@@ -266,6 +266,32 @@ class IdbImapLocations implements ImapLocationStore {
     });
   }
 
+  async adopt(messageId: number, place: { mailbox: string; uidvalidity: number; uid: number; flags: string[] }, expect: { rfcMessageId: string; size: number; date: number }) {
+    let adopted = false;
+    await this.command(() => {
+      const holds = T(this.c, "imap_identity_holds");
+      const hold = holds.get(messageId);
+      if (!hold || hold.account_id !== this.accountId || hold.owner !== null) return;
+      if (this.t.count("fk_message_id", messageId)) return;
+      if (this.t.by("uid", this.accountId, place.mailbox, place.uidvalidity, place.uid).length) return;
+      const messages = T(this.c, "messages");
+      const m = messages.get(messageId);
+      if (!m || m.account_id !== this.accountId || m.rfc_message_id !== expect.rfcMessageId || m.size !== expect.size || m.date !== expect.date) return;
+      // one message of the account with this Message-ID: a duplicate (two copies, or two different mails) stays held
+      if ((messages.bucket("rfc", this.accountId, expect.rfcMessageId)?.size ?? 0) !== 1) return;
+      const ops = T(this.c, "ops");
+      for (const target of T(this.c, "op_targets").by("message", messageId)) {
+        const state = ops.get(target.op_id)?.state;
+        if (state === "queued" || state === "running" || state === "unknown") return;
+      }
+      this.t.put({ message_id: messageId, account_id: this.accountId, mailbox: place.mailbox, uidvalidity: place.uidvalidity, uid: place.uid, flags: JSON.stringify(place.flags) });
+      this.located([messageId], place.mailbox, true, place.uidvalidity);
+      holds.delete(messageId);
+      adopted = true;
+    });
+    return adopted;
+  }
+
   async mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean, expected: readonly ImapLocation[], holdOwner: string) {
     if (!holdOwner) throw new ImapIdentityError();
     const expectedById = new Map<number, ImapLocation[]>();

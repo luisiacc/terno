@@ -973,10 +973,12 @@ describe("IMAP provider against ImapKit", () => {
     expect(rows).toEqual([
       { subject: "A", is_read: 1, is_starred: 1, in_inbox: 1 },
       { subject: "B", is_read: 0, is_starred: 0, in_inbox: 1 },
-      { subject: "C", is_read: 0, is_starred: 0, in_inbox: 1 },
+      // plan 114: moved to the Archive by another app, and followed there (the same mail, nothing of ours pending)
+      { subject: "C", is_read: 0, is_starred: 0, in_inbox: 0 },
       { subject: "D", is_read: 0, is_starred: 0, in_inbox: 1 },
     ]);
-    expect((await client.call("counts.get", {})).inboxUnread).toBe(3);
+    expect((await client.call("counts.get", {})).inboxUnread).toBe(2);
+    expect((await client.call("threads.list", { view: "archive" })).items.map((x) => x.subject)).toEqual(["C"]);
   });
 
   it("holds mail across a UIDVALIDITY reset without duplicating mail", async () => {
@@ -991,13 +993,18 @@ describe("IMAP provider against ImapKit", () => {
     const after = sqlDb(backend.store).all<{ uid: number; uidvalidity: number }>("SELECT uid, uidvalidity FROM message_locations ORDER BY uid");
     expect(count(backend, "SELECT 1 FROM messages")).toBe(3);
     expect(before).toHaveLength(3);
-    expect(after).toEqual([]);
-    // ops still target the right message after the reset
+    // plan 114: each found again under the new UIDVALIDITY, at its own renumbered UID (each Message-ID is unique)
+    const validity = ctl.getMailbox("INBOX").uidvalidity;
+    const onServer = Object.fromEntries(ctl.listMessages("INBOX", { raw: true }).map((m) => [/Subject: (\S+)/.exec(m.raw!.toString())![1], m.uid]));
+    expect(sqlDb(backend.store).all("SELECT m.subject, l.uid, l.uidvalidity FROM messages m JOIN message_locations l ON l.message_id = m.id ORDER BY m.subject"))
+      .toEqual(["dos", "tres", "uno"].map((subject) => ({ subject, uid: onServer[subject], uidvalidity: validity })));
+    expect(after.every((a) => a.uid > 100)).toBe(true);
+    // ops target the right message after the reset: only "dos" is read on the server
     const thread = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE subject = 'dos'")!.thread_id;
     await backend.server.invoke("threads.act", { threadIds: [thread], action: "markRead" }, { clientId: "t", origin: "renderer" });
     await backend.runWorker();
-    expect(ctl.listMessages("INBOX").every((m) => !m.flags.includes("\\Seen"))).toBe(true);
-    expect((await backend.store.ops.recent(20))[0]).toMatchObject({ state: "queued", attempts: 0, next_attempt_at: AWAITING_IDENTITY });
+    expect(ctl.listMessages("INBOX", { raw: true }).filter((m) => m.flags.includes("\\Seen")).map((m) => /Subject: (\S+)/.exec(m.raw!.toString())![1])).toEqual(["dos"]);
+    expect((await backend.store.ops.recent(20))[0]).toMatchObject({ state: "succeeded" });
   });
 
   it("does not let a sync clobber an optimistic change whose op hasn't run yet", async () => {
@@ -1163,8 +1170,10 @@ describe("a new account's first sync (plan 79)", () => {
     expect(before).toBeGreaterThan(0);
     // a reset like any other: the preview's 250 lose their places and wait for proof of identity (never matched by
     // envelope), nothing stays placed under the old validity, and nothing is written twice
+    // plan 114: the preview's are found again under the new numbering (each Message-ID unique, same size and date);
+    // the one the server dropped stays held, unplaced
     const rows = placed(backend);
-    expect(rows).toHaveLength(10);
+    expect(rows).toHaveLength(259);
     expect(rows.every((r) => r.uidvalidity !== before && r.uid > 1000)).toBe(true);
     expect(count(backend, "SELECT 1 FROM messages")).toBe(260);
   });
@@ -1270,7 +1279,7 @@ describe("an account's own folders (plan 68)", () => {
     expect((await client.call("counts.get", {})).folderUnread).toEqual({ [`${account.id}:Work`]: 1 });
   });
 
-  it("external moves, renames and folder deletion retain cached mail without inferring a destination", async () => {
+  it("external moves, renames and folder deletion retain cached mail; a move or rename is followed only as plan 114 proves it", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
     ctl.createMailbox("Work");
@@ -1282,12 +1291,15 @@ describe("an account's own folders (plan 68)", () => {
     const id = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = 'Contrato'")!.id;
     ctl.moveMessages("Work", [m.uid], "Clients");
     await backend.syncAccount(account.id);
+    // plan 114: the only mail with its Message-ID, same size and date, nothing of ours pending: followed
     expect(await folderOf(client, account.id, "Work")).toEqual([]);
-    expect(await folderOf(client, account.id, "Clients")).toEqual([]);
+    expect(await folderOf(client, account.id, "Clients")).toEqual(["Contrato"]);
     ctl.renameMailbox("Clients", "Proyectos");
     await backend.syncAccount(account.id);
     expect((await backend.store.folders.list()).map((f) => f.key).sort()).toEqual(["Proyectos", "Work"]);
-    expect(await folderOf(client, account.id, "Proyectos")).toEqual([]);
+    // the pass reads the new folder before it lets the vanished one's places go: the next one finds it there
+    await backend.syncAccount(account.id);
+    expect(await folderOf(client, account.id, "Proyectos")).toEqual(["Contrato"]);
     // the same message, never removed and fetched again; its old path's locations are gone
     expect(sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = 'Contrato'")!.id).toBe(id);
     expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Clients'")).toBe(0);
@@ -1411,8 +1423,9 @@ describe("an account's own folders (plan 68)", () => {
     expect(sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages")?.id).toBe(id);
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages")?.id).toBe(id);
-    expect(await folderOf(client, account.id, "Work")).toEqual([]);
-    expect(await backend.store.providerStore(account.id).locations.unresolved([id])).toEqual([id]);
+    // plan 114: the same message, found again under the new UIDVALIDITY
+    expect(await folderOf(client, account.id, "Work")).toEqual(["Contrato"]);
+    expect(await backend.store.providerStore(account.id).locations.unresolved([id])).toEqual([]);
   });
 
   it("Codex R4: completing a failed reset does not prove disappearance or identity", async () => {
@@ -1443,7 +1456,10 @@ describe("an account's own folders (plan 68)", () => {
     expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((m) => m.subject)).toEqual(["Borrado", "Contrato"]);
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((m) => m.subject)).toEqual(["Borrado", "Contrato"]);
-    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
+    // the expunged one isn't proven gone (held); the one still there is found again (plan 114)
+    const borrado = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = 'Borrado'")!.id;
+    await expectRetained(backend, account.id, retained, [borrado]);
+    expect(await folderOf(client, account.id, "Work")).toEqual(["Contrato"]);
   });
 
   it("Codex R5: interrupted reset retains old ID-less twins without assigning their new UIDs", async () => {
@@ -1671,8 +1687,9 @@ describe("an account's own folders (plan 68)", () => {
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages")).toEqual([before]);
     expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ?", category.id)).toBe(1);
-    expect(await folderOf(client, account.id, "A")).toEqual([]);
-    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
+    // plan 114: followed into A after the full pass, the same message in the same conversation and category
+    expect(await folderOf(client, account.id, "A")).toEqual(["Movido entre STATUS"]);
+    await expectRetained(backend, account.id, retained, []);
   });
 
   it("Codex R9: sequential reset passes cannot discard or rebind either folder’s cached mail", async () => {
@@ -1703,7 +1720,9 @@ describe("an account's own folders (plan 68)", () => {
     await backend.syncAccount(account.id);
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((r) => r.subject)).toEqual(["Borrado en A", "En B", "Queda en A"]);
-    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
+    // the expunged one stays held; each still there is found again at its own copy (plan 114)
+    await expectRetained(backend, account.id, retained, [sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = 'Borrado en A'")!.id]);
+    expect(sqlDb(backend.store).all("SELECT m.subject, l.mailbox FROM messages m JOIN message_locations l ON l.message_id = m.id ORDER BY m.subject")).toEqual([{ subject: "En B", mailbox: "B" }, { subject: "Queda en A", mailbox: "A" }]);
   });
 
   it("Codex R10: an ID-less message moved out of a folder that's then deleted, all between syncs, keeps its identity", async () => {
@@ -2794,12 +2813,13 @@ describe("an account's own folders (plan 68)", () => {
       opened.length = 0;
       await backend.syncAccount(account.id);
       expect(opened).toContain("Work");
-      expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Work'")).toBe(0);
-      expect(await folderOf(client, account.id, "Work")).toEqual([]);
+      // plan 114: found again under the new UIDVALIDITY
+      expect(sqlDb(backend.store).all("SELECT uidvalidity FROM message_locations WHERE mailbox = 'Work'")).toEqual([{ uidvalidity: ctl.getMailbox("Work").uidvalidity }]);
+      expect(await folderOf(client, account.id, "Work")).toEqual(["Contrato"]);
     } finally {
       spy.mockRestore();
     }
-    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
+    await expectRetained(backend, account.id, retained, []);
   });
 });
 

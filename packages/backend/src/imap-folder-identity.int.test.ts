@@ -41,7 +41,7 @@ async function setup(folders: Record<string, object>, syncWindowDays?: number) {
   return { server, commands, account, ...first, async reopen() { client.close(); await bounded(backend.stop(), "backend stop"); return open(); } };
 }
 
-it("follows renamed localized folders while holding unproven message identity through reopen", async () => {
+it("follows renamed localized folders, and the message in them once proven (plan 114), through reopen", async () => {
   const t = await setup({ Enviados: { "special-use": "\\Trash" }, "Proyectos": {} });
   const bytes = rawIdleMail("Folder identity", "Exact bytes");
   const old = t.server.control.addMessage("Proyectos", { raw: bytes });
@@ -59,9 +59,12 @@ it("follows renamed localized folders while holding unproven message identity th
   await reopened.backend.syncAccount(t.account.id);
   const folders = (await reopened.client.call("app.bootstrap", {})).folders.filter((f) => f.accountId === t.account.id);
   expect(folders.find((f) => f.key === "Clientes/Contratos é")).toMatchObject({ path: ["Clientes", "Contratos é"], selectable: true });
-  expect((await reopened.client.call("threads.list", { view: "all", accountId: t.account.id, folder: "Clientes/Contratos é" })).items.map((x) => x.id)).toEqual([]);
-  expect(await reopened.backend.store.providerStore(t.account.id).locations!.of([message.id])).toEqual([]);
-  expect(await reopened.backend.store.providerStore(t.account.id).locations.unresolved([message.id])).toEqual([message.id]);
+  // plan 114: found in the renamed folder at its own copy (its Message-ID is the only one; same size and date); the
+  // other folder's message under the same UID is never taken for it
+  expect((await reopened.client.call("threads.list", { view: "all", accountId: t.account.id, folder: "Clientes/Contratos é" })).items.map((x) => x.id)).toEqual([thread.id]);
+  expect((await reopened.backend.store.providerStore(t.account.id).locations!.of([message.id])).map((l) => [l.mailbox, l.uid])).toEqual([["Clientes/Contratos é", old.uid]]);
+  expect(await reopened.backend.store.providerStore(t.account.id).locations.unresolved([message.id])).toEqual([]);
+  expect((await reopened.client.call("threads.list", { view: "inbox" })).items.map((x) => x.subject)).toEqual(["Other folder"]);
   expect((await reopened.client.call("threads.get", { threadId: thread.id })).messages[0]).toMatchObject({ id: message.id, bodyText: message.bodyText });
   expect(t.server.control.getMessage("Clientes/Contratos &AOk-", old.uid, { raw: true }).raw).toEqual(Buffer.from(bytes));
   expect(t.server.control.getMessage("INBOX", other.uid, { raw: true }).raw).toEqual(Buffer.from(otherBytes));

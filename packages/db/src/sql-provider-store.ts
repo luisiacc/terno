@@ -174,6 +174,24 @@ class SqlImapLocations implements ImapLocationStore {
     }
   }
 
+  async adopt(messageId: number, place: { mailbox: string; uidvalidity: number; uid: number; flags: string[] }, expect: { rfcMessageId: string; size: number; date: number }) {
+    return this.db.tx(() => {
+      const hold = this.db.get<{ owner: string | null }>("SELECT owner FROM imap_identity_holds WHERE message_id=? AND account_id=?", messageId, this.accountId);
+      if (!hold || hold.owner !== null) return false;
+      if (this.db.get("SELECT 1 FROM message_locations WHERE message_id=?", messageId)) return false;
+      if (this.db.get("SELECT 1 FROM message_locations WHERE account_id=? AND mailbox=? AND uidvalidity=? AND uid=?", this.accountId, place.mailbox, place.uidvalidity, place.uid)) return false;
+      const m = this.db.get<{ size: number; date: number; rfc_message_id: string | null }>("SELECT size, date, rfc_message_id FROM messages WHERE id=? AND account_id=?", messageId, this.accountId);
+      if (!m || m.rfc_message_id !== expect.rfcMessageId || m.size !== expect.size || m.date !== expect.date) return false;
+      // one message of the account with this Message-ID: a duplicate (two copies, or two different mails) stays held
+      if (this.db.get<{ n: number }>("SELECT count(*) AS n FROM (SELECT 1 FROM messages INDEXED BY messages_rfc WHERE account_id=? AND rfc_message_id=? LIMIT 2)", this.accountId, expect.rfcMessageId)!.n !== 1) return false;
+      if (this.db.get("SELECT 1 FROM op_targets t JOIN ops o ON o.id=t.op_id WHERE t.message_id=? AND o.state IN ('queued','running','unknown')", messageId)) return false;
+      this.write(messageId, place.mailbox, place.uidvalidity, place.uid, place.flags);
+      this.located([messageId], place.mailbox, true, place.uidvalidity);
+      this.db.run("DELETE FROM imap_identity_holds WHERE message_id=?", messageId);
+      return true;
+    });
+  }
+
   async mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean, expected: readonly ImapLocation[], holdOwner: string) {
     if (!holdOwner) throw new ImapIdentityError();
     const expectedById = new Map<number, ImapLocation[]>();

@@ -238,6 +238,14 @@ export interface ImapLocationStore {
   mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean, expected: readonly ImapLocation[], holdOwner: string): Promise<void>;
   /** The server refused the one command a dispatch started (a tagged NO/BAD): nothing moved, so this admission's holds go. */
   refused(messageIds: readonly number[], holdOwner: string): Promise<void>;
+  /**
+   * Plan 114: a message another mail app moved (or a mailbox reset renumbered) found at its new place. The held
+   * message takes `place` and its hold goes only when that is provably the same mail and nothing of ours can be
+   * misdirected: a hold left by a lost location (no owner: no command of ours in flight), no place left anywhere,
+   * the only message of the account with its Message-ID, the same size and date, and no action of ours queued,
+   * running or unknown for it. False, with nothing written, otherwise: it stays held.
+   */
+  adopt(messageId: number, place: { mailbox: string; uidvalidity: number; uid: number; flags: string[] }, expect: { rfcMessageId: string; size: number; date: number }): Promise<boolean>;
   upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]): Promise<void>;
   /**
    * plan 107 (Codex code review round 20 #5): many places of one mailbox and generation, each as `upsert`, in one unit

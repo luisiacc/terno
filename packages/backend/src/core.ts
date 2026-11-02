@@ -1258,6 +1258,7 @@ export class BackendCore {
         dispatch: (ids, expected, start, fenceIds) => write(() => locations.dispatch(ids, expected, start, fenceIds)),
         mappedMove: (...args) => write(() => locations.mappedMove(...args)),
         refused: (...args) => write(() => locations.refused(...args)),
+        adopt: (...args) => write(() => locations.adopt(...args)),
         upsert: (...args) => write(() => locations.upsert(...args)),
         upsertMany: (...args) => write(() => locations.upsertMany(...args)),
         remove: (...args) => write(() => locations.remove(...args)),

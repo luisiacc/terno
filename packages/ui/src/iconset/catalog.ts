@@ -84,7 +84,7 @@ export const ICONS = {
   MessageSquareReply: "MessageSquareReplyIcon",
   MessageSquareText: "Message01Icon",
   Moon: "MoonIcon",
-  // plan 113: the category tip's picture of a right-click (the right button shaded) and the pointer on the menu
+  // plan 114: the category tip's picture of a right-click (the right button shaded) and the pointer on the menu
   MousePointer: "Cursor01Icon",
   MouseRightClick: "MouseRightClick03Icon",
   // snippets: a note, apart from the blockquote's quote marks (TextQuote)

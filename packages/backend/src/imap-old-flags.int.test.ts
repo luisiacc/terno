@@ -273,7 +273,7 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     await witness(durable, t, FLAGS);
   });
 
-  it.each([true, false])("holds the same cached old bytes in an unproven new epoch with CONDSTORE=%s", async (condstore) => {
+  it.each([true, false])("finds the same cached old message again in a new epoch, by plan 114's proof, with CONDSTORE=%s", async (condstore) => {
     const t = await setup(condstore);
     await t.stop();
     t.advance();
@@ -283,16 +283,17 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     const start = t.w.commands.length;
     await bounded(r.backend.syncAccount(t.account.id), "reset sync");
     expect(epoch.uidvalidity).not.toBe(t.target.uidvalidity);
-    expect((await detail(r)).messages[0]).toMatchObject({ id: t.message.id, bodyText: t.message.bodyText, isRead: false, isStarred: false });
-    expect(await r.backend.store.providerStore(t.account.id).locations.unresolved([t.message.id])).toEqual([t.message.id]);
+    // the same message, its cached body kept (never fetched again), and the server's flags now
+    expect((await detail(r)).messages[0]).toMatchObject({ id: t.message.id, bodyText: t.message.bodyText, isRead: true, isStarred: true });
+    expect(await r.backend.store.providerStore(t.account.id).locations.unresolved([t.message.id])).toEqual([]);
     const commands = t.w.commands.slice(start);
     expect(commands.filter((c) => /BODY(?:\.PEEK)?\[\](?:<|\s|\))/.test(c.data))).toEqual([]);
     expect(commands.length).toBeLessThan(35);
     expect(t.w.overflow).toBe(false);
     await r.stop();
     const durable = await t.open();
-    expect((await detail(durable)).messages[0]).toMatchObject({ id: t.message.id, bodyText: t.message.bodyText, isRead: false, isStarred: false });
-    expect(await durable.backend.store.providerStore(t.account.id).locations.of([t.message.id])).toEqual([]);
+    expect((await detail(durable)).messages[0]).toMatchObject({ id: t.message.id, bodyText: t.message.bodyText, isRead: true, isStarred: true });
+    expect((await durable.backend.store.providerStore(t.account.id).locations.of([t.message.id])).map((l) => [l.uidvalidity, l.uid])).toEqual([[epoch.uidvalidity, t.target.uid]]);
   });
 
   it("a reused old UID in a replacement epoch cannot borrow the cached identity/body", async () => {

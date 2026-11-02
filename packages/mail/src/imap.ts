@@ -1239,6 +1239,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           }
           const candidates = new Set(await locations.twins(envelope, 0, 1));
           if (existing) candidates.add(existing.id);
+          // plan 114: the one held message this mail provably is (moved by another app, or renumbered by a reset)
+          // takes this place; anything less certain stays held below
+          if (existing && envelope.rfcMessageId && candidates.size === 1 && (await locations.unresolved([existing.id])).length
+            && (await locations.adopt(existing.id, { mailbox: path, uidvalidity, uid: m.uid, flags }, { rfcMessageId: envelope.rfcMessageId, size: envelope.size, date: envelope.date }))) {
+            touched.add(existing.id);
+            opts.introduced.add(existing.id);
+            continue;
+          }
           let uncertain = false;
           for (const id of candidates) {
             const here = await locations.get(id, path);

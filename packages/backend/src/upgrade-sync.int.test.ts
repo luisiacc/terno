@@ -4,7 +4,7 @@
  * The migration itself runs at open, before the backend syncs anything, each step in one transaction, so new mail
  * can't land in the middle of one. What an upgrade leaves for later (here v41's tally of Archive and Spam unread)
  * runs in slices beside sync: mail keeps arriving (IDLE and the poll) while it is unfinished, and every count ends
- * exact, whatever arrived or changed meanwhile.
+ * exact, whatever arrived, changed or moved meanwhile.
  */
 import { mkdtempSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -120,8 +120,8 @@ it("after an update that migrated, mail keeps syncing while the upgrade's backgr
   const cursor = db.get<{ after_id: number }>("SELECT after_id FROM view_unread_backfill")!.after_id;
   expect(cursor).toBeGreaterThan(0);
 
-  // meanwhile, on the server: new unread mail in each place, and old mail read and unread on both sides of the
-  // tally's cursor
+  // meanwhile, on the server: new unread mail in each place, old mail read and unread on both sides of the tally's
+  // cursor, and an unread conversation moved to the archive by another app (plan 114)
   server.control.addMessage("INBOX", mail("new in inbox"));
   server.control.addMessage("Archive", mail("new in archive"));
   server.control.addMessage("Junk", mail("new in junk"));
@@ -129,11 +129,15 @@ it("after an update that migrated, mail keeps syncing while the upgrade's backgr
   const unreadArchived = archived.filter((m) => !m.flags.includes("\\Seen"));
   server.control.setFlags("Archive", [unreadArchived[0]!.uid, unreadArchived.at(-2)!.uid], ["\\Seen"], "add");
   server.control.setFlags("Archive", [archived.find((m) => m.flags.includes("\\Seen"))!.uid], ["\\Seen"], "remove");
+  const inbox = server.control.listMessages("INBOX") as { uid: number; flags: string[] }[];
+  // the first unread in the inbox is "inbox 0"
+  server.control.moveMessages("INBOX", [inbox.find((m) => !m.flags.includes("\\Seen"))!.uid], "Archive");
 
   // it syncs (push and the poll) while the tally is still unfinished
   const subjects = () => new Set(db.all<{ subject: string }>("SELECT subject FROM messages WHERE subject LIKE 'new in %'").map((r) => r.subject));
   await until(() => subjects().size === 3, "new mail synced during the tally");
   await until(() => db.get<{ n: number }>("SELECT count(*) AS n FROM threads WHERE unread_count = 0 AND in_inbox = 0 AND in_spam = 0 AND in_trash = 0")!.n === 251, "the archive's flags synced");
+  await until(() => db.get<{ in_inbox: number }>("SELECT t.in_inbox FROM threads t JOIN messages m ON m.thread_id = t.id WHERE m.subject = 'inbox 0'")?.in_inbox === 0, "the move synced");
   expect(db.get("SELECT 1 FROM view_unread_backfill"), "the tally is still midway").toBeDefined();
   expect(slices).toBe(2);
 
@@ -142,6 +146,6 @@ it("after an update that migrated, mail keeps syncing while the upgrade's backgr
   const t = tallies(db);
   expect(t.viewUnread).toEqual(t.viewTruth);
   expect(t.folderUnread).toEqual(t.folderTruth);
-  // Archive: 250 unread, 2 read meanwhile, 1 unread again and 1 new; Spam: 100 and 1 new
-  expect(t.viewUnread).toEqual([{ account_id: account.id, view: 1, n: 250 - 2 + 1 + 1 }, { account_id: account.id, view: 2, n: 101 }]);
+  // Archive: 250 unread, 2 read meanwhile, 1 unread again, 1 new and 1 moved in; Spam: 100 and 1 new
+  expect(t.viewUnread).toEqual([{ account_id: account.id, view: 1, n: 250 - 2 + 1 + 1 + 1 }, { account_id: account.id, view: 2, n: 101 }]);
 });

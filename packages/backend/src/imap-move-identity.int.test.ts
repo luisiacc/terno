@@ -6,7 +6,7 @@ import { createRegistry } from "@terno/mail";
 import { AWAITING_IDENTITY, ImapIdentityError } from "@terno/store";
 import { sqlDb } from "@terno/db";
 import imapkit from "imapkit";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { bounded, rawIdleMail } from "./test/imap-idle-fixture";
 
@@ -45,7 +45,7 @@ async function setup(folders: Record<string, object>, syncWindowDays?: number, u
     imap: { host: "127.0.0.1", port, secure: false, user: "testuser" },
     smtp: { host: "127.0.0.1", port: 1, secure: false, user: "testuser" }, password: "testpass", verify: false,
   });
-  return { server, commands, account, ...first, async reopen() { client.close(); await bounded(backend.stop(), "backend stop"); return open(); } };
+  return { server, port, commands, account, ...first, async reopen() { client.close(); await bounded(backend.stop(), "backend stop"); return open(); } };
 }
 
 
@@ -194,11 +194,15 @@ it("does not replay an acknowledged MOVE when UIDPLUS is unavailable", async () 
   expect(t.commands.filter((command) => command === "UID MOVE")).toHaveLength(moves);
   await reopened.backend.syncAccount(t.account.id);
   expect((await reopened.client.call("threads.get", { threadId: thread.id })).messages[0]).toMatchObject({ id: message.id, bodyText: message.bodyText });
-  expect(await reopened.backend.store.providerStore(t.account.id).locations!.of([message.id])).toEqual([]);
-  expect(await reopened.backend.store.providerStore(t.account.id).locations.unresolved([message.id])).toEqual([message.id]);
+  // plan 114: the sync finds it in the Trash (the only mail with its Message-ID, same size and date, nothing of ours
+  // pending for it), at exactly its own copy; a later action reaches that copy and no other
+  const trashed = t.server.control.listMessages("Trash", { raw: true })[0]!;
+  expect((await reopened.backend.store.providerStore(t.account.id).locations!.of([message.id])).map((l) => [l.mailbox, l.uid])).toEqual([["Trash", trashed.uid]]);
+  expect(await reopened.backend.store.providerStore(t.account.id).locations.unresolved([message.id])).toEqual([]);
   await reopened.client.call("threads.act", { threadIds: [thread.id], action: "markRead" });
   await reopened.backend.runWorker();
-  expect((await reopened.client.call("ops.list", {})).find((item) => item.kind === "markRead")).toMatchObject({ state: "queued" });
+  expect((await reopened.client.call("ops.list", {})).find((item) => item.kind === "markRead")).toMatchObject({ state: "succeeded" });
+  expect(t.server.control.getMessage("Trash", trashed.uid, { raw: true })).toMatchObject({ raw: Buffer.from(bytes), flags: ["\\Seen"] });
   expect(t.commands.filter((command) => command === "UID MOVE")).toHaveLength(moves);
   expect(old.uidvalidity).toBe(t.server.control.getMailbox("INBOX").uidvalidity);
 });
@@ -258,13 +262,19 @@ it.each(["missing", "duplicate", "epoch", "range"] as const)("withholds an inval
   try { await t.backend.runWorker(); } finally { altered.mockRestore(); }
   const moves = t.commands.filter((command) => command === "UID MOVE").length;
   expect(moves).toBe(1);
+  const ids = messages.map((message) => message.id);
+  // the invalid mapping is never trusted: nothing placed from it
+  expect(await t.backend.store.providerStore(t.account.id).locations.of(ids)).toEqual([]);
+  expect(new Set(await t.backend.store.providerStore(t.account.id).locations.unresolved(ids))).toEqual(new Set(ids));
   const reopened = await t.reopen();
   await reopened.backend.syncAccount(t.account.id);
   await reopened.backend.runWorker();
   expect(t.commands.filter((command) => command === "UID MOVE")).toHaveLength(moves);
-  const ids = messages.map((message) => message.id);
-  expect(await reopened.backend.store.providerStore(t.account.id).locations.of(ids)).toEqual([]);
-  expect(new Set(await reopened.backend.store.providerStore(t.account.id).locations.unresolved(ids))).toEqual(new Set(ids));
+  // plan 114: the sync finds each in the Trash by its own evidence, each at the copy that is its own bytes
+  const located = await reopened.backend.store.providerStore(t.account.id).locations.of(ids);
+  expect(located.map((l) => l.mailbox)).toEqual(["Trash", "Trash"]);
+  expect(await reopened.backend.store.providerStore(t.account.id).locations.unresolved(ids)).toEqual([]);
+  for (const l of located) expect(t.server.control.getMessage("Trash", l.uid, { raw: true }).raw!.toString()).toContain(messages.find((m) => m.id === l.message_id)!.bodyText!.trim());
   expect(t.server.control.listMessages("Trash", { raw: true }).map((message) => message.raw!.toString()).sort()).toEqual([...bytes].sort());
   for (const thread of threads) expect((await reopened.client.call("threads.get", { threadId: thread.id })).messages[0]).toMatchObject({ bodyState: "full" });
 });
@@ -364,4 +374,69 @@ it("resumes a changed admission on completed sync only when every target is stil
   await t.backend.runWorker();
   expect(await t.backend.store.ops.get(op.id)).toMatchObject({ state: "succeeded", attempts: 1 });
   expect(t.server.control.getMessage("INBOX", remote.uid, { raw: true })).toMatchObject({ raw: Buffer.from(raw), flags: ["\\Seen"] });
+});
+
+describe("plan 114: a message another mail app moved, followed when provably the same mail", () => {
+  async function placed(t: Awaited<ReturnType<typeof setup>>, bytes: string, folder = "INBOX") {
+    const added = t.server.control.addMessage(folder, { raw: bytes });
+    await t.backend.syncAccount(t.account.id);
+    const id = (await t.backend.store.providerStore(t.account.id).locations!.at(folder, added.uidvalidity, added.uid))!;
+    const thread = sqlDb(t.backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", id)!.thread_id;
+    return { added, id, thread, before: (await t.client.call("threads.get", { threadId: thread })).messages[0]! };
+  }
+  const listed = async (t: Awaited<ReturnType<typeof setup>>, view: "inbox" | "archive") => (await t.client.call("threads.list", { view, accountId: t.account.id })).items.map((x) => x.id);
+
+  it.each(["imap", "server"] as const)("moved Inbox → Archive (%s): the same message, body and conversation, now in Archive and out of the Inbox", async (how) => {
+    const t = await setup({ Archive: { "special-use": "\\Archive" } });
+    const m = await placed(t, rawIdleMail("Moved elsewhere", "Exact moved bytes"));
+    expect(await listed(t, "inbox")).toEqual([m.thread]);
+    if (how === "server") t.server.control.moveMessages("INBOX", [m.added.uid], "Archive");
+    else {
+      const { ImapFlow } = await import("imapflow");
+      const other = new ImapFlow({ host: "127.0.0.1", port: t.port, secure: false, auth: { user: "testuser", pass: "testpass" }, logger: false });
+      await other.connect();
+      const lock = await other.getMailboxLock("INBOX");
+      try { await other.messageMove(String(m.added.uid), "Archive", { uid: true }); } finally { lock.release(); }
+      await other.logout();
+    }
+    await t.backend.syncAccount(t.account.id);
+    const archived = t.server.control.listMessages("Archive")[0]!;
+    const locations = t.backend.store.providerStore(t.account.id).locations!;
+    expect(await locations.unresolved([m.id])).toEqual([]);
+    expect((await locations.of([m.id])).map((l) => [l.mailbox, l.uid])).toEqual([["Archive", archived.uid]]);
+    expect(await listed(t, "inbox")).toEqual([]);
+    expect(await listed(t, "archive")).toEqual([m.thread]);
+    expect(sqlDb(t.backend.store).get<{ n: number }>("SELECT count(*) AS n FROM messages")!.n).toBe(1);
+    expect((await t.client.call("threads.get", { threadId: m.thread })).messages[0]).toMatchObject({ id: m.id, bodyText: m.before.bodyText });
+    // and it's ours to act on again: read here, read there
+    await t.client.call("threads.act", { threadIds: [m.thread], action: "markRead" });
+    await t.backend.runWorker();
+    expect(t.server.control.getMessage("Archive", archived.uid).flags).toContain("\\Seen");
+  });
+
+  it("a different mail under the same Message-ID (another size) where the old one was: not adopted, the old one stays held", async () => {
+    const t = await setup({ Archive: { "special-use": "\\Archive" } });
+    const make = (body: string) => ["From: Ana <ana@example.test>", "To: Test <test@example.test>", "Subject: Same id", "Message-ID: <same@example.test>", `Date: ${new Date().toUTCString()}`, "Content-Type: text/plain; charset=utf-8", "", body, ""].join("\r\n");
+    const m = await placed(t, make("short"));
+    t.server.control.expungeMessages("INBOX", [m.added.uid]);
+    t.server.control.addMessage("Archive", { raw: make("a different, longer body") });
+    await t.backend.syncAccount(t.account.id);
+    const locations = t.backend.store.providerStore(t.account.id).locations!;
+    expect(await locations.unresolved([m.id])).toEqual([m.id]);
+    expect(await locations.of([m.id])).toEqual([]);
+    expect((await t.client.call("threads.get", { threadId: m.thread })).messages[0]).toMatchObject({ id: m.id, bodyText: m.before.bodyText });
+  });
+
+  it("a mailbox the server renumbered (a new UIDVALIDITY): its messages are found again in place", async () => {
+    const t = await setup({});
+    const m = await placed(t, rawIdleMail("Renumbered", "Exact renumbered bytes"));
+    t.server.control.resetUidValidity("INBOX");
+    await t.backend.syncAccount(t.account.id);
+    const locations = t.backend.store.providerStore(t.account.id).locations!;
+    const now = t.server.control.listMessages("INBOX")[0]!;
+    expect(await locations.unresolved([m.id])).toEqual([]);
+    expect((await locations.of([m.id])).map((l) => [l.mailbox, l.uidvalidity, l.uid])).toEqual([["INBOX", t.server.control.getMailbox("INBOX").uidvalidity, now.uid]]);
+    expect(await listed(t, "inbox")).toEqual([m.thread]);
+    expect(sqlDb(t.backend.store).get<{ n: number }>("SELECT count(*) AS n FROM messages")!.n).toBe(1);
+  });
 });

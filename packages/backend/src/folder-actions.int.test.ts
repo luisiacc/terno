@@ -1472,15 +1472,10 @@ it.each(RENAME_TABLE)("renames before a pass: the server $uv UIDVALIDITY, $renam
       await t.client.call("folders.exportCancel", { exportId: started.exportId });
       expect(started.total).toBe(0);
       expect(await t.ownFolders()).toContain(last);
-    } else if (uv === "changes") {
-      // its UIDs under the new UIDVALIDITY prove nothing: the moved mail is held as a reset's is (plan 68), with its
-      // id and body, and no folder lists it
-      expect(await t.threadsIn(last)).toEqual([]);
-      expect(await t.locations([ma.id])).toEqual([]);
-      expect(await t.held([ma.id])).toEqual([ma.id]);
-      expect((await t.messageOf(a!)).bodyText).toBe(ma.bodyText);
     } else {
-      // the moved mail is in the last name, once, with its body; nothing it was is held or left elsewhere
+      // the moved mail is in the last name, once, with its body; nothing it was is held or left elsewhere. Under a new
+      // UIDVALIDITY its UIDs prove nothing by themselves: it's found again as plan 114 proves it (the only mail with its
+      // Message-ID, same size and date, nothing of ours pending)
       const there = await t.threadsIn(last);
       expect(there).toHaveLength(1);
       const m = await t.messageOf(there[0]!);
@@ -1488,7 +1483,7 @@ it.each(RENAME_TABLE)("renames before a pass: the server $uv UIDVALIDITY, $renam
       expect(m.bodyText).toBe(ma.bodyText);
       expect((await t.locations([m.id])).map((l) => l.mailbox)).toEqual([last]);
       expect(await t.held([ma.id, m.id])).toEqual([]);
-      // the server kept its UIDs' meaning: the message keeps its identity
+      // the message keeps its identity
       expect(m.id).toBe(ma.id);
     }
     for (const name of names.slice(0, -1)) if (name !== "Work" || after !== "recreate") expect(await t.threadsIn(name)).toEqual([]);
@@ -1512,6 +1507,9 @@ it.each(RENAME_TABLE)("renames before a pass: the server $uv UIDVALIDITY, $renam
     await t.reopen();
   }
   await t.backend.syncAccount(t.account.id);
+  // under a new UIDVALIDITY the moved mail is held only as that pass ends (its old generation retired), after the
+  // folder's read set its copy aside: the next pass finds it (plan 114)
+  if (uv === "changes" && (after === "nothing" || after === "recreate")) await t.backend.syncAccount(t.account.id);
   await check();
   await t.backend.syncAccount(t.account.id);
   await check();

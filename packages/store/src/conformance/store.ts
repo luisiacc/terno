@@ -18,6 +18,7 @@ import { defineScheduledConformance } from "./scheduled";
 import { defineUnsubscribeConformance } from "./unsubscribe";
 import { defineHiddenInboxConformance } from "./hidden-inbox";
 import { defineTabsConformance } from "./tabs";
+import { defineImapAdoptConformance } from "./imap-adopt";
 import { defineViewUnreadConformance } from "./view-unread";
 import { defineFlagIntentConformance } from "./flag-intents";
 import { defineDurableFlagIntentConformance } from "./durable-flag-intents";
@@ -94,6 +95,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       return next;
     });
     defineViewUnreadConformance(fresh);
+    defineImapAdoptConformance(fresh);
     defineScheduledConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);
