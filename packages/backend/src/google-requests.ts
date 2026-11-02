@@ -44,10 +44,7 @@ export async function savedGoogleRequests(input: {
   };
   const pause = () => { paused = true; input.changed(); };
   const constraint = (epoch: number, active: () => boolean) => input.status.constrain(
-    { generation: epoch, live: active }, new ProviderCooldownError("gmail-api", "0", "quota"), () => {
-      try { installation.check({ request: mail }); scope.check({ request: mail }); return false; }
-      catch { return true; }
-    },
+    { generation: epoch, live: active }, new ProviderCooldownError("gmail-api", "0", "quota"), () => gate.mailConstrained(owner ?? "installation", stamp),
   );
   return {
     generation: input.credentials,

@@ -136,6 +136,15 @@ export class ProviderCooldown {
     return row.minimum === null ? Object.freeze({ kind: "hold", reason: "clock-evidence" }) : Object.freeze({ kind: "at", atMs: Number(row.minimum) });
   }
   /** Private host scope; request arguments cannot change mailbox/service ownership. */
+  /** Status observes durable admission, independent of a retired request handle's liveness. */
+  mailConstrained(owner: string, stamp: CooldownStamp): boolean {
+    const scopes = new Set([owner, "installation"]);
+    if ([...scopes].some((scope) => this.state(scope, "gmail-api").kind !== "ready")) return true;
+    const dependent = [...this.dependencies.values()].some((dependency) => scopes.has(dependency.owner) &&
+      (dependency.id === null || (dependency.id === stamp.id && dependency.createdAt === stamp.createdAt)));
+    return dependent && [...scopes].some((scope) => this.state(scope, "oauth-token").kind !== "ready");
+  }
+
   requestsFor(owner: string, live: () => boolean = () => true): ProviderRequests {
     return this.policy(owner, live, null);
   }

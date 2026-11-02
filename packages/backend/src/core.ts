@@ -1009,8 +1009,13 @@ export class BackendCore {
   private statusChanged(): void {
     this.statusDirty = true;
     this.statusNotification ??= Promise.resolve().then(async () => {
-      while (this.statusDirty && !this.stopped) { this.statusDirty = false; await this.emitAccounts(); }
-    }).catch(() => this.log("warn", "Account status could not be published")).finally(() => { this.statusNotification = null; });
+      try {
+        while (this.statusDirty && !this.stopped) { this.statusDirty = false; await this.emitAccounts(); }
+      } finally {
+        this.statusNotification = null;
+        if (this.statusDirty && !this.stopped) this.statusChanged();
+      }
+    }).catch(() => this.log("warn", "Account status could not be published"));
   }
 
   async accountViews(accounts: Account[]): Promise<Account[]> {
@@ -1819,7 +1824,8 @@ export class BackendCore {
           await setState({ status: "offline", ...(!(more && before?.syncState.lastSyncAt === null) && { lastSyncAt: this.now() }), connection: { state: "offline", retryAt: this.connectivity.probeLater(accountId) } });
           return;
         }
-        // plan 25: a refused send (SMTP) isn't proven by a sync (IMAP): it keeps asking, and its sends keep waiting
+        const finished = await this.accountRead(life, () => this.store.accounts.get(accountId));
+        if (!finished) return;
         if (credentials !== this.credentialsOf(accountId)) return;
         // plan 102: a first sync that paused between chunks is still one (the pill stays; no "synced at" yet)
         const firstChunk = more && before?.syncState.lastSyncAt === null;
@@ -1834,7 +1840,7 @@ export class BackendCore {
         // a probe the host thought pointless worked: it was wrong about offline (reachability can be, with some VPNs)
         if (startedOffline && !this.connectivity.online) this.networkChanged(true, "other");
         // the account works: whatever waited for its sign-in, or for the network, goes now
-        if (!sendOnly) await this.accountWrite(life, () => this.resumeAuth(accountId));
+        if (!status.holds("send")) await this.accountWrite(life, () => this.resumeAuth(accountId));
         if ((await this.accountWrite(life, () => this.store.ops.resumeNetwork(accountId, this.now()))).length) this.kickWorker();
         // its mail is here: drafts an import kept for it (answering messages that just synced) go in
         await this.accountWrite(life, () => restorePending(this, accountId)).catch((error: unknown) => {

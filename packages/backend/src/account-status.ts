@@ -15,7 +15,7 @@ export class AccountStatus {
   private whole: { failure: StatusFailure; scope: null; source: "account" | "incoming" } | undefined;
   private send: { failure: StatusFailure; scope: "send" } | undefined;
   private get auth() { return this.whole ?? this.send; }
-  private policy: { failure: StatusFailure; generation: number } | undefined;
+  private policy: { failure: StatusFailure } | undefined;
   private run: symbol | undefined;
   private constraint: { failure: StatusFailure; active(): boolean } | undefined;
   private revision = 0;
@@ -24,7 +24,6 @@ export class AccountStatus {
   private writing: Promise<void> | undefined;
   private recovery = 0;
   private refusal = 0;
-  private failure: unknown;
 
   constructor(private readonly options: {
     initial: AccountSyncState;
@@ -35,6 +34,7 @@ export class AccountStatus {
     failed?(): void;
   }) {
     this.state = { ...options.initial };
+    if (this.state.status === "syncing") this.state = { ...this.state, status: this.state.lastError ? "error" : "idle", progress: null };
     if (this.state.authRequired) {
       const failure = { message: this.state.lastError ?? "", i18n: this.state.lastErrorI18n };
       if (this.state.authScope === "send") this.send = { scope: "send", failure };
@@ -50,7 +50,7 @@ export class AccountStatus {
 
   get signInRequired(): boolean { return this.auth?.scope === null; }
   holds(kind: string): boolean { return !!this.auth && (this.auth.scope === null || kind === "send"); }
-  get policyPaused(): boolean { return this.policy?.generation === this.options.generation(); }
+  get policyPaused(): boolean { return this.policy !== undefined; }
   get policyRevision(): number { return this.recovery; }
 
   project(): AccountSyncState {
@@ -74,6 +74,7 @@ export class AccountStatus {
     // Run outcomes never prove that a refused credential or a policy hold recovered.
     const { authRequired: _required, authScope: _scope, ...outcome } = patch;
     if ((this.signInRequired || this.policyPaused || this.constraint?.active()) && outcome.lastSyncAt !== undefined) outcome.lastSyncAt = this.state.lastSyncAt;
+    if (outcome.progress === null && this.state.progress === undefined) delete outcome.progress;
     this.state = { ...this.state, ...outcome };
     if (end) {
       this.run = undefined;
@@ -92,7 +93,7 @@ export class AccountStatus {
 
   forbid(authority: StatusAuthority, revision: number, failure: StatusFailure): Promise<void> {
     if (!this.current(authority) || revision !== this.recovery) return Promise.resolve();
-    this.policy = { generation: authority.generation, failure };
+    this.policy = { failure };
     return this.publish(true);
   }
 
@@ -154,13 +155,12 @@ export class AccountStatus {
         try {
           for (;;) {
             const revision = this.revision, state = this.project(), encoded = JSON.stringify(state);
-            if (encoded !== this.persisted) { await this.options.write(state); this.persisted = encoded; this.failure = undefined; }
+            if (encoded !== this.persisted) { await this.options.write(state); this.persisted = encoded; }
             if (revision === this.revision) break;
           }
           this.writing = undefined;
           resolve();
         } catch (error) {
-          this.failure = error;
           this.writing = undefined;
           this.options.failed?.();
           reject(error);
@@ -170,5 +170,5 @@ export class AccountStatus {
     return this.writing;
   }
 
-  flush(): Promise<void> { return this.writing ?? (this.failure === undefined ? Promise.resolve() : Promise.reject(this.failure)); }
+  flush(): Promise<void> { return this.writing ?? this.publish(); }
 }
