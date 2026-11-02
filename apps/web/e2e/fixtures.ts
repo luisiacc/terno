@@ -111,6 +111,11 @@ async function networkRegistry(net: TestNetwork): Promise<import("@terno/mail").
           if (await refusing(ctx)) throw refusal(ctx);
           return demo.execute(op);
         },
+        // the login a recheck of the saved password makes (plan 25)
+        async verify() {
+          if (await refusing(ctx)) throw refusal(ctx);
+          return demo.verify();
+        },
       };
     },
     async verifyImap(_config, password) {

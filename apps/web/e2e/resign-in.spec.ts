@@ -160,6 +160,26 @@ test.describe("signing in again", { tag: "@design" }, () => {
     await expect(notice(page)).toBeVisible();
   });
 
+  test("its server takes the saved password again: Check for new mail clears it, no sign-in needed", async ({ app: page, server }) => {
+    const { freelance } = await accounts(server);
+    await refuse(server, freelance);
+    await expect(marker(page, freelance)).toBeVisible();
+    const check = async () => {
+      await page.getByTestId(`nav-account-${freelance.id}`).click({ button: "right" });
+      await page.getByTestId("account-menu-sync").click();
+    };
+    // still refused: checking says nothing new and the key stays
+    await check();
+    await expect(page.getByTestId("snack").filter({ hasText: "for new mail" })).toBeVisible();
+    await expect(marker(page, freelance)).toBeVisible();
+    await expect(notice(page)).toBeVisible();
+    // it was a glitch: the saved password works again, and the next check lifts it as a sign-in would
+    server.net.refused.delete(freelance.email);
+    await check();
+    await expect(marker(page, freelance)).toHaveCount(0);
+    await expect(notice(page)).toHaveCount(0);
+  });
+
   test("a send while it needs a sign-in: it says the message will go out once you sign in, and Sign in is right there", async ({ app: page, server }) => {
     const { freelance } = await accounts(server);
     await refuse(server, freelance);

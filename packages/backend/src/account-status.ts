@@ -49,6 +49,8 @@ export class AccountStatus {
   }
 
   get signInRequired(): boolean { return this.auth?.scope === null; }
+  /** What lifts a whole-account refusal besides a sign-in: IMAP accepting its own refusal again, else IMAP and SMTP. */
+  get recheck(): "incoming" | "account" | null { return this.whole?.source ?? null; }
   holds(kind: string): boolean { return !!this.auth && (this.auth.scope === null || kind === "send"); }
   get policyPaused(): boolean { return this.policy !== undefined; }
   get policyRevision(): number { return this.recovery; }

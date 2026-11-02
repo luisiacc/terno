@@ -14,6 +14,8 @@ import { Backend, plaintextCipher } from "./backend";
 
 interface Scripted extends MailProvider {
   syncs: number;
+  /** logins of a saved-password recheck (plan 25) */
+  verifies: number;
   executed: string[];
   /** the password this provider was created with (a sign-in re-creates it) */
   password: string | null;
@@ -33,12 +35,17 @@ afterEach(async () => {
 
 async function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] } = {}) {
   const providers = new Map<number, Scripted>();
+  /** passwords the IMAP and SMTP sign-in check was asked about, and those it accepts */
+  const verified: string[] = [];
+  const accepts = new Set(["new-password"]);
+  let clock = Date.now();
   /** what the next provider of an account starts with (a test sets it before a sign-in) */
   const script = new Map<number, Partial<Pick<Scripted, "refuseSync" | "refuseOps">>>();
   const registry: ProviderRegistry = {
     create(ctx) {
       const p: Scripted = {
         syncs: 0,
+        verifies: 0,
         executed: [],
         password: null,
         refuseSync: false,
@@ -46,7 +53,7 @@ async function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] 
         opGate: null,
         syncGate: null,
         ...script.get(ctx.account.id),
-        async verify() {},
+        async verify() { p.verifies++; },
         async sync() {
           p.syncs++;
           // what the server answers is decided as the pass starts (a gate only delays the answer)
@@ -68,7 +75,8 @@ async function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] 
       return p;
     },
     async verifyImap(_config, password) {
-      if (password !== "new-password") throw new ProviderAuthError("IMAP login failed: Invalid credentials");
+      verified.push(password);
+      if (!accepts.has(password)) throw new ProviderAuthError("IMAP login failed: Invalid credentials");
     },
     async connectGmail() {
       throw new Error("not in tests");
@@ -83,6 +91,7 @@ async function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] 
     autoSync: true,
     syncIntervalMs: o.syncIntervalMs ?? 3_600_000,
     connectivity: { delays: [150, 300, 600], settleMs: 30, offlineRetryMs: 60_000 },
+    now: () => clock,
   });
   await backend.store.ready;
   const ids: number[] = [];
@@ -103,7 +112,10 @@ async function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] 
     subject: "Hola", text: "Synthetic body", messageId: "synthetic@example.com", inReplyTo: null, references: [], providerThreadId: null,
   } : { subject: "Hola" } })!;
   const opRow = (id: string) => db().get<{ state: string; attempts: number }>("SELECT state, attempts FROM ops WHERE id = ?", id)!;
-  return { backend, client, providers, script, ids, state, op, opRow };
+  /** a refusal the last session saw: kept across the quit, which protocol refused it unknown */
+  const keptRefusal = (id: number) => db().run("UPDATE accounts SET sync_state = ? WHERE id = ?", JSON.stringify({ ...state(id), status: "error", lastError: "IMAP login failed: Invalid credentials", authRequired: true, authScope: null }), id);
+  const advance = (ms: number) => void (clock += ms);
+  return { backend, client, providers, script, ids, state, op, opRow, verified, accepts, keptRefusal, advance };
 }
 
 const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -125,6 +137,76 @@ describe("plan 25: an account that needs a sign-in", () => {
     await expect.poll(() => t.providers.get(refused)!.syncs).toBe(before + 1);
     await tick(300);
     expect(t.providers.get(refused)!.syncs).toBe(before + 1);
+  });
+
+  it("a refusal kept across a quit: a launch and a network change recheck the saved password with IMAP and SMTP; once accepted, Retry lifts it and what waited goes", async () => {
+    const t = await setup();
+    const [id] = t.ids as [number];
+    t.keptRefusal(id);
+    await t.backend.setSecret(`account:${id}:password`, "saved-password");
+    const parked = t.op(id, "archive");
+    await t.backend.start();
+    // the launch tried it once (the whole sign-in check: which protocol refused is unknown); still refused
+    await expect.poll(() => t.verified).toEqual(["saved-password"]);
+    await t.backend.runWorker();
+    expect(t.opRow(parked)).toEqual({ state: "queued", attempts: 0 });
+    expect(t.state(id)).toMatchObject({ status: "error", authRequired: true, authScope: null });
+    t.backend.networkChanged(true, "network");
+    await expect.poll(() => t.verified).toHaveLength(2);
+    expect(t.state(id)).toMatchObject({ authRequired: true });
+    // the server takes it again (a lockout lifted): the user's Retry lifts the refusal as a sign-in would
+    t.accepts.add("saved-password");
+    await t.client.call("sync.now", { accountId: id, reason: "user" });
+    await expect.poll(() => t.state(id)).toMatchObject({ status: "idle", authRequired: false, authScope: null, lastError: null });
+    await expect.poll(() => t.opRow(parked).state).toBe("succeeded");
+    await expect.poll(() => t.providers.get(id)?.syncs ?? 0).toBeGreaterThan(0);
+    expect(t.verified).toHaveLength(3);
+  });
+
+  it("a window's focus rechecks at most every ten minutes, Retry whenever asked; a Gmail refusal is a revoked grant, never rechecked", async () => {
+    const t = await setup({ kinds: ["imap", "gmail"] });
+    const [imap, gmail] = t.ids as [number, number];
+    for (const id of t.ids) t.keptRefusal(id);
+    await t.backend.setSecret(`account:${imap}:password`, "saved-password");
+    await t.backend.start();
+    await expect.poll(() => t.verified).toHaveLength(1);
+    await t.client.call("sync.now", { reason: "focus" });
+    await t.client.call("sync.now", { reason: "focus" });
+    await tick(50);
+    expect(t.verified).toHaveLength(1);
+    t.advance(10 * 60_000);
+    await t.client.call("sync.now", { reason: "focus" });
+    await expect.poll(() => t.verified).toHaveLength(2);
+    await t.client.call("sync.now", { reason: "user" });
+    await expect.poll(() => t.verified).toHaveLength(3);
+    await t.client.call("sync.now", { accountId: gmail, reason: "user" });
+    await tick(50);
+    expect(t.verified).toHaveLength(3);
+    expect(t.providers.get(gmail)?.verifies ?? 0).toBe(0);
+    expect(t.state(gmail)).toMatchObject({ authRequired: true });
+    expect(t.state(imap)).toMatchObject({ authRequired: true });
+  });
+
+  it("a refusal IMAP made is rechecked by an IMAP login alone: Retry lifts it once the server takes the password", async () => {
+    const t = await setup();
+    const [id] = t.ids as [number];
+    t.script.set(id, { refuseSync: true });
+    await t.backend.start();
+    await expect.poll(() => t.state(id).authRequired).toBe(true);
+    const p = t.providers.get(id)!;
+    const verifies = p.verifies;
+    // still refused: the login fails and nothing changes
+    p.verify = async () => { p.verifies++; throw new ProviderAuthError("IMAP login failed: Invalid credentials"); };
+    await t.client.call("sync.now", { accountId: id, reason: "user" });
+    await expect.poll(() => p.verifies).toBe(verifies + 1);
+    expect(t.state(id)).toMatchObject({ status: "error", authRequired: true });
+    // taken again
+    p.verify = async () => void p.verifies++;
+    p.refuseSync = false;
+    await t.client.call("sync.now", { accountId: id, reason: "user" });
+    await expect.poll(() => t.state(id)).toMatchObject({ status: "idle", authRequired: false, authScope: null });
+    expect(p.verifies).toBe(verifies + 2);
+    expect(t.verified).toEqual([]);
   });
 
   it("offline, a refused account gets no probe (Codex review #7), and Retry now (the network's) skips it", async () => {

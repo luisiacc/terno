@@ -1,6 +1,7 @@
 /**
  * Plan 20 in the renderer. A window coming back to the front with an account offline retries it
- * at once (the backend rate-limits too). The web build also passes the page's online/offline on:
+ * at once (the backend rate-limits too), and one that needs a sign-in has its saved password rechecked
+ * (plan 25; the backend does that at most every ten minutes). The web build also passes the page's online/offline on:
  * there it is the only network signal (desktop's main watches the network itself).
  */
 import { client } from "~/rpc/connection";
@@ -14,7 +15,8 @@ export function installNetworkEvents(): () => void {
   let lastFocus = Number.NEGATIVE_INFINITY;
   const retryOffline = () => {
     if (document.visibilityState !== "visible" || Date.now() - lastFocus < FOCUS_EVERY_MS) return;
-    if (!getApp().accounts.some((a) => a.syncState.connection)) return;
+    // offline or backing off, or (plan 25) an IMAP account whose saved password the backend may recheck
+    if (!getApp().accounts.some((a) => a.syncState.connection || (a.kind === "imap" && a.syncState.authRequired && a.syncState.authScope !== "send"))) return;
     lastFocus = Date.now();
     void client.call("sync.now", { reason: "focus" }).catch(() => {});
   };

@@ -11,6 +11,7 @@ import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/di
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { AWAITING_AUTH, FlagObservationError, operationFlagFields, type FlagObservation, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
+import type { ImapAccountConfig } from "@terno/mail";
 import { IncomingPipeline, ProviderIdentityError, ProviderCooldownError, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type RequestDescriptor, type MailAdmission, type SendPayload, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
@@ -159,6 +160,8 @@ export function opSummary(kind: string, subject: string, count: number): Pick<Op
 }
 
 const AUTO_NOTICE_GATHER_MS = 1500;
+/** plan 25: a window's focus rechecks a refused saved password at most this often (a refused login, again and again, locks accounts out) */
+const RECHECK_FOCUS_MS = 10 * 60_000;
 const AUTO_NOTICE_EVERY_MS = 30_000;
 
 const DESTRUCTIVE_OR_SIGNAL: Partial<Record<ThreadAction, "archive" | "trash" | "spam" | "star">> = {
@@ -193,6 +196,9 @@ export class BackendCore {
   private readonly lifetimes = new Map<number, AccountLifetime>();
   private readonly statuses = new Map<number, AccountStatus>();
   private readonly statusLoads = new Map<number, Promise<AccountStatus>>();
+  /** plan 25: when each IMAP account's refused saved password was last rechecked, and those being rechecked now */
+  private readonly rechecked = new Map<number, number>();
+  private readonly rechecking = new Set<number>();
   private statusNotification: Promise<void> | null = null;
   private statusDirty = false;
   private readonly syncing = new Map<number, Promise<void>>();
@@ -558,7 +564,10 @@ export class BackendCore {
     this.idleTimer.unref?.();
     // a new start is a fresh look at the network: ops parked for it in the last session try again
     if (this.connectivity.online) await this.store.ops.resumeNetwork(null, this.now());
-    for (const account of await this.store.accounts.list()) this.startAccount(account);
+    for (const account of await this.store.accounts.list()) {
+      this.startAccount(account);
+      if (this.connectivity.online) void this.recheckSignIn(account.id, "start");
+    }
     this.syncTimer = setInterval(() => void this.tick(), this.options.syncIntervalMs);
     this.kickWorker();
   }
@@ -574,7 +583,7 @@ export class BackendCore {
       const life = this.lifetimes.get(account.id);
       void this.providers.get(account.id)?.then((p) => { if (life && this.current(life)) p?.heartbeat?.(); }, () => {});
       // plan 25: one that needs a sign-in isn't asked every two minutes (a refused login, again and again, locks
-      // accounts out); a start, a network change and signing in again still try it
+      // accounts out); signing in again lifts it, and recheckSignIn tries the saved password at moments the user would
       if (!this.connectivity.pending(account.id) && !(await this.accountStatus(account.id)).signInRequired) void this.syncAccount(account.id);
     }
   }
@@ -610,6 +619,54 @@ export class BackendCore {
       if (resumed) this.kickWorker();
     }
     for (const id of ids) void this.syncAccount(id);
+    for (const account of await this.store.accounts.list()) {
+      if (accountId !== null && account.id !== accountId) continue;
+      void this.recheckSignIn(account.id, reason).then((lifted) => { if (lifted) void this.syncAccount(account.id); });
+    }
+  }
+
+  /**
+   * Plan 25: a server that refused an IMAP account's saved password may take it again (a glitch, a lockout
+   * lifted). At a moment the user would try again (a launch, a network change, Retry, the window's focus at
+   * most every ten minutes) the saved password gets one login: IMAP for a refusal IMAP made, IMAP and SMTP as a
+   * sign-in proves them when the refusal's protocol is unknown (one kept across a quit). Accepted, the refusal
+   * lifts as a sign-in would; refused, nothing changes. Gmail's refusal is a revoked grant: only a sign-in
+   * answers it. True when lifted (the caller syncs).
+   */
+  private async recheckSignIn(accountId: number, reason: "start" | "network" | "user" | "focus"): Promise<boolean> {
+    const life = this.lifetimes.get(accountId);
+    if (!life || !this.current(life) || this.rechecking.has(accountId)) return false;
+    const last = this.rechecked.get(accountId);
+    if (reason === "focus" && last !== undefined && this.now() - last < RECHECK_FOCUS_MS) return false;
+    this.rechecking.add(accountId);
+    try {
+      const account = await this.store.accounts.get(accountId);
+      const status = await this.accountStatus(accountId);
+      const scope = status.recheck;
+      if (account?.kind !== "imap" || !scope || !this.current(life)) return false;
+      this.rechecked.set(accountId, this.now());
+      // a refusal published while the login runs is newer than its answer
+      const recover = status.recoveryProof(this.statusAuthority(life), scope);
+      if (scope === "incoming") {
+        const provider = await this.provider(accountId);
+        if (!provider || !this.current(life)) return false;
+        await provider.verify();
+      } else {
+        const config = (await this.store.accounts.config<ImapAccountConfig>(accountId))?.config;
+        const password = await this.getSecret(`account:${accountId}:password`);
+        if (!config || !password || !this.current(life)) return false;
+        await this.options.providers.verifyImap(config, password);
+      }
+      await recover();
+      if (status.signInRequired) return false;
+      await this.resumeAuth(accountId);
+      return true;
+    } catch {
+      // a refused (or failed) recheck never discharges the sign-in hold
+      return false;
+    } finally {
+      this.rechecking.delete(accountId);
+    }
   }
 
   /**
@@ -627,15 +684,7 @@ export class BackendCore {
       void p.then((provider) => { if (this.current(life)) provider?.reset?.(); }, () => {});
     }
     for (const account of await this.store.accounts.list()) {
-      const status = await this.accountStatus(account.id);
-      const life = this.lifetimes.get(account.id);
-      if (account.kind === "imap" && status.signInRequired && life && this.current(life)) {
-        const recover = status.recoveryProof(this.statusAuthority(life), "incoming");
-        try {
-          const provider = await this.provider(account.id);
-          if (provider) { await provider.verify(); await recover(); await this.resumeAuth(account.id); }
-        } catch { /* A failed probe never discharges the sign-in hold. */ }
-      }
+      await this.recheckSignIn(account.id, "network");
       if (!this.unwatch.has(account.id)) this.watchAccount(account.id);
     }
     await this.store.ops.resumeNetwork(null, this.now());
