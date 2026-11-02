@@ -4,14 +4,14 @@ import { nodePlatform } from "./node-driver";
 import { SqlMailStore } from "./sql-store";
 import { msg, withAccounts } from "../../store/src/conformance/fixtures";
 
-for (const reader of ["thread", "snapshot", "sentTexts", "sentAfter"] as const) for (const captured of [true, false]) it(`retains the selected ${captured ? "captured" : "inline"} batch through ${reader} replacement`, async () => {
+for (const reader of ["thread", "snapshot", "sentTexts", "sentAfter"] as const) for (const captured of [true, false]) for (const replacement of captured ? ["captured", "inline"] : ["captured"]) it(`retains the selected ${captured ? "captured" : "inline"} batch through ${reader} ${replacement} replacement`, async () => {
   const db = openDatabase(":memory:");
   let hold = false, entered!: () => void, release!: () => void;
   const started = new Promise<void>((r) => { entered = r; }), resume = new Promise<void>((r) => { release = r; });
   const platform = { ...nodePlatform, async yield() { await nodePlatform.yield(); if (hold) { hold = false; entered(); await resume; } } };
   const store = new SqlMailStore(db, { platform, instantSearch: false });
   let reading: Promise<unknown> | undefined;
-  const first = "First exact body\r\n😀 ".repeat(2200), old = captured ? "Second old body\r\n🧡 ".repeat(2300) : "old inline body", fresh = "Replacement complete body\r\n🦉 ".repeat(2400);
+  const first = "First exact body\r\n😀 ".repeat(2200), old = captured ? "Second old body\r\n🧡 ".repeat(2300) : "old inline body", fresh = replacement === "inline" ? "Replacement inline body\r\n🦉" : "Replacement complete body\r\n🦉 ".repeat(2400);
   try {
     const [accountId] = await withAccounts(store, 1);
     const result = await store.sync.ingest([msg({ accountId: accountId!, providerMsgId: "first", providerThreadId: "shared", bodyText: first, bodyHtml: "<p>first</p>", bodyState: "full", isSent: true, size: 100 }), msg({ accountId: accountId!, providerMsgId: "second", providerThreadId: "shared", bodyText: old, bodyHtml: "<p>old exact HTML</p>", bodyState: "full", isSent: true, size: 100 })], { now: 1, classifier: null, applyFilters: false });
@@ -51,5 +51,22 @@ for (const failure of ["acquisition", "read"] as const) it(`releases the whole s
     for (const row of rows) expect(sqlBodyProtocol(db).held(row.capture_id)).toBe(false);
     for (const row of rows) await store.sync.setBody(row.message_id, "replacement", null, { now: 2, classifier: null });
     expect((await store.threads.get(r.touched[0]!))!.messages.map((m) => m.bodyText)).toEqual(["replacement", "replacement"]);
+  } finally { await store.close(); }
+});
+
+it("does not retain debug body sources when the native metadata selection fails", async () => {
+  const { vi } = await import("vitest"), { sqlBodyProtocol } = await import("./body-parts");
+  const db = openDatabase(":memory:"), store = new SqlMailStore(db, { platform: nodePlatform, instantSearch: false });
+  try {
+    const [accountId] = await withAccounts(store, 1);
+    const result = await store.sync.ingest([msg({ accountId: accountId!, bodyText: "exact selected body ".repeat(3000) })], { now: 1, classifier: null, applyFilters: false });
+    const capture = db.get<{ capture_id: string }>("SELECT capture_id FROM body_heads")!.capture_id;
+    const fault = new Error("Synthetic debug selection failure"), all = db.all.bind(db);
+    const spy = vi.spyOn(db, "all").mockImplementation((sql, ...args) => { if (sql.includes("AS cats FROM threads t")) throw fault; return all(sql, ...args); });
+    try { await expect(store.debug.snapshot()).rejects.toBe(fault); } finally { spy.mockRestore(); }
+    expect(sqlBodyProtocol(db).held(capture), "failed metadata must not leave an owner preventing reclamation").toBe(false);
+    const message = (await store.threads.get(result.touched[0]!))!.messages[0]!;
+    await store.sync.setBody(message.id, "new exact body", null, { now: 2, classifier: null });
+    expect((await store.threads.get(result.touched[0]!))!.messages[0]!.bodyText).toBe("new exact body");
   } finally { await store.close(); }
 });

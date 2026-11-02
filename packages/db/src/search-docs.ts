@@ -44,8 +44,8 @@ interface ThreadDocRow {
   cats: string | null;
 }
 
-function toMessageDoc(db: Db, r: MessageDocRow): SearchMessageDoc {
-  const projection = r.capture_id ? projectBodyTokens(retainBody(db, r.capture_id), () => sqlBodyParts(db, r.capture_id!, 2, () => new Promise<void>((resolve) => setTimeout(resolve, 0)))) : undefined;
+function toMessageDoc(db: Db, r: MessageDocRow, retainBodies = true): SearchMessageDoc {
+  const projection = retainBodies && r.capture_id ? projectBodyTokens(retainBody(db, r.capture_id), () => sqlBodyParts(db, r.capture_id!, 2, () => new Promise<void>((resolve) => setTimeout(resolve, 0)))) : undefined;
   return {
     messageId: r.id,
     threadId: r.thread_id,
@@ -80,11 +80,11 @@ function toThreadDoc(r: ThreadDocRow): SearchThreadDoc {
 }
 
 /** Message projections, every message or the given ids (missing ids are simply absent). */
-export function messageDocs(db: Db, ids?: readonly number[]): SearchMessageDoc[] {
+export function messageDocs(db: Db, ids?: readonly number[], retainBodies = true): SearchMessageDoc[] {
   const rows = ids
     ? db.all<MessageDocRow>(`${MESSAGE_DOC} WHERE m.id IN (SELECT value FROM json_each(?))`, JSON.stringify(ids))
     : db.all<MessageDocRow>(`${MESSAGE_DOC} ORDER BY m.id`);
-  return rows.map((row) => toMessageDoc(db, row));
+  return rows.map((row) => toMessageDoc(db, row, retainBodies));
 }
 
 export function threadDocs(db: Db, ids?: readonly number[]): SearchThreadDoc[] {

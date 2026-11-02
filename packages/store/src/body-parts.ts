@@ -113,11 +113,25 @@ export async function matchBodyParts(source: BodyPartSource, op: TextOp, value: 
   return op === "equals" ? found && matchStart === 0 && matchEnd === at : op === "endsWith" && matchEnd === at;
 }
 
+/** Canonical persisted ranges may span differently sized transport chunks. */
+export function bodyPartCount(text: string | null, parts?: readonly string[]): number | null {
+  return parts ? Math.ceil(parts.reduce((n, part) => n + part.length, 0) / BODY_PART_UNITS) : text === null ? null : Math.ceil(text.length / BODY_PART_UNITS);
+}
+
 /** Produces one exact persistence unit at a time, also for a token longer than a unit. */
 export async function* bodyPartWrites(text: string | null, html: string | null, tokens: Iterable<string> | readonly Uint16Array[] | AsyncIterable<Uint16Array>, parts?: import("@terno/core").ExactBodyParts): AsyncGenerator<{ field: number; ordinal: number; value: Uint8Array }> {
   for (const [field, content] of [text, html].entries()) {
     const exact = field === 0 ? parts?.text : parts?.html;
-    if (exact) { for (const [ordinal, part] of exact.entries()) yield { field, ordinal, value: encodeBodyPart(part) }; continue; }
+    if (exact) {
+      let pending = "", ordinal = 0;
+      for (const part of exact) for (let at = 0; at < part.length;) {
+        const take = Math.min(BODY_PART_UNITS - pending.length, part.length - at);
+        pending += part.slice(at, at + take); at += take;
+        if (pending.length === BODY_PART_UNITS) { yield { field, ordinal: ordinal++, value: encodeBodyPart(pending) }; pending = ""; }
+      }
+      if (pending) yield { field, ordinal, value: encodeBodyPart(pending) };
+      continue;
+    }
     if (content === null) continue;
     for (let start = 0, ordinal = 0; start < content.length; start += BODY_PART_UNITS, ordinal++) yield { field, ordinal, value: encodeBodyPart(content.slice(start, start + BODY_PART_UNITS)) };
   }

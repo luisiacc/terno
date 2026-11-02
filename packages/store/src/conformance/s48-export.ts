@@ -3,12 +3,13 @@ import type { MailStore } from "../mail-store";
 import { msg, withAccounts } from "./fixtures";
 
 export function exactBodyExport(open: () => Promise<MailStore>): void {
-  it("exports complete captured text and HTML in bounded random-access stretches", async () => {
+  for (const format of ["strings", "parts"] as const) it(`exports complete captured ${format} in bounded random-access stretches`, async () => {
     const store = await open();
     try {
       const [accountId] = await withAccounts(store, 1);
       const text = "x".repeat(32767) + "😀\r\n" + "tail 🧡 e\u0301 ".repeat(6000), html = "<p>" + text + "</p>";
-      const r = await store.sync.ingest([msg({ accountId: accountId!, bodyText: text, bodyHtml: html })], { now: 1, applyFilters: false, classifier: null });
+      const split = (value: string) => { const chunks = [value.slice(0, 1000)]; for (let at = 1000; at < value.length; at += 32768) chunks.push(value.slice(at, at + 32768)); return chunks; };
+      const r = await store.sync.ingest([msg({ accountId: accountId!, ...(format === "parts" ? { bodyText: null, bodyHtml: null, bodyParts: { text: split(text), html: split(html) } } : { bodyText: text, bodyHtml: html }) })], { now: 1, applyFilters: false, classifier: null });
       const id = r.inserted[0]!, metadata = await store.folderExport.messages([id]);
       expect(metadata.map((m) => [m.hasText, m.hasHtml, m.bodyState])).toEqual([[true, true, "full"]]);
       for (const [field, expected] of [["text", text], ["html", html]] as const) {

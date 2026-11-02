@@ -1,5 +1,5 @@
 import { bodyPartRange, finishBodyClose } from "@terno/store";
-import { releaseMessageBodies, releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
+import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
 import { publishBody } from "@terno/store";
 import { resolvable, parseSearch } from "@terno/core";
 import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, BODY_READY_APPLICATION_ID } from "./body-upgrade";
@@ -1386,7 +1386,7 @@ export class SqlMailStore implements MailStore {
   readonly debug: MailStore["debug"] = {
     snapshot: async () => this.bodyCommand(() => withBodySelection(this.db, () => {
       const value = storeSnapshot(this.db);
-      return { value, ids: value.messages.map((message) => message.id), release: () => releaseMessageBodies(value.search.messages, this.yieldTo) };
+      return { value, ids: value.messages.map((message) => message.id) };
     }, async (snapshot, references) => {
         for (const message of snapshot.messages) {
           const reference = references.get(message.id);
@@ -1503,7 +1503,8 @@ function storeSnapshot(db: Db): StoreSnapshot {
     ops: db
       .all<{ id: string; account_id: number; kind: string; state: StoreSnapshot["ops"][number]["state"]; attempts: number; target_json: string }>("SELECT id, account_id, kind, state, attempts, target_json FROM ops ORDER BY seq")
       .map((o) => ({ id: o.id, accountId: o.account_id, kind: o.kind, state: o.state, attempts: o.attempts, messageIds: (JSON.parse(o.target_json) as { messageIds?: number[] }).messageIds ?? [] })),
-    search: { messages: messageDocs(db), threads: threadDocs(db) },
+    // The selected batch owns hydration; debug metadata does not create a second token-reader lifetime.
+    search: { messages: messageDocs(db, undefined, false), threads: threadDocs(db) },
   };
 }
 

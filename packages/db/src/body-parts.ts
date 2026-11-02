@@ -2,7 +2,7 @@ import { BodyProtocol, BodyEpochChanged, type BodyTicket } from "@terno/store";
 import { iterateBodyTokens, type TextOp } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { BODY_PART_UNITS, bodyPreview, validateBodyInput, assembleBody, bodyPartWrites, bodyTestKey, matchBodyParts, prepareBodyTokens, prepareBodySnippet, browserBodyPreparationFactory, type BodyPartSource, type IncomingMessage } from "@terno/store";
+import { BODY_PART_UNITS, bodyPartCount, bodyPreview, validateBodyInput, assembleBody, bodyPartWrites, bodyTestKey, matchBodyParts, prepareBodyTokens, prepareBodySnippet, browserBodyPreparationFactory, type BodyPartSource, type IncomingMessage } from "@terno/store";
 import type { Db } from "./sqlite";
 
 const staging = new WeakMap<Db, Map<string, () => void>>();
@@ -53,7 +53,7 @@ export async function stageBody<T extends Pick<IncomingMessage, "accountId" | "b
       if (part.field === 2) tokenCount = part.ordinal + 1;
       await yieldTo();
     }
-    counts.push(message.bodyParts?.text?.length ?? (message.bodyText === null ? null : Math.ceil(message.bodyText.length / BODY_PART_UNITS)), message.bodyParts?.html?.length ?? (message.bodyHtml === null ? null : Math.ceil(message.bodyHtml.length / BODY_PART_UNITS)));
+    counts.push(bodyPartCount(message.bodyText, message.bodyParts?.text), bodyPartCount(message.bodyHtml, message.bodyParts?.html));
     if (acknowledged[0] !== (counts[0] ?? 0) || acknowledged[1] !== (counts[1] ?? 0)) throw new Error("Body acknowledgements are incomplete");
     check?.();
     db.tx(() => { check?.(); return db.run("UPDATE body_captures SET text_parts=?,html_parts=?,token_parts=?,ready=1 WHERE id=?", counts[0]!, counts[1]!, tokenCount, id); });
@@ -79,14 +79,13 @@ export async function discardBody(db: Db, id: string, yieldTo: () => Promise<voi
 }
 
 /** Snapshot every representation and acquire its ownership before any selected reader can yield. */
-export async function withBodySelection<T, R>(db: Db, select: () => { value: T; ids: readonly number[]; release?: () => void | Promise<void> }, read: (value: T, references: ReadonlyMap<number, import("@terno/core").BodyReadReference>) => Promise<R>): Promise<R> {
-  const releases: (() => void | Promise<void>)[] = [], references = new Map<number, import("@terno/core").BodyReadReference>();
+export async function withBodySelection<T, R>(db: Db, select: () => { value: T; ids: readonly number[] }, read: (value: T, references: ReadonlyMap<number, import("@terno/core").BodyReadReference>) => Promise<R>): Promise<R> {
+  const releases: (() => void)[] = [], references = new Map<number, import("@terno/core").BodyReadReference>();
   const errors: unknown[] = [];
   let result!: R;
   try {
     const value = db.tx(() => {
       const selected = select();
-      if (selected.release) releases.push(selected.release);
       for (const id of selected.ids) {
         if (references.has(id)) continue;
         const reference = bodyReadReference(db, id);

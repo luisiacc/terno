@@ -7,7 +7,7 @@ import { unsubscribeBodyParts } from "@terno/store";
 import { bodyPreview, validateBodyInput, bodyPrefix, SENT_TEXT_MAX } from "@terno/store";
 import { bodyOwnership } from "./body-ownership";
 import { iterateBodyTokens, type TextOp } from "@terno/core";
-import { bodyPartRange, decodeBodyPart, assembleBody, prepareBodySnippet, bodyPartWrites, BODY_PART_UNITS, bodyTestKey, matchBodyParts, type BodyPartSource, type BodyTest, type BodyTestResults, prepareBodyTokens, browserBodyPreparationFactory } from "@terno/store";
+import { bodyPartRange, decodeBodyPart, assembleBody, prepareBodySnippet, bodyPartWrites, bodyPartCount, BODY_PART_UNITS, bodyTestKey, matchBodyParts, type BodyPartSource, type BodyTest, type BodyTestResults, prepareBodyTokens, browserBodyPreparationFactory } from "@terno/store";
 import { idbCaptureRepairs, idbCaptureStorage, idbCapturePage } from "./capture-repair";
 import { exportBody, exportIds, exportMessages, sliceBody } from "./folder-export";
 import { completeCapture, retryCapture } from "@terno/store";
@@ -581,7 +581,7 @@ export class IdbMailStore implements MailStore {
     this.bodyStages.set(id, this.bodyProtocol.retain(id));
     let tokenCount = 0; const acknowledged = [0, 0, 0];
     try {
-    await this.command(() => T(this.c, "body_captures").insert({ id, account_id: message.accountId, message_id: null, text_parts: message.bodyParts?.text?.length ?? (message.bodyText === null ? null : Math.ceil(message.bodyText.length / BODY_PART_UNITS)), html_parts: message.bodyParts?.html?.length ?? (message.bodyHtml === null ? null : Math.ceil(message.bodyHtml.length / BODY_PART_UNITS)), token_parts: 0, ready: 0 }), { check });
+    await this.command(() => T(this.c, "body_captures").insert({ id, account_id: message.accountId, message_id: null, text_parts: bodyPartCount(message.bodyText, message.bodyParts?.text), html_parts: bodyPartCount(message.bodyHtml, message.bodyParts?.html), token_parts: 0, ready: 0 }), { check });
       for await (const part of bodyPartWrites(message.bodyText, message.bodyHtml, message.preparedBodyTokens ?? (message.bodyParts?.text || (message.bodyText && message.bodyText.length > BODY_PART_UNITS) ? prepareBodyTokens(message.bodyParts?.text ?? message.bodyText!, this.o.platform.yield, this.o.platform.bodyPreparation ?? browserBodyPreparationFactory, check) : iterateBodyTokens(message.bodyText ?? "")), message.bodyParts)) {
         await this.command(() => { check?.(); T(this.c, "body_parts").insert({ capture_id: id, ...part }); }, { check });
         if (part.ordinal !== acknowledged[part.field]!) throw new Error("Body acknowledgement is not contiguous");
@@ -589,7 +589,7 @@ export class IdbMailStore implements MailStore {
         if (part.field === 2) tokenCount = part.ordinal + 1;
         await this.o.platform.yield();
       }
-      if (acknowledged[0] !== (message.bodyParts?.text?.length ?? Math.ceil((message.bodyText?.length ?? 0) / BODY_PART_UNITS)) || acknowledged[1] !== (message.bodyParts?.html?.length ?? Math.ceil((message.bodyHtml?.length ?? 0) / BODY_PART_UNITS))) throw new Error("Body acknowledgements are incomplete");
+      if (acknowledged[0] !== (bodyPartCount(message.bodyText, message.bodyParts?.text) ?? 0) || acknowledged[1] !== (bodyPartCount(message.bodyHtml, message.bodyParts?.html) ?? 0)) throw new Error("Body acknowledgements are incomplete");
       await this.command(() => { check?.(); const row = T(this.c, "body_captures").get(id)!; T(this.c, "body_captures").update(row, { token_parts: tokenCount, ready: 1 }); }, { check });
       return { ...message, bodyText: null, bodyHtml: null, bodyParts: undefined, preparedBodyTokens: undefined, bodyCapture: { id, preview: bodyPreview(message.bodyText, message.bodyParts), snippet: await prepareBodySnippet(message.snippet || message.bodyText, this.o.platform.yield, message.snippet ? undefined : message.bodyParts?.text), tail: "" } };
     } catch (error) { if (this.isOpen && !this.unusable) await this.finishBodyStage(id); throw error; }
