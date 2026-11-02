@@ -47,7 +47,7 @@ function TooltipContent({
         <TooltipPrimitive.Popup
           data-slot="tooltip-content"
           className={cn(
-            "z-50 inline-flex w-fit max-w-xs origin-(--transform-origin) duration-fast items-center gap-2 rounded-md bg-popover px-2 py-1 board:rounded-lg board:px-2.5 board:py-1.5 board:shadow-menu text-xs text-popover-foreground shadow-popover has-data-[slot=kbd]:pr-1 data-[side=bottom]:slide-in-from-top-0.5 data-[side=top]:slide-in-from-bottom-0.5 data-[side=left]:slide-in-from-right-0.5 data-[side=right]:slide-in-from-left-0.5 data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+            "z-50 inline-flex w-fit max-w-xs origin-(--transform-origin) duration-fast items-center gap-2 rounded-lg bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-menu has-data-[slot=kbd]:pr-1 data-[side=bottom]:slide-in-from-top-0.5 data-[side=top]:slide-in-from-bottom-0.5 data-[side=left]:slide-in-from-right-0.5 data-[side=right]:slide-in-from-left-0.5 data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
             className
           )}
           {...props}

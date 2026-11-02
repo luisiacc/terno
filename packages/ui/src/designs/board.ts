@@ -5,7 +5,7 @@ const INTER = '"Inter Variable", ui-sans-serif, system-ui, sans-serif';
 /**
  * Board (plan 117): BoardUI's base components (boardui.com, MIT) as a design. Inter at BoardUI's ramp
  * (body 14/20, body 2 13/18, caption 12/16), its 10 px controls and 16 px menus, medium weights, small avatars.
- * The controls themselves (gradient primary, filled fields, bordered menus) are the `board:` styles in components/.
+ * Its controls are every design's since plan 118; Board is them in BoardUI's own type, shapes and colors.
  */
 export const board: DesignDefinition = {
   id: "board",

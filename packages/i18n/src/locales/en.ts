@@ -820,7 +820,7 @@ const en = {
   "design.macos.description": "Like Apple Mail: compact, in the system font.",
   "design.atelier.description": "Editorial: ink and paper, plain upright type.",
   "design.lumen.description": "Warm and people-first: big avatars, filters at hand.",
-  "design.board.description": "Crisp and familiar: Inter, bordered controls, a blue accent.",
+  "design.board.description": "BoardUI throughout: Inter, its shapes, a blue accent.",
   "sidebar.alreadyHere": "Already here",
   "sidebar.accounts": "Accounts",
   "sidebar.allAccounts": "All accounts",

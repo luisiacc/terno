@@ -4,10 +4,9 @@ function Kbd({ className, ...props }: React.ComponentProps<"kbd">) {
   return (
     <kbd
       data-slot="kbd"
+      // BoardUI's key (plan 118): a flat pill
       className={cn(
-        "pointer-events-none inline-flex h-4.5 w-fit min-w-4.5 items-center justify-center gap-1 rounded-sm bg-muted px-1 font-sans text-2xs font-medium text-muted-foreground tabular select-none shadow-[inset_0_calc(var(--hairline-w)*-1)_var(--border)] [&_svg:not([class*='size-'])]:size-3",
-        // board: BoardUI's key, a flat pill
-        "board:rounded-full board:px-1.5 board:font-semibold board:shadow-none",
+        "pointer-events-none inline-flex h-4.5 w-fit min-w-4.5 items-center justify-center gap-1 rounded-full bg-muted px-1.5 font-sans text-2xs font-semibold text-muted-foreground tabular select-none [&_svg:not([class*='size-'])]:size-3",
         className
       )}
       {...props}
