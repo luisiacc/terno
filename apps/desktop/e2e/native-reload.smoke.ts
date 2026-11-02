@@ -27,17 +27,19 @@ async function committedCopy() {
   expect(saved).toMatchObject({ id: identity.id, generation: identity.generation, revision: identity.revision });
 }
 async function menu(id = "native-reload") {
-  await app.evaluate(({ app: a, Menu, BrowserWindow }, id) => {
+  await app.evaluate(({ Menu, BrowserWindow }, id) => {
     const owner = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL() === "app://terno/")!;
-    a.focus({ steal: true }); owner.show(); owner.focus(); owner.webContents.focus(); const item = Menu.getApplicationMenu()!.getMenuItemById(id)!;
+    // the window stays behind the user's work (a stolen focus took their keystrokes into this draft): the menu item and
+    // the shortcut go to this window directly, its page focused within it; focus emulation keeps the page's own focus
+    owner.webContents.focus(); const item = Menu.getApplicationMenu()!.getMenuItemById(id)!;
     // Electron supplies this window when the OS invokes the menu callback.
     item.click(item, owner, undefined);
   }, id);
 }
 async function shortcut(ignoreCache = false) {
-  await app.evaluate(({ app: a, BrowserWindow }, ignoreCache) => {
+  await app.evaluate(({ BrowserWindow }, ignoreCache) => {
     const owner = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL() === "app://terno/")!;
-    a.focus({ steal: true }); owner.show(); owner.focus(); owner.webContents.focus();
+    owner.webContents.focus();
     const modifiers: ("meta" | "shift")[] = ignoreCache ? ["meta", "shift"] : ["meta"];
     owner.webContents.sendInputEvent({ type: "keyDown", keyCode: "R", modifiers });
     owner.webContents.sendInputEvent({ type: "keyUp", keyCode: "R", modifiers });
@@ -150,6 +152,8 @@ test.beforeEach(async () => {
   await traceNative(app);
   await blockExternal(app);
   page = await app.firstWindow(); await page.getByTestId("thread-row").first().waitFor({ timeout: 60_000 });
+  // focus and keys are the page's own, whether or not the window is frontmost (TERNO_TEST_BACKGROUND keeps it behind)
+  await (await page.context().newCDPSession(page)).send("Emulation.setFocusEmulationEnabled", { enabled: true });
   await page.addInitScript(() => {
     window.nativeReloadProbe = { nonce: crypto.randomUUID(), pagehides: 0, dropCopy: false, copyCommitted: false, gateSave: false, reached: false };
     window.addEventListener("pagehide", () => { window.nativeReloadProbe.pagehides++; });
