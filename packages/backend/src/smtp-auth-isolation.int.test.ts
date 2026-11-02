@@ -398,7 +398,8 @@ describe("S21: real SMTP authentication is isolated from receiving", () => {
     for (let i = 0; i < 3; i++) { await t.backend.syncAccount(account.id); await t.backend.runWorker(); }
     expect(t.auths).toHaveLength(2);
     expect(t.received).toEqual([]);
-    await expect.poll(() => t.state(account.id)).toMatchObject({ status: "idle", authRequired: true, authScope: "send", lastError: null });
+    // receiving stays idle; the held SMTP refusal keeps saying why until a verified sign-in (account-status owner, R1)
+    await expect.poll(() => t.state(account.id)).toMatchObject({ status: "idle", authRequired: true, authScope: "send", lastError: expect.stringContaining("535") });
 
     await t.reopen();
     await parked(t, [first.opId, second.opId]);

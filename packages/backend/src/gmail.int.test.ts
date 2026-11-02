@@ -674,7 +674,7 @@ describe("Gmail operations", () => {
     expect(sqlDb(backend.store).all("SELECT state FROM ops WHERE kind != 'send'").every((r) => (r as { state: string }).state === "succeeded")).toBe(true);
   });
 
-  it("a revoked sign-in suspends actions without spending attempts; a successful sync resumes them", async () => {
+  it("a revoked sign-in suspends actions without spending attempts; signing in again resumes them", async () => {
     const { google, backend, client, thread, account } = await connected();
     const refresh = await backend.store.secrets.get(`account:${account.id}:refreshToken`);
     await backend.store.secrets.delete(`account:${account.id}:refreshToken`);
@@ -683,6 +683,11 @@ describe("Gmail operations", () => {
     for (let i = 0; i < 10; i++) await backend.runWorker();
     expect(sqlDb(backend.store).get("SELECT state, attempts FROM ops WHERE kind = 'star'")).toEqual({ state: "queued", attempts: 0 });
     await backend.store.secrets.put(`account:${account.id}:refreshToken`, refresh!);
+    // a sync's success never proves a refused credential recovered (account-status owner): it stays held
+    await backend.syncAccount(account.id);
+    await backend.runWorker();
+    expect(sqlDb(backend.store).get("SELECT state, attempts FROM ops WHERE kind = 'star'")).toEqual({ state: "queued", attempts: 0 });
+    await backend.signedIn(account.id);
     await backend.syncAccount(account.id);
     await backend.runWorker();
     expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE kind = 'star'")).toEqual({ state: "succeeded" });

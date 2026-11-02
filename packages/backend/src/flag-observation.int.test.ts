@@ -146,6 +146,12 @@ it.each([401, 429])("a queued flag reconciliation rechecks admission after histo
   expect.soft(t.minimalRequests()).toBe(0);
   expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toHaveLength(1);
   t.allowHistory();
+  if (status === 401) {
+    // a refused credential holds every sync until a verified sign-in (account-status owner)
+    await t.backend.syncAccount(t.account.id);
+    expect(t.minimalRequests()).toBe(0);
+    await t.backend.signedIn(t.account.id);
+  }
   await t.backend.syncAccount(t.account.id);
   expect(t.minimalRequests()).toBe(1);
   expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
@@ -155,7 +161,8 @@ it("an explicit trailing sync consumes the simultaneous automatic request withou
   const t = await setup("SQL", true);
   vi.spyOn(t.backend, "kickWorker").mockImplementation(() => {});
   const sync = vi.spyOn(t.backend, "syncAccount");
-  const held = t.refuseHistory(401);
+  // transient: since the account-status owner a 401 holds the explicit trailing pass as well
+  const held = t.refuseHistory(503);
   const running = t.backend.syncAccount(t.account.id);
   await held.captured.promise;
   const explicit = t.backend.syncAccount(t.account.id);
@@ -398,13 +405,14 @@ it.each(["sign-in", "backoff"] as const)("committed reconciliation respects %s a
   await t.backend.store.threads.act({ threadIds: [t.threadId], action: "markRead", signal: null, now: 1 });
   const [op] = await t.backend.store.ops.claimReady(2, 20);
   await t.backend.store.ops.markUnknown(op!.id, "Synthetic uncertainty", 3);
+  // a real refusal: the account-status owner, not Connectivity, holds a sign-in in the Backend
+  if (blocked === "sign-in") { t.refuseHistory(401).response.release(); await t.backend.syncAccount(t.account.id); }
   const sync = vi.spyOn(t.backend, "syncAccount").mockResolvedValue();
-  if (blocked === "sign-in") t.backend.connectivity.waitForSignIn(t.account.id, true);
-  else t.backend.connectivity.failed(t.account.id, t.backend.connectivity.epoch);
+  if (blocked === "backoff") t.backend.connectivity.failed(t.account.id, t.backend.connectivity.epoch);
   await t.client.call("ops.resolveUnknown", { opId: op!.id, resolution: "discard" });
   expect(sync).not.toHaveBeenCalled();
   expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toHaveLength(1);
-  if (blocked === "sign-in") t.backend.connectivity.waitForSignIn(t.account.id, false);
+  if (blocked === "sign-in") { t.allowHistory(); await t.backend.signedIn(t.account.id); }
   else t.backend.connectivity.succeeded(t.account.id);
   await t.client.call("threads.act", { threadIds: [t.threadId], action: "star" });
   expect(sync).toHaveBeenCalledWith(t.account.id);

@@ -62,6 +62,8 @@ describe("backend diagnostics", () => {
     let next: Error | null = new ProviderAuthError("Invalid credentials for luis@empresa.mx");
     const { backend, accountId } = await setup(() => next);
     await backend.syncAccount(accountId);
+    // the refusal holds every sync until the account is signed in again (account-status owner)
+    await backend.signedIn(accountId);
     next = new ProviderError("ETIMEDOUT imap.empresa.mx", true);
     await backend.syncAccount(accountId);
     expect(records).toEqual([]);
