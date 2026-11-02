@@ -52,6 +52,8 @@ export interface AppState {
   reviewCategoryId: number | null;
   /** plan 87: the Reminders list (view "all", no account, category, folder or review) */
   reminders: boolean;
+  /** plan 108: the account the sidebar is focused on ("solo", never keyboard focus); while set, accountId is it */
+  soloAccountId: number | null;
   query: string;
   /** mailboxes with the unread filter on (lib/unread-filter: the current list's flag is derived from this) */
   /** each mailbox's quick filter (plan 12's unread filter, generalized in plan 15) */
@@ -114,6 +116,7 @@ export const useApp = create<AppState>(() => ({
   gmailTab: null,
   reviewCategoryId: null,
   reminders: false,
+  soloAccountId: null,
   query: "",
   listFilters: loadListFilters(),
   supportedFilters: LEGACY_FILTERS,
@@ -166,11 +169,20 @@ export function setApp(partial: AppState | Partial<AppState> | ((state: AppState
  * scope across accounts, a tab back to the Inbox) leaves the folder too, so a list is never asked for an invalid one.
  */
 function keepFolderValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
-  next = keepRemindersValid(state, next);
+  next = keepSoloValid(state, keepRemindersValid(state, next));
   const m = { ...state, ...next };
   const out = m.folder !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.view !== "all") ? { ...next, folder: null } : next;
   // plan 86: a Gmail tab is its account's Inbox, alone, likewise
   return m.gmailTab !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.folder !== null || m.view !== "inbox") ? { ...out, gmailTab: null } : out;
+}
+
+/**
+ * Plan 108: focus on an account lasts while you're in it. A write that takes you to another account or to all of
+ * them (Reminders, a category across accounts, a notification, the palette) ends it in the same write.
+ */
+function keepSoloValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
+  const m = { ...state, ...next };
+  return m.soloAccountId !== null && m.accountId !== m.soloAccountId ? { ...next, soloAccountId: null } : next;
 }
 
 /** Plan 87: any other list (a tab, an account, a search: a search looks everywhere) leaves Reminders. */

@@ -1,5 +1,5 @@
 import { installSendWarnings } from "./send-warning";
-import { reconcileAccounts } from "~/lib/account-folders";
+import { reconcileAccounts, rememberFocus, restoredFocus } from "~/lib/account-folders";
 import { setSyncProgress } from "~/state/sync-progress";
 import { localized } from "~/lib/i18n";
 import { t } from "@terno/i18n";
@@ -41,7 +41,9 @@ export async function boot(): Promise<void> {
     const b = await client.call("app.bootstrap", {});
     applyAppearance(reconcileSettings(b.settings));
     acceptNextFavorites();
-    setApp({ ready: true, accounts: b.accounts, categories: b.categories, folders: b.folders ?? [], counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version, host: b.host, supportedFilters: supportedFilters(b.filters) });
+    setApp({ ready: true, accounts: b.accounts, categories: b.categories, folders: b.folders ?? [], counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version, host: b.host, supportedFilters: supportedFilters(b.filters), ...restoredFocus(b.accounts) });
+    // plan 108: focus on an account is remembered however it changes (the menu, the back arrow, leaving for another)
+    rememberFocus();
     // a remembered open account that's no longer there (plan 67)
     reconcileAccounts(b.accounts);
     installAppearanceListeners();

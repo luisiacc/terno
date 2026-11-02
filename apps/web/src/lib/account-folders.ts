@@ -2,7 +2,7 @@ import type { Account, Folder, Tab, View } from "@terno/core";
 import { t } from "@terno/i18n";
 import { useLayoutEffect, useState } from "react";
 import { create } from "zustand";
-import { getApp, navigate } from "~/state/app";
+import { getApp, navigate, setApp, useApp, type AppState } from "~/state/app";
 
 /**
  * Plan 67: what's at the top of the sidebar is all your mail; what's under an account is that account's.
@@ -54,7 +54,8 @@ export function toggleAccount(id: number): void {
 
 /** A folder by shortcut or palette: in the scope you're in when the account lists it, otherwise for all accounts. */
 export function goToFolder(view: View): void {
-  navigate(listedByAccount(view) ? { view } : { view, accountId: null });
+  // plan 108: focused, every folder is the account's (its Starred and All Mail too)
+  navigate(listedByAccount(view) || getApp().soloAccountId !== null ? { view } : { view, accountId: null });
 }
 
 /** The account list changed: an account that's gone stops being open, and stops being where you are. */
@@ -64,6 +65,59 @@ export function reconcileAccounts(accounts: readonly Account[]): void {
   if (open !== null && !has(open)) setOpenAccount(null);
   const { accountId } = getApp();
   if (accountId !== null && !has(accountId)) navigate({ view: "inbox", accountId: null });
+}
+
+// ── plan 108: focus on one account (the sidebar shows only it; search looks only in it)
+
+/** a focused sidebar's views: the top's order, every one the account's */
+export const SOLO_VIEWS = ["inbox", "starred", "sent", "archive", "all", "spam", "trash"] as const satisfies readonly View[];
+
+const SOLO_KEY = "terno:sidebar-solo";
+function remember(id: number | null): void {
+  try {
+    if (id === null) localStorage.removeItem(SOLO_KEY);
+    else localStorage.setItem(SOLO_KEY, String(id));
+  } catch {
+    // private mode: remembered for this session only
+  }
+}
+
+/** Focus on an account: its Inbox, unless you're already in one of its places (then you stay). */
+export function focusAccount(id: number): void {
+  const s = getApp();
+  if (s.accountId === id && s.reviewCategoryId === null && !s.reminders) setApp({ soloAccountId: id });
+  else {
+    navigate({ accountId: id, view: "inbox" });
+    setApp({ soloAccountId: id });
+  }
+}
+
+/** The back arrow: the all-accounts Inbox (focus ends with the account: the app state keeps them together). */
+export function leaveFocus(): void {
+  navigate({ view: "inbox", accountId: null });
+}
+
+/** Where focus is remembered: written whenever it changes, however it ended. Returns the unsubscribe. */
+export function rememberFocus(): () => void {
+  return useApp.subscribe((s, prev) => {
+    if (s.soloAccountId !== prev.soloAccountId) remember(s.soloAccountId);
+  });
+}
+
+/** At start: the remembered focus, on its account's Inbox, if that account is still there among several. */
+export function restoredFocus(accounts: readonly Account[]): Partial<AppState> {
+  let id: number | null = null;
+  try {
+    id = Number(localStorage.getItem(SOLO_KEY)) || null;
+  } catch {
+    return {};
+  }
+  if (id === null) return {};
+  if (accounts.length < 2 || !accounts.some((a) => a.id === id)) {
+    remember(null);
+    return {};
+  }
+  return { soloAccountId: id, accountId: id, view: "inbox" };
 }
 
 // ── plan 68: the account's own folders

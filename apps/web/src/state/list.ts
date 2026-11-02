@@ -64,7 +64,13 @@ export function listKey(): string {
   // plan 68: a folder goes before the query, only when there is one (every other list's key is as it was)
   // plan 87: Reminders, only when it's that list (every other list's key is as it was)
   // plan 86: a Gmail tab likewise ("~promotions": never a folder's key)
-  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.gmailTab ? [`~${s.gmailTab}`] : []), ...(s.reminders ? ["reminders"] : []), s.query.trim()]);
+  // plan 108: a search focused on an account looks only in it, so it's another list than the same search everywhere
+  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.gmailTab ? [`~${s.gmailTab}`] : []), ...(s.reminders ? ["reminders"] : []), ...(soloSearch(s) ? ["~solo"] : []), s.query.trim()]);
+}
+
+/** plan 108: a search while focused on an account: only that account's mail */
+function soloSearch(s: { soloAccountId: number | null; query: string }): boolean {
+  return s.soloAccountId !== null && s.query.trim() !== "";
 }
 
 let seq = 0;
@@ -180,7 +186,8 @@ export function currentScope(): ThreadScope | null {
   const filter = activeFilter(s);
   const q = s.query.trim();
   // plan 64: a search looks everywhere (every account, category and place, Spam and Trash too); in:, account:, category: narrow it
-  if (q) return { kind: "search", query: q, ...(filter ? { filter } : {}) };
+  // plan 108: focused on an account, a search looks only in it
+  if (q) return { kind: "search", query: q, ...(s.soloAccountId !== null ? { accountId: s.soloAccountId } : {}), ...(filter ? { filter } : {}) };
   // plan 68: a folder's list is its own (a search from it looks everywhere, as any search does)
   return { kind: "view", view: s.view, accountId: s.accountId ?? undefined, categoryId: s.categoryId ?? undefined, ...(filter ? { filter } : {}), ...(s.folder ? { folder: s.folder } : {}), ...(s.gmailTab ? { tab: s.gmailTab } : {}) };
 }
@@ -430,7 +437,7 @@ useApp.subscribe((s, prev) => {
     pendingMore = null;
     useList.setState((l) => ({ key, itemsKey: l.itemsKey === l.key ? key : l.itemsKey, loadingMore: false, loading: false }));
     if (s.scope) setApp({ scope: null });
-  } else if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.query !== prev.query) {
+  } else if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.query !== prev.query || soloSearch(s) !== soloSearch(prev)) {
     // "all N of that list" means nothing in another one
     if (s.scope) setApp({ scope: null });
     void reloadList();
