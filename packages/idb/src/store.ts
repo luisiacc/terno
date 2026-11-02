@@ -448,7 +448,10 @@ export class IdbMailStore implements MailStore {
     return this.exclusive(async () => {
       await o.prefetch?.();
       const epoch = this.bodyProtocol.ticket().epoch;
-      const result = this.db.tx(() => { if (o.bodyTicket) this.bodyProtocol.validate(o.bodyTicket); o.check?.(); return fn(); });
+      let result: V;
+      try { result = this.db.tx(() => { if (o.bodyTicket) this.bodyProtocol.validate(o.bodyTicket); o.check?.(); return fn(); }); }
+      // an admission that expired before the unit ran is a refusal, as it is at persistence
+      catch (error) { if (error instanceof CredentialAdmissionExpired) return false as V; throw error; }
       if ([...this.db.touched(BODY_FACT_TABLES).values()].some((keys) => keys.length)) this.db.tx(() => {
         const table = this.db.table("body_protocol"), row = table.get(1)!;
         table.update(row, { epoch: this.o.platform.uuid() });
