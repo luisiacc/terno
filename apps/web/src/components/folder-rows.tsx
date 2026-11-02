@@ -148,7 +148,7 @@ export function FolderNameRow({
           }}
           onBlur={(e) => void finish(e.currentTarget.value, true)}
           onContextMenu={(e) => e.stopPropagation()}
-          className={cn("-mx-1 h-[calc(var(--nav-h)-6px)] min-w-0 flex-1 rounded-sm bg-background px-1 text-foreground ring-2 ring-ring outline-none", busy && "opacity-60", error && "ring-destructive")}
+          className={cn("-mx-1 h-[calc(var(--nav-h)-6px)] min-w-0 flex-1 rounded-sm bg-background px-1 text-foreground ring-2 ring-ring outline-none", busy && "text-muted-foreground", error && "ring-destructive")}
         />
       </div>
       {error && (
