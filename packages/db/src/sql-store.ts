@@ -341,6 +341,8 @@ export class SqlMailStore implements MailStore {
    * disabled), with the same results.
    */
   private async searchPage(req: SearchRequest): Promise<StoreSearchPage> {
+    const ready = this.db.tx(() => this.instant?.at(this.revision()) ? this.searchPreparedPage(req) : null);
+    if (ready) return ready;
     const bodyTests = req.search.query.terms.filter((t) => t.field === "text").map((t) => ({ op: "contains" as const, value: t.value, prefix: t.prefix }));
     const matches = await prepareBodyMatches(this.db, bodyTests, this.yieldTo);
     return withBodyMatches(this.db, matches, () => this.searchPreparedPage(req));
