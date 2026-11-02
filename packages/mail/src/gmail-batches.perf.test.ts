@@ -77,6 +77,8 @@ it("bounds 50k cached refresh pages, effects and durable scalar checkpoints", as
       },
       pendingAttachmentBodies: async () => [],
     },
+    // the backend's cooperative turn (core.ts: the Node platform's setImmediate), not a timer: what each control read yields to (7de175c2)
+    yield: () => new Promise<void>((resolve) => setImmediate(resolve)),
     loadCursor: async () => null,
     saveCursor: async (value: unknown) => { saved = value; writes++; maxBytes = Math.max(maxBytes, JSON.stringify(value).length); },
     fetch: async (input: string | URL) => {
