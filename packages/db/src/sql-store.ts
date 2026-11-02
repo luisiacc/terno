@@ -1,4 +1,4 @@
-import { bodyPartRange, finishBodyClose } from "@terno/store";
+import { bodyTestKey, bodyPartRange, finishBodyClose } from "@terno/store";
 import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
 import { publishBody } from "@terno/store";
 import { resolvable, parseSearch } from "@terno/core";
@@ -23,7 +23,7 @@ import { mergeBefore, sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObse
 import { bindSqlPromotedFlags, sqlFlags } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { sqlAssets, replaceAttachments } from "./attachments";
-import { categoryOf, ruleReadsBody, senderVetoed, type Address, type FilterAction, type FilterRule, type ThreadAction, type ThreadSummary } from "@terno/core";
+import { categoryOf, ruleReadsBody, senderVetoed, type MessageTerm, type Address, type FilterAction, type FilterRule, type ThreadAction, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -154,7 +154,7 @@ import {
 import { beginSearchBuild, materializeChanges, searchChangeIds, searchHead } from "./outbox";
 import { SEARCH_SCHEMA_VERSION } from "./migrations";
 import { findRuleMatches } from "./rules";
-import { ftsTermMessages, resolveQuery } from "./search";
+import { ftsIndexedTermMessages, ftsTermMessages, resolveQuery } from "./search";
 import { Fts5SearchEngine } from "./search-engine";
 import { messageDocs, threadDocs } from "./search-docs";
 import { seedDataset } from "./seed";
@@ -166,6 +166,10 @@ import type { Db } from "./sqlite";
 const MATERIALIZE_SLICE = 500;
 
 /** Counted up to here: "how much mail can't be searched yet" never pays for a huge count. */
+class ReadyPhraseRequired extends Error {
+  constructor(readonly term: MessageTerm, readonly candidates: readonly number[]) { super("Captured phrase preparation required"); }
+}
+
 const PENDING_BODIES_CAP = 1000;
 
 const FLAG_COLUMNS: Record<string, string> = {
@@ -221,6 +225,7 @@ export class SqlMailStore implements MailStore {
 
   private readonly yieldTo: () => Promise<void>;
   private readonly bodyCleanup: Promise<void>;
+  private readyPhrases: Map<string, number[]> | undefined;
   private bodyClosing = false;
   private bodyClose: Promise<void> | undefined;
   private bodyCleanupFailure: { error: unknown } | undefined;
@@ -267,7 +272,14 @@ export class SqlMailStore implements MailStore {
         snapshotPath: db.path === ":memory:" ? null : `${db.path}.search`,
         identity: `sqlite-schema-${SEARCH_SCHEMA_VERSION}`,
         // inside the store's unit of work, like the engine's own answer
-        phrases: (term) => ftsTermMessages(db, term),
+        phrases: (term, candidates) => {
+          if (term.field === "text" && db.get("SELECT 1 FROM body_heads LIMIT 1")) {
+            const ids = this.readyPhrases?.get(bodyTestKey("contains", term.value, term.prefix));
+            if (!ids) throw new ReadyPhraseRequired(term, candidates);
+            return ids;
+          }
+          return ftsTermMessages(db, term);
+        },
         log: this.log,
       });
       db.onCommit(() => this.instant?.notify());
@@ -348,8 +360,38 @@ export class SqlMailStore implements MailStore {
    * disabled), with the same results.
    */
   private async searchPage(req: SearchRequest): Promise<StoreSearchPage> {
-    const ready = this.db.tx(() => this.instant?.at(this.revision()) ? this.searchPreparedPage(req) : null);
-    if (ready) return ready;
+    const phrases = new Map<string, number[]>(), revision = this.revision();
+    const check = () => {
+      const current = this.revision();
+      if (current.epoch !== revision.epoch || current.seq !== revision.seq) throw new RpcError("STALE", L("errors.mail.processingBusy"), { reason: "revision" });
+    };
+    for (;;) {
+      try {
+        const ready = this.db.tx(() => {
+          check();
+          if (!this.instant?.at(revision)) return null;
+          const prior = this.readyPhrases; this.readyPhrases = phrases;
+          try { return this.searchPreparedPage(req); } finally { this.readyPhrases = prior; }
+        });
+        if (ready) return ready;
+        break;
+      } catch (error) {
+        if (!(error instanceof ReadyPhraseRequired)) throw error;
+        const ids = this.db.tx(() => { check(); return ftsIndexedTermMessages(this.db, error.term); });
+        const test = { op: "contains" as const, value: error.term.value, prefix: error.term.prefix };
+        for (let at = 0; at < error.candidates.length; at += 500) {
+          const captures = this.db.tx(() => {
+            check();
+            return this.db.all<{ capture_id: string }>("SELECT capture_id FROM body_heads WHERE message_id IN (SELECT value FROM json_each(?))", JSON.stringify(error.candidates.slice(at, at + 500))).map((row) => row.capture_id);
+          });
+          const matches = await prepareBodyMatches(this.db, [test], this.yieldTo, captures, "selected", new Map(), check);
+          const found = withBodyMatches(this.db, matches, () => this.db.all<{ id: number }>("SELECT message_id AS id FROM body_heads WHERE capture_id IN (SELECT value FROM json_each(?)) AND terno_part_match(capture_id,'contains',?,?)", JSON.stringify(captures), test.value, test.prefix ? 1 : 0));
+          for (const row of found) ids.push(row.id);
+          await this.yieldTo(); check();
+        }
+        phrases.set(bodyTestKey("contains", error.term.value, error.term.prefix), [...new Set(ids)]);
+      }
+    }
     const bodyTests = req.search.query.terms.filter((t) => t.field === "text").map((t) => ({ op: "contains" as const, value: t.value, prefix: t.prefix }));
     const matches = await prepareBodyMatches(this.db, bodyTests, this.yieldTo);
     return withBodyMatches(this.db, matches, () => this.searchPreparedPage(req));

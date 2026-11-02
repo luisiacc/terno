@@ -303,10 +303,14 @@ function excludeClause(): string {
  * inside one column, the last token may be a prefix). The instant engine asks
  * it for frequent words that are rarely adjacent, inside the store's unit of work.
  */
-export function ftsTermMessages(db: Db, term: MessageTerm): number[] {
+export function ftsIndexedTermMessages(db: Db, term: MessageTerm): number[] {
   const expr = ftsTerm(term);
-  if (!expr) return [];
-  const ids = db.all<{ id: number }>("SELECT rowid AS id FROM messages_fts WHERE messages_fts MATCH ?", expr).map((r) => r.id);
+  return expr ? db.all<{ id: number }>("SELECT rowid AS id FROM messages_fts WHERE messages_fts MATCH ?", expr).map((r) => r.id) : [];
+}
+
+export function ftsTermMessages(db: Db, term: MessageTerm): number[] {
+  if (!ftsTerm(term)) return [];
+  const ids = ftsIndexedTermMessages(db, term);
   if (term.field === "text") for (const row of db.all<{ id: number }>("SELECT message_id AS id FROM body_heads WHERE terno_part_match(capture_id,'contains',?,?)", term.value, term.prefix ? 1 : 0)) ids.push(row.id);
   return [...new Set(ids)];
 }

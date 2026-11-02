@@ -34,3 +34,34 @@ it("answers exact ready-index queries without reading stored tokens in any accou
     } finally { spy.mockRestore(); enumeration.mockRestore(); }
   } finally { await store.close(); }
 });
+
+it("keeps common positive and negative RAM phrases exact with captured candidates", async () => {
+  let hold = false, armed = false, entered!: () => void, release!: () => void;
+  const held = new Promise<void>((r) => { entered = r; }), resume = new Promise<void>((r) => { release = r; });
+  const platform = { ...nodePlatform, async yield() { await nodePlatform.yield(); if (hold) { hold = false; entered(); await resume; } } };
+  const db = openDatabase(":memory:"), store = new SqlMailStore(db, { platform, instantSearch: true });
+  let searching: ReturnType<typeof store.threads.searchText> | undefined;
+  try {
+    const [accountId, other] = await withAccounts(store, 2);
+    await store.sync.ingest(Array.from({ length: 513 }, (_, i) => msg({ accountId: accountId!, providerMsgId: `common-${i}`, providerThreadId: `common-${i}`, date: 1, subject: "Synthetic", bodyText: i === 0 ? "alpha gap beta ".repeat(3000) : "alpha gap beta" })), { now: 1, classifier: null, applyFilters: false });
+    await store.sync.ingest([msg({ accountId: other!, date: 1, subject: "Unrelated", bodyText: "omega unrelated body ".repeat(3000) })], { now: 1, classifier: null, applyFilters: false });
+    expect(await store.instant!.settled()).toBe(true);
+    const ownCapture = db.get<{ capture_id: string }>("SELECT capture_id FROM body_heads WHERE message_id=1")!.capture_id;
+    const reads = new Set<string>(), get = db.get.bind(db);
+    const spy = vi.spyOn(db, "get").mockImplementation((sql, ...args) => { if (armed && sql === "SELECT text_parts,html_parts,token_parts,ready FROM body_captures WHERE id=?") { armed = false; hold = true; }
+      if (sql === "SELECT ordinal,value FROM body_parts WHERE capture_id=? AND field=? AND ordinal=?") reads.add(String(args[0])); return get(sql, ...args); });
+    try {
+      for (const [query, expected] of [['-"alpha beta"', [513,512,511,510,509,508,507,506,505,504]], ['"alpha beta"', []], ['-"alpha gap"', []], ['-alp', []], ['"alpha gap"', [513,512,511,510,509,508,507,506,505,504]]] as const) {
+        expect((await store.threads.searchText({ query, accountId: accountId!, now: 1, limit: 10 })).items.map((row) => row.id), query).toEqual(expected);
+      }
+      expect([...reads]).toEqual([ownCapture]);
+      armed = true;
+      searching = store.threads.searchText({ query: '-"alpha beta"', accountId: accountId!, now: 1, limit: 10 }); void searching.catch(() => {});
+      await held;
+      await store.sync.setBody(1, "alpha beta " + "fresh ".repeat(10000), null, { now: 2, classifier: null });
+      release(); await expect(searching).rejects.toMatchObject({ code: "STALE" });
+      expect(await store.instant!.settled()).toBe(true);
+      expect((await store.threads.searchText({ query: '"alpha beta"', accountId: accountId!, now: 2, limit: 10 })).items.map((row) => row.id)).toEqual([1]);
+    } finally { spy.mockRestore(); }
+  } finally { release(); await searching?.catch(() => {}); await store.close(); }
+});

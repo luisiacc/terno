@@ -75,7 +75,7 @@ export const INDEX_FORMAT = 2;
  * as a prefix when `term.prefix`. It must answer at the engine's revision: the
  * store calls it inside the same unit of work as the query.
  */
-export type PhraseSource = (term: MessageTerm) => Iterable<number>;
+export type PhraseSource = (term: MessageTerm, candidates: readonly number[]) => Iterable<number>;
 
 export interface InstantEngineOptions extends SliceOptions {
   phrases?: PhraseSource;
@@ -984,7 +984,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
       }
       if (r === OVER_BUDGET) {
         // frequent words that are rarely adjacent: ask the exact phrase doclist instead of verifying candidates
-        for (const ph of plan.phrases) andInto(plan.set, this.sourceSet(ph.term));
+        for (const ph of plan.phrases) andInto(plan.set, this.sourceSet(ph.term, plan.set));
         plan.phrases = [];
         this.materialize(plan);
         const rewalk = popcount(plan.set) >= (this.o.walkThreshold ?? 2000);
@@ -1239,16 +1239,18 @@ export class InstantSearchEngine implements CachedSearchEngine {
     const { set, phrase } = this.termSet(term);
     andInto(set, this.alive);
     if (!phrase) return set;
-    if (this.o.phrases && popcount(set) > (this.o.phraseBudget ?? 512)) return andInto(this.sourceSet(term), this.alive);
+    if (this.o.phrases && popcount(set) > (this.o.phraseBudget ?? 512)) return andInto(this.sourceSet(term, set), this.alive);
     scanBits(set, (d) => {
       if (!this.phraseAt(d, phrase)) clearBit(set, d);
     });
     return set;
   }
 
-  private sourceSet(term: MessageTerm): Uint32Array {
+  private sourceSet(term: MessageTerm, candidates: Uint32Array): Uint32Array {
+    const ids: number[] = [];
+    scanBits(candidates, (d) => { ids.push(this.docMsg[d]!); });
     const set = new Uint32Array(this.alive.length);
-    for (const id of this.o.phrases!(term)) {
+    for (const id of this.o.phrases!(term, ids)) {
       const d = this.msgToDoc.get(id);
       if (d !== undefined) setBit(set, d);
     }

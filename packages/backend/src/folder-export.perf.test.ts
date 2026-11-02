@@ -7,7 +7,7 @@ import "fake-indexeddb/auto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openDatabase, SqlMailStore } from "@terno/db";
+import { nodePlatform, openDatabase, SqlMailStore } from "@terno/db";
 import { IdbMailStore } from "@terno/idb";
 import { BODY_READ } from "@terno/mail/portable";
 import type { IncomingMessage, MailStore } from "@terno/store";
@@ -210,7 +210,7 @@ describe("folder export (plan 107)", () => {
 
   it("IndexedDB: a 20 MB body read a stretch at a time, after a reopen (Codex code review round 6 #4)", async () => {
     const name = `export-big-perf-${Date.now()}`;
-    const open = () => IdbMailStore.open({ name, factory: indexedDB, platform: { uuid: () => crypto.randomUUID(), yield: yieldTurn }, instantSearch: false });
+    const open = () => IdbMailStore.open({ name, factory: indexedDB, platform: { uuid: () => crypto.randomUUID(), yield: yieldTurn, bodyPreparation: nodePlatform.bodyPreparation }, instantSearch: false });
     const seeded = await open();
     const accountId = await seedBig(seeded);
     await seeded.close();

@@ -130,14 +130,14 @@ function checkBodyRevision(db: Db, matches: PreparedBodyMatches): void {
   if (current.epoch !== expected.epoch || current.seq !== expected.seq) throw new RpcError("STALE", L("errors.mail.processingBusy"), { reason: "revision" });
 }
 
-export async function prepareBodyMatches(db: Db, tests: readonly { op: TextOp; value: string; prefix?: boolean }[], yieldTo: () => Promise<void>, extra: readonly string[] = [], published = true, cache: PreparedBodyMatches = new Map(), check?: () => void): Promise<PreparedBodyMatches> {
+export async function prepareBodyMatches(db: Db, tests: readonly { op: TextOp; value: string; prefix?: boolean }[], yieldTo: () => Promise<void>, extra: readonly string[] = [], published: boolean | "selected" = true, cache: PreparedBodyMatches = new Map(), check?: () => void): Promise<PreparedBodyMatches> {
   const prepared: PreparedBodyMatches = new Map();
-  preparedTickets.set(prepared, { ticket: sqlBodyProtocol(db).ticket(check), published });
+  preparedTickets.set(prepared, { ticket: sqlBodyProtocol(db).ticket(check), published: published !== false });
   if (!tests.length) return prepared;
   if (published) preparedRevisions.set(prepared, bodyRevision(db));
   const yieldCurrent = async () => { await yieldTo(); checkBodyRevision(db, prepared); };
   let after = "";
-  while (published) {
+  while (published === true) {
     const rows = db.all<{ id: string }>("SELECT DISTINCT c.id FROM body_captures c JOIN body_heads b ON b.capture_id=c.id WHERE c.id>? AND c.ready=1 ORDER BY c.id LIMIT 32", after);
     if (!rows.length) break;
     for (const row of rows) { prepared.set(row.id, cache.get(row.id) ?? new Map()); after = row.id; }
