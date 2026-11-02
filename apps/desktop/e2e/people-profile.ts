@@ -14,7 +14,8 @@ export function profileFacts(path: string) {
       accounts: digest("SELECT id, email, provider_config FROM accounts ORDER BY id"),
       threads: digest("SELECT id FROM threads ORDER BY id"),
       messages: digest("SELECT id, thread_id, subject, from_email, to_json FROM messages ORDER BY id"),
-      bodies: digest("SELECT * FROM message_bodies ORDER BY message_id"),
+      // the columns a v13 file has: v45 (w11) added capture, preview and revision columns its upgrade fills in
+      bodies: digest("SELECT message_id, body_text, body_html FROM message_bodies ORDER BY message_id"),
       drafts: digest("SELECT id FROM drafts ORDER BY id"),
       counts: ["accounts", "threads", "messages", "message_bodies", "drafts"].map((table) => db.get<{ n: number }>(`SELECT count(*) AS n FROM ${table}`)!.n),
     };
