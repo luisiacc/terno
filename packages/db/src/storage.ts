@@ -32,7 +32,8 @@ const HELD = "m.is_draft = 1 OR m.is_starred = 1 OR m.is_sent = 1 OR m.provider_
 
 /**
  * The report's row, one indexed aggregate per thread: its messages, what they take here (measured: headers, bodies
- * and attachments as stored, base64; `octet_length` reads a value's size, never the value), and whether one of them
+ * and attachments as stored, base64, a large body's text and HTML parts too (w11; not its token index); `octet_length`
+ * reads a value's size, never the value), and whether one of them
  * is held by its own columns (a star, even in Trash where the thread's flag ignores it; a draft, local or unsent).
  */
 const SELECT = /* sql */ `
@@ -41,6 +42,7 @@ SELECT t.id, t.account_id, t.last_date, t.in_inbox, t.in_trash, t.in_spam, t.has
   coalesce(sum(
     octet_length(m.subject) + octet_length(m.snippet) + octet_length(m.to_json) + octet_length(m.cc_json) + octet_length(m.references_json)
     + coalesce((SELECT coalesce(octet_length(b.body_text), 0) + coalesce(octet_length(b.body_html), 0) FROM message_bodies b WHERE b.message_id = m.id), 0)
+    + coalesce((SELECT sum(octet_length(p.value)) FROM body_heads h JOIN body_parts p ON p.capture_id = h.capture_id AND p.field < 2 WHERE h.message_id = m.id), 0)
     + coalesce((SELECT sum((a.size + 2) / 3 * 4) FROM attachment_links l JOIN attachment_assets a ON a.id = l.asset_id WHERE l.message_id = m.id), 0)
   ), 0) AS bytes,
   coalesce(max(${HELD}), 0) AS held
