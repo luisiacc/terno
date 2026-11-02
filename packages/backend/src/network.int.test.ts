@@ -452,7 +452,7 @@ describe("plan 20: the IMAP provider's own connections", () => {
     await new Promise((r) => setTimeout(r, 800));
     expect(proxy.accepted).toBe(2);
     // and a sync says it's a sign-in to redo
-    await expect(p.sync({} as never)).rejects.toBeInstanceOf((await import("@terno/mail")).ProviderAuthError);
+    await expect(p.sync({ signal: new AbortController().signal } as never)).rejects.toBeInstanceOf((await import("@terno/mail")).ProviderAuthError);
   });
 
   const markRead = (p: Awaited<ReturnType<typeof provider>>) => probes.get(p)!();
