@@ -1,17 +1,18 @@
 import "fake-indexeddb/auto";
 import { expect, it, vi } from "vitest";
 import { msg, withAccounts } from "../../store/src/conformance/fixtures";
+import { nodePlatform } from "../../db/src/node-driver";
 import { EXPORT_LEASES_MAX, IdbMailStore } from "./store";
 
 /**
- * Plan 107, Codex code review round 27 #3: a body past the body cache's budget (8 MB) went after every call, so an
- * export read a 20 MB body whole again for each 256 KB stretch. Under its session's lease it's read once, and the
- * lease lets it go when the session ends.
+ * Plan107's 20 MB export remains exact after captured bodies replace whole-record clones. Its cached manifest
+ * needs no native body-record read per stretch; bounded parts supply the content. Inline leases still invalidate
+ * on writes and retain at most the original number of sessions.
  */
-const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setTimeout(resolve, 0)) };
+const platform = nodePlatform;
 const STRETCH = 256 * 1024;
 
-it("a 20 MB body is read once an export, and read again only after its lease is released", async () => {
+it("a 20 MB captured body exports bounded exact parts while inline session leases retain their bounds", async () => {
   const store = await IdbMailStore.open({ name: `lease-${crypto.randomUUID()}`, factory: indexedDB, platform, instantSearch: false });
   try {
     const [accountId] = await withAccounts(store, 1);
@@ -19,8 +20,8 @@ it("a 20 MB body is read once an export, and read again only after its lease is 
     const body = "ab\r\nFrom c".repeat(1_048_576);
     const { inserted } = await store.sync.ingest([msg({ accountId: accountId!, providerMsgId: "big", bodyText: body, bodyHtml: null })], { applyFilters: false, now: 0, classifier: null });
     const id = inserted[0]!;
-    // past the cache's budget: not kept after the write
-    expect(store.bodyCache().bytes).toBe(0);
+    // Only the existing 4,096-unit preview is retained in the cache, never the complete body.
+    expect(store.bodyCache().bytes).toBe(8192);
     const reads: unknown[] = [];
     const get = IDBObjectStore.prototype.get;
     const spy = vi.spyOn(IDBObjectStore.prototype, "get").mockImplementation(function (this: IDBObjectStore, key) {
@@ -38,14 +39,14 @@ it("a 20 MB body is read once an export, and read again only after its lease is 
     };
     try {
       expect(await exportAll("e1")).toBe(body);
-      expect(reads).toEqual([id]);
-      // the cache stays within its budget: the lease holds it apart
-      expect(store.bodyCache().bytes).toBe(0);
+      expect(reads).toEqual([]);
+      // The complete content stayed in durable parts; the cache still owns only the preview.
+      expect(store.bodyCache().bytes).toBe(8192);
       // a cancel (or a finish, or an idle session) releases it: the next export reads it again
       store.folderExport.release("e1");
       expect((store as unknown as { exportLeases: Map<string, unknown> }).exportLeases.size).toBe(0);
       await store.folderExport.body(id, "text", 0, STRETCH, "e1");
-      expect(reads).toEqual([id, id]);
+      expect(reads).toEqual([]);
       // a write to the message lets it go too: what's exported is what's stored
       const update = await store.sync.ingest([msg({ accountId: accountId!, providerMsgId: "big", bodyText: "fresh", bodyHtml: null })], { applyFilters: false, now: 0, classifier: null });
       expect(update.inserted).toEqual([]);

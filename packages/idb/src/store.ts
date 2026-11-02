@@ -181,6 +181,8 @@ import { sameRevision, SearchCancelledError, type AutocompleteSource, type Conta
 import { contactOf, isLearnable, sentOf } from "./autocomplete";
 import { appendOutbox, checkCursor, columnsOf, materializeChanges, pageOf, planScan, scanPage, searchChangeIds, searchHead } from "./search";
 
+class IdbStoreClosed extends Error { constructor() { super("the store is closed"); } }
+
 const PENDING_BODIES_CAP = 1000;
 /** bodies kept in memory after a unit of work (read ahead or written), by count and bytes; the rest stay in IndexedDB */
 const BODY_CACHE = 2000;
@@ -495,7 +497,7 @@ export class IdbMailStore implements MailStore {
   }
 
   private assertUsable(): void {
-    if (!this.open || this.unusable) throw new Error("the store is closed");
+    if (!this.open || this.unusable) throw new IdbStoreClosed();
   }
 
   /** `early`: reads only early tables (answers while messages load) */
@@ -606,7 +608,8 @@ export class IdbMailStore implements MailStore {
     let remaining = bodyOwnership(this.db).count();
     for (const id of candidates) {
       if (remaining-- === 0) break;
-      await this.discardBody(id);
+      try { await this.discardBody(id); }
+      catch (error) { if (this.unusable && error instanceof IdbStoreClosed) return; throw error; }
       await this.o.platform.yield();
     }
   }

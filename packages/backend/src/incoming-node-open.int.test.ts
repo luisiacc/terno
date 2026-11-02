@@ -51,7 +51,7 @@ for (const mode of ["corrupt", "migration"] as const) it(`preserves Plan95 class
   }
   try {
     const error = await openNodeMailbox(path).then((db) => { db.close(); return undefined; }, (error: unknown) => error);
-    expect(classifyOpenError(error)).toMatchObject({ kind: "failed", reason: mode, step: mode === "migration" ? 41 : null });
-    if (mode === "migration") { const old = new Db(nodeSqliteDriver, path, { readonly: true }); try { expect(old.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(40); } finally { old.close(); } }
+    expect(classifyOpenError(error)).toMatchObject({ kind: "failed", reason: mode, step: mode === "migration" ? 45 : null });
+    if (mode === "migration") { const old = new Db(nodeSqliteDriver, path, { readonly: true }); try { expect(old.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(44); } finally { old.close(); } }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

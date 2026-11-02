@@ -60,7 +60,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
     if (path === "/messages" && url.searchParams.size === 3 && url.searchParams.get("includeSpamTrash") === "true" && url.searchParams.get("maxResults") === "500" && /^after:\d+$/.test(url.searchParams.get("q") ?? "")) return Response.json({ messages: [...messages.keys()].map((id) => ({ id })) });
     if (path === "/history") {
       const start = url.searchParams.get("startHistoryId");
-      if (url.searchParams.get("maxResults") !== "500" || url.searchParams.getAll("historyTypes").sort().join(",") !== "labelAdded,labelRemoved,messageAdded,messageDeleted" || url.searchParams.size !== 6 || (start !== base && start !== terminal && start !== deletedTerminal)) return refuse();
+      if (url.searchParams.get("maxResults") !== "500" || !((url.searchParams.getAll("historyTypes").sort().join(",") === "labelAdded,labelRemoved,messageAdded,messageDeleted" && url.searchParams.size === 6) || (url.searchParams.getAll("historyTypes").sort().join(",") === "messageAdded,messageDeleted" && url.searchParams.size === 4)) || (start !== base && start !== terminal && start !== deletedTerminal)) return refuse();
       if(expired && start===base){expired=false;refreshed=true;return Response.json({}, {status:404});}
       if(removed)return Response.json({historyId:deletedTerminal,...(start!==deletedTerminal && {history:[{id:deletedTerminal,messagesDeleted:[{message:{id:"p"}}]}]})});
       return Response.json({ historyId: additions.length ? terminal : base, ...(additions.length && start === base ? { history: [{ id: terminal, messagesAdded: additions.map((id) => ({ message: { id } })), messagesDeleted: historyDeleted.map(id=>({message:{id}})) }] } : {}) });

@@ -32,6 +32,12 @@ Worker.prototype.terminate = function () {
 const sqlite = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 const nativeBackup = sqlite.backup;
 sqlite.backup = async (...args) => { const result = await nativeBackup(...args); if (mode === "backup-cancel") { port.postMessage({ fixture: "backup-held" }); await backup; } return result; };
+if (mode === "backup-cancel") {
+  // Exercise the real asynchronous SQLite copy rather than the newer APFS clone shortcut.
+  const fs = createRequire(import.meta.url)("node:fs") as typeof import("node:fs");
+  const statfs = fs.statfsSync;
+  fs.statfsSync = ((...args: Parameters<typeof statfs>) => ({ ...statfs(...args), type: 0 })) as typeof statfs;
+}
 syncBuiltinESMExports();
 const open = nodeSqliteDriver.open.bind(nodeSqliteDriver);
 nodeSqliteDriver.open = (path, options) => { port.postMessage({ fixture: "host-open" }); return open(path, options); };

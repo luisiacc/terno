@@ -69,7 +69,7 @@ for (const mode of ["prepared-cancel", "prepared-success", "backup-cancel", "mig
     expect(native.events.some((event) => event.tag === "host-open" || event.tag === "ready")).toBe(false);
     if (mode === "migration-error") {
       native.worker.postMessage({ fixture: "release-retirement" });
-      const failure = await native.until("open-failed"); expect(failure.kind).toBe("failed"); expect(failure.reason).toBe("migration"); exactOld(path, 40);
+      const failure = await native.until("open-failed"); expect(failure.kind).toBe("failed"); expect(failure.reason).toBe("migration"); exactOld(path, 44);
     } else if (mode === "prepared-success") {
       native.worker.postMessage({ fixture: "release-prepared" }); expect((await native.until("native-exit")).tag).toBe("native-exit");
       await native.barrier(); expect(native.events.some((event) => event.tag === "ready" || event.tag === "host-open")).toBe(false);

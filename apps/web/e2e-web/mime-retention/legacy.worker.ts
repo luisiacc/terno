@@ -25,10 +25,11 @@ function fixture(db: Db): number {
   db.exec("ALTER TABLE messages DROP COLUMN unsubscribe");
   return threadId;
 }
+const laterTables = new Set(["scheduled_sends", "forward_eligible", "forwards", "forward_recipients"]);
 async function idbFixture(name: string, db: Db): Promise<void> {
   const open = indexedDB.open(databaseName(name), 22);
   open.onupgradeneeded = () => {
-    for (const table of TABLES) if (!table.memoryOnly && table.name !== "scheduled_sends" && !table.name.startsWith("body_")) open.result.createObjectStore(table.name);
+    for (const table of TABLES) if (!table.memoryOnly && !laterTables.has(table.name) && !table.name.startsWith("body_")) open.result.createObjectStore(table.name);
     open.result.createObjectStore("meta");
     for (const part of OP_PART_STORES) open.result.createObjectStore(part);
     open.transaction!.objectStore("capture_repairs").createIndex("discovery", ["account_id", "key"]);
@@ -40,7 +41,7 @@ async function idbFixture(name: string, db: Db): Promise<void> {
   const idb = await new Promise<IDBDatabase>((resolve, reject) => { open.onsuccess = () => resolve(open.result); open.onerror = () => reject(open.error); });
   try {
     for (const table of TABLES) {
-      if (table.memoryOnly || table.name === "scheduled_sends" || table.name.startsWith("body_")) continue;
+      if (table.memoryOnly || laterTables.has(table.name) || table.name.startsWith("body_")) continue;
       const rows = db.all<Record<string, unknown>>(`SELECT * FROM ${table.name}`);
       const tx = idb.transaction(table.name, "readwrite");
       for (const row of rows) { const key = table.key.map((column) => row[column]) as IDBValidKey[]; tx.objectStore(table.name).put(row, key.length === 1 ? key[0]! : key); }
