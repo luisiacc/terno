@@ -20,7 +20,8 @@ function attach() {
   client.attach(renderer);
   return { requests, event: <E extends EventName>(event: E, payload: Events[E]) => server.send({ v: RPC_VERSION, t: "evt", e: event, p: payload }), error: (req: RpcRequest, code: string) => server.send({ v: RPC_VERSION, t: "res", id: req.id, ok: false, e: { code, message: "synthetic" } as RpcErrorPayload }), reply: (req: RpcRequest, result: unknown) => server.send({ v: RPC_VERSION, t: "res", id: req.id, ok: true, r: result }) };
 }
-const tick = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+// a task, not a count of microtasks: threads.get hydrates its body parts through more hops (w11)
+const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 const row = (id: number, starred = false): ThreadSummary => ({ id, accountId: 1, subject: "synthetic", snippet: "", lastDate: id, messageCount: 1, unread: !starred, starred, categoryIds: [], fromName: "Synthetic", fromEmail: "synthetic@example.test", hasAttachments: false });
 const detail = (id: number, starred = false): ThreadDetail => ({ thread: { ...row(id, starred), inInbox: true, inTrash: false, inSpam: false }, messages: [] });
 afterEach(() => {
@@ -38,7 +39,7 @@ it("a warm unchanged-ID detail must refetch on replacement instead of serving th
   setApp({ selectedId: 701 });
   const replacement = attach();
   const next = loadThread(701); await tick();
-  expect(replacement.requests.map((r) => [r.m, r.p])).toEqual([["threads.get", { threadId: 701 }]]);
+  expect(replacement.requests.map((r) => [r.m, r.p])).toEqual([["threads.get", { threadId: 701, bodyFormat: "parts" }]]);
   replacement.reply(replacement.requests[0]!, detail(701, true));
   await next;
   expect(useThreads.getState().details.get(701)?.thread).toMatchObject({ id: 701, starred: true, unread: false });
