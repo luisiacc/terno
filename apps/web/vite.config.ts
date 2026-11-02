@@ -42,7 +42,8 @@ function serviceWorker(buildId: string): Plugin {
     apply: "build",
     generateBundle(_options, bundle) {
       // SQLite-WASM's own worker and OPFS proxy are emitted but never loaded (the sahpool VFS needs neither)
-      const files = Object.keys(bundle).filter((f) => !f.endsWith(".map") && !/sqlite3-(worker1|opfs-async-proxy)/.test(f));
+      // plan 117: Board's Inter beyond latin and latin-ext (all English and Spanish need) loads only if text asks for it
+      const files = Object.keys(bundle).filter((f) => !f.endsWith(".map") && !/sqlite3-(worker1|opfs-async-proxy)/.test(f) && !/(^|\/)inter-(?!latin)[\w-]+\.woff2$/.test(f));
       const source = readFileSync(resolve(import.meta.dirname, "src/web/sw.js"), "utf8")
         .replace("__TERNO_BUILD__", JSON.stringify(buildId))
         .replace("__TERNO_PRECACHE__", JSON.stringify(["./", "theme.js", ...files]));
