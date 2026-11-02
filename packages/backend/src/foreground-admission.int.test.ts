@@ -86,6 +86,7 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
       if (ctx.google) google.set(ctx.account.id, ctx.google);
       const incoming = ctx.incoming!;
       const processor = ctx.incomingProcessor!;
+      // a synthetic server: Google's per-user quota pacing (plan 62) is lifted, as in gmail.int.test.ts
       const provider = createGmailProvider({ ...ctx,
         google: ctx.google && { ...ctx.google, request(descriptor, input, init) { admissions.push({ path: new URL(input instanceof Request ? input.url : String(input)).pathname, lane: descriptor.admission ?? "background" }); return ctx.google!.request(descriptor, input, init); } },
         incoming: { ...incoming, promote: async (id, signal, reset, admission) => {
@@ -94,7 +95,7 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
           promoted.push(id); if (promoted.length === 1) firstPromoted(); return release;
         } },
         incomingProcessor: { run: async (input, signal) => { const result = await processor.run(input, signal); processed.push(ctx.account.id); return result; } },
-      }, { endpoints: { api: `https://foreground.invalid/${ctx.account.id}/gmail`, token: `https://foreground.invalid/${ctx.account.id}/token` } });
+      }, { endpoints: { api: `https://foreground.invalid/${ctx.account.id}/gmail`, token: `https://foreground.invalid/${ctx.account.id}/token` }, unitsPerSecond: Infinity });
       const sync = provider.sync.bind(provider);
       provider.sync = async (sink) => { syncRuns.set(ctx.account.id, (syncRuns.get(ctx.account.id) ?? 0) + 1); try { await sync(sink); } catch (error) { await syncFailure?.(ctx.account.id, error); throw error; } };
       return provider;
