@@ -31,6 +31,8 @@ async function fixture(kind: "gmail" | "imap", blocked = true, partial = false) 
   let backend = await open(); await backend.ready;
   const { account } = await backend.store.accounts.create({ kind, email: "synthetic@example.test", displayName: "Synthetic", color: "blue", providerConfig: { demo: true }, now: 1 });
   const sibling = await backend.store.accounts.create({ kind: "imap", email: "sibling@example.test", displayName: "Sibling", color: "blue", now: 1 });
+  // the app has every account's status once it lists them (80d812de); sign-in then never reads behind held persistence
+  await backend.accountViews([account, sibling.account]);
   const source = { ...incoming(account.id, kind), ...(partial && { bodyState: "partial" as const }) };
   await backend.ingestSliced([source, { ...incoming(sibling.account.id, "imap"), providerMsgId: "sibling", rfcMessageId: "sibling@example.test" }], false);
   const id = (await backend.store.providerStore(account.id).messageByProviderId("p"))!.id;
