@@ -7,11 +7,12 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        // board: BoardUI's primary, lit from the top (the gradient rides over the fill, so hover still darkens it)
-        default: "bg-primary text-primary-foreground shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] hover:bg-[color-mix(in_oklab,var(--primary)_90%,var(--foreground))] board:bg-linear-to-b board:from-highlight board:to-transparent",
+        // board: BoardUI's primary, lit from the top between two fills its text is checked on (primary-hover is the lighter
+        // of the two in light palettes, the darker in dark ones); hover drops the gradient for the darker hover fill
+        default: "bg-primary text-primary-foreground shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] hover:bg-[color-mix(in_oklab,var(--primary)_90%,var(--foreground))] board:bg-linear-to-b board:from-primary-hover board:to-primary board:dark:from-primary board:dark:to-primary-hover board:hover:bg-none",
         // board: BoardUI's secondary, its own 1 px border (no size change) firming up on hover, over a contact shadow
         outline:
-          "bg-background shadow-raised hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:bg-card dark:hover:bg-muted [&_svg:not([class*='text-'])]:text-muted-foreground hover:[&_svg:not([class*='text-'])]:text-foreground aria-expanded:[&_svg:not([class*='text-'])]:text-foreground board:border-border board:bg-card board:shadow-xs board:hover:border-input board:hover:bg-muted board:aria-expanded:border-input board:aria-expanded:bg-muted",
+          "bg-background shadow-raised hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:bg-card dark:hover:bg-muted [&_svg:not([class*='text-'])]:text-muted-foreground hover:[&_svg:not([class*='text-'])]:text-foreground aria-expanded:[&_svg:not([class*='text-'])]:text-foreground board:border-border board:bg-card board:shadow-xs board:hover:border-input board:hover:bg-muted board:aria-expanded:border-input board:aria-expanded:bg-muted board:aria-invalid:border-destructive",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:

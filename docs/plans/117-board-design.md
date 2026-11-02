@@ -41,3 +41,15 @@ No JS. The CSS adds the `board:` rules (scoped selectors, parsed once) and one p
 - BoardUI's application components and templates (sidebar, data table, charts, composer…).
 - Making Board the default or applying its controls to every design: a decision once it has been seen.
 - Sizes: BoardUI's 36 px medium button and 42 px switch would move every toolbar and settings row, so Board keeps Terno's control heights.
+
+## Revisions after the Codex review
+
+Five findings, all fixed. `e2e/board-controls.spec.ts` renders the real components into the app in Board, light and dark, and fails without the fixes:
+
+1. An invalid outline button lost its error border to `board:border-border` (same specificity, emitted later). It's restated under `board:aria-invalid:`.
+2. Hovering a focused or invalid input group brought back the neutral border. Focus, error and disabled are restated under `board:`.
+3. The primary's white highlight left its text at 4.0:1 at the top of the gradient. The gradient now runs between `primary-hover` and `primary` (in dark palettes, between `primary` and the darker `primary-hover`). Both are fills the contrast suite checks its text on. Hover drops the gradient for the darker hover fill.
+4. A disabled field lost its fill to `board:bg-field`. It's restated under `board:disabled:`.
+5. The web build's service worker precached all seven Inter subsets (224 KB) whatever the design. It now precaches only latin and latin-ext, which is all English and Spanish need; any other subset loads over the network if text ever needs it.
+
+Already failing on the base commit and unrelated: `designs.spec` (macOS baselines, the font-service checks), `sidebar-panels.spec`'s long-sidebar group in every design, `settings-edits.test.ts`'s import tests, and `no-hardcoded`'s `folder-rows.tsx:151`.
