@@ -58,7 +58,7 @@ export const CODES = {
   "update.mailbox_failed": c("fromVersion", "toVersion", "openFailure", "step"),
 
   // plan 95: the mailbox's upgrade (backup, migration) and its restore
-  "mailbox.backup_made": c("schema", "durationMs"),
+  "mailbox.backup_made": c("schema", "method", "durationMs"),
   "mailbox.backup_skipped": c("schema"),
   "mailbox.open_failed": c("openFailure", "schema", "step", "errorClass", "errno"),
   "mailbox.restored": c("durationMs"),

@@ -6,7 +6,7 @@
 import { dirname, join } from "node:path";
 import { Backend, nodeStore, parseGoogleClients, seedDemo, seedDemoCode, startAgentSocket, type LegacySecretReader, type SecretCipher } from "@terno/backend";
 import type { BackupSummary, MailboxGate } from "@terno/core/mailbox";
-import { classifyOpenError, diskFree, expireBackups, listBackups, mailboxBytes, migrateHeadroom, nodePlatform, openDatabase, prepareUpgrade, quarantineRestored, SCHEMA_VERSION, SqlMailStore, type BackupInfo, type UpgradePlan } from "@terno/db";
+import { cancelClones, classifyOpenError, diskFree, expireBackups, listBackups, mailboxBytes, migrateHeadroom, nodePlatform, openDatabase, prepareUpgrade, quarantineRestored, SCHEMA_VERSION, SqlMailStore, type BackupInfo, type UpgradePlan } from "@terno/db";
 import { captureError, installDiag, log, type DiagEntry, type DiagOptions } from "@terno/core/diag";
 import { isRpcMessage, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail/registry";
@@ -213,6 +213,8 @@ const storeLog =
     if (dev) console[level](`[backend] ${message}`, extra ?? "");
   };
 let restoredFrom: number | null = null;
+/** the backup before a migration, while it runs: a shutdown ends a clone in flight and waits for it (plan 112) */
+let preparing: Promise<UpgradePlan> | null = null;
 
 const summary = (b: BackupInfo | null | undefined): BackupSummary | null => (b ? { createdAt: b.createdAt, appVersion: b.appVersion, fromSchema: b.fromSchema } : null);
 
@@ -226,13 +228,18 @@ async function openMailbox(msg: Extract<MainToBackend, { type: "init" }>): Promi
   let plan: UpgradePlan | null = null;
   const startedAt = Date.now();
   try {
-    plan = await prepareUpgrade(msg.dbPath, {
+    preparing = prepareUpgrade(msg.dbPath, {
       backupsDir,
       appVersion: msg.version,
       skipBackup: msg.skipBackup,
       onBackup: () => send({ type: "gate", gate: { kind: "upgrading", phase: "backup", from: plan?.from ?? 0, to: SCHEMA_VERSION } }),
     });
-    if (plan.made) log.info("mailbox.backup_made", { schema: plan.from ?? 0, durationMs: Date.now() - startedAt });
+    try {
+      plan = await preparing;
+    } finally {
+      preparing = null;
+    }
+    if (plan.made) log.info("mailbox.backup_made", { schema: plan.from ?? 0, method: plan.method ?? "copy", durationMs: Date.now() - startedAt });
     const migrating = plan.from !== null && plan.from < plan.to;
     if (migrating && !plan.backup) log.info("mailbox.backup_skipped", { schema: plan.from ?? 0 });
     if (migrating) send({ type: "gate", gate: { kind: "upgrading", phase: "migrate", from: plan.from!, to: plan.to } });
@@ -280,6 +287,10 @@ let closing: Promise<void> | null = null;
 /** See MainToBackend "shutdown": a send in flight is never cut short unless main says so. */
 async function shutdown(msg: Extract<MainToBackend, { type: "shutdown" }>): Promise<void> {
   const b = backend;
+  if (!b && preparing) {
+    cancelClones();
+    await preparing.catch(() => {});
+  }
   if (!b || closing) {
     await closing;
     return send({ type: "shutdown-result", id: msg.id, outcome: "closed" });
