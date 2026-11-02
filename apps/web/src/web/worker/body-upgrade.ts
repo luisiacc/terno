@@ -1,6 +1,16 @@
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
+import { UncertainWriteError } from "@terno/idb/uncertainty";
 import type { BodyUpgradeProgress } from "@terno/db/wasm";
+import type { BodyUpgradeFailure } from "./body-upgrade-failure";
+
+/** The host's own errors again, so the startup gate keeps its classification (uncertain, newer). */
+function upgradeFailureError(failure: BodyUpgradeFailure | undefined): Error {
+  if (failure === "uncertain-dirty") return new UncertainWriteError("dirty");
+  if (failure === "uncertain-unreadable") return new UncertainWriteError("unreadable");
+  if (failure === "newer") return new Error("Database schema is newer than this app. Update Terno.");
+  return new RpcError("UNAVAILABLE", L("errors.mail.processingBusy"));
+}
 
 /** One bootstrap owner per backend lifetime; no queued body inputs and no polling. */
 export class BrowserBodyUpgrades {
@@ -26,12 +36,12 @@ export class BrowserBodyUpgrades {
       const cancel = () => worker.postMessage({ type: "cancel" });
       this.signal.addEventListener("abort", cancel, { once: true });
       worker.onerror = (event) => { event.preventDefault(); fail(); }; worker.onmessageerror = fail;
-      worker.onmessage = (event: MessageEvent<{ type?: string; ok?: boolean; cancelled?: boolean; progress?: BodyUpgradeProgress }>) => {
+      worker.onmessage = (event: MessageEvent<{ type?: string; ok?: boolean; cancelled?: boolean; failure?: BodyUpgradeFailure; progress?: BodyUpgradeProgress }>) => {
         if (event.data.type === "retired") {
           retired = true; settled = true; detach(); worker.terminate();
           if (this.quarantined === worker) this.quarantined = undefined;
           if (this.signal.aborted) reject(this.signal.reason);
-          else if (!event.data.ok) reject(new RpcError("UNAVAILABLE", L("errors.mail.processingBusy")));
+          else if (!event.data.ok) reject(upgradeFailureError(event.data.failure));
           else resolve();
           return;
         }

@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { upgradeLegacyIdbBodies } from "@terno/idb";
 import { openDatabaseWith, upgradeLegacyBodies, wasmSqliteDriver, type BodyUpgradeProgress } from "@terno/db/wasm";
+import { classifyUpgradeFailure, type BodyUpgradeFailure } from "./body-upgrade-failure";
 
 declare const self: DedicatedWorkerGlobalScope;
 let active = false, cancelled = false, resume: (() => void) | undefined;
@@ -13,7 +14,7 @@ self.onmessage = (event: MessageEvent<{ type: string; kind?: "idb" | "opfs"; nam
   if (request.type !== "upgrade" || active || !request.name) return;
   active = true;
   void (async () => {
-    let error = false;
+    let error = false, failure: BodyUpgradeFailure | undefined;
     const channel = new MessageChannel();
     const yieldTo = () => new Promise<void>((resolve) => { channel.port1.onmessage = () => resolve(); channel.port2.postMessage(0); });
     try {
@@ -30,9 +31,9 @@ self.onmessage = (event: MessageEvent<{ type: string; kind?: "idb" | "opfs"; nam
         } finally { pool.pauseVfs(); }
       }
       check();
-    } catch { error = true; }
+    } catch (cause) { error = true; failure = classifyUpgradeFailure(cause); }
     finally { channel.port1.close(); channel.port2.close(); }
     // All native transactions and OPFS handles have retired before this acknowledgement.
-    self.postMessage({ type: "retired", ok: !error && !cancelled, cancelled });
+    self.postMessage({ type: "retired", ok: !error && !cancelled, cancelled, failure });
   })();
 };
