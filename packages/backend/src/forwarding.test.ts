@@ -259,4 +259,34 @@ describe("forwarding (plan 116)", () => {
       expect(imported?.forward).toEqual({ addresses: [ANA], enabled: false });
     });
   });
+
+  describe("after the Codex code review, round 2", () => {
+    it("#2: an agent can't make a filter file new mail into a category that forwards, unless agents may send", async () => {
+      const { agent, client, cat } = await setup();
+      const rule = { match: "all" as const, conditions: [{ field: "subject" as const, op: "contains" as const, value: "a" }], actions: [{ type: "addCategory" as const, categoryId: cat.id }] };
+      await expect(agent.call("filters.save", { name: "x", enabled: true, source: "manual", rule })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(agent.call("categorize.apply", { categoryId: cat.id, scope: { kind: "sender", email: "a@b.test" }, always: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await client.call("settings.update", { allowAgentSend: true });
+      await expect(agent.call("filters.save", { name: "x", enabled: true, source: "manual", rule })).resolves.toMatchObject({ name: "x" });
+    });
+
+    it("#3/#4: the real capacity refusals wait for room, and the forwards after them still go", async () => {
+      const { backend, advance, arrive, sends, last } = await setup();
+      for (let i = 0; i < 52; i++) await arrive({ subject: `factura ${i}` });
+      const blocked = new Set((await backend.store.forwards.list(NOW, 200)).map((r) => r.id).sort((a, b) => a - b).slice(0, 51));
+      const queue = backend.store.compose.queueSend.bind(backend.store.compose);
+      const keys = ["errors.sentCopy.capacity", "errors.recipientReceipt.wireCapacity"] as const;
+      let n = 0;
+      const spy = vi.spyOn(backend.store.compose, "queueSend").mockImplementation(async (c) => {
+        if (blocked.has(c.forward!.id)) throw new RpcError("BAD_REQUEST", L(keys[n++ % 2]!));
+        return queue(c);
+      });
+      await advance(FORWARD_DELAY_MS);
+      expect(await sends()).toHaveLength(1);
+      expect(last().items.filter((i) => i.status === "failed")).toEqual([]);
+      spy.mockRestore();
+      await advance(60_000);
+      expect(await sends()).toHaveLength(52);
+    });
+  });
 });

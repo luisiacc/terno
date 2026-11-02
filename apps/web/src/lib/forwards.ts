@@ -37,7 +37,7 @@ export function applyForwards(snapshot: ForwardSnapshot): void {
   const byMessage = new Map<number, ForwardInfo[]>();
   for (const f of snapshot.items) byMessage.set(f.messageId, [...(byMessage.get(f.messageId) ?? []), f]);
   useForwards.setState({ items: snapshot.items, questions: snapshot.questions, byMessage });
-  notice(snapshot.items.filter((f) => f.status === "waiting"));
+  notice(snapshot.items.filter((f) => f.status === "waiting"), snapshot.waiting);
   failures(snapshot.items.filter((f) => f.status === "failed" || f.status === "partial" || f.status === "unknown"));
 }
 
@@ -61,30 +61,45 @@ function failures(failed: readonly ForwardInfo[]): void {
   });
 }
 
-/** One notice for what waits: "Forwarding 3 messages from Facturas to Ana · Cancel"; it goes when nothing waits. */
-function notice(waiting: readonly ForwardInfo[]): void {
-  const key = waiting.map((f) => f.id).join(",");
+/**
+ * One notice for what waits: "Forwarding 3 messages to Ana · Cancel"; it goes when nothing waits. Its count is
+ * the backend's (the list is bounded), and its Cancel takes every one waiting up to the newest it showed.
+ */
+function notice(waiting: readonly ForwardInfo[], count: number): void {
+  const key = `${count}:${waiting.map((f) => f.id).join(",")}`;
   if (key === noticed) return;
   noticed = key;
   if (!waiting.length) {
     withdrawSnack(NOTICE);
     return;
   }
-  const ids = waiting.map((f) => f.id);
+  const upTo = Math.max(...waiting.map((f) => f.id));
+  const total = Math.max(count, waiting.length);
   const rules = new Set(waiting.map((f) => f.ruleName));
   const first = waiting[0]!;
-  const message = rules.size === 1
-    ? t("forward.notice", { count: waiting.length, to: who(first.to) })
-    : t("forward.noticeMany", { count: waiting.length });
+  // all of them to the same place (and all of them shown): who; otherwise how many
+  const message = rules.size === 1 && total === waiting.length
+    ? t("forward.notice", { count: total, to: who(first.to) })
+    : t("forward.noticeMany", { count: total });
   const last = Math.max(...waiting.map((f) => f.dueAt));
   snack(message, {
     id: NOTICE,
     // the dock is narrow: the category on the quieter second line
-    ...(rules.size === 1 && first.ruleName && { description: t("forward.noticeFrom", { rule: first.ruleName }) }),
+    ...(rules.size === 1 && total === waiting.length && first.ruleName && { description: t("forward.noticeFrom", { rule: first.ruleName }) }),
     // until the last one goes (the backend's clock and this one agree to within a turn), never under the default
     duration: Math.max(FORWARD_DELAY_MS, last - Date.now()),
-    action: { label: t("common.cancel"), name: t("forward.cancelName", { count: ids.length }), onClick: () => void cancelForwards(ids) },
+    action: { label: t("common.cancel"), name: t("forward.cancelName", { count: total }), onClick: () => void cancelWaiting(upTo) },
   });
+}
+
+/** The notice's Cancel: every forward waiting up to the newest it showed. */
+async function cancelWaiting(upTo: number): Promise<void> {
+  try {
+    const { cancelled } = await client.call("forwards.cancelWaiting", { upTo });
+    if (cancelled) snack.success(t("forward.cancelled", { count: cancelled }));
+  } catch (error) {
+    snack.error(t("forward.cancelFailed"), { description: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 export async function cancelForwards(ids: readonly number[]): Promise<void> {

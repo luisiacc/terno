@@ -1042,7 +1042,10 @@ export class BackendCore {
       this.reconcileFlags(r.flagReconcileAccounts);
       this.notifyChanged(r.touched);
       // plan 116: what it inserted, and the bodies it completed (their filters and category may make them go)
-      if (this.forwards.isActive) this.planForwards({ messageIds: forwardEligible ? r.inserted : [], threadIds: r.touched });
+      if (this.forwards.isActive) {
+        this.planForwards({ messageIds: forwardEligible ? r.inserted : [], threadIds: r.touched });
+        void this.forwards.filesArrived({ threadIds: r.touched }).catch(() => {});
+      }
     });
     return { inserted };
   }
@@ -2370,7 +2373,7 @@ export class BackendCore {
   private bodyArrived(messageId: number): void {
     if (!this.forwards.isActive) return;
     this.planForwards({ messageIds: [messageId] });
-    void this.forwards.filesArrived(messageId).catch(() => {});
+    void this.forwards.filesArrived({ messageIds: [messageId] }).catch(() => {});
   }
 
   /** Plan 116: new mail or a filing may make forwards; a failure is logged (the start's sweep looks again). */

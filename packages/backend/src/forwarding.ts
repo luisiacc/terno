@@ -58,8 +58,9 @@ export interface ForwardingHost {
 }
 
 const isStale = (error: unknown) => error instanceof RpcError && error.code === "STALE";
-/** a send that may be queued later: the Sent-copy receipts are full (plan 65), or the store failed for its own reasons */
-const transient = (error: unknown) => !(error instanceof RpcError) || error.i18n?.key === "errors.recipientReceipt.capacity" || !["NOT_FOUND", "BAD_REQUEST", "FORBIDDEN", "STALE"].includes(error.code);
+/** a send that may be queued later: the Sent-copy receipts or their bytes are full (plan 65), or the store failed for its own reasons */
+const ROOM = new Set(["errors.recipientReceipt.capacity", "errors.recipientReceipt.wireCapacity", "errors.sentCopy.capacity"]);
+const transient = (error: unknown) => !(error instanceof RpcError) || ROOM.has(error.i18n?.key ?? "") || !["NOT_FOUND", "BAD_REQUEST", "FORBIDDEN", "STALE"].includes(error.code);
 const i18nKey = (error: unknown) => (error instanceof RpcError ? error.i18n?.key : undefined);
 
 export class Forwarding {
@@ -118,19 +119,22 @@ export class Forwarding {
     if (made.length) this.poke();
   }
 
-  /** The original's files arrived: a forward waiting for them goes now. */
-  async filesArrived(messageId: number): Promise<void> {
+  /** The original's files arrived (a body's capture, by message or by the threads an ingest touched): a forward waiting for them goes now. */
+  async filesArrived(p: { messageIds?: readonly number[]; threadIds?: readonly number[] }): Promise<void> {
     if (!this.isActive) return;
-    let woke = false;
-    for (const row of await this.host.store.forwards.list(this.host.now(), LIST_LIMIT)) {
-      if (row.messageId === messageId && row.state === "waiting" && row.filesUntil !== null) woke = (await this.host.store.forwards.waitForFiles(row.id, this.host.now(), this.host.now())) || woke;
-    }
-    if (woke) this.poke();
+    if (await this.host.store.forwards.filesReady(p, this.host.now())) this.poke();
   }
 
   /** An op settled: if it is a forward's, the windows hear how it went. */
   opSettled(opId: string): void {
     if (this.ops.has(opId)) this.poke();
+  }
+
+  /** The notice's Cancel: every forward waiting that was made by the newest it showed, in the list or not. */
+  async cancelWaiting(upTo: number): Promise<number> {
+    const n = await this.host.store.forwards.cancelWaiting(upTo, this.host.now());
+    this.poke();
+    return n;
   }
 
   async cancel(ids: readonly number[]): Promise<number> {
@@ -198,13 +202,15 @@ export class Forwarding {
     // what to do comes from its own query, never the windows' list (a burst bigger than it waits all the same)
     let worked = 0;
     let stuck = false;
-    const tried = new Set<number>();
+    // in pages past the last one tried: forwards that stay (waiting for room) never hide the ones after them
+    let after: { dueAt: number; id: number } | undefined;
     while (!this.stopped) {
-      const work = (await store.forwards.work(now, WORK_PAGE)).filter((r) => !tried.has(r.id));
+      const work = await store.forwards.work(now, WORK_PAGE, after);
       if (!work.length) break;
+      const last = work[work.length - 1]!;
+      after = { dueAt: last.dueAt, id: last.id };
       for (const row of work) {
         if (this.stopped) break;
-        tried.add(row.id);
         worked++;
         try {
           // looks run one at a time: a forward still "sending" here is one a quit, a crash or a full queue interrupted
@@ -338,7 +344,7 @@ export class Forwarding {
     }
     this.ops = ops;
     const questions: ForwardQuestion[] = (await store.forwards.holds(this.host.now())).map((h) => ({ rule: h.rule, ruleName: names.get(`${h.rule.kind}:${h.rule.id}`) ?? "", count: h.count, held: h.held }));
-    return { items, questions };
+    return { items, questions, waiting: await store.forwards.waitingCount() };
   }
 
   /** Where a forward is: its own state until its sends are queued, then theirs (never "failed" while one may have gone). */

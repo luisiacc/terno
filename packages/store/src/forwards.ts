@@ -155,8 +155,14 @@ export interface ForwardsStore {
   list(now: number, limit: number): Promise<ForwardRow[]>;
   /** rules holding forwards (the questions) */
   holds(now: number): Promise<ForwardHold[]>;
-  /** what to work on now, soonest first: waiting ones that are due, and claimed ones not all queued yet */
-  work(now: number, limit: number): Promise<ForwardRow[]>;
+  /** what to work on now, soonest first: waiting ones that are due, and claimed ones not all queued yet (`after`: the page's last) */
+  work(now: number, limit: number, after?: { dueAt: number; id: number }): Promise<ForwardRow[]>;
+  /** how many wait their 10 s now (the notice says it; the windows' list is bounded) */
+  waitingCount(): Promise<number>;
+  /** the notice's Cancel: every forward still waiting that was made by then (id ≤ upTo), shown or not */
+  cancelWaiting(upTo: number, now: number): Promise<number>;
+  /** the original's files are here: forwards of these messages (or of these threads') waiting for them go now */
+  filesReady(p: { messageIds?: readonly number[]; threadIds?: readonly number[] }, now: number): Promise<number>;
   /** when there is something to do next (null: nothing): the soonest due waiting forward, or a held one's expiry */
   nextDue(): Promise<number | null>;
   /** a rule is gone (a filter or a category deleted): what it waits or holds is cancelled (an id may be used again) */

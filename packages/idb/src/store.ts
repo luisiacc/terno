@@ -162,7 +162,7 @@ import type { Key, MemDb } from "./mem";
 import { idbCachedPage, IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, PartialCommit, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
 import { UncertainWriteError } from "./uncertainty";
-import { forwardRuleGone, forwardWork, approveRule, cancelForwards, claimForward, eligiblePage, failForward, forwardHolds, forwardSendOpen, forwardsActive, getForward, linkForwardSend, listForwards, markEligible, nextForwardDue, planForwards, pruneForwards, retryForward, setCategoryForward, stopRule, waitForFiles } from "./forwards";
+import { cancelWaiting, filesReady, waitingCount, forwardRuleGone, forwardWork, approveRule, cancelForwards, claimForward, eligiblePage, failForward, forwardHolds, forwardSendOpen, forwardsActive, getForward, linkForwardSend, listForwards, markEligible, nextForwardDue, planForwards, pruneForwards, retryForward, setCategoryForward, stopRule, waitForFiles } from "./forwards";
 import { deleteScheduled, failScheduled, getScheduled, listScheduled, putScheduled, rescheduleScheduled, stillScheduled } from "./scheduled";
 import { answeredReminders, deleteExactReminders, deleteReminders, listReminders, putReminders } from "./reminders";
 import { startTabsBackfill, tabsIdle, tabsSlice } from "./tabs";
@@ -1598,7 +1598,10 @@ export class IdbMailStore implements MailStore {
     eligiblePage: (now, after, limit) => this.read(() => eligiblePage(this.c, now, after, limit)),
     list: (_now, limit) => this.early(() => listForwards(this.c, limit)),
     holds: (now) => this.early(() => forwardHolds(this.c, now)),
-    work: (now, limit) => this.read(() => forwardWork(this.c, now, limit)),
+    work: (now, limit, after) => this.read(() => forwardWork(this.c, now, limit, after)),
+    waitingCount: () => this.early(() => waitingCount(this.c)),
+    cancelWaiting: (upTo, now) => this.command(() => cancelWaiting(this.c, upTo, now)),
+    filesReady: (p, now) => this.command(() => filesReady(this.c, p, now)),
     nextDue: () => this.early(() => nextForwardDue(this.c)),
     ruleGone: (rule, now) => this.command(() => forwardRuleGone(this.c, rule, now)),
     cancel: (ids, now) => this.command(() => cancelForwards(this.c, ids, now)),

@@ -78,7 +78,7 @@ import {
   type ClassifyResult,
 } from "./categorize";
 import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
-import { forwardRuleGone, forwardWork, approveRule, cancelForwards, claimForward, eligiblePage, failForward, forwardHolds, forwardSendOpen, forwardsActive, getForward, linkForwardSend, listForwards, markEligible, nextForwardDue, planForwards, pruneForwards, retryForward, setCategoryForward, stopRule, waitForFiles } from "./forwards";
+import { cancelWaiting, filesReady, waitingCount, forwardRuleGone, forwardWork, approveRule, cancelForwards, claimForward, eligiblePage, failForward, forwardHolds, forwardSendOpen, forwardsActive, getForward, linkForwardSend, listForwards, markEligible, nextForwardDue, planForwards, pruneForwards, retryForward, setCategoryForward, stopRule, waitForFiles } from "./forwards";
 import { deleteScheduled, failScheduled, getScheduled, listScheduled, putScheduled, rescheduleScheduled, stillScheduled } from "./scheduled";
 import { answeredReminders, deleteExactReminders, deleteReminders, listReminders, putReminders } from "./reminders";
 import { COMPACT_KEY, compactPages, footprint, incrementalVacuum, removeStorage, storageThreads } from "./storage";
@@ -869,7 +869,10 @@ export class SqlMailStore implements MailStore {
     eligiblePage: async (now, after, limit) => eligiblePage(this.db, now, after, limit),
     list: async (_now, limit) => listForwards(this.db, limit),
     holds: async (now) => forwardHolds(this.db, now),
-    work: async (now, limit) => forwardWork(this.db, now, limit),
+    work: async (now, limit, after) => forwardWork(this.db, now, limit, after),
+    waitingCount: async () => waitingCount(this.db),
+    cancelWaiting: async (upTo, now) => cancelWaiting(this.db, upTo, now),
+    filesReady: async (p, now) => this.db.tx(() => filesReady(this.db, p, now)),
     nextDue: async () => nextForwardDue(this.db),
     ruleGone: async (rule, now) => forwardRuleGone(this.db, rule, now),
     cancel: async (ids, now) => cancelForwards(this.db, ids, now),

@@ -228,8 +228,28 @@ export function forwardHolds(db: Db, now: number): ForwardHold[] {
   });
 }
 
-export function forwardWork(db: Db, now: number, limit: number): ForwardRow[] {
-  return db.all<Raw>(`${ROW} WHERE (f.state = 'waiting' AND f.due_at <= ?) OR f.state = 'sending' ORDER BY f.due_at, f.id LIMIT ?`, now, limit).map(toRow);
+export function forwardWork(db: Db, now: number, limit: number, after?: { dueAt: number; id: number }): ForwardRow[] {
+  const from = after ? " AND (f.due_at > ? OR (f.due_at = ? AND f.id > ?))" : "";
+  return db.all<Raw>(`${ROW} WHERE ((f.state = 'waiting' AND f.due_at <= ?) OR f.state = 'sending')${from} ORDER BY f.due_at, f.id LIMIT ?`, now, ...(after ? [after.dueAt, after.dueAt, after.id] : []), limit).map(toRow);
+}
+
+export function waitingCount(db: Db): number {
+  return db.get<{ n: number }>("SELECT COUNT(*) AS n FROM forwards WHERE state = 'waiting'")!.n;
+}
+
+export function cancelWaiting(db: Db, upTo: number, now: number): number {
+  return db.tx(() => {
+    const rows = db.all<{ id: number }>("SELECT id FROM forwards WHERE state = 'waiting' AND id <= ?", upTo);
+    for (const r of rows) settle(db, r.id, "cancelled", null, now);
+    return rows.length;
+  });
+}
+
+export function filesReady(db: Db, p: { messageIds?: readonly number[]; threadIds?: readonly number[] }, now: number): number {
+  const where = [p.messageIds?.length ? "message_id IN (SELECT value FROM json_each(?))" : null, p.threadIds?.length ? "message_id IN (SELECT id FROM messages WHERE thread_id IN (SELECT value FROM json_each(?)))" : null].filter(Boolean);
+  if (!where.length) return 0;
+  const params = [...(p.messageIds?.length ? [ids(p.messageIds)] : []), ...(p.threadIds?.length ? [ids(p.threadIds)] : [])];
+  return Number(db.run(`UPDATE forwards SET due_at = ?, at = ? WHERE state = 'waiting' AND files_until IS NOT NULL AND due_at > ? AND (${where.join(" OR ")})`, now, now, now, ...params).changes);
 }
 
 export function nextForwardDue(db: Db): number | null {

@@ -125,6 +125,19 @@ test.describe("forwarding what lands in a category (plan 116)", { tag: "@design"
     expect(JSON.parse(db.get<{ forward_json: string }>("SELECT forward_json FROM filters WHERE name = 'Facturas a Ana'")!.forward_json)).toMatchObject({ enabled: true, rev: 1 });
   });
 
+  test("Codex code review round 2 #5: reselecting a filter brings back its saved addresses, never the ones typed meanwhile", async ({ app: page, server }) => {
+    await server.backend.server.invoke("filters.save", { name: "Recibos a Ana", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "subject", op: "contains", value: "Recibo" }], actions: [{ type: "forward", to: [{ name: "Ana", email: "ana@books.test" }] }] } }, SETUP);
+    await page.getByTestId("open-filters").click();
+    const item = page.getByTestId("filter-item").filter({ hasText: "Recibos a Ana" }).getByRole("button").first();
+    await item.click();
+    await expect(chipsOf(page, "filter-forward-to")).toHaveCount(1);
+    await page.getByTestId("filter-forward-to").pressSequentially("luis@books.test, ");
+    await expect(chipsOf(page, "filter-forward-to")).toHaveCount(2);
+    await item.click();
+    await expect(chipsOf(page, "filter-forward-to")).toHaveCount(1);
+    await expect(chipsOf(page, "filter-forward-to")).toHaveAttribute("data-email", "ana@books.test");
+  });
+
   for (const mode of ["light", "dark"] as const) {
     test(`the dialog, the sidebar's mark and the reader's line are axe-clean, ${mode}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, SETUP);

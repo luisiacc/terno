@@ -85,9 +85,11 @@ export interface ForwardQuestion {
 }
 
 export interface ForwardSnapshot {
-  /** waiting, held, sending, and what settled lately (bounded) */
+  /** waiting, held, sending, and what settled lately (bounded; the waiting ones first, newest first) */
   items: ForwardInfo[];
   questions: ForwardQuestion[];
+  /** how many wait their 10 s, the list's or not */
+  waiting: number;
 }
 
 /** A rule's addresses as stored: valid, trimmed, each once (case-insensitive), in the order given. */

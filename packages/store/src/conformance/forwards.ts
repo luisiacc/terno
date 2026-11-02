@@ -329,5 +329,53 @@ export function defineForwardsConformance(fresh: () => Promise<MailStore>, reope
         expect(await store.forwards.get(row!.id)).toMatchObject({ state: "queued", opIds: [first.opId, null], reason: "forward.reason.failed" });
       });
     });
+
+    describe("after the Codex code review, round 2", () => {
+      it("#1: the notice's Cancel takes every waiting forward made by then, and only those", async () => {
+        const { store, arrive, file, plan } = await setup();
+        const ids: number[] = [];
+        for (let i = 0; i < 3; i++) {
+          const m = await arrive();
+          await file(m.thread, "filter");
+          ids.push((await plan({ messageIds: [m.id] }))[0]!.id);
+        }
+        expect(await store.forwards.waitingCount()).toBe(3);
+        expect(await store.forwards.cancelWaiting(ids[1]!, NOW + 1)).toBe(2);
+        expect((await store.forwards.get(ids[2]!))?.state).toBe("waiting");
+        expect(await store.forwards.waitingCount()).toBe(1);
+      });
+
+      it("#4: work goes on past a page of forwards that stay", async () => {
+        const { store, arrive, file, plan } = await setup();
+        const ids: number[] = [];
+        for (let i = 0; i < 3; i++) {
+          const m = await arrive({}, NOW + i);
+          await file(m.thread, "filter", NOW + i);
+          ids.push((await plan({ messageIds: [m.id] }, NOW + i))[0]!.id);
+        }
+        const at = NOW + 2 + FORWARD_DELAY_MS;
+        const first = await store.forwards.work(at, 2);
+        expect(first.map((r) => r.id)).toEqual(ids.slice(0, 2));
+        const last = first[first.length - 1]!;
+        expect((await store.forwards.work(at, 2, { dueAt: last.dueAt, id: last.id })).map((r) => r.id)).toEqual([ids[2]]);
+      });
+
+      it("#6/#7: files that arrived wake a forward waiting for them, by its message or its thread", async () => {
+        const { store, arrive, file, plan } = await setup();
+        const a = await arrive(), b = await arrive(), c = await arrive();
+        const rows = [];
+        for (const m of [a, b, c]) {
+          await file(m.thread, "filter");
+          rows.push((await plan({ messageIds: [m.id] }))[0]!);
+        }
+        const at = NOW + FORWARD_DELAY_MS;
+        for (const r of rows) expect(await store.forwards.waitForFiles(r.id, at + 300_000, at)).toBe(true);
+        expect(await store.forwards.filesReady({ messageIds: [a.id] }, at + 5)).toBe(1);
+        expect(await store.forwards.filesReady({ threadIds: [b.thread] }, at + 6)).toBe(1);
+        expect((await store.forwards.get(rows[0]!.id))?.dueAt).toBe(at + 5);
+        expect((await store.forwards.get(rows[1]!.id))?.dueAt).toBe(at + 6);
+        expect((await store.forwards.get(rows[2]!.id))?.dueAt).toBe(at + 300_000);
+      });
+    });
   });
 }

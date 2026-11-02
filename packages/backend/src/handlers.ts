@@ -102,6 +102,12 @@ export function createHandlers(b: Backend): Handlers {
     if (ended && !(await b.reminders.restore([], ended))) throw new RpcError("BAD_REQUEST", L("errors.remindersFull", { max: REMINDERS_MAX }));
     filedReminders.delete(batchId);
   };
+  /** Plan 116: an agent sets up no filing into a category that forwards, unless agents may send. */
+  const agentMayFile = async (categoryIds: readonly number[]) => {
+    if (!categoryIds.length || (await readSettings(store)).allowAgentSend) return;
+    const forwarding = new Set((await store.categories.list()).filter((c) => c.forward?.enabled).map((c) => c.id));
+    if (categoryIds.some((id) => forwarding.has(id))) throw new RpcError("FORBIDDEN", L("errors.forwardAgent"));
+  };
   const fileThreads = async (categoryId: number, threadIds: readonly number[], addedBy: AddedBy, source: string, progress?: (done: number) => void) => {
     await requireCategory(categoryId);
     const batchId = await store.categories.createBatch(categoryId, source, { kind: "threads" }, b.now());
@@ -489,6 +495,8 @@ export function createHandlers(b: Backend): Handlers {
       let filter: { id: number; filterUndo: number | null; retargeted: { from: number } | null } | null = null;
       let filterFailed = false;
       if (always && isFilterable(scope)) {
+        // plan 116: an agent's "always" is a filter filing new mail here: not into a category that forwards, unless agents may send
+        if (ctx.origin === "mcp") await agentMayFile([categoryId]);
         try {
           const f = await similarFilters.ensureRule(categoryRule(scope, categoryId), filterName ?? (scope.kind === "words" ? scope.terms.join(", ") : similarValue(scope)));
           filter = { id: f.filter.id, filterUndo: f.filterUndo, retargeted: f.retargeted };
@@ -644,6 +652,8 @@ export function createHandlers(b: Backend): Handlers {
       if (ctx.origin === "mcp") {
         const previous = p.id === undefined ? null : await store.filters.get(p.id);
         if (p.rule.actions.some((a) => a.type === "forward") || previous?.rule.actions.some((a) => a.type === "forward")) throw new RpcError("FORBIDDEN", L("errors.forwardAgent"));
+        // nor files new mail into a category that forwards, unless agents may send (its filing would send mail elsewhere)
+        await agentMayFile(p.rule.actions.flatMap((a) => (a.type === "addCategory" ? [a.categoryId] : [])));
       }
       const f = await store.filters.save(p, b.now());
       await b.forwards.rules();
@@ -751,6 +761,7 @@ export function createHandlers(b: Backend): Handlers {
     // plan 116
     "forwards.list": () => b.forwards.refresh(),
     "forwards.cancel": async ({ ids }) => ({ cancelled: await b.forwards.cancel(ids) }),
+    "forwards.cancelWaiting": async ({ upTo }) => ({ cancelled: await b.forwards.cancelWaiting(upTo) }),
     "forwards.retry": async ({ id }) => {
       if (!(await b.forwards.retry(id))) throw new RpcError("BAD_REQUEST", L("errors.forwardNotRetryable"));
       return { ok: true as const };

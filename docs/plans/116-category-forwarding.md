@@ -185,3 +185,15 @@ Thirteen findings. Twelve fixed, each with a regression test (store conformance 
 13. **An import dropped category forwarding.** It comes back with its addresses, turned off.
 
 Not changed: **3. Spam or a category removal, then Undo, within the 10 s.** The forward goes by what the mail is when its time comes; an Undo puts the mail back as it was, and its forward with it. A removal that stays (or a Spam, a Trash that stays) still cancels it.
+
+## Codex code review, round 2 (the last)
+
+Seven findings, all fixed with a regression test:
+
+1. **The notice's Cancel took only the forwards in the windows' list (200).** It cancels every forward still waiting up to the newest it showed (`forwards.cancelWaiting`), and counts them all (`ForwardSnapshot.waiting`).
+2. **An agent could reach a forwarding category through an `addCategory` filter (or "always").** From MCP, a filter or an "always" filing new mail into a category that forwards is refused unless agents may send.
+3. **The Sent-copy queue's own capacity refusals (`errors.sentCopy.capacity`, `errors.recipientReceipt.wireCapacity`) failed the forward.** They wait for room like the receipts' one.
+4. **Fifty forwards waiting for room hid the ones after them.** The work is read in pages past the last one tried.
+5. **Reselecting a filter in the builder kept the addresses typed meanwhile.** The field starts again whenever a filter is loaded.
+6. **A forward waiting for its files was looked for in the windows' list.** Files arriving wake it by its message, in the store (`forwards.filesReady`).
+7. **Files completed by an ingest's upsert didn't wake it.** They do, by the threads the ingest touched.

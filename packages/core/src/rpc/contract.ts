@@ -862,6 +862,8 @@ export const contract = {
   "forwards.list": m<import("../forwarding").ForwardSnapshot>()(empty),
   /** the user's Cancel (those still waiting or held) */
   "forwards.cancel": m<{ cancelled: number }>()(z.object({ ids: z.array(id).min(1).max(1000) }).strict()),
+  /** the notice's Cancel: every forward still waiting that was made by then (id ≤ upTo) */
+  "forwards.cancelWaiting": m<{ cancelled: number }>()(z.object({ upTo: id }).strict()),
   /** a failed forward (nothing went) waits again */
   "forwards.retry": m<{ ok: true }>()(z.object({ id }).strict()),
   /** past the cap: Keep forwarding (true) or Stop (false) */

@@ -298,6 +298,12 @@ export function FiltersDialog() {
     const prefill = getApp().filterPrefill;
     return prefill ? draftOf({ ...prefill, enabled: prefill.enabled ?? true, source: prefill.source ?? "manual" }) : emptyDraft();
   });
+  // a filter (or a new one) loaded into the builder: fields that keep text of their own (Forward to) start again from it
+  const [loads, setLoads] = useState(0);
+  const load = (d: Draft) => {
+    setDraft(d);
+    setLoads((n) => n + 1);
+  };
   // opened from Ajustes → Filtros: closing goes back there
   const [returnTo] = useState(() => getApp().filterPrefill?.returnTo ?? null);
   const [deleting, setDeleting] = useState(false);
@@ -363,7 +369,7 @@ export function FiltersDialog() {
       // plan 89: applying runs in the background (its own progress snack); the dialog is free at once
       if (applyExisting) void applyFilter(f.id, f.name);
       else snack.success(t("filters.saved"));
-      setDraft(draftOf(f));
+      load(draftOf(f));
       await refresh();
     } catch (error) {
       snack.error(error instanceof Error ? error.message : String(error));
@@ -384,7 +390,7 @@ export function FiltersDialog() {
               variant="outline"
               data-testid="new-filter"
               onClick={() => {
-                setDraft(emptyDraft());
+                load(emptyDraft());
                 setExplanation(null);
                 setPrompt("");
               }}
@@ -398,7 +404,7 @@ export function FiltersDialog() {
               <Fragment key={f.id}>
               {f.auto && !all[i - 1]?.auto && <p data-testid="filters-auto-heading" className="mt-4 mb-1 px-2 text-2xs font-medium tracking-wide text-muted-foreground uppercase">{t("filters.group.auto")}</p>}
               <div data-testid="filter-item" data-auto={f.auto || undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", draft.id === f.id && "bg-muted")}>
-                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => (setDraft(draftOf(f)), setExplanation(null))}>
+                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => (load(draftOf(f)), setExplanation(null))}>
                   <span className="block truncate">{f.name}</span>
                   <span className="text-2xs text-muted-foreground">
                     {f.auto ? t("filters.source.auto") : f.source === "ai" ? t("filters.source.aiShort") : f.source === "learned" ? t("filters.source.learned") : t("filters.source.manual")} · {t("filters.hits", { count: f.hits })}
@@ -570,7 +576,7 @@ export function FiltersDialog() {
                   </SelectContent>
                 </Select>
               </div>
-              {forwardAction && <ForwardTo key={draft.id ?? "new"} to={forwardAction.to} onChange={(to) => setForward(to)} paused={Boolean(filters.find((f) => f.id === draft.id)?.forwardPaused)} />}
+              {forwardAction && <ForwardTo key={loads} to={forwardAction.to} onChange={(to) => setForward(to)} paused={Boolean(filters.find((f) => f.id === draft.id)?.forwardPaused)} />}
               {!valid.success && <p className="text-xs text-destructive" data-testid="filter-invalid">{t(filterIssueKey(valid.error.issues))}</p>}
             </div>
 
@@ -592,7 +598,7 @@ export function FiltersDialog() {
                   confirm={t("filters.delete.confirm")}
                   onConfirm={async () => {
                     await client.call("filters.delete", { id: draft.id! });
-                    setDraft(emptyDraft());
+                    load(emptyDraft());
                     void refresh();
                   }}
                 />

@@ -218,10 +218,35 @@ export function forwardHolds(c: Ctx, now: number): ForwardHold[] {
   return [...held.values()].map((h) => ({ ...h, count: madeLately(c, h.rule, now) }));
 }
 
-export function forwardWork(c: Ctx, now: number, limit: number): ForwardRow[] {
+export function forwardWork(c: Ctx, now: number, limit: number, after?: { dueAt: number; id: number }): ForwardRow[] {
   const forwards = T(c, "forwards");
-  const rows = [...forwards.by("state", "waiting").filter((r) => r.due_at <= now), ...forwards.by("state", "sending")];
+  const rows = [...forwards.by("state", "waiting").filter((r) => r.due_at <= now), ...forwards.by("state", "sending")]
+    .filter((r) => !after || r.due_at > after.dueAt || (r.due_at === after.dueAt && r.id > after.id));
   return rows.sort((a, b) => a.due_at - b.due_at || a.id - b.id).slice(0, limit).map((r) => rowOf(c, r));
+}
+
+export const waitingCount = (c: Ctx): number => T(c, "forwards").count("state", "waiting");
+
+export function cancelWaiting(c: Ctx, upTo: number, now: number): number {
+  let n = 0;
+  for (const r of T(c, "forwards").by("state", "waiting")) {
+    if (r.id > upTo) continue;
+    settle(c, r, "cancelled", null, now);
+    n++;
+  }
+  return n;
+}
+
+export function filesReady(c: Ctx, p: { messageIds?: readonly number[]; threadIds?: readonly number[] }, now: number): number {
+  const messages = new Set(p.messageIds ?? []);
+  for (const t of p.threadIds ?? []) for (const k of T(c, "messages").keysBy("fk_thread_id", t)) messages.add(Number(k));
+  let n = 0;
+  for (const r of T(c, "forwards").by("state", "waiting")) {
+    if (r.files_until == null || r.due_at <= now || !messages.has(r.message_id)) continue;
+    T(c, "forwards").update(r, { due_at: now, at: now });
+    n++;
+  }
+  return n;
 }
 
 export function nextForwardDue(c: Ctx): number | null {
