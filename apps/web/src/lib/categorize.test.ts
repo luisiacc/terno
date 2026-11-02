@@ -40,7 +40,8 @@ const row = (id: number, unread: boolean): ThreadSummary => ({ id, unread, categ
 
 beforeEach(() => {
   fake.calls.length = 0;
-  fake.handlers = {};
+  // plan 85: a removal asks which filters file there; none unless a test says so
+  fake.handlers = { "filters.autoFor": async () => ({ filters: [] }) };
   const items = [row(1, true), row(2, true), row(3, false)];
   useList.setState({ items, index: new Map(items.map((t, i) => [t.id, i])) });
   setApp({ counts: { ...EMPTY_COUNTS, categoryUnread: { [CAT]: 4 } } });
