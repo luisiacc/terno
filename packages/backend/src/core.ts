@@ -565,8 +565,12 @@ export class BackendCore {
     // a new start is a fresh look at the network: ops parked for it in the last session try again
     if (this.connectivity.online) await this.store.ops.resumeNetwork(null, this.now());
     for (const account of await this.store.accounts.list()) {
-      this.startAccount(account);
-      if (this.connectivity.online) void this.recheckSignIn(account.id, "start");
+      // plan 25: a refusal kept across the quit gets one recheck, and no watcher knocking with the same password
+      if (this.connectivity.online && account.kind === "imap" && (await this.accountStatus(account.id)).recheck) {
+        this.lifetime(account.id);
+        this.connectivity.track(account.id);
+        void this.recheckSignIn(account.id, "start");
+      } else this.startAccount(account);
     }
     this.syncTimer = setInterval(() => void this.tick(), this.options.syncIntervalMs);
     this.kickWorker();
@@ -621,7 +625,7 @@ export class BackendCore {
     for (const id of ids) void this.syncAccount(id);
     for (const account of await this.store.accounts.list()) {
       if (accountId !== null && account.id !== accountId) continue;
-      void this.recheckSignIn(account.id, reason).then((lifted) => { if (lifted) void this.syncAccount(account.id); });
+      void this.recheckSignIn(account.id, reason);
     }
   }
 
@@ -631,7 +635,7 @@ export class BackendCore {
    * most every ten minutes) the saved password gets one login: IMAP for a refusal IMAP made, IMAP and SMTP as a
    * sign-in proves them when the refusal's protocol is unknown (one kept across a quit). Accepted, the refusal
    * lifts as a sign-in would; refused, nothing changes. Gmail's refusal is a revoked grant: only a sign-in
-   * answers it. True when lifted (the caller syncs).
+   * answers it. Lifted, the account watches and syncs again.
    */
   private async recheckSignIn(accountId: number, reason: "start" | "network" | "user" | "focus"): Promise<boolean> {
     const life = this.lifetimes.get(accountId);
@@ -660,6 +664,8 @@ export class BackendCore {
       await recover();
       if (status.signInRequired) return false;
       await this.resumeAuth(accountId);
+      this.watchAccount(accountId);
+      void this.syncAccount(accountId);
       return true;
     } catch {
       // a refused (or failed) recheck never discharges the sign-in hold
@@ -685,7 +691,8 @@ export class BackendCore {
     }
     for (const account of await this.store.accounts.list()) {
       await this.recheckSignIn(account.id, "network");
-      if (!this.unwatch.has(account.id)) this.watchAccount(account.id);
+      // a watcher would only knock with a password its server refuses
+      if (!this.unwatch.has(account.id) && !(await this.accountStatus(account.id)).signInRequired) this.watchAccount(account.id);
     }
     await this.store.ops.resumeNetwork(null, this.now());
     // the worker paused while offline: whatever is due goes now

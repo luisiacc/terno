@@ -16,6 +16,8 @@ interface Scripted extends MailProvider {
   syncs: number;
   /** logins of a saved-password recheck (plan 25) */
   verifies: number;
+  /** push watchers started (each logs in with the saved password) */
+  watches: number;
   executed: string[];
   /** the password this provider was created with (a sign-in re-creates it) */
   password: string | null;
@@ -46,6 +48,7 @@ async function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] 
       const p: Scripted = {
         syncs: 0,
         verifies: 0,
+        watches: 0,
         executed: [],
         password: null,
         refuseSync: false,
@@ -54,6 +57,7 @@ async function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] 
         syncGate: null,
         ...script.get(ctx.account.id),
         async verify() { p.verifies++; },
+        watch() { p.watches++; return () => {}; },
         async sync() {
           p.syncs++;
           // what the server answers is decided as the pass starts (a gate only delays the answer)
@@ -161,6 +165,28 @@ describe("plan 25: an account that needs a sign-in", () => {
     await expect.poll(() => t.opRow(parked).state).toBe("succeeded");
     await expect.poll(() => t.providers.get(id)?.syncs ?? 0).toBeGreaterThan(0);
     expect(t.verified).toHaveLength(3);
+  });
+
+  it("Codex review: a refusal kept across a quit: the launch's recheck is its only login (no watcher knocks); accepted, the account watches and syncs at once", async () => {
+    const refused = await setup();
+    const [id] = refused.ids as [number];
+    refused.keptRefusal(id);
+    await refused.backend.setSecret(`account:${id}:password`, "saved-password");
+    await refused.backend.start();
+    await expect.poll(() => refused.verified).toHaveLength(1);
+    await tick(100);
+    expect(refused.providers.get(id)?.watches ?? 0).toBe(0);
+    expect(refused.providers.get(id)?.syncs ?? 0).toBe(0);
+
+    const accepted = await setup();
+    const [other] = accepted.ids as [number];
+    accepted.keptRefusal(other);
+    await accepted.backend.setSecret(`account:${other}:password`, "saved-password");
+    accepted.accepts.add("saved-password");
+    await accepted.backend.start();
+    await expect.poll(() => accepted.state(other)).toMatchObject({ status: "idle", authRequired: false });
+    await expect.poll(() => accepted.providers.get(other)?.syncs ?? 0).toBeGreaterThan(0);
+    await expect.poll(() => accepted.providers.get(other)?.watches ?? 0).toBe(1);
   });
 
   it("a window's focus rechecks at most every ten minutes, Retry whenever asked; a Gmail refusal is a revoked grant, never rechecked", async () => {
