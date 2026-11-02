@@ -11,6 +11,7 @@
 /* plan 15: the designs' faces, bundled (never fetched from a font service); a face downloads only once text uses it */
 @import "@fontsource-variable/figtree";
 @import "@fontsource-variable/instrument-sans";
+@import "@fontsource-variable/inter";
 /* every theme's token values (generated from src/themes/registry.ts) */
 @import "./themes.generated.css";
 /* every design's type, shape and density (generated from src/designs/*.ts) */
@@ -22,6 +23,13 @@
 @source "../components";
 
 @custom-variant dark (&:is(.dark *));
+/*
+ * plan 117: Board's controls (BoardUI's base components) over the shared ones: inside Board, not inside another
+ * design nested in it (a preview), and a Board preview nested in another design gets them. As specific as dark:
+ * (one attribute), so a board: style overrides the base and dark: ones; restate a state (hover:, data-checked:…)
+ * under board: wherever board: replaces its property.
+ */
+@custom-variant board (&:is([data-design="board"] *):not(:where([data-design="board"] [data-design]:not([data-design="board"]) *)));
 /* plan 54: focus rings only while the user moves with Tab (lib/focus-ring.ts sets the flag); a text field keeps its ring */
 /* a control that only appears with keyboard focus (opacity-0 until focused) must stay visible however focus came: ungated */
 @custom-variant focus-reveal (&:focus-visible);
@@ -130,6 +138,8 @@
   --color-sidebar-glyph: var(--sidebar-glyph);
   --color-popover-glass: var(--popover-glass);
   --color-drop-target: color-mix(in oklch, var(--primary) 16%, transparent);
+  /* plan 117: Board's filled field, a wash of ink so it reads on white and on grey groups alike */
+  --color-field: color-mix(in oklab, var(--foreground) 5%, transparent);
 
   /* shadows take the theme's shadow color (deeper in dark themes) */
   --shadow-2xs: 0 1px color-mix(in oklab, var(--shadow-color) 50%, transparent);
@@ -144,6 +154,8 @@
   --shadow-raised: 0 0 0 var(--hairline-w) var(--border), 0 1px 1px color-mix(in oklab, var(--shadow-color) 60%, transparent), inset 0 1px var(--highlight);
   --shadow-popover: 0 0 0 var(--hairline-w) var(--border), 0 4px 12px -2px var(--shadow-color), 0 12px 32px -12px var(--shadow-color);
   --shadow-modal: 0 0 0 var(--hairline-w) var(--border), 0 24px 64px -24px var(--shadow-color);
+  /* plan 117: Board's menus and tooltips, BoardUI's dropdown: a 1 px edge over a soft, short shadow */
+  --shadow-menu: 0 0 0 1px var(--border), 0 1px 1px color-mix(in oklab, var(--shadow-color) 40%, transparent), 0 6px 16px -4px color-mix(in oklab, var(--shadow-color) 70%, transparent);
 
   /* motion: one setting (--motion, 0/50/75/100 ms) behind every duration */
   --default-transition-duration: var(--motion-fast);
