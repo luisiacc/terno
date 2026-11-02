@@ -153,3 +153,15 @@ The review is in `/tmp/terno-p112/code-review.txt`. Each fix has a regression te
 3. Restore checks its margin again after a `cp` that copied in full, before anything moves.
 4. A full copy that left too little room reports the space free once the copy is gone, so Update Without a Backup is offered when the migration alone fits.
 5. The smoke asserts the logged backup time is under the cover's 400 ms, besides watching for the cover.
+
+## 9. Mail during an upgrade
+
+- **Request (verbatim):** "make sure after restarting for an update that has migrations, the app still polls for new messages, maybe even during the migration being run, or at least it handles that gracefully, i wouldn't want a migration that touches the threads of emails broken midway because the migration is midawy and new messages came in, we need to handle that gracefully."
+- **The migration can't meet new mail.** It runs at open (`openDatabase` → `migrate`), before the backend exists: nothing syncs until it ends. Each step is one transaction, so a quit or a crash leaves the file at the last whole step. Mail that arrives meanwhile waits on the server and comes in with the first pass after (§7: 100 ms for the whole way from v24 at 50,000 threads).
+- **What overlaps with sync is the upgrade's background work.** Examples are v24's folder memberships, v41's Archive and Spam unread and plan 17's facts. `start()` schedules it without waiting (`void this.rebuildFolders()`), then starts every account's sync, push and poll. Each slice is its own transaction on the one writer, so a slice and a sync write never interleave inside each other. The triggers count only what the slices have passed, so nothing is counted twice or missed.
+- **Tested end to end** (`packages/backend/src/upgrade-sync.int.test.ts`, real IMAP server with IDLE):
+  - A v40 mailbox of 1,000 conversations opens and migrates, and the backfill is held after its first slice.
+  - Meanwhile, new mail arrives in the Inbox, Archive and Junk, and archived mail is marked read and unread on both sides of the slice's cursor. All of it syncs while the backfill is still midway.
+  - Released, the backfill ends with Archive and Spam unread and every folder's unread equal to a recount from the conversations, and with the expected totals.
+  - With the trigger's cursor check removed (double counting), the test fails.
+- **Found while writing it (not this plan's):** a message another mail app moves from the Inbox to the Archive loses its Inbox location at the next sync, but its new Archive copy isn't attached. The conversation stays in the Inbox with no location. This happens with or without an upgrade, by the server's own move and by an IMAP MOVE alike. Left out of this test, and reported separately.
