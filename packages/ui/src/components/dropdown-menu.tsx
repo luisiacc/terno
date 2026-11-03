@@ -4,6 +4,21 @@ import * as React from "react"
 import { Menu as MenuPrimitive } from "@base-ui/react/menu"
 import { cn } from "cn"
 import { ChevronRight as ChevronRightIcon, Check as CheckIcon } from "@terno/ui/icons"
+import {
+  MENU_GROUP,
+  MENU_INDICATOR,
+  MENU_LABEL,
+  MENU_MARK,
+  MENU_MOTION,
+  MENU_PANEL,
+  MENU_ROW,
+  MENU_ROW_CHECKABLE,
+  MENU_ROW_DESTRUCTIVE,
+  MENU_SEPARATOR,
+  MENU_SHORTCUT,
+  SUBMENU_ALIGN_OFFSET,
+  SUBMENU_SIDE_OFFSET,
+} from "@terno/ui/components/menu-styles"
 
 function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
   return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />
@@ -42,8 +57,8 @@ function DropdownMenuContent({
       >
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"
-          // The menu (plan 118): solid, a 1 px edge, rows highlighted in the neutral muted, not the accent
-          className={cn("z-50 max-h-(--available-height) w-(--anchor-width) min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-menu bg-popover p-1.5 shadow-menu [--accent:var(--muted)] [--accent-foreground:var(--foreground)] text-popover-foreground duration-base data-closed:duration-fast outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95", className )}
+          // BoardUI's menu (plan 125, menu-styles.ts)
+          className={cn("z-50 w-(--anchor-width) min-w-32", MENU_PANEL, MENU_MOTION, className)}
           {...props}
         />
       </MenuPrimitive.Positioner>
@@ -51,8 +66,8 @@ function DropdownMenuContent({
   )
 }
 
-function DropdownMenuGroup({ ...props }: MenuPrimitive.Group.Props) {
-  return <MenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />
+function DropdownMenuGroup({ className, ...props }: MenuPrimitive.Group.Props) {
+  return <MenuPrimitive.Group data-slot="dropdown-menu-group" className={cn(MENU_GROUP, className)} {...props} />
 }
 
 function DropdownMenuLabel({
@@ -66,10 +81,7 @@ function DropdownMenuLabel({
     <MenuPrimitive.GroupLabel
       data-slot="dropdown-menu-label"
       data-inset={inset}
-      className={cn(
-        "px-1.5 py-1 text-xs font-medium text-muted-foreground data-inset:pl-7",
-        className
-      )}
+      className={cn(MENU_LABEL, className)}
       {...props}
     />
   )
@@ -89,10 +101,7 @@ function DropdownMenuItem({
       data-slot="dropdown-menu-item"
       data-inset={inset}
       data-variant={variant}
-      className={cn(
-        "group/dropdown-menu-item relative flex cursor-default items-center gap-1.5 h-8 rounded-md px-2 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground data-[variant=destructive]:*:[svg]:text-destructive",
-        className
-      )}
+      className={cn("group/dropdown-menu-item", MENU_ROW, MENU_ROW_DESTRUCTIVE, className)}
       {...props}
     />
   )
@@ -114,30 +123,27 @@ function DropdownMenuSubTrigger({
     <MenuPrimitive.SubmenuTrigger
       data-slot="dropdown-menu-sub-trigger"
       data-inset={inset}
-      className={cn(
-        "flex cursor-default items-center gap-1.5 h-8 rounded-md px-2 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-popup-open:bg-accent data-popup-open:text-accent-foreground data-open:bg-accent data-open:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground",
-        className
-      )}
+      className={cn(MENU_ROW, "data-popup-open:bg-accent data-popup-open:text-accent-foreground data-popup-open:[&_svg:not([class*='text-'])]:text-accent-foreground", className)}
       {...props}
     >
       {children}
-      <ChevronRightIcon className="ml-auto" />
+      <ChevronRightIcon className="ms-auto rtl:-scale-x-100" />
     </MenuPrimitive.SubmenuTrigger>
   )
 }
 
 function DropdownMenuSubContent({
   align = "start",
-  alignOffset = -3,
+  alignOffset = SUBMENU_ALIGN_OFFSET,
   side = "right",
-  sideOffset = 0,
+  sideOffset = SUBMENU_SIDE_OFFSET,
   className,
   ...props
 }: React.ComponentProps<typeof DropdownMenuContent>) {
   return (
     <DropdownMenuContent
       data-slot="dropdown-menu-sub-content"
-      className={cn("w-auto min-w-[96px] rounded-menu bg-popover p-1.5 shadow-menu [--accent:var(--muted)] [--accent-foreground:var(--foreground)] text-popover-foreground duration-base data-closed:duration-fast ease-spring data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.97] data-closed:animate-out data-closed:fade-out-0 data-closed:ease-exit", className )}
+      className={cn("w-auto min-w-[96px]", className)}
       align={align}
       alignOffset={alignOffset}
       side={side}
@@ -160,20 +166,16 @@ function DropdownMenuCheckboxItem({
     <MenuPrimitive.CheckboxItem
       data-slot="dropdown-menu-checkbox-item"
       data-inset={inset}
-      className={cn(
-        "relative flex cursor-default items-center gap-1.5 h-8 rounded-md pr-8 pl-2 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground",
-        className
-      )}
+      className={cn(MENU_ROW, MENU_ROW_CHECKABLE, className)}
       checked={checked}
       {...props}
     >
       <span
-        className="pointer-events-none absolute right-2 flex items-center justify-center"
+        className={MENU_INDICATOR}
         data-slot="dropdown-menu-checkbox-item-indicator"
       >
         <MenuPrimitive.CheckboxItemIndicator>
-          <CheckIcon
-          />
+          <CheckIcon className={MENU_MARK} />
         </MenuPrimitive.CheckboxItemIndicator>
       </span>
       {children}
@@ -202,19 +204,15 @@ function DropdownMenuRadioItem({
     <MenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
       data-inset={inset}
-      className={cn(
-        "relative flex cursor-default items-center gap-1.5 h-8 rounded-md pr-8 pl-2 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground",
-        className
-      )}
+      className={cn(MENU_ROW, MENU_ROW_CHECKABLE, className)}
       {...props}
     >
       <span
-        className="pointer-events-none absolute right-2 flex items-center justify-center"
+        className={MENU_INDICATOR}
         data-slot="dropdown-menu-radio-item-indicator"
       >
         <MenuPrimitive.RadioItemIndicator>
-          <CheckIcon
-          />
+          <CheckIcon className={MENU_MARK} />
         </MenuPrimitive.RadioItemIndicator>
       </span>
       {children}
@@ -229,7 +227,7 @@ function DropdownMenuSeparator({
   return (
     <MenuPrimitive.Separator
       data-slot="dropdown-menu-separator"
-      className={cn("-mx-1 my-1 h-(--hairline-w) bg-hairline", className)}
+      className={cn(MENU_SEPARATOR, className)}
       {...props}
     />
   )
@@ -242,10 +240,7 @@ function DropdownMenuShortcut({
   return (
     <span
       data-slot="dropdown-menu-shortcut"
-      className={cn(
-        "ml-auto text-xs tracking-widest text-muted-foreground group-focus/dropdown-menu-item:text-accent-foreground",
-        className
-      )}
+      className={cn(MENU_SHORTCUT, className)}
       {...props}
     />
   )
