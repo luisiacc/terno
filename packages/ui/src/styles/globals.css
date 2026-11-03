@@ -457,9 +457,9 @@
 @utility rounded-menu {
   border-radius: calc(var(--radius-md) + var(--spacing) * 1.5);
 }
-/* the same for a command list (the palette, the category picker): lg rows, 2 in (the list's and the group's p-1) */
+/* the same for a command list (the palette, the category picker): BoardUI's xl rows (plan 125), 2 in (the list's p-2) */
 @utility rounded-palette {
-  border-radius: calc(var(--radius-lg) + var(--spacing) * 2);
+  border-radius: calc(var(--radius-xl) + var(--spacing) * 2);
 }
 /*
  * Translucent menus (DropdownMenu, ContextMenu, Select popups only: modal, so

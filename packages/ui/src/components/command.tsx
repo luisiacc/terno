@@ -14,8 +14,15 @@ import {
   InputGroup,
   InputGroupAddon,
 } from "@terno/ui/components/input-group"
+import { Kbd, KbdGroup } from "@terno/ui/components/kbd"
 import { Search as SearchIcon, Check as CheckIcon } from "@terno/ui/icons"
 
+/*
+ * BoardUI's command palette (plan 125): a search row over a full-width divider, a list of 40 px medium rows 2 px apart
+ * at an 8 px inset (their xl corners concentric with the panel's rounded-palette), muted section headings, and a hint
+ * row. Everything sits on one line 20 px in: the search glyph, the rows' icons, the headings and the hints. Terno keeps
+ * its width and placement (640 px at 18%): long subjects need the room.
+ */
 function Command({
   className,
   ...props
@@ -24,7 +31,7 @@ function Command({
     <CommandPrimitive
       data-slot="command"
       className={cn(
-        "flex size-full flex-col overflow-hidden rounded-palette! bg-popover p-1 text-popover-foreground [--accent:var(--muted)] [--accent-foreground:var(--foreground)]",
+        "flex size-full flex-col overflow-hidden rounded-palette! bg-popover text-popover-foreground [--accent:var(--muted)] [--accent-foreground:var(--foreground)]",
         className
       )}
       {...props}
@@ -38,19 +45,22 @@ function CommandDialog({
   children,
   className,
   showCloseButton = false,
+  hints = true,
   ...props
 }: Omit<React.ComponentProps<typeof Dialog>, "children"> & {
   title?: string
   description?: string
   className?: string
   showCloseButton?: boolean
+  /** the row of keyboard hints under the list */
+  hints?: boolean
   children: React.ReactNode
 }) {
   return (
     <Dialog {...props}>
       <DialogContent
         className={cn(
-          "top-[18%] translate-y-0 overflow-hidden rounded-palette! p-0 sm:max-w-[640px]",
+          "top-[18%] translate-y-0 gap-0 overflow-hidden rounded-palette! p-0 sm:max-w-[640px]",
           className
         )}
         showCloseButton={showCloseButton}
@@ -60,8 +70,36 @@ function CommandDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         {children}
+        {hints && <CommandHints />}
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** BoardUI's hint row: how to move, choose and leave, in muted text with the keys as keycaps */
+function CommandHints({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="command-hints"
+      className={cn("hairline-t flex shrink-0 items-center gap-4 px-5 py-2 text-sm text-muted-foreground", className)}
+      {...props}
+    >
+      <span className="flex items-center gap-1.5">
+        <KbdGroup>
+          <Kbd>↑</Kbd>
+          <Kbd>↓</Kbd>
+        </KbdGroup>
+        {t("ui.command.navigate")}
+      </span>
+      <span className="flex items-center gap-1.5">
+        <Kbd>↵</Kbd>
+        {t("ui.command.select")}
+      </span>
+      <span className="flex items-center gap-1.5">
+        <Kbd>esc</Kbd>
+        {t("ui.command.close")}
+      </span>
+    </div>
   )
 }
 
@@ -74,18 +112,18 @@ function CommandInput({
   addon?: React.ReactNode
 }) {
   return (
-    <div data-slot="command-input-wrapper" className="p-1 pb-0">
-      <InputGroup className="h-11! rounded-none! border-0! border-b! border-b-hairline! bg-transparent! shadow-none! *:data-[slot=input-group-addon]:pl-3!">
+    <div data-slot="command-input-wrapper" className="hairline-b px-2">
+      <InputGroup className="h-11! rounded-none! border-0! bg-transparent! shadow-none! *:data-[slot=input-group-addon]:pl-3!">
         <CommandPrimitive.Input
           data-slot="command-input"
           className={cn(
-            "w-full text-md outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
+            "w-full text-sm font-medium outline-hidden disabled:cursor-not-allowed disabled:text-muted-foreground",
             className
           )}
           {...props}
         />
         <InputGroupAddon>
-          <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
+          <SearchIcon className="size-5 shrink-0 text-muted-foreground" />
           {addon}
         </InputGroupAddon>
       </InputGroup>
@@ -101,7 +139,7 @@ function CommandList({
     <CommandPrimitive.List
       data-slot="command-list"
       className={cn(
-        "no-scrollbar max-h-96 scroll-py-1 overflow-x-hidden overflow-y-auto outline-none",
+        "no-scrollbar max-h-96 scroll-py-2 overflow-x-hidden overflow-y-auto p-2 outline-none",
         className
       )}
       {...props}
@@ -116,7 +154,7 @@ function CommandEmpty({
   return (
     <CommandPrimitive.Empty
       data-slot="command-empty"
-      className={cn("py-6 text-center text-sm", className)}
+      className={cn("flex min-h-32 items-center justify-center px-4 text-center text-sm font-medium text-muted-foreground", className)}
       {...props}
     />
   )
@@ -130,7 +168,7 @@ function CommandGroup({
     <CommandPrimitive.Group
       data-slot="command-group"
       className={cn(
-        "overflow-hidden p-1 text-foreground **:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:py-1.5 **:[[cmdk-group-heading]]:text-2xs **:[[cmdk-group-heading]]:font-semibold **:[[cmdk-group-heading]]:text-muted-foreground",
+        "overflow-hidden text-foreground not-first:pt-2 **:[[cmdk-group-items]]:flex **:[[cmdk-group-items]]:flex-col **:[[cmdk-group-items]]:gap-0.5 **:[[cmdk-group-heading]]:px-3 **:[[cmdk-group-heading]]:pt-1 **:[[cmdk-group-heading]]:pb-1 **:[[cmdk-group-heading]]:text-sm **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group-heading]]:text-muted-foreground",
         className
       )}
       {...props}
@@ -145,7 +183,7 @@ function CommandSeparator({
   return (
     <CommandPrimitive.Separator
       data-slot="command-separator"
-      className={cn("-mx-1 h-(--hairline-w) bg-hairline", className)}
+      className={cn("-mx-2 my-1 h-(--hairline-w) bg-hairline", className)}
       {...props}
     />
   )
@@ -160,7 +198,7 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "group/command-item relative flex cursor-default items-center gap-2 h-9 rounded-lg px-2 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-selected:bg-accent data-selected:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground",
+        "group/command-item relative flex h-10 cursor-default items-center gap-2 rounded-xl px-3 text-sm font-medium outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:text-muted-foreground data-selected:bg-accent data-selected:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground",
         className
       )}
       {...props}
@@ -171,17 +209,26 @@ function CommandItem({
   )
 }
 
+/** Muted text at a row's end: the section or a path, what the command acts on */
+function CommandDescription({ className, ...props }: React.ComponentProps<"span">) {
+  return (
+    <span
+      data-slot="command-hint"
+      className={cn("ms-auto truncate ps-3 font-normal text-muted-foreground", className)}
+      {...props}
+    />
+  )
+}
+
+/** A row's shortcut, one keycap for the chord; on the chosen row, in full ink (contrast.ts) */
 function CommandShortcut({
   className,
   ...props
-}: React.ComponentProps<"span">) {
+}: React.ComponentProps<"kbd">) {
   return (
-    <span
+    <Kbd
       data-slot="command-shortcut"
-      className={cn(
-        "ml-auto text-xs tracking-widest text-muted-foreground group-data-selected/command-item:text-accent-foreground",
-        className
-      )}
+      className={cn("ms-auto group-data-selected/command-item:text-foreground", className)}
       {...props}
     />
   )
@@ -195,6 +242,8 @@ export {
   CommandEmpty,
   CommandGroup,
   CommandItem,
+  CommandDescription,
+  CommandHints,
   CommandShortcut,
   CommandSeparator,
 }

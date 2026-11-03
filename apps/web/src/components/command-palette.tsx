@@ -2,7 +2,7 @@ import { focusAccount, goToAccount, goToFolder } from "~/lib/account-folders";
 import { normalizeText, remindPresets, separatesTabs, snippetPreview, TABS, type CategoryColor, type ReminderKind, type Snippet } from "@terno/core";
 import { t, type TextKey } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
-import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
+import { Command, CommandDescription, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
 import { Archive, AtSign, Bell, BellOff, BookmarkPlus, CalendarClock, CheckCheck, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users, X } from "@terno/ui/icons";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
@@ -425,8 +425,8 @@ export function CommandPalette() {
                   <CommandItem key={`${group}:${c.id}`} value={itemValue(c)} disabled={c.disabled} data-testid={c.testId} data-command={c.id} onSelect={() => select(c)}>
                     {c.icon} <span className="truncate">{c.display ?? c.label}</span>
                     {alias && <span className="shrink-0 text-muted-foreground" data-testid="palette-alias">({alias})</span>}
-                    {c.hint && <span data-slot="command-hint" className="ml-auto truncate pl-3 text-muted-foreground">{c.hint}</span>}
-                    {c.shortcut && <CommandShortcut className={c.hint ? "ml-3" : undefined}>{c.shortcut}</CommandShortcut>}
+                    {c.hint && <CommandDescription>{c.hint}</CommandDescription>}
+                    {c.shortcut && <CommandShortcut className={c.hint ? "ms-3" : undefined}>{c.shortcut}</CommandShortcut>}
                   </CommandItem>
                 );
               })}
