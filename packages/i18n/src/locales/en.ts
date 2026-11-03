@@ -2185,6 +2185,7 @@ It contains none of your mail, contacts, settings or keys.
   "ui.pagination.previous": "Previous",
   "ui.pagination.next": "Next",
   "ui.pagination.range": "{from}–{to} of {total}",
+  "ui.search.clear": "Clear search",
   "errors.forwardGone": "This forward was cancelled or already sent.",
   "forward.reason.ruleChanged": "Not forwarded: the forwarding rule changed or was turned off.",
   "forward.reason.gone": "Not forwarded: the message is no longer here.",

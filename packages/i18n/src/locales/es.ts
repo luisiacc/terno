@@ -2170,6 +2170,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "ui.pagination.previous": "Anterior",
   "ui.pagination.next": "Siguiente",
   "ui.pagination.range": "{from}–{to} de {total}",
+  "ui.search.clear": "Limpiar búsqueda",
   "errors.forwardGone": "Este reenvío se canceló o ya se envió.",
   "forward.reason.ruleChanged": "No se reenvió: la regla de reenvío cambió o se desactivó.",
   "forward.reason.gone": "No se reenvió: el mensaje ya no está.",
