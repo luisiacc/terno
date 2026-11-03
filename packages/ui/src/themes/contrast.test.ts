@@ -26,8 +26,9 @@ describe("WCAG AA in every built-in theme", () => {
     // plan 94: a filled button's text on its hover fill
     // plan 118: a field's text and placeholder on its wash over 4 surfaces
     // plan 122: a past time's clock on the card
-    // plan 125: the danger button's text on both stops of its fill; a key's text on its field wash over a highlighted row
-    expect(CONTRAST_PAIRS).toHaveLength(49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1);
+    // plan 125: the danger button's text on both stops of its fill; a key's text on its field wash over a highlighted row;
+    // the link button on panes and cards
+    expect(CONTRAST_PAIRS).toHaveLength(49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2);
   });
 
   it("reports a failing pair with its ratio", () => {

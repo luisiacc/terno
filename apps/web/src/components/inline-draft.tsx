@@ -192,24 +192,24 @@ export function SaveState({ d }: { d: LocalDraft }) {
         {recovery?.state === "unknown" && recovery.reason && ` ${t(`compose.recovery.${recovery.reason}`)}`}
       </span>
       {recovery && (
-        <button
+        <Button
           ref={actionRef}
-          type="button"
+          variant="link"
           data-testid="draft-save-copy"
-          className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
+          className="text-xs"
           aria-busy={recovery.state === "copying"}
           aria-disabled={recovery.state === "copying"}
           onClick={() => { if (recovery.state !== "copying") void copyDraft(d.key); }}
         >
           {t(recovery.state === "unknown" ? "compose.recovery.another" : "compose.recovery.copy")}
-        </button>
+        </Button>
       )}
       {!recovery && d.status === "error" &&
         richT(d.tooLong ? "compose.status.tooLong" : "compose.status.failed", {
           retry: (text) => (
-            <button type="button" className="font-medium text-foreground underline underline-offset-2 hover:no-underline" onClick={() => retryDraft(d.key)}>
+            <Button variant="link" className="text-xs" onClick={() => retryDraft(d.key)}>
               {text}
-            </button>
+            </Button>
           ),
         })}
     </span>
@@ -237,9 +237,9 @@ export function Quote({ d }: { d: LocalDraft }) {
       <div className="px-3.5 pb-1 text-xs text-muted-foreground">
         {richT("compose.quote.removed", {
           include: (text) => (
-            <button type="button" className="font-medium text-primary hover:underline" onClick={() => editDraft(d.key, { includeQuote: true })}>
+            <Button variant="link" className="text-xs" onClick={() => editDraft(d.key, { includeQuote: true })}>
               {text}
-            </button>
+            </Button>
           ),
         })}
       </div>
@@ -262,9 +262,9 @@ export function Quote({ d }: { d: LocalDraft }) {
         {show && (
           <div className="mt-2 border-l-2 border-hairline pl-3 text-sm whitespace-pre-wrap text-muted-foreground">
             {d.quotedText}
-            <button type="button" className="mt-2 block text-xs font-medium text-primary hover:underline" onClick={() => editDraft(d.key, { includeQuote: false })} data-testid="compose-quote-remove">
+            <Button variant="link" className="mt-2 flex text-xs" onClick={() => editDraft(d.key, { includeQuote: false })} data-testid="compose-quote-remove">
               {t("compose.quote.remove")}
-            </button>
+            </Button>
           </div>
         )}
       </div>

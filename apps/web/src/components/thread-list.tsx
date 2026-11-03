@@ -447,13 +447,13 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   // plan 108: focused on an account, a search looks only in it: it says whose, and offers every account
   const soloSearch = useApp((s) => s.soloAccountId !== null) && searching;
   const searchAll = soloSearch && (
-    <button type="button" data-testid="solo-search-all" onClick={() => {
+    <Button variant="link" data-testid="solo-search-all" className="no-drag text-2xs" onClick={() => {
         setApp({ soloAccountId: null });
         // the button goes with the narrowed search: the keyboard stays in the search (Codex code review #5)
         searchInputRef.current?.focus();
-      }} className="no-drag shrink-0 rounded-sm text-2xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+      }}>
       {t("list.search.allAccounts")}
-    </button>
+    </Button>
   );
   // (the compact title row leaves it to "Search all accounts": beside the stats it would only truncate)
   const accountSuffix = account && (!searching || (soloSearch && kind !== "title")) && <span className="ml-1.5 text-sm font-normal tracking-normal text-muted-foreground not-italic">· {account.displayName}</span>;
@@ -503,6 +503,9 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
  * Gmail's "select all": ⌘A checks the loaded rows; when the view has more,
  * this offers every thread of it, which the backend then acts on (a scope).
  */
+// a link on the tint is the ink, not the accent: the accent fails AA there in three palettes (contrast.ts)
+const tintLink = "text-xs text-foreground active:text-foreground";
+
 function SelectAllBanner() {
   const loaded = useList((s) => s.items.length);
   const more = useList((s) => s.nextCursor !== null);
@@ -535,22 +538,16 @@ function SelectAllBanner() {
           <span data-testid="select-all-scope">
             {t("list.selectAll.scopeSelected", { count: scope.count, label: scope.label })}
           </span>
-          <button type="button" data-testid="select-all-clear" className="font-medium text-primary hover:underline" onClick={clearSelection}>
+          <Button variant="link" data-testid="select-all-clear" className={tintLink} onClick={clearSelection}>
             {t("list.selectAll.clear")}
-          </button>
+          </Button>
         </>
       ) : (
         <>
           <span>{t("list.selectAll.loadedSelected", { count: loaded })}</span>
-          <button
-            type="button"
-            data-testid="select-all-scope-button"
-            disabled={!n || n.capped}
-            className="font-medium text-primary hover:underline disabled:opacity-60"
-            onClick={() => n && selectScope(n.n)}
-          >
+          <Button variant="link" data-testid="select-all-scope-button" disabled={!n || n.capped} className={tintLink} onClick={() => n && selectScope(n.n)}>
             {n ? (n.capped ? t("list.selectAll.capped", { count: n.n, label }) : t("list.selectAll.select", { count: n.n, label })) : t("list.selectAll.pending", { label })}
-          </button>
+          </Button>
         </>
       )}
     </div>

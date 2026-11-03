@@ -147,9 +147,9 @@ function UpdateDetails({ pill, close }: { pill: Exclude<PillModel, { kind: "hidd
         </div>
       ) : (
         version && (
-          <button type="button" onClick={() => openReleaseNotes(version)} className="self-start rounded-sm text-xs text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring">
+          <Button variant="link" onClick={() => openReleaseNotes(version)} className="self-start text-xs">
             {t("updates.releaseNotes")}
-          </button>
+          </Button>
         )
       )}
       <div className="flex justify-end gap-2">

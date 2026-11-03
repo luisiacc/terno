@@ -31,7 +31,8 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...text("foreground", ["background", "pane", "card", "popover", "muted", "row-hover", "accent", "sidebar", "sidebar-accent"]),
   ...text("muted-foreground", ["background", "pane", "card", "popover", "muted", "row-hover", "row-selected", "sidebar", "sidebar-accent"]),
   ...text("primary-foreground", ["primary"]),
-  ...text("primary", ["background", "popover"]),
+  // plan 125: BoardUI's link button (Button variant="link") on panes and cards (on the tint it fails AA in three palettes: links there are the ink)
+  ...text("primary", ["background", "popover", "pane", "card"]),
   ...text("accent-foreground", ["accent"]),
   ...text("row-selected-foreground", ["row-selected"]),
   ...text("destructive", ["background", "popover"]),

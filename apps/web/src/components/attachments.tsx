@@ -42,7 +42,7 @@ export function DraftAttachments({ d }: { d: LocalDraft }) {
     {busy && <p role="status" className="text-xs text-muted-foreground">{t("attachments.adding")}</p>}
     {forward && <p role="status" data-testid="forward-files" data-status={forward.status} className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
       <span>{forwardFilesText(forward)}</span>
-      {forward.status === "failed" && <Button type="button" variant="link" size="sm" data-testid="forward-files-retry" className="h-auto p-0 text-xs font-medium text-foreground underline underline-offset-2 hover:no-underline" disabled={d.sending} onClick={() => retryForwardFiles(d.key)}>{t("compose.forwardFiles.tryAgain")}</Button>}
+      {forward.status === "failed" && <Button variant="link" data-testid="forward-files-retry" className="text-xs" disabled={d.sending} onClick={() => retryForwardFiles(d.key)}>{t("compose.forwardFiles.tryAgain")}</Button>}
     </p>}
     {!!chips.length && <ul aria-label={t("reader.attachments")} className={cn("flex flex-wrap gap-2", forward && "mt-2")}>
       {chips.map((a) => <li key={a.assetId} data-testid="draft-attachment" className="flex max-w-full">

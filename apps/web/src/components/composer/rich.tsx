@@ -707,9 +707,9 @@ function LinkBubble({ href, top, left, onOpen, onEdit, onRemove }: { href: strin
       style={{ top, left }}
       className="absolute z-20 flex max-w-[280px] items-center gap-0.5 rounded-lg surface-glass py-0.5 pr-0.5 pl-2 text-xs shadow-popover animate-in fade-in-0 duration-fast"
     >
-      <button type="button" onMouseDown={keep} onClick={onOpen} className="min-w-0 truncate rounded-sm text-primary underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring outline-none" data-testid="link-bubble-open" title={href}>
-        {href.replace(/^mailto:/, "")}
-      </button>
+      <Button variant="link" onMouseDown={keep} onClick={onOpen} className="min-w-0 shrink text-xs" data-testid="link-bubble-open" title={href}>
+        <span className="truncate">{href.replace(/^mailto:/, "")}</span>
+      </Button>
       <span className="mx-1 h-3.5 w-(--hairline-w) shrink-0 bg-hairline" />
       <IconButton size="icon-xs" tooltipSide="bottom" onMouseDown={keep} onClick={onOpen} label={t("compose.link.open")}>
         <ExternalLink className="size-3.5" />
