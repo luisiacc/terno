@@ -22,7 +22,9 @@ function Switch({
     >
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
-        className="pointer-events-none block rounded-full bg-background shadow-raised ring-0 transition-transform group-data-[size=default]/switch:size-4 group-data-[size=sm]/switch:size-3 group-data-[size=default]/switch:data-checked:translate-x-[calc(100%-2px)] group-data-[size=sm]/switch:data-checked:translate-x-[calc(100%-2px)] dark:data-checked:bg-primary-foreground group-data-[size=default]/switch:data-unchecked:translate-x-0 group-data-[size=sm]/switch:data-unchecked:translate-x-0 dark:data-unchecked:bg-foreground relative after:absolute after:inset-0 after:m-auto after:size-1.5 after:rounded-full after:bg-input data-checked:after:bg-primary group-data-[size=sm]/switch:after:size-1"
+        // BoardUI's thumb (plan 125): white in both modes, lit from the top, over a two-layer contact shadow; its chip a
+        // small embossed dot, the primary when on
+        className="pointer-events-none relative block rounded-full bg-card bg-linear-to-b from-card from-45% to-muted shadow-[0_3px_3px_0_color-mix(in_oklab,var(--shadow-color)_30%,transparent),0_0.75px_0_0_color-mix(in_oklab,var(--shadow-color)_50%,transparent)] ring-0 transition-transform group-data-[size=default]/switch:size-4 group-data-[size=sm]/switch:size-3 group-data-[size=default]/switch:data-checked:translate-x-[calc(100%-2px)] group-data-[size=sm]/switch:data-checked:translate-x-[calc(100%-2px)] group-data-[size=default]/switch:data-unchecked:translate-x-0 group-data-[size=sm]/switch:data-unchecked:translate-x-0 dark:bg-foreground dark:from-foreground dark:to-[color-mix(in_oklab,var(--foreground)_88%,var(--background))] after:absolute after:inset-0 after:m-auto after:size-1.5 after:rounded-full after:bg-input after:shadow-[inset_0_0.5px_1px_var(--shadow-color)] dark:data-unchecked:after:bg-muted-foreground/50 data-checked:after:bg-primary group-data-[size=sm]/switch:after:size-1"
       />
     </SwitchPrimitive.Root>
   )

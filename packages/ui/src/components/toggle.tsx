@@ -11,8 +11,9 @@ const toggleVariants = cva(
       variant: {
         default: "bg-transparent aria-pressed:bg-muted data-[state=on]:bg-muted",
         // BoardUI's segmented control (plan 120), an item on ToggleGroup's track: the chosen one a raised thumb, card on
-        // the field wash (light), muted on the background with an inner highlight (dark, where the track is darker)
-        segmented: "bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-xs dark:aria-pressed:bg-muted dark:aria-pressed:shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)]",
+        // the field wash (light), muted on the background with an inner highlight (dark, where the track is darker).
+        // Plan 125: regular weight, the chosen one medium; a text label's medium width is held (data-label) so nothing shifts
+        segmented: "bg-transparent font-normal text-muted-foreground hover:bg-transparent hover:text-foreground aria-pressed:font-medium data-label:flex-col data-label:gap-0 data-label:after:invisible data-label:after:h-0 data-label:after:overflow-hidden data-label:after:font-medium data-label:after:content-[attr(data-label)] aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-xs dark:aria-pressed:bg-muted dark:aria-pressed:shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)]",
       },
       size: {
         default:

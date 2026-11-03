@@ -15,6 +15,8 @@ const EXEMPT = [/\/designs\//, /\/themes\//, /\.test\.tsx?$/, /\.generated\.css$
 
 /** file → pixel text sizes it may use, and why */
 const TEXT_PX: Record<string, string[]> = {
+  // plan 125: BoardUI's initials in the 20 px avatar
+  "packages/ui/src/components/avatar.tsx": ["10px"],
   // the 7 px file type on an attachment's glyph, the 10 px "auto" mark and suggestion key
   "apps/web/src/components/reader.tsx": ["7px", "10px"],
   // the initials in the 22 px avatar of the quick reply bar; the 10 px quote toggle
