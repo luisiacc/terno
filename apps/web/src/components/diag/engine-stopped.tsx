@@ -1,6 +1,5 @@
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { Loader2 } from "@terno/ui/icons";
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
@@ -42,13 +41,13 @@ export function EngineStopped() {
         <div className="mt-5 flex justify-center gap-2">
           <Button
             data-testid="engine-retry"
-            disabled={retrying}
+            loading={retrying}
             onClick={() => {
               setRetrying(true);
               void restartEngine();
             }}
           >
-            {retrying && <Loader2 className="animate-spin" />} {t("app.tryAgain")}
+            {t("app.tryAgain")}
           </Button>
           <Button variant="outline" onClick={() => void exportDiagnostics()}>
             {t("diag.exportButton")}

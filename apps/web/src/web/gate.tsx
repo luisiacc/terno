@@ -2,7 +2,7 @@ import { RecoveryReload } from "~/components/diag/recovery-reload";
 import { t, type TextKey } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
-import { Loader2 } from "@terno/ui/icons";
+import { Spinner } from "@terno/ui/components/spinner";
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { requestTakeover, takeBack } from "./connect";
@@ -74,15 +74,15 @@ export function WebGate() {
   if (phase === "starting" && progress) {
     return (
       <Screen testId="web-starting" title={showText(progress)}>
-        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+        <Spinner className="text-muted-foreground" aria-hidden />
       </Screen>
     );
   }
   if (phase === "elsewhere" || phase === "taking-over") {
     return (
       <Screen testId="web-elsewhere" title={t("web.gate.elsewhere.title")} body={t("web.gate.elsewhere.body")}>
-        <Button data-testid="web-use-here" disabled={phase === "taking-over"} onClick={() => requestTakeover()}>
-          {phase === "taking-over" && <Loader2 className="animate-spin" />} {t("web.gate.useHere")}
+        <Button data-testid="web-use-here" loading={phase === "taking-over"} onClick={() => requestTakeover()}>
+          {t("web.gate.useHere")}
         </Button>
       </Screen>
     );

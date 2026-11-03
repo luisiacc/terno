@@ -3,7 +3,7 @@ import type { OwnerIdentity } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
-import { BadgeCheck, Loader2, UserRound } from "@terno/ui/icons";
+import { BadgeCheck, UserRound } from "@terno/ui/icons";
 import { localeTag, t } from "@terno/i18n";
 import { useState } from "react";
 import { snack } from "~/lib/snack";
@@ -85,8 +85,8 @@ function ChangeOwner({ owner, accounts, onDone }: { owner: OwnerIdentity; accoun
         <Button type="button" variant="ghost" size="sm" onClick={onDone}>
           {t("common.cancel")}
         </Button>
-        <Button type="submit" size="sm" disabled={busy || !target || (target.kind === "imap" && !password)} data-testid="change-owner-submit">
-          {busy && <Loader2 className="animate-spin" />} {target?.kind === "gmail" ? t("account.owner.verifyGoogle") : t("account.owner.verifyChange")}
+        <Button type="submit" size="sm" disabled={!target || (target.kind === "imap" && !password)} loading={busy} data-testid="change-owner-submit">
+          {target?.kind === "gmail" ? t("account.owner.verifyGoogle") : t("account.owner.verifyChange")}
         </Button>
       </div>
     </form>

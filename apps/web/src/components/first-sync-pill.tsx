@@ -1,6 +1,7 @@
 import type { Account, SyncProgress } from "@terno/core";
 import { formatNumber, t } from "@terno/i18n";
-import { ChevronDown, Loader2 } from "@terno/ui/icons";
+import { Spinner } from "@terno/ui/components/spinner";
+import { ChevronDown } from "@terno/ui/icons";
 import { Progress } from "@terno/ui/components/progress";
 import { cn } from "@terno/ui/lib/utils";
 import { useId, useState } from "react";
@@ -87,7 +88,7 @@ export function FirstSyncPill() {
           className="flex w-full items-center gap-2 rounded-lg py-1.5 pr-2 pl-2.5 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           data-testid="first-sync-toggle"
         >
-          <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden />
+          <Spinner className="size-3.5 text-muted-foreground" aria-hidden />
           <div className="min-w-0 flex-1 leading-tight">
             <p role="status" className="truncate font-medium text-sidebar-foreground">
               {first.length ? t("firstSync.title") : t("firstSync.older")}

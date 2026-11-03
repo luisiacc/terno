@@ -4,7 +4,7 @@ import { Input } from "@terno/ui/components/input";
 import { Label } from "@terno/ui/components/label";
 import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
-import { Loader2, Mail } from "@terno/ui/icons";
+import { Mail } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { Suspense, useEffect, useState } from "react";
 import { snack } from "~/lib/snack";
@@ -154,8 +154,8 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
           </SelectContent>
         </Select>
       </div>
-      <Button variant="outline" className="h-10 justify-center gap-2" onClick={connectGmail} focusableWhenDisabled disabled={busy !== null} data-testid="connect-gmail">
-        {busy === "gmail" ? <Loader2 className="animate-spin" /> : <Mail />} {t("account.continueGoogle")}
+      <Button variant="outline" className="h-10 justify-center gap-2" onClick={connectGmail} focusableWhenDisabled disabled={busy !== null} loading={busy === "gmail"} data-testid="connect-gmail">
+        <Mail /> {t("account.continueGoogle")}
       </Button>
       {error?.kind === "gmail" && failure}
       {!imapHere && DesktopOnly ? (
@@ -202,8 +202,8 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
               </div>
             </div>
           </div>
-          <Button type="submit" className="w-full" focusableWhenDisabled disabled={busy !== null} data-testid="imap-submit">
-            {busy === "imap" && <Loader2 className="animate-spin" />} {t("account.connectAccount")}
+          <Button type="submit" className="w-full" focusableWhenDisabled disabled={busy !== null} loading={busy === "imap"} data-testid="imap-submit">
+            {t("account.connectAccount")}
           </Button>
           {error?.kind === "imap" && failure}
         </form>

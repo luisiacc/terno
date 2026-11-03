@@ -5,8 +5,7 @@ import { SettingsGroup, SettingsRow, type RowA11y, type SettingsUpdate } from ".
 import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@terno/ui/components/select";
-import { cn } from "@terno/ui/lib/utils";
-import { CircleAlert, CircleCheck, Loader2, RefreshCw, ShieldCheck } from "@terno/ui/icons";
+import { CircleAlert, CircleCheck, RefreshCw, ShieldCheck } from "@terno/ui/icons";
 import { refText, t } from "@terno/i18n";
 import { useEffect, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
@@ -318,8 +317,8 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
                     }}
                     onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
                   />
-                  <Button variant="outline" size="icon-sm" aria-label={t("ai.model.refresh")} disabled={!canDiscover || discovery.state === "loading"} onClick={() => void discover()}>
-                    <RefreshCw className={cn(discovery.state === "loading" && "animate-spin")} />
+                  <Button variant="outline" size="icon-sm" aria-label={t("ai.model.refresh")} disabled={!canDiscover} loading={discovery.state === "loading"} onClick={() => void discover()}>
+                    <RefreshCw />
                   </Button>
                 </div>
                 {discovery.state === "error" && (
@@ -357,8 +356,8 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
         {ai.provider !== "none" && (
           <div className="space-y-2 py-3">
             <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" data-testid="ai-test" disabled={testing || (ai.provider !== "fake" && !ai.model)} onClick={() => void runTest()}>
-                {testing && <Loader2 className="animate-spin" />} {t("ai.test")}
+              <Button variant="outline" size="sm" data-testid="ai-test" disabled={ai.provider !== "fake" && !ai.model} loading={testing} onClick={() => void runTest()}>
+                {t("ai.test")}
               </Button>
               <span role="status" aria-live="polite" className="text-xs">
                 {test?.ok && (

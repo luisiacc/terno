@@ -5,7 +5,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Input } from "@terno/ui/components/input";
 import { PopoverDescription, PopoverTitle } from "@terno/ui/components/popover";
 import { cn } from "@terno/ui/lib/utils";
-import { Loader2 } from "@terno/ui/icons";
+import { Spinner } from "@terno/ui/components/spinner";
 import { useEffect, useId, useState } from "react";
 import { canStart, clearAttemptError, prepareGoogle, sendOnly, signInAgain, useSignIn, type Attempt } from "~/lib/sign-in";
 
@@ -122,7 +122,7 @@ function Action({ account, attempt, google, onAsk }: { account: Account; attempt
     return (
       <div className="flex items-center gap-2">
         <p aria-live="polite" className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="sign-in-waiting">
-          <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden />
+          <Spinner className="size-3.5 text-current" aria-hidden />
           {t("signIn.google.waiting")}
         </p>
         <Button size="sm" variant="ghost" onClick={() => void run(account)} data-testid="sign-in-google-again" {...common}>
@@ -145,7 +145,7 @@ function Action({ account, attempt, google, onAsk }: { account: Account; attempt
       data-testid="sign-in-google"
       {...common}
     >
-      {(busy || google === "loading") && <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden />}
+      {(busy || google === "loading") && <Spinner aria-hidden />}
       {ready || google !== "loading" ? t("signIn.google") : t("signIn.google.loading")}
     </Button>
   );
@@ -185,8 +185,7 @@ function PasswordForm({ account, attempt, autoFocus }: { account: Account; attem
         data-account-id={account.id}
         data-testid="sign-in-password"
       />
-      <Button type="submit" size="sm" aria-disabled={busy || !password || undefined} data-testid="sign-in-submit">
-        {busy && <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden />}
+      <Button type="submit" size="sm" loading={busy} aria-disabled={busy || !password || undefined} data-testid="sign-in-submit">
         {t("signIn.submit")}
       </Button>
     </form>

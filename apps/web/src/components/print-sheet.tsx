@@ -6,7 +6,8 @@ import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group"
 import { cn } from "@terno/ui/lib/utils";
 import { PRINT_INK } from "@terno/ui/themes/print";
 import { t } from "@terno/i18n";
-import { CircleAlert, FileDown, ImageOff, Info, LoaderCircle, Printer } from "@terno/ui/icons";
+import { CircleAlert, FileDown, ImageOff, Info, Printer } from "@terno/ui/icons";
+import { Spinner } from "@terno/ui/components/spinner";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
 import { hasRemoteContent } from "~/lib/mail";
@@ -275,9 +276,10 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
             disabled={!ready}
             focusableWhenDisabled
             onClick={() => void run("pdf")}
+            loading={busy === "pdf"}
             data-testid="print-save-pdf"
           >
-            {busy === "pdf" ? <LoaderCircle className="animate-spin" /> : <FileDown />}
+            <FileDown />
             {t("print.savePdf")}
           </Button>
           <Button
@@ -286,9 +288,10 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
             disabled={!ready}
             focusableWhenDisabled
             onClick={() => void run("print")}
+            loading={busy === "print"}
             data-testid="print-submit"
           >
-            {busy === "print" ? <LoaderCircle className="animate-spin" /> : <Printer />}
+            <Printer />
             {t("print.print")}
           </Button>
         </div>
@@ -416,7 +419,7 @@ function Preview({ doc, current, onFitted }: { doc: { html: string; paper: Paper
           />
         </div>
       </div>
-      {!(ready && current) && <LoaderCircle aria-hidden className="absolute top-4 right-4 size-4 animate-spin text-muted-foreground" />}
+      {!(ready && current) && <Spinner aria-hidden className="absolute top-4 right-4 text-muted-foreground" />}
     </div>
   );
 }

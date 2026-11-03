@@ -1,7 +1,7 @@
 import type { MailboxGate } from "@terno/core/mailbox";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { Loader2 } from "@terno/ui/icons";
+import { Spinner } from "@terno/ui/components/spinner";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { formatBytes } from "~/lib/format";
@@ -66,7 +66,6 @@ const Actions = ({ children }: { children: ReactNode }) => <div className="mt-5 
 
 function GateScreen({ gate }: { gate: Exclude<MailboxGate, { kind: "open" }> }) {
   const busy = useMailbox((s) => s.busy);
-  const spin = busy && <Loader2 className="animate-spin" />;
   const retry = (
     <Button variant="outline" disabled={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
       {t("updates.tryAgain")}
@@ -88,7 +87,7 @@ function GateScreen({ gate }: { gate: Exclude<MailboxGate, { kind: "open" }> }) 
     case "restoring":
       return (
         <Cover title={t("mailbox.restoring")} testId="mailbox-gate" kind="restoring" busy>
-          <Loader2 className="mt-4 size-4 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden />
+          <Spinner className="mt-4 text-muted-foreground" aria-hidden />
         </Cover>
       );
     case "no-room":
@@ -97,8 +96,8 @@ function GateScreen({ gate }: { gate: Exclude<MailboxGate, { kind: "open" }> }) 
           <Body testId="mailbox-body">{t(gate.stage === "backup" ? "mailbox.noRoom.backup" : "mailbox.noRoom.migrate", { need: formatBytes(gate.needBytes), free: formatBytes(gate.freeBytes) })}</Body>
           {gate.canSkipBackup && <Body>{t("mailbox.noRoom.skipHint")}</Body>}
           <Actions>
-            <Button data-primary disabled={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
-              {spin} {t("updates.tryAgain")}
+            <Button data-primary loading={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
+              {t("updates.tryAgain")}
             </Button>
             {gate.canSkipBackup && skip}
           </Actions>
@@ -125,8 +124,8 @@ function GateScreen({ gate }: { gate: Exclude<MailboxGate, { kind: "open" }> }) 
             <Cover title={t("mailbox.backup.title")} testId="mailbox-gate" kind="backup">
               <Body>{t("mailbox.backup.body")}</Body>
               <Actions>
-                <Button data-primary disabled={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
-                  {spin} {t("updates.tryAgain")}
+                <Button data-primary loading={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
+                  {t("updates.tryAgain")}
                 </Button>
                 {skip}
               </Actions>
@@ -137,8 +136,8 @@ function GateScreen({ gate }: { gate: Exclude<MailboxGate, { kind: "open" }> }) 
             <Cover title={t("mailbox.unwritable.title")} testId="mailbox-gate" kind="unwritable">
               <Body>{t("mailbox.unwritable.body")}</Body>
               <Actions>
-                <Button data-primary disabled={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
-                  {spin} {t("updates.tryAgain")}
+                <Button data-primary loading={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
+                  {t("updates.tryAgain")}
                 </Button>
               </Actions>
             </Cover>
@@ -160,7 +159,7 @@ function Upgrading({ phase }: { phase: "backup" | "migrate" }) {
   return (
     <Cover title={t("mailbox.upgrading.title")} testId="mailbox-gate" kind="upgrading" busy>
       <Body testId="mailbox-body">{t(phase === "backup" ? "mailbox.upgrading.backup" : "mailbox.upgrading.migrate")}</Body>
-      <Loader2 className="mt-4 size-4 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden />
+      <Spinner className="mt-4 text-muted-foreground" aria-hidden />
     </Cover>
   );
 }
@@ -268,7 +267,7 @@ function UpdateAction({ label, secondary = null }: { label: string; secondary?: 
       <Actions>
         <Button
           data-primary
-          disabled={working}
+          loading={working}
           data-testid="update-now"
           onClick={() => {
             setAsked(true);
@@ -276,7 +275,7 @@ function UpdateAction({ label, secondary = null }: { label: string; secondary?: 
             void updateNow().finally(() => setRunning(false));
           }}
         >
-          {working && <Loader2 className="animate-spin" />} {outcome && state.error ? t("updates.tryAgain") : label}
+          {outcome && state.error ? t("updates.tryAgain") : label}
         </Button>
         {secondary}
       </Actions>

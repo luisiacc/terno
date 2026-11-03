@@ -9,7 +9,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Input } from "@terno/ui/components/input";
 import { Switch } from "@terno/ui/components/switch";
 import { cn } from "@terno/ui/lib/utils";
-import { Loader2, Plus, RefreshCw, Trash2 } from "@terno/ui/icons";
+import { Plus, RefreshCw, Trash2 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { lazy, Suspense, useEffect, useId, useState } from "react";
 import { snack } from "~/lib/snack";
@@ -115,8 +115,8 @@ function Reconnect({ account }: { account: Account }) {
           >
             {t("common.cancel")}
           </Button>
-          <Button type="submit" size="sm" focusableWhenDisabled disabled={busy || !password} data-testid="account-reconnect-submit">
-            {busy && <Loader2 className="animate-spin" />} {t("account.verifySave")}
+          <Button type="submit" size="sm" focusableWhenDisabled disabled={!password} loading={busy} data-testid="account-reconnect-submit">
+            {t("account.verifySave")}
           </Button>
         </form>
         {error}
@@ -134,6 +134,7 @@ function Reconnect({ account }: { account: Account }) {
         focusableWhenDisabled
         disabled={busy}
         aria-disabled={busy || (!ready && !failed) || undefined}
+        loading={busy || (google === "loading" && !ready)}
         data-testid="account-reconnect"
         onClick={() => {
           if (account.kind === "imap") setAsking(true);
@@ -142,7 +143,7 @@ function Reconnect({ account }: { account: Account }) {
           else if (ready) void run();
         }}
       >
-        {busy || (google === "loading" && !ready) ? <Loader2 className="animate-spin" /> : <RefreshCw />} {label}
+        <RefreshCw /> {label}
       </Button>
       {error}
       {failed && (

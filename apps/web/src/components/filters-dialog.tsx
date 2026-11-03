@@ -3,6 +3,7 @@ import { Badge } from "@terno/ui/components/badge";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { CloseButton } from "@terno/ui/components/close-button";
+import { Spinner } from "@terno/ui/components/spinner";
 import { Dialog, DialogContent, DialogTitle } from "@terno/ui/components/dialog";
 import { Input } from "@terno/ui/components/input";
 import { NumberField } from "@terno/ui/components/number-field";
@@ -10,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@terno/ui/components/switch";
 import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Forward, Loader2, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2 } from "@terno/ui/icons";
+import { Archive, Forward, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2 } from "@terno/ui/icons";
 import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { t, type TextKey } from "@terno/i18n";
 import { richT } from "~/lib/i18n";
@@ -272,7 +273,7 @@ function Preview({ rule }: { rule: FilterRule }) {
               ? richT("filters.preview.matches", { count: state.count, n: (n) => <span data-testid="preview-count">{n}</span> })
               : t("filters.preview.calculating")}
         </span>
-        {loading ? <Loader2 className="size-3.5 animate-spin text-muted-foreground" /> : state && <span data-testid="preview-ms" className="font-mono text-2xs text-muted-foreground">{Math.round(state.ms)} ms</span>}
+        {loading ? <Spinner className="size-3.5 text-muted-foreground" aria-hidden /> : state && <span data-testid="preview-ms" className="font-mono text-2xs text-muted-foreground">{Math.round(state.ms)} ms</span>}
       </div>
       <ul className="divide-y divide-border/60">
         {state?.sample.map((th) => (
@@ -475,8 +476,8 @@ export function FiltersDialog() {
                     placeholder={t("filters.ai.placeholder")}
                     className="min-h-16 flex-1 resize-none bg-background"
                   />
-                  <Button data-testid="ai-generate" onClick={generate} disabled={generating || prompt.trim().length < 3} className="self-end">
-                    {generating ? <Loader2 className="animate-spin" /> : <Wand2 />} {t("filters.ai.create")}
+                  <Button data-testid="ai-generate" onClick={generate} loading={generating} disabled={prompt.trim().length < 3} className="self-end">
+                    <Wand2 /> {t("filters.ai.create")}
                   </Button>
                 </div>
                 <p className="mt-2 text-2xs text-muted-foreground" data-testid="ai-privacy-notice">

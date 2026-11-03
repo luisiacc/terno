@@ -3,7 +3,8 @@ import { localeTag, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { cn } from "@terno/ui/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { Loader2, RotateCw, WifiOff } from "@terno/ui/icons";
+import { Spinner } from "@terno/ui/components/spinner";
+import { RotateCw, WifiOff } from "@terno/ui/icons";
 import { useEffect, useState } from "react";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
@@ -64,7 +65,7 @@ function Pill({ down, total }: { down: Account[]; total: number }) {
   return (
     <div className="flex shrink-0 px-2 pt-1" data-testid="connection-pill" data-state={reconnecting ? "reconnecting" : "offline"}>
       <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-sidebar-border py-1 pr-1 pl-2.5 text-xs">
-        {reconnecting ? <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden /> : <WifiOff className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />}
+        {reconnecting ? <Spinner className="size-3.5 text-muted-foreground" aria-hidden /> : <WifiOff className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />}
         <div className="min-w-0 flex-1 leading-tight">
           {/* a screen reader hears the state when it changes, never the countdown */}
           <p role="status" className="truncate font-medium text-sidebar-foreground" data-testid="connection-label">

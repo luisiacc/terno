@@ -4,7 +4,6 @@ import { Button } from "@terno/ui/components/button";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
-import { Loader2 } from "@terno/ui/icons";
 import { useState } from "react";
 import { checkForUpdates, errorText, setUpdatePrefs, unsupportedText, useUpdates } from "~/lib/updates";
 import { SettingsGroup, SettingsRow } from "./parts";
@@ -96,13 +95,13 @@ export function UpdatesSection() {
             variant="outline"
             size="sm"
             data-testid="updates-check"
-            disabled={unsupported || checking || state.status === "checking" || state.status === "downloading" || state.status === "installing"}
+            disabled={unsupported || state.status === "downloading" || state.status === "installing"}
+            loading={checking || state.status === "checking"}
             onClick={() => {
               setChecking(true);
               void checkForUpdates().finally(() => setChecking(false));
             }}
           >
-            {(checking || state.status === "checking") && <Loader2 className="animate-spin motion-reduce:animate-none" />}
             {t("updates.settings.checkNow")}
           </Button>
         )}
