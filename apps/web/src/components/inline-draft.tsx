@@ -4,8 +4,7 @@ import type { Account } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
-import { Shortcut } from "@terno/ui/components/shortcut";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
+import { IconButton } from "@terno/ui/components/icon-button";
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, Pin, PinOff, ReplyAll, Trash2 } from "@terno/ui/icons";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -273,24 +272,6 @@ export function Quote({ d }: { d: LocalDraft }) {
   );
 }
 
-function ToolIcon({ label, keys, onClick, children, testId, disabled }: { label: string; keys?: string; onClick: () => void; children: React.ReactNode; testId?: string; disabled?: boolean }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button type="button" variant="ghost" size="icon-sm" aria-label={label} onClick={onClick} data-testid={testId} disabled={disabled} className="text-muted-foreground hover:text-foreground">
-            {children}
-          </Button>
-        }
-      />
-      <TooltipContent>
-        {label}
-        {keys && <Shortcut keys={keys} />}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
 /** The inline draft's accessible name: "Reply to Ana", "Forward" (nobody yet). Reply-all reads as a reply. */
 function formLabel(forward: boolean, who: string): string {
   if (forward) return who ? t("compose.form.forward", { name: who }) : t("compose.form.forwardEmpty");
@@ -481,9 +462,9 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
               showSubject={d.mode === "forward" || d.mode === "new"}
               // plan 115: not from Review drafts, which owns the draft while it's open
               corner={!recovering && (
-                <ToolIcon label={t("compose.pin")} onClick={() => pinDraft(d.key)} testId="compose-pin" disabled={d.sending}>
+                <IconButton label={t("compose.pin")} onClick={() => pinDraft(d.key)} data-testid="compose-pin" disabled={d.sending}>
                   <Pin />
-                </ToolIcon>
+                </IconButton>
               )}
             />
             <ComposerBody draftKey={d.key} checkpoint={checkpoint} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="block min-h-[132px] w-full px-3.5 pt-3 pb-1 text-base" />
@@ -500,12 +481,12 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
                 <SaveState d={d} />
               </span>
               <span className="ml-auto flex gap-0.5">
-                <ToolIcon label={t("compose.discard")} onClick={() => void discard()} testId="compose-discard" disabled={d.sending}>
+                <IconButton label={t("compose.discard")} onClick={() => void discard()} data-testid="compose-discard" disabled={d.sending}>
                   <Trash2 />
-                </ToolIcon>
-                <ToolIcon label={t("compose.collapse")} keys="escape" onClick={collapse} testId="compose-collapse">
+                </IconButton>
+                <IconButton label={t("compose.collapse")} shortcut="escape" onClick={collapse} data-testid="compose-collapse">
                   <ChevronDown />
-                </ToolIcon>
+                </IconButton>
               </span>
             </div>
             {state === "open" && drop.layer}
