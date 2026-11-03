@@ -4,6 +4,7 @@ import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Dialog, DialogContent, DialogTitle } from "@terno/ui/components/dialog";
 import { Input } from "@terno/ui/components/input";
+import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
 import { Textarea } from "@terno/ui/components/textarea";
@@ -164,7 +165,7 @@ function ConditionRow({ c, onChange, onRemove }: { c: Condition; onChange: (c: C
               <SelectItem value="lt">{t("filters.age.lt")}</SelectItem>
             </SelectContent>
           </Select>
-          <Input type="number" min={0} className="h-7 w-20" value={c.value} onChange={(e) => onChange({ ...c, value: Math.max(0, Number(e.target.value) || 0) })} />
+          <NumberField aria-label={t("filters.age.days")} min={0} format={{ useGrouping: false }} className="h-7 w-28" value={c.value} onValueChange={(days) => onChange({ ...c, value: Math.max(0, days ?? 0) })} />
           <span className="text-muted-foreground">{t("settings.days")}</span>
         </div>
       ) : (

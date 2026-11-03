@@ -48,12 +48,12 @@ for (const theme of ["light", "dark"] as const) {
       await dialog.getByTestId("imap-password").fill("synthetic-password");
       // five-digit ports fit, not cut by the host field beside them
       for (const name of ["IMAP port", "SMTP port"]) {
-        const port = dialog.getByRole("spinbutton", { name });
+        const port = dialog.getByLabel(name, { exact: true });
         await port.fill("65535");
         expect(await port.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
       }
-      await dialog.getByRole("spinbutton", { name: "IMAP port" }).fill("993");
-      await dialog.getByRole("spinbutton", { name: "SMTP port" }).fill("465");
+      await dialog.getByLabel("IMAP port", { exact: true }).fill("993");
+      await dialog.getByLabel("SMTP port", { exact: true }).fill("465");
       expect((await new AxeBuilder({ page }).include('[data-testid="add-account-dialog"]').analyze()).violations).toEqual([]);
       await page.screenshot({ path: info.outputPath(`add-account-${theme}.png`) });
       await dialog.getByTestId("imap-submit").click();

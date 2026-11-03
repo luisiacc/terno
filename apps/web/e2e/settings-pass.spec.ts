@@ -132,7 +132,7 @@ test.describe("editable, persisted and in effect", () => {
     await page.getByRole("combobox", { name: "Density" }).click();
     await page.getByTestId("density-compact").click();
     await expect(rows(page).first()).toHaveCSS("height", "40px");
-    const days = page.getByRole("spinbutton", { name: "Sync window" });
+    const days = page.getByLabel("Sync window");
     await days.fill("3");
     await days.press("Enter");
     await expect(page.getByTestId("sync-window-error")).toHaveText("Enter a number of days from 7 to 3,650.");
@@ -145,7 +145,7 @@ test.describe("editable, persisted and in effect", () => {
     await reopen(page, "general");
     await expect(page.getByRole("switch", { name: "Always load remote images" })).toBeChecked();
     await expect(page.getByRole("combobox", { name: "Density" })).toContainText("Compact");
-    await expect(page.getByRole("spinbutton", { name: "Sync window" })).toHaveValue("45");
+    await expect(page.getByLabel("Sync window")).toHaveValue("45");
     await expect(rows(page).first()).toHaveCSS("height", "40px");
     // the choice survives a reload too
     await page.reload();
@@ -191,8 +191,8 @@ test.describe("editable, persisted and in effect", () => {
     await item.getByRole("radiogroup", { name: "Color" }).getByRole("radio", { name: "Violet" }).check();
     await item.getByRole("textbox", { name: "Signature" }).fill("Luis Cordero\nhola@luiscordero.dev");
     await item.getByRole("textbox", { name: "Signature" }).blur();
-    await item.getByRole("spinbutton", { name: "Sync window" }).fill("30");
-    await item.getByRole("spinbutton", { name: "Sync window" }).press("Enter");
+    await item.getByLabel("Sync window").fill("30");
+    await item.getByLabel("Sync window").press("Enter");
     await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === imap.id)).toMatchObject({
       displayName: "Freelance (nuevo)",
       senderName: "Luis C.",
@@ -211,10 +211,10 @@ test.describe("editable, persisted and in effect", () => {
     await expect(item.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Freelance (nuevo)");
     await expect(item.getByRole("radio", { name: "Violet" })).toBeChecked();
     await expect(item.getByRole("textbox", { name: "Signature" })).toHaveValue("Luis Cordero\nhola@luiscordero.dev");
-    await expect(item.getByRole("spinbutton", { name: "Sync window" })).toHaveValue("30");
+    await expect(item.getByLabel("Sync window")).toHaveValue("30");
     // emptied: back to the general window
-    await item.getByRole("spinbutton", { name: "Sync window" }).fill("");
-    await item.getByRole("spinbutton", { name: "Sync window" }).press("Enter");
+    await item.getByLabel("Sync window").fill("");
+    await item.getByLabel("Sync window").press("Enter");
     await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === imap.id)!.syncWindowDays).toBeNull();
 
     // the signature shows under a new message from that account, and is what gets sent below the text
@@ -275,7 +275,7 @@ test.describe("editable, persisted and in effect", () => {
     handlers["accounts.update"] = original;
     await name.press("Enter");
     await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.displayName).toBe("Tres y cuatro");
-    const days = item.getByRole("spinbutton", { name: "Sync window" });
+    const days = item.getByLabel("Sync window");
     await days.fill("20");
     await days.press("Enter");
     await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.syncWindowDays).toBe(20);

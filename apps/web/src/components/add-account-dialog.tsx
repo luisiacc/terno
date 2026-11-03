@@ -2,6 +2,7 @@ import { Button } from "@terno/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@terno/ui/components/dialog";
 import { Input } from "@terno/ui/components/input";
 import { Label } from "@terno/ui/components/label";
+import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Loader2, Mail } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
@@ -16,7 +17,8 @@ import { windowChoices, windowLabel } from "~/lib/settings-values";
 const WEB = import.meta.env.VITE_TARGET === "web";
 
 /** a port fits five digits: it never shrinks beside its host, and has no spinner to cover them */
-const PORT = "w-16 shrink-0 px-1.5 text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
+/** a port: five digits beside the host, no steppers (nobody steps to a port); the arrow keys still do */
+const PORT = { className: "w-16 shrink-0", inputClassName: "px-1.5 text-center", steppers: false, min: 1, max: 65535, format: { useGrouping: false } } as const;
 
 /** Known IMAP/SMTP settings so most people only type email + password. */
 const PRESETS: Record<string, { imap: string; smtp: string; smtpPort: number }> = {
@@ -189,14 +191,14 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
               <Label htmlFor="acc-imap">{t("account.imapServer")}</Label>
               <div className="flex gap-1.5">
                 <Input id="acc-imap" data-testid="imap-host" required value={form.imapHost} onChange={(e) => set({ imapHost: e.target.value })} />
-                <Input aria-label={t("account.imapPort")} className={PORT} type="number" inputMode="numeric" value={form.imapPort} onChange={(e) => set({ imapPort: Number(e.target.value) })} />
+                <NumberField aria-label={t("account.imapPort")} {...PORT} value={form.imapPort} onValueChange={(port) => set({ imapPort: port ?? 0 })} />
               </div>
             </div>
             <div className="col-span-2 space-y-1">
               <Label htmlFor="acc-smtp">{t("account.smtpServer")}</Label>
               <div className="flex gap-1.5">
                 <Input id="acc-smtp" data-testid="smtp-host" required value={form.smtpHost} onChange={(e) => set({ smtpHost: e.target.value })} />
-                <Input aria-label={t("account.smtpPort")} className={PORT} type="number" inputMode="numeric" value={form.smtpPort} onChange={(e) => set({ smtpPort: Number(e.target.value) })} />
+                <NumberField aria-label={t("account.smtpPort")} {...PORT} value={form.smtpPort} onValueChange={(port) => set({ smtpPort: port ?? 0 })} />
               </div>
             </div>
           </div>

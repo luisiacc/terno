@@ -1,6 +1,6 @@
 import type { AppSettings } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
-import { Input } from "@terno/ui/components/input";
+import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
 import { Columns2, Keyboard, Rows3 } from "@terno/ui/icons";
@@ -42,25 +42,26 @@ export function DaysField({
   allowEmpty?: boolean;
 }) {
   const errorId = `${a11y.id}-days-error`;
-  const [text, setText] = useState(value === null ? "" : String(value));
+  const [draft, setDraft] = useState<number | null>(value);
   const [error, setError] = useState<string | null>(null);
   // the stored value changed: show it in the same element (keyboard focus stays)
   const [shown, setShown] = useState(value);
   if (value !== shown) {
     setShown(value);
     // unless what is in the field is an edit of its own, typed since
-    if (text === (shown === null ? "" : String(shown))) {
-      setText(value === null ? "" : String(value));
+    if (draft === shown) {
+      setDraft(value);
       setError(null);
     }
   }
-  const commit = async () => {
-    if (allowEmpty && text.trim() === "") {
+  /** what was typed or stepped to (NaN: text that isn't a number) */
+  const commit = async (days: number | null) => {
+    if (allowEmpty && days === null) {
       setError(null);
       if (value !== null) await onSave(null).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
       return;
     }
-    const r = parseSyncWindow(text);
+    const r = parseSyncWindow(days === null ? "" : String(days));
     if ("error" in r) return setError(r.error);
     setError(null);
     if (r.days === value) return;
@@ -73,25 +74,30 @@ export function DaysField({
   return (
     <span className="flex flex-col items-end gap-1">
       <span className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Input
-          {...a11y}
-          type="number"
-          inputMode="numeric"
+        {/* a typed value out of range stays, with the reason (no clamping); the steppers stay within it */}
+        <NumberField
+          id={a11y.id}
           min={SYNC_WINDOW_MIN}
           max={SYNC_WINDOW_MAX}
-          step={1}
-          className="h-7 w-20 text-right tabular-nums"
+          allowOutOfRange
+          format={{ useGrouping: false }}
+          className="h-7 w-28"
           data-testid={testId}
-          value={text}
+          value={draft}
           placeholder={placeholder}
           aria-invalid={error ? true : undefined}
           aria-describedby={[a11y["aria-describedby"], error ? errorId : null].filter(Boolean).join(" ") || undefined}
-          onChange={(e) => {
-            setText(e.target.value);
+          onValueChange={(days) => {
+            setDraft(days);
             if (error) setError(null);
           }}
-          onBlur={() => void commit()}
-          onKeyDown={(e) => e.key === "Enter" && void commit()}
+          onValueCommitted={(days) => void commit(days)}
+          // Enter saves too, and the field keeps focus (Base UI commits on blur only)
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            const typed = e.currentTarget.value.trim();
+            void commit(typed === "" ? null : Number(typed));
+          }}
         />
         {t("settings.days")}
       </span>
