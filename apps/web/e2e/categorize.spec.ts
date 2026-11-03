@@ -59,7 +59,7 @@ test.describe("categorization snackbar", { tag: "@design" }, () => {
     await expect(snack.getByTestId("snackbar-title")).toHaveText("Added to Facturas");
     await expect(snack.getByTestId("snackbar-sender")).toContainText("Everything from Uber Receipts");
     await expect(snack.getByTestId("snackbar-sender-count")).toHaveText(`${rest}`);
-    await expect(page.getByTestId("reader").locator("[data-slot=category-badge]", { hasText: "Facturas" })).toBeVisible();
+    await expect(page.getByTestId("reader").locator("[data-testid=category-chip]", { hasText: "Facturas" })).toBeVisible();
     // plan 81: it says it catches new mail too, in a word and in full
     await expect(snack.getByTestId("snackbar-sender-future")).toHaveText("+ new mail");
     await expect(snack.getByTestId("snackbar-sender")).toHaveAccessibleDescription("Adds every conversation from Uber Receipts to Facturas, and their new mail from now on.");
@@ -107,7 +107,7 @@ test.describe("categorization snackbar", { tag: "@design" }, () => {
     await expect.poll(() => db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", target, facturas) ?? null).toBeNull();
     // an undo is not a removal: no negative example
     expect(db.get("SELECT 1 FROM cls_examples WHERE thread_id = ?", target)).toBeUndefined();
-    await expect(page.getByTestId("reader").locator("[data-slot=category-badge]", { hasText: "Facturas" })).toHaveCount(0);
+    await expect(page.getByTestId("reader").locator("[data-testid=category-chip]", { hasText: "Facturas" })).toHaveCount(0);
 
     await fileWithPicker(page, facturas);
     await expect(page.getByTestId("category-snackbar")).toBeVisible();
@@ -201,12 +201,12 @@ test.describe("everything from a sender, out of a category (plan 77)", () => {
     expect(inFacturas()).toBe(0);
     // a user removal: the engine learns it
     expect(db.get<{ c: number }>(`SELECT count(*) c FROM cls_examples WHERE category_id = ? AND label < 0 AND thread_id IN (${rappi})`, facturas)!.c).toBe(ids.length);
-    await expect(page.getByTestId("reader").locator("[data-slot=category-badge]", { hasText: "Facturas" })).toHaveCount(0);
+    await expect(page.getByTestId("reader").locator("[data-testid=category-chip]", { hasText: "Facturas" })).toHaveCount(0);
 
     await toast(page, "removed from Facturas").getByTestId("snack-action").click();
     await expect(toast(page, "Undone: Facturas")).toBeVisible();
     await expect.poll(inFacturas).toBe(ids.length);
-    await expect(page.getByTestId("reader").locator("[data-slot=category-badge]", { hasText: "Facturas" })).toBeVisible();
+    await expect(page.getByTestId("reader").locator("[data-testid=category-chip]", { hasText: "Facturas" })).toBeVisible();
   });
 });
 
@@ -477,7 +477,7 @@ test.describe("the engine's suggestions and auto adds in the UI", { tag: "@desig
     db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) VALUES (?, ?, 'auto', ?)", t, facturas, Date.now());
     db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'auto', 0.99, ?, ?)", t, facturas, JSON.stringify([{ k: "reason.sameSender", p: { count: 12, category: "Facturas" } }]), Date.now());
     await selectThread(page, t, "in:inbox from:recibos@rappi.com");
-    const badge = page.getByTestId("reader").locator("[data-slot=category-badge]", { hasText: "Facturas" });
+    const badge = page.getByTestId("reader").locator("[data-testid=category-chip]", { hasText: "Facturas" });
     await expect(badge.getByTestId("auto-mark")).toHaveText("auto");
     await settled(server, t);
     // keyboard and assistive tech reach the explanation too

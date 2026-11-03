@@ -2,13 +2,14 @@ import { folderName } from "~/lib/account-folders";
 import { ReaderAttachments } from "./attachments";
 import type { Account, Category, CategoryColor, MessageDetail, Reason, ThreadDetail } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
-import { CategoryBadge, CategoryDot } from "@terno/ui/components/category-dot";
+import { Chip } from "@terno/ui/components/chip";
+import { CategoryDot } from "@terno/ui/components/category-dot";
 import { IconButton } from "@terno/ui/components/icon-button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Bell, ChevronDown, ChevronLeft, ChevronUp, Forward, Inbox, Layers, MailOpen, OctagonAlert, Printer, Reply, ReplyAll, Star, Tag, Trash2, X } from "@terno/ui/icons";
+import { Archive, Bell, ChevronDown, ChevronLeft, ChevronUp, Forward, Inbox, Layers, MailOpen, OctagonAlert, Printer, Reply, ReplyAll, Star, Tag, Trash2 } from "@terno/ui/icons";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
@@ -306,10 +307,9 @@ function Welcome() {
 /** The account a conversation is in, as a chip: its color and its address (or name). */
 function AccountChip({ account, full }: { account: Account; full: boolean }) {
   return (
-    <span data-testid="reader-account" className="inline-flex h-6 items-center gap-1.5 rounded-full bg-muted px-2.5 text-xs text-muted-foreground">
-      <CategoryDot color={account.color as CategoryColor} />
-      {full ? account.email : account.displayName}
-    </span>
+    <Chip data-testid="reader-account" dot={<CategoryDot color={account.color as CategoryColor} />} className="font-normal text-muted-foreground">
+      <span className="truncate">{full ? account.email : account.displayName}</span>
+    </Chip>
   );
 }
 
@@ -328,8 +328,14 @@ function ThreadChips({ detail, account, cats, accountChip, className }: { detail
       {cats.map((c) => {
         const auto = detail.categorization?.auto.find((a) => a.categoryId === c.id);
         return (
-          <CategoryBadge key={c.id} color={c.color as CategoryColor}>
-            {c.name}
+          <Chip
+            key={c.id}
+            data-testid="category-chip"
+            dot={<CategoryDot color={c.color as CategoryColor} />}
+            onRemove={() => void removeFromCategory(c.id, [thread.id])}
+            removeLabel={auto ? t("reader.category.notIt", { category: c.name }) : t("reader.category.remove", { category: c.name })}
+          >
+            <span className="truncate">{c.name}</span>
             {auto && (
               <Tooltip>
                 <TooltipTrigger
@@ -347,31 +353,33 @@ function ThreadChips({ detail, account, cats, accountChip, className }: { detail
                 <Reasons title={t("reader.auto.title", { category: c.name })} reasons={auto.reasons} hint={t("reader.auto.hint", { category: c.name })} />
               </Tooltip>
             )}
-            <button type="button" aria-label={auto ? t("reader.category.notIt", { category: c.name }) : t("reader.category.remove", { category: c.name })} className="text-muted-foreground hover:text-foreground" onClick={() => void removeFromCategory(c.id, [thread.id])}>
-              <X className="size-3" />
-            </button>
-          </CategoryBadge>
+          </Chip>
         );
       })}
       {detail.categorization?.suggestions.map((sg, i) => {
         const c = categories.find((x) => x.id === sg.categoryId);
         if (!c) return null;
         return (
-          <span key={sg.categoryId} data-testid="suggestion-chip" className="inline-flex h-5 items-center rounded-full border border-dashed border-primary/40 text-xs text-foreground">
+          // not filed yet: the chip's outline, dashed in the accent, around its accept half and its ×
+          <Chip
+            key={sg.categoryId}
+            data-testid="suggestion-chip"
+            className="border border-dashed border-primary/40 bg-transparent ps-0"
+            onRemove={() => void answer(c.id, false)}
+            removeLabel={t("reader.category.notIt", { category: c.name })}
+            removeProps={{ "data-testid": "suggestion-reject" }}
+          >
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <button type="button" data-testid="suggestion-accept" onClick={() => void answer(c.id, true)} className="inline-flex h-full items-center gap-1 rounded-l-full pr-1 pl-1.5 hover:bg-accent">
+                  <button type="button" data-testid="suggestion-accept" onClick={() => void answer(c.id, true)} className="inline-flex h-full min-w-0 items-center gap-1.5 rounded-s-[inherit] ps-2 pe-0.5 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring">
                     <CategoryDot color={c.color as CategoryColor} />{t("reader.suggestion", { category: c.name })}{keyed(i, c.id) && <Shortcut keys="y" className="ml-0.5 [&_kbd]:h-3.5 [&_kbd]:min-w-3.5 [&_kbd]:text-[10px]" />}
                   </button>
                 }
               />
               <Reasons title={t("reader.suggestion.title", { category: c.name, percent: Math.round(sg.p * 100) })} reasons={sg.reasons} hint={keyed(i, c.id) ? t("reader.suggestion.hint") : undefined} />
             </Tooltip>
-            <button type="button" aria-label={t("reader.category.notIt", { category: c.name })} data-testid="suggestion-reject" onClick={() => void answer(c.id, false)} className="inline-flex h-full items-center rounded-r-full px-1 text-muted-foreground hover:bg-accent hover:text-foreground">
-              <X className="size-3" />
-            </button>
-          </span>
+          </Chip>
         );
       })}
     </div>
