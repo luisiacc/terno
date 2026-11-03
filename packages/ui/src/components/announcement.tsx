@@ -65,7 +65,7 @@ function Announcement({
           </p>
         )}
         {description && <p className={cn("text-muted-foreground", title && !inline && "mt-0.5", inline && "min-w-0 flex-1 truncate")}>{description}</p>}
-        {actions && <div className={cn("flex flex-wrap gap-1.5", !inline && "mt-2", inline && "shrink-0")}>{actions}</div>}
+        {actions && <div className={cn("flex flex-wrap gap-1.5", !inline && "mt-1.5", inline && "shrink-0")}>{actions}</div>}
       </div>
       {onClose && (
         // centred on the first line of text (16 px), the 20 px button reaching 2 px past it
