@@ -1,6 +1,7 @@
 "use client"
 
 import { NumberField as NumberFieldPrimitive } from "@base-ui/react/number-field"
+import { useRef } from "react"
 import { cn } from "cn"
 import { t } from "@terno/i18n"
 import { Minus, Plus } from "@terno/ui/icons"
@@ -22,6 +23,13 @@ type NumberFieldProps = Omit<NumberFieldPrimitive.Root.Props, "className" | "ren
   "aria-invalid"?: boolean
   "data-testid"?: string
   onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>
+  /** Enter commits as leaving the field does (the same parsing), focus staying in the field */
+  commitOnEnter?: boolean
+  /**
+   * The field was left (or Enter committed it) with edited text that isn't a number (".", "-"): Base UI then keeps
+   * the text and commits nothing, so this is the caller's chance to say why.
+   */
+  onUnparsed?: (text: string) => void
 }
 
 /**
@@ -29,7 +37,8 @@ type NumberFieldProps = Omit<NumberFieldPrimitive.Root.Props, "className" | "ren
  * focus and error, its unavailable look) with − and + at its end. Base UI parses and formats the number for the locale
  * (pass `format`, e.g. `{ useGrouping: false }` for ports), steps it with the arrows and the steppers within `min` and
  * `max`, and reports it on blur (`onValueCommitted`). `id`, the label's target, lands on the input. The input is
- * a text field (Base UI's), named by its label: find it by its label, not as a spinbutton.
+ * a text field (Base UI's), named by its label: find it by its label, not as a spinbutton. `commitOnEnter` and
+ * `onUnparsed` go through that same commit, so Enter and Tab read a number the same way (Codex code review #4, #5).
  */
 function NumberField({
   className,
@@ -42,10 +51,23 @@ function NumberField({
   "aria-invalid": ariaInvalid,
   "data-testid": testId,
   onKeyDown,
+  commitOnEnter = false,
+  onUnparsed,
+  onValueCommitted,
   ...props
 }: NumberFieldProps) {
+  // between an edit and the blur that follows it: did Base UI commit anything?
+  const edit = useRef({ edited: false, committed: false })
   return (
-    <NumberFieldPrimitive.Root data-slot="number-field" className="contents" {...props}>
+    <NumberFieldPrimitive.Root
+      data-slot="number-field"
+      className="contents"
+      onValueCommitted={(value, details) => {
+        edit.current.committed = true
+        onValueCommitted?.(value, details)
+      }}
+      {...props}
+    >
       <NumberFieldPrimitive.Group
         data-slot="number-field-group"
         className={cn(
@@ -64,7 +86,34 @@ function NumberField({
           // Base UI says "Number field" in English whatever the language
           aria-roledescription={t("ui.numberField.role")}
           data-testid={testId}
-          onKeyDown={onKeyDown}
+          onKeyDown={(e) => {
+            onKeyDown?.(e)
+            if (!commitOnEnter || e.key !== "Enter" || e.defaultPrevented) return
+            // Base UI commits on blur only: leave and come back, in the same frame
+            const input = e.currentTarget
+            input.blur()
+            input.focus({ preventScroll: true })
+          }}
+          onChange={() => {
+            edit.current = { edited: true, committed: false }
+          }}
+          onBlur={(e) => {
+            const input = e.currentTarget
+            // edited to text with no digit at all (".", "-"): no number to read. Base UI would keep it only until its
+            // next render (then put the last number back); skipping its blur keeps the text the user's, still edited,
+            // so leaving again checks it again (this handler runs before Base UI's)
+            if (edit.current.edited && input.value.trim() !== "" && !/\p{Nd}/u.test(input.value)) {
+              e.preventBaseUIHandler()
+              onUnparsed?.(input.value)
+              return
+            }
+            // anything else after Base UI's own blur, which parses the text and commits it if it can
+            queueMicrotask(() => {
+              const { edited, committed } = edit.current
+              edit.current = { edited: false, committed: false }
+              if (edited && !committed && input.value.trim() !== "") onUnparsed?.(input.value)
+            })
+          }}
           className={cn(
             "h-full w-full min-w-0 flex-1 bg-transparent px-2.5 text-base tabular-nums outline-none placeholder:text-muted-foreground disabled:text-muted-foreground md:text-sm",
             steppers && "pe-1",

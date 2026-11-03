@@ -46,6 +46,36 @@ describe("DaysField on the shared NumberField (plan 125, revision 2)", () => {
     expect(document.activeElement).toBe(input);
   });
 
+  it("text that isn't a number, left with Tab or Enter, stays with the reason (Codex code review #4)", async () => {
+    const onSave = vi.fn(async () => {});
+    const { host } = await render(<DaysField a11y={a11y} testId="sync-window" value={180} onSave={onSave} />);
+    const input = host.querySelector<HTMLInputElement>("#days")!;
+    await type(input, ".");
+    await act(async () => input.blur());
+    expect(input.value).toBe(".");
+    expect(host.querySelector("[data-testid=sync-window-error]")?.textContent).toMatch(/from 7 to 3,650/);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    await type(input, "45");
+    expect(host.querySelector("[data-testid=sync-window-error]")).toBeNull();
+    await type(input, "-");
+    await enter(input);
+    expect(host.querySelector("[data-testid=sync-window-error]")).not.toBeNull();
+    expect(document.activeElement).toBe(input);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("Enter reads the number as leaving the field does, by the locale's rules (Codex code review #5)", async () => {
+    // forty-five in Eastern Arabic digits: Base UI's parser reads them (as it reads "45,0" in es-ES), Number() can't
+    const onSave = vi.fn(async () => {});
+    const { host } = await render(<DaysField a11y={a11y} testId="sync-window" value={180} onSave={onSave} />);
+    const input = host.querySelector<HTMLInputElement>("#days")!;
+    await type(input, "٤٥");
+    await enter(input);
+    expect(host.querySelector("[data-testid=sync-window-error]")).toBeNull();
+    expect(onSave).toHaveBeenCalledWith(45);
+    expect(document.activeElement).toBe(input);
+  });
+
   it("a typed value out of range stays as typed, with the reason announced; typing again clears it", async () => {
     const onSave = vi.fn(async () => {});
     const { host } = await render(<DaysField a11y={a11y} testId="sync-window" value={180} onSave={onSave} />);

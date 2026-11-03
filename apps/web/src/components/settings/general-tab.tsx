@@ -54,8 +54,8 @@ export function DaysField({
       setError(null);
     }
   }
-  /** what was typed or stepped to (NaN: text that isn't a number) */
-  const commit = async (days: number | null) => {
+  /** what was typed or stepped to, or typed text that isn't a number */
+  const commit = async (days: number | string | null) => {
     if (allowEmpty && days === null) {
       setError(null);
       if (value !== null) await onSave(null).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
@@ -92,12 +92,10 @@ export function DaysField({
             if (error) setError(null);
           }}
           onValueCommitted={(days) => void commit(days)}
-          // Enter saves too, and the field keeps focus (Base UI commits on blur only)
-          onKeyDown={(e) => {
-            if (e.key !== "Enter") return;
-            const typed = e.currentTarget.value.trim();
-            void commit(typed === "" ? null : Number(typed));
-          }}
+          // Enter saves too, read as leaving the field reads it (the locale's rules), the field keeping focus
+          commitOnEnter
+          // text that isn't a number at all: it stays, with the same reason
+          onUnparsed={(text) => void commit(text)}
         />
         {t("settings.days")}
       </span>
