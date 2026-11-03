@@ -2,7 +2,7 @@ import { cn } from "cn"
 import { t } from "@terno/i18n"
 
 // a ring a quarter of the radius thick, its edges a hair soft (closest-side: 100% is the radius)
-const RING = "radial-gradient(closest-side, transparent 74%, #000 76%, #000 98%, transparent 100%)"
+const RING = "radial-gradient(closest-side, transparent 74%, black 76%, black 98%, transparent 100%)"
 
 /**
  * BoardUI's spinner (plan 125): a faint ring with an arc turning on it, in the text's color. 1.15em beside text, 16 px
@@ -25,8 +25,8 @@ function Spinner({
       className={cn("relative inline-flex size-4 shrink-0 text-primary in-data-[slot=button]:size-[1.15em] in-data-[slot=button]:text-current", className)}
       {...props}
     >
-      <span aria-hidden className="absolute inset-0 rounded-full bg-current opacity-15" style={{ maskImage: RING, WebkitMaskImage: RING }} />
-      <span aria-hidden className="absolute inset-0 animate-spin [animation-duration:900ms]">
+      <span aria-hidden className="absolute inset-0 rounded-full bg-current/15" style={{ maskImage: RING, WebkitMaskImage: RING }} />
+      <span aria-hidden className="absolute inset-0 animate-spin">
         <span className="absolute inset-0" style={{ background: "conic-gradient(transparent 70deg, currentColor 360deg)", maskImage: RING, WebkitMaskImage: RING }} />
         {/* the arc's rounded head, at its leading end */}
         <span className="absolute top-0 left-1/2 size-1/8 -translate-x-1/2 rounded-full bg-current" />
