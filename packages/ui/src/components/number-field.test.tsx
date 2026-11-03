@@ -19,7 +19,7 @@ async function render(node: React.ReactNode) {
     act(() => root.unmount());
     host.remove();
   };
-  return host;
+  return Object.assign(host, { rerender: (next: React.ReactNode) => act(async () => root.render(next)) });
 }
 
 /** types into the field as the user would (React's onChange listens to input events) */
@@ -55,6 +55,16 @@ describe("NumberField (plan 125)", () => {
     } finally {
       await loadLocale("en");
     }
+  });
+
+  it("without onUnparsed, text that isn't a number gets Base UI's own blur: a new value shows (Codex code review, second pass #1)", async () => {
+    // a port replaced by "." and left, then set by the form (an email's preset)
+    const host = await render(<NumberField aria-label="SMTP port" steppers={false} value={993} />);
+    const input = host.querySelector("input")!;
+    await type(input, ".");
+    await act(async () => input.blur());
+    await host.rerender(<NumberField aria-label="SMTP port" steppers={false} value={465} />);
+    expect(input.value).toBe("465");
   });
 
   it("commits what was typed on blur, not while typing", async () => {

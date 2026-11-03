@@ -99,12 +99,13 @@ function NumberField({
           }}
           onBlur={(e) => {
             const input = e.currentTarget
-            // edited to text with no digit at all (".", "-"): no number to read. Base UI would keep it only until its
-            // next render (then put the last number back); skipping its blur keeps the text the user's, still edited,
-            // so leaving again checks it again (this handler runs before Base UI's)
-            if (edit.current.edited && input.value.trim() !== "" && !/\p{Nd}/u.test(input.value)) {
+            // edited to text with no digit at all (".", "-") and a caller to say why: Base UI would keep the text only
+            // until its next render (then put the last number back); skipping its blur keeps it the user's, still
+            // edited, so leaving again checks it again (this handler runs before Base UI's). With no one to say why,
+            // Base UI's own blur runs, so the value the form sets later shows (Codex code review, second pass #1)
+            if (onUnparsed && edit.current.edited && input.value.trim() !== "" && !/\p{Nd}/u.test(input.value)) {
               e.preventBaseUIHandler()
-              onUnparsed?.(input.value)
+              onUnparsed(input.value)
               return
             }
             // anything else after Base UI's own blur, which parses the text and commits it if it can
