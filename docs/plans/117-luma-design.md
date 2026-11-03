@@ -8,7 +8,7 @@
 
 ## What exists
 
-- BoardUI (MIT, github.com/BoardUI/boardui) is React 19, Tailwind v4 and React Aria. Its base components (`components/base/`) are buttons, input, textarea, select, checkbox, switch, dropdown, tooltip, kbd, badges, tabs and a segmented control. Their look: Tailwind's neutrals with a blue accent ramp, Inter, 10 px controls, 16 px menus, a primary button lit top to bottom (accent 500 → 600), white secondary buttons with a 1 px border and a contact shadow, *filled* fields (tertiary grey, no border, a ring on hover), white thumbs with a small coloured "chip", and a soft two-layer dropdown shadow.
+- BoardUI (MIT, [boardui.com/components](https://www.boardui.com/components/)) is React 19, Tailwind v4 and React Aria. Its base components (`components/base/`) are buttons, input, textarea, select, checkbox, switch, dropdown, tooltip, kbd, badges, tabs and a segmented control. Their look: Tailwind's neutrals with a blue accent ramp, Inter, 10 px controls, 16 px menus, a primary button lit top to bottom (accent 500 → 600), white secondary buttons with a 1 px border and a contact shadow, *filled* fields (tertiary grey, no border, a ring on hover), white thumbs with a small coloured "chip", and a soft two-layer dropdown shadow.
 - Terno's base components (`packages/ui/src/components/`) are shadcn on Base UI, drawn from palette tokens and the design's variables (plan 15). A design is type, shape, density and structural variants; colours live in palettes.
 
 ## Design
