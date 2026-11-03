@@ -176,7 +176,7 @@ for (const mode of ["light", "dark"] as const) {
       expect(await css(page, "remind-date", "box-shadow")).not.toBe("none");
     });
 
-    // plan 122: BoardUI's Time Field, typed segment by segment in Input's filled field
+    // plan 122: BoardUI's Time Field, typed segment by segment, in the theme's secondary chrome
     test("the time is BoardUI's Time Field: typed segment by segment, the focused one in the primary", async ({ app: page }) => {
       await openRow(page, 1);
       await page.getByTestId("action-remind").click();
@@ -184,7 +184,11 @@ for (const mode of ["light", "dark"] as const) {
       await popover.getByTestId("remind-pick").click();
       const field = popover.getByTestId("remind-time");
       await page.mouse.move(1, 1);
-      expect(await css(page, "remind-time", "background-color"), "the filled field").toBe(await css(page, "probe-field", "background-color"));
+      // the theme's secondary, as the date beside it: the card, a 1 px border, a shadow (no grey wash)
+      expect(await css(page, "remind-time", "background-color"), "the card").toBe(await css(page, "probe-card", "background-color"));
+      expect(await css(page, "remind-time", "background-color")).toBe(await css(page, "remind-date", "background-color"));
+      expect(await css(page, "remind-time", "border-top-width")).toBe("1px");
+      expect(await css(page, "remind-time", "box-shadow")).not.toBe("none");
       await typeTime(field, 2, 30, "PM");
       expect(await timeText(field)).toBe("2:30 PM");
       const minute = field.locator("[role=spinbutton]").nth(1);

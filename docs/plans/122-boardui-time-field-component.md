@@ -72,3 +72,7 @@ Nine points:
 ## Revisions after the Codex code review
 
 One finding, fixed: a cleared segment with focus kept its placeholder's `muted-foreground` on the primary fill (1.23:1 in Terno light), since the placeholder rule came later in the CSS. The focused segment's text is `primary-foreground` whether or not it is cleared; `controls.spec` checks the cleared, focused hour's color and fails without the fix.
+
+## Follow-up: no grey wash
+
+Asked: "remove the gray color since we don't do that, lets keep the style according to the themes we have". The Time Field is drawn as the theme's secondary control, the same as the date button beside it (`bg-card`, a 1 px `border`, `shadow-xs`, `rounded-md`), instead of Input's grey `bg-field` wash; its clock sits where the date's calendar does. `controls.spec` checks it has the card, the date's own fill, a border and a shadow.
