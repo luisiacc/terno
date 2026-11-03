@@ -56,3 +56,9 @@ The critique (12 points) changed:
 8. The e2e dev server takes `googleClients` (`backendOptions.noGoogle` for a build without one); web-build configs set a synthetic `TERNO_GOOGLE_WEB_DEV_ID`.
 9. Tests that leaned on the removed setting for other reasons were moved to their own triggers (the categorize race, keychain fixtures).
 10. The secret is deleted before the Única keychain migration (which would otherwise open and seal it again), with no "once" marker; the preload's flag and its build define are gone.
+
+## What the Codex code review changed
+
+One finding: the test for the removed `settings.setSecret` sent a name the old method already refused, so it would have passed with the method still there. It now sends the name the method used to accept and expects `UNKNOWN_METHOD`, and checks nothing was stored. No other defects found (commits `c1b76950`, and `88f11927` for the Settings sidebar's 1 px gap).
+
+Verified: `pnpm typecheck`, `pnpm lint`; backend, mail, db and store unit tests (the failures left also fail on a clean main, or pass alone); the e2e specs that sign in to Google or show Settings → Accounts (97 tests); the web build's Google specs; the Accounts baseline looked at without the group.

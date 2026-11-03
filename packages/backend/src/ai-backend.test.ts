@@ -238,7 +238,9 @@ describe("keys never leave the backend", () => {
 
   it("there is no generic secret setter (plan 123 removed settings.setSecret): AI keys go through ai.setKey", async () => {
     const { backend, client } = await setup();
-    await expect(backend.server.invoke("settings.setSecret" as never, { name: "anthropicApiKey", value: "x" } as never, { clientId: "r", origin: "renderer" })).rejects.toBeTruthy();
+    // the name it used to accept: the method itself is gone, not just the value refused (Codex review)
+    await expect(backend.server.invoke("settings.setSecret" as never, { name: "gmailClientSecret", value: "x" } as never, { clientId: "r", origin: "renderer" })).rejects.toMatchObject({ code: "UNKNOWN_METHOD" });
+    expect(await backend.store.secrets.has("gmailClientSecret")).toBe(false);
     expect(await client.call("app.bootstrap", {}).then((b) => b.settings.ai.hasKey)).toBe(false);
   });
 });
