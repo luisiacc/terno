@@ -2,10 +2,11 @@ import { SNIPPET_HTML_MAX, SNIPPET_TEXT_MAX, SNIPPET_VARIABLES, type Snippet, ty
 import { schema } from "@terno/richtext";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Input } from "@terno/ui/components/input";
 import { cn } from "@terno/ui/lib/utils";
-import { Braces, ChevronDown, ChevronLeft, ChevronRight, Trash2 } from "@terno/ui/icons";
+import { Braces, ChevronDown, ChevronLeft, Trash2 } from "@terno/ui/icons";
 import { TextSelection, type EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
@@ -159,7 +160,6 @@ export default function SnippetEditor({ id, fresh, selectName }: { id: string; f
   const initial = start.snippet;
   const [name, setName] = useState(initial?.name ?? "");
   const [fills, setFills] = useState(() => ({ subject: initial?.subject ?? "", to: initial?.to ?? "", cc: initial?.cc ?? "", bcc: initial?.bcc ?? "" }));
-  const [fillsOpen, setFillsOpen] = useState(() => Object.values(fills).some((v) => v.trim() !== ""));
   const [tooLong, setTooLong] = useState(false);
   const viewRef = useRef<EditorView | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -287,19 +287,12 @@ export default function SnippetEditor({ id, fresh, selectName }: { id: string; f
       </div>
       <p className="mt-1.5 px-1 text-xs text-muted-foreground">{t("snippets.variables.help")}</p>
 
-      <div className="mt-5">
-        <button
-          type="button"
-          aria-expanded={fillsOpen}
-          aria-controls={`${base}-fills`}
-          onClick={() => setFillsOpen((o) => !o)}
-          data-testid="snippet-fills-toggle"
-          className="flex items-center gap-1 rounded-sm px-1 text-xs font-semibold text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-        >
-          {fillsOpen ? <ChevronDown className="size-[1.15em]" aria-hidden /> : <ChevronRight className="size-[1.15em]" aria-hidden />}
+      {/* starts open when one of them is filled in */}
+      <Collapsible className="mt-5" defaultOpen={Object.values(fills).some((v) => v.trim() !== "")}>
+        <CollapsibleTrigger data-testid="snippet-fills-toggle" className="w-auto gap-1 rounded-sm px-1 text-xs font-semibold text-muted-foreground hover:text-foreground [&_svg]:size-[1.15em]">
           {t("snippets.alsoFills")}
-        </button>
-        <div id={`${base}-fills`} hidden={!fillsOpen}>
+        </CollapsibleTrigger>
+        <CollapsiblePanel>
           <div className="mt-1.5 hairline-divide rounded-[calc(var(--radius-lg)+2px)] bg-tint px-4">
             {fillRow("subject", t("compose.subject"))}
             {fillRow("to", t("compose.to"))}
@@ -307,8 +300,8 @@ export default function SnippetEditor({ id, fresh, selectName }: { id: string; f
             {fillRow("bcc", t("compose.bcc"))}
           </div>
           <p className="mt-1.5 px-1 text-xs text-muted-foreground">{t("snippets.alsoFills.hint")}</p>
-        </div>
-      </div>
+        </CollapsiblePanel>
+      </Collapsible>
 
       <div className="mt-6 flex items-center justify-between">
         {stored ? (

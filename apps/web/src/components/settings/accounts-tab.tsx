@@ -3,12 +3,13 @@ import { RecipientReceipts } from "./recipient-receipts";
 import { localized } from "~/lib/i18n";
 import { separatesTabs, type Account, type CategoryColor } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
+import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@terno/ui/components/accordion";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Input } from "@terno/ui/components/input";
 import { Switch } from "@terno/ui/components/switch";
 import { cn } from "@terno/ui/lib/utils";
-import { ChevronRight, Loader2, Plus, RefreshCw, Trash2 } from "@terno/ui/icons";
+import { Loader2, Plus, RefreshCw, Trash2 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { lazy, Suspense, useEffect, useId, useState } from "react";
 import { snack } from "~/lib/snack";
@@ -208,22 +209,13 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
   );
 }
 
+/** One account in the list: its row opens its settings in place (an accordion section, several may be open). */
 function AccountItem({ account, generalWindow, isOwner }: { account: Account; generalWindow: number; isOwner: boolean }) {
-  // plan 106: Settings opened on this account (the sidebar's Account Settings…) opens it; later events leave it be
-  const [open, setOpen] = useState(() => getApp().settingsAccount === account.id);
-  const panel = useId();
   // a sign-in to redo reads calmly (plan 25); a real error or an outage in the error ink
   const attention = !needsSignIn(account) && (account.syncState.status === "error" || account.syncState.status === "offline");
   return (
-    <div data-testid="settings-account" data-account-id={account.id}>
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={panel}
-        onClick={() => setOpen((o) => !o)}
-        className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-md px-2 py-2.5 text-left [contain:inline-size] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-        data-testid="account-toggle"
-      >
+    <AccordionItem value={account.id} data-testid="settings-account" data-account-id={account.id}>
+      <AccordionTrigger level={4} className="-mx-2 w-[calc(100%+1rem)] rounded-md px-2 py-2.5 [contain:inline-size]" data-testid="account-toggle">
         <CategoryDot color={account.color as CategoryColor} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{account.displayName}</span>
@@ -231,12 +223,11 @@ function AccountItem({ account, generalWindow, isOwner }: { account: Account; ge
             {account.email} · {account.kind === "gmail" ? "Gmail" : "IMAP/SMTP"} · {status(account)}
           </span>
         </span>
-        <ChevronRight aria-hidden className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-fast", open && "rotate-90")} />
-      </button>
-      <div id={panel} hidden={!open}>
-        {open && <AccountEditor account={account} generalWindow={generalWindow} isOwner={isOwner} />}
-      </div>
-    </div>
+      </AccordionTrigger>
+      <AccordionPanel>
+        <AccountEditor account={account} generalWindow={generalWindow} isOwner={isOwner} />
+      </AccordionPanel>
+    </AccordionItem>
   );
 }
 
@@ -248,9 +239,12 @@ export function AccountsTab({ settings }: { settings: AppSettings; update: Setti
     <div data-testid="accounts-tab">
       <OwnerCard owner={owner} demo={demo} accounts={accounts} />
       <SettingsGroup title={t("account.list")} testId="accounts-group">
-        {accounts.map((a) => (
-          <AccountItem key={a.id} account={a} generalWindow={settings.syncWindowDays} isOwner={owner?.accountId === a.id} />
-        ))}
+        {/* plan 106: Settings opened on an account (the sidebar's Account Settings…) opens it; later events leave it be */}
+        <Accordion multiple defaultValue={accounts.filter((a) => a.id === getApp().settingsAccount).map((a) => a.id)} className="hairline-divide">
+          {accounts.map((a) => (
+            <AccountItem key={a.id} account={a} generalWindow={settings.syncWindowDays} isOwner={owner?.accountId === a.id} />
+          ))}
+        </Accordion>
         <div className="py-1.5">
           <Button variant="ghost" size="sm" className="-mx-2" data-testid="settings-add-account" onClick={() => setApp({ dialog: "addAccount" })}>
             <Plus /> {t("account.add")}

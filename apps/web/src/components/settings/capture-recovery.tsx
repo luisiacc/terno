@@ -1,6 +1,7 @@
 import type { CaptureRepair } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { useEffect, useId, useRef, useState } from "react";
 import { client } from "~/rpc/connection";
 
@@ -34,11 +35,12 @@ export default function CaptureRecovery({ accountId }: { accountId: number }) {
     } catch { if (request === generation.current) setError(true); }
     finally { if (request === generation.current) setBusy(false); }
   };
-  return <div className="hairline-t py-3" data-testid="capture-recovery">
-    <Button variant="ghost" size="sm" aria-expanded={open} aria-controls={id} onClick={() => {
-      setOpen(!open); if (!open) void load(); else generation.current++;
-    }}>{t("capture.title")}</Button>
-    <div id={id} hidden={!open} className="flex flex-col gap-3 pt-2" aria-busy={open && busy}>
+  // kept mounted (empty while closed): the region the trigger controls is there, hidden, before it first opens
+  return <Collapsible open={open} onOpenChange={(next) => {
+    setOpen(next); if (next) void load(); else generation.current++;
+  }} className="hairline-t py-3" data-testid="capture-recovery">
+    <CollapsibleTrigger aria-controls={id} className="rounded-md py-1 text-sm font-medium">{t("capture.title")}</CollapsibleTrigger>
+    <CollapsiblePanel keepMounted id={id} className="flex flex-col gap-3 pt-2" aria-busy={open && busy}>
       {open && <>
       <p className="text-xs text-muted-foreground">{t("capture.hint")}</p>
       {error && <p role="alert" className="text-xs text-destructive-ink">{t("capture.error")}</p>}
@@ -53,6 +55,6 @@ export default function CaptureRecovery({ accountId }: { accountId: number }) {
         {(next || after) && <Button variant="ghost" size="sm" focusableWhenDisabled disabled={busy || !next} onClick={() => void load(next)}>{t("capture.next")}</Button>}
       </div>
       </>}
-    </div>
-  </div>;
+    </CollapsiblePanel>
+  </Collapsible>;
 }
