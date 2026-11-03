@@ -2,11 +2,18 @@
 // same worker can switch NODE_ENV between React's and react-dom/server's loads, and the two must match)
 import { Avatar, AvatarFallback } from "@terno/ui/components/avatar";
 import { Button } from "@terno/ui/components/button";
+import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@terno/ui/components/accordion";
 import { Checkbox } from "@terno/ui/components/checkbox";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
+import { ColorSwatch, ColorSwatches } from "@terno/ui/components/color-swatches";
 import { DialogFooter } from "@terno/ui/components/dialog";
 import { Input } from "@terno/ui/components/input";
 import { InputGroup, InputGroupInput } from "@terno/ui/components/input-group";
 import { Kbd } from "@terno/ui/components/kbd";
+import { NumberField } from "@terno/ui/components/number-field";
+import { Pagination } from "@terno/ui/components/pagination";
+import { Progress } from "@terno/ui/components/progress";
+import { Radio, RadioCard, RadioDot, RadioGroup } from "@terno/ui/components/radio-group";
 import { Separator } from "@terno/ui/components/separator";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@terno/ui/components/tabs";
@@ -58,6 +65,21 @@ process.stdout.write(
       h("i", { "data-testid": "probe-muted-ink", className: "text-muted-foreground" }),
       h("i", { "data-testid": "probe-ink-tint", className: "bg-foreground/8" }),
       h("i", { "data-testid": "probe-popover", className: "bg-popover" }),
+      // plan 125, phase 2a: the radio and its card, the swatches, the number field, the pager, the disclosures and the
+      // progress bar at rest; the tokens they should show
+      h(RadioGroup, { defaultValue: "a", "aria-label": "Radios", className: "flex-row" }, h(Radio, { value: "a", "data-testid": "radio-on" }, "One"), h(Radio, { value: "b", "data-testid": "radio-off" }, "Two")),
+      h(RadioGroup, { defaultValue: "a", "aria-label": "Cards", className: "flex-row" }, h(RadioCard, { value: "a", "data-testid": "radio-card-on", className: "gap-2 p-2" }, "One", h(RadioDot)), h(RadioCard, { value: "b", "data-testid": "radio-card-off", className: "gap-2 p-2" }, "Two", h(RadioDot))),
+      h(ColorSwatches, { defaultValue: "rose", "aria-label": "Color" }, h(ColorSwatch, { value: "rose", label: "Rose", color: "var(--cat-rose)", "data-testid": "swatch-on" }), h(ColorSwatch, { value: "lime", label: "Lime", color: "var(--cat-lime)", "data-testid": "swatch-off" })),
+      h(NumberField, { "aria-label": "Days", defaultValue: 30, "data-testid": "number-input", className: "w-32" }),
+      h(Pagination, { page: 0, pageSize: 25, total: 80, onPageChange: () => {} }),
+      h(Collapsible, { defaultOpen: true }, h(CollapsibleTrigger, { "data-testid": "collapsible-open" }, "Open"), h(CollapsiblePanel, null, "Inside")),
+      h(Accordion, null, h(AccordionItem, { value: 1 }, h(AccordionTrigger, { "data-testid": "accordion-closed" }, "Closed"), h(AccordionPanel, null, "Inside"))),
+      h(Progress, { value: 40, label: "Work", valueLabel: "40%", "data-testid": "progress" }),
+      h("i", { "data-testid": "probe-input-border", className: "border border-input" }),
+      h("i", { "data-testid": "probe-border", className: "border border-border" }),
+      h("i", { "data-testid": "probe-primary-border", className: "border border-primary" }),
+      h("i", { "data-testid": "probe-primary-ink-on-bg", className: "bg-primary-foreground" }),
+      h("i", { "data-testid": "probe-cat-rose", className: "bg-cat-rose" }),
     ),
   ),
 );

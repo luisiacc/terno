@@ -113,6 +113,76 @@ for (const design of DESIGN_IDS) for (const mode of ["light", "dark"] as const) 
       expect(host.x + host.width - (footer.x + footer.width), "24 px in from its end").toBe(24);
     });
 
+    // plan 125, phase 2a: BoardUI's radio and its card, the swatches, the number field, the pager, the disclosures and the
+    // progress bar, at rest
+    test("a chosen radio is the primary lit from the top, a white centre in it; unchosen, white over the input border", async ({ app: page }) => {
+      const dot = (id: string, pseudo?: string) =>
+        page.getByTestId(id).locator("[data-slot=radio-dot]").evaluate((el, ps) => {
+          const s = getComputedStyle(el, ps);
+          return { bg: s.backgroundColor, image: s.backgroundImage, border: s.borderTopColor, scale: s.scale };
+        }, pseudo);
+      const [on, off, centre, offCentre] = [await dot("radio-on"), await dot("radio-off"), await dot("radio-on", "::after"), await dot("radio-off", "::after")];
+      expect(on.bg).toBe(await css(page, "probe-primary", "background-color"));
+      expect(on.image).toContain("linear-gradient");
+      expect(centre.bg).toBe(await css(page, "probe-primary-ink-on-bg", "background-color"));
+      expect(centre.scale).toBe("1");
+      expect(off.bg).toBe(await css(page, "probe-card", "background-color"));
+      expect(off.border).toBe(await css(page, "probe-input-border", "border-top-color"));
+      expect(offCentre.scale).toBe("0");
+      await expect(page.getByTestId("radio-on")).toHaveAttribute("aria-checked", "true");
+    });
+
+    test("a radio card takes the primary edge when chosen; at rest, the border on the card", async ({ app: page }) => {
+      expect(await css(page, "radio-card-on", "border-top-color")).toBe(await css(page, "probe-primary-border", "border-top-color"));
+      expect(await css(page, "radio-card-on", "box-shadow")).not.toMatch(FLAT);
+      expect(await css(page, "radio-card-off", "border-top-color")).toBe(await css(page, "probe-border", "border-top-color"));
+      expect(await css(page, "radio-card-off", "background-color")).toBe(await css(page, "probe-card", "background-color"));
+    });
+
+    test("swatches are filled with their colour, 24 px, the chosen one ringed inside its edge", async ({ app: page }) => {
+      expect(await css(page, "swatch-on", "background-color")).toBe(await css(page, "probe-cat-rose", "background-color"));
+      expect((await page.getByTestId("swatch-on").boundingBox())!.width).toBe(24);
+      const ring = (id: string) => page.getByTestId(id).locator("span[aria-hidden]").last().evaluate((el) => getComputedStyle(el).opacity);
+      expect([await ring("swatch-on"), await ring("swatch-off")]).toEqual(["1", "0"]);
+    });
+
+    test("the number field is the filled field, its − and + quiet at its end", async ({ app: page }) => {
+      const field = page.getByTestId("number-input").locator("xpath=..");
+      expect(await field.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await css(page, "probe-field", "background-color"));
+      expect(await field.evaluate((el) => getComputedStyle(el).borderTopColor)).toBe("rgba(0, 0, 0, 0)");
+      expect(await css(page, "number-input", "color")).toBe(await css(page, "probe-foreground", "color"));
+      const steppers = field.locator("button");
+      await expect(steppers).toHaveCount(2);
+      expect(await steppers.evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")))).toEqual(["Decrease", "Increase"]);
+      expect(await steppers.first().evaluate((el) => getComputedStyle(el).color)).toBe(await css(page, "probe-muted-ink", "color"));
+    });
+
+    test("the pager: secondary Previous and Next, the range between them in muted text", async ({ app: page }) => {
+      const nav = page.locator("#controls-probe nav[data-slot=pagination]");
+      const [previous, next, range] = [nav.locator("[data-slot=pagination-previous]"), nav.locator("[data-slot=pagination-next]"), nav.locator("span[aria-live]")];
+      await expect(range).toHaveText("1–25 of 80");
+      expect(await range.evaluate((el) => getComputedStyle(el).color)).toBe(await css(page, "probe-muted-ink", "color"));
+      // on the first page Previous is unavailable: the outline's field wash
+      expect(await previous.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await css(page, "probe-field", "background-color"));
+      expect(await next.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await css(page, "probe-card", "background-color"));
+    });
+
+    test("a disclosure's chevron sits at its end, pointing up when open", async ({ app: page }) => {
+      const chevron = (id: string) => page.getByTestId(id).locator("svg").evaluate((el) => ({ rotate: getComputedStyle(el).rotate, last: el.parentElement!.lastElementChild === el }));
+      expect(await chevron("collapsible-open")).toEqual({ rotate: "180deg", last: true });
+      expect(await chevron("accordion-closed")).toEqual({ rotate: "none", last: true });
+      await expect(page.getByTestId("collapsible-open")).toHaveAttribute("aria-expanded", "true");
+      await expect(page.getByTestId("accordion-closed")).toHaveAttribute("aria-expanded", "false");
+    });
+
+    test("the progress bar is a 4 px track on the field wash, the fill in the primary", async ({ app: page }) => {
+      const track = page.getByTestId("progress").getByRole("progressbar");
+      expect(await track.evaluate((el) => ({ h: el.getBoundingClientRect().height, bg: getComputedStyle(el).backgroundColor }))).toEqual({ h: 4, bg: await css(page, "probe-field", "background-color") });
+      expect(await track.locator("[data-slot=progress-fill]").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await css(page, "probe-primary", "background-color"));
+      await expect(track).toHaveAccessibleName("Work");
+      await expect(track).toHaveAttribute("aria-valuenow", "40");
+    });
+
     test("the primary's gradient runs between primary-hover and primary, the fills its text is checked on", async ({ app: page }) => {
       const stops = [await css(page, "primary", "--tw-gradient-from"), await css(page, "primary", "--tw-gradient-to")].map((s) => s.trim());
       const fills = [await css(page, "probe-primary-hover", "background-color"), await css(page, "probe-primary", "background-color")];
