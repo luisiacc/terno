@@ -72,6 +72,7 @@ export { Mails } from "./iconset/generated/Mails";
 export { Maximize } from "./iconset/generated/Maximize";
 export { MessageSquareReply } from "./iconset/generated/MessageSquareReply";
 export { MessageSquareText } from "./iconset/generated/MessageSquareText";
+export { Minus } from "./iconset/generated/Minus";
 export { Moon } from "./iconset/generated/Moon";
 export { MousePointer } from "./iconset/generated/MousePointer";
 export { MouseRightClick } from "./iconset/generated/MouseRightClick";

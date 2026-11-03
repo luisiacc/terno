@@ -83,6 +83,8 @@ export const ICONS = {
   Maximize: "ArrowExpandDiagonal01Icon",
   MessageSquareReply: "MessageSquareReplyIcon",
   MessageSquareText: "Message01Icon",
+  // plan 125: a checkbox's indeterminate dash
+  Minus: "MinusSignIcon",
   Moon: "MoonIcon",
   // plan 114: the category tip's picture of a right-click (the right button shaded) and the pointer on the menu
   MousePointer: "Cursor01Icon",
