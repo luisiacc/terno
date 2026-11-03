@@ -8,6 +8,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { ProviderCooldown, ProviderCooldownError } from "./provider-cooldown";
 
+// plan 123: only Terno's own Google clients exist; tests carry a synthetic one
+const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] };
+
 const profile = "https://gmail.googleapis.com/gmail/v1/users/me/profile";
 const userinfo = "https://openidconnect.googleapis.com/v1/userinfo";
 const email = "onboarding@example.test";
@@ -61,7 +64,7 @@ async function setup(profileHeaders?: { wait: Promise<void>; started(): void }) 
     gmailTokens: { inspect: inspectGmailToken, set: installed },
   };
   const dir = mkdtempSync(join(tmpdir(), "terno-b41-"));
-  const open = () => new Backend({ dbPath: join(dir, "test.db"), version: "test", providers, cipher: plaintextCipher, autoSync: false, instantSearch: false, iconTransport: null, now: () => clock, openExternal: async () => {} });
+  const open = () => new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "test.db"), version: "test", providers, cipher: plaintextCipher, autoSync: false, instantSearch: false, iconTransport: null, now: () => clock, openExternal: async () => {} });
   let backend = open();
   const attach = () => {
     const [local, remote] = createMemoryTransportPair();
@@ -76,7 +79,7 @@ async function setup(profileHeaders?: { wait: Promise<void>; started(): void }) 
     await backend.stop();
     rmSync(dir, { recursive: true, force: true });
   });
-  await client.call("settings.update", { gmailClientId: "synthetic-client" });
+  await client.call("app.bootstrap", {}); // the store opens with the first call
   const expire = async () => {
     const rows = decodeCooldown(await backend.store.providerCooldown.read()).rows;
     const wait = Math.max(0, ...rows.flatMap((row) => [Number(row.replay), row.minimum === null ? 0 : Number(row.minimum) - clock])) + 1;

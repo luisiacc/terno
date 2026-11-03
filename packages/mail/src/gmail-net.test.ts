@@ -50,10 +50,10 @@ describe("Gmail requests and the network (plan 20)", () => {
     let refreshes = 0;
     const ctx = {
       account: { id: 1, email: "me@gmail.com" }, config: {},
-      getSecret: async () => "refresh-token", getAppSecret: async () => null,
+      getSecret: async () => "refresh-token", getAppSecret: async () => null, googleClient: async () => ({ clientId: "client", clientSecret: null }),
       replaceSecret: async (_name: string, expected: string, next: string) => expected === "refresh-token" && next === expected,
       store: {
-        setting: async () => ({ gmailClientId: "client" }),
+        setting: async () => ({}),
         syncedMessages: async () => [{ id: 7, providerMsgId: "g7" }],
         syncedMessagePage: async (after?: string) => after ? { items: [] } : { items: [{ id: 7, providerMsgId: "g7" }], next: "g7" },
         messageByProviderId: async () => phase === "new raw" ? null : { id: 7 },
@@ -128,9 +128,9 @@ describe("Gmail requests and the network (plan 20)", () => {
     const ctx = {
       account: { id: 1, email: "me@gmail.com" }, config: {},
       fetch: async () => { requests++; return new Response(body, { status: 429 }); },
-      getSecret: async () => "refresh-token", getAppSecret: async () => null,
+      getSecret: async () => "refresh-token", getAppSecret: async () => null, googleClient: async () => ({ clientId: "client", clientSecret: null }),
       replaceSecret: async (_name: string, expected: string, next: string) => expected === "refresh-token" && next === expected,
-      store: { setting: async () => ({ gmailClientId: "client" }) },
+      store: { setting: async () => ({}) },
     } as unknown as ProviderContext;
     const error = await createGmailProvider(ctx).verify().catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ProviderError);
@@ -276,8 +276,8 @@ describe("Gmail requests and the network (plan 20)", () => {
       config: {},
       fetch: cut,
       getSecret: async () => "refresh-token",
-      getAppSecret: async () => null,
-      store: { setting: async () => ({ gmailClientId: "client" }) },
+      getAppSecret: async () => null, googleClient: async () => ({ clientId: "client", clientSecret: null }),
+      store: { setting: async () => ({}) },
     } as unknown as ProviderContext;
     const error = await createGmailProvider(ctx).verify().catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ProviderError);

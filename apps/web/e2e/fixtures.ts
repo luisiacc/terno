@@ -78,6 +78,10 @@ export interface TestNetwork {
   incoming: IncomingMessage[];
 }
 
+/** plan 123: the Google client a test build carries (Terno's own is the only way to connect Gmail) */
+export const E2E_GOOGLE_CLIENT = "e2e.apps.googleusercontent.com";
+export const E2E_GOOGLE = { preferred: E2E_GOOGLE_CLIENT, clients: [{ clientId: E2E_GOOGLE_CLIENT, clientSecret: "" }] };
+
 /** plan 25: the password the fake IMAP server accepts */
 export const SIGN_IN_PASSWORD = "right-password";
 const SIGNED_IN = "signed-in-again";
@@ -143,7 +147,8 @@ interface Fixtures {
   /** freeze Date for deterministic list dates (off for perf: the fake clock coarsens performance.now) */
   fixedClock: boolean;
   /** backend-dev knobs: a fresh install with no mailbox, and owner claims through the demo registry */
-  backendOptions: { empty?: boolean; ownerClaims?: boolean; agentSocket?: boolean; smtpCapture?: boolean; network?: boolean };
+  /** noGoogle (plan 123): a build without Terno's Google client, which can't connect Gmail */
+  backendOptions: { empty?: boolean; ownerClaims?: boolean; agentSocket?: boolean; smtpCapture?: boolean; network?: boolean; noGoogle?: boolean };
   /** the design the app opens in (plan 15): each Playwright project sets its own; null leaves the install's default (Lumen) */
   design: DesignId | null;
   /** plan 24: the layout the app opens in (null: the install's default, Split) */
@@ -182,7 +187,7 @@ export const test = base.extend<Fixtures>({
     const icons = iconStub();
     // plan 96: one-click unsubscribes never reach the internet either: recorded, answered 200
     const unsubscribes: UnsubscribeRecorder = { posted: [], status: 200, post: async (url) => (unsubscribes.posted.push(url.href), { status: unsubscribes.status }) };
-    const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers, connectivity, iconTransport: icons, unsubscribeTransport: unsubscribes, openExternal: backendOptions.network ? async () => {} : undefined });
+    const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers, connectivity, iconTransport: icons, unsubscribeTransport: unsubscribes, openExternal: backendOptions.network ? async () => {} : undefined, googleClients: backendOptions.noGoogle ? null : E2E_GOOGLE });
     if (!siteIcons) await server.backend.server.invoke("settings.update", { senderIcons: false }, { clientId: "setup", origin: "dev" as const });
     await use(Object.assign(server, { smtp: capture?.received ?? [], net, icons, unsubscribes }));
     // Backend.stop() doesn't wait for an in-flight ops batch; let it settle first.

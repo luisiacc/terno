@@ -2,7 +2,7 @@ import type { Account } from "@terno/core";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
 import { getApp, setApp } from "~/state/app";
-import { webClientId } from "~/lib/google-client";
+import { webBuiltInClientId } from "~/lib/google-client";
 
 /** Google Identity Services' token model: the subset Terno uses. */
 interface TokenResponse {
@@ -96,16 +96,16 @@ function accessToken(clientId: string, loginHint?: string, scopes = GMAIL_SCOPES
 }
 
 /**
- * Connects Gmail (or renews an account's hour-long access) with the user's
- * own OAuth client ID of type "Web application". There is no refresh token
+ * Connects Gmail (or renews an account's hour-long access) with Terno's
+ * own OAuth client ID of type "Web application" (plan 123: the only one). There is no refresh token
  * without a server: the token goes to the worker's memory and is never stored.
  * With `accountId` (signing that account in again, plan 25) the token must be
  * that account's: another Google account picked in the popup changes nothing.
  * `syncWindowDays` (plan 79, Add account): the days a new mailbox downloads.
  */
 export async function connectGmailWeb(loginHint?: string, accountId?: number, o: { syncWindowDays?: number } = {}): Promise<Account> {
-  const clientId = webClientId(getApp().settings?.gmailClientId);
-  if (!clientId) throw Object.assign(new Error(t("errors.gmailClientIdMissing")), { i18n: { key: "errors.gmailClientIdMissing" } });
+  const clientId = webBuiltInClientId();
+  if (!clientId) throw Object.assign(new Error(t("errors.google.noClientWeb")), { i18n: { key: "errors.google.noClientWeb" } });
   await preloadGoogle();
   // plan 22: a new account asks for photos from Google too (the user can untick them on Google's screen)
   const adding = loginHint === undefined && accountId === undefined;
@@ -136,8 +136,8 @@ export async function connectGmailWeb(loginHint?: string, accountId?: number, o:
  * creating one, and later reconnects carry the same grant (include_granted_scopes).
  */
 export async function authorizeGooglePhotosWeb(account: Account): Promise<void> {
-  const clientId = webClientId(getApp().settings?.gmailClientId);
-  if (!clientId) throw Object.assign(new Error(t("errors.gmailClientIdMissing")), { i18n: { key: "errors.gmailClientIdMissing" } });
+  const clientId = webBuiltInClientId();
+  if (!clientId) throw Object.assign(new Error(t("errors.google.noClientWeb")), { i18n: { key: "errors.google.noClientWeb" } });
   await preloadGoogle();
   const token = await accessToken(clientId, account.email, [...GMAIL_SCOPES, ...PHOTO_SCOPES], true);
   setApp({ settings: await client.call("icons.authorizeGoogle", { accountId: account.id, accessToken: token.access_token, expiresIn: token.expires_in, scope: token.scope }) });

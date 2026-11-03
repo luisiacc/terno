@@ -23,6 +23,9 @@ import { SMTPServer } from "smtp-server";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
+// plan 123: only Terno's own Google clients exist; tests carry a synthetic one
+const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] };
+
 const NOW = Date.UTC(2026, 10, 1, 12);
 const ANA = { name: "Ana", email: "ana@books.test" };
 const FILE = Buffer.from([0, 255, 128, 13, 10, 37]);
@@ -47,7 +50,7 @@ interface Harness {
 
 function backendOn(providers: ProviderRegistry, clock: { now: number }) {
   const dir = mkdtempSync(join(tmpdir(), "terno-forward-delivery-"));
-  const backend = new Backend({ dbPath: join(dir, "mail.db"), providers, version: "test", cipher: plaintextCipher, autoSync: false, instantSearch: false, iconTransport: null, now: () => clock.now });
+  const backend = new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "mail.db"), providers, version: "test", cipher: plaintextCipher, autoSync: false, instantSearch: false, iconTransport: null, now: () => clock.now });
   const [a, b] = createMemoryTransportPair();
   backend.connect(b, { clientId: "renderer", origin: "renderer" });
   const client = new RpcClient(a);
@@ -106,7 +109,6 @@ async function gmailHarness(): Promise<Harness> {
   const t = backendOn(providers, clock);
   cleanup.push(async () => { await t.close(); server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); });
   const { account } = await t.backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 });
-  await t.backend.store.settings.set("app", { gmailClientId: "synthetic-client" });
   await t.backend.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
   await (await t.backend.provider(account.id))!.verify();
   return { backend: t.backend, client: t.client, accountId: account.id, clock, delivered };

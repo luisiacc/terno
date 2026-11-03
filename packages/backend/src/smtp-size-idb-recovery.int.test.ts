@@ -13,6 +13,9 @@ import { SMTPServer } from "smtp-server";
 import { afterAll, afterEach, chai, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
+// plan 123: only Terno's own Google clients exist; tests carry a synthetic one
+const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] };
+
 const cleanup: (() => Promise<void> | void)[] = [];
 afterEach(async () => { try { for (const fn of cleanup.splice(0).reverse()) await fn(); } finally { vi.restoreAllMocks(); } });
 const to = [{ name: "Recipient", email: "recipient@example.test" }];
@@ -43,14 +46,13 @@ async function setup(adapter: "sql" | "idb", smtp?: number, owned = cleanup) {
   const open = async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(intercept);
     const store = adapter === "idb" ? await IdbMailStore.open({ name, factory, platform: nodePlatform, instantSearch: false }) : undefined;
-    backend = new Backend({ store, dbPath: join(dir, "mail.db"), version: "test", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), autoSync: false, instantSearch: false, iconTransport: null, unsubscribeTransport: null, now: () => 1000 });
+    backend = new Backend({ googleClients: TEST_GOOGLE, store, dbPath: join(dir, "mail.db"), version: "test", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), autoSync: false, instantSearch: false, iconTransport: null, unsubscribeTransport: null, now: () => 1000 });
     const [a, b] = createMemoryTransportPair(); backend.connect(b, { clientId: "size-reopen", origin: "renderer" }); client = new RpcClient(a);
     await backend.ready;
   };
   owned.push(async () => { client?.close(); if (backend) await backend.stop(); rmSync(dir, { recursive: true, force: true }); expect(unexpected).toEqual([]); });
   await open();
   const accountId = (await backend.store.accounts.create({ kind: smtp ? "imap" : "gmail", email: "sender@example.test", displayName: "Synthetic", color: "indigo", now: 1000, providerConfig: smtp ? { imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: smtp, secure: false, user: "synthetic" }, appendToSent: false } : {} })).account.id;
-  await backend.store.settings.set("app", { gmailClientId: "synthetic-client" });
   await backend.setSecret(`account:${accountId}:${smtp ? "password" : "refreshToken"}`, "synthetic-secret");
   return {
     accountId, sends, accept() { loseResponse = false; }, get backend() { return backend; }, get client() { return client; },

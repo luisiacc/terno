@@ -49,7 +49,7 @@ export function AddAccountDialog() {
           <DialogTitle>{t("account.addTitle")}</DialogTitle>
           <DialogDescription>{t("account.addDescription")}</DialogDescription>
         </DialogHeader>
-        <AddAccountForm draft={draft} onDraft={setDraft} onDone={() => setApp({ dialog: null })} onNeedsClientId={() => setApp({ dialog: "settings", settingsTab: "accounts" })} />
+        <AddAccountForm draft={draft} onDraft={setDraft} onDone={() => setApp({ dialog: null })} />
       </DialogContent>
     </Dialog>
   );
@@ -60,14 +60,12 @@ interface FormProps {
   onDraft: (update: (d: AccountDraft) => AccountDraft) => void;
   /** connected: the host closes */
   onDone: () => void;
-  /** no Google client ID yet: Settings → Accounts is where it goes (the host saves its place first) */
-  onNeedsClientId: () => void;
   /** a connection is in flight (the setup holds Back and Skip meanwhile) */
   onBusy?: (busy: boolean) => void;
 }
 
 /** The sync window, Google, then IMAP: the add-account dialog's body, and the first-run setup's last step (plan 98). */
-export function AddAccountForm({ draft, onDraft, onDone, onNeedsClientId, onBusy }: FormProps) {
+export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
   const imapHere = useApp((s) => s.host?.capabilities.imap ?? true);
   const generalWindow = useApp((s) => s.settings?.syncWindowDays ?? 180);
   const syncWindowDays = draft.picked ?? generalWindow;
@@ -102,11 +100,7 @@ export function AddAccountForm({ draft, onDraft, onDone, onNeedsClientId, onBusy
       snack.success(t("account.connected", { email: a.email }));
       onDone();
     } catch (error) {
-      // no client ID yet: Settings → Accounts is where it goes
-      if ((error as { i18n?: { key?: string } } | null)?.i18n?.key === "errors.gmailClientIdMissing") {
-        snack.error(error instanceof Error ? error.message : String(error));
-        onNeedsClientId();
-      } else setError({ kind: "gmail", text: attemptError(error)! });
+      setError({ kind: "gmail", text: attemptError(error)! });
     } finally {
       setBusy(null);
     }

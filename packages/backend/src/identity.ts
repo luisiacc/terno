@@ -134,7 +134,7 @@ export async function googleCredentialIntent(b: Backend, account: Account, stamp
     if (!sameBytes(latest, current)) throw persistenceFailed();
     b.assertSignIn(account.id, flow);
     // plan 99: the stored grant belongs to the account's own client (the one this sign-in used)
-    const oauth = await googleClientFor(b, await rememberedGoogleClient(b, account.id), true).catch(() => null);
+    const oauth = await googleClientFor(b, await rememberedGoogleClient(b, account.id)).catch(() => null);
     b.assertSignIn(account.id, flow);
     if (!oauth) throw invalidRenewal();
     let proof: GmailRenewalProof;
@@ -199,9 +199,9 @@ export async function connectExistingGoogle(b: Backend, account: Account, flow: 
   if (b.options.providers.gmailTokens) throw new RpcError("UNAVAILABLE", L("errors.gmailReconnectInBrowser"));
   // plan 99: an account signs in again with the client that connected it (its refresh token works with no other)
   const remembered = await rememberedGoogleClient(b, account.id);
-  const oauth = await googleClientFor(b, remembered, true);
+  const oauth = await googleClientFor(b, remembered);
   b.assertSignIn(account.id, flow);
-  if (!oauth) throw new RpcError("BAD_REQUEST", L(remembered ? "errors.google.clientGone" : "errors.gmailClientIdMissing"));
+  if (!oauth) throw new RpcError("BAD_REQUEST", L(remembered ? "errors.google.clientGone" : "errors.google.noClient"));
   if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));
   let result: GmailConnectResult;
   try { result = await b.options.providers.connectGmail({ clientId: oauth.clientId, clientSecret: oauth.clientSecret, openExternal: b.options.openExternal, signal: AbortSignal.any([b.abort.signal, flow.signal]), fetch: b.net.fetchFor("mail"), loginHint: account.email, scopes, allowOmittedRefreshToken: true }); }

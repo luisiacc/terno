@@ -5,7 +5,7 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import type { GmailAccountConfig, GmailConnectResult, ProviderRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
-import { googleClientFor, parseGoogleClients, rememberLegacyGoogleClients, type GoogleClients } from "./google-client";
+import { googleClientFor, parseGoogleClients, type GoogleClients } from "./google-client";
 
 // Plan 99: Terno's own Google client, so Connect Google goes straight to Google.
 const identity = { email: "reader@example.com", name: "Reader", sub: "google-subject", emailVerified: true, grantedScopes: ["https://www.googleapis.com/auth/gmail.modify"], refreshToken: "synthetic-refresh" };
@@ -26,64 +26,49 @@ async function setup(googleClients: GoogleClients | null) {
 }
 
 describe("plan 99: Terno's Google client", () => {
-  it("with nothing in Settings, connecting uses the build's client and the account remembers it", async () => {
+  it("connecting uses the build's client and the account remembers it", async () => {
     const t = await setup(BUILT);
     const account = await t.client.call("accounts.connectGmail", {});
     expect(t.connect.mock.calls[0]![0]).toMatchObject({ clientId: "terno-prod", clientSecret: "prod-secret" });
     expect(await t.config(account.id)).toMatchObject({ googleClientId: "terno-prod" });
   });
 
-  it("without a build client or one in Settings, it still asks for a client ID", async () => {
+  it("without a build client, connecting says this copy can't connect Google", async () => {
     const t = await setup(null);
-    await expect(t.client.call("accounts.connectGmail", {})).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("client ID") });
+    await expect(t.client.call("accounts.connectGmail", {})).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("can’t connect Google accounts") });
     expect(t.connect).not.toHaveBeenCalled();
   });
 
-  it("a client in Settings is used for new connections, with its own secret", async () => {
+  it("plan 123: a client ID left in Settings is never used, for new connections or accounts", async () => {
     const t = await setup(BUILT);
-    await t.client.call("settings.update", { gmailClientId: "own-client" });
-    await t.client.call("settings.setSecret", { name: "gmailClientSecret", value: "own-secret" });
+    await t.backend.store.settings.set("app", { gmailClientId: "own-client" });
     const account = await t.client.call("accounts.connectGmail", {});
-    expect(t.connect.mock.calls[0]![0]).toMatchObject({ clientId: "own-client", clientSecret: "own-secret" });
-    expect(await t.config(account.id)).toMatchObject({ googleClientId: "own-client" });
+    expect(t.connect.mock.calls[0]![0]).toMatchObject({ clientId: "terno-prod", clientSecret: "prod-secret" });
+    expect(await t.config(account.id)).toMatchObject({ googleClientId: "terno-prod" });
+    expect(await googleClientFor(t.backend, "own-client")).toBeNull();
+    expect((await t.client.call("app.bootstrap", {})).settings).not.toHaveProperty("gmailClientId");
   });
 
-  it("an account keeps its client: a baked one gets its own secret, a changed Settings client never lends its secret", async () => {
+  it("an account keeps its client: a baked one gets its own secret, any other is gone", async () => {
     const t = await setup(BUILT);
-    await t.client.call("settings.update", { gmailClientId: "client-b" });
-    await t.client.call("settings.setSecret", { name: "gmailClientSecret", value: "secret-b" });
     // made in dev, refreshing in a release (dev and release share a profile)
     expect(await googleClientFor(t.backend, "terno-dev")).toEqual({ clientId: "terno-dev", clientSecret: "dev-secret" });
-    expect(await googleClientFor(t.backend, "client-b")).toEqual({ clientId: "client-b", clientSecret: "secret-b" });
-    // connected with client A, Settings now says B: A's grant can't be paired with B's secret
     expect(await googleClientFor(t.backend, "client-a")).toBeNull();
+    // remembering none (before plan 99): the build's preferred one
+    expect(await googleClientFor(t.backend)).toEqual({ clientId: "terno-prod", clientSecret: "prod-secret" });
   });
 
-  it("accounts from before plan 99 keep the Settings client, so clearing it later doesn't move them", async () => {
-    const t = await setup(BUILT);
-    await t.client.call("settings.update", { gmailClientId: "legacy-client" });
-    const { account } = await t.backend.store.accounts.create({ kind: "gmail", email: "old@example.com", displayName: "old", color: "indigo", providerConfig: { senderName: "Old", googleSubject: "s" }, now: 1 });
-    const { account: imap } = await t.backend.store.accounts.create({ kind: "imap", email: "imap@example.com", displayName: "imap", color: "indigo", providerConfig: { senderName: "Imap" }, now: 1 });
-    await t.backend.start();
-    expect(await t.config(account.id)).toMatchObject({ googleClientId: "legacy-client", googleSubject: "s" });
-    expect(await t.config(imap.id)).not.toHaveProperty("googleClientId");
-    await t.client.call("settings.update", { gmailClientId: "" });
-    expect(await googleClientFor(t.backend, await t.config(account.id).then((c) => c.googleClientId))).toBeNull();
+  it("no build clients: none for anything", async () => {
+    const t = await setup(null);
+    expect(await googleClientFor(t.backend)).toBeNull();
+    expect(await googleClientFor(t.backend, "terno-prod")).toBeNull();
   });
 
-  it("an account the backfill couldn't bind stays on the build's client when a Settings client comes later (Codex review)", async () => {
+  it("start() forgets a client secret saved for a client of the user's own", async () => {
     const t = await setup(BUILT);
-    // the Settings client was cleared before this version first ran: nothing to bind the account to
-    const { account } = await t.backend.store.accounts.create({ kind: "gmail", email: "old@example.com", displayName: "old", color: "indigo", providerConfig: { senderName: "Old" }, now: 1 });
+    await t.backend.setSecret("gmailClientSecret", "own-secret");
     await t.backend.start();
-    expect(await t.config(account.id)).not.toHaveProperty("googleClientId");
-    // reconnected with the build's client, then the user adds their own for new connections
-    await t.client.call("settings.update", { gmailClientId: "own-client" });
-    expect(await googleClientFor(t.backend, undefined, true)).toEqual({ clientId: "terno-prod", clientSecret: "prod-secret" });
-    expect((await googleClientFor(t.backend))?.clientId).toBe("own-client");
-    // a later start doesn't bind it to a client it never signed in with
-    await rememberLegacyGoogleClients(t.backend);
-    expect(await t.config(account.id)).not.toHaveProperty("googleClientId");
+    expect(await t.backend.store.secrets.has("gmailClientSecret")).toBe(false);
   });
 
   it("the build's clients parse only when well formed", () => {

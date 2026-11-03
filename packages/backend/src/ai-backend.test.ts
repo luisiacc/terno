@@ -236,9 +236,10 @@ describe("keys never leave the backend", () => {
     expect(await backend.getSecret("ai:compatible:openrouter:apiKey")).toBe("sk-or-key-00000000002");
   });
 
-  it("settings.setSecret no longer accepts AI keys", async () => {
-    const { client } = await setup();
-    expect(await errorOf(client.call("settings.setSecret", { name: "anthropicApiKey" as never, value: "x" }))).toMatchObject({ code: "BAD_REQUEST" });
+  it("there is no generic secret setter (plan 123 removed settings.setSecret): AI keys go through ai.setKey", async () => {
+    const { backend, client } = await setup();
+    await expect(backend.server.invoke("settings.setSecret" as never, { name: "anthropicApiKey", value: "x" } as never, { clientId: "r", origin: "renderer" })).rejects.toBeTruthy();
+    expect(await client.call("app.bootstrap", {}).then((b) => b.settings.ai.hasKey)).toBe(false);
   });
 });
 

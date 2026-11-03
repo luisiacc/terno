@@ -13,6 +13,9 @@ import { createGmailProvider, ProviderError, type ProviderRegistry } from "@tern
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
+// plan 123: only Terno's own Google clients exist; tests carry a synthetic one
+const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] };
+
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
@@ -47,7 +50,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s raw provider headers stay out o
       create(ctx) { return createGmailProvider({ ...ctx, fetch: (input, init) => ctx.fetch(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, abort.signal]) : abort.signal }) }, { endpoints: { token: `${origin}/token`, api: `${origin}/mail` } }); },
       async verifyImap() {}, async connectGmail() { throw new Error("Unused fixture consent"); },
     };
-    const open = async () => new Backend({
+    const open = async () => new Backend({ googleClients: TEST_GOOGLE,
       dbPath: join(dir, "synthetic.db"), store: kind === "IndexedDB" ? await IdbMailStore.open({ name, factory, platform, instantSearch: false }) : undefined,
       platform, version: "test", providers: registry, cipher: plaintextCipher, autoSync: false, instantSearch: false, iconTransport: null,
       log: (...args) => logs.push(args),
@@ -73,7 +76,6 @@ describe.each(["SQL", "IndexedDB"] as const)("%s raw provider headers stay out o
     installDiag({ proc: "backend", version: "test", build: "test", channel: "dev", sink: { write: (entry) => records.push(entry), capture: (record) => records.push(record) } });
     let rpc = attach(); await rpc.call("app.bootstrap", {});
     const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 });
-    await backend.store.settings.set("app", { gmailClientId: "synthetic-client" });
     await backend.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
     const provider = await backend.provider(account.id);
     if (!provider) throw new Error("Missing fixture provider");

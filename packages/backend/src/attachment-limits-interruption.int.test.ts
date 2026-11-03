@@ -8,6 +8,9 @@ import { createRegistry, parseRaw } from "@terno/mail";
 import { afterEach, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
+// plan 123: only Terno's own Google clients exist; tests carry a synthetic one
+const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] };
+
 const cleanup: (() => Promise<void> | void)[] = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); vi.restoreAllMocks(); });
 const to = [{ name: "Recipient", email: "recipient@example.test" }];
@@ -32,7 +35,7 @@ async function setup(kind: "gmail" | "imap" = "gmail") {
   vi.spyOn(globalThis, "fetch").mockImplementation(intercept);
   let backend!: Backend, client!: RpcClient;
   const open = async () => {
-    backend = new Backend({ dbPath: join(dir, "mail.db"), version: "test", cipher: plaintextCipher, autoSync: false, instantSearch: false, iconTransport: null, providers: createRegistry(), now: () => now });
+    backend = new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "mail.db"), version: "test", cipher: plaintextCipher, autoSync: false, instantSearch: false, iconTransport: null, providers: createRegistry(), now: () => now });
     const [a, b] = createMemoryTransportPair(); backend.connect(b, { clientId: "limits", origin: "renderer" }); client = new RpcClient(a);
     await backend.ready;
   };
@@ -40,7 +43,6 @@ async function setup(kind: "gmail" | "imap" = "gmail") {
   cleanup.push(async () => { client.close(); await backend.stop(); rmSync(dir, { recursive: true, force: true }); expect(unexpected).toEqual([]); });
   const account = async (accountKind = kind) => (await backend.store.accounts.create({ kind: accountKind, email: "sender@example.test", displayName: "Synthetic", color: "indigo", providerConfig: accountKind === "imap" ? { appendToSent: false } : {}, now })).account.id;
   const accountId = await account();
-  await backend.store.settings.set("app", { gmailClientId: "synthetic-client" });
   await backend.setSecret(`account:${accountId}:refreshToken`, "synthetic-refresh");
   return { accountId, account, routes, sends, setMode(value: typeof mode) { mode = value; }, setNow(value: number) { now = value; }, get backend() { return backend; }, get client() { return client; }, async reopen() { client.close(); await backend.stop(); await open(); } };
 }

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error a build script (plain JS)
-import { buildGoogleClients, withDotEnv } from "../../../scripts/release-env.mjs";
+import { buildGoogleClients, buildWebGoogleClientId, withDotEnv } from "../../../scripts/release-env.mjs";
 
 // Plan 99: what a desktop build bakes in (synthetic values only).
 const both = { TERNO_GOOGLE_DESKTOP_ID: "prod-id", TERNO_GOOGLE_DESKTOP_SECRET: "prod-s", TERNO_GOOGLE_DESKTOP_DEV_ID: "dev-id", TERNO_GOOGLE_DESKTOP_DEV_SECRET: "dev-s" };
@@ -19,6 +19,14 @@ describe("plan 99: the build's Google clients", () => {
   it("a release without its client fails, unless it says none on purpose", () => {
     expect(() => buildGoogleClients({ TERNO_RELEASE: "1", TERNO_GOOGLE_DESKTOP_DEV_ID: "dev-id" })).toThrow(/a release needs Terno's Google client/);
     expect(buildGoogleClients({ TERNO_RELEASE: "1", TERNO_GOOGLE_DESKTOP_ID: "" })).toBeNull();
+  });
+
+  it("plan 123: the web build's ID, dev's outside a release; a web release without it fails unless it says none", () => {
+    expect(buildWebGoogleClientId({ TERNO_GOOGLE_WEB_DEV_ID: "web-dev", TERNO_GOOGLE_WEB_ID: "web-prod" })).toBe("web-dev");
+    expect(buildWebGoogleClientId({})).toBe("");
+    expect(buildWebGoogleClientId({ TERNO_RELEASE: "1", TERNO_GOOGLE_WEB_DEV_ID: "web-dev", TERNO_GOOGLE_WEB_ID: "web-prod" })).toBe("web-prod");
+    expect(() => buildWebGoogleClientId({ TERNO_RELEASE: "1", TERNO_GOOGLE_WEB_DEV_ID: "web-dev" })).toThrow(/a web release needs Terno's Google client/);
+    expect(buildWebGoogleClientId({ TERNO_RELEASE: "1", TERNO_GOOGLE_WEB_ID: "" })).toBe("");
   });
 
   it("reads .env under the environment (what is set wins)", () => {

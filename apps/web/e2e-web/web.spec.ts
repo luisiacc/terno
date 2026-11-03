@@ -277,9 +277,6 @@ test("Gmail in the browser: Google's token model through the page, the mailbox s
   await page.getByTestId("open-settings").click();
   const settings = page.getByTestId("settings-dialog");
   await settings.getByTestId("tab-accounts").click();
-  const clientId = settings.getByRole("textbox", { name: "Google OAuth Client ID" });
-  await clientId.fill("123-web.apps.googleusercontent.com");
-  await clientId.blur();
   await settings.getByRole("button", { name: "Add account" }).click();
   await page.getByTestId("connect-gmail").click();
   await expect(page.getByTestId("snack-message").getByText("luis@gmail.com connected")).toBeVisible();
@@ -297,9 +294,6 @@ test("plan 25: after a reload Gmail asks for a sign-in quietly (the sidebar's li
   await page.getByTestId("open-settings").click();
   const settings = page.getByTestId("settings-dialog");
   await settings.getByTestId("tab-accounts").click();
-  const clientId = settings.getByRole("textbox", { name: "Google OAuth Client ID" });
-  await clientId.fill("123-web.apps.googleusercontent.com");
-  await clientId.blur();
   await settings.getByRole("button", { name: "Add account" }).click();
   await page.getByTestId("connect-gmail").click();
   await expect(page.getByTestId("snack-message").getByText("luis@gmail.com connected")).toBeVisible();
@@ -338,9 +332,6 @@ test("plan 25 (Codex code review #4): Google's script failing to load says so, a
   await page.getByTestId("open-settings").click();
   const settings = page.getByTestId("settings-dialog");
   await settings.getByTestId("tab-accounts").click();
-  const clientId = settings.getByRole("textbox", { name: "Google OAuth Client ID" });
-  await clientId.fill("123-web.apps.googleusercontent.com");
-  await clientId.blur();
   await settings.getByRole("button", { name: "Add account" }).click();
   await page.getByTestId("connect-gmail").click();
   await expect(page.getByTestId("snack-message").getByText("luis@gmail.com connected")).toBeVisible();
@@ -543,9 +534,6 @@ test("switching into a fresh, empty engine: drafts and account filters wait for 
   await page.keyboard.press("Escape");
   await page.keyboard.press("Meta+Comma");
   await page.getByTestId("tab-accounts").click();
-  const clientId = page.getByRole("textbox", { name: "Google OAuth Client ID" });
-  await clientId.fill("123-web.apps.googleusercontent.com");
-  await clientId.blur();
   await page.getByRole("button", { name: "Add account" }).click();
   await page.getByTestId("connect-gmail").click();
   await expect(page.getByTestId("snack-message").getByText("luis.cordero@gmail.com connected")).toBeVisible();

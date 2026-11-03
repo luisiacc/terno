@@ -247,7 +247,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public provider secret replacem
     const t = await setup(kind);
     const markers = ["synthetic-private-refresh", "private-address@example.test", "Synthetic private subject"];
     const detail = markers.join(" / ");
-    const appName = "gmailClientSecret";
+    const appName = "ai:openai:apiKey";
     await t.backend.setSecret(appName, "synthetic-app");
     const cipher = vi.spyOn(t.cipher, "decrypt").mockRejectedValue(new Error(detail));
     const accountError = await t.ctx.getSecret("password").catch((error: unknown) => error);

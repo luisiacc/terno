@@ -9,6 +9,9 @@ import { createGmailProvider, type ProviderRegistry, type ProviderContext } from
 import { afterEach, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
+// plan 123: only Terno's own Google clients exist; tests carry a synthetic one
+const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] };
+
 const cleanups: (() => Promise<void>)[] = [];
 const heldTerminals: (() => void)[] = [];
 afterEach(async () => {
@@ -105,7 +108,7 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
   const dir = mkdtempSync(join(tmpdir(), "terno-foreground-"));
   const factory = new IDBFactory();
   const store = kind === "IDB" ? await IdbMailStore.open({ name: crypto.randomUUID(), factory, platform: { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) }, instantSearch: false }) : undefined;
-  const backend = new Backend({ store, dbPath: join(dir, "mail.db"), providers, cipher: plaintextCipher, version: "test", autoSync, instantSearch: false, iconTransport: null });
+  const backend = new Backend({ googleClients: TEST_GOOGLE, store, dbPath: join(dir, "mail.db"), providers, cipher: plaintextCipher, version: "test", autoSync, instantSearch: false, iconTransport: null });
   const syncs: Promise<void>[] = [];
   const [local, remote] = createMemoryTransportPair();
   backend.connect(remote, { clientId: "foreground-test", origin: "renderer" });
@@ -126,7 +129,6 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
     await backend.setSecret(`account:${id}:refreshToken`, "synthetic-refresh");
   }
   // Real token exchange and profile proof retain the saved mailbox admission boundary.
-  await backend.store.settings.set("app", { gmailClientId: "synthetic-client" });
   if (refresh) {
     for (let accountId = 1; accountId <= backgroundAccounts; accountId++) {
       await backend.ingestSliced(Array.from({ length: exactCapacity && accountId === backgroundAccounts ? 2 : 6 }, (_, i) => ({

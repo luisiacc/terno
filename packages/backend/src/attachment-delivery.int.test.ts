@@ -12,6 +12,9 @@ import { afterEach, chai, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { startNetProxy, type NetProxy } from "./test/net-proxy";
 
+// plan 123: only Terno's own Google clients exist; tests carry a synthetic one
+const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] };
+
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
 
@@ -70,7 +73,7 @@ async function setup(mode: "accept" | "refuse" | "lost") {
   const port = proxy.port;
   let backend!: Backend, client!: RpcClient;
   const open = () => {
-    backend = new Backend({ dbPath: join(dir, "mail.db"), version: "test", cipher: plaintextCipher, autoSync: false, instantSearch: false, iconTransport: null,
+    backend = new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "mail.db"), version: "test", cipher: plaintextCipher, autoSync: false, instantSearch: false, iconTransport: null,
       providers: createRegistry({ imap: { allowInsecure: true, timeouts: { smtpSocketMs: 1500 } } }) });
     const [a, b] = createMemoryTransportPair(); backend.connect(b, { clientId: "synthetic", origin: "renderer" }); client = new RpcClient(a);
   };
@@ -150,12 +153,12 @@ it.each(["accept", "refuse", "lost"] as const)("sends exact staged bytes through
   const dir = mkdtempSync(join(tmpdir(), "terno-gmail-delivery-"));
   const providers: ProviderRegistry = { create: (ctx) => createGmailProvider(ctx, { endpoints: { token: `${origin}/token`, api: `${origin}/gmail` } }), async verifyImap() {}, async connectGmail() { throw new Error("unused"); } };
   let backend!: Backend, client!: RpcClient;
-  const open = () => { backend = new Backend({ dbPath: join(dir, "mail.db"), providers, version: "test", cipher: plaintextCipher, autoSync: false, instantSearch: false, iconTransport: null });
+  const open = () => { backend = new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "mail.db"), providers, version: "test", cipher: plaintextCipher, autoSync: false, instantSearch: false, iconTransport: null });
     const [a, b] = createMemoryTransportPair(); backend.connect(b, { clientId: "synthetic", origin: "renderer" }); client = new RpcClient(a); };
   open();
   cleanup.push(async () => { client.close(); await backend.stop(); server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); rmSync(dir, { recursive: true, force: true }); });
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 });
-  await backend.store.settings.set("app", { gmailClientId: "synthetic-client" }); await backend.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
+  await backend.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
   await (await backend.provider(account.id))!.verify();
   const bytes = Buffer.from([0, 255, 128, 13, 10]);
   const ref = await client.call("attachments.create", { accountId: account.id, filename: "exact.bin", mime: "application/octet-stream", size: bytes.length });

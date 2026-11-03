@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
-import { buildDsn } from "../../scripts/release-env.mjs";
+import { buildDsn, buildWebGoogleClientId } from "../../scripts/release-env.mjs";
 
 /**
  * Two targets from one renderer:
@@ -125,8 +125,8 @@ export default defineConfig(({ mode }) => {
       // the web reports from the page (plan 78: a release gets Terno's DSN, a demo or test build none unless
       // TERNO_SENTRY_DSN says so); the desktop renderer never does (main sends)
       "import.meta.env.VITE_SENTRY_DSN": JSON.stringify(target === "web" ? buildDsn() : ""),
-      // plan 99: the web build's own Google client (public); from the environment only, so e2e builds keep bring-your-own
-      "import.meta.env.VITE_TERNO_GOOGLE_CLIENT_ID": JSON.stringify(target === "web" ? (process.env.TERNO_RELEASE === "1" ? process.env.TERNO_GOOGLE_WEB_ID : process.env.TERNO_GOOGLE_WEB_DEV_ID) ?? "" : ""),
+      // plans 99 and 123: the web build's own Google client (public), the only one it signs in with
+      "import.meta.env.VITE_TERNO_GOOGLE_CLIENT_ID": JSON.stringify(target === "web" ? buildWebGoogleClientId() : ""),
     },
     resolve: {
       alias: {

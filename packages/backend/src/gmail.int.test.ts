@@ -13,6 +13,9 @@ import { createGmailTokenBroker, createRegistry, gmailReconnect, type ProviderRe
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { sqlDb } from "@terno/db";
+import type { GoogleClients } from "./google-client";
+
+const TEST_GOOGLE: GoogleClients = { preferred: "client-123.apps.googleusercontent.com", clients: [{ clientId: "client-123.apps.googleusercontent.com", clientSecret: "" }] };
 
 interface FakeMsg {
   id: string;
@@ -262,7 +265,7 @@ function browser(google: FakeGoogle, behaviour: "approve" | "deny" | "forge-then
   };
 }
 
-async function setup(behaviour?: Parameters<typeof browser>[1], options: { cipher?: typeof plaintextCipher } = {}) {
+async function setup(behaviour?: Parameters<typeof browser>[1], options: { cipher?: typeof plaintextCipher; googleClients?: GoogleClients | null } = {}) {
   const google = await new FakeGoogle().start();
   cleanups.push(() => google.stop());
   const dir = mkdtempSync(join(tmpdir(), "terno-gmail-"));
@@ -273,6 +276,8 @@ async function setup(behaviour?: Parameters<typeof browser>[1], options: { ciphe
     providers: createRegistry({ gmail: { endpoints: google.endpoints(), unitsPerSecond: Infinity } }),
     openExternal: browser(google, behaviour),
     autoSync: false,
+    // plan 123: only Terno's own client exists; the fake Google answers to this one
+    googleClients: options.googleClients === undefined ? TEST_GOOGLE : options.googleClients,
   });
   let closed = false;
   const stopBackend = async () => { if (!closed) { closed = true; await backend.stop(); } };
@@ -283,7 +288,6 @@ async function setup(behaviour?: Parameters<typeof browser>[1], options: { ciphe
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "r", origin: "renderer" });
   const client = new RpcClient(c, { defaultTimeoutMs: 20_000 });
-  await client.call("settings.update", { gmailClientId: "client-123.apps.googleusercontent.com" });
   return { google, backend, client, dir, stopBackend };
 }
 
@@ -386,7 +390,7 @@ describe("Gmail attachment capture", () => {
     await ctx.backend.syncAccount(ctx.account.id);
     await ctx.stopBackend();
     ctx.client.close();
-    const backend = new Backend({ dbPath: join(ctx.dir, "u.db"), version: "test", cipher: plaintextCipher, providers: createRegistry({ gmail: { endpoints: ctx.google.endpoints(), unitsPerSecond: Infinity } }), autoSync: false });
+    const backend = new Backend({ dbPath: join(ctx.dir, "u.db"), version: "test", cipher: plaintextCipher, providers: createRegistry({ gmail: { endpoints: ctx.google.endpoints(), unitsPerSecond: Infinity } }), autoSync: false, googleClients: TEST_GOOGLE });
     cleanups.push(() => backend.stop());
     const [c, s] = createMemoryTransportPair();
     backend.connect(s, { clientId: "restarted", origin: "renderer" });
@@ -424,10 +428,9 @@ describe("Gmail OAuth (installed app)", () => {
     await expect(client.call("accounts.connectGmail", {})).rejects.toThrow(/denied/i);
   });
 
-  it("requires a client ID first", async () => {
-    const { client } = await setup();
-    await client.call("settings.update", { gmailClientId: "" });
-    await expect(client.call("accounts.connectGmail", {})).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  it("a build without Terno's Google client can't connect Google", async () => {
+    const { client } = await setup(undefined, { googleClients: null });
+    await expect(client.call("accounts.connectGmail", {})).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("can’t connect Google accounts") });
   });
 });
 

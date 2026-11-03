@@ -36,8 +36,6 @@ export type DesktopPrintResult =
 export interface DesktopBridge {
   platform: string;
   version: string;
-  /** plan 99: the build carries Terno's Google client; older shells don't say */
-  googleBuiltIn?: boolean;
   openExternal(url: string): void;
   agentInfo(): Promise<{ mcpCommand: string; socketPath: string; skillPath: string }>;
   /** native theme source, window background (#rrggbb) and sidebar vibrancy; older shells don't have it */

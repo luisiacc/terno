@@ -34,6 +34,8 @@ export interface DevServerOptions {
   unsubscribeTransport?: BackendOptions["unsubscribeTransport"];
   /** E2E (plan 25): where Google's sign-in page would open (a test's fake Google never needs a browser) */
   openExternal?: BackendOptions["openExternal"];
+  /** plan 123: the Google clients a build carries, the only way to connect Gmail (E2E passes a test one) */
+  googleClients?: BackendOptions["googleClients"];
 }
 
 export interface DevServer {
@@ -68,6 +70,7 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
     iconTransport: o.iconTransport,
     unsubscribeTransport: o.unsubscribeTransport,
     openExternal: o.openExternal,
+    googleClients: o.googleClients,
     log: logBackend,
   });
   if (o.seed !== false && (await seedDemo(backend.store, { threads: o.threads, accounts: o.accounts }))) {

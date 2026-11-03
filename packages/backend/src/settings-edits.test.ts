@@ -32,7 +32,7 @@ function setup(o: { gmail?: (hint?: string) => Promise<GmailConnectResult> } = {
     connectGmail: async (c) => (o.gmail ? o.gmail(c.loginHint) : Promise.reject(new Error("no gmail here"))),
   };
   const dir = mkdtempSync(join(tmpdir(), "terno-accounts-"));
-  const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: registry, now: () => NOW, autoSync: false, openExternal: async () => {} });
+  const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: registry, now: () => NOW, autoSync: false, openExternal: async () => {}, googleClients: { preferred: "id.apps.googleusercontent.com", clients: [{ clientId: "id.apps.googleusercontent.com", clientSecret: "" }] } });
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "r", origin: "renderer" });
   const client = new RpcClient(c);
@@ -139,7 +139,7 @@ describe("accounts.reconnect", () => {
         return { email, name: "Luis", sub: "1", emailVerified: true, refreshToken: `rt-${email}` };
       },
     });
-    await client.call("settings.update", { gmailClientId: "id.apps.googleusercontent.com" });
+    await client.call("app.bootstrap", {}); // the store opens with the first call
     const a = createAccount(sqlDb(backend.store), { kind: "gmail", email: "luis@gmail.com", displayName: "luis", color: "indigo" });
     expect(await errorOf(client.call("accounts.reconnect", { id: a.id }))).toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/not luis@gmail.com/) });
     expect(await backend.getSecret(`account:${a.id}:refreshToken`)).toBeNull();

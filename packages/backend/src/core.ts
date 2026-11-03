@@ -26,7 +26,7 @@ import { TabsBackfill } from "./tabs";
 import { ScheduledSends, type ComposeSendParams } from "./scheduled";
 import { Forwarding } from "./forwarding";
 import { createHandlers } from "./handlers";
-import { googleClientFor, rememberedGoogleClient, rememberLegacyGoogleClients, type GoogleClients } from "./google-client";
+import { forgetOwnGoogleClient, googleClientFor, rememberedGoogleClient, type GoogleClients } from "./google-client";
 import { restorePending } from "./import";
 import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
@@ -522,6 +522,9 @@ export class BackendCore {
   async start(): Promise<void> {
     await this.ready;
     if (this.stopped) return;
+    // plan 123: only Terno's own Google clients; a secret saved for one of the user's goes (before the keychain move,
+    // which would otherwise open and seal it again)
+    await forgetOwnGoogleClient(this).catch((error: unknown) => void captureError(error, { code: "google.own_client_cleanup_failed" }));
     // before anything syncs: secrets sealed by Única are sealed again (or stay pending, and Settings asks for them)
     if (this.options.legacySecrets) {
       await migrateLegacySecrets(this.store, this.options.cipher, this.options.legacySecrets, (level, message) => this.log(level, message)).catch((error: unknown) => {
@@ -530,8 +533,6 @@ export class BackendCore {
       });
       if (this.stopped) return;
     }
-    // plan 99: accounts from before it keep the client in Settings (before any of them syncs)
-    await rememberLegacyGoogleClients(this).catch((error: unknown) => void captureError(error, { code: "google.client_backfill_failed" }));
     if (this.stopped) return;
     if (!this.categorizer.ready) void this.categorizer.rebuild();
     // plan 41: the badge as it is now (a restarted backend puts it back), before any sync changes it
@@ -1500,7 +1501,7 @@ export class BackendCore {
         replaceSecret: (name, expected, next) => this.replaceProviderSecret(life, stamp, name, expected, next),
         getAppSecret: (name) => this.accountRead(life, () => this.getSecret(name)),
         // plan 99: the client this account's refresh token belongs to (read now: a reconnect may have recorded it)
-        googleClient: () => this.accountRead(life, async () => googleClientFor(this, await rememberedGoogleClient(this, accountId), true)),
+        googleClient: () => this.accountRead(life, async () => googleClientFor(this, await rememberedGoogleClient(this, accountId))),
         event: (code, fields) => {
           if (this.current(life)) breadcrumb("sync", code, { accountKind: accountKindOf(account.kind), ...(fields?.durationMs !== undefined && { durationMs: fields.durationMs }) });
         },

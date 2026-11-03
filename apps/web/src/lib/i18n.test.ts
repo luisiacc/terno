@@ -9,9 +9,9 @@ afterEach(() => setLocale("en", en));
 
 describe("text the backend sent with its catalog reference", () => {
   it("shows the reference in the active language, else the text as sent", () => {
-    const ref = L("errors.gmailClientIdMissing");
+    const ref = L("errors.google.noClient");
     setLocale("es", es);
-    expect(localized(ref.message, ref)).toBe(es["errors.gmailClientIdMissing"]);
+    expect(localized(ref.message, ref)).toBe(es["errors.google.noClient"]);
     expect(localized("Server said no", undefined)).toBe("Server said no");
     expect(localized(null, null)).toBeNull();
     // a key this build doesn't know (a newer backend): the text as sent

@@ -10,6 +10,9 @@ import type { IncomingMessage } from "@terno/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
+// plan 123: only Terno's own Google clients exist; tests carry a synthetic one
+const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] };
+
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn(); });
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -48,7 +51,7 @@ async function setup(kind: "SQL" | "IndexedDB", accountKind: "imap" | "gmail" = 
   const dir = mkdtempSync(join(tmpdir(), "terno-account-lifecycle-"));
   const platform = { uuid: () => crypto.randomUUID(), yield: turn };
   const store = kind === "IndexedDB" ? await IdbMailStore.open({ name: "synthetic-lifecycle", factory: new IDBFactory(), platform }) : undefined;
-  const backend = new Backend({ dbPath: join(dir, "test.db"), store, platform: store ? platform : undefined, version: "test", providers: registry, cipher: plaintextCipher, autoSync, iconTransport: null, openExternal: async () => {} });
+  const backend = new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "test.db"), store, platform: store ? platform : undefined, version: "test", providers: registry, cipher: plaintextCipher, autoSync, iconTransport: null, openExternal: async () => {} });
   const ids: number[] = [];
   for (const name of ["first", "sibling"]) ids.push((await backend.store.accounts.create({ kind: accountKind, email: `${name}@example.test`, displayName: name, color: "indigo", providerConfig: { senderName: name }, now: 1 })).account.id);
   const [c, s] = createMemoryTransportPair();
@@ -395,7 +398,6 @@ describe.each(["SQL", "IndexedDB"] as const)("%s account lifetime: X06 / S16 / S
       };
     };
     t.registry.connectGmail = async (o) => ({ email: o.loginHint!, name: "Synthetic", sub: "synthetic-subject", emailVerified: true, refreshToken: "synthetic-refresh", grantedScopes: ["https://www.googleapis.com/auth/gmail.modify"] });
-    await t.client.call("settings.update", { gmailClientId: "synthetic-client" });
     t.backend.startAccount((await t.backend.store.accounts.get(t.ids[0]!))!);
     await t.backend.syncAccount(t.ids[0]!);
     const queued = await t.client.call("compose.send", { accountId: t.ids[0]!, to: [{ name: "", email: "receiver@example.test" }], subject: "once", bodyText: "synthetic" });

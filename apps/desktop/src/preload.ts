@@ -33,8 +33,6 @@ window.addEventListener("message", (e) => {
 contextBridge.exposeInMainWorld("ternoDesktop", {
   platform: process.platform,
   version: ipcRenderer.sendSync("terno:version") as string,
-  // plan 99: this build carries Terno's Google client (a build-time constant), so Gmail needs no setup
-  googleBuiltIn: process.env.TERNO_GOOGLE_BUILT_IN === "1",
   openExternal: (url: string) => ipcRenderer.send("terno:open-external", String(url)),
   agentInfo: () => ipcRenderer.invoke("terno:agent-info"),
   // validated in main; main also remembers it for the next window's first frame

@@ -66,8 +66,8 @@ function context(netFetch: typeof fetch) {
   const replaceSecret = vi.fn(async () => true);
   const ctx = {
     account: { id: 1, email: "synthetic@example.test" }, config: {},
-    fetch: netFetch, store: { setting: async () => ({ gmailClientId: "synthetic-client" }) },
-    getSecret: async () => "synthetic-refresh", getAppSecret: async () => null, replaceSecret,
+    fetch: netFetch, store: { setting: async () => ({}) },
+    getSecret: async () => "synthetic-refresh", getAppSecret: async () => null, googleClient: async () => ({ clientId: "synthetic-client", clientSecret: null }), replaceSecret,
   } as unknown as ProviderContext;
   return { ctx, replaceSecret };
 }

@@ -45,3 +45,14 @@ export function buildGoogleClients(env = withDotEnv()) {
   const clients = release ? [...prod, ...dev] : [...dev, ...prod];
   return clients.length ? { preferred: clients[0].clientId, clients } : null;
 }
+
+/**
+ * Plan 123: the web build's Google client ID (public), the only way the web connects Gmail.
+ * A release uses prod's, anything else dev's; a release without it fails, unless
+ * TERNO_GOOGLE_WEB_ID="" says so (a fork). Test builds set TERNO_GOOGLE_WEB_DEV_ID themselves.
+ */
+export function buildWebGoogleClientId(env = withDotEnv()) {
+  if (env.TERNO_RELEASE !== "1") return env.TERNO_GOOGLE_WEB_DEV_ID ?? "";
+  if (env.TERNO_GOOGLE_WEB_ID || env.TERNO_GOOGLE_WEB_ID === "") return env.TERNO_GOOGLE_WEB_ID;
+  throw new Error("a web release needs Terno's Google client: set TERNO_GOOGLE_WEB_ID (in .env), or TERNO_GOOGLE_WEB_ID= for none");
+}

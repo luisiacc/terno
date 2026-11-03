@@ -46,7 +46,6 @@ for (const theme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: theme });
       await expect(page.locator("html")).toHaveClass(theme === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
       const account = (await server.backend.store.accounts.list()).find((a) => a.kind === "gmail")!;
-      await server.backend.server.invoke("settings.update", { gmailClientId: "e2e.apps.googleusercontent.com" }, ctx);
       const list = page.getByRole("listbox", { name: "Conversations" });
       await list.hover();
       await page.mouse.wheel(0, 850);

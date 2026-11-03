@@ -42,7 +42,7 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
     }, { language });
     await page.goto(`/?demo=200&mailbox=w12-authored-${language}-${theme}-${placement}`);
     await expect.poll(() => page.evaluate(() => window.__ternoWeb?.storage)).toBe("opfs-sqlite");
-    await page.evaluate(async ({ language, theme }) => window.__ternoWeb!.client.call("settings.update", { language, theme, gmailClientId: "123-synthetic.apps.googleusercontent.com" }), { language, theme });
+    await page.evaluate(async ({ language, theme }) => window.__ternoWeb!.client.call("settings.update", { language, theme }), { language, theme });
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("lang", new RegExp(`^${language}`));
     await expect.poll(() => page.evaluate(() => window.__ternoWeb?.storage)).toBe("opfs-sqlite");

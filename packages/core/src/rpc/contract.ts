@@ -131,11 +131,6 @@ export interface AppSettings {
   remoteImages: "ask" | "always";
   ai: AiSettings;
   allowAgentSend: boolean;
-  gmailClientId: string;
-  /** a Google OAuth client secret is saved (never the secret itself) */
-  gmailClientSecretSet: boolean;
-  /** the saved client secret was sealed by Única and couldn't be moved: it has to be saved again */
-  gmailClientSecretUnreadable: boolean;
   syncWindowDays: number;
   /** what the categorization engine may do with new mail */
   autoCategorize: AutoCategorize;
@@ -423,7 +418,6 @@ const settingsPatch = z.object({
     .strict()
     .optional(),
   allowAgentSend: z.boolean().optional(),
-  gmailClientId: z.string().max(300).optional(),
   syncWindowDays: syncWindow.optional(),
   autoCategorize: z.enum(["off", "suggest", "auto"]).optional(),
   aiCategorize: z.boolean().optional(),
@@ -1023,7 +1017,6 @@ export const contract = {
   ),
 
   "settings.update": m<AppSettings>()(settingsPatch),
-  "settings.setSecret": m<{ ok: true }>()(z.object({ name: z.enum(["gmailClientSecret"]), value: z.string().max(500) })),
 
   "ai.providers": m<{ providers: ProviderDescriptor[]; presets: PresetDescriptor[] }>()(empty),
   "ai.listModels": m<{ models: ModelInfo[]; tookMs: number }>()(aiTarget, { timeoutMs: 15_000 }),

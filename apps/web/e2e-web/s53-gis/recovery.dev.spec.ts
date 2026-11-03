@@ -56,7 +56,7 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
     await page.goto(`/?demo=0&mailbox=s53-${language}-${theme}`);
     await expect.poll(() => page.evaluate(() => window.__ternoWeb?.storage)).toBe("opfs-sqlite");
     await page.evaluate(async ({ language, theme }) => {
-      await window.__ternoWeb!.client.call("settings.update", { language, theme, gmailClientId: "123-synthetic.apps.googleusercontent.com" });
+      await window.__ternoWeb!.client.call("settings.update", { language, theme });
     }, { language, theme });
     const account = await page.evaluate(() => window.__ternoWeb!.client.call("accounts.connectGmailToken", { accessToken: "synthetic-token", expiresIn: 3600 }));
     await page.reload();

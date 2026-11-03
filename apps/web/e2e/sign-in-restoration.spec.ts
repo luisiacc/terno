@@ -7,7 +7,7 @@ const ctx = { clientId: "setup", origin: "dev" as const };
 
 for (const theme of ["light", "dark"] as const) {
   test(`deferred popup restoration preserves the password and later focus (${theme}) @design`, async ({ app: page, server }, info) => {
-    await server.backend.server.invoke("settings.update", { theme, gmailClientId: "e2e.apps.googleusercontent.com" }, ctx);
+    await server.backend.server.invoke("settings.update", { theme }, ctx);
     await page.reload();
     await page.locator("[data-ready]").waitFor();
     await rows(page).first().waitFor();

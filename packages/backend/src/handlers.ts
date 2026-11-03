@@ -906,9 +906,9 @@ export function createHandlers(b: Backend): Handlers {
     },
 
     "accounts.connectGmail": async ({ syncWindowDays }) => {
-      // plan 99: the client in Settings, else the one this build carries
+      // plan 123: the client this build carries; a build without one can't connect Google
       const oauth = await googleClientFor(b);
-      if (!oauth) throw new RpcError("BAD_REQUEST", L("errors.gmailClientIdMissing"));
+      if (!oauth) throw new RpcError("BAD_REQUEST", L("errors.google.noClient"));
       if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));
       const google = await b.initialGoogleRequests(true);
       const result = await b.options.providers.connectGmail({
@@ -1109,12 +1109,6 @@ export function createHandlers(b: Backend): Handlers {
       settingsUpdates = updating.then(() => {}, () => {});
       return updating;
     },
-    "settings.setSecret": async ({ name, value }) => {
-      if (value) await b.setSecret(name, value);
-      else await store.secrets.delete(name);
-      return { ok: true as const };
-    },
-
     "ai.providers": () => b.aiService.providers(),
     "ai.listModels": ({ provider, baseURL, preset }) => b.aiService.listModels({ provider, baseURL, preset }),
     "ai.test": ({ provider, model, baseURL, preset }) => b.aiService.test({ provider, model, baseURL, preset }),

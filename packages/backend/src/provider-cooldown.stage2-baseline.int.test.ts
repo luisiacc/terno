@@ -13,6 +13,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { fixtureCleanup } from "./provider-cooldown.test-utils";
 
+// plan 123: only Terno's own Google clients exist; tests carry a synthetic one
+const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] };
+
 const cleanup = fixtureCleanup();
 beforeEach(() => cleanup.assertAvailable());
 afterEach(() => cleanup.finish());
@@ -83,13 +86,12 @@ async function fixture(mode: Mode, status: 200 | 429) {
   let backend: Backend | undefined;
   cleanup.push(async () => { await backend?.stop(); });
   const open = async () => {
-    backend = new Backend({ dbPath: join(dir, "synthetic.db"), store: mode === "SQL" ? undefined : await IdbMailStore.open({ name, factory, platform, instantSearch: mode === "IDB on" }), platform, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
+    backend = new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "synthetic.db"), store: mode === "SQL" ? undefined : await IdbMailStore.open({ name, factory, platform, instantSearch: mode === "IDB on" }), platform, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
     await backend.ready;
     return backend;
   };
   const seed = await open();
   const { account } = await seed.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 });
-  await seed.store.settings.set("app", { gmailClientId: "synthetic-client" });
   await seed.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
   const stamp = await seed.store.accounts.stamp(account.id);
   if (!stamp) throw new Error("Synthetic account stamp missing");

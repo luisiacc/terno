@@ -7,6 +7,9 @@ import { buildRawPortable, createGmailApiProvider } from "@terno/mail/portable";
 import { afterEach, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
+// plan 123: only Terno's own Google clients exist; tests carry a synthetic one
+const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] };
+
 const cleanup: (() => Promise<void>)[] = [];
 async function finish(tasks: (() => Promise<void>)[]) {
   const errors: unknown[] = [];
@@ -50,7 +53,7 @@ async function setup(answer: (request: Request) => Promise<Response>) {
   };
   let backend: Backend, client: RpcClient;
   const open = async () => {
-    backend = new Backend({ dbPath: join(dir, "mail.db"), providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null, openExternal: async () => {} });
+    backend = new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "mail.db"), providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null, openExternal: async () => {} });
     await backend.ready;
     const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "s27", origin: "renderer" }); client = new RpcClient(c);
   };
@@ -62,7 +65,6 @@ async function setup(answer: (request: Request) => Promise<Response>) {
     ids.push(account.id);
     await backend!.syncAccount(account.id);
   }
-  await client!.call("settings.update", { gmailClientId: "synthetic-client" });
   return { get backend() { return backend!; }, get client() { return client!; }, ids, contexts, requests, unexpected,
     async reopen() { client.close(); await backend.stop(); await open(); },
   };

@@ -13,10 +13,12 @@ vi.mock("~/rpc/connection", () => ({
     call: vi.fn(async (method: string, params: Record<string, unknown>) => {
       calls.push({ method, params });
       if (method === "accounts.connectGmailToken") return ACCOUNT;
-      return { gmailClientId: "c", googlePhotos: {}, googlePhotosPending: [] };
+      return { googlePhotos: {}, googlePhotosPending: [] };
     }),
   },
 }));
+// plan 123: the build's client ID is the only one
+vi.mock("~/lib/google-client", () => ({ webBuiltInClientId: () => "c" }));
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 
 let granted = "";
@@ -30,7 +32,7 @@ beforeEach(async () => {
     },
   });
   const { setApp } = await import("~/state/app");
-  setApp({ settings: { gmailClientId: "c", googlePhotos: {}, googlePhotosPending: [ACCOUNT.id] } as unknown as AppSettings, accounts: [ACCOUNT] });
+  setApp({ settings: { googlePhotos: {}, googlePhotosPending: [ACCOUNT.id] } as unknown as AppSettings, accounts: [ACCOUNT] });
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -82,7 +84,7 @@ it("hovering or focusing Sign in now loads nothing from Google", async () => {
   const preload = vi.fn(async () => {});
   vi.doMock("~/web/google", () => ({ preloadGoogle: preload, authorizeGooglePhotosWeb: vi.fn() }));
   const { setApp } = await import("~/state/app");
-  setApp({ settings: { gmailClientId: "c", googlePhotos: {}, googlePhotosPending: [ACCOUNT.id], senderIcons: false } as unknown as AppSettings, accounts: [ACCOUNT] });
+  setApp({ settings: { googlePhotos: {}, googlePhotosPending: [ACCOUNT.id], senderIcons: false } as unknown as AppSettings, accounts: [ACCOUNT] });
   const { SenderPictures } = await import("~/components/settings/sender-pictures");
   const { getApp } = await import("~/state/app");
   const host = document.createElement("div");

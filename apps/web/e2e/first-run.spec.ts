@@ -164,15 +164,14 @@ test.describe("first-run setup", () => {
     expect(running).toBe(0);
   });
 
-  // Codex code review #1: the Google detour to Settings (no client ID yet) unmounts the setup; what was typed comes back with it
-  test("the Google client-ID detour keeps what was typed for the account", async ({ app: page, server }) => {
-    await server.backend.server.invoke("settings.update", { gmailClientId: "" }, ctx);
+  // Codex code review #1: a detour to Settings unmounts the setup; what was typed comes back with it
+  test("a detour to Settings keeps what was typed for the account", async ({ app: page, server }) => {
     await open(page, server);
     await page.getByTestId("first-run-continue").click();
     await page.getByTestId("first-run-continue").click();
     await page.getByTestId("imap-email").fill("ana@icloud.com");
-    await page.getByTestId("connect-gmail").click();
-    await expect(page.getByTestId("tab-accounts")).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("ControlOrMeta+Comma");
+    await expect(page.getByTestId("settings-dialog")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(step(page)).toHaveAttribute("data-step", "account");
     await expect(page.getByTestId("imap-email")).toHaveValue("ana@icloud.com");
@@ -182,15 +181,14 @@ test.describe("first-run setup", () => {
   test("the detour back from Settings keeps an AI chosen there", async ({ app: page, server }) => {
     const ollama = await startOllamaStub();
     try {
-      await server.backend.server.invoke("settings.update", { gmailClientId: "" }, ctx);
       await isolateLocalDiscovery(server, ollama.url);
       await page.reload();
       await expect(step(page)).toBeVisible();
       await expect.poll(async () => ((await settings(server)).ai as { provider: string }).provider).toBe("ollama");
       await page.getByTestId("first-run-continue").click();
       await page.getByTestId("first-run-continue").click();
-      await page.getByTestId("connect-gmail").click();
-      await expect(page.getByTestId("tab-accounts")).toHaveAttribute("aria-selected", "true");
+      await page.keyboard.press("ControlOrMeta+Comma");
+      await expect(page.getByTestId("settings-dialog")).toBeVisible();
       await server.backend.server.invoke("settings.update", { ai: { provider: "none" } }, ctx);
       await page.keyboard.press("Escape");
       await expect(step(page)).toHaveAttribute("data-step", "account");

@@ -81,7 +81,8 @@ async function unicaProfile() {
   await client.call("settings.update", { localMode: false });
   await client.call("settings.update", { ai: { provider: "openai", model: "gpt-x" } });
   await client.call("ai.setKey", { provider: "openai", value: "sk-legacy-0000-1234" });
-  await client.call("settings.setSecret", { name: "gmailClientSecret", value: "GOCSPX-legacy" });
+  // a Google client secret of the user's own (before plan 123), sealed like the rest
+  await backend.setSecret("gmailClientSecret", "GOCSPX-legacy");
   const names = await backend.store.secrets.names();
   expect(names).toEqual(["account:1:password", "ai:openai:apiKey", "gmailClientSecret"]);
   for (const n of names) expect(unica.opens((await backend.store.secrets.get(n))!)).toBe(true);
@@ -103,16 +104,17 @@ describe("keychain migration (Única → Terno)", () => {
     const { dir, accountId, names } = await unicaProfile();
     const calls: Uint8Array[][] = [];
     const { backend, client } = await startTerno(dir, helper(calls));
+    // plan 123: the Google client secret is used by nothing now: start() forgets it before the migration opens it
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toHaveLength(3);
-    for (const n of names) expect(terno.opens((await backend.store.secrets.get(n))!)).toBe(true);
+    expect(calls[0]).toHaveLength(2);
+    for (const n of names.filter((n) => n !== "gmailClientSecret")) expect(terno.opens((await backend.store.secrets.get(n))!)).toBe(true);
+    expect(await backend.store.secrets.has("gmailClientSecret")).toBe(false);
     expect(await readKeychainState(backend.store)).toEqual({ generation: "terno", pending: {} });
     expect(await backend.getSecret(`account:${accountId}:password`)).toBe("imap-pässwörd 1");
     expect(await backend.getSecret("ai:openai:apiKey")).toBe("sk-legacy-0000-1234");
     await backend.syncAccount(accountId);
     expect((await backend.store.accounts.list())[0]!.syncState).toMatchObject({ status: "idle", lastError: null });
-    const settings = (await client.call("app.bootstrap", {})).settings;
-    expect(settings).toMatchObject({ gmailClientSecretSet: true, gmailClientSecretUnreadable: false });
+    expect((await client.call("app.bootstrap", {})).settings.ai).toMatchObject({ hasKey: true, keyUnreadable: false });
     await backend.stop();
     // the next start has nothing to do: the helper isn't launched again
     await startTerno(dir, helper(calls));
@@ -133,9 +135,11 @@ describe("keychain migration (Única → Terno)", () => {
     const { backend, client } = await startTerno(dir, async () => {
       throw new Error("the keychain refused access");
     });
-    // the legacy blobs are untouched and pending
-    for (const n of names) expect(unica.opens((await backend.store.secrets.get(n))!)).toBe(true);
-    expect(Object.keys((await readKeychainState(backend.store))!.pending).sort()).toEqual(names);
+    // the legacy blobs are untouched and pending (but the Google client secret, forgotten before the migration: plan 123)
+    const kept = names.filter((n) => n !== "gmailClientSecret");
+    for (const n of kept) expect(unica.opens((await backend.store.secrets.get(n))!)).toBe(true);
+    expect(await backend.store.secrets.has("gmailClientSecret")).toBe(false);
+    expect(Object.keys((await readKeychainState(backend.store))!.pending).sort()).toEqual(kept);
     // the account: its sync fails with what to do, and nothing crashes
     await backend.syncAccount(accountId);
     const account = (await backend.store.accounts.list())[0]!;
@@ -143,10 +147,9 @@ describe("keychain migration (Única → Terno)", () => {
     expect(account.syncState.lastError).toMatch(/couldn’t open what Única saved: this account’s password\. Enter it again in Settings → Accounts/);
     // the account's error goes to the renderer as a catalog message (its language)
     expect(account.syncState.lastErrorI18n).toEqual({ key: "errors.secret.legacy.password" });
-    // the AI key and the client secret
+    // the AI key
     let settings = (await client.call("app.bootstrap", {})).settings;
     expect(settings.ai).toMatchObject({ provider: "openai", hasKey: true, keyUnreadable: true });
-    expect(settings).toMatchObject({ gmailClientSecretSet: true, gmailClientSecretUnreadable: true });
     await expect(backend.aiService.config({ provider: "openai", model: "gpt-x" })).rejects.toMatchObject({ kind: "not_configured", message: expect.stringMatching(/your API key\. Save it again in Settings → AI/), i18n: { key: "errors.secret.legacy.apiKey" } });
 
     // entering them again clears each one, whichever way it is saved
@@ -154,18 +157,15 @@ describe("keychain migration (Única → Terno)", () => {
     await client.call("ai.setKey", { provider: "openai", value: "sk-new-0000-5678" });
     settings = (await client.call("app.bootstrap", {})).settings;
     expect(settings.ai).toMatchObject({ hasKey: true, keyUnreadable: false });
-    expect(settings.gmailClientSecretUnreadable).toBe(true);
     expect(await backend.getSecret(`account:${accountId}:password`)).toBe("nueva");
     await backend.syncAccount(accountId);
     expect((await backend.store.accounts.list())[0]!.syncState).toMatchObject({ status: "idle", lastError: null });
     await backend.stop();
 
-    // the next start retries only what is still pending (the client secret), and the helper can open it now
+    // both entered again: the next start has nothing left to open, and the helper isn't launched
     const calls: Uint8Array[][] = [];
     const again = await startTerno(dir, helper(calls));
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toHaveLength(1);
-    expect(await again.backend.getSecret("gmailClientSecret")).toBe("GOCSPX-legacy");
+    expect(calls).toHaveLength(0);
     expect(await again.backend.getSecret(`account:${accountId}:password`)).toBe("nueva");
     expect(await readKeychainState(again.backend.store)).toEqual({ generation: "terno", pending: {} });
   });
@@ -174,8 +174,9 @@ describe("keychain migration (Única → Terno)", () => {
     const { dir, names } = await unicaProfile();
     const broken: SecretCipher = { encrypt: terno.encrypt, decrypt: async (b) => `${await terno.decrypt(b)}!` };
     const { backend } = await startTerno(dir, helper(), broken);
-    for (const n of names) expect(unica.opens((await backend.store.secrets.get(n))!)).toBe(true);
-    expect(Object.keys((await readKeychainState(backend.store))!.pending)).toHaveLength(3);
+    // (the Google client secret was forgotten before the migration: plan 123)
+    for (const n of names.filter((n) => n !== "gmailClientSecret")) expect(unica.opens((await backend.store.secrets.get(n))!)).toBe(true);
+    expect(Object.keys((await readKeychainState(backend.store))!.pending)).toHaveLength(2);
   });
 
   it("rejects what a wrong key can produce (garbage that passed the padding check) and keeps the rest", async () => {

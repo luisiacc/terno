@@ -65,8 +65,6 @@ const common = {
     "process.env.TERNO_BUILD_SHA": JSON.stringify(sha),
     "process.env.TERNO_SENTRY_DSN": JSON.stringify(dsn),
     "process.env.TERNO_GOOGLE_CLIENTS": JSON.stringify(google ? JSON.stringify(google) : ""),
-    // the preload's answer to "does Connect Google need setup?" (never the clients themselves)
-    "process.env.TERNO_GOOGLE_BUILT_IN": JSON.stringify(google ? "1" : ""),
     ...(testBuild ? { __TERNO_TEST_BUILD__: JSON.stringify(testBuild) } : {}),
   },
   // ESM deps that read import.meta.url get a CJS-compatible value

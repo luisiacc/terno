@@ -10,6 +10,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { setGooglePhotoState } from "./settings";
 
+// plan 123: only Terno's own Google clients exist; tests carry a synthetic one
+const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] };
+
 const MAIL = "https://www.googleapis.com/auth/gmail.modify";
 const PHOTO = "https://www.googleapis.com/auth/contacts.readonly";
 const who = { email: "reader@example.test", name: "Reader", sub: "reader-sub", emailVerified: true, grantedScopes: [MAIL, PHOTO] };
@@ -36,10 +39,9 @@ async function setup(kind: "SQL" | "IndexedDB") {
   const factory = new IDBFactory();
   const store = kind === "IndexedDB" ? await IdbMailStore.open({ name: "synthetic-renewal", factory, platform }) : undefined;
   const encrypt = vi.fn(plaintextCipher.encrypt), decrypt = vi.fn(plaintextCipher.decrypt);
-  const backend = new Backend({ dbPath: join(dir, "test.db"), store, platform: store ? platform : undefined, version: "test", log: (...args) => { logs.push(args); }, cipher: { encrypt, decrypt }, providers: registry, autoSync: false, iconTransport: null, openExternal: async () => {} });
+  const backend = new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "test.db"), store, platform: store ? platform : undefined, version: "test", log: (...args) => { logs.push(args); }, cipher: { encrypt, decrypt }, providers: registry, autoSync: false, iconTransport: null, openExternal: async () => {} });
   const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "renewal", origin: "renderer" }); const client = new RpcClient(c);
   cleanups.push(async () => { for (const g of gates) g.release(); client.close(); await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
-  await client.call("settings.update", { gmailClientId: "synthetic-client" });
   // signed in without the contacts scopes: these tests turn photos on themselves
   answer = { ...who, email: "owner@example.test", sub: "owner-sub", refreshToken: "owner-refresh", grantedScopes: [MAIL] };
   await client.call("accounts.connectGmail", {});

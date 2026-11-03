@@ -32,11 +32,10 @@ function savedStep(): Step {
 }
 
 /**
- * What's typed for the account while the setup is away: the Google detour to
- * Settings (no client ID yet) unmounts it, and it comes back with this. Memory
- * only (a password may be in it), dropped when the setup ends. `discovered`:
- * the local-model discovery ran in this session (coming back from the detour
- * never runs it again over an AI chosen in Settings meanwhile).
+ * What's typed for the account while the setup is away (unmounted, as behind
+ * Settings): it comes back with this. Memory only (a password may be in it),
+ * dropped when the setup ends. `discovered`: the local-model discovery ran in
+ * this session (coming back never runs it again over an AI chosen meanwhile).
  */
 const kept = { draft: EMPTY_ACCOUNT_DRAFT, discovered: false };
 
@@ -258,7 +257,7 @@ export function FirstRun() {
     ),
     account: (
       <div className="grid gap-4">
-        <AddAccountForm draft={draft} onDraft={setDraft} onBusy={setBusy} onDone={done} onNeedsClientId={() => setApp({ dialog: "settings", settingsTab: "accounts" })} />
+        <AddAccountForm draft={draft} onDraft={setDraft} onBusy={setBusy} onDone={done} />
         {OnboardingNudge && (
           <Suspense>
             <OnboardingNudge />

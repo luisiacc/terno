@@ -8,6 +8,9 @@ import type { GmailConnectResult, ProviderRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
+// plan 123: only Terno's own Google clients exist; tests carry a synthetic one
+const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] };
+
 const identity = { email: "reader@example.com", name: "Reader", sub: "google-subject", emailVerified: true, grantedScopes: ["https://www.googleapis.com/auth/gmail.modify"] };
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -25,12 +28,11 @@ async function setup(web = true) {
   };
   const dir = mkdtempSync(join(tmpdir(), "terno-google-validation-"));
   const encrypt = vi.fn(plaintextCipher.encrypt);
-  const backend = new Backend({ dbPath: join(dir, "test.db"), version: "test", cipher: { ...plaintextCipher, encrypt }, providers, openExternal: async () => {}, now: () => clock, autoSync: false });
+  const backend = new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "test.db"), version: "test", cipher: { ...plaintextCipher, encrypt }, providers, openExternal: async () => {}, now: () => clock, autoSync: false });
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "google-validation", origin: "renderer" });
   const client = new RpcClient(c);
   cleanups.push(async () => { await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
-  await client.call("settings.update", { gmailClientId: "synthetic-client" });
   return { backend, client, providers, connect, inspect, installed, encrypt, answer: (value: unknown) => { result = value; }, advance: (ms: number) => { clock += ms; } };
 }
 

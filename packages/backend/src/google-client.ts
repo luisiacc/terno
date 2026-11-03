@@ -1,11 +1,9 @@
 // Plan 99: which Google OAuth client a Gmail sign-in or token refresh uses.
-// A build carries Terno's own Desktop clients, so connecting needs no setup;
-// a client ID in Settings overrides them for new connections. A refresh token
-// works only with the client that issued it, so an account remembers its client
-// (GmailAccountConfig.googleClientId) and is only ever paired with that client's secret.
+// A build carries Terno's own Desktop clients, so connecting needs no setup, and
+// (plan 123) they are the only ones. A refresh token works only with the client
+// that issued it, so an account remembers its client (GmailAccountConfig.googleClientId).
 import type { GmailAccountConfig } from "@terno/mail";
 import type { BackendCore as Backend } from "./core";
-import { readSettings } from "./settings";
 
 export interface GoogleClient {
   clientId: string;
@@ -32,21 +30,16 @@ export function parseGoogleClients(json: string | undefined): GoogleClients | nu
 }
 
 /**
- * The client for a new connection (Settings', else the build's), for an account (its remembered
- * one), or for an existing account that remembers none: the build's first, since the backfill
- * already bound every account Settings' client could have connected, and a Settings client added
- * later must not capture an account it never signed in. null: none, or the remembered client is
- * no longer here. Throws what reading the user's saved secret throws.
+ * The client for an account (the one it remembers) or for a new connection (the build's preferred
+ * one; an account that remembers none was connected before plan 99 and gets it too). Only the
+ * build's clients exist (plan 123: no client of the user's own). null: none, or the remembered
+ * client isn't one of them.
  */
-export async function googleClientFor(b: Backend, remembered?: string, existing = false): Promise<GoogleClient | null> {
+export async function googleClientFor(b: Backend, remembered?: string): Promise<GoogleClient | null> {
   const built = b.options.googleClients ?? null;
-  const own = (await readSettings(b.store)).gmailClientId;
-  const id = remembered || (existing ? built?.preferred || own : own || built?.preferred);
-  if (!id) return null;
-  const baked = built?.clients.find((c) => c.clientId === id);
-  if (baked) return { clientId: id, clientSecret: baked.clientSecret || null };
-  if (id !== own) return null;
-  return { clientId: id, clientSecret: await b.getSecret("gmailClientSecret") };
+  const id = remembered || built?.preferred;
+  const baked = id ? built?.clients.find((c) => c.clientId === id) : undefined;
+  return baked ? { clientId: baked.clientId, clientSecret: baked.clientSecret || null } : null;
 }
 
 /** The client a Gmail account was connected with (undefined: before plan 99, or none recorded). */
@@ -55,26 +48,9 @@ export async function rememberedGoogleClient(b: Backend, accountId: number): Pro
   return typeof id === "string" && id ? id : undefined;
 }
 
-const BACKFILLED = "googleClientBackfill";
-
-/**
- * Accounts connected before plan 99 can only have used the client in Settings: they keep it,
- * so clearing that setting later doesn't move them to the build's client. Once (a later run
- * would bind an account the build's client reconnected to a Settings client added since).
- * Runs on start(), before any account syncs.
- */
-export async function rememberLegacyGoogleClients(b: Backend): Promise<void> {
-  // the web signs in per session (no refresh token, no client binding)
-  if (b.options.providers.gmailTokens) return;
-  if (await b.store.settings.get(BACKFILLED, false)) return;
-  const own = (await readSettings(b.store)).gmailClientId;
-  if (own) {
-    for (const account of await b.store.accounts.list()) {
-      if (account.kind !== "gmail") continue;
-      const stored = await b.store.accounts.config<GmailAccountConfig & { demo?: boolean }>(account.id);
-      if (!stored || stored.config.googleClientId || stored.config.demo) continue;
-      await b.store.accounts.setProviderConfig(account.id, { ...stored.config, googleClientId: own });
-    }
-  }
-  await b.store.settings.set(BACKFILLED, true);
+/** Plan 123: a client secret the user saved for a client of their own (before it) is used by nothing now. */
+export async function forgetOwnGoogleClient(b: Backend): Promise<void> {
+  if (await b.store.secrets.has(OWN_SECRET)) await b.store.secrets.delete(OWN_SECRET);
 }
+
+const OWN_SECRET = "gmailClientSecret";

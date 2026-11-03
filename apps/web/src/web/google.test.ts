@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { t } from "@terno/i18n";
 import type { Account } from "@terno/core";
 
-const mocks = vi.hoisted(() => ({ call: vi.fn(), setApp: vi.fn(), getApp: vi.fn() }));
+const mocks = vi.hoisted(() => ({ call: vi.fn(), setApp: vi.fn(), getApp: vi.fn(), clientId: "synthetic-client" }));
 vi.mock("~/rpc/connection", () => ({ client: { call: mocks.call } }));
 vi.mock("~/state/app", () => ({ getApp: mocks.getApp, setApp: mocks.setApp }));
+// plan 123: the build's client ID is the only one
+vi.mock("~/lib/google-client", () => ({ webBuiltInClientId: () => mocks.clientId }));
 import { authorizeGooglePhotosWeb, connectGmailWeb } from "./google";
 
 const mail = "https://www.googleapis.com/auth/gmail.modify";
@@ -16,7 +18,8 @@ const valid = { access_token: "synthetic-token", expires_in: 3600, scope: mail }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.getApp.mockReturnValue({ settings: { gmailClientId: "synthetic-client", googlePhotos: {} } });
+  mocks.clientId = "synthetic-client";
+  mocks.getApp.mockReturnValue({ settings: { googlePhotos: {} } });
   mocks.call.mockImplementation(async (method: string) => method === "accounts.connectGmailToken" ? account : { googlePhotos: { "7": {} } });
   request = vi.fn();
   vi.stubGlobal("window", { google: { accounts: { oauth2: { initTokenClient: (c: typeof config) => { config = c; return { requestAccessToken: request }; } } } } });
@@ -87,7 +90,7 @@ describe("GIS public helpers", () => {
     expect(mocks.setApp).not.toHaveBeenCalled();
   });
   it("leaves existing photo settings untouched", async () => {
-    mocks.getApp.mockReturnValue({ settings: { gmailClientId: "synthetic-client", googlePhotos: { "7": {} } } });
+    mocks.getApp.mockReturnValue({ settings: { googlePhotos: { "7": {} } } });
     await expect(respond({ ...valid, scope: `${mail} ${contacts}` })).resolves.toEqual(account);
     expect(mocks.call).toHaveBeenCalledTimes(1);
   });
@@ -98,5 +101,14 @@ describe("GIS public helpers", () => {
   it("rejects an invalid photo grant without state effects", async () => {
     await expect(respond({ ...valid, scope: contacts }, true)).rejects.toThrow(t("web.google.noGmailScope"));
     expect(mocks.call).not.toHaveBeenCalled(); expect(mocks.setApp).not.toHaveBeenCalled();
+  });
+});
+
+describe("plan 123: a web build without Terno's Google client", () => {
+  it("says it can't connect Google, for mail and for photos, and never opens Google's window", async () => {
+    mocks.clientId = "";
+    await expect(connectGmailWeb()).rejects.toMatchObject({ message: t("errors.google.noClientWeb"), i18n: { key: "errors.google.noClientWeb" } });
+    await expect(authorizeGooglePhotosWeb(account)).rejects.toMatchObject({ message: t("errors.google.noClientWeb") });
+    expect(request).not.toHaveBeenCalled();
   });
 });

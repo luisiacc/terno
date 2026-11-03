@@ -45,12 +45,12 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
     };
     let server: Awaited<ReturnType<typeof startDevServer>> | undefined;
     try {
-      server = await startDevServer({ port: 0, dataDir: dir, token: "synthetic-ui", seed: false, autoSync: false, providers, iconTransport: null });
+      server = await startDevServer({ port: 0, dataDir: dir, token: "synthetic-ui", seed: false, autoSync: false, providers, iconTransport: null, googleClients: { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] } });
       const backend = server.backend;
       const { account } = await backend.store.accounts.create({ kind: "gmail", email: "reader@example.test", displayName: "Reader", color: "indigo", now: 1 });
       await backend.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
       await backend.store.accounts.setCursor(account.id, { historyId: "10" });
-      await backend.server.invoke("settings.update", { language, theme, layout: "split", senderIcons: false, gmailClientId: "synthetic-client" }, { clientId: "setup", origin: "dev" });
+      await backend.server.invoke("settings.update", { language, theme, layout: "split", senderIcons: false }, { clientId: "setup", origin: "dev" });
       await backend.ingestSliced([true, false].map((full) => ({
         accountId: account.id, providerMsgId: full ? "sibling" : "header", providerThreadId: full ? "sibling" : "header", rfcMessageId: `${full ? "sibling" : "header"}@example.test`,
         inReplyTo: null, references: [], from: { name: "Sender", email: "sender@example.test" }, to: [], cc: [], bcc: [], subject: full ? "Healthy sibling" : "Header body", date: full ? 2000 : 1000, snippet: full ? "Exact sibling" : "", bodyText: full ? "Exact sibling\n" + "Sibling context\n".repeat(100) : null, bodyHtml: null, bodyState: full ? "full" as const : "partial" as const, listId: null,

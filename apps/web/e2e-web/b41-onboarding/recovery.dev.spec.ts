@@ -40,7 +40,7 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
     await expect.poll(() => page.evaluate(() => window.__ternoWeb?.storage)).toBe("opfs-sqlite");
     const account = await page.evaluate(async ({ language, theme }) => {
       const client = window.__ternoWeb!.client;
-      await client.call("settings.update", { language, theme, gmailClientId: "123-synthetic.apps.googleusercontent.com" });
+      await client.call("settings.update", { language, theme });
       return client.call("accounts.connectGmailToken", { accessToken: "synthetic-seed", expiresIn: 3600 });
     }, { language, theme });
     await page.reload();

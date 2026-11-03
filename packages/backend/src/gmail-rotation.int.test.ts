@@ -8,6 +8,9 @@ import { createGmailProvider, type ProviderRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
+// plan 123: only Terno's own Google clients exist; tests carry a synthetic one
+const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] };
+
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
@@ -63,7 +66,7 @@ async function setup(kind: "SQL" | "IndexedDB") {
     create: (ctx) => createGmailProvider(ctx, { endpoints: { token: `${url}/token`, api: `${url}/gmail` } }),
     async verifyImap() {}, async connectGmail() { throw new Error("Unused synthetic OAuth flow"); },
   };
-  const open = async () => new Backend({
+  const open = async () => new Backend({ googleClients: TEST_GOOGLE,
     dbPath: join(dir, "synthetic.db"),
     store: kind === "IndexedDB" ? await IdbMailStore.open({ name, factory, platform, instantSearch: false }) : undefined,
     platform, version: "test", providers: registry, cipher: plaintextCipher,
@@ -71,7 +74,6 @@ async function setup(kind: "SQL" | "IndexedDB") {
   });
   let backend = await open();
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 });
-  await backend.store.settings.set("app", { gmailClientId: "synthetic-client" });
   const secretName = `account:${account.id}:refreshToken`;
   await backend.setSecret(secretName, refresh);
   cleanup.push(async () => {

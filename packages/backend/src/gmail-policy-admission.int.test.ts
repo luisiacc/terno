@@ -9,6 +9,9 @@ import { createGmailProvider, inspectGmailToken, ProviderAuthError, ProviderErro
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
+// plan 123: only Terno's own Google clients exist; tests carry a synthetic one
+const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] };
+
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
   try { for (const close of cleanups.splice(0).reverse()) await close(); }
@@ -60,12 +63,11 @@ async function setup(autoSync = false, kind: "SQL" | "IDB" = "SQL") {
   const dir = mkdtempSync(join(tmpdir(), "terno-policy-recovery-"));
   const name = crypto.randomUUID(), factory = new IDBFactory();
   const openStore = async () => kind === "IDB" ? await IdbMailStore.open({ name, factory, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} }, instantSearch: false }) : undefined;
-  const open = async () => new Backend({ store: await openStore(), dbPath: join(dir, "test.db"), providers, cipher: plaintextCipher, version: "test", autoSync, instantSearch: false, iconTransport: null });
+  const open = async () => new Backend({ googleClients: TEST_GOOGLE, store: await openStore(), dbPath: join(dir, "test.db"), providers, cipher: plaintextCipher, version: "test", autoSync, instantSearch: false, iconTransport: null });
   let backend = await open();
   cleanups.push(async () => { await backend.stop(); rmSync(dir, { recursive: true, force: true }); expect(unexpected).toEqual([]); });
   await backend.ready;
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 });
-  await backend.store.settings.set("app", { gmailClientId: "synthetic-client" });
   await backend.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
   const connect = () => {
     const [local, remote] = createMemoryTransportPair();

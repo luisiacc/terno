@@ -26,7 +26,9 @@ it("exports categories, filters, settings, drafts and unsent ops, and no secret"
   backend.connect(s, { clientId: "r", origin: "renderer" });
   const client = new RpcClient(c);
   await backend.setSecret("ai:anthropic:apiKey", "sk-ant-secret-1234");
-  await client.call("settings.update", { gmailClientId: "client-1.apps.googleusercontent.com", density: "compact" });
+  // plan 123: a Google client ID of the user's own, left from before, is neither returned nor exported
+  await backend.store.settings.set("app", { ...(await backend.store.settings.get<object>("app", {})), gmailClientId: "client-1.apps.googleusercontent.com" });
+  await client.call("settings.update", { density: "compact" });
   const { accounts } = await client.call("app.bootstrap", {});
   const thread = (await client.call("threads.list", { view: "inbox", limit: 1 })).items[0]!;
   await client.call("threads.act", { threadIds: [thread.id], action: "archive" });
@@ -36,13 +38,31 @@ it("exports categories, filters, settings, drafts and unsent ops, and no secret"
   expect(dump).toMatchObject({ format: "terno-export", version: 2 });
   expect(dump.categories.length).toBeGreaterThan(0);
   expect(dump.filters.map((f) => f.name)).toContain("Notificaciones de GitHub → Desarrollo");
-  expect(dump.settings).toMatchObject({ gmailClientId: "client-1.apps.googleusercontent.com", density: "compact" });
+  expect(dump.settings).toMatchObject({ density: "compact" });
+  expect(dump.settings).not.toHaveProperty("gmailClientId");
   expect(dump.accounts.map((a) => a.email)).toEqual(accounts.map((a) => a.email));
   expect(dump.drafts).toMatchObject([{ subject: "Borrador", mode: "new", bcc: [], quotedText: "", inReplyTo: null, forwardOf: null }]);
   expect(dump.ops).toMatchObject([{ kind: "archive", state: "queued" }]);
   expect(JSON.stringify(dump)).not.toContain("sk-ant-secret");
   // agents can't take it
   await expect(backend.server.invoke("app.export", {}, { clientId: "agent", origin: "mcp" })).rejects.toBeTruthy();
+});
+
+it("plan 123: an older export's Google client ID is ignored on import", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "terno-import-google-"));
+  const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
+  cleanups.push(async () => {
+    await backend.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const [c, s] = createMemoryTransportPair();
+  backend.connect(s, { clientId: "r", origin: "renderer" });
+  const client = new RpcClient(c);
+  await client.call("app.import", { data: { format: "terno-export", version: 1, settings: { gmailClientId: "client-1.apps.googleusercontent.com", density: "compact" } } as never });
+  const { settings } = await client.call("app.bootstrap", {});
+  expect(settings.density).toBe("compact");
+  expect(settings).not.toHaveProperty("gmailClientId");
+  expect(await backend.store.settings.get<Record<string, unknown>>("app", {})).not.toHaveProperty("gmailClientId");
 });
 
 it("exports exact draft attachment bytes, imports with fresh account-owned IDs, and preserves byte-distinct drafts on repeated import", async () => {

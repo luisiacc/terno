@@ -65,9 +65,10 @@ async function setup(o: { web?: boolean } = {}) {
     return new Response(Buffer.from(pngBytes(128)), { status: 200, headers: { "content-type": "image/png" } });
   });
   const dir = mkdtempSync(join(tmpdir(), "terno-gphotos-"));
-  const backend = new Backend({ dbPath: join(dir, "g.db"), version: "t", cipher: plaintextCipher, providers: registry(f, o.web), autoSync: false, iconTransport: null, openExternal: async () => {} });
+  // plan 123: only Terno's own Google clients exist; the test carries a synthetic one
+  const googleClients = { preferred: "client.apps.googleusercontent.com", clients: [{ clientId: "client.apps.googleusercontent.com", clientSecret: "" }] };
+  const backend = new Backend({ dbPath: join(dir, "g.db"), version: "t", cipher: plaintextCipher, providers: registry(f, o.web), autoSync: false, iconTransport: null, openExternal: async () => {}, googleClients });
   await seedDemo(backend.store, { threads: 60, accounts: 2 });
-  await backend.store.settings.update<Record<string, unknown>, void>("app", {}, (s) => ({ value: { ...s, gmailClientId: "client.apps.googleusercontent.com" }, result: undefined }));
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });
   const client = new RpcClient(c);

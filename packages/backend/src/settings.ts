@@ -17,7 +17,7 @@ import { unreadableSecrets } from "./keychain";
 /** The part of the store settings live in. */
 export type SettingsStore = Pick<MailStore, "settings" | "secrets">;
 
-type General = Omit<AppSettings, "ai" | "gmailClientSecretSet" | "gmailClientSecretUnreadable">;
+type General = Omit<AppSettings, "ai">;
 
 /** What is persisted under settings.app. The renderer only ever sees AppSettings. */
 interface StoredSettings extends Partial<General> {
@@ -27,6 +27,8 @@ interface StoredSettings extends Partial<General> {
     /** observed by Test connection (or a ladder downgrade), per provider + endpoint + model */
     capabilities?: Record<string, Capabilities>;
   };
+  /** plan 123: a Google client of the user's own (before it); dropped on read */
+  gmailClientId?: string;
   /** pre-v3 shape, mapped on read */
   aiProvider?: "anthropic" | "fake" | "none";
   aiModel?: string;
@@ -137,7 +139,6 @@ export const DEFAULT_SETTINGS: General = {
   layout: "split",
   remoteImages: "ask",
   allowAgentSend: false,
-  gmailClientId: "",
   syncWindowDays: 180,
   autoCategorize: "auto",
   aiCategorize: false,
@@ -417,7 +418,7 @@ function resolveThemes(g: General): General {
 
 export async function readSettings(store: SettingsStore): Promise<AppSettings> {
   const s = await stored(store);
-  const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, remoteImagesVersion: _r, errorReportsVersion: _e, localMailVersion: _l, ...general } = s;
+  const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, remoteImagesVersion: _r, errorReportsVersion: _e, localMailVersion: _l, gmailClientId: _g, ...general } = s;
   const { provider, profiles, capabilities } = aiState(s, s.aiProvider === undefined && !s.ai?.provider && (await store.secrets.has(keySecretName("anthropic"))));
   const profile = profiles[provider] ?? { model: "" };
   const secret = keySecretName(provider, profile.preset);
@@ -438,7 +439,7 @@ export async function readSettings(store: SettingsStore): Promise<AppSettings> {
     capabilities: capabilities[capabilityKey(provider, profile)] ?? null,
     profiles,
   };
-  return { ...resolveThemes({ ...DEFAULT_SETTINGS, ...general, language: languageOf(s) }), gmailClientSecretSet: await store.secrets.has("gmailClientSecret"), gmailClientSecretUnreadable: unreadable.has("gmailClientSecret"), ai };
+  return { ...resolveThemes({ ...DEFAULT_SETTINGS, ...general, language: languageOf(s) }), ai };
 }
 
 export class SettingsError extends Error {

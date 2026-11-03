@@ -12,6 +12,9 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
+// plan 123: only Terno's own Google clients exist; tests carry a synthetic one
+const TEST_GOOGLE = { preferred: "synthetic", clients: [{ clientId: "synthetic", clientSecret: "" }] };
+
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); vi.restoreAllMocks(); });
 function latch() { let resolve!: () => void; const promise = new Promise<void>((r) => { resolve = r; }); return { promise, resolve }; }
@@ -40,10 +43,9 @@ async function setup(kind: "SQL" | "IndexedDB", autoSync = false) {
     create: (ctx) => { contexts.set(ctx.account.id, ctx); return createGmailProvider(ctx, { endpoints: { token: `${origin}/token`, api: `${origin}/gmail` } }); },
     async verifyImap() {}, async connectGmail() { throw new Error("Unused consent"); },
   };
-  const open = async () => new Backend({ dbPath: join(dir, "mail.db"), store: kind === "IndexedDB" ? await IdbMailStore.open({ name, factory, platform, instantSearch: false }) : undefined, platform, providers, cipher: plaintextCipher, version: "test", autoSync, now: () => Date.now() + offset, instantSearch: false, iconTransport: null });
+  const open = async () => new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "mail.db"), store: kind === "IndexedDB" ? await IdbMailStore.open({ name, factory, platform, instantSearch: false }) : undefined, platform, providers, cipher: plaintextCipher, version: "test", autoSync, now: () => Date.now() + offset, instantSearch: false, iconTransport: null });
   let backend = await open();
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 });
-  await backend.store.settings.set("app", { gmailClientId: "synthetic" });
   await backend.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
   cleanup.push(async () => {
     try { await backend.stop(); }

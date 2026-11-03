@@ -117,9 +117,6 @@ test("queued Gmail survives worker reload and waits for the same account", async
   expect(requests.length).toBe(beforeQuiet);
   expect(await op()).toMatchObject({ state: "queued", attempts: 0 });
   await page.evaluate(async () => {
-    const settings = await window.__ternoWeb!.client.call("settings.update", { gmailClientId: "123-synthetic.apps.googleusercontent.com" });
-    const { setApp } = await import("/src/state/app.ts");
-    setApp({ settings });
     window.google = { accounts: { oauth2: { initTokenClient: (config) => ({ requestAccessToken: () => config.error_callback?.({ type: "popup_closed" }) }) } } };
   });
   const beforeRefusal = requests.length;

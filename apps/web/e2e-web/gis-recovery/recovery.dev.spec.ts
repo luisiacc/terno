@@ -29,11 +29,6 @@ test("browser GIS callbacks retain an authored draft in the actual worker store"
   await page.goto("/?demo=200&mailbox=w12-gis");
   await page.getByTestId("thread-row").first().waitFor({ timeout: 60_000 });
   expect(await page.evaluate(() => window.__ternoWeb!.storage)).toBe("opfs-sqlite");
-  await page.getByTestId("open-settings").click();
-  await page.getByTestId("tab-accounts").click();
-  const id = page.getByRole("textbox", { name: "Google OAuth Client ID" });
-  await id.fill("123-synthetic.apps.googleusercontent.com"); await id.blur();
-  await page.keyboard.press("Escape");
   const list = page.getByRole("listbox", { name: "Conversations" });
   await list.hover(); await page.mouse.wheel(0, 500);
   await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);

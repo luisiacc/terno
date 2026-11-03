@@ -901,7 +901,7 @@ describe("categorizer: auto-apply at ingestion", () => {
     const spy = vi.spyOn(t.backend.store.secrets, "has").mockImplementation(async (name) => {
       const value = await has(name);
       // Let the real settings read and enabled() resolve before stopping, ahead of enqueue's continuation.
-      if (name === "gmailClientSecret") queueMicrotask(() => queueMicrotask(() => queueMicrotask(() => t.backend.aiAssist.stop())));
+      if (name === "ai:fake:apiKey") queueMicrotask(() => queueMicrotask(() => queueMicrotask(() => t.backend.aiAssist.stop())));
       return value;
     });
     await t.backend.aiAssist.enqueue(t.threads);

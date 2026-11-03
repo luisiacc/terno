@@ -41,11 +41,6 @@ const notice = (page: Page) => page.getByTestId("sign-in-notice");
 const marker = (page: Page, a: Account) => page.getByTestId(`sign-in-marker-${a.id}`);
 const popover = (page: Page) => page.getByTestId("sign-in-popover");
 
-test.beforeEach(async ({ server }) => {
-  // Google's sign-in needs the user's client ID (the fake Google answers for it)
-  await server.backend.server.invoke("settings.update", { gmailClientId: "e2e.apps.googleusercontent.com" }, ctx);
-});
-
 test.describe("signing in again", { tag: "@design" }, () => {
   test("one Gmail account: a key on its row and one calm line; mail stays readable; Continue with Google clears both", async ({ app: page, server }) => {
     const { personal } = await accounts(server);

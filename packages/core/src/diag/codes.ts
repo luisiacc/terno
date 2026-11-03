@@ -90,7 +90,7 @@ export const CODES = {
   "ai.failed": c("aiKind", "op"),
   "keychain.migration_failed": c("errorClass"),
   // plan 99: recording which Google client older accounts were connected with
-  "google.client_backfill_failed": c("errorClass"),
+  "google.own_client_cleanup_failed": c("errorClass"),
   "move.resume_failed": c("errorClass"),
   // plan 17: the thread facts' backfill (a slice failed; three in a row stop it for the session)
   "facts.backfill_failed": c("errorClass", "count"),

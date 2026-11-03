@@ -31,10 +31,10 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
       const address = google.address();
       if (!address || typeof address === "string") throw new Error("No synthetic Google port");
       const origin = `http://127.0.0.1:${address.port}`;
-      server = await startDevServer({ port: 0, dataDir: dir, token: "synthetic", seed: false, autoSync: false, iconTransport: null, providers: createRegistry({ gmail: { endpoints: { token: `${origin}/token`, api: `${origin}/mail` } } }) });
+      server = await startDevServer({ port: 0, dataDir: dir, token: "synthetic", seed: false, autoSync: false, iconTransport: null, googleClients: { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] }, providers: createRegistry({ gmail: { endpoints: { token: `${origin}/token`, api: `${origin}/mail` } } }) });
       const backend = server.backend;
       const ctx = { clientId: "synthetic", origin: "dev" as const };
-      await backend.server.invoke("settings.update", { language, theme, senderIcons: false, gmailClientId: "synthetic-client" }, ctx);
+      await backend.server.invoke("settings.update", { language, theme, senderIcons: false }, ctx);
       const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic Gmail", color: "indigo", now: 1 });
       await backend.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
       await backend.syncAccount(account.id);
@@ -79,9 +79,9 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
       const address = google.address();
       if (!address || typeof address === "string") throw new Error("Missing synthetic port");
       const origin = `http://127.0.0.1:${address.port}`;
-      server = await startDevServer({ port: 0, dataDir: dir, token: "synthetic", seed: false, autoSync: false, iconTransport: null, providers: createRegistry({ gmail: { endpoints: { token: `${origin}/token`, api: `${origin}/mail` } } }) });
+      server = await startDevServer({ port: 0, dataDir: dir, token: "synthetic", seed: false, autoSync: false, iconTransport: null, googleClients: { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] }, providers: createRegistry({ gmail: { endpoints: { token: `${origin}/token`, api: `${origin}/mail` } } }) });
       const backend = server.backend, ctx = { clientId: "synthetic", origin: "dev" as const };
-      await backend.server.invoke("settings.update", { language, theme, senderIcons: false, gmailClientId: "synthetic-client" }, ctx);
+      await backend.server.invoke("settings.update", { language, theme, senderIcons: false }, ctx);
       const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic Gmail", color: "indigo", now: 1 });
       await backend.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
       await backend.syncAccount(account.id);

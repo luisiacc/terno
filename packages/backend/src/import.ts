@@ -21,7 +21,6 @@ const GENERAL_KEYS = [
   "customThemes",
   "density",
   "layout",
-  "gmailClientId",
   "syncWindowDays",
   "autoCategorize",
   "aiCategorize",

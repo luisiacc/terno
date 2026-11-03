@@ -256,6 +256,7 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
     try {
       server = await startDevServer({
         port: 0, dataDir: dir, token: "synthetic", threads: 40, accounts: 4, autoSync: false, iconTransport: null, openExternal: async (url) => { external.push(url); },
+        googleClients: { preferred: "synthetic.apps.googleusercontent.com", clients: [{ clientId: "synthetic.apps.googleusercontent.com", clientSecret: "" }] },
         providers: {
           ...demoRegistry,
           async verifyImap(_config, value) {
@@ -274,7 +275,7 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
       const imap = accounts.find((a) => a.kind === "imap")!;
       const gmail = accounts.find((a) => a.kind === "gmail")!;
       await backend.store.accounts.setSyncState(imap.id, { status: "error", authRequired: false, lastError: detail });
-      await backend.server.invoke("settings.update", { language, theme, senderIcons: false, gmailClientId: "synthetic.apps.googleusercontent.com" }, ctx);
+      await backend.server.invoke("settings.update", { language, theme, senderIcons: false }, ctx);
       await page.addInitScript((language) => localStorage.setItem("terno:language", language), language);
       await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=synthetic`);
       await page.getByTestId("thread-row").first().waitFor();
@@ -350,12 +351,10 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
       await trigger.click();
       await expect(dialog.getByRole("alert")).toHaveCount(0);
       await expect(page.getByTestId("imap-email")).toHaveValue("");
-      // Preserve the existing missing-client-ID navigation and snack.
-      await backend.server.invoke("settings.update", { gmailClientId: "" }, ctx);
+      // plan 123: a build without Terno's Google client says so where the other errors show (no detour)
+      (backend.options as { googleClients?: unknown }).googleClients = null;
       await dialog.getByTestId("connect-gmail").click();
-      await expect(dialog).toHaveCount(0);
-      await expect(page.getByTestId("tab-accounts")).toHaveAttribute("aria-selected", "true");
-      await expect(page.getByTestId("snack-message")).toHaveText(t("errors.gmailClientIdMissing"));
+      await expect(error).toHaveText(t("errors.google.noClient"));
       expect(googleCalls).toHaveLength(3);
       await page.keyboard.press("Escape");
       await trigger.click();
