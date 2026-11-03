@@ -1,5 +1,6 @@
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { Pagination } from "@terno/ui/components/pagination";
 import { useEffect, useRef, useState } from "react";
 import type { ResultOf } from "@terno/core/rpc";
 import { clearRecipientDetails } from "~/lib/send-warning";
@@ -77,9 +78,9 @@ export function RecipientReceipts({ accountId }: { accountId: number }) {
       <span>{new Date(row.createdAt).toLocaleString()}{row.outcomeUncertain ? ` · ${t("account.recipientReceipts.uncertain")}` : row.state === "pending" ? ` · ${t("account.recipientReceipts.pending")}` : ""}</span>
       <div className="flex gap-1"><Button variant="ghost" size="sm" disabled={busy || row.retired} onClick={() => void details(row)}>{t("account.recipientReceipts.details")}</Button><Button variant="ghost" size="sm" disabled={busy} onClick={() => void action(row, "clear")}>{t("account.recipientReceipts.clear")}</Button></div>
     </div>)}
-    {rows && rows.length > 25 && <div className="flex gap-1"><Button variant="ghost" size="sm" disabled={current === 0} onClick={() => setPage(current - 1)}>{t("account.recipientReceipts.previous")}</Button><Button variant="ghost" size="sm" disabled={(current + 1) * 25 >= rows.length} onClick={() => setPage(current + 1)}>{t("account.recipientReceipts.next")}</Button></div>}
+    {rows && <Pagination aria-label={t("account.recipientReceipts")} page={current} pageSize={25} total={rows.length} onPageChange={setPage} />}
     {selected && <div className="flex flex-col gap-2"><ul>{selected.entries.slice(detailCurrent * 25, (detailCurrent + 1) * 25).map((entry, index) => <li key={`${detailCurrent}:${index}`} className="break-all">{entry.role.toUpperCase()} · {entry.email} · {t(`account.recipientReceipts.${entry.outcome}`)}</li>)}</ul>
-      {selected.entries.length > 25 && <div className="flex gap-1"><Button variant="ghost" size="sm" disabled={detailCurrent === 0} onClick={() => setDetailPage(detailCurrent - 1)}>{t("account.recipientReceipts.previous")}</Button><Button variant="ghost" size="sm" disabled={(detailCurrent + 1) * 25 >= selected.entries.length} onClick={() => setDetailPage(detailCurrent + 1)}>{t("account.recipientReceipts.next")}</Button></div>}
+      <Pagination aria-label={t("account.recipientReceipts.recipients")} page={detailCurrent} pageSize={25} total={selected.entries.length} onPageChange={setDetailPage} />
       {selected.row.childOpId ? <p>{t("account.recipientReceipts.claimed")}</p> : selected.entries.some((entry) => entry.outcome === "rejected") && (selected.row.sourceAvailable ? <Button variant="ghost" size="sm" disabled={busy} onClick={() => void action(selected.row, "recover")}>{t("account.recipientReceipts.recover")}</Button> : <p>{t("account.recipientReceipts.unavailable")}</p>)}
     </div>}
   </div>}</SettingsRow>;

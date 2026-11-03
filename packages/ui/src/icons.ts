@@ -5,6 +5,7 @@ export { Apple } from "./iconset/generated/Apple";
 export { Archive } from "./iconset/generated/Archive";
 export { ArrowDown } from "./iconset/generated/ArrowDown";
 export { ArrowLeft } from "./iconset/generated/ArrowLeft";
+export { ArrowRight } from "./iconset/generated/ArrowRight";
 export { AtSign } from "./iconset/generated/AtSign";
 export { BadgeCheck } from "./iconset/generated/BadgeCheck";
 export { Baseline } from "./iconset/generated/Baseline";

@@ -11,6 +11,8 @@ export const ICONS = {
   ArrowDown: "ArrowDown02Icon",
   // plan 108: the focused sidebar's way back to all accounts
   ArrowLeft: "ArrowLeft02Icon",
+  // plan 125: Pagination's Next
+  ArrowRight: "ArrowRight02Icon",
   AtSign: "AtIcon",
   BadgeCheck: "CheckmarkBadge01Icon",
   Baseline: "TextColorIcon",

@@ -1,6 +1,7 @@
 import type { SentCopyInfo } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { Pagination } from "@terno/ui/components/pagination";
 import { useEffect, useRef, useState } from "react";
 import { client } from "~/rpc/connection";
 import { SettingsRow } from "./parts";
@@ -39,10 +40,7 @@ export function SentCopies({ accountId }: { accountId: number }) {
           <Button variant="ghost" size="sm" disabled={busy !== null} onClick={() => void run(row, "forget")}>{t("account.sentCopies.clear")}</Button>
         </div>
       </div>)}
-      {rows && rows.length > 25 && <div className="flex gap-2">
-        <Button variant="ghost" size="sm" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>{t("account.sentCopies.previous")}</Button>
-        <Button variant="ghost" size="sm" disabled={(currentPage + 1) * 25 >= rows.length} onClick={() => setPage(currentPage + 1)}>{t("account.sentCopies.next")}</Button>
-      </div>}
+      {rows && <Pagination aria-label={t("account.sentCopies")} page={currentPage} pageSize={25} total={rows.length} onPageChange={setPage} />}
     </div>}
   </SettingsRow>;
 }
