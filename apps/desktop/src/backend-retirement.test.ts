@@ -217,13 +217,17 @@ it("actual failed quit restores windows and retains the single-instance owner", 
   const app = Object.assign(new EventEmitter(), { quit: vi.fn() });
   const window = { isDestroyed: () => false, hide: vi.fn(), show: vi.fn() };
   const quitting = vi.fn();
+  // app.ts's present(): shows the window, never taking focus from a background run (1ea49077)
+  const present = vi.fn((w: typeof window) => w.show());
   const h = hostBlock('  app.on("before-quit",', '\n}\n', {
     app, quitState: "running", windows: [window], shutdown: async () => "timeout", backend: {},
-    enableReload: vi.fn(), updates: { quitting },
+    enableReload: vi.fn(), updates: { quitting }, present,
   }, "{ state: () => quitState }");
   app.emit("before-quit", { preventDefault: vi.fn() });
   await Promise.resolve(); await Promise.resolve();
   expect(window.hide).toHaveBeenCalledTimes(1);
+  // restored as it was, without stealing focus
+  expect(present).toHaveBeenCalledWith(window, false);
   expect(window.show).toHaveBeenCalledTimes(1);
   expect(h.state()).toBe("running");
   expect(app.quit).not.toHaveBeenCalled();

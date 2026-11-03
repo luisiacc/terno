@@ -295,17 +295,16 @@ describe("quote, signature and the document around them", () => {
     expect(pieces.length).toBeGreaterThan(10);
     expect(pieces.join("")).toBe(textToHtml(big));
     expect(pieces.join("").startsWith('<blockquote style="')).toBe(true);
-    // each piece is a short step, also for one 5-million-character line (the backend yields between pieces)
+    // each piece is a short step, also for one 5-million-character line (the backend yields between pieces): bounded
+    // by the budget, not by the text (its time is gated alone in richtext.perf.test.ts, away from the parallel run)
     for (const text of [big.repeat(3), "x ".repeat(2_500_000)]) {
-      let worst = 0;
-      const it = textToHtmlChunks(text);
-      for (;;) {
-        const t0 = performance.now();
-        const r = it.next();
-        worst = Math.max(worst, performance.now() - t0);
-        if (r.done) break;
+      let longest = 0, count = 0;
+      for (const piece of textToHtmlChunks(text)) {
+        longest = Math.max(longest, piece.length);
+        count++;
       }
-      expect(worst).toBeLessThan(25);
+      expect(count).toBeGreaterThan(100);
+      expect(longest).toBeLessThan(16_384 * 8);
     }
     expect(textToHtml("a\r\nb\rc")).toBe("<div>a</div><div>b</div><div>c</div>");
     // a long line cut into parts keeps its links and its double spaces whole, wherever the boundary falls

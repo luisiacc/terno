@@ -193,6 +193,9 @@ describe.skipIf(skip)("plan 95 on real volumes", { timeout: 180_000 }, () => {
     const v = volume("clone", "APFS", 600)!;
     const db = join(v, "terno.db");
     oldMailbox(db, 200);
+    // the fixture just wrote 200 MB to a fresh image: flushed first, or the backup's own fsyncs wait on it and the
+    // timer charges the fixture's writes to the backup (0.7 to 1.3 s on a quiet machine)
+    spawnSync("sync");
     const before = free(v);
     const t = performance.now();
     const plan = await prepareUpgrade(db, { backupsDir: join(v, "backups"), appVersion: "0.3.0" });

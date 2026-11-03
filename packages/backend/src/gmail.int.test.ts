@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { encodeText } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createGmailTokenBroker, createRegistry, gmailReconnect, type ProviderRegistry } from "@terno/mail";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { sqlDb } from "@terno/db";
 import type { GoogleClients } from "./google-client";
@@ -673,8 +673,10 @@ describe("Gmail operations", () => {
     await client.call("threads.act", { threadIds: [thread("Hola mamá")], action: "star" });
     // ops for one account run sequentially; force parallel API calls through a sync too
     await Promise.all([backend.runWorker(), backend.syncAccount(sqlDb(backend.store).get<{ id: number }>("SELECT id FROM accounts")!.id)]);
+    // threads.act kicks the worker itself: on a busy machine it may already hold the ops, and runWorker() then
+    // returns at once; wait for them to settle rather than for that call
+    await vi.waitFor(() => expect(sqlDb(backend.store).all("SELECT state FROM ops WHERE kind != 'send'").map((r) => (r as { state: string }).state)).toEqual(["succeeded", "succeeded", "succeeded"]), { timeout: 10_000 });
     expect(google.refreshCalls - before).toBe(1);
-    expect(sqlDb(backend.store).all("SELECT state FROM ops WHERE kind != 'send'").every((r) => (r as { state: string }).state === "succeeded")).toBe(true);
   });
 
   it("a revoked sign-in suspends actions without spending attempts; signing in again resumes them", async () => {
