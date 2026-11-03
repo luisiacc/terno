@@ -25,7 +25,8 @@ describe("WCAG AA in every built-in theme", () => {
     // plan 120: the date picker's chosen day on the primary's wash in its popover
     // plan 94: a filled button's text on its hover fill
     // plan 118: a field's text and placeholder on its wash over 4 surfaces
-    expect(CONTRAST_PAIRS).toHaveLength(49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8);
+    // plan 122: a past time's clock on the card
+    expect(CONTRAST_PAIRS).toHaveLength(49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1);
   });
 
   it("reports a failing pair with its ratio", () => {

@@ -67,6 +67,8 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...CAT_NAMES.flatMap((c) => (["pane", "tint", "row-hover", "row-selected", "accent"] as const).map((over): ContrastPair => ({ fg: `cat-${c}-ink`, bg: `cat-${c}`, tint: true, min: 4.5, overToken: over }))),
   // plan 34: an invalid recipient chip's mark (its dotted underline and alert glyph) on the chip's fill
   ...ui("destructive", ["muted"]),
+  // plan 122: a past time's clock in the Time Field, on the card it is drawn on
+  ...ui("destructive", ["card"]),
   // plan 120: the date picker's chosen day, its text on the primary's 15% wash in the popover
   { fg: "foreground", bg: "primary", tint: true, min: 4.5, overToken: "popover" },
   // plan 118: a field's text and placeholder on its wash of ink (globals.css --color-field, 5%), on the surfaces fields sit on
