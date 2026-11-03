@@ -1,6 +1,6 @@
 /**
  * Plan 119: a panel of rows has corners concentric with its rows'. The panel's radius is the row's plus the inset
- * between them, so the two curves run parallel in every design: the send-later popover and its time list, a right-click
+ * between them, so the two curves run parallel in every design: the send-later popover, a right-click
  * menu, the palette, the date picker, the category picker.
  */
 import type { Locator } from "@playwright/test";
@@ -25,11 +25,6 @@ test.describe("menu corners are concentric with their rows (plan 119)", { tag: "
     await page.getByTestId("compose-send-later").click();
     const popover = page.getByTestId("send-later-popover");
     await concentric(popover, popover.getByTestId("send-later-now"));
-    // and the time list inside Custom, a select whose content is passed its own classes
-    await popover.getByTestId("send-later-custom").click();
-    await popover.getByTestId("send-later-time").click();
-    const times = page.getByTestId("send-later-times");
-    await concentric(times, times.getByRole("option").first());
   });
 
   test("a right-click menu", async ({ app: page }) => {

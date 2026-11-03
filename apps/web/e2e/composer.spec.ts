@@ -723,6 +723,31 @@ test("the editor stays out of the startup bundle: the entry and what it imports 
   expect(entry.hits).toEqual([]);
 });
 
+// plan 122: React Aria (the Time Field) is the pickers' alone: none of it in the entry or what it imports statically
+test("React Aria stays out of the startup bundle: it loads with the date and time pickers", async ({ app: page }) => {
+  const entry = await page.evaluate(async () => {
+    const src = document.querySelector<HTMLScriptElement>("script[type=module][src]")!.src;
+    const seen = new Set<string>();
+    const hits: string[] = [];
+    const walk = async (url: string) => {
+      if (seen.has(url)) return;
+      seen.add(url);
+      const code = await (await fetch(url)).text();
+      if (/data-rac|react-aria|DateSegment/.test(code)) hits.push(url);
+      for (const m of code.matchAll(/(?:^|[;\n}])\s*import\s*(?:[^"'();]*?from\s*)?["'](\.\/[^"']+\.js)["']/g)) await walk(new URL(m[1]!, url).href);
+    };
+    await walk(src);
+    return { files: seen.size, hits };
+  });
+  expect(entry.files).toBeGreaterThan(3);
+  expect(entry.hits).toEqual([]);
+  // and it is what draws the time once the picker loads
+  await openRow(page, 1);
+  await page.getByTestId("action-remind").click();
+  await page.getByTestId("remind-pick").click();
+  await expect(page.getByTestId("remind-time")).toHaveAttribute("data-rac", "");
+});
+
 test("a huge draft skips its lines off screen from the start: nothing reads style or layout while all of them would be styled", async ({ app: page, server }) => {
   // a read then styled every line before content-visibility applied, and every keystroke after cost twice as much
   // (a 2 MB draft: 21 ms to the transaction instead of 12, the frame at 60 ms; plan 16, "Huge drafts")

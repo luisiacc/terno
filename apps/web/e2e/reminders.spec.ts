@@ -8,7 +8,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { E2E_NOW } from "./constants";
-import { expect, focusList, openRow, rows, selectedRow, test } from "./fixtures";
+import { expect, focusList, openRow, rows, selectedRow, test, timeText, typeTime } from "./fixtures";
 
 const snackWith = (page: Page, text: string | RegExp) => page.locator("[data-testid=snack]").filter({ hasText: text });
 const rowOf = (page: Page, id: string | number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
@@ -73,9 +73,8 @@ test.describe("remind me", { tag: "@design" }, () => {
     await expect(popover.getByTestId("remind-set")).toBeDisabled();
     await popover.getByTestId("remind-date").click();
     await calendar.locator('button[data-day="2026-10-30"]').click();
-    await popover.getByTestId("remind-time").click();
-    await page.getByTestId("remind-times").getByRole("option", { name: "2:00 PM", exact: true }).click();
-    await expect(popover.getByTestId("remind-time")).toContainText("2:00 PM");
+    await typeTime(popover.getByTestId("remind-time"), 2, 0, "PM");
+    expect(await timeText(popover.getByTestId("remind-time"))).toBe("2:00 PM");
     await popover.getByTestId("remind-set").click();
     await expect(popover).toBeHidden();
     await expect(snackWith(page, "I'll remind you on Oct 30 at 2:00 PM if they don't answer")).toBeVisible();

@@ -21,7 +21,8 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
   const [kind, setKind] = useState<ReminderKind>(initialKind ?? current?.kind ?? "always");
   const [picking, setPicking] = useState(custom);
   const when = useWhen(defaultRemindAt(new Date()));
-  const { chosen, past } = when;
+  const { chosen, past, ready } = when;
+  const formRef = useRef<HTMLFormElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const pastId = useId();
   const [, recheck] = useState(0);
@@ -81,22 +82,24 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
         </button>
         {picking && (
           <form
+            ref={formRef}
             className="flex flex-col gap-2 pt-1 pb-1"
             data-testid="remind-custom"
             onSubmit={(e) => {
               e.preventDefault();
+              if (!ready) return;
               // the moment can pass while the picker stays open: the clock again, and a render that shows why
               if (chosen > Date.now()) set(chosen);
               else recheck((n) => n + 1);
             }}
           >
-            <WhenFields when={when} testPrefix="remind" describedBy={pastId} />
+            <WhenFields when={when} testPrefix="remind" describedBy={pastId} onEnter={() => formRef.current?.requestSubmit()} />
             {past && (
               <p id={pastId} className="px-2 text-xs text-destructive-ink" data-testid="remind-past">
                 {t("remind.past")}
               </p>
             )}
-            <Button type="submit" size="sm" data-testid="remind-set" disabled={past} className="self-end">
+            <Button type="submit" size="sm" data-testid="remind-set" disabled={past || !ready} className="self-end">
               {t("remind.set")}
             </Button>
           </form>

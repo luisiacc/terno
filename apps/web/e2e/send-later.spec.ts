@@ -7,7 +7,7 @@
  */
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { addRecipients, expect, focusList, openRow, test } from "./fixtures";
+import { addRecipients, expect, focusList, openRow, test, typeTime } from "./fixtures";
 
 const snackWith = (page: Page, text: string | RegExp) => page.locator("[data-testid=snack]").filter({ hasText: text });
 const body = (page: Page) => page.getByTestId("compose-body");
@@ -68,8 +68,7 @@ test.describe("send later", { tag: "@design" }, () => {
 
     await popover.getByTestId("send-later-custom").click();
     await expect(popover.getByTestId("send-later-date")).toContainText("Fri, Oct 23");
-    await popover.getByTestId("send-later-time").click();
-    await page.getByTestId("send-later-times").getByRole("option", { name: "10:15 AM" }).click();
+    await typeTime(popover.getByTestId("send-later-time"), 10, 15, "AM");
     await popover.getByTestId("send-later-set").click();
     await expect(snackWith(page, "Will send tomorrow at 10:15 AM")).toBeVisible();
     await expect(page.getByTestId("composer")).toHaveCount(0);
@@ -95,8 +94,7 @@ test.describe("send later", { tag: "@design" }, () => {
     await popover.getByTestId("send-later-custom").click();
     await popover.getByTestId("send-later-date").click();
     await page.getByTestId("send-later-calendar").getByRole("button", { name: /October 22/ }).click();
-    await popover.getByTestId("send-later-time").click();
-    await page.getByTestId("send-later-times").getByRole("option", { name: "9:00 AM", exact: true }).click();
+    await typeTime(popover.getByTestId("send-later-time"), 9, 0, "AM");
     await expect(popover.getByTestId("send-later-past")).toHaveText("Pick a time in the future.");
     await expect(popover.getByTestId("send-later-set")).toBeDisabled();
     await page.keyboard.press("Escape");

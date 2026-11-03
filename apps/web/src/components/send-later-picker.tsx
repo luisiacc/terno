@@ -33,6 +33,11 @@ export function SendLaterPicker({ current, onPick, onEdit, sendKeys, done }: { c
     done();
     onPick(at);
   };
+  const schedule = () => {
+    if (!when.ready) return;
+    if (when.chosen <= Date.now()) recheck((n) => n + 1);
+    else pick(when.chosen);
+  };
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
     const items = [...(listRef.current?.querySelectorAll<HTMLElement>("[data-send-later-choice]") ?? [])];
@@ -74,13 +79,13 @@ export function SendLaterPicker({ current, onPick, onEdit, sendKeys, done }: { c
         </button>
         {picking && (
           <div className="flex flex-col gap-2 pt-1 pb-1" data-testid="send-later-fields">
-            <WhenFields when={when} testPrefix="send-later" describedBy={pastId} />
+            <WhenFields when={when} testPrefix="send-later" describedBy={pastId} onEnter={schedule} />
             {when.past && (
               <p id={pastId} className="px-2 text-xs text-destructive-ink" data-testid="send-later-past">
                 {t("remind.past")}
               </p>
             )}
-            <Button type="button" size="sm" data-testid="send-later-set" disabled={when.past} className="self-end" onClick={() => (when.chosen <= Date.now() ? recheck((n) => n + 1) : pick(when.chosen))}>
+            <Button type="button" size="sm" data-testid="send-later-set" disabled={when.past || !when.ready} className="self-end" onClick={schedule}>
               {t("sendLater.schedule")}
             </Button>
           </div>

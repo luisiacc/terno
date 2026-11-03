@@ -239,6 +239,18 @@ export async function readerSubject(page: Page): Promise<string> {
 }
 
 /** Clicks a row by index and waits for the reader. */
+/**
+ * Plan 122: a time typed into a TimeField as a person would: its hour segment, two-digit hour and minute (so 1 and 10
+ * never run together), then A or P in a 12-hour locale.
+ */
+export async function typeTime(field: Locator, hour: number, minute: number, period?: "AM" | "PM"): Promise<void> {
+  await field.locator("[role=spinbutton]").first().click();
+  await field.page().keyboard.type(`${String(hour).padStart(2, "0")}${String(minute).padStart(2, "0")}${period ? period[0] : ""}`);
+}
+
+/** A TimeField's text as it reads (without the bidi isolates React Aria wraps its digits in). */
+export const timeText = (field: Locator): Promise<string> => field.evaluate((el) => (el.textContent ?? "").replace(/[\u2066-\u2069\u200e\u200f]/g, "").replace(/\s+/g, " ").trim());
+
 export async function openRow(page: Page, index: number): Promise<string> {
   const row = rows(page).nth(index);
   const id = (await row.getAttribute("data-thread-id"))!;

@@ -149,7 +149,9 @@ export default defineConfig(({ mode }) => {
         // uses it (a composer-only icon in the lazy composer) instead of riding the barrel into the entry
         treeshake: { moduleSideEffects: (id: string) => (/packages\/ui\/src\/(icons\.ts|iconset\/)/.test(id) ? false : undefined) },
         output: {
-          manualChunks: (id: string) => (id.includes("node_modules/react") || id.includes("node_modules/scheduler") ? "react" : undefined),
+          // React itself, not every package whose name starts with "react" (react-aria-components and react-day-picker
+          // belong to the lazy pickers that import them, plan 122)
+          manualChunks: (id: string) => (/[\\/]node_modules[\\/](?:react|react-dom|scheduler)[\\/]/.test(id) ? "react" : undefined),
         },
       },
     },

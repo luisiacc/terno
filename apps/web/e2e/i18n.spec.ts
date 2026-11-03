@@ -7,7 +7,7 @@
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import type { Page } from "@playwright/test";
-import { expect, navTo, openRow, rows, selectedId, test } from "./fixtures";
+import { expect, navTo, openRow, rows, selectedId, test, timeText, typeTime } from "./fixtures";
 import { englishLeaks } from "./i18n-leaks";
 
 const SETTINGS_TABS = ["general", "appearance", "accounts", "categories", "filters", "ai", "agents", "data"] as const;
@@ -29,6 +29,18 @@ async function expectNoLeaks(page: Page, where: string) {
 }
 
 test.describe("languages", () => {
+  // plan 122: the Time Field takes the app's language, not the browser's: 24-hour in Spanish
+  test("the reminder's time is 24-hour in Spanish", async ({ app: page }) => {
+    await chooseLanguage(page, "es");
+    await page.keyboard.press("Escape");
+    await openRow(page, 1);
+    await page.getByTestId("action-remind").click();
+    await page.getByTestId("remind-pick").click();
+    const field = page.getByTestId("remind-time");
+    await typeTime(field, 14, 30);
+    expect(await timeText(field)).toBe("14:30");
+  });
+
   test("English by default on an English system", async ({ app: page }) => {
     await expect(page.locator("html")).toHaveAttribute("lang", "en-US");
     await expect(page.getByTestId("list-title")).toHaveText(en["view.inbox"]);

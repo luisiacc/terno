@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { DESIGN_IDS } from "@terno/core";
-import { expect, focusList, openRow, test } from "./fixtures";
+import { addRecipients, expect, focusList, openRow, test, timeText, typeTime } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 
@@ -159,8 +159,8 @@ for (const mode of ["light", "dark"] as const) {
       expect(await day.evaluate((el) => getComputedStyle(el).color)).toBe(await css(page, "probe-foreground", "color"));
     });
 
-    // plan 121: BoardUI's picker triggers and time slots, the date and time as wide as the rows above them
-    test("the date and time pickers: BoardUI's triggers on the rows' width, its time slots", async ({ app: page }) => {
+    // plan 121: BoardUI's date-picker trigger, the date and time as wide as the rows above them
+    test("the date and time: BoardUI's date trigger, both on the rows' width", async ({ app: page }) => {
       await openRow(page, 1);
       await page.getByTestId("action-remind").click();
       const popover = page.getByTestId("remind-popover");
@@ -171,21 +171,68 @@ for (const mode of ["light", "dark"] as const) {
       const time = await box("remind-time");
       expect(Math.abs(date.x - row.x), "the date starts on the row's edge").toBeLessThanOrEqual(0.5);
       expect(Math.abs(time.x + time.width - (row.x + row.width)), "the time ends on it").toBeLessThanOrEqual(0.5);
-      for (const id of ["remind-date", "remind-time"]) {
-        expect(await css(page, id, "background-color"), `${id}: the secondary's card`).toBe(await css(page, "probe-card", "background-color"));
-        expect(await css(page, id, "border-top-width")).toBe("1px");
-        expect(await css(page, id, "box-shadow")).not.toBe("none");
-      }
-      await page.getByTestId("remind-time").click();
-      const chosen = page.getByTestId("remind-times").locator("[data-slot=select-item][data-selected]");
-      // the list opens focused on the chosen time; move off it, so its fill is the chosen one's, not the focus highlight
-      await expect(chosen).toBeFocused();
-      await page.keyboard.press("ArrowDown");
-      await expect(chosen).not.toBeFocused();
+      expect(await css(page, "remind-date", "background-color"), "the secondary's card").toBe(await css(page, "probe-card", "background-color"));
+      expect(await css(page, "remind-date", "border-top-width")).toBe("1px");
+      expect(await css(page, "remind-date", "box-shadow")).not.toBe("none");
+    });
+
+    // plan 122: BoardUI's Time Field, typed segment by segment in Input's filled field
+    test("the time is BoardUI's Time Field: typed segment by segment, the focused one in the primary", async ({ app: page }) => {
+      await openRow(page, 1);
+      await page.getByTestId("action-remind").click();
+      const popover = page.getByTestId("remind-popover");
+      await popover.getByTestId("remind-pick").click();
+      const field = popover.getByTestId("remind-time");
       await page.mouse.move(1, 1);
-      expect(await chosen.evaluate((el) => getComputedStyle(el).justifyContent)).toBe("center");
-      expect(await chosen.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await css(page, "probe-muted", "background-color"));
-      await expect(chosen.locator("svg")).toBeHidden();
+      expect(await css(page, "remind-time", "background-color"), "the filled field").toBe(await css(page, "probe-field", "background-color"));
+      await typeTime(field, 2, 30, "PM");
+      expect(await timeText(field)).toBe("2:30 PM");
+      const minute = field.locator("[role=spinbutton]").nth(1);
+      await minute.click();
+      await page.keyboard.press("ArrowUp");
+      expect(await timeText(field)).toBe("2:31 PM");
+      expect(await minute.evaluate((el) => getComputedStyle(el).backgroundColor), "the focused segment").toBe(await css(page, "probe-primary", "background-color"));
+    });
+
+    // plan 122 review: a cleared time sets nothing; Enter in the time sets it; a past one shows the error border
+    test("the Time Field: cleared it sets nothing, Enter sets it, a past time is marked", async ({ app: page }) => {
+      await openRow(page, 1);
+      await page.getByTestId("action-remind").click();
+      const popover = page.getByTestId("remind-popover");
+      await popover.getByTestId("remind-pick").click();
+      const field = popover.getByTestId("remind-time");
+      // today (E2E_NOW is 9:30 AM) at 9:00 AM: past, the field's border in the error color
+      await popover.getByTestId("remind-date").click();
+      await page.locator('[data-slot=calendar] button[data-day="2026-10-22"]').click();
+      await typeTime(field, 9, 0, "AM");
+      await expect(popover.getByTestId("remind-past")).toBeVisible();
+      expect(await css(page, "remind-time", "border-top-color")).toBe(await css(page, "probe-destructive", "border-top-color"));
+      // cleared: Set is off, and Enter does nothing
+      await typeTime(field, 4, 0, "PM");
+      await field.locator("[role=spinbutton]").first().click();
+      await page.keyboard.press("Backspace");
+      await page.keyboard.press("Backspace");
+      await expect(popover.getByTestId("remind-set")).toBeDisabled();
+      await page.keyboard.press("Enter");
+      await expect(popover).toBeVisible();
+      // whole again and in the future: Enter sets it
+      await typeTime(field, 4, 0, "PM");
+      await expect(popover.getByTestId("remind-set")).toBeEnabled();
+      await page.keyboard.press("Enter");
+      await expect(popover).toBeHidden();
+      await expect(page.locator("[data-testid=snack]").filter({ hasText: "4:00 PM" })).toBeVisible();
+    });
+
+    test("Send later's time: Enter schedules it", async ({ app: page }) => {
+      await focusList(page);
+      await page.keyboard.press("c");
+      await addRecipients(page, "compose-to", "ana@example.com");
+      await page.getByTestId("compose-send-later").click();
+      const popover = page.getByTestId("send-later-popover");
+      await popover.getByTestId("send-later-custom").click();
+      await typeTime(popover.getByTestId("send-later-time"), 10, 15, "AM");
+      await page.keyboard.press("Enter");
+      await expect(page.locator("[data-testid=snack]").filter({ hasText: "10:15 AM" })).toBeVisible();
     });
 
     test("the draft's From selector fills on hover", async ({ app: page }) => {
