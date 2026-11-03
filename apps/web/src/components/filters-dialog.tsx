@@ -2,6 +2,7 @@ import { formatAddressList, isValidEmail, parseAddressList, type Address, checkP
 import { Badge } from "@terno/ui/components/badge";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
+import { CloseButton } from "@terno/ui/components/close-button";
 import { Dialog, DialogContent, DialogTitle } from "@terno/ui/components/dialog";
 import { Input } from "@terno/ui/components/input";
 import { NumberField } from "@terno/ui/components/number-field";
@@ -9,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@terno/ui/components/switch";
 import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Forward, Loader2, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2, X } from "@terno/ui/icons";
+import { Archive, Forward, Loader2, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2 } from "@terno/ui/icons";
 import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { t, type TextKey } from "@terno/i18n";
 import { richT } from "~/lib/i18n";
@@ -194,9 +195,7 @@ function ConditionRow({ c, onChange, onRemove }: { c: Condition; onChange: (c: C
         </>
       )}
       {onRemove && (
-        <Button variant="ghost" size="icon-xs" aria-label={t("filters.removeCondition")} onClick={onRemove} className="text-muted-foreground">
-          <X />
-        </Button>
+        <CloseButton label={t("filters.removeCondition")} onClick={onRemove} className="mx-0.5" />
       )}
     </div>
       {pattern !== null && (
@@ -381,7 +380,7 @@ export function FiltersDialog() {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && setApp(returnTo === "settings" ? { dialog: "settings", settingsTab: "filters" } : { dialog: null })}>
-      <DialogContent className="flex h-[min(760px,88vh)] max-w-[min(1040px,94vw)] gap-0 overflow-hidden p-0 sm:max-w-[min(1040px,94vw)]" data-testid="filters-dialog" closeClassName="top-2 end-2">
+      <DialogContent className="flex h-[min(760px,88vh)] max-w-[min(1040px,94vw)] gap-0 overflow-hidden p-0 sm:max-w-[min(1040px,94vw)]" data-testid="filters-dialog" closeClassName="top-4 end-4">
         <DialogTitle className="sr-only">{t("settings.tab.filters")}</DialogTitle>
         <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-muted/30">
           <div className="flex items-center justify-between px-4 pt-4 pb-2">
@@ -456,7 +455,8 @@ export function FiltersDialog() {
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
+          {/* below the close, on the sidebar list's first line (the close sits on its header's) */}
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6 pt-12">
             {/* only offered once an AI can really run (a model, and its key when it needs one); otherwise it could only fail */}
             {aiReady(ai) && (
               <div className="rounded-xl border border-primary/25 bg-gradient-to-br from-accent/80 to-transparent p-4">
