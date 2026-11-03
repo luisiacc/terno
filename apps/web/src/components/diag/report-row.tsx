@@ -1,7 +1,8 @@
 import type { PendingReport } from "@terno/core/diag";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { LifeBuoy, X } from "@terno/ui/icons";
+import { Announcement } from "@terno/ui/components/announcement";
+import { LifeBuoy } from "@terno/ui/icons";
 import { useState } from "react";
 import { client } from "~/rpc/connection";
 import { setApp } from "~/state/app";
@@ -54,16 +55,19 @@ export function ReportRow() {
   };
 
   return (
-    <div data-testid="report-row" data-offer={offer} role="status" className="mx-3 mt-1 mb-1 flex items-start gap-2.5 rounded-[calc(var(--radius-lg)+2px)] bg-tint p-2.5 text-xs">
-      <LifeBuoy className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden />
-      <div className="min-w-0 flex-1">
-        <p className="font-medium text-foreground" data-testid="report-row-title">
-          {title}
-        </p>
-        <p className="mt-0.5 text-muted-foreground">
-          {t(offer === "ask" ? "diag.row.ask" : offer === "sent" ? "diag.row.sent" : offer === "retry" ? "diag.row.notSent" : "diag.row.local")}
-        </p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
+    <Announcement
+      data-testid="report-row"
+      data-offer={offer}
+      role="status"
+      icon={<LifeBuoy />}
+      title={title}
+      titleProps={{ "data-testid": "report-row-title" }}
+      description={t(offer === "ask" ? "diag.row.ask" : offer === "sent" ? "diag.row.sent" : offer === "retry" ? "diag.row.notSent" : "diag.row.local")}
+      onClose={dismiss}
+      closeLabel={t("common.dismiss")}
+      closeProps={{ "data-testid": "report-close" }}
+      actions={
+        <>
           {offer === "ask" && (
             <>
               <Button size="xs" variant="outline" disabled={busy} data-testid="report-send" onClick={() => void send()}>
@@ -105,11 +109,8 @@ export function ReportRow() {
               </Button>
             </>
           )}
-        </div>
-      </div>
-      <button type="button" aria-label={t("common.dismiss")} data-testid="report-close" className="text-muted-foreground hover:text-foreground" onClick={dismiss}>
-        <X className="size-3.5" />
-      </button>
-    </div>
+        </>
+      }
+    />
   );
 }
