@@ -3,7 +3,7 @@ import { setLocale, t } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { choiceLabel, errorHelp, OUTPUT_LABEL, presetLabel, privacyLine, providerName } from "./ai";
+import { aiReady, choiceLabel, errorHelp, OUTPUT_LABEL, presetLabel, privacyLine, providerName } from "./ai";
 
 const ai = (over: Partial<AiSettings>) => ({ provider: "none", preset: null, baseURL: null, local: false, ...over }) as AiSettings;
 
@@ -36,5 +36,24 @@ describe("AI labels and help", () => {
     expect(errorHelp(undefined, ai({}))).toBeNull();
     setLocale("es", es);
     expect(errorHelp("unavailable", ai({ provider: "lmstudio", local: true }))).toBe("Abre LM Studio y comprueba el endpoint.");
+  });
+
+  it("counts the AI as ready only when it can really run: a model, and its key where one is needed", () => {
+    const keyed = { model: "m", hasKey: true, keyConfirmed: true, keyUnreadable: false };
+    expect(aiReady(undefined)).toBe(false);
+    expect(aiReady(ai({ provider: "none", model: "m" }))).toBe(false);
+    // a local server needs only a model
+    expect(aiReady(ai({ provider: "ollama", model: "" }))).toBe(false);
+    expect(aiReady(ai({ provider: "ollama", model: "qwen3:8b", hasKey: false }))).toBe(true);
+    expect(aiReady(ai({ provider: "compatible", preset: "custom", model: "m", hasKey: false }))).toBe(true);
+    expect(aiReady(ai({ provider: "compatible", preset: null, model: "m", hasKey: false }))).toBe(true);
+    // a cloud provider needs its key, readable and confirmed for this endpoint
+    expect(aiReady(ai({ provider: "anthropic", model: "claude-opus-5-5", hasKey: false }))).toBe(false);
+    expect(aiReady(ai({ provider: "anthropic", ...keyed }))).toBe(true);
+    expect(aiReady(ai({ provider: "openai", ...keyed, model: " " }))).toBe(false);
+    expect(aiReady(ai({ provider: "openai", ...keyed, keyConfirmed: false }))).toBe(false);
+    expect(aiReady(ai({ provider: "openai", ...keyed, keyUnreadable: true }))).toBe(false);
+    expect(aiReady(ai({ provider: "compatible", preset: "groq", model: "m", hasKey: false }))).toBe(false);
+    expect(aiReady(ai({ provider: "compatible", preset: "groq", ...keyed }))).toBe(true);
   });
 });

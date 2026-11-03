@@ -14,6 +14,7 @@ import { setListFilter, toggleUnreadFilter } from "~/lib/unread";
 import { activeFilter, isUnreadOnly } from "~/lib/unread-filter";
 import { DESIGNS } from "@terno/ui/designs/index";
 import { designName } from "~/lib/design";
+import { aiReady } from "~/lib/ai";
 import { checkForUpdates, installUpdate, useHasUpdates, useUpdates } from "~/lib/updates";
 import { englishWords as english } from "~/lib/palette-words";
 import { getApp, navigate, setApp, useApp } from "~/state/app";
@@ -103,6 +104,7 @@ export function CommandPalette() {
   const active = useApp((s) => (open ? activeFilter(s) : undefined));
   const supported = useApp((s) => s.supportedFilters);
   const design = useApp((s) => (open ? (s.settings?.design ?? null) : null));
+  const canAi = useApp((s) => open && aiReady(s.settings?.ai));
   const updatesAvailable = useHasUpdates();
   const readyVersion = useUpdates((s) => (open && s.state?.ready && s.state.status !== "installing" ? s.state.ready.version : null));
   const [value, setValue] = useState("");
@@ -306,7 +308,7 @@ export function CommandPalette() {
       }
     }
     add({ id: "action.undo", group: "actions", label: t("common.undo"), icon: <Undo2 />, shortcut: "Z", ...synonyms("palette.alias.undo"), keywords: [...english("common.undo"), ...english("palette.alias.undo").flatMap(words)], run: undoLast });
-    add({ id: "filters.ai", group: "actions", label: t("palette.aiFilter"), icon: <Sparkles />, ...synonyms("palette.alias.aiFilter"), keywords: [...english("palette.aiFilter"), ...english("palette.alias.aiFilter").flatMap(words)], run: () => setApp({ dialog: "filters" }) });
+    if (canAi) add({ id: "filters.ai", group: "actions", label: t("palette.aiFilter"), icon: <Sparkles />, ...synonyms("palette.alias.aiFilter"), keywords: [...english("palette.aiFilter"), ...english("palette.alias.aiFilter").flatMap(words)], run: () => setApp({ dialog: "filters" }) });
     add({
       id: "appearance.theme",
       group: "actions",

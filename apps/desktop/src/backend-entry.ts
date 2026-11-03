@@ -187,7 +187,9 @@ async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal:
     send({ type: "gate", gate: { kind: "open", restoredFrom } });
     if (msg.demo && (await seedDemo(backend.store, { threads: 3000, accounts: 4 }))) {
       if (signal.aborted) return;
-      await backend.store.settings.set("app", { ai: { provider: "fake" } });
+      // AI off, as on a real install: the AI features show only once a real model is set up (the demo model is still
+      // in the AI tab to try them)
+      await backend.store.settings.set("app", { ai: { provider: "none" } });
     }
     if (signal.aborted) return;
     // `pnpm dev:demo`: a fresh verification code every launch, to try the list's code chip (plan 72); not in smokes

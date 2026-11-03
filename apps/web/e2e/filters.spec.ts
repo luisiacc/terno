@@ -46,6 +46,35 @@ test.describe("AI filters and learned filters", () => {
     await expect(page.getByTestId("ai-generate")).toHaveCount(0);
   });
 
+  test("the AI box and its palette command wait for an AI that can run: a cloud provider without its key offers neither", async ({ app: page, server }) => {
+    const ctx = { clientId: "setup", origin: "dev" } as const;
+    const aiCommand = async (count: number) => {
+      await page.keyboard.press("ControlOrMeta+k");
+      await page.getByTestId("palette-input").fill("Create filter with AI");
+      // the search row always answers, so a 0 isn't a palette not yet drawn
+      const results = page.getByRole("listbox", { name: "Results" });
+      await expect(results.getByRole("option", { name: "Search for “Create filter with AI” in all accounts" })).toBeVisible();
+      await expect(results.getByRole("option", { name: "Create filter with AI", exact: true })).toHaveCount(count);
+      await page.keyboard.press("Escape");
+    };
+    await server.backend.server.invoke("settings.update", { ai: { provider: "anthropic" } }, ctx);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await aiCommand(0);
+    await page.getByTestId("open-filters").click();
+    await expect(page.getByTestId("condition-value")).toBeVisible();
+    await expect(page.getByTestId("ai-prompt")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    // its key saved: now it can run
+    await server.backend.server.invoke("ai.setKey", { provider: "anthropic", value: "sk-ant-e2e-0123456789" }, ctx);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await aiCommand(1);
+    await page.getByTestId("open-filters").click();
+    await expect(page.getByTestId("ai-prompt")).toBeVisible();
+  });
+
   test("invalid rules can't be saved", async ({ app: page }) => {
     await page.getByTestId("open-filters").click();
     await expect(page.getByTestId("condition-value")).toHaveValue("");

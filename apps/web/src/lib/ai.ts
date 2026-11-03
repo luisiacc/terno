@@ -84,6 +84,16 @@ export function providerName(ai: Pick<AiSettings, "provider" | "preset" | "local
   return choiceLabel(choiceOf(ai));
 }
 
+/**
+ * The AI can really run: a provider and a model chosen, and its key saved (readable, for this endpoint) when it
+ * needs one. AI features are offered only then; otherwise they could only fail.
+ */
+export function aiReady(ai: AiSettings | null | undefined): ai is AiSettings {
+  if (!ai || ai.provider === "none" || !ai.model.trim()) return false;
+  const keyed = ai.provider === "anthropic" || ai.provider === "openai" || (ai.provider === "compatible" && (ai.preset ?? "custom") !== "custom");
+  return !keyed || (ai.hasKey && ai.keyConfirmed && !ai.keyUnreadable);
+}
+
 /** One line on what leaves the Mac when generating a filter. Never message content. */
 export function privacyLine(ai: AiSettings): string {
   if (ai.provider === "none") return t("ai.privacy.off");

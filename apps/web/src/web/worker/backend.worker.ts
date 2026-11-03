@@ -195,7 +195,9 @@ async function start(init: WorkerInit): Promise<void> {
     const { seedDemo } = await import("@terno/backend/demo");
     if (await seedDemo(store, init.demo)) {
       seeded = true;
-      await store.settings.set("app", { ai: { provider: "fake" } });
+      // AI off, as on a real install: the AI features show only once a real model is set up (the demo model is still
+      // in the AI tab to try them)
+      await store.settings.set("app", { ai: { provider: "none" } });
       await backend.categorizer.rebuildNow();
       mark("seed");
     }

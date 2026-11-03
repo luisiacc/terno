@@ -14,7 +14,7 @@ import { t, type TextKey } from "@terno/i18n";
 import { richT } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
 import { applyFilter } from "~/lib/filters";
-import { errorHelp, privacyLine } from "~/lib/ai";
+import { aiReady, errorHelp, privacyLine } from "~/lib/ai";
 import { listDate } from "~/lib/format";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
@@ -456,8 +456,8 @@ export function FiltersDialog() {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
-            {/* only offered once an AI is chosen; with AI off the box could only fail */}
-            {ai && ai.provider !== "none" && (
+            {/* only offered once an AI can really run (a model, and its key when it needs one); otherwise it could only fail */}
+            {aiReady(ai) && (
               <div className="rounded-xl border border-primary/25 bg-gradient-to-br from-accent/80 to-transparent p-4">
                 <label className="mb-2 flex items-center gap-1.5 text-sm font-medium" htmlFor="ai-prompt">
                   <Sparkles className="size-4 text-primary" /> {t("filters.ai.label")}
