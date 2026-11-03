@@ -380,7 +380,7 @@ export function FiltersDialog() {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && setApp(returnTo === "settings" ? { dialog: "settings", settingsTab: "filters" } : { dialog: null })}>
-      <DialogContent className="flex h-[min(760px,88vh)] max-w-[min(1040px,94vw)] gap-0 overflow-hidden p-0 sm:max-w-[min(1040px,94vw)]" data-testid="filters-dialog">
+      <DialogContent className="flex h-[min(760px,88vh)] max-w-[min(1040px,94vw)] gap-0 overflow-hidden p-0 sm:max-w-[min(1040px,94vw)]" data-testid="filters-dialog" closeClassName="top-2 end-2">
         <DialogTitle className="sr-only">{t("settings.tab.filters")}</DialogTitle>
         <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-muted/30">
           <div className="flex items-center justify-between px-4 pt-4 pb-2">

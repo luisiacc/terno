@@ -207,6 +207,8 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
       // the scroll padding keeps a focused control from landing under them
       className="flex max-h-[90vh] w-[min(960px,94vw)] max-w-none scroll-pb-16 flex-col gap-0 overflow-x-hidden overflow-y-auto p-0 sm:max-w-[min(960px,94vw)] md:h-[min(660px,90vh)] md:scroll-pb-0 md:flex-row md:overflow-hidden"
       data-testid="print-sheet"
+      // on the title's line, at the options column's inset (px-5 pt-5)
+      closeClassName="end-5 top-[calc(var(--spacing)*5+(var(--text-lg--line-height)-var(--spacing)*6)/2)]"
       onKeyDown={(e) => {
         // Return prints (or saves, from ⇧⌘P), unless a control has its own use for it
         if (e.key === "Enter" && !e.defaultPrevented && !(e.target as Element).closest("button, [role=radio], input, a")) {
