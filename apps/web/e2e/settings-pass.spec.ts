@@ -102,6 +102,26 @@ test.describe("reachable", () => {
   }
 });
 
+test("the sidebar's rows stand 1 px apart: a hovered row's fill never runs into the selected one's", async ({ app: page }) => {
+  await openVia(page, "gear", "general");
+  const general = await page.getByTestId("tab-general").boundingBox();
+  const appearance = page.getByTestId("tab-appearance");
+  await appearance.hover();
+  const below = await appearance.boundingBox();
+  expect(below!.y - (general!.y + general!.height)).toBeCloseTo(1, 1);
+  // the hovered row is filled, and the line between them is the sidebar's own
+  const fill = (id: string) => page.getByTestId(id).evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(await fill("tab-appearance")).not.toBe("rgba(0, 0, 0, 0)");
+  expect(await fill("tab-general")).not.toBe(await fill("tab-appearance"));
+  if (process.env.SETTINGS_SHOTS) {
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await appearance.hover();
+      await page.getByTestId("settings-dialog").locator("nav").screenshot({ path: `${process.env.SETTINGS_SHOTS}/settings-nav-hover-${scheme}.png` });
+    }
+  }
+});
+
 test.describe("editable, persisted and in effect", () => {
   test("General: remote images, density (row height), sync window (validated); no local-mode row (plan 97)", async ({ app: page }) => {
     await openVia(page, "gear", "general");

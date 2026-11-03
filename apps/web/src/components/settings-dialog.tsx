@@ -68,7 +68,8 @@ export function SettingsDialog() {
           {/* macOS System Settings: a sidebar of sections with accent glyphs */}
           <nav className="hairline-r hairline-strong flex w-[180px] shrink-0 flex-col bg-sidebar px-2 pt-5 pb-3">
             <h2 className="mb-3 px-2 text-md font-semibold tracking-tight">{t("common.settings")}</h2>
-            <TabsList activateOnFocus className="h-auto w-full items-stretch gap-0 rounded-none bg-transparent p-0 dark:bg-transparent">
+            {/* a 1 px gap: a hovered row's fill never runs into the selected one's */}
+            <TabsList activateOnFocus className="h-auto w-full items-stretch gap-px rounded-none bg-transparent p-0 dark:bg-transparent">
               {SETTINGS_TABS.map(({ value, label, icon: Icon }) => (
                 <TabsTrigger
                   key={value}
