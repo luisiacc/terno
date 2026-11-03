@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { loadLocale } from "@terno/i18n";
 import { NumberField } from "./number-field";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -44,6 +45,16 @@ describe("NumberField (plan 125)", () => {
     expect(input.getAttribute("aria-describedby")).toBe("hint");
     expect(input.value).toBe("30");
     expect([...host.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual(["Decrease", "Increase"]);
+  });
+
+  it("describes its role in the app's language, not Base UI's English (Codex code review #6)", async () => {
+    await loadLocale("es");
+    try {
+      const host = await render(<NumberField aria-label="Días" defaultValue={30} />);
+      expect(host.querySelector("input")!.getAttribute("aria-roledescription")).toBe("Campo numérico");
+    } finally {
+      await loadLocale("en");
+    }
   });
 
   it("commits what was typed on blur, not while typing", async () => {

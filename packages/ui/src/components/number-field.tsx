@@ -61,6 +61,8 @@ function NumberField({
           aria-labelledby={ariaLabelledBy}
           aria-describedby={ariaDescribedBy}
           aria-invalid={ariaInvalid}
+          // Base UI says "Number field" in English whatever the language
+          aria-roledescription={t("ui.numberField.role")}
           data-testid={testId}
           onKeyDown={onKeyDown}
           className={cn(

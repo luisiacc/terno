@@ -2181,6 +2181,7 @@ It contains none of your mail, contacts, settings or keys.
   "ui.spinner.loading": "Loading",
   "ui.numberField.decrease": "Decrease",
   "ui.numberField.increase": "Increase",
+  "ui.numberField.role": "Number field",
   "ui.pagination.label": "Pages",
   "ui.pagination.previous": "Previous",
   "ui.pagination.next": "Next",

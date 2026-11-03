@@ -2166,6 +2166,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "ui.spinner.loading": "Cargando",
   "ui.numberField.decrease": "Disminuir",
   "ui.numberField.increase": "Aumentar",
+  "ui.numberField.role": "Campo numérico",
   "ui.pagination.label": "Páginas",
   "ui.pagination.previous": "Anterior",
   "ui.pagination.next": "Siguiente",
