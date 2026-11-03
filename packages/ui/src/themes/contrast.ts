@@ -76,6 +76,10 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...(["foreground", "muted-foreground"] as const).flatMap((fg) =>
     (["background", "card", "popover", "tint"] as const).map((over): ContrastPair => ({ fg, bg: "foreground", alpha: FIELD_WASH, min: 4.5, overToken: over })),
   ),
+  // plan 125: BoardUI's danger button, its text on both stops of its fill
+  ...text("destructive-foreground", ["destructive", "destructive-shade"]),
+  // plan 125: a key (Kbd) on the field wash, its text full ink on a highlighted row (the palette's chosen command)
+  { fg: "foreground", bg: "foreground", alpha: FIELD_WASH, min: 4.5, overToken: "muted" },
   // translucent menus: their text over anything (black or white) behind them
   ...GLASS_TEXT.flatMap((fg) => GLASS_BACKDROPS.map((over): ContrastPair => ({ fg, bg: "popover-glass", min: 4.5, over: `oklch(${over})` }))),
 ];

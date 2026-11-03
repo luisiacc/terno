@@ -186,6 +186,21 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
     const pr = o("primary");
     return { ...pr, l: Math.max(0, Math.min(1, pr.l + (o("primary-foreground").l > pr.l ? -0.06 : 0.06))) };
   });
+  // plan 125: the danger button's text, white on a red, or the theme's own dark where its red is light (dark palettes),
+  // stepped further only if 4.5:1 needs it; then the lower stop of its top light, a shade darker that the text still reads on
+  def("destructive-foreground", () => {
+    const fill = formatOklch(o("destructive"));
+    const best = [p("1 0 0"), o("background")].sort((a, b) => contrast(b, fill, bg) - contrast(a, fill, bg))[0]!;
+    return stepUntil(best, [fill], 4.5, bg, o("foreground"), best.l < o("destructive").l);
+  });
+  def("destructive-shade", () => {
+    const d = o("destructive");
+    for (let step = 0.06; step >= 0.03; step = Math.round((step - 0.01) * 100) / 100) {
+      const c = { ...d, l: Math.max(0, d.l - step) };
+      if (contrast(o("destructive-foreground"), c, bg) >= 4.5) return c;
+    }
+    return { ...d, l: Math.min(1, d.l + 0.06) };
+  });
   def("popover-glass", () => withAlpha(o("popover"), glassAlpha(o("popover"), GLASS_TEXT.map((k) => o(k)))));
   // badges and avatars: the reader and menus, and (plan 15) rows hovered, selected and checked, drafts and panes
   // (translucent surfaces as painted: over the background)

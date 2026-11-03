@@ -114,6 +114,14 @@ describe("plan 94: a filled button under the pointer", () => {
   });
 });
 
+describe("plan 125: the danger button's top light", () => {
+  it.each(THEMES.map((t) => [t.id, t] as const))("%s: its lower stop is a visible step darker than the fill", (_, t) => {
+    expect(parseColor(t.tokens["destructive-shade"]).l).toBeLessThan(parseColor(t.tokens.destructive).l);
+    const [a, b] = [oklchToRgb(parseColor(t.tokens.destructive)), oklchToRgb(parseColor(t.tokens["destructive-shade"]))];
+    expect(Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b)).toBeGreaterThan(0.04);
+  });
+});
+
 describe("plan 66: a hovered sidebar row", () => {
   // a fill as painted over the sidebar, and how far it sits from the bare sidebar
   const away = (fill: string, sidebar: string) => {
