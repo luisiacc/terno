@@ -3,6 +3,7 @@ import { FONT_CSS, parseHtml, HIGHLIGHT_DARK, HIGHLIGHT_HEX, HIGHLIGHT_INK, HIGH
 import { formatList, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { ColorSwatch, ColorSwatches } from "@terno/ui/components/color-swatches";
+import { IconButton } from "@terno/ui/components/icon-button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { Shortcut } from "@terno/ui/components/shortcut";
@@ -697,7 +698,6 @@ export function LinkPopover({ view, draft, onClose, canEdit, palette = true }: {
 
 /** Under a link the caret is in: where it goes, open, edit, remove. In the editor's flow, so Tab reaches it. */
 function LinkBubble({ href, top, left, onOpen, onEdit, onRemove }: { href: string; top: number; left: number; onOpen: () => void; onEdit: () => void; onRemove: () => void }) {
-  const icon = "inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring outline-none [&_svg]:size-3.5";
   const keep = (e: React.MouseEvent) => e.preventDefault();
   return (
     <div
@@ -711,15 +711,15 @@ function LinkBubble({ href, top, left, onOpen, onEdit, onRemove }: { href: strin
         {href.replace(/^mailto:/, "")}
       </button>
       <span className="mx-1 h-3.5 w-(--hairline-w) shrink-0 bg-hairline" />
-      <button type="button" onMouseDown={keep} onClick={onOpen} aria-label={t("compose.link.open")} className={icon}>
-        <ExternalLink />
-      </button>
-      <button type="button" onMouseDown={keep} onClick={onEdit} aria-label={t("compose.link.edit")} className={icon} data-testid="link-bubble-edit">
-        <Pencil />
-      </button>
-      <button type="button" onMouseDown={keep} onClick={onRemove} aria-label={t("compose.link.remove")} className={icon} data-testid="link-bubble-remove">
-        <Unlink />
-      </button>
+      <IconButton size="icon-xs" tooltipSide="bottom" onMouseDown={keep} onClick={onOpen} label={t("compose.link.open")}>
+        <ExternalLink className="size-3.5" />
+      </IconButton>
+      <IconButton size="icon-xs" tooltipSide="bottom" onMouseDown={keep} onClick={onEdit} label={t("compose.link.edit")} data-testid="link-bubble-edit">
+        <Pencil className="size-3.5" />
+      </IconButton>
+      <IconButton size="icon-xs" tooltipSide="bottom" onMouseDown={keep} onClick={onRemove} label={t("compose.link.remove")} data-testid="link-bubble-remove">
+        <Unlink className="size-3.5" />
+      </IconButton>
     </div>
   );
 }
