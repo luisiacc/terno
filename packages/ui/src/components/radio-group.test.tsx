@@ -68,6 +68,32 @@ describe("RadioGroup (plan 125)", () => {
     expect(onPick).toHaveBeenLastCalledWith("stack");
   });
 
+  it("onReselect hears the chosen radio chosen again: clicked, or arrowed back onto, not merely focused (Codex code review, second pass #3)", async () => {
+    const onReselect = vi.fn();
+    const onValueChange = vi.fn();
+    // controlled and never updated: the choice is still pending, so "split" stays the chosen one
+    const host = await render(
+      <RadioGroup aria-label="Layout" value="split" onValueChange={onValueChange} onReselect={onReselect}>
+        <RadioCard value="split">Split</RadioCard>
+        <RadioCard value="list">List</RadioCard>
+      </RadioGroup>,
+    );
+    const [split, list] = [...host.querySelectorAll<HTMLElement>("[role=radio]")];
+    await act(async () => split!.focus());
+    expect(onReselect).not.toHaveBeenCalled();
+    await key(split!, "ArrowDown");
+    expect(document.activeElement).toBe(list);
+    expect(onValueChange).toHaveBeenLastCalledWith("list", expect.anything());
+    expect(onReselect).not.toHaveBeenCalled();
+    await key(list!, "ArrowUp");
+    expect(document.activeElement).toBe(split);
+    expect(onReselect).toHaveBeenCalledWith("split");
+    await act(async () => split!.click());
+    expect(onReselect).toHaveBeenCalledTimes(2);
+    await act(async () => list!.click());
+    expect(onReselect).toHaveBeenCalledTimes(2);
+  });
+
   it("a click chooses; a labelled radio is named by its label", async () => {
     const onValueChange = vi.fn();
     const host = await render(

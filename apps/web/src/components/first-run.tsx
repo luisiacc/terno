@@ -161,10 +161,18 @@ export function FirstRun() {
       // the styles stay put and the palettes scroll (the one in use scrolled into view); a window too short for a row of them scrolls as a whole
       <div className="flex min-h-full flex-col">
         <h3 className="type-section-label mb-1.5 shrink-0 text-muted-foreground">{t("firstRun.look.style")}</h3>
-        <RadioGroup aria-label={t("firstRun.look.style")} aria-describedby="first-run-design-description" value={settings.design} onValueChange={(design) => pick({ design: design as AppSettings["design"] })} className="grid shrink-0 grid-cols-3 gap-2">
+        <RadioGroup
+          aria-label={t("firstRun.look.style")}
+          aria-describedby="first-run-design-description"
+          value={settings.design}
+          onValueChange={(design) => pick({ design: design as AppSettings["design"] })}
+          // the chosen style chosen again (clicked, or arrowed back onto) cancels a switch still waiting for its faces
+          // (Codex code review #2, second pass #3)
+          onReselect={(design) => pick({ design: design as AppSettings["design"] })}
+          className="grid shrink-0 grid-cols-3 gap-2"
+        >
           {DESIGNS.map((d) => (
-            // the chosen one clicked again is a choice too: it cancels a switch still waiting for its faces (Codex code review #2)
-            <RadioCard key={d.id} value={d.id} onClick={() => settings.design === d.id && pick({ design: d.id })} data-testid={`first-run-design-${d.id}`} className="flex-col items-center gap-1.5 px-2 pt-2.5 pb-2">
+            <RadioCard key={d.id} value={d.id} data-testid={`first-run-design-${d.id}`} className="flex-col items-center gap-1.5 px-2 pt-2.5 pb-2">
               {/* the style's own type, in its own design */}
               <span data-design={d.id} aria-hidden className="flex h-10 w-14 items-center justify-center rounded-lg bg-background text-xl text-foreground shadow-hairline" style={{ fontFamily: "var(--type-list-title-family)", fontWeight: "var(--type-list-title-weight)", fontStyle: "var(--type-list-title-style)" }}>
                 {/* i18n-ignore: aria-hidden typography specimen, identical in every language */}
@@ -210,11 +218,10 @@ export function FirstRun() {
             return (
               <section key={m} aria-label={label} className="mb-3 last:mb-0">
                 {following && <h4 className="mb-1 text-xs font-medium text-muted-foreground">{label}</h4>}
-                <RadioGroup aria-label={label} value={chosen} onValueChange={(id) => choose(id as string)} className="grid auto-rows-min grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-2" data-testid={`first-run-palettes-${m}`}>
-                  {/* the chosen palette clicked again still shows its mode in the preview (Codex code review #3) */}
-                  <ThemeCard theme={own} base={own.id} name={t("settings.appearance.styleColors")} testId={`theme-card-design-${m}`} value={DESIGN_PALETTE} onClick={() => chosen === DESIGN_PALETTE && choose(DESIGN_PALETTE)} />
+                <RadioGroup aria-label={label} value={chosen} onValueChange={(id) => choose(id as string)} onReselect={(id) => choose(id as string)} className="grid auto-rows-min grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-2" data-testid={`first-run-palettes-${m}`}>
+                  <ThemeCard theme={own} base={own.id} name={t("settings.appearance.styleColors")} testId={`theme-card-design-${m}`} value={DESIGN_PALETTE} />
                   {themesFor(m).map((p) => (
-                    <ThemeCard key={p.id} theme={p} base={p.id} value={p.id} onClick={() => chosen === p.id && choose(p.id)} />
+                    <ThemeCard key={p.id} theme={p} base={p.id} value={p.id} />
                   ))}
                 </RadioGroup>
               </section>

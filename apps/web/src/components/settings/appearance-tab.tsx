@@ -75,16 +75,9 @@ function DesignPreview({ design, mode }: { design: DesignDefinition; mode: Theme
 }
 
 /** A design as one of the styles: a radio card (in the Style `RadioGroup`, whose value is the design's id). */
-function StyleCard({ design, mode, chosen }: { design: DesignDefinition; mode: ThemeMode; chosen: boolean }) {
+function StyleCard({ design, mode }: { design: DesignDefinition; mode: ThemeMode }) {
   return (
-    <RadioCard
-      value={design.id}
-      // the chosen one clicked again is a choice too (a radio reports no change for its own value): it cancels a switch
-      // still waiting for its faces (Codex code review #2)
-      onClick={() => chosen && void updateAppearance({ design: design.id })}
-      data-testid={`design-card-${design.id}`}
-      className="w-[180px] flex-col gap-1.5 p-1.5"
-    >
+    <RadioCard value={design.id} data-testid={`design-card-${design.id}`} className="w-[180px] flex-col gap-1.5 p-1.5">
       <DesignPreview design={design} mode={mode} />
       <span className="flex items-center gap-1 px-0.5 text-sm">
         <span className="truncate font-medium">{designName(design.id)}</span>
@@ -294,9 +287,19 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
       <SettingsGroup>
         <SettingsRow stacked label={t("settings.appearance.style")} hint={t("settings.appearance.style.hint")}>
           {(a) => (
-            <RadioGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} value={settings.design} onValueChange={(id) => void updateAppearance({ design: id as DesignDefinition["id"] })} className="flex-row flex-wrap gap-2" data-testid="design-grid">
+            <RadioGroup
+              aria-labelledby={a["aria-labelledby"]}
+              aria-describedby={a["aria-describedby"]}
+              value={settings.design}
+              onValueChange={(id) => void updateAppearance({ design: id as DesignDefinition["id"] })}
+              // the chosen style chosen again (clicked, or arrowed back onto) is a choice too: it cancels a switch still
+              // waiting for its faces (Codex code review #2, second pass #3)
+              onReselect={(id) => void updateAppearance({ design: id as DesignDefinition["id"] })}
+              className="flex-row flex-wrap gap-2"
+              data-testid="design-grid"
+            >
               {DESIGNS.map((d) => (
-                <StyleCard key={d.id} design={d} mode={mode} chosen={settings.design === d.id} />
+                <StyleCard key={d.id} design={d} mode={mode} />
               ))}
             </RadioGroup>
           )}

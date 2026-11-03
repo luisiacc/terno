@@ -2,6 +2,7 @@
 
 import { Radio as RadioPrimitive } from "@base-ui/react/radio"
 import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group"
+import { createContext, useContext, useRef } from "react"
 import { cn } from "cn"
 
 /**
@@ -9,8 +10,58 @@ import { cn } from "cn"
  * leaves the group. `Radio` is the 16 px dot with its label; `RadioCard` is a bordered card that is the radio itself,
  * taking the accent edge when chosen (the first-run and appearance choices), with `RadioDot` inside it to say so.
  */
-function RadioGroup({ className, ...props }: RadioGroupPrimitive.Props) {
-  return <RadioGroupPrimitive data-slot="radio-group" className={cn("flex flex-col gap-2", className)} {...props} />
+function RadioGroup({
+  className,
+  onReselect,
+  onKeyDown,
+  onPointerDown,
+  ...props
+}: RadioGroupPrimitive.Props & {
+  /**
+   * The chosen radio chosen again (clicked, Space, or arrowed back onto): a radio reports no change for its own
+   * value, but a choice still waiting (a style's faces) must hear it (Codex code review, second pass #3)
+   */
+  onReselect?: (value: unknown) => void
+}) {
+  // an arrow key moves focus (Base UI's, a render later) and chooses what it lands on: the next focus is a choice
+  const arrowed = useRef(false)
+  const group = (
+    <RadioGroupPrimitive
+      data-slot="radio-group"
+      className={cn("flex flex-col gap-2", className)}
+      onKeyDown={(e) => {
+        arrowed.current = e.key.startsWith("Arrow")
+        onKeyDown?.(e)
+      }}
+      onPointerDown={(e) => {
+        arrowed.current = false
+        onPointerDown?.(e)
+      }}
+      {...props}
+    />
+  )
+  if (!onReselect) return group
+  return <Reselect.Provider value={{ value: props.value, arrowed, reselect: onReselect }}>{group}</Reselect.Provider>
+}
+
+const Reselect = createContext<{ value: unknown; arrowed: React.RefObject<boolean>; reselect: (value: unknown) => void } | null>(null)
+
+/** a radio's click and focus, also telling its group when it is the chosen one chosen again */
+function useReselect({ value, onClick, onFocus }: Pick<RadioPrimitive.Root.Props, "value" | "onClick" | "onFocus">) {
+  const group = useContext(Reselect)
+  if (!group) return { onClick, onFocus }
+  return {
+    onClick: (e: Parameters<NonNullable<typeof onClick>>[0]) => {
+      onClick?.(e)
+      if (value === group.value) group.reselect(value)
+    },
+    onFocus: (e: Parameters<NonNullable<typeof onFocus>>[0]) => {
+      onFocus?.(e)
+      const arrowed = group.arrowed.current
+      group.arrowed.current = false
+      if (arrowed && value === group.value) group.reselect(value)
+    },
+  }
 }
 
 /**
@@ -35,7 +86,8 @@ function RadioDot({ className, ...props }: React.ComponentProps<"span">) {
 }
 
 /** A radio and its label (children); the label clicks it. Without children, name it with `aria-label`. */
-function Radio({ className, children, ...props }: RadioPrimitive.Root.Props) {
+function Radio({ className, children, onClick, onFocus, ...props }: RadioPrimitive.Root.Props) {
+  const handlers = useReselect({ value: props.value, onClick, onFocus })
   const radio = (
     <RadioPrimitive.Root
       data-slot="radio"
@@ -44,6 +96,7 @@ function Radio({ className, children, ...props }: RadioPrimitive.Root.Props) {
         children === undefined && className
       )}
       {...props}
+      {...handlers}
     >
       <RadioDot />
     </RadioPrimitive.Root>
@@ -58,7 +111,8 @@ function Radio({ className, children, ...props }: RadioPrimitive.Root.Props) {
 }
 
 /** A card that is a radio: its content names it. Put a `RadioDot` in it where the choice should show. */
-function RadioCard({ className, ...props }: RadioPrimitive.Root.Props) {
+function RadioCard({ className, onClick, onFocus, ...props }: RadioPrimitive.Root.Props) {
+  const handlers = useReselect({ value: props.value, onClick, onFocus })
   return (
     <RadioPrimitive.Root
       data-slot="radio-card"
@@ -67,6 +121,7 @@ function RadioCard({ className, ...props }: RadioPrimitive.Root.Props) {
         className
       )}
       {...props}
+      {...handlers}
     />
   )
 }
