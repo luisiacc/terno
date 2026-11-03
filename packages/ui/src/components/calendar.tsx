@@ -8,10 +8,11 @@ import { enUS, es } from "react-day-picker/locale"
 export const CALENDAR_LOCALES = { en: enUS, es } as const
 
 /**
- * shadcn's Calendar (react-day-picker), in Terno's tokens: the month on the
- * left and quiet arrows on the right (Calendar.app), days as soft rounded
- * cells, today in the accent's ink, the chosen day filled. Focus paints only
- * while moving with the keyboard (plan 54); motion: none.
+ * shadcn's Calendar (react-day-picker), in Terno's tokens and BoardUI's date picker (plans 120, 125): the month
+ * between quiet arrows, medium days as soft rounded cells 4 px apart (BoardUI's 12 would outgrow the 320 px popover),
+ * today marked by a dot in the primary under its number, the chosen day filled, other months' days muted (a chosen day
+ * next week may be in the next month), unavailable days struck through. Focus paints only while moving with the
+ * keyboard (plan 54); motion: none.
  */
 function Calendar({ className, classNames, showOutsideDays = true, components, ...props }: React.ComponentProps<typeof DayPicker>) {
   const d = getDefaultClassNames()
@@ -36,9 +37,9 @@ function Calendar({ className, classNames, showOutsideDays = true, components, .
         month_caption: cn("flex h-7 items-center justify-center", d.month_caption),
         caption_label: cn("text-sm font-medium", d.caption_label),
         month_grid: cn("w-full border-collapse", d.month_grid),
-        weekdays: cn("flex", d.weekdays),
-        weekday: cn("w-(--cell) pb-1 text-center text-xs font-medium text-muted-foreground", d.weekday),
-        week: cn("mt-0.5 flex w-full", d.week),
+        weekdays: cn("flex gap-1", d.weekdays),
+        weekday: cn("w-(--cell) pb-1 text-center text-sm font-medium text-muted-foreground", d.weekday),
+        week: cn("mt-1 flex w-full gap-1", d.week),
         day: cn("size-(--cell) p-0 text-center", d.day),
         today: cn("today", d.today),
         outside: cn("outside", d.outside),
@@ -73,14 +74,14 @@ function CalendarDayButton({ className, day, modifiers, ...props }: React.Compon
       data-today={modifiers.today || undefined}
       data-outside={modifiers.outside || undefined}
       className={cn(
-        "inline-flex size-(--cell) items-center justify-center rounded-md text-sm tabular-nums outline-none",
+        "relative inline-flex size-(--cell) items-center justify-center rounded-md text-sm font-medium tabular-nums outline-none",
         // BoardUI's day (plan 120): a neutral hover; the chosen day in a wash of the primary with the ink's text (contrast.ts)
         "hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
         "data-outside:text-muted-foreground data-outside:data-selected:text-foreground",
-        // today in the primary only at rest: on the hover fill and the chosen wash its text is the ink (contrast.ts pairs)
-        "data-today:font-semibold data-today:text-primary data-today:hover:text-foreground data-today:data-selected:text-foreground",
+        // today: a 4 px dot in the primary under the number, its text the ink like any day's (plan 125)
+        "data-today:after:absolute data-today:after:bottom-1 data-today:after:left-1/2 data-today:after:size-1 data-today:after:-translate-x-1/2 data-today:after:rounded-full data-today:after:bg-primary",
         "data-selected:bg-primary/15 data-selected:font-semibold data-selected:text-foreground data-selected:hover:bg-primary/15",
-        "disabled:pointer-events-none disabled:text-muted-foreground disabled:opacity-40",
+        "disabled:pointer-events-none disabled:text-muted-foreground disabled:line-through",
         className
       )}
       {...props}
