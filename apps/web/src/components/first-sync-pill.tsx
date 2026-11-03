@@ -1,6 +1,7 @@
 import type { Account, SyncProgress } from "@terno/core";
 import { formatNumber, t } from "@terno/i18n";
 import { ChevronDown, Loader2 } from "@terno/ui/icons";
+import { Progress } from "@terno/ui/components/progress";
 import { cn } from "@terno/ui/lib/utils";
 import { useId, useState } from "react";
 import { windowLabel } from "~/lib/settings-values";
@@ -117,28 +118,11 @@ export function FirstSyncPill() {
                 const { label, short, fraction } = syncLeft(live.has(a.id) ? live.get(a.id) : a.syncState.progress, stopsAt);
                 return (
                   <li key={a.id} data-testid={`first-sync-account-${a.id}`}>
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="min-w-0 truncate text-sidebar-foreground">{a.displayName}</span>
-                      <span className="shrink-0 text-muted-foreground tabular-nums" aria-hidden>
-                        {short}
-                      </span>
-                    </div>
-                    <div
-                      role="progressbar"
-                      aria-label={a.displayName}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={fraction === null ? undefined : Math.round(fraction * 100)}
-                      aria-valuetext={label}
-                      className="relative mt-1 h-[3px] overflow-hidden rounded-full bg-sidebar-border"
-                    >
-                      <div
-                        className="h-full rounded-full bg-primary/80 transition-[width] duration-base ease-motion"
-                        style={{ width: `${fraction === null ? 30 : Math.max(4, fraction * 100)}%` }}
-                      />
+                    {/* the row says it short; the bar's value says it whole */}
+                    <Progress value={fraction === null ? null : fraction * 100} label={<span className="text-sidebar-foreground">{a.displayName}</span>} valueLabel={short} aria-valuetext={label}>
                       {/* paused while the card is closed: nothing animates out of sight (idle means idle) */}
                       <div aria-hidden className={cn("sync-sheen absolute inset-y-0 left-0 w-2/5", !open && "[animation-play-state:paused]")} />
-                    </div>
+                    </Progress>
                   </li>
                 );
               })}
