@@ -54,6 +54,8 @@ test.describe("the docked snackbar", { tag: "@design" }, () => {
     await page.emulateMedia({ reducedMotion: "no-preference" });
     await page.mouse.move(1300, 100);
     await archiveOne(page);
+    // the ring's offset is set on its first frame: until then it reads as nothing (NaN), not as full
+    await expect.poll(() => drained(page)).not.toBeNaN();
     const a = await drained(page);
     await page.waitForTimeout(600);
     const b = await drained(page);

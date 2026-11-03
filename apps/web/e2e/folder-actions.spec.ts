@@ -415,7 +415,8 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await openAccount(page, acme);
     for (const key of ["Label_22", "Label_23"]) {
       await own(page, acme, key).click({ button: "right" });
-      await page.getByTestId("folder-menu-favorite").click();
+      // this folder's menu: the one before may still be closing (an exit animation)
+      await page.getByTestId(`folder-menu-${acme}-${key}`).getByTestId("folder-menu-favorite").click();
     }
     const first = page.getByTestId(`nav-fav-${acme}-Label_22`);
     // the menus that added them have closed (and handed their rows the focus back)
