@@ -64,3 +64,11 @@ The plan critique raised 10 points. Changes made:
 8. **Supply chain:** every action is pinned to a commit; the checkout doesn't persist its token; `pnpm install` and the Sentry CLI install run before the certificate or the .p8 is on the runner.
 9. **Source maps:** the artifact sets `include-hidden-files`, names only the two `.maps` directories, and uploads even when the build fails. They hold the app's source, which is public here anyway.
 10. **Concurrency:** GitHub keeps only the newest *waiting* run in a group, so a third start replaces a waiting second. That's documented in the workflow rather than worked around; releases are started by hand, one at a time.
+
+## What the code review changed
+
+Codex reviewed the implementation (commit 25f2be13) and found three problems, each fixed with a test that fails without the fix:
+
+1. **A failed upload left a draft** (`gh release create` creates the draft before uploading), and that draft blocked the retry with "already exists". `release.mjs` now deletes its own unfinished draft (`deleteFailedDraft`, drafts only) and RELEASING.md says how to clear a stale one.
+2. **The signing probe passed when codesign failed:** inside an `&&` chain `bash -e` doesn't stop. The probe is now its own `if !` line; the test runs the workflow's import step with stand-in `security` and `codesign` and expects a failing codesign to fail the step.
+3. **The dispatch could print an earlier run's link**, because it took any run created within 5 s before the dispatch. It now uses the URL `gh workflow run` prints, else the first run that wasn't listed before dispatching.

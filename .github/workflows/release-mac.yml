@@ -101,7 +101,9 @@ jobs:
           IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | sed -nE 's/.*"(Developer ID Application: [^"]+)".*/\1/p' | head -1)"
           [ -n "$IDENTITY" ] || { echo "✗ MAC_CERT_P12 holds no Developer ID Application identity with its private key (RELEASING.md)"; exit 1; }
           # sign a scratch file now, so a key codesign can't use fails here, not after the build
-          printf 'probe' > "$RUNNER_TEMP/probe" && codesign --force --sign "$IDENTITY" --timestamp=none "$RUNNER_TEMP/probe" && rm -f "$RUNNER_TEMP/probe"
+          printf 'probe' > "$RUNNER_TEMP/probe"
+          if ! codesign --force --sign "$IDENTITY" --timestamp=none "$RUNNER_TEMP/probe"; then echo "✗ codesign can't use the key in MAC_CERT_P12 (RELEASING.md)"; exit 1; fi
+          rm -f "$RUNNER_TEMP/probe"
           echo "✓ signing as $IDENTITY"
 
       # electron-builder's notarize reads APPLE_API_KEY as a path to the .p8

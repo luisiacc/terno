@@ -1,9 +1,11 @@
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error a build script (plain JS)
-import { dispatch, dispatchArgs, isMainTip, preflight, REQUIRED_SECRETS, tagExists } from "../scripts/release-ci.mjs";
+import { deleteFailedDraft, dispatch, dispatchArgs, isMainTip, preflight, REQUIRED_SECRETS, tagExists } from "../scripts/release-ci.mjs";
 // @ts-expect-error a build script (plain JS)
 import { builderIdentity } from "../scripts/sign-identity.mjs";
 
@@ -62,26 +64,58 @@ describe("plan 126: starting a release from this Mac", () => {
     expect(tagExists("1.4.0", () => ({ status: 1 }))).toBe(false);
   });
 
-  it("returns the run created after the dispatch, ignoring older runs", () => {
+  it("returns the URL gh prints for the new run", () => {
+    const run = (args: string[]) => (args[0] === "workflow" ? { status: 0, stdout: "https://github.com/luisiacc/terno/actions/runs/42\n", stderr: "" } : { status: 0, stdout: "[]", stderr: "" });
+    expect(dispatch({ sha }, run, () => {})).toBe("https://github.com/luisiacc/terno/actions/runs/42");
+  });
+
+  it("without a printed URL, returns the first run that wasn't there before, never an earlier one (review)", () => {
     const calls: string[][] = [];
-    const old = { url: "https://github.com/luisiacc/terno/actions/runs/1", createdAt: "2020-01-01T00:00:00Z" };
-    const fresh = { url: "https://github.com/luisiacc/terno/actions/runs/2", createdAt: new Date(Date.now() + 1_000).toISOString() };
+    // the earlier run is seconds old: a timestamp window would have taken it
+    const earlier = { databaseId: 1, url: "https://github.com/luisiacc/terno/actions/runs/1" };
+    const fresh = { databaseId: 2, url: "https://github.com/luisiacc/terno/actions/runs/2" };
     let lists = 0;
     const run = (args: string[]) => {
       calls.push(args);
       if (args[0] === "workflow") return { status: 0, stdout: "", stderr: "" };
       lists++;
-      return { status: 0, stdout: JSON.stringify(lists === 1 ? [old] : [fresh, old]), stderr: "" };
+      return { status: 0, stdout: JSON.stringify(lists <= 2 ? [earlier] : [fresh, earlier]), stderr: "" };
     };
     expect(dispatch({ sha }, run, () => {})).toBe(fresh.url);
-    expect(calls[0]).toEqual(dispatchArgs({ sha }));
-    expect(lists).toBe(2);
+    expect(calls[1]).toEqual(dispatchArgs({ sha })); // listed once before dispatching
+    expect(lists).toBe(3);
   });
 
   it("a failed dispatch says why, and an unlisted run gives up quietly", () => {
-    expect(() => dispatch({ sha }, () => ({ status: 1, stdout: "", stderr: "HTTP 404: workflow not found" }), () => {})).toThrow(/workflow not found/);
+    expect(() => dispatch({ sha }, (args: string[]) => (args[0] === "workflow" ? { status: 1, stdout: "", stderr: "HTTP 404: workflow not found" } : { status: 0, stdout: "[]", stderr: "" }), () => {})).toThrow(/workflow not found/);
     const never = (args: string[]) => ({ status: 0, stdout: args[0] === "run" ? "[]" : "", stderr: "" });
     expect(dispatch({ sha }, never, () => {})).toBeNull();
+  });
+});
+
+describe("plan 126 review: a failed upload doesn't block the retry", () => {
+  const gh = (isDraft: string | null) => {
+    const calls: string[][] = [];
+    const run = (args: string[]) => {
+      calls.push(args);
+      if (args[1] === "view") return isDraft === null ? { status: 1, stdout: "" } : { status: 0, stdout: `${isDraft}\n` };
+      return { status: 0, stdout: "" };
+    };
+    return { run, deleted: () => calls.some((a) => a[1] === "delete") };
+  };
+
+  it("deletes the draft gh left behind", () => {
+    const g = gh("true");
+    expect(deleteFailedDraft("1.4.0", g.run)).toBe(true);
+    expect(g.deleted()).toBe(true);
+  });
+
+  it("never deletes a published release, nor anything when there is none", () => {
+    for (const state of ["false", null]) {
+      const g = gh(state);
+      expect(deleteFailedDraft("1.4.0", g.run)).toBe(false);
+      expect(g.deleted()).toBe(false);
+    }
   });
 });
 
@@ -125,6 +159,33 @@ describe("plan 126: the release workflow", () => {
       expect(at(before)).toBeLessThan(at("- name: Write the notarization key"));
     }
     expect(step("Import the Developer ID certificate")).toContain('codesign --force --sign "$IDENTITY"');
+  });
+
+  it("the import step fails when codesign can't use the key, before the build (review)", () => {
+    const text = step("Import the Developer ID certificate");
+    const script = text.slice(text.indexOf("run: |") + 7).split("\n").map((l) => l.replace(/^ {10}/, "")).join("\n");
+    const dir = mkdtempSync(join(tmpdir(), "terno-release-"));
+    try {
+      const bin = join(dir, "bin");
+      mkdirSync(bin);
+      const stub = (name: string, body: string) => {
+        writeFileSync(join(bin, name), `#!/bin/bash\n${body}\n`);
+        chmodSync(join(bin, name), 0o755);
+      };
+      stub("curl", 'while [ $# -gt 0 ]; do [ "$1" = -o ] && : > "$2"; shift; done');
+      stub("openssl", "echo pw");
+      stub("security", 'if [ "$1" = find-identity ]; then echo \'  1) ABC "Developer ID Application: Synthetic (TEAM)"\'; fi; exit 0');
+      const runStep = (codesign: number) => {
+        stub("codesign", `exit ${codesign}`);
+        return spawnSync("bash", ["-e", "-c", script], { encoding: "utf8", env: { PATH: `${bin}:/usr/bin:/bin`, RUNNER_TEMP: dir, MAC_CERT_P12: Buffer.from("p12").toString("base64"), MAC_CERT_PASSWORD: "x" } });
+      };
+      expect(runStep(0).status).toBe(0);
+      const failed = runStep(1);
+      expect(failed.status).not.toBe(0);
+      expect(failed.stdout).not.toContain("✓ signing as");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("no shell line expands an input or a secret (they reach scripts through env only)", () => {

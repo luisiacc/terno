@@ -11,7 +11,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { dispatch, isMainTip, tagExists } from "./release-ci.mjs";
+import { deleteFailedDraft, dispatch, isMainTip, tagExists } from "./release-ci.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -84,7 +84,7 @@ if (!yml.includes(`version: ${version}`) || !yml.includes(`Terno-${version}-arm6
 
 const args = ["release", "create", `v${version}`, "--repo", REPO, "--draft", "--title", `Terno ${version}`, "--generate-notes", ...(ci ? ["--target", sha] : []), ...(prerelease ? ["--prerelease"] : []), ...want.map((f) => join(out, f))];
 const created = run("gh", args, { stdio: ["ignore", "pipe", "inherit"] });
-if (created.status !== 0) fail("gh release create failed (nothing was published)");
+if (created.status !== 0) fail(`gh release create failed (nothing was published)${deleteFailedDraft(version) ? "; its unfinished draft was removed, so running the release again is safe" : ""}`);
 console.log(`\n✓ draft release v${version} (${prerelease ? "nightly, prerelease" : "stable"}): ${created.stdout.trim()}`);
 console.log("  Review the notes and assets, then publish it: until then no copy of Terno sees it.");
 if (!existsSync(join(app, "Contents/Resources/app-update.yml"))) console.warn("! app-update.yml missing from the app");

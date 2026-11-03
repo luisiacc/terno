@@ -78,6 +78,8 @@ The run's log says which step failed and why:
 - **"the secret … is missing or empty"**: set it (above).
 - **"holds no Developer ID Application identity"**: the `.p12` has the wrong certificate, or the certificate without its private key. Export it again from My Certificates (the row with a disclosure triangle).
 - **"isn't notarized"**: check the three `APPLE_API_*` secrets, and that the key wasn't revoked.
-- **"v… already exists"**: bump the version. A failed run leaves no release behind, so you can fix the problem and run `pnpm release:mac` again.
+- **"v… already exists"**: a release with that version is already on the Releases page. If it's a draft you don't want, delete it there (or `gh release delete v1.4.0`); otherwise bump the version.
+
+A failed run leaves no release behind: if uploading fails halfway, the script deletes its unfinished draft. So you can fix the problem and run `pnpm release:mac` again.
 
 To replace a key, run its `gh secret set` again.

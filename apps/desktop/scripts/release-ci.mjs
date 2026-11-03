@@ -67,22 +67,42 @@ function gh(args) {
   return spawnSync("gh", args, { encoding: "utf8" });
 }
 
+const RUN_URL = /https:\/\/github\.com\/[^\s]+\/actions\/runs\/\d+/;
+const listRuns = (run) => {
+  const r = run(["run", "list", "--repo", REPO, "--workflow", WORKFLOW, "--event", "workflow_dispatch", "--limit", "10", "--json", "databaseId,url"]);
+  return r.status === 0 ? JSON.parse(r.stdout) : null;
+};
+
 /**
- * Starts the workflow for `sha` and returns its run's URL (or null when GitHub
- * hasn't listed it yet). The run is the newest dispatch created after `since`.
+ * Starts the workflow for `sha` and returns its run's URL (or null when GitHub hasn't
+ * listed it yet). gh prints the URL when GitHub returns it; otherwise it is the first
+ * run that wasn't listed before the dispatch (never a timestamp guess, which an earlier
+ * run inside the clock-skew window could match).
  */
 export function dispatch({ sha, version }, run = gh, wait = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)) {
-  const since = Date.now() - 5_000; // GitHub's clock and ours may differ by a few seconds
+  const before = new Set((listRuns(run) ?? []).map((x) => x.databaseId));
   const started = run(dispatchArgs({ sha, version }));
   if (started.status !== 0) throw new Error(`gh workflow run failed: ${(started.stderr ?? "").trim()}`);
+  const printed = RUN_URL.exec(`${started.stdout ?? ""}\n${started.stderr ?? ""}`);
+  if (printed) return printed[0];
   for (let i = 0; i < 10; i++) {
     wait(2_000);
-    const r = run(["run", "list", "--repo", REPO, "--workflow", WORKFLOW, "--event", "workflow_dispatch", "--limit", "5", "--json", "url,createdAt"]);
-    if (r.status !== 0) continue;
-    const found = JSON.parse(r.stdout).find((x) => Date.parse(x.createdAt) >= since);
+    const found = listRuns(run)?.find((x) => !before.has(x.databaseId));
     if (found) return found.url;
   }
   return null;
+}
+
+/**
+ * After a failed `gh release create`: deletes the draft it left (gh creates the draft before
+ * uploading, and keeps it when an upload fails), so running the release again isn't blocked
+ * by "already exists". Only a draft: a published release is never touched. Returns whether
+ * it deleted one.
+ */
+export function deleteFailedDraft(version, run = gh) {
+  const r = run(["release", "view", `v${version}`, "--repo", REPO, "--json", "isDraft", "--jq", ".isDraft"]);
+  if (r.status !== 0 || r.stdout.trim() !== "true") return false;
+  return run(["release", "delete", `v${version}`, "--repo", REPO, "--yes"]).status === 0;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === "check") {
