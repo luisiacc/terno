@@ -59,3 +59,7 @@ Ten points; what changed:
 8. **Unused components are probed:** `controls-markup.ts` renders the segmented control, default and line tabs, an avatar and a divider in every design and mode, against token probes.
 9. **Focus:** nothing of BoardUI's focus handling is copied; the days and arrows keep `focus-visible:` rings.
 10. **Baselines:** Settings → Appearance and General, and the print sheet, are regenerated (`--update-snapshots=all`, since the 0.2% tolerance let the small controls pass); first run is covered by `controls.spec`'s checks of the shared control rather than a new baseline.
+
+## Revisions after the Codex code review
+
+One finding, fixed: a chosen day shown as another month's (December 1 in November's last row) kept the outside days' muted text on the chosen wash, which fails AA in six palettes (Lumen light 4.13, Nord 4.05). Chosen outside days are `foreground` too; `controls.spec` selects December 1, goes back to November and checks it in light and dark (it fails without the fix).

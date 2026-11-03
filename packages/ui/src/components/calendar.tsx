@@ -76,7 +76,7 @@ function CalendarDayButton({ className, day, modifiers, ...props }: React.Compon
         "inline-flex size-(--cell) items-center justify-center rounded-md text-sm tabular-nums outline-none",
         // BoardUI's day (plan 120): a neutral hover; the chosen day in a wash of the primary with the ink's text (contrast.ts)
         "hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
-        "data-outside:text-muted-foreground",
+        "data-outside:text-muted-foreground data-outside:data-selected:text-foreground",
         // today in the primary only at rest: on the hover fill and the chosen wash its text is the ink (contrast.ts pairs)
         "data-today:font-semibold data-today:text-primary data-today:hover:text-foreground data-today:data-selected:text-foreground",
         "data-selected:bg-primary/15 data-selected:font-semibold data-selected:text-foreground data-selected:hover:bg-primary/15",

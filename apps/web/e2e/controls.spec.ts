@@ -139,6 +139,26 @@ for (const mode of ["light", "dark"] as const) {
       expect(await today.evaluate((el) => getComputedStyle(el).color)).toBe(ink);
     });
 
+    // plan 120 review: a chosen day shown as another month's (December 1 in November's last row) is the ink too
+    test("the date picker's chosen day keeps readable text outside its month", async ({ app: page }) => {
+      await openRow(page, 1);
+      await page.getByTestId("action-remind").click();
+      const popover = page.getByTestId("remind-popover");
+      await popover.getByTestId("remind-pick").click();
+      await popover.getByTestId("remind-date").click();
+      const calendar = page.locator("[data-slot=calendar]");
+      await calendar.locator(".rdp-button_next").click();
+      await calendar.locator(".rdp-button_next").click();
+      await calendar.locator('button[data-day="2026-12-01"]').click();
+      await popover.getByTestId("remind-date").click();
+      await calendar.locator(".rdp-button_previous").click();
+      const day = calendar.locator('button[data-day="2026-12-01"]');
+      await expect(day).toHaveAttribute("data-outside", "true");
+      await expect(day).toHaveAttribute("data-selected", "true");
+      await page.mouse.move(1, 1);
+      expect(await day.evaluate((el) => getComputedStyle(el).color)).toBe(await css(page, "probe-foreground", "color"));
+    });
+
     test("the draft's From selector fills on hover", async ({ app: page }) => {
       await focusList(page);
       await page.keyboard.press("c");
