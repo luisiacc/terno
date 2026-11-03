@@ -2162,6 +2162,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "ui.command.title": "Paleta de comandos",
   "ui.command.description": "Busca un comando para ejecutar…",
   "ui.shortcut.then": "luego",
+  "ui.spinner.loading": "Cargando",
   "errors.forwardGone": "Este reenvío se canceló o ya se envió.",
   "forward.reason.ruleChanged": "No se reenvió: la regla de reenvío cambió o se desactivó.",
   "forward.reason.gone": "No se reenvió: el mensaje ya no está.",

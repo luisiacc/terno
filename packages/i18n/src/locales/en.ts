@@ -2177,6 +2177,7 @@ It contains none of your mail, contacts, settings or keys.
   "ui.command.title": "Command palette",
   "ui.command.description": "Search for a command to run…",
   "ui.shortcut.then": "then",
+  "ui.spinner.loading": "Loading",
   "errors.forwardGone": "This forward was cancelled or already sent.",
   "forward.reason.ruleChanged": "Not forwarded: the forwarding rule changed or was turned off.",
   "forward.reason.gone": "Not forwarded: the message is no longer here.",
