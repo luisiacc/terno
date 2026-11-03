@@ -1,5 +1,6 @@
 import { shortcutsFor, type Command, type ThreadAction } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
+import { IconButton } from "@terno/ui/components/icon-button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Archive, CheckCheck, FolderInput, Inbox, Mail, MailOpen, OctagonAlert, ShieldCheck, Star, Tag, Trash2, X } from "@terno/ui/icons";
@@ -14,29 +15,27 @@ type Variant = "pane" | "toolbar";
 
 function BarButton({ label, command, onClick, children, testId, disabled, bar }: { label: string; command?: Command; onClick: () => void; children: React.ReactNode; testId: string; disabled?: boolean; bar: Variant }) {
   const keys = command ? shortcutsFor(command, undefined, isMac)[0] : undefined;
+  // the toolbar's: the icon, named; the name and key in the tooltip
+  if (bar === "toolbar")
+    return (
+      <IconButton label={label} shortcut={keys} data-testid={testId} disabled={disabled} onClick={onClick}>
+        {children}
+      </IconButton>
+    );
+  // the pane's keeps its visible name; the tooltip only has the key
+  const button = (
+    <Button variant="outline" size="sm" data-testid={testId} disabled={disabled} onClick={onClick} className="justify-start gap-2">
+      {children}
+      {label}
+    </Button>
+  );
+  if (!keys) return button;
   return (
     <Tooltip>
-      <TooltipTrigger
-        render={
-          bar === "pane" ? (
-            <Button variant="outline" size="sm" data-testid={testId} disabled={disabled} onClick={onClick} className="justify-start gap-2">
-              {children}
-              {label}
-            </Button>
-          ) : (
-            // the toolbar's: the icon, named; the name and key in the tooltip
-            <Button variant="ghost" size="icon-sm" data-testid={testId} disabled={disabled} onClick={onClick} aria-label={label} className="text-muted-foreground hover:text-foreground">
-              {children}
-            </Button>
-          )
-        }
-      />
-      {(keys || bar === "toolbar") && (
-        <TooltipContent className="flex items-center gap-2">
-          {bar === "toolbar" && label}
-          {keys && <Shortcut keys={keys} />}
-        </TooltipContent>
-      )}
+      <TooltipTrigger render={button} />
+      <TooltipContent>
+        <Shortcut keys={keys} />
+      </TooltipContent>
     </Tooltip>
   );
 }
