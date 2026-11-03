@@ -4,7 +4,7 @@ import * as React from "react"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "cn"
 import { ChevronDown as ChevronDownIcon, ChevronUp as ChevronUpIcon } from "@terno/ui/icons"
-import { MENU_GROUP, MENU_LABEL, MENU_MOTION, MENU_PANEL, MENU_ROW, MENU_SEPARATOR } from "@terno/ui/components/menu-styles"
+import { MENU_GROUP, MENU_LABEL, MENU_MOTION, MENU_PANEL, MENU_ROW, MENU_SEPARATOR } from "./menu-styles"
 
 const Select = SelectPrimitive.Root
 

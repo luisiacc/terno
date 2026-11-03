@@ -18,7 +18,7 @@ import {
   MENU_SHORTCUT,
   SUBMENU_ALIGN_OFFSET,
   SUBMENU_SIDE_OFFSET,
-} from "@terno/ui/components/menu-styles"
+} from "./menu-styles"
 
 function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
   return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />
