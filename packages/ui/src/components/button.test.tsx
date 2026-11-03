@@ -49,11 +49,12 @@ describe("Button's loading (plan 125)", () => {
     expect(button.textContent).toBe(" Send");
   });
 
-  it("with no leading icon, keeps the label (hidden, holding the width) and centres the spinner over it", async () => {
+  it("with no leading icon, keeps the label (transparent: holding the width and the name) and centres the spinner over it", async () => {
     const host = await render(<Button loading>Remove</Button>);
     const button = host.querySelector("button")!;
     const label = [...button.children].find((el) => el.textContent === "Remove")!;
-    expect(label.className).toContain("invisible");
+    expect(label.className).toContain("opacity-0");
+    expect(label.className).not.toContain("invisible");
     expect(button.querySelector("[data-slot=spinner]")!.parentElement!.className).toContain("absolute inset-0");
   });
 

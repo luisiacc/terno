@@ -88,6 +88,8 @@ for (const design of DESIGN_IDS) for (const mode of ["light", "dark"] as const) 
       expect(await css(page, "busy", "background-image")).toBe(await css(page, "idle", "background-image"));
       await expect(page.getByTestId("busy").locator("[data-slot=spinner]")).toBeVisible();
       await expect(page.getByTestId("busy")).toHaveAttribute("aria-busy", "true");
+      // its label is hidden by opacity, not visibility: it still names the button (Codex code review #1)
+      await expect(page.getByTestId("busy")).toHaveAccessibleName("Remove all");
     });
 
     test("an indeterminate checkbox draws a dash on the checked fill; the tick is 2 px", async ({ app: page }) => {

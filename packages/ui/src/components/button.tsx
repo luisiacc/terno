@@ -80,7 +80,8 @@ function Button({
       </>
     ) : (
       <>
-        <span className="invisible inline-flex items-center gap-[inherit]">{children as React.ReactNode}</span>
+        {/* hidden by opacity, not visibility: it holds the width and still names the button */}
+        <span className="inline-flex items-center gap-[inherit] opacity-0">{children as React.ReactNode}</span>
         <span className="absolute inset-0 grid place-items-center">
           <Spinner aria-hidden />
         </span>
