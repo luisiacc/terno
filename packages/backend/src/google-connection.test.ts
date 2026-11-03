@@ -480,21 +480,55 @@ describe("plan 125: Remove account withdraws Terno's Google grant", () => {
     expect(revokeGoogle).not.toHaveBeenCalled();
   });
 
-  it("a new Google sign-in waits for a removal's revoke still in flight (it would end the new grant)", async () => {
+  it("a new Google sign-in waits for a removal still running, from its first step to the end of its revoke", async () => {
     let finish!: (o: "revoked") => void;
     const revokeGoogle = vi.fn<NonNullable<ProviderRegistry["revokeGoogle"]>>(() => new Promise((r) => { finish = r; }));
     const t = await setup(false, { revokeGoogle });
     const account = await t.client.call("accounts.connectGmail", {});
+    // the removal is still in its local cleanup (Codex code review #2: the barrier started only with the revoke)
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    const reset = t.backend.autocomplete.reset.bind(t.backend.autocomplete);
+    vi.spyOn(t.backend.autocomplete, "reset").mockImplementationOnce(async () => { await held; return reset(); });
     const removed = t.client.call("accounts.remove", { id: account.id });
-    await vi.waitFor(() => expect(revokeGoogle).toHaveBeenCalled());
+    await vi.waitFor(() => expect(t.backend.autocomplete.reset).toHaveBeenCalled());
     t.connect.mockClear();
     const again = t.client.call("accounts.connectGmail", {});
+    await new Promise((r) => setTimeout(r, 50));
+    expect(t.connect).not.toHaveBeenCalled();
+    release();
+    await vi.waitFor(() => expect(revokeGoogle).toHaveBeenCalled());
     await new Promise((r) => setTimeout(r, 50));
     expect(t.connect).not.toHaveBeenCalled();
     finish("revoked");
     expect(await removed).toEqual({ ok: true, google: "revoked" });
     await again;
     expect(t.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it("a sign-in whose consent was open when that address's removal began is refused: the revoke ended its grant", async () => {
+    const revokeGoogle = revoker();
+    const t = await setup(false, { revokeGoogle });
+    const account = await t.client.call("accounts.connectGmail", {});
+    // Add account's consent is open in the browser…
+    let consent!: (r: unknown) => void;
+    t.connect.mockImplementationOnce(() => new Promise((r) => { consent = r as (r: unknown) => void; }));
+    const again = t.client.call("accounts.connectGmail", {});
+    await vi.waitFor(() => expect(consent).toBeDefined());
+    // …when the same mailbox is removed
+    expect(await t.client.call("accounts.remove", { id: account.id })).toEqual({ ok: true, google: "revoked" });
+    consent({ ...identity, refreshToken: "made-before-the-revoke" });
+    await expect(again).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("was removed while you were signing in") });
+    expect((await t.client.call("app.bootstrap", {})).accounts).toEqual([]);
+    // another address isn't affected
+    const other = await setup(false, { revokeGoogle: revoker() });
+    const first = await other.client.call("accounts.connectGmail", {});
+    other.connect.mockImplementationOnce(() => new Promise((r) => { consent = r as (r: unknown) => void; }));
+    const second = other.client.call("accounts.connectGmail", {});
+    await vi.waitFor(() => expect(other.connect).toHaveBeenCalledTimes(2));
+    await other.client.call("accounts.remove", { id: first.id });
+    consent({ ...identity, email: "someone-else@example.com", sub: "other-subject", refreshToken: "r2" });
+    expect(await second).toMatchObject({ email: "someone-else@example.com" });
   });
 
   it("a registry without revoke (tests, demo) never tries, and the answer has no google field", async () => {

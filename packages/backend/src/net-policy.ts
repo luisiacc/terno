@@ -263,6 +263,8 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
         let request: RequestInit = input instanceof NativeRequest ? { method: input.method, headers: input.headers, body: input.body, signal: input.signal, duplex: "half", ...init } as RequestInit : { ...init };
         // the SDKs' own redirect mode is never trusted: an AI key doesn't follow any redirect, here or in a browser
         const keyed = purpose === "ai" && carriesCredential(request.headers);
+        // plan 125: a caller that refuses redirects (a token in the body: Google's revoke) gets none, on any hop
+        const refuses = request.redirect === "error";
         for (let hop = 0; ; hop++) {
           const { pinnedHost } = await assert(purpose, url, meta);
           if (browser) {
@@ -277,7 +279,7 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
             }
             // plan 96: an unsubscribe request goes where the mail said and nowhere else (a redirect comes back opaque);
             // a keyed AI request was refused above
-            return baseFetch(url, { ...request, redirect: purpose === "unsubscribe" ? "manual" : "follow" });
+            return baseFetch(url, { ...request, redirect: purpose === "unsubscribe" ? "manual" : refuses ? "error" : "follow" });
           }
           const target = new URL(url);
           // Connect to the address we just checked, so a DNS answer can't change between check and connect.
@@ -288,7 +290,7 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
           const location = REDIRECT_STATUS.has(res.status) ? res.headers.get("location") : null;
           if (!location) return res;
           await res.body?.cancel();
-          if (keyed) throw redirectRefused(purpose, url, new URL(location, url));
+          if (keyed || refuses) throw redirectRefused(purpose, url, new URL(location, url));
           if (hop >= MAX_REDIRECTS) throw new TypeError(`Too many redirects (${url.host})`);
           const next = new URL(location, url);
           if (next.origin !== url.origin) {

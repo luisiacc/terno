@@ -8,8 +8,37 @@ import type { GmailAccountConfig } from "@terno/mail";
 import type { BackendCore as Backend } from "./core";
 
 const REVOKE_TIMEOUT_MS = 5_000;
-/** revokes still running: a new Google sign-in waits for them, or the late revoke would end the grant it just made */
-const running = new WeakMap<Backend, Set<Promise<unknown>>>();
+
+/**
+ * Gmail removals in progress, from their first step to the end of their revoke: a new Google sign-in waits for them,
+ * and one whose consent was already open when a removal of the same address began is refused (the revoke ends the
+ * whole grant, the one it just made included). `seq` orders them; `recent` remembers the last few addresses.
+ */
+interface Removals { seq: number; running: Set<Promise<void>>; recent: { seq: number; email: string }[] }
+const removals = new WeakMap<Backend, Removals>();
+const removalsOf = (b: Backend): Removals => {
+  let r = removals.get(b);
+  if (!r) removals.set(b, (r = { seq: 0, running: new Set(), recent: [] }));
+  return r;
+};
+
+/** A Gmail account's removal begins (before anything is deleted); `end` once its revoke is over, or it failed. */
+export function beginGoogleRemoval(b: Backend, email: string): { end: () => void } {
+  const r = removalsOf(b);
+  r.recent.push({ seq: ++r.seq, email: email.toLowerCase() });
+  if (r.recent.length > 20) r.recent.shift();
+  let end!: () => void;
+  const done = new Promise<void>((resolve) => (end = resolve));
+  r.running.add(done);
+  void done.then(() => r.running.delete(done));
+  return { end };
+}
+
+/** Where removals stand now: a sign-in remembers it before opening Google's consent. */
+export const removalMark = (b: Backend): number => removalsOf(b).seq;
+
+/** A removal of this address began after `mark` (its revoke ends the grant this sign-in made). */
+export const removedSince = (b: Backend, mark: number, email: string): boolean => removalsOf(b).recent.some((r) => r.seq > mark && r.email === email.toLowerCase());
 
 /**
  * The token to revoke, read after dropAccount (its sign-ins and renewals are over, and their writes drained, so
@@ -31,16 +60,11 @@ export async function googleGrantOf(b: Backend, accountId: number): Promise<stri
 export function withdrawGoogleGrant(b: Backend, token: string | null): Promise<"revoked" | "failed"> {
   const revoke = b.options.providers.revokeGoogle;
   if (!revoke || token === null || !b.connectivity.online) return Promise.resolve("failed");
-  const done = revoke(token, b.net.fetchFor("mail"), AbortSignal.any([b.abort.signal, AbortSignal.timeout(REVOKE_TIMEOUT_MS)]));
-  const set = running.get(b) ?? new Set();
-  running.set(b, set);
-  set.add(done);
-  void done.finally(() => set.delete(done)).catch(() => {});
-  return done;
+  return revoke(token, b.net.fetchFor("mail"), AbortSignal.any([b.abort.signal, AbortSignal.timeout(REVOKE_TIMEOUT_MS)]));
 }
 
-/** Before a new Google consent: a removal's revoke still in flight finishes first (at most its timeout). */
+/** Before a new Google consent: removals still running finish first (their revoke at most its timeout). */
 export async function revokesSettled(b: Backend): Promise<void> {
-  const set = running.get(b);
-  if (set?.size) await Promise.allSettled(set);
+  const { running } = removalsOf(b);
+  if (running.size) await Promise.allSettled(running);
 }

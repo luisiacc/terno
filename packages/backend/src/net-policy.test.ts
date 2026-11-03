@@ -115,6 +115,18 @@ describe("redirects", () => {
     }
   });
 
+  it("plan 125: a request that refuses redirects gets none, so a token in its body never reaches another host", async () => {
+    const p = await pair();
+    try {
+      const { net } = policy();
+      await expect(net.fetchFor("mail")(`${p.aUrl}/revoke`, { method: "POST", body: "token=synthetic-token", redirect: "error" })).rejects.toThrow();
+      await expect(net.fetchFor("mail")(`${p.aUrl}/same`, { redirect: "error" })).rejects.toThrow();
+      expect(p.seenB).toEqual([]);
+    } finally {
+      p.close();
+    }
+  });
+
   it("an AI request carrying a key follows no redirect at all, to another origin or its own: the key stays where it was bound", async () => {
     const p = await pair();
     try {

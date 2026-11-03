@@ -19,7 +19,7 @@ import { followFavoriteFolders, readAutoCategorize, readSettings, setGooglePhoto
 import { countFolder, createFolder, deleteFolder, favoriteFolder, renameFolder } from "./folders";
 import { googleClientFor } from "./google-client";
 import { authorizeGooglePhotos, setGooglePhotos } from "./icons/google";
-import { googleGrantOf, revokesSettled, withdrawGoogleGrant } from "./google-revoke";
+import { beginGoogleRemoval, googleGrantOf, removalMark, removedSince, revokesSettled, withdrawGoogleGrant } from "./google-revoke";
 
 /** How long a recipient lookup waits for the index's first build (then answers with what it has: nothing). */
 const FIRST_BUILD_WAIT_MS = 250;
@@ -227,6 +227,32 @@ export function createHandlers(b: Backend): Handlers {
     return next;
   };
   const nextAccountColor = async () => ACCOUNT_COLORS[(await store.accounts.list()).length % ACCOUNT_COLORS.length]!;
+  /** accounts.remove's work; a Gmail account's grant is withdrawn at Google after it's gone here (plan 125) */
+  const removeAccount = async (id: number, wasOwner: boolean, gmail: boolean): Promise<{ ok: true; google?: "revoked" | "failed" }> => {
+    await b.dropAccount(id, { remove: true });
+    // plan 125: read once nothing can replace it (dropAccount ended the account's sign-ins and renewals)
+    const grant = gmail ? await googleGrantOf(b, id) : undefined;
+    // plan 22: its photo lists and photos go with it
+    await setGooglePhotoState(store, id, null);
+    await b.icons.dropPhotos(id);
+    // plan 107: and its favorite folders, in the one turn of its folder list with the account row (Codex code review
+    // round 11 #3: a favorite waiting for the list found the account still there and was written after the cleanup)
+    await b.withFolderList(id, async () => {
+      await b.writeFavorites(() => followFavoriteFolders(store, id, { deleted: "all" }));
+      // the owner row survives: its account_id is cleared (ON DELETE SET NULL)
+      await store.accounts.remove(id);
+    });
+    b.accountRemoved(id);
+    forgetSignInVersion(b, id);
+    // nobody from a removed account lingers in suggestions
+    await b.autocomplete.reset();
+    await b.emitAccounts();
+    if (wasOwner) await b.emitOwner();
+    b.notifyChanged([]);
+    // plan 125: gone here first; then Terno's access at Google is withdrawn (bounded, never undoing the removal)
+    if (grant === undefined) return { ok: true as const };
+    return { ok: true as const, google: await withdrawGoogleGrant(b, grant) };
+  };
 
   return {
     "app.bootstrap": async (_p, ctx) => {
@@ -913,6 +939,7 @@ export function createHandlers(b: Backend): Handlers {
       if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));
       // plan 125: a removal's revoke would end the grant this consent is about to make for the same person
       await revokesSettled(b);
+      const mark = removalMark(b);
       const google = await b.initialGoogleRequests(true);
       const result = await b.options.providers.connectGmail({
         clientId: oauth.clientId,
@@ -927,6 +954,11 @@ export function createHandlers(b: Backend): Handlers {
       googleFlowActive(b);
       validateGoogleConnection(result, "initial");
       if (result.refreshToken === null) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
+      // plan 125: removed while this consent was open: that removal's revoke ends the grant just made
+      if (removedSince(b, mark, result.email)) {
+        await revokesSettled(b);
+        throw new RpcError("BAD_REQUEST", L("errors.google.removedWhileConnecting", { email: result.email }));
+      }
       const existing = (await store.accounts.list()).find((a) => a.email === result.email.toLowerCase());
       if (existing) throw new RpcError("BAD_REQUEST", L("errors.alreadyConnected", { email: result.email }));
       const config: GmailAccountConfig & AccountPrefs = { senderName: result.name || result.email, googleSubject: result.sub!, googleClientId: oauth.clientId, ...(syncWindowDays !== undefined && { syncWindowDays }) };
@@ -1042,30 +1074,12 @@ export function createHandlers(b: Backend): Handlers {
 
     "accounts.remove": async ({ id }) => {
       const wasOwner = (await store.owner.get())?.accountId === id;
-      const kind = (await store.accounts.get(id))?.kind;
-      await b.dropAccount(id, { remove: true });
-      // plan 125: read once nothing can replace it (dropAccount ended the account's sign-ins and renewals)
-      const grant = kind === "gmail" ? await googleGrantOf(b, id) : undefined;
-      // plan 22: its photo lists and photos go with it
-      await setGooglePhotoState(store, id, null);
-      await b.icons.dropPhotos(id);
-      // plan 107: and its favorite folders, in the one turn of its folder list with the account row (Codex code review
-      // round 11 #3: a favorite waiting for the list found the account still there and was written after the cleanup)
-      await b.withFolderList(id, async () => {
-        await b.writeFavorites(() => followFavoriteFolders(store, id, { deleted: "all" }));
-        // the owner row survives: its account_id is cleared (ON DELETE SET NULL)
-        await store.accounts.remove(id);
-      });
-      b.accountRemoved(id);
-      forgetSignInVersion(b, id);
-      // nobody from a removed account lingers in suggestions
-      await b.autocomplete.reset();
-      await b.emitAccounts();
-      if (wasOwner) await b.emitOwner();
-      b.notifyChanged([]);
-      // plan 125: gone here first; then Terno's access at Google is withdrawn (bounded, never undoing the removal)
-      if (grant === undefined) return { ok: true as const };
-      return { ok: true as const, google: await withdrawGoogleGrant(b, grant) };
+      const before = await store.accounts.get(id);
+      // plan 125: from the first step, a new Google sign-in waits for this removal and its revoke
+      const removal = before?.kind === "gmail" && b.options.providers.revokeGoogle ? beginGoogleRemoval(b, before.email) : null;
+      try {
+        return await removeAccount(id, wasOwner, before?.kind === "gmail");
+      } finally { removal?.end(); }
     },
     // plan 107: folder changes, favorites and the .mbox export (filled in by their commits)
     "folders.create": ({ accountId, parent, name }) => createFolder(b, accountId, parent, name),

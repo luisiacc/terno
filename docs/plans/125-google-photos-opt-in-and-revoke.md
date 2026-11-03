@@ -80,3 +80,15 @@ Codex critiqued the plan in 12 points. These replace the sections above where th
     - tests for each.
 
 Also fixed on the way: plan 124's `sections([…])` helper hid the site's copy from the i18n scanner's catalog check (`scan.test.ts`). The sections' type is inferred again.
+
+## What the Codex code review changed
+
+Codex reviewed `a0deacdb` and raised 2 points, both fixed with regression tests:
+
+1. **The backend's `fetchFor` followed redirects itself** and ignored the caller's `redirect: "error"`, so a cross-origin 307 could carry the token in the form body to another host. `fetchFor` now honors `redirect: "error"` on every hop, in Node and the browser (`net-policy.test.ts`: "a request that refuses redirects gets none"; it fails without the fix).
+2. **The re-add barrier started only with the revoke,** after the local cleanup and the account events. Now:
+   - it starts at the removal's first step (`beginGoogleRemoval`);
+   - a desktop sign-in whose consent was already open when a removal of the same address began is refused with "{email} was removed while you were signing in…", because the revoke ended the grant it made;
+   - other addresses are unaffected.
+
+   Tests: "waits for a removal still running, from its first step…" and "a sign-in whose consent was open… is refused".
