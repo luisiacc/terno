@@ -72,7 +72,7 @@ test.describe("themes", () => {
       for (const t of THEMES.filter((x) => x.mode === mode)) {
         await page.getByTestId(`theme-card-${t.id}`).click();
         await expect(page.locator("html")).toHaveAttribute("data-theme", t.id);
-        await expect(page.getByTestId(`theme-card-${t.id}`)).toHaveAttribute("aria-pressed", "true");
+        await expect(page.getByTestId(`theme-card-${t.id}`)).toHaveAttribute("aria-checked", "true");
         // the build minifies values (oklch(99% .002 85)): compare the colors, not the spelling
         expect(toHex(await cssVar(page, "--background")), t.id).toBe(toHex(t.tokens.background));
         expect(toHex(await cssVar(page, "--primary")), t.id).toBe(toHex(t.tokens.primary));

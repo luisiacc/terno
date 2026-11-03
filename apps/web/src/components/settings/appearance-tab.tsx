@@ -1,12 +1,13 @@
 import { CUSTOM_PREFIX, DESIGN_PALETTE, customThemeSchema, MAX_CUSTOM_THEMES, type CustomTheme, type ThemeMode } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
+import { RadioCard, RadioDot, RadioGroup } from "@terno/ui/components/radio-group";
 import { Textarea } from "@terno/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { contrastFailures } from "@terno/ui/themes/contrast";
 import { builtinTheme, resolveCustomTheme, themeName, themesFor } from "@terno/ui/themes/registry";
 import { cn } from "@terno/ui/lib/utils";
-import { Check, Copy, Pencil, Play, Trash2, Upload } from "@terno/ui/icons";
+import { Copy, Pencil, Play, Trash2, Upload } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useId, useRef, useState } from "react";
 import { ThemeCard } from "./appearance-cards";
@@ -73,23 +74,17 @@ function DesignPreview({ design, mode }: { design: DesignDefinition; mode: Theme
   );
 }
 
-function StyleCard({ design, mode, selected, onSelect }: { design: DesignDefinition; mode: ThemeMode; selected: boolean; onSelect: () => void }) {
+/** A design as one of the styles: a radio card (in the Style `RadioGroup`, whose value is the design's id). */
+function StyleCard({ design, mode }: { design: DesignDefinition; mode: ThemeMode }) {
   return (
-    <button
-      type="button"
-      data-testid={`design-card-${design.id}`}
-      aria-pressed={selected}
-      onClick={onSelect}
-      className={cn("flex w-[180px] flex-col gap-1.5 rounded-xl p-1.5 text-left hover:bg-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none", selected && "bg-accent text-accent-foreground hover:bg-accent")}
-    >
+    <RadioCard value={design.id} data-testid={`design-card-${design.id}`} className="w-[180px] flex-col gap-1.5 p-1.5">
       <DesignPreview design={design} mode={mode} />
       <span className="flex items-center gap-1 px-0.5 text-sm">
         <span className="truncate font-medium">{designName(design.id)}</span>
-        {selected && <Check className="ml-auto size-3.5 shrink-0 text-primary" />}
+        <RadioDot className="invisible ml-auto group-data-checked/radio:visible" />
       </span>
-      {/* on the accent wash, its own ink (muted text isn't held to AA there) */}
-      <span className={cn("px-0.5 text-xs", selected ? "text-accent-foreground" : "text-muted-foreground")}>{designDescription(design.id)}</span>
-    </button>
+      <span className="px-0.5 text-xs text-muted-foreground">{designDescription(design.id)}</span>
+    </RadioCard>
   );
 }
 
@@ -271,21 +266,19 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
     const prevTheme = !prevId || prevId === own.id ? undefined : prevCustom ? resolveCustomTheme(prevCustom) : builtinTheme(prevId);
     const prevBase = prevCustom ? (builtinTheme(prevCustom.extends)?.id ?? prevCustom.extends) : prevTheme?.id;
     return (
-      <div role="group" aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} className="-mx-1.5 flex flex-wrap gap-1" data-testid={`theme-grid-${m}`}>
-        <ThemeCard theme={own} base={own.id} name={t("settings.appearance.styleColors")} testId={`theme-card-design-${m}`} selected={selected === DESIGN_PALETTE} onSelect={() => pick(m, DESIGN_PALETTE)} note={selected === DESIGN_PALETTE ? note : undefined} />
-        {prevTheme && prevBase && (
-          <ThemeCard key={`previous-${prevTheme.id}`} theme={prevTheme} base={prevBase} testId={`theme-card-previous-${m}`} selected={selected === prevTheme.id} onSelect={() => pick(m, prevTheme.id)} note={t("settings.appearance.previous")} />
-        )}
+      <RadioGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} value={selected} onValueChange={(id) => pick(m, id as string)} className="flex-row flex-wrap gap-2" data-testid={`theme-grid-${m}`}>
+        <ThemeCard theme={own} base={own.id} name={t("settings.appearance.styleColors")} testId={`theme-card-design-${m}`} value={DESIGN_PALETTE} note={selected === DESIGN_PALETTE ? note : undefined} />
+        {prevTheme && prevBase && <ThemeCard key={`previous-${prevTheme.id}`} theme={prevTheme} base={prevBase} testId={`theme-card-previous-${m}`} value={prevTheme.id} note={t("settings.appearance.previous")} />}
         {themesFor(m)
           .filter((theme) => theme.id !== prevTheme?.id)
           .map((theme) => (
-            <ThemeCard key={theme.id} theme={theme} base={theme.id} selected={selected === theme.id} onSelect={() => pick(m, theme.id)} note={selected === theme.id ? note : undefined} />
+            <ThemeCard key={theme.id} theme={theme} base={theme.id} value={theme.id} note={selected === theme.id ? note : undefined} />
           ))}
         {custom.filter((c) => `${CUSTOM_PREFIX}${c.id}` !== prevTheme?.id).map((c) => {
           const theme = resolveCustomTheme(c);
-          return <ThemeCard key={theme.id} theme={theme} base={builtinTheme(c.extends)?.id ?? c.extends} selected={selected === theme.id} onSelect={() => pick(m, theme.id)} note={selected === theme.id ? note : undefined} />;
+          return <ThemeCard key={theme.id} theme={theme} base={builtinTheme(c.extends)?.id ?? c.extends} value={theme.id} note={selected === theme.id ? note : undefined} />;
         })}
-      </div>
+      </RadioGroup>
     );
   };
 
@@ -294,11 +287,11 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
       <SettingsGroup>
         <SettingsRow stacked label={t("settings.appearance.style")} hint={t("settings.appearance.style.hint")}>
           {(a) => (
-            <div role="group" aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} className="-mx-1.5 flex flex-wrap gap-1" data-testid="design-grid">
+            <RadioGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} value={settings.design} onValueChange={(id) => void updateAppearance({ design: id as DesignDefinition["id"] })} className="flex-row flex-wrap gap-2" data-testid="design-grid">
               {DESIGNS.map((d) => (
-                <StyleCard key={d.id} design={d} mode={mode} selected={settings.design === d.id} onSelect={() => void updateAppearance({ design: d.id })} />
+                <StyleCard key={d.id} design={d} mode={mode} />
               ))}
-            </div>
+            </RadioGroup>
           )}
         </SettingsRow>
       </SettingsGroup>

@@ -2,12 +2,13 @@ import { DESIGN_PALETTE, type AiProviderId, type ThemeMode } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@terno/ui/components/dialog";
+import { RadioCard, RadioDot, RadioGroup } from "@terno/ui/components/radio-group";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { DESIGNS, designById } from "@terno/ui/designs/index";
 import { builtinTheme, themesFor } from "@terno/ui/themes/registry";
 import { cn } from "@terno/ui/lib/utils";
-import { Check, Columns2, Laptop, Moon, Rows3, Sun } from "@terno/ui/icons";
+import { Columns2, Laptop, Moon, Rows3, Sun } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
@@ -55,40 +56,16 @@ async function findLocalModel(): Promise<Found | null> {
   return Promise.any(probes).catch(() => null);
 }
 
-/** Arrow keys move the choice within a radio group (and choose it, as radios do); Tab leaves the group. */
-function radioKeys(e: React.KeyboardEvent<HTMLElement>) {
-  const step = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
-  if (!step) return;
-  const radios = [...e.currentTarget.querySelectorAll<HTMLElement>("[role=radio]")];
-  const at = radios.indexOf(document.activeElement as HTMLElement);
-  if (at < 0) return;
-  e.preventDefault();
-  const next = radios[(at + step + radios.length) % radios.length]!;
-  next.focus();
-  next.click();
-}
-
-function Choice({ checked, onSelect, mark, title, body, testId }: { checked: boolean; onSelect: () => void; mark: React.ReactNode; title: string; body: string; testId: string }) {
+function Choice({ value, mark, title, body, testId }: { value: string; mark: React.ReactNode; title: string; body: string; testId: string }) {
   return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={checked}
-      tabIndex={checked ? 0 : -1}
-      data-testid={testId}
-      onClick={onSelect}
-      className={cn(
-        "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-        checked ? "bg-accent text-accent-foreground" : "hover:bg-muted/60",
-      )}
-    >
+    <RadioCard value={value} data-testid={testId} className="w-full items-center gap-3 px-3 py-2.5">
       {mark}
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-medium">{title}</span>
-        <span className={cn("mt-0.5 block text-xs", checked ? "text-accent-foreground/80" : "text-muted-foreground")}>{body}</span>
+        <span className="mt-0.5 block text-xs text-muted-foreground">{body}</span>
       </span>
-      <Check className={cn("size-4 shrink-0 text-primary", !checked && "invisible")} />
-    </button>
+      <RadioDot />
+    </RadioCard>
   );
 }
 
@@ -142,7 +119,7 @@ export function FirstRun() {
 
   // the palette in use is in view (the default, GitHub, sits partway down the list)
   useEffect(() => {
-    if (step === "look") document.querySelector("[data-testid=first-run-palettes] [aria-pressed=true]")?.scrollIntoView({ block: "nearest" });
+    if (step === "look") document.querySelector("[data-testid=first-run-palettes] [aria-checked=true]")?.scrollIntoView({ block: "nearest" });
   }, [step, settings?.theme]);
 
   if (!settings) return null;
@@ -175,39 +152,27 @@ export function FirstRun() {
 
   const body = {
     layout: (
-      <div role="radiogroup" aria-label={t("firstRun.layout.label")} className="-mx-3 space-y-1" onKeyDown={radioKeys}>
-        <Choice testId="first-run-layout-split" checked={settings.layout === "split"} onSelect={() => pick({ layout: "split" })} mark={<Columns2 className="size-5 shrink-0" />} title={t("settings.general.layout.split")} body={t("firstRun.layout.split.body")} />
-        <Choice testId="first-run-layout-list" checked={settings.layout === "list"} onSelect={() => pick({ layout: "list" })} mark={<Rows3 className="size-5 shrink-0" />} title={t("settings.general.layout.list")} body={t("firstRun.layout.list.body")} />
-      </div>
+      <RadioGroup aria-label={t("firstRun.layout.label")} value={settings.layout} onValueChange={(layout) => pick({ layout: layout as AppSettings["layout"] })}>
+        <Choice testId="first-run-layout-split" value="split" mark={<Columns2 className="size-5 shrink-0" />} title={t("settings.general.layout.split")} body={t("firstRun.layout.split.body")} />
+        <Choice testId="first-run-layout-list" value="list" mark={<Rows3 className="size-5 shrink-0" />} title={t("settings.general.layout.list")} body={t("firstRun.layout.list.body")} />
+      </RadioGroup>
     ),
     look: (
       // the styles stay put and the palettes scroll (the one in use scrolled into view); a window too short for a row of them scrolls as a whole
       <div className="flex min-h-full flex-col">
         <h3 className="type-section-label mb-1.5 shrink-0 text-muted-foreground">{t("firstRun.look.style")}</h3>
-        <div role="radiogroup" aria-label={t("firstRun.look.style")} aria-describedby="first-run-design-description" className="-mx-1 grid shrink-0 grid-cols-3 gap-1" onKeyDown={radioKeys}>
-          {DESIGNS.map((d) => {
-            const checked = settings.design === d.id;
-            return (
-              <button
-                key={d.id}
-                type="button"
-                role="radio"
-                aria-checked={checked}
-                tabIndex={checked ? 0 : -1}
-                data-testid={`first-run-design-${d.id}`}
-                onClick={() => pick({ design: d.id })}
-                className={cn("flex flex-col items-center gap-1.5 rounded-xl px-2 pt-2.5 pb-2 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none", checked ? "bg-accent text-accent-foreground" : "hover:bg-muted/60")}
-              >
-                {/* the style's own type, in its own design */}
-                <span data-design={d.id} aria-hidden className="flex h-10 w-14 items-center justify-center rounded-lg bg-background text-xl text-foreground shadow-hairline" style={{ fontFamily: "var(--type-list-title-family)", fontWeight: "var(--type-list-title-weight)", fontStyle: "var(--type-list-title-style)" }}>
-                  {/* i18n-ignore: aria-hidden typography specimen, identical in every language */}
-                  Aa
-                </span>
-                <span className="text-sm font-medium">{designName(d.id)}</span>
-              </button>
-            );
-          })}
-        </div>
+        <RadioGroup aria-label={t("firstRun.look.style")} aria-describedby="first-run-design-description" value={settings.design} onValueChange={(design) => pick({ design: design as AppSettings["design"] })} className="grid shrink-0 grid-cols-3 gap-2">
+          {DESIGNS.map((d) => (
+            <RadioCard key={d.id} value={d.id} data-testid={`first-run-design-${d.id}`} className="flex-col items-center gap-1.5 px-2 pt-2.5 pb-2">
+              {/* the style's own type, in its own design */}
+              <span data-design={d.id} aria-hidden className="flex h-10 w-14 items-center justify-center rounded-lg bg-background text-xl text-foreground shadow-hairline" style={{ fontFamily: "var(--type-list-title-family)", fontWeight: "var(--type-list-title-weight)", fontStyle: "var(--type-list-title-style)" }}>
+                {/* i18n-ignore: aria-hidden typography specimen, identical in every language */}
+                Aa
+              </span>
+              <span className="text-sm font-medium">{designName(d.id)}</span>
+            </RadioCard>
+          ))}
+        </RadioGroup>
         <p id="first-run-design-description" className="mt-2 min-h-8 shrink-0 text-xs text-muted-foreground">
           {designDescription(design.id)}
         </p>
@@ -230,7 +195,8 @@ export function FirstRun() {
           </ToggleGroup>
         </div>
         <p className="mb-2 shrink-0 text-xs text-muted-foreground">{t(following ? "firstRun.look.modeHint" : settings.theme === "light" ? "firstRun.look.modeHint.light" : "firstRun.look.modeHint.dark")}</p>
-        <div className="hairline-t -mx-1.5 min-h-32 flex-1 basis-0 overflow-y-auto pt-2 pb-1" data-testid="first-run-palettes">
+        {/* the cards' edges on the column's line, room around them for the chosen edge and the focus ring */}
+        <div className="hairline-t -mx-1.5 min-h-32 flex-1 basis-0 overflow-y-auto px-1.5 pt-2 pb-1" data-testid="first-run-palettes">
           {modes.map((m) => {
             const slot = m === "light" ? "lightTheme" : "darkTheme";
             const chosen = settings[slot] === DESIGN_PALETTE ? DESIGN_PALETTE : resolveTheme(settings, m).id;
@@ -242,13 +208,13 @@ export function FirstRun() {
             const label = t(m === "light" ? "settings.appearance.lightTheme" : "settings.appearance.darkTheme");
             return (
               <section key={m} aria-label={label} className="mb-3 last:mb-0">
-                {following && <h4 className="mb-1 px-1.5 text-xs font-medium text-muted-foreground">{label}</h4>}
-                <div role="group" aria-label={label} className="grid auto-rows-min grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-1" data-testid={`first-run-palettes-${m}`}>
-                  <ThemeCard theme={own} base={own.id} name={t("settings.appearance.styleColors")} testId={`theme-card-design-${m}`} selected={chosen === DESIGN_PALETTE} onSelect={() => choose(DESIGN_PALETTE)} />
+                {following && <h4 className="mb-1 text-xs font-medium text-muted-foreground">{label}</h4>}
+                <RadioGroup aria-label={label} value={chosen} onValueChange={(id) => choose(id as string)} className="grid auto-rows-min grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-2" data-testid={`first-run-palettes-${m}`}>
+                  <ThemeCard theme={own} base={own.id} name={t("settings.appearance.styleColors")} testId={`theme-card-design-${m}`} value={DESIGN_PALETTE} />
                   {themesFor(m).map((p) => (
-                    <ThemeCard key={p.id} theme={p} base={p.id} selected={chosen === p.id} onSelect={() => choose(p.id)} />
+                    <ThemeCard key={p.id} theme={p} base={p.id} value={p.id} />
                   ))}
-                </div>
+                </RadioGroup>
               </section>
             );
           })}

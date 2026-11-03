@@ -199,11 +199,11 @@ test.describe("switching designs", () => {
           for (const e of l.getEntries() as (PerformanceEntry & { value: number; hadRecentInput: boolean })[]) if (!e.hadRecentInput) (window as unknown as { __shifts: number }).__shifts += e.value;
         }).observe({ type: "layout-shift" });
       });
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("Space"); // a radio: Space chooses it (Enter is the form's)
       await expect(page.locator("html")).toHaveAttribute("data-design", id);
       await expect(page.locator("html")).not.toHaveAttribute("data-theme-switching", "");
       await expect(card).toBeFocused();
-      await expect(card).toHaveAttribute("aria-pressed", "true");
+      await expect(card).toHaveAttribute("aria-checked", "true");
       // behind the sheet: the same thread open, still where the list was, the draft and its text
       await expect(selectedRow(page)).toHaveAttribute("data-thread-id", open);
       await expect(selectedRow(page)).toBeInViewport();

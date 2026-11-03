@@ -1,7 +1,7 @@
 import { CUSTOM_PREFIX, THEME_TOKENS } from "@terno/core";
 import { themeName, type Theme } from "@terno/ui/themes/registry";
 import { cn } from "@terno/ui/lib/utils";
-import { Check } from "@terno/ui/icons";
+import { RadioCard, RadioDot } from "@terno/ui/components/radio-group";
 
 /**
  * A 132×84 live mini-mock of the app in a theme: sidebar, three rows (one
@@ -36,21 +36,16 @@ export function ThemePreview({ theme, base }: { theme: Theme; base: string }) {
   );
 }
 
-export function ThemeCard({ theme, base, selected, onSelect, note, name, testId }: { theme: Theme; base: string; selected: boolean; onSelect: () => void; note?: string; name?: string; testId?: string }) {
+/** A palette as one of its mode's choices: a radio card (in a `RadioGroup` whose value is the palette's id). */
+export function ThemeCard({ theme, base, value, note, name, testId }: { theme: Theme; base: string; value: string; note?: string; name?: string; testId?: string }) {
   return (
-    <button
-      type="button"
-      data-testid={testId ?? `theme-card-${theme.id}`}
-      aria-pressed={selected}
-      onClick={onSelect}
-      className={cn("flex flex-col gap-1.5 rounded-lg p-1.5 text-left hover:bg-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none", selected && "bg-accent text-accent-foreground hover:bg-accent")}
-    >
+    <RadioCard value={value} data-testid={testId ?? `theme-card-${theme.id}`} className="flex-col gap-1.5 p-1.5">
       <ThemePreview theme={theme} base={base} />
       <span className="flex w-[132px] items-center gap-1 text-xs">
         <span className="truncate font-medium">{name ?? themeName(theme)}</span>
-        {selected && <Check className="ml-auto size-3.5 shrink-0 text-primary" />}
+        <RadioDot className="invisible ml-auto group-data-checked/radio:visible" />
       </span>
       {note && <span className="w-[132px] text-2xs">{note}</span>}
-    </button>
+    </RadioCard>
   );
 }

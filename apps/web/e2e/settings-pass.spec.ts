@@ -173,7 +173,7 @@ test.describe("editable, persisted and in effect", () => {
     await expect(page.getByTestId("mail-paper")).toHaveAttribute("aria-pressed", "true");
     await page.getByRole("group", { name: "Mode" }).getByRole("button", { name: "Light" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "solarized-light");
-    await expect(page.getByTestId("theme-card-solarized-light")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("theme-card-solarized-light")).toHaveAttribute("aria-checked", "true");
   });
 
   test("Accounts: name, sender, color, signature (sent and shown under the draft), sync window, reconnect, remove", async ({ app: page, server }) => {

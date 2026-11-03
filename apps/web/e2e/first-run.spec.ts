@@ -55,7 +55,7 @@ test.describe("first-run setup", () => {
     await expect(page.getByTestId("first-run-look-system")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("first-run-palettes-light")).toBeVisible();
     await expect(page.getByTestId("first-run-palettes-dark")).toBeVisible();
-    await expect(page.getByTestId("theme-card-github-dark")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("theme-card-github-dark")).toHaveAttribute("aria-checked", "true");
     await page.getByTestId("theme-card-dracula").click();
     await expect(preview(page)).toHaveAttribute("data-mode", "dark");
     await expect(preview(page)).toHaveClass(/\bdark\b/);
@@ -210,7 +210,7 @@ test.describe("first-run setup", () => {
       await last.scrollIntoViewIfNeeded();
       await expect(last).toBeInViewport({ ratio: 1 });
       await last.click();
-      await expect(last).toHaveAttribute("aria-pressed", "true");
+      await expect(last).toHaveAttribute("aria-checked", "true");
       await expect(page.getByTestId("first-run-continue")).toBeInViewport({ ratio: 1 });
     });
   });
