@@ -52,7 +52,7 @@
 
 - App name **Terno**; logo `brand/terno-icon.svg` exported at 120 × 120 px.
 - Home page `https://terno.app/`, privacy policy `https://terno.app/privacy/`, authorized domain `terno.app`.
-- **Support email and developer contact: needed.** Set up `privacy@terno.app` (Cloudflare Email Routing to your inbox), then use it here and in the policy's Contact section.
+- **Support email and developer contact:** `privacy@terno.app`. Cloudflare Email Routing forwards it, with `support@`, `luis@` and `l@terno.app`, to the maintainer's inbox; the policy's Contact section links to it.
 - Terms of service: optional, so left out. LICENSE covers the software.
 - Prove you own `terno.app` in Google Search Console with a DNS TXT record in Cloudflare, using the Google account that owns the Cloud project.
 
@@ -104,7 +104,6 @@ Static HTML; no script added.
 ## Out of scope
 
 - The app changes listed above.
-- A support mailbox (it needs the maintainer's DNS and inbox).
 - Terms of service.
 
 ## What the Codex review changed

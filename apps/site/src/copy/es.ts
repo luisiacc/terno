@@ -253,7 +253,7 @@ export const es: SiteCopy = {
         {
           id: "contact",
           title: "Contacto",
-          body: ["Para preguntas sobre privacidad, o para que borremos tu entrada de la lista de espera, contacta con Luisiacc LLC a través de [github.com/luisiacc](https://github.com/luisiacc)."],
+          body: ["Para preguntas sobre privacidad, o para que borremos tu entrada de la lista de espera, escribe a Luisiacc LLC a [privacy@terno.app](mailto:privacy@terno.app)."],
         },
       ],
     },

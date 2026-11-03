@@ -113,6 +113,14 @@ describe("the privacy policy", () => {
     expect(section("delete")).toContain("14 days or more after the update");
   });
 
+  it("the contact is a mailbox Google's consent screen can also use (plan 124)", () => {
+    for (const path of ["/privacy/", "/es/privacy/"]) {
+      const link = page(path).querySelector<HTMLAnchorElement>("#contact a[href^='mailto:']")!;
+      expect(link.getAttribute("href")).toBe("mailto:privacy@terno.app");
+      expect(link.textContent).toBe("privacy@terno.app");
+    }
+  });
+
   it("no mark is left as literal text", () => {
     for (const path of ["/privacy/", "/es/privacy/"]) {
       const text = page(path).querySelector("main")!.textContent!;

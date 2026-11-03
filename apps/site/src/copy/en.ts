@@ -263,7 +263,7 @@ export const en = {
         {
           id: "contact",
           title: "Contact",
-          body: ["For questions about privacy, or to have your waitlist entry removed, reach Luisiacc LLC through [github.com/luisiacc](https://github.com/luisiacc)."],
+          body: ["For questions about privacy, or to have your waitlist entry removed, email Luisiacc LLC at [privacy@terno.app](mailto:privacy@terno.app)."],
         },
       ]),
     },
