@@ -45,7 +45,7 @@ describe("Announcement (plan 125)", () => {
         <Announcement title="Plain" />
       </>
     );
-    const [group, plain] = host.querySelectorAll<HTMLElement>("[data-slot=announcement]");
+    const [group, plain] = [...host.querySelectorAll<HTMLElement>("[data-slot=announcement]")] as [HTMLElement, HTMLElement];
     const title = host.querySelector<HTMLElement>("[data-testid=t]")!;
     expect(group.getAttribute("aria-labelledby")).toBe(title.id);
     expect(plain.hasAttribute("aria-labelledby")).toBe(false);

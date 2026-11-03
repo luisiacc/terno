@@ -57,7 +57,7 @@ describe("IconButton (plan 125)", () => {
         <IconButton label="B" variant="secondary" size="icon"><Archive /></IconButton>
       </>
     );
-    const [ghost, secondary] = host.querySelectorAll("button");
+    const [ghost, secondary] = [...host.querySelectorAll("button")] as [HTMLButtonElement, HTMLButtonElement];
     expect(ghost.className).toContain("text-muted-foreground");
     expect(ghost.className).toContain("size-7");
     expect(secondary.className).toContain("border-border");
