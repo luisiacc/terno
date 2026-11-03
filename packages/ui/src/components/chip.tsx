@@ -9,7 +9,7 @@ type ChipProps = React.ComponentProps<"span"> & {
     | { onRemove?: undefined; removeLabel?: never; removeProps?: never }
     | {
         /** shows a small round × at the end */
-        onRemove: () => void
+        onRemove: (event: React.MouseEvent<HTMLButtonElement>) => void
         /** names the × after the chip: "Remove Work", "Not Work" */
         removeLabel: string
         removeProps?: Omit<React.ComponentProps<typeof CloseButton>, "label" | "onClick" | "size"> & { "data-testid"?: string }
