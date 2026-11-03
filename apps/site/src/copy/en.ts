@@ -178,13 +178,13 @@ export const en = {
         {
           id: "connections",
           title: "Who the app talks to",
-          body: ["Besides your mail providers, Terno reaches the internet only for these, each of which you control:"],
+          body: ["Besides your mail providers, Terno reaches the internet only for these:"],
           points: [
             "**Your mail providers** (Gmail, iCloud, Outlook or any IMAP/SMTP server), to fetch, send and organize your mail.",
             "**Website icons.** To show a company’s logo next to its mail, Terno asks that company’s own website for its icon. The site sees your IP address and nothing else. On by default; turn it off in Settings → Appearance.",
             "**Photos from Google.** With a Google account, Terno can show your Google contacts’ photos. You can turn it off in Settings → Appearance.",
             "**Remote images in messages** load only when you choose to, for one message or always. The sender’s server then sees your IP address, as with any mail app.",
-            "**Updates.** Terno checks GitHub for new versions. Nothing about you or your mail is sent.",
+            "**Updates.** Terno checks GitHub for a new version after it opens and every few hours. Nothing about you or your mail is sent. In Settings → General you choose whether new versions download on their own.",
             "**AI**, only if you set up a provider. See [AI providers](#ai).",
             "**Error reports**, only if you agree. See [Error reports](#errors).",
             "**Unsubscribing.** When you click Unsubscribe, Terno contacts the address the sender gave for it.",
@@ -197,9 +197,9 @@ export const en = {
             "When you connect a Google account, Google asks you to allow Terno to:",
           ],
           points: [
-            "**See your name, email address and profile picture**, to identify the account in Terno.",
+            "**See your name, email address and profile picture**, to identify the account in Terno and, with Photos from Google on, to show your picture on the mail you send.",
             "**Read, send, label and delete your Gmail mail** (the `gmail.modify` permission), so you can read, search, send, archive, label and delete your mail in Terno.",
-            "**See your contacts’ photos** (read-only access to your contacts and other contacts), only to show the photos of the people who write to you. You can untick this on Google’s screen.",
+            "**See your contacts’ email addresses and photos** (read-only access to your contacts and other contacts), only to put the right photo next to the people who write to you. You can untick this on Google’s screen.",
           ],
           after: [
             "Terno uses this data only to provide the features you see in the app. It is stored on your Mac and is never sent to us. We don’t sell it, use it for advertising, use it to build profiles of you, or use it to develop, improve or train AI models, and no person at Luisiacc LLC reads it.",
@@ -224,14 +224,14 @@ export const en = {
           id: "agents",
           title: "AI tools on your Mac",
           body: [
-            "Terno includes a connector (MCP) that AI tools on your Mac, such as Claude, can use to search, read, organize and draft your mail. It works only for apps on your Mac that you set it up in. What those tools do with your mail is up to them and their provider. Sending mail through them needs its own switch, off by default.",
+            "Terno includes a connector (MCP) that AI tools on your Mac, such as Claude, can use to search, read, organize and draft your mail once you add it to them. It can’t be reached from the network: only programs running as you on your Mac, holding a key kept in your Terno folder, can use it, the same programs that could open your mail files directly. What those tools do with your mail is up to them and their provider. Sending mail through them needs its own switch, off by default.",
           ],
         },
         {
           id: "errors",
           title: "Error reports",
           body: [
-            "When something goes wrong, Terno asks before sending a report (you can choose Always or Never instead). A report holds the error, where in Terno’s code it happened, the app and macOS versions, how many accounts you have, and a random ID you can reset. It never holds your mail, addresses, names or subjects. Reports go to Sentry, the service we use to track errors.",
+            "When something goes wrong, Terno asks before sending a report (you can choose Always or Never instead), and you can see exactly what it holds first: the error and where in Terno’s code it happened; the steps just before it, as codes (such as which view or dialog was open); the app and macOS versions, your language and the kind of Mac (processor and memory); how many accounts you have; and a random ID you can reset. It never holds your mail, addresses, names or subjects. Reports go to Sentry, the service we use to track errors.",
             "Terno keeps its own logs on your Mac, limited in size. They don’t contain your mail or addresses.",
           ],
         },
@@ -239,7 +239,7 @@ export const en = {
           id: "delete",
           title: "Removing your data",
           body: [
-            "Removing an account in Settings → Accounts deletes its mail, tokens and pictures from your Mac. To remove everything, quit Terno and delete the folder `~/Library/Application Support/Terno` and the Keychain item “Terno Safe Storage”. Copies Terno makes before upgrading your mailbox are deleted after 14 days.",
+            "Removing an account in Settings → Accounts deletes its mail, sign-in tokens and pictures from Terno’s mailbox. Before an update changes how your mailbox is stored, Terno keeps a copy of it in case something goes wrong; a copy made before you removed the account still holds it until the copy is deleted, the first time Terno opens 14 days or more after the update. To remove everything at once, quit Terno and delete the folder `~/Library/Application Support/Terno` and the Keychain item “Terno Safe Storage”.",
           ],
         },
         {

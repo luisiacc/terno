@@ -168,13 +168,13 @@ export const es: SiteCopy = {
         {
           id: "connections",
           title: "Con quién habla la app",
-          body: ["Además de con tus proveedores de correo, Terno solo se conecta a internet para lo siguiente, y tú decides sobre cada cosa:"],
+          body: ["Además de con tus proveedores de correo, Terno solo se conecta a internet para lo siguiente:"],
           points: [
             "**Tus proveedores de correo** (Gmail, iCloud, Outlook o cualquier servidor IMAP/SMTP), para descargar, enviar y organizar tu correo.",
             "**Iconos de sitios web.** Para mostrar el logo de una empresa junto a su correo, Terno pide el icono al propio sitio web de esa empresa. El sitio ve tu dirección IP y nada más. Activado por defecto; puedes desactivarlo en Ajustes → Apariencia.",
             "**Fotos de Google.** Con una cuenta de Google, Terno puede mostrar las fotos de tus contactos de Google. Puedes desactivarlo en Ajustes → Apariencia.",
             "**Las imágenes remotas de los mensajes** solo se cargan cuando tú lo decides, para un mensaje o siempre. Entonces el servidor del remitente ve tu dirección IP, como con cualquier app de correo.",
-            "**Actualizaciones.** Terno consulta GitHub para ver si hay versiones nuevas. No se envía nada sobre ti ni sobre tu correo.",
+            "**Actualizaciones.** Terno consulta GitHub si hay una versión nueva al abrirse y cada pocas horas. No se envía nada sobre ti ni sobre tu correo. En Ajustes → General eliges si las versiones nuevas se descargan solas.",
             "**IA**, solo si configuras un proveedor. Consulta [Proveedores de IA](#ai).",
             "**Informes de error**, solo si aceptas. Consulta [Informes de error](#errors).",
             "**Cancelar suscripciones.** Cuando pulsas Cancelar suscripción, Terno contacta con la dirección que el remitente dio para ello.",
@@ -187,9 +187,9 @@ export const es: SiteCopy = {
             "Cuando conectas una cuenta de Google, Google te pide que permitas a Terno:",
           ],
           points: [
-            "**Ver tu nombre, tu dirección de correo y tu foto de perfil**, para identificar la cuenta en Terno.",
+            "**Ver tu nombre, tu dirección de correo y tu foto de perfil**, para identificar la cuenta en Terno y, con Fotos de Google activado, mostrar tu foto en el correo que envías.",
             "**Leer, enviar, etiquetar y eliminar tu correo de Gmail** (el permiso `gmail.modify`), para que puedas leer, buscar, enviar, archivar, etiquetar y eliminar tu correo en Terno.",
-            "**Ver las fotos de tus contactos** (acceso de solo lectura a tus contactos y a otros contactos), solo para mostrar las fotos de quienes te escriben. Puedes desmarcarlo en la pantalla de Google.",
+            "**Ver las direcciones de correo y las fotos de tus contactos** (acceso de solo lectura a tus contactos y a otros contactos), solo para poner la foto correcta junto a quienes te escriben. Puedes desmarcarlo en la pantalla de Google.",
           ],
           after: [
             "Terno usa estos datos solo para ofrecerte las funciones que ves en la app. Se guardan en tu Mac y nunca se nos envían. No los vendemos, no los usamos para publicidad ni para crear perfiles tuyos, ni para desarrollar, mejorar o entrenar modelos de IA, y nadie en Luisiacc LLC los lee.",
@@ -214,14 +214,14 @@ export const es: SiteCopy = {
           id: "agents",
           title: "Herramientas de IA en tu Mac",
           body: [
-            "Terno incluye un conector (MCP) que las herramientas de IA de tu Mac, como Claude, pueden usar para buscar, leer, organizar y redactar tu correo. Solo funciona en las apps de tu Mac en las que lo configures. Lo que esas herramientas hagan con tu correo depende de ellas y de su proveedor. Enviar correo a través de ellas necesita su propio interruptor, desactivado por defecto.",
+            "Terno incluye un conector (MCP) que las herramientas de IA de tu Mac, como Claude, pueden usar para buscar, leer, organizar y redactar tu correo cuando lo añades a ellas. No se puede alcanzar desde la red: solo pueden usarlo los programas que se ejecutan con tu usuario en tu Mac y tienen una clave guardada en tu carpeta de Terno, los mismos programas que podrían abrir directamente tus archivos de correo. Lo que esas herramientas hagan con tu correo depende de ellas y de su proveedor. Enviar correo a través de ellas necesita su propio interruptor, desactivado por defecto.",
           ],
         },
         {
           id: "errors",
           title: "Informes de error",
           body: [
-            "Cuando algo falla, Terno pregunta antes de enviar un informe (también puedes elegir Siempre o Nunca). Un informe contiene el error, en qué parte del código de Terno ocurrió, las versiones de la app y de macOS, cuántas cuentas tienes y un identificador aleatorio que puedes restablecer. Nunca contiene tu correo, direcciones, nombres ni asuntos. Los informes van a Sentry, el servicio que usamos para seguir los errores.",
+            "Cuando algo falla, Terno pregunta antes de enviar un informe (también puedes elegir Siempre o Nunca), y antes puedes ver exactamente qué contiene: el error y en qué parte del código de Terno ocurrió; los pasos justo anteriores, como códigos (por ejemplo, qué vista o diálogo estaba abierto); las versiones de la app y de macOS, tu idioma y el tipo de Mac (procesador y memoria); cuántas cuentas tienes; y un identificador aleatorio que puedes restablecer. Nunca contiene tu correo, direcciones, nombres ni asuntos. Los informes van a Sentry, el servicio que usamos para seguir los errores.",
             "Terno guarda sus propios registros en tu Mac, con un tamaño limitado. No contienen tu correo ni direcciones.",
           ],
         },
@@ -229,7 +229,7 @@ export const es: SiteCopy = {
           id: "delete",
           title: "Borrar tus datos",
           body: [
-            "Eliminar una cuenta en Ajustes → Cuentas borra su correo, sus tokens y sus imágenes de tu Mac. Para borrarlo todo, cierra Terno y elimina la carpeta `~/Library/Application Support/Terno` y el ítem del Llavero «Terno Safe Storage». Las copias que Terno hace antes de actualizar tu buzón se borran a los 14 días.",
+            "Eliminar una cuenta en Ajustes → Cuentas borra su correo, sus tokens de inicio de sesión y sus imágenes del buzón de Terno. Antes de que una actualización cambie cómo se guarda tu buzón, Terno guarda una copia por si algo sale mal; una copia hecha antes de que eliminaras la cuenta la sigue conteniendo hasta que se borra, la primera vez que Terno se abre 14 días o más después de la actualización. Para borrarlo todo de una vez, cierra Terno y elimina la carpeta `~/Library/Application Support/Terno` y el ítem del Llavero «Terno Safe Storage».",
           ],
         },
         {

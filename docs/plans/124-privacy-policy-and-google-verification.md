@@ -58,23 +58,28 @@
 
 ### Scope justifications (Data Access)
 
-- **`openid`, `email`, `profile`** (non-sensitive): identify which Google account was connected and show its name and picture in the account list.
+- **`openid`, `email`, `profile`** (non-sensitive): identify which Google account was connected (its address and name in the account list), and with "Photos from Google" on, show the user's own picture on the mail they send.
 - **`https://www.googleapis.com/auth/gmail.modify`** (restricted):
-  > Terno is a desktop email client for macOS. Users read, search, send, archive, label, move to trash and mark as read their Gmail messages in Terno. It needs to read messages and history to show and search the mailbox (synced to a local database on the user's Mac), send to send replies and new mail, and modify labels to archive, file in categories, mark read and trash. gmail.readonly can't send or change labels, and gmail.send plus gmail.labels can't read mail. gmail.modify is the narrowest scope that covers a full mail client, and Terno doesn't request https://mail.google.com/ because it never deletes permanently. All Gmail data stays on the user's device; Terno has no server that receives it.
+  > Terno is a desktop email client for macOS. Users read, search, send, archive, label, move to trash and mark as read their Gmail messages in Terno. It needs to read messages and history to show and search the mailbox (synced to a local database on the user's Mac), send to send replies and new mail, and modify labels to archive, file in categories, mark read and trash. gmail.readonly can't send or change labels, and gmail.send plus gmail.labels can't read mail. gmail.modify is the narrowest scope that covers a full mail client, and Terno doesn't request https://mail.google.com/ because it never deletes permanently. Gmail data is stored only on the user's device, and Terno has no server that receives it. The one exception is optional and set up by the user: if they choose a cloud AI provider and turn on an AI feature, Terno sends that provider, directly from the device, only what the feature needs. For "help sorting into categories" that is the sender's name and address, the subject and the first 600 characters of a message Terno couldn't sort on its own. AI is off by default, and the privacy policy lists what each feature sends.
 - **`https://www.googleapis.com/auth/contacts.readonly`, `.../contacts.other.readonly`** (sensitive):
-  > Used only to show the profile photos of the people in the user's message list, read through the People API (`personFields=photos`, `readMask=photos`). The photo list and images are cached on the user's Mac. Users can untick the permission on the consent screen, or turn the feature off in Settings → Appearance.
+  > Used only to show the profile photos of the people in the user's message list. Terno reads each contact's email addresses and photo through the People API (`people/me/connections?personFields=emailAddresses,photos`, `otherContacts?readMask=emailAddresses,photos`), so it can match a photo to the sender of a message. Only the address-to-photo list and the images are kept, cached on the user's Mac; no other contact data is read. Users can untick the permission on the consent screen, or turn the feature off in Settings → Appearance.
 
 ### Demo video (unlisted YouTube, English, about 3 minutes)
 
 1. Open Terno and choose Add account → Google. Show the browser consent screen with the app name "Terno". Show the address bar long enough for the `client_id` to be readable, and show each permission.
 2. **gmail.modify:** the inbox loading; opening and searching a message; replying (show it arriving); archiving, filing in a category, marking read, moving to trash; then the same changes in Gmail on the web.
 3. **contacts:** sender photos in the list, then the Settings → Appearance switch.
-4. **openid/email/profile:** the account in Settings → Accounts with its name and picture.
+4. **openid/email/profile:** the account in Settings → Accounts with its address and name, then your own picture on a message you sent (Photos from Google on).
 5. Remove the account, then remove Terno at myaccount.google.com/permissions.
 
 ### The security assessment (CASA)
 
-Restricted scopes normally need a yearly third-party assessment. Google aims it at apps that store or send restricted data on their own servers. When asked, state that Terno is a client-side desktop app: Gmail data goes only between Google and the user's Mac, and Terno has no backend that receives it (the source is public at github.com/luisiacc/terno). Google decides whether that is enough, so leave time for an assessment in the schedule anyway.
+Restricted scopes normally need a yearly third-party assessment. Google's criteria cover restricted data stored on, or passed through, servers: the developer's own servers **and third parties'**. When asked, state the facts:
+
+- Terno is a client-side desktop app with no backend that receives Gmail data (the source is public at github.com/luisiacc/terno).
+- The only third parties that can receive it are the cloud AI provider the user chooses, for the AI features they turn on (off by default), and local MCP tools the user connects.
+
+Google may count the AI transfer and require the assessment anyway, so plan time and money for it. One way to avoid it is to keep Gmail-derived content away from cloud AI providers, allowing only local models for Gmail accounts. That would cost a feature, so it's a product decision.
 
 ### App changes that would make review smoother (not done here)
 
@@ -101,3 +106,17 @@ Static HTML; no script added.
 - The app changes listed above.
 - A support mailbox (it needs the maintainer's DNS and inbox).
 - Terms of service.
+
+## What the Codex review changed
+
+Codex reviewed `052b2053` and raised 7 points, all fixed:
+
+1. **Account removal and upgrade backups.** A pre-upgrade backup still holds a removed account until it expires, and it expires at the first open 14 days or more after the upgrade, not on a timer. The policy now says so.
+2. **MCP.** The connector always runs, gated by a token file that any program running as the user can read; nothing authorizes it per app. The policy now describes that boundary instead of "only apps you set it up in".
+3. **AI in the verification material.** The gmail.modify justification and the CASA section claimed Gmail data never leaves the device. Both now disclose the optional transfer to the user's chosen AI provider, and that Google's assessment criteria include third-party servers.
+4. **Error reports** also carry coded breadcrumbs (views, dialogs), the locale and the kind of Mac; the policy lists them.
+5. **Update checks can't be turned off**, only automatic downloads. The connections list no longer says every item is user-controlled.
+6. **Contacts.** Terno reads `emailAddresses,photos` to match photos to senders. The scope justification and the policy say so.
+7. **Own picture.** It is shown on the user's own messages, not in Settings → Accounts. The justification and the demo script were corrected.
+
+Points 2 and 5 are honest descriptions of the current app. Opt-in MCP and a way to turn update checks off would be app changes.

@@ -95,6 +95,24 @@ describe("the privacy policy", () => {
     expect(COPY.es.pages.privacy.sections.map((s) => s.id)).toEqual(COPY.en.pages.privacy.sections.map((s) => s.id));
   });
 
+  it("states what the code does, not more (the review's corrections)", () => {
+    const doc = page("/privacy/");
+    const section = (id: string) => doc.getElementById(id)!.textContent!;
+    // update checks run whatever the setting; only the download is a choice
+    expect(section("connections")).not.toContain("you control");
+    expect(section("connections")).toContain("every few hours");
+    // People API reads addresses to match photos (google-photos.ts), and the own picture is for sent mail
+    expect(section("google")).toContain("email addresses and photos");
+    expect(section("google")).toContain("the mail you send");
+    // the connector is gated by a token file, not per app
+    expect(section("agents")).toContain("key kept in your Terno folder");
+    expect(section("agents")).not.toContain("set it up in");
+    // reports carry coded breadcrumbs and device facts
+    expect(section("errors")).toContain("the steps just before it");
+    // a pre-upgrade backup outlives a removed account until it expires at a later open
+    expect(section("delete")).toContain("14 days or more after the update");
+  });
+
   it("no mark is left as literal text", () => {
     for (const path of ["/privacy/", "/es/privacy/"]) {
       const text = page(path).querySelector("main")!.textContent!;
