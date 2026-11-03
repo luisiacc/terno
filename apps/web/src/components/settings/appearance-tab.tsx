@@ -305,7 +305,7 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
       <SettingsGroup>
         <SettingsRow label={t("settings.appearance.mode")} hint={t("settings.appearance.mode.hint")}>
           {(a) => (
-            <ToggleGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} variant="outline" size="sm" value={[settings.theme]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ theme: v[0] as AppSettings["theme"] })} data-testid="mode-toggle">
+            <ToggleGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} variant="segmented" value={[settings.theme]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ theme: v[0] as AppSettings["theme"] })} data-testid="mode-toggle">
               <ToggleGroupItem value="system" data-testid="mode-system">{t("settings.appearance.system")}</ToggleGroupItem>
               <ToggleGroupItem value="light" data-testid="mode-light">{t("settings.appearance.light")}</ToggleGroupItem>
               <ToggleGroupItem value="dark" data-testid="mode-dark">{t("settings.appearance.dark")}</ToggleGroupItem>
@@ -327,8 +327,7 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
               <ToggleGroup
                 aria-labelledby={a["aria-labelledby"]}
                 aria-describedby={a["aria-describedby"]}
-                variant="outline"
-                size="sm"
+                variant="segmented"
                 value={[String(settings.motionMs)]}
                 onValueChange={(v: string[]) => {
                   if (!v[0]) return;
@@ -348,7 +347,7 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
         </SettingsRow>
         <SettingsRow stacked label={t("settings.appearance.htmlMail")} hint={t("settings.appearance.htmlMail.hint")}>
           {(a) => (
-            <ToggleGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} variant="outline" size="sm" value={[settings.htmlMailAppearance]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ htmlMailAppearance: v[0] as AppSettings["htmlMailAppearance"] })} data-testid="mail-appearance-toggle">
+            <ToggleGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} variant="segmented" value={[settings.htmlMailAppearance]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ htmlMailAppearance: v[0] as AppSettings["htmlMailAppearance"] })} data-testid="mail-appearance-toggle">
               <ToggleGroupItem value="auto" data-testid="mail-auto">{t("settings.appearance.htmlMail.auto")}</ToggleGroupItem>
               <ToggleGroupItem value="paper" data-testid="mail-paper">{t("settings.appearance.htmlMail.paper")}</ToggleGroupItem>
             </ToggleGroup>

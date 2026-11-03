@@ -215,7 +215,7 @@ export function FirstRun() {
         <div className="mt-4 mb-1 flex shrink-0 items-center justify-between gap-2">
           <h3 className="type-section-label text-muted-foreground">{t("firstRun.look.colors")}</h3>
           {/* the appearance itself (Settings' Mode): System follows the Mac, Light and Dark stay put */}
-          <ToggleGroup aria-label={t("firstRun.look.mode")} variant="outline" size="sm" value={[settings.theme]} onValueChange={(v: string[]) => v[0] && pick({ theme: v[0] as AppSettings["theme"] })} data-testid="first-run-look-mode">
+          <ToggleGroup aria-label={t("firstRun.look.mode")} variant="segmented" value={[settings.theme]} onValueChange={(v: string[]) => v[0] && pick({ theme: v[0] as AppSettings["theme"] })} data-testid="first-run-look-mode">
             <ToggleGroupItem value="system" data-testid="first-run-look-system" className="gap-1.5">
               <Laptop aria-hidden />
               {t("settings.appearance.system")}

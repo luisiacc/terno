@@ -13,7 +13,8 @@ function Separator({
       data-slot="separator"
       orientation={orientation}
       className={cn(
-        "shrink-0 bg-border data-horizontal:h-px data-horizontal:w-full data-vertical:w-px data-vertical:self-stretch",
+        // BoardUI's divider (plan 120), drawn as the app's hairlines
+        "shrink-0 bg-hairline data-horizontal:h-(--hairline-w) data-horizontal:w-full data-vertical:w-(--hairline-w) data-vertical:self-stretch",
         className
       )}
       {...props}

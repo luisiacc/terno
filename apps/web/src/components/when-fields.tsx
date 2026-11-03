@@ -51,7 +51,7 @@ export function WhenFields({ when, testPrefix, describedBy }: { when: ReturnType
             </Button>
           }
         />
-        <PopoverContent side="bottom" align="start" sideOffset={6} className="w-auto p-2.5" data-testid={`${testPrefix}-calendar`}>
+        <PopoverContent side="bottom" align="start" sideOffset={6} className="w-auto rounded-[calc(var(--radius-md)+var(--spacing)*2.5)] p-2.5" data-testid={`${testPrefix}-calendar`}>
           <Calendar
             mode="single"
             required

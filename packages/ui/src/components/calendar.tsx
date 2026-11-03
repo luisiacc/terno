@@ -23,20 +23,21 @@ function Calendar({ className, classNames, showOutsideDays = true, components, .
         root: cn("w-fit", d.root),
         months: cn("relative flex flex-col", d.months),
         month: cn("flex w-full flex-col gap-2", d.month),
-        nav: cn("absolute top-0 right-0 flex items-center gap-0.5", d.nav),
+        // BoardUI's date picker (plan 120): the month centered between the arrows
+        nav: cn("absolute inset-x-0 top-0 flex items-center justify-between", d.nav),
         button_previous: cn(
-          "inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring aria-disabled:pointer-events-none aria-disabled:opacity-40",
+          "inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-disabled:pointer-events-none aria-disabled:opacity-40",
           d.button_previous
         ),
         button_next: cn(
-          "inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring aria-disabled:pointer-events-none aria-disabled:opacity-40",
+          "inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-disabled:pointer-events-none aria-disabled:opacity-40",
           d.button_next
         ),
-        month_caption: cn("flex h-7 items-center pl-1.5", d.month_caption),
-        caption_label: cn("text-sm font-semibold tracking-tight", d.caption_label),
+        month_caption: cn("flex h-7 items-center justify-center", d.month_caption),
+        caption_label: cn("text-sm font-medium", d.caption_label),
         month_grid: cn("w-full border-collapse", d.month_grid),
         weekdays: cn("flex", d.weekdays),
-        weekday: cn("w-(--cell) text-center text-2xs font-medium text-muted-foreground", d.weekday),
+        weekday: cn("w-(--cell) pb-1 text-center text-xs font-medium text-muted-foreground", d.weekday),
         week: cn("mt-0.5 flex w-full", d.week),
         day: cn("size-(--cell) p-0 text-center", d.day),
         today: cn("today", d.today),
@@ -73,10 +74,12 @@ function CalendarDayButton({ className, day, modifiers, ...props }: React.Compon
       data-outside={modifiers.outside || undefined}
       className={cn(
         "inline-flex size-(--cell) items-center justify-center rounded-md text-sm tabular-nums outline-none",
-        "hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
+        // BoardUI's day (plan 120): a neutral hover; the chosen day in a wash of the primary with the ink's text (contrast.ts)
+        "hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
         "data-outside:text-muted-foreground",
-        "data-today:font-semibold data-today:text-primary",
-        "data-selected:bg-primary data-selected:font-semibold data-selected:text-primary-foreground data-selected:hover:bg-primary data-selected:hover:text-primary-foreground",
+        // today in the primary only at rest: on the hover fill and the chosen wash its text is the ink (contrast.ts pairs)
+        "data-today:font-semibold data-today:text-primary data-today:hover:text-foreground data-today:data-selected:text-foreground",
+        "data-selected:bg-primary/15 data-selected:font-semibold data-selected:text-foreground data-selected:hover:bg-primary/15",
         "disabled:pointer-events-none disabled:text-muted-foreground disabled:opacity-40",
         className
       )}

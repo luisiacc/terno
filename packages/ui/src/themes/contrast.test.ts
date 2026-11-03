@@ -22,7 +22,7 @@ describe("WCAG AA in every built-in theme", () => {
     // plan 15: unread ink on 4 surfaces, 8 badge inks over 5 row/draft surfaces, the sidebar's accent as text on 2
     // plan 34: an invalid recipient chip's mark on the chip
     // plan 66: a hovered sidebar row's four inks and its glyph
-    // a chosen outline toggle's text on the accent's wash over a tint group
+    // plan 120: the date picker's chosen day on the primary's wash in its popover
     // plan 94: a filled button's text on its hover fill
     // plan 118: a field's text and placeholder on its wash over 4 surfaces
     expect(CONTRAST_PAIRS).toHaveLength(49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8);

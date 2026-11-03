@@ -53,8 +53,8 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
         aria-label={t("remind.kind.label")}
         value={[kind]}
         onValueChange={(v: string[]) => v[0] && setKind(v[0] as ReminderKind)}
-        spacing={0}
-        className="flex w-full rounded-lg bg-muted p-0.5"
+        variant="segmented"
+        className="flex w-full"
         data-testid="remind-kind"
       >
         {(["always", "noReply"] as const).map((k) => (
@@ -62,7 +62,7 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
             key={k}
             value={k}
             data-testid={`remind-kind-${k}`}
-            className="h-7 flex-1 rounded-md px-2 text-xs font-medium text-muted-foreground hover:text-foreground data-pressed:bg-background data-pressed:text-foreground data-pressed:shadow-sm"
+            className="flex-1 px-2 text-xs"
           >
             {t(k === "noReply" ? "remind.kind.noReply" : "remind.kind.always")}
           </ToggleGroupItem>

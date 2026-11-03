@@ -238,8 +238,7 @@ export function GeneralTab({ settings, update }: { settings: AppSettings; update
             <ToggleGroup
               aria-labelledby={a["aria-labelledby"]}
               aria-describedby={a["aria-describedby"]}
-              variant="outline"
-              size="sm"
+              variant="segmented"
               value={[settings.layout]}
               onValueChange={(v: string[]) => v[0] && void updateAppearance({ layout: v[0] as AppSettings["layout"] })}
               data-testid="layout-toggle"

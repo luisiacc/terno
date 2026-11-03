@@ -1,5 +1,5 @@
 /**
- * Plans 117 and 118: the base controls of every design keep their states: an error border, focus under
+ * Plans 117, 118 and 120: the base controls of every design keep their states: an error border, focus under
  * hover, a disabled fill, and a primary whose text is on fills the contrast suite checks. The real components,
  * rendered to markup here, drawn by the app's own stylesheet in each design, against probes of the token they should show.
  */
@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { DESIGN_IDS } from "@terno/core";
-import { expect, focusList, test } from "./fixtures";
+import { expect, focusList, openRow, test } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 
@@ -57,7 +57,39 @@ for (const design of DESIGN_IDS) for (const mode of ["light", "dark"] as const) 
       await page.getByTestId("primary").hover();
       expect(await css(page, "primary", "background-image")).toBe("none");
     });
+
+    // plan 120: BoardUI's segmented control, tabs, avatar and divider
+    test("the segmented control: a track with a raised thumb, corners concentric", async ({ app: page }) => {
+      await segmented(page, "segmented", "segmented-on", "segmented-off", mode);
+    });
+
+    test("tabs: the default list is the segmented track; a line tab is chosen in the primary, underlined", async ({ app: page }) => {
+      expect(await css(page, "tabs", "background-color")).toBe(await css(page, mode === "light" ? "probe-field" : "probe-background", "background-color"));
+      expect(await css(page, "tab-on", "background-color")).toBe(await css(page, mode === "light" ? "probe-card" : "probe-muted", "background-color"));
+      expect(await css(page, "line-tab-on", "color")).toBe(await css(page, "probe-primary-ink", "color"));
+      const after = await page.getByTestId("line-tab-on").evaluate((el) => ({ bg: getComputedStyle(el, "::after").backgroundColor, opacity: getComputedStyle(el, "::after").opacity }));
+      expect(after).toEqual({ bg: await css(page, "probe-primary", "background-color"), opacity: "1" });
+    });
+
+    test("the avatar is round with no ring, 36 px when large; the divider is a hairline", async ({ app: page }) => {
+      const avatar = await page.getByTestId("avatar").evaluate((el) => ({ w: el.getBoundingClientRect().width, ring: getComputedStyle(el, "::after").content }));
+      expect(avatar).toEqual({ w: 36, ring: "none" });
+      expect(await css(page, "separator", "background-color")).toBe(await css(page, "probe-hairline", "background-color"));
+      expect(await css(page, "separator", "height")).toBe(await css(page, "probe-hairline", "height"));
+    });
   });
+}
+
+async function segmented(page: Page, track: string, on: string, off: string, mode: "light" | "dark") {
+  const light = mode === "light";
+  expect(await css(page, track, "background-color"), "the track").toBe(await css(page, light ? "probe-field" : "probe-background", "background-color"));
+  expect(await css(page, on, "background-color"), "the thumb").toBe(await css(page, light ? "probe-card" : "probe-muted", "background-color"));
+  expect(await css(page, off, "background-color"), "no thumb").toBe("rgba(0, 0, 0, 0)");
+  const r = await page.getByTestId(track).evaluate((el) => {
+    const item = el.querySelector("[data-slot=toggle-group-item]")!;
+    return { outer: parseFloat(getComputedStyle(el).borderTopLeftRadius), inner: parseFloat(getComputedStyle(item).borderTopLeftRadius), inset: item.getBoundingClientRect().left - el.getBoundingClientRect().left };
+  });
+  expect(Math.abs(r.outer - (r.inner + r.inset)), `track ${r.outer}px = item ${r.inner}px + inset ${r.inset}px`).toBeLessThanOrEqual(0.5);
 }
 
 // plan 118 review: call sites that restyle a control keep their states over its new base
@@ -78,6 +110,33 @@ for (const mode of ["light", "dark"] as const) {
       await expect(page.getByTestId("compose-send-later")).toHaveAttribute("aria-expanded", "true");
       expect(await css(page, "compose-send-later", "background-image")).toBe("none");
       expect(await css(page, "compose-send-later", "background-color")).toBe(await css(page, "probe-primary-hover", "background-color"));
+    });
+
+    // plan 120: the print sheet's and the remind popover's own segmented controls are the shared one
+    test("the print sheet's and the remind popover's choices are the segmented control", async ({ app: page }) => {
+      await openRow(page, 1);
+      await page.getByTestId("action-remind").click();
+      await segmented(page, "remind-kind", "remind-kind-always", "remind-kind-noReply", mode);
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("ControlOrMeta+p");
+      await segmented(page, "print-content", "print-content-headers", "print-content-body", mode);
+    });
+
+    test("the date picker's today keeps readable text when hovered and when chosen", async ({ app: page }) => {
+      await openRow(page, 1);
+      await page.getByTestId("action-remind").click();
+      const popover = page.getByTestId("remind-popover");
+      await popover.getByTestId("remind-pick").click();
+      await popover.getByTestId("remind-date").click();
+      const today = page.locator("[data-slot=calendar] button[data-today]");
+      const ink = await css(page, "probe-foreground", "color");
+      await today.hover();
+      expect(await today.evaluate((el) => getComputedStyle(el).color)).toBe(ink);
+      await today.click();
+      await popover.getByTestId("remind-date").click();
+      await expect(today).toHaveAttribute("data-selected", "true");
+      await page.mouse.move(1, 1);
+      expect(await today.evaluate((el) => getComputedStyle(el).color)).toBe(ink);
     });
 
     test("the draft's From selector fills on hover", async ({ app: page }) => {

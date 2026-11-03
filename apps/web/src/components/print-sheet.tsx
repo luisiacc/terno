@@ -295,16 +295,16 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
   );
 }
 
-/** A macOS segmented control: a recessed track, the chosen segment raised on it. */
+/** The segmented control (plan 120) with labels that may wrap: two lines of a long scope still fit the sheet. */
 function Segmented({ a, value, onChange, items, testId, full }: { a: { "aria-labelledby": string; "aria-describedby"?: string }; value: string; onChange: (v: string) => void; items: [string, string][]; testId: string; full?: boolean }) {
   return (
     <ToggleGroup
       aria-labelledby={a["aria-labelledby"]}
       aria-describedby={a["aria-describedby"]}
-      spacing={0}
+      variant="segmented"
       value={[value]}
       onValueChange={(v: string[]) => v[0] && onChange(v[0])}
-      className={cn("gap-0 rounded-[calc(var(--radius-lg)+1px)] bg-foreground/[0.07] p-0.5", full && "w-full")}
+      className={cn(full && "w-full")}
       data-testid={testId}
     >
       {items.map(([v, label]) => (
@@ -313,7 +313,7 @@ function Segmented({ a, value, onChange, items, testId, full }: { a: { "aria-lab
           value={v}
           data-testid={`${testId}-${v}`}
           className={cn(
-            "min-h-6 h-auto min-w-0 rounded-[calc(var(--radius-md)+1px)]! px-3 py-0.5 text-[12.5px] leading-tight font-medium whitespace-normal text-muted-foreground transition-[background-color,color,box-shadow] hover:bg-transparent hover:text-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-raised dark:aria-pressed:bg-foreground/[0.14]",
+            "h-auto min-h-7 px-3 py-0.5 text-xs leading-tight whitespace-normal",
             full && "flex-1",
           )}
         >

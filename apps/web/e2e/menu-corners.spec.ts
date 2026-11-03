@@ -1,10 +1,10 @@
 /**
  * Plan 119: a panel of rows has corners concentric with its rows'. The panel's radius is the row's plus the inset
  * between them, so the two curves run parallel in every design: the send-later popover and its time list, a right-click
- * menu, the palette, the category picker.
+ * menu, the palette, the date picker, the category picker.
  */
 import type { Locator } from "@playwright/test";
-import { addRecipients, expect, focusList, rows, test } from "./fixtures";
+import { addRecipients, expect, focusList, openRow, rows, test } from "./fixtures";
 
 async function concentric(panel: Locator, row: Locator) {
   await expect(row).toBeVisible();
@@ -43,6 +43,17 @@ test.describe("menu corners are concentric with their rows (plan 119)", { tag: "
     await page.keyboard.press("ControlOrMeta+k");
     const dialog = page.locator("[data-slot=dialog-content]").filter({ has: page.locator("[data-slot=command]") });
     await concentric(dialog, dialog.locator("[data-slot=command-item]").first());
+  });
+
+  // plan 120: BoardUI's date picker, its days 2.5 in from the popover's edge
+  test("the date picker", async ({ app: page }) => {
+    await openRow(page, 1);
+    await page.getByTestId("action-remind").click();
+    await page.getByTestId("remind-pick").click();
+    await page.getByTestId("remind-date").click();
+    const calendar = page.getByTestId("remind-calendar");
+    // a full week's first day (the first week may start mid-row)
+    await concentric(calendar, calendar.locator("[data-slot=calendar] tbody tr").nth(1).locator("button[data-day]").first());
   });
 
   test("the category picker", async ({ app: page }) => {

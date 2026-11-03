@@ -68,13 +68,13 @@ export function SettingsDialog() {
           {/* macOS System Settings: a sidebar of sections with accent glyphs */}
           <nav className="hairline-r hairline-strong flex w-[180px] shrink-0 flex-col bg-sidebar px-2 pt-5 pb-3">
             <h2 className="mb-3 px-2 text-md font-semibold tracking-tight">{t("common.settings")}</h2>
-            <TabsList activateOnFocus className="w-full items-stretch bg-transparent p-0">
+            <TabsList activateOnFocus className="h-auto w-full items-stretch gap-0 rounded-none bg-transparent p-0 dark:bg-transparent">
               {SETTINGS_TABS.map(({ value, label, icon: Icon }) => (
                 <TabsTrigger
                   key={value}
                   value={value}
                   data-testid={`tab-${value}`}
-                  className="h-7 justify-start gap-2.5 rounded-md px-2 font-normal text-sidebar-foreground after:hidden not-data-active:hover:bg-sidebar-hover hover:text-sidebar-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-sidebar-accent"
+                  className="h-auto justify-start gap-2.5 rounded-md border border-transparent px-2 py-0.5 font-normal text-sidebar-foreground after:hidden not-data-active:hover:bg-sidebar-hover hover:text-sidebar-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-sidebar-accent dark:data-active:shadow-none"
                 >
                   <Icon className="size-4 text-sidebar-glyph" />
                   {label}

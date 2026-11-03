@@ -1,0 +1,25 @@
+import { openRow, test } from "./fixtures";
+const ctx = { clientId: "setup", origin: "dev" as const };
+const out = "/tmp/terno-scratch/five";
+for (const mode of ["light", "dark"] as const) test(`five ${mode}`, { tag: "@design" }, async ({ app: page, server }, info) => {
+  const d = info.project.name;
+  await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
+  await page.reload(); await page.locator("[data-ready]").waitFor();
+  const shot = async (sel: string, name: string, pad = 16) => { const el = page.locator(sel).first(); await el.waitFor(); await page.waitForTimeout(250); const b = (await el.boundingBox())!; await page.screenshot({ path: `${out}/${d}-${mode}-${name}.png`, clip: { x: Math.max(0, b.x - pad), y: Math.max(0, b.y - pad), width: b.width + 2 * pad, height: b.height + 2 * pad } }); };
+  await page.getByTestId("open-settings").click();
+  await page.getByTestId("tab-appearance").click();
+  await shot("[data-testid=settings-dialog]", "appearance", 0);
+  await page.getByTestId("tab-general").click();
+  await shot("[data-testid=settings-dialog]", "general", 0);
+  await page.keyboard.press("Escape");
+  await openRow(page, 1);
+  await page.getByTestId("action-remind").click();
+  const popover = page.getByTestId("remind-popover");
+  await popover.getByTestId("remind-pick").click();
+  await shot("[data-testid=remind-popover]", "remind");
+  await popover.getByTestId("remind-date").click();
+  await shot("[data-testid=remind-calendar]", "calendar");
+  await page.keyboard.press("Escape"); await page.keyboard.press("Escape");
+  await page.keyboard.press("Meta+p");
+  await shot("[data-testid=print-sheet]", "print", 0);
+});
