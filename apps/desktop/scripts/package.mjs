@@ -23,6 +23,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build, Platform, Arch } from "electron-builder";
 import { withMounted } from "../src/dmg-mount.ts";
+import { builderIdentity } from "./sign-identity.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -87,6 +88,19 @@ function assertCanSign(identity) {
   }
 }
 
+/** hdiutil, retried: a hosted runner's disk arbitration is sometimes briefly busy ("Resource busy"). */
+function hdiutil(args) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return execFileSync("hdiutil", args, { stdio: "inherit", timeout: 600_000 });
+    } catch (e) {
+      if (attempt === 3) throw e;
+      console.warn(`! hdiutil ${args[0]} failed (attempt ${attempt} of 3), retrying`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5_000);
+    }
+  }
+}
+
 /** Plan 19: the icon macOS shows: Assets.car's "Icon" on macOS 26, the .icns elsewhere. */
 function assertIcon(app) {
   const info = JSON.parse(execFileSync("plutil", ["-convert", "json", "-o", "-", join(app, "Contents/Info.plist")], { encoding: "utf8" }));
@@ -98,6 +112,8 @@ const identity = pickIdentity();
 const developerId = identity.startsWith("Developer ID Application:");
 const notarize = developerId && Boolean((process.env.APPLE_ID && process.env.APPLE_APP_SPECIFIC_PASSWORD && process.env.APPLE_TEAM_ID) || (process.env.APPLE_API_KEY && process.env.APPLE_API_KEY_ID && process.env.APPLE_API_ISSUER));
 assertCanSign(identity);
+// plan 126: a release built on GitHub ships only notarized (RELEASING.md lists the secrets)
+if (process.env.GITHUB_ACTIONS === "true" && process.env.TERNO_RELEASE === "1" && !testBuild && !notarize) throw new Error(`a release on GitHub must be notarized: ${developerId ? "set APPLE_API_KEY, APPLE_API_KEY_ID and APPLE_API_ISSUER" : "no Developer ID Application identity in the keychain"}`);
 console.log(`signing with ${identity === "-" ? "an ad-hoc signature (this build can't update itself)" : identity}${developerId ? `, hardened runtime${notarize ? ", notarized" : ", not notarized (no APPLE_* credentials)"}` : ""}`);
 
 // Source maps (archived by build.mjs, never in the app) go to Sentry for a release (plan 78)
@@ -147,7 +163,7 @@ await build({
       // CFBundleIconName points macOS at Assets.car's "Icon", the name actool gave it
       icon: join(root, "resources/icon.icns"),
       extendInfo: { CFBundleIconName: "Icon" },
-      identity,
+      identity: builderIdentity(identity),
       hardenedRuntime: developerId,
       entitlements: developerId ? join(root, "resources/entitlements.mac.plist") : undefined,
       entitlementsInherit: developerId ? join(root, "resources/entitlements.mac.plist") : undefined,
@@ -197,12 +213,12 @@ if (!testBuild && process.env.TERNO_PACKAGE_DMG !== "0") {
   if (existsSync("/usr/bin/SetFile")) {
     // a writable image first, so the mounted volume can take Terno's icon, then compressed
     const rw = join(release, "volume-rw.dmg");
-    execFileSync("hdiutil", ["create", "-volname", productName, "-srcfolder", app, "-ov", "-format", "UDRW", "-fs", "APFS", rw], { stdio: "inherit" });
+    hdiutil(["create", "-volname", productName, "-srcfolder", app, "-ov", "-format", "UDRW", "-fs", "APFS", rw]);
     withMounted(rw, false, (volume) => {
       copyFileSync(join(root, "resources/icon.icns"), join(volume, ".VolumeIcon.icns"));
       execFileSync("SetFile", ["-a", "C", volume]);
     });
-    execFileSync("hdiutil", ["convert", rw, "-format", "UDZO", "-ov", "-o", dmg], { stdio: "inherit" });
+    hdiutil(["convert", rw, "-format", "UDZO", "-ov", "-o", dmg]);
     rmSync(rw, { force: true });
     withMounted(dmg, true, (volume) => {
       if (!existsSync(join(volume, `${productName}.app`))) throw new Error(`the DMG has no ${productName}.app at its root`);
@@ -210,7 +226,7 @@ if (!testBuild && process.env.TERNO_PACKAGE_DMG !== "0") {
     });
   } else {
     console.log("! SetFile not found (Xcode command line tools): the DMG volume keeps the generic icon");
-    execFileSync("hdiutil", ["create", "-volname", productName, "-srcfolder", app, "-ov", "-format", "UDZO", "-fs", "APFS", dmg], { stdio: "inherit" });
+    hdiutil(["create", "-volname", productName, "-srcfolder", app, "-ov", "-format", "UDZO", "-fs", "APFS", dmg]);
   }
   console.log(`\n✓ ${dmg}`);
 }
