@@ -143,7 +143,10 @@ test("what the browser can't do is said plainly: IMAP and agents locked, honest 
   await expect(settings.getByTestId("desktop-only-agents")).toBeVisible();
   await expect(settings.getByTestId("mcp-claude")).toHaveCount(0);
   await settings.getByTestId("tab-accounts").click();
-  await expect(settings).toContainText("Web application");
+  await expect(settings.getByTestId("accounts-group")).toBeVisible();
+  // plan 123: Terno's own Google client, nothing to set up here
+  await expect(settings).not.toContainText("Google (Gmail)");
+  await expect(settings).not.toContainText("OAuth");
   await settings.getByRole("button", { name: "Add account" }).click();
   const add = page.getByTestId("add-account-dialog");
   await expect(add.getByTestId("desktop-only-imap")).toBeVisible();
