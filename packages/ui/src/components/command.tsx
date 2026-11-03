@@ -15,6 +15,7 @@ import {
   InputGroupAddon,
 } from "@terno/ui/components/input-group"
 import { Kbd, KbdGroup } from "@terno/ui/components/kbd"
+import { keyLabel } from "@terno/ui/components/shortcut"
 import { Search as SearchIcon, Check as CheckIcon } from "@terno/ui/icons"
 
 /*
@@ -86,17 +87,17 @@ function CommandHints({ className, ...props }: React.ComponentProps<"div">) {
     >
       <span className="flex items-center gap-1.5">
         <KbdGroup>
-          <Kbd>↑</Kbd>
-          <Kbd>↓</Kbd>
+          <Kbd>{keyLabel("arrowup")}</Kbd>
+          <Kbd>{keyLabel("arrowdown")}</Kbd>
         </KbdGroup>
         {t("ui.command.navigate")}
       </span>
       <span className="flex items-center gap-1.5">
-        <Kbd>↵</Kbd>
+        <Kbd>{keyLabel("enter")}</Kbd>
         {t("ui.command.select")}
       </span>
       <span className="flex items-center gap-1.5">
-        <Kbd>esc</Kbd>
+        <Kbd>{keyLabel("escape")}</Kbd>
         {t("ui.command.close")}
       </span>
     </div>

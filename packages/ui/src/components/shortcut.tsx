@@ -16,6 +16,11 @@ const SYMBOLS: Record<string, string> = {
   arrowdown: "↓",
 }
 
+/** One key's keycap text: "escape" → "esc", "arrowup" → "↑". */
+function keyLabel(key: string) {
+  return SYMBOLS[key] ?? key.toUpperCase()
+}
+
 /** Renders a binding like "mod+k" or "g i" as keycaps. */
 function Shortcut({ keys, className }: { keys: string; className?: string }) {
   return (
@@ -24,7 +29,7 @@ function Shortcut({ keys, className }: { keys: string; className?: string }) {
         <span key={i} className="inline-flex items-center gap-0.5">
           {i > 0 && <span className="px-0.5 text-2xs text-muted-foreground">{t("ui.shortcut.then")}</span>}
           {chord.split("+").map((k) => (
-            <Kbd key={k}>{SYMBOLS[k] ?? k.toUpperCase()}</Kbd>
+            <Kbd key={k}>{keyLabel(k)}</Kbd>
           ))}
         </span>
       ))}
@@ -32,4 +37,4 @@ function Shortcut({ keys, className }: { keys: string; className?: string }) {
   )
 }
 
-export { Shortcut }
+export { Shortcut, keyLabel }
