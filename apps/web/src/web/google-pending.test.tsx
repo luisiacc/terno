@@ -40,10 +40,18 @@ const MAIL = "https://www.googleapis.com/auth/gmail.modify";
 const CONTACTS = "https://www.googleapis.com/auth/contacts.readonly";
 
 // Codex review round 1 (plan 74)
-it("Add account reaching a waiting mailbox: contacts declined, it stops waiting", async () => {
+it("plan 125: Add account reaching a waiting mailbox asks for mail only, and the mailbox keeps waiting for its own sign-in", async () => {
   granted = MAIL;
   const { connectGmailWeb } = await import("./google");
   await connectGmailWeb();
+  // it didn't ask for contacts, so their absence isn't the user declining them
+  expect(calls.map((c) => c.method)).toEqual(["accounts.connectGmailToken"]);
+});
+
+it("a waiting account's own sign-in: contacts declined, it stops waiting", async () => {
+  granted = MAIL;
+  const { connectGmailWeb } = await import("./google");
+  await connectGmailWeb(ACCOUNT.email, ACCOUNT.id);
   expect(calls.map((c) => c.method)).toEqual(["accounts.connectGmailToken", "icons.googlePhotos"]);
   expect(calls[1]!.params).toEqual({ accountId: ACCOUNT.id, on: false });
 });
@@ -55,8 +63,9 @@ it("a waiting account's consent counts only if it still waits (the backend reads
   expect(calls.find((c) => c.method === "icons.authorizeGoogle")?.params).toMatchObject({ accountId: ACCOUNT.id, ifPending: true });
 });
 
-// Codex review round 2: Add account reaching a waiting mailbox, switched off while Google's popup is open
-it("Add account: a mailbox that waited before the popup is re-checked by the backend, even if switched off meanwhile", async () => {
+// Codex review round 2: Add account reaching a waiting mailbox, switched off while Google's popup is open. Plan 125:
+// Add account no longer asks for contacts, so an older grant Google hands back turns nothing on once it stopped waiting.
+it("Add account: a mailbox switched off while the popup was open gets nothing turned on", async () => {
   granted = `${MAIL} ${CONTACTS}`;
   const { setApp, getApp } = await import("~/state/app");
   vi.stubGlobal("google", {
@@ -74,8 +83,7 @@ it("Add account: a mailbox that waited before the popup is re-checked by the bac
   });
   const { connectGmailWeb } = await import("./google");
   await connectGmailWeb();
-  const authorize = calls.find((c) => c.method === "icons.authorizeGoogle");
-  expect(authorize?.params).toMatchObject({ accountId: ACCOUNT.id, ifPending: true });
+  expect(calls.map((c) => c.method)).toEqual(["accounts.connectGmailToken"]);
 });
 
 it("hovering or focusing Sign in now loads nothing from Google", async () => {

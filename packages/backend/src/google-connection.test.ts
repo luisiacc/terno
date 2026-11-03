@@ -15,7 +15,7 @@ const identity = { email: "reader@example.com", name: "Reader", sub: "google-sub
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
 
-async function setup(web = true) {
+async function setup(web = true, extra: Partial<ProviderRegistry> = {}) {
   let result: unknown = { ...identity, refreshToken: "synthetic-refresh" };
   let clock = 1_000_000;
   const installed = vi.fn();
@@ -25,6 +25,7 @@ async function setup(web = true) {
     create: () => ({ async verify() {}, async sync() {}, async execute() {}, async close() {} }),
     async verifyImap() {}, connectGmail: connect,
     ...(web && { gmailTokens: { inspect, set: installed } }),
+    ...extra,
   };
   const dir = mkdtempSync(join(tmpdir(), "terno-google-validation-"));
   const encrypt = vi.fn(plaintextCipher.encrypt);
@@ -50,13 +51,14 @@ describe("Google connection RPC validation", () => {
     expect(await t.client.call("app.bootstrap", {})).toMatchObject({ accounts: [], owner: null });
   });
 
-  it("plan 22: a new desktop sign-in asks for the contacts scopes too, and photos come on with what Google granted", async () => {
+  it("plan 125: a new desktop sign-in asks for mail only; photos stay off until the user turns them on", async () => {
     const t = await setup(false);
     const contacts = "https://www.googleapis.com/auth/contacts.readonly";
+    // even a grant that somehow carries contacts doesn't turn photos on by itself
     t.answer({ ...identity, grantedScopes: [...identity.grantedScopes, contacts], refreshToken: "synthetic-refresh" });
     const account = await t.client.call("accounts.connectGmail", {});
-    expect(t.connect.mock.calls[0]![0].scopes).toEqual(expect.arrayContaining([contacts, "https://www.googleapis.com/auth/contacts.other.readonly", "https://www.googleapis.com/auth/gmail.modify"]));
-    expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos[String(account.id)]).toEqual({ connections: true, otherContacts: false, apiDisabled: false });
+    expect(t.connect.mock.calls[0]![0].scopes).toEqual(["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.modify"]);
+    expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos[String(account.id)]).toBeUndefined();
   });
 
   it("plan 79: the days chosen when connecting are the new account's window, on desktop and the web; a reconnect keeps its own", async () => {
@@ -424,4 +426,80 @@ it("a browser reconnect reply projects verified recovery rather than its capture
   provider.sync = sync;
   const reconnected = await t.client.call("accounts.connectGmailToken", { accountId: account.id, accessToken: "synthetic-reconnected", expiresIn: 3600 });
   expect(reconnected.syncState).toMatchObject({ authRequired: false });
+});
+
+describe("plan 125: Remove account withdraws Terno's Google grant", () => {
+  const revoker = (outcome: "revoked" | "failed" = "revoked") => vi.fn<NonNullable<ProviderRegistry["revokeGoogle"]>>(async () => outcome);
+
+  it("desktop: the saved refresh token is revoked after the account is gone", async () => {
+    const revokeGoogle = revoker();
+    const t = await setup(false, { revokeGoogle });
+    t.answer({ ...identity, refreshToken: "synthetic-refresh" });
+    const account = await t.client.call("accounts.connectGmail", {});
+    revokeGoogle.mockImplementation(async () => {
+      // the local removal comes first: by the time Google is asked, the account is already gone
+      expect((await t.client.call("app.bootstrap", {})).accounts).toEqual([]);
+      return "revoked";
+    });
+    expect(await t.client.call("accounts.remove", { id: account.id })).toEqual({ ok: true, google: "revoked" });
+    expect(revokeGoogle).toHaveBeenCalledTimes(1);
+    expect(revokeGoogle.mock.calls[0]![0]).toBe("synthetic-refresh");
+  });
+
+  it("a failed revoke still removes the account, and says so", async () => {
+    const t = await setup(false, { revokeGoogle: revoker("failed") });
+    const account = await t.client.call("accounts.connectGmail", {});
+    expect(await t.client.call("accounts.remove", { id: account.id })).toEqual({ ok: true, google: "failed" });
+    expect((await t.client.call("app.bootstrap", {})).accounts).toEqual([]);
+  });
+
+  it("offline: Google isn't tried, and the user is told to do it by hand", async () => {
+    const revokeGoogle = revoker();
+    const t = await setup(false, { revokeGoogle });
+    const account = await t.client.call("accounts.connectGmail", {});
+    t.backend.connectivity.online = false;
+    expect(await t.client.call("accounts.remove", { id: account.id })).toEqual({ ok: true, google: "failed" });
+    expect(revokeGoogle).not.toHaveBeenCalled();
+  });
+
+  it("a saved token that can't be opened: the account still goes, and the user is told to check at Google", async () => {
+    const revokeGoogle = revoker();
+    const t = await setup(false, { revokeGoogle });
+    const account = await t.client.call("accounts.connectGmail", {});
+    vi.spyOn(t.backend, "getSecret").mockRejectedValue(new Error("sealed"));
+    expect(await t.client.call("accounts.remove", { id: account.id })).toEqual({ ok: true, google: "failed" });
+    expect(revokeGoogle).not.toHaveBeenCalled();
+    expect((await t.client.call("app.bootstrap", {})).accounts).toEqual([]);
+  });
+
+  it("an IMAP account never revokes", async () => {
+    const revokeGoogle = revoker();
+    const t = await setup(false, { revokeGoogle });
+    const account = await t.client.call("accounts.addImap", { email: "me@imap.example", displayName: "Me", imap: { host: "imap.example", port: 993, secure: true, user: "me" }, smtp: { host: "smtp.example", port: 465, secure: true, user: "me" }, password: "pw" });
+    expect(await t.client.call("accounts.remove", { id: account.id })).toEqual({ ok: true });
+    expect(revokeGoogle).not.toHaveBeenCalled();
+  });
+
+  it("a new Google sign-in waits for a removal's revoke still in flight (it would end the new grant)", async () => {
+    let finish!: (o: "revoked") => void;
+    const revokeGoogle = vi.fn<NonNullable<ProviderRegistry["revokeGoogle"]>>(() => new Promise((r) => { finish = r; }));
+    const t = await setup(false, { revokeGoogle });
+    const account = await t.client.call("accounts.connectGmail", {});
+    const removed = t.client.call("accounts.remove", { id: account.id });
+    await vi.waitFor(() => expect(revokeGoogle).toHaveBeenCalled());
+    t.connect.mockClear();
+    const again = t.client.call("accounts.connectGmail", {});
+    await new Promise((r) => setTimeout(r, 50));
+    expect(t.connect).not.toHaveBeenCalled();
+    finish("revoked");
+    expect(await removed).toEqual({ ok: true, google: "revoked" });
+    await again;
+    expect(t.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it("a registry without revoke (tests, demo) never tries, and the answer has no google field", async () => {
+    const t = await setup(false);
+    const account = await t.client.call("accounts.connectGmail", {});
+    expect(await t.client.call("accounts.remove", { id: account.id })).toEqual({ ok: true });
+  });
 });

@@ -104,6 +104,9 @@ describe("the privacy policy", () => {
     // People API reads addresses to match photos (google-photos.ts), and the own picture is for sent mail
     expect(section("google")).toContain("email addresses and photos");
     expect(section("google")).toContain("the mail you send");
+    // plan 125: contacts only with the photos switch; removal withdraws the grant
+    expect(section("google")).toContain("only when you turn on Photos from Google");
+    expect(section("google")).toContain("withdraws Terno’s access at Google");
     // the connector is gated by a token file, not per app
     expect(section("agents")).toContain("key kept in your Terno folder");
     expect(section("agents")).not.toContain("set it up in");

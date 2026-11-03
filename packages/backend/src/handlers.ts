@@ -18,7 +18,8 @@ import { deleteSnippet, listSnippets, saveSnippet } from "./snippets";
 import { followFavoriteFolders, readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
 import { countFolder, createFolder, deleteFolder, favoriteFolder, renameFolder } from "./folders";
 import { googleClientFor } from "./google-client";
-import { authorizeGooglePhotos, PHOTO_SCOPES, photoStateFrom, setGooglePhotos } from "./icons/google";
+import { authorizeGooglePhotos, setGooglePhotos } from "./icons/google";
+import { googleGrantOf, revokesSettled, withdrawGoogleGrant } from "./google-revoke";
 
 /** How long a recipient lookup waits for the index's first build (then answers with what it has: nothing). */
 const FIRST_BUILD_WAIT_MS = 250;
@@ -910,6 +911,8 @@ export function createHandlers(b: Backend): Handlers {
       const oauth = await googleClientFor(b);
       if (!oauth) throw new RpcError("BAD_REQUEST", L("errors.google.noClient"));
       if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));
+      // plan 125: a removal's revoke would end the grant this consent is about to make for the same person
+      await revokesSettled(b);
       const google = await b.initialGoogleRequests(true);
       const result = await b.options.providers.connectGmail({
         clientId: oauth.clientId,
@@ -918,8 +921,8 @@ export function createHandlers(b: Backend): Handlers {
         signal: b.abort.signal,
         fetch: b.net.fetchFor("mail"),
         google,
-        // plan 22: photos from Google come on with the account (the user can untick them on Google's screen)
-        scopes: [...GMAIL_SCOPES, ...PHOTO_SCOPES],
+        // plan 125: mail only; contacts are asked for when the user turns photos on (Settings → Appearance)
+        scopes: GMAIL_SCOPES,
       }).finally(() => google.close());
       googleFlowActive(b);
       validateGoogleConnection(result, "initial");
@@ -948,11 +951,6 @@ export function createHandlers(b: Backend): Handlers {
       // what an import kept for this mailbox goes in now
       await restorePending(b);
       b.startAccount(account);
-      const photos = photoStateFrom(result.grantedScopes ?? []);
-      if (photos.connections || photos.otherContacts) {
-        await setGooglePhotoState(store, account.id, photos);
-        void b.icons.syncPeople(account.id, photos).catch(() => {});
-      }
       return (await b.accountViews([account]))[0]!;
     },
 
@@ -1044,7 +1042,10 @@ export function createHandlers(b: Backend): Handlers {
 
     "accounts.remove": async ({ id }) => {
       const wasOwner = (await store.owner.get())?.accountId === id;
+      const kind = (await store.accounts.get(id))?.kind;
       await b.dropAccount(id, { remove: true });
+      // plan 125: read once nothing can replace it (dropAccount ended the account's sign-ins and renewals)
+      const grant = kind === "gmail" ? await googleGrantOf(b, id) : undefined;
       // plan 22: its photo lists and photos go with it
       await setGooglePhotoState(store, id, null);
       await b.icons.dropPhotos(id);
@@ -1062,7 +1063,9 @@ export function createHandlers(b: Backend): Handlers {
       await b.emitAccounts();
       if (wasOwner) await b.emitOwner();
       b.notifyChanged([]);
-      return { ok: true as const };
+      // plan 125: gone here first; then Terno's access at Google is withdrawn (bounded, never undoing the removal)
+      if (grant === undefined) return { ok: true as const };
+      return { ok: true as const, google: await withdrawGoogleGrant(b, grant) };
     },
     // plan 107: folder changes, favorites and the .mbox export (filled in by their commits)
     "folders.create": ({ accountId, parent, name }) => createFolder(b, accountId, parent, name),

@@ -974,7 +974,8 @@ export const contract = {
    * live login. Its waiting actions resume and it syncs.
    */
   "accounts.reconnect": m<Account>()(z.object({ id, password: z.string().min(1).max(1000).optional() }), { timeoutMs: 300_000 }),
-  "accounts.remove": m<{ ok: true }>()(z.object({ id })),
+  /** plan 125: a Gmail account's grant is withdrawn at Google after the local removal; `google` says how that went */
+  "accounts.remove": m<{ ok: true; google?: "revoked" | "failed" }>()(z.object({ id })),
 
   /**
    * Plan 107: an account's own folders, changed on its server (IMAP mailboxes, Gmail labels), one change at a time

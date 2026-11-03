@@ -2,6 +2,7 @@ import { L } from "@terno/i18n";
 import { createDemoProvider } from "./demo";
 import { beginGmailRenewal } from "./gmail-renewal";
 import { createGmailProvider, connectGmail } from "./gmail";
+import { revokeGoogleToken } from "./google-revoke";
 import { createImapProvider, type ImapProviderOptions } from "./imap";
 import { sendViaSmtp, verifySmtp } from "./smtp";
 import { ProviderError, type ImapAccountConfig, type ProviderRegistry, type SendPayload } from "./types";
@@ -66,5 +67,7 @@ export function createRegistry(options: RegistryOptions = {}): ProviderRegistry 
     },
     connectGmail: (o) => connectGmail({ ...o, endpoints: options.gmail?.endpoints }),
     beginGmailRenewal: (o) => beginGmailRenewal({ ...o, endpoints: options.gmail?.endpoints }),
+    // plan 125: a synthetic Google (endpoints moved) has no grant to withdraw, and must never reach the real one
+    ...(!options.gmail?.endpoints && { revokeGoogle: revokeGoogleToken }),
   };
 }

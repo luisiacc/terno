@@ -62,15 +62,15 @@
 - **`https://www.googleapis.com/auth/gmail.modify`** (restricted):
   > Terno is a desktop email client for macOS. Users read, search, send, archive, label, move to trash and mark as read their Gmail messages in Terno. It needs to read messages and history to show and search the mailbox (synced to a local database on the user's Mac), send to send replies and new mail, and modify labels to archive, file in categories, mark read and trash. gmail.readonly can't send or change labels, and gmail.send plus gmail.labels can't read mail. gmail.modify is the narrowest scope that covers a full mail client, and Terno doesn't request https://mail.google.com/ because it never deletes permanently. Gmail data is stored only on the user's device, and Terno has no server that receives it. The one exception is optional and set up by the user: if they choose a cloud AI provider and turn on an AI feature, Terno sends that provider, directly from the device, only what the feature needs. For "help sorting into categories" that is the sender's name and address, the subject and the first 600 characters of a message Terno couldn't sort on its own. AI is off by default, and the privacy policy lists what each feature sends.
 - **`https://www.googleapis.com/auth/contacts.readonly`, `.../contacts.other.readonly`** (sensitive):
-  > Used only to show the profile photos of the people in the user's message list. Terno reads each contact's email addresses and photo through the People API (`people/me/connections?personFields=emailAddresses,photos`, `otherContacts?readMask=emailAddresses,photos`), so it can match a photo to the sender of a message. Only the address-to-photo list and the images are kept, cached on the user's Mac; no other contact data is read. Users can untick the permission on the consent screen, or turn the feature off in Settings → Appearance.
+  > Used only to show the profile photos of the people in the user's message list. Terno reads each contact's email addresses and photo through the People API (`people/me/connections?personFields=emailAddresses,photos`, `otherContacts?readMask=emailAddresses,photos`), so it can match a photo to the sender of a message. Only the address-to-photo list and the images are kept, cached on the user's Mac; no other contact data is read. Terno asks for it only when the user turns on "Photos from Google" in Settings → Appearance (plan 125), and the user can turn it off there.
 
 ### Demo video (unlisted YouTube, English, about 3 minutes)
 
 1. Open Terno and choose Add account → Google. Show the browser consent screen with the app name "Terno". Show the address bar long enough for the `client_id` to be readable, and show each permission.
 2. **gmail.modify:** the inbox loading; opening and searching a message; replying (show it arriving); archiving, filing in a category, marking read, moving to trash; then the same changes in Gmail on the web.
-3. **contacts:** sender photos in the list, then the Settings → Appearance switch.
+3. **contacts:** turn on Settings → Appearance → Photos from Google, show Google's consent for contacts, then the sender photos in the list.
 4. **openid/email/profile:** the account in Settings → Accounts with its address and name, then your own picture on a message you sent (Photos from Google on).
-5. Remove the account, then remove Terno at myaccount.google.com/permissions.
+5. Remove the account, then show Terno is gone from myaccount.google.com/permissions (plan 125 withdraws the grant).
 
 ### The security assessment (CASA)
 
@@ -81,7 +81,7 @@ Restricted scopes normally need a yearly third-party assessment. Google's criter
 
 Google may count the AI transfer and require the assessment anyway, so plan time and money for it. One way to avoid it is to keep Gmail-derived content away from cloud AI providers, allowing only local models for Gmail accounts. That would cost a feature, so it's a product decision.
 
-### App changes that would make review smoother (not done here)
+### App changes that would make review smoother (1 and 2 done in plan 125)
 
 1. **Ask for the contacts scopes only when the user turns on photos.** Right now a new account asks for all six (`handlers.ts:921`). Reviewers prefer asking for each permission at the moment it's needed, and the reconnect and switch path already does that (plan 74).
 2. **Revoke at Google on Remove account** (`POST https://oauth2.googleapis.com/revoke`), so removing an account also withdraws the grant. Today the policy tells the user to do it by hand.

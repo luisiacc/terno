@@ -55,13 +55,16 @@ describe("GIS public helpers", () => {
       expect(mocks.call).not.toHaveBeenCalled(); expect(mocks.setApp).not.toHaveBeenCalled();
     }
   });
-  it("connects mail without optional contacts, and forwards an explicit partial contact grant", async () => {
+  it("plan 125: Add account asks for mail only, and contacts Google kept from before don't turn photos on", async () => {
     await expect(respond(valid)).resolves.toEqual(account);
+    expect(config.scope.split(" ")).not.toContain(contacts);
+    expect(config.scope.split(" ")).toContain(mail);
     expect(mocks.call).toHaveBeenCalledTimes(1);
     mocks.call.mockClear();
+    // include_granted_scopes can hand back an older contacts grant: photos still wait for the switch
     await expect(respond({ ...valid, scope: `${mail} ${contacts}` })).resolves.toEqual(account);
-    expect(mocks.call).toHaveBeenCalledTimes(2);
-    expect(mocks.call).toHaveBeenLastCalledWith("icons.authorizeGoogle", expect.objectContaining({ accountId: 7, scope: `${mail} ${contacts}` }));
+    expect(mocks.call).toHaveBeenCalledTimes(1);
+    expect(mocks.call).toHaveBeenCalledWith("accounts.connectGmailToken", expect.anything());
   });
   it("reconnects and delegates mailbox identity to the worker", async () => {
     const result = connectGmailWeb(account.email, account.id); await Promise.resolve(); config.callback(valid);

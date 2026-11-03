@@ -372,6 +372,9 @@ export interface ProviderRegistry {
   connectGmail(options: { clientId: string; clientSecret: string | null; openExternal: (url: string) => Promise<void>; signal?: AbortSignal; fetch: typeof fetch; google?: Pick<GoogleRequests, "request">; loginHint?: string; scopes?: string[]; allowOmittedRefreshToken?: boolean }): Promise<GmailConnectResult>;
   /** Cold proof is optional: custom registries without it must refuse omitted renewal credentials. */
   beginGmailRenewal?(options: GmailRenewalOptions): Promise<GmailRenewalProof>;
+  /** plan 125: withdraw a removed account's Google grant (desktop only: the endpoint has no CORS; absent in test and
+   * demo registries, which never try) */
+  revokeGoogle?(token: string, netFetch: typeof globalThis.fetch, signal: AbortSignal): Promise<"revoked" | "failed">;
 }
 
 export interface RequestRun { markDispatched(): void; markSubmissionDispatched?(): void }

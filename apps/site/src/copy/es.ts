@@ -189,13 +189,13 @@ export const es: SiteCopy = {
           points: [
             "**Ver tu nombre, tu dirección de correo y tu foto de perfil**, para identificar la cuenta en Terno y, con Fotos de Google activado, mostrar tu foto en el correo que envías.",
             "**Leer, enviar, etiquetar y eliminar tu correo de Gmail** (el permiso `gmail.modify`), para que puedas leer, buscar, enviar, archivar, etiquetar y eliminar tu correo en Terno.",
-            "**Ver las direcciones de correo y las fotos de tus contactos** (acceso de solo lectura a tus contactos y a otros contactos), solo para poner la foto correcta junto a quienes te escriben. Puedes desmarcarlo en la pantalla de Google.",
+            "**Ver las direcciones de correo y las fotos de tus contactos** (acceso de solo lectura a tus contactos y a otros contactos), solo para poner la foto correcta junto a quienes te escriben. Terno solo lo pide cuando activas Fotos de Google en Ajustes → Apariencia.",
           ],
           after: [
             "Terno usa estos datos solo para ofrecerte las funciones que ves en la app. Se guardan en tu Mac y nunca se nos envían. No los vendemos, no los usamos para publicidad ni para crear perfiles tuyos, ni para desarrollar, mejorar o entrenar modelos de IA, y nadie en Luisiacc LLC los lee.",
             "Terno solo pasa datos de usuario de Google a otros cuando tú se lo pides: al proveedor de IA que elijas, cuando activas una función de IA (solo lo que esa función necesita, descrito más abajo), y a las herramientas de IA de tu Mac que conectes a Terno.",
             "El uso y la transferencia a cualquier otra app, por parte de Terno, de la información recibida de las API de Google se ajustarán a la [Política de datos de usuario de los servicios de API de Google](https://developers.google.com/terms/api-services-user-data-policy), incluidos los requisitos de uso limitado.",
-            "Para retirar el acceso de Terno, elimina la cuenta en Ajustes → Cuentas, lo que borra su correo y sus tokens de tu Mac, y luego quita Terno en [myaccount.google.com/permissions](https://myaccount.google.com/permissions).",
+            "Eliminar la cuenta en Ajustes → Cuentas borra su correo y sus tokens de tu Mac y retira el acceso de Terno en Google, para Terno en cualquier sitio donde uses esa cuenta. Si Google no lo confirma, Terno te avisa, y puedes quitar Terno tú mismo en [myaccount.google.com/permissions](https://myaccount.google.com/permissions).",
           ],
         },
         {

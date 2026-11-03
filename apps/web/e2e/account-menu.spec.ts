@@ -263,6 +263,30 @@ test.describe("the account menu", { tag: "@design" }, () => {
     expect(await server.backend.store.accounts.get(a!)).toBeFalsy();
   });
 
+  test("plan 125: a Gmail account's dialog says where to withdraw Google's access; an unconfirmed revoke says to check there", async ({ app: page, server }) => {
+    const accounts = await server.backend.store.accounts.list();
+    const gmail = accounts.find((a) => a.kind === "gmail")!;
+    const imap = accounts.find((a) => a.kind === "imap")!;
+    const dialog = page.getByTestId("account-remove-dialog");
+    // the browser can't revoke (Google's endpoint has no CORS): it points to Google's page
+    await openMenu(page, imap.id);
+    await page.getByTestId("account-menu-remove").click();
+    await expect(dialog).not.toContainText("Google");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await openMenu(page, gmail.id);
+    await page.getByTestId("account-menu-remove").click();
+    await expect(dialog).toContainText("To withdraw Terno’s access to your Google Account too, remove Terno at myaccount.google.com/permissions.");
+    // a desktop removal Google didn't confirm: removed anyway, and the snack says where to check
+    const handlers = (server.backend.server as unknown as { handlers: Handlers }).handlers;
+    const remove = handlers["accounts.remove"]!;
+    handlers["accounts.remove"] = async (...args) => ({ ...((await remove(...args)) as object), google: "failed" });
+    await page.getByTestId("account-remove-dialog-confirm").click();
+    const snack = page.getByTestId("snack").filter({ hasText: "Google didn’t confirm Terno lost access." });
+    await expect(snack).toContainText("Account removed");
+    await expect(snack.getByRole("button", { name: "Check at Google" })).toBeVisible();
+    await expect(row(page, gmail.id)).toHaveCount(0);
+  });
+
   test("Shift+F10 and the menu key open the focused row's own menu: an account's, a category's, never the thread menu", async ({ app: page, server }) => {
     const [a] = await accountIds(page);
     await rows(page).first().click();

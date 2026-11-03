@@ -107,24 +107,25 @@ export async function connectGmailWeb(loginHint?: string, accountId?: number, o:
   const clientId = webBuiltInClientId();
   if (!clientId) throw Object.assign(new Error(t("errors.google.noClientWeb")), { i18n: { key: "errors.google.noClientWeb" } });
   await preloadGoogle();
-  // plan 22: a new account asks for photos from Google too (the user can untick them on Google's screen)
+  // plan 125: a new account asks for mail only; contacts wait until the user turns photos on
   const adding = loginHint === undefined && accountId === undefined;
   // plan 74: an account whose photos wait for this sign-in asks for them too
   // the accounts waiting before Google's popup: their consent is read again by the backend (switched off meanwhile, it counts for nothing)
   const waitedBefore = new Set(getApp().settings?.googlePhotosPending ?? []);
   const pending = accountId !== undefined && waitedBefore.has(accountId);
-  const token = await accessToken(clientId, loginHint, adding || pending ? [...GMAIL_SCOPES, ...PHOTO_SCOPES] : GMAIL_SCOPES);
+  const token = await accessToken(clientId, loginHint, pending ? [...GMAIL_SCOPES, ...PHOTO_SCOPES] : GMAIL_SCOPES);
   const granted = token.scope.split(/\s+/);
   const expiresIn = token.expires_in;
   const account = await client.call("accounts.connectGmailToken", { accessToken: token.access_token, expiresIn, ...(accountId !== undefined && { accountId }), ...(adding && o.syncWindowDays !== undefined && { syncWindowDays: o.syncWindowDays }) });
   // still wanted after Google's popup (not turned off meanwhile); Add account may have reached a waiting mailbox too
   const waited = waitedBefore.has(account.id);
   const stillPending = waited && (getApp().settings?.googlePhotosPending ?? []).includes(account.id);
-  if ((adding || stillPending) && token.scope.length <= 2000 && PHOTO_SCOPES.some((scope) => granted.includes(scope)) && !getApp().settings?.googlePhotos[String(account.id)]) {
+  if (stillPending && token.scope.length <= 2000 && PHOTO_SCOPES.some((scope) => granted.includes(scope)) && !getApp().settings?.googlePhotos[String(account.id)]) {
     // photos are extra: the account is connected even if this fails
     await client.call("icons.authorizeGoogle", { accountId: account.id, accessToken: token.access_token, expiresIn, scope: token.scope, ...(waited && { ifPending: true }) }).then((settings) => setApp({ settings }), () => {});
-  } else if (stillPending) {
-    // unticked on Google's screen: it stops waiting (no asking at every sign-in)
+  } else if (stillPending && pending) {
+    // unticked on Google's screen: it stops waiting (no asking at every sign-in). Add account didn't ask (plan 125),
+    // so a waiting mailbox it reached keeps waiting for its own sign-in.
     await client.call("icons.googlePhotos", { accountId: account.id, on: false }).then((settings) => setApp({ settings }), () => {});
   }
   return account;

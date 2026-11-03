@@ -1,14 +1,3 @@
-/** A privacy page section: paragraphs, an optional list, and paragraphs after it. Marks are `parts/rich.tsx`'s. */
-export interface PrivacySection {
-  /** the anchor the contents and other pages link to; the same in every language */
-  id: string;
-  title: string;
-  body: string[];
-  points?: string[];
-  after?: string[];
-}
-const sections = (list: PrivacySection[]) => list;
-
 /** The site's copy (plan 97), English (the source language). `es.ts` must match this shape: the type check says so. */
 export const en = {
   lang: "en",
@@ -159,7 +148,7 @@ export const en = {
       intro: "Terno keeps your mail on your Mac. There is no Terno account, and no Terno server that stores your mail. This page says exactly what the app and this website do with your data.",
       updated: "Last updated: November 2, 2026",
       contents: "On this page",
-      sections: sections([
+      sections: [
         {
           id: "who",
           title: "Who we are",
@@ -199,13 +188,13 @@ export const en = {
           points: [
             "**See your name, email address and profile picture**, to identify the account in Terno and, with Photos from Google on, to show your picture on the mail you send.",
             "**Read, send, label and delete your Gmail mail** (the `gmail.modify` permission), so you can read, search, send, archive, label and delete your mail in Terno.",
-            "**See your contacts’ email addresses and photos** (read-only access to your contacts and other contacts), only to put the right photo next to the people who write to you. You can untick this on Google’s screen.",
+            "**See your contacts’ email addresses and photos** (read-only access to your contacts and other contacts), only to put the right photo next to the people who write to you. Terno asks for this only when you turn on Photos from Google in Settings → Appearance.",
           ],
           after: [
             "Terno uses this data only to provide the features you see in the app. It is stored on your Mac and is never sent to us. We don’t sell it, use it for advertising, use it to build profiles of you, or use it to develop, improve or train AI models, and no person at Luisiacc LLC reads it.",
             "Terno passes Google user data to someone else only when you ask it to: to the AI provider you choose, when you turn on an AI feature (only what that feature needs, described below), and to AI tools on your Mac that you connect to Terno.",
             "Terno’s use and transfer to any other app of information received from Google APIs will adhere to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.",
-            "To stop Terno’s access, remove the account in Settings → Accounts, which deletes its mail and sign-in tokens from your Mac, then remove Terno at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).",
+            "Removing the account in Settings → Accounts deletes its mail and sign-in tokens from your Mac and withdraws Terno’s access at Google, for Terno everywhere you use that account. If Google doesn’t confirm it, Terno tells you, and you can remove Terno yourself at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).",
           ],
         },
         {
@@ -265,7 +254,7 @@ export const en = {
           title: "Contact",
           body: ["For questions about privacy, or to have your waitlist entry removed, email Luisiacc LLC at [privacy@terno.app](mailto:privacy@terno.app)."],
         },
-      ]),
+      ],
     },
   },
   shot: { appearance: "Picture appearance", light: "Light", dark: "Dark", enlarge: "Enlarge picture", close: "Close" },
