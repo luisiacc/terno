@@ -8,7 +8,7 @@ type AnnouncementProps = Omit<React.ComponentProps<"div">, "title"> & {
   icon?: React.ReactElement
   title?: React.ReactNode
   /** extra props for the title's paragraph (a test id) */
-  titleProps?: React.ComponentProps<"p">
+  titleProps?: React.ComponentProps<"p"> & { "data-testid"?: string }
   description?: React.ReactNode
   /** small buttons under the text, or at the row's end when `inline` */
   actions?: React.ReactNode
@@ -17,7 +17,7 @@ type AnnouncementProps = Omit<React.ComponentProps<"div">, "title"> & {
   /** shows a CloseButton at the end; `closeLabel` names what it does ("Dismiss", "Hide for a week") */
   onClose?: () => void
   closeLabel?: string
-  closeProps?: Omit<React.ComponentProps<typeof CloseButton>, "label" | "onClick">
+  closeProps?: Omit<React.ComponentProps<typeof CloseButton>, "label" | "onClick"> & { "data-testid"?: string }
 }
 
 /**

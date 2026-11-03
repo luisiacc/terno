@@ -1,7 +1,8 @@
 import { t } from "@terno/i18n";
 import { buttonVariants } from "@terno/ui/components/button";
 import { cn } from "@terno/ui/lib/utils";
-import { Laptop, Lock, X } from "@terno/ui/icons";
+import { Laptop, Lock } from "@terno/ui/icons";
+import { Announcement } from "@terno/ui/components/announcement";
 import { useState } from "react";
 import { richT } from "~/lib/i18n";
 
@@ -24,23 +25,19 @@ export function DesktopBanner() {
   const [hidden, setHidden] = useState(() => Date.now() - Number(localStorage.getItem(DISMISSED) ?? 0) < WEEK);
   if (hidden) return null;
   return (
-    <div data-testid="mac-banner" className="mx-3 mt-2 flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-2.5 py-1.5 text-xs">
-      <Laptop className="size-3.5 shrink-0 text-muted-foreground" />
-      <p className="min-w-0 flex-1 truncate text-muted-foreground">{richT("web.mac.banner", { b: (text) => <span className="font-medium text-foreground">{text}</span> })}</p>
-      <DownloadLink size="xs" variant="ghost" className="h-6" />
-      <button
-        type="button"
-        aria-label={t("web.mac.hideForWeek")}
-        data-testid="mac-banner-dismiss"
-        className="text-muted-foreground hover:text-foreground"
-        onClick={() => {
-          localStorage.setItem(DISMISSED, String(Date.now()));
-          setHidden(true);
-        }}
-      >
-        <X className="size-3.5" />
-      </button>
-    </div>
+    <Announcement
+      inline
+      data-testid="mac-banner"
+      icon={<Laptop />}
+      description={richT("web.mac.banner", { b: (text) => <span className="font-medium text-foreground">{text}</span> })}
+      actions={<DownloadLink size="xs" variant="outline" />}
+      onClose={() => {
+        localStorage.setItem(DISMISSED, String(Date.now()));
+        setHidden(true);
+      }}
+      closeLabel={t("web.mac.hideForWeek")}
+      closeProps={{ "data-testid": "mac-banner-dismiss" }}
+    />
   );
 }
 

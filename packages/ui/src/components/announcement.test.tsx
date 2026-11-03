@@ -41,7 +41,7 @@ describe("Announcement (plan 125)", () => {
   it("a status or group is named by its title; a plain one carries no name", async () => {
     const host = await render(
       <>
-        <Announcement role="group" title="Keep forwarding?" titleProps={{ "data-testid": "t" } as React.ComponentProps<"p">} />
+        <Announcement role="group" title="Keep forwarding?" titleProps={{ "data-testid": "t" }} />
         <Announcement title="Plain" />
       </>
     );
