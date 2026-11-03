@@ -194,7 +194,7 @@ export function SaveState({ d }: { d: LocalDraft }) {
       {recovery && (
         <Button
           ref={actionRef}
-          variant="link"
+          variant="link-secondary"
           data-testid="draft-save-copy"
           className="text-xs"
           aria-busy={recovery.state === "copying"}
@@ -207,7 +207,7 @@ export function SaveState({ d }: { d: LocalDraft }) {
       {!recovery && d.status === "error" &&
         richT(d.tooLong ? "compose.status.tooLong" : "compose.status.failed", {
           retry: (text) => (
-            <Button variant="link" className="text-xs" onClick={() => retryDraft(d.key)}>
+            <Button variant="link-secondary" className="text-xs" onClick={() => retryDraft(d.key)}>
               {text}
             </Button>
           ),
@@ -237,7 +237,7 @@ export function Quote({ d }: { d: LocalDraft }) {
       <div className="px-3.5 pb-1 text-xs text-muted-foreground">
         {richT("compose.quote.removed", {
           include: (text) => (
-            <Button variant="link" className="text-xs" onClick={() => editDraft(d.key, { includeQuote: true })}>
+            <Button variant="link-secondary" className="text-xs" onClick={() => editDraft(d.key, { includeQuote: true })}>
               {text}
             </Button>
           ),
@@ -262,7 +262,7 @@ export function Quote({ d }: { d: LocalDraft }) {
         {show && (
           <div className="mt-2 border-l-2 border-hairline pl-3 text-sm whitespace-pre-wrap text-muted-foreground">
             {d.quotedText}
-            <Button variant="link" className="mt-2 flex text-xs" onClick={() => editDraft(d.key, { includeQuote: false })} data-testid="compose-quote-remove">
+            <Button variant="link-secondary" className="mt-2 flex text-xs" onClick={() => editDraft(d.key, { includeQuote: false })} data-testid="compose-quote-remove">
               {t("compose.quote.remove")}
             </Button>
           </div>

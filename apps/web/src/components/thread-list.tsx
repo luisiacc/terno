@@ -503,9 +503,6 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
  * Gmail's "select all": ⌘A checks the loaded rows; when the view has more,
  * this offers every thread of it, which the backend then acts on (a scope).
  */
-// a link on the tint is the ink, not the accent: the accent fails AA there in three palettes (contrast.ts)
-const tintLink = "text-xs text-foreground active:text-foreground";
-
 function SelectAllBanner() {
   const loaded = useList((s) => s.items.length);
   const more = useList((s) => s.nextCursor !== null);
@@ -531,6 +528,7 @@ function SelectAllBanner() {
   if (!show || (!scope && !currentScope())) return null;
   const label = t("list.scope.quoted", { label: scopeLabel(query || (category ?? viewLabel(view)), filter) });
   const n = count?.key === key ? count : null;
+  // its links in the ink: the accent fails AA on the tint in three palettes (contrast.ts)
   return (
     <div data-testid="select-all-banner" className="hairline-b flex shrink-0 flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 bg-tint px-3 py-1.5 text-center text-xs text-muted-foreground">
       {scope ? (
@@ -538,14 +536,14 @@ function SelectAllBanner() {
           <span data-testid="select-all-scope">
             {t("list.selectAll.scopeSelected", { count: scope.count, label: scope.label })}
           </span>
-          <Button variant="link" data-testid="select-all-clear" className={tintLink} onClick={clearSelection}>
+          <Button variant="link-secondary" data-testid="select-all-clear" className="text-xs" onClick={clearSelection}>
             {t("list.selectAll.clear")}
           </Button>
         </>
       ) : (
         <>
           <span>{t("list.selectAll.loadedSelected", { count: loaded })}</span>
-          <Button variant="link" data-testid="select-all-scope-button" disabled={!n || n.capped} className={tintLink} onClick={() => n && selectScope(n.n)}>
+          <Button variant="link-secondary" data-testid="select-all-scope-button" disabled={!n || n.capped} className="text-xs" onClick={() => n && selectScope(n.n)}>
             {n ? (n.capped ? t("list.selectAll.capped", { count: n.n, label }) : t("list.selectAll.select", { count: n.n, label })) : t("list.selectAll.pending", { label })}
           </Button>
         </>

@@ -26,6 +26,8 @@ const buttonVariants = cva(
         // BoardUI's danger (plan 125): solid, lit from the top from the red to its shade, its own text (contrast.ts)
         destructive: "bg-destructive bg-linear-to-b from-destructive to-destructive-shade text-destructive-foreground shadow-xs hover:bg-[color-mix(in_oklab,var(--destructive)_90%,var(--foreground))] hover:bg-none active:bg-[color-mix(in_oklab,var(--destructive)_90%,var(--foreground))] active:bg-none focus-visible:ring-destructive/40 unavailable:bg-muted unavailable:bg-none unavailable:text-muted-foreground unavailable:shadow-none",
         link: "text-primary underline-offset-3 hover:underline active:text-[color-mix(in_oklab,var(--primary)_80%,var(--foreground))] unavailable:opacity-50",
+        // BoardUI's secondary link, in the ink: for surfaces the accent isn't checked on (the tint, a draft)
+        "link-secondary": "text-foreground underline-offset-3 hover:underline active:text-muted-foreground unavailable:opacity-50",
       },
       size: {
         default:
@@ -42,7 +44,7 @@ const buttonVariants = cva(
       },
     },
     // BoardUI's link button: text, no box
-    compoundVariants: [{ variant: "link", class: "h-auto rounded-sm border-0 p-0 has-data-[icon=inline-end]:pr-0 has-data-[icon=inline-start]:pl-0" }],
+    compoundVariants: [{ variant: ["link", "link-secondary"], class: "h-auto rounded-sm border-0 p-0 has-data-[icon=inline-end]:pr-0 has-data-[icon=inline-start]:pl-0" }],
     defaultVariants: {
       variant: "default",
       size: "default",
