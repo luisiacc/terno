@@ -1,8 +1,9 @@
 import type { Account } from "@terno/core";
 import { t } from "@terno/i18n";
+import { CloseButton } from "@terno/ui/components/close-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { KeyRound, X } from "@terno/ui/icons";
+import { KeyRound } from "@terno/ui/icons";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { clearAttemptError, noticeAccounts, prepareGoogle, putOff, sendOnly, useSignIn } from "~/lib/sign-in";
 import { useApp } from "~/state/app";
@@ -110,19 +111,7 @@ function Notice({ accounts }: { accounts: Account[] }) {
           </PopoverContent>
         </Popover>
         <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                aria-label={t("signIn.later")}
-                data-testid="sign-in-dismiss"
-                onClick={later}
-                className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-              />
-            }
-          >
-            <X className="size-3.5" aria-hidden />
-          </TooltipTrigger>
+          <TooltipTrigger render={<CloseButton label={t("signIn.later")} data-testid="sign-in-dismiss" onClick={later} className="mx-0.5 focus-visible:ring-sidebar-ring" />} />
           <TooltipContent>{t("signIn.later")}</TooltipContent>
         </Tooltip>
       </div>
