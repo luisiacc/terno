@@ -1,5 +1,6 @@
 "use client"
 
+import { createGenericEventDetails } from "@base-ui/react/internals/createBaseUIEventDetails"
 import { NumberField as NumberFieldPrimitive } from "@base-ui/react/number-field"
 import { useRef } from "react"
 import { cn } from "cn"
@@ -54,17 +55,35 @@ function NumberField({
   commitOnEnter = false,
   onUnparsed,
   onValueCommitted,
+  onValueChange,
+  value,
+  defaultValue,
   ...props
 }: NumberFieldProps) {
   // between an edit and the blur that follows it: did Base UI commit anything?
   const edit = useRef({ edited: false, committed: false })
+  // commits and unparsed reports so far (an Enter checks whether its blur produced either)
+  const seen = useRef({ commits: 0, unparsed: 0 })
+  // the number as Base UI last parsed it (uncontrolled; a controlled field reads `value`)
+  const parsed = useRef<number | null>(defaultValue ?? null)
+  const unparsed = (text: string) => {
+    seen.current.unparsed++
+    onUnparsed?.(text)
+  }
   return (
     <NumberFieldPrimitive.Root
       data-slot="number-field"
       className="contents"
-      onValueCommitted={(value, details) => {
+      value={value}
+      defaultValue={defaultValue}
+      onValueChange={(next, details) => {
+        parsed.current = next
+        onValueChange?.(next, details)
+      }}
+      onValueCommitted={(next, details) => {
         edit.current.committed = true
-        onValueCommitted?.(value, details)
+        seen.current.commits++
+        onValueCommitted?.(next, details)
       }}
       {...props}
     >
@@ -91,8 +110,16 @@ function NumberField({
             if (!commitOnEnter || e.key !== "Enter" || e.defaultPrevented) return
             // Base UI commits on blur only: leave and come back, in the same frame
             const input = e.currentTarget
+            const before = { ...seen.current }
             input.blur()
             input.focus({ preventScroll: true })
+            // a blur after no edit commits nothing (Base UI's): an Enter still commits the number in the field, so
+            // one after a save that failed tries again (Codex code review, second pass #2). After the blur's own check
+            const native = e.nativeEvent
+            queueMicrotask(() => {
+              if (seen.current.commits !== before.commits || seen.current.unparsed !== before.unparsed) return
+              onValueCommitted?.(value !== undefined ? value : parsed.current, createGenericEventDetails("keyboard", native))
+            })
           }}
           onChange={() => {
             edit.current = { edited: true, committed: false }
@@ -105,14 +132,14 @@ function NumberField({
             // Base UI's own blur runs, so the value the form sets later shows (Codex code review, second pass #1)
             if (onUnparsed && edit.current.edited && input.value.trim() !== "" && !/\p{Nd}/u.test(input.value)) {
               e.preventBaseUIHandler()
-              onUnparsed(input.value)
+              unparsed(input.value)
               return
             }
             // anything else after Base UI's own blur, which parses the text and commits it if it can
             queueMicrotask(() => {
               const { edited, committed } = edit.current
               edit.current = { edited: false, committed: false }
-              if (edited && !committed && input.value.trim() !== "") onUnparsed?.(input.value)
+              if (onUnparsed && edited && !committed && input.value.trim() !== "") unparsed(input.value)
             })
           }}
           className={cn(

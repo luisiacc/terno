@@ -76,6 +76,21 @@ describe("DaysField on the shared NumberField (plan 125, revision 2)", () => {
     expect(document.activeElement).toBe(input);
   });
 
+  it("Enter again after a save that failed tries again (Codex code review, second pass #2)", async () => {
+    const onSave = vi.fn().mockRejectedValueOnce(new Error("Couldn't save")).mockResolvedValue(undefined);
+    const { host } = await render(<DaysField a11y={a11y} testId="sync-window" value={180} onSave={onSave} />);
+    const input = host.querySelector<HTMLInputElement>("#days")!;
+    await type(input, "45");
+    await enter(input);
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(host.querySelector("[data-testid=sync-window-error]")?.textContent).toBe("Couldn't save");
+    await enter(input);
+    expect(onSave).toHaveBeenCalledTimes(2);
+    expect(onSave).toHaveBeenLastCalledWith(45);
+    expect(host.querySelector("[data-testid=sync-window-error]")).toBeNull();
+    expect(document.activeElement).toBe(input);
+  });
+
   it("a typed value out of range stays as typed, with the reason announced; typing again clears it", async () => {
     const onSave = vi.fn(async () => {});
     const { host } = await render(<DaysField a11y={a11y} testId="sync-window" value={180} onSave={onSave} />);
