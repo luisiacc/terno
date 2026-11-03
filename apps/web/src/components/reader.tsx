@@ -3,6 +3,7 @@ import { ReaderAttachments } from "./attachments";
 import type { Account, Category, CategoryColor, MessageDetail, Reason, ThreadDetail } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { CategoryBadge, CategoryDot } from "@terno/ui/components/category-dot";
+import { IconButton } from "@terno/ui/components/icon-button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
@@ -87,23 +88,8 @@ function RemindButton({ threadId }: { threadId: number }) {
   );
 }
 
-function ToolButton({ label, keys, onClick, children, testId, active, disabled, busy, className }: { label: string; keys?: string; onClick: () => void; children: React.ReactNode; testId?: string; active?: boolean; disabled?: boolean; busy?: boolean; className?: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button variant="ghost" size="icon-sm" aria-label={label} data-testid={testId} onClick={onClick} disabled={disabled} aria-busy={busy || undefined} className={cn("no-drag rounded-md text-muted-foreground hover:text-foreground [&_svg]:[--icon-line:var(--icon-line-toolbar)]", active && "text-star hover:text-star", className)}>
-            {children}
-          </Button>
-        }
-      />
-      <TooltipContent className="flex items-center gap-2">
-        {label}
-        {keys && <Shortcut keys={keys} />}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
+// the reader's toolbar icons: out of the window's drag region, at the toolbar's line weight
+const tool = "no-drag rounded-md [&_svg]:[--icon-line:var(--icon-line-toolbar)]";
 
 /** Why the engine did or suggests something: its reasons, in plain words. */
 function Reasons({ title, reasons, hint }: { title: string; reasons: Reason[]; hint?: string }) {
@@ -472,9 +458,9 @@ function useListTitle(): string {
 function BackButton() {
   const title = useListTitle();
   return (
-    <ToolButton label={t("reader.back", { mailbox: title })} keys="escape" onClick={goBack} testId="reader-back">
+    <IconButton className={tool} label={t("reader.back", { mailbox: title })} shortcut="escape" onClick={goBack} data-testid="reader-back">
       <ChevronLeft />
-    </ToolButton>
+    </IconButton>
   );
 }
 
@@ -486,12 +472,12 @@ function StepButtons({ id }: { id: number }) {
   const busy = useList((s) => s.loadingMore);
   return (
     <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.navigate")}>
-      <ToolButton label={t("reader.newer")} keys="k" onClick={() => move(-1)} testId="reader-newer" disabled={at === undefined || at === 0}>
+      <IconButton className={tool} label={t("reader.newer")} shortcut="k" onClick={() => move(-1)} data-testid="reader-newer" disabled={at === undefined || at === 0}>
         <ChevronUp />
-      </ToolButton>
-      <ToolButton label={t("reader.older")} keys="j" onClick={() => move(1)} testId="reader-older" disabled={at === undefined || (at >= last && !more)} busy={busy && at === last}>
+      </IconButton>
+      <IconButton label={t("reader.older")} shortcut="j" onClick={() => move(1)} data-testid="reader-older" className={tool} disabled={at === undefined || (at >= last && !more)} aria-busy={(busy && at === last) || undefined}>
         <ChevronDown />
-      </ToolButton>
+      </IconButton>
     </div>
   );
 }
@@ -597,41 +583,41 @@ function ReaderContent() {
         {page && <BackButton />}
         <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.organize")}>
         {thread?.inTrash || thread?.inSpam ? (
-          <ToolButton label={t("actions.moveToInbox")} onClick={() => act(thread.inSpam ? "notSpam" : "moveToInbox")} testId="action-inbox">
+          <IconButton className={tool} label={t("actions.moveToInbox")} onClick={() => act(thread.inSpam ? "notSpam" : "moveToInbox")} data-testid="action-inbox">
             <Inbox />
-          </ToolButton>
+          </IconButton>
         ) : (
           <>
             {/* plan 86: in Promotions or Social, out of the tab into the Inbox (Gmail learns from it) */}
             {thread && inSeparateTab(thread, accounts) && (
-              <ToolButton label={t("actions.moveToInbox")} onClick={() => act("moveToInbox")} testId="action-inbox">
+              <IconButton className={tool} label={t("actions.moveToInbox")} onClick={() => act("moveToInbox")} data-testid="action-inbox">
                 <Inbox />
-              </ToolButton>
+              </IconButton>
             )}
-            <ToolButton label={t("actions.archive")} keys="e" onClick={() => act("archive")} testId="action-archive">
+            <IconButton className={tool} label={t("actions.archive")} shortcut="e" onClick={() => act("archive")} data-testid="action-archive">
               <Archive />
-            </ToolButton>
+            </IconButton>
           </>
         )}
-        <ToolButton label={t("actions.trash")} keys="#" onClick={() => act("trash")} testId="action-trash">
+        <IconButton className={tool} label={t("actions.trash")} shortcut="#" onClick={() => act("trash")} data-testid="action-trash">
           <Trash2 />
-        </ToolButton>
-        <ToolButton label={t("actions.spam")} keys="!" onClick={() => act("spam")} testId="action-spam">
+        </IconButton>
+        <IconButton className={tool} label={t("actions.spam")} shortcut="!" onClick={() => act("spam")} data-testid="action-spam">
           <OctagonAlert />
-        </ToolButton>
+        </IconButton>
         </div>
         <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.mark")}>
-        <ToolButton label={t("actions.category")} keys="l" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} testId="action-category">
+        <IconButton className={tool} label={t("actions.category")} shortcut="l" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} data-testid="action-category">
           <Tag />
-        </ToolButton>
+        </IconButton>
         {/* plan 87: a narrow reader (the minimum window) gives its place to the bell; the menu, the palette and ⌘⇧U keep it */}
-        <ToolButton label={t("actions.markUnread")} onClick={() => act("markUnread")} testId="action-unread" className="@max-[420px]:hidden">
+        <IconButton label={t("actions.markUnread")} onClick={() => act("markUnread")} data-testid="action-unread" className={cn(tool, "@max-[420px]:hidden")}>
           <MailOpen />
-        </ToolButton>
+        </IconButton>
         {/* keyed by thread: moving to a starred thread swaps the button instead of fading its color (navigation never animates) */}
-        <ToolButton key={thread?.id ?? "none"} label={thread?.starred ? t("actions.unstar") : t("actions.star")} keys="s" onClick={() => toggleStar()} testId="action-star" active={thread?.starred}>
+        <IconButton key={thread?.id ?? "none"} label={thread?.starred ? t("actions.unstar") : t("actions.star")} shortcut="s" onClick={() => toggleStar()} data-testid="action-star" className={cn(tool, thread?.starred && "text-star hover:text-star")}>
           <Star className={cn(thread?.starred && "fill-star")} />
-        </ToolButton>
+        </IconButton>
         <RemindButton key={`remind-${selectedId}`} threadId={selectedId} />
         </div>
         <div className="ml-auto flex items-center gap-0.5" role="group" aria-label={t("reader.group.respond")}>
@@ -653,21 +639,21 @@ function ReaderContent() {
               </TooltipContent>
             </Tooltip>
           ) : (
-            <ToolButton label={t("actions.reply")} keys="r" onClick={() => openCompose("reply")} testId="action-reply">
+            <IconButton className={tool} label={t("actions.reply")} shortcut="r" onClick={() => openCompose("reply")} data-testid="action-reply">
               <Reply />
-            </ToolButton>
+            </IconButton>
           )}
-          <ToolButton label={t("actions.replyAll")} keys="a" onClick={() => openCompose("replyAll")} testId="action-reply-all">
+          <IconButton className={tool} label={t("actions.replyAll")} shortcut="a" onClick={() => openCompose("replyAll")} data-testid="action-reply-all">
             <ReplyAll />
-          </ToolButton>
-          <ToolButton label={t("actions.forward")} keys="f" onClick={() => openCompose("forward")} testId="action-forward">
+          </IconButton>
+          <IconButton className={tool} label={t("actions.forward")} shortcut="f" onClick={() => openCompose("forward")} data-testid="action-forward">
             <Forward />
-          </ToolButton>
+          </IconButton>
         </div>
         <div className="flex items-center" role="group" aria-label={t("reader.group.print")}>
-          <ToolButton label={t("actions.print")} keys="mod+p" onClick={() => printCommand("print")} testId="action-print">
+          <IconButton className={tool} label={t("actions.print")} shortcut="mod+p" onClick={() => printCommand("print")} data-testid="action-print">
             <Printer />
-          </ToolButton>
+          </IconButton>
         </div>
         {page && <StepButtons id={selectedId} />}
       </div>
