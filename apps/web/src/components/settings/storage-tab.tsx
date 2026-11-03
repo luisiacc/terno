@@ -116,9 +116,9 @@ export function StorageTab() {
                       {viewLabel(b)}
                     </span>
                   }
-                  hint={r ? t("common.conversations", { count: r.threads }) : <Skeleton className="mt-1 h-3 w-24" />}
+                  hint={r ? t("common.conversations", { count: r.threads }) : <Skeleton shape="text" className="mt-1 w-24" />}
                 >
-                  {() => (r ? <span className="text-sm text-muted-foreground tabular">{t("storage.about", { size: formatBytes(r.bytes) })}</span> : <Skeleton className="h-4 w-16" />)}
+                  {() => (r ? <span className="text-sm text-muted-foreground tabular">{t("storage.about", { size: formatBytes(r.bytes) })}</span> : <Skeleton shape="text" className="h-4 w-16" />)}
                 </SettingsRow>
               );
             })}
@@ -144,7 +144,7 @@ export function StorageTab() {
             {REMOVABLE_BUCKETS.map((b) => {
               const a = bucket(b)?.removable[ageIndex];
               return (
-                <SettingsRow key={b} testId={`storage-pick-${b}`} label={viewLabel(b)} hint={!a ? <Skeleton className="mt-1 h-3 w-32" /> : a.threads ? amountText(a) : t("storage.nothingOld")}>
+                <SettingsRow key={b} testId={`storage-pick-${b}`} label={viewLabel(b)} hint={!a ? <Skeleton shape="text" className="mt-1 w-32" /> : a.threads ? amountText(a) : t("storage.nothingOld")}>
                   {(a11y) => (
                     <Checkbox
                       {...a11y}

@@ -860,8 +860,8 @@ export function ThreadList() {
           <div className="space-y-3 p-4">
             {Array.from({ length: 8 }, (_, i) => (
               <div key={i} className="space-y-1.5">
-                <Skeleton className="h-3 w-1/3" />
-                <Skeleton className="h-3 w-5/6" />
+                <Skeleton shape="text" className="w-1/3" />
+                <Skeleton shape="text" className="w-5/6" />
               </div>
             ))}
           </div>
