@@ -78,7 +78,7 @@ export function WhenFields({ when, testPrefix, describedBy }: { when: ReturnType
         <SelectContent alignItemWithTrigger={false} side="bottom" align="end" sideOffset={6} className="max-h-60 min-w-30" data-testid={`${testPrefix}-times`}>
           {TIMES.map((m) => (
             // BoardUI's time slots: centered, the chosen one filled (no check)
-            <SelectItem key={m} value={m} data-gone={gone(m) || undefined} className="justify-center pr-2 tabular-nums data-gone:text-muted-foreground data-selected:bg-muted data-selected:font-medium [&>span:first-child]:flex-none [&>span:not(:first-child)]:hidden">
+            <SelectItem key={m} value={m} data-gone={gone(m) || undefined} className="justify-center pr-2 tabular-nums data-gone:text-muted-foreground aria-selected:bg-muted aria-selected:font-medium [&>span:first-child]:flex-none [&>span:not(:first-child)]:hidden">
               {timeText(m)}
             </SelectItem>
           ))}

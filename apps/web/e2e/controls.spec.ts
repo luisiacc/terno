@@ -178,6 +178,10 @@ for (const mode of ["light", "dark"] as const) {
       }
       await page.getByTestId("remind-time").click();
       const chosen = page.getByTestId("remind-times").locator("[data-slot=select-item][data-selected]");
+      // the list opens focused on the chosen time; move off it, so its fill is the chosen one's, not the focus highlight
+      await expect(chosen).toBeFocused();
+      await page.keyboard.press("ArrowDown");
+      await expect(chosen).not.toBeFocused();
       await page.mouse.move(1, 1);
       expect(await chosen.evaluate((el) => getComputedStyle(el).justifyContent)).toBe("center");
       expect(await chosen.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await css(page, "probe-muted", "background-color"));

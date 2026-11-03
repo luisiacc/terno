@@ -29,3 +29,7 @@ Classes only.
 ## Out of scope
 
 BoardUI's 12/24-hour switch: the locale already decides (12-hour in English, 24-hour in Spanish).
+
+## Revisions after the Codex review
+
+One finding, and it hid a bug: the test checked the chosen time's fill while the list's focus was still on it, so the focus highlight (also `muted` in a menu) passed for it. With focus moved off (ArrowDown), the chosen time had no fill: this repo's `data-selected:` variant means `data-selected="true"` (the calendar's), and Base UI's select items set an empty `data-selected`. The slots use `aria-selected:` (`true` on the chosen option) instead, and the test moves focus off the chosen time before checking it; it fails without the fill.
