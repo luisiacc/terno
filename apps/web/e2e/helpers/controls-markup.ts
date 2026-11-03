@@ -36,6 +36,7 @@ process.stdout.write(
       h("i", { "data-testid": "probe-background", className: "bg-background" }),
       h("i", { "data-testid": "probe-primary-ink", className: "text-primary" }),
       h("i", { "data-testid": "probe-foreground", className: "text-foreground" }),
+      h("i", { "data-testid": "probe-primary-ink-on", className: "text-primary-foreground" }),
       h("i", { "data-testid": "probe-hairline", className: "block h-(--hairline-w) bg-hairline" }),
     ),
   ),

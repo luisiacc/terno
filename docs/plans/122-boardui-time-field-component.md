@@ -68,3 +68,7 @@ Nine points:
 8. **Past times are no longer dimmed in a list** (there is no list): a past time is flagged once typed, with the field's error border and the "Pick a time in the future." note. Intentional.
 9. **The bundle check** is real now: `composer.spec` walks the entry's static imports for React Aria (none) and checks the field is React Aria's once the picker opens. It found React Aria in the startup chunk through the chunking rule, fixed above.
 
+
+## Revisions after the Codex code review
+
+One finding, fixed: a cleared segment with focus kept its placeholder's `muted-foreground` on the primary fill (1.23:1 in Terno light), since the placeholder rule came later in the CSS. The focused segment's text is `primary-foreground` whether or not it is cleared; `controls.spec` checks the cleared, focused hour's color and fails without the fix.

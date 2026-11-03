@@ -213,6 +213,10 @@ for (const mode of ["light", "dark"] as const) {
       await page.keyboard.press("Backspace");
       await page.keyboard.press("Backspace");
       await expect(popover.getByTestId("remind-set")).toBeDisabled();
+      // the cleared hour, focused: its dashes in the primary's own text color, on the primary
+      const hour = field.locator("[role=spinbutton]").first();
+      await expect(hour).toHaveAttribute("data-placeholder", "true");
+      expect(await hour.evaluate((el) => getComputedStyle(el).color)).toBe(await css(page, "probe-primary-ink-on", "color"));
       await page.keyboard.press("Enter");
       await expect(popover).toBeVisible();
       // whole again and in the future: Enter sets it

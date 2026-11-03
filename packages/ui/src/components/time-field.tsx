@@ -49,7 +49,8 @@ function TimeField<T extends TimeValue>({
                 className={cn(
                   "rounded-sm px-0.5 text-foreground tabular-nums caret-transparent outline-none",
                   "data-[placeholder]:text-muted-foreground data-[type=literal]:px-0 data-[type=literal]:text-muted-foreground",
-                  "data-[focused]:bg-primary data-[focused]:text-primary-foreground"
+                  // focused, cleared or not, its text is the primary's own (a cleared segment's muted dashes would vanish on it)
+                  "data-[focused]:bg-primary data-[focused]:text-primary-foreground data-[focused]:data-[placeholder]:text-primary-foreground"
                 )}
               />
             )}
