@@ -1,9 +1,9 @@
 import { folderName } from "~/lib/account-folders";
-import { Input } from "@terno/ui/components/input";
+import { SearchField } from "@terno/ui/components/search-field";
 import { Kbd } from "@terno/ui/components/kbd";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Bell, ChevronDown, Inbox, ListFilter, Search, SquarePen, X } from "@terno/ui/icons";
+import { Bell, ChevronDown, Inbox, ListFilter, Search, SquarePen } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
@@ -218,7 +218,7 @@ function toggleSearch(): void {
   useSearchOpen.setState({ open: false });
 }
 
-function SearchField({ autoCollapse }: { autoCollapse: boolean }) {
+function ListSearch({ autoCollapse }: { autoCollapse: boolean }) {
   const query = useApp((s) => s.query);
   const review = useApp((s) => s.reviewCategoryId !== null);
   const [focused, setFocused] = useState(false);
@@ -228,50 +228,39 @@ function SearchField({ autoCollapse }: { autoCollapse: boolean }) {
   const showCoverage = !review && (focused || query.trim() !== "");
   return (
     <>
-      <div className="no-drag relative">
-        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          ref={(el) => {
-            searchInputRef.current = el;
-          }}
-          data-testid="search-input"
-          value={query}
-          placeholder={placeholder}
-          aria-label={placeholder}
-          aria-describedby={showCoverage ? "search-coverage" : undefined}
-          className="h-[30px] rounded-lg border-0 bg-tint pr-14 pl-8 text-sm shadow-none dark:bg-tint"
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          onChange={(e) => {
-            setApp({ query: e.target.value });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              if (getApp().query) setApp({ query: "" });
-              else if (autoCollapse) {
-                // an empty field behind a button closes, and focus goes back to the button
-                useSearchOpen.setState({ open: false });
-                requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-testid=search-button]")?.focus());
-              }
-              e.currentTarget.blur();
-            } else if (e.key === "Enter" || e.key === "ArrowDown") {
-              e.currentTarget.blur();
+      <SearchField
+        className="no-drag"
+        ref={(el) => {
+          searchInputRef.current = el;
+        }}
+        data-testid="search-input"
+        value={query}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        aria-describedby={showCoverage ? "search-coverage" : undefined}
+        clearLabel={t("list.search.clear")}
+        hint={<Kbd>/</Kbd>}
+        // the list's compact field, on the tint
+        fieldClassName="h-[30px] bg-tint text-sm dark:bg-tint"
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onValueChange={(q) => setApp({ query: q })}
+        // its own Escape: clear, then close the field and give focus back
+        clearOnEscape={false}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            if (getApp().query) setApp({ query: "" });
+            else if (autoCollapse) {
+              // an empty field behind a button closes, and focus goes back to the button
+              useSearchOpen.setState({ open: false });
+              requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-testid=search-button]")?.focus());
             }
-          }}
-        />
-        {query ? (
-          <button
-            type="button"
-            aria-label={t("list.search.clear")}
-            className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
-            onClick={() => setApp({ query: "" })}
-          >
-            <X className="size-3.5" />
-          </button>
-        ) : (
-          <Kbd className="absolute top-1/2 right-2 -translate-y-1/2">/</Kbd>
-        )}
-      </div>
+            e.currentTarget.blur();
+          } else if (e.key === "Enter" || e.key === "ArrowDown") {
+            e.currentTarget.blur();
+          }
+        }}
+      />
       {showCoverage && <p id="search-coverage" data-testid="search-coverage" className="no-drag mt-1.5 text-2xs text-muted-foreground">{t("list.search.coverage")}</p>}
     </>
   );
@@ -503,7 +492,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
           <div className="flex shrink-0 items-center gap-0.5 pt-0.5">{actions}</div>
         </div>
       )}
-      {showField && <SearchField autoCollapse={behindButton} />}
+      {showField && <ListSearch autoCollapse={behindButton} />}
       {!review && !reminders && quick === "chips" && <QuickChips filter={filter} />}
       {tabs && <ListTabs />}
     </div>
