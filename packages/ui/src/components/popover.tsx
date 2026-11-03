@@ -17,7 +17,7 @@ function PopoverContent({
   align = "center",
   alignOffset = 0,
   side = "bottom",
-  sideOffset = 4,
+  sideOffset = 8,
   anchor,
   ...props
 }: PopoverPrimitive.Popup.Props &
@@ -38,7 +38,8 @@ function PopoverContent({
         <PopoverPrimitive.Popup
           data-slot="popover-content"
           className={cn(
-            "z-50 flex w-72 origin-(--transform-origin) flex-col gap-2.5 rounded-2xl bg-popover p-3 text-sm text-popover-foreground shadow-menu outline-hidden duration-base data-closed:duration-fast ease-spring data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.97] data-closed:animate-out data-closed:fade-out-0 data-closed:ease-exit",
+            // BoardUI's popover (plan 125): 320 px, 12 px between its parts, 8 px off its trigger (10 with an arrow)
+            "z-50 flex w-80 origin-(--transform-origin) flex-col gap-3 rounded-2xl bg-popover p-3 text-sm text-popover-foreground shadow-menu outline-hidden duration-base data-closed:duration-fast ease-spring data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.97] data-closed:animate-out data-closed:fade-out-0 data-closed:ease-exit",
             className
           )}
           {...props}
@@ -76,6 +77,17 @@ function PopoverHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+/** The popover's actions, at its end */
+function PopoverFooter({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="popover-footer"
+      className={cn("flex justify-end gap-2", className)}
+      {...props}
+    />
+  )
+}
+
 function PopoverTitle({ className, ...props }: PopoverPrimitive.Title.Props) {
   return (
     <PopoverPrimitive.Title
@@ -104,6 +116,7 @@ export {
   PopoverArrow,
   PopoverContent,
   PopoverDescription,
+  PopoverFooter,
   PopoverHeader,
   PopoverTitle,
   PopoverTrigger,

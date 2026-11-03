@@ -41,14 +41,15 @@ function TimeField<T extends TimeValue>({
               "flex h-8 w-full min-w-0 cursor-text items-center rounded-md border border-border bg-card pr-2.5 pl-8 text-sm whitespace-nowrap shadow-xs transition-colors",
               "data-[hovered]:border-input data-[focus-within]:border-ring data-[focus-within]:ring-3 data-[focus-within]:ring-ring",
               "data-[invalid]:border-destructive data-[invalid]:ring-3 data-[invalid]:ring-destructive/20 dark:data-[invalid]:border-destructive/50 dark:data-[invalid]:ring-destructive/40",
-              "data-[disabled]:pointer-events-none data-[disabled]:bg-input/50 data-[disabled]:opacity-50"
+              // unavailable, as the secondary button (plan 125): the field wash under its border, flat, no opacity
+              "data-[disabled]:pointer-events-none data-[disabled]:bg-field data-[disabled]:shadow-none"
             )}
           >
             {(segment) => (
               <DateSegment
                 segment={segment}
                 className={cn(
-                  "rounded-sm px-0.5 text-foreground tabular-nums caret-transparent outline-none",
+                  "rounded-md px-0.5 text-foreground tabular-nums caret-transparent outline-none group-data-[disabled]/time-field:text-muted-foreground",
                   "data-[placeholder]:text-muted-foreground data-[type=literal]:px-0 data-[type=literal]:text-muted-foreground",
                   // focused, cleared or not, its text is the primary's own (a cleared segment's muted dashes would vanish on it)
                   "data-[focused]:bg-primary data-[focused]:text-primary-foreground data-[focused]:data-[placeholder]:text-primary-foreground"
