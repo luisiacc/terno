@@ -17,7 +17,8 @@ const lines = (page: Page, selector: string) =>
 test.describe("icon line", { tag: "@design" }, () => {
   test("the same line at every size", async ({ app: page }) => {
     await expect(page.getByTestId("message").first()).toBeVisible();
-    const all = await lines(page, "svg.icon");
+    // (the round close tunes its own: BoardUI's × at 1.5 px, plan 125)
+    const all = await lines(page, "svg.icon:not([data-slot=close-button] svg)");
     expect(new Set(all.map((i) => Math.round(i.size))).size).toBeGreaterThan(1);
     expect(all.every((i) => i.scaling === "non-scaling-stroke")).toBe(true);
     const stroke = Number(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--icon-stroke")));
