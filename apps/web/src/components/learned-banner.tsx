@@ -1,6 +1,7 @@
 import { capFilterName, LEARNED_FILTER_NAME, type LearnedProposal } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
-import { Sparkles, X } from "@terno/ui/icons";
+import { Announcement } from "@terno/ui/components/announcement";
+import { Sparkles } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useEffect, useState } from "react";
 import { richT } from "~/lib/i18n";
@@ -31,13 +32,15 @@ export function LearnedBanner() {
   const who = proposal.scope === "list" ? t("list.learned.list", { value: proposal.value }) : proposal.scope === "domain" ? t("list.learned.domain", { value: proposal.value }) : proposal.value;
   const action = t(ACTION[proposal.action]);
   return (
-    <div data-testid="learned-banner" className="mx-3 mt-1 mb-1 flex items-start gap-2.5 rounded-[calc(var(--radius-lg)+2px)] bg-tint p-2.5 text-xs">
-      <Sparkles className="mt-0.5 size-3.5 shrink-0 text-primary" />
-      <div className="min-w-0 flex-1">
-        <p className="text-foreground">
-          {richT(SENTENCE[proposal.action], { who, count: proposal.support, b: (text) => <span className="font-medium">{text}</span> })}
-        </p>
-        <div className="mt-1.5 flex gap-1.5">
+    <Announcement
+      data-testid="learned-banner"
+      icon={<Sparkles />}
+      // a sentence with its sender in medium, not a heading
+      title={richT(SENTENCE[proposal.action], { who, count: proposal.support, b: (text) => <span className="font-medium">{text}</span> })}
+      titleProps={{ className: "font-normal" }}
+      onClose={() => setProposal(null)}
+      actions={
+        <>
           {/* a suggestion, not the screen's main action: a quiet raised button */}
           <Button
             size="xs"
@@ -66,11 +69,8 @@ export function LearnedBanner() {
           >
             {t("list.learned.notNow")}
           </Button>
-        </div>
-      </div>
-      <button type="button" aria-label={t("common.close")} className="text-muted-foreground hover:text-foreground" onClick={() => setProposal(null)}>
-        <X className="size-3.5" />
-      </button>
-    </div>
+        </>
+      }
+    />
   );
 }
