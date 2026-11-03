@@ -2,6 +2,7 @@ import "./rich.css";
 import { FONT_CSS, parseHtml, HIGHLIGHT_DARK, HIGHLIGHT_HEX, HIGHLIGHT_INK, HIGHLIGHT_INK_DARK, HIGHLIGHTS, normalizeHref, TEXT_COLORS, TEXT_DARK, TEXT_HEX, schema } from "@terno/richtext";
 import { formatList, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { ColorSwatch, ColorSwatches } from "@terno/ui/components/color-swatches";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { Shortcut } from "@terno/ui/components/shortcut";
@@ -776,61 +777,44 @@ function ValueMenu<V extends string>({ label, name, value, items, onPick, trigge
   );
 }
 
-/** A labelled row of color swatches: one radio group, arrows move and pick, as in any palette. */
+/** "none" as the swatches' value (a radio's value is never null) */
+const NO_COLOR = "none";
+
+/** A labelled row of color swatches: one radio group (the shared swatches), arrows move and pick, as in any palette. */
 function Swatches({ label, value, options, onPick, kind }: { label: string; value: string | null; options: readonly string[]; onPick: (v: string | null) => void; kind: "text" | "highlight" }) {
   const dark = isDark();
   const all = [null, ...options];
-  const current = Math.max(0, all.indexOf(value));
-  const refs = useRef<(HTMLButtonElement | null)[]>([]);
-  const move = (e: React.KeyboardEvent, i: number) => {
-    const delta = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
-    if (!delta) return;
-    e.preventDefault();
-    const next = (i + delta + all.length) % all.length;
-    refs.current[next]?.focus();
-    onPick(all[next]!);
-  };
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-xs font-medium text-muted-foreground" id={`sw-${kind}`}>
         {label}
       </span>
-      <div role="radiogroup" aria-labelledby={`sw-${kind}`} className="flex gap-1">
-        {all.map((v, i) => {
+      <ColorSwatches aria-labelledby={`sw-${kind}`} value={value ?? NO_COLOR} onValueChange={(v) => onPick(v === NO_COLOR ? null : (v as string))} className="flex-nowrap gap-1">
+        {all.map((v) => {
           const name = v === null ? (kind === "text" ? t("compose.format.colorDefault") : t("compose.format.highlightNone")) : t(`compose.format.swatch.${v}` as "compose.format.swatch.red");
-          const checked = v === value || (v === null && value === null);
           return (
-            <Tooltip key={v ?? "none"}>
+            <Tooltip key={v ?? NO_COLOR}>
               <TooltipTrigger
                 render={
-                  <button
-                    ref={(el) => {
-                      refs.current[i] = el;
-                    }}
-                    type="button"
-                    role="radio"
-                    aria-checked={checked}
-                    aria-label={name}
-                    tabIndex={i === current ? 0 : -1}
-                    onKeyDown={(e) => move(e, i)}
-                    onClick={() => onPick(v)}
+                  <ColorSwatch
+                    value={v ?? NO_COLOR}
+                    label={name}
+                    // the chosen one again re-applies it (a selection in mixed colors shows "none" chosen)
+                    onClick={() => v === value && onPick(v)}
                     data-testid={`swatch-${kind}-${v ?? "none"}`}
-                    className={cn(
-                      "relative inline-flex size-6 items-center justify-center rounded-full text-2xs font-semibold outline-none ring-offset-2 ring-offset-popover transition-shadow focus-visible:ring-2 focus-visible:ring-ring",
-                      checked && "ring-2 ring-foreground/70",
-                      v === null && "shadow-hairline",
-                    )}
-                    style={v === null ? undefined : kind === "text" ? { color: swatchText(v, dark) } : { backgroundColor: swatchWash(v, dark), color: dark ? HIGHLIGHT_INK_DARK : HIGHLIGHT_INK }}
+                    color={v === null ? undefined : kind === "text" ? swatchText(v, dark) : swatchWash(v, dark)}
+                    style={v !== null && kind === "highlight" ? { color: dark ? HIGHLIGHT_INK_DARK : HIGHLIGHT_INK } : undefined}
+                    className="text-2xs font-semibold"
                   >
-                    {v === null ? <span className="block h-px w-4 rotate-[-45deg] bg-muted-foreground" /> : kind === "text" ? <span style={{ backgroundColor: swatchText(v, dark) }} className="block size-4 rounded-full" /> : "A"}
-                  </button>
+                    {v === null ? <span className="block h-px w-4 rotate-[-45deg] bg-muted-foreground" /> : kind === "highlight" ? "A" : null}
+                  </ColorSwatch>
                 }
               />
               <TooltipContent>{name}</TooltipContent>
             </Tooltip>
           );
         })}
-      </div>
+      </ColorSwatches>
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { CATEGORY_COLORS, type CategoryColor } from "@terno/core";
 import type { SettingsPatch } from "@terno/core/rpc";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@terno/ui/components/alert-dialog";
 import { Button } from "@terno/ui/components/button";
-import { CategoryDot } from "@terno/ui/components/category-dot";
+import { ColorSwatch, ColorSwatches } from "@terno/ui/components/color-swatches";
 import { Input } from "@terno/ui/components/input";
 import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
@@ -201,7 +201,7 @@ export function CommitInput({
 
 
 /**
- * The palette as native radio buttons (arrow keys, one tab stop), each named
+ * The palette as the shared swatches (one radio group: arrow keys, one tab stop), each named
  * by its color. The pick shows at once; a save that fails puts the stored
  * color back.
  */
@@ -215,26 +215,22 @@ export function ColorPicker({ value, onChange, a11y, name, testId }: { value: st
     if (picked === stored) setPicked(value);
   }
   return (
-    <div role="radiogroup" aria-labelledby={a11y["aria-labelledby"]} aria-describedby={a11y["aria-describedby"]} className="flex items-center gap-1" data-testid={testId}>
+    <ColorSwatches
+      aria-labelledby={a11y["aria-labelledby"]}
+      aria-describedby={a11y["aria-describedby"]}
+      name={name}
+      value={picked}
+      onValueChange={(v) => {
+        const c = v as CategoryColor;
+        setPicked(c);
+        onChange(c).catch(() => setPicked(value));
+      }}
+      data-testid={testId}
+    >
       {CATEGORY_COLORS.map((c) => (
-        <label key={c} className="relative flex size-6 cursor-pointer items-center justify-center rounded-full has-focus-visible:ring-2 has-focus-visible:ring-ring">
-          <input
-            type="radio"
-            name={name}
-            value={c}
-            checked={picked === c}
-            onChange={() => {
-              setPicked(c);
-              onChange(c).catch(() => setPicked(value));
-            }}
-            aria-label={t(COLOR_LABEL[c])}
-            className="peer sr-only"
-            data-testid={testId ? `${testId}-${c}` : undefined}
-          />
-          <CategoryDot color={c} className="size-3.5 peer-checked:ring-2 peer-checked:ring-foreground peer-checked:ring-offset-2 peer-checked:ring-offset-tint" />
-        </label>
+        <ColorSwatch key={c} value={c} label={t(COLOR_LABEL[c])} color={`var(--cat-${c})`} data-testid={testId ? `${testId}-${c}` : undefined} />
       ))}
-    </div>
+    </ColorSwatches>
   );
 }
 

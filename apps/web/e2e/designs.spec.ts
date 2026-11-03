@@ -332,7 +332,7 @@ test.describe("an install from before designs", () => {
     await expect(page.locator("html")).toHaveAttribute("data-theme", "lumen-light");
     await page.getByTestId("open-settings").click();
     await page.getByTestId("tab-appearance").click();
-    await expect(page.getByTestId("theme-card-design-light")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("theme-card-design-light")).toHaveAttribute("aria-checked", "true");
     const previous = page.getByTestId("theme-card-previous-light");
     await expect(previous).toContainText("GitHub Light");
     await expect(previous).toContainText("Your previous theme");

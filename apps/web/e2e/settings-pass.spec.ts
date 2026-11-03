@@ -188,7 +188,7 @@ test.describe("editable, persisted and in effect", () => {
     await expect(page.getByTestId(`nav-account-${imap.id}`)).toContainText("Freelance (nuevo)");
     await item.getByRole("textbox", { name: "Sender name" }).fill("Luis C.");
     await item.getByRole("textbox", { name: "Sender name" }).blur();
-    await item.getByRole("radiogroup", { name: "Color" }).getByRole("radio", { name: "Violet" }).check({ force: true }); // the input is visually hidden behind its dot
+    await item.getByRole("radiogroup", { name: "Color" }).getByRole("radio", { name: "Violet" }).check();
     await item.getByRole("textbox", { name: "Signature" }).fill("Luis Cordero\nhola@luiscordero.dev");
     await item.getByRole("textbox", { name: "Signature" }).blur();
     await item.getByRole("spinbutton", { name: "Sync window" }).fill("30");
@@ -319,7 +319,7 @@ test.describe("editable, persisted and in effect", () => {
     await item.getByTestId("category-toggle").click();
     await item.getByRole("textbox", { name: "Name" }).fill("Clientes VIP");
     await item.getByRole("textbox", { name: "Name" }).press("Enter");
-    await item.getByRole("radio", { name: "Rose" }).check({ force: true });
+    await item.getByRole("radio", { name: "Rose" }).check();
     await item.getByRole("button", { name: "Move up “Clientes VIP”" }).click();
     // the moved button keeps focus; the sidebar follows
     await expect(item.getByRole("button", { name: "Move up “Clientes VIP”" })).toBeFocused();
