@@ -1,9 +1,10 @@
 import { client } from "~/rpc/connection";
 import { useRef, useState } from "react";
-import { Download, Paperclip, X } from "@terno/ui/icons";
+import { Download, Paperclip } from "@terno/ui/icons";
 import type { AttachmentInfo } from "@terno/core";
 import { formatList, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { Chip } from "@terno/ui/components/chip";
 import { cn } from "@terno/ui/lib/utils";
 import { attachFiles, downloadAttachment, useAttachmentUploads } from "~/lib/attachments";
 import { editDraft, type LocalDraft } from "~/lib/drafts";
@@ -44,14 +45,19 @@ export function DraftAttachments({ d }: { d: LocalDraft }) {
       {forward.status === "failed" && <Button type="button" variant="link" size="sm" data-testid="forward-files-retry" className="h-auto p-0 text-xs font-medium text-foreground underline underline-offset-2 hover:no-underline" disabled={d.sending} onClick={() => retryForwardFiles(d.key)}>{t("compose.forwardFiles.tryAgain")}</Button>}
     </p>}
     {!!chips.length && <ul aria-label={t("reader.attachments")} className={cn("flex flex-wrap gap-2", forward && "mt-2")}>
-      {chips.map((a) => <li key={a.assetId} data-testid="draft-attachment" className="flex max-w-full items-center gap-2 rounded-md bg-tint py-1 pl-2.5 pr-1 text-xs">
-        <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="max-w-48 truncate">{a.filename}</span><span className="text-muted-foreground tabular">{formatBytes(a.size)}</span>
-        <Button type="button" variant="ghost" size="icon-sm" aria-label={t("attachments.remove", { name: a.filename })} disabled={d.sending || busy} onClick={(e) => {
-          const body = e.currentTarget.closest("[data-testid=composer]")?.querySelector<HTMLElement>("[data-testid=compose-body]");
-          editDraft(d.key, { attachments: d.attachments!.filter((x) => x.assetId !== a.assetId) });
-          body?.focus({ preventScroll: true });
-        }}><X className="size-3" /></Button>
+      {chips.map((a) => <li key={a.assetId} data-testid="draft-attachment" className="flex max-w-full">
+        <Chip
+          dot={<Paperclip className="size-3.5 shrink-0 text-muted-foreground" />}
+          removeLabel={t("attachments.remove", { name: a.filename })}
+          removeProps={{ disabled: d.sending || busy }}
+          onRemove={(e) => {
+            const body = e.currentTarget.closest("[data-testid=composer]")?.querySelector<HTMLElement>("[data-testid=compose-body]");
+            editDraft(d.key, { attachments: d.attachments!.filter((x) => x.assetId !== a.assetId) });
+            body?.focus({ preventScroll: true });
+          }}
+        >
+          <span className="max-w-48 truncate">{a.filename}</span><span className="font-normal text-muted-foreground tabular">{formatBytes(a.size)}</span>
+        </Chip>
       </li>)}
     </ul>}
   </div>;
