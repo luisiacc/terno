@@ -1,4 +1,5 @@
 import { t } from "@terno/i18n";
+import { Announcement } from "@terno/ui/components/announcement";
 import { Button } from "@terno/ui/components/button";
 import { Forward } from "@terno/ui/icons";
 import { useState } from "react";
@@ -22,20 +23,23 @@ export function ForwardQuestion() {
     }
   };
   return (
-    <div role="group" aria-labelledby="forward-question-text" data-testid="forward-question" className="mx-3 mt-1 mb-1 flex items-start gap-2.5 rounded-[calc(var(--radius-lg)+2px)] bg-tint p-2.5 text-xs">
-      <Forward className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden />
-      <div className="min-w-0 flex-1">
-        <p id="forward-question-text" className="text-foreground">{t("forward.question", { rule: question.ruleName, count: question.count })}</p>
-        <p className="mt-0.5 text-muted-foreground">{t("forward.questionHeld", { count: question.held })}</p>
-        <div className="mt-1.5 flex gap-1.5">
+    // no close: it stays until answered
+    <Announcement
+      role="group"
+      data-testid="forward-question"
+      icon={<Forward />}
+      title={t("forward.question", { rule: question.ruleName, count: question.count })}
+      description={t("forward.questionHeld", { count: question.held })}
+      actions={
+        <>
           <Button size="xs" variant="outline" disabled={busy} data-testid="forward-question-keep" onClick={() => void answer(true)}>
             {t("forward.keep")}
           </Button>
           <Button size="xs" variant="ghost" disabled={busy} data-testid="forward-question-stop" onClick={() => void answer(false)}>
             {t("forward.stop")}
           </Button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    />
   );
 }
