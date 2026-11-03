@@ -2,8 +2,9 @@ import { focusAccount, goToAccount, goToFolder } from "~/lib/account-folders";
 import { normalizeText, remindPresets, separatesTabs, snippetPreview, TABS, type CategoryColor, type ReminderKind, type Snippet } from "@terno/core";
 import { t, type TextKey } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
+import { Chip } from "@terno/ui/components/chip";
 import { Command, CommandDescription, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, AtSign, Bell, BellOff, BookmarkPlus, CalendarClock, CheckCheck, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users, X } from "@terno/ui/icons";
+import { Archive, AtSign, Bell, BellOff, BookmarkPlus, CalendarClock, CheckCheck, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory } from "~/lib/categorize";
@@ -407,11 +408,15 @@ export function CommandPalette() {
           data-testid="palette-input"
           addon={
             page !== "root" && (
-              <button type="button" onClick={back} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.stopPropagation()} data-testid="palette-page" className="flex h-6 shrink-0 items-center gap-1 rounded-md bg-muted px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+              // the page's name, its × the way back (Enter and Space on it stay out of the list's keys)
+              <Chip
+                data-testid="palette-page"
+                onRemove={back}
+                removeLabel={t("palette.back")}
+                removeProps={{ "data-testid": "palette-back", onKeyDown: (e) => (e.key === "Enter" || e.key === " ") && e.stopPropagation() }}
+              >
                 {pageName[page]}
-                <span className="sr-only">, {t("palette.back")}</span>
-                <X className="size-3" aria-hidden />
-              </button>
+              </Chip>
             )
           }
         />

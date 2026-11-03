@@ -122,7 +122,7 @@ test.describe("palette", () => {
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("palette-page")).toBeVisible();
     await page.keyboard.press("Shift+Tab");
-    await expect(page.getByTestId("palette-page")).toBeFocused();
+    await expect(page.getByTestId("palette-back")).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("palette-page")).toHaveCount(0);
     await expect(page.getByRole("dialog")).toBeVisible();
