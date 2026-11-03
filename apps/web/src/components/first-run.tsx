@@ -163,7 +163,8 @@ export function FirstRun() {
         <h3 className="type-section-label mb-1.5 shrink-0 text-muted-foreground">{t("firstRun.look.style")}</h3>
         <RadioGroup aria-label={t("firstRun.look.style")} aria-describedby="first-run-design-description" value={settings.design} onValueChange={(design) => pick({ design: design as AppSettings["design"] })} className="grid shrink-0 grid-cols-3 gap-2">
           {DESIGNS.map((d) => (
-            <RadioCard key={d.id} value={d.id} data-testid={`first-run-design-${d.id}`} className="flex-col items-center gap-1.5 px-2 pt-2.5 pb-2">
+            // the chosen one clicked again is a choice too: it cancels a switch still waiting for its faces (Codex code review #2)
+            <RadioCard key={d.id} value={d.id} onClick={() => settings.design === d.id && pick({ design: d.id })} data-testid={`first-run-design-${d.id}`} className="flex-col items-center gap-1.5 px-2 pt-2.5 pb-2">
               {/* the style's own type, in its own design */}
               <span data-design={d.id} aria-hidden className="flex h-10 w-14 items-center justify-center rounded-lg bg-background text-xl text-foreground shadow-hairline" style={{ fontFamily: "var(--type-list-title-family)", fontWeight: "var(--type-list-title-weight)", fontStyle: "var(--type-list-title-style)" }}>
                 {/* i18n-ignore: aria-hidden typography specimen, identical in every language */}
