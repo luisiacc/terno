@@ -183,6 +183,50 @@ for (const design of DESIGN_IDS) for (const mode of ["light", "dark"] as const) 
       await expect(track).toHaveAttribute("aria-valuenow", "40");
     });
 
+    test("the icon button: ghost is the quiet muted glyph, secondary the bordered card; both named", async ({ app: page }) => {
+      expect(await css(page, "icon-ghost", "background-color")).toBe("rgba(0, 0, 0, 0)");
+      expect(await css(page, "icon-ghost", "color")).toBe(await css(page, "probe-muted-ink", "color"));
+      await expect(page.getByTestId("icon-ghost")).toHaveAccessibleName("Archive");
+      expect(await css(page, "icon-secondary", "background-color")).toBe(await css(page, "probe-card", "background-color"));
+      expect(await css(page, "icon-secondary", "border-top-color")).toBe(await css(page, "probe-border", "border-top-color"));
+      expect(await css(page, "icon-secondary", "width")).toBe("32px");
+    });
+
+    test("a chip is medium caption text on the field wash, its × the round close named after it", async ({ app: page }) => {
+      expect(await css(page, "chip", "background-color")).toBe(await css(page, "probe-field", "background-color"));
+      expect(await css(page, "chip", "color")).toBe(await css(page, "probe-foreground", "color"));
+      expect([await css(page, "chip", "height"), await css(page, "chip", "font-weight")]).toEqual(["24px", "500"]);
+      const remove = page.getByTestId("chip-remove");
+      await expect(remove).toHaveAccessibleName("Remove Work");
+      expect(await remove.evaluate((el) => ({ w: el.getBoundingClientRect().width, round: Number.parseFloat(getComputedStyle(el).borderRadius) >= 8 }))).toEqual({ w: 16, round: true });
+    });
+
+    test("the search field: the filled field, a round clear once it has text, the key hint while empty", async ({ app: page }) => {
+      expect(await css(page, "search-full", "background-color")).toBe(await css(page, "probe-field", "background-color"));
+      const field = page.getByTestId("search-full").locator("..");
+      const clear = field.getByRole("button", { name: "Clear search" });
+      await expect(clear).toHaveAttribute("tabindex", "-1");
+      expect(await clear.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await css(page, "probe-field", "background-color"));
+      await expect(page.getByTestId("search-hint")).toBeVisible();
+      await expect(page.getByTestId("search-empty").locator("..").getByRole("button")).toHaveCount(0);
+    });
+
+    test("an announcement sits on the tint: its title the ink, its text muted, its close round on the field wash", async ({ app: page }) => {
+      expect(await css(page, "announcement", "background-color")).toBe(await css(page, "probe-tint", "background-color"));
+      expect(await css(page, "announcement-title", "color")).toBe(await css(page, "probe-foreground", "color"));
+      expect(await css(page, "announcement-title", "font-weight")).toBe("500");
+      expect(await page.getByTestId("announcement").locator("p").nth(1).evaluate((el) => getComputedStyle(el).color)).toBe(await css(page, "probe-muted-ink", "color"));
+      await expect(page.getByTestId("announcement-close")).toHaveAccessibleName("Close");
+      expect(await css(page, "announcement-close", "background-color")).toBe(await css(page, "probe-field", "background-color"));
+    });
+
+    test("a link button is the accent with no box; the toast's surface is the solid popover", async ({ app: page }) => {
+      expect(await css(page, "link", "color")).toBe(await css(page, "probe-primary-ink", "color"));
+      expect([await css(page, "link", "background-color"), await css(page, "link", "padding-left")]).toEqual(["rgba(0, 0, 0, 0)", "0px"]);
+      expect(Number.parseFloat(await css(page, "link", "height"))).toBeLessThan(24);
+      expect(await css(page, "snack-surface", "background-color")).toBe(await css(page, "probe-popover", "background-color"));
+    });
+
     test("the primary's gradient runs between primary-hover and primary, the fills its text is checked on", async ({ app: page }) => {
       const stops = [await css(page, "primary", "--tw-gradient-from"), await css(page, "primary", "--tw-gradient-to")].map((s) => s.trim());
       const fills = [await css(page, "probe-primary-hover", "background-color"), await css(page, "probe-primary", "background-color")];

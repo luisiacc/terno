@@ -1,12 +1,16 @@
 // Plans 118 and 120: the controls spec's markup, rendered in its own process (an in-process Vite build in another spec of the
 // same worker can switch NODE_ENV between React's and react-dom/server's loads, and the two must match)
 import { Avatar, AvatarFallback } from "@terno/ui/components/avatar";
+import { Announcement } from "@terno/ui/components/announcement";
 import { Button } from "@terno/ui/components/button";
 import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@terno/ui/components/accordion";
+import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Checkbox } from "@terno/ui/components/checkbox";
+import { Chip } from "@terno/ui/components/chip";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { ColorSwatch, ColorSwatches } from "@terno/ui/components/color-swatches";
 import { DialogFooter } from "@terno/ui/components/dialog";
+import { IconButton } from "@terno/ui/components/icon-button";
 import { Input } from "@terno/ui/components/input";
 import { InputGroup, InputGroupInput } from "@terno/ui/components/input-group";
 import { Kbd } from "@terno/ui/components/kbd";
@@ -14,10 +18,12 @@ import { NumberField } from "@terno/ui/components/number-field";
 import { Pagination } from "@terno/ui/components/pagination";
 import { Progress } from "@terno/ui/components/progress";
 import { Radio, RadioCard, RadioDot, RadioGroup } from "@terno/ui/components/radio-group";
+import { SearchField } from "@terno/ui/components/search-field";
 import { Separator } from "@terno/ui/components/separator";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@terno/ui/components/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
+import { Archive, Sparkles } from "@terno/ui/icons";
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -80,6 +86,16 @@ process.stdout.write(
       h("i", { "data-testid": "probe-primary-border", className: "border border-primary" }),
       h("i", { "data-testid": "probe-primary-ink-on-bg", className: "bg-primary-foreground" }),
       h("i", { "data-testid": "probe-cat-rose", className: "bg-cat-rose" }),
+      // plan 125, phase 2b: the icon button, the chip, the search field, the announcement, the link button and the toast's
+      // surface at rest; the tokens they should show
+      h("div", { style: { display: "flex", gap: 8 } }, h(IconButton, { label: "Archive", shortcut: "e", "data-testid": "icon-ghost" }, h(Archive)), h(IconButton, { label: "Archive", variant: "secondary", size: "icon", "data-testid": "icon-secondary" }, h(Archive))),
+      h("div", { style: { display: "flex", gap: 8 } }, h(Chip, { dot: h(CategoryDot, { color: "rose" }), onRemove: () => {}, removeLabel: "Remove Work", removeProps: { "data-testid": "chip-remove" }, "data-testid": "chip" }, "Work")),
+      h(SearchField, { "aria-label": "Search", value: "ana", onValueChange: () => {}, "data-testid": "search-full", hint: h(Kbd, null, "/") }),
+      h(SearchField, { "aria-label": "Search", value: "", onValueChange: () => {}, "data-testid": "search-empty", hint: h(Kbd, { "data-testid": "search-hint" }, "/") }),
+      h(Announcement, { icon: h(Sparkles), title: "Title", titleProps: { "data-testid": "announcement-title" }, description: "Body", onClose: () => {}, closeProps: { "data-testid": "announcement-close" }, "data-testid": "announcement", className: "m-0" }),
+      h(Button, { variant: "link", "data-testid": "link" }, "Try again"),
+      h("div", { "data-testid": "snack-surface", className: "snack-surface rounded-xl p-2" }, "Archived"),
+      h("i", { "data-testid": "probe-tint", className: "bg-tint" }),
     ),
   ),
 );
