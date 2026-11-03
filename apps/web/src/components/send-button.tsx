@@ -29,11 +29,12 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
   const disabled = d.sending || Boolean(d.recovery);
   const kbd = "[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none";
   // the group owns the fill (a primary button's, plan 118), radius and shadow, so the halves meet with no seam; each half
-  // only tints on hover (bg-none: a half's own gradient would hide that).
+  // only tints on hover (bg-none: a half's own gradient would hide that), and keeps the group's look when unavailable (the
+  // group fades instead).
   // The group clips, so focus is a ring inside each half, 2 px in so it doesn't read as the half's edge, in the
   // text's color (the ring token is primary itself, 1:1 here).
   const half =
-    "border-0 bg-transparent bg-none shadow-none hover:bg-primary-hover aria-expanded:bg-primary-hover focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-[inset_0_0_0_2px_var(--primary),inset_0_0_0_3.5px_var(--primary-foreground)] active:not-aria-[haspopup]:scale-100 disabled:opacity-100";
+    "border-0 bg-transparent bg-none shadow-none hover:bg-primary-hover aria-expanded:bg-primary-hover focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-[inset_0_0_0_2px_var(--primary),inset_0_0_0_3.5px_var(--primary-foreground)] active:not-aria-[haspopup]:scale-100 unavailable:bg-transparent unavailable:text-primary-foreground";
   return (
     <div
       className={cn("flex shrink-0 items-stretch overflow-hidden rounded-[min(var(--radius-md),12px)] bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground dark:from-primary dark:to-primary-hover shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] has-disabled:opacity-50", className)}
