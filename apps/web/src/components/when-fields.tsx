@@ -17,8 +17,11 @@ const timeText = (minutes: number) =>
   new Intl.DateTimeFormat(tag(), getLocale() === "en" ? { hour: "numeric", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit" }).format(new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60));
 const TIMES = Array.from({ length: (24 * 60) / STEP }, (_, i) => i * STEP);
 
-/** the field look both triggers share (a quiet filled control, like the search field) */
-const FIELD = "h-8 gap-2 rounded-lg border-0 bg-tint px-2.5 text-sm font-normal text-foreground shadow-none hover:bg-accent hover:text-accent-foreground dark:bg-tint [&_svg]:text-muted-foreground";
+/**
+ * BoardUI's picker trigger (plan 121), both the date's and the time's: the secondary button's chrome (card, a 1 px
+ * border, a contact shadow) around an icon and the value; corners and icon on the rows' line above them
+ */
+const TRIGGER = "h-8 gap-2 rounded-md px-2 text-sm font-normal text-foreground [&_svg]:text-muted-foreground";
 
 /** A day and a time of day (local), starting at `start`; `chosen` is the moment they make. */
 export function useWhen(start: number) {
@@ -45,7 +48,7 @@ export function WhenFields({ when, testPrefix, describedBy }: { when: ReturnType
       <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
         <PopoverTrigger
           render={
-            <Button type="button" variant="ghost" data-testid={`${testPrefix}-date`} aria-label={`${t("remind.date")}: ${dayText(day)}`} aria-invalid={past || undefined} aria-describedby={past ? describedBy : undefined} className={cn(FIELD, "min-w-0 flex-1 justify-start")}>
+            <Button type="button" variant="outline" data-testid={`${testPrefix}-date`} aria-label={`${t("remind.date")}: ${dayText(day)}`} aria-invalid={past || undefined} aria-describedby={past ? describedBy : undefined} className={cn(TRIGGER, "min-w-0 flex-1 justify-start")}>
               <CalendarDays className="size-[1.15em]" aria-hidden />
               <span className="truncate">{dayText(day)}</span>
             </Button>
@@ -68,13 +71,14 @@ export function WhenFields({ when, testPrefix, describedBy }: { when: ReturnType
         </PopoverContent>
       </Popover>
       <Select value={minutes} onValueChange={(v) => v !== null && setMinutes(v)} items={TIMES.map((m) => ({ value: m, label: timeText(m) }))}>
-        <SelectTrigger data-testid={`${testPrefix}-time`} aria-label={t("remind.time")} aria-invalid={past || undefined} aria-describedby={past ? describedBy : undefined} className={cn(FIELD, "w-30 shrink-0")}>
+        <SelectTrigger data-testid={`${testPrefix}-time`} aria-label={t("remind.time")} aria-invalid={past || undefined} aria-describedby={past ? describedBy : undefined} className={cn(TRIGGER, "w-30 shrink-0")}>
           <Clock className="size-[1.15em]" aria-hidden />
           <SelectValue className="tabular-nums" />
         </SelectTrigger>
         <SelectContent alignItemWithTrigger={false} side="bottom" align="end" sideOffset={6} className="max-h-60 min-w-30" data-testid={`${testPrefix}-times`}>
           {TIMES.map((m) => (
-            <SelectItem key={m} value={m} data-gone={gone(m) || undefined} className="tabular-nums data-gone:text-muted-foreground">
+            // BoardUI's time slots: centered, the chosen one filled (no check)
+            <SelectItem key={m} value={m} data-gone={gone(m) || undefined} className="justify-center pr-2 tabular-nums data-gone:text-muted-foreground data-selected:bg-muted data-selected:font-medium [&>span:first-child]:flex-none [&>span:not(:first-child)]:hidden">
               {timeText(m)}
             </SelectItem>
           ))}

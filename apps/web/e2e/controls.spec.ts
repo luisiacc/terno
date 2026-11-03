@@ -159,6 +159,31 @@ for (const mode of ["light", "dark"] as const) {
       expect(await day.evaluate((el) => getComputedStyle(el).color)).toBe(await css(page, "probe-foreground", "color"));
     });
 
+    // plan 121: BoardUI's picker triggers and time slots, the date and time as wide as the rows above them
+    test("the date and time pickers: BoardUI's triggers on the rows' width, its time slots", async ({ app: page }) => {
+      await openRow(page, 1);
+      await page.getByTestId("action-remind").click();
+      const popover = page.getByTestId("remind-popover");
+      await popover.getByTestId("remind-pick").click();
+      const box = async (id: string) => (await page.getByTestId(id).boundingBox())!;
+      const row = await box("remind-pick");
+      const date = await box("remind-date");
+      const time = await box("remind-time");
+      expect(Math.abs(date.x - row.x), "the date starts on the row's edge").toBeLessThanOrEqual(0.5);
+      expect(Math.abs(time.x + time.width - (row.x + row.width)), "the time ends on it").toBeLessThanOrEqual(0.5);
+      for (const id of ["remind-date", "remind-time"]) {
+        expect(await css(page, id, "background-color"), `${id}: the secondary's card`).toBe(await css(page, "probe-card", "background-color"));
+        expect(await css(page, id, "border-top-width")).toBe("1px");
+        expect(await css(page, id, "box-shadow")).not.toBe("none");
+      }
+      await page.getByTestId("remind-time").click();
+      const chosen = page.getByTestId("remind-times").locator("[data-slot=select-item][data-selected]");
+      await page.mouse.move(1, 1);
+      expect(await chosen.evaluate((el) => getComputedStyle(el).justifyContent)).toBe("center");
+      expect(await chosen.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await css(page, "probe-muted", "background-color"));
+      await expect(chosen.locator("svg")).toBeHidden();
+    });
+
     test("the draft's From selector fills on hover", async ({ app: page }) => {
       await focusList(page);
       await page.keyboard.press("c");

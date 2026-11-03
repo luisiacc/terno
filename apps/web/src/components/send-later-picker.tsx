@@ -73,10 +73,10 @@ export function SendLaterPicker({ current, onPick, onEdit, sendKeys, done }: { c
           <span className="min-w-0 flex-1 truncate">{t("sendLater.custom")}</span>
         </button>
         {picking && (
-          <div className="flex flex-col gap-2 px-2 pt-1 pb-1" data-testid="send-later-fields">
+          <div className="flex flex-col gap-2 pt-1 pb-1" data-testid="send-later-fields">
             <WhenFields when={when} testPrefix="send-later" describedBy={pastId} />
             {when.past && (
-              <p id={pastId} className="px-1 text-xs text-destructive-ink" data-testid="send-later-past">
+              <p id={pastId} className="px-2 text-xs text-destructive-ink" data-testid="send-later-past">
                 {t("remind.past")}
               </p>
             )}

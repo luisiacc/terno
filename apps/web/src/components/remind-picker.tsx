@@ -81,7 +81,7 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
         </button>
         {picking && (
           <form
-            className="flex flex-col gap-2 px-2 pt-1 pb-1"
+            className="flex flex-col gap-2 pt-1 pb-1"
             data-testid="remind-custom"
             onSubmit={(e) => {
               e.preventDefault();
@@ -92,7 +92,7 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
           >
             <WhenFields when={when} testPrefix="remind" describedBy={pastId} />
             {past && (
-              <p id={pastId} className="px-1 text-xs text-destructive-ink" data-testid="remind-past">
+              <p id={pastId} className="px-2 text-xs text-destructive-ink" data-testid="remind-past">
                 {t("remind.past")}
               </p>
             )}
