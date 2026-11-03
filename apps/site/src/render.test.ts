@@ -1,5 +1,6 @@
 import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
+import { COPY } from "./copy";
 import { render, routes } from "./entry-server";
 
 describe("prerendered pages", () => {
@@ -67,6 +68,44 @@ describe("the main design", () => {
       const out = render(route);
       expect(out.design).toBe("midnight");
       expect(out.body).not.toContain("mn-cap-big\">⌘</kbd><kbd class=\"mn-cap mn-cap-big\">K");
+    }
+  });
+});
+
+describe("the privacy policy", () => {
+  const page = (path: string) => new JSDOM(render(routes().find((r) => r.path === path)!).body).window.document;
+
+  it("has Google's Limited Use statement, linked to the User Data Policy, in both languages (OAuth verification)", () => {
+    for (const path of ["/privacy/", "/es/privacy/"]) {
+      const google = page(path).querySelector("section#google")!;
+      expect(google.querySelector('a[href="https://developers.google.com/terms/api-services-user-data-policy"]')).not.toBeNull();
+      expect(google.querySelector('a[href="https://myaccount.google.com/permissions"]')).not.toBeNull();
+      expect(google.querySelector("code")?.textContent).toBe("gmail.modify");
+    }
+    expect(page("/privacy/").querySelector("section#google")!.textContent).toContain("will adhere to the Google API Services User Data Policy, including the Limited Use requirements");
+  });
+
+  it("every in-page link lands on a section, and both languages use the same anchors", () => {
+    for (const path of ["/privacy/", "/es/privacy/"]) {
+      const doc = page(path);
+      const links = [...doc.querySelectorAll('a[href^="#"]')].map((a) => a.getAttribute("href")!.slice(1)).filter((id) => id !== "main");
+      expect(links.length).toBeGreaterThan(COPY.en.pages.privacy.sections.length);
+      for (const id of links) expect(doc.getElementById(id), id).not.toBeNull();
+    }
+    expect(COPY.es.pages.privacy.sections.map((s) => s.id)).toEqual(COPY.en.pages.privacy.sections.map((s) => s.id));
+  });
+
+  it("no mark is left as literal text", () => {
+    for (const path of ["/privacy/", "/es/privacy/"]) {
+      const text = page(path).querySelector("main")!.textContent!;
+      expect(text).not.toMatch(/\*\*|`|\]\(/);
+    }
+  });
+
+  it("every home design links to it", () => {
+    for (const route of routes().filter((r) => r.page === "home")) {
+      const privacy = route.lang === "es" ? "/es/privacy/" : "/privacy/";
+      expect(new JSDOM(render(route).body).window.document.querySelector(`a[href="${privacy}"]`), route.path).not.toBeNull();
     }
   });
 });

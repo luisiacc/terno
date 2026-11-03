@@ -28,7 +28,7 @@ export const es: SiteCopy = {
     },
     local: {
       title: "Sin cuenta. Sin nube. Solo tu Mac.",
-      body: "Terno habla con tus servidores de correo y con nada más. Tu correo, tus contactos y el índice de búsqueda viven en tu Mac.",
+      body: "Tu correo va de tu Mac a tus servidores de correo, nunca por los nuestros. Tu correo, tus contactos y el índice de búsqueda viven en tu Mac.",
       points: ["Privado desde el primer momento", "Imágenes remotas solo si las pides", "Cero rastreo"],
     },
     search: {
@@ -146,23 +146,114 @@ export const es: SiteCopy = {
     notFound: { title: "Esta página no existe", body: "Puede que el enlace sea antiguo o esté mal escrito.", home: "Ir a la página de inicio" },
     privacy: {
       title: "Privacidad",
-      intro: "La app Terno guarda tu correo en tu Mac. Esta página trata de este sitio web.",
+      intro: "Terno guarda tu correo en tu Mac. No hay cuenta de Terno ni ningún servidor de Terno que guarde tu correo. Esta página explica exactamente qué hacen con tus datos la app y este sitio web.",
+      updated: "Última actualización: 2 de noviembre de 2026",
+      contents: "En esta página",
       sections: [
         {
-          title: "Qué guarda este sitio",
-          body: "Solo lo que das a la lista de espera: tu dirección de correo, la plataforma que elegiste y cuándo te uniste. Nada más se guarda. No hay cookies, ni analítica, ni scripts o fuentes de terceros.",
+          id: "who",
+          title: "Quiénes somos",
+          body: [
+            "Terno lo hace Luisiacc LLC («nosotros»). Esta política cubre la app Terno para Mac y este sitio web, terno.app. El código de Terno es público en [GitHub](https://github.com/luisiacc/terno), así que puedes comprobar todo lo que sigue.",
+          ],
         },
         {
-          title: "Qué pasa sin guardarse",
-          body: "Tu dirección IP se usa un momento para frenar abusos (unas pocas altas por minuto como mucho) y no se guarda. El servidor no registra lo que envías.",
+          id: "on-your-mac",
+          title: "Tu correo se queda en tu Mac",
+          body: [
+            "Terno descarga tu correo de tus proveedores de correo y lo guarda, junto con tus contactos y el índice de búsqueda, en una base de datos en la carpeta de usuario de tu Mac. Tus contraseñas, tokens de inicio de sesión y claves de IA se cifran con una clave guardada en el Llavero de macOS.",
+            "Nada de esto se nos envía. No tenemos ningún servidor que reciba tu correo, tus contactos ni nada de lo que haces en la app. No hay analítica ni rastreo.",
+          ],
         },
         {
-          title: "Cuánto tiempo lo guardamos",
-          body: "Hasta que te escribamos para decirte que Terno está listo para tu plataforma; después se borra. Para que te borremos antes, escribe a la dirección de nuestro perfil de GitHub.",
+          id: "connections",
+          title: "Con quién habla la app",
+          body: ["Además de con tus proveedores de correo, Terno solo se conecta a internet para lo siguiente, y tú decides sobre cada cosa:"],
+          points: [
+            "**Tus proveedores de correo** (Gmail, iCloud, Outlook o cualquier servidor IMAP/SMTP), para descargar, enviar y organizar tu correo.",
+            "**Iconos de sitios web.** Para mostrar el logo de una empresa junto a su correo, Terno pide el icono al propio sitio web de esa empresa. El sitio ve tu dirección IP y nada más. Activado por defecto; puedes desactivarlo en Ajustes → Apariencia.",
+            "**Fotos de Google.** Con una cuenta de Google, Terno puede mostrar las fotos de tus contactos de Google. Puedes desactivarlo en Ajustes → Apariencia.",
+            "**Las imágenes remotas de los mensajes** solo se cargan cuando tú lo decides, para un mensaje o siempre. Entonces el servidor del remitente ve tu dirección IP, como con cualquier app de correo.",
+            "**Actualizaciones.** Terno consulta GitHub para ver si hay versiones nuevas. No se envía nada sobre ti ni sobre tu correo.",
+            "**IA**, solo si configuras un proveedor. Consulta [Proveedores de IA](#ai).",
+            "**Informes de error**, solo si aceptas. Consulta [Informes de error](#errors).",
+            "**Cancelar suscripciones.** Cuando pulsas Cancelar suscripción, Terno contacta con la dirección que el remitente dio para ello.",
+          ],
         },
         {
-          title: "La app",
-          body: "Terno se conecta a tus propios servidores de correo y, si configuras uno, al proveedor de IA que elijas. No tiene cuenta de Terno y no nos envía nada salvo que decidas enviar un informe de error. El código es público, así que puedes comprobarlo.",
+          id: "google",
+          title: "Datos de usuario de Google",
+          body: [
+            "Cuando conectas una cuenta de Google, Google te pide que permitas a Terno:",
+          ],
+          points: [
+            "**Ver tu nombre, tu dirección de correo y tu foto de perfil**, para identificar la cuenta en Terno.",
+            "**Leer, enviar, etiquetar y eliminar tu correo de Gmail** (el permiso `gmail.modify`), para que puedas leer, buscar, enviar, archivar, etiquetar y eliminar tu correo en Terno.",
+            "**Ver las fotos de tus contactos** (acceso de solo lectura a tus contactos y a otros contactos), solo para mostrar las fotos de quienes te escriben. Puedes desmarcarlo en la pantalla de Google.",
+          ],
+          after: [
+            "Terno usa estos datos solo para ofrecerte las funciones que ves en la app. Se guardan en tu Mac y nunca se nos envían. No los vendemos, no los usamos para publicidad ni para crear perfiles tuyos, ni para desarrollar, mejorar o entrenar modelos de IA, y nadie en Luisiacc LLC los lee.",
+            "Terno solo pasa datos de usuario de Google a otros cuando tú se lo pides: al proveedor de IA que elijas, cuando activas una función de IA (solo lo que esa función necesita, descrito más abajo), y a las herramientas de IA de tu Mac que conectes a Terno.",
+            "El uso y la transferencia a cualquier otra app, por parte de Terno, de la información recibida de las API de Google se ajustarán a la [Política de datos de usuario de los servicios de API de Google](https://developers.google.com/terms/api-services-user-data-policy), incluidos los requisitos de uso limitado.",
+            "Para retirar el acceso de Terno, elimina la cuenta en Ajustes → Cuentas, lo que borra su correo y sus tokens de tu Mac, y luego quita Terno en [myaccount.google.com/permissions](https://myaccount.google.com/permissions).",
+          ],
+        },
+        {
+          id: "ai",
+          title: "Proveedores de IA",
+          body: [
+            "La IA está desactivada hasta que eliges un proveedor en Ajustes → IA: Anthropic, OpenAI, un servicio compatible con OpenAI (como OpenRouter, Groq, Together o Azure OpenAI) o un modelo que se ejecuta en tu Mac (Ollama, LM Studio). Tu clave se queda en tu Mac, y las peticiones van directamente de tu Mac a ese proveedor, bajo sus condiciones de privacidad. Con un modelo en tu Mac, nada sale de él.",
+            "Qué envía cada función:",
+          ],
+          points: [
+            "**Crear un filtro a partir de tus palabras:** lo que escribiste, la fecha de hoy, las direcciones y nombres de tus cuentas, y los nombres de tus categorías.",
+            "**Ayuda para clasificar en categorías** (un interruptor aparte): para un mensaje que Terno no sabe clasificar por sí solo, el nombre y la dirección del remitente, el asunto, los primeros 600 caracteres del texto y los nombres de tus categorías.",
+          ],
+        },
+        {
+          id: "agents",
+          title: "Herramientas de IA en tu Mac",
+          body: [
+            "Terno incluye un conector (MCP) que las herramientas de IA de tu Mac, como Claude, pueden usar para buscar, leer, organizar y redactar tu correo. Solo funciona en las apps de tu Mac en las que lo configures. Lo que esas herramientas hagan con tu correo depende de ellas y de su proveedor. Enviar correo a través de ellas necesita su propio interruptor, desactivado por defecto.",
+          ],
+        },
+        {
+          id: "errors",
+          title: "Informes de error",
+          body: [
+            "Cuando algo falla, Terno pregunta antes de enviar un informe (también puedes elegir Siempre o Nunca). Un informe contiene el error, en qué parte del código de Terno ocurrió, las versiones de la app y de macOS, cuántas cuentas tienes y un identificador aleatorio que puedes restablecer. Nunca contiene tu correo, direcciones, nombres ni asuntos. Los informes van a Sentry, el servicio que usamos para seguir los errores.",
+            "Terno guarda sus propios registros en tu Mac, con un tamaño limitado. No contienen tu correo ni direcciones.",
+          ],
+        },
+        {
+          id: "delete",
+          title: "Borrar tus datos",
+          body: [
+            "Eliminar una cuenta en Ajustes → Cuentas borra su correo, sus tokens y sus imágenes de tu Mac. Para borrarlo todo, cierra Terno y elimina la carpeta `~/Library/Application Support/Terno` y el ítem del Llavero «Terno Safe Storage». Las copias que Terno hace antes de actualizar tu buzón se borran a los 14 días.",
+          ],
+        },
+        {
+          id: "site",
+          title: "Este sitio web",
+          body: [
+            "Este sitio lo sirve Cloudflare. No tiene cookies, ni analítica, ni scripts o fuentes de terceros.",
+            "Solo guarda lo que das a la lista de espera: tu dirección de correo, la plataforma que elegiste y cuándo te uniste. Se borra cuando te escribamos para decirte que Terno está listo para tu plataforma, o antes si lo pides. Tu dirección IP se usa un momento para frenar abusos y no se guarda, y el servidor no registra lo que envías.",
+          ],
+        },
+        {
+          id: "children",
+          title: "Menores",
+          body: ["Terno no está dirigido a menores de 13 años, y no recopilamos sus datos a sabiendas."],
+        },
+        {
+          id: "changes",
+          title: "Cambios",
+          body: ["Si esta política cambia, actualizaremos esta página y su fecha. Los cambios importantes también aparecerán en las notas de versión de la app."],
+        },
+        {
+          id: "contact",
+          title: "Contacto",
+          body: ["Para preguntas sobre privacidad, o para que borremos tu entrada de la lista de espera, contacta con Luisiacc LLC a través de [github.com/luisiacc](https://github.com/luisiacc)."],
         },
       ],
     },

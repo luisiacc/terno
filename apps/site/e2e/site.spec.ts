@@ -148,3 +148,16 @@ test("every page of the site is dark even when the system is light", async ({ pa
     expect(scheme, path).toBe("dark");
   }
 });
+
+for (const path of ["/privacy/", "/es/privacy/"])
+  for (const width of [1440, 390])
+    test(`the privacy policy ${path} (${width}px) is axe-clean, fits the screen and its contents scroll to each section`, async ({ page }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(path);
+      const axe = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
+      expect(axe.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      await page.locator('nav a[href="#google"]').click();
+      await expect(page.locator("section#google h2")).toBeInViewport();
+    });

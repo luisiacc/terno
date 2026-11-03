@@ -3,6 +3,7 @@ import { ArrowLeft } from "./icons";
 import type { SiteCopy } from "../copy";
 import type { Route } from "../site";
 import { Logo } from "./logo";
+import { Rich } from "./rich";
 import { Waitlist, WaitlistOutcomes } from "./waitlist";
 
 /**
@@ -35,6 +36,7 @@ function Plain({ copy, children }: { copy: SiteCopy; children: ReactNode }) {
 
 const h1 = "mt-6 text-4xl font-semibold tracking-tight text-balance";
 const lead = "mt-4 text-lg text-(--plain-muted) text-pretty";
+const prose = "mt-3 leading-relaxed text-(--plain-muted) text-pretty";
 const formClasses = {
   form: "mt-10 grid gap-4 sm:grid-cols-[1fr_10rem] sm:items-end",
   label: "text-sm font-medium",
@@ -52,10 +54,43 @@ export function SecondaryPage({ route, copy }: { route: Route; copy: SiteCopy })
       <Plain copy={copy}>
         <h1 className={h1}>{p.privacy.title}</h1>
         <p className={lead}>{p.privacy.intro}</p>
+        <p className="mt-3 text-sm text-(--plain-muted)">{p.privacy.updated}</p>
+        <nav aria-label={p.privacy.contents} className="mt-10 border-y border-(--plain-line) py-5">
+          <h2 className="text-sm font-medium text-(--plain-muted)">{p.privacy.contents}</h2>
+          <ol className="mt-3 gap-x-6 text-sm sm:columns-2 [&>li]:py-0.75">
+            {p.privacy.sections.map((s) => (
+              <li key={s.id}>
+                <a href={`#${s.id}`} className="hover:underline hover:underline-offset-4">
+                  {s.title}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
         {p.privacy.sections.map((s) => (
-          <section key={s.title} className="mt-10">
-            <h2 className="text-xl font-semibold">{s.title}</h2>
-            <p className="mt-2 leading-relaxed text-(--plain-muted)">{s.body}</p>
+          <section key={s.id} id={s.id} aria-labelledby={`${s.id}-title`} className="mt-12 scroll-mt-8">
+            <h2 id={`${s.id}-title`} className="text-xl font-semibold">
+              {s.title}
+            </h2>
+            {s.body.map((para) => (
+              <p key={para} className={prose}>
+                <Rich text={para} />
+              </p>
+            ))}
+            {s.points && (
+              <ul className="mt-3 grid list-disc gap-2 pl-5 leading-relaxed text-(--plain-muted) marker:text-(--plain-line)">
+                {s.points.map((point) => (
+                  <li key={point}>
+                    <Rich text={point} />
+                  </li>
+                ))}
+              </ul>
+            )}
+            {s.after?.map((para) => (
+                <p key={para} className={prose}>
+                  <Rich text={para} />
+                </p>
+              ))}
           </section>
         ))}
       </Plain>

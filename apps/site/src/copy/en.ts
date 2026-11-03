@@ -1,3 +1,14 @@
+/** A privacy page section: paragraphs, an optional list, and paragraphs after it. Marks are `parts/rich.tsx`'s. */
+export interface PrivacySection {
+  /** the anchor the contents and other pages link to; the same in every language */
+  id: string;
+  title: string;
+  body: string[];
+  points?: string[];
+  after?: string[];
+}
+const sections = (list: PrivacySection[]) => list;
+
 /** The site's copy (plan 97), English (the source language). `es.ts` must match this shape: the type check says so. */
 export const en = {
   lang: "en",
@@ -27,7 +38,7 @@ export const en = {
     },
     local: {
       title: "No account. No cloud. Just your Mac.",
-      body: "Terno talks to your mail servers and nothing else. Your mail, contacts and search index live on your Mac.",
+      body: "Your mail goes between your Mac and your mail servers, never through ours. Your mail, contacts and search index live on your Mac.",
       points: ["Private from the first launch", "Remote images only when you ask", "Zero tracking"],
     },
     search: {
@@ -145,25 +156,116 @@ export const en = {
     notFound: { title: "This page doesn’t exist", body: "The link may be old or mistyped.", home: "Go to the home page" },
     privacy: {
       title: "Privacy",
-      intro: "Terno the app keeps your mail on your Mac. This page is about this website.",
-      sections: [
+      intro: "Terno keeps your mail on your Mac. There is no Terno account, and no Terno server that stores your mail. This page says exactly what the app and this website do with your data.",
+      updated: "Last updated: November 2, 2026",
+      contents: "On this page",
+      sections: sections([
         {
-          title: "What this site stores",
-          body: "Only what you give the waitlist: your email address, the platform you chose and the time you joined. Nothing else is stored. There are no cookies, no analytics and no third-party scripts or fonts.",
+          id: "who",
+          title: "Who we are",
+          body: [
+            "Terno is made by Luisiacc LLC (“we”). This policy covers the Terno app for Mac and this website, terno.app. Terno’s source is public on [GitHub](https://github.com/luisiacc/terno), so you can check everything below.",
+          ],
         },
         {
-          title: "What passes through without being kept",
-          body: "Your IP address is used for a moment to stop abuse (a few sign-ups a minute at most) and is not stored. The server doesn’t log what you submit.",
+          id: "on-your-mac",
+          title: "Your mail stays on your Mac",
+          body: [
+            "Terno downloads your mail from your mail providers and keeps it, with your contacts and the search index, in a database in your Mac’s user folder. Your passwords, sign-in tokens and AI keys are encrypted with a key kept in your macOS Keychain.",
+            "None of this is sent to us. We have no server that receives your mail, your contacts or anything you do in the app. There are no analytics and no tracking.",
+          ],
         },
         {
-          title: "How long we keep it",
-          body: "Until we write to tell you Terno is ready for your platform, then it is deleted. To be removed sooner, write to the address on our GitHub profile.",
+          id: "connections",
+          title: "Who the app talks to",
+          body: ["Besides your mail providers, Terno reaches the internet only for these, each of which you control:"],
+          points: [
+            "**Your mail providers** (Gmail, iCloud, Outlook or any IMAP/SMTP server), to fetch, send and organize your mail.",
+            "**Website icons.** To show a company’s logo next to its mail, Terno asks that company’s own website for its icon. The site sees your IP address and nothing else. On by default; turn it off in Settings → Appearance.",
+            "**Photos from Google.** With a Google account, Terno can show your Google contacts’ photos. You can turn it off in Settings → Appearance.",
+            "**Remote images in messages** load only when you choose to, for one message or always. The sender’s server then sees your IP address, as with any mail app.",
+            "**Updates.** Terno checks GitHub for new versions. Nothing about you or your mail is sent.",
+            "**AI**, only if you set up a provider. See [AI providers](#ai).",
+            "**Error reports**, only if you agree. See [Error reports](#errors).",
+            "**Unsubscribing.** When you click Unsubscribe, Terno contacts the address the sender gave for it.",
+          ],
         },
         {
-          title: "The app",
-          body: "Terno connects to your own mail servers and, if you set one up, the AI provider you choose. It has no Terno account and sends us nothing unless you choose to send an error report. The source is public, so you can check.",
+          id: "google",
+          title: "Google user data",
+          body: [
+            "When you connect a Google account, Google asks you to allow Terno to:",
+          ],
+          points: [
+            "**See your name, email address and profile picture**, to identify the account in Terno.",
+            "**Read, send, label and delete your Gmail mail** (the `gmail.modify` permission), so you can read, search, send, archive, label and delete your mail in Terno.",
+            "**See your contacts’ photos** (read-only access to your contacts and other contacts), only to show the photos of the people who write to you. You can untick this on Google’s screen.",
+          ],
+          after: [
+            "Terno uses this data only to provide the features you see in the app. It is stored on your Mac and is never sent to us. We don’t sell it, use it for advertising, use it to build profiles of you, or use it to develop, improve or train AI models, and no person at Luisiacc LLC reads it.",
+            "Terno passes Google user data to someone else only when you ask it to: to the AI provider you choose, when you turn on an AI feature (only what that feature needs, described below), and to AI tools on your Mac that you connect to Terno.",
+            "Terno’s use and transfer to any other app of information received from Google APIs will adhere to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.",
+            "To stop Terno’s access, remove the account in Settings → Accounts, which deletes its mail and sign-in tokens from your Mac, then remove Terno at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).",
+          ],
         },
-      ],
+        {
+          id: "ai",
+          title: "AI providers",
+          body: [
+            "AI is off until you choose a provider in Settings → AI: Anthropic, OpenAI, an OpenAI-compatible service (such as OpenRouter, Groq, Together or Azure OpenAI) or a model running on your Mac (Ollama, LM Studio). Your key stays on your Mac, and requests go straight from your Mac to that provider, under its privacy terms. With a model on your Mac, nothing leaves it.",
+            "What each feature sends:",
+          ],
+          points: [
+            "**Writing a filter from your words:** what you typed, today’s date, your accounts’ addresses and names, and your category names.",
+            "**Help sorting into categories** (a separate switch): for a message Terno can’t sort on its own, the sender’s name and address, the subject, the first 600 characters of the text and your category names.",
+          ],
+        },
+        {
+          id: "agents",
+          title: "AI tools on your Mac",
+          body: [
+            "Terno includes a connector (MCP) that AI tools on your Mac, such as Claude, can use to search, read, organize and draft your mail. It works only for apps on your Mac that you set it up in. What those tools do with your mail is up to them and their provider. Sending mail through them needs its own switch, off by default.",
+          ],
+        },
+        {
+          id: "errors",
+          title: "Error reports",
+          body: [
+            "When something goes wrong, Terno asks before sending a report (you can choose Always or Never instead). A report holds the error, where in Terno’s code it happened, the app and macOS versions, how many accounts you have, and a random ID you can reset. It never holds your mail, addresses, names or subjects. Reports go to Sentry, the service we use to track errors.",
+            "Terno keeps its own logs on your Mac, limited in size. They don’t contain your mail or addresses.",
+          ],
+        },
+        {
+          id: "delete",
+          title: "Removing your data",
+          body: [
+            "Removing an account in Settings → Accounts deletes its mail, tokens and pictures from your Mac. To remove everything, quit Terno and delete the folder `~/Library/Application Support/Terno` and the Keychain item “Terno Safe Storage”. Copies Terno makes before upgrading your mailbox are deleted after 14 days.",
+          ],
+        },
+        {
+          id: "site",
+          title: "This website",
+          body: [
+            "This site is served by Cloudflare. It has no cookies, no analytics and no third-party scripts or fonts.",
+            "It stores only what you give the waitlist: your email address, the platform you chose and the time you joined. That is deleted once we write to tell you Terno is ready for your platform, or sooner if you ask. Your IP address is used for a moment to stop abuse and is not stored, and the server doesn’t log what you submit.",
+          ],
+        },
+        {
+          id: "children",
+          title: "Children",
+          body: ["Terno isn’t directed to children under 13, and we don’t knowingly collect their data."],
+        },
+        {
+          id: "changes",
+          title: "Changes",
+          body: ["If this policy changes, we’ll update this page and its date. Important changes will also be in the app’s release notes."],
+        },
+        {
+          id: "contact",
+          title: "Contact",
+          body: ["For questions about privacy, or to have your waitlist entry removed, reach Luisiacc LLC through [github.com/luisiacc](https://github.com/luisiacc)."],
+        },
+      ]),
     },
   },
   shot: { appearance: "Picture appearance", light: "Light", dark: "Dark", enlarge: "Enlarge picture", close: "Close" },
