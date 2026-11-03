@@ -2,7 +2,9 @@ import { t } from "@terno/i18n";
 import { Kbd } from "@terno/ui/components/kbd";
 import { cn } from "@terno/ui/lib/utils";
 import { motionOff } from "@terno/ui/themes/apply";
-import { CircleCheck, Loader2, OctagonX, TriangleAlert, X } from "@terno/ui/icons";
+import { CloseButton } from "@terno/ui/components/close-button";
+import { Spinner } from "@terno/ui/components/spinner";
+import { CircleCheck, OctagonX, TriangleAlert } from "@terno/ui/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAppearance } from "~/lib/appearance";
 import { clock, dismissSnack, elapsedAt, pause, resume, runAction, useSnack, zHolds, type Snack, type SnackAction } from "~/lib/snack";
@@ -99,7 +101,8 @@ export function SnackPill({ label, name, onClick, shortcut, disabled, testId = "
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "relative inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full pl-2.5 text-xs font-medium whitespace-nowrap text-foreground transition-[background-color,transform] duration-fast hover:bg-tint active:scale-[0.97] disabled:opacity-60",
+        // BoardUI's toast action is the secondary button: the card fill over a contact shadow, its border the ring's track
+        "relative inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full bg-card pl-2.5 text-xs font-medium whitespace-nowrap text-foreground shadow-xs transition-[background-color,transform] duration-fast hover:bg-muted active:scale-[0.97] disabled:opacity-60",
         shortcut ? "pr-1" : "pr-2.5",
       )}
     >
@@ -115,26 +118,16 @@ const TONE_ICON = {
   success: <CircleCheck className="size-3.5 shrink-0 text-success-ink" aria-hidden />,
   warning: <TriangleAlert className="size-3.5 shrink-0 text-star" aria-hidden />,
   error: <OctagonX className="size-3.5 shrink-0 text-destructive-ink" aria-hidden />,
-  loading: <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" aria-hidden />,
+  loading: <Spinner className="size-3.5 text-muted-foreground" aria-hidden />,
   neutral: null,
 };
 
 /** "Undo" alone says nothing to a screen reader: it names what it takes back. */
 const nameOf = (a: SnackAction, s: Snack) => a.name ?? (a.label === t("common.undo") ? t("snack.undoName", { message: s.message }) : undefined);
 
-/** A close button for any snack body (a 24 px target around a small glyph). */
+/** A close button for any snack body: BoardUI's round one, inside a 24 px slot. */
 export function SnackClose({ onClick = () => dismissSnack() }: { onClick?: () => void }) {
-  return (
-    <button
-      type="button"
-      data-testid="snack-close"
-      aria-label={t("snack.dismiss")}
-      onClick={onClick}
-      className="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors duration-fast hover:bg-tint hover:text-foreground"
-    >
-      <X className="size-3" />
-    </button>
-  );
+  return <CloseButton data-testid="snack-close" label={t("snack.dismiss")} onClick={onClick} className="mx-0.5" />;
 }
 
 function Row({ snack }: { snack: Snack }) {
@@ -159,7 +152,7 @@ function Row({ snack }: { snack: Snack }) {
           data-testid="snack-secondary"
           aria-label={snack.secondary.name}
           onClick={() => runAction("secondary")}
-          className="inline-flex h-6 shrink-0 items-center rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors duration-fast hover:bg-tint hover:text-foreground"
+          className="inline-flex h-6 shrink-0 items-center rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors duration-fast hover:bg-muted hover:text-foreground"
         >
           {snack.secondary.label}
         </button>
@@ -308,7 +301,7 @@ export function SnackDock() {
           dismissSnack(current.id);
         }}
         className={cn(
-          "snack-surface relative overflow-hidden rounded-[calc(var(--radius-lg)+2px)] transition-[opacity,translate,visibility] duration-slow ease-motion",
+          "snack-surface relative overflow-hidden rounded-xl transition-[opacity,translate,visibility] duration-slow ease-motion",
           open ? "pointer-events-auto visible translate-y-0 opacity-100" : "invisible translate-y-1 opacity-0",
         )}
       >

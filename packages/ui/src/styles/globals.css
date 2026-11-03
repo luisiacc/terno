@@ -481,30 +481,16 @@
   }
 }
 /*
- * The docked snackbar (plan 13): glass over the list's last rows (lighter
- * than menus: the list keeps scrolling under it), a hairline, barely lifted.
- * Its countdown ring: the track in the hairline ink, the time left in primary.
+ * The docked snackbar (plan 13) on BoardUI's toast surface (plan 125): solid
+ * popover, the menus' edge and lift. Its countdown ring: the track in the
+ * hairline ink, the time left in primary.
  */
 @utility snack-surface {
   --snack-track: var(--border);
   --snack-ring: var(--primary);
-  /* nearly solid: rows keep moving under it, and text must not ghost through */
-  background-color: color-mix(in oklab, var(--popover) 96%, transparent);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  backdrop-filter: blur(16px) saturate(1.4);
-  box-shadow:
-    0 0 0 var(--hairline-w) var(--border),
-    0 1px 2px color-mix(in oklab, var(--shadow-color) 60%, transparent),
-    0 8px 20px -14px var(--shadow-color),
-    inset 0 1px var(--highlight);
-  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-    background-color: var(--popover);
-  }
-  @media (prefers-reduced-transparency: reduce) {
-    background-color: var(--popover);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--shadow-menu);
 }
 /* a toolbar whose bottom hairline appears once content scrolls under it (data-scrolled, set by an IntersectionObserver) */
 @utility scroll-hairline {
