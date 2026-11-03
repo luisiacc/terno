@@ -90,4 +90,11 @@ describe("first run", () => {
     expect(updateAppearance).toHaveBeenLastCalledWith({ design: "lumen" });
   });
 
+  it("following the system in a light window, the chosen dark palette clicked again previews dark (Codex code review #3)", async () => {
+    const el = await look({ theme: "system" });
+    expect(el("preview").dataset.mode).toBe("light");
+    expect(el("theme-card-design-dark").getAttribute("aria-checked")).toBe("true");
+    await act(async () => el("theme-card-design-dark").click());
+    expect(el("preview").dataset.mode).toBe("dark");
+  });
 });

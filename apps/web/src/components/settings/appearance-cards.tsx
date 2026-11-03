@@ -37,9 +37,9 @@ export function ThemePreview({ theme, base }: { theme: Theme; base: string }) {
 }
 
 /** A palette as one of its mode's choices: a radio card (in a `RadioGroup` whose value is the palette's id). */
-export function ThemeCard({ theme, base, value, note, name, testId }: { theme: Theme; base: string; value: string; note?: string; name?: string; testId?: string }) {
+export function ThemeCard({ theme, base, value, note, name, testId, onClick }: { theme: Theme; base: string; value: string; note?: string; name?: string; testId?: string; onClick?: () => void }) {
   return (
-    <RadioCard value={value} data-testid={testId ?? `theme-card-${theme.id}`} className="flex-col gap-1.5 p-1.5">
+    <RadioCard value={value} onClick={onClick} data-testid={testId ?? `theme-card-${theme.id}`} className="flex-col gap-1.5 p-1.5">
       <ThemePreview theme={theme} base={base} />
       <span className="flex w-[132px] items-center gap-1 text-xs">
         <span className="truncate font-medium">{name ?? themeName(theme)}</span>

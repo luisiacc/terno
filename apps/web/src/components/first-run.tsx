@@ -211,9 +211,10 @@ export function FirstRun() {
               <section key={m} aria-label={label} className="mb-3 last:mb-0">
                 {following && <h4 className="mb-1 text-xs font-medium text-muted-foreground">{label}</h4>}
                 <RadioGroup aria-label={label} value={chosen} onValueChange={(id) => choose(id as string)} className="grid auto-rows-min grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-2" data-testid={`first-run-palettes-${m}`}>
-                  <ThemeCard theme={own} base={own.id} name={t("settings.appearance.styleColors")} testId={`theme-card-design-${m}`} value={DESIGN_PALETTE} />
+                  {/* the chosen palette clicked again still shows its mode in the preview (Codex code review #3) */}
+                  <ThemeCard theme={own} base={own.id} name={t("settings.appearance.styleColors")} testId={`theme-card-design-${m}`} value={DESIGN_PALETTE} onClick={() => chosen === DESIGN_PALETTE && choose(DESIGN_PALETTE)} />
                   {themesFor(m).map((p) => (
-                    <ThemeCard key={p.id} theme={p} base={p.id} value={p.id} />
+                    <ThemeCard key={p.id} theme={p} base={p.id} value={p.id} onClick={() => chosen === p.id && choose(p.id)} />
                   ))}
                 </RadioGroup>
               </section>
