@@ -90,8 +90,10 @@ export function providerName(ai: Pick<AiSettings, "provider" | "preset" | "local
  */
 export function aiReady(ai: AiSettings | null | undefined): ai is AiSettings {
   if (!ai || ai.provider === "none" || !ai.model.trim()) return false;
+  // as the backend: a saved key it can't open fails every provider, required or not; a compatible one needs its server
+  if (ai.keyUnreadable || (ai.provider === "compatible" && !endpointOf(ai))) return false;
   const keyed = ai.provider === "anthropic" || ai.provider === "openai" || (ai.provider === "compatible" && (ai.preset ?? "custom") !== "custom");
-  return !keyed || (ai.hasKey && ai.keyConfirmed && !ai.keyUnreadable);
+  return !keyed || (ai.hasKey && ai.keyConfirmed);
 }
 
 /** One line on what leaves the Mac when generating a filter. Never message content. */

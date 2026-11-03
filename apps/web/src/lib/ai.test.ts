@@ -45,8 +45,14 @@ describe("AI labels and help", () => {
     // a local server needs only a model
     expect(aiReady(ai({ provider: "ollama", model: "" }))).toBe(false);
     expect(aiReady(ai({ provider: "ollama", model: "qwen3:8b", hasKey: false }))).toBe(true);
-    expect(aiReady(ai({ provider: "compatible", preset: "custom", model: "m", hasKey: false }))).toBe(true);
-    expect(aiReady(ai({ provider: "compatible", preset: null, model: "m", hasKey: false }))).toBe(true);
+    expect(aiReady(ai({ provider: "compatible", preset: "custom", baseURL: "http://127.0.0.1:8080/v1", model: "m", hasKey: false }))).toBe(true);
+    expect(aiReady(ai({ provider: "compatible", preset: null, baseURL: "http://127.0.0.1:8080/v1", model: "m", hasKey: false }))).toBe(true);
+    // a compatible server without its address can't be reached (Codex review)
+    expect(aiReady(ai({ provider: "compatible", preset: "custom", model: "m", hasKey: false }))).toBe(false);
+    expect(aiReady(ai({ provider: "compatible", preset: "azure", model: "m", hasKey: true, keyConfirmed: true, keyUnreadable: false }))).toBe(false);
+    expect(aiReady(ai({ provider: "compatible", preset: "azure", baseURL: "https://x.openai.azure.com/openai/v1", model: "m", hasKey: true, keyConfirmed: true, keyUnreadable: false }))).toBe(true);
+    // a saved key that can't be opened fails even where a key is optional (Codex review)
+    expect(aiReady(ai({ provider: "ollama", model: "qwen3:8b", hasKey: true, keyUnreadable: true }))).toBe(false);
     // a cloud provider needs its key, readable and confirmed for this endpoint
     expect(aiReady(ai({ provider: "anthropic", model: "claude-opus-5-5", hasKey: false }))).toBe(false);
     expect(aiReady(ai({ provider: "anthropic", ...keyed }))).toBe(true);
