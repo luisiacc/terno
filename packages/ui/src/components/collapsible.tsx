@@ -17,7 +17,7 @@ function Collapsible(props: CollapsiblePrimitive.Root.Props) {
 const disclosureTrigger =
   "group/disclosure flex w-full cursor-pointer items-center gap-3 text-start outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed"
 const disclosureChevron =
-  "size-4 shrink-0 text-muted-foreground transition-[rotate,color] group-hover/disclosure:text-foreground group-data-panel-open/disclosure:rotate-180 group-data-panel-open/disclosure:text-foreground"
+  "ms-auto size-4 shrink-0 text-muted-foreground transition-[rotate,color] group-hover/disclosure:text-foreground group-data-panel-open/disclosure:rotate-180 group-data-panel-open/disclosure:text-foreground"
 
 /** The trigger row: what it opens (children), then the chevron (`chevron={false}` leaves it out). */
 function CollapsibleTrigger({ className, children, chevron = true, ...props }: CollapsiblePrimitive.Trigger.Props & { chevron?: boolean }) {
