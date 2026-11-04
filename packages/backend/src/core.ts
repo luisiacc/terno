@@ -6,7 +6,7 @@ import { COOLDOWN_TICKETS, copyOpAdmission, rejectedRecipients, type CooldownSta
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
-import { asciiEmail, decodeText, encodeText, messageOf, textRef, type Account, type AccountPrefs, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
+import { asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, textRef, type Account, type AccountPrefs, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -18,6 +18,7 @@ import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
 import { AiAssist } from "./ai-assist";
 import { SummaryWorker } from "./summaries";
+import { WritingService } from "./writing";
 import { Attention, type AttentionHost } from "./attention";
 import { hydrateSendAttachments } from "./attachments";
 import { Categorizer } from "./categorizer";
@@ -263,6 +264,8 @@ export class BackendCore {
   readonly aiAssist: AiAssist;
   /** plan 132: summaries of new mail, and by hand; asleep on an empty queue */
   readonly summaries: SummaryWorker;
+  /** plan 133: drafting: what goes into a draft, and the learner, asleep until the feature is used */
+  readonly writing: WritingService;
   /** plan 18: recipient and body suggestions, in memory, built on first use */
   readonly autocomplete: Autocomplete;
   /** plan 17: the thread facts' backfill, woken at start and by changes */
@@ -311,6 +314,7 @@ export class BackendCore {
       ready: (threadId) => this.server.emit("aiSummary", { threadId }, { origins: ["renderer", "dev"] }),
       log: (level, message, extra) => this.log(level, message, extra),
     });
+    this.writing = new WritingService(this);
     this.facts = new FactsBackfill(this);
     this.reminders = new Reminders({
       store: this.store,
@@ -409,7 +413,10 @@ export class BackendCore {
         await this.ready;
         return this.authorize(method, ctx);
       },
-      onDisconnect: (ctx) => this.aiService.disconnected(ctx.clientId),
+      onDisconnect: (ctx) => {
+        this.aiService.disconnected(ctx.clientId);
+        this.writing.disconnected(ctx.clientId);
+      },
     });
   }
 
@@ -578,6 +585,11 @@ export class BackendCore {
     await this.aiAssist.start().catch((error: unknown) => {
       captureError(error, { code: "ai.failed" });
       this.log("warn", "categorization assist couldn't start", error instanceof Error ? error.message : error);
+    });
+    // plan 133: one setting read; nothing runs unless the feature has been used
+    void this.writing.learner.start().catch((error: unknown) => {
+      captureError(error, { code: "ai.failed" });
+      this.log("warn", "voice learner couldn't start", error instanceof Error ? error.name : "error");
     });
     // plan 68: a folder rebuild a quit interrupted goes on where it was
     void this.rebuildFolders();
@@ -833,6 +845,7 @@ export class BackendCore {
     for (const n of this.autoNotices.values()) if (n.timer) clearTimeout(n.timer);
     this.categorizer.stop();
     // the slice in flight finishes; the next start resumes where the store's progress says
+    await this.writing.learner.stop();
     await this.facts.stop();
     await this.tabs.stop();
     if (this.workerTimer) clearTimeout(this.workerTimer);
@@ -948,6 +961,8 @@ export class BackendCore {
       attachments: p.attachments,
       recordReply: o.renderer,
       ...(o.scheduledAt !== undefined && { scheduledAt: o.scheduledAt }),
+      // plan 133 §8: only the renderer knows what was typed; a scheduled send kept what it said in its params
+      ...(p.draftId !== undefined && { writing: { authored: o.renderer && p.authoredText !== undefined ? canonicalAuthored(p.authoredText) : null } }),
       now: this.now(),
     });
     try {
@@ -981,6 +996,7 @@ export class BackendCore {
       this.autocomplete.notify();
       this.facts.wake();
       this.tabs.start();
+      this.writing.learner.wake();
     });
   }
 

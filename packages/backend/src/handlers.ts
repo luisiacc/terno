@@ -7,6 +7,7 @@ import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
 import { forgetSignInVersion, signInVersion, admitBrowserGoogle, beginSignIn, endSignIn, googleAdmission, changeOwnerTo, gmailClaim, googleFlowActive, imapClaim, loginFailed, reconnectAccount, validateGoogleConnection } from "./identity";
 import { accountLabel } from "./account-label";
+import { toRpcError } from "./ai-service";
 import { exportMailbox, importMailbox, restorePending } from "./import";
 import { countThreadScope, progressReporter, resolveThreadScope, SCOPE_CAP, UndoJournal } from "./scope";
 import { followFolderFilters, SimilarFilters } from "./similar";
@@ -902,7 +903,7 @@ export function createHandlers(b: Backend): Handlers {
       return r;
     },
     "compose.schedule": async ({ sendAt, ...p }, ctx) => {
-      const params = ctx.origin === "renderer" ? p : { ...p, bodyHtml: undefined };
+      const params = ctx.origin === "renderer" ? p : { ...p, bodyHtml: undefined, authoredText: undefined };
       const r = await b.scheduled.schedule(params, sendAt);
       if (r === "stale") throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftRevision" });
       if (r === "full") throw new RpcError("BAD_REQUEST", L("errors.scheduledFull", { max: SCHEDULED_MAX }));
@@ -1274,6 +1275,42 @@ export function createHandlers(b: Backend): Handlers {
       await store.aiSummaries.clear();
       return { ok: true };
     },
+
+    // plan 133: renderer only; none of these is in MCP_ALLOWED
+    "ai.compose": (p, ctx) => b.writing.compose(p, ctx.clientId),
+    "ai.composeEnd": ({ session }, ctx) => {
+      b.writing.endSession(session, ctx.clientId);
+      return { ok: true };
+    },
+    "ai.resolveIntent": (p, ctx) => b.writing.resolveIntent(p, ctx.clientId),
+    "writing.activate": async () => {
+      await b.writing.learner.activate();
+      return { ok: true };
+    },
+    "writing.prefs.get": () => b.writing.getPrefs(),
+    "writing.prefs.set": (patch) => b.writing.setPrefs(patch),
+    "writing.profiles.list": (p) => b.writing.listProfiles(p),
+    "writing.profiles.edit": (p) => b.writing.editProfile(p),
+    "writing.profiles.reset": async ({ scopeKey, language }) => {
+      await b.writing.resetProfile(scopeKey, language);
+      return { ok: true };
+    },
+    "writing.profiles.rebuild": async ({ accountId }) => {
+      await b.writing.learner.rebuild(accountId);
+      return { ok: true };
+    },
+    "writing.profiles.clear": async () => {
+      await b.writing.learner.clear();
+      return { ok: true };
+    },
+    "writing.studyStyle": async ({ requestId, confirm }, ctx) => {
+      try {
+        return await b.writing.learner.study({ requestId, clientId: ctx.clientId, ...(confirm ? { confirm } : {}) });
+      } catch (error) {
+        throw toRpcError(error);
+      }
+    },
+    "writing.commitGeneration": async (p) => ({ ok: await b.writing.commitGeneration(p) }),
 
     "identity.get": () => store.owner.get(),
     "identity.changeOwner": ({ accountId, password }) => changeOwnerTo(b, accountId, password),

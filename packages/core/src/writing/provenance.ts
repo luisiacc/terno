@@ -29,10 +29,10 @@ const LENGTH_CHANGE = 0.3;
 const LENGTH_MIN_WORDS = 8;
 
 /** What changed between a generated draft and what was sent, in the terms a voice can use. Never the mail's content. */
-export function classifyEdit(generated: string, final: string): Correction[] {
+export function classifyEdit(generated: string, final: string, selfNames: readonly string[] = []): Correction[] {
   const out: Correction[] = [];
-  const before = { greeting: normalizeGreeting(generated), signOff: normalizeSignOff(generated) };
-  const after = { greeting: normalizeGreeting(final), signOff: normalizeSignOff(final) };
+  const before = { greeting: normalizeGreeting(generated), signOff: normalizeSignOff(generated, selfNames) };
+  const after = { greeting: normalizeGreeting(final), signOff: normalizeSignOff(final, selfNames) };
   if (before.greeting && !after.greeting) out.push({ kind: "dropped-greeting" });
   else if (after.greeting && before.greeting !== after.greeting) out.push({ kind: "changed-greeting", value: after.greeting });
   if (before.signOff && !after.signOff) out.push({ kind: "dropped-sign-off" });
@@ -74,10 +74,10 @@ function correctionLine(c: Correction): string {
 }
 
 /** Newest first. The changes that repeat, as lines for a voice block. */
-export function repeatedCorrections(pairs: readonly { generated: string; final: string }[]): string[] {
+export function repeatedCorrections(pairs: readonly { generated: string; final: string }[], selfNames: readonly string[] = []): string[] {
   const seen = new Map<string, { correction: Correction; count: number; newest: number }>();
   pairs.forEach((pair, i) => {
-    for (const correction of classifyEdit(pair.generated, pair.final)) {
+    for (const correction of classifyEdit(pair.generated, pair.final, selfNames)) {
       const key = correctionKey(correction);
       const entry = seen.get(key);
       if (entry) entry.count++;

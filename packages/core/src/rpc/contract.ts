@@ -22,6 +22,7 @@ import {
   type PresetDescriptor,
   type ProviderDescriptor,
 } from "../ai";
+import { GENERATION_TEXT_MAX, WRITING_INSTRUCTIONS_MAX, WRITING_ONE_OFF_MAX, type AiComposeDelta, type AiComposeResult, type AiIntentResult, type AiStudyProgress, type WritingPrefs, type WritingProfileView, type WritingStatus, type WritingStudyResult } from "../writing/contract";
 import type { AlwaysScope, CategoryModelStats, Prediction, QuickActions } from "../categorize/bulk";
 import type { I18nRef } from "./envelope";
 import type { AutoCategorize } from "../categorize/policy";
@@ -646,7 +647,14 @@ const composeSend = z.object({
   draftGeneration: z.string().max(64).optional(),
   draftRevision: z.number().int().positive().optional(),
   attachments: attachmentRefs.optional(),
+  /** plan 133 §8: the body as the user left it, before signature and quote: what provenance compares with what the model wrote (renderer only) */
+  authoredText: z.string().max(10_000_000).optional(),
 });
+
+const requestId = z.string().min(1).max(64);
+const writingInstructions = z.string().max(WRITING_INSTRUCTIONS_MAX);
+const scopeKeyParam = z.string().min(1).max(400);
+const profileLanguage = z.string().max(8);
 
 export const contract = {
   "app.bootstrap": m<Bootstrap>()(empty),
@@ -1104,6 +1112,91 @@ export const contract = {
   /** Settings → Storage → Clear AI data. */
   "ai.summaries.clear": m<{ ok: true }>()(empty),
 
+  // plan 133. All renderer-only: none of these is in MCP_ALLOWED. The contract's described in the plan's last section.
+  /**
+   * A draft, streamed to this connection as `aiCompose` events; cancellable with `ai.cancel`. `session`: one draft's
+   * refinement session: a second call in it with the same sources and settings assembles nothing.
+   */
+  "ai.compose": m<AiComposeResult>()(
+    z.object({
+      requestId,
+      session: z.string().min(1).max(64),
+      accountId: id,
+      kind: z.enum(["reply", "new"]),
+      threadId: id.optional(),
+      /** the message being answered; default: the thread's newest not from the user */
+      answeringMessageId: id.optional(),
+      to: z.array(address).max(MAX_RECIPIENTS),
+      cc: z.array(address).max(MAX_RECIPIENTS).default([]),
+      subject: z.string().max(998).default(""),
+      needsSubject: z.boolean().default(false),
+      /** what to say; empty answers what the thread needs */
+      instruction: z.string().max(WRITING_ONE_OFF_MAX).default(""),
+      /** words already in the body: what the author means to say */
+      draft: z.string().max(100_000).optional(),
+      /** the text being refined, for Regenerate-with-changes, "Shorter" and the like */
+      previousDraft: z.string().max(100_000).optional(),
+      attachments: z.array(z.string().max(300)).max(100).optional(),
+      /** IANA name, from the renderer: a backend has no idea what day it is for the user */
+      timezone: z.string().max(64).default("UTC"),
+    }),
+    { timeoutMs: 300_000 },
+  ),
+  /** Lets a session's snapshot go (the draft closed, the strip went). */
+  "ai.composeEnd": m<{ ok: true }>()(z.object({ session: z.string().min(1).max(64) })),
+  /**
+   * Where a sentence's draft goes (§5). `waitForContacts`: call again with it after a `wait` decision: it answers
+   * once the contact index is warm, so there's nothing to poll. Sends the instruction and matched names at most.
+   */
+  "ai.resolveIntent": m<AiIntentResult>()(
+    z.object({
+      requestId,
+      instruction: z.string().max(WRITING_ONE_OFF_MAX),
+      surface: z.discriminatedUnion("kind", [z.object({ kind: z.literal("thread"), threadId: id }), z.object({ kind: z.literal("list") }), z.object({ kind: z.literal("draft"), recipients: z.array(address).max(MAX_RECIPIENTS) })]),
+      accountId: id.optional(),
+      waitForContacts: z.boolean().optional(),
+    }),
+    { timeoutMs: 120_000 },
+  ),
+  /** The feature's settings opened: from here on the local learner may run. */
+  "writing.activate": m<{ ok: true }>()(empty),
+  "writing.prefs.get": m<WritingPrefs>()(empty),
+  /** A patch: `account.prefs` null forgets that account's settings. */
+  "writing.prefs.set": m<WritingPrefs>()(
+    z.object({
+      global: z.object({ enabled: z.boolean().optional(), instructions: writingInstructions.optional(), useSentMail: z.boolean().optional() }).optional(),
+      account: z.object({ accountId: id, prefs: z.object({ instructions: writingInstructions.optional(), useGeneral: z.boolean().optional(), useSentMail: z.boolean().optional() }).nullable() }).optional(),
+    }),
+  ),
+  "writing.profiles.list": m<{ items: WritingProfileView[]; next: { scopeKey: string; language: string } | null; status: WritingStatus }>()(
+    z.object({ scope: z.enum(["you", "account", "domain", "person"]).optional(), accountId: id.optional(), after: z.object({ scopeKey: scopeKeyParam, language: profileLanguage }).optional(), limit: z.number().int().min(1).max(200).default(100) }),
+  ),
+  /** Pins the profile: a later pass counts what's new and offers "Update" instead of overwriting. */
+  "writing.profiles.edit": m<WritingProfileView>()(
+    z.object({
+      scopeKey: scopeKeyParam,
+      language: profileLanguage.default(""),
+      phrases: z.array(z.string().max(200)).max(40).optional(),
+      /** greetings and sign-offs as typed, with their share of mail */
+      greetings: z.array(z.object({ text: z.string().max(200), share: z.number().min(0).max(1) })).max(10).optional(),
+      signOffs: z.array(z.object({ text: z.string().max(200), share: z.number().min(0).max(1) })).max(10).optional(),
+      judgment: z.object({ traits: z.object({ formality: z.number().int().min(1).max(5), warmth: z.number().int().min(1).max(5), directness: z.number().int().min(1).max(5), detail: z.number().int().min(1).max(5), humor: z.number().int().min(0).max(2) }), notes: z.array(z.string().max(200)).max(8) }).nullable().optional(),
+    }),
+  ),
+  /** Unpins and rebuilds it from mail. */
+  "writing.profiles.reset": m<{ ok: true }>()(z.object({ scopeKey: scopeKeyParam, language: profileLanguage.optional() })),
+  /** Counts again from mail, one account or all; nothing is overwritten that's pinned. */
+  "writing.profiles.rebuild": m<{ ok: true }>()(z.object({ accountId: id.optional() })),
+  /** Clear all: every profile, generation, consent and checkpoint; it sleeps until the feature is used again. */
+  "writing.profiles.clear": m<{ ok: true }>()(empty),
+  /**
+   * "Let AI study my style". Without `confirm` nothing is sent: it answers `consent` with what would go. With it, the
+   * model step runs in the background through the limiter's `voice` task (`aiStudy` events, cancellable with `ai.cancel`).
+   */
+  "writing.studyStyle": m<WritingStudyResult>()(z.object({ requestId, confirm: z.object({ provider: z.string().max(64), accountIds: z.array(id).max(100) }).optional() }), { timeoutMs: 120_000 }),
+  /** §8: model text went into a draft: its provenance from now until it's sent. False: that draft or generation is gone. */
+  "writing.commitGeneration": m<{ ok: boolean }>()(z.object({ accountId: id, draftId: id, draftGeneration: z.string().max(64), address: z.string().max(320), text: z.string().max(GENERATION_TEXT_MAX) })),
+
   "identity.get": m<OwnerIdentity | null>()(empty),
   "identity.changeOwner": m<OwnerIdentity>()(z.object({ accountId: id, password: z.string().min(1).max(1000).optional() }), { timeoutMs: 300_000 }),
 
@@ -1194,5 +1287,9 @@ export interface Events {
   syncProgress: { accountId: number; progress: import("../types").SyncProgress | null };
   /** plan 132: a thread's summary is ready, for an open reader (only to the renderer and dev: never MCP) */
   aiSummary: { threadId: number };
+  /** plan 133: a stream's text so far, only to the connection that asked: append it */
+  aiCompose: AiComposeDelta;
+  /** plan 133: the style study's progress, only to the connection that asked */
+  aiStudy: AiStudyProgress;
 }
 export type EventName = keyof Events;

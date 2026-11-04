@@ -198,7 +198,8 @@ const MAX_FOUND = 1000;
  * A generator: it yields at each message and comparison so a backend in slices can look at its clock.
  */
 export function* phraseSteps(mails: readonly WrittenMail[]): Generator<void, string[], void> {
-  const runs = mails.map((m) => {
+  const runs: { recipients: readonly string[]; runs: string[][] }[] = [];
+  for (const m of mails) {
     let left = MAX_WORDS_READ;
     const kept: string[][] = [];
     for (const run of phraseRuns(m.text)) {
@@ -206,8 +207,9 @@ export function* phraseSteps(mails: readonly WrittenMail[]): Generator<void, str
       kept.push(run.slice(0, left));
       left -= run.length;
     }
-    return { recipients: m.to, runs: kept };
-  });
+    runs.push({ recipients: m.to, runs: kept });
+    yield;
+  }
   const found = new Map<string, { text: string; messages: number; n: number }>();
   let survivors: Set<string> | null = null;
   for (let n = MIN_N; n <= MAX_N; n++) {

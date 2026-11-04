@@ -249,6 +249,8 @@ export interface ComposeOptions {
   signal?: AbortSignal;
   effort?: Effort;
   timing?: { idleMs: number; firstMs: number };
+  /** output room, when the window is small (§6.3) */
+  maxTokens?: number;
 }
 
 export interface ComposeResult {
@@ -271,7 +273,7 @@ export async function runCompose(transport: ModelTransport, input: ComposeInput,
       system,
       messages,
       output: "text",
-      maxTokens: COMPOSE_MAX_TOKENS,
+      maxTokens: options.maxTokens ?? COMPOSE_MAX_TOKENS,
       signal: options.signal ?? new AbortController().signal,
       effort: options.effort ?? "low",
     },
