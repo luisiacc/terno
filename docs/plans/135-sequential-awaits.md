@@ -86,7 +86,7 @@ Run `pnpm test:perf` for `gmail-history`, `gmail-batches`, `load`, `backend`, an
 ## Out of scope
 
 - Raising the attachment or body-job gates, which would unlock parallel attachment reads. That's a separate decision about backend load.
-- Trashing through `batchModify` with the `TRASH` label (50 units per thousand against 20 each). It would be far cheaper, but Gmail's behaviour needs checking against a real account.
+- Trashing through `batchModify` with the `TRASH` label (50 units per thousand against 20 each). Built as plan 136 and dropped unmerged: Google doesn't document that it matches `/trash`, what happens to `SPAM` and user labels, or how a chunk treats a draft or a missing id. Terno doesn't rely on undocumented provider behaviour, so trash stays on `/trash`. The saving was also smaller than this suggests, a third to a half of the total, because the reads that follow a trash stay.
 - Newest-first order in `hydrateSelectedThread`.
 
 ## Revisions after the Codex review
