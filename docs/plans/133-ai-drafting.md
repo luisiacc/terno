@@ -1,6 +1,6 @@
 # Plan 133: AI drafting
 
-- **Status:** third version, after two Codex rounds. The pure core is built (`packages/core/src/writing/`, `packages/ai/src/writing.ts`), the thin experiment has run on synthetic mail, and the backend is built (steps 2, 3, 5, 6 and the data side of 9): read "What the experiment found" and "What building it changed" before the sections they change. The composer and Settings work from "Composer contract" at the end. No UI yet, no real-model proof of this path yet, no Codex review of this code yet. Your blind read (§11) is still the release gate, and it hasn't happened.
+- **Status:** third version, after two Codex rounds. The pure core is built (`packages/core/src/writing/`, `packages/ai/src/writing.ts`), the thin experiment has run on synthetic mail, the backend is built (steps 2, 3, 5, 6 and the data side of 9), and so are the composer and Settings (steps 5, 7, 8): read "What the experiment found" and "What building it changed" before the sections they change. No real-model proof of this path yet. Your blind read (§11) is still the release gate, and it hasn't happened.
 - **Builds on:** plan 131 (base), plan 85 §6, decisions 9 and 10, revisions 4, 5, 7, 9, 11, plans 16, 44, 60, 93, 115, 130 (the composer), plan 18 (recipients and sent-mail reading).
 
 ## The requests
@@ -597,6 +597,35 @@ Built to the decisions above: the profile is local by default, sends no other pe
 - **Fixed in passing:** `capture-repair-upgrade.int.test.ts` was already failing at plan 134's v49 (it didn't drop that index). `phraseSteps` replaced `stockPhrases`'s body so it can yield; past 1,000 qualifying sequences only the likeliest are compared. Tests updated for the new tables: `idb.uncertain-upgrade.test.ts`, `capture-repair-upgrade.int.test.ts`, and `legacy.worker.ts` in the web e2e.
 
 **Not built, or not proven:** the composer and Settings UI (steps 7, 8). Step 9's correction guidance is built; whether it helps is a question for the eval. A real-model run through this path. The learner's slices measure 8 ms, but the event loop's longest wait during a whole pass on SQLite measured 35 ms, once: the gate allows 60 ms rather than the 8 ms target, and I haven't traced it (a commit, or garbage collection from the phrase counting). Prompt-version staleness of judgments is noticed only after a pass, not when a draft needs one. Message identity on IMAP is relied on rather than tested end to end: the local row keeps its id through `sendCopies.record`, and only the adoption by RFC id is in the conformance suite. A row whose message is deleted and re-ingested loses provenance, and the mail would then count as the user's.
+
+### The composer and Settings
+
+Built to §10 and the contract, on the fake (`fakeDraft` in `packages/ai/src/fake.ts` paces it; `TERNO_FAKE_DRAFT_PACE=1` for running by hand). `lib/ai-draft.ts` is the keyed store, `components/composer/ai-draft.tsx` the row, strip and preview, both in the lazy `ai-draft` chunk; `lib/ai-draft-state.ts` and `composer/ai-slot.tsx` are all the entry knows.
+
+- **The seam is `composeLanding`.** `openCompose` stays as it was, typed `Promise<void>`, because some forty tests hold its promise; it's the same function. `onLanded` says where it landed before anything takes focus, so the row shows in the commit that shows the draft. `addressReply` is the explicit-recipient path, only on a reply Terno filled in.
+- **A reply Terno filled in isn't "a draft with recipients".** §5.2's last rows would have made ⌘J on a thread ask "Add Tom · Just write it" of a draft nobody chose. Until it's authored, its surface is the thread.
+- **The preview shares the editor's grid cell.** So the cell's height is theirs together and the empty editor stays focused above it, without its placeholder or caret. At commit the words stay on the same pixels, measured per frame across the commit (`recordCommit` in the spec), and preview and text are never on screen together.
+- **What finishes with no editor waits in the store (`held`)** rather than going in through `editDraft`, which would rebuild the document and lose its undo step. If the app closes first, only the model's text is lost; a draft that was never committed has nothing else at stake.
+- **Coming back to a conversation is an open, for a draft with AI work in progress.** Leaving a thread expires its draft's place there, and only an explicit open brings one back: "the strip shows on return" would never have happened. Found by writing the test. The source is checked as the strip's open checks it, and focus doesn't move.
+- **Esc on a row that made its draft takes the draft with it,** if nothing's been written, and focus goes back to the reply bar. Esc on the strip is the form's: nothing's pending.
+- **Attachment metadata counts as a change only outside forwards:** a forward's files arrive in the background (plan 60) mid-stream, which isn't the user changing anything.
+- **Recipients are compared as addresses:** the chips rewrite the text as they settle, which isn't a change of who it's for.
+- **`writing.activate` is not called from the AI tab.** Looking at the provider settings shouldn't start reading sent mail; the first draft or the Writing style page does. That page looks again every 2 s while a pass is running, for a while, since no event says one finished.
+- **Regenerate with no words is Enter on the refining row.** Free-form refining and the chips send `previousDraft`; Regenerate sends the original instruction and notes, as a fresh take. Undo goes back one version, and the strip stays for the one before.
+- **`[placeholder]` lists stay `- ` lines:** a model's `- ` is kept as typed, not turned into list nodes, so what the preview shows is what the document holds, and provenance compares equal.
+- **Changing To mid-stream follows §10.4, not §5.2.** §5.2 says it stops and restarts; §10.4 says it goes on and ends as a suggestion saying who it was for. It's the second: no surprise spending, nothing lost.
+
+**What looking at it changed**, from frames of the stream and the commit in macOS and Lumen, light and dark:
+
+- The check line was in the row, as the plan drew it, and that moved every word down 22 px at commit on the one-tap path. It's under the text now. The row keeps one height from writing to strip.
+- A suggestion under typed words had 130 px of empty editor above it, pushing Send out of view. The editor gives up its minimum height while a suggestion is under it.
+- A long stream ran past the fold with nothing to show for it. It now follows its last line, only while that line is in view, so someone who scrolled up to read stays put.
+- In the pinned card's width the strip took three lines. "Written with AI" goes there (the label says AI), the voice truncates, and it holds one line.
+- Strip and Stop words ended 2 px short of Cc, Bcc and Subject's line; the popover's link was centered. "Often opens with “…,”" for someone who opens with a bare name reads "with just their name".
+
+**Tests changed, not weakened:** `palette.spec.ts` lists the new row. `visual.spec.ts` waits for the stub's models before choosing one: a real Ollama on this machine could answer first, and the timing that hid that moved. The monthly limit's field got a real `<label>`: pushed further down the tab by Drafting, axe stopped reading its `aria-labelledby` as a label. Baselines updated: `compose-new-inline`, `settings-ai-local`, `settings-ai-local-dark`.
+
+**Not built:** rewrite on selection (§10.2's "right after"). The packaged smoke for ⌘J, and a perf gate for a preview frame in a 10 MB draft (the preview doesn't touch the document, and a frame writes only the lines that changed, but that's reasoning, not a number). `send-group-rest.png` in `send-later.spec.ts` was already failing before this work. The entry grew about 7 KB gzipped, nearly all of it the catalog's English strings, which is where they live.
 
 ## The Codex reviews
 

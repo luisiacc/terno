@@ -3,14 +3,14 @@ import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { controllerFor, focusBody } from "~/components/composer/controller";
 import { client } from "~/rpc/connection";
-import { getApp } from "~/state/app";
+import { getApp, useApp } from "~/state/app";
 import { loadThread, useThreads } from "~/state/threads";
 import { errorHelp, writingTarget } from "./ai";
 import { aiDraftHooks, useAiDraftUi, type AiDraftBadge } from "./ai-draft-state";
 import { addressReply, composeLanding, leaveNewDraft, sendDraft } from "./compose";
 import { focusSoon } from "./compose-focus-move";
 import { draftCommands, draftKeyOf } from "./draft-commands";
-import { authored, draftPresentationThread, editDraft, editDraftRecipients, flushDraft, forgetDraft, materialize, NO_AUTO, shownDraftKey, useDrafts, validRecipients, type LocalDraft } from "./drafts";
+import { authored, draftPresentationThread, editDraft, editDraftRecipients, flushDraft, forgetDraft, materialize, NO_AUTO, shownDraftKey, useDrafts, validateDraftPresentation, validRecipients, type LocalDraft } from "./drafts";
 import { localized } from "./i18n";
 import { currentPage, listLayout, openThread } from "./page";
 import { snack } from "./snack";
@@ -145,7 +145,7 @@ export interface AiSession {
   run: Run | null;
   lastSpec: RunSpec | null;
   choice: AiChoice | null;
-  held: { how: "replace" | "below"; result: Extract<AiComposeResult, { status: "done" }>; spec: RunSpec } | null;
+  held: { how: "replace" | "below"; result: Extract<AiComposeResult, { status: "done" }>; spec: RunSpec; prior: AiStrip | undefined; needsSubject: boolean } | null;
   error: AiError | null;
   strip: AiStrip | null;
   /** a send was stopped here: the row offers the choice; `sendAt` is what it was asked to do */
@@ -763,7 +763,7 @@ function commit(key: string, how: "replace" | "below", result: Extract<AiCompose
   const c = controllerFor(key);
   if (!c) {
     // pinning, collapsing or another thread took the editor: it goes in when one is there
-    update(key, { phase: "held", held: { how, result, spec }, run: null, live: "" });
+    update(key, { phase: "held", held: { how, result, spec, prior, needsSubject }, run: null, live: "" });
     return true;
   }
   const before = c.snapshot();
@@ -828,7 +828,7 @@ export function discard(key: string) {
 export function commitHeld(key: string) {
   const s = session(key);
   if (s?.phase !== "held" || !s.held || !controllerFor(key)) return;
-  commit(key, s.held.how, s.held.result, s.held.spec, undefined, false);
+  commit(key, s.held.how, s.held.result, s.held.spec, s.held.prior, s.held.needsSubject);
 }
 
 // ── provenance (§8)
@@ -848,6 +848,7 @@ function recordProvenance(key: string, text: string) {
     }
   })();
   provenance.set(key, run);
+  void run.finally(() => { if (provenance.get(key) === run) provenance.delete(key); });
 }
 
 // ── the strip
@@ -998,6 +999,29 @@ export async function includeEveryone(key: string): Promise<void> {
   // they asked for it knowingly: not a change that makes the text a suggestion
   update(key, { everyone: 0, ...(s.run ? { run: { ...s.run, binding: { ...s.run.binding, to: addresses(now.toText), cc: addresses(now.ccText), mode: now.mode, inReplyToMessageId: now.inReplyToMessageId } } } : {}) });
 }
+
+// ── coming back to the conversation
+
+/**
+ * Leaving a conversation retires its draft's place there (`expireDraftPresentation`), and only an explicit open brings
+ * a draft back. A draft with its AI work in progress is what the user came back for (§10.4: "the strip shows on
+ * return"), so arriving is that open: its source is checked as a strip's open checks it, and focus stays where it is.
+ */
+useApp.subscribe((state, previous) => {
+  if (state.selectedId === previous.selectedId || state.selectedId === null) return;
+  const threadId = state.selectedId;
+  for (const key of Object.keys(useAiDraft.getState().sessions)) {
+    const d = draftOf(key);
+    if (!d?.presentationExpired || d.departedThreadId !== threadId) continue;
+    const source = d.mode === "forward" ? d.forwardOfMessageId : d.mode === "new" ? null : d.inReplyToMessageId;
+    if (source === null) continue;
+    void (async () => {
+      const context = await client.call("drafts.sourceContext", { messageId: source }).catch(() => null);
+      const now = draftOf(key);
+      if (context?.threadId === threadId && getApp().selectedId === threadId && now?.presentationExpired && session(key)) validateDraftPresentation(key, threadId);
+    })();
+  }
+});
 
 // ── what happens to the draft under it
 

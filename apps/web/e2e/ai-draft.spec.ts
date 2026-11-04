@@ -553,6 +553,23 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(body(page)).toHaveText("");
   });
 
+  test("switching threads: it goes on, and the text is there with its strip on return", async ({ app: page, server }) => {
+    await ready(page, server);
+    fakeDraft.paceMs = 120;
+    await openThread(page, /Contract review/);
+    await openField(page);
+    await field(page).fill("say that this is just fine");
+    await page.keyboard.press("Enter");
+    await streaming(page);
+    await openThread(page, /Studio lunch/);
+    await expect(page.getByTestId("composer")).toHaveCount(0);
+    await page.waitForTimeout(2500);
+    await openThread(page, /Contract review/);
+    await expect(strip(page)).toBeVisible();
+    await expect(body(page)).toContainText("That works for me");
+    expect(await recipientEmails(page, "compose-to")).toEqual(["ana@studio.example"]);
+  });
+
   test("pinned: the stream goes on in the card, its editor rebuilt, and commits there", async ({ app: page, server }) => {
     await ready(page, server);
     fakeDraft.paceMs = 120;

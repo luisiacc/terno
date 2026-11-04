@@ -272,6 +272,18 @@ describe("§10.4: binding and races", () => {
     expect(session(key)!.phase).toBe("strip");
   });
 
+  it("what waited for the draft to open again keeps its subject", async () => {
+    const { key, unmount } = await writing({ mode: "new" });
+    unmount();
+    last("ai.compose").resolve(done("Back.", { subject: "Generated" }));
+    await tick();
+    expect(session(key)!.phase).toBe("held");
+    expect(useDrafts.getState().drafts[key]!.subject).toBe("");
+    editor(key);
+    store.commitHeld(key);
+    expect(useDrafts.getState().drafts[key]!.subject).toBe("Generated");
+  });
+
   it("pin: the view is destroyed and rebuilt mid-stream; insertion goes to the controller mounted at that moment", async () => {
     const { key, c, unmount } = await writing();
     delta(key, "Hi");
