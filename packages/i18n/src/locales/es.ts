@@ -1927,6 +1927,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.ai.monthlyLimit": "La IA automática llegó a tu límite mensual en Ajustes → IA, así que no se gasta más con tu clave.",
   "errors.ai.summaryProvider": "Los resúmenes necesitan un proveedor. Añade una clave de OpenAI en Ajustes → IA o elige tu proveedor actual para ellos.",
   "errors.ai.requestInUse": "Esa solicitud de IA ya está en curso.",
+  "errors.ai.noCredit": "{provider} indica que esta cuenta no tiene crédito. Añade crédito en {provider} o elige otro proveedor en Ajustes → IA.",
   "errors.ai.cancelled": "Cancelado.",
   "errors.ai.tooSlow": "La IA tardó demasiado en responder.",
   "errors.ai.timeout": "{provider} no respondió a tiempo.",

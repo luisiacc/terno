@@ -61,6 +61,18 @@ describe("the spend guard", () => {
   });
 });
 
+describe("out of credit", () => {
+  it("is told apart from a rate limit, because waiting won't help", async () => {
+    const { mapSdkError } = await import("./sdk-errors");
+    class APIError extends Error { status = 429; code = "credit_balance_exhausted"; type = "insufficient_quota"; }
+    class Other extends Error {}
+    const sdk = { APIError, APIUserAbortError: Other, APIConnectionError: Other, APIConnectionTimeoutError: Other } as never;
+    expect(mapSdkError(new APIError("You have no credits remaining."), sdk, { label: "OpenAI", local: false, host: "api.openai.com" }).kind).toBe("auth");
+    class Limited extends APIError { override code = "rate_limit_exceeded"; override type = "requests"; }
+    expect(mapSdkError(new Limited("Slow down."), sdk, { label: "OpenAI", local: false, host: "api.openai.com" }).kind).toBe("rate_limited");
+  });
+});
+
 describe("prices", () => {
   it("knows what the defaults cost, and says nothing about what it doesn't know", () => {
     expect(costOf("gpt-6-luna", { inputTokens: 1_000_000, outputTokens: 0 })).toBeCloseTo(0.1, 6);

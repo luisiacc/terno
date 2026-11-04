@@ -1942,6 +1942,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.ai.monthlyLimit": "Automatic AI reached your monthly limit in Settings → AI, so nothing more is spent on your key.",
   "errors.ai.summaryProvider": "Summaries need a provider. Add an OpenAI key in Settings → AI, or choose your current provider for them.",
   "errors.ai.requestInUse": "That AI request is already running.",
+  "errors.ai.noCredit": "{provider} says this account has no credit left. Add credit with {provider}, or choose another provider in Settings → AI.",
   "errors.ai.cancelled": "Cancelled.",
   "errors.ai.tooSlow": "The AI took too long to answer.",
   "errors.ai.timeout": "{provider} didn’t answer in time.",

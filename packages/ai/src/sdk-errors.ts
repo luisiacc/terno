@@ -75,6 +75,9 @@ export function mapSdkError(error: unknown, sdk: SdkErrors, info: ErrorInfo): Ai
   if (error instanceof sdk.APIError) {
     const status = error.status;
     if (status === 401 || status === 403) return new AiError(L("errors.ai.keyRejected", { provider: info.label }), "auth");
+    // out of credit reads like a rate limit, but waiting won't help: automatic work must stop, and the user needs to know
+    if (status === 429 && /insufficient_quota|credit_balance|credit balance|billing/i.test(`${(error as { code?: string }).code ?? ""} ${(error as { type?: string }).type ?? ""} ${error.message}`)) return new AiError(L("errors.ai.noCredit", { provider: info.label }), "auth");
+    if (status === 400 && /credit balance/i.test(error.message)) return new AiError(L("errors.ai.noCredit", { provider: info.label }), "auth");
     if (status === 429) return new AiError(L("errors.ai.rateLimited", { provider: info.label }), "rate_limited");
     if ((status === 400 || status === 422) && UNSUPPORTED_OUTPUT.test(error.message)) return new AiError(`${info.label}: ${error.message}`, "unsupported");
     if (status === 404) return new AiError(L("errors.ai.notFound", { provider: info.label, detail: error.message }), "unavailable");
