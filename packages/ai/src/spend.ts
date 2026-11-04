@@ -1,19 +1,24 @@
-import { priceOf } from "./prices";
-import { AiError, promptText, type CompletionRequest, type ModelTransport, type StreamEvent, type Usage } from "./types";
+import { costAt, priceOf, worstCaseUsd } from "./prices";
+import { AiError, type CompletionRequest, type ModelTransport, type StreamEvent, type Usage } from "./types";
 
 /**
  * A hard ceiling for runs against real models (evals, proofs on a developer's
  * key). Each request first reserves its worst case: its whole input plus every
  * output token it may use. If that doesn't fit, it never leaves the machine.
- * After it finishes, the reservation becomes what it really cost.
+ * Until it settles the reservation counts as spent, so concurrent requests, and
+ * a process that dies mid-request, can't pass the cap.
  *
  * Not used by the shipped app, which has daily limits of its own (ai-limiter).
+ * On disk: file-ledger.ts, so this module stays free of node:fs for the web build.
  */
 export interface SpendLedger {
-  /** dollars recorded so far */
+  /** dollars recorded so far, unsettled reservations included */
   spent(): number;
   readonly capUsd: number;
-  record(entry: { model: string; usd: number; usage?: Usage; label?: string }): void;
+  /** Holds `usd` against the cap as one atomic step. Its id, or null when it doesn't fit: then nothing was held. */
+  reserve(entry: { model: string; usd: number; label?: string }): string | null;
+  /** Turns a reservation into what it really cost. */
+  settle(id: string, entry: { model: string; usd: number; usage?: Usage; label?: string }): void;
 }
 
 export class BudgetExceededError extends AiError {
@@ -23,31 +28,34 @@ export class BudgetExceededError extends AiError {
   }
 }
 
-/** Generous on purpose: a reservation should overestimate. */
-function inputTokens(req: CompletionRequest): number {
-  const chars = promptText(req.system).length + req.messages.reduce((n, m) => n + promptText(m.content).length, 0);
-  return Math.ceil(chars / 2.5);
-}
-
 function worstCase(model: string, req: CompletionRequest): number {
   const price = priceOf(model);
   // an unknown price can't be held to a ceiling, so it doesn't run at all
   if (!price) throw new BudgetExceededError(`no known price for ${model}: refusing to call it on a budget`);
-  // a cache write is the priciest way to read input
-  return (inputTokens(req) * Math.max(price.input, price.cacheWrite ?? 0) + req.maxTokens * price.output) / 1_000_000;
+  return worstCaseUsd(price, req);
 }
 
 function actual(model: string, usage: Usage | undefined, reserved: number): number {
   const price = priceOf(model);
   // no usage reported: assume the worst case happened
   if (!price || !usage) return reserved;
-  return (usage.inputTokens * price.input + usage.outputTokens * price.output + (usage.cacheReadTokens ?? 0) * (price.cacheRead ?? price.input) + (usage.cacheWriteTokens ?? 0) * (price.cacheWrite ?? price.input)) / 1_000_000;
+  return costAt(price, usage);
 }
 
-function admit(ledger: SpendLedger, reserved: number, model: string): void {
-  const after = ledger.spent() + reserved;
-  if (after > ledger.capUsd) {
+function hold(ledger: SpendLedger, reserved: number, model: string, label: string | undefined): string {
+  const id = ledger.reserve({ model, usd: reserved, label });
+  if (id === null) {
     throw new BudgetExceededError(`spend cap: $${ledger.spent().toFixed(4)} spent + $${reserved.toFixed(4)} worst case for ${model} would pass $${ledger.capUsd.toFixed(2)}`);
+  }
+  return id;
+}
+
+/** A settle that can't be written leaves the worst case standing, which errs the safe way. It must not lose the answer. */
+function settle(ledger: SpendLedger, id: string, entry: Parameters<SpendLedger["settle"]>[1]): void {
+  try {
+    ledger.settle(id, entry);
+  } catch {
+    // the reservation stays counted
   }
 }
 
@@ -57,13 +65,13 @@ export function budgetedTransport(inner: ModelTransport, model: string, ledger: 
     ...inner,
     async complete(req) {
       const reserved = worstCase(model, req);
-      admit(ledger, reserved, model);
+      const id = hold(ledger, reserved, model, label);
       try {
         const completion = await inner.complete(req);
-        ledger.record({ model, usd: actual(model, completion.usage, reserved), usage: completion.usage, label });
+        settle(ledger, id, { model, usd: actual(model, completion.usage, reserved), usage: completion.usage, label });
         return completion;
       } catch (error) {
-        ledger.record({ model, usd: reserved, label: `${label ?? ""} failed` });
+        settle(ledger, id, { model, usd: reserved, label: `${label ?? ""} failed` });
         throw error;
       }
     },
@@ -71,7 +79,7 @@ export function budgetedTransport(inner: ModelTransport, model: string, ledger: 
       ? {
           async *stream(req: CompletionRequest): AsyncGenerator<StreamEvent> {
             const reserved = worstCase(model, req);
-            admit(ledger, reserved, model);
+            const id = hold(ledger, reserved, model, label);
             let usage: Usage | undefined;
             let finished = false;
             try {
@@ -84,7 +92,7 @@ export function budgetedTransport(inner: ModelTransport, model: string, ledger: 
               }
             } finally {
               // stopped early or failed: billed for what ran, which we can't see, so the worst case stands
-              ledger.record({ model, usd: finished ? actual(model, usage, reserved) : reserved, usage, label: finished ? label : `${label ?? ""} stopped` });
+              settle(ledger, id, { model, usd: finished ? actual(model, usage, reserved) : reserved, usage, label: finished ? label : `${label ?? ""} stopped` });
             }
           },
         }

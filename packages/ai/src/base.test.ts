@@ -1,4 +1,10 @@
+import { execFile } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
+import { fileLedger } from "./file-ledger";
 import { budgetedTransport, BudgetExceededError, type SpendLedger } from "./spend";
 import { costOf } from "./prices";
 import { streamCompletion } from "./stream";
@@ -8,9 +14,20 @@ import { AiError, type CompletionRequest, type ModelTransport, type ProviderConf
 
 const req = (over: Partial<CompletionRequest> = {}): CompletionRequest => ({ system: "s", messages: [{ role: "user", content: "hello" }], output: "text", maxTokens: 1000, signal: new AbortController().signal, ...over });
 
-function ledger(capUsd: number): SpendLedger & { entries: { usd: number }[] } {
-  const entries: { usd: number }[] = [];
-  return { capUsd, entries, spent: () => entries.reduce((n, e) => n + e.usd, 0), record: (e) => void entries.push(e) };
+function ledger(capUsd: number): SpendLedger {
+  const held = new Map<string, number>();
+  const spent = () => [...held.values()].reduce((n, usd) => n + usd, 0);
+  return {
+    capUsd,
+    spent,
+    reserve(e) {
+      if (spent() + e.usd > capUsd) return null;
+      const id = String(held.size);
+      held.set(id, e.usd);
+      return id;
+    },
+    settle: (id, e) => void held.set(id, e.usd),
+  };
 }
 
 const answers: ModelTransport = { complete: async () => ({ text: "hi", stop: "end", usage: { inputTokens: 100, outputTokens: 50 } }) };
@@ -58,6 +75,78 @@ describe("the spend guard", () => {
       break;
     }
     expect(book.spent()).toBeGreaterThanOrEqual((1000 * 10) / 1e6);
+  });
+
+  it("counts a request in flight, so a second can't share what's left of the cap", async () => {
+    // one worst case is about $0.010; the cap holds one, not two
+    const book = ledger(0.015);
+    let sent = 0;
+    let finish!: () => void;
+    const stalled: ModelTransport = { complete: async () => (sent++, await new Promise<void>((r) => (finish = r)), { text: "", stop: "end", usage: { inputTokens: 1, outputTokens: 1 } }) };
+    const held = budgetedTransport(stalled, "claude-sonnet-5-5", book);
+    const first = held.complete(req());
+    await expect(held.complete(req())).rejects.toBeInstanceOf(BudgetExceededError);
+    expect(sent).toBe(1);
+    expect(book.spent()).toBeGreaterThanOrEqual(0.01);
+    finish();
+    await first;
+    expect(book.spent()).toBeLessThan(0.001);
+  });
+
+  it("keeps the answer when the settle can't be written, and the worst case stands", async () => {
+    const book = ledger(1);
+    book.settle = () => { throw new Error("disk"); };
+    await expect(budgetedTransport(answers, "claude-sonnet-5-5", book).complete(req())).resolves.toMatchObject({ text: "hi" });
+    expect(book.spent()).toBeGreaterThanOrEqual(0.01);
+  });
+});
+
+describe("the ledger on disk", () => {
+  const dir = () => mkdtempSync(join(tmpdir(), "terno-ledger-"));
+  const worstCase = (1000 * 10 + 5 * 2.5) / 1e6;
+
+  it("reserve and settle lines add up to what's really spent, and a process that died stays counted", () => {
+    const path = join(dir(), "spend.jsonl");
+    const book = fileLedger(path, 1);
+    const a = book.reserve({ model: "m", usd: 0.5 })!;
+    expect(book.spent()).toBeCloseTo(0.5, 10);
+    book.settle(a, { model: "m", usd: 0.1 });
+    expect(book.spent()).toBeCloseTo(0.1, 10);
+    // never settled: the run that made it is gone, and a new one still sees it
+    book.reserve({ model: "m", usd: 0.2 });
+    expect(fileLedger(path, 1).spent()).toBeCloseTo(0.3, 10);
+    expect(fileLedger(path, 1).reserve({ model: "m", usd: 0.8 })).toBeNull();
+  });
+
+  it("still counts a ledger written before reservations", () => {
+    const path = join(dir(), "spend.jsonl");
+    writeFileSync(path, `${JSON.stringify({ at: "x", model: "m", usd: 0.25 })}\n`);
+    expect(fileLedger(path, 1).spent()).toBeCloseTo(0.25, 10);
+  });
+
+  it("refuses rather than guess when a line can't be read", () => {
+    const path = join(dir(), "spend.jsonl");
+    writeFileSync(path, `{"type":"reserve","id":"a","us`);
+    expect(() => fileLedger(path, 1).reserve({ model: "m", usd: 0.01 })).toThrow();
+  });
+
+  it("refuses when the lock stays held, and never breaks it", () => {
+    const path = join(dir(), "spend.jsonl");
+    mkdirSync(`${path}.lock`);
+    expect(() => fileLedger(path, 1, 20).reserve({ model: "m", usd: 0.01 })).toThrow(/locked/);
+    expect(existsSync(`${path}.lock`)).toBe(true);
+  });
+
+  it("five real processes reserving at once pass no cap: the one that reproduced $0.020 against $0.015", async () => {
+    const path = join(dir(), "spend.jsonl");
+    const module = pathToFileURL(fileURLToPath(new URL("./file-ledger.ts", import.meta.url))).href;
+    const script = `import { fileLedger } from ${JSON.stringify(module)}; const id = fileLedger(${JSON.stringify(path)}, 0.015).reserve({ model: "m", usd: ${worstCase} }); process.stdout.write(id ? "held" : "refused");`;
+    const run = () => new Promise<string>((resolve, reject) => {
+      execFile(process.execPath, ["--no-warnings", "--input-type=module", "-e", script], (error, stdout) => (error ? reject(error) : resolve(stdout)));
+    });
+    const results = await Promise.all(Array.from({ length: 5 }, run));
+    expect(results.filter((r) => r === "held")).toHaveLength(1);
+    expect(fileLedger(path, 0.015).spent()).toBeLessThanOrEqual(0.015);
   });
 });
 

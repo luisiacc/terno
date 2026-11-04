@@ -1,6 +1,7 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { budgetedTransport, createAi, transportFor, type AiOptions, type AiTasks, type ModelTransport, type ProviderConfig, type SpendLedger } from "@terno/ai";
+import { fileLedger as ledgerAt } from "@terno/ai/file-ledger";
 
 /**
  * Runs against real models, for evals and proofs, and nothing else. Never
@@ -16,17 +17,7 @@ if (!(HARD_CAP_USD > 0 && HARD_CAP_USD <= 5)) throw new Error("TERNO_AI_CAP_USD 
 export const LEDGER_PATH = process.env.TERNO_AI_LEDGER ?? "/tmp/terno-ai/spend.jsonl";
 
 export function fileLedger(path: string = LEDGER_PATH, capUsd: number = HARD_CAP_USD): SpendLedger {
-  mkdirSync(dirname(path), { recursive: true });
-  return {
-    capUsd,
-    spent() {
-      if (!existsSync(path)) return 0;
-      return readFileSync(path, "utf8").split("\n").filter(Boolean).reduce((sum, line) => sum + (JSON.parse(line) as { usd: number }).usd, 0);
-    },
-    record(entry) {
-      appendFileSync(path, `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`);
-    },
-  };
+  return ledgerAt(path, capUsd);
 }
 
 /** The repo's .env, read only here and held only in this process. Values are never logged. */

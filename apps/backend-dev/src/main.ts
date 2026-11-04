@@ -17,7 +17,12 @@ const server = await startDevServer({
   ...(real ? { aiFactory: real.realAiFactory() } : {}),
 });
 if (real) await real.seedPersona(server.backend, process.env.TERNO_REPO_ROOT ?? join(process.cwd(), "../.."));
+// only now: the proof types real keys into a backend that says it's held to the ledger (app-proof.mjs)
+const takeBackGuard = real ? real.writeGuardMarker(Number(new URL(server.url).port)) : () => {};
 console.log("[backend-dev] listening on localhost");
-const stop = () => void server.close().then(() => process.exit(0));
+const stop = () => {
+  takeBackGuard();
+  void server.close().then(() => process.exit(0));
+};
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);

@@ -1,7 +1,10 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { budgetedTransport, createAi, type SpendLedger } from "@terno/ai";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { budgetedTransport, createAi } from "@terno/ai";
+import { fileLedger } from "@terno/ai/file-ledger";
 import type { AiFactory, Backend } from "@terno/backend";
+
+export { writeGuardMarker } from "./proof-guard";
 
 type IncomingMessage = Parameters<Backend["store"]["sync"]["ingest"]>[0][number];
 
@@ -10,22 +13,14 @@ type IncomingMessage = Parameters<Backend["store"]["sync"]["ingest"]>[0][number]
  * set by a test or a build). Every request is held to the same on-disk ledger
  * as the evals (scripts/ai-real/harness.ts), so a loop in the app can't pass it.
  */
-function ledger(path: string, capUsd: number): SpendLedger {
-  mkdirSync(dirname(path), { recursive: true });
-  return {
-    capUsd,
-    spent: () => (existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean).reduce((sum, line) => sum + (JSON.parse(line) as { usd: number }).usd, 0) : 0),
-    record: (entry) => appendFileSync(path, `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`),
-  };
-}
-
-export function realAiFactory(): AiFactory {
+export function realAiFactory(create: typeof createAi = createAi): AiFactory {
   const capUsd = Number(process.env.TERNO_AI_CAP_USD ?? 5);
   if (!(capUsd > 0 && capUsd <= 5)) throw new Error("TERNO_AI_CAP_USD must be above 0 and at most 5");
-  const book = ledger(process.env.TERNO_AI_LEDGER ?? "/tmp/terno-ai/spend.jsonl", capUsd);
+  const book = fileLedger(process.env.TERNO_AI_LEDGER ?? "/tmp/terno-ai/spend.jsonl", capUsd);
   return (config, options) => {
-    if (config.id === "fake") return createAi(config, options);
-    return createAi(config, {
+    if (config.id === "fake") return create(config, options);
+    // an SDK retry is a request the ledger never saw, and filter sessions keep one
+    return create({ ...config, maxRetries: 0 }, {
       ...options,
       wrapTransport: (transport) => {
         const held = budgetedTransport(transport, config.model, book, "app");

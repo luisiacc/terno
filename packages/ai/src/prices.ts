@@ -1,4 +1,4 @@
-import type { Usage } from "./types";
+import { promptText, type CompletionRequest, type Usage } from "./types";
 
 export interface ModelPrice {
   /** US dollars per million tokens */
@@ -29,11 +29,29 @@ export function priceOf(model: string): ModelPrice | null {
   return PRICES[model] ?? null;
 }
 
-/** What a request cost in US dollars, or null when the price isn't known. */
-export function costOf(model: string, usage: Usage): number | null {
-  const price = priceOf(model);
-  if (!price) return null;
+/** A cloud model nobody told us the price of: counted dear, so a ceiling still bites and nothing reads as free. */
+export const UNKNOWN_CLOUD_PRICE: ModelPrice = { input: 10, output: 50 };
+
+/** Generous on purpose: a reservation should overestimate. */
+export function estimateInputTokens(req: Pick<CompletionRequest, "system" | "messages">): number {
+  const chars = promptText(req.system).length + req.messages.reduce((n, m) => n + promptText(m.content).length, 0);
+  return Math.ceil(chars / 2.5);
+}
+
+/** The most a request can cost: its whole input at the priciest way to read it (a cache write) plus every output token it may use. */
+export function worstCaseUsd(price: ModelPrice, req: Pick<CompletionRequest, "system" | "messages" | "maxTokens">): number {
+  return (estimateInputTokens(req) * Math.max(price.input, price.cacheWrite ?? 0) + req.maxTokens * price.output) / 1_000_000;
+}
+
+/** What a request cost at a price, in US dollars. */
+export function costAt(price: ModelPrice, usage: Usage): number {
   const cached = (usage.cacheReadTokens ?? 0) * (price.cacheRead ?? price.input) + (usage.cacheWriteTokens ?? 0) * (price.cacheWrite ?? price.input);
   // OpenAI counts cached tokens inside input; Anthropic reports them apart. Only OpenAI's would double-count, and only upward.
   return (usage.inputTokens * price.input + usage.outputTokens * price.output + cached) / 1_000_000;
+}
+
+/** What a request cost in US dollars, or null when the price isn't known. */
+export function costOf(model: string, usage: Usage): number | null {
+  const price = priceOf(model);
+  return price ? costAt(price, usage) : null;
 }

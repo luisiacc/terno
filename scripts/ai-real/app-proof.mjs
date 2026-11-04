@@ -3,11 +3,22 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
+import { refusalToTypeKeys } from "../../apps/backend-dev/src/proof-guard.ts";
+
+const URL_ = process.env.PROOF_URL ?? "http://127.0.0.1:5183/?backend=ws://127.0.0.1:5184";
+/** Real keys typed into a backend off the ledger would spend with no ceiling. Asked again right before each key is typed. */
+function assertGuarded() {
+  const refusal = refusalToTypeKeys(URL_);
+  if (refusal) {
+    console.error(refusal);
+    process.exit(1);
+  }
+}
+assertGuarded();
 
 const require = createRequire(resolve("apps/web/package.json"));
 const { chromium } = require("@playwright/test");
 
-const URL_ = process.env.PROOF_URL ?? "http://127.0.0.1:5183/?backend=ws://127.0.0.1:5184";
 const OUT = process.env.PROOF_OUT ?? "/tmp/terno-ai/proof";
 mkdirSync(OUT, { recursive: true });
 const env = Object.fromEntries(readFileSync(".env", "utf8").split(/\r?\n/).map((l) => /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(l)).filter(Boolean).map((m) => [m[1], m[2].replace(/^(["'])(.*)\1$/, "$2")]));
@@ -91,12 +102,14 @@ await step("settings", async () => {
   await page.getByTestId("tab-ai").click();
   await page.getByTestId("ai-provider").click();
   await page.getByRole("option", { name: /Claude/ }).click();
+  assertGuarded();
   await page.getByTestId("ai-key").fill(env.ANTHROPIC_API_KEY);
   await page.keyboard.press("Enter");
   await page.getByTestId("ai-key").waitFor({ state: "detached", timeout: 10_000 }).catch(() => {});
   await page.waitForTimeout(400);
   await shot("settings-ai");
   await page.getByTestId("tab-categories").click();
+  assertGuarded();
   await page.getByTestId("jev-key").fill(env.JEV_API_KEY);
   await page.getByTestId("jev-key-save").click();
   await page.getByTestId("jev-key-test").click();
