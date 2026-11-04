@@ -30,6 +30,7 @@ export function defineAiSummariesConformance(fresh: () => Promise<MailStore>, re
         stamp: (await store.aiSummaries.sources(threadId))!.stamp,
         expectThrough: (await store.aiSummaries.get(threadId))?.throughMessageId ?? null,
         now: at,
+        clearGeneration: store.aiSummaries.clearGeneration(),
         contentHash: "hash",
         promptVersion: 1,
         language: "en",
@@ -207,6 +208,24 @@ export function defineAiSummariesConformance(fresh: () => Promise<MailStore>, re
         expect(await store.aiSummaries.get(a.thread)).toBeNull();
         expect(await store.aiSummaries.pendingCount()).toBe(0);
         expect(await store.newMail.page("summary", null, 10)).toEqual([]);
+      });
+
+      it("a write that started before a clear brings nothing back; one that started after writes", async () => {
+        const { store, arrive, write } = await setup();
+        const a = await arrive({ providerThreadId: "a" });
+        const before = await write(a.thread);
+        await store.aiSummaries.clear();
+        expect(await store.aiSummaries.finish(before)).toBe("gone");
+        expect(await store.aiSummaries.get(a.thread)).toBeNull();
+        expect(await store.aiSummaries.finish(await write(a.thread))).toBe("written");
+      });
+
+      it("a write and a clear asked for at once leave nothing, whichever runs first", async () => {
+        const { store, arrive, write } = await setup();
+        const a = await arrive({ providerThreadId: "a" });
+        const before = await write(a.thread);
+        await Promise.all([store.aiSummaries.finish(before), store.aiSummaries.clear()]);
+        expect(await store.aiSummaries.get(a.thread)).toBeNull();
       });
     });
 

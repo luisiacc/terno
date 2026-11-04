@@ -1079,6 +1079,8 @@ export class SqlMailStore implements MailStore {
     prune: async (now) => pruneNewMail(this.db, now),
   };
 
+  private summaryClears = 0;
+
   readonly aiSummaries: MailStore["aiSummaries"] = {
     get: async (threadId) => getSummary(this.db, threadId),
     sources: async (threadId) => summarySources(this.db, threadId),
@@ -1103,9 +1105,14 @@ export class SqlMailStore implements MailStore {
     attempt: async (threadId, kind, max, now) => attemptSummary(this.db, threadId, kind, max, now),
     fail: async (threadId, kind, now) => failSummary(this.db, threadId, kind, now),
     drop: async (threadId, expectThrough) => dropSummary(this.db, threadId, expectThrough),
-    finish: async (write) => finishSummary(this.db, write),
+    // the check and the write are one synchronous step, as is clear: neither can land between the other's parts
+    finish: async (write) => (write.clearGeneration === this.summaryClears ? finishSummary(this.db, write) : "gone"),
     dropPending: async () => dropPendingSummaries(this.db),
-    clear: async () => clearSummaries(this.db),
+    clear: async () => {
+      this.summaryClears++;
+      clearSummaries(this.db);
+    },
+    clearGeneration: () => this.summaryClears,
     prune: async (now, maxRows) => pruneSummaries(this.db, now, maxRows),
   };
 

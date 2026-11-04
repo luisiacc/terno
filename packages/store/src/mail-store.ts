@@ -538,8 +538,10 @@ export interface MailStore {
     finish(write: import("./ai-summaries").SummaryWrite): Promise<import("./ai-summaries").SummaryWriteOutcome>;
     /** the setting went off: nothing stays queued */
     dropPending(): Promise<void>;
-    /** Settings → Storage → Clear AI data */
+    /** Settings → Storage → Clear AI data. Refuses every `finish` that started before it. */
     clear(): Promise<void>;
+    /** how many clears so far, in this process: nothing in flight outlives it, so nothing needs it on disk */
+    clearGeneration(): number;
     /** the bounds: pending rows past their moment, then the oldest results over `maxRows`; how many went */
     prune(now: number, maxRows: number): Promise<number>;
   };

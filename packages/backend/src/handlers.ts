@@ -1272,7 +1272,7 @@ export function createHandlers(b: Backend): Handlers {
     "ai.summaries.get": ({ threadId }) => b.summaries.read(threadId),
     "ai.summaries.status": () => b.summaries.status(),
     "ai.summaries.clear": async () => {
-      await store.aiSummaries.clear();
+      await b.summaries.clear();
       return { ok: true };
     },
 

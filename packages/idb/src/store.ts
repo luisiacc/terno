@@ -1918,6 +1918,8 @@ export class IdbMailStore implements MailStore {
     prune: (now) => this.command(() => pruneNewMail(this.c, now)),
   };
 
+  private summaryClears = 0;
+
   readonly aiSummaries: MailStore["aiSummaries"] = {
     get: (threadId) => this.read(() => getSummary(this.c, threadId)),
     sources: (threadId) => this.read(() => summarySources(this.c, threadId)),
@@ -1939,9 +1941,15 @@ export class IdbMailStore implements MailStore {
     attempt: (threadId, kind, max, now) => this.command(() => attemptSummary(this.c, threadId, kind, max, now)),
     fail: (threadId, kind, now) => this.command(() => failSummary(this.c, threadId, kind, now)),
     drop: (threadId, expectThrough) => this.command(() => dropSummary(this.c, threadId, expectThrough)),
-    finish: (write) => this.command(() => finishSummary(this.c, write)),
+    // inside the command: commands run one at a time, so a clear can't land between the check and the write
+    finish: (write) => this.command(() => (write.clearGeneration === this.summaryClears ? finishSummary(this.c, write) : "gone")),
     dropPending: () => this.command(() => dropPendingSummaries(this.c)),
-    clear: () => this.command(() => clearSummaries(this.c)),
+    clear: () => {
+      // at once, not when its turn comes: a finish queued ahead of it is about to write what this clears
+      this.summaryClears++;
+      return this.command(() => clearSummaries(this.c));
+    },
+    clearGeneration: () => this.summaryClears,
     prune: (now, maxRows) => this.command(() => pruneSummaries(this.c, now, maxRows)),
   };
 

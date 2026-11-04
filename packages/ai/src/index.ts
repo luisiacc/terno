@@ -1,7 +1,7 @@
 export * from "./types";
 export * from "./providers";
 export * from "./wire";
-export { SUMMARY_PROMPT_VERSION, summaryPrompt, summarizeTask, type SummarizeInput, type ThreadSummaryResult, type ThreadText } from "./summarize";
+export { SUMMARY_PROMPT_VERSION, summaryBudget, summaryPrompt, summarizeTask, type SummarizeInput, type ThreadSummaryResult, type ThreadText } from "./summarize";
 export * from "./writing";
 export * from "./json";
 export * from "./ladder";

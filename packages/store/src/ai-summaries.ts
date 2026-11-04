@@ -95,6 +95,8 @@ export type SummaryWrite = {
   /** the row's through_message_id when it read them (null: no row then) */
   expectThrough: number | null;
   now: number;
+  /** `clearGeneration()` before it read anything: a clear since then means this write brings back what was cleared */
+  clearGeneration: number;
 } & (
   | {
       /** a stored result for the same text: it keeps its original provenance */
@@ -112,7 +114,7 @@ export type SummaryWrite = {
     }
 );
 
-/** `moved`: the sources or the queue changed meanwhile, go again; `blocked`: spam or trash, nothing written; `gone`: no such thread. */
+/** `moved`: the sources or the queue changed meanwhile, go again; `blocked`: spam or trash, nothing written; `gone`: no such thread, or everything was cleared since. */
 export type SummaryWriteOutcome = "written" | "moved" | "blocked" | "gone";
 
 /** The threads summaries never touch, by hand or not: Spam and Trash (revision 1: any spam message in the thread counts). */

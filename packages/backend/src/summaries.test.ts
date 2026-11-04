@@ -272,6 +272,28 @@ describe("what's sent", () => {
     expect(prompt.length).toBeLessThan((tokens - 1500) * 4);
   });
 
+  it.each([2000, 4096, 8192])("a %i-token window holds the whole prompt, headers and snippets included, and the answer's allowance", async (tokens) => {
+    const { client, backend, model, arrive, row } = await setup({ enabled: false });
+    await backend.store.settings.update("app", {}, (s: Record<string, unknown>) => {
+      const ai = (s.ai ?? {}) as Record<string, unknown>;
+      return { value: { ...s, ai: { ...ai, capabilities: { "fake|||demo": { output: "json_schema", contextTokens: tokens, embeddings: false, probedAt: 1 } } } }, result: undefined };
+    });
+    await client.call("settings.update", { summaries: { enabled: true } });
+    const snippet = "s".repeat(180);
+    for (let i = 0; i < 50; i++) await arrive({ providerThreadId: "long", date: START - 90_000 + i, snippet, bodyText: `body ${i} ${"z".repeat(2000)}`, from: { name: "A rather long display name for a person", email: `someone-with-a-long-address-${i}@books.test` } }, false);
+    const last = await arrive({ providerThreadId: "long", subject: "q".repeat(900), bodyText: `${WORDS}${"y".repeat(40_000)}` });
+    await until(async () => expect((await row(last.thread))?.state).toBe("ready"));
+    const req = model.requests[0]!;
+    const prompt = promptText(req.messages[0]!.content);
+    const LADDER = 1000;
+    expect(promptText(req.system).length + LADDER + prompt.length + req.maxTokens * 4).toBeLessThanOrEqual(tokens * 4);
+    expect(req.maxTokens).toBe(Math.min(3000, Math.ceil(tokens / 2)));
+    expect(prompt).toContain("The contract needs");
+    // what's cited still runs m1, m2…: dropping a message leaves no gap
+    const labels = [...prompt.matchAll(/<message id="m(\d+)"/g)].map((m) => Number(m[1]));
+    expect(labels).toEqual(labels.map((_, i) => i + 1));
+  });
+
   it("keeps an own message's words out of quotes in both languages", () => {
     expect(withoutQuotes("Yes.\n> Are you coming?\nOn Mon, 3 Mar, Ana wrote:\n> old\nmore")).toBe("Yes.");
     expect(withoutQuotes("Sí.\nEl lun, 3 mar, Ana escribió:\nviejo")).toBe("Sí.");
@@ -728,6 +750,60 @@ describe("by hand", () => {
     await expect(client.call("ai.summaries.clear", {})).resolves.toEqual({ ok: true });
     expect(await row(thread)).toBeNull();
     await expect(read(thread)).resolves.toEqual({ state: "none" });
+  });
+
+  it("two requests at once on one thread pay once, and both get the answer", async () => {
+    const { client, model, thread } = await old();
+    const g = gate();
+    model.answer = (req) => held(req, g.opened);
+    const first = go(client, thread);
+    const second = go(client, thread);
+    await until(() => expect(model.requests).toHaveLength(1));
+    await settle();
+    g.open(replying());
+    await expect(first).resolves.toMatchObject({ status: "ready" });
+    await expect(second).resolves.toMatchObject({ status: "ready" });
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it("Clear AI data stops a request in flight, and it brings nothing back", async () => {
+    const { client, model, thread, row } = await old();
+    const g = gate();
+    model.answer = (req) => held(req, g.opened);
+    const asked = errorOf(go(client, thread));
+    await until(() => expect(model.requests).toHaveLength(1));
+    await client.call("ai.summaries.clear", {});
+    expect(model.requests[0]!.signal.aborted).toBe(true);
+    await expect(asked).resolves.toMatchObject({ code: "CANCELLED" });
+    g.open(replying());
+    await settle();
+    expect(await row(thread)).toBeNull();
+  });
+
+  it("an answer that arrives after Clear AI data is thrown away, even from a model that ignored the abort", async () => {
+    const { client, model, thread, row } = await old();
+    const g = gate();
+    model.answer = () => g.opened;
+    const asked = errorOf(go(client, thread));
+    await until(() => expect(model.requests).toHaveLength(1));
+    await client.call("ai.summaries.clear", {});
+    g.open(replying());
+    await expect(asked).resolves.toMatchObject({ code: "CANCELLED" });
+    await settle();
+    expect(await row(thread)).toBeNull();
+  });
+
+  it("the worker's summary in flight stops too", async () => {
+    const { client, model, arrive, row } = await setup();
+    const g = gate();
+    model.answer = () => g.opened;
+    const { thread } = await arrive();
+    await until(() => expect(model.requests).toHaveLength(1));
+    await client.call("ai.summaries.clear", {});
+    expect(model.requests[0]!.signal.aborted).toBe(true);
+    g.open(replying());
+    await settle();
+    expect(await row(thread)).toBeNull();
   });
 });
 

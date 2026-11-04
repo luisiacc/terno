@@ -9,6 +9,12 @@ import type { StructuredTask } from "./ladder";
  */
 export const SUMMARY_PROMPT_VERSION = 2;
 const SUMMARY_MAX_TOKENS = 3000;
+/** What a server with no json_schema gets on top of the system prompt: the instructions, the schema, the example. */
+const LADDER_OVERHEAD_CHARS = 1000;
+/** Rough tokens, as plan 132 §4.3 sizes everything. */
+const CHARS_PER_TOKEN = 4;
+/** Below this there's nothing left to summarize from: what such a window can't hold, it can't hold. */
+const MIN_PROMPT_TOKENS = 250;
 const SUMMARY_MAX_CHARS = 800;
 const SUMMARY_MAX_ITEMS = 6;
 const ITEM_MAX_CHARS = 200;
@@ -32,6 +38,8 @@ export interface SummarizeInput {
   language: string;
   /** YYYY-MM-DD */
   today: string;
+  /** what the answer may use, from `summaryBudget`; a small window has less */
+  outputTokens?: number;
 }
 
 export interface ThreadSummaryResult {
@@ -65,7 +73,18 @@ Write dates as a person would: "today", "Thursday", "12 March", never 2026-03-12
 const dataText = (text: string) => text.replace(/<(\/?)(message|subject)/gi, "<$1​$2");
 const attribute = (text: string) => dataText(text).replace(/["\r\n]/g, " ");
 
-export function summaryPrompt(input: SummarizeInput): string {
+/**
+ * How a context window divides up: the answer's allowance, then the system prompt, and what's left for the whole
+ * serialized `summaryPrompt`. A window too small for the full allowance gives the answer half. Unknown: nothing to fit.
+ */
+export function summaryBudget(contextTokens: number | null): { outputTokens: number; promptChars: number } {
+  if (contextTokens === null) return { outputTokens: SUMMARY_MAX_TOKENS, promptChars: Infinity };
+  const outputTokens = Math.min(SUMMARY_MAX_TOKENS, Math.ceil(contextTokens / 2));
+  const fixedTokens = Math.ceil((SYSTEM("en", "2026-01-01").length + LADDER_OVERHEAD_CHARS) / CHARS_PER_TOKEN);
+  return { outputTokens, promptChars: Math.max(MIN_PROMPT_TOKENS, contextTokens - outputTokens - fixedTokens) * CHARS_PER_TOKEN };
+}
+
+export function summaryPrompt(input: Pick<SummarizeInput, "subject" | "thread">): string {
   const blocks = input.thread.map((m) => `<message id="${m.label}" from="${attribute(m.from)}" date="${m.date}"${m.own ? ' author="the reader"' : ""}>\n${dataText(m.text)}\n</message>`);
   return `<subject>${attribute(input.subject)}</subject>\n\n${blocks.join("\n\n")}`;
 }
@@ -86,7 +105,7 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
     prompt: summaryPrompt(input),
     schema: { name: "thread_summary", zod: wire },
     example: { summary: "Ana can't make the 12th and proposes the 19th.", items: [{ kind: "date", text: "Meeting moved to 19 March", message: input.thread[0]!.label }] },
-    maxTokens: SUMMARY_MAX_TOKENS,
+    maxTokens: input.outputTokens ?? SUMMARY_MAX_TOKENS,
     effort: "low",
     validate: (w) => {
       const summary = clean(w.summary, SUMMARY_MAX_CHARS);
