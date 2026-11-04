@@ -63,10 +63,13 @@ Not adopted from the document: **Teams** (later plan) and **§7, the Business Us
 | Who needs it | individuals; organizations under 100 employees and contractors **and** under US$5M revenue | people using Terno for work at a larger organization who don't need AI | anyone who wants the AI features |
 | Everything the app does today (accounts, unified inbox, search, categories, AI filters and categorization with your own key or a local model, themes, shortcuts, codes, snooze, …) | ✓ | ✓ | ✓ |
 | Business use at any company size (LICENSE grant (c)) | under the limit only | ✓ | ✓ |
-| AI summaries | | | ✓ |
-| Personal Writing AI (with per-contact style) | | | ✓ |
-| Ask Your Inbox | | | ✓ |
+| Smart categorization (decision 8) | own provider | own provider | ✓ (`jev`) |
+| AI summaries | own provider | own provider | ✓ |
+| Personal Writing AI (with per-contact style) | own provider | own provider | ✓ |
+| Ask Your Inbox | own provider | own provider | ✓ |
 | Managed AI allowance ($3 of provider cost per month) | | | ✓ |
+
+"Own provider" is the user's API key or a local model (decision 9).
 
 **Business** unlocks no features; it is the right to use Terno for work at an organization that isn't a Small Organization (LICENSE). **Pro includes business use**: a Pro subscriber never needs a Business seat too. Both are stated in the subscription terms shown at checkout and on terno.app/pricing: "Every paid subscription includes the right to use Terno for work, at a company of any size."
 
@@ -189,23 +192,52 @@ Teams (comments, shared drafts, assignments, admin, seat management, SSO); prepa
 
 ## Order of work
 
-1. Plan 50 steps 2–4 (Worker skeleton, accounts, billing + offline entitlements, local-mode grant), with Pro as the only paid plan.
-2. `Entitlement`, `requirePro()`, `billing.*` RPCs, Settings → Pro, the "Pro" tags (no features yet, behind a dev flag).
-3. Trial.
-4. Managed AI: relay, metering, `ternoTransport`, execution choice, allowance UI.
-5. AI summaries (own plan), then Personal Writing AI (own plan), then Ask Your Inbox (own plan).
-6. Launch, on desktop and the web together, when **all three** are solid (decision 4): remove the dev flag.
+Features come first, on the user's own provider; the server and billing follow (decision 4, as changed on 2026-11-04).
+
+1. The swappable base (decision 10): `AiTasks` as the seam, `AiService.forTask`, the `calibrated` flag.
+2. AI summaries (own plan), then Personal Writing AI (own plan), then Ask Your Inbox (own plan), then smart categorization as suggestions (own plan). Each ships when it is ready, Free on the user's key or local model, with no account and no server. With no provider set up, a feature offers only **Use your own key or local model** until Pro exists.
+3. Plan 50 steps 2–4 (Worker skeleton, accounts, billing + offline entitlements, local-mode grant), with Pro as the only paid plan.
+4. `Entitlement`, `requirePro()`, `billing.*` RPCs, Settings → Pro, behind a dev flag.
+5. Trial.
+6. Managed AI: relay, metering, the managed `AiTasks`, the "AI features run on" choice, allowance UI. No feature changes, by decision 10.
+7. Launch Pro, on desktop and the web together, when hosted AI runs every shipped feature: remove the dev flag. Filing with hosted `jev` joins once decision 8's open points are settled, and doesn't hold up this launch.
 
 ## Decisions (2026-10-31)
 
 1. **Provider:** the same merchant of record as plan 84, once it passes plan 84's sandbox gate.
 2. **Support amounts:** plan 84.
 3. **Web:** `mail.terno.app` gets Pro at launch, with the same account and entitlement as desktop (answers plan 50 open question 3). On the web the session lives in the worker's store; checkout opens in a new tab.
-4. **Launch scope:** Pro launches with all three AI features, not one at a time.
+4. **Launch scope (changed 2026-11-04, the user: "the features will ship before the server and billing"):** the AI features ship one at a time on the user's own provider, before the server and billing exist. Pro launches later, with hosted AI for every feature shipped by then.
 5. **Trial allowance:** $0.50 of provider cost.
 6. **Free AI tasks:** managed AI never runs filters or categorization, even for Pro users without a provider.
 7. **Organization limit (Docker-style).** The BSL 1.1 grant allows free production use for individuals and Small Organizations (fewer than 100 employees and contractors **and** less than US$5M annual revenue), 30-day evaluation at any size, and any use by someone holding an active paid subscription. Larger organizations need a paid seat per person who uses Terno for work: **Pro** (AI included) or **Business** ($49/user/year proposed, no features). Pro's terms state it covers business use. Enforcement is the license alone, never the app.
-8. **Pro categorization beyond filters uses `jev` (2026-11-01).** The request: "for the ai pro plan, for categorization that doesn't fall into filters, we can use 'jev'". Threads that no filter (manual, AI or learned) places are categorized with `jev` in Pro. What `jev` is (a model, a provider or a technique) is not yet written down here; record it before the categorization part of Pro gets its own plan. Decision 6 still holds for Free: filters and the existing categorization never run on managed AI.
+8. **Pro categorization beyond filters uses `jev` (2026-11-01).** The request: "for the ai pro plan, for categorization that doesn't fall into filters, we can use 'jev'". Threads that no filter (manual, AI or learned) places are categorized with `jev` in Pro. Decision 6 still holds for Free: filters and the existing categorization never run on managed AI.
+
+   **What `jev` is** ([TypeSafe AI's announcement](https://typesafe.ai/blog/introducing-system-one-models-and-jev), read 2026-11-04; its figures are self-reported): TypeSafe AI's first public "System One" model, a hosted model in waitlisted early access (docs.typesafe.ai). It takes text and structured state and returns one value from outputs defined in advance, with a calibrated confidence. Latency 70–500 ms; input $0.042 per million tokens, output free. It generates no free text, and choices go up to 255 before a slower two-stage path. So it fits picking a category and cannot write summaries, drafts or answers.
+
+   **Scope (2026-11-04).** The request: "categorization we could have for thins don't have a rule yet, but are new and we can categorize it with confidence". So `jev` looks at a thread only if it is new (the engine's existing limit: an inbound root in the Inbox, within `POLICY.autoWindowDays`, never backfill) and no filter placed it and the local engine didn't file it. It files the thread itself when its confidence clears the bar; below the bar it files nothing. This is a deliberate exception to plan 02 §3.6, where AI only suggests.
+
+   **Who gets it (2026-11-04).** The request: "for the smart categorization, it would be only under the paid plan, the one that uses AI, the one with our current filters is free", then "the local engine stays free, also if they use a local ai provider or their own api key they canuse ai features as well". So filters, the local engine and Settings → Categories' existing AI switch (`aiCategorize`, `AiAssist`) stay Free. Smart categorization on Terno's hosted `jev` needs Pro; on the user's own provider it doesn't (decision 9). When Pro ends, new mail stops going to hosted `jev` and threads it already filed stay where they are.
+
+   Consequences for the plan: `AiAssist` can't simply be reused, because it only sends threads where the engine already has evidence (`p ≥ 0.5`, enough examples, labels limited to those categories), which is the opposite of mail with nothing to go on. `jev` needs the user's categories as its choices. A filing keeps what the engine's `auto` filings have: Undo, `added_by = 'auto'` so it doesn't train the model, the veto checks, and the per-category safety valve that pauses filing when users keep reverting.
+
+   **To settle in the categorization plan:** which account pays and whether requests go through the relay, since decision 6 keeps managed AI off categorization and this is a third provider path; the confidence bar, measured on real mail rather than assumed from TypeSafe AI's calibration claim (start at the engine's `POLICY.autoP`, 0.97); what `jev` gets for categories with no examples yet, since a name alone may say little; what mail text is sent, in the disclosure of revision 5; TypeSafe AI's data retention, which the announcement doesn't state, as a launch requirement like revision 5's zero-retention terms; and what happens if early access ends or the service is down, which must leave categorization on the local engine.
+
+9. **AI features are free on the user's own provider (2026-11-04).** The request: "if they use a local ai provider or their own api key they canuse ai features as well". This reverses the pasted document's "the Pro subscription pays for your advanced product features": every AI feature (summaries, writing, Ask Your Inbox, smart categorization) runs without Pro on the user's key or local model. **Pro sells hosted AI:** no key or model to set up, the included allowance, hosted `jev`, and business use at any company size. It overrides the earlier text where they differ:
+   - **Gating (§2, revisions 6 and 7):** `requirePro()` guards only hosted requests, meaning the relay and hosted `jev`. A request on the user's own provider needs no entitlement, account or sign-in. Gating tests change to match: each AI feature runs on Free with a fake provider, and a hosted request throws `ProRequired`.
+   - **Execution (§5, revision 2):** "Pro features run on" becomes "AI features run on". Managed AI is one choice, offered only with Pro or a trial.
+   - **Pro tags (§7):** an AI feature with no provider configured offers both ways to run it, **Use your own key or local model** and **Try Pro free**. With a provider configured, it shows no Pro tag.
+   - **When Pro ends:** AI features on the user's own provider keep working; only hosted AI stops.
+   - **Order of work:** the three features and own-provider smart categorization don't need plan 50's Worker when they run on the user's provider, so they ship first (decision 4).
+   - **Smart categorization on the user's own model only suggests (2026-11-04, the user: "for users own model will be suggestions, not filed automatically").** Decision 8's automatic filing relies on `jev`'s calibrated confidence, and a general model's self-reported confidence has no such claim behind it. Filing stays hosted `jev` only.
+10. **One interface; the AI behind it swaps (2026-11-04).** The request: "we need to make it so the ways to apply the ai are different but the interfaces are the same, so we can just hotswap them like a local model and hotswap the provider with the api key of the user or with our own." Features never know what runs them. Most of this exists: tasks call `AiTasks` (`packages/ai/src/types.ts`), `createAi` builds it over any `ModelTransport`, and `AiService.current()` resolves the configured provider on every call, so changing provider or key already applies to the next request.
+    - **`AiTasks` is the seam.** `summarize`, `compose` and `ask` are added to it next to `classify`. Managed AI implements the same interface. It can't be only a `ModelTransport`: `jev` generates no text and its API isn't known yet, so managed `classify` goes to `jev` while the writing tasks go to the relay's language models.
+    - **Two levels of choice.** "AI features run on": **Your provider** or **Managed AI**. A local model and a user's key are both already "your provider" (the existing provider setting, which keeps each provider's model and key when switching). This replaces revision 2's three modes with `aiExecution: "own" | "managed"`. Switching never touches the saved provider config, and revision 2's rule stays: managed AI isn't in the provider list.
+    - **One place decides.** `AiService.forTask(task)` returns the `AiTasks` for a task: it reads the choice, applies decision 6 and calls `requirePro()` when the choice is managed. That replaces §2's check at each Pro RPC.
+    - **Differences are declared, not branched on.** An implementation states what it can do, and callers read that: `AiTasks` gains `calibrated: boolean`, true only for hosted `jev`. Categorization files when `calibrated` and confidence clears the bar, and suggests otherwise. No feature checks `providerId`, and an architecture test enforces it.
+    - **A swap never moves mail silently.** Switching aborts requests in flight, including repairs still in the ladder, so nothing more goes to the provider the user left. Managed AI running out or Pro ending shows the §5 message and offers the alternatives; it never falls over to another provider on its own, because that would send mail somewhere the user didn't pick for this.
+    - **Limits that stay visible.** Budgets follow `Capabilities.contextTokens`, since a local model may hold far less than a cloud one. `complete()` returns whole text today, so streaming for summaries and drafts is added to the transport interface when the first writing task is built.
+    - **Tests:** the existing contract suite (`packages/ai/src/contract.test.ts`) runs every task against every implementation, managed included. Swapping during a task sends nothing further to the old provider. The same feature e2e passes on a fake own provider and a fake managed one.
 
 ## Revisions after the Codex review
 
