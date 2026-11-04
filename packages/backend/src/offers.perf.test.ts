@@ -36,6 +36,7 @@ let dir: string;
 let backend: Backend;
 let client: RpcClient;
 let target: number;
+let account: number;
 let category: number;
 
 beforeAll(async () => {
@@ -59,6 +60,8 @@ beforeAll(async () => {
   backend.connect(srv, { clientId: "perf", origin: "renderer" });
   client = new RpcClient(c);
   category = (await client.call("categories.create", { name: "Pedidos", color: "amber" })).id;
+  account = db.get<{ id: number }>("SELECT account_id id FROM threads WHERE id = ?", target)!.id;
+  await backend.store.folders.replace(account, [{ key: "Label_Perf", path: ["Perf"], selectable: true }]);
   await client.call("categories.moveThreads", { to: category, threadIds: [target], source: "dnd" });
 }, 600_000);
 
@@ -121,6 +124,8 @@ it("interactive: the snackbar's offers after a drag (four scopes, counted) hold 
   await interactive("offers after a move (category)", FRAME, () => client.call("offers.forAction", { threadIds: [target], action: { category } }));
   await interactive("offers after spam", FRAME, () => client.call("offers.forAction", { threadIds: [target], action: "spam" }));
   await interactive("offers after archive", FRAME, () => client.call("offers.forAction", { threadIds: [target], action: "archive" }));
+  // plan 127: the same lines after a drop on a folder
+  await interactive("offers after a move (folder)", FRAME, () => client.call("offers.forAction", { threadIds: [target], action: { accountId: account, folder: "Label_Perf" } }));
 });
 
 it("interactive: a numbered subject nothing else has is counted and swept within a frame (every message of the sender read)", async () => {
@@ -212,3 +217,16 @@ it("background: forty of Terno's filters (patterns and words) at ingest cost at 
   // the filters' own memory: what the import keeps anyway (rows, the search index) plus little
   expect(filtered.kept, `kept +${filtered.kept.toFixed(1)} MB vs +${bare.kept.toFixed(1)} MB without filters`).toBeLessThanOrEqual(bare.kept + 8);
 }, 600_000);
+
+it("background: a folder line moves a sender's mail of one account in slices: no stall over 50 ms, lists stay fast (plan 127)", async () => {
+  const before = sqlDb(backend.store).get<{ c: number }>("SELECT count(*) c FROM thread_folders WHERE folder = 'Label_Perf'")!.c;
+  let moved = 0;
+  const r = await background("folder line move", async () => {
+    moved = (await client.call("folders.moveScope", { accountId: account, folder: "Label_Perf", from: null, scope: { kind: "sender", email: SHOP } })).affected;
+  });
+  meta.folderMoved = moved;
+  expect(moved).toBeGreaterThan(100);
+  expect(sqlDb(backend.store).get<{ c: number }>("SELECT count(*) c FROM thread_folders WHERE folder = 'Label_Perf'")!.c).toBe(before + moved);
+  expect(r.stall, `stall ${r.stall.toFixed(1)} ms`).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
+  expect(p95(r.list), `list p95 ${p95(r.list).toFixed(1)} ms`).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);
+}, 300_000);

@@ -1,5 +1,6 @@
 import { applyFolderOp, keptInInbox, labelsLeft, labelsMoved, LEAVE_FOLDER, leaveFolderOps, MOVE_TO_FOLDER, type FolderMoved, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
 import { applyThreadAction, type ActionResult } from "./actions";
+import { FOLDER_OPS_PENDING } from "./folders";
 import { recomputeThreads } from "./ingest";
 import { enqueueOp } from "./repos";
 import { placeholders, type Db } from "./sqlite";
@@ -49,7 +50,7 @@ export function moveThreadsToFolder(db: Db, c: { threadIds: readonly number[]; a
   const moved: FolderMoved = { accountId, folder, from, fromInbox: [], fromFolder: [], added: [], leftOnly: [] };
   const targets = { kept: [] as number[], rest: [] as number[] };
   // where each is once what's on its way lands: A → B then B → A is a move out of B
-  const pending = db.get("SELECT 1 FROM ops WHERE kind IN ('moveToFolder', 'leaveFolder') AND state IN ('queued', 'running') LIMIT 1")
+  const pending = db.get(FOLDER_OPS_PENDING)
     ? byChunks(chosen.map((m) => m.id), (chunk) => db.all<{ message_id: number; kind: string; payload_json: string }>(`SELECT ot.message_id, o.kind, o.payload_json FROM op_targets ot JOIN ops o ON o.id = ot.op_id WHERE ot.grp = 'location' AND ot.message_id IN (${placeholders(chunk.length)}) AND o.kind IN ('moveToFolder', 'leaveFolder') AND o.state IN ('queued', 'running') ORDER BY o.seq`, ...chunk))
     : [];
   const pendingOf = new Map<number, typeof pending>();

@@ -34,7 +34,7 @@ function mailbox(count = 3, successStatus = 204) {
   const provider = createGmailApiProvider(ctx, { tokens: { get: async () => "token", invalidate() {} }, buildRaw: async () => new Uint8Array() });
   const restore = (ids = Array.from({ length: count }, (_, i) => i + 1)) => provider.execute({ id: "restore", kind: "moveToInbox", target: { messageIds: ids }, payload: {} });
   const execute = (kind: string, ids = Array.from({ length: count }, (_, i) => i + 1)) => provider.execute({ id: kind, kind, target: { messageIds: ids }, payload: {} });
-  return { labels, batches, requests, restore, execute, fail: (index: number, status: number) => { failBatch = { index, status }; }, loseResponse: (index: number) => { loseResponse = index; }, onBatch: (fn: (index: number) => void) => { onBatch = fn; } };
+  return { provider, labels, batches, requests, restore, execute, fail: (index: number, status: number) => { failBatch = { index, status }; }, loseResponse: (index: number) => { loseResponse = index; }, onBatch: (fn: (index: number) => void) => { onBatch = fn; } };
 }
 
 describe("Gmail restore to inbox", () => {
@@ -119,5 +119,23 @@ describe("Gmail categories (plan 86)", () => {
     await run(box, kind);
     expect([...box.labels.get("g1")!].sort()).toEqual(["INBOX", "UNREAD", "custom", ...category].sort());
     expect(box.requests).toHaveLength(1);
+  });
+});
+
+describe("Gmail: an account's folders (plan 127)", () => {
+  const op = (box: ReturnType<typeof mailbox>, kind: string, payload: unknown) => box.provider.execute({ id: kind, kind, target: { messageIds: [1] }, payload });
+  it("a move adds the label and takes off the folder it left, nothing else; the Inbox's own goes with the archive that follows", async () => {
+    const box = mailbox(1);
+    box.labels.set("g1", new Set(["INBOX", "Label_A", "custom"]));
+    await op(box, "moveToFolder", { folder: "Label_B", from: "Label_A", keepInbox: false });
+    expect([...box.labels.get("g1")!].sort()).toEqual(["INBOX", "Label_B", "custom"]);
+  });
+  it("its undo: out of the folder, back to the one it left; one it was in before stays", async () => {
+    const box = mailbox(1);
+    box.labels.set("g1", new Set(["Label_B"]));
+    await op(box, "leaveFolder", { folder: "Label_B", back: "Label_A", toInbox: false, stays: false });
+    expect([...box.labels.get("g1")!]).toEqual(["Label_A"]);
+    await op(box, "leaveFolder", { folder: "Label_A", back: "Label_C", toInbox: false, stays: true });
+    expect([...box.labels.get("g1")!].sort()).toEqual(["Label_A", "Label_C"]);
   });
 });

@@ -50,8 +50,9 @@ SELECT t.id, t.account_id, k.folder, t.last_date, t.unread_count > 0 FROM (
  * change when the op succeeds. Read from the ops themselves, so settling one is only the refresh its settling does.
  * `ops_folder_moves` holds only the unsettled ones: with none on its way, this probe is all it costs.
  */
+export const FOLDER_OPS_PENDING = "SELECT 1 FROM ops INDEXED BY ops_folder_moves WHERE kind IN ('moveToFolder', 'leaveFolder') AND state IN ('queued', 'running') LIMIT 1";
 function overlayFolderOps(db: Db, json: string): void {
-  if (!db.get(`SELECT 1 FROM ops WHERE kind IN ('moveToFolder', 'leaveFolder') AND state IN ('queued', 'running') LIMIT 1`)) return;
+  if (!db.get(FOLDER_OPS_PENDING)) return;
   const pending = db.all<{ thread_id: number; message_id: number; kind: string; payload_json: string }>(
     `SELECT m.thread_id, m.id AS message_id, o.kind, o.payload_json
      FROM messages m JOIN op_targets ot ON ot.message_id = m.id AND ot.grp = 'location' JOIN ops o ON o.id = ot.op_id
