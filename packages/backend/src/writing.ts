@@ -168,6 +168,10 @@ function clean(error: unknown): unknown {
 export class WritingService {
   readonly learner: VoiceLearner;
   private readonly snapshots = new Map<string, Snapshot>();
+  /** each draft and each "who is this for" while it runs: `accountId` null is any account's */
+  private readonly asking = new Set<{ accountId: number | null; controller: AbortController }>();
+  /** ups when what snapshots are made of goes away: an assembly that started before it starts over */
+  private learned = 0;
 
   constructor(private readonly b: Backend) {
     this.learner = new VoiceLearner({
@@ -198,6 +202,26 @@ export class WritingService {
     while (this.snapshots.size > SNAPSHOTS_MAX) this.snapshots.delete(this.snapshots.keys().next().value!);
   }
 
+  /** A request that stops, at the provider too, the moment the user takes back the permission it runs under. */
+  private underPermission(accountId: number | null, signal: AbortSignal): { signal: AbortSignal; done: () => void } {
+    const entry = { accountId, controller: new AbortController() };
+    this.asking.add(entry);
+    return { signal: AbortSignal.any([signal, entry.controller.signal]), done: () => void this.asking.delete(entry) };
+  }
+
+  private forgetSnapshots(): void {
+    this.learned++;
+    this.snapshots.clear();
+  }
+
+  /** Clear all, from any window: no draft goes on with a copy of what was just cleared. */
+  async clearProfiles(): Promise<void> {
+    this.forgetSnapshots();
+    await this.learner.clear();
+    // what assembled while that ran read what it was clearing
+    this.forgetSnapshots();
+  }
+
   // ─── settings ────────────────────────────────────────────────────────────
 
   getPrefs(): Promise<WritingPrefs> {
@@ -216,6 +240,16 @@ export class WritingService {
       const value = { global, accounts };
       return { value, result: value };
     });
+    // before anything else: nothing already asked for goes on under a permission that's gone
+    const accountsLost = (accountId: number) => usesSentMail(before, accountId) && !usesSentMail(after, accountId);
+    let lost = false;
+    for (const { accountId, controller } of this.asking) {
+      if (!after.global.enabled || (accountId !== null && accountsLost(accountId))) {
+        controller.abort();
+        lost = true;
+      }
+    }
+    if (lost || (before.global.useSentMail && !after.global.useSentMail) || (before.global.enabled && !after.global.enabled)) this.forgetSnapshots();
     await this.learner.prefsChanged(before, after);
     return after;
   }
@@ -253,7 +287,9 @@ export class WritingService {
   }
 
   async resetProfile(scopeKey: string, language: string | undefined): Promise<void> {
+    this.forgetSnapshots();
     await this.b.store.writing.profiles.reset(scopeKey, language);
+    this.forgetSnapshots();
     await this.learner.rebuild(accountOfKey(scopeKey) ?? undefined);
   }
 
@@ -459,7 +495,8 @@ export class WritingService {
 
   async compose(p: ComposeParams, clientId: string): Promise<AiComposeResult> {
     const { store } = this.b;
-    const { signal, release } = this.b.aiService.begin(p.requestId, clientId);
+    const { signal: asked, release } = this.b.aiService.begin(p.requestId, clientId);
+    const { signal, done: permissionDone } = this.underPermission(p.accountId, asked);
     const stream = coalescer((text) => this.b.server.emitTo(clientId, "aiCompose", { requestId: p.requestId, text }));
     void this.learner.activate().catch(() => {});
     try {
@@ -479,8 +516,17 @@ export class WritingService {
         snapshot = held;
         reused = true;
       } else {
-        const assembled = await this.assemble(p, ai, account, prefs, key);
+        const current = async () => {
+          for (;;) {
+            const learned = this.learned;
+            const out = await this.assemble(p, ai, account, prefs, key);
+            // what it read may have been cleared meanwhile: then it starts over, on what's there now
+            if (learned === this.learned || signal.aborted) return out;
+          }
+        };
+        const assembled = await current();
         if ("waiting" in assembled) return { status: "waitingBody", messageId: assembled.waiting };
+        if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
         snapshot = assembled;
         this.keep(session, snapshot);
       }
@@ -514,6 +560,7 @@ export class WritingService {
       stream.flush();
       throw toRpcError(clean(error));
     } finally {
+      permissionDone();
       release();
     }
   }
@@ -544,7 +591,8 @@ export class WritingService {
 
   async resolveIntent(p: IntentParams, clientId: string): Promise<AiIntentResult> {
     const { store } = this.b;
-    const { signal, release } = this.b.aiService.begin(p.requestId, clientId);
+    const { signal: asked, release } = this.b.aiService.begin(p.requestId, clientId);
+    const { signal, done: permissionDone } = this.underPermission(null, asked);
     void this.learner.activate().catch(() => {});
     try {
       const surface = await this.surfaceOf(p.surface as IntentSurfaceParam);
@@ -595,10 +643,12 @@ export class WritingService {
       const person = this.personIn(named);
       const newMessage = (named.kind === "route" && named.route.type === "new") || (named.kind === "ask" && named.question.type === "new-or-reply");
       const fromAccountId = person && newMessage ? ((await store.writing.sentTo({ addresses: [person.address], limit: 1 })).refs[0]?.accountId ?? null) : null;
+      if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
       return { decision: named, fromAccountId, confirmFailed };
     } catch (error) {
       throw toRpcError(clean(error));
     } finally {
+      permissionDone();
       release();
     }
   }

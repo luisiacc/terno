@@ -90,6 +90,7 @@ export function createAi(config: ProviderConfig, options: AiOptions = {}): AiTas
       return capabilities.contextTokens;
     },
     endpoint: resolveBaseURL(config) ?? null,
+    preset: config.preset ?? null,
 
     summarize(input, signal) {
       return run(summarizeTask(input), signal);

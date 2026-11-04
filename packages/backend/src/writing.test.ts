@@ -412,8 +412,148 @@ describe("ai.compose: stopping", () => {
   });
 });
 
+describe("a permission taken back (plan 133 review)", () => {
+  /** a draft in flight that only ends when it's aborted */
+  const holding = (t: Awaited<ReturnType<typeof setup>>) => {
+    t.model.stream = async function* (req) {
+      await new Promise((_, reject) => req.signal.addEventListener("abort", () => reject(new AiError("stopped", "cancelled")), { once: true }));
+      yield { type: "done", stop: "end" };
+    };
+  };
+
+  it("drafting turned off stops a draft at the provider, and it isn't returned", async () => {
+    const t = await setup();
+    holding(t);
+    const asked = errorOf(t.compose());
+    await vi.waitFor(() => expect(t.model.requests).toHaveLength(1));
+    await t.client.call("writing.prefs.set", { global: { enabled: false } });
+    expect(t.model.requests[0]!.signal.aborted).toBe(true);
+    await expect(asked).resolves.toMatchObject({ code: "CANCELLED" });
+  });
+
+  it("a model that ignores the abort still doesn't get its answer returned", async () => {
+    const t = await setup();
+    let finish!: () => void;
+    const finished = new Promise<void>((r) => (finish = r));
+    t.model.stream = async function* () {
+      await finished;
+      yield* say("<email>Too late.</email>");
+    };
+    const asked = errorOf(t.compose());
+    await vi.waitFor(() => expect(t.model.requests).toHaveLength(1));
+    await t.client.call("writing.prefs.set", { global: { enabled: false } });
+    finish();
+    await expect(asked).resolves.toMatchObject({ code: "CANCELLED" });
+  });
+
+  it("drafting turned off stops a 'who is this for' at the provider", async () => {
+    const t = await setup();
+    const { thread } = await t.received({ from: { name: "Bea", email: "bea@acme.test" }, to: [{ name: "Tom Reed", email: "tom@acme.test" }, { name: "Me", email: t.account.email }] });
+    t.model.answer = (req) => new Promise((_, reject) => req.signal.addEventListener("abort", () => reject(new AiError("stopped", "cancelled")), { once: true }));
+    const asked = errorOf(t.client.call("ai.resolveIntent", { requestId: t.requestId(), instruction: "tell tom it's fine", surface: { kind: "thread", threadId: thread }, waitForContacts: true }));
+    await vi.waitFor(() => expect(t.model.requests).toHaveLength(1));
+    await t.client.call("writing.prefs.set", { global: { enabled: false } });
+    expect(t.model.requests[0]!.signal.aborted).toBe(true);
+    await expect(asked).resolves.toMatchObject({ code: "CANCELLED" });
+  });
+
+  it("learning turned off for one account stops that account's draft and leaves the other's", async () => {
+    const t = await setup({ accounts: 2 });
+    const [a, b] = t.accounts;
+    holding(t);
+    const first = errorOf(t.compose({ accountId: a!.id, session: "a" }));
+    await vi.waitFor(() => expect(t.model.requests).toHaveLength(1));
+    // this model takes one request at a time: the other account's waits its turn
+    const second = errorOf(t.compose({ accountId: b!.id, session: "b" }));
+    await t.client.call("writing.prefs.set", { account: { accountId: a!.id, prefs: { useSentMail: false } } });
+    expect(t.model.requests[0]!.signal.aborted).toBe(true);
+    await expect(first).resolves.toMatchObject({ code: "CANCELLED" });
+    await vi.waitFor(() => expect(t.model.requests).toHaveLength(2));
+    expect(t.model.requests[1]!.signal.aborted).toBe(false);
+    await t.client.call("writing.prefs.set", { global: { enabled: false } });
+    await expect(second).resolves.toMatchObject({ code: "CANCELLED" });
+  });
+
+  it("a learning change that takes nothing back aborts nothing", async () => {
+    const t = await setup();
+    holding(t);
+    const asked = errorOf(t.compose());
+    await vi.waitFor(() => expect(t.model.requests).toHaveLength(1));
+    await t.client.call("writing.prefs.set", { global: { instructions: "Be short" } });
+    expect(t.model.requests[0]!.signal.aborted).toBe(false);
+    await t.client.call("writing.prefs.set", { global: { enabled: false } });
+    await asked;
+  });
+});
+
+describe("clearing what was learned (plan 133 review)", () => {
+  /** what's only in a profile: the study's notes, which reach a draft's prompt through nothing else */
+  const NOTE = "note: Answers first";
+  const studied = async () => {
+    const t = await setup();
+    await t.sentMany(30);
+    await t.learned();
+    await t.client.call("writing.studyStyle", { requestId: "st", confirm: { provider: "fake", accountIds: [t.account.id] } });
+    await vi.waitFor(async () => expect((await t.client.call("writing.profiles.list", { scope: "you" })).items[0]?.judgment).toBeTruthy());
+    await t.backend.writing.learner.idle();
+    return t;
+  };
+
+  it("Clear from another window leaves no copy in this window's draft session", async () => {
+    const t = await studied();
+    await done(t.compose());
+    expect(textOf(last(t))).toContain(NOTE);
+    expect((await done(t.compose())).used.reused).toBe(true);
+    await t.connect("other-window", "renderer").call("writing.profiles.clear", {});
+    const after = await done(t.compose());
+    expect(after.used.reused).toBe(false);
+    expect(textOf(last(t))).not.toContain(NOTE);
+  });
+
+  it("Reset does too", async () => {
+    const t = await studied();
+    await done(t.compose());
+    expect((await done(t.compose())).used.reused).toBe(true);
+    await t.connect("other-window", "renderer").call("writing.profiles.reset", { scopeKey: "you" });
+    expect((await done(t.compose())).used.reused).toBe(false);
+  });
+
+  it("an assembly under way when Clear comes starts over rather than keep what it read", async () => {
+    const t = await studied();
+    const real = t.backend.store.writing.profiles.read.bind(t.backend.store.writing.profiles);
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let reading!: () => void;
+    const started = new Promise<void>((r) => (reading = r));
+    vi.spyOn(t.backend.store.writing.profiles, "read").mockImplementationOnce(async (keys) => {
+      const rows = await real(keys);
+      reading();
+      await held;
+      return rows;
+    });
+    const composing = done(t.compose());
+    await started;
+    await t.client.call("writing.profiles.clear", {});
+    release();
+    await composing;
+    expect(textOf(last(t))).not.toContain(NOTE);
+    const next = await done(t.compose());
+    expect(next.used.reused).toBe(true);
+    expect(textOf(last(t))).not.toContain(NOTE);
+  });
+});
+
 describe("ai.resolveIntent", () => {
   const ask = (t: Awaited<ReturnType<typeof setup>>, instruction: string, surface: unknown, over = {}) => t.client.call("ai.resolveIntent", { requestId: t.requestId(), instruction, surface: surface as never, waitForContacts: true, ...over });
+
+  it("a person on the thread who also sent last makes no model call, whoever else in the contacts shares the name", async () => {
+    const t = await setup();
+    await t.sent({ to: [{ name: "Ana Other", email: "ana@elsewhere.test" }] });
+    const { thread } = await t.received({ from: { name: "Ana López", email: "ana@acme.test" }, to: [{ name: "Me", email: t.account.email }] });
+    const r = await ask(t, "tell ana it's fine", { kind: "thread", threadId: thread });
+    expect(r.decision).toMatchObject({ kind: "route", route: { type: "reply", to: { address: "ana@acme.test" } } });
+    expect(t.model.requests).toEqual([]);
+  });
 
   it("a participant in the thread: replying to them, in English and Spanish; only one call, instruction and names at most", async () => {
     const t = await setup();

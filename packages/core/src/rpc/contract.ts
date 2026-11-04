@@ -1195,7 +1195,7 @@ export const contract = {
    * "Let AI study my style". Without `confirm` nothing is sent: it answers `consent` with what would go. With it, the
    * model step runs in the background through the limiter's `voice` task (`aiStudy` events, cancellable with `ai.cancel`).
    */
-  "writing.studyStyle": m<WritingStudyResult>()(z.object({ requestId, confirm: z.object({ provider: z.string().max(64), accountIds: z.array(id).max(100) }).optional() }), { timeoutMs: 120_000 }),
+  "writing.studyStyle": m<WritingStudyResult>()(z.object({ requestId, confirm: z.object({ provider: z.string().max(64), destination: z.string().max(2048).optional(), accountIds: z.array(id).max(100) }).optional() }), { timeoutMs: 120_000 }),
   /** §8: model text went into a draft: its provenance from now until it's sent. False: that draft or generation is gone. */
   "writing.commitGeneration": m<{ ok: boolean }>()(z.object({ accountId: id, draftId: id, draftGeneration: z.string().max(64), address: z.string().max(320), text: z.string().max(GENERATION_TEXT_MAX) })),
 

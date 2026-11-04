@@ -130,7 +130,7 @@ export interface WritingStatus {
 
 export type WritingStudyResult =
   /** nothing has been sent: show the consent wording with these numbers, and call again with `confirm` */
-  | { status: "consent"; provider: AiProviderId; messages: number; tokens: number; usd: number | null; accountIds: number[] }
+  | { status: "consent"; provider: AiProviderId; /** where this would go: `confirm` hands it back, and anywhere else asks again */ destination: string; messages: number; tokens: number; usd: number | null; accountIds: number[] }
   /** it runs in the background, with `aiStudy` events */
   | { status: "started"; total: number }
   /** nothing to study yet: the local pass hasn't found enough mail */

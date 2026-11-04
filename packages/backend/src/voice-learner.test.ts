@@ -2,6 +2,7 @@
  * Plan 133 §2 and §3: the learner, through the real backend and SQLite. Everything's local unless a test says
  * otherwise; the store's rules are in the conformance suite, here what the learner does with them.
  */
+import { AiError } from "@terno/ai";
 import { RevisionError } from "@terno/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LEARNER_KEY, STUDY_KEY, windowKey, type LearnerCheckpoint } from "./voice-learner";
@@ -434,6 +435,127 @@ describe("the optional model step (§3)", () => {
     t.clock.now += 3600_000;
     await t.learned();
     expect(t.model.requests.length).toBe(atChange);
+  });
+
+  describe("consent follows where the mail goes (plan 133 review)", () => {
+    const moreMail = async (t: Awaited<ReturnType<typeof prepared>>, word: string) => {
+      await t.sentMany(25, (i) => ({ date: t.clock.now + i, bodyText: `A ${word} line of text ${i}, thanks.` }));
+      t.clock.now += 3600_000;
+      await t.learned();
+    };
+
+    it("a study on a local endpoint never authorizes a refresh on a cloud service", async () => {
+      const t = await prepared();
+      await t.client.call("writing.studyStyle", { requestId: "dest1", confirm: { provider: "fake", accountIds: [t.account.id] } });
+      await t.finish();
+      expect(await t.consent()).toMatchObject({ provider: "fake", destination: expect.stringContaining('"local":true') });
+      const before = t.model.requests.length;
+      // the same provider and id, now somewhere that isn't this machine
+      vi.spyOn(await t.backend.aiService.forTask("voice", { foreground: false }), "local", "get").mockReturnValue(false);
+      await moreMail(t, "fresh");
+      expect(t.model.requests.length).toBe(before);
+    });
+
+    it("another server of the same kind needs its own consent", async () => {
+      const t = await prepared();
+      await t.client.call("writing.studyStyle", { requestId: "dest2", confirm: { provider: "fake", accountIds: [t.account.id] } });
+      await t.finish();
+      const before = t.model.requests.length;
+      const ai = await t.backend.aiService.forTask("voice", { foreground: false });
+      Object.defineProperty(ai, "endpoint", { value: "https://elsewhere.example/v1", configurable: true });
+      await moreMail(t, "fresh");
+      expect(t.model.requests.length).toBe(before);
+    });
+
+    it("a confirm that names only the provider isn't agreement: the destination has to be the one asked about", async () => {
+      const t = await prepared();
+      const ai = await t.backend.aiService.forTask("voice", { foreground: false });
+      vi.spyOn(ai, "local", "get").mockReturnValue(false);
+      const asked = await t.client.call("writing.studyStyle", { requestId: "dest3" });
+      if (asked.status !== "consent") throw new Error("expected consent");
+      expect(await t.client.call("writing.studyStyle", { requestId: "dest4", confirm: { provider: "fake", accountIds: [t.account.id] } })).toMatchObject({ status: "consent" });
+      // agreed to one place; it now points at another
+      Object.defineProperty(ai, "endpoint", { value: "https://elsewhere.example/v1", configurable: true });
+      expect(await t.client.call("writing.studyStyle", { requestId: "dest5", confirm: { provider: "fake", destination: asked.destination, accountIds: [t.account.id] } })).toMatchObject({ status: "consent" });
+      expect(t.model.requests).toEqual([]);
+      expect(await t.consent()).toBeNull();
+      const again = await t.client.call("writing.studyStyle", { requestId: "dest6" });
+      if (again.status !== "consent") throw new Error("expected consent");
+      expect(await t.client.call("writing.studyStyle", { requestId: "dest7", confirm: { provider: "fake", destination: again.destination, accountIds: [t.account.id] } })).toMatchObject({ status: "started" });
+      await t.finish();
+    });
+
+    it("what a consent didn't name stays out: an account added after it", async () => {
+      const t = await prepared({ accounts: 2 });
+      const [a, b] = t.accounts;
+      await t.client.call("writing.studyStyle", { requestId: "dest8", confirm: { provider: "fake", accountIds: [a!.id, b!.id] } });
+      await t.finish();
+      const stored = (await t.consent()) as unknown as { accountIds: number[] };
+      await t.backend.store.settings.set(STUDY_KEY, { ...stored, accountIds: [a!.id] });
+      const before = t.model.requests.length;
+      await t.sentMany(25, (i) => ({ accountId: b!.id, date: t.clock.now + i, bodyText: `canary-unnamed ${i}, thanks.` }));
+      t.clock.now += 3600_000;
+      await t.learned();
+      for (const req of t.model.requests.slice(before)) expect(JSON.stringify(req.messages)).not.toContain("canary-unnamed");
+    });
+
+    it("a consent from before destinations were kept refreshes nothing until it's asked again", async () => {
+      const t = await prepared();
+      await t.client.call("writing.studyStyle", { requestId: "dest9", confirm: { provider: "fake", accountIds: [t.account.id] } });
+      await t.finish();
+      await t.backend.store.settings.set(STUDY_KEY, { provider: "fake", accountIds: [t.account.id], at: START });
+      const before = t.model.requests.length;
+      await moreMail(t, "fresh");
+      expect(t.model.requests.length).toBe(before);
+    });
+  });
+
+  describe("a permission taken back (plan 133 review)", () => {
+    const holdingModel = (t: Awaited<ReturnType<typeof prepared>>) => {
+      t.model.answer = (req) => new Promise((_, reject) => req.signal.addEventListener("abort", () => reject(new AiError("stopped", "cancelled")), { once: true }));
+    };
+
+    it.each([
+      ["drafting off", { global: { enabled: false } }],
+      ["learning off", { global: { useSentMail: false } }],
+    ])("%s stops a study at the provider, and no judgment lands", async (_name, patch) => {
+      const t = await prepared();
+      holdingModel(t);
+      await t.client.call("writing.studyStyle", { requestId: "perm1", confirm: { provider: "fake", accountIds: [t.account.id] } });
+      await vi.waitFor(() => expect(t.model.requests.length).toBeGreaterThan(0));
+      await t.client.call("writing.prefs.set", patch);
+      expect(t.model.requests[0]!.signal.aborted).toBe(true);
+      await t.finish();
+      expect(t.heard[t.heard.length - 1]!.state).toBe("cancelled");
+      const rows = await t.backend.store.writing.profiles.list({ limit: 50 });
+      expect(rows.every((r) => r.judgmentJson === null)).toBe(true);
+    });
+
+    it("Clear stops a study at the provider, and a consent isn't written back afterward", async () => {
+      const t = await prepared();
+      holdingModel(t);
+      await t.client.call("writing.studyStyle", { requestId: "perm2", confirm: { provider: "fake", accountIds: [t.account.id] } });
+      await vi.waitFor(() => expect(t.model.requests.length).toBeGreaterThan(0));
+      await t.client.call("writing.profiles.clear", {});
+      expect(t.model.requests[0]!.signal.aborted).toBe(true);
+      await t.finish();
+      expect(await t.consent()).toBeNull();
+    });
+
+    it("learning off stops a refresh at the provider", async () => {
+      const t = await prepared();
+      await t.client.call("writing.studyStyle", { requestId: "perm3", confirm: { provider: "fake", accountIds: [t.account.id] } });
+      await t.finish();
+      const before = t.model.requests.length;
+      holdingModel(t);
+      await t.sentMany(25, (i) => ({ date: t.clock.now + i, bodyText: `A fresh line of text ${i}, thanks.` }));
+      t.clock.now += 3600_000;
+      const learning = t.learned();
+      await vi.waitFor(() => expect(t.model.requests.length).toBeGreaterThan(before));
+      await t.client.call("writing.prefs.set", { global: { useSentMail: false } });
+      expect(t.model.requests[before]!.signal.aborted).toBe(true);
+      await learning;
+    });
   });
 
   it("nothing to study before there's enough mail; no provider says so plainly and sends nothing", async () => {

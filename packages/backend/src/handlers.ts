@@ -1300,7 +1300,7 @@ export function createHandlers(b: Backend): Handlers {
       return { ok: true };
     },
     "writing.profiles.clear": async () => {
-      await b.writing.learner.clear();
+      await b.writing.clearProfiles();
       return { ok: true };
     },
     "writing.studyStyle": async ({ requestId, confirm }, ctx) => {

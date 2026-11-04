@@ -125,6 +125,8 @@ export interface AiTasks {
   readonly contextTokens: number | null;
   /** the endpoint they talk to: one model id can sit behind several (plan 132 revision 5) */
   readonly endpoint: string | null;
+  /** which server of a compatible kind this is: part of where mail goes (a study's consent) */
+  readonly preset?: CompatiblePreset | null;
   generateFilter(prompt: string, ctx: FilterGenerationContext, signal?: AbortSignal): Promise<GeneratedFilter>;
   /** plan 132: a conversation's summary; items citing a message that isn't in it are dropped */
   summarize(input: SummarizeInput, signal?: AbortSignal): Promise<ThreadSummaryResult>;

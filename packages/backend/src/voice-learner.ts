@@ -1,4 +1,5 @@
 import { AiError, costOf, JUDGE_PROMPT_VERSION, type AiTasks } from "@terno/ai";
+import { L } from "@terno/i18n";
 import { captureError } from "@terno/core/diag";
 import {
   chooseSample,
@@ -92,8 +93,15 @@ export interface LearnerCheckpoint {
 
 export interface StudyConsent {
   provider: string;
+  /** where the samples were agreed to go, from `destinationOf`: a consent from before this has none, and refreshes nothing */
+  destination?: string;
   accountIds: number[];
   at: number;
+}
+
+/** Where a request goes, as a user would mean it: another server of the same kind isn't what they agreed to. */
+export function destinationOf(ai: Pick<AiTasks, "providerId" | "preset" | "endpoint" | "local">): string {
+  return JSON.stringify({ provider: ai.providerId, preset: ai.preset ?? null, origin: URL.canParse(ai.endpoint ?? "") ? new URL(ai.endpoint!).origin : ai.endpoint, local: ai.local });
 }
 
 export interface VoiceLearnerHost {
@@ -158,6 +166,8 @@ export class VoiceLearner {
   private failures = 0;
   /** ups when the data is cleared or the feature goes off: a pass in flight doesn't commit */
   private epoch = 0;
+  /** aborted with each withdrawal: what studies and refreshes run under, on top of their own */
+  private permission = new AbortController();
   /** asked for while a run was going */
   private readonly pendingForced = new Set<number>();
   /** each account's window, once read: what's in it, as of the last pass and the log read since */
@@ -246,22 +256,28 @@ export class VoiceLearner {
   async prefsChanged(before: WritingPrefs, after: WritingPrefs): Promise<void> {
     const { store } = this.host;
     const learns = (p: WritingPrefs, id: number) => p.accounts[String(id)]?.useSentMail ?? p.global.useSentMail;
-    let stopped = false;
-    for (const a of await store.accounts.list()) {
+    const accounts = await store.accounts.list();
+    // first of all: what's running may be counting, or asking a provider about, what was just turned off
+    if (accounts.some((a) => usesSentMail(before, a.id) && !usesSentMail(after, a.id))) this.withdraw();
+    for (const a of accounts) {
       // the setting went off, not the feature: turning drafting off for a while keeps what was learned
       if (learns(before, a.id) && !learns(after, a.id)) await store.writing.profiles.clearJudgments(a.id);
-      if (usesSentMail(before, a.id) && !usesSentMail(after, a.id)) stopped = true;
       if (!usesSentMail(before, a.id) && usesSentMail(after, a.id)) this.pendingForced.add(a.id);
     }
     if (before.global.useSentMail && !after.global.useSentMail) await store.writing.profiles.clearJudgments();
-    // what's running may be counting what was just turned off
-    if (stopped) this.epoch++;
     this.wake({ force: true });
+  }
+
+  /** Permission went: a pass in flight doesn't commit, and studies and refreshes stop at the provider too. */
+  private withdraw(): void {
+    this.epoch++;
+    this.permission.abort();
+    this.permission = new AbortController();
   }
 
   /** Clear all: nothing learned stays, and it sleeps until the feature is used again. */
   async clear(): Promise<void> {
-    this.epoch++;
+    this.withdraw();
     this.active = false;
     await this.running?.catch(() => {});
     const cp = await this.checkpoint();
@@ -606,12 +622,14 @@ export class VoiceLearner {
     } catch {
       return;
     }
-    if (ai.providerId !== consent.provider) return;
+    // a study on this machine says nothing about a cloud service, nor one server about another
+    if (consent.destination !== destinationOf(ai)) return;
     let cp = start;
     const today = dayOf(this.host.now());
     if (cp.refreshDay !== today) cp = { ...cp, refreshDay: today, refreshes: 0 };
     const allowed = accounts.filter((a) => consent.accountIds.includes(a.id) && usesSentMail(prefs, a.id));
-    const { signal, release } = this.host.begin(`voice-refresh:${this.host.now()}`, "voice-learner");
+    const { signal: asked, release } = this.host.begin(`voice-refresh:${this.host.now()}`, "voice-learner");
+    const signal = AbortSignal.any([asked, this.permission.signal]);
     try {
       let after: { scopeKey: string; language: string } | undefined;
       for (;;) {
@@ -649,7 +667,9 @@ export class VoiceLearner {
   }
 
   /** "Let AI study my style": sends samples of sent mail to the provider, so it says what first and waits for `confirm`. */
-  async study(p: { requestId: string; clientId: string; confirm?: { provider: string; accountIds: readonly number[] } }): Promise<WritingStudyResult> {
+  async study(p: { requestId: string; clientId: string; confirm?: { provider: string; accountIds: readonly number[]; destination?: string } }): Promise<WritingStudyResult> {
+    // before anything is read: a withdrawal from here on stops it, and leaves no consent behind
+    const epoch = this.epoch;
     await this.activate();
     const { store } = this.host;
     await this.idle();
@@ -659,8 +679,9 @@ export class VoiceLearner {
     if (!targets.length) return { status: "nothing" };
     const ai = await this.host.forVoice();
     const accountIds = accounts.map((a) => a.id);
+    const destination = destinationOf(ai);
     if (!ai.local) {
-      const agreed = p.confirm && p.confirm.provider === ai.providerId && accountIds.every((id) => p.confirm!.accountIds.includes(id));
+      const agreed = p.confirm && p.confirm.provider === ai.providerId && p.confirm.destination === destination && accountIds.every((id) => p.confirm!.accountIds.includes(id));
       if (!agreed) {
         let messages = 0;
         let tokens = 0;
@@ -672,16 +693,17 @@ export class VoiceLearner {
           tokens += Math.min(limits.maxTokens, Math.ceil(used * Math.max(1, habits.words.median) * 1.4));
         }
         const usd = costOf(ai.model, { inputTokens: tokens, outputTokens: 300 * targets.length });
-        return { status: "consent", provider: ai.providerId as AiProviderId, messages, tokens, usd, accountIds };
+        return { status: "consent", provider: ai.providerId as AiProviderId, destination, messages, tokens, usd, accountIds };
       }
     }
-    await store.settings.set(STUDY_KEY, { provider: ai.providerId, accountIds, at: this.host.now() } satisfies StudyConsent);
+    if (epoch !== this.epoch) throw new AiError(L("errors.ai.cancelled"), "cancelled");
+    await store.settings.set(STUDY_KEY, { provider: ai.providerId, destination, accountIds, at: this.host.now() } satisfies StudyConsent);
     if (this.studying) return { status: "started", total: this.studying.total };
     const total = targets.length;
     this.studying = { requestId: p.requestId, total };
     const progress = (state: AiStudyProgress["state"], done: number, errorKind?: string) => this.host.studyProgress(p.clientId, { requestId: p.requestId, state, done, total, ...(errorKind ? { errorKind } : {}) });
-    const { signal, release } = this.host.begin(p.requestId, p.clientId);
-    const epoch = this.epoch;
+    const { signal: asked, release } = this.host.begin(p.requestId, p.clientId);
+    const signal = AbortSignal.any([asked, this.permission.signal]);
     const live = () => !this.stopped && epoch === this.epoch && !signal.aborted;
     this.studyRun = (async () => {
       let done = 0;

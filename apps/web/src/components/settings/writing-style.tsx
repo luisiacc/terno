@@ -235,7 +235,7 @@ function Study({ status, onChanged }: { status: WritingStatus | null; onChanged:
     asking.current = id;
     setState({ kind: "running", requestId: id, done: 0, total: asked.messages });
     try {
-      const started = await client.call("writing.studyStyle", { requestId: id, confirm: { provider: asked.provider, accountIds: asked.accountIds } });
+      const started = await client.call("writing.studyStyle", { requestId: id, confirm: { provider: asked.provider, destination: asked.destination, accountIds: asked.accountIds } });
       if (started.status === "started") { if (asking.current === id) setState({ kind: "running", requestId: id, done: 0, total: started.total }); }
       else setState({ kind: started.status === "nothing" ? "nothing" : "idle" });
     } catch (e) {
