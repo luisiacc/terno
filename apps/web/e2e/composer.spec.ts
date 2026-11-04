@@ -746,6 +746,40 @@ test.describe("the new message", { tag: "@design" }, () => {
     await expect(body(page).locator("a")).toHaveCount(0);
   });
 
+  test("plan 130: an open link bubble changes sides as the card's text scrolls, and is never cut off", async ({ app: page }) => {
+    await compose(page);
+    await body(page).click();
+    for (let i = 0; i < 40; i++) { await page.keyboard.type(`línea ${i}`); await page.keyboard.press("Enter"); }
+    await page.keyboard.type("el enlace");
+    await select(page, "enlace");
+    await page.keyboard.press("ControlOrMeta+l");
+    await page.getByTestId("link-url").fill("acme.example/propuesta");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("ControlOrMeta+End");
+    for (let i = 0; i < 40; i++) { await page.keyboard.press("Enter"); await page.keyboard.type(`más ${i}`); }
+    const link = body(page).locator("a"), bubble = page.getByTestId("link-bubble"), scroller = card(page).locator("[data-draft-scroll]");
+    /** Scrolls so the link's edge meets the scroller's. */
+    const scrollLinkTo = (edge: "top" | "bottom") => scroller.evaluate((el, edge) => {
+      const a = el.querySelector("[data-testid=compose-body] a")!.getBoundingClientRect(), s = el.getBoundingClientRect();
+      el.scrollTop += edge === "bottom" ? a.bottom - s.bottom + 4 : a.top - s.top - 4;
+    }, edge);
+    const inside = async () => {
+      const b = await box(bubble), s = await box(scroller);
+      return b.y >= s.y && b.y + b.height <= s.y + s.height;
+    };
+    await scrollLinkTo("bottom");
+    await link.click();
+    await expect(bubble).toBeVisible();
+    await expect.poll(async () => (await box(bubble)).y + (await box(bubble)).height <= (await box(link)).y).toBe(true);
+    expect(await inside()).toBe(true);
+    await scrollLinkTo("top");
+    await expect.poll(async () => (await box(bubble)).y >= (await box(link)).y + (await box(link)).height).toBe(true);
+    expect(await inside()).toBe(true);
+    await scrollLinkTo("bottom");
+    await expect.poll(async () => (await box(bubble)).y + (await box(bubble)).height <= (await box(link)).y).toBe(true);
+    expect(await inside()).toBe(true);
+  });
+
   test("plan 130: Collapse steps away: what's written is kept in the strip, with focus; an untouched one goes, and the list reads on", async ({ app: page }) => {
     await compose(page);
     await page.getByTestId("compose-collapse").click();

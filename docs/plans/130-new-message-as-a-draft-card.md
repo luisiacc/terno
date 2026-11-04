@@ -76,3 +76,10 @@ The plan critique raised 8 points. What changed:
 6. **Focus rings:** a text field's ring reaches 3 px outside it, and the first row only has 1 px, so the scroller has `pt-0.5`.
 7. **Drops:** `composer-drop.spec.ts` only drives replies, so it gets new-message cases: blank pane space, the fields, the text, and the overlay ringing the card.
 8. **Perf:** a shrink-to-fit card may lay a huge body out differently, so `perf.spec.ts` gets the huge-draft gate through a new message too, with the reply's budgets.
+
+## What the Codex code review changed
+
+Round 1 raised 2 points, both fixed:
+
+1. The link bubble chose its side only on editor updates, so scrolling an open bubble left it on the wrong side and clipped. It now re-places itself on the scroller's scroll and resize, with listeners only while a bubble is open (regression test: it changes sides both ways).
+2. The blank-pane drop test dispatched on the form directly, so it would pass even if the form no longer covered that point. It now asserts the form is what's under the point, near the pane's foot.

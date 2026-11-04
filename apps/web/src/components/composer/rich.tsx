@@ -410,6 +410,18 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
     setBubble((b) => (b && b.from === at.from && b.to === at.to && b.href === at.href && b.top === top && b.left === left ? b : { ...at, top, left }));
   }
 
+  // an open bubble follows the scroller: which side has room changes as the link moves (nothing runs while none is open)
+  const bubbleOpen = bubble !== null;
+  useEffect(() => {
+    const scroller = bubbleOpen ? wrapRef.current?.closest("[data-draft-scroll]") : null;
+    if (!scroller) return;
+    const place = () => { if (viewRef.current) updateBubble(viewRef.current); };
+    scroller.addEventListener("scroll", place, { passive: true });
+    const resized = new ResizeObserver(place);
+    resized.observe(scroller);
+    return () => { scroller.removeEventListener("scroll", place); resized.disconnect(); };
+  }, [bubbleOpen]);
+
   openLinkRef.current = () => {
     const view = viewRef.current;
     if (!view || !canMutate()) return;

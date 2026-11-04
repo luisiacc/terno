@@ -114,7 +114,10 @@ test("plan 130: a new message takes a drop anywhere in the pane; the layer rings
   const pdf = await transfer(page, [{ name: "notes.pdf", type: "application/pdf" }]);
   // the empty pane under the card
   const c = (await card.boundingBox())!, f = (await form.boundingBox())!;
-  const blank = { x: f.x + f.width / 2, y: (c.y + c.height + f.y + f.height) / 2 };
+  const blank = { x: f.x + f.width / 2, y: f.y + f.height - 12 };
+  expect(blank.y).toBeGreaterThan(c.y + c.height);
+  // the form really is what's under that point: a drop there reaches it
+  expect(await form.evaluate((el, p) => el.contains(document.elementFromPoint(p.x, p.y)), blank)).toBe(true);
   await drag(form, pdf, blank, "dragenter", "dragover");
   await expect(page.getByTestId("compose-drop")).toHaveAttribute("data-state", "attach");
   const layer = (await page.getByTestId("compose-drop").boundingBox())!;
