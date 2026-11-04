@@ -134,3 +134,5 @@ Follow-up request, verbatim:
 > for the style selector, i think its too bigg make it a single line, max 2 lines
 
 At five styles the two-column grid ran three rows and pushed everything else down the tab. It's now a row of compact cards (a 72 px mock and the name), wrapping to a second row only when the window is too narrow for 5.5 rem each. The chosen style's description sits on one line below, as first run has it, and describes the group for screen readers. The mock's section label is gone (it couldn't fit), and "Inbox" goes from 13 px to 10 px. Light and dark colors keep their larger cards: colors need the room, and they weren't asked about.
+
+The Codex review found two narrow-window problems, both fixed with a test that fails without the fix: at 550 px the grid reached three rows (a column now gives way before three stop fitting), and a description that wrapped on some styles but not others moved everything below it when switching (all of them now share one cell, so it's always as tall as the longest).

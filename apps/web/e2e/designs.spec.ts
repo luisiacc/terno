@@ -58,6 +58,23 @@ test.describe("in every design", { tag: "@design" }, () => {
     }
   });
 
+  test("Settings' styles never take more than two rows, and a description that wraps moves nothing below it", async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { language: "es" }, ctx);
+    await page.setViewportSize({ width: 550, height: 800 });
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-appearance").click();
+    const cards = page.getByTestId("design-grid").getByRole("radio");
+    await expect(cards).toHaveCount(DESIGNS.length);
+    const tops = await cards.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
+    expect(new Set(tops).size).toBeLessThanOrEqual(2);
+    // the cell is as tall as its tallest description, whichever is showing
+    const cell = await page.getByTestId("design-descriptions").evaluate((el) => ({ height: el.getBoundingClientRect().height, tallest: Math.max(...[...el.children].map((c) => c.getBoundingClientRect().height)), count: el.children.length }));
+    expect(cell.count).toBe(DESIGNS.length);
+    expect(cell.height).toBe(cell.tallest);
+  });
+
   test("the parts every variant keeps: one compose control, rows as options with their parts, the subject, the chips, the reply controls", async ({ app: page }) => {
     await expect(page.getByTestId("compose-button")).toHaveCount(1);
     await expect(page.getByTestId("compose-button")).toBeVisible();

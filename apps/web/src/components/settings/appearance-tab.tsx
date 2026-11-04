@@ -291,17 +291,22 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
                 // the chosen style chosen again (clicked, or arrowed back onto) is a choice too: it cancels a switch still
                 // waiting for its faces (Codex code review #2, second pass #3)
                 onReselect={(id) => void updateAppearance({ design: id as DesignDefinition["id"] })}
-                // one row at Settings' width; a narrower window wraps to a second rather than squeezing the mocks
-                className="grid grid-cols-[repeat(auto-fit,minmax(5.5rem,1fr))] gap-2"
+                // one row at Settings' width; narrower, a second row, and never a third: the column gives way before three stop fitting
+                className="grid grid-cols-[repeat(auto-fit,minmax(min(5.5rem,calc((100%-1rem)/3)),1fr))] gap-2"
                 data-testid="design-grid"
               >
                 {DESIGNS.map((d) => (
                   <StyleCard key={d.id} design={d} mode={mode} />
                 ))}
               </RadioGroup>
-              <p id="design-description" data-testid="design-description" className="mt-2 text-xs text-muted-foreground">
-                {designDescription(settings.design)}
-              </p>
+              {/* all of them in one cell, the chosen one showing: as tall as the longest, so nothing below moves when a choice wraps differently */}
+              <div className="mt-2 grid text-xs text-muted-foreground" data-testid="design-descriptions">
+                {DESIGNS.map((d) => (
+                  <p key={d.id} id={d.id === settings.design ? "design-description" : undefined} data-testid={d.id === settings.design ? "design-description" : undefined} aria-hidden={d.id !== settings.design} className={cn("[grid-area:1/1]", d.id !== settings.design && "invisible")}>
+                    {designDescription(d.id)}
+                  </p>
+                ))}
+              </div>
             </>
           )}
         </SettingsRow>
