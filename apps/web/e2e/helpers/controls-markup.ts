@@ -96,6 +96,8 @@ process.stdout.write(
       h(Button, { variant: "link", "data-testid": "link" }, "Try again"),
       h("div", { "data-testid": "snack-surface", className: "snack-surface rounded-xl p-2" }, "Archived"),
       h("i", { "data-testid": "probe-tint", className: "bg-tint" }),
+      // plan 137: a button in a nested design draws that design's corners
+      h("div", { "data-design": "luma" }, h(Button, { "data-testid": "nested-primary" }, "Send")),
     ),
   ),
 );

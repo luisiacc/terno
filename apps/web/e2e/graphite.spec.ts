@@ -3,8 +3,17 @@
  * screen at 12, 13, 14 or 24 px, regular or medium, at -0.15px; 14 px navigation icons on the section labels' line;
  * pill buttons but not pill toolbars. The other designs draw what they did, and a nested preview draws in its own design.
  */
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { expect, openRow, test } from "./fixtures";
+
+// the real components, rendered to markup as controls.spec.ts does (helpers/controls-markup.ts says why)
+const ui = new URL("../../../packages/ui/", import.meta.url);
+const tsx = createRequire(new URL("package.json", ui)).resolve("tsx/cli");
+const markup = execFileSync(process.execPath, [tsx, fileURLToPath(new URL("./helpers/controls-markup.ts", import.meta.url))], { cwd: fileURLToPath(ui), encoding: "utf8" });
+const addControls = (page: Page) => page.evaluate((html) => document.body.insertAdjacentHTML("beforeend", html), markup);
 
 /** Hidden text and other designs' previews; MICRO is the marks drawn inside a shape (initials, a file type: source-scan.test.ts lists them). */
 const MICRO = ["7px", "9.5px", "10px"];
@@ -66,6 +75,13 @@ test.describe("Graphite (plan 137)", () => {
     await expect(page.getByRole("button", { name: "Archive", exact: true }).first()).toHaveCSS("border-radius", "8px");
   });
 
+  test("the real buttons: words are pills, icons keep the ladder, and a nested design draws its own corners", async ({ app: page }) => {
+    await addControls(page);
+    for (const id of ["primary", "danger", "outline-off"]) await expect(page.getByTestId(id), id).toHaveCSS("border-radius", "9999px");
+    await expect(page.getByTestId("icon-ghost")).toHaveCSS("border-radius", "8px");
+    await expect(page.getByTestId("nested-primary")).toHaveCSS("border-radius", "10px");
+  });
+
   test("Settings groups are 16 px outlined cards, and a nested preview keeps its own design", async ({ app: page }) => {
     await page.keyboard.press("Meta+,");
     const group = page.getByTestId("settings-dialog").locator(".card-group").first();
@@ -79,6 +95,11 @@ test.describe("Graphite (plan 137)", () => {
 });
 
 test.describe("the other designs keep what they drew (plan 137)", () => {
+  test("macOS: its real buttons keep their 8 px corners", async ({ app: page }) => {
+    await addControls(page);
+    for (const id of ["primary", "danger", "outline-off"]) await expect(page.getByTestId(id), id).toHaveCSS("border-radius", "8px");
+  });
+
   test("macOS: no base tracking, 16 px nav icons, Send's 6 px corner and 12.8 px label, 10 px Settings groups", async ({ app: page }) => {
     await expect(page.locator("html")).toHaveCSS("letter-spacing", "normal");
     await expect(page.getByTestId("sidebar").getByRole("button", { name: /^Inbox/ }).locator("svg").first()).toHaveCSS("width", "16px");

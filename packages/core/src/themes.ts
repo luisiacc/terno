@@ -71,6 +71,7 @@ export const THEME_TOKENS = [
   "highlight",
   "draft-foreground",
   "sidebar-glyph",
+  "control-edge",
   "popover-glass",
   // plan 08: error and "saved" text that reads on tint groups too
   "destructive-ink",

@@ -2,7 +2,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { contrastFailures, CONTRAST_PAIRS, FIELD_WASH, STAR_ON_ROWS } from "./contrast";
+import { contrast, parseColor, withAlpha } from "./color";
+import { contrastFailures, CONTRAST_PAIRS, CONTROL_EDGES, FIELD_WASH, STAR_ON_ROWS } from "./contrast";
 import { THEMES } from "./registry";
 
 describe("WCAG AA in every built-in theme", () => {
@@ -13,6 +14,17 @@ describe("WCAG AA in every built-in theme", () => {
 
   it.each(["lumen-light", "lumen-dark", "atelier-light", "atelier-dark"])("%s keeps its star readable on hovered, selected and checked rows", (id) => {
     expect(contrastFailures(THEMES.find((t) => t.id === id)!, STAR_ON_ROWS)).toEqual([]);
+  });
+
+  it.each(["graphite-light", "graphite-dark"])("%s draws unchecked boxes and off switches at 3:1", (id) => {
+    const theme = THEMES.find((t) => t.id === id)!;
+    expect(contrastFailures(theme, CONTROL_EDGES)).toEqual([]);
+    // the off switch's track is 80% of it in dark (switch.tsx)
+    if (theme.mode === "dark") expect(contrast(withAlpha(parseColor(theme.tokens["control-edge"]), 0.8), theme.tokens.popover, theme.tokens.background)).toBeGreaterThanOrEqual(3);
+  });
+
+  it("control-edge is input in every other palette, so no other design's controls moved", () => {
+    for (const theme of THEMES.filter((t) => !t.id.startsWith("graphite-"))) expect(theme.tokens["control-edge"], theme.id).toBe(theme.tokens.input);
   });
 
   it("checks the pairs the plan requires", () => {

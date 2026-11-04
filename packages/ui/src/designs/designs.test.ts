@@ -88,8 +88,8 @@ describe("designs (plan 15)", () => {
     it("hierarchy: #292929 and #5D5D5D in light, #EDEDED and #9E9E9E in dark", () => {
       const light = builtinTheme("graphite-light")!.tokens;
       const dark = builtinTheme("graphite-dark")!.tokens;
-      expect([light.foreground, light.primary, light["muted-foreground"], light.input].map(hex)).toEqual(["#292929", "#292929", "#5D5D5D", "#9E9E9E"]);
-      expect([dark.foreground, dark["muted-foreground"], dark.input].map(hex)).toEqual(["#EDEDED", "#9E9E9E", "#5D5D5D"]);
+      expect([light.foreground, light.primary, light["muted-foreground"]].map(hex)).toEqual(["#292929", "#292929", "#5D5D5D"]);
+      expect([dark.foreground, dark["muted-foreground"]].map(hex)).toEqual(["#EDEDED", "#9E9E9E"]);
     });
   });
 

@@ -176,6 +176,8 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   const hovered = formatOklch(rgbToOklch(composite(oklchToRgb(o("sidebar-hover")), { ...oklchToRgb(o("sidebar")), alpha: 1 })));
   def("unread-ink", () => stepUntil(o("unread"), [...["background", "pane", "sidebar", "sidebar-accent"].map((k) => formatOklch(o(k as ThemeToken))), hovered], 4.5, bg, o("foreground"), light));
   def("sidebar-primary-ink", () => stepUntil(o("sidebar-primary"), [formatOklch(o("sidebar")), formatOklch(o("sidebar-accent"))], 4.5, bg, o("sidebar-foreground"), light));
+  // plan 137: an unchecked box's edge and an off switch's track; `input` also tints fields, so a palette that holds these to 3:1 sets this instead
+  def("control-edge", () => o("input"));
   def("sidebar-glyph", () => stepUntil(o("sidebar-primary"), [formatOklch(o("sidebar")), formatOklch(o("sidebar-accent")), hovered], 3, bg, o("muted-foreground"), light));
   // plan 94: toward its text while that still reads at 4.5:1, else away from it (a fill already near 4.5:1 can only darken)
   def("primary-hover", () => {
@@ -512,7 +514,8 @@ export const THEMES: readonly Theme[] = [
     mode: "light",
     vibrancy: false,
     // Graphite (plan 137): white panes, #292929 ink, #5D5D5D for everything secondary, #F4F4F4 selections; a sky blue is the
-    // one color. #9E9E9E is only the firm border: on white it's 2.7:1, below AA for text and for marks
+    // one color. #9E9E9E is 2.7:1 on white, below AA for text and for marks, so unchecked boxes and off switches take #949494,
+    // the nearest grey that holds 3:1
     tokens: {
       background: "1 0 0",
       foreground: "#292929",
@@ -525,7 +528,7 @@ export const THEMES: readonly Theme[] = [
       accent: "#F4F4F4",
       "accent-foreground": "#292929",
       border: "0 0 0 / 8%",
-      input: "#9E9E9E",
+      input: "0 0 0 / 14%",
       primary: "#292929",
       "primary-foreground": "1 0 0",
       destructive: "0.577 0.215 27",
@@ -538,7 +541,7 @@ export const THEMES: readonly Theme[] = [
       "sidebar-accent": "#F4F4F4",
     },
     cats: cats(".645 .17 16 | .64 .13 66 | .62 .13 131 | .61 .11 163 | .61 .1 225 | .585 .14 277 | .606 .15 300 | .56 .01 257"),
-    overrides: { "sidebar-foreground": "#5D5D5D", "sidebar-glyph": "#5D5D5D", "sidebar-accent-foreground": "#292929" },
+    overrides: { "sidebar-foreground": "#5D5D5D", "sidebar-glyph": "#5D5D5D", "sidebar-accent-foreground": "#292929", "control-edge": "#949494" },
   }),
   defineTheme({
     id: "terno-dark",
@@ -903,7 +906,7 @@ export const THEMES: readonly Theme[] = [
       accent: "#2A2A2A",
       "accent-foreground": "#EDEDED",
       border: "1 0 0 / 9%",
-      input: "#5D5D5D",
+      input: "1 0 0 / 14%",
       primary: "#EDEDED",
       "primary-foreground": "#1A1A1A",
       destructive: "0.704 0.17 22",
@@ -916,7 +919,7 @@ export const THEMES: readonly Theme[] = [
       "sidebar-accent": "#2A2A2A",
     },
     cats: cats(".72 .13 16 | .8 .12 75 | .78 .13 131 | .74 .11 163 | .76 .09 225 | .7 .12 277 | .72 .12 300 | .7 .01 257"),
-    overrides: { "sidebar-foreground": "#9E9E9E", "sidebar-glyph": "#9E9E9E", "sidebar-accent-foreground": "#EDEDED" },
+    overrides: { "sidebar-foreground": "#9E9E9E", "sidebar-glyph": "#9E9E9E", "sidebar-accent-foreground": "#EDEDED", "control-edge": "#808080" },
   }),
 ];
 

@@ -55,9 +55,9 @@ From the picture: 28 px nav rows, white sidebar and panes divided by hairlines, 
 |---|---|---|
 | Ink (`foreground`, `primary`, selected nav) | `#292929` | `#EDEDED` |
 | Secondary (`muted-foreground`, idle nav, section labels, glyphs) | `#5D5D5D` | `#9E9E9E` |
-| Tertiary | `#9E9E9E` (non-text only) | `#5D5D5D` (non-text only) |
+| Control edges (`control-edge`: unchecked boxes, off switches) | `#949494` | `#808080` |
 
-**`#9E9E9E` on white is 2.7:1, which fails AA for text (4.5:1) and for UI marks (3:1).** The contrast suite and axe both require those, so in the light palette it is only decorative: the firm `input` border. Ordinary text is `#292929` or `#5D5D5D`. Dark inverts the ramp: `#9E9E9E` on `#1A1A1A` is 6.5:1, so there it does the secondary tier's work.
+**`#9E9E9E` on white is 2.7:1, which fails AA for text (4.5:1) and for UI marks (3:1)**, so the light palette can't use it for anything that has to be seen. Text there is `#292929` or `#5D5D5D`, and control edges are `#949494`, the nearest grey that holds 3:1. Other palettes' `control-edge` is their `input`, so their controls don't move. Dark inverts the ramp: `#9E9E9E` on `#1A1A1A` is 6.5:1, so there it is the secondary tier, and the blueprint's three greys are all in use only across the two modes.
 
 Words that carry a meaning keep their colour: errors, "Draft", and unread and reminder text in the sky blue's ink. The sky blue is pulled down from the picture's so the dot holds 3:1 on white.
 
@@ -117,3 +117,10 @@ Eight points, all taken:
 ## Baselines already failing on the base commit
 
 Run on a clean checkout of `50d09c24`, with the same results: `send-later.spec` (`send-group-rest.png`, 896 pixels, every design), `visual.spec` (`compose-new-inline.png`, 48,119 pixels). Flaky there too: `visual.spec`'s "AI on a local model" (5 of 6 failed on that checkout, with a real Ollama running on the machine) and `dialog-move.spec`'s "Tab onto a control past the edge" (in macOS, Luma and Graphite). Left alone: they aren't this change's, and rewriting them would hide what moved them.
+
+## Revisions after the Codex code review
+
+Two findings, both fixed, each with a test that fails without the fix:
+
+1. `input` isn't only decorative: it drew unchecked checkboxes and off switches, at 2.68:1 (light) and 2.50:1 (dark). A darker `input` can't be the answer, because 13 fields also fill with `dark:bg-input/30`, and an opaque grey pushed that fill so light the To label dropped to 4.18:1 (the `@design` axe test caught it). So a new derived token, `control-edge`, draws those two controls: `#949494` and `#808080` in Graphite, and equal to `input` in every other palette. `input` is the same quiet wash here as elsewhere. `CONTROL_EDGES` holds Graphite to 3:1. The suite still exempts the older palettes: that's an existing gap, and closing it means repainting every design.
+2. The pill tests passed with the `Button` change removed, because Send sets its own radius and the nested preview has no button in it. They now measure the real `Button`s from `controls-markup.ts`, including one nested in Luma (`10px`, where the root alias would have given Graphite's `8px`).

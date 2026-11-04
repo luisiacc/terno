@@ -49,7 +49,7 @@ export const graphite: DesignDefinition = {
   tracking: { tight: TRACKING, display: TRACKING, base: TRACKING, wide: TRACKING },
   type: TYPE,
   icon: { stroke: 1.5, toolbar: 1.5, nav: 14 },
-  layout: { sidebar: "224px", listMin: "340px", listMax: "400px", readerMin: 360, readerMax: "800px", readerPadX: "2rem", rowRadius: "0.5rem", navRadius: "0.5rem", navHeight: "1.75rem", cardRadius: "1rem", commandRadius: "0.5rem" },
+  layout: { sidebar: "224px", listMin: "340px", listMax: "400px", readerMin: 348, readerMax: "800px", readerPadX: "2rem", rowRadius: "0.5rem", navRadius: "0.5rem", navHeight: "1.75rem", cardRadius: "1rem", commandRadius: "0.5rem" },
   rows: { comfortable: 72, compact: 40, wide: 44 },
   avatar: { row: 0, rowCompact: 0, rowWide: 0, message: 32, collapsed: 24, senderCard: 0 },
   surfaces: { draft: "outline", reviewBadge: "plain", inboxCount: "muted", cta: "pill", card: "outline" },
