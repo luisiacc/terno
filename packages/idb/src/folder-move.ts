@@ -29,17 +29,17 @@ export function moveThreadsToFolder(c: Ctx, o: { threadIds: readonly number[]; a
   const messages = T(c, "messages");
   const locations = T(c, "message_locations");
   const rows = ids.flatMap((id) => messages.by("fk_thread_id", id)).filter((m) => !m.is_draft && !m.is_trash && !m.is_spam).sort((x, y) => x.id - y.id);
-  // IMAP: your own mail stays in Sent, unless it's all there is. Gmail's labels go on the whole conversation
+  // IMAP: your own mail stays in Sent, unless it's all there is or it's in the folder this leaves. Gmail's labels go on the whole conversation
   const received = new Set(rows.filter((m) => !m.is_sent).map((m) => m.thread_id as number));
-  const chosen = gmail ? rows : rows.filter((m) => !m.is_sent || !received.has(m.thread_id));
   const moved: FolderMoved = { accountId, folder, from, fromInbox: [], fromFolder: [], added: [], leftOnly: [] };
   const targets = { kept: [] as number[], rest: [] as number[] };
-  for (const m of chosen) {
+  for (const m of rows) {
     const has = new Set<string>(gmail ? labelsOf(m) : locations.by("fk_message_id", m.id).map((l) => l.mailbox as string));
     // where it is once what's on its way lands: A → B then B → A is a move out of B
     if (T(c, "ops").count("folder_moves", accountId)) for (const op of pendingFolderOps(c, m.id)) applyFolderOp(has, op.kind as string, JSON.parse(op.payload_json as string) as MoveToFolderPayload | LeaveFolderPayload);
     const inFolder = has.has(folder);
     const inFrom = from !== null && has.has(from);
+    if (!gmail && m.is_sent && received.has(m.thread_id) && !inFrom) continue;
     if (inFolder && !inFrom) continue;
     (kept.has(m.thread_id) ? targets.kept : targets.rest).push(m.id);
     if (inFolder) moved.leftOnly.push(m.id);

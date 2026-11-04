@@ -250,26 +250,22 @@ export function createHandlers(b: Backend): Handlers {
     const before = undoJournal.take(undoId);
     if (!before) throw new RpcError("NOT_FOUND", L("errors.undoGone"));
     try {
-      // plan 127: out of the folder first: the moveToInbox the restore queues then finds each message in place
-      const moved = folderMoves.get(undoId);
-      if (moved) {
-        const touched = new Set<number>();
-        for (const m of moved) {
-          const r = await store.threads.leaveFolder({ moved: m, now: b.now() });
-          for (const t of r.threadIds) touched.add(t);
-          b.opsQueued(r.opIds);
-          await b.yieldTurn();
-        }
-        folderMoves.delete(undoId);
-        b.notifyChanged([...touched]);
-        if (!before.length) return touched.size;
-      }
       // the reminders it ended first: refused (the cap), nothing is taken back and the Undo stays for a retry
       const ended = endedReminders.get(undoId);
       if (ended && !(await b.reminders.restore([], ended))) throw new RpcError("BAD_REQUEST", L("errors.remindersFull", { max: REMINDERS_MAX }));
-      const restored = (await restore(before, jobId)).size;
+      // plan 127: out of the folder first: the moveToInbox the restore queues then finds each message in place
+      const left = new Set<number>();
+      for (const m of folderMoves.get(undoId) ?? []) {
+        const r = await store.threads.leaveFolder({ moved: m, now: b.now() });
+        for (const t of r.threadIds) left.add(t);
+        b.opsQueued(r.opIds);
+        b.notifyChanged(r.threadIds);
+        await b.yieldTurn();
+      }
+      folderMoves.delete(undoId);
+      const restored = before.length ? await restore(before, jobId) : new Set<number>();
       endedReminders.delete(undoId);
-      return restored;
+      return new Set([...left, ...restored]).size;
     } catch (error) {
       // restoring is idempotent: a retry repeats all of it
       undoJournal.putBack(undoId, before);

@@ -772,6 +772,8 @@ export class SqlMailStore implements MailStore {
       const receipt = sqlSendCopies(this.db).get(id);
       if (op?.state === "running" && sendAccepted && receipt?.submission === "pending" && (receipt.copyRequested || receipt.ready)) acceptCopySubmission(sqlSendCopies(this.db), id, sendAccepted.warning);
       markOpUnknown(this.db, id, error, now);
+      // plan 127: no longer counted as on its way: the folder shows what's known until a pass finds where it is
+      if (op && isFolderOp(op.kind)) settleFolderOp(this.db, op, false);
     })),
     awaitAuth: async (id, error, now) => awaitAuthOp(this.db, id, error, now),
     release: async (id, now) => releaseOp(this.db, id, now),

@@ -186,6 +186,31 @@ export function defineFolderMoveConformance(name: string, harness: StoreHarness)
       expect(r.moved.added).toEqual([inserted[2]]);
     });
 
+    it("IMAP: leaving a folder takes all the thread's copies there, your own too, so the row that leaves the list really has", async () => {
+      const { store, imap } = await fresh();
+      await ingest(store, [
+        msg({ accountId: imap, providerMsgId: "out", rfcMessageId: "out@t", providerThreadId: "t", isSent: true, locations: [loc("A", 1)], inInbox: false }),
+        msg({ accountId: imap, providerMsgId: "in", rfcMessageId: "in@t", providerThreadId: "t", inReplyTo: "out@t", references: ["out@t"], locations: [loc("A", 2)], inInbox: false }),
+      ]);
+      const thread = await threadOf(store, "in");
+      expect(await list(store, imap, "A")).toEqual([thread]);
+      const r = await store.threads.moveToFolder({ threadIds: [thread], accountId: imap, folder: "B", from: "A", now: NOW });
+      expect(r.moved.fromFolder).toHaveLength(2);
+      expect(await list(store, imap, "A")).toEqual([]);
+      expect(await list(store, imap, "B")).toEqual([thread]);
+    });
+
+    it("an unknown outcome stops counting at once: the folder shows only what's known", async () => {
+      const { store, imap } = await fresh();
+      await ingest(store, [msg({ accountId: imap, providerMsgId: "i", locations: [loc("INBOX", 1)], inInbox: true })]);
+      const thread = await threadOf(store, "i");
+      await store.threads.moveToFolder({ threadIds: [thread], accountId: imap, folder: "A", from: null, now: NOW });
+      expect(await list(store, imap, "A")).toEqual([thread]);
+      const [op] = await store.ops.claimReady(NOW + 1, 1);
+      await store.ops.markUnknown(op!.id, "lost", NOW);
+      expect(await list(store, imap, "A")).toEqual([]);
+    });
+
     it("offers count what would still change: this account's threads not in the folder, starred and replied ones too", async () => {
       const { store, gmail, imap } = await fresh();
       const mk = (accountId: number, id: string) => msg({ accountId, providerMsgId: id, rfcMessageId: `${id}@t`, from: { email: "shop@example.com", name: "Shop" }, gmailLabels: accountId === gmail ? ["INBOX"] : undefined, inInbox: true });

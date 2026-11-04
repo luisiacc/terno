@@ -3,6 +3,7 @@
  * dropped moves; the snack then offers the rest, like a category's. A thread in a category shown in the Inbox, and in
  * none hidden, stays there as well as in the folder.
  */
+import { RpcError } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { deferred, targetRows, undoAction, undoActions } from "~/lib/actions";
 import { leaveView } from "~/lib/categorize";
@@ -33,8 +34,8 @@ export async function moveToFolder(to: FolderDrop, threadIds: readonly number[])
   const undoIds = deferred<number[]>();
   const undo = registerUndo(() => undoIds.promise.then((list) => (list.length ? undoActions(list, ids.length) : undefined)));
   const connection = client.connectionVersion;
+  const list: number[] = [];
   try {
-    const list: number[] = [];
     let kept = 0;
     // the contract takes ≤ 5,000 ids a call; each can be undone exactly
     for (let i = 0; i < ids.length; i += 5000) {
@@ -56,9 +57,12 @@ export async function moveToFolder(to: FolderDrop, threadIds: readonly number[])
       );
     }
   } catch (error) {
-    undoIds.resolve([]);
+    // what committed before the failure stays undoable: earlier calls, and the slices of this one (the backend names them)
+    const partial = error instanceof RpcError ? (error.details as { undoId?: number } | undefined)?.undoId : undefined;
+    if (typeof partial === "number") list.push(partial);
+    undoIds.resolve(list);
     if (connection !== client.connectionVersion) return;
-    snack.error(t("folder.move.failed", { folder: to.name, error: error instanceof Error ? error.message : String(error) }));
+    snack.error(t("folder.move.failed", { folder: to.name, error: error instanceof Error ? error.message : String(error) }), { action: list.length && undo.state === "ready" ? undoAction(undo, t("folder.move.undo", { folder: to.name })) : undefined });
     void reloadList({ keepSelection: true });
   }
 }

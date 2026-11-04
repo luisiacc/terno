@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail";
 import imapkit from "imapkit";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { bounded, rawIdleMail } from "./test/imap-idle-fixture";
 
@@ -144,6 +144,45 @@ it("archiving a kept thread leaves the folder's copy; undoing that archive doesn
   await t.settle();
   expect([t.on("INBOX"), t.on("Recibos"), t.on("Archive")]).toEqual([1, 1, 0]);
   expect(await t.locations([message])).toEqual(["INBOX", "Recibos"]);
+});
+
+it("filing a copy of mail that's in Archive and a folder: Archive keeps its copy, and undo removes only the new one", async () => {
+  const t = await setup();
+  const { thread, message } = await oneInInbox(t);
+  const category = await t.client.call("categories.create", { name: "Facturas", color: "cyan", showInInbox: true });
+  await t.client.call("categories.addThreads", { categoryId: category.id, threadIds: [thread], source: "picker" });
+  await t.move([thread], "Recibos");
+  await t.settle();
+  await t.client.call("threads.act", { threadIds: [thread], action: "archive" });
+  await t.settle();
+  expect([t.on("Archive"), t.on("Recibos"), t.on("Familia")]).toEqual([1, 1, 0]);
+  const { undoId } = await t.move([thread], "Familia");
+  await t.settle();
+  expect([t.on("Archive"), t.on("Recibos"), t.on("Familia")]).toEqual([1, 1, 1]);
+  await t.undo(undoId!);
+  await t.settle();
+  expect([t.on("Archive"), t.on("Recibos"), t.on("Familia")]).toEqual([1, 1, 0]);
+  expect(await t.locations([message])).toEqual(["Archive", "Recibos"]);
+});
+
+it("a refused undo (the reminders are full) changes nothing, and its retry works", async () => {
+  const t = await setup();
+  const { thread } = await oneInInbox(t);
+  const past = Date.now() - 1000;
+  await t.client.call("reminders.set", { threadIds: [thread], dueAt: past, kind: "always" });
+  const { undoId } = await t.move([thread], "Recibos");
+  expect((await t.client.call("reminders.list", {})).reminders).toEqual([]);
+  const refuse = vi.spyOn(t.backend.reminders, "restore").mockResolvedValueOnce(false);
+  await expect(t.undo(undoId!)).rejects.toThrow();
+  // still in the folder, not queued to leave it
+  expect(await t.threadsIn("Recibos")).toEqual([thread]);
+  expect(await t.inbox()).toEqual([]);
+  expect((await t.ops()).filter((o) => o.startsWith("leaveFolder"))).toEqual([]);
+  refuse.mockRestore();
+  expect(await t.undo(undoId!)).toEqual({ restored: 1 });
+  expect(await t.threadsIn("Recibos")).toEqual([]);
+  expect(await t.inbox()).toEqual([thread]);
+  expect((await t.client.call("reminders.list", {})).reminders.map((r) => r.threadId)).toEqual([thread]);
 });
 
 it("from one folder to another, and back with undo", async () => {

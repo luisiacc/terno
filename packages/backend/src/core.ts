@@ -2465,7 +2465,10 @@ export class BackendCore {
         } else if (error instanceof ProviderAuthError) {
           await this.store.ops.awaitAuth(op.id, message, this.now());
           if (this.current(life) && !(await this.parkedAcrossSignIn(op.account_id, credentials))) await this.needsSignIn(op.account_id, op.kind, error, credentials, life);
-        } else if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
+        } else if (error instanceof ProviderError && error.ambiguous) {
+          await this.store.ops.markUnknown(op.id, message, this.now());
+          if (isFolderOp(op.kind)) this.notifyChanged([]);
+        }
         // the server couldn't be reached: wait for the network (plan 20); an outage gives the attempt back
         else if (error instanceof ProviderIdentityError) state = await this.store.ops.fail(op.id, message, true, this.now(), { identity: true, keepAttempt: true });
         else if (error instanceof ProviderError && error.network) state = await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });

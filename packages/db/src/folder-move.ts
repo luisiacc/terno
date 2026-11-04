@@ -36,12 +36,9 @@ export function moveThreadsToFolder(db: Db, c: { threadIds: readonly number[]; a
   const kept = new Set(threads.filter((t) => keptInInbox(!!t.in_inbox, shown.get(t.id) ?? [])).map((t) => t.id));
   const gmail = isGmail(db, accountId);
   const messages = byChunks(ids, (chunk) => db.all<{ id: number; thread_id: number; is_sent: number; in_inbox: number; gmail_labels: string | null }>(`SELECT id, thread_id, is_sent, in_inbox, gmail_labels FROM messages WHERE thread_id IN (${placeholders(chunk.length)}) AND is_draft = 0 AND is_trash = 0 AND is_spam = 0`, ...chunk));
-  // IMAP: your own mail stays in Sent, unless it's all there is. Gmail's labels go on the whole conversation
-  const received = new Set(messages.filter((m) => !m.is_sent).map((m) => m.thread_id));
-  const chosen = gmail ? messages : messages.filter((m) => !m.is_sent || !received.has(m.thread_id));
   const places = new Map<number, Set<string>>();
   if (!gmail) {
-    for (const l of byChunks(chosen.map((m) => m.id), (chunk) => db.all<{ message_id: number; mailbox: string }>(`SELECT message_id, mailbox FROM message_locations WHERE message_id IN (${placeholders(chunk.length)})`, ...chunk))) {
+    for (const l of byChunks(messages.map((m) => m.id), (chunk) => db.all<{ message_id: number; mailbox: string }>(`SELECT message_id, mailbox FROM message_locations WHERE message_id IN (${placeholders(chunk.length)})`, ...chunk))) {
       const set = places.get(l.message_id);
       if (set) set.add(l.mailbox);
       else places.set(l.message_id, new Set([l.mailbox]));
@@ -51,15 +48,18 @@ export function moveThreadsToFolder(db: Db, c: { threadIds: readonly number[]; a
   const targets = { kept: [] as number[], rest: [] as number[] };
   // where each is once what's on its way lands: A → B then B → A is a move out of B
   const pending = db.get(FOLDER_OPS_PENDING)
-    ? byChunks(chosen.map((m) => m.id), (chunk) => db.all<{ message_id: number; kind: string; payload_json: string }>(`SELECT ot.message_id, o.kind, o.payload_json FROM op_targets ot JOIN ops o ON o.id = ot.op_id WHERE ot.grp = 'location' AND ot.message_id IN (${placeholders(chunk.length)}) AND o.kind IN ('moveToFolder', 'leaveFolder') AND o.state IN ('queued', 'running') ORDER BY o.seq`, ...chunk))
+    ? byChunks(messages.map((m) => m.id), (chunk) => db.all<{ message_id: number; kind: string; payload_json: string }>(`SELECT ot.message_id, o.kind, o.payload_json FROM op_targets ot JOIN ops o ON o.id = ot.op_id WHERE ot.grp = 'location' AND ot.message_id IN (${placeholders(chunk.length)}) AND o.kind IN ('moveToFolder', 'leaveFolder') AND o.state IN ('queued', 'running') ORDER BY o.seq`, ...chunk))
     : [];
   const pendingOf = new Map<number, typeof pending>();
   for (const p of pending) pendingOf.set(p.message_id, [...(pendingOf.get(p.message_id) ?? []), p]);
-  for (const m of chosen) {
+  // IMAP: your own mail stays in Sent, unless it's all there is or it's in the folder this leaves. Gmail's labels go on the whole conversation
+  const received = new Set(messages.filter((m) => !m.is_sent).map((m) => m.thread_id));
+  for (const m of messages) {
     const has = gmail ? new Set(labelsOf(m.gmail_labels)) : new Set(places.get(m.id));
     for (const p of pendingOf.get(m.id) ?? []) applyFolderOp(has, p.kind, JSON.parse(p.payload_json) as MoveToFolderPayload | LeaveFolderPayload);
     const inFolder = has.has(folder);
     const inFrom = from !== null && has.has(from);
+    if (!gmail && m.is_sent && received.has(m.thread_id) && !inFrom) continue;
     if (inFolder && !inFrom) continue;
     (kept.has(m.thread_id) ? targets.kept : targets.rest).push(m.id);
     if (inFolder) moved.leftOnly.push(m.id);

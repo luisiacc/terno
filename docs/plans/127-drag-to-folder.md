@@ -129,3 +129,13 @@ The read-only critique made 10 points. Nine change the design; the design above 
 8. **Kept as designed:** the archive part stays thread-wide, as any archive's is. A draft with `in_inbox` is as rare as it is today, and skipping it would leave the thread in the Inbox.
 9. **Drags read rows once.** What the dragged rows are (their accounts, anything in Trash or Spam) is computed at drag start; `refuses` is a lookup, so pointer moves don't walk the payload. The backend checks again.
 10. **A partial index for pending moves.** `ops_folder_moves` (migration 47; an in-memory `folder_moves` index in IndexedDB) holds only unsettled `moveToFolder`/`leaveFolder` ops, so with a large unrelated backlog the probe stays one read. Perf gate with a backlog.
+
+## What the Codex code review changed
+
+Round 1 (`f363b27a..ef2e5266`) found five issues. Each is fixed with a test checked to fail without the fix.
+
+1. **An Archive copy was lost on undo.** Mail in Archive and a folder, filed into another, moved out of Archive while the journal called it an added copy; undo then deleted the new copy and Archive stayed empty. Archive's copy now moves only when it's the message's one copy. Test: `folder-move.int.test.ts`, kept, archived, filed, undone.
+2. **A refused undo had already changed mail.** With the reminders full, the undo took the mail out of the folder before reminders refused it. Reminders go first; nothing changes on a refusal, and a retry works. Test: `folder-move.int.test.ts`.
+3. **A row could leave a list while its thread stayed in that folder.** A sent-only conversation in A that later got a reply kept its own copy in A when moved to B. A thread's copies in the folder it leaves all move, yours too. Test: conformance, both stores.
+4. **A bulk move that failed partway lost its Undo.** The failure snack ignored what committed. It now offers an Undo of the earlier calls and the slices the backend names. Test: `folder-move.test.ts`.
+5. **An unknown outcome left the folder claiming the mail.** A lost answer stopped counting as pending but nothing recomputed. It recomputes and the lists follow. Test: conformance, both stores.

@@ -2443,7 +2443,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
                 continue;
               }
               const inbox = mine.find((l) => l.mailbox === r.inbox);
-              const archived = mine.find((l) => l.mailbox === r.archive);
+              // Archive's copy moves only when it's the message's one copy: with another, this is an added copy (as the journal says)
+              const archived = mine.length === 1 ? mine.find((l) => l.mailbox === r.archive) : undefined;
               if (source) moves.push(source);
               else if (keepInbox) { if (mine[0]) copies.push(inbox ?? mine[0]); }
               else if (inbox ?? archived) moves.push((inbox ?? archived)!);

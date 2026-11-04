@@ -1420,6 +1420,8 @@ export class IdbMailStore implements MailStore {
       const receipt = idbSendCopies(this.db).get(id);
       if (op?.state === "running" && sendAccepted && receipt?.submission === "pending" && (receipt.copyRequested || receipt.ready)) acceptCopySubmission(idbSendCopies(this.db), id, sendAccepted.warning);
       markOpUnknown(this.c, id, error, now);
+      // plan 127: no longer counted as on its way: the folder shows what's known until a pass finds where it is
+      if (op && isFolderOp(op.kind)) settleFolderOp(this.c, op, false);
     }),
     awaitAuth: (id, error, now) => this.command(() => awaitAuthOp(this.c, id, error, now), { early: true }),
     release: (id, now) => this.command(() => releaseOp(this.c, id, now), { early: true }),
