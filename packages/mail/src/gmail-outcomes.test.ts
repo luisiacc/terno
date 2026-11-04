@@ -16,7 +16,7 @@ afterEach(async () => {
 function mailbox(respond: (url: URL) => Response | Promise<Response>, initial: unknown = null) {
   const external = vi.spyOn(globalThis, "fetch").mockImplementation(async () => { throw new Error("external fetch forbidden"); });
   const fallback = vi.fn(async () => { throw new Error("unmanaged fetch forbidden"); });
-  const requests: URL[] = [], checkpoints: unknown[] = [], removals: number[] = [], updates: FlagUpdate[] = [];
+  const requests: URL[] = [], checkpoints: unknown[] = [], removals: number[] = [], updates: FlagUpdate[] = [], flagWrites: number[] = [];
   const rows = new Map<string, { id: number; providerMsgId: string; bytes: string; labels: string[] }>();
   let cursor = initial, refuseIngest = false, reservations = 0, needsProof = false;
   const pending = new Set<string>();
@@ -62,7 +62,7 @@ function mailbox(respond: (url: URL) => Response | Promise<Response>, initial: u
       for (const m of batch) rows.set(m.providerMsgId!, { id: rows.get(m.providerMsgId!)?.id ?? rows.size + 1, providerMsgId: m.providerMsgId!, bytes: m.bodyText!, labels: m.gmailLabels ?? [] });
       for (const m of batch) pending.delete(m.providerMsgId!);
     },
-    async updateFlags(batch) { updates.push(...batch); for (const update of batch) {
+    async updateFlags(batch) { flagWrites.push(batch.length); updates.push(...batch); for (const update of batch) {
       const row = [...rows.values()].find((r) => r.id === update.messageId)!;
       row.labels = update.gmailLabels!;
     } },
@@ -75,7 +75,7 @@ function mailbox(respond: (url: URL) => Response | Promise<Response>, initial: u
     expect(reservations).toBe(0); expect(net.googlePending()).toBe(0);
     expect(external).not.toHaveBeenCalled(); expect(fallback).not.toHaveBeenCalled();
   });
-  return { sync: () => provider.sync(sink), rows, requests, checkpoints, removals, updates,
+  return { sync: () => provider.sync(sink), rows, requests, checkpoints, removals, updates, flagWrites,
     pending, set needsProof(value: boolean) { needsProof = value; },
     get cursor() { return cursor; }, set refuseIngest(value: boolean) { refuseIngest = value; } };
 }
@@ -100,6 +100,72 @@ it.each(["missing", "foreign", 403, 429, 503] as const)("retains cached bytes an
   expect(box.checkpoints).toEqual([{ historyId: "12" }]);
   expect(box.requests.filter((u) => u.pathname.endsWith("/history")).map((u) => u.searchParams.get("startHistoryId"))).toEqual(["10", "10"]);
   expect(box.requests.filter((u) => u.pathname.endsWith("/messages/kept"))).toHaveLength(2);
+});
+
+function relabeled(count: number, answer: (id: string) => Response | Promise<Response>) {
+  const ids = Array.from({ length: count }, (_, i) => `g${String(i).padStart(3, "0")}`);
+  const box = mailbox((url) => url.pathname.endsWith("/history")
+    ? Response.json({ historyId: "12", history: [{ labelsAdded: ids.map((id) => ({ message: { id } })) }] })
+    : answer(url.pathname.split("/").at(-1)!), { historyId: "10" });
+  ids.forEach((id, i) => box.rows.set(id, { id: i + 1, providerMsgId: id, bytes: "cached", labels: ["INBOX"] }));
+  return { box, ids };
+}
+
+it("label changes are read side by side and written a page at a time", async () => {
+  let active = 0, peak = 0;
+  const { box, ids } = relabeled(120, async (id) => {
+    active++; peak = Math.max(peak, active);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    active--;
+    return Response.json({ id, labelIds: ["STARRED"] });
+  });
+  // a message this store doesn't hold is never asked for and leaves no empty write
+  box.rows.delete("g000");
+  await box.sync();
+  expect(peak).toBe(6);
+  expect(box.flagWrites).toEqual([49, 50, 20]);
+  expect(new Set(box.updates.map((u) => u.expectedProviderMsgId))).toEqual(new Set(ids.slice(1)));
+  for (const update of box.updates) expect(box.rows.get(update.expectedProviderMsgId!)!.id).toBe(update.messageId);
+  expect(box.requests.filter((u) => u.pathname.endsWith("/g000"))).toEqual([]);
+  expect(box.checkpoints).toEqual([{ historyId: "12" }]);
+});
+
+it("a failure past the first page keeps what was written, moves no cursor and replays", async () => {
+  let broken = true;
+  const { box } = relabeled(120, async (id) => {
+    if (id === "g055") return new Response(null, { status: 404 });
+    if (id === "g070" && broken) return new Response(null, { status: 503 });
+    return Response.json({ id, labelIds: ["STARRED"] });
+  });
+  await expect(box.sync()).rejects.toMatchObject({ retryable: true });
+  expect(box.flagWrites).toEqual([50]);
+  expect(box.rows.get("g049")!.labels).toEqual(["STARRED"]);
+  // the failed page is not written, and an absence found on it waits for the pass that finishes
+  expect(box.rows.get("g051")!.labels).toEqual(["INBOX"]);
+  expect(box.removals).toEqual([]);
+  expect(box.checkpoints).toEqual([]);
+  broken = false;
+  await box.sync();
+  expect(box.removals).toEqual([56]);
+  expect(box.rows.has("g055")).toBe(false);
+  expect(box.rows.get("g119")!.labels).toEqual(["STARRED"]);
+  expect(box.checkpoints).toEqual([{ historyId: "12" }]);
+});
+
+it("an identity proof's own 404 is no message's absence, whichever read it interrupts", async () => {
+  const box = mailbox((url) => {
+    if (url.pathname.endsWith("/history")) return Response.json({ historyId: "12", history: [{ labelsAdded: ["a", "b", "c"].map((id) => ({ message: { id } })) }] });
+    if (url.pathname.endsWith("/profile")) return new Response(null, { status: 404 });
+    throw new Error("a message read without its proof");
+  }, { historyId: "10" });
+  ["a", "b", "c"].forEach((id, i) => box.rows.set(id, { id: i + 1, providerMsgId: id, bytes: "cached", labels: ["INBOX"] }));
+  await box.sync().catch(() => {});
+  // /history proved first; now the proof is due on the reads
+  box.needsProof = true;
+  await expect(box.sync()).rejects.toBeDefined();
+  expect(box.removals).toEqual([]);
+  expect(box.rows.size).toBe(3);
+  expect(box.checkpoints.filter((c) => (c as { historyId?: string }).historyId === "12")).toHaveLength(0);
 });
 
 it.each([200, 404])("list omission plus terminal empty page requires a separate cached GET (%i)", async (status) => {

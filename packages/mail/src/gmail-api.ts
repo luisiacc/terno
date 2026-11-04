@@ -1287,22 +1287,23 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     const live: SyncPass = { ...sink, ingest: (messages) => sink.ingest(messages, { live: true }) };
     for (let i = 0; i < toFetch.length; i += 50) await fetchFull(toFetch.slice(i, i + 50), live);
 
-    let updates: FlagUpdate[] = [];
-    for (const gid of changed) {
-      if (deleted.has(gid)) continue;
-      const local = await known(gid);
-      if (!local) continue;
-      try {
-        const m = readMessage(await syncRead(`/messages/${gid}?format=minimal`, sink), gid);
-        updates.push({ messageId: local, expectedProviderMsgId: gid, flags: labelState(m.labelIds ?? []), gmailLabels: m.labelIds ?? [] });
-        if (updates.length === 50) { sink.check(); await sink.updateFlags(updates); updates = []; }
-      } catch (e) {
-        if (e instanceof GmailApiError && e.resource === `/messages/${gid}?format=minimal` && e.status === 404) deleted.add(gid);
-        else throw e;
-      }
+    const relabeled = [...changed].filter((gid) => !deleted.has(gid));
+    for (let i = 0; i < relabeled.length; i += 50) {
+      const updates: FlagUpdate[] = [];
+      await download(relabeled.slice(i, i + 50), async (gid) => {
+        const local = await known(gid);
+        if (!local) return;
+        try {
+          const m = readMessage(await syncRead(`/messages/${gid}?format=minimal`, sink), gid);
+          updates.push({ messageId: local, expectedProviderMsgId: gid, flags: labelState(m.labelIds ?? []), gmailLabels: m.labelIds ?? [] });
+        } catch (e) {
+          if (e instanceof GmailApiError && e.resource === `/messages/${gid}?format=minimal` && e.status === 404) deleted.add(gid);
+          else throw e;
+        }
+      });
+      sink.check();
+      if (updates.length) await sink.updateFlags(updates);
     }
-    sink.check();
-    if (updates.length) await sink.updateFlags(updates);
     sink.check();
     let removals: number[] = [];
     for (const gid of deleted) {
@@ -1533,7 +1534,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         .flatMap(([, p]) => (p && !p.startsWith("local:") ? [p] : []));
       if (!gmailIds.length) return;
       if (op.kind === "trash") {
-        for (const id of gmailIds) await api(`/messages/${id}/trash`, { method: "POST", requestRun: op.requestRun });
+        // each message its own request, and trashing one twice is harmless: a failure stops the ones not yet begun
+        await download(gmailIds, async (id) => { await api(`/messages/${id}/trash`, { method: "POST", requestRun: op.requestRun }); });
         return;
       }
       // plan 127: into and out of an account's folders; the Inbox's own label goes with the archive op that follows
