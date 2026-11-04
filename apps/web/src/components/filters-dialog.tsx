@@ -381,10 +381,10 @@ export function FiltersDialog() {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && setApp(returnTo === "settings" ? { dialog: "settings", settingsTab: "filters" } : { dialog: null })}>
-      <DialogContent className="flex h-[min(760px,88vh)] max-w-[min(1040px,94vw)] gap-0 overflow-hidden p-0 sm:max-w-[min(1040px,94vw)]" data-testid="filters-dialog" closeClassName="top-4 end-4">
+      <DialogContent movable="filters" className="flex h-[min(760px,88vh)] max-w-[min(1040px,94vw)] gap-0 overflow-hidden p-0 sm:max-w-[min(1040px,94vw)]" data-testid="filters-dialog" closeClassName="top-4 end-4">
         <DialogTitle className="sr-only">{t("settings.tab.filters")}</DialogTitle>
         <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-muted/30">
-          <div className="flex items-center justify-between px-4 pt-4 pb-2">
+          <div data-dialog-handle className="flex items-center justify-between px-4 pt-4 pb-2">
             <h2 className="text-sm font-semibold">{t("settings.tab.filters")}</h2>
             <Button
               size="xs"
@@ -456,8 +456,9 @@ export function FiltersDialog() {
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          {/* below the close, on the sidebar list's first line (the close sits on its header's) */}
-          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6 pt-12">
+          {/* the form starts below the close, on the sidebar list's first line (the close sits on its header's); the 4 px left over keeps a first control's focus ring from clipping */}
+          <div data-dialog-handle className="h-11 shrink-0" />
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6 pt-1">
             {/* only offered once an AI can really run (a model, and its key when it needs one); otherwise it could only fail */}
             {aiReady(ai) && (
               <div className="rounded-xl border border-primary/25 bg-gradient-to-br from-accent/80 to-transparent p-4">

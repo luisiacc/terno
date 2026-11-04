@@ -49,7 +49,7 @@ Terno's shared controls (`src/components/`) are BoardUI's free **Base** componen
 | Input OTP | port on first use | |
 | Link Button | `button.tsx` `link` / `link-secondary` | |
 | Meter | port on first use | Storage's segmented bar is the app's |
-| Modal | `dialog.tsx`, `alert-dialog.tsx` | |
+| Modal | `dialog.tsx`, `alert-dialog.tsx` | ours: `movable` drags a config dialog aside (plan 129, `lib/dialog-move.ts`); BoardUI's doesn't move |
 | Notification | port on first use | |
 | Number Field | `number-field.tsx` | |
 | Pagination | `pagination.tsx` | the simple Previous / range / Next form |

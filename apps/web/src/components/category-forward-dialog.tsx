@@ -42,7 +42,7 @@ export function CategoryForwardDialog({ category, open, onOpenChange }: { catego
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md" data-testid="category-forward-dialog">
+      <DialogContent movable="category-forward" className="sm:max-w-md" data-testid="category-forward-dialog">
         <DialogHeader>
           <DialogTitle>{t("category.forward.title", { name: category.name })}</DialogTitle>
           <DialogDescription>{t("category.forward.description")}</DialogDescription>

@@ -426,6 +426,20 @@
 [data-slot="tooltip-content"] {
   -webkit-app-region: no-drag;
 }
+/* a dialog the user can drag (plan 129): its margin and its handles say so, the rest doesn't inherit it */
+[data-slot="dialog-content"][data-movable] {
+  cursor: grab;
+}
+[data-slot="dialog-content"][data-movable] > * {
+  cursor: auto;
+}
+[data-slot="dialog-content"][data-movable] :is([data-slot="dialog-header"], [data-dialog-handle]) {
+  cursor: grab;
+}
+[data-slot="dialog-content"][data-moving],
+[data-slot="dialog-content"][data-moving] * {
+  cursor: grabbing !important;
+}
 /* hairlines: one device pixel on retina, in --hairline (or --border with hairline-strong) */
 @utility hairline {
   border: var(--hairline-w) solid var(--hairline-color, var(--hairline));

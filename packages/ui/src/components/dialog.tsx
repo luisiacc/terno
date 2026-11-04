@@ -6,6 +6,7 @@ import { t } from "@terno/i18n"
 
 import { Button } from "@terno/ui/components/button"
 import { CloseButton } from "@terno/ui/components/close-button"
+import { useDialogMove } from "@terno/ui/lib/dialog-move"
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
@@ -31,7 +32,8 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-overlay duration-base data-closed:duration-fast data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        // moved aside (plan 129), the app shows its real colors: the backdrop stays, and still catches a click
+        "fixed inset-0 isolate z-50 bg-overlay transition-[background-color] duration-base data-moved:bg-transparent data-closed:duration-fast data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
@@ -45,19 +47,34 @@ function DialogOverlay({
  * the title's first line; DialogHeader leaves it room. A sheet with an inset of its own (p-0) places it with
  * `closeClassName`.
  */
-function DialogContent({
+function DialogContent(props: DialogSurfaceProps) {
+  return (
+    <DialogPortal>
+      <DialogSurface {...props} />
+    </DialogPortal>
+  )
+}
+
+type DialogSurfaceProps = DialogPrimitive.Popup.Props & {
+  showCloseButton?: boolean
+  closeClassName?: string
+  /** Plan 129: the user can drag it aside, and it stays there for the session under this id. Its margin and DialogHeader are the handles; mark others `data-dialog-handle`. */
+  movable?: string
+}
+
+/** Inside the portal, so it mounts with each opening (a dialog's host may stay mounted between them). */
+function DialogSurface({
   className,
   children,
   showCloseButton = true,
   closeClassName,
+  movable,
   ...props
-}: DialogPrimitive.Popup.Props & {
-  showCloseButton?: boolean
-  closeClassName?: string
-}) {
+}: DialogSurfaceProps) {
+  const move = useDialogMove(movable)
   return (
-    <DialogPortal>
-      <DialogOverlay />
+    <>
+      <DialogOverlay data-moved={move.moved ? "" : undefined} />
       <DialogPrimitive.Popup
         render={(elementProps, state) => <ModalHostPopup open={state.open} elementProps={elementProps} />}
         data-slot="dialog-content"
@@ -67,6 +84,7 @@ function DialogContent({
           className
         )}
         {...props}
+        {...move.props}
       >
         {children}
         {showCloseButton && (
@@ -82,7 +100,7 @@ function DialogContent({
           />
         )}
       </DialogPrimitive.Popup>
-    </DialogPortal>
+    </>
   )
 }
 

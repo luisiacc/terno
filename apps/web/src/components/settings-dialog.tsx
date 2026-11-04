@@ -49,7 +49,7 @@ function SettingsPane({ title, children }: { title: string; children: React.Reac
   }, []);
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div ref={headerRef} data-testid="settings-header" className="scroll-hairline shrink-0 px-6 pt-5 pb-2">
+      <div ref={headerRef} data-testid="settings-header" data-dialog-handle className="scroll-hairline shrink-0 px-6 pt-5 pb-2">
         <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
       </div>
       <div ref={scrollerRef} className="relative min-h-0 flex-1 overflow-y-auto px-6 pt-2 pb-4">
@@ -88,13 +88,13 @@ export function SettingsDialog() {
         setDeletedSnippet(null);
       }}
     >
-      <DialogContent className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog" initialFocus={initialFocus}
+      <DialogContent movable="settings" className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog" initialFocus={initialFocus}
         // on the section title's line, at the content's inset (pt-5 px-6)
         closeClassName="top-[calc(var(--spacing)*5+(var(--text-lg--line-height)-var(--spacing)*6)/2)]">
         <DialogTitle className="sr-only">{t("common.settings")}</DialogTitle>
         <Tabs value={tab} onValueChange={(v) => setApp({ settingsTab: v as SettingsTab })} orientation="vertical" className="flex h-full min-w-0 flex-row gap-0">
           {/* macOS System Settings: a sidebar of sections with accent glyphs */}
-          <nav className="hairline-r hairline-strong flex w-[180px] shrink-0 flex-col bg-sidebar px-2 pt-5 pb-3">
+          <nav data-dialog-handle className="hairline-r hairline-strong flex w-[180px] shrink-0 flex-col bg-sidebar px-2 pt-5 pb-3">
             <h2 className="mb-3 px-2 text-md font-semibold tracking-tight">{t("common.settings")}</h2>
             {/* a 1 px gap: a hovered row's fill never runs into the selected one's */}
             <TabsList activateOnFocus className="h-auto w-full items-stretch gap-px rounded-none bg-transparent p-0 dark:bg-transparent">

@@ -46,7 +46,7 @@ export function AddAccountDialog() {
   const [draft, setDraft] = useState(EMPTY_ACCOUNT_DRAFT);
   return (
     <Dialog open={open} onOpenChange={(o) => !o && setApp({ dialog: null })}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md" data-testid="add-account-dialog">
+      <DialogContent movable="add-account" className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md" data-testid="add-account-dialog">
         <DialogHeader>
           <DialogTitle>{t("account.addTitle")}</DialogTitle>
           <DialogDescription>{t("account.addDescription")}</DialogDescription>
