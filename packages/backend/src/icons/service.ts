@@ -147,11 +147,12 @@ export class IconService {
   async data(ids: string[]): Promise<Record<string, string | null>> {
     await this.load();
     const out: Record<string, string | null> = {};
-    for (const id of ids) {
+    // a screenful of avatars, one file each (the contract caps a call at 50)
+    await Promise.all(ids.map(async (id) => {
       const e = this.cache.peek(id);
       const bytes = e?.kind === "icon" ? await this.cache.read(id) : null;
       out[id] = e?.kind === "icon" && bytes ? `data:${e.mime};base64,${toBase64(bytes)}` : null;
-    }
+    }));
     return out;
   }
 

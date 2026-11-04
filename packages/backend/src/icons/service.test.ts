@@ -146,6 +146,28 @@ describe("sender icons, fetching (plan 22)", () => {
     expect(data["d:nope.com"]).toBeNull();
   });
 
+  it("a screenful of icons is read side by side, each answered as it would be alone", async () => {
+    const { backend, client, events } = await setup({ seed: false });
+    await client.call("settings.update", { senderIcons: true });
+    const emails = ["a@netflix.com", "b@spotify.com", "c@figma.com"];
+    await client.call("icons.lookup", { emails });
+    await until(() => Object.keys(Object.assign({}, ...events.map((e) => e.icons))).length === 3);
+    const cache = (backend.icons as unknown as { cache: { read(id: string): Promise<Uint8Array | null> } }).cache;
+    const read = cache.read.bind(cache);
+    let active = 0, peak = 0;
+    vi.spyOn(cache, "read").mockImplementation(async (id) => {
+      active++; peak = Math.max(peak, active);
+      await settle();
+      active--;
+      return read(id);
+    });
+    const ids = ["d:netflix.com", "d:spotify.com", "d:figma.com"];
+    const data = await client.call("icons.data", { ids: [...ids, "d:nope.com"] });
+    expect(peak).toBe(3);
+    for (const id of ids) expect(data[id]).toMatch(/^data:image\/png;base64,/);
+    expect(data["d:nope.com"]).toBeNull();
+  });
+
   it("a site without an icon is remembered as such (no refetch); answers in microseconds from memory for 200 addresses", async () => {
     const { client, transport, events } = await setup({ seed: false, transport: stubTransport({ known: () => false }) });
     await client.call("settings.update", { senderIcons: true });
