@@ -65,6 +65,30 @@ describe("Google photos (plan 22)", () => {
     expect(failed.connections).toBe("failed");
   });
 
+  it("the user's own photo is read beside the lists, and a slow one doesn't hold them up", async () => {
+    let answer!: () => void, listed!: () => void;
+    const held = new Promise<void>((resolve) => { answer = resolve; }), reached = new Promise<void>((resolve) => { listed = resolve; });
+    const { get } = people({ connections: [[person(["a@x.com"], [{ url: PHOTO }])]], picture: PHOTO });
+    const slow: AuthorizedGet = async <T,>(url: string, signal?: AbortSignal) => {
+      if (url === USERINFO) await held; else listed();
+      return get<T>(url, signal);
+    };
+    const collecting = collectGooglePhotos(slow, USERINFO, { connections: true, otherContacts: false });
+    await reached;
+    answer();
+    expect(await collecting).toMatchObject({ own: expect.any(String), connections: "ok", contacts: [{ email: "a@x.com" }] });
+  });
+
+  it("cancelled while only the user's own photo was read: rejects, and its late answer is nobody's problem", async () => {
+    const ctl = new AbortController();
+    const reading: AuthorizedGet = async <T,>(_url: string, signal?: AbortSignal) => {
+      ctl.abort();
+      signal?.throwIfAborted();
+      return {} as T;
+    };
+    await expect(collectGooglePhotos(reading, USERINFO, { connections: false, otherContacts: false }, ctl.signal)).rejects.toThrow();
+  });
+
   it("cancelled mid-list: not one more page, and every request carried the signal (Codex review)", async () => {
     const ctl = new AbortController();
     const seen: (AbortSignal | undefined)[] = [];
