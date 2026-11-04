@@ -16,6 +16,7 @@ import { defineFactsConformance } from "./facts";
 import { defineReminderConformance } from "./reminders";
 import { defineScheduledConformance } from "./scheduled";
 import { defineForwardsConformance } from "./forwards";
+import { defineAiSummariesConformance } from "./ai-summaries";
 import { defineUnsubscribeConformance } from "./unsubscribe";
 import { defineHiddenInboxConformance } from "./hidden-inbox";
 import { defineTabsConformance } from "./tabs";
@@ -105,6 +106,11 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       return next;
     });
     defineForwardsConformance(fresh, async (s) => {
+      const next = await harness.reopen(s);
+      open.push(next);
+      return next;
+    });
+    defineAiSummariesConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);
       return next;

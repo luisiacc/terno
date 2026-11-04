@@ -9,3 +9,4 @@ export * from "./autocomplete";
 export * from "./perf";
 export * from "./twins-perf";
 export * from "./forwards-perf";
+export * from "./ai-summaries-perf";

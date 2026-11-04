@@ -174,6 +174,7 @@ import type { Key, MemDb } from "./mem";
 import { idbCachedPage, IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, PartialCommit, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
 import { UncertainWriteError } from "./uncertainty";
+import { attemptSummary, clearNewMail, clearSummaries, consumeNewMail, dropPendingSummaries, dropSummary, failSummary, finishSummary, getSummary, lastSummaryFailure, markNewMail, newMailPage, pendingSummaries, pendingSummaryCount, pruneNewMail, pruneSummaries, summarySources } from "./ai-summaries";
 import { cancelWaiting, filesReady, waitingCount, forwardRuleGone, forwardWork, approveRule, cancelForwards, claimForward, eligiblePage, failForward, forwardHolds, forwardSendOpen, forwardsActive, getForward, linkForwardSend, listForwards, markEligible, nextForwardDue, planForwards, pruneForwards, retryForward, setCategoryForward, stopRule, waitForFiles } from "./forwards";
 import { deleteScheduled, failScheduled, getScheduled, listScheduled, putScheduled, rescheduleScheduled, stillScheduled } from "./scheduled";
 import { answeredReminders, deleteExactReminders, deleteReminders, listReminders, putReminders } from "./reminders";
@@ -1241,7 +1242,7 @@ export class IdbMailStore implements MailStore {
         return { accountId, protocolId: current.protocol_id, epoch: flagTick(repo, accountId) };
       });
     },
-    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible }) => this.bodyCommand(async () => {
+    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible, newMail }) => this.bodyCommand(async () => {
       const callerCheck = check; check = () => { if (this.bodyClosing) throw new Error("The store is closing"); callerCheck?.(); };
       await this.bodyCleanup;
       const staged: IncomingMessage[] = [];
@@ -1262,6 +1263,8 @@ export class IdbMailStore implements MailStore {
           const result = ingestMessages(this.c, staged as IncomingMessage[], now, observation);
           // plan 116: live mail that may be forwarded, marked with its insertion (never later, by an upsert)
           if (forwardEligible) markEligible(this.c, result.inserted, now);
+          // plan 131 revision 5: the same for the AI features, whether or not its text is here or a classifier is ready
+          if (newMail) markNewMail(this.c, result.inserted, now, newMail);
           const touched = new Set(result.touchedThreads);
           const opIds: string[] = [];
           const folderMoves: FolderFilterMove[] = [];
@@ -1899,6 +1902,41 @@ export class IdbMailStore implements MailStore {
     deleteExact: (rows) => this.command(() => deleteExactReminders(this.c, rows), { early: true }),
     // reads messages: waits for them
     answered: (rows) => this.read(() => answeredReminders(this.c, rows)),
+  };
+
+  // plans 131, 132: they read messages, so they wait for them
+  readonly newMail: MailStore["newMail"] = {
+    page: (want, after, limit) => this.read(() => newMailPage(this.c, want, after, limit)),
+    consume: (want, messageIds) => this.command(() => consumeNewMail(this.c, want, messageIds)),
+    clear: (want) => this.command(() => clearNewMail(this.c, want)),
+    prune: (now) => this.command(() => pruneNewMail(this.c, now)),
+  };
+
+  readonly aiSummaries: MailStore["aiSummaries"] = {
+    get: (threadId) => this.read(() => getSummary(this.c, threadId)),
+    sources: (threadId) => this.read(() => summarySources(this.c, threadId)),
+    text: (requests) => this.bodyCommand(() => this.exclusive(async () => {
+      await this.readBodies(requests.map((r) => r.messageId));
+      const out = new Map<number, string | null>();
+      for (const { messageId, limit } of requests) {
+        const body = this.c.body(messageId);
+        if (!body) { out.set(messageId, null); continue; }
+        if (!body.capture_id) { out.set(messageId, body.body_text?.slice(0, limit) ?? null); continue; }
+        const capture = T(this.c, "body_captures").get(body.capture_id)!;
+        out.set(messageId, capture.text_parts === null ? null : await bodyPrefix(this.bodyPartSource(body.capture_id, 0), limit));
+      }
+      return out;
+    })),
+    pending: (after, limit) => this.read(() => pendingSummaries(this.c, after, limit)),
+    pendingCount: () => this.read(() => pendingSummaryCount(this.c)),
+    lastFailure: () => this.read(() => lastSummaryFailure(this.c)),
+    attempt: (threadId, kind, max, now) => this.command(() => attemptSummary(this.c, threadId, kind, max, now)),
+    fail: (threadId, kind, now) => this.command(() => failSummary(this.c, threadId, kind, now)),
+    drop: (threadId, expectThrough) => this.command(() => dropSummary(this.c, threadId, expectThrough)),
+    finish: (write) => this.command(() => finishSummary(this.c, write)),
+    dropPending: () => this.command(() => dropPendingSummaries(this.c)),
+    clear: () => this.command(() => clearSummaries(this.c)),
+    prune: (now, maxRows) => this.command(() => pruneSummaries(this.c, now, maxRows)),
   };
 
   // plan 116: messages are read by most of these, so they wait for them (the list and the next due don't)

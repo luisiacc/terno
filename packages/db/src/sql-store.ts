@@ -1,4 +1,4 @@
-import { bodyTestKey, bodyPartRange, finishBodyClose } from "@terno/store";
+import { bodyPrefix, bodyTestKey, bodyPartRange, finishBodyClose } from "@terno/store";
 import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
 import { publishBody } from "@terno/store";
 import { resolvable, parseSearch } from "@terno/core";
@@ -87,6 +87,7 @@ import {
   type ClassifyResult,
 } from "./categorize";
 import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
+import { attemptSummary, clearNewMail, clearSummaries, consumeNewMail, dropPendingSummaries, dropSummary, failSummary, finishSummary, getSummary, lastSummaryFailure, markNewMail, newMailPage, pendingSummaries, pendingSummaryCount, pruneNewMail, pruneSummaries, summarySources } from "./ai-summaries";
 import { cancelWaiting, filesReady, waitingCount, forwardRuleGone, forwardWork, approveRule, cancelForwards, claimForward, eligiblePage, failForward, forwardHolds, forwardSendOpen, forwardsActive, getForward, linkForwardSend, listForwards, markEligible, nextForwardDue, planForwards, pruneForwards, retryForward, setCategoryForward, stopRule, waitForFiles } from "./forwards";
 import { deleteScheduled, failScheduled, getScheduled, listScheduled, putScheduled, rescheduleScheduled, stillScheduled } from "./scheduled";
 import { answeredReminders, deleteExactReminders, deleteReminders, listReminders, putReminders } from "./reminders";
@@ -610,7 +611,7 @@ export class SqlMailStore implements MailStore {
     // Messages, filter claims, filter actions and their ops, and the categorizer's decisions
     // commit together: a crash can't record a filter as applied without its effects, nor an
     // auto-categorization without its message.
-    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible }) => this.bodyCommand(async () => {
+    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible, newMail }) => this.bodyCommand(async () => {
       const callerCheck = check; check = () => { if (this.bodyClosing) throw new Error("The store is closing"); callerCheck?.(); };
       await this.bodyCleanup;
       const staged: IncomingMessage[] = [];
@@ -630,6 +631,8 @@ export class SqlMailStore implements MailStore {
           const result = ingestMessages(this.db, staged as IncomingMessage[], now, observation);
         // plan 116: live mail that may be forwarded, marked with its insertion (never later, by an upsert)
         if (forwardEligible) markEligible(this.db, result.inserted, now);
+        // plan 131 revision 5: the same for the AI features, whether or not its text is here or a classifier is ready
+        if (newMail) markNewMail(this.db, result.inserted, now, newMail);
         const touched = new Set(result.touchedThreads);
         const opIds: string[] = [];
         const folderMoves: FolderFilterMove[] = [];
@@ -1061,6 +1064,45 @@ export class SqlMailStore implements MailStore {
       });
       } finally { if (body.bodyCapture) await finishBodyStage(this.db, body.bodyCapture.id, this.yieldTo); }
     }),
+  };
+
+  // ───────────────────────────── AI on new mail (plans 131, 132) ─────────────────────────────
+
+  readonly newMail: MailStore["newMail"] = {
+    page: async (want, after, limit) => newMailPage(this.db, want, after, limit),
+    consume: async (want, messageIds) => consumeNewMail(this.db, want, messageIds),
+    clear: async (want) => clearNewMail(this.db, want),
+    prune: async (now) => pruneNewMail(this.db, now),
+  };
+
+  readonly aiSummaries: MailStore["aiSummaries"] = {
+    get: async (threadId) => getSummary(this.db, threadId),
+    sources: async (threadId) => summarySources(this.db, threadId),
+    text: async (requests) => this.bodyCommand(async () => {
+      const out = new Map<number, string | null>();
+      for (const { messageId, limit } of requests) {
+        const reference = bodyReadReference(this.db, messageId);
+        if (!reference) {
+          out.set(messageId, this.db.get<{ text: string | null }>("SELECT substr(body_text, 1, ?) AS text FROM message_bodies WHERE message_id = ?", limit, messageId)?.text ?? null);
+          continue;
+        }
+        if (reference.textParts === null) { out.set(messageId, null); continue; }
+        const release = retainBody(this.db, reference.version);
+        try { out.set(messageId, await bodyPrefix(sqlBodyParts(this.db, reference.version, 0, this.yieldTo), limit)); }
+        finally { release(); }
+      }
+      return out;
+    }),
+    pending: async (after, limit) => pendingSummaries(this.db, after, limit),
+    pendingCount: async () => pendingSummaryCount(this.db),
+    lastFailure: async () => lastSummaryFailure(this.db),
+    attempt: async (threadId, kind, max, now) => attemptSummary(this.db, threadId, kind, max, now),
+    fail: async (threadId, kind, now) => failSummary(this.db, threadId, kind, now),
+    drop: async (threadId, expectThrough) => dropSummary(this.db, threadId, expectThrough),
+    finish: async (write) => finishSummary(this.db, write),
+    dropPending: async () => dropPendingSummaries(this.db),
+    clear: async () => clearSummaries(this.db),
+    prune: async (now, maxRows) => pruneSummaries(this.db, now, maxRows),
   };
 
   // ───────────────────────────── forwards (plan 116) ─────────────────────────────

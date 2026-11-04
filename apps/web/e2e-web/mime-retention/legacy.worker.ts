@@ -25,7 +25,7 @@ function fixture(db: Db): number {
   db.exec("ALTER TABLE messages DROP COLUMN unsubscribe");
   return threadId;
 }
-const laterTables = new Set(["scheduled_sends", "forward_eligible", "forwards", "forward_recipients"]);
+const laterTables = new Set(["scheduled_sends", "forward_eligible", "forwards", "forward_recipients", "ai_new_mail", "ai_summaries"]);
 async function idbFixture(name: string, db: Db): Promise<void> {
   const open = indexedDB.open(databaseName(name), 22);
   open.onupgradeneeded = () => {

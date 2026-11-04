@@ -8,6 +8,7 @@ export type { IncomingAttachment, IncomingLocation, IncomingMessage } from "@ter
 import { placeholders, type Db } from "./sqlite";
 import { pendingFlagFields, pruneOpTargets } from "./repos";
 import { mergeReminder } from "./reminders";
+import { mergeSummaries } from "./ai-summaries";
 import { answeredThreads, FACT_COLUMNS, noteSentMail, noteSentMailPrepared, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn } from "./facts";
 
 
@@ -192,6 +193,7 @@ export function mergeThreads(db: Db, into: number, from: number, result: IngestR
   }
   db.run("UPDATE OR IGNORE cls_decisions SET thread_id = ? WHERE thread_id = ?", into, from);
   mergeReminder(db, into, from);
+  mergeSummaries(db, into, from);
   db.run("DELETE FROM threads WHERE id = ?", from);
   result.touchedThreads.delete(from);
   result.touchedThreads.add(into);

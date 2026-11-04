@@ -401,7 +401,8 @@ export interface MailStore {
     beginObservation(accountId: number, options: FlagObservationOptions): Promise<FlagObservation | null>;
     /** threading, aggregates, filters (claims, actions, ops) and classification of one slice */
     /** `forwardEligible` (plan 116): live mail it inserts may be forwarded (forward_eligible), in the same commit */
-    ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null; observation?: FlagObservation; check?: () => void; forwardEligible?: boolean }): Promise<IngestOutcome>;
+    /** `newMail` (plan 131 revision 5): live mail it inserts is new mail the named features want (ai_new_mail), in the same commit */
+    ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null; observation?: FlagObservation; check?: () => void; forwardEligible?: boolean; newMail?: import("./ai-summaries").NewMailWants }): Promise<IngestOutcome>;
     setBody(messageId: number, text: string | null, html: string | null, o: { bodyParts?: import("@terno/core").ExactBodyParts; preparedBodyTokens?: Uint16Array[]; now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[]; captureUnavailable?: "size"; repair?: import("@terno/core").CaptureTicket; check?: () => void; expected?: { accountId: number; threadId: number; providerMsgId: string } }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] } & FlagReconciliation>;
     /** provider state for existing messages; preserves fields affected by queued/running ops inside the same unit */
     updateFlags(accountId: number, updates: readonly FlagUpdate[], observation?: FlagObservation, check?: () => void): Promise<{ touched: number[] } & FlagReconciliation>;
@@ -495,6 +496,51 @@ export interface MailStore {
     matchMessages(rule: FilterRule, now: number, messageIds: readonly number[]): Promise<number[]>;
     /** claims + actions + ops for one chunk; refuses (CANCELLED) if the filter changed since `ruleJson` */
     applyChunk(id: number, ruleJson: string, messageIds: readonly number[], now: number): Promise<{ applied: number; touched: number[]; opIds: string[] } & FlagReconciliation>;
+  };
+
+  /**
+   * Plan 131 revision 5: live mail marked for the AI features that want it, by the ingest that inserted it. A merge
+   * moves a mark with its message; removing the message removes it.
+   */
+  newMail: {
+    /** a feature's marks, oldest first, after a keyset */
+    page(want: import("./ai-summaries").NewMailWant, after: { arrivedAt: number; messageId: number } | null, limit: number): Promise<import("./ai-summaries").NewMailMark[]>;
+    /** the feature is done with these; a mark nothing wants any more goes */
+    consume(want: import("./ai-summaries").NewMailWant, messageIds: readonly number[]): Promise<void>;
+    /** the feature was turned off: it wants nothing of what's marked */
+    clear(want: import("./ai-summaries").NewMailWant): Promise<void>;
+    /** marks past their moment go; how many */
+    prune(now: number): Promise<number>;
+  };
+
+  /**
+   * Plan 132: a thread's summary and the queue of those still to make. Queueing happens in `sync.ingest`; a delete
+   * cascades from the thread; a merge invalidates. Not exported, not synced, not searched.
+   */
+  aiSummaries: {
+    get(threadId: number): Promise<import("./ai-summaries").AiSummaryRow | null>;
+    /** the thread and its messages as summaries see them, no bodies: an indexed read of one thread */
+    sources(threadId: number): Promise<import("./ai-summaries").SummarySources | null>;
+    /** the start of these messages' text (null: none here), read in one go */
+    text(requests: readonly { messageId: number; limit: number }[]): Promise<Map<number, string | null>>;
+    /** `pending` rows, oldest first, after a keyset */
+    pending(after: { createdAt: number; threadId: number } | null, limit: number): Promise<import("./ai-summaries").AiSummaryRow[]>;
+    pendingCount(): Promise<number>;
+    /** the newest failure, for Settings */
+    lastFailure(): Promise<{ kind: string; at: number } | null>;
+    /** a failed attempt on a pending row: it stays pending until `max` attempts, then fails; the state it's left in */
+    attempt(threadId: number, kind: string, max: number, now: number): Promise<import("./ai-summaries").AiSummaryState | null>;
+    fail(threadId: number, kind: string, now: number): Promise<void>;
+    /** it no longer qualifies: out of the queue (a result it held stays, hidden by its stamp) with its marks; never when the queue moved past `expectThrough` */
+    drop(threadId: number, expectThrough: number): Promise<void>;
+    /** the result (or a reuse), in one transaction with its re-checks: spam and trash block it, a change of sources makes it `moved` */
+    finish(write: import("./ai-summaries").SummaryWrite): Promise<import("./ai-summaries").SummaryWriteOutcome>;
+    /** the setting went off: nothing stays queued */
+    dropPending(): Promise<void>;
+    /** Settings → Storage → Clear AI data */
+    clear(): Promise<void>;
+    /** the bounds: pending rows past their moment, then the oldest results over `maxRows`; how many went */
+    prune(now: number, maxRows: number): Promise<number>;
   };
 
   /**

@@ -23,6 +23,7 @@ export * from "./gmail-refresh";
 export * from "./capture-repair";
 export * from "./thread-merges";
 export * from "./forwards";
+export * from "./ai-summaries";
 export * from "./folder-move";
 
 export * from "./body-parts";

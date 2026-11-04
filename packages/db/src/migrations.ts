@@ -1235,6 +1235,40 @@ CREATE TRIGGER body_fact_imap_identity_holds_delete AFTER DELETE ON imap_identit
 ` },
   // plan 127: unsettled folder moves, which membership reads: one probe however many other ops wait
   { version: 47, name: "pending folder moves", sql: "CREATE INDEX ops_folder_moves ON ops(seq) WHERE kind IN ('moveToFolder', 'leaveFolder') AND state IN ('queued', 'running');" },
+  // plan 131 revision 5: new mail the AI features want, marked by the ingest that inserted it; plan 132: summaries.
+  // Two empty tables: nothing to do at 50k threads
+  { version: 48, name: "ai new mail and summaries (plans 131, 132)", sql: `
+CREATE TABLE ai_new_mail (
+  message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+  thread_id INTEGER NOT NULL,
+  arrived_at INTEGER NOT NULL,
+  wants_summary INTEGER NOT NULL DEFAULT 0,
+  wants_category INTEGER NOT NULL DEFAULT 0
+) WITHOUT ROWID;
+CREATE INDEX ai_new_mail_thread ON ai_new_mail(thread_id);
+CREATE INDEX ai_new_mail_at ON ai_new_mail(arrived_at);
+CREATE INDEX ai_new_mail_summary ON ai_new_mail(arrived_at, message_id) WHERE wants_summary = 1;
+CREATE INDEX ai_new_mail_category ON ai_new_mail(arrived_at, message_id) WHERE wants_category = 1;
+CREATE TABLE ai_summaries (
+  thread_id INTEGER PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+  state TEXT NOT NULL CHECK (state IN ('pending','ready','failed')),
+  through_message_id INTEGER NOT NULL,
+  source_stamp TEXT,
+  content_hash TEXT,
+  prompt_version INTEGER,
+  language TEXT,
+  model TEXT,
+  provider TEXT,
+  endpoint TEXT,
+  body_json TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  error_kind TEXT,
+  created_at INTEGER NOT NULL,
+  generated_at INTEGER,
+  failed_at INTEGER
+) WITHOUT ROWID;
+CREATE INDEX ai_summaries_pending ON ai_summaries(created_at, thread_id) WHERE state = 'pending';
+` },
 
 ];
 
