@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { DraftTooLargeError, fitDraftBudget, headAndTail, type DraftParts } from "./budget";
 import { checkSpecifics, findPlaceholders } from "./checks";
-import { countWords, detectWritingLanguage, normalizeGreeting, normalizeSignOff, readCorpus, repeatedTrailers, writtenText } from "./extract";
+import { countWords, normalizeGreeting, normalizeSignOff, readCorpus, repeatedTrailers, writtenText } from "./extract";
 import { computeHabits, stockPhrases } from "./habits";
+import { detectWritingLanguage } from "./language";
 import { resolveIntent, type ContactLookup, type IntentPerson } from "./intent";
 import { ALL_PARTS, renderHabits, renderLevel, renderVoices } from "./render";
 import { chooseExamples, chooseSample, SAMPLE_LIMITS, sampleable } from "./sample";
@@ -207,7 +208,7 @@ describe("the sample", () => {
     expect(chooseSample(one, SAMPLE_LIMITS.person).length).toBe(10);
   });
 
-  it("picks examples of the same kind first, then the same language, newest first, without duplicates", () => {
+  it("picks examples in the same language first, then of the same kind, newest first, without duplicates", () => {
     const mails = [
       written("old reply in english and more", { id: 1, at: 1, isReply: true, language: "en" }),
       written("new message started by them", { id: 2, at: 9, isReply: false, language: "en" }),
@@ -216,7 +217,7 @@ describe("the sample", () => {
       written("newer reply in english", { id: 5, at: 4, isReply: true, language: "en" }),
       written("to a group", { id: 6, at: 7, isReply: true, language: "en", cc: ["b@x.example"] }),
     ];
-    expect(chooseExamples(mails, { isReply: true, oneToOne: true, language: "en" }, 3).map((m) => m.id)).toEqual([3, 1, 4]);
+    expect(chooseExamples(mails, { isReply: true, oneToOne: true, language: "en" }, 3).map((m) => m.id)).toEqual([3, 1, 2]);
   });
 
   it("the topic check doesn't take a manner note for a subject", () => {

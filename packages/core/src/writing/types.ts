@@ -2,8 +2,8 @@
 
 export type VoiceScope = "you" | "account" | "domain" | "person";
 
-/** "" when the text is too short or mixed to tell. */
-export type WritingLanguage = "en" | "es" | "";
+/** A language's code ("en", "fr", …), or "" when the text is too short or mixed to tell. */
+export type WritingLanguage = string;
 
 /** A sent message as the store has it: the body still holds quotes and the signature. */
 export interface SentMail {

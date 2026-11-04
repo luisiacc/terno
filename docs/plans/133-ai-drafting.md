@@ -760,3 +760,29 @@ The body is yours to open or fetch: `waitingBody` only says the text isn't here.
 | `writing.studyStyle` | `{ requestId, confirm? }`. Without `confirm`, nothing is sent: `{ status: "consent", provider, messages, tokens, usd, accountIds }` for the consent wording (`usd` null where the price is unknown). Show it, and call again with `confirm: { provider, accountIds }`. Then `{ status: "started", total }`, with `aiStudy` events `{ requestId, state: "running"|"done"|"failed"|"cancelled", done, total, errorKind? }`, stopped by `ai.cancel`. `{ status: "nothing" }`: not enough mail yet. A local provider asks nothing. A new account or provider asks again |
 
 Clear AI data and the strip's words are yours. Every string here's in the catalog already: `errors.ai.draftFailed`, `draftingOff`, `draftTooLarge`, `errors.writing.profileGone`, `profileTooLarge`.
+
+
+## Language, by account and person
+
+The user, after the first build: "for the drafts, lets have into account language also, maybe a user speaks in some accounts or to some people in one language, and maybe other languages in any combination of other accounts + other senders."
+
+Profiles were already kept per language at every level. What was too simple was deciding which language to write in: a reply always copied the other person, a new message looked only at the person and then the instruction, and only English and Spanish were recognized.
+
+**The decision is now made locally, per account and person (`chooseLanguage`, `packages/core/src/writing/language.ts`), and stated to the model in the task,** so the stable prompt prefix doesn't change. Most specific first:
+
+1. What the instruction asks for ("in French").
+2. What the author already writes in this conversation.
+3. A settled habit with this person on this account: 3 or more of the newest 12 messages, 70% in one language, even when they wrote in another. A person with mixed history has no habit.
+4. The language of the message being answered.
+5. Thinner history with this person.
+6. This person from another account.
+7. This domain on this account.
+8. This account.
+9. How they write in general.
+10. The instruction's language.
+
+- **Recognized languages:** English, Spanish, French, Portuguese, German, Italian and Dutch by common words; Japanese, Korean, Chinese, Russian, Arabic, Hebrew, Greek, Hindi and Thai by script. A short message that doesn't say gives no answer rather than a guess, and the next step decides.
+- **A level in another language** keeps its length, punctuation and manner but not its greeting, sign-off or stock phrases, which would be copied across (`voiceForLanguage`). Examples in the same language come first (`chooseExamples`).
+- **Shown and changeable:** the strip's popover says which language and why ("In Spanish, as you write to Tom from this account"), and saying "in French" in the row changes it, on a refinement too.
+
+**Proved:** unit tests for each step and combination; the real backend with a scripted model (`writing-language.test.ts`); and real Sonnet 5.5 holding to the named language in 5 of 5 combinations, including an English thread with a Spanish habit, French and German, and an instruction overriding a habit (`scripts/ai-real/language.real.ts`). What can't be proved here is how well the habit thresholds fit real people's mail; they're the first thing to look at in the user's blind read.

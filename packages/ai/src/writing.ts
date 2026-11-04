@@ -45,9 +45,11 @@ mail does this. If the other person asks something the task doesn't cover, leave
 it out rather than answer it or promise an answer. Write a short [placeholder] so
 the author fills it in only where a sentence can't stand without the fact.
 
-Reply in the language of the other person's last message, or for a new message
-the language of the author's mail to this person, or else the language of the
-task. The language the task itself is written in does not decide this.
+Write in the language the task names, whatever language the thread or the
+instruction is in, unless the instruction asks for another. If the task names
+none, reply in the language of the other person's last message, or for a new
+message the language of the author's mail to this person, or else the language of
+the instruction.
 
 Put the email's body inside <email></email> and write nothing outside it: no
 comment on the task, the instruction or what is missing. Plain text, paragraphs
@@ -108,6 +110,8 @@ export interface ComposeTask {
   /** what the author wants to say; empty answers what the thread needs */
   instruction: string;
   needsSubject: boolean;
+  /** decided per account and person (chooseLanguage); absent: the rules decide */
+  language?: string;
   /** the words already in the draft */
   draft?: string;
   previousDraft?: string;
@@ -144,6 +148,7 @@ export function composeTaskBlock(task: ComposeTask): string {
     `today: ${task.today}, ${task.timezone}`,
     `recipients: ${task.recipients.map(neutralizeTags).join(", ")}`,
   ];
+  if (task.language) lines.push(`language: ${task.language}`);
   if (task.situation) lines.push(`situation: ${neutralizeTags(task.situation)}`);
   if (task.attachments?.length) lines.push(`attached: ${task.attachments.map(neutralizeTags).join(", ")}`);
   if (task.needsSubject) lines.push("Write a subject too.");

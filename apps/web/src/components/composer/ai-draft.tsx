@@ -1,5 +1,5 @@
 import { parseAddressList } from "@terno/core";
-import { t } from "@terno/i18n";
+import { getLocale, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { CloseButton } from "@terno/ui/components/close-button";
 import { Kbd } from "@terno/ui/components/kbd";
@@ -59,11 +59,27 @@ function voiceLabel(strip: AiStrip, who: string): string {
   return t("aiDraft.voice.general");
 }
 
+const LANGUAGE_REASON = {
+  asked: "aiDraft.language.asked",
+  thread: "aiDraft.language.thread",
+  person: "aiDraft.language.person",
+  inbound: "aiDraft.language.inbound",
+  otherAccount: "aiDraft.language.otherAccount",
+  domain: "aiDraft.language.domain",
+  account: "aiDraft.language.account",
+  you: "aiDraft.language.you",
+  instruction: "aiDraft.language.instruction",
+} as const;
+
 /** What was used, in words, for the popover. */
 function voiceLines(strip: AiStrip, who: string, domain: string): string[] {
   const { used } = strip;
   const out: string[] = [];
   const name = who || t("aiDraft.voice.them");
+  if (used.language && used.languageReason !== "unknown") {
+    const language = new Intl.DisplayNames([getLocale()], { type: "language" }).of(used.language) ?? used.language;
+    out.push(t(LANGUAGE_REASON[used.languageReason], { language, who: name, domain: domain || name }));
+  }
   if (used.history === "none" && who) out.push(used.levels.includes("domain") && domain ? t("aiDraft.voice.newDomain", { name, domain }) : t("aiDraft.voice.new", { name }));
   if (used.history === "unavailable") out.push(t("aiDraft.voice.unavailable", { name }));
   if (used.learning) out.push(t("aiDraft.voice.stillLearning"));
@@ -94,6 +110,7 @@ function VoicePopover({ strip, toText }: { strip: AiStrip; toText: string }) {
             <li key={text}>{text}</li>
           ))}
         </ul>
+        <p className="mt-2 text-xs text-muted-foreground">{t("aiDraft.language.change")}</p>
         <p className="mt-2 text-xs text-muted-foreground">{t("aiDraft.used.model", { model: modelName(strip.used.model), provider: ai ? providerLabel(strip.used.provider, ai) : strip.used.provider })}</p>
         <Button
           type="button"

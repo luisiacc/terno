@@ -825,7 +825,7 @@ export function placePartial(key: string) {
 
 function emptyUsed(): AiStrip["used"] {
   const target = writingTarget(aiSettings());
-  return { levels: [], personFromOtherAccount: false, examples: 0, pastConversations: 0, threadMessages: 0, history: "none", learning: false, inboundSnippetOnly: false, language: "", provider: target.provider, model: aiSettings()?.model ?? "", reused: false };
+  return { levels: [], personFromOtherAccount: false, examples: 0, pastConversations: 0, threadMessages: 0, history: "none", learning: false, inboundSnippetOnly: false, language: "", languageReason: "unknown", provider: target.provider, model: aiSettings()?.model ?? "", reused: false };
 }
 
 /** Discard: the document never had it. */

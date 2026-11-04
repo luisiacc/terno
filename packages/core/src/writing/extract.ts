@@ -1,3 +1,4 @@
+import { detectWritingLanguage } from "./language";
 import { normalizeText } from "../text";
 import type { SentMail, WritingLanguage, WrittenMail } from "./types";
 
@@ -194,21 +195,6 @@ export function normalizeSignOff(text: string, selfNames: readonly string[] = []
   // "Love you lots,\nB xx": the name is in the closing's kiss
   if (lines.length > 2 && CLOSING.test(prev) && /^\p{L}{1,14}\s+x+$/iu.test(last) && isSelf(last.split(/\s+/)[0]!)) return `${prev}\n${last}`;
   return CLOSING.test(last) ? last : null;
-}
-
-const EN = new Set("the and you to is for that it of thanks please we be will have this with are can your on i i'm not was but at".split(" "));
-const ES = new Set("el la que de y en los las por para con una un es gracias saludos hola nos te lo le se su al del usted no como pero más".split(" "));
-
-export function detectWritingLanguage(text: string): WritingLanguage {
-  let en = 0;
-  let es = 0;
-  for (const w of text.toLowerCase().match(/\p{L}[\p{L}'’]*/gu) ?? []) {
-    if (EN.has(w)) en++;
-    else if (ES.has(w)) es++;
-  }
-  if (en >= 2 && en > es) return "en";
-  if (es >= 2 && es > en) return "es";
-  return "";
 }
 
 export const countWords = (text: string): number => text.match(/\p{L}[\p{L}\p{M}\p{N}'’-]*|\p{N}+(?:[.,:]\p{N}+)*/gu)?.length ?? 0;

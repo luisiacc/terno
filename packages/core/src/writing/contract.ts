@@ -1,3 +1,4 @@
+import type { LanguageReason } from "./language";
 import type { AiProviderId } from "../ai";
 import type { IntentDecision } from "./intent";
 import type { SpecificFinding } from "./checks";
@@ -51,8 +52,9 @@ export interface WritingUsed {
   learning: boolean;
   /** the message it answers was too big to keep: only its snippet was there */
   inboundSnippetOnly: boolean;
-  /** "en", "es" or "" when it couldn't tell */
+  /** a language's code, or "" when it couldn't tell */
   language: string;
+  languageReason: LanguageReason;
   provider: AiProviderId;
   model: string;
   /** Regenerate and "Shorter" re-used what the first draft assembled */
@@ -101,7 +103,7 @@ export interface WritingProfileView {
   scope: VoiceScope;
   /** `you`, `account:3`, `domain:3:acme.com`, `person:3:tom@acme.com` */
   scopeKey: string;
-  /** "" holds all of the scope's mail; "en" and "es" that language's */
+  /** "" holds all of the scope's mail; a code, that language's */
   language: string;
   accountId: number | null;
   samples: number;

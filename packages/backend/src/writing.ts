@@ -6,12 +6,15 @@ import {
   chooseExamples,
   CONSUMER_DOMAINS,
   DEFAULT_WRITING_PREFS,
+  chooseLanguage,
   detectWritingLanguage,
   DraftTooLargeError,
   estimateTokens,
   findPlaceholders,
   fitDraftBudget,
   headAndTail,
+  languageName,
+  namedLanguage,
   OUTPUT_TOKENS_LARGE,
   readCorpus,
   renderVoices,
@@ -19,6 +22,7 @@ import {
   resolveIntent,
   scopeKeys,
   UNKNOWN_LOCAL_CAPACITY,
+  voiceForLanguage,
   type Account,
   type AiComposeResult,
   type AiIntentResult,
@@ -32,14 +36,16 @@ import {
   type RenderedVoice,
   type VoiceJudgment,
   type VoiceProfile,
+  type VoiceScope,
   type WritingPrefs,
   type WritingProfileView,
   type WritingUsed,
+  type WrittenMail,
 } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type ParsedParamsOf } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { GENERATIONS_MAX_ROWS, type SummarySourceMessage, type ThreadContextMessage, type WritingProfileRow } from "@terno/store";
+import { GENERATIONS_MAX_ROWS, type MailStore, type SummarySourceMessage, type ThreadContextMessage, type WritingProfileRow } from "@terno/store";
 import type { BackendCore as Backend } from "./core";
 import { toRpcError } from "./ai-service";
 import { withoutQuotes } from "./summaries";
@@ -372,36 +378,51 @@ export class WritingService {
     const snippetOnly = answering !== null && !inboundText;
     const inbound = answering ? headAndTail(inboundText || answering.snippet, INBOUND_MAX_TOKENS) : null;
 
-    // §6.3: the language of their last message; for a new message, past mail to this person, else the instruction's
-    let language: string = inboundText ? detectWritingLanguage(inboundText) : "";
-    let chain = useMail ? await this.voiceChain(account, address, "") : [];
-    if (!language) language = chain.find((v) => v.scope === "person")?.habits.languages[0]?.text ?? "";
-    if (!language) language = detectWritingLanguage(p.instruction);
-    if (useMail && language) chain = await this.voiceChain(account, address, language);
-    const voice = useMail ? await this.withCorrections(renderVoices(chain, ALL_PARTS), account.id, address, [account.senderName, account.displayName].filter(Boolean)) : [];
-
     let history: WritingUsed["history"] = "none";
     let examples: { date: string; subject: string; text: string }[] = [];
     let past: { date: string; subject: string; snippet: string }[] = [];
+    let mails: WrittenMail[] = [];
+    let sentRefs = new Map<number, Awaited<ReturnType<MailStore["writing"]["sentTo"]>>["refs"][number]>();
     if (address && useMail) {
       const sent = await store.writing.sentTo({ addresses: [address], accountId: account.id, limit: EXAMPLE_CANDIDATES });
       history = sent.state;
       if (history === "none" && (await store.writing.sentTo({ addresses: [address], limit: 1 })).state !== "none") history = "unavailable";
       if (sent.refs.length) {
-        const byId = new Map(sent.refs.map((r) => [r.id, r]));
+        sentRefs = new Map(sent.refs.map((r) => [r.id, r]));
         const texts = await store.writing.corpus.texts(sent.refs.map((r) => r.id));
-        const mails = readCorpus(
+        mails = readCorpus(
           texts.flatMap((t) => {
-            const r = byId.get(t.id);
+            const r = sentRefs.get(t.id);
             return r ? [{ id: r.id, to: r.to, cc: r.cc, at: r.date, isReply: r.isReply, body: t.text }] : [];
           }),
           { signature: account.signature, selfNames: [account.senderName, account.displayName].filter(Boolean) },
         );
+      }
+    }
+
+    // §6.3: per account and person, from what they've done: someone may write one language here and another there
+    const neutral = useMail ? await this.voiceChain(account, address, "") : [];
+    const level = (scope: VoiceScope, other = false) => neutral.find((v) => v.scope === scope && !!v.fromOtherAccount === other)?.habits ?? null;
+    const { language, reason: languageReason } = chooseLanguage({
+      instruction: p.instruction,
+      threadOwn: (context?.messages ?? []).filter((m) => m.own && m.text).sort((a, b) => b.date - a.date).map((m) => detectWritingLanguage(withoutQuotes(m.text ?? ""))),
+      inbound: inboundText ? detectWritingLanguage(inboundText) : "",
+      toPerson: [...mails].sort((a, b) => b.at - a.at).map((m) => m.language),
+      otherAccount: level("person", true),
+      domain: level("domain"),
+      account: level("account"),
+      you: level("you"),
+    });
+    const chain = (useMail && language ? await this.voiceChain(account, address, language) : neutral).map((v) => voiceForLanguage(v, language));
+    const voice = useMail ? await this.withCorrections(renderVoices(chain, ALL_PARTS), account.id, address, [account.senderName, account.displayName].filter(Boolean)) : [];
+
+    if (address && useMail) {
+      if (mails.length) {
         const oneToOne = p.to.length + p.cc.length === 1;
         const chosen = chooseExamples(mails, { isReply: p.kind === "reply", oneToOne, language }, EXAMPLE_CANDIDATES).filter((m) => m.text.length <= EXAMPLE_MAX_CHARS);
         // §6.2: their earlier messages in this same conversation count first
-        const inThread = (id: string | number) => byId.get(Number(id))?.threadId === p.threadId;
-        examples = [...chosen.filter((m) => inThread(m.id)), ...chosen.filter((m) => !inThread(m.id))].slice(0, EXAMPLES).map((m) => ({ date: dayIn(m.at, p.timezone), subject: byId.get(Number(m.id))?.subject ?? "", text: m.text }));
+        const inThread = (id: string | number) => sentRefs.get(Number(id))?.threadId === p.threadId;
+        examples = [...chosen.filter((m) => inThread(m.id)), ...chosen.filter((m) => !inThread(m.id))].slice(0, EXAMPLES).map((m) => ({ date: dayIn(m.at, p.timezone), subject: sentRefs.get(Number(m.id))?.subject ?? "", text: m.text }));
       }
       const threads = await store.writing.threadsWith({ address, accountId: account.id, ...(p.threadId !== undefined ? { exclude: p.threadId } : {}), limit: PAST_CONVERSATIONS });
       const summaries = new Map((await store.threads.summaries(threads)).map((t) => [t.id, t]));
@@ -459,6 +480,7 @@ export class WritingService {
       learning: useMail && chain.length === 0 && (await this.learner.status()).state === "learning",
       inboundSnippetOnly: snippetOnly,
       language,
+      languageReason,
       provider: ai.providerId,
       model: ai.model,
     };
@@ -532,9 +554,14 @@ export class WritingService {
       }
       if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
       const today = dayIn(this.b.now(), p.timezone);
+      // "in French" on a refinement changes the language of a draft already assembled
+      const asked = namedLanguage(p.instruction);
+      const language = asked ?? snapshot.used.language;
+      const named = languageName(language);
       const task: ComposeTask = {
         kind: p.kind,
         today,
+        ...(named ? { language: named } : {}),
         timezone: p.timezone,
         recipients: [...p.to, ...p.cc].map((a) => (a.name ? `${a.name} <${a.email}>` : a.email)),
         instruction: p.instruction,
