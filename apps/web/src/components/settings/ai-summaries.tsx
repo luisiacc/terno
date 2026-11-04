@@ -190,7 +190,7 @@ export function AiUseGroup({ settings, update }: { settings: AppSettings; update
       <SettingsRow label={t("ai.usage.label")} hint={t("ai.usage.hint")} testId="ai-usage">
         {() => <span className="text-sm text-muted-foreground tabular" data-testid="ai-usage-value">{usage ? t("ai.usage.value", { count: usage.month.requests, usd: usd(usage.month.usd) }) : "…"}</span>}
       </SettingsRow>
-      <SettingsRow label={t("ai.limit.label")} hint={t("ai.limit.hint")} testId="ai-limit">
+      <SettingsRow labelFor label={t("ai.limit.label")} hint={t("ai.limit.hint")} testId="ai-limit">
         {(a) => (
           <NumberField
             id={a.id}
