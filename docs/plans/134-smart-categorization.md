@@ -1,6 +1,6 @@
 # Plan 134: smart categorization
 
-- **Status:** proposed. Nothing is built.
+- **Status:** built, parts A and B (see "What building it changed"). The Codex code review and the real-model eval haven't run.
 - **Builds on:** plan 131 (base), plan 02 (the engine), plan 05's W10 follow-ups (`AiAssist`'s lifecycle), plan 85 decisions 8, 9 and 10, plan 83 (hidden categories), plan 116 (forwarding).
 
 ## The requests
@@ -137,3 +137,22 @@ Codex (`gpt-6.1-sol`, high, read-only, against `f787771c`) raised 5 points on th
 3. **Evidence uses a whitelist of sources.** "Not filter or auto" excludes nothing, because neither is an `ExampleSource` (`packages/core/src/categorize/model.ts:4`), and agent placements do create examples (`packages/db/src/categorize.ts:28`). Samples come only from `user`, `suggestion` and `bulk`. A test proves an agent's example never appears.
 4. **Evidence is data in the user turn, with a budget.** `ClassifyInput.instructions` goes into the system prompt (`tasks.ts:107`), so sample subjects there would promote mail content to instructions. `ClassifyInput` gains `categories: { label; name; samples }[]`, rendered in the untrusted data block, with names and subjects capped and samples cut by the session's capacity before any category is dropped. Stable labels stay. The band-score plumbing goes. A suggestion records the AI's confidence, labeled as such, since the assist writes the local score today (`ai-assist.ts:177`) and the reader shows it as a percentage (`reader.tsx:380`).
 5. **Every filing condition is re-read in the filing transaction.** `recordAiSuggestion`'s pattern only covers candidacy and vetoes (`sql-store.ts:1280`). `recordAiFiling` also re-reads `autoApply`, example count, the safety valve, `showInInbox` and `forward`, any of which can change while `jev` answers. A category that has become hidden or forwarding downgrades to a suggestion. Each condition is tested changing mid-request.
+
+## What building it changed
+
+- **A JEV key the user can set.** The body says JEV is hosted-only and part B waits for plan 85's relay. The user asked otherwise ("allow user to set a JEV api key for future categorization, even though only we'll use it for testing"), so Settings → Categories has a key row, and part B is built on `calibrated` with no relay. Pro gating isn't built, so nothing is gated; "Pro ends" is tested as removing the key. Plan 85 decision 6's exception still needs its line there when the relay lands. The web build's reach to TypeSafe AI (CORS) is unknown.
+- **New categories are hidden by default, so most can't be filed into.** `categories.create` defaults `showInInbox` to false, and a hidden category only gets suggestions (§4). A user's new category gets AI filings only once it's shown in the Inbox. The rule is the plan's; the effect on how often JEV files is worth a decision, and the hint doesn't mention it.
+- **A second migration.** v49 adds a partial index on `cls_examples(category_id, at)` for the whitelisted sources, so evidence reads a few rows per category instead of walking a 50k-example category. Shape only. IndexedDB needs none: it walks its in-memory rows.
+- **`undecided` isn't in the result.** Revision 1 made it a wake-up, and every slice already wakes the assist, so the field would say nothing. `uncertain` is gone from `ClassifyResult`.
+- **The engine's turn is `suggestBackfill` on the one thread,** right before asking, for mail that came before a model was ready. It can suggest but not file, as for any late mail; what it settles isn't sent.
+- **A mark waits for the full body.** Up to its 3 days: a thread whose body never comes is never sent. `setBody` wakes the assist.
+- **Failures,** like plan 132's: `rate_limited`, `unavailable` and `timeout` end the pass and hold for a minute with the marks kept; the day's or month's limit holds until the next day; `auth`, `not_configured` and `blocked` wait for a settings change or new mail; a bad answer loses that thread's mark and the rest go on. There's no timer on a failure: the next mail, the network or a settings change looks again.
+- **A mode of "suggest" wins over `calibrated`:** a user who told the engine only to suggest doesn't get AI filings.
+- **What blocks filing without a veto becomes a suggestion:** auto-apply off, too few examples and a paused valve, like hidden and forwarding. A veto writes nothing. §4 only said they block.
+- **A provider or key change** drops the queue and what's in flight, and what's still marked goes to the new target. The hint names it, and a JEV key is a change like any other.
+- **An import never turns the switch on,** as with summaries: `aiCategorize` left the import's keys.
+- **Evidence budget:** 3 samples a category, cut to 2, 1, then 0 past 12,000 characters or the session's window, whichever is less. Every category stays.
+- **The reset is written at boot,** not at read time, in `AiAssist.start`, since it must precede any sync and no read should have that side effect. The line shows once and hides as soon as the switch is on again, since it says "this is now off".
+- **The reader says whose number it is:** "the AI's confidence: 90%", for AI suggestions.
+- **The fake model** matches a label by the name beside it, since labels are now `c1`. e2e gives the engine an empty model, because the demo mailbox's has an opinion on nearly anything.
+- **Not done:** `load.perf.test.ts` wasn't extended; `smart-categorization.perf.test.ts` measures evidence and filing at 50k threads in both stores (under 1 ms). The eval is `scripts/ai-real/categorize.real.ts`, written, not run. The `categorize.eval.test.ts` extension wasn't made.
