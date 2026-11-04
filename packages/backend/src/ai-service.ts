@@ -15,9 +15,12 @@ import {
   type AiProviderId,
   type AiTasks,
   type CompatiblePreset,
+  type CompletionRequest,
   type GeneratedFilter,
   type ModelInfo,
+  type ModelTransport,
   type ProviderConfig,
+  type StreamEvent,
 } from "@terno/ai";
 import { INTENT_CLAUDE_MODEL, JEV_DEFAULT_MODEL, messageOf, SUMMARY_DEFAULT_MODEL, textRef, WRITING_CLAUDE_MODEL, type AiTaskName } from "@terno/core";
 import { RpcError, type AiTestResult, type AppSettings } from "@terno/core/rpc";
@@ -39,6 +42,25 @@ interface Target {
 }
 
 const MODELS_TTL_MS = 60_000;
+
+/**
+ * A key the user took back stops spending: whatever was built under it aborts what it has in flight and refuses what
+ * comes next. A cache of clients can't do this, since a worker keeps the instance it already holds.
+ */
+function revocable(inner: ModelTransport, revoked: AbortSignal): ModelTransport {
+  const guard = (req: CompletionRequest): CompletionRequest => {
+    if (revoked.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
+    return { ...req, signal: AbortSignal.any([req.signal, revoked]) };
+  };
+  const wrapped: ModelTransport = { ...inner, complete: async (req) => inner.complete(guard(req)) };
+  if (inner.stream) {
+    const stream = inner.stream.bind(inner);
+    wrapped.stream = async function* (req: CompletionRequest): AsyncGenerator<StreamEvent> {
+      yield* stream(guard(req));
+    };
+  }
+  return wrapped;
+}
 
 /** AI failures cross the RPC boundary with their kind, so the UI can give specific help. */
 export function toRpcError(error: unknown): RpcError {
@@ -63,6 +85,8 @@ export class AiService {
   private readonly generating = new Map<string, AbortController>();
   /** in-flight foreground requests by id: only the connection that started one can stop it */
   private readonly requests = new Map<string, { clientId: string; controller: AbortController }>();
+  /** by secret name: aborted when that key is replaced or removed, and what was built under it dies with it */
+  private readonly keyLeases = new Map<string, AbortController>();
   readonly limiter: AiLimiter;
 
   constructor(
@@ -201,6 +225,7 @@ export class AiService {
   async forTask(task: AiTaskName | "filter" | "voice" | "intent", o: { foreground?: boolean } = {}): Promise<AiTasks> {
     const settings = await readSettings(this.b.store);
     const target = await this.targetFor(task, settings);
+    const lease = this.keyLease(keySecretName(target.provider, target.preset));
     const stored = await this.config(target);
     const capabilities = (await capabilitiesFor(this.b.store, target)) ?? undefined;
     // the limiter counts every request, so the SDK's own retries (unseen by it) stay off for these tasks
@@ -208,18 +233,26 @@ export class AiService {
     const { fetch: _fetch, ...hashed } = config;
     const foreground = o.foreground ?? (task === "filter" || task === "writing");
     const key = await sha256Hex(JSON.stringify({ ...hashed, task, foreground }));
+    // the key changed while this was reading it: what it holds may be the one taken back
+    if (lease.signal.aborted) return this.forTask(task, o);
     let ai = this.clients.get(key);
     if (!ai) {
       if (this.clients.size > 16) this.clients.clear();
       const local = isLocalProvider({ id: target.provider, baseURL: target.baseURL, preset: target.preset });
       ai = this.factory(config, {
-        wrapTransport: (transport) => this.limiter.wrap(transport, { task: task as LimiterTask, model: target.model, local, foreground }),
+        wrapTransport: (transport) => revocable(this.limiter.wrap(transport, { task: task as LimiterTask, model: target.model, local, foreground }), lease.signal),
         onCapabilities: (next) =>
           void saveCapabilities(this.b.store, target.provider, { model: target.model, baseURL: target.baseURL, preset: target.preset }, next),
       });
       this.clients.set(key, ai);
     }
     return ai;
+  }
+
+  private keyLease(secretName: string): AbortController {
+    let lease = this.keyLeases.get(secretName);
+    if (!lease) this.keyLeases.set(secretName, (lease = new AbortController()));
+    return lease;
   }
 
   /** The configured provider, ready to run tasks. Throws AiError when it can't. */
@@ -325,6 +358,9 @@ export class AiService {
       await setKeyHint(this.b.store, provider, preset, null);
       await bindKeyOrigin(this.b.store, name, null);
     }
+    // written first, so nothing built from here on can read the old one; done before the caller lets workers resume
+    this.keyLeases.get(name)?.abort();
+    this.keyLeases.delete(name);
     this.clients.clear();
     this.models.clear();
     return readSettings(this.b.store);

@@ -419,6 +419,12 @@ describe("resolveIntent", () => {
     expect(resolveIntent({ instruction: "tell ana it's fine", surface: thread, lookup: ready })).toMatchObject({ kind: "route", route: { type: "reply", to: ana } });
   });
 
+  it("the thread's own person who sent last needs no call, whoever else in the contacts shares the name", () => {
+    const anotherAna: IntentPerson = { name: "Ana Other", address: "ana@elsewhere.example" };
+    const crowded = (token: string): ContactLookup => ({ state: "ready", hits: [...people, anotherAna].filter((p) => p.name.toLowerCase().split(" ").includes(token)) });
+    expect(resolveIntent({ instruction: "tell ana it's fine", surface: thread, lookup: crowded })).toMatchObject({ kind: "route", route: { type: "reply", to: ana } });
+  });
+
   it("'Mark the invoice as paid' doesn't address Mark", () => {
     const decision = resolveIntent({ instruction: "Mark the invoice as paid", surface: { kind: "thread", participants: [mark, ana], lastSender: "ana@acme.example" }, lookup: ready });
     expect(decision).toEqual({ kind: "confirm", candidates: [mark] });
