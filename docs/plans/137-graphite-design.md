@@ -88,7 +88,7 @@ Fixed-purpose micro labels already listed in `source-scan.test.ts` keep their si
 - Existing designs: their baselines pass unchanged except the Style grid and palette lists.
 - Visual: inbox, reader, reply, palette, menus, Settings and first run, in light and dark, looked at side by side with the picture.
 
-First run lays the styles out in one row, one column per style, so it goes from four columns to five. Settings' two-column Style grid leaves Graphite on a row of its own, as a list that scrolls.
+First run lays the styles out in one row, one column per style, so it goes from four columns to five. Settings' Style picker becomes one row of compact cards too (see "The style picker" below).
 
 ## Perf
 
@@ -126,3 +126,11 @@ Two findings, both fixed, each with a test that fails without the fix:
 2. The pill tests passed with the `Button` change removed, because Send sets its own radius and the nested preview has no button in it. They now measure the real `Button`s from `controls-markup.ts`, including one nested in Luma (`10px`, where the root alias would have given Graphite's `8px`).
 
 Second pass, two findings, both fixed: hovering an unchecked box or radio fell back to `foreground/30` (1.84:1 in light), so a second token, `control-edge-hover`, draws it (`#5D5D5D` and `#9E9E9E` in Graphite, the ink at 30% in every other palette, as a test asserts); and `controls.spec` still compared the radio's edge with `input`. Review stopped here, with both passes' findings fixed.
+
+## The style picker
+
+Follow-up request, verbatim:
+
+> for the style selector, i think its too bigg make it a single line, max 2 lines
+
+At five styles the two-column grid ran three rows and pushed everything else down the tab. It's now a row of compact cards (a 72 px mock and the name), wrapping to a second row only when the window is too narrow for 5.5 rem each. The chosen style's description sits on one line below, as first run has it, and describes the group for screen readers. The mock's section label is gone (it couldn't fit), and "Inbox" goes from 13 px to 10 px. Light and dark colors keep their larger cards: colors need the room, and they weren't asked about.

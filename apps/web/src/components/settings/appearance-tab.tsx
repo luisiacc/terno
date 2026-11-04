@@ -1,7 +1,7 @@
 import { CUSTOM_PREFIX, DESIGN_PALETTE, customThemeSchema, MAX_CUSTOM_THEMES, type CustomTheme, type ThemeMode } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
-import { RadioCard, RadioDot, RadioGroup } from "@terno/ui/components/radio-group";
+import { RadioCard, RadioGroup } from "@terno/ui/components/radio-group";
 import { Textarea } from "@terno/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { contrastFailures } from "@terno/ui/themes/contrast";
@@ -30,45 +30,41 @@ const APPLIES_IN = { light: "settings.appearance.appliesLight", dark: "settings.
 function DesignPreview({ design, mode }: { design: DesignDefinition; mode: ThemeMode }) {
   const v = design.variants;
   const title = { fontFamily: "var(--type-list-title-family)", fontWeight: "var(--type-list-title-weight)", fontStyle: "var(--type-list-title-style)", letterSpacing: "var(--type-list-title-tracking)" } as const;
-  const section = { fontFamily: "var(--type-section-label-family)", fontWeight: "var(--type-section-label-weight)", fontStyle: "var(--type-section-label-style)" } as const;
   return (
-    <div data-design={design.id} data-theme={design.palette[mode]} aria-hidden className="flex h-[132px] w-full overflow-hidden rounded-lg border border-border bg-background font-sans text-foreground">
-      <div className="flex w-[30%] shrink-0 flex-col gap-1 bg-sidebar p-1.5">
-        {v.compose === "sidebar-pill" && <span className="h-3 rounded-full bg-primary" />}
-        {v.compose === "sidebar-outline" && <span className="h-3 rounded-[3px] bg-card shadow-hairline" />}
-        {v.compose === "sidebar-row" && <span className="h-1 w-4/5 rounded-full bg-muted-foreground" />}
-        <span className="mt-0.5 h-2 rounded-[calc(var(--nav-radius)*0.4)] bg-sidebar-accent" />
-        <span className="h-1 w-4/5 rounded-full bg-muted-foreground" />
-        <span className="h-1 w-3/5 rounded-full bg-muted-foreground" />
-        <span className="mt-1 truncate text-[8px] leading-none text-muted-foreground" style={section}>
-          {t("sidebar.categories")}
-        </span>
-        <span className="size-1.5 rounded-full bg-cat-amber" />
-        <span className="size-1.5 rounded-full bg-cat-emerald" />
-        <span className="size-1.5 rounded-full bg-cat-indigo" />
+    <div data-design={design.id} data-theme={design.palette[mode]} aria-hidden className="flex h-[72px] w-full overflow-hidden rounded-md border border-border bg-background font-sans text-foreground">
+      <div className="flex w-[30%] shrink-0 flex-col gap-[3px] bg-sidebar p-1">
+        {v.compose === "sidebar-pill" && <span className="h-1.5 rounded-full bg-primary" />}
+        {v.compose === "sidebar-outline" && <span className="h-1.5 rounded-[2px] bg-card shadow-hairline" />}
+        {v.compose === "sidebar-row" && <span className="h-0.5 w-4/5 rounded-full bg-muted-foreground" />}
+        <span className="h-1 rounded-[calc(var(--nav-radius)*0.2)] bg-sidebar-accent" />
+        <span className="h-0.5 w-4/5 rounded-full bg-muted-foreground" />
+        <span className="h-0.5 w-3/5 rounded-full bg-muted-foreground" />
+        <span className="mt-0.5 size-1 rounded-full bg-cat-amber" />
+        <span className="size-1 rounded-full bg-cat-emerald" />
+        <span className="size-1 rounded-full bg-cat-indigo" />
       </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-1 bg-pane p-2">
-        <div className="flex items-center justify-between">
-          <span className="truncate text-[13px] leading-none" style={title}>
+      <div className="flex min-w-0 flex-1 flex-col gap-[3px] bg-pane p-1">
+        <div className="flex items-center justify-between gap-0.5">
+          <span className="truncate text-[10px] leading-none" style={title}>
             {viewLabel("inbox")}
           </span>
-          {v.compose === "list-header" && <span className="size-2 rounded-[2px] border border-muted-foreground" />}
+          {v.compose === "list-header" && <span className="size-1.5 shrink-0 rounded-[1px] border border-muted-foreground" />}
         </div>
         {v.quickFilters === "chips" && (
           <div className="flex gap-0.5">
-            <span className="h-2 w-4 rounded-full bg-primary" />
-            <span className="h-2 w-5 rounded-full bg-muted" />
-            <span className="h-2 w-5 rounded-full bg-muted" />
+            <span className="h-1 w-2 rounded-full bg-primary" />
+            <span className="h-1 w-2.5 rounded-full bg-muted" />
+            <span className="h-1 w-2.5 rounded-full bg-muted" />
           </div>
         )}
         {/* more than fit: the list runs on past the mock's edge, as a real one does */}
         {[0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className={cn("relative flex shrink-0 items-center gap-1.5 rounded-[calc(var(--row-radius)*0.5)] px-1", design.avatar.row ? "h-[22px]" : "h-[16px]", i === 1 && "bg-row-selected")}>
-            {design.avatar.row > 0 && <span className={cn("shrink-0 rounded-full", design.avatar.row > 40 ? "size-4" : "size-3.5", ["bg-cat-rose/30", "bg-cat-indigo/30", "bg-cat-emerald/30"][i % 3])} />}
-            {!design.avatar.row && i === 0 && <span className="absolute left-0 size-1 rounded-full bg-unread" />}
-            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className={cn("h-1 rounded-full", i === 1 ? "w-1/2 bg-row-selected-foreground" : "w-2/5 bg-foreground")} />
-              <span className="h-0.5 w-5/6 rounded-full bg-muted-foreground" />
+          <div key={i} className={cn("relative flex shrink-0 items-center gap-1 rounded-[calc(var(--row-radius)*0.25)] px-0.5", design.avatar.row ? "h-[13px]" : "h-[11px]", i === 1 && "bg-row-selected")}>
+            {design.avatar.row > 0 && <span className={cn("shrink-0 rounded-full", design.avatar.row > 40 ? "size-2.5" : "size-2", ["bg-cat-rose/30", "bg-cat-indigo/30", "bg-cat-emerald/30"][i % 3])} />}
+            {!design.avatar.row && i === 0 && <span className="absolute left-0 size-0.5 rounded-full bg-unread" />}
+            <span className="flex min-w-0 flex-1 flex-col gap-px">
+              <span className={cn("h-0.5 rounded-full", i === 1 ? "w-1/2 bg-row-selected-foreground" : "w-2/5 bg-foreground")} />
+              <span className="h-px w-5/6 rounded-full bg-muted-foreground" />
             </span>
           </div>
         ))}
@@ -80,13 +76,9 @@ function DesignPreview({ design, mode }: { design: DesignDefinition; mode: Theme
 /** A design as one of the styles: a radio card (in the Style `RadioGroup`, whose value is the design's id). */
 function StyleCard({ design, mode }: { design: DesignDefinition; mode: ThemeMode }) {
   return (
-    <RadioCard value={design.id} data-testid={`design-card-${design.id}`} className="min-w-0 flex-col gap-1.5 p-1.5">
+    <RadioCard value={design.id} data-testid={`design-card-${design.id}`} className="min-w-0 flex-col items-center gap-1 p-1 pb-1.5">
       <DesignPreview design={design} mode={mode} />
-      <span className="flex items-center gap-1 px-0.5 text-sm">
-        <span className="truncate font-medium">{designName(design.id)}</span>
-        <RadioDot className="invisible ml-auto group-data-checked/radio:visible" />
-      </span>
-      <span className="px-0.5 text-xs text-muted-foreground">{designDescription(design.id)}</span>
+      <span className="max-w-full truncate px-0.5 text-xs font-medium">{designName(design.id)}</span>
     </RadioCard>
   );
 }
@@ -290,22 +282,27 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
       <SettingsGroup>
         <SettingsRow stacked label={t("settings.appearance.style")} hint={t("settings.appearance.style.hint")}>
           {(a) => (
-            <RadioGroup
-              aria-labelledby={a["aria-labelledby"]}
-              aria-describedby={a["aria-describedby"]}
-              value={settings.design}
-              onValueChange={(id) => void updateAppearance({ design: id as DesignDefinition["id"] })}
-              // the chosen style chosen again (clicked, or arrowed back onto) is a choice too: it cancels a switch still
-              // waiting for its faces (Codex code review #2, second pass #3)
-              onReselect={(id) => void updateAppearance({ design: id as DesignDefinition["id"] })}
-              // two across, each half the row: fixed-width cards left a hole beside the last column
-              className="grid grid-cols-2 gap-2"
-              data-testid="design-grid"
-            >
-              {DESIGNS.map((d) => (
-                <StyleCard key={d.id} design={d} mode={mode} />
-              ))}
-            </RadioGroup>
+            <>
+              <RadioGroup
+                aria-labelledby={a["aria-labelledby"]}
+                aria-describedby={`${a["aria-describedby"]} design-description`}
+                value={settings.design}
+                onValueChange={(id) => void updateAppearance({ design: id as DesignDefinition["id"] })}
+                // the chosen style chosen again (clicked, or arrowed back onto) is a choice too: it cancels a switch still
+                // waiting for its faces (Codex code review #2, second pass #3)
+                onReselect={(id) => void updateAppearance({ design: id as DesignDefinition["id"] })}
+                // one row at Settings' width; a narrower window wraps to a second rather than squeezing the mocks
+                className="grid grid-cols-[repeat(auto-fit,minmax(5.5rem,1fr))] gap-2"
+                data-testid="design-grid"
+              >
+                {DESIGNS.map((d) => (
+                  <StyleCard key={d.id} design={d} mode={mode} />
+                ))}
+              </RadioGroup>
+              <p id="design-description" data-testid="design-description" className="mt-2 text-xs text-muted-foreground">
+                {designDescription(settings.design)}
+              </p>
+            </>
           )}
         </SettingsRow>
       </SettingsGroup>

@@ -8,6 +8,8 @@
  */
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
+import en from "@terno/i18n/locales/en";
+import es from "@terno/i18n/locales/es";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import type { DesignDefinition } from "../../../packages/ui/src/designs/types";
 import { sqlDb } from "../../backend-dev/src/server";
@@ -32,6 +34,28 @@ test.describe("in every design", { tag: "@design" }, () => {
     await page.locator("[data-ready]").waitFor();
     await expect(rows(page).first()).toHaveCSS("height", `${d.rows.compact}px`);
     await server.backend.server.invoke("settings.update", { density: "comfortable" }, ctx);
+  });
+
+  test("Settings' styles sit on one row, every name in full, with the chosen one's description on a line below", async ({ app: page }) => {
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-appearance").click();
+    const cards = page.getByTestId("design-grid").getByRole("radio");
+    await expect(cards).toHaveCount(DESIGNS.length);
+    const tops = await cards.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
+    expect(new Set(tops).size).toBe(1);
+    // a truncated name is wider than its box
+    expect(await cards.evaluateAll((els) => els.filter((el) => { const n = el.querySelector(":scope > span"); return n && n.scrollWidth > n.clientWidth; }).length)).toBe(0);
+    const description = page.getByTestId("design-description");
+    await expect(description).toBeVisible();
+    await expect(page.getByTestId("design-grid")).toHaveAccessibleDescription(new RegExp((await description.textContent())!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    // every style's description takes one line at this width, in both languages
+    for (const d of DESIGNS) for (const locale of [en, es]) {
+      const height = await description.evaluate((el, text) => {
+        el.textContent = text;
+        return el.getBoundingClientRect().height;
+      }, locale[`design.${d.id}.description`]);
+      expect(height, d.id).toBeLessThan(20);
+    }
   });
 
   test("the parts every variant keeps: one compose control, rows as options with their parts, the subject, the chips, the reply controls", async ({ app: page }) => {
