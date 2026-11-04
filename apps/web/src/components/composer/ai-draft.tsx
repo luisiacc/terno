@@ -8,7 +8,7 @@ import { Spinner } from "@terno/ui/components/spinner";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import { modelName, providerLabel, writingTarget } from "~/lib/ai";
-import { acknowledgeTold, answer, closeRow, commitHeld, discard, discardAndSend, includeEveryone, keepWriting, noteBody, place, placePartial, previewMode, previewText, recallInstruction, refine, retry, setInstruction, stop, submit, subscribePreview, undoCommit, useAiDraft, type AiSession, type AiStrip } from "~/lib/ai-draft";
+import { acknowledgeTold, answer, closeRow, commitHeld, discard, discardAndSend, includeEveryone, keepWriting, noteBody, place, placePartial, previewMode, previewText, recallInstruction, refine, retry, setInstruction, stop, submit, subscribePreview, takeFocusRequest, undoCommit, useAiDraft, type AiSession, type AiStrip } from "~/lib/ai-draft";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { useDrafts } from "~/lib/drafts";
 import { setApp, useApp } from "~/state/app";
@@ -318,7 +318,8 @@ function Guard({ s }: { s: AiSession }) {
 }
 
 function Field({ s, id }: { s: AiSession; id: string }) {
-  const notes = useDrafts((state) => (state.drafts[s.key]?.bodyText ?? "").trim() !== "");
+  // the editor's, as it is now: the draft's copy lags it until the next save
+  const notes = useController(s.key)?.empty() === false;
   const threaded = useDrafts((state) => (state.drafts[s.key]?.mode ?? "new") !== "new");
   const working = s.phase === "resolving";
   const placeholder = s.strip ? t("aiDraft.placeholder.refine") : notes ? t("aiDraft.placeholder.notes") : threaded ? t("aiDraft.placeholder.reply") : t("aiDraft.placeholder.new");
@@ -373,9 +374,9 @@ export function AiRow({ draftKey }: { draftKey: string }) {
   // asked for: the field, or the row's default choice. Programmatic, so no ring (plan 54)
   const focus = s?.focus ?? 0;
   useLayoutEffect(() => {
-    if (!focus) return;
+    if (!takeFocusRequest(draftKey, focus)) return;
     rootRef.current?.querySelector<HTMLElement>("[data-ai-default], [data-testid=ai-row-input]")?.focus({ preventScroll: true });
-  }, [focus]);
+  }, [draftKey, focus]);
   if (!s) return null;
   const content = (() => {
     if (s.guard) return <Guard s={s} />;
@@ -477,14 +478,16 @@ export function AiPreview({ draftKey, className }: { draftKey: string; className
     );
   }
   const below = mode === "below";
+  // never while it's writing: only text waiting for a choice (a suggestion, what came before a failure) can be read
+  const waiting = s?.phase === "choice" || s?.phase === "error";
   return (
     <div
       ref={rootRef}
       data-testid="ai-preview"
       data-mode={mode}
-      aria-hidden={below && s?.phase === "choice" ? undefined : true}
-      role={below && s?.phase === "choice" ? "region" : undefined}
-      aria-label={below && s?.phase === "choice" ? t("aiDraft.suggestion") : undefined}
+      aria-hidden={waiting ? undefined : true}
+      role={waiting ? "region" : undefined}
+      aria-label={waiting ? t("aiDraft.suggestion") : undefined}
       className={cn(below ? "hairline-t mx-3.5 mt-2 pt-2 pb-1 [grid-area:2/1]" : "pointer-events-none [grid-area:1/1]")}
     >
       {below && <p className="mb-1 text-xs text-muted-foreground">{t("aiDraft.suggestion")}</p>}

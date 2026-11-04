@@ -54,14 +54,16 @@ function editor(key: string, initial = "") {
       c.text = how === "replace" || !c.text ? text : `${c.text}\n\n${text}`;
       c.doc = {};
       c.placeholder = placeholder;
-      // as the real editor's change does: the draft is dirty, and autosave follows
+      // as the real editor's change does: the draft is dirty, autosave follows, and its listeners hear of it at once
       editDraft(key, {});
+      for (const l of listeners) l();
       return { doc: c.doc };
     },
     undoGenerated(doc: unknown) {
       if (c.doc !== doc) return null;
       c.text = history.pop()!.text;
       c.doc = {};
+      for (const l of listeners) l();
       return { doc: c.doc };
     },
     docToken: () => c.doc,
@@ -687,6 +689,141 @@ describe("§5.2: a sentence's decision", () => {
     await run;
     // still cold: treated as nobody
     expect(calls("ai.compose")).toHaveLength(1);
+  });
+});
+
+describe("what the Codex review found", () => {
+  const tomRoute = { decision: { kind: "route", route: { type: "fill-draft", to: { name: "Tom Reed", address: "tom@acme.test" } } }, fromAccountId: 2, confirmFailed: false };
+
+  it("1: To or From changing while the decision is on its way: the old decision is dropped, and it asks again about what's there now", async () => {
+    const key = createDraft(newFields(1));
+    editor(key);
+    await store.openRow({ key });
+    store.setInstruction(key, "tell tom that this is just fine");
+    void store.submit(key);
+    await tick();
+    expect(last("ai.resolveIntent").params.surface).toEqual({ kind: "list" });
+    editDraftRecipients(key, "to", "ana@example.test", ["ana@example.test"]);
+    last("ai.resolveIntent").resolve(tomRoute);
+    await tick();
+    expect(useDrafts.getState().drafts[key]!.toText).toBe("ana@example.test");
+    expect(useDrafts.getState().drafts[key]!.accountId).toBe(1);
+    expect(calls("ai.compose")).toHaveLength(0);
+    expect(calls("ai.resolveIntent")).toHaveLength(2);
+    expect(last("ai.resolveIntent").params.surface).toEqual({ kind: "draft", recipients: [{ name: "", email: "ana@example.test" }] });
+  });
+
+  it("2: a named participant whose message has a Reply-To: to them alone, not the team it names", async () => {
+    const threads = await import("~/state/threads");
+    const message = { id: 3, accountId: 1, from: { name: "Tom Reed", email: "tom@acme.test" }, to: [{ name: "", email: "me@example.test" }], cc: [], replyTo: [{ name: "Team", email: "team@acme.test" }, { name: "List", email: "list@acme.test" }], isSent: false, bodyText: "Hi", snippet: "Hi", subject: "Contract", date: 1, rfcMessageId: "<3@x>", attachments: [], attachmentState: "complete" };
+    vi.mocked(threads.loadThread).mockResolvedValueOnce({ thread: { id: 7, accountId: 1, subject: "Contract" }, messages: [message, { ...message, id: 4, from: { name: "Ana", email: "ana@example.test" }, replyTo: [] }] } as never);
+    const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 4, toText: "ana@example.test" });
+    const { addressReply } = await import("./compose");
+    expect(await addressReply(key, 7, { name: "Tom Reed", address: "tom@acme.test" })).toBe(true);
+    const d = useDrafts.getState().drafts[key]!;
+    expect(d.toText).toBe("Tom Reed <tom@acme.test>");
+    expect(d.ccText).toBe("");
+    expect(d.inReplyToMessageId).toBe(3);
+  });
+
+  it("3: an image alone in the body is the user's: it ends in a choice, never replaced by itself, and no empty notes are sent", async () => {
+    const key = createDraft({ ...newFields(1), toText: "ana@example.test" });
+    const { c } = editor(key);
+    c.empty = () => false;
+    await store.openRow({ key });
+    await store.submit(key);
+    expect(last("ai.compose").params.draft).toBeUndefined();
+    expect(store.previewMode(session(key))).toBe("below");
+    last("ai.compose").resolve(done("Words."));
+    await tick();
+    expect(session(key)!.phase).toBe("choice");
+    expect(c.text).toBe("");
+  });
+
+  it("6: the editor's history evicted: Undo still takes the words back and the subject with them, if they're still what it wrote", async () => {
+    const { key, unmount } = await writing({ mode: "new" });
+    last("ai.compose").resolve(done("Body.", { subject: "Generated" }));
+    await tick();
+    unmount();
+    const rebuilt = editor(key, "Body.");
+    store.undoCommit(key);
+    expect(useDrafts.getState().drafts[key]!.bodyText).toBe("");
+    expect(useDrafts.getState().drafts[key]!.subject).toBe("");
+    expect(session(key)).toBeUndefined();
+    rebuilt.unmount();
+  });
+
+  it("6: and if they aren't, nothing is overwritten, the subject stays and the strip just goes", async () => {
+    const { key, unmount } = await writing({ mode: "new" });
+    last("ai.compose").resolve(done("Body.", { subject: "Generated" }));
+    await tick();
+    unmount();
+    editor(key, "Body, and more of mine.");
+    editDraft(key, { bodyText: "Body, and more of mine." });
+    store.undoCommit(key);
+    expect(useDrafts.getState().drafts[key]!.bodyText).toBe("Body, and more of mine.");
+    expect(useDrafts.getState().drafts[key]!.subject).toBe("Generated");
+    expect(session(key)).toBeUndefined();
+  });
+
+  it("7: provenance that failed is tried again before the send, so the model's text doesn't count as the user's", async () => {
+    rpc.deferred.add("writing.commitGeneration");
+    const { key } = await writing();
+    last("ai.compose").resolve(done("Sent."));
+    await tick();
+    await tick();
+    last("writing.commitGeneration").reject(new Error("offline"));
+    await tick();
+    expect(calls("writing.commitGeneration")).toHaveLength(1);
+    rpc.deferred.delete("writing.commitGeneration");
+    expect(await sendDraft(key)).toBe(true);
+    expect(calls("writing.commitGeneration")).toHaveLength(2);
+    const order = rpc.calls.map((c) => c.method);
+    expect(order.lastIndexOf("writing.commitGeneration")).toBeLessThan(order.indexOf("compose.send"));
+  });
+
+  it("8: closing the row while it works out where it goes stops that call too", async () => {
+    const key = createDraft({ ...newFields(1), toText: "ana@example.test" });
+    editor(key);
+    await store.openRow({ key });
+    store.setInstruction(key, "tell tom");
+    void store.submit(key);
+    await tick();
+    const requestId = last("ai.resolveIntent").params.requestId;
+    store.closeRow(key);
+    expect(last("ai.cancel").params.requestId).toBe(requestId);
+    // and the answer, when it comes, does nothing
+    last("ai.resolveIntent").resolve(tomRoute);
+    await tick();
+    expect(useDrafts.getState().drafts[key]!.toText).toBe("ana@example.test");
+    expect(calls("ai.compose")).toHaveLength(0);
+  });
+
+  it("9: a run starting never takes focus from another draft's editor", async () => {
+    const other = document.createElement("div");
+    other.dataset.testid = "composer";
+    other.dataset.draftKey = "another";
+    const otherBody = document.createElement("div");
+    otherBody.dataset.testid = "compose-body";
+    otherBody.tabIndex = 0;
+    other.append(otherBody);
+    document.body.append(other);
+    otherBody.focus();
+    const key = createDraft({ ...newFields(1), toText: "ana@example.test" });
+    const { c } = editor(key);
+    await store.openRow({ key });
+    await store.submit(key);
+    expect(session(key)!.phase).toBe("writing");
+    expect(c.focused).toBe(0);
+    expect(document.activeElement).toBe(otherBody);
+    other.remove();
+  });
+
+  it("10: the row's control takes focus for a request once: mounting again doesn't take it again", async () => {
+    expect(store.takeFocusRequest("k", 0)).toBe(false);
+    expect(store.takeFocusRequest("k", 1)).toBe(true);
+    expect(store.takeFocusRequest("k", 1)).toBe(false);
+    expect(store.takeFocusRequest("k", 2)).toBe(true);
   });
 });
 

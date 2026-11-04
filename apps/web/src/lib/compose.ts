@@ -819,9 +819,9 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
 }
 
 /**
- * Plan 133 §5.2: a reply to someone who may not be its last sender: it answers their newest message, to them alone
- * (a Bcc'd or Cc'd person with no message keeps the reply's source). Only for a draft Terno filled in: a person's own
- * recipients are never replaced. False when nothing changed.
+ * Plan 133 §5.2: a reply to someone who may not be its last sender: it answers their newest message, to them alone,
+ * whatever Reply-To that message names (a Cc'd person with no message keeps the reply's source). Only for a draft Terno
+ * filled in: a person's own recipients are never replaced. False when nothing changed.
  */
 export async function addressReply(key: string, threadId: number, person: { name: string; address: string }): Promise<boolean> {
   const detail = await loadThread(threadId);
@@ -833,8 +833,8 @@ export async function addressReply(key: string, threadId: number, person: { name
   const address = person.address.toLowerCase();
   const source = [...detail.messages].reverse().find((m) => !m.isSent && m.from.email.toLowerCase() === address);
   const fields = replyFields("reply", detail, account, { identities: accounts.map((a) => a.email), ...(source ? { sourceId: source.id } : {}) });
-  const to = source ? fields.toText : formatAddressList([{ name: person.name, email: person.address }]);
-  const patch: DraftFields = { ...fields, showSourceContext: true, toText: to, ccText: "", auto: { to: source ? fields.auto.to : [person.address], cc: [], bcc: [] } };
+  const to = { name: source?.from.name || person.name, email: source?.from.email ?? person.address };
+  const patch: DraftFields = { ...fields, showSourceContext: true, toText: formatAddressList([to]), ccText: "", auto: { to: [to.email], cc: [], bcc: [] } };
   return editDraft(key, patch);
 }
 

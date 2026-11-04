@@ -570,6 +570,20 @@ test.describe("drafting with AI (plan 133)", () => {
     expect(await recipientEmails(page, "compose-to")).toEqual(["ana@studio.example"]);
   });
 
+  test("coming back to a question doesn't take focus: only asking for it does (Codex review 10)", async ({ app: page, server }) => {
+    await ready(page, server);
+    await openThread(page, /Studio lunch/);
+    await openField(page);
+    await field(page).fill("tell tom that this is just fine");
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("ai-choice-forward")).toBeFocused();
+    await openThread(page, /Contract review/);
+    await page.getByTestId("thread-row").filter({ hasText: /Contract review/ }).first().focus();
+    await openThread(page, /Studio lunch/);
+    await expect(page.getByTestId("ai-question")).toBeVisible();
+    await expect(page.getByTestId("ai-choice-forward")).not.toBeFocused();
+  });
+
   test("pinned: the stream goes on in the card, its editor rebuilt, and commits there", async ({ app: page, server }) => {
     await ready(page, server);
     fakeDraft.paceMs = 120;
@@ -666,6 +680,9 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(page.getByTestId("ai-error-text")).toBeVisible();
     await expect(page.getByTestId("ai-error-insert")).toBeVisible();
     await expect(page.getByTestId("ai-error-retry")).toBeVisible();
+    // what came can be read before deciding on it, by anyone (Codex review 11)
+    await expect(preview(page)).not.toHaveAttribute("aria-hidden", "true");
+    await expect(page.getByRole("region", { name: "Suggestion" })).toBeVisible();
     await page.getByTestId("ai-error-insert").click();
     await expect(strip(page)).toBeVisible();
     await expect(page.getByTestId("ai-strip-check")).toContainText("This was cut off.");
@@ -723,6 +740,13 @@ test.describe("drafting with AI (plan 133)", () => {
     await profile.getByTestId("style-profile-reset").click();
     await expect(page.getByTestId("style-profile-edited")).toHaveCount(0);
 
+    // the study on a local model asks nothing, and is running, not done, when it starts (Codex review 12)
+    await page.getByTestId("style-study-start").click();
+    await expect(page.getByTestId("style-study-consent")).toHaveCount(0);
+    await expect(page.getByTestId("style-study-running")).toContainText(/\d+ of \d+/);
+    await page.getByTestId("style-study-stop").click();
+    await expect(page.getByTestId("style-study-start")).toBeVisible();
+
     await page.getByTestId("writing-style-back").click();
     await expect(page.getByTestId("ai-tab")).toBeVisible();
     await expect(page.getByTestId("ai-drafting-instructions")).toHaveValue("Never use exclamation marks.");
@@ -735,8 +759,7 @@ test.describe("drafting with AI (plan 133)", () => {
     const signature = (await page.getByTestId("account-signature").boundingBox())!;
     expect((await own.boundingBox())!.y).toBeGreaterThan(signature.y);
     await own.fill("Exclamation marks are fine here.");
-    await own.blur();
-    await expect.poll(async () => ((await server.backend.server.invoke("writing.prefs.get", {}, dev)) as { accounts: Record<string, { instructions?: string }> }).accounts[String(accountId)]?.instructions).toBe("Exclamation marks are fine here.");
+    // straight to the switch: the blur's save and the switch's must not overwrite each other (Codex review 4)
     await page.getByTestId("account-writing-general").click();
     await expect.poll(async () => ((await server.backend.server.invoke("writing.prefs.get", {}, dev)) as { accounts: Record<string, { useGeneral?: boolean; instructions?: string }> }).accounts[String(accountId)]).toEqual({ instructions: "Exclamation marks are fine here.", useGeneral: false });
   });

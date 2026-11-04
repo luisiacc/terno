@@ -93,8 +93,9 @@ export interface AiCommit {
   doc: unknown;
   /** the subject this filled, if it did */
   subject: string | null;
-  /** what was there before, for an editor rebuilt without its history */
+  /** what was there before and what it made, for an editor rebuilt without its history */
   before: { html: string; text: string };
+  text: string;
 }
 
 export interface AiStrip {
@@ -140,6 +141,8 @@ export interface AiSession {
   confirmFailed: boolean;
   /** "Looking up contacts…" */
   lookingUp: boolean;
+  /** the §5 call in flight, to stop with the row */
+  intentRequest: string | null;
   /** "Include everyone (3)", on a reply narrowed to one person */
   everyone: number;
   run: Run | null;
@@ -257,6 +260,7 @@ function remove(key: string, endCompose = true) {
   streams.delete(key);
   stopWaiting(key);
   clearSlow(key);
+  focusAnswered.delete(key);
   if (endCompose && s.lastSpec) void quietly(() => client.call("ai.composeEnd", { session: sessionId(key) }));
 }
 
@@ -271,7 +275,7 @@ async function quietly(call: () => Promise<unknown>): Promise<void> {
 }
 
 function newSession(key: string, o: { opened: boolean; phase: AiPhase }): AiSession {
-  return { key, phase: o.phase, instruction: "", focus: 1, opened: o.opened, who: false, question: null, fromAccountId: null, confirmFailed: false, lookingUp: false, everyone: 0, run: null, lastSpec: null, choice: null, held: null, error: null, strip: null, guard: null, live: "" };
+  return { key, phase: o.phase, instruction: "", focus: 1, opened: o.opened, who: false, question: null, fromAccountId: null, confirmFailed: false, lookingUp: false, intentRequest: null, everyone: 0, run: null, lastSpec: null, choice: null, held: null, error: null, strip: null, guard: null, live: "" };
 }
 
 // ── the row opens
@@ -335,7 +339,8 @@ export function recallInstruction(key: string): boolean {
 /** Back to the text, from the row or from nowhere: someone who moved on to To, or to the list, stays there. */
 function focusEditor(key: string) {
   const active = document.activeElement;
-  if (active && active !== document.body && !rowOwns(active, key) && active.getAttribute("data-testid") !== "compose-body") return;
+  // (another draft's editor is somewhere else they moved on to)
+  if (active && active !== document.body && !rowOwns(active, key) && !(active.getAttribute("data-testid") === "compose-body" && draftKeyOf(active) === key)) return;
   focusBody(key, "keep");
 }
 const rowOwns = (el: Element, key: string) => el.closest(`[data-ai-row="${CSS.escape(key)}"]`) !== null;
@@ -344,9 +349,10 @@ const rowOwns = (el: Element, key: string) => el.closest(`[data-ai-row="${CSS.es
 export function closeRow(key: string) {
   const s = session(key);
   if (!s) return;
+  cancel(s);
   const d = draftOf(key);
   if (s.strip) {
-    update(key, { phase: "strip", instruction: "", question: null, error: null, who: false, confirmFailed: false, lookingUp: false });
+    update(key, { phase: "strip", instruction: "", question: null, error: null, who: false, confirmFailed: false, lookingUp: false, intentRequest: null });
     return focusEditor(key);
   }
   const untouched = s.opened && d !== undefined && !authored(d);
@@ -418,7 +424,10 @@ export async function submit(key: string): Promise<void> {
 
 function runFor(key: string, instruction: string): RunSpec {
   const notes = bodyNow(key);
-  return notes.trim() ? { kind: "notes", instruction, notes } : { kind: "draft", instruction };
+  if (notes.trim()) return { kind: "notes", instruction, notes };
+  // an image alone has no words for the model, but it's the user's: nothing goes over it without a choice
+  const c = controllerFor(key);
+  return c && !c.empty() ? { kind: "notes", instruction, notes: "" } : { kind: "draft", instruction };
 }
 
 function askWho(key: string) {
@@ -430,24 +439,32 @@ function askWho(key: string) {
 
 async function resolve(key: string, instruction: string, d: LocalDraft) {
   const surface = surfaceOf(d);
-  const asked = () => { const now = session(key); return now?.phase === "resolving" && now.instruction.trim() === instruction; };
-  update(key, { phase: "resolving", lookingUp: false });
+  const requestId = globalThis.crypto.randomUUID();
+  const asked = () => { const now = session(key); return now?.phase === "resolving" && now.intentRequest === requestId; };
+  update(key, { phase: "resolving", lookingUp: false, intentRequest: requestId });
   const accountId = surface.kind === "list" ? getApp().accountId ?? undefined : d.accountId;
+  // who it's on now: a decision is about these, and someone typing a name meanwhile has answered part of it
+  const on = `${d.accountId}|${addresses(d.toText)}|${addresses(d.ccText)}`;
   let result: AiIntentResult;
   try {
-    result = await client.call("ai.resolveIntent", { requestId: globalThis.crypto.randomUUID(), instruction, surface, ...(accountId !== undefined ? { accountId } : {}) });
+    result = await client.call("ai.resolveIntent", { requestId, instruction, surface, ...(accountId !== undefined ? { accountId } : {}) });
     if (!asked()) return;
     if (result.decision.kind === "wait") {
       // "not ready" is never "no such person": it answers when the index is warm, with nothing to poll
-      update(key, { lookingUp: true });
-      result = await client.call("ai.resolveIntent", { requestId: globalThis.crypto.randomUUID(), instruction, surface, waitForContacts: true, ...(accountId !== undefined ? { accountId } : {}) });
-      if (!asked()) return;
+      const again = globalThis.crypto.randomUUID();
+      update(key, { lookingUp: true, intentRequest: again });
+      result = await client.call("ai.resolveIntent", { requestId: again, instruction, surface, waitForContacts: true, ...(accountId !== undefined ? { accountId } : {}) });
+      if (session(key)?.intentRequest !== again) return;
     }
   } catch (error) {
-    if (asked()) failed(key, error);
+    const now = session(key);
+    if (now?.phase === "resolving" && now.intentRequest) failed(key, error);
     return;
   }
-  update(key, { lookingUp: false, confirmFailed: result.confirmFailed, fromAccountId: result.fromAccountId });
+  const current = materialize(key);
+  if (!current) return;
+  update(key, { intentRequest: null, lookingUp: false, confirmFailed: result.confirmFailed, fromAccountId: result.fromAccountId });
+  if (`${current.accountId}|${addresses(current.toText)}|${addresses(current.ccText)}` !== on) return resolve(key, instruction, current);
   const { decision } = result;
   if (decision.kind === "ask") {
     if (decision.question.type === "who") return askWho(key);
@@ -464,7 +481,7 @@ async function resolve(key: string, instruction: string, d: LocalDraft) {
     case "reply": {
       const thread = threadOf(d);
       if (route.to && thread !== null) await addressReply(key, thread, route.to);
-      if (!asked()) return;
+      if (session(key)?.phase !== "resolving") return;
       update(key, { everyone: route.to && route.includeEveryone > 1 ? route.includeEveryone : 0 });
       return startRun(key, runFor(key, instruction));
     }
@@ -639,7 +656,7 @@ function startRun(key: string, spec: RunSpec): void {
     subject: d.subject,
     needsSubject,
     instruction: spec.instruction,
-    ...(spec.notes !== undefined ? { draft: spec.notes } : {}),
+    ...(spec.notes?.trim() ? { draft: spec.notes } : {}),
     ...(spec.previous !== undefined ? { previousDraft: spec.previous } : {}),
     attachments: (d.attachments ?? []).map((a) => a.filename),
     timezone: timezone(),
@@ -754,6 +771,8 @@ export function stop(key: string) {
 function cancel(s: AiSession) {
   const requestId = s.run?.requestId;
   if (requestId && requests.delete(requestId)) void quietly(() => client.call("ai.cancel", { requestId }));
+  const intent = s.intentRequest;
+  if (intent) void quietly(() => client.call("ai.cancel", { requestId: intent }));
   clearSlow(s.key);
 }
 
@@ -776,7 +795,7 @@ function commit(key: string, how: "replace" | "below", result: Extract<AiCompose
   // never over a subject the user wrote (§10.3)
   let subject: string | null = null;
   if (needsSubject && result.subject && d && !d.subject.trim() && editDraft(key, { subject: result.subject, subjectEdited: true })) subject = result.subject;
-  const stack = [...(prior?.stack ?? []), { doc: inserted.doc, subject, before }];
+  const stack = [...(prior?.stack ?? []), { doc: inserted.doc, subject, before, text: c.snapshot().text }];
   // what the draft holds now, as a send will compare it: a replace is all of the text, an insert only what it wrote
   recordProvenance(key, how === "replace" ? c.snapshot().text : result.text);
   clearStream(key);
@@ -833,22 +852,26 @@ export function commitHeld(key: string) {
 
 // ── provenance (§8)
 
-const provenance = new Map<string, Promise<void>>();
+/** What's committed and not yet known to the backend; a send asks again, since with no row the mail would count as the user's. */
+const provenance = new Map<string, { text: string; run: Promise<boolean> }>();
+
+async function writeProvenance(key: string, text: string): Promise<boolean> {
+  // after the first save has given the draft its id
+  await flushDraft(key, true);
+  const d = draftOf(key);
+  if (!d || d.id === null || !d.generation) return false;
+  try {
+    await client.call("writing.commitGeneration", { accountId: d.accountId, draftId: d.id, draftGeneration: d.generation, address: parseAddressList(d.toText)[0]?.email ?? "", text });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function recordProvenance(key: string, text: string) {
-  const run = (async () => {
-    // after the first save has given the draft its id
-    await flushDraft(key, true);
-    const d = draftOf(key);
-    if (!d || d.id === null || !d.generation) return;
-    try {
-      await client.call("writing.commitGeneration", { accountId: d.accountId, draftId: d.id, draftGeneration: d.generation, address: parseAddressList(d.toText)[0]?.email ?? "", text });
-    } catch {
-      /* the draft stands; a send that can't be compared stays out of learning */
-    }
-  })();
-  provenance.set(key, run);
-  void run.finally(() => { if (provenance.get(key) === run) provenance.delete(key); });
+  const entry = { text, run: writeProvenance(key, text) };
+  provenance.set(key, entry);
+  void entry.run.then((ok) => { if (ok && provenance.get(key) === entry) provenance.delete(key); });
 }
 
 // ── the strip
@@ -866,6 +889,8 @@ export function refine(key: string, how: "regenerate" | "shorter" | "warmer") {
   startRun(key, { kind: "refine", instruction: how === "shorter" ? SHORTER : WARMER, previous: bodyNow(key) });
 }
 
+const undoing: { key: string | null } = { key: null };
+
 /**
  * The strip's Undo: the text as ordinary undo would take it back, and a subject this filled, if nobody has edited it
  * since (§10.3). Under a refinement it goes back one version, and the strip stays for the one before.
@@ -875,11 +900,16 @@ export function undoCommit(key: string) {
   const top = s?.strip?.stack[s.strip.stack.length - 1];
   if (!s?.strip || !top) return;
   const c = controllerFor(key);
+  undoing.key = key;
   const undone = c?.undoGenerated(top.doc);
+  undoing.key = null;
   if (!undone) {
-    // an editor rebuilt without its history: the same words, put back by hand, if they're still what it wrote
-    const d = materialize(key);
-    if (d && (c?.docToken() === top.doc || !c)) editDraft(key, { bodyHtml: top.before.html, bodyText: top.before.text });
+    // an editor rebuilt without its history (its cache is bounded): the same words, put back by hand, if they're still what it wrote
+    if (bodyNow(key) !== top.text) {
+      remove(key);
+      return focusEditor(key);
+    }
+    editDraft(key, { bodyHtml: top.before.html, bodyText: top.before.text });
   }
   const d = draftOf(key);
   if (top.subject !== null && d?.subject === top.subject) editDraft(key, { subject: "", subjectEdited: false });
@@ -897,6 +927,8 @@ export function undoCommit(key: string) {
 
 /** Any change of the text: typing during a stream makes the result a suggestion; the strip lasts until the next keystroke. */
 export function noteBody(key: string) {
+  // the strip's own Undo changes the text too: it isn't a keystroke
+  if (undoing.key === key) return;
   const s = session(key);
   const c = controllerFor(key);
   if (!s || !c) return;
@@ -924,7 +956,21 @@ aiDraftHooks.blocksSend = (key, sendAt) => {
   return true;
 };
 
-aiDraftHooks.provenance = (key) => provenance.get(key) ?? Promise.resolve();
+aiDraftHooks.provenance = async (key) => {
+  const entry = provenance.get(key);
+  if (!entry) return;
+  // the first try failed (its save, or the call): the draft has its id by now, so once more before the send
+  if (!(await entry.run)) await writeProvenance(key, entry.text);
+  if (provenance.get(key) === entry) provenance.delete(key);
+};
+
+/** The row's control takes focus for a request once: a row that mounts again (back in the conversation) doesn't take it again. */
+const focusAnswered = new Map<string, number>();
+export function takeFocusRequest(key: string, seq: number): boolean {
+  if (!seq || focusAnswered.get(key) === seq) return false;
+  focusAnswered.set(key, seq);
+  return true;
+}
 
 aiDraftHooks.busy = (key) => {
   const s = session(key);

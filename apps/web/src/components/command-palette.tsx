@@ -240,7 +240,7 @@ export function CommandPalette() {
     // ── actions
     add({ id: "compose.new", group: "actions", label: t("palette.compose"), icon: <PenLine />, shortcut: "C", ...synonyms("palette.alias.compose"), keywords: [...english("palette.compose"), ...english("palette.alias.compose").flatMap(words)], run: () => void openCompose("new") });
     // plan 133: from a conversation or the list, the draft §5.2 opens, with its row
-    if (drafting && !draft) add({ id: "compose.ai", group: "actions", label: t("palette.aiDraft"), icon: <Sparkles />, shortcut: isMac ? "⌘J" : "Ctrl+J", testId: "palette-ai-draft", ...synonyms("palette.alias.aiDraft", english("palette.aiDraft")), run: () => openAiDraft() });
+    if (drafting && !draft) add({ id: "compose.ai", group: "actions", label: t("palette.aiDraft"), icon: <Sparkles />, shortcut: isMac ? "⌘J" : "Ctrl+J", testId: "palette-ai-draft", ...synonyms("palette.alias.aiDraft", english("palette.aiDraft")), run: () => requestAnimationFrame(() => requestAnimationFrame(() => openAiDraft())) }); // once the closing palette has given focus back: an open whose focus moves under it gives up
     if (replyable) {
       add({ id: "compose.reply", group: "actions", label: t("palette.reply"), icon: <Reply />, shortcut: "R", testId: "palette-reply", ...synonyms("palette.alias.reply", english("palette.reply")), run: () => reply("reply") });
       add({ id: "compose.replyAll", group: "actions", label: t("palette.replyAll"), icon: <ReplyAll />, shortcut: "A", testId: "palette-reply-all", keywords: english("palette.replyAll"), run: () => reply("replyAll") });

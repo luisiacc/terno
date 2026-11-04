@@ -623,6 +623,21 @@ Built to §10 and the contract, on the fake (`fakeDraft` in `packages/ai/src/fak
 - In the pinned card's width the strip took three lines. "Written with AI" goes there (the label says AI), the voice truncates, and it holds one line.
 - Strip and Stop words ended 2 px short of Cc, Bcc and Subject's line; the popover's link was centered. "Often opens with “…,”" for someone who opens with a bare name reads "with just their name".
 
+**What the Codex review changed** (`codex exec` read-only on the composer's diff, 12 points, all accepted, each with a regression test in `ai-draft.test.ts` or the spec):
+
+1. A decision that came back after To or From changed was still applied, and could add Tom without asking. It's dropped, and asked again about what's there now.
+2. A named participant's Reply-To replaced them, and could widen who saw it. To is them alone.
+3. An image alone in the body read as empty, and the commit replaced it. It now ends in the choice.
+4. Saving account instructions and flipping the switch at once could overwrite each other. Each sends only its own field.
+5. Undo on a refinement ended the strip, because undo's own change looked like a keystroke.
+6. Undo after the editor's bounded cache lost the history did nothing but clear the subject. It puts the words back by hand if they're still what it wrote, and otherwise touches nothing.
+7. Provenance that failed was never retried, so the model's text would count as the user's. It's tried again before the send. If that fails too the send's own call would almost certainly fail with it; a row can't be written, and the mail does count as the user's.
+8. Closing the row left its intent call running.
+9. A run starting could take focus from another draft's editor.
+10. A row mounting again in a conversation took focus again. A request is answered once.
+11. Partial text kept after a failure couldn't be read by a screen reader.
+12. On a local model the study showed "done" while it ran, with no Stop. Fixing it found one more: its progress could finish before the listener existed, so it listens before asking.
+
 **Tests changed, not weakened:** `palette.spec.ts` lists the new row. `visual.spec.ts` waits for the stub's models before choosing one: a real Ollama on this machine could answer first, and the timing that hid that moved. The monthly limit's field got a real `<label>`: pushed further down the tab by Drafting, axe stopped reading its `aria-labelledby` as a label. Baselines updated: `compose-new-inline`, `settings-ai-local`, `settings-ai-local-dark`.
 
 **Not built:** rewrite on selection (§10.2's "right after"). The packaged smoke for ⌘J, and a perf gate for a preview frame in a 10 MB draft (the preview doesn't touch the document, and a frame writes only the lines that changed, but that's reasoning, not a number). `send-group-rest.png` in `send-later.spec.ts` was already failing before this work. The entry grew about 7 KB gzipped, nearly all of it the catalog's English strings, which is where they live.

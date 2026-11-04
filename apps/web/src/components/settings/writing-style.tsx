@@ -6,7 +6,7 @@ import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/com
 import { Spinner } from "@terno/ui/components/spinner";
 import { Textarea } from "@terno/ui/components/textarea";
 import { ChevronLeft } from "@terno/ui/icons";
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { providerLabel } from "~/lib/ai";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { snack } from "~/lib/snack";
@@ -200,23 +200,25 @@ type StudyState = { kind: "idle" } | { kind: "asking" } | { kind: "consent"; ask
 function Study({ status, onChanged }: { status: WritingStatus | null; onChanged: () => void }) {
   const ai = useApp((s) => s.settings?.ai);
   const [state, setState] = useState<StudyState>({ kind: "idle" });
-  const requestId = state.kind === "running" ? state.requestId : null;
-  useEffect(() => {
-    if (!requestId) return;
-    return client.on("aiStudy", (p) => {
-      if (p.requestId !== requestId) return;
-      if (p.state === "running") return setState({ kind: "running", requestId, done: p.done, total: p.total });
-      setState({ kind: p.state === "done" ? "done" : p.state === "failed" ? "failed" : "idle" });
-      if (p.state === "done") onChanged();
-    });
-  }, [requestId, onChanged]);
+  // listening before asking: on a local model the study can be over before the call that started it has answered
+  const asking = useRef<string | null>(null);
+  useEffect(() => client.on("aiStudy", (p) => {
+    if (p.requestId !== asking.current) return;
+    if (p.state === "running") return setState({ kind: "running", requestId: p.requestId, done: p.done, total: p.total });
+    asking.current = null;
+    setState({ kind: p.state === "done" ? "done" : p.state === "failed" ? "failed" : "idle" });
+    if (p.state === "done") onChanged();
+  }), [onChanged]);
   const ask = async () => {
     setState({ kind: "asking" });
     try {
-      const asked = await client.call("writing.studyStyle", { requestId: globalThis.crypto.randomUUID() });
+      const id = globalThis.crypto.randomUUID();
+      asking.current = id;
+      const asked = await client.call("writing.studyStyle", { requestId: id });
       if (asked.status === "consent") setState({ kind: "consent", asked });
       else if (asked.status === "nothing") setState({ kind: "nothing" });
-      else setState({ kind: "done" });
+      // a local provider asks nothing: it's running, with its progress and Stop like any other
+      else if (asking.current === id) setState({ kind: "running", requestId: id, done: 0, total: asked.total });
     } catch (e) {
       failed(e);
       setState({ kind: "idle" });
@@ -224,10 +226,11 @@ function Study({ status, onChanged }: { status: WritingStatus | null; onChanged:
   };
   const confirm = async (asked: Extract<WritingStudyResult, { status: "consent" }>) => {
     const id = globalThis.crypto.randomUUID();
+    asking.current = id;
     setState({ kind: "running", requestId: id, done: 0, total: asked.messages });
     try {
       const started = await client.call("writing.studyStyle", { requestId: id, confirm: { provider: asked.provider, accountIds: asked.accountIds } });
-      if (started.status === "started") setState({ kind: "running", requestId: id, done: 0, total: started.total });
+      if (started.status === "started") { if (asking.current === id) setState({ kind: "running", requestId: id, done: 0, total: started.total }); }
       else setState({ kind: started.status === "nothing" ? "nothing" : "idle" });
     } catch (e) {
       failed(e);

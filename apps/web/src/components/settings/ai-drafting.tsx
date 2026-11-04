@@ -76,14 +76,14 @@ export function AccountWriting({ accountId }: { accountId: number }) {
   const [prefs, save] = usePrefs();
   if (!prefs?.global.enabled) return null;
   const own = prefs.accounts[String(accountId)];
-  const keep = { instructions: own?.instructions, useGeneral: own?.useGeneral, useSentMail: own?.useSentMail };
+  // each sends only its own field: the backend merges, so a save in flight from the other is never overwritten with what this render saw
   return (
     <>
       <SettingsRow stacked labelFor label={t("aiDraft.account.instructions")} hint={t("aiDraft.account.instructionsHint")}>
-        {(a) => <CommitInput multiline a11y={a} data-testid="account-writing-instructions" value={own?.instructions ?? ""} placeholder={t("aiDraft.account.instructionsPlaceholder")} maxLength={WRITING_INSTRUCTIONS_MAX} onCommit={(instructions) => save({ account: { accountId, prefs: { ...keep, instructions } } })} />}
+        {(a) => <CommitInput multiline a11y={a} data-testid="account-writing-instructions" value={own?.instructions ?? ""} placeholder={t("aiDraft.account.instructionsPlaceholder")} maxLength={WRITING_INSTRUCTIONS_MAX} onCommit={(instructions) => save({ account: { accountId, prefs: { instructions } } })} />}
       </SettingsRow>
       <SettingsRow label={t("aiDraft.account.useGeneral")} hint={t("aiDraft.account.useGeneralHint")}>
-        {(a) => <Switch {...a} checked={own?.useGeneral ?? true} data-testid="account-writing-general" onCheckedChange={(useGeneral) => void save({ account: { accountId, prefs: { ...keep, useGeneral } } }).catch(failed)} />}
+        {(a) => <Switch {...a} checked={own?.useGeneral ?? true} data-testid="account-writing-general" onCheckedChange={(useGeneral) => void save({ account: { accountId, prefs: { useGeneral } } }).catch(failed)} />}
       </SettingsRow>
     </>
   );
