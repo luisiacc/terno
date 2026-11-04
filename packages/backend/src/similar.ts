@@ -30,22 +30,35 @@ export interface Ensured {
   filterUndo: number | null;
   /** plan 90: the same mail's automatic filter filed into this category before */
   retargeted: { from: number } | null;
+  /** plan 128: the same mail's automatic filter moved it to this other folder before */
+  retargetedFolder: { from: string } | null;
 }
 
-/** The category an addCategory-only rule files into. */
-const targetOf = (rule: FilterRule): number | null => (rule.actions.length === 1 && rule.actions[0]!.type === "addCategory" ? rule.actions[0]!.categoryId : null);
+/** Where a rule with one action puts mail, as a key: a category or a folder. */
+const targetOf = (rule: FilterRule): string | null => {
+  const action = rule.actions.length === 1 ? rule.actions[0]! : null;
+  if (action?.type === "addCategory") return `cat:${action.categoryId}`;
+  if (action?.type === "moveToFolder") return `folder:${action.accountId}:${action.folder}`;
+  return null;
+};
+/** Two different places of one kind. A category and a folder aren't rivals: mail can be in both (plan 127). */
+const rivals = (a: string, b: string) => a !== b && a.slice(0, a.indexOf(":")) === b.slice(0, b.indexOf(":"));
+/** What mail a rule looks at besides which account's. */
+const mailConditions = (rule: FilterRule) => rule.conditions.filter((c) => c.field !== "account");
+const accountOf = (rule: FilterRule) => rule.conditions.find((c) => c.field === "account")?.value ?? null;
 /** The same conditions (what mail), whatever it does with it. */
 const sameMail = (a: FilterRule, b: FilterRule) => sameRule({ ...a, actions: [] }, { ...b, actions: [] });
 /** A sender-wide rule's address: one `from equals` and nothing else. */
 const senderOf = (rule: FilterRule): string | null => {
-  const [c, ...rest] = rule.conditions;
+  const [c, ...rest] = mailConditions(rule);
   return rest.length === 0 && c?.field === "from" && c.op === "equals" && !c.negate ? c.value.trim().toLowerCase() : null;
 };
 /** A sender + subject rule's address. */
 const subjectSenderOf = (rule: FilterRule): string | null => {
-  if (rule.conditions.length !== 2) return null;
-  const from = rule.conditions.find((c) => c.field === "from" && c.op === "equals" && !c.negate);
-  const subject = rule.conditions.find((c) => c.field === "subject" && !c.negate);
+  const conditions = mailConditions(rule);
+  if (conditions.length !== 2) return null;
+  const from = conditions.find((c) => c.field === "from" && c.op === "equals" && !c.negate);
+  const subject = conditions.find((c) => c.field === "subject" && !c.negate);
   return from && subject && typeof from.value === "string" ? from.value.trim().toLowerCase() : null;
 };
 
@@ -124,22 +137,24 @@ export class SimilarFilters {
         // anyone's identical filter, on, is already doing it: reused, never changed
         let filter = same.find((f) => f.enabled) ?? null;
         let retargeted: { from: number } | null = null;
+        let retargetedFolder: { from: string } | null = null;
         const target = targetOf(rule);
         if (!filter) {
           // a disabled one is turned back on only if it's Terno's: the user turned theirs off
           const off = same.find((f) => f.auto);
-          const elsewhere = target === null ? [] : all.filter((f) => f.auto && sameMail(f.rule, rule) && targetOf(f.rule) !== null && targetOf(f.rule) !== target).sort((a, b) => b.id - a.id);
+          const elsewhere = target === null ? [] : all.filter((f) => { const to = targetOf(f.rule); return f.auto && sameMail(f.rule, rule) && to !== null && rivals(to, target); }).sort((a, b) => b.id - a.id);
           if (off) {
             const w = await this.write(off, { enabled: true });
             filter = w.filter;
             record(w.change);
           } else if (elsewhere[0]) {
             // the same mail filed elsewhere before: it files here now (old mail isn't re-filed: its claims stay)
-            const from = targetOf(elsewhere[0].rule)!;
+            const from = elsewhere[0].rule.actions[0]!;
             const w = await this.write(elsewhere[0], { rule, name: capFilterName(name), enabled: true }, true);
             filter = w.filter;
             record(w.change);
-            retargeted = { from };
+            if (from.type === "addCategory") retargeted = { from: from.categoryId };
+            if (from.type === "moveToFolder") retargetedFolder = { from: from.folder };
           } else {
             filter = await this.store.filters.save({ name: capFilterName(name), enabled: true, source: "manual", auto: true, rule, learnedKey }, this.now());
             record({ filterId: filter.id, before: null, after: filterState(filter) });
@@ -149,14 +164,14 @@ export class SimilarFilters {
         const sender = target === null ? null : senderOf(rule);
         if (sender) {
           for (const f of all) {
-            if (!f.auto || !f.enabled || f.id === filter.id || subjectSenderOf(f.rule) !== sender) continue;
+            if (!f.auto || !f.enabled || f.id === filter.id || subjectSenderOf(f.rule) !== sender || accountOf(f.rule) !== accountOf(rule)) continue;
             const to = targetOf(f.rule);
-            if (to === null || to === target) continue;
+            if (to === null || !rivals(to, target!)) continue;
             const change = await skip(async () => (await this.write(f, { enabled: false })).change);
             if (change) record(change);
           }
         }
-        return { filter, retargeted };
+        return { filter, retargeted, retargetedFolder };
       });
       return { ...result, filterUndo };
     });
@@ -207,5 +222,30 @@ export class SimilarFilters {
       }
       this.undos.delete(filterUndo);
     });
+  }
+}
+
+/**
+ * Plan 128: filters that move mail to a folder follow what happened to it: a new name is the same folder (what it
+ * already filed stays claimed), one deleted turns them off (they couldn't file anything, and off tells the user). Each
+ * write compares what it read: an edit meanwhile wins. A failure is logged: the folder's own change already happened.
+ */
+export async function followFolderFilters(store: Pick<MailStore, "filters">, accountId: number, change: { renamed?: readonly { from: string; to: string }[]; deleted?: readonly string[] | "all" }, now: number, warn: (message: string, detail: unknown) => void): Promise<void> {
+  if (!change.renamed?.length && !change.deleted?.length) return;
+  const moved = new Map(change.renamed?.map((m) => [m.from, m.to]));
+  const gone = change.deleted === "all" ? null : new Set(change.deleted);
+  for (const f of await store.filters.list()) {
+    const action = f.rule.actions.find((a) => a.type === "moveToFolder" && a.accountId === accountId);
+    if (action?.type !== "moveToFolder") continue;
+    const to = gone === null ? undefined : moved.get(action.folder);
+    const deleted = to === undefined && (gone === null || gone.has(action.folder));
+    if ((to === undefined || to === action.folder) && (!deleted || !f.enabled)) continue;
+    const before = filterState(f);
+    const state: FilterState = deleted ? { ...before, enabled: false } : { ...before, rule: { ...f.rule, actions: f.rule.actions.map((a) => (a === action ? { ...action, folder: to! } : a)) } };
+    try {
+      await store.filters.save({ id: f.id, ...state, source: f.source, keepApplications: true, expect: before }, now);
+    } catch (error) {
+      if (!(error instanceof RpcError && error.code === "CANCELLED")) warn(`filter ${f.id} didn't follow its folder`, error instanceof Error ? error.message : error);
+    }
   }
 }

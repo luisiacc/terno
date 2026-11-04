@@ -222,7 +222,7 @@ it("background: a folder line moves a sender's mail of one account in slices: no
   const before = sqlDb(backend.store).get<{ c: number }>("SELECT count(*) c FROM thread_folders WHERE folder = 'Label_Perf'")!.c;
   let moved = 0;
   const r = await background("folder line move", async () => {
-    moved = (await client.call("folders.moveScope", { accountId: account, folder: "Label_Perf", from: null, scope: { kind: "sender", email: SHOP } })).affected;
+    moved = (await client.call("folders.moveScope", { accountId: account, folder: "Label_Perf", from: null, scope: { kind: "sender", email: SHOP }, filterName: "Shop → Perf" })).affected;
   });
   meta.folderMoved = moved;
   expect(moved).toBeGreaterThan(100);

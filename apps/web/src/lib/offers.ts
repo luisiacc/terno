@@ -3,7 +3,7 @@
  * snackbar, the similar snackbar, the thread menu's submenus): one order,
  * one set of labels, one way to chain undos.
  */
-import type { SimilarScope } from "@terno/core";
+import type { SimilarOffer, SimilarScope } from "@terno/core";
 import { registerUndo, runUndo, useSnack, type Undo } from "~/lib/snack";
 
 /** Narrowest first: the same sender and subject, everything from them, their domain, their list. */
@@ -11,6 +11,19 @@ export const OFFER_ORDER = ["subject", "sender", "domain", "list"] as const sati
 
 export function orderOffers<T extends { scope: SimilarScope }>(offers: readonly T[]): T[] {
   return [...offers].sort((a, b) => OFFER_ORDER.indexOf(a.scope.kind) - OFFER_ORDER.indexOf(b.scope.kind));
+}
+
+/**
+ * The lines a filing offers, in order (plans 81, 84, 128). Each moves what's there and catches new mail, so the sender's
+ * stays with nothing left now; a subject needs more of it; a domain or list holding no more than the sender is said once.
+ */
+export function filingOffers<T extends SimilarOffer>(offers: readonly T[]): T[] {
+  const sender = offers.find((x) => x.scope.kind === "sender");
+  return orderOffers(offers).filter((o) => {
+    if (o.scope.kind === "sender") return true;
+    if (!(o.count > 0 || o.capped)) return false;
+    return o.scope.kind === "subject" || !sender || o.capped || sender.capped || o.count !== sender.count;
+  });
 }
 
 /**

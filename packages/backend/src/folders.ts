@@ -5,6 +5,7 @@ import { ProviderError, type FolderChange, type FolderMove, type MailProvider } 
 import type { FolderCountCursor, FolderGeneration, FolderPlace, ProviderFolder } from "@terno/store";
 import { BULK_SLICE, SliceSizer } from "./slicer";
 import type { BackendCore as Backend } from "./core";
+import { followFolderFilters } from "./similar";
 import { followFavoriteFolders, setFavoriteFolder, SettingsError } from "./settings";
 
 /**
@@ -148,6 +149,7 @@ async function change<R extends FolderChange>(
         void b.rebuildFolders();
         // and those of folders gone in another app: the list after the change is the account's whole one (round 24 #3)
         await b.writeFavorites(() => followFavoriteFolders(b.store, accountId, { renamed, deleted, listed: new Set(result.folders.map((f) => f.key)) }));
+        await followFolderFilters(b.store, accountId, { renamed, deleted }, b.now(), (m, d) => b.log("warn", m, d));
       });
       // persisted: the provider may stop announcing these deletions (Codex code review round 13 #1: acknowledged before,
       // a LIST failing after the DELETE left the favorite for good)

@@ -8,7 +8,7 @@ import { formatList, t } from "@terno/i18n";
 import { Check, Search } from "@terno/ui/icons";
 import { useEffect, useId, useRef, useState } from "react";
 import { fileAlways, filterNameOf, stopFiling, undoFiled, type Filed } from "~/lib/categorize";
-import { chainUndo, isLatest, orderOffers, unchain } from "~/lib/offers";
+import { chainUndo, filingOffers, isLatest, unchain } from "~/lib/offers";
 import { scopeLabel } from "~/lib/similar";
 import { dismissSnack, patchSnack, pause, resume, runUndo, snack, useSnack, type Undo } from "~/lib/snack";
 import { client } from "~/rpc/connection";
@@ -305,17 +305,8 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
     setApp({ query, view: "all", categoryId: null, accountId: null, reviewCategoryId: null, selectedId: null });
   };
 
-  // the default's own scope isn't offered again; a domain or list holding no more than the sender is said once
-  const shown = orderOffers(offers?.offers ?? []).filter((o) => {
-    if (def && def.status !== "failed" && o.scope.kind === "subject") return false;
-    if (o.scope.kind === "subject" && !(o.count > 0 || o.capped)) return false;
-    if (o.scope.kind === "domain" || o.scope.kind === "list") {
-      const sender = offers?.offers.find((x) => x.scope.kind === "sender");
-      if (!(o.count > 0 || o.capped)) return false;
-      if (sender && !o.capped && !sender.capped && o.count === sender.count) return false;
-    }
-    return true;
-  });
+  // the default's own scope isn't offered again
+  const shown = filingOffers(offers?.offers ?? []).filter((o) => !(def && def.status !== "failed" && o.scope.kind === "subject"));
   const lines: Line[] = [...shown.map((offer) => ({ kind: "scope" as const, offer })), ...(qa?.terms.length || qa?.sender ? [{ kind: "words" as const }] : [])];
   const busy = def?.status === "running";
 

@@ -190,7 +190,8 @@ async function restoreInto(b: Backend, items: Pending, options: { final: boolean
         continue;
       }
       const conditions = f.rule.conditions.map((c): Condition => (c.field === "account" ? { ...c, value: ids[String(c.value)]! } : c));
-      const rule: FilterRule = { ...f.rule, conditions };
+      const actions = f.rule.actions.map((a): FilterAction => (a.type === "moveToFolder" ? { ...a, accountId: ids[String(a.accountId)]! } : a));
+      const rule: FilterRule = { ...f.rule, conditions, actions };
       const key = `${f.name}\n${JSON.stringify(rule)}`;
       if (same.has(key)) {
         existingFilters++;
@@ -383,6 +384,13 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
       const email = emailOfOld.get(c.value);
       if (email === undefined) ok = false;
       else emails[String(c.value)] = email;
+    }
+    // plan 128: a folder's account, the same way (its key is the server's: it comes along as it is)
+    for (const a of actions) {
+      if (a.type !== "moveToFolder") continue;
+      const email = emailOfOld.get(a.accountId);
+      if (email === undefined) ok = false;
+      else emails[String(a.accountId)] = email;
     }
     if (!ok || actions.length === 0) skipped.push(f.name);
     else waitingFilters.push({ name: f.name, enabled: f.enabled, source: f.source, auto: f.auto ?? false, rule: { ...f.rule, actions }, accountEmails: emails });

@@ -12,6 +12,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { bounded, rawIdleMail } from "./test/imap-idle-fixture";
 
+const SENDER = "ana@example.test";
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close(); });
 
@@ -275,7 +276,7 @@ it("a scope moves everything from the sender, kept threads copied, with one undo
   for (const s of ["Uno", "Dos", "Tres"]) t.server.control.addMessage("INBOX", { raw: rawIdleMail(s) });
   await t.sync();
   const ids = await t.inbox();
-  const r = await t.client.call("folders.moveScope", { accountId: t.account.id, folder: "Recibos", from: null, scope: { kind: "sender", email: "ana@example.test" } });
+  const r = await t.client.call("folders.moveScope", { accountId: t.account.id, folder: "Recibos", from: null, scope: { kind: "sender", email: SENDER }, filterName: "Ana → Recibos" });
   expect(r.affected).toBe(3);
   expect(await t.inbox()).toEqual([]);
   await t.settle();
@@ -284,4 +285,93 @@ it("a scope moves everything from the sender, kept threads copied, with one undo
   await t.settle();
   expect([t.on("INBOX"), t.on("Recibos")]).toEqual([3, 0]);
   expect(new Set(await t.inbox())).toEqual(new Set(ids));
+});
+
+// ── plan 128: a line's filter, on a real server
+
+const SENDER_RULE = (accountId: number, folder: string) => ({ match: "all" as const, conditions: [{ field: "from" as const, op: "equals" as const, value: SENDER }], actions: [{ type: "moveToFolder" as const, accountId, folder }] });
+
+it("a line saves the filter: new mail reaching the server ends in the folder, not in INBOX; undo takes back the filter and the sweep", async () => {
+  const t = await setup();
+  for (const s of ["Uno", "Dos"]) t.server.control.addMessage("INBOX", { raw: rawIdleMail(s) });
+  await t.sync();
+  const r = await t.client.call("folders.moveScope", { accountId: t.account.id, folder: "Recibos", from: null, scope: { kind: "sender", email: SENDER }, filterName: "Ana → Recibos" });
+  expect(r).toMatchObject({ affected: 2, filterFailed: false });
+  expect(r.filter?.filterUndo).not.toBeNull();
+  const [saved] = await t.client.call("filters.list", {});
+  expect(saved).toMatchObject({ name: "Ana → Recibos", auto: true, rule: { actions: [{ type: "moveToFolder", accountId: t.account.id, folder: "Recibos" }] } });
+  await t.settle();
+
+  t.server.control.addMessage("INBOX", { raw: rawIdleMail("Tres") });
+  await t.sync();
+  // in the folder before the server has answered
+  expect(await t.inbox()).toEqual([]);
+  expect((await t.threadsIn("Recibos")).length).toBe(3);
+  await t.settle();
+  expect([t.on("INBOX"), t.on("Recibos"), t.on("Archive")]).toEqual([0, 3, 0]);
+  expect(await t.ops()).toEqual([]);
+
+  await t.client.call("similar.undo", { undoId: r.undoId, filterUndo: r.filter!.filterUndo });
+  expect(await t.client.call("filters.list", {})).toEqual([]);
+  await t.settle();
+  // the sweep's two come back; the one the filter moved on arrival stays where the filter put it
+  expect([t.on("INBOX"), t.on("Recibos")]).toEqual([2, 1]);
+  // and new mail stays in the Inbox now
+  t.server.control.addMessage("INBOX", { raw: rawIdleMail("Cuatro") });
+  await t.sync();
+  await t.settle();
+  expect(t.on("INBOX")).toBe(3);
+});
+
+it("new mail in a category shown in the Inbox: a copy in the folder, and it stays in INBOX", async () => {
+  const t = await setup();
+  const category = await t.client.call("categories.create", { name: "Facturas", color: "cyan", showInInbox: true });
+  await t.sync();
+  await t.client.call("filters.save", { name: "cat", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "from", op: "equals", value: SENDER }], actions: [{ type: "addCategory", categoryId: category.id }] } });
+  await t.client.call("filters.save", { name: "folder", enabled: true, source: "manual", rule: SENDER_RULE(t.account.id, "Recibos") });
+  t.server.control.addMessage("INBOX", { raw: rawIdleMail("Recibo") });
+  await t.sync();
+  const [thread] = await t.inbox();
+  expect(await t.threadsIn("Recibos")).toEqual([thread]);
+  await t.settle();
+  expect([t.on("INBOX"), t.on("Recibos"), t.on("Archive")]).toEqual([1, 1, 0]);
+  expect(await t.inbox()).toEqual([thread]);
+});
+
+it("filters.save refuses a new folder that isn't listed; one that went away doesn't stop a rename", async () => {
+  const t = await setup();
+  await t.sync();
+  await expect(t.client.call("filters.save", { name: "x", enabled: true, source: "manual", rule: SENDER_RULE(t.account.id, "Nope") })).rejects.toMatchObject({ code: "NOT_FOUND" });
+  const saved = await t.client.call("filters.save", { name: "x", enabled: true, source: "manual", rule: SENDER_RULE(t.account.id, "Recibos") });
+  // gone from the server, and from the list at the next pass
+  await t.backend.store!.folders.replace(t.account.id, (await t.backend.store!.folders.list()).filter((f) => f.accountId === t.account.id && f.key !== "Recibos").map(({ key, path, selectable }) => ({ key, path, selectable })));
+  await expect(t.client.call("filters.save", { id: saved.id, name: "y", enabled: true, source: "manual", rule: saved.rule })).resolves.toMatchObject({ name: "y" });
+});
+
+it("renaming a folder in Terno takes its filters along; deleting it turns them off", async () => {
+  const t = await setup();
+  await t.sync();
+  const saved = await t.client.call("filters.save", { name: "x", enabled: true, source: "manual", rule: SENDER_RULE(t.account.id, "Recibos") });
+  const { renamed } = await t.client.call("folders.rename", { accountId: t.account.id, key: "Recibos", name: "Facturas" });
+  expect(renamed[0]!.to).toBe("Facturas");
+  let now = (await t.client.call("filters.list", {})).find((f) => f.id === saved.id)!;
+  expect(now.rule.actions).toEqual([{ type: "moveToFolder", accountId: t.account.id, folder: "Facturas" }]);
+  expect(now.enabled).toBe(true);
+  await t.client.call("folders.delete", { accountId: t.account.id, key: "Facturas" });
+  now = (await t.client.call("filters.list", {})).find((f) => f.id === saved.id)!;
+  expect(now.enabled).toBe(false);
+});
+
+it("a backup brings the filter back to the account with that address, whatever its id is now", async () => {
+  const t = await setup();
+  await t.sync();
+  const saved = await t.client.call("filters.save", { name: "x", enabled: true, source: "manual", rule: SENDER_RULE(t.account.id, "Recibos") });
+  const backup = JSON.parse(JSON.stringify(await t.client.call("app.export", {}))) as { accounts: { id: number; email: string }[]; filters: { rule: { actions: { accountId: number }[] } }[] };
+  const old = 4242;
+  backup.accounts.find((a) => a.email === t.account.email)!.id = old;
+  backup.filters[0]!.rule.actions[0]!.accountId = old;
+  await t.client.call("filters.delete", { id: saved.id });
+  await t.client.call("app.import", { data: backup as never });
+  const [back] = await t.client.call("filters.list", {});
+  expect(back!.rule.actions).toEqual([{ type: "moveToFolder", accountId: t.account.id, folder: "Recibos" }]);
 });

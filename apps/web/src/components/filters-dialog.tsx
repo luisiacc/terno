@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@terno/ui/components/switch";
 import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Forward, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2 } from "@terno/ui/icons";
+import { Archive, Folder as FolderIcon, Forward, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2 } from "@terno/ui/icons";
 import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { t, type TextKey } from "@terno/i18n";
 import { richT } from "~/lib/i18n";
@@ -58,14 +58,62 @@ const PATTERN_ISSUES = {
   complex: "filters.invalid.pattern.complex",
 } as const satisfies Record<NonNullable<ReturnType<typeof checkPattern>>, TextKey>;
 
-const ACTIONS: { type: Exclude<FilterAction["type"], "addCategory" | "forward">; label: `filters.action.${string}` & TextKey; icon: typeof Archive }[] = [
+/** Plan 128: "Move to" a folder of one account. One that isn't there says so: the mail it would move stays in the Inbox. */
+function FolderAction({ action, rule, onChange }: { action: { accountId: number; folder: string } | undefined; rule: FilterRule; onChange: (to: { accountId: number; folder: string } | null) => void }) {
+  const folders = useApp((s) => s.folders);
+  const accounts = useApp((s) => s.accounts);
+  const options = useMemo(() => {
+    const email = new Map(accounts.map((a) => [a.id, a.email]));
+    return folders
+      .filter((f) => f.selectable && email.has(f.accountId))
+      .map((f) => ({ value: JSON.stringify([f.accountId, f.key]), label: accounts.length > 1 ? `${email.get(f.accountId)!} · ${f.path.join(" / ")}` : f.path.join(" / ") }));
+  }, [folders, accounts]);
+  if (!action && options.length === 0) return null;
+  const value = action ? JSON.stringify([action.accountId, action.folder]) : "none";
+  const gone = action !== undefined && !options.some((o) => o.value === value);
+  const items = [{ value: "none", label: t("filters.noFolder") }, ...options, ...(gone ? [{ value, label: t("filters.folderGone") }] : [])];
+  const account = action && accounts.find((a) => a.id === action.accountId);
+  const oneAccount = rule.match === "all" && rule.conditions.some((c) => c.field === "account" && c.value === action?.accountId && !c.negate);
+  return (
+    <div className="space-y-1.5">
+      <Select
+        value={value}
+        onValueChange={(v) => {
+          if (v === "none") return onChange(null);
+          const [accountId, folder] = JSON.parse(v as string) as [number, string];
+          onChange({ accountId, folder });
+        }}
+        items={items}
+      >
+        <SelectTrigger size="sm" className={cn("h-7 max-w-full text-xs", action && "border-primary/40 bg-primary/10")} data-testid="action-folder-select" aria-label={t("filters.moveToFolder")}>
+          <FolderIcon className="size-3.5" />
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {items.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {gone ? (
+        <p className="text-xs text-destructive" data-testid="filter-folder-gone">{t("filters.folderGoneHelp")}</p>
+      ) : (
+        action && account && !oneAccount && <p className="text-xs text-muted-foreground" data-testid="filter-folder-account">{t("filters.folderAccountOnly", { account: account.email })}</p>
+      )}
+    </div>
+  );
+}
+
+const ACTIONS: { type: Exclude<FilterAction["type"], "addCategory" | "forward" | "moveToFolder">; label: `filters.action.${string}` & TextKey; icon: typeof Archive }[] = [
   { type: "archive", label: "filters.action.archive", icon: Archive },
   { type: "trash", label: "filters.action.trash", icon: Trash2 },
   { type: "spam", label: "filters.action.spam", icon: OctagonAlert },
   { type: "markRead", label: "filters.action.markRead", icon: MailCheck },
   { type: "star", label: "filters.action.star", icon: Star },
 ];
-const EXCLUSIVE = new Set(["archive", "trash", "spam"]);
+const EXCLUSIVE = new Set(["archive", "trash", "spam", "moveToFolder"]);
 
 interface Draft {
   id?: number;
@@ -329,12 +377,14 @@ export function FiltersDialog() {
   const rule = draft.rule;
   const setRule = (r: FilterRule) => setDraft((d) => ({ ...d, rule: r }));
   const hasAction = (type: string) => rule.actions.some((a) => a.type === type);
-  const toggleAction = (type: Exclude<FilterAction["type"], "addCategory" | "forward">) => {
+  const toggleAction = (type: Exclude<FilterAction["type"], "addCategory" | "forward" | "moveToFolder">) => {
     if (hasAction(type)) setRule({ ...rule, actions: rule.actions.filter((a) => a.type !== type) });
     else setRule({ ...rule, actions: [...rule.actions.filter((a) => !(EXCLUSIVE.has(type) && EXCLUSIVE.has(a.type))), { type }] });
   };
   const categoryAction = rule.actions.find((a) => a.type === "addCategory") as { type: "addCategory"; categoryId: number } | undefined;
   const forwardAction = rule.actions.find((a) => a.type === "forward") as { type: "forward"; to: Address[] } | undefined;
+  const folderAction = rule.actions.find((a) => a.type === "moveToFolder") as { type: "moveToFolder"; accountId: number; folder: string } | undefined;
+  const setFolder = (to: { accountId: number; folder: string } | null) => setRule({ ...rule, actions: [...rule.actions.filter((a) => !EXCLUSIVE.has(a.type)), ...(to ? [{ type: "moveToFolder" as const, ...to }] : [])] });
   const setForward = (to: Address[] | null) => setRule({ ...rule, actions: [...rule.actions.filter((a) => a.type !== "forward"), ...(to ? [{ type: "forward" as const, to }] : [])] });
 
   const generate = async () => {
@@ -579,6 +629,7 @@ export function FiltersDialog() {
                   </SelectContent>
                 </Select>
               </div>
+              <FolderAction action={folderAction} rule={rule} onChange={setFolder} />
               {forwardAction && <ForwardTo key={loads} to={forwardAction.to} onChange={(to) => setForward(to)} paused={Boolean(filters.find((f) => f.id === draft.id)?.forwardPaused)} />}
               {!valid.success && <p className="text-xs text-destructive" data-testid="filter-invalid">{t(filterIssueKey(valid.error.issues))}</p>}
             </div>

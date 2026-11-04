@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { capFilterName, categoryRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction, type AccountPrefs, type Reminder, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
+import { capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction, type AccountPrefs, type Reminder, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
 import { L } from "@terno/i18n";
 import { movedNothing, SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type FolderMoved, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
@@ -9,7 +9,7 @@ import { forgetSignInVersion, signInVersion, admitBrowserGoogle, beginSignIn, en
 import { accountLabel } from "./account-label";
 import { exportMailbox, importMailbox, restorePending } from "./import";
 import { countThreadScope, progressReporter, resolveThreadScope, SCOPE_CAP, UndoJournal } from "./scope";
-import { SimilarFilters } from "./similar";
+import { followFolderFilters, SimilarFilters } from "./similar";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { findUnsubscribe, runUnsubscribe } from "./unsubscribe";
 import { StorageMaintenance } from "./storage";
@@ -206,9 +206,13 @@ export function createHandlers(b: Backend): Handlers {
    * Plan 127: a folder move over these threads, one store command per slice. Never a learning signal. An undo id holds
    * it all, also after a failure partway (the slices that committed stay undoable).
    */
-  const moveToFolder = async (accountId: number, folder: string, from: string | null, threadIds: readonly number[], progress?: (done: number) => void) => {
+  const requireFolder = async (accountId: number, folder: string) => {
     const listed = (await store.folders.list()).filter((f) => f.accountId === accountId);
     if (!listed.some((f) => f.key === folder && f.selectable)) throw new RpcError("NOT_FOUND", L("errors.folderExport.gone"));
+    return listed;
+  };
+  const moveToFolder = async (accountId: number, folder: string, from: string | null, threadIds: readonly number[], progress?: (done: number) => void) => {
+    const listed = await requireFolder(accountId, folder);
     const source = from !== null && from !== folder && listed.some((f) => f.key === from) ? from : null;
     const moved: FolderMoved[] = [];
     const before: MessageState[] = [];
@@ -294,6 +298,7 @@ export function createHandlers(b: Backend): Handlers {
     // round 11 #3: a favorite waiting for the list found the account still there and was written after the cleanup)
     await b.withFolderList(id, async () => {
       await b.writeFavorites(() => followFavoriteFolders(store, id, { deleted: "all" }));
+      await followFolderFilters(store, id, { deleted: "all" }, b.now(), (m, d) => b.log("warn", m, d));
       // the owner row survives: its account_id is cleared (ON DELETE SET NULL)
       await store.accounts.remove(id);
     });
@@ -435,26 +440,49 @@ export function createHandlers(b: Backend): Handlers {
       const progress = progressReporter(b, jobId, threadIds.length);
       return moveToFolder(accountId, folder, from, threadIds, progress);
     },
-    "folders.moveScope": async ({ accountId, folder, from, scope, jobId }) => {
-      // resolved once, as a sweep is: filing changes the scope's own "not in it yet"
-      const ids = await resolving(async () => {
-        const cap = b.options.similarCap ?? SCOPE_CAP;
-        const found = new Set<number>();
-        for (let cursor: number | null = null; ; ) {
-          const page = await store.similar.resolvePage(scope, { accountId, folder }, [], cursor, b.options.similarPage ?? SIMILAR_PAGE);
-          for (const id of page.ids) found.add(id);
-          if (found.size > cap) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
-          if (page.next === null) break;
-          cursor = page.next;
-          await b.yieldTurn();
-        }
-        return [...found];
-      });
-      const progress = progressReporter(b, jobId, ids.length);
-      progress(0);
-      const r = await moveToFolder(accountId, folder, from, ids, progress);
-      progress(ids.length);
-      return r;
+    "folders.moveScope": async ({ accountId, folder, from, scope, filterName, jobId }) => {
+      await requireFolder(accountId, folder);
+      // plan 128: the filter first, so mail that arrives while the set moves is caught by it (the set is fixed below)
+      let filter: { id: number; filterUndo: number | null; retargeted: { from: string } | null } | null = null;
+      let filterFailed = false;
+      try {
+        const f = await similarFilters.ensureRule(folderRule(scope, accountId, folder), filterName);
+        filter = { id: f.filter.id, filterUndo: f.filterUndo, retargeted: f.retargetedFolder };
+      } catch (error) {
+        // the mail still moves and stays undoable: the result says the filter is missing
+        filterFailed = true;
+        const partial = error instanceof RpcError ? (error.details as { filterUndo?: unknown } | undefined)?.filterUndo : undefined;
+        if (typeof partial === "number") filter = { id: 0, filterUndo: partial, retargeted: null };
+        b.log("warn", "folder filter failed", error instanceof Error ? error.message : error);
+      }
+      try {
+        // resolved once, as a sweep is: filing changes the scope's own "not in it yet"
+        const ids = await resolving(async () => {
+          const cap = b.options.similarCap ?? SCOPE_CAP;
+          const found = new Set<number>();
+          for (let cursor: number | null = null; ; ) {
+            const page = await store.similar.resolvePage(scope, { accountId, folder }, [], cursor, b.options.similarPage ?? SIMILAR_PAGE);
+            for (const id of page.ids) found.add(id);
+            if (found.size > cap) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
+            if (page.next === null) break;
+            cursor = page.next;
+            await b.yieldTurn();
+          }
+          return [...found];
+        });
+        const progress = progressReporter(b, jobId, ids.length);
+        progress(0);
+        const r = await moveToFolder(accountId, folder, from, ids, progress);
+        progress(ids.length);
+        return { ...r, filter, filterFailed };
+      } catch (error) {
+        // what moved and the filter stay: the renderer can still undo both
+        const filterUndo = filter?.filterUndo ?? null;
+        if (filterUndo === null) throw error;
+        const undoId = error instanceof RpcError ? ((error.details as { undoId?: number } | undefined)?.undoId ?? null) : null;
+        if (error instanceof RpcError) throw new RpcError(error.code, error.message, { undoId, filterUndo }, { expected: error.expected, diag: error.diag, i18n: error.i18n, cause: error });
+        throw new RpcError("INTERNAL", error instanceof Error ? error.message : String(error), { undoId, filterUndo }, { expected: false, cause: error });
+      }
     },
     "similar.offers": ({ threadIds, action }) => store.similar.offers(threadIds, action),
     "similar.apply": async ({ threadIds, scope, action, jobId, filterName }) => {
@@ -767,6 +795,9 @@ export function createHandlers(b: Backend): Handlers {
         // nor files new mail into a category that forwards, unless agents may send (its filing would send mail elsewhere)
         await agentMayFile(p.rule.actions.flatMap((a) => (a.type === "addCategory" ? [a.categoryId] : [])));
       }
+      // plan 128: a new target has to be there; one that went away since doesn't stop the filter being renamed
+      const before = p.id === undefined ? [] : ((await store.filters.get(p.id))?.rule.actions ?? []);
+      for (const a of p.rule.actions) if (a.type === "moveToFolder" && !before.some((x) => x.type === "moveToFolder" && x.accountId === a.accountId && x.folder === a.folder)) await requireFolder(a.accountId, a.folder);
       const f = await store.filters.save(p, b.now());
       await b.forwards.rules();
       return f;

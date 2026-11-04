@@ -31,6 +31,7 @@ import { restorePending } from "./import";
 import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
 import { CARRY_SLICE, carryRenamed } from "./folders";
+import { followFolderFilters } from "./similar";
 import { followFavoriteFolders, readAutoCategorize, readComposeSuggestions, readGooglePhotos, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
 import { IconService } from "./icons/service";
 import type { IconTransport } from "./icons/transport";
@@ -1844,6 +1845,7 @@ export class BackendCore {
             // review round 12 #3: they stayed, and a folder made again under the name came back a favorite); and so
             // does a folder gone in another app, this list being the account's whole one (Codex code review round 24 #3)
             await this.accountWrite(life, () => this.writeFavorites(() => followFavoriteFolders(this.store, accountId, { renamed: moves, deleted, listed: new Set(folders.map((f) => f.key)) })));
+            await this.accountWrite(life, () => followFolderFilters(this.store, accountId, { renamed: moves, deleted }, this.now(), (m, d) => this.log("warn", m, d)));
           });
         },
       };

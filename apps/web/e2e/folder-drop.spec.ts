@@ -5,11 +5,14 @@
  */
 import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
+import { msg } from "@terno/store/conformance";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 import { expect, test } from "./fixtures";
 
 test.use({ reducedMotion: "no-preference" });
 
+/** a folder of the seed's IMAP-like account */
+const FOLDER_NAME = "Clientes antiguos";
 const accountOf = (server: DevServer, name: string) => sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM accounts WHERE display_name = ?", name)!.id;
 const inFolder = (server: DevServer, accountId: number, folder: string) => new Set(sqlDb(server.backend.store).all<{ thread_id: number }>("SELECT thread_id FROM thread_folders WHERE account_id = ? AND folder = ?", accountId, folder).map((r) => r.thread_id));
 const own = (page: Page, accountId: number, key: string) => page.getByTestId(`nav-own-${accountId}-${key}`);
@@ -90,6 +93,54 @@ test.describe("dragging mail onto a folder", { tag: "@design" }, () => {
     await page.keyboard.press("z");
     await expect.poll(() => ids.every((id) => !inFolder(server, account, "Label_23").has(id))).toBe(true);
     await expect.poll(() => db.all<{ id: number; in_inbox: number }>(`SELECT id, in_inbox FROM threads WHERE id IN (${ids.join(",")})`).every((r) => before.get(r.id) === r.in_inbox)).toBe(true);
+  });
+
+  test("a line says + new mail: what arrives next lands in the folder, and Undo takes the filter back too (plan 128)", async ({ app: page, server }) => {
+    const account = accountOf(server, "Acme Studio");
+    const db = sqlDb(server.backend.store);
+    const arrive = async (id: string, email: string) => {
+      const { touched } = await server.backend.store.sync.ingest([msg({ accountId: account, providerMsgId: id, rfcMessageId: `${id}@t`, from: { name: "Sender", email }, subject: `Fresh ${id}`, date: Date.now(), gmailLabels: ["INBOX"], inInbox: true })], { applyFilters: true, now: Date.now(), classifier: null });
+      return touched[0]!;
+    };
+    await openAccount(page, account);
+    const first = await rowOutside(page, inFolder(server, account, "Label_23"));
+    const sender = db.get<{ from_email: string }>("SELECT from_email FROM messages WHERE thread_id = ? AND is_sent = 0 ORDER BY date LIMIT 1", first)!.from_email;
+    await dragTo(page, row(page, first), own(page, account, "Label_23"));
+    await page.mouse.up();
+    const line = page.getByTestId("folder-sender");
+    await expect(line).toContainText("+ new mail");
+    await line.click();
+    await expect.poll(() => db.get<{ c: number }>("SELECT count(*) c FROM filters WHERE auto = 1 AND rule_json LIKE '%moveToFolder%'")!.c).toBe(1);
+
+    const caught = await arrive("future-1", sender);
+    expect(inFolder(server, account, "Label_23").has(caught)).toBe(true);
+    expect(db.get<{ in_inbox: number }>("SELECT in_inbox FROM threads WHERE id = ?", caught)!.in_inbox).toBe(0);
+    const stranger = await arrive("future-2", "someone-else@example.test");
+    expect(db.get<{ in_inbox: number }>("SELECT in_inbox FROM threads WHERE id = ?", stranger)!.in_inbox).toBe(1);
+
+    await page.keyboard.press("z");
+    await expect.poll(() => db.get<{ c: number }>("SELECT count(*) c FROM filters WHERE rule_json LIKE '%moveToFolder%'")!.c).toBe(0);
+    const after = await arrive("future-3", sender);
+    expect(db.get<{ in_inbox: number }>("SELECT in_inbox FROM threads WHERE id = ?", after)!.in_inbox).toBe(1);
+  });
+
+  test("the builder moves mail to a folder, and says when it only moves one account's", async ({ app: page, server }) => {
+    await page.getByTestId("open-filters").click();
+    await page.getByTestId("condition-value").fill("someone@example.test");
+    await page.getByTestId("action-folder-select").click();
+    await page.getByRole("option").filter({ hasText: FOLDER_NAME }).first().click();
+    await expect(page.getByTestId("action-toggle-archive")).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("filter-folder-account")).toBeVisible();
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme });
+      await page.screenshot({ path: test.info().outputPath(`builder-${colorScheme}.png`) });
+    }
+    await page.getByTestId("action-toggle-archive").click();
+    await expect(page.getByTestId("action-folder-select")).toContainText("No folder");
+    await page.getByTestId("action-folder-select").click();
+    await page.getByRole("option").filter({ hasText: FOLDER_NAME }).first().click();
+    await page.getByTestId("filter-save").click();
+    await expect.poll(async () => (await server.backend.store.filters.list()).some((f) => f.rule.actions.some((a) => a.type === "moveToFolder"))).toBe(true);
   });
 
   test("a thread in a category shown in the Inbox stays there and the note says why", async ({ app: page, server }) => {

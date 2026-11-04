@@ -994,9 +994,13 @@ export const contract = {
     z.object({ accountId: id, folder: folderKey, from: folderKey.nullable(), threadIds: z.array(id).min(1).max(5000), jobId: jobId.optional() }),
     { timeoutMs: 300_000 },
   ),
-  /** Plan 127: the same for a scope, resolved once and sliced with progress. A failure after some slices carries `{ undoId }` in its details. */
-  "folders.moveScope": m<{ affected: number; kept: number; undoId: number | null }>()(
-    z.object({ accountId: id, folder: folderKey, from: folderKey.nullable(), scope: similarScope, jobId: jobId.optional() }),
+  /**
+   * Plan 127: the same for a scope, resolved once and sliced with progress. Plan 128: and a filter for its new mail,
+   * saved first (`filterFailed`: only what's there moved). `similar.undo` takes back both; a failure partway carries
+   * `{ undoId, filterUndo }` in its details.
+   */
+  "folders.moveScope": m<{ affected: number; kept: number; undoId: number | null; filter: { id: number; filterUndo: number | null; retargeted: { from: string } | null } | null; filterFailed: boolean }>()(
+    z.object({ accountId: id, folder: folderKey, from: folderKey.nullable(), scope: similarScope, filterName: filterName.unwrap(), jobId: jobId.optional() }),
     { timeoutMs: 300_000 },
   ),
   /** Plan 107: what a delete takes with it, for its confirmation (messages in the folder and its subfolders, here) */
