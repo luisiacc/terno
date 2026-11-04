@@ -145,6 +145,6 @@ Run on a shared machine with a load average between 7 and 52, so budgets were co
 Two failures appear in this group.
 
 - **A budget (`<= 1500` ms):** on both sides, under load. Noise.
-- **Typed text not at the end of the draft:** seen four times on this branch in its first runs, and **never on the base commit** (none in about 24 runs). It then didn't come back in 34 further runs here, including 8 under heavy CPU load and 18 with selection and focus logged. So it was never captured, and the cause is unknown.
+- **Typed text not at the end of the draft:** seen five times on this branch in its first runs, and **never on the base commit** (none in about 40 runs). It then didn't come back in about 50 further runs here, including 8 under heavy CPU load and 30 with selection and focus logged. So it was never captured, and the cause is unknown.
 
 Nothing in this diff touches the composer, and a thread's details arriving sooner is the only link I can see. If it shows up again, suspect a second focus landing after `Cmd+End`, and start with `focusDraft`'s callers in `compose.ts`.
