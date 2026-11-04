@@ -169,10 +169,11 @@ export function FirstRun() {
           // the chosen style chosen again (clicked, or arrowed back onto) cancels a switch still waiting for its faces
           // (Codex code review #2, second pass #3)
           onReselect={(design) => pick({ design: design as AppSettings["design"] })}
-          className="grid shrink-0 grid-cols-3 gap-2"
+          // one row, one column per style: three columns left the fourth alone on a row of its own
+          className="grid shrink-0 grid-cols-4 gap-2"
         >
           {DESIGNS.map((d) => (
-            <RadioCard key={d.id} value={d.id} data-testid={`first-run-design-${d.id}`} className="flex-col items-center gap-1.5 px-2 pt-2.5 pb-2">
+            <RadioCard key={d.id} value={d.id} data-testid={`first-run-design-${d.id}`} className="min-w-0 flex-col items-center gap-1.5 px-1 pt-2.5 pb-2">
               {/* the style's own type, in its own design */}
               <span data-design={d.id} aria-hidden className="flex h-10 w-14 items-center justify-center rounded-lg bg-background text-xl text-foreground shadow-hairline" style={{ fontFamily: "var(--type-list-title-family)", fontWeight: "var(--type-list-title-weight)", fontStyle: "var(--type-list-title-style)" }}>
                 {/* i18n-ignore: aria-hidden typography specimen, identical in every language */}

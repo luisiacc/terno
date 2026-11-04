@@ -21,6 +21,41 @@ async function openAppearance(page: Page) {
 
 const cssVar = (page: Page, name: string) => page.evaluate((n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(), name);
 
+test.describe("the Appearance choices", () => {
+  // fixed-width cards in a wrapping row left a hole beside the last column
+  test("the style and color cards fill their row, their previews fill the cards", async ({ app: page }) => {
+    await openAppearance(page);
+    for (const id of ["design-grid", "theme-grid-light", "theme-grid-dark"]) {
+      const grid = page.getByTestId(id);
+      await grid.scrollIntoViewIfNeeded();
+      const { gridRight, right, overflow } = await grid.evaluate((el) => {
+        const cards = [...el.querySelectorAll<HTMLElement>("[role=radio]")];
+        return {
+          gridRight: el.getBoundingClientRect().right,
+          right: Math.max(...cards.map((c) => c.getBoundingClientRect().right)),
+          // a card's content past its edge, or a preview short of it
+          overflow: cards.filter((c) => {
+            const preview = c.querySelector<HTMLElement>("[aria-hidden]")!;
+            return c.scrollWidth > c.clientWidth || c.clientWidth - preview.getBoundingClientRect().width > 14;
+          }).length,
+        };
+      });
+      expect(Math.abs(gridRight - right), id).toBeLessThan(1);
+      expect(overflow, id).toBe(0);
+    }
+  });
+
+  // Codex review: a fixed three columns left a narrow window's color names cut off ("Catppuccin L…")
+  test("in a narrow window, the color cards drop a column and keep their names whole", async ({ app: page }) => {
+    await page.setViewportSize({ width: 640, height: 800 });
+    await openAppearance(page);
+    const cut = await page.getByTestId("theme-grid-light").evaluate((el) =>
+      [...el.querySelectorAll<HTMLElement>("[role=radio] .truncate")].filter((name) => name.scrollWidth > name.clientWidth).map((name) => name.textContent),
+    );
+    expect(cut).toEqual([]);
+  });
+});
+
 test.describe("reduced transparency", () => {
   test("the vibrancy sidebar turns opaque when the OS asks for reduced transparency", async ({ app: page }) => {
     const cdp = await page.context().newCDPSession(page);

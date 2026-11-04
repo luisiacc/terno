@@ -32,18 +32,19 @@ function DesignPreview({ design, mode }: { design: DesignDefinition; mode: Theme
   const title = { fontFamily: "var(--type-list-title-family)", fontWeight: "var(--type-list-title-weight)", fontStyle: "var(--type-list-title-style)", letterSpacing: "var(--type-list-title-tracking)" } as const;
   const section = { fontFamily: "var(--type-section-label-family)", fontWeight: "var(--type-section-label-weight)", fontStyle: "var(--type-section-label-style)" } as const;
   return (
-    <div data-design={design.id} data-theme={design.palette[mode]} aria-hidden className="flex h-[104px] w-[168px] overflow-hidden rounded-lg border border-border bg-background font-sans text-foreground">
-      <div className="flex w-[48px] shrink-0 flex-col gap-1 bg-sidebar p-1.5">
+    <div data-design={design.id} data-theme={design.palette[mode]} aria-hidden className="flex h-[132px] w-full overflow-hidden rounded-lg border border-border bg-background font-sans text-foreground">
+      <div className="flex w-[30%] shrink-0 flex-col gap-1 bg-sidebar p-1.5">
         {v.compose === "sidebar-pill" && <span className="h-3 rounded-full bg-primary" />}
         {v.compose === "sidebar-outline" && <span className="h-3 rounded-[3px] bg-card shadow-hairline" />}
         <span className="mt-0.5 h-2 rounded-[calc(var(--nav-radius)*0.4)] bg-sidebar-accent" />
-        <span className="h-1 w-8 rounded-full bg-muted-foreground" />
-        <span className="h-1 w-6 rounded-full bg-muted-foreground" />
-        <span className="mt-1 text-[8px] leading-none text-muted-foreground" style={section}>
+        <span className="h-1 w-4/5 rounded-full bg-muted-foreground" />
+        <span className="h-1 w-3/5 rounded-full bg-muted-foreground" />
+        <span className="mt-1 truncate text-[8px] leading-none text-muted-foreground" style={section}>
           {t("sidebar.categories")}
         </span>
         <span className="size-1.5 rounded-full bg-cat-amber" />
         <span className="size-1.5 rounded-full bg-cat-emerald" />
+        <span className="size-1.5 rounded-full bg-cat-indigo" />
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-1 bg-pane p-2">
         <div className="flex items-center justify-between">
@@ -59,13 +60,14 @@ function DesignPreview({ design, mode }: { design: DesignDefinition; mode: Theme
             <span className="h-2 w-5 rounded-full bg-muted" />
           </div>
         )}
-        {[0, 1, 2].map((i) => (
+        {/* more than fit: the list runs on past the mock's edge, as a real one does */}
+        {[0, 1, 2, 3, 4].map((i) => (
           <div key={i} className={cn("relative flex shrink-0 items-center gap-1.5 rounded-[calc(var(--row-radius)*0.5)] px-1", design.avatar.row ? "h-[22px]" : "h-[16px]", i === 1 && "bg-row-selected")}>
-            {design.avatar.row > 0 && <span className={cn("shrink-0 rounded-full", design.avatar.row > 40 ? "size-4" : "size-3.5", ["bg-cat-rose/30", "bg-cat-indigo/30", "bg-cat-emerald/30"][i])} />}
+            {design.avatar.row > 0 && <span className={cn("shrink-0 rounded-full", design.avatar.row > 40 ? "size-4" : "size-3.5", ["bg-cat-rose/30", "bg-cat-indigo/30", "bg-cat-emerald/30"][i % 3])} />}
             {!design.avatar.row && i === 0 && <span className="absolute left-0 size-1 rounded-full bg-unread" />}
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className={cn("h-1 rounded-full", i === 1 ? "w-12 bg-row-selected-foreground" : "w-10 bg-foreground")} />
-              <span className="h-0.5 w-16 rounded-full bg-muted-foreground" />
+              <span className={cn("h-1 rounded-full", i === 1 ? "w-1/2 bg-row-selected-foreground" : "w-2/5 bg-foreground")} />
+              <span className="h-0.5 w-5/6 rounded-full bg-muted-foreground" />
             </span>
           </div>
         ))}
@@ -77,7 +79,7 @@ function DesignPreview({ design, mode }: { design: DesignDefinition; mode: Theme
 /** A design as one of the styles: a radio card (in the Style `RadioGroup`, whose value is the design's id). */
 function StyleCard({ design, mode }: { design: DesignDefinition; mode: ThemeMode }) {
   return (
-    <RadioCard value={design.id} data-testid={`design-card-${design.id}`} className="w-[180px] flex-col gap-1.5 p-1.5">
+    <RadioCard value={design.id} data-testid={`design-card-${design.id}`} className="min-w-0 flex-col gap-1.5 p-1.5">
       <DesignPreview design={design} mode={mode} />
       <span className="flex items-center gap-1 px-0.5 text-sm">
         <span className="truncate font-medium">{designName(design.id)}</span>
@@ -266,7 +268,7 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
     const prevTheme = !prevId || prevId === own.id ? undefined : prevCustom ? resolveCustomTheme(prevCustom) : builtinTheme(prevId);
     const prevBase = prevCustom ? (builtinTheme(prevCustom.extends)?.id ?? prevCustom.extends) : prevTheme?.id;
     return (
-      <RadioGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} value={selected} onValueChange={(id) => pick(m, id as string)} className="flex-row flex-wrap gap-2" data-testid={`theme-grid-${m}`}>
+      <RadioGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} value={selected} onValueChange={(id) => pick(m, id as string)} className="grid grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-2" data-testid={`theme-grid-${m}`}>
         <ThemeCard theme={own} base={own.id} name={t("settings.appearance.styleColors")} testId={`theme-card-design-${m}`} value={DESIGN_PALETTE} note={selected === DESIGN_PALETTE ? note : undefined} />
         {prevTheme && prevBase && <ThemeCard key={`previous-${prevTheme.id}`} theme={prevTheme} base={prevBase} testId={`theme-card-previous-${m}`} value={prevTheme.id} note={t("settings.appearance.previous")} />}
         {themesFor(m)
@@ -295,7 +297,8 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
               // the chosen style chosen again (clicked, or arrowed back onto) is a choice too: it cancels a switch still
               // waiting for its faces (Codex code review #2, second pass #3)
               onReselect={(id) => void updateAppearance({ design: id as DesignDefinition["id"] })}
-              className="flex-row flex-wrap gap-2"
+              // two across, each half the row: fixed-width cards left a hole beside the last column
+              className="grid grid-cols-2 gap-2"
               data-testid="design-grid"
             >
               {DESIGNS.map((d) => (
