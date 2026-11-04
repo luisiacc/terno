@@ -220,6 +220,15 @@ describe("the sample", () => {
     expect(chooseExamples(mails, { isReply: true, oneToOne: true, language: "en" }, 3).map((m) => m.id)).toEqual([3, 1, 2]);
   });
 
+  it("a message whose language can't be told comes after one known to match, before one known not to", () => {
+    const mails = [
+      written("hasta pronto", { id: 1, at: 9, isReply: true, language: "" }),
+      written("una respuesta en castellano", { id: 2, at: 8, isReply: true, language: "es" }),
+      written("a reply in english", { id: 3, at: 1, isReply: true, language: "en" }),
+    ];
+    expect(chooseExamples(mails, { isReply: true, oneToOne: true, language: "en" }, 3).map((m) => m.id)).toEqual([3, 1, 2]);
+  });
+
   it("the topic check doesn't take a manner note for a subject", () => {
     expect(rejectNote("Leads with the answer, then one short practical reason", [{ text: "the answer is no for a practical reason", to: ["a@x.example"] }, { text: "other mail here", to: ["b@x.example"] }])).toBeNull();
   });

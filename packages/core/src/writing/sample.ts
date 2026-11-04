@@ -45,7 +45,7 @@ export function sampleable(mails: readonly WrittenMail[]): WrittenMail[] {
  */
 export function chooseExamples(mails: readonly WrittenMail[], want: { isReply: boolean; oneToOne: boolean; language: string }, limit = 4): WrittenMail[] {
   const oneToOne = (m: WrittenMail) => m.to.length + m.cc.length === 1;
-  const score = (m: WrittenMail) => (m.isReply === want.isReply ? 2 : 0) + (oneToOne(m) === want.oneToOne ? 2 : 0) + (!want.language || !m.language || m.language === want.language ? 5 : 0);
+  const score = (m: WrittenMail) => (m.isReply === want.isReply ? 2 : 0) + (oneToOne(m) === want.oneToOne ? 2 : 0) + (!want.language || m.language === want.language ? 10 : m.language ? 0 : 5);
   return sampleable(mails)
     .filter((m) => m.words > 0)
     .sort((a, b) => score(b) - score(a) || newestFirst(a, b))

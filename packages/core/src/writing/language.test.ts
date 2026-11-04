@@ -32,6 +32,11 @@ describe("detectWritingLanguage", () => {
     for (const text of ["ok", "Gracias!", "thanks", "👍", "", "12:30"]) expect(detectWritingLanguage(text)).toBe("");
   });
 
+  it("abstains on shared words rather than guess between languages", () => {
+    expect(detectWritingLanguage("Por favor, me avise no final de semana.")).toBe("");
+    expect(detectWritingLanguage("Meeting in London, dinner in Soho?")).toBe("");
+  });
+
   it("a name in another script doesn't change an English mail", () => {
     expect(detectWritingLanguage("Please thank 田中 for the update and tell him we will have it with the others.")).toBe("en");
   });
@@ -44,6 +49,10 @@ describe("namedLanguage", () => {
     ["réponds en français", "fr"],
     ["antworte auf Deutsch", "de"],
     ["responde em português", "pt"],
+    ["Write in Spanish, not in English", "es"],
+    ["Not in Spanish; answer in French", "fr"],
+    ["no en inglés, en español", "es"],
+    ["write it in English and in Spanish", null],
     ["say no politely", null],
     ["he lives in France", null],
   ])("%s", (instruction, language) => {
@@ -137,6 +146,14 @@ describe("voiceForLanguage", () => {
     expect(other.phrases).toEqual([]);
     expect(other.habits.exclamation).toBe(0.5);
     expect(other.habits.words.median).toBe(20);
+  });
+
+  it("a mixed level keeps only its manner, since it holds the other language's greetings too", () => {
+    const mixed = profile("", "en");
+    mixed.habits.languages = [{ text: "en", share: 0.6 }, { text: "es", share: 0.4 }];
+    const voice = voiceForLanguage(mixed, "en");
+    expect(voice.habits.greetings).toEqual([]);
+    expect(voice.phrases).toEqual([]);
   });
 
   it("no level argues for its own language", () => {

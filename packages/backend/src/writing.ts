@@ -405,7 +405,11 @@ export class WritingService {
     const level = (scope: VoiceScope, other = false) => neutral.find((v) => v.scope === scope && !!v.fromOtherAccount === other)?.habits ?? null;
     const { language, reason: languageReason } = chooseLanguage({
       instruction: p.instruction,
-      threadOwn: (context?.messages ?? []).filter((m) => m.own && m.text).sort((a, b) => b.date - a.date).map((m) => detectWritingLanguage(withoutQuotes(m.text ?? ""))),
+      // what they wrote, not their signature or a quote: "Thanks!" over a Spanish signature says nothing about Spanish
+      threadOwn: readCorpus(
+        (context?.messages ?? []).filter((m) => m.own && m.text).sort((a, b) => b.date - a.date).map((m) => ({ id: m.id, to: [], cc: [], at: m.date, isReply: true, body: m.text ?? "" })),
+        { signature: account.signature, selfNames: [account.senderName, account.displayName].filter(Boolean) },
+      ).sort((a, b) => b.at - a.at).map((m) => m.language),
       inbound: inboundText ? detectWritingLanguage(inboundText) : "",
       toPerson: [...mails].sort((a, b) => b.at - a.at).map((m) => m.language),
       otherAccount: level("person", true),
@@ -534,7 +538,9 @@ export class WritingService {
       const held = this.snapshots.get(session);
       let snapshot: Snapshot;
       let reused = false;
-      if (held?.key === key) {
+      // "in French" on a refinement is a new draft in French: its voice, examples and everything after it follow
+      const asked = namedLanguage(p.instruction);
+      if (held?.key === key && (!asked || asked === held.used.language)) {
         snapshot = held;
         reused = true;
       } else {
@@ -554,10 +560,7 @@ export class WritingService {
       }
       if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
       const today = dayIn(this.b.now(), p.timezone);
-      // "in French" on a refinement changes the language of a draft already assembled
-      const asked = namedLanguage(p.instruction);
-      const language = asked ?? snapshot.used.language;
-      const named = languageName(language);
+      const named = languageName(snapshot.used.language);
       const task: ComposeTask = {
         kind: p.kind,
         today,

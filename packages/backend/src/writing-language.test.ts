@@ -69,6 +69,33 @@ describe("the language of a draft", () => {
     expect(taskOf(t)).toContain("language: English");
   });
 
+  it("a refinement in another language stays in it for the refinements after", async () => {
+    const t = await setup();
+    await t.sentMany(6, (i) => ({ bodyText: `${EN} ${i}` }));
+    await t.learned();
+    const session = "same-draft";
+    await done(t.compose({ to: [TOM], instruction: "say that works", session }));
+    expect(taskOf(t)).toContain("language: English");
+    const french = await done(t.compose({ to: [TOM], instruction: "now in French", session }));
+    expect(french.used).toMatchObject({ language: "fr", languageReason: "asked" });
+    expect(taskOf(t)).toContain("language: French");
+    const shorter = await done(t.compose({ to: [TOM], instruction: "shorter", session }));
+    expect(shorter.used.language).toBe("fr");
+    expect(taskOf(t)).toContain("language: French");
+  });
+
+  it("a signature in another language doesn't set the conversation's", async () => {
+    const t = await setup();
+    const signature = "Atentamente, gracias por todo\nDepartamento de ventas de la empresa";
+    await t.client.call("accounts.update", { id: t.account.id, signature });
+    const { thread, m } = await t.received({ bodyText: EN });
+    await t.sent({ bodyText: `Thanks!\n\n${signature}`, providerThreadId: m.providerThreadId, subject: m.subject, inReplyTo: m.rfcMessageId, references: [m.rfcMessageId!], date: START - 30_000 });
+    const context = await t.backend.store.writing.threadContext(thread, { maxBodies: 10, maxChars: 4000 });
+    expect(context?.messages.some((x) => x.own)).toBe(true);
+    const r = await done(t.compose({ kind: "reply", threadId: thread }));
+    expect(r.used).toMatchObject({ language: "en", languageReason: "inbound" });
+  });
+
   it("another language's greeting doesn't reach the prompt", async () => {
     const t = await setup();
     await t.sentMany(8, (i) => ({ bodyText: `Hi Tom,\n\n${EN} ${i}\n\nBest,\nLuis` }));

@@ -786,3 +786,14 @@ Profiles were already kept per language at every level. What was too simple was 
 - **Shown and changeable:** the strip's popover says which language and why ("In Spanish, as you write to Tom from this account"), and saying "in French" in the row changes it, on a refinement too.
 
 **Proved:** unit tests for each step and combination; the real backend with a scripted model (`writing-language.test.ts`); and real Sonnet 5.5 holding to the named language in 5 of 5 combinations, including an English thread with a Spanish habit, French and German, and an instruction overriding a habit (`scripts/ai-real/language.real.ts`). What can't be proved here is how well the habit thresholds fit real people's mail; they're the first thing to look at in the user's blind read.
+
+
+**What the code review of this part changed** (Codex, 7 findings, all fixed with regression tests):
+
+1. A refinement "in French" now re-assembles in French, and the refinements after it stay there, with the popover telling the truth.
+2. "Write in Spanish, not in English" is Spanish: a refused language doesn't count, and asking for two decides nothing here.
+3. A word several languages share proves nothing: detection needs a word only that language has, and counts each word once, so "Meeting in London, dinner in Soho?" gives no answer rather than Italian.
+4. What the author wrote in the thread is read without their signature or quotes.
+5. A level with a real share of another language keeps only its manner.
+6. Examples known to match come first, then ones whose language can't be told, then others.
+7. The AI switch's one-time reset rechecks inside its transaction, so a switch turned on meanwhile stays on (plan 134).

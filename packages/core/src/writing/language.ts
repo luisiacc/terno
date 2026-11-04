@@ -6,7 +6,7 @@ import type { Habits, Share, VoiceProfile } from "./types";
  */
 
 const WORDS: Readonly<Record<string, ReadonlySet<string>>> = {
-  en: new Set("the and you to is for that it of thanks please we be will have this with are can your on i i'm not was but at hi hello yes let's me my our from so if do works sounds good".split(" ")),
+  en: new Set("the and you to is for that it of thanks please we be will have this with are can your on i i'm not was but at in hi hello yes let's me my our from so if do works sounds good".split(" ")),
   es: new Set("el la que de y en los las por para con una un es gracias saludos hola nos te lo le se su al del usted no como pero más sí muy bien estimado estimada buenas".split(" ")),
   fr: new Set("le la les des et est que pour dans une un vous nous je merci bonjour avec pas sur ce cette au aux du votre notre cordialement oui salut".split(" ")),
   pt: new Set("o os as e é que para com uma um você vocês nós eu obrigado obrigada olá não em na no dos das por mais seu sua atenciosamente".split(" ")),
@@ -45,14 +45,24 @@ export function detectWritingLanguage(text: string): string {
     if (count / letters >= (language === "ja" ? 0.1 : 0.3)) return language;
   }
   const lower = text.toLowerCase();
+  // each word once: "in London, dinner in Soho" is one word of evidence, not two
+  const words = new Set(lower.match(/\p{L}[\p{L}'’]*/gu) ?? []);
   const score: Record<string, number> = {};
-  for (const word of lower.match(/\p{L}[\p{L}'’]*/gu) ?? []) {
-    for (const [language, words] of Object.entries(WORDS)) if (words.has(word)) score[language] = (score[language] ?? 0) + 1;
+  const own: Record<string, number> = {};
+  for (const word of words) {
+    const speakers = Object.entries(WORDS).filter(([, list]) => list.has(word)).map(([language]) => language);
+    for (const language of speakers) score[language] = (score[language] ?? 0) + 1;
+    if (speakers.length === 1) own[speakers[0]!] = (own[speakers[0]!] ?? 0) + 1;
   }
-  for (const [tell, language] of TELLS) if (tell.test(lower) && score[language]) score[language] += 2;
-  const ranked = Object.entries(score).sort((a, b) => b[1] - a[1]);
-  const [first, second] = ranked;
-  return first && first[1] >= 2 && first[1] > (second?.[1] ?? 0) ? first[0] : "";
+  for (const [tell, language] of TELLS) {
+    if (tell.test(lower) && score[language]) {
+      score[language] += 2;
+      own[language] = (own[language] ?? 0) + 1;
+    }
+  }
+  const [first, second] = Object.entries(score).sort((a, b) => b[1] - a[1]);
+  // a word only this language has, or it's a guess between languages that share them
+  return first && first[1] >= 2 && first[1] > (second?.[1] ?? 0) && own[first[0]] ? first[0] : "";
 }
 
 /** The names a person might use in an instruction: "in Spanish", "en inglés". Only ones Terno can also keep a voice for. */
@@ -66,9 +76,17 @@ const NAMED: readonly [RegExp, string][] = [
   [/\b(?:in|en|em|auf|lingua)\s+(?:dutch|holand[eé]s|n[eé]erlandais|niederl[aä]ndisch|olandese|nederlands)\b/iu, "nl"],
 ];
 
+const NEGATION = /(?:^|[\s,;(])(?:not|never|no|nunca|pas|nicht|n[aã]o|non|niet)\s+$/iu;
+
+/** The one language the instruction asks for: "in Spanish, not in English" is Spanish. Asking for two decides nothing here. */
 export function namedLanguage(instruction: string): string | null {
-  for (const [name, language] of NAMED) if (name.test(instruction)) return language;
-  return null;
+  const asked = new Set<string>();
+  for (const [name, language] of NAMED) {
+    for (const match of instruction.matchAll(new RegExp(name.source, `${name.flags}g`))) {
+      if (!NEGATION.test(instruction.slice(0, match.index))) asked.add(language);
+    }
+  }
+  return asked.size === 1 ? [...asked][0]! : null;
 }
 
 /** How the model is told. A code it isn't named here goes unsaid, and the prompt's own rule decides. */
@@ -138,13 +156,17 @@ export function chooseLanguage(e: LanguageEvidence): LanguageChoice {
   return typed ? { language: typed, reason: "instruction" } : { language: "", reason: "unknown" };
 }
 
+const PURE_SHARE = 0.9;
+
 /**
  * A level as it applies to this language. Its length, punctuation and manner hold across languages, but a greeting,
  * sign-off or stock phrase from another language would be copied into this one. The language itself is the task's to
  * state, so no level argues for its own.
  */
 export function voiceForLanguage(profile: VoiceProfile, language: string): VoiceProfile {
-  const fits = !language || profile.language === language || profile.habits.languages[0]?.text === language;
+  const top = profile.habits.languages[0];
+  // a level with a real share of another language holds that language's greetings too: only its manner carries
+  const fits = !language || profile.language === language || (top?.text === language && top.share >= PURE_SHARE);
   const habits = { ...profile.habits, languages: [] };
   if (fits) return { ...profile, habits };
   return { ...profile, phrases: [], habits: { ...habits, greetings: [], noGreeting: 0, signOffs: [], noSignOff: 0 } };

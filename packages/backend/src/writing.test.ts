@@ -33,7 +33,7 @@ describe("ai.compose: what goes in", () => {
   it("someone known adds their level and whole messages to them, newest and of the same kind first", async () => {
     const t = await setup();
     await t.sentMany(10, (i) => ({ bodyText: `Plain note to Tom number ${i} about this`, date: START - 86_400_000 * (i + 1) }));
-    await t.sent({ bodyText: "Newest reply to Tom", inReplyTo: "x@test", date: START - 1000 });
+    await t.sent({ bodyText: "Newest reply to Tom about this", inReplyTo: "x@test", date: START - 1000 });
     await t.sentMany(20, (i) => ({ to: [{ name: "Other", email: `p${i % 3}@else.test` }], bodyText: `canary-other ${i}` }));
     await t.learned();
     const { thread } = await t.received({});

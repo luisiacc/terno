@@ -51,6 +51,22 @@ describe("the one-time reset of the AI switch", () => {
     expect((await readSettings(store)).aiCategorize).toBe(true);
   });
 
+  it("a switch the user turns on between its read and its write stays on", async () => {
+    const store = memory({ aiCategorize: false, appearanceVersion: 99 });
+    const read = store.settings.get.bind(store.settings);
+    let raced = false;
+    store.settings.get = (async (key: string, fallback: unknown) => {
+      const value = await read(key, fallback);
+      if (key === "app" && !raced) {
+        raced = true;
+        await updateSettings(store, { aiCategorize: true });
+      }
+      return value;
+    }) as never;
+    await stampSmartCategorize(store);
+    expect((await readSettings(store)).aiCategorize).toBe(true);
+  });
+
   it("a switch turned on after a fresh install stays on across a restart", async () => {
     const store = memory();
     await stampSmartCategorize(store);
