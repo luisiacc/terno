@@ -45,6 +45,37 @@ const jsonLine = <T,>(text: string, label: string, fallback: T): T => {
 };
 
 /**
+ * How the offline model writes a draft, for flow tests and demos: as fast as it can by default. `firstTokenMs` and
+ * `paceMs` make it stream like a real model; `text` writes the body instead of the echo. `TERNO_FAKE_DRAFT_PACE=1`
+ * starts it at a real model's speed, for running the app on it by hand.
+ */
+export const fakeDraft: { firstTokenMs: number; paceMs: number; text: ((instruction: string) => string | null) | null } = {
+  firstTokenMs: 0,
+  paceMs: 0,
+  text: null,
+};
+if ((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.TERNO_FAKE_DRAFT_PACE === "1") {
+  fakeDraft.firstTokenMs = 900;
+  fakeDraft.paceMs = 35;
+}
+
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(new Error("aborted"));
+    const timer = setTimeout(done, ms);
+    function done() {
+      signal.removeEventListener("abort", stop);
+      resolve();
+    }
+    function stop() {
+      clearTimeout(timer);
+      reject(new Error("aborted"));
+    }
+    signal.addEventListener("abort", stop, { once: true });
+  });
+}
+
+/**
  * Deterministic offline model for tests, demos and visual flows. It reads the
  * same prompts a real model gets (so the ladder and repairs run for real) and
  * understands a handful of Spanish/English filter descriptions.
@@ -86,10 +117,12 @@ export function fakeTransport(options: { failFirstAttempt?: boolean } = {}): Mod
     async *stream(req: CompletionRequest): AsyncGenerator<StreamEvent> {
       calls++;
       // scripted by a marker in the instruction, so a flow test reaches each failure through the real path
-      const script = fakeComposeScript(promptText(req.system), promptText(req.messages[0]?.content ?? ""));
+      const script = fakeComposeScript(promptText(req.system), promptText(req.messages[0]?.content ?? ""), fakeDraft.text);
       if (script.slowMs) await new Promise((resolve) => setTimeout(resolve, script.slowMs));
+      if (fakeDraft.firstTokenMs) await pause(fakeDraft.firstTokenMs, req.signal);
       let sent = 0;
       for (const chunk of script.chunks) {
+        if (fakeDraft.paceMs && sent) await pause(fakeDraft.paceMs, req.signal);
         // i18n-ignore: a scripted failure of the offline model, seen only in tests
         if (script.fail === sent) throw new AiError("The connection dropped.", "unavailable");
         if (script.stall && sent === 1) {

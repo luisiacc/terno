@@ -30,6 +30,14 @@ describe("resolveKey", () => {
     expect(resolveKey(key("Enter", { meta: true }), { ...typing, composing: true }, null).command).toBe("compose.send");
   });
 
+  it("⌘J (Ctrl+J off Mac) reaches the AI row from the list, while typing and while composing (plan 133)", () => {
+    expect(resolveKey(key("j", { meta: true }), ctx, null).command).toBe("compose.ai");
+    expect(resolveKey(key("j", { meta: true }), { ...ctx, editable: true, composing: true }, null).command).toBe("compose.ai");
+    expect(resolveKey(key("j", { ctrl: true }), ctx, null, undefined, false).command).toBe("compose.ai");
+    // ⇧⌘J stays Spam
+    expect(resolveKey(key("j", { meta: true, shift: true }), ctx, null).command).toBe("thread.spam");
+  });
+
   it("⌘; (Ctrl+; off Mac) opens the snippets while writing, in the palette too (plan 93)", () => {
     const writing = { editable: true, composing: true, dialogOpen: false };
     expect(resolveKey(key(";", { meta: true }), writing, null).command).toBe("snippets.open");

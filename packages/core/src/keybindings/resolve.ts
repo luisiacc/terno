@@ -35,6 +35,7 @@ export type Command =
   | "compose.replyAll"
   | "compose.forward"
   | "compose.send"
+  | "compose.ai"
   | "search.focus"
   | "palette.open"
   | "snippets.open"
@@ -140,6 +141,8 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "a", command: "compose.replyAll" },
   { keys: "f", command: "compose.forward" },
   { keys: "mod+enter", command: "compose.send", inEditable: true, inDialog: true },
+  // plan 133: from a draft, a conversation or the list (a chord types nothing; the dispatcher's preventDefault keeps it from Chrome's Downloads)
+  { keys: "mod+j", command: "compose.ai", inEditable: true, inDialog: true },
   { keys: "/", command: "search.focus" },
   { keys: "mod+k", command: "palette.open", inEditable: true, inDialog: true },
   // plan 93: Superhuman's snippets key, while writing above all (a chord types nothing)

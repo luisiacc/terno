@@ -287,7 +287,7 @@ export async function runCompose(transport: ModelTransport, input: ComposeInput,
 }
 
 /** Echoes what it got, so tests see the prompt's shape in the draft. A marker in the instruction scripts a failure. */
-export function fakeComposeScript(system: string, prompt: string): { text: string; chunks: string[]; stop: Completion["stop"]; fail: number | null; stall: boolean; slowMs: number } {
+export function fakeComposeScript(system: string, prompt: string, write?: ((instruction: string) => string | null) | null): { text: string; chunks: string[]; stop: Completion["stop"]; fail: number | null; stall: boolean; slowMs: number } {
   const count = (scope: string) => (prompt.match(new RegExp(`<voice scope="${scope}"`, "g")) ?? []).length;
   const examples = (prompt.match(/<sent date=/g) ?? []).length;
   const thread = (prompt.match(/<message from=/g) ?? []).length;
@@ -295,7 +295,7 @@ export function fakeComposeScript(system: string, prompt: string): { text: strin
   const needsSubject = /Write a subject too\./.test(prompt);
   const previous = /<previous_draft>/.test(prompt);
   const said = instruction.replace(/\[fake:[^\]]*\]/g, "").trim();
-  const body = `you=${count("you")} account=${count("account")} domain=${count("domain")} person=${count("person")} examples=${examples} thread=${thread} refine=${previous ? 1 : 0} signature=${/<signature>/.test(system) ? 1 : 0}\n\n${said || "A reply."}`;
+  const body = write?.(said) ?? `you=${count("you")} account=${count("account")} domain=${count("domain")} person=${count("person")} examples=${examples} thread=${thread} refine=${previous ? 1 : 0} signature=${/<signature>/.test(system) ? 1 : 0}\n\n${said || "A reply."}`;
   const text = `${needsSubject ? "<subject>Fake subject</subject>\n" : ""}<email>${body}</email>`;
   const chunks = text.match(/[\s\S]{1,12}/g) ?? [];
   const stop: Completion["stop"] = /\[fake:refusal\]/.test(instruction) ? "refusal" : /\[fake:length\]/.test(instruction) ? "length" : "end";
