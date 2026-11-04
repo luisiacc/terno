@@ -156,3 +156,7 @@ Codex (`gpt-6.1-sol`, high, read-only, against `f787771c`) raised 5 points on th
 - **The reader says whose number it is:** "the AI's confidence: 90%", for AI suggestions.
 - **The fake model** matches a label by the name beside it, since labels are now `c1`. e2e gives the engine an empty model, because the demo mailbox's has an opinion on nearly anything.
 - **Not done:** `load.perf.test.ts` wasn't extended; `smart-categorization.perf.test.ts` measures evidence and filing at 50k threads in both stores (under 1 ms). The eval is `scripts/ai-real/categorize.real.ts`, written, not run. The `categorize.eval.test.ts` extension wasn't made.
+
+## What the code review changed
+
+- **A JEV request has one deadline.** It had none, so a stalled response could hold AiAssist's only drain forever. `config.timeoutMs` now covers the whole request through the last byte of the body, mapped to `timeout`, and a body read that doesn't notice the abort still gives up. A caller's cancel stays a cancel, and a body that isn't JSON says so rather than claiming it couldn't connect.

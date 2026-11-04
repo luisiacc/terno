@@ -54,7 +54,7 @@ async function call<T>(config: ProviderConfig, path: string, signal: AbortSignal
     if (error instanceof AiError) throw error;
     if (signal?.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
     if (deadline.aborted) throw new AiError(L("errors.ai.timeout", { provider: INFO.label }), "timeout");
-    if (error instanceof SyntaxError) throw new AiError(L("errors.ai.invalidOutput", { detail: "not JSON" }), "invalid_output");
+    if (error instanceof SyntaxError) throw new AiError(L("errors.ai.invalidOutput", { detail: error.name }), "invalid_output");
     if ((error as { name?: string })?.name === "NetworkPolicyError") throw new AiError(L("errors.ai.cannotConnect", { provider: INFO.label, host: "api.typesafe.ai" }), "blocked");
     throw new AiError(L("errors.ai.cannotConnect", { provider: INFO.label, host: "api.typesafe.ai" }), "unavailable");
   }

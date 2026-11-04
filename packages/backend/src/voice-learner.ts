@@ -475,7 +475,7 @@ export class VoiceLearner {
   }
 
   /** `before`: what the window held at the last pass; null when there wasn't one, so nothing is new against it. */
-  private async countScope(scope: VoiceScope, scopeKey: string, accountId: number | null, mails: readonly CountedMail[], out: { upserts: ProfileUpsert[]; incorporated: Incorporated[]; before: ReadonlySet<number> | null }, live: () => boolean): Promise<boolean> {
+  private async countScope(scope: VoiceScope, scopeKey: string, accountId: number | null, mails: readonly CountedMail[], out: { upserts: ProfileUpsert[]; incorporated: Incorporated[]; before: ReadonlySet<number | string> | null }, live: () => boolean): Promise<boolean> {
     if (mails.length < MIN_SAMPLES[scope]) return true;
     const { upserts, incorporated, before } = out;
     const write = async (language: string, subset: readonly CountedMail[]): Promise<boolean> => {

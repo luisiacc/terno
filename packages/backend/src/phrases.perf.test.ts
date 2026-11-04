@@ -1,28 +1,31 @@
 /**
  * Plan 133 review: counting phrases can't hold the event loop. A step of the generator is the most a slicing caller can
- * be late by, and on a corpus where tens of thousands of sequences qualify, sorting them all was 140 ms in one step.
+ * be late by, and on a corpus where tens of thousands of sequences qualify, sorting them all took 140 ms in one step.
  */
+import { phraseSteps, stockPhrases, type WrittenMail } from "@terno/core";
 import { expect, it } from "vitest";
-import { phraseSteps, stockPhrases } from "./habits";
-import type { WrittenMail } from "./extract";
 
 const MULT = Number(process.env.PERF_BUDGET_MULTIPLIER ?? "1");
 
-/** Words drawn so that sequences recur across many messages and recipients: as many qualify as a real corpus could. */
+/**
+ * Thousands of different passages, each landing in a few messages to different people: nearly every sequence in them
+ * qualifies, so tens of thousands reach the selection, which is what a whole-map sort couldn't take.
+ */
 function corpus(messages: number): WrittenMail[] {
-  const pool = Array.from({ length: 180 }, (_, i) => `word${String.fromCharCode(97 + (i % 26))}${String.fromCharCode(97 + ((i * 7) % 26))}`);
+  const letter = (n: number) => String.fromCharCode(97 + (n % 26));
+  const pool = Array.from({ length: 5000 }, (_, i) => `w${letter(i)}${letter(i >> 2)}${letter(i >> 4)}${letter(i >> 6)}${letter(i >> 8)}`);
   let seed = 233;
-  const next = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff);
-  const passage = (from: number) => Array.from({ length: 12 }, (_, i) => pool[(from + i * (1 + (from % 3))) % pool.length]!).join(" ");
+  const next = () => (seed = (Math.imul(seed, 1664525) + 1013904223) | 0) >>> 8;
+  const PASSAGES = 2400;
+  const passage = (index: number) => Array.from({ length: 12 }, (_, i) => pool[(index * 13 + i * (index % 97) + i) % pool.length]!).join(" ");
   return Array.from({ length: messages }, (_, id) => {
-    const sentences = Array.from({ length: 34 }, () => `${passage(next() % pool.length)}.`);
+    const sentences = Array.from({ length: 34 }, () => `${passage(next() % PASSAGES)}.`);
     return { id, text: sentences.join(" "), to: [`r${id % 40}@x.test`], cc: [], at: id, isReply: false, bulk: false, greeting: null, signOff: null, words: 400, language: "en" } as unknown as WrittenMail;
   });
 }
 
 it("no step of counting phrases takes more than the slicer's budget, on 300 messages where most sequences qualify", () => {
-  const mails = corpus(300);
-  const steps = phraseSteps(mails);
+  const steps = phraseSteps(corpus(300));
   let longest = 0;
   let count = 0;
   for (;;) {
@@ -39,7 +42,7 @@ it("no step of counting phrases takes more than the slicer's budget, on 300 mess
   expect(longest).toBeLessThanOrEqual(8 * MULT);
 });
 
-it("over the bound it still finds what's used most, the same each time", () => {
+it("past the bound it still finds what's used most, the same each time", () => {
   const mails = corpus(120);
   const first = stockPhrases(mails);
   expect(first.length).toBeGreaterThan(0);

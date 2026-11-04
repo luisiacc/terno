@@ -520,16 +520,16 @@ describe("clearing what was learned (plan 133 review)", () => {
 
   it("an assembly under way when Clear comes starts over rather than keep what it read", async () => {
     const t = await studied();
-    const real = t.backend.store.writing.profiles.read.bind(t.backend.store.writing.profiles);
+    const real = t.backend.store.writing.sentTo.bind(t.backend.store.writing);
     let release!: () => void;
     const held = new Promise<void>((r) => (release = r));
     let reading!: () => void;
     const started = new Promise<void>((r) => (reading = r));
-    vi.spyOn(t.backend.store.writing.profiles, "read").mockImplementationOnce(async (keys) => {
-      const rows = await real(keys);
+    // past the voice levels, which it has read by now, and not yet done
+    vi.spyOn(t.backend.store.writing, "sentTo").mockImplementationOnce(async (p) => {
       reading();
       await held;
-      return rows;
+      return real(p);
     });
     const composing = done(t.compose());
     await started;

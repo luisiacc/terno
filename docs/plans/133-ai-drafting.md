@@ -667,6 +667,22 @@ Two were later overridden by the user's direction, for stated reasons:
 11. Voice needs situations, and edits need caution: `situations` as an eval arm, corrections only when repeated (§3, §8).
 12. A reproducible gate and an earlier experiment: hard checks beside your read, a bounded own-mail fixture, a thin experiment first, and existing text as notes in the first release (§10.2, §11, §12).
 
+### What the code review of the whole AI series changed
+
+- **Consent follows where the mail goes.** It's bound to provider, preset, endpoint origin and locality as well as the accounts it named. The consent question returns the destination and `confirm` hands it back, so a provider's name alone isn't agreement. A local study never authorizes a cloud refresh, and a consent from before this refreshes nothing until it's asked again.
+- **Permission taken back stops at the provider.** Turning drafting off aborts every draft and "who is this for"; turning learning off for an account aborts that account's drafts; either aborts studies and refreshes. What finishes anyway isn't returned, and a study that started before the withdrawal writes no consent.
+- **Clearing leaves no copy.** Clear and Reset empty every window's snapshots, and an assembly under way starts over on what's there now.
+- **Judgments keep refreshing once the window fills.** `new_since` counted net growth, so a full window never moved. A pass now compares against the window on disk and counts, per scope and language, the messages newly in it, in the same commit that moves the window. "You" adds up what its accounts incorporated, by language.
+- **Under 8 ms.** A builder had loosened the gate to 60 ms, and the test missed the run's last stretch. Back to 8 ms, and the beat now outlives the run. What stalled:
+  - phrase counting sorted its whole `found` map: a bounded heap and sliced sweeps (one step: 34.9 ms before, 2.6 ms after, on 300 synthetic messages)
+  - the clock restarted after each page of bodies, so cheap pages added up unseen (27 ms): it keeps running now
+  - habits summed over a whole window in one go (6 ms): stepped
+  - a pass wrote all its rows in one commit (21 ms): rows go in commits of 8, and only the last, with the window, the checkpoint and the counts, makes the pass real. Rows left by a stopped pass are recounted to the same thing
+  - header pages of 200 (9 ms): pages of 64, and yields at the start of a run and of a pass
+  - the learner's slice went from 6 to 3 ms, because a look at the clock can come late
+
+  Measured on SQLite at 50k threads with 3,000 sent messages: 5.9 to 7.9 ms over six runs. That's close to the gate, and a run under load can touch it. The test checkpoints the WAL first, as `load.perf.test.ts` does: a 17 ms spike was the checkpoint of what seeding left, which any next writer would pay, and which the production driver runs off the event loop (`wal_autocheckpoint = 0`). IndexedDB isn't gated: fake-indexeddb's commits are the test's own.
+
 ## Composer contract
 
 What the renderer builds on. Types are in `packages/core/src/writing/contract.ts`, parameters in `packages/core/src/rpc/contract.ts`. Everything is renderer-only: MCP gets `FORBIDDEN`, and none of it is in `AppSettings`, an account or `app.bootstrap`.
