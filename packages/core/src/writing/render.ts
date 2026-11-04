@@ -1,4 +1,4 @@
-import type { Habits, Share, VoiceJudgment, VoiceProfile, VoiceScope, VoiceSituation } from "./types";
+import type { Habits, Share, VoiceJudgment, VoiceProfile, VoiceScope } from "./types";
 
 /**
  * Plan 133 §1: each level renders only what differs from the level above, worked out here from structured values, so
@@ -10,10 +10,11 @@ export interface RenderParts {
   phrases: boolean;
   traits: boolean;
   notes: boolean;
-  situations: boolean;
 }
 
-export const ALL_PARTS: RenderParts = { habits: true, phrases: true, traits: true, notes: true, situations: false };
+/** What a draft sends by default: the eval found traits and notes added nothing to these (plan 133, what the experiment found). */
+export const LOCAL_PARTS: RenderParts = { habits: true, phrases: true, traits: false, notes: false };
+export const ALL_PARTS: RenderParts = { habits: true, phrases: true, traits: true, notes: true };
 
 export interface RenderedVoice {
   scope: VoiceScope;
@@ -23,6 +24,7 @@ export interface RenderedVoice {
 
 /** a rate has to move this much before it's worth a line */
 const RATE_DELTA = 0.15;
+const SHARE_DELTA = 0.2;
 const LENGTH_DELTA = 0.3;
 /** so the difference between 3 words and 5 isn't called a change of voice */
 const LENGTH_MIN_WORDS = 4;
@@ -40,13 +42,12 @@ function usage(shares: readonly Share[], none: number): string {
 
 const topOf = (shares: readonly Share[]) => (shares[0] && shares[0].share >= 0.1 ? shares[0].text : null);
 
-function greetingChanged(h: Habits, p: Habits): boolean {
-  return topOf(h.greetings) !== topOf(p.greetings) || Math.abs(h.noGreeting - p.noGreeting) >= RATE_DELTA + 0.05;
-}
+/** The usual choice changed, or the same one became much more or less usual: "Hola" at 27% of all mail, 80% here. */
+const usageChanged = (a: readonly Share[], aNone: number, b: readonly Share[], bNone: number) =>
+  topOf(a) !== topOf(b) || Math.abs(aNone - bNone) >= SHARE_DELTA || Math.abs((a[0]?.share ?? 0) - (b[0]?.share ?? 0)) >= SHARE_DELTA;
 
-function signOffChanged(h: Habits, p: Habits): boolean {
-  return topOf(h.signOffs) !== topOf(p.signOffs) || Math.abs(h.noSignOff - p.noSignOff) >= RATE_DELTA + 0.05;
-}
+const greetingChanged = (h: Habits, p: Habits) => usageChanged(h.greetings, h.noGreeting, p.greetings, p.noGreeting);
+const signOffChanged = (h: Habits, p: Habits) => usageChanged(h.signOffs, h.noSignOff, p.signOffs, p.noSignOff);
 
 function renderRate(label: string, share: number, none: string): string {
   return share < 0.05 ? none : `${label} in ${pct(share)} of messages`;
@@ -88,19 +89,8 @@ function renderTraits(t: VoiceJudgment["traits"], parent: VoiceJudgment["traits"
   return shown.length ? [`manner: ${shown.join(", ")}`] : [];
 }
 
-function renderSituations(s: VoiceJudgment["situations"], parent: VoiceJudgment["situations"] | null): string[] {
-  const lines: string[] = [];
-  for (const [name, v] of Object.entries(s) as [VoiceSituation, NonNullable<VoiceJudgment["situations"][VoiceSituation]>][]) {
-    const before = parent?.[name];
-    if (before && before.formality === v.formality && before.length === v.length && before.note === v.note) continue;
-    const parts = [v.formality !== undefined ? `formality ${v.formality}/5` : "", v.length && v.length !== "same" ? v.length : "", v.note ?? ""].filter(Boolean);
-    if (parts.length) lines.push(`when they ${name}: ${parts.join(", ")}`);
-  }
-  return lines;
-}
-
 /** One level as text, or "" when it adds nothing to its parent. */
-export function renderLevel(profile: VoiceProfile, parent: VoiceProfile | null, parts: RenderParts = ALL_PARTS): string {
+export function renderLevel(profile: VoiceProfile, parent: VoiceProfile | null, parts: RenderParts = LOCAL_PARTS): string {
   const lines: string[] = [];
   if (parts.habits) lines.push(...renderHabits(profile.habits, parent?.habits ?? null));
   if (parts.phrases) {
@@ -111,7 +101,6 @@ export function renderLevel(profile: VoiceProfile, parent: VoiceProfile | null, 
   const judgment = profile.judgment;
   if (judgment) {
     if (parts.traits) lines.push(...renderTraits(judgment.traits, parent?.judgment?.traits ?? null));
-    if (parts.situations) lines.push(...renderSituations(judgment.situations, parent?.judgment?.situations ?? null));
     if (parts.notes) {
       const known = new Set(parent?.judgment?.notes ?? []);
       lines.push(...judgment.notes.filter((n) => !known.has(n)).map((n) => `note: ${n}`));
@@ -124,7 +113,7 @@ export function renderLevel(profile: VoiceProfile, parent: VoiceProfile | null, 
  * Every level that exists, general to specific. A person's profile from another account is absolute, so it stands on
  * its own, labelled, rather than as a difference from this account.
  */
-export function renderVoices(chain: readonly VoiceProfile[], parts: RenderParts = ALL_PARTS): RenderedVoice[] {
+export function renderVoices(chain: readonly VoiceProfile[], parts: RenderParts = LOCAL_PARTS): RenderedVoice[] {
   const out: RenderedVoice[] = [];
   let parent: VoiceProfile | null = null;
   for (const profile of chain) {
@@ -134,10 +123,4 @@ export function renderVoices(chain: readonly VoiceProfile[], parts: RenderParts 
     if (!fromOtherAccount) parent = profile;
   }
   return out;
-}
-
-/** The chain's most specific word on length, for the task line. */
-export function lengthHint(chain: readonly VoiceProfile[]): { median: number; p80: number } | null {
-  const last = chain[chain.length - 1];
-  return last ? last.habits.words : null;
 }

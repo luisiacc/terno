@@ -39,6 +39,19 @@ export function sampleable(mails: readonly WrittenMail[]): WrittenMail[] {
   return out;
 }
 
+/**
+ * §6.2: the messages to this person that go into a draft: same kind first (reply vs new, one-to-one vs group), the same
+ * language preferred, newest first, exact duplicates out, whole.
+ */
+export function chooseExamples(mails: readonly WrittenMail[], want: { isReply: boolean; oneToOne: boolean; language: string }, limit = 4): WrittenMail[] {
+  const oneToOne = (m: WrittenMail) => m.to.length + m.cc.length === 1;
+  const score = (m: WrittenMail) => (m.isReply === want.isReply ? 2 : 0) + (oneToOne(m) === want.oneToOne ? 2 : 0) + (m.language === want.language ? 1 : 0);
+  return sampleable(mails)
+    .filter((m) => m.words > 0)
+    .sort((a, b) => score(b) - score(a) || newestFirst(a, b))
+    .slice(0, limit);
+}
+
 /** Largest remainders, so every stratum with a claim gets its share and the total is exact. */
 function quotas(sizes: readonly number[], room: number): number[] {
   const total = sizes.reduce((a, b) => a + b, 0);

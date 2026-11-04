@@ -4,8 +4,8 @@ import { checkSpecifics, findPlaceholders } from "./checks";
 import { countWords, detectWritingLanguage, normalizeGreeting, normalizeSignOff, readCorpus, repeatedTrailers, writtenText } from "./extract";
 import { computeHabits, stockPhrases } from "./habits";
 import { resolveIntent, type ContactLookup, type IntentPerson } from "./intent";
-import { lengthHint, renderHabits, renderLevel, renderVoices } from "./render";
-import { chooseSample, SAMPLE_LIMITS, sampleable } from "./sample";
+import { ALL_PARTS, renderHabits, renderLevel, renderVoices } from "./render";
+import { chooseExamples, chooseSample, SAMPLE_LIMITS, sampleable } from "./sample";
 import { rejectNote, screenNotes } from "./screen";
 import type { Habits, SentMail, VoiceProfile, WrittenMail } from "./types";
 
@@ -59,31 +59,33 @@ describe("the extractor", () => {
 
   it("normalizes greetings, keeping titles and groups", () => {
     expect(normalizeGreeting("Hi Tom,\nmore")).toBe("Hi {name},");
-    expect(normalizeGreeting("hey tom - got it")).toBe("hey {name}-");
+    expect(normalizeGreeting("hey tom - got it")).toBe("hey {name in lowercase}-");
     expect(normalizeGreeting("Estimado Sr. García:\nle escribo")).toBe("Estimado Sr. {name}:");
     expect(normalizeGreeting("Hi all,")).toBe("Hi all,");
     expect(normalizeGreeting("Hola!")).toBe("Hola!");
     expect(normalizeGreeting("Tom,\nok")).toBe("{name},");
-    expect(normalizeGreeting("tom,\nok", ["Tom"])).toBe("{name},");
+    expect(normalizeGreeting("tom,\nok", ["Tom"])).toBe("{name in lowercase},");
     expect(normalizeGreeting("Yes,\nok")).toBeNull();
     expect(normalizeGreeting("thats fine")).toBeNull();
     expect(normalizeGreeting("hi can you send it")).toBe("hi");
+    expect(normalizeGreeting("IVY!! omg yes", ["Ivy", "Marsh"])).toBe("{NAME IN CAPITALS}!!");
   });
 
-  it("normalizes sign-offs and doesn't mistake a one-liner for one", () => {
-    expect(normalizeSignOff("All good.\n\nBest,\nTom", ["Tom Reed"])).toBe("Best,\n{me}");
-    expect(normalizeSignOff("All good.\n-t", ["Tom Reed"])).toBe("-{me}");
+  it("keeps sign-offs as typed and doesn't mistake a one-liner for one", () => {
+    expect(normalizeSignOff("All good.\n\nBest,\nTom", ["Tom Reed"])).toBe("Best,\nTom");
+    expect(normalizeSignOff("All good.\n-t", ["Tom Reed"])).toBe("-t");
     expect(normalizeSignOff("All good.\nThanks!", ["Tom Reed"])).toBe("Thanks!");
-    expect(normalizeSignOff("All good.\nTom", ["Tom Reed"])).toBe("{me}");
+    expect(normalizeSignOff("All good.\nTom", ["Tom Reed"])).toBe("Tom");
     expect(normalizeSignOff("Thanks!", ["Tom Reed"])).toBeNull();
-    expect(normalizeSignOff("Le escribo por el contrato.\n\nReciba un cordial saludo,\nRodrigo", ["Rodrigo Aldana"])).toBe("Reciba un cordial saludo,\n{me}");
+    expect(normalizeSignOff("Hi Mum!\n\nYes.\n\nLove you lots,\nB xx", ["Bea"])).toBe("Love you lots,\nB xx");
+    expect(normalizeSignOff("Le escribo por el contrato.\n\nReciba un cordial saludo,\nRodrigo", ["Rodrigo Aldana"])).toBe("Reciba un cordial saludo,\nRodrigo");
     expect(normalizeSignOff("One thing.\nAnother thing that is not a closing.", ["Tom"])).toBeNull();
   });
 
   it("reads a corpus per account, with names", () => {
     const mails: SentMail[] = [{ id: 1, to: ["tom@x.example"], cc: [], at: 1, body: "hey tom,\nyep\n-m", isReply: true }];
     const [m] = readCorpus(mails, { selfNames: ["Milo"], namesOf: () => ["Tom"] });
-    expect(m).toMatchObject({ greeting: "hey {name},", signOff: "-{me}" });
+    expect(m).toMatchObject({ greeting: "hey {name in lowercase},", signOff: "-m" });
   });
 });
 
@@ -101,13 +103,15 @@ describe("habits", () => {
 
   it("track greetings, sign-offs, language, replies and one-to-one", () => {
     const habits = computeHabits([
-      written("Hi Tom,\nThe report is on the way and it will be with you soon.\nBest,\nTom", { isReply: true, greeting: "Hi {name},", signOff: "Best,\n{me}" }),
-      written("Hi Sam,\nThe plan is for you to read it and tell me.\nBest,\nTom", { isReply: false, to: ["a@x.example", "b@x.example"], greeting: "Hi {name},", signOff: "Best,\n{me}" }),
+      written("Hi Tom,\nThe report is on the way and it will be with you soon.\nBest,\nTom", { isReply: true, greeting: "Hi {name},", signOff: "Best,\nTom" }),
+      written("Hi Sam,\nThe plan is for you to read it and tell me.\nBest,\nTom", { isReply: false, to: ["a@x.example", "b@x.example"], greeting: "Hi {name},", signOff: "Best,\nTom" }),
       written("hola, que tal, te escribo para ver como va el proyecto de la casa", { greeting: "hola,", signOff: null }),
       written("sent you the file 😀\nbye", { greeting: null, signOff: null }),
     ]);
     expect(habits.greetings[0]).toEqual({ text: "Hi {name},", share: 0.5 });
-    expect(habits.signOffs[0]).toEqual({ text: "Best,\n{me}", share: 0.5 });
+    expect(habits.signOffs[0]).toEqual({ text: "Best,\nTom", share: 0.5 });
+    // a greeting and a sign-off aren't sentences: this one's body is 14 words and 12
+    expect(habits.sentenceWords).toBeGreaterThanOrEqual(7);
     expect(habits.noSignOff).toBe(0.5);
     expect(habits.languages.map((l) => l.text).sort()).toEqual(["en", "es"]);
     expect(habits.replies).toBe(0.75);
@@ -133,12 +137,20 @@ describe("stock phrases", () => {
   });
 
   it("carry no digits, don't cross sentences, and keep only the longest of a family", () => {
-    const mails = [1, 2, 3].map((id) => written(`invoice 42 goes out today. thanks for your help with this`, { id, to: [`r${id}@x.example`] }));
+    const mails = [1, 2, 3].map((id) => written(`invoice 42 goes out today. thanks for your help with this project`, { id, to: [`r${id}@x.example`] }));
     const phrases = stockPhrases(mails);
     expect(phrases.filter((p) => /\d/.test(p))).toEqual([]);
-    expect(phrases).toContain("thanks for your help with this");
+    expect(phrases).toContain("thanks for your help with this project");
     expect(phrases).not.toContain("thanks for your help");
     expect(phrases.some((p) => p.includes("today thanks"))).toBe(false);
+  });
+
+  it("leave out fragments that start or stop on a function word, in both languages", () => {
+    const mails = [1, 2, 3].map((id) => written(`thank you for the certificate of the house. el certificado de la calle mayor`, { id, to: [`r${id}@x.example`] }));
+    const phrases = stockPhrases(mails);
+    expect(phrases).not.toContain("thank you for");
+    expect(phrases).not.toContain("de la calle");
+    expect(phrases).not.toContain("el certificado de");
   });
 
   it("keep at most eight words", () => {
@@ -190,6 +202,27 @@ describe("the sample", () => {
     expect(chooseSample(big, { maxMessages: 10, maxTokens: 6000, perRecipient: 3 }).length).toBeLessThanOrEqual(2);
   });
 
+  it("gives a person scope all of its own recent mail: the recipient cap would stop it at 3", () => {
+    const one = Array.from({ length: 10 }, (_, i) => written(`message ${i} is here`, { id: i, at: i, to: ["tom@x.example"] }));
+    expect(chooseSample(one, SAMPLE_LIMITS.person).length).toBe(10);
+  });
+
+  it("picks examples of the same kind first, then the same language, newest first, without duplicates", () => {
+    const mails = [
+      written("old reply in english and more", { id: 1, at: 1, isReply: true, language: "en" }),
+      written("new message started by them", { id: 2, at: 9, isReply: false, language: "en" }),
+      written("newer reply in english", { id: 3, at: 5, isReply: true, language: "en" }),
+      written("una respuesta en castellano", { id: 4, at: 8, isReply: true, language: "es" }),
+      written("newer reply in english", { id: 5, at: 4, isReply: true, language: "en" }),
+      written("to a group", { id: 6, at: 7, isReply: true, language: "en", cc: ["b@x.example"] }),
+    ];
+    expect(chooseExamples(mails, { isReply: true, oneToOne: true, language: "en" }, 3).map((m) => m.id)).toEqual([3, 1, 4]);
+  });
+
+  it("the topic check doesn't take a manner note for a subject", () => {
+    expect(rejectNote("Leads with the answer, then one short practical reason", [{ text: "the answer is no for a practical reason", to: ["a@x.example"] }, { text: "other mail here", to: ["b@x.example"] }])).toBeNull();
+  });
+
   it("leaves out bulk, the model's own text, empties and duplicates", () => {
     const pool = sampleable([written("x y", { bulk: true }), written("a b", { fromModel: true }), written("", { id: "e" }), written("same", { id: 1 }), written("same", { id: 2 }), written("fine", { id: 3 })]);
     expect(pool.map((m) => m.text).sort()).toEqual(["fine", "same"]);
@@ -202,7 +235,7 @@ const habits = (over: Partial<Habits> = {}): Habits => ({
   sentenceWords: 10,
   greetings: [{ text: "Hi {name},", share: 0.8 }],
   noGreeting: 0.2,
-  signOffs: [{ text: "Best,\n{me}", share: 0.7 }],
+  signOffs: [{ text: "Best,\nTom", share: 0.7 }],
   noSignOff: 0.3,
   exclamation: 0.1,
   emoji: 0,
@@ -221,20 +254,20 @@ describe("level rendering", () => {
     const text = renderLevel(profile("you", { phrases: ["let me know"] }), null);
     expect(text).toContain("length: usually 30 words");
     expect(text).toContain('opens with: "Hi {name}," 80%');
-    expect(text).toContain('"Best, / {me}" 70%');
+    expect(text).toContain('"Best, / Tom" 70%');
     expect(text).toContain('phrases they reuse: "let me know"');
   });
 
   it("renders only what differs from the parent", () => {
-    const you = profile("you", { phrases: ["let me know"], judgment: { traits, situations: {}, notes: ["Answers first"] } });
-    const same = profile("account", { phrases: ["let me know"], judgment: { traits, situations: {}, notes: ["Answers first"] } });
-    expect(renderLevel(same, you)).toBe("");
+    const you = profile("you", { phrases: ["let me know"], judgment: { traits, notes: ["Answers first"] } });
+    const same = profile("account", { phrases: ["let me know"], judgment: { traits, notes: ["Answers first"] } });
+    expect(renderLevel(same, you, ALL_PARTS)).toBe("");
     const different = profile("account", {
       habits: habits({ words: { median: 8, p80: 20 }, greetings: [{ text: "hey {name}", share: 0.9 }], exclamation: 0.5 }),
       phrases: ["let me know", "sounds good to me"],
-      judgment: { traits: { ...traits, formality: 1 }, situations: {}, notes: ["Answers first", "Drops pleasantries"] },
+      judgment: { traits: { ...traits, formality: 1 }, notes: ["Answers first", "Drops pleasantries"] },
     });
-    const text = renderLevel(different, you);
+    const text = renderLevel(different, you, ALL_PARTS);
     expect(text).toContain("length: usually 8 words");
     expect(text).toContain('opens with: "hey {name}" 90%');
     expect(text).toContain("exclamation marks: present in 50%");
@@ -268,17 +301,21 @@ describe("level rendering", () => {
   it("handles someone new: you, account and their domain", () => {
     const chain = [profile("you"), profile("account", { habits: habits({ exclamation: 0.8 }) }), profile("domain", { habits: habits({ exclamation: 0.8, words: { median: 90, p80: 200 } }) })];
     expect(renderVoices(chain).map((v) => v.scope)).toEqual(["you", "account", "domain"]);
-    expect(lengthHint(chain)).toEqual({ median: 90, p80: 200 });
   });
 
   it("leaves parts out on request, the eval's arms", () => {
-    const you = profile("you", { phrases: ["let me know"], judgment: { traits, situations: { decline: { length: "shorter" } }, notes: ["Answers first"] } });
-    const parts = { habits: false, phrases: true, traits: false, notes: false, situations: true };
-    const text = renderLevel(you, null, parts);
+    const you = profile("you", { phrases: ["let me know"], judgment: { traits, notes: ["Answers first"] } });
+    const text = renderLevel(you, null, { habits: false, phrases: true, traits: false, notes: false });
     expect(text).toContain("let me know");
-    expect(text).toContain("when they decline: shorter");
     expect(text).not.toContain("Answers first");
     expect(text).not.toContain("length:");
+  });
+
+  it("sends only the local parts by default, whatever the profile holds", () => {
+    const you = profile("you", { judgment: { traits, notes: ["Answers first"] } });
+    expect(renderVoices([you])[0]!.text).not.toContain("Answers first");
+    expect(renderVoices([you])[0]!.text).not.toContain("manner:");
+    expect(renderVoices([you], ALL_PARTS)[0]!.text).toContain("Answers first");
   });
 });
 

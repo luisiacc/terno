@@ -11,6 +11,14 @@ export const MAX_NOTE_WORDS = 14;
 const COPIED_RUN = 4;
 /** a word this long, seen in the sample only about one person's mail, reads as a subject rather than a manner */
 const TOPIC_WORD_LENGTH = 4;
+/**
+ * What a note about manner is made of. Without this the topic check took out 21 of 88 notes on real output, all of them
+ * good ("Leads with the answer"), because most words in a small sample are only ever sent to one person.
+ */
+const MANNER_WORDS: ReadonlySet<string> = new Set(
+  `about after always answer answers aside asides articles asks asking before brief briefly caveat caveats capital capitals casual clause clauses clipped close closes closing comma commas compact condition conditions detail details direct directly drop drops dropping dry ends exclamation exclamations facts first fixed filler formal formally frequent frequently friendly from gets gives goes gratitude greeting greetings hedge hedging informal instead instruction instructions into joke jokes keeps lead leading leads line lines long longer lowercase marks message messages moves mostly name names never offer offers often only open opening opens padded padding paragraph paragraphs period periods phrase phrases plain plainly plainly point pleasantries practical preamble punctuation question questions rarely rather reason reasons recipient recipients register repeat repeats request requests rhythm says sentence sentences short shorter sign-off signoff signs soften softener softeners softening softens some sometimes starts state statement states stays straight structure subjects teasing tease tease teases than that their them then they this tone uses usually warm warmly warmth when with without word words writes
+  abre abren anade anadidas apodo asunto breve breves calida calido cierra cierre clientes colegas comentario comentarios completa completas completo completos con cordial corta cortas corto cortos despedida directa directamente directo destinatario destinatarios espanol explica estructura favor firma fija fijo fijas fijos formal formales formula frase frases gracias ingles larga largas largo largos linea lineas mantiene nada nombre nombres ordenado parrafo parrafos personales pregunta preguntas preambulo primera primero protocolaria protocolario razonamiento registro responde respuesta rodeos saludo saludos segun solo suaviza suena tecnico tono tutea tuteo usted`.split(/\s+/),
+);
 
 const words = (text: string) => normalizeText(text).match(/\p{L}[\p{L}\p{N}'’-]*/gu) ?? [];
 
@@ -44,7 +52,7 @@ export function rejectNote(note: string, sample: readonly ScreenSample[]): NoteR
   const distinct = new Set(sample.flatMap((m) => m.to)).size;
   if (distinct >= 2) {
     for (const w of noteWords) {
-      if (w.length >= TOPIC_WORD_LENGTH && recipients.get(w)?.size === 1) return "topic";
+      if (w.length >= TOPIC_WORD_LENGTH && !MANNER_WORDS.has(w) && recipients.get(w)?.size === 1) return "topic";
     }
   }
   return null;

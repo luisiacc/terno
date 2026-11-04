@@ -74,8 +74,8 @@ function stripSignature(lines: string[], signature: string | null | undefined): 
   return dropTrailingBlank(kept.slice(0, nonBlank[0]!));
 }
 
-/** A closing or a bare name repeats as well, and those are habits, not boilerplate. */
-const isBoilerplate = (line: string) => line.includes(" ") && !CLOSING.test(line);
+/** A closing or a bare name repeats as well ("B xx", "Tom Reed"), and those are habits, not boilerplate. */
+const isBoilerplate = (line: string) => line.split(" ").length >= 3 && !CLOSING.test(line);
 
 /** Lines that keep ending this account's mail (a role, a phone, a slogan), to take off along with the signature. */
 export function repeatedTrailers(bodies: readonly string[], signature?: string | null): ReadonlySet<string> {
@@ -128,19 +128,28 @@ export function normalizeGreeting(text: string, toNames: readonly string[] = [])
       if (!TITLES.test(w)) break;
       titles.push(w);
     }
-    return `${[word, ...titles, "{name}"].join(" ")}${punctuation}`;
+    return `${[word, ...titles, nameSlot(words[titles.length] ?? "")].join(" ")}${punctuation}`;
   }
+  // "IVY!! omg yes": the recipient's own name, shouted or not, opening a line that goes on
+  const called = /^(\p{L}[\p{L}'’-]*)([!,:]+)/u.exec(first);
+  if (called && isName(called[1]!)) return `${nameSlot(called[1]!)}${called[2]}`;
   const bare = /^(\p{L}[\p{L}'’-]*(?: \p{L}[\p{L}'’-]*)?)\s*([,:]|\s-)$/u.exec(first);
   if (bare && !NOT_A_NAME.test(bare[1]!) && !CLOSING.test(first)) {
     const named = isName(bare[1]!.split(" ")[0]!);
-    if (named || /^\p{Lu}/u.test(bare[1]!)) return `{name}${bare[2]!.trim()}`;
+    if (named || /^\p{Lu}/u.test(bare[1]!)) return `${nameSlot(bare[1]!)}${bare[2]!.trim()}`;
   }
   return null;
 }
 
+/** Someone who types `hi tom,` types it for Wes too: the case of a name is part of the habit. */
+const nameSlot = (typed: string) => (/^\p{Lu}{2,}$/u.test(typed) ? "{NAME IN CAPITALS}" : /^\p{Ll}/u.test(typed) ? "{name in lowercase}" : "{name}");
+
 const SELF_MARK = /^[-–—~]\s*(\p{L}{1,14})\.?$/u;
 
-/** `Best,\nTom` → `Best,\n{me}`; `-t` → `-{me}`. A one-line message is the message, not a sign-off. */
+/**
+ * How a message ends, as typed: `Best,\nTom`, `-m`, `Rodri`. Not normalized like a greeting: the sender's own name is
+ * theirs to use, and `-m` vs `-milo` vs `Milo Trask` is exactly the habit. A one-line message is the message.
+ */
 export function normalizeSignOff(text: string, selfNames: readonly string[] = []): string | null {
   const lines = text.split("\n").map(flatten).filter(Boolean);
   if (lines.length < 2) return null;
@@ -152,15 +161,11 @@ export function normalizeSignOff(text: string, selfNames: readonly string[] = []
   const last = lines[lines.length - 1]!;
   const prev = lines[lines.length - 2]!;
   const mark = SELF_MARK.exec(last);
-  if (mark && (isSelf(mark[1]!) || mark[1]!.length <= 2)) return `${last[0]}{me}`;
-  if (isSelf(last)) return lines.length > 2 && CLOSING.test(prev) ? `${prev}\n{me}` : "{me}";
-  if (CLOSING.test(last)) {
-    const words = last.split(" ");
-    const tail = words[words.length - 1]!;
-    if (words.length > 1 && isSelf(tail)) return `${words.slice(0, -1).join(" ")} {me}`;
-    return last;
-  }
-  return null;
+  if (mark && (isSelf(mark[1]!) || mark[1]!.length <= 2)) return last;
+  if (isSelf(last)) return lines.length > 2 && CLOSING.test(prev) ? `${prev}\n${last}` : last;
+  // "Love you lots,\nB xx": the name is in the closing's kiss
+  if (lines.length > 2 && CLOSING.test(prev) && /^\p{L}{1,14}\s+x+$/iu.test(last) && isSelf(last.split(/\s+/)[0]!)) return `${prev}\n${last}`;
+  return CLOSING.test(last) ? last : null;
 }
 
 const EN = new Set("the and you to is for that it of thanks please we be will have this with are can your on i i'm not was but at".split(" "));

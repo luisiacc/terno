@@ -4,7 +4,7 @@ import { fakeTransport } from "./fake";
 import { jevTasks } from "./jev";
 import { createAi } from "./tasks";
 import { AiError, promptText, type CompletionRequest, type ModelTransport, type PromptBlock, type ProviderConfig } from "./types";
-import { COMPOSE_MAX_TOKENS, composePrompt, composeTaskBlock, judgeVoicePrompt, neutralizeTags, parseIntentTask, subjectFilter, WRITING_RULES, type ComposeInput } from "./writing";
+import { COMPOSE_MAX_TOKENS, composePrompt, composeTaskBlock, emailFilter, judgeVoicePrompt, neutralizeTags, parseIntentTask, WRITING_RULES, type ComposeInput } from "./writing";
 
 const config: ProviderConfig = { id: "fake", model: "demo", apiKey: null, fetch: globalThis.fetch, timeoutMs: 1000, maxRetries: 0 };
 
@@ -123,10 +123,9 @@ describe("the prompt", () => {
   });
 
   it("the task names only what it was given", () => {
-    const text = composeTaskBlock({ kind: "new", today: "2026-03-05", timezone: "UTC", recipients: [], instruction: "", needsSubject: true, draft: "rough notes", lengthHint: { median: 8, p80: 20 } });
+    const text = composeTaskBlock({ kind: "new", today: "2026-03-05", timezone: "UTC", recipients: [], instruction: "", needsSubject: true, draft: "rough notes" });
     expect(text).toContain("Write a subject too.");
     expect(text).toContain("<draft>\nrough notes\n</draft>");
-    expect(text).toContain("usually 8 words");
     expect(text).toContain("No instruction");
     expect(text).not.toContain("<previous_draft>");
   });
@@ -203,23 +202,30 @@ describe("compose", () => {
   });
 });
 
-describe("subjectFilter", () => {
+describe("emailFilter", () => {
   const run = (chunks: string[]) => {
     let body = "";
-    const f = subjectFilter((t) => (body += t));
+    const f = emailFilter((t) => (body += t));
     for (const c of chunks) f.push(c);
     f.finish();
     return { body, subject: f.subject };
   };
-  it("takes a subject split across chunks", () => {
-    expect(run(["<sub", "ject>Quo", "te</subject>", "\nHello ", "there"])).toEqual({ body: "Hello there", subject: "Quote" });
+  it("takes a subject and a body split across chunks", () => {
+    expect(run(["<sub", "ject>Quo", "te</subject>\n<em", "ail>\nHello ", "there</ema", "il>"])).toEqual({ body: "Hello there", subject: "Quote" });
   });
-  it("passes through a body with no subject", () => {
+  it("never shows a model thinking out loud, before or after the email", () => {
+    expect(run(["no opener, no sign-off, lowercase, short.\n", "<email>prob tmrw</email>", "\nthat should do it"])).toEqual({ body: "prob tmrw", subject: null });
+  });
+  it("shows what came if the tag never does, rather than lose it", () => {
     expect(run(["Hel", "lo"])).toEqual({ body: "Hello", subject: null });
-    expect(run(["<", "b>bold"])).toEqual({ body: "<b>bold", subject: null });
+    expect(run(["<subject>Hi</subject>\nHello"])).toEqual({ body: "Hello", subject: "Hi" });
   });
-  it("shows an unclosed subject rather than lose it", () => {
-    expect(run(["<subject>never"])).toEqual({ body: "<subject>never", subject: null });
+  it("shows what came if it never closes", () => {
+    expect(run(["<email>cut of", "f mid sen"])).toEqual({ body: "cut off mid sen", subject: null });
+    expect(run(["<email>a </em"])).toEqual({ body: "a </em", subject: null });
+  });
+  it("leaves other brackets in the body alone", () => {
+    expect(run(["<email>a < b and <i>c</i></email>"])).toEqual({ body: "a < b and <i>c</i>", subject: null });
   });
 });
 
@@ -238,9 +244,9 @@ describe("judgeVoice", () => {
     expect(prompt).toContain('to="r1"');
   });
 
-  const answering = (notes: string[], traits = { formality: 3, warmth: 3, directness: 3, detail: 3, humor: 1 }, situations: unknown[] = []): ModelTransport => ({
+  const answering = (notes: string[], traits = { formality: 3, warmth: 3, directness: 3, detail: 3, humor: 1 }): ModelTransport => ({
     async complete() {
-      return { text: JSON.stringify({ traits, situations, notes }), stop: "end" };
+      return { text: JSON.stringify({ traits, notes }), stop: "end" };
     },
   });
 
@@ -250,17 +256,12 @@ describe("judgeVoice", () => {
     expect(r.rejected.map((x) => x.reason).sort()).toEqual(["digits", "topic"]);
   });
 
-  it("screens notes inside situations too", async () => {
-    const r = await createAi(config, { transport: answering([], undefined, [{ situation: "decline", formality: 4, length: "shorter", note: "Mentions the biopsy" }, { situation: "group", formality: null, length: null, note: null }]) }).judgeVoice({ scope: "you", language: "en", sample });
-    expect(r.judgment.situations).toEqual({ decline: { formality: 4, length: "shorter" } });
-  });
-
   it("sends traits off the scale back for repair", async () => {
     let calls = 0;
     const transport: ModelTransport = {
       async complete() {
         calls++;
-        return { text: JSON.stringify({ traits: { formality: calls === 1 ? 9 : 3, warmth: 3, directness: 3, detail: 3, humor: 0 }, situations: [], notes: [] }), stop: "end" };
+        return { text: JSON.stringify({ traits: { formality: calls === 1 ? 9 : 3, warmth: 3, directness: 3, detail: 3, humor: 0 }, notes: [] }), stop: "end" };
       },
     };
     const r = await createAi(config, { transport }).judgeVoice({ scope: "you", language: "en", sample });

@@ -35,13 +35,18 @@ function startsLowercase(text: string): boolean {
   return lower > 0 && lower >= upper;
 }
 
+/** The sentences of what was said: a greeting or a sign-off isn't one, and would make everyone look terse. */
+function bodySentences(m: WrittenMail): string[] {
+  const lines = m.text.split("\n").filter((l) => l.trim());
+  const from = m.greeting ? 1 : 0;
+  const to = lines.length - (m.signOff ? m.signOff.split("\n").length : 0);
+  return sentences(lines.slice(from, Math.max(from, to)).join("\n"));
+}
+
 export function computeHabits(mails: readonly WrittenMail[]): Habits {
   const total = mails.length;
   const words = mails.map((m) => m.words).sort((a, b) => a - b);
-  const sentenceLengths = mails.flatMap((m) => {
-    const parts = sentences(m.text);
-    return parts.length > 1 ? parts.map(countWords) : [];
-  });
+  const sentenceLengths = mails.flatMap((m) => bodySentences(m).map(countWords));
   const hasGreeting = mails.filter((m) => m.greeting).length;
   const hasSignOff = mails.filter((m) => m.signOff).length;
   return {
@@ -61,6 +66,13 @@ export function computeHabits(mails: readonly WrittenMail[]): Habits {
     oneToOne: ratio(mails.filter((m) => m.to.length + m.cc.length === 1).length, total),
   };
 }
+
+/** "Thank you for", "de la calle": a sequence that starts or stops on one of these isn't a phrase, it's a fragment. */
+const FUNCTION_WORDS = new Set("a an the and or but so of to for in on at by from with as if that this these those is are was were be i you he she we they it my your his her our their me him them de del la las el los lo le les un una unos unas y o e u pero que en por para con a al se su sus mi mis tu tus te nos es son no ni como más".split(" "));
+const isFragment = (phrase: string) => {
+  const words = phrase.toLowerCase().split(" ");
+  return FUNCTION_WORDS.has(words[0]!) || FUNCTION_WORDS.has(words[words.length - 1]!);
+};
 
 const MIN_N = 3;
 const MAX_N = 8;
@@ -144,8 +156,9 @@ export function stockPhrases(mails: readonly WrittenMail[]): string[] {
     survivors = next;
   }
   // a part of a longer phrase, used no more often than the whole, says nothing the whole doesn't
-  const kept = [...found].filter(([key, f]) => ![...found].some(([other, o]) => other !== key && o.messages >= f.messages && ` ${other} `.includes(` ${key} `)));
+  const kept = [...found].filter(([key, f]) => ![...found].some(([other, o]) => other !== key && o.messages >= f.messages && !isFragment(o.text) && ` ${other} `.includes(` ${key} `)));
   return kept
+    .filter(([, f]) => !isFragment(f.text))
     .sort((a, b) => b[1].messages * b[1].n - a[1].messages * a[1].n || (a[0] < b[0] ? -1 : 1))
     .slice(0, MAX_PHRASES)
     .map(([, f]) => f.text);

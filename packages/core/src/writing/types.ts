@@ -32,9 +32,9 @@ export interface WrittenMail {
   fromModel: boolean;
   text: string;
   words: number;
-  /** names normalized, as typed otherwise: `hey {name},` */
+  /** the name normalized, the rest as typed: `hey {name in lowercase},` */
   greeting: string | null;
-  /** `Best,\n{me}`, `-{me}`, `thanks` */
+  /** as typed: `Best,\nTom`, `-m`, `thanks` */
   signOff: string | null;
   language: WritingLanguage;
 }
@@ -66,9 +66,6 @@ export interface Habits {
   oneToOne: number;
 }
 
-export const VOICE_SITUATIONS = ["decline", "apologize", "acknowledge", "request", "negotiate", "schedule", "group"] as const;
-export type VoiceSituation = (typeof VOICE_SITUATIONS)[number];
-
 /** What the model adds to the counts (§3). Closed scales, so levels compare and render locally. */
 export interface VoiceJudgment {
   traits: {
@@ -78,7 +75,6 @@ export interface VoiceJudgment {
     detail: number;
     humor: number;
   };
-  situations: Partial<Record<VoiceSituation, { formality?: number; length?: "shorter" | "same" | "longer"; note?: string }>>;
   /** manner only: at most 4, at most 14 words each */
   notes: string[];
 }
