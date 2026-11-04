@@ -128,3 +128,23 @@ Simulated latency, seven-sample median for threads and one run for Gmail, agains
 | Trash, 45 messages at 50 ms | 2,311 ms | 413 ms |
 
 Not measured: `icons.data`, the reconnect and `readSelectedBody` (each proved by a test of the behaviour), and the local reads (`Promise.all` on synchronous SQLite does the same work).
+
+## Gates
+
+Run on a shared machine with a load average between 7 and 52, so budgets were compared against a clean checkout of the base commit.
+
+- **Typecheck, lint:** pass.
+- **Unit:** `core` and `mail` 2,843 of 2,844. The one failure (`gmail-transport.test.ts:93`, a 50 ms sleep on `verify()`) passes alone, with and without this work. Affected `backend` files 589 of 589.
+- **Perf:** `gmail-history`, `gmail-batches`, `gmail-control`, `backend`, `mailbox-read` pass. `load.perf`: "a disk that turns slow mid-job" times out at about 300 s **on the base commit too**, so it isn't this work. Two more failed in one run on each side, under load.
+- **UI perf:** everything but the 2 MB draft group passes (59 in `perf.spec.ts`, plus `autocomplete-perf`).
+- **E2E:** `reader`, `reader-mark-read`, `forward-capture` 16 of 16.
+- **Not run:** the full `pnpm test`, `test:e2e` and `test:web` sweeps, `dist:mac` and the packaged smoke.
+
+### Open: the 2 MB draft group
+
+Two failures appear in this group.
+
+- **A budget (`<= 1500` ms):** on both sides, under load. Noise.
+- **Typed text not at the end of the draft:** seen four times on this branch in its first runs, and **never on the base commit** (none in about 24 runs). It then didn't come back in 34 further runs here, including 8 under heavy CPU load and 18 with selection and focus logged. So it was never captured, and the cause is unknown.
+
+Nothing in this diff touches the composer, and a thread's details arriving sooner is the only link I can see. If it shows up again, suspect a second focus landing after `Cmd+End`, and start with `focusDraft`'s callers in `compose.ts`.
