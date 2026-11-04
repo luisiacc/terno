@@ -19,6 +19,7 @@ import { retryIn } from "../connection-pill";
 import { getApp, setApp, useApp } from "~/state/app";
 import { patchAccount, type AccountEdit } from "~/lib/accounts";
 import { DaysField } from "./general-tab";
+import { AccountWriting } from "./ai-drafting";
 import { OwnerCard } from "./owner-card";
 import { AccountRemoveDialog } from "../account-remove-dialog";
 import { ColorPicker, CommitInput, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
@@ -173,6 +174,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
       <SettingsRow stacked labelFor label={t("account.signature")} hint={t("account.signature.hint")}>
         {(a) => <CommitInput multiline a11y={a} data-testid="account-signature" value={account.signature} placeholder={t("account.signature.placeholder")} maxLength={10_000} onCommit={(v) => save({ signature: v })} />}
       </SettingsRow>
+      <AccountWriting accountId={account.id} />
       <SettingsRow labelFor label={t("settings.general.syncWindow")} hint={t("account.syncWindow.hint", { days: generalWindow })}>
         {(a) => (
           <DaysField

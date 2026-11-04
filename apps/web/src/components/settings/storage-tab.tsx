@@ -191,7 +191,7 @@ export function StorageTab() {
                   variant="outline"
                   size="sm"
                   data-testid="storage-clear-ai"
-                  onClick={() => void clearSummaries().then(() => snack.success(t("storage.clearAi.done")), (e: unknown) => snack.error(e instanceof Error ? e.message : String(e)))}
+                  onClick={() => void Promise.all([clearSummaries(), client.call("writing.profiles.clear", {})]).then(() => snack.success(t("storage.clearAi.done")), (e: unknown) => snack.error(e instanceof Error ? e.message : String(e)))}
                 >
                   {t("storage.clearAi.button")}
                 </Button>

@@ -2,13 +2,15 @@ import { localized } from "~/lib/i18n";
 import type { CompatiblePreset, ModelInfo, PresetDescriptor, ProviderDescriptor } from "@terno/core";
 import type { AiTestResult, AppSettings } from "@terno/core/rpc";
 import { AiUseGroup, SummariesGroup } from "./ai-summaries";
+import { DraftingGroup } from "./ai-drafting";
+import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { SettingsGroup, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
 import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { CircleAlert, CircleCheck, RefreshCw, ShieldCheck } from "@terno/ui/icons";
 import { refText, t } from "@terno/i18n";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
 import {
   choiceLabel,
@@ -32,6 +34,8 @@ import { formatBytes } from "~/lib/format";
 import { client } from "~/rpc/connection";
 import { setApp } from "~/state/app";
 import { reconcileSettings } from "~/lib/appearance";
+
+const WritingStyle = lazy(() => import("./writing-style"));
 
 const targetKey = (ai: AppSettings["ai"]) => [ai.provider, ai.preset ?? "", ai.baseURL ?? "", ai.model].join("|");
 
@@ -166,6 +170,11 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
   const selectable = (c: ProviderChoice) => c !== "fake" || catalog?.providers.some((p) => p.id === "fake");
   const items = [...LOCAL_CHOICES, ...CLOUD_CHOICES, "fake" as const, "none" as const].filter(selectable).map((c) => ({ value: c, label: choiceLabel(c) }));
   const models = discovery.state === "done" ? discovery.models : [];
+
+  // plan 133 §7: a page of its own, lazy; leaving the tab comes back to the tab
+  const stylePage = useAiDraftUi((s) => s.stylePage);
+  useEffect(() => () => useAiDraftUi.setState({ stylePage: false }), []);
+  if (stylePage) return <Suspense fallback={null}><WritingStyle /></Suspense>;
 
   return (
     <div data-testid="ai-tab">
@@ -383,6 +392,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
           </div>
         )}
       </SettingsGroup>
+      <DraftingGroup settings={settings} />
       <SummariesGroup settings={settings} update={update} />
       <AiUseGroup settings={settings} update={update} />
     </div>
