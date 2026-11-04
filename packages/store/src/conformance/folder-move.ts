@@ -188,7 +188,7 @@ export function defineFolderMoveConformance(name: string, harness: StoreHarness)
 
     it("offers count what would still change: this account's threads not in the folder, starred and replied ones too", async () => {
       const { store, gmail, imap } = await fresh();
-      const mk = (accountId: number, id: string) => msg({ accountId, providerMsgId: id, rfcMessageId: `${id}@t`, fromEmail: "shop@example.com", fromName: "Shop", gmailLabels: accountId === gmail ? ["INBOX"] : undefined, inInbox: true });
+      const mk = (accountId: number, id: string) => msg({ accountId, providerMsgId: id, rfcMessageId: `${id}@t`, from: { email: "shop@example.com", name: "Shop" }, gmailLabels: accountId === gmail ? ["INBOX"] : undefined, inInbox: true });
       await ingest(store, [mk(gmail, "a"), mk(gmail, "b"), mk(gmail, "c"), mk(imap, "d")]);
       const [a, b] = [await threadOf(store, "a"), await threadOf(store, "b")];
       await store.threads.act({ threadIds: [b], action: "star", signal: null, now: NOW });
