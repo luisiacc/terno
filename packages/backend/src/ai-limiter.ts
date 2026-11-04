@@ -1,4 +1,4 @@
-import { AiError, costOf, type CompletionRequest, type ModelTransport, type StreamEvent, type Usage } from "@terno/ai";
+import { AiError, costAt, estimateInputTokens, priceOf, UNKNOWN_CLOUD_PRICE, worstCaseUsd, type CompletionRequest, type ModelPrice, type ModelTransport, type StreamEvent, type Usage } from "@terno/ai";
 import { L } from "@terno/i18n";
 import type { AiTaskName } from "@terno/core";
 import type { AiUsageReport } from "@terno/core/rpc";
@@ -21,6 +21,8 @@ interface Tally {
   inputTokens: number;
   outputTokens: number;
   usd: number;
+  /** how many of these requests' charges are estimates: an unknown price, or usage nobody reported */
+  estimated?: number;
 }
 
 /**
@@ -31,6 +33,7 @@ type UsageBook = Record<string, Partial<Record<LimiterTask | "byHand", Tally>>>;
 
 const BOOK_KEY = "ai:usage";
 const KEEP_DAYS = 40;
+const FREE: ModelPrice = { input: 0, output: 0 };
 
 export class DailyLimitError extends AiError {
   constructor() {
@@ -58,6 +61,29 @@ interface Waiter {
   foreground: boolean;
 }
 
+/** What a request is charged before it goes, kept unless the provider reports what really happened. */
+interface Reservation {
+  day: string;
+  task: LimiterTask | "byHand";
+  inputTokens: number;
+  outputTokens: number;
+  usd: number;
+  estimated: boolean;
+}
+
+interface WrapOptions {
+  task: LimiterTask;
+  model: string;
+  local: boolean;
+  foreground: boolean;
+}
+
+/** A request that may go: what to settle afterward (none when a person's request couldn't even read the book), and its local slot. */
+interface Admitted {
+  reservation: Reservation | null;
+  release: () => void;
+}
+
 export interface AiLimiterHost {
   readonly store: Pick<MailStore, "settings">;
   now(): number;
@@ -65,11 +91,26 @@ export interface AiLimiterHost {
   monthlyLimitUsd(): Promise<number>;
 }
 
+/** A model on this machine costs nothing; a cloud model nobody priced is counted dear rather than free. */
+function priceFor(model: string, local: boolean): { price: ModelPrice; known: boolean } {
+  if (local) return { price: FREE, known: true };
+  const price = priceOf(model);
+  return price ? { price, known: true } : { price: UNKNOWN_CLOUD_PRICE, known: false };
+}
+
+/** A server that says it used nothing has told us nothing: the worst case stands, as if it hadn't said. */
+const reported = (usage: Usage | undefined): usage is Usage => !!usage && usage.inputTokens + usage.outputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0) > 0;
+
 /**
  * Every request to a provider passes here. It keeps background work within its
  * share, keeps a local model to one request at a time (foreground first), and
  * counts what was spent, so a daily or monthly ceiling can stop work nobody is
  * watching. A person's own request is never refused, only counted.
+ *
+ * The count is a reservation: a request is charged its worst case, durably,
+ * before it leaves, and the charge becomes what it really cost only if the
+ * provider says. So concurrent requests can't share one remaining allowance,
+ * and a lost response, a failure or a crash mid-request stays counted.
  */
 export class AiLimiter {
   private readonly sent: number[] = [];
@@ -77,27 +118,21 @@ export class AiLimiter {
   private localBusy = false;
   private waitingBackground = 0;
   private book: UsageBook | null = null;
+  private loading: Promise<UsageBook> | null = null;
   private writing: Promise<void> = Promise.resolve();
 
   constructor(private readonly host: AiLimiterHost) {}
 
-  wrap(transport: ModelTransport, o: { task: LimiterTask; model: string; local: boolean; foreground: boolean }): ModelTransport {
-    const before = async (req: CompletionRequest) => {
-      if (!o.foreground) await this.admitBackground(o.task as BackgroundTask, req.signal);
-      return o.local ? this.takeLocal(o.foreground, req.signal) : () => {};
-    };
+  wrap(transport: ModelTransport, o: WrapOptions): ModelTransport {
     const counted = o.foreground && o.task in DAILY_REQUESTS ? "byHand" : o.task;
     const wrapped: ModelTransport = {
       ...transport,
       complete: async (req) => {
-        const release = await before(req);
+        const { reservation, release } = await this.admit(o, counted, req);
         try {
           const completion = await transport.complete(req);
-          void this.record(counted, o.model, completion.usage);
+          this.settle(reservation, o, completion.usage);
           return completion;
-        } catch (error) {
-          void this.record(counted, o.model, undefined);
-          throw error;
         } finally {
           release();
         }
@@ -105,9 +140,10 @@ export class AiLimiter {
     };
     if (transport.stream) {
       const inner = transport.stream.bind(transport);
-      const record = (usage: Usage | undefined) => this.record(counted, o.model, usage);
+      const admit = (req: CompletionRequest) => this.admit(o, counted, req);
+      const settle = (reservation: Reservation | null, usage: Usage | undefined) => this.settle(reservation, o, usage);
       wrapped.stream = async function* (req: CompletionRequest): AsyncGenerator<StreamEvent> {
-        const release = await before(req);
+        const { reservation, release } = await admit(req);
         let usage: Usage | undefined;
         try {
           for await (const event of inner(req)) {
@@ -115,7 +151,7 @@ export class AiLimiter {
             yield event;
           }
         } finally {
-          void record(usage);
+          settle(reservation, usage);
           release();
         }
       };
@@ -123,13 +159,102 @@ export class AiLimiter {
     return wrapped;
   }
 
-  /** Waits for a slot in the minute, after checking the day's and the month's ceilings. */
-  private async admitBackground(task: BackgroundTask, signal: AbortSignal): Promise<void> {
-    const book = await this.load();
+  /**
+   * Background work is refused early when it can't fit, waits its turn, and is
+   * asked again after waiting, since the book moved meanwhile. The last check
+   * and the charge happen with no await between them.
+   */
+  private async admit(o: WrapOptions, counted: LimiterTask | "byHand", req: CompletionRequest): Promise<Admitted> {
+    const { price } = priceFor(o.model, o.local);
+    const worst = { inputTokens: estimateInputTokens(req), outputTokens: req.maxTokens, usd: worstCaseUsd(price, req) };
+    const task = o.task as BackgroundTask;
+    if (!o.foreground) {
+      const book = await this.bookFor(false);
+      this.checkCeilings(book!, task, worst, await this.host.monthlyLimitUsd());
+      await this.takeMinuteSlot(req.signal);
+    }
+    const release = o.local ? await this.takeLocal(o.foreground, req.signal) : () => {};
+    try {
+      if (req.signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
+      const book = await this.bookFor(o.foreground);
+      if (!o.foreground) this.checkCeilings(book!, task, worst, await this.host.monthlyLimitUsd());
+      if (!book) return { reservation: null, release };
+      const reservation = this.reserve(book, counted, worst, !o.local);
+      // written before anything leaves, so a crash mid-request stays counted
+      await this.persist().catch(() => {
+        if (o.foreground) return;
+        this.unreserve(book, reservation);
+        throw this.notSaved();
+      });
+      return { reservation, release };
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+
+  private notSaved(): AiError {
+    return new AiError(L("errors.ai.usageNotSaved"), "unavailable");
+  }
+
+  /** A person's request goes even when the book can't be read; background work can't be held to a ceiling it can't see. */
+  private async bookFor(foreground: boolean): Promise<UsageBook | null> {
+    try {
+      return await this.load();
+    } catch {
+      if (foreground) return null;
+      throw this.notSaved();
+    }
+  }
+
+  private checkCeilings(book: UsageBook, task: BackgroundTask, worst: Pick<Reservation, "inputTokens" | "usd">, ceiling: number): void {
     const today = book[dayOf(this.host.now())]?.[task] ?? emptyTally();
-    if (today.requests >= DAILY_REQUESTS[task] || today.inputTokens >= DAILY_INPUT_TOKENS[task]) throw new DailyLimitError();
-    const ceiling = await this.host.monthlyLimitUsd();
-    if (ceiling > 0 && this.monthBackgroundUsd(book) >= ceiling) throw new MonthlyLimitError();
+    if (today.requests + 1 > DAILY_REQUESTS[task] || today.inputTokens + worst.inputTokens > DAILY_INPUT_TOKENS[task]) throw new DailyLimitError();
+    if (ceiling > 0 && this.monthBackgroundUsd(book) + worst.usd > ceiling) throw new MonthlyLimitError();
+  }
+
+  private reserve(book: UsageBook, task: LimiterTask | "byHand", worst: Pick<Reservation, "inputTokens" | "outputTokens" | "usd">, estimated: boolean): Reservation {
+    const day = dayOf(this.host.now());
+    const tally = ((book[day] ??= {})[task] ??= emptyTally());
+    tally.requests++;
+    tally.inputTokens += worst.inputTokens;
+    tally.outputTokens += worst.outputTokens;
+    tally.usd += worst.usd;
+    if (estimated) tally.estimated = (tally.estimated ?? 0) + 1;
+    const days = Object.keys(book).sort();
+    while (days.length > KEEP_DAYS) delete book[days.shift()!];
+    return { day, task, ...worst, estimated };
+  }
+
+  /** It never left: nothing was spent. */
+  private unreserve(book: UsageBook, r: Reservation): void {
+    const tally = book[r.day]?.[r.task];
+    if (!tally) return;
+    tally.requests = Math.max(0, tally.requests - 1);
+    this.adjust(tally, -r.inputTokens, -r.outputTokens, -r.usd);
+    if (r.estimated) tally.estimated = Math.max(0, (tally.estimated ?? 0) - 1);
+  }
+
+  private adjust(tally: Tally, inputTokens: number, outputTokens: number, usd: number): void {
+    tally.inputTokens = Math.max(0, tally.inputTokens + inputTokens);
+    tally.outputTokens = Math.max(0, tally.outputTokens + outputTokens);
+    tally.usd = Math.max(0, tally.usd + usd);
+  }
+
+  /** The provider said what happened: the reservation becomes that. With nothing reported, the worst case stands. */
+  private settle(r: Reservation | null, o: WrapOptions, usage: Usage | undefined): void {
+    if (!r || !reported(usage)) return;
+    const tally = this.book?.[r.day]?.[r.task];
+    if (!tally) return;
+    const { price, known } = priceFor(o.model, o.local);
+    this.adjust(tally, usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0) - r.inputTokens, usage.outputTokens - r.outputTokens, costAt(price, usage) - r.usd);
+    if (r.estimated && known) tally.estimated = Math.max(0, (tally.estimated ?? 0) - 1);
+    // a failed write leaves the worst case on disk, which errs the safe way
+    void this.persist().catch(() => {});
+  }
+
+  /** Waits for a slot in the minute. */
+  private async takeMinuteSlot(signal: AbortSignal): Promise<void> {
     if (this.waitingBackground >= MAX_WAITING) throw new AiError(L("errors.ai.rateLimited", { provider: "Terno" }), "rate_limited");
     this.waitingBackground++;
     try {
@@ -202,8 +327,27 @@ export class AiLimiter {
     };
   }
 
-  private async load(): Promise<UsageBook> {
-    return (this.book ??= await this.host.store.settings.get<UsageBook>(BOOK_KEY, {}));
+  /** One read however many ask at once: a second copy of the book would lose what the first has charged. */
+  private load(): Promise<UsageBook> {
+    if (this.book) return Promise.resolve(this.book);
+    this.loading ??= this.host.store.settings.get<UsageBook>(BOOK_KEY, {}).then(
+      (book) => {
+        this.loading = null;
+        return (this.book = book);
+      },
+      (error: unknown) => {
+        this.loading = null;
+        throw error;
+      },
+    );
+    return this.loading;
+  }
+
+  /** The whole book as it is when its turn comes, so an awaited write holds every charge made before it. */
+  private persist(): Promise<void> {
+    const write = this.writing.then(() => this.host.store.settings.set(BOOK_KEY, this.book));
+    this.writing = write.catch(() => {});
+    return write;
   }
 
   private monthBackgroundUsd(book: UsageBook): number {
@@ -216,32 +360,11 @@ export class AiLimiter {
     return usd;
   }
 
-  /**
-   * Counts a finished request. With no usage reported (a failure, or a server
-   * that doesn't say) it still counts as a request, so a failing provider can't
-   * be retried past the ceiling.
-   */
-  private async record(task: LimiterTask | "byHand", model: string, usage: Usage | undefined): Promise<void> {
-    const book = await this.load();
-    const day = dayOf(this.host.now());
-    const tally = ((book[day] ??= {})[task] ??= emptyTally());
-    tally.requests++;
-    if (usage) {
-      tally.inputTokens += usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
-      tally.outputTokens += usage.outputTokens;
-      tally.usd += costOf(model, usage) ?? 0;
-    }
-    const days = Object.keys(book).sort();
-    while (days.length > KEEP_DAYS) delete book[days.shift()!];
-    this.writing = this.writing.then(() => this.host.store.settings.set(BOOK_KEY, book)).catch(() => {});
-    await this.writing;
-  }
-
   async report(): Promise<AiUsageReport> {
     const book = await this.load();
     const today = dayOf(this.host.now());
     const month = today.slice(0, 7);
-    const report: AiUsageReport = { today: { requests: 0, usd: 0 }, month: { requests: 0, usd: 0 }, monthBackgroundUsd: this.monthBackgroundUsd(book) };
+    const report: AiUsageReport = { today: { requests: 0, usd: 0 }, month: { requests: 0, usd: 0 }, monthBackgroundUsd: this.monthBackgroundUsd(book), estimated: false };
     for (const [day, tasks] of Object.entries(book)) {
       for (const tally of Object.values(tasks)) {
         if (day === today) {
@@ -251,6 +374,7 @@ export class AiLimiter {
         if (day.startsWith(month)) {
           report.month.requests += tally.requests;
           report.month.usd += tally.usd;
+          if ((tally.estimated ?? 0) > 0) report.estimated = true;
         }
       }
     }

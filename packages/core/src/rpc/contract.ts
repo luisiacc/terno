@@ -127,11 +127,13 @@ export interface AiSummariesSetting {
   acknowledged: AiProviderId[];
 }
 
-/** What AI use has cost so far on the user's own keys, as far as prices are known (plan 131). */
+/** What AI use has cost so far on the user's own keys (plan 131). */
 export interface AiUsageReport {
   today: { requests: number; usd: number };
   month: { requests: number; usd: number };
   monthBackgroundUsd: number;
+  /** some of the month's figure is an estimate, counted high: a price nobody told us, or usage a provider didn't report */
+  estimated: boolean;
 }
 
 export interface AppSettings {
