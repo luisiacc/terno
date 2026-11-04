@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { budgetedTransport, createAi, transportFor, type AiOptions, type AiTasks, type ProviderConfig, type SpendLedger } from "@terno/ai";
+import { budgetedTransport, createAi, transportFor, type AiOptions, type AiTasks, type ModelTransport, type ProviderConfig, type SpendLedger } from "@terno/ai";
 
 /**
  * Runs against real models, for evals and proofs, and nothing else. Never
@@ -63,6 +63,13 @@ export function realTasks(target: RealTarget, label: string, options: AiOptions 
     wrapTransport: (transport) => budgetedTransport(transport, target.model, ledger, label),
     ...(target.provider === "jev" ? {} : { transport: transportFor(config) }),
   });
+}
+
+/** A bare transport under the same ledger, for what isn't an app task: fixtures and judges in an eval. */
+export function realTransport(target: RealTarget, label: string): ModelTransport {
+  const keys = realKeys();
+  const config: ProviderConfig = { id: target.provider, model: target.model, apiKey: keys[target.provider], fetch: globalThis.fetch, timeoutMs: 120_000, maxRetries: 0 };
+  return budgetedTransport(transportFor(config), target.model, fileLedger(), label);
 }
 
 export function spendReport(): string {
