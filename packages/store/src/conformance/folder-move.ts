@@ -1,6 +1,7 @@
-import { folderRef } from "@terno/core";
+import { folderRef, type FilterRule } from "@terno/core";
 import { afterEach, describe, expect, it } from "vitest";
 import type { MailStore } from "../mail-store";
+import type { IncomingMessage } from "../types";
 import { ingest, msg, threadOf, withAccounts } from "./fixtures";
 import type { StoreHarness } from "./store";
 
@@ -227,6 +228,152 @@ export function defineFolderMoveConformance(name: string, harness: StoreHarness)
       const page = await store.similar.resolvePage(sender.scope, target, [], null, 2000);
       expect(new Set(page.ids)).toEqual(new Set([b, await threadOf(store, "c")]));
       expect(page.kept).toEqual([]);
+    });
+  });
+
+  describe(`filters that move new mail to a folder (plan 128): ${name}`, () => {
+    const FROM = { name: "Uber", email: "uber@example.com" };
+    const fromUber: FilterRule["conditions"] = [{ field: "from", op: "equals", value: FROM.email }];
+    const filter = (store: MailStore, actions: FilterRule["actions"], conditions = fromUber) => store.filters.save({ name: `f${JSON.stringify(actions)}`, enabled: true, source: "manual", rule: { match: "all", conditions, actions } }, NOW);
+    const toFolder = (accountId: number, folder: string) => ({ type: "moveToFolder" as const, accountId, folder });
+    const arrive = async (store: MailStore, over: Partial<IncomingMessage> & { accountId: number; providerMsgId: string }) => {
+      const r = await ingest(store, [msg({ from: FROM, ...over })], NOW);
+      return { ...r, thread: await threadOf(store, over.providerMsgId) };
+    };
+    const newGmail = (accountId: number, id: string, labels = ["INBOX"]) => ({ accountId, providerMsgId: id, rfcMessageId: `${id}@t`, gmailLabels: labels, inInbox: labels.includes("INBOX") });
+    const newImap = (accountId: number, id: string, uid = 1, mailbox = "INBOX") => ({ accountId, providerMsgId: id, rfcMessageId: `${id}@t`, locations: [loc(mailbox, uid)], inInbox: mailbox === "INBOX" });
+    const queued = async (store: MailStore) => (await store.debug.snapshot()).ops.filter((o) => o.state === "queued").map((o) => o.kind);
+
+    it("Gmail: new mail goes to the folder and not the Inbox, with its ops; other mail isn't touched", async () => {
+      const { store, gmail } = await fresh();
+      await filter(store, [toFolder(gmail, "Label_A")]);
+      const moved = await arrive(store, newGmail(gmail, "n1"));
+      const other = await ingest(store, [msg({ ...newGmail(gmail, "n2"), from: { name: "Ana", email: "ana@example.com" } })], NOW);
+      expect(moved.opIds.length).toBe(2);
+      expect(await list(store, gmail, "Label_A")).toEqual([moved.thread]);
+      expect(await inbox(store)).toEqual([await threadOf(store, "n2")]);
+      expect(other.opIds).toEqual([]);
+      expect(await settleAll(store)).toEqual(["moveToFolder", "archive"]);
+      expect(await list(store, gmail, "Label_A")).toEqual([moved.thread]);
+    });
+
+    it("IMAP: the same, shown in the folder before the server has answered", async () => {
+      const { store, imap } = await fresh();
+      await filter(store, [toFolder(imap, "A")]);
+      const { thread } = await arrive(store, newImap(imap, "n"));
+      expect(await list(store, imap, "A")).toEqual([thread]);
+      expect(await inbox(store)).toEqual([]);
+      expect(await queued(store)).toEqual(["moveToFolder", "archive"]);
+    });
+
+    it("a category shown in the Inbox keeps it there, whichever filter comes first; a hidden one wins", async () => {
+      const { store, gmail } = await fresh();
+      const shown = (await store.categories.create("Shown", "cyan", { showInInbox: true })).id;
+      const hidden = (await store.categories.create("Hidden", "indigo", { showInInbox: false })).id;
+      // the folder's filter first: its move still waits for the category's
+      await filter(store, [toFolder(gmail, "Label_A")]);
+      await filter(store, [{ type: "addCategory", categoryId: shown }]);
+      const kept = await arrive(store, newGmail(gmail, "kept"));
+      expect(await list(store, gmail, "Label_A")).toEqual([kept.thread]);
+      expect(await inbox(store)).toEqual([kept.thread]);
+      expect(await queued(store)).toEqual(["moveToFolder"]);
+      await filter(store, [{ type: "addCategory", categoryId: hidden }]);
+      const both = await arrive(store, newGmail(gmail, "both"));
+      expect(new Set(await list(store, gmail, "Label_A"))).toEqual(new Set([kept.thread, both.thread]));
+      expect(await inbox(store)).toEqual([kept.thread]);
+    });
+
+    it("only its own account's mail moves; the rule's other actions still run on the rest", async () => {
+      const { store, gmail, imap } = await fresh();
+      await filter(store, [toFolder(gmail, "Label_A"), { type: "markRead" }]);
+      const { thread, opIds } = await arrive(store, newImap(imap, "elsewhere"));
+      expect(await inbox(store)).toEqual([thread]);
+      expect(await list(store, gmail, "Label_A")).toEqual([]);
+      expect(await list(store, imap, "A")).toEqual([]);
+      expect(opIds.length).toBe(1);
+      expect(await queued(store)).toEqual(["markRead"]);
+    });
+
+    it("mail already put somewhere isn't moved on arrival: another folder, Archive, your own, Trash", async () => {
+      const { store, imap } = await fresh();
+      await filter(store, [toFolder(imap, "A")]);
+      await arrive(store, newImap(imap, "in-b", 1, "B"));
+      await arrive(store, newImap(imap, "archived", 1, "Archive"));
+      await arrive(store, { ...newImap(imap, "mine", 1, "Sent"), isSent: true });
+      await arrive(store, { ...newImap(imap, "mine-in-inbox", 2), isSent: true });
+      await arrive(store, { ...newImap(imap, "trashed", 1, "Trash"), isTrash: true });
+      expect(await list(store, imap, "A")).toEqual([]);
+      expect(await queued(store)).toEqual([]);
+    });
+
+    it("who reached the Inbox is read before any filter acts: an archive filter or another folder's doesn't stop this one", async () => {
+      const { store, gmail } = await fresh();
+      await filter(store, [{ type: "archive" }]);
+      await filter(store, [toFolder(gmail, "Label_A")]);
+      await filter(store, [toFolder(gmail, "Label_B")]);
+      const { thread } = await arrive(store, newGmail(gmail, "n"));
+      expect(await list(store, gmail, "Label_A")).toEqual([thread]);
+      expect(await list(store, gmail, "Label_B")).toEqual([thread]);
+      expect(await inbox(store)).toEqual([]);
+    });
+
+    it("a trash filter wins, wherever it is in the order", async () => {
+      const { store, gmail } = await fresh();
+      await filter(store, [toFolder(gmail, "Label_A")]);
+      await filter(store, [{ type: "trash" }]);
+      await arrive(store, newGmail(gmail, "n"));
+      expect(await list(store, gmail, "Label_A")).toEqual([]);
+      expect(await queued(store)).toEqual(["trash"]);
+    });
+
+    it("a folder that isn't there does nothing: the mail stays in the Inbox, and ingest goes on", async () => {
+      const { store, gmail } = await fresh();
+      await filter(store, [toFolder(gmail, "Label_Gone")]);
+      const { thread, opIds } = await arrive(store, newGmail(gmail, "n"));
+      expect(opIds).toEqual([]);
+      expect(await inbox(store)).toEqual([thread]);
+      expect(await queued(store)).toEqual([]);
+    });
+
+    it("an account with no folder list yet is trusted (a first sync): the key is the server's", async () => {
+      const s = await harness.open();
+      open.push(s);
+      const [gmail] = await withAccounts(s);
+      await filter(s, [toFolder(gmail!, "Label_A")]);
+      await arrive(s, newGmail(gmail!, "n"));
+      expect(await inbox(s)).toEqual([]);
+      expect(await queued(s)).toEqual(["moveToFolder", "archive"]);
+    });
+
+    it("a later action failing takes its move back with the rest of the filter", async () => {
+      const { store, gmail } = await fresh();
+      await filter(store, [toFolder(gmail, "Label_A"), { type: "addCategory", categoryId: 987654 }]);
+      const { thread } = await arrive(store, newGmail(gmail, "n"));
+      expect(await inbox(store)).toEqual([thread]);
+      expect(await list(store, gmail, "Label_A")).toEqual([]);
+      expect(await queued(store)).toEqual([]);
+    });
+
+    it("a body filter moves it when the body arrives, in that transaction", async () => {
+      const { store, gmail } = await fresh();
+      await filter(store, [toFolder(gmail, "Label_A")], [{ field: "body", op: "contains", value: "recibo" }]);
+      const { inserted: [m], thread } = await arrive(store, { ...newGmail(gmail, "n"), bodyText: null, bodyState: "none" });
+      expect(await inbox(store)).toEqual([thread]);
+      const r = await store.sync.setBody(m!, "tu recibo de hoy", null, { now: NOW, classifier: null });
+      expect(r.opIds.length).toBe(2);
+      expect(await list(store, gmail, "Label_A")).toEqual([thread]);
+      expect(await inbox(store)).toEqual([]);
+    });
+
+    it("Apply to existing mail takes it from wherever it is, except your own", async () => {
+      const { store, imap } = await fresh();
+      const { inserted: [archived] } = await ingest(store, [msg({ from: FROM, ...newImap(imap, "archived", 1, "Archive") })], NOW);
+      const { inserted: [mine] } = await ingest(store, [msg({ from: FROM, ...newImap(imap, "mine", 1, "Sent"), isSent: true })], NOW);
+      const f = await filter(store, [toFolder(imap, "A")]);
+      const r = await store.filters.applyChunk(f.id, JSON.stringify(f.rule), [archived!, mine!], NOW);
+      expect(r.applied).toBe(2);
+      expect(await list(store, imap, "A")).toEqual([await threadOf(store, "archived")]);
+      expect(r.opIds.length).toBe(1);
     });
   });
 }

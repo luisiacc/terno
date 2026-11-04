@@ -1,6 +1,6 @@
-import { applyFolderOp, keptInInbox, labelsLeft, labelsMoved, LEAVE_FOLDER, leaveFolderOps, MOVE_TO_FOLDER, type FolderMoved, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
-import { applyThreadAction, type ActionResult } from "./actions";
-import { FOLDER_OPS_PENDING } from "./folders";
+import { applyFolderOp, folderReachable, keptInInbox, labelsLeft, labelsMoved, LEAVE_FOLDER, leaveFolderOps, MOVE_TO_FOLDER, type FolderFilterMove, type FolderMoved, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
+import { applyMessageAction, applyThreadAction, type ActionResult } from "./actions";
+import { FOLDER_OPS_PENDING, listFolders } from "./folders";
 import { recomputeThreads } from "./ingest";
 import { enqueueOp } from "./repos";
 import { placeholders, type Db } from "./sqlite";
@@ -22,20 +22,29 @@ function byChunks<T>(ids: readonly number[], read: (chunk: number[]) => T[]): T[
 
 const isGmail = (db: Db, accountId: number) => db.get<{ kind: string }>("SELECT kind FROM accounts WHERE id = ?", accountId)?.kind === "gmail";
 
-/** Plan 127: see MailStore.threads.moveToFolder. Runs inside the caller's transaction. */
-export function moveThreadsToFolder(db: Db, c: { threadIds: readonly number[]; accountId: number; folder: string; from: string | null; now: number }): { threadIds: number[]; opIds: string[]; moved: FolderMoved; kept: number[]; archived: ActionResult } {
-  const { accountId, folder, from, now } = c;
-  const threads = byChunks([...new Set(c.threadIds)], (chunk) => db.all<{ id: number; in_inbox: number }>(`SELECT id, in_inbox FROM threads WHERE id IN (${placeholders(chunk.length)}) AND account_id = ? AND in_trash = 0 AND in_spam = 0`, ...chunk, accountId));
-  const ids = threads.map((t) => t.id);
+interface MoveRow {
+  id: number;
+  thread_id: number;
+  is_sent: number;
+  in_inbox: number;
+  gmail_labels: string | null;
+}
+
+/** Which of these threads stay in the Inbox: in it, in a category shown there, in none hidden. */
+function keptThreads(db: Db, threads: readonly { id: number; in_inbox: number }[]): Set<number> {
   const shown = new Map<number, boolean[]>();
-  for (const r of byChunks(ids, (chunk) => db.all<{ thread_id: number; show_in_inbox: number }>(`SELECT tc.thread_id, c.show_in_inbox FROM thread_categories tc JOIN categories c ON c.id = tc.category_id WHERE tc.thread_id IN (${placeholders(chunk.length)})`, ...chunk))) {
+  for (const r of byChunks(threads.map((t) => t.id), (chunk) => db.all<{ thread_id: number; show_in_inbox: number }>(`SELECT tc.thread_id, c.show_in_inbox FROM thread_categories tc JOIN categories c ON c.id = tc.category_id WHERE tc.thread_id IN (${placeholders(chunk.length)})`, ...chunk))) {
     const list = shown.get(r.thread_id);
     if (list) list.push(!!r.show_in_inbox);
     else shown.set(r.thread_id, [!!r.show_in_inbox]);
   }
-  const kept = new Set(threads.filter((t) => keptInInbox(!!t.in_inbox, shown.get(t.id) ?? [])).map((t) => t.id));
+  return new Set(threads.filter((t) => keptInInbox(!!t.in_inbox, shown.get(t.id) ?? [])).map((t) => t.id));
+}
+
+/** The provider ops that put these messages in the folder, and what each one changes (an undo's journal). */
+function queueFolderMoves(db: Db, to: { accountId: number; folder: string; from: string | null; now: number }, messages: readonly MoveRow[], kept: ReadonlySet<number>): { moved: FolderMoved; opIds: string[] } {
+  const { accountId, folder, from, now } = to;
   const gmail = isGmail(db, accountId);
-  const messages = byChunks(ids, (chunk) => db.all<{ id: number; thread_id: number; is_sent: number; in_inbox: number; gmail_labels: string | null }>(`SELECT id, thread_id, is_sent, in_inbox, gmail_labels FROM messages WHERE thread_id IN (${placeholders(chunk.length)}) AND is_draft = 0 AND is_trash = 0 AND is_spam = 0`, ...chunk));
   const places = new Map<number, Set<string>>();
   if (!gmail) {
     for (const l of byChunks(messages.map((m) => m.id), (chunk) => db.all<{ message_id: number; mailbox: string }>(`SELECT message_id, mailbox FROM message_locations WHERE message_id IN (${placeholders(chunk.length)})`, ...chunk))) {
@@ -76,6 +85,41 @@ export function moveThreadsToFolder(db: Db, c: { threadIds: readonly number[]; a
   };
   queue(targets.kept, true);
   queue(targets.rest, false);
+  return { moved, opIds };
+}
+
+/**
+ * Plan 128: a filter's move, per message as a filter's every action is. Only `messageIds`, this account's, received, not
+ * in Trash or Spam. A thread kept in the Inbox is copied there and stays. Null: the folder isn't there, nothing changed.
+ * Runs inside the caller's transaction.
+ */
+export function moveMessagesToFolder(db: Db, c: FolderFilterMove & { now: number }): { threadIds: number[]; opIds: string[] } | null {
+  const { accountId, folder, now } = c;
+  if (!folderReachable(listFolders(db), accountId, folder)) return null;
+  const messages = byChunks(c.messageIds, (chunk) => db.all<MoveRow>(`SELECT id, thread_id, is_sent, in_inbox, gmail_labels FROM messages WHERE id IN (${placeholders(chunk.length)}) AND account_id = ? AND is_draft = 0 AND is_sent = 0 AND is_trash = 0 AND is_spam = 0`, ...chunk, accountId));
+  const threadIds = [...new Set(messages.map((m) => m.thread_id))];
+  if (!threadIds.length) return { threadIds, opIds: [] };
+  const kept = keptThreads(db, byChunks(threadIds, (chunk) => db.all<{ id: number; in_inbox: number }>(`SELECT id, in_inbox FROM threads WHERE id IN (${placeholders(chunk.length)})`, ...chunk)));
+  const { opIds } = queueFolderMoves(db, { accountId, folder, from: null, now }, messages, kept);
+  const archived = applyMessageAction(db, messages.filter((m) => !kept.has(m.thread_id)).map((m) => m.id), "archive");
+  for (const target of archived.targets) {
+    const id = enqueueOp(db, { accountId: target.accountId, kind: "archive", target: { messageIds: target.messageIds } }, now);
+    if (id) opIds.push(id);
+  }
+  // membership reads the queued ops: the archive's recompute saw them; only what it didn't touch is left
+  const done = new Set(archived.threadIds);
+  recomputeThreads(db, threadIds.filter((t) => !done.has(t)));
+  return { threadIds, opIds };
+}
+
+/** Plan 127: see MailStore.threads.moveToFolder. Runs inside the caller's transaction. */
+export function moveThreadsToFolder(db: Db, c: { threadIds: readonly number[]; accountId: number; folder: string; from: string | null; now: number }): { threadIds: number[]; opIds: string[]; moved: FolderMoved; kept: number[]; archived: ActionResult } {
+  const { accountId, folder, from, now } = c;
+  const threads = byChunks([...new Set(c.threadIds)], (chunk) => db.all<{ id: number; in_inbox: number }>(`SELECT id, in_inbox FROM threads WHERE id IN (${placeholders(chunk.length)}) AND account_id = ? AND in_trash = 0 AND in_spam = 0`, ...chunk, accountId));
+  const ids = threads.map((t) => t.id);
+  const kept = keptThreads(db, threads);
+  const messages = byChunks(ids, (chunk) => db.all<MoveRow>(`SELECT id, thread_id, is_sent, in_inbox, gmail_labels FROM messages WHERE thread_id IN (${placeholders(chunk.length)}) AND is_draft = 0 AND is_trash = 0 AND is_spam = 0`, ...chunk));
+  const { moved, opIds } = queueFolderMoves(db, { accountId, folder, from, now }, messages, kept);
   // after the move's ops: IMAP's archive then finds no copy left in the Inbox, Gmail's takes its label away
   const archived = applyThreadAction(db, ids.filter((t) => !kept.has(t)), "archive");
   for (const target of archived.targets) {

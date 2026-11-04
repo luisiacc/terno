@@ -78,8 +78,20 @@ export function categoryRule(scope: FilterableScope, categoryId: number): Filter
     if (scope.email) conditions.push({ field: "from", op: "equals", value: scope.email });
     return { match: "all", conditions, actions };
   }
-  // as the stores resolve the scope now: "@acme.studio " files acme.studio, so the filter must say acme.studio
+  return { match: "all", conditions: scopeConditions(scope), actions };
+}
+
+/** As the stores resolve the scope now: "@acme.studio " files acme.studio, so the filter must say acme.studio. */
+function scopeConditions(scope: Exclude<FilterableScope, { kind: "words" }>): FilterRule["conditions"] {
   const canonical =
     scope.kind === "domain" ? { kind: "domain" as const, domain: scope.domain.trim().replace(/^@/, "") } : scope.kind === "list" ? { kind: "list" as const, listId: scope.listId.trim() } : scope;
-  return { match: "all", conditions: similarRule(canonical, "archive").conditions, actions };
+  return similarRule(canonical, "archive").conditions;
+}
+
+/**
+ * Plan 128: the filter that moves the scope's future mail to one of an account's folders. The account's condition
+ * keeps its hits, preview and "Apply" to the mail the action can touch.
+ */
+export function folderRule(scope: Exclude<FilterableScope, { kind: "words" }>, accountId: number, folder: string): FilterRule {
+  return { match: "all", conditions: [...scopeConditions(scope), { field: "account", op: "is", value: accountId }], actions: [{ type: "moveToFolder", accountId, folder }] };
 }

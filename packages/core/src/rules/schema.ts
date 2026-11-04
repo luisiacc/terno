@@ -11,7 +11,8 @@ export const TEXT_FIELDS = ["from", "fromDomain", "recipients", "subject", "body
 export const TEXT_OPS = ["contains", "equals", "startsWith", "endsWith", "matches"] as const;
 /** The fields a pattern may run on: not bodies (large, and FTS-backed). */
 export const PATTERN_FIELDS = ["from", "fromDomain", "recipients", "subject", "listId"] as const;
-export const LOCATION_ACTIONS = ["archive", "trash", "spam"] as const;
+/** plan 128: one place a rule sends mail: a folder is a place too */
+export const LOCATION_ACTIONS = ["archive", "trash", "spam", "moveToFolder"] as const;
 
 export type TextField = (typeof TEXT_FIELDS)[number];
 export type TextOp = (typeof TEXT_OPS)[number];
@@ -61,6 +62,8 @@ export const actionSchema = z.union([
   z.object({ type: z.literal("addCategory"), categoryId: z.number().int().positive() }),
   // plan 116: new mail it matches is forwarded there (never mail it is applied to later, nor old mail)
   z.object({ type: z.literal("forward"), to: z.array(forwardAddress).min(1) }),
+  // plan 128: into one of an account's folders. A key means nothing without its account, and only that account's mail moves
+  z.object({ type: z.literal("moveToFolder"), accountId: z.number().int().positive(), folder: z.string().min(1).max(1000) }),
 ]);
 
 export const filterRuleSchema = z

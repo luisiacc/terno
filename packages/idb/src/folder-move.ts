@@ -1,6 +1,6 @@
-import { applyFolderOp, keptInInbox, labelsLeft, labelsMoved, LEAVE_FOLDER, leaveFolderOps, MOVE_TO_FOLDER, type FolderMoved, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
-import { pendingFolderOps } from "./folders";
-import { applyThreadAction, enqueueOp, recomputeThreads, T, type ActionResult, type Ctx, type R } from "./mail";
+import { applyFolderOp, folderReachable, keptInInbox, labelsLeft, labelsMoved, LEAVE_FOLDER, leaveFolderOps, MOVE_TO_FOLDER, type FolderFilterMove, type FolderMoved, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
+import { listFolders, pendingFolderOps } from "./folders";
+import { applyMessageAction, applyThreadAction, enqueueOp, recomputeThreads, T, type ActionResult, type Ctx, type R } from "./mail";
 
 const labelsOf = (m: R): string[] => {
   try {
@@ -13,22 +13,18 @@ const labelsOf = (m: R): string[] => {
 
 const isGmail = (c: Ctx, accountId: number) => T(c, "accounts").get(accountId)?.kind === "gmail";
 
-/** Plan 127: see MailStore.threads.moveToFolder (the SQL adapter's folder-move.ts). Inside the caller's unit. */
-export function moveThreadsToFolder(c: Ctx, o: { threadIds: readonly number[]; accountId: number; folder: string; from: string | null; now: number }): { threadIds: number[]; opIds: string[]; moved: FolderMoved; kept: number[]; archived: ActionResult } {
-  const { accountId, folder, from, now } = o;
-  const threadRows = T(c, "threads");
-  const threads = [...new Set(o.threadIds)].flatMap((id) => {
-    const t = threadRows.get(id);
-    return t && t.account_id === accountId && !t.in_trash && !t.in_spam ? [t] : [];
-  });
-  const ids = threads.map((t) => t.id as number);
+/** Which of these threads stay in the Inbox: in it, in a category shown there, in none hidden. */
+function keptThreads(c: Ctx, threads: readonly R[]): Set<number> {
   const categories = T(c, "categories");
   const memberships = T(c, "thread_categories");
-  const kept = new Set(threads.filter((t) => keptInInbox(t.in_inbox === 1, memberships.by("fk_thread_id", t.id).map((m) => categories.get(m.category_id)?.show_in_inbox !== 0))).map((t) => t.id as number));
+  return new Set(threads.filter((t) => keptInInbox(t.in_inbox === 1, memberships.by("fk_thread_id", t.id).map((m) => categories.get(m.category_id)?.show_in_inbox !== 0))).map((t) => t.id as number));
+}
+
+/** The provider ops that put these messages in the folder, and what each one changes (an undo's journal). */
+function queueFolderMoves(c: Ctx, to: { accountId: number; folder: string; from: string | null; now: number }, rows: readonly R[], kept: ReadonlySet<number>): { moved: FolderMoved; opIds: string[] } {
+  const { accountId, folder, from, now } = to;
   const gmail = isGmail(c, accountId);
-  const messages = T(c, "messages");
   const locations = T(c, "message_locations");
-  const rows = ids.flatMap((id) => messages.by("fk_thread_id", id)).filter((m) => !m.is_draft && !m.is_trash && !m.is_spam).sort((x, y) => x.id - y.id);
   // IMAP: your own mail stays in Sent, unless it's all there is or it's in the folder this leaves. Gmail's labels go on the whole conversation
   const received = new Set(rows.filter((m) => !m.is_sent).map((m) => m.thread_id as number));
   const moved: FolderMoved = { accountId, folder, from, fromInbox: [], fromFolder: [], added: [], leftOnly: [] };
@@ -56,6 +52,44 @@ export function moveThreadsToFolder(c: Ctx, o: { threadIds: readonly number[]; a
   };
   queue(targets.kept, true);
   queue(targets.rest, false);
+  return { moved, opIds };
+}
+
+/** Plan 128: see the SQL adapter's moveMessagesToFolder. Null: the folder isn't there, nothing changed. Inside the caller's unit. */
+export function moveMessagesToFolder(c: Ctx, o: FolderFilterMove & { now: number }): { threadIds: number[]; opIds: string[] } | null {
+  const { accountId, folder, now } = o;
+  if (!folderReachable(listFolders(c), accountId, folder)) return null;
+  const all = T(c, "messages");
+  const rows = o.messageIds.flatMap((id) => all.get(id) ?? []).filter((m) => m.account_id === accountId && !m.is_draft && !m.is_sent && !m.is_trash && !m.is_spam).sort((x, y) => x.id - y.id);
+  const threadIds = [...new Set(rows.map((m) => m.thread_id as number))];
+  if (!threadIds.length) return { threadIds, opIds: [] };
+  const threads = T(c, "threads");
+  const kept = keptThreads(c, threadIds.flatMap((id) => threads.get(id) ?? []));
+  const { opIds } = queueFolderMoves(c, { accountId, folder, from: null, now }, rows, kept);
+  const archived = applyMessageAction(c, rows.filter((m) => !kept.has(m.thread_id as number)).map((m) => m.id as number), "archive");
+  for (const target of archived.targets) {
+    const id = enqueueOp(c, { accountId: target.accountId, kind: "archive", target: { messageIds: target.messageIds } }, now);
+    if (id) opIds.push(id);
+  }
+  // membership reads the queued ops: the archive's recompute saw them; only what it didn't touch is left
+  const done = new Set(archived.threadIds);
+  recomputeThreads(c, threadIds.filter((t) => !done.has(t)));
+  return { threadIds, opIds };
+}
+
+/** Plan 127: see MailStore.threads.moveToFolder (the SQL adapter's folder-move.ts). Inside the caller's unit. */
+export function moveThreadsToFolder(c: Ctx, o: { threadIds: readonly number[]; accountId: number; folder: string; from: string | null; now: number }): { threadIds: number[]; opIds: string[]; moved: FolderMoved; kept: number[]; archived: ActionResult } {
+  const { accountId, folder, from, now } = o;
+  const threadRows = T(c, "threads");
+  const threads = [...new Set(o.threadIds)].flatMap((id) => {
+    const t = threadRows.get(id);
+    return t && t.account_id === accountId && !t.in_trash && !t.in_spam ? [t] : [];
+  });
+  const ids = threads.map((t) => t.id as number);
+  const kept = keptThreads(c, threads);
+  const messages = T(c, "messages");
+  const rows = ids.flatMap((id) => messages.by("fk_thread_id", id)).filter((m) => !m.is_draft && !m.is_trash && !m.is_spam).sort((x, y) => x.id - y.id);
+  const { moved, opIds } = queueFolderMoves(c, { accountId, folder, from, now }, rows, kept);
   // after the move's ops: IMAP's archive then finds no copy left in the Inbox, Gmail's takes its label away
   const archived = applyThreadAction(c, ids.filter((t) => !kept.has(t)), "archive");
   for (const target of archived.targets) {

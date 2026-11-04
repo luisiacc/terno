@@ -15,8 +15,8 @@ import { sqlRecipientReceipts } from "./recipient-receipts";
 import { detachedReply } from "@terno/store";
 import { sqlSendCopies } from "./send-copies";
 import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, clearRecipientWarning, sendWarningFlags, submissionAccepted } from "@terno/store";
-import { isFolderOp } from "@terno/store";
-import { leaveFolder, moveThreadsToFolder, settleFolderOp } from "./folder-move";
+import { isFolderOp, movesToFolder, type FolderFilterMove } from "@terno/store";
+import { leaveFolder, moveMessagesToFolder, moveThreadsToFolder, settleFolderOp } from "./folder-move";
 import { carryFolder, clearFolder, countFolderMessages, listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { exportBody, exportIds, exportMessages } from "./folder-export";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
@@ -514,17 +514,21 @@ export class SqlMailStore implements MailStore {
   // ───────────────────────────── filters on incoming mail ─────────────────────────────
 
   /** Enabled filters on new (or newly body-complete) messages. Automated: never a learning signal. */
-  private applyFiltersTo(messageIds: readonly number[], onlyBodyFilters: boolean, now: number, opIds: string[]): Set<number> {
+  private applyFiltersTo(messageIds: readonly number[], onlyBodyFilters: boolean, now: number, opIds: string[], folderMoves: FolderFilterMove[]): Set<number> {
     const touched = new Set<number>();
     if (messageIds.length === 0) return touched;
-    for (const filter of listFilters(this.db)) {
-      if (!filter.enabled) continue;
-      if (onlyBodyFilters && !ruleReadsBody(filter.rule)) continue;
+    const filters = listFilters(this.db).filter((f) => f.enabled && (!onlyBodyFilters || ruleReadsBody(f.rule)));
+    // plan 128: what reached the Inbox, read before any filter acts: an archive (or another folder's) doesn't change who else moves
+    const inbox = filters.some((f) => movesToFolder(f.rule)) ? new Set(this.db.all<{ id: number }>("SELECT id FROM messages WHERE in_inbox = 1 AND id IN (SELECT value FROM json_each(?))", JSON.stringify(messageIds)).map((m) => m.id)) : null;
+    for (const filter of filters) {
       const matches = findRuleMatches(this.db, filter.rule, now, messageIds);
       if (matches.messageIds.length === 0) continue;
       try {
+        const moves: FolderFilterMove[] = [];
         // claims + actions + ops atomically (a savepoint inside the command)
-        const changed = this.db.tx(() => this.runFilterActions(filter.rule.actions, claimFilterApplications(this.db, filter.id, matches.messageIds, now), now, opIds));
+        const changed = this.db.tx(() => this.runFilterActions(filter.rule.actions, claimFilterApplications(this.db, filter.id, matches.messageIds, now), now, opIds, moves, inbox));
+        // only once its savepoint held: a later action failing leaves no move behind
+        folderMoves.push(...moves);
         for (const id of changed) touched.add(id);
       } catch (error) {
         // e.g. the filter points at a deleted category: skip it, keep ingesting
@@ -534,12 +538,18 @@ export class SqlMailStore implements MailStore {
     return touched;
   }
 
-  private runFilterActions(actions: FilterAction[], messageIds: number[], now: number, opIds: string[]): Set<number> {
+  private runFilterActions(actions: FilterAction[], messageIds: number[], now: number, opIds: string[], folderMoves: FolderFilterMove[], inbox: ReadonlySet<number> | null): Set<number> {
     const touched = new Set<number>();
     if (messageIds.length === 0) return touched;
     for (const action of actions) {
       // plan 116: a forward is decided after the commit, from what the mail is then (forwards.plan)
       if (action.type === "forward") continue;
+      // plan 128: made last (flushFolderMoves), when the categories that keep a thread in the Inbox are all known
+      if (action.type === "moveToFolder") {
+        const ids = inbox ? messageIds.filter((id) => inbox.has(id)) : messageIds;
+        if (ids.length) folderMoves.push({ accountId: action.accountId, folder: action.folder, messageIds: ids });
+        continue;
+      }
       if (action.type === "addCategory") {
         const threads = this.db
           .all<{ thread_id: number }>("SELECT DISTINCT thread_id FROM messages WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify(messageIds))
@@ -553,6 +563,23 @@ export class SqlMailStore implements MailStore {
       }
     }
     return touched;
+  }
+
+  /** Plan 128: the collected moves. One failing, or a folder that isn't there, stops only that one: the mail stays where it is, and ingest goes on. */
+  private flushFolderMoves(moves: readonly FolderFilterMove[], now: number, opIds: string[], touched: Set<number>): void {
+    for (const move of moves) {
+      try {
+        const r = this.db.tx(() => moveMessagesToFolder(this.db, { ...move, now }));
+        if (!r) {
+          this.log("warn", `filter move: folder not found on account ${move.accountId}`);
+          continue;
+        }
+        opIds.push(...r.opIds);
+        for (const t of r.threadIds) touched.add(t);
+      } catch (error) {
+        this.log("warn", `filter move failed on account ${move.accountId}`, error instanceof Error ? error.message : error);
+      }
+    }
   }
 
   private classify(classifier: ClassifierInput | null, inserted: readonly number[], bodyCompleted: readonly number[], now: number): ClassifyResult {
@@ -605,13 +632,15 @@ export class SqlMailStore implements MailStore {
         if (forwardEligible) markEligible(this.db, result.inserted, now);
         const touched = new Set(result.touchedThreads);
         const opIds: string[] = [];
+        const folderMoves: FolderFilterMove[] = [];
         if (applyFilters) {
-          for (const t of this.applyFiltersTo(result.inserted, false, now, opIds)) touched.add(t);
+          for (const t of this.applyFiltersTo(result.inserted, false, now, opIds, folderMoves)) touched.add(t);
           // bodies that arrived through an upsert may now satisfy body filters
-          for (const t of this.applyFiltersTo(result.bodyCompleted, true, now, opIds)) touched.add(t);
+          for (const t of this.applyFiltersTo(result.bodyCompleted, true, now, opIds, folderMoves)) touched.add(t);
         }
         const c = this.classify(classifier, result.inserted, result.bodyCompleted, now);
         for (const t of c.touched) touched.add(t);
+        this.flushFolderMoves(folderMoves, now, opIds, touched);
         return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }));
       }, check); } finally {
@@ -642,10 +671,12 @@ export class SqlMailStore implements MailStore {
         if (owner) recomputeThreads(this.db, [owner.thread_id]);
         if (captureUnavailable) return { touched: owner ? [owner.thread_id] : [], deltas: [], auto: new Map(), opIds: [] };
         const opIds: string[] = [];
-        const touched = this.applyFiltersTo([messageId], true, now, opIds);
+        const folderMoves: FolderFilterMove[] = [];
+        const touched = this.applyFiltersTo([messageId], true, now, opIds, folderMoves);
         // the body was the missing piece: reclassify once
         const c = this.classify(classifier, [], [messageId], now);
         for (const t of c.touched) touched.add(t);
+        this.flushFolderMoves(folderMoves, now, opIds, touched);
         if (owner) touched.add(owner.thread_id);
         return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }));
@@ -1101,7 +1132,10 @@ export class SqlMailStore implements MailStore {
           : messageIds;
         const ids = claimFilterApplications(this.db, id, eligible, now);
         const opIds: string[] = [];
-        const touched = this.runFilterActions(rule.actions, ids, now, opIds);
+        const folderMoves: FolderFilterMove[] = [];
+        // asked for by hand: wherever the mail is now, not only the Inbox (plan 128)
+        const touched = this.runFilterActions(rule.actions, ids, now, opIds, folderMoves, null);
+        this.flushFolderMoves(folderMoves, now, opIds, touched);
         return { applied: ids.length, touched: [...touched], opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }),
   };

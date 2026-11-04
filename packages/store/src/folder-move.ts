@@ -58,6 +58,22 @@ export function keptInInbox(inInbox: boolean, shownInInbox: readonly boolean[]):
   return inInbox && shownInInbox.length > 0 && shownInInbox.every(Boolean);
 }
 
+/** Plan 128: a filter's move, collected while its actions run and made once the mail's categories are known. */
+export interface FolderFilterMove {
+  accountId: number;
+  folder: string;
+  messageIds: number[];
+}
+
+/** Can a filter still move mail there? An account with no list yet (a first sync) is trusted: a stale key fails as an op. */
+export function folderReachable(listed: readonly { accountId: number; key: string; selectable: boolean }[], accountId: number, folder: string): boolean {
+  const own = listed.filter((f) => f.accountId === accountId);
+  return own.length === 0 || own.some((f) => f.key === folder && f.selectable);
+}
+
+/** Does this rule move mail to a folder? Only then does anyone need to know what was in the Inbox. */
+export const movesToFolder = (rule: { actions: readonly { type: string }[] }): boolean => rule.actions.some((a) => a.type === "moveToFolder");
+
 export const isFolderOp = (kind: string): boolean => kind === MOVE_TO_FOLDER || kind === LEAVE_FOLDER;
 
 /**

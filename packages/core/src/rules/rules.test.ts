@@ -3,6 +3,8 @@ import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { describe, expect, it } from "vitest";
 import { bodyMatches, evaluateRule, type RuleMessage } from "./evaluate";
+import { folderRule } from "../categorize/bulk";
+import { sameRule } from "../similar";
 import { filterIssueKey, filterRuleSchema, type FilterRule } from "./schema";
 
 const NOW = Date.UTC(2026, 9, 22);
@@ -168,5 +170,32 @@ describe("filterRuleSchema", () => {
     setLocale("es", es);
     expect(t(filterIssueKey(conflict))).toBe("Un filtro solo puede mover el correo a un lugar (archivo, papelera o spam).");
     setLocale("en", en);
+  });
+});
+
+describe("a filter's folder (plan 128)", () => {
+  const rule = (actions: FilterRule["actions"]): FilterRule => ({ match: "all", conditions: [{ field: "from", op: "equals", value: "a@shop.com" }], actions });
+  const folder = { type: "moveToFolder" as const, accountId: 3, folder: "Recibos" };
+
+  it("is a place: not with archive, delete, spam or another folder, fine with star and a category", () => {
+    for (const other of [{ type: "archive" as const }, { type: "trash" as const }, { type: "spam" as const }, { ...folder, folder: "Otra" }]) {
+      const parsed = filterRuleSchema.safeParse(rule([folder, other]));
+      expect(parsed.success).toBe(false);
+      expect(filterIssueKey(parsed.error!.issues)).toBe("filters.invalid.oneLocation");
+    }
+    expect(filterRuleSchema.safeParse(rule([folder, { type: "star" }, { type: "addCategory", categoryId: 1 }])).success).toBe(true);
+  });
+
+  it("names its account and a key", () => {
+    expect(filterRuleSchema.safeParse(rule([{ ...folder, folder: "" }])).success).toBe(false);
+    expect(filterRuleSchema.safeParse(rule([{ ...folder, accountId: 0 }])).success).toBe(false);
+  });
+
+  it("folderRule: the scope's conditions, the account's, the action; two folders aren't the same rule", () => {
+    const made = folderRule({ kind: "domain", domain: "@shop.com " }, 3, "Recibos");
+    expect(made).toEqual({ match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "shop.com" }, { field: "account", op: "is", value: 3 }], actions: [folder] });
+    expect(filterRuleSchema.safeParse(made).success).toBe(true);
+    expect(sameRule(made, folderRule({ kind: "domain", domain: "shop.com" }, 3, "Recibos"))).toBe(true);
+    expect(sameRule(made, folderRule({ kind: "domain", domain: "shop.com" }, 3, "Otra"))).toBe(false);
   });
 });
