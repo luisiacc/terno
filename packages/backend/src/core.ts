@@ -693,14 +693,15 @@ export class BackendCore {
       const life = this.lifetimes.get(id)!;
       void p.then((provider) => { if (this.current(life)) provider?.reset?.(); }, () => {});
     }
-    for (const account of await this.store.accounts.list()) {
+    // each account on its own: one server slow to answer its login holds up nobody else's mail
+    await Promise.all((await this.store.accounts.list()).map(async (account) => {
       await this.recheckSignIn(account.id, "network");
       // a watcher would only knock with a password its server refuses
       if (!this.unwatch.has(account.id) && !(await this.accountStatus(account.id)).signInRequired) this.watchAccount(account.id);
-    }
-    await this.store.ops.resumeNetwork(null, this.now());
-    // the worker paused while offline: whatever is due goes now
-    this.kickWorker();
+      await this.store.ops.resumeNetwork(account.id, this.now());
+      // the worker paused while offline: whatever is due goes now
+      this.kickWorker();
+    }));
   }
 
   /** The host went offline: push stops (its sockets are dead anyway), the worker waits, accounts say so. */
@@ -1654,7 +1655,8 @@ export class BackendCore {
 
   private async readSelectedBody(threadId: number, messageId: number): Promise<ResultOf<"reader.hydrate">> {
     await this.ready;
-    const detail = await this.store.threads.get(threadId);
+    // the message's state is all this needs: parts, so no body in the thread is read to learn it
+    const detail = await this.store.threads.get(threadId, { bodyFormat: "parts" });
     const message = detail?.messages.find((m) => m.id === messageId);
     if (!message || message.bodyState === "full" || message.bodyUnavailable) return { changed: false };
     const life = this.lifetime(message.accountId);

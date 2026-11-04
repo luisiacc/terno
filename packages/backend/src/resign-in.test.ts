@@ -8,8 +8,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createAccount, enqueueOp, sqlDb } from "@terno/db";
+import { AWAITING_NETWORK } from "@terno/store";
 import { ProviderAuthError, type MailProvider, type ProviderRegistry } from "@terno/mail";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
 interface Scripted extends MailProvider {
@@ -40,6 +41,8 @@ async function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] 
   /** passwords the IMAP and SMTP sign-in check was asked about, and those it accepts */
   const verified: string[] = [];
   const accepts = new Set(["new-password"]);
+  /** while set, a saved-password check waits for it */
+  let verifyGate: Promise<void> | null = null;
   let clock = Date.now();
   /** what the next provider of an account starts with (a test sets it before a sign-in) */
   const script = new Map<number, Partial<Pick<Scripted, "refuseSync" | "refuseOps">>>();
@@ -80,6 +83,7 @@ async function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] 
     },
     async verifyImap(_config, password) {
       verified.push(password);
+      if (verifyGate) await verifyGate;
       if (!accepts.has(password)) throw new ProviderAuthError("IMAP login failed: Invalid credentials");
     },
     async connectGmail() {
@@ -119,7 +123,8 @@ async function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] 
   /** a refusal the last session saw: kept across the quit, which protocol refused it unknown */
   const keptRefusal = (id: number) => db().run("UPDATE accounts SET sync_state = ? WHERE id = ?", JSON.stringify({ ...state(id), status: "error", lastError: "IMAP login failed: Invalid credentials", authRequired: true, authScope: null }), id);
   const advance = (ms: number) => void (clock += ms);
-  return { backend, client, providers, script, ids, state, op, opRow, verified, accepts, keptRefusal, advance };
+  const awaitNetwork = (id: string) => db().run("UPDATE ops SET next_attempt_at = ? WHERE id = ?", AWAITING_NETWORK, id);
+  return { backend, client, providers, script, ids, state, op, opRow, verified, accepts, keptRefusal, advance, awaitNetwork, holdVerify: (gate: Promise<void> | null) => { verifyGate = gate; } };
 }
 
 const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -165,6 +170,39 @@ describe("plan 25: an account that needs a sign-in", () => {
     await expect.poll(() => t.opRow(parked).state).toBe("succeeded");
     await expect.poll(() => t.providers.get(id)?.syncs ?? 0).toBeGreaterThan(0);
     expect(t.verified).toHaveLength(3);
+  });
+
+  it("a network change: a server slow to answer one account's login holds up no other account's mail", async () => {
+    const t = await setup();
+    const [slow, other] = t.ids as [number, number];
+    t.keptRefusal(slow);
+    await t.backend.setSecret(`account:${slow}:password`, "saved-password");
+    await t.backend.start();
+    await expect.poll(() => t.verified).toEqual(["saved-password"]);
+    const waiting = t.op(slow, "archive"), parked = t.op(other, "archive");
+    t.awaitNetwork(waiting);
+    t.awaitNetwork(parked);
+    let answer!: () => void, synced!: () => void;
+    t.holdVerify(new Promise<void>((resolve) => { answer = resolve; }));
+    // a finished sync resumes its account's mail too: held, what goes can only be the network change's doing
+    t.providers.get(other)!.syncGate = new Promise<void>((resolve) => { synced = resolve; });
+    t.backend.networkChanged(true, "network");
+    await expect.poll(() => t.verified).toHaveLength(2);
+    await expect.poll(() => t.opRow(parked).state).toBe("succeeded");
+    // its own order holds: looked at first, its mail then
+    expect(t.opRow(waiting)).toEqual({ state: "queued", attempts: 0 });
+    t.holdVerify(null);
+    answer();
+    synced();
+    await expect.poll(async () => (await t.backend.store.ops.nextAttemptAt()) !== AWAITING_NETWORK).toBe(true);
+    expect(t.state(slow)).toMatchObject({ authRequired: true });
+  });
+
+  it("downloading a message's body learns its state without reading any body", async () => {
+    const t = await setup({ kinds: ["imap"] });
+    const get = vi.spyOn(t.backend.store.threads, "get");
+    await expect(t.backend.hydrateBody(1, 1)).resolves.toEqual({ changed: false });
+    expect(get).toHaveBeenCalledWith(1, { bodyFormat: "parts" });
   });
 
   it("Codex review: a refusal kept across a quit: the launch's recheck is its only login (no watcher knocks); accepted, the account watches and syncs at once", async () => {
