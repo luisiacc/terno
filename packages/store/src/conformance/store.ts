@@ -17,6 +17,7 @@ import { defineReminderConformance } from "./reminders";
 import { defineScheduledConformance } from "./scheduled";
 import { defineForwardsConformance } from "./forwards";
 import { defineAiSummariesConformance } from "./ai-summaries";
+import { defineSmartCategorizationConformance } from "./smart-categorization";
 import { defineUnsubscribeConformance } from "./unsubscribe";
 import { defineHiddenInboxConformance } from "./hidden-inbox";
 import { defineTabsConformance } from "./tabs";
@@ -115,6 +116,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       open.push(next);
       return next;
     });
+    defineSmartCategorizationConformance(fresh);
 
     describe("reply destinations", () => {
       it("retains Reply-To through ingest, refresh and reopen without replacing it on partial updates", async () => {
