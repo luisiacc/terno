@@ -1,6 +1,7 @@
 import { textRef, type AiErrorKind, type AiProviderId, type Capabilities, type CompatiblePreset, type FilterRule, type ModelInfo, type OutputMode, type TextRef } from "@terno/core";
 import type { Localized } from "@terno/i18n";
 import type { z } from "zod";
+import type { SummarizeInput, ThreadSummaryResult } from "./summarize";
 
 export type { AiErrorKind, AiProviderId, Capabilities, CompatiblePreset, ModelInfo, OutputMode, PresetDescriptor, ProviderDescriptor } from "@terno/core";
 
@@ -121,7 +122,11 @@ export interface AiTasks {
   readonly calibrated: boolean;
   /** the model's context window, when known */
   readonly contextTokens: number | null;
+  /** the endpoint they talk to: one model id can sit behind several (plan 132 revision 5) */
+  readonly endpoint: string | null;
   generateFilter(prompt: string, ctx: FilterGenerationContext, signal?: AbortSignal): Promise<GeneratedFilter>;
+  /** plan 132: a conversation's summary; items citing a message that isn't in it are dropped */
+  summarize(input: SummarizeInput, signal?: AbortSignal): Promise<ThreadSummaryResult>;
   /** One result per input, in input order; malformed responses are repaired or rejected as a whole. */
   classify<L extends string>(input: ClassifyInput<L>, signal?: AbortSignal): Promise<{ id: string; label: L | null; confidence: number }[]>;
   /** declared only; built with the categorization agent */

@@ -184,7 +184,7 @@ export class AiService {
     if (name === "summary") {
       if (settings.ai.keys.openai?.hasKey) return profiled("openai", SUMMARY_DEFAULT_MODEL);
       // a local model costs nothing and stays here; a paid one is the user's call, since this runs on every new mail
-      if (!isLocalProvider({ id: configured.provider, baseURL: configured.baseURL, preset: configured.preset }) && configured.provider !== "none") {
+      if (!isLocalProvider({ id: configured.provider, baseURL: configured.baseURL, preset: configured.preset }) || configured.provider === "none") {
         throw new AiError(L("errors.ai.summaryProvider"), "not_configured");
       }
     }

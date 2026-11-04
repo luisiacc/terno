@@ -17,6 +17,41 @@ export const WRITING_CLAUDE_MODEL = "claude-sonnet-5-5";
 export const SUMMARY_DEFAULT_MODEL = "gpt-6-luna";
 export const JEV_DEFAULT_MODEL = "jev-latest";
 
+/** Plan 132: what a summary can point out. */
+export const SUMMARY_ITEM_KINDS = ["decision", "date", "action", "question"] as const;
+export type SummaryItemKind = (typeof SUMMARY_ITEM_KINDS)[number];
+
+export interface AiSummaryItem {
+  kind: SummaryItemKind;
+  text: string;
+  /** the message it's in: never one the thread doesn't hold */
+  messageId: number;
+}
+
+/** A conversation's summary, as the reader shows it. Plain text, never HTML. */
+export interface AiSummary {
+  threadId: number;
+  summary: string;
+  items: AiSummaryItem[];
+  /** who wrote it, for its tooltip */
+  provider: AiProviderId;
+  model: string;
+  generatedAt: number;
+}
+
+/** `stale`: there was one, but the conversation has changed since. */
+export type AiSummaryRead = { state: "none" } | { state: "stale" } | { state: "ready"; summary: AiSummary };
+
+/** `consent`: this would be the first text sent to this cloud provider by hand; `waitingBody`: the newest message's text isn't here yet. */
+export type AiSummarizeResult = { status: "ready"; summary: AiSummary } | { status: "consent"; provider: AiProviderId } | { status: "waitingBody" };
+
+/** What Settings says about the automatic summaries: `blockedBy` while they've stopped, `lastError` after one failed. */
+export interface AiSummariesStatus {
+  pending: number;
+  blockedBy: { kind: AiErrorKind; message: string; i18n?: import("./rpc/envelope").I18nRef; limit?: "daily" | "monthly" } | null;
+  lastError: AiErrorKind | null;
+}
+
 export const COMPATIBLE_PRESETS = ["openrouter", "groq", "together", "azure", "custom"] as const;
 export type CompatiblePreset = (typeof COMPATIBLE_PRESETS)[number];
 

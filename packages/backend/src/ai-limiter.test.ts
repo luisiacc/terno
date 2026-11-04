@@ -47,6 +47,19 @@ describe("AiLimiter", () => {
     await expect(limiter.wrap(free, { task: "writing", model: "claude-sonnet-5-5", local: false, foreground: true }).complete(req())).resolves.toBeTruthy();
   });
 
+  it("plan 132: a summary asked for by hand counts as spent, never toward the day's or the month's ceilings", async () => {
+    const h = host(0.0001);
+    const limiter = new AiLimiter(h);
+    const big: ModelTransport = { complete: async () => ({ text: "", stop: "end", usage: { inputTokens: 1_000_000, outputTokens: 0 } }) };
+    const byHand = limiter.wrap(big, { task: "summary", model: "gpt-6-luna", local: false, foreground: true });
+    for (let i = 0; i < DAILY_REQUESTS.summary + 1; i++) await byHand.complete(req());
+    const report = await limiter.report();
+    expect(report.today.requests).toBe(DAILY_REQUESTS.summary + 1);
+    expect(report.month.usd).toBeGreaterThan(0);
+    expect(report.monthBackgroundUsd).toBe(0);
+    await expect(limiter.wrap(free, { task: "summary", model: "gpt-6-luna", local: false, foreground: false }).complete(req())).resolves.toBeTruthy();
+  });
+
   it("counts a failed request, so a failing provider can't be retried past the ceiling", async () => {
     const h = host();
     const limiter = new AiLimiter(h);

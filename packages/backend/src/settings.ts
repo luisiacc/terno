@@ -146,6 +146,7 @@ export const DEFAULT_SETTINGS: General = {
   syncWindowDays: 180,
   autoCategorize: "auto",
   aiCategorize: false,
+  summaries: { enabled: false, enabledAt: null, acknowledged: [] },
   errorReports: "ask",
   // new installs follow the system: English unless it's a language Terno ships
   language: "system",
@@ -476,16 +477,31 @@ export class SettingsError extends Error {
  * Applies a settings patch. Selecting a cloud provider while local mode is on
  * is refused; turning local mode on with a cloud provider keeps it dormant.
  */
-export async function updateSettings(store: SettingsStore, patch: SettingsPatch): Promise<AppSettings> {
+export async function updateSettings(store: SettingsStore, patch: SettingsPatch, now: number = Date.now()): Promise<AppSettings> {
   if (patch.ai) await pinKeyOrigins(store);
   const hasLegacyKey = await store.secrets.has(keySecretName("anthropic"));
-  await store.settings.update<StoredSettings, void>("app", {}, (s) => ({ value: patchedSettings(migrate(s), patch, hasLegacyKey), result: undefined }));
+  await store.settings.update<StoredSettings, void>("app", {}, (s) => ({ value: patchedSettings(migrate(s), patch, hasLegacyKey, now), result: undefined }));
   return readSettings(store);
 }
 
-function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: boolean): StoredSettings {
-  const { ai: aiPatch, ...rest } = patch;
-  const general = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
+/** Plan 132: a provider the user was told a hand summary goes to. */
+export async function acknowledgeSummaryProvider(store: SettingsStore, provider: AiProviderId): Promise<void> {
+  await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
+    const s = migrate(raw);
+    const current = s.summaries ?? DEFAULT_SETTINGS.summaries;
+    return { value: current.acknowledged.includes(provider) ? s : { ...s, summaries: { ...current, acknowledged: [...current.acknowledged, provider] } }, result: undefined };
+  });
+}
+
+function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: boolean, now: number): StoredSettings {
+  const { ai: aiPatch, summaries: summariesPatch, ...rest } = patch;
+  const general: Partial<General> = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
+  if (summariesPatch) {
+    // the moment it went on: mail from before it is never sent (off and on again starts over)
+    const was = s.summaries ?? DEFAULT_SETTINGS.summaries;
+    const enabledAt = !summariesPatch.enabled ? null : was.enabled ? was.enabledAt : now;
+    general.summaries = { ...was, enabled: summariesPatch.enabled, enabledAt };
+  }
   const state = aiState(s, hasLegacyKey);
   let { provider } = state;
   const profiles = { ...state.profiles };

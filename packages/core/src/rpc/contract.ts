@@ -10,6 +10,9 @@ import {
   AI_TASK_NAMES,
   COMPATIBLE_PRESETS,
   type AiErrorKind,
+  type AiSummarizeResult,
+  type AiSummariesStatus,
+  type AiSummaryRead,
   type AiProviderId,
   type AiTaskName,
   type AiTaskTarget,
@@ -116,6 +119,13 @@ export interface AiSettings {
   monthlyLimitUsd: number;
 }
 
+export interface AiSummariesSetting {
+  enabled: boolean;
+  enabledAt: number | null;
+  /** the cloud providers the user was told a hand summary sends the conversation to */
+  acknowledged: AiProviderId[];
+}
+
 /** What AI use has cost so far on the user's own keys, as far as prices are known (plan 131). */
 export interface AiUsageReport {
   today: { requests: number; usd: number };
@@ -154,6 +164,8 @@ export interface AppSettings {
   autoCategorize: AutoCategorize;
   /** let the configured AI suggest categories for mail the engine is unsure about (never auto-applies) */
   aiCategorize: boolean;
+  /** plan 132: summarize new mail as it arrives (off unless the user turns it on: it sends mail with no click); mail from before `enabledAt` never */
+  summaries: AiSummariesSetting;
   /** anonymous error reports (builds with a DSN, outside local mode): ask each time, send, or never */
   errorReports: "ask" | "always" | "never";
   /** the UI language: follow the system, or a locale Terno ships (@terno/i18n LOCALES) */
@@ -448,6 +460,8 @@ const settingsPatch = z.object({
   syncWindowDays: syncWindow.optional(),
   autoCategorize: z.enum(["off", "suggest", "auto"]).optional(),
   aiCategorize: z.boolean().optional(),
+  /** `enabledAt` is the backend's: the moment it went on */
+  summaries: z.object({ enabled: z.boolean() }).strict().optional(),
   errorReports: z.enum(["ask", "always", "never"]).optional(),
   language: z.enum(LANGUAGE_SETTINGS).optional(),
   composeSuggestions: z.boolean().optional(),
@@ -1075,6 +1089,17 @@ export const contract = {
   /** Stops one of this connection's requests. */
   "ai.cancel": m<{ ok: true }>()(z.object({ requestId: z.string().min(1).max(64) })),
   "ai.usage": m<AiUsageReport>()(empty),
+  /**
+   * Plan 132 §7: a conversation's summary, by hand: any thread that isn't in spam or trash, however old. Cancellable
+   * with `ai.cancel`. `acknowledge`: the user has read that it goes to this provider.
+   */
+  "ai.summarize": m<AiSummarizeResult>()(z.object({ threadId: id, requestId: z.string().min(1).max(64), acknowledge: z.boolean().optional() }), { timeoutMs: 120_000 }),
+  /** Plan 132 §6: the summary an open reader shows. Mail content: renderer only, never for MCP. */
+  "ai.summaries.get": m<AiSummaryRead>()(z.object({ threadId: id })),
+  /** What the automatic summaries are doing, for Settings → AI. */
+  "ai.summaries.status": m<AiSummariesStatus>()(empty),
+  /** Settings → Storage → Clear AI data. */
+  "ai.summaries.clear": m<{ ok: true }>()(empty),
 
   "identity.get": m<OwnerIdentity | null>()(empty),
   "identity.changeOwner": m<OwnerIdentity>()(z.object({ accountId: id, password: z.string().min(1).max(1000).optional() }), { timeoutMs: 300_000 }),
@@ -1164,5 +1189,7 @@ export interface Events {
    * The account's syncState keeps the last one saved (at a chunk's end), for a window that opens meanwhile.
    */
   syncProgress: { accountId: number; progress: import("../types").SyncProgress | null };
+  /** plan 132: a thread's summary is ready, for an open reader (only to the renderer and dev: never MCP) */
+  aiSummary: { threadId: number };
 }
 export type EventName = keyof Events;

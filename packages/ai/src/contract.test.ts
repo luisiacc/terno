@@ -216,6 +216,30 @@ function describeProviderContract(c: Contract) {
       expect(c.dialect.structured(stub.requests[0]!.body)).toBe(false);
     });
 
+    it("summarizes a thread through the same ladder, structured, at low effort, with mail only in the user turn", async () => {
+      const summary = { summary: "Ana proposes the 19th.", items: [{ kind: "date", text: "Moved to 19 March", message: "m1" }, { kind: "action", text: "Invented", message: "m9" }] };
+      chat(() => ok(summary));
+      const thread = [{ label: "m1", from: "Ana <ana@books.test>", date: "2026-11-01", own: false, text: "A secret canary-4d2 sentence." }];
+      const r = await createAi(config()).summarize({ subject: "Contract", thread, language: "es", today: "2026-11-04" });
+      expect(r).toEqual({ summary: "Ana proposes the 19th.", items: [{ kind: "date", text: "Moved to 19 March", message: "m1" }] });
+      const req = stub.requests[0]!;
+      expect(c.dialect.structured(req.body)).toBe(true);
+      expect(c.dialect.system(req.body)).toContain("Write in Spanish");
+      expect(c.dialect.system(req.body)).not.toContain("canary-4d2");
+      expect(c.dialect.lastUser(req.body)).toContain("canary-4d2");
+    });
+
+    it("gives a summary's failures the kinds the worker acts on", async () => {
+      const thread = [{ label: "m1", from: "Ana", date: "2026-11-01", own: false, text: "Hello" }];
+      const go = () => createAi(config()).summarize({ subject: "S", thread, language: "en", today: "2026-11-04" });
+      chat(() => ({ status: 401, json: c.dialect.error(401, "bad key") }));
+      await expect(go()).rejects.toMatchObject({ kind: "auth" });
+      chat(() => ({ status: 200, json: c.dialect.reply("", "refusal") }));
+      await expect(go()).rejects.toMatchObject({ kind: "refused" });
+      chat(() => ({ status: 200, json: c.dialect.reply('{"summary": "Ana', "length") }));
+      await expect(go()).rejects.toMatchObject({ kind: "invalid_output" });
+    });
+
     it("sends malformed JSON to repair", async () => {
       chat((_, n) => (n === 0 ? { status: 200, json: c.dialect.reply("{ not json") } : ok()));
       await expect(createAi(config({ capabilities: { output: "json_object", contextTokens: null, embeddings: false, probedAt: 1 } })).generateFilter("x", ctx)).resolves.toMatchObject({

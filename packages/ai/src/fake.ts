@@ -1,5 +1,6 @@
 import { normalizeText } from "@terno/core";
 import { keyRef } from "@terno/i18n";
+import { fakeSummary } from "./summarize";
 import { promptText, type ModelTransport } from "./types";
 import type { WireFilter } from "./wire";
 
@@ -67,6 +68,7 @@ export function fakeTransport(options: { failFirstAttempt?: boolean } = {}): Mod
         return { text: JSON.stringify({ results }), stop: "end" };
       }
       if (schema?.name === "probe") return { text: '{"ok":true}', stop: "end" };
+      if (schema?.name === "thread_summary") return { text: JSON.stringify(fakeSummary(promptText(system), prompt)), stop: "end" };
       const wire = filterFor(prompt, jsonLine(promptText(system), "Categories", []));
       // Simulates a model mistake to exercise the repair loop.
       const out = options.failFirstAttempt && !repairing ? { ...wire, actions: [{ type: "archive", categoryId: null }, { type: "trash", categoryId: null }] } : wire;

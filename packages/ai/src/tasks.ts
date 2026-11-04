@@ -5,7 +5,8 @@ import { fakeTransport } from "./fake";
 import { jevModels, jevTasks } from "./jev";
 import { runStructured, type StructuredTask } from "./ladder";
 import { openaiChatTransport } from "./openai-chat";
-import { describeProvider, isLocalProvider } from "./providers";
+import { describeProvider, isLocalProvider, resolveBaseURL } from "./providers";
+import { summarizeTask } from "./summarize";
 import { AiError, type AiTasks, type Capabilities, type ClassifyInput, type ModelInfo, type ModelTransport, type OutputMode, type ProviderConfig } from "./types";
 import { convertWireFilter, EXAMPLE_WIRE_FILTER, systemPrompt, wireFilterSchema } from "./wire";
 
@@ -86,6 +87,11 @@ export function createAi(config: ProviderConfig, options: AiOptions = {}): AiTas
     calibrated: false,
     get contextTokens() {
       return capabilities.contextTokens;
+    },
+    endpoint: resolveBaseURL(config) ?? null,
+
+    summarize(input, signal) {
+      return run(summarizeTask(input), signal);
     },
 
     generateFilter(prompt, ctx, signal) {

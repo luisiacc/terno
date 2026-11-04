@@ -83,9 +83,14 @@ export function jevTasks(config: ProviderConfig, options: AiOptions = {}): AiTas
     model: config.model,
     calibrated: true,
     contextTokens: null,
+    endpoint: resolveBaseURL(config) ?? null,
     generateFilter() {
       // i18n-ignore: a caller's bug: forTask never offers JEV for filters
       throw new AiError("JEV can't write filters", "unsupported");
+    },
+    summarize() {
+      // i18n-ignore: a caller's bug: the settings row never offers JEV for summaries
+      throw new AiError("JEV writes no text", "unsupported");
     },
     async classify<K extends string>(input: ClassifyInput<K>, signal?: AbortSignal) {
       if (input.labels.length === 0 || input.labels.length > 254) {

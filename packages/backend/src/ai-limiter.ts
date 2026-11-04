@@ -23,8 +23,11 @@ interface Tally {
   usd: number;
 }
 
-/** By day (YYYY-MM-DD, local time) and task. Bounded: a month and a bit. */
-type UsageBook = Record<string, Partial<Record<LimiterTask, Tally>>>;
+/**
+ * By day (YYYY-MM-DD, local time) and task. Bounded: a month and a bit. `byHand`: a person's own request for what is
+ * otherwise background work (a summary asked for): it counts as spent, never toward that work's ceilings.
+ */
+type UsageBook = Record<string, Partial<Record<LimiterTask | "byHand", Tally>>>;
 
 const BOOK_KEY = "ai:usage";
 const KEEP_DAYS = 40;
@@ -83,16 +86,17 @@ export class AiLimiter {
       if (!o.foreground) await this.admitBackground(o.task as BackgroundTask, req.signal);
       return o.local ? this.takeLocal(o.foreground, req.signal) : () => {};
     };
+    const counted = o.foreground && o.task in DAILY_REQUESTS ? "byHand" : o.task;
     const wrapped: ModelTransport = {
       ...transport,
       complete: async (req) => {
         const release = await before(req);
         try {
           const completion = await transport.complete(req);
-          void this.record(o.task, o.model, completion.usage);
+          void this.record(counted, o.model, completion.usage);
           return completion;
         } catch (error) {
-          void this.record(o.task, o.model, undefined);
+          void this.record(counted, o.model, undefined);
           throw error;
         } finally {
           release();
@@ -101,7 +105,7 @@ export class AiLimiter {
     };
     if (transport.stream) {
       const inner = transport.stream.bind(transport);
-      const record = (usage: Usage | undefined) => this.record(o.task, o.model, usage);
+      const record = (usage: Usage | undefined) => this.record(counted, o.model, usage);
       wrapped.stream = async function* (req: CompletionRequest): AsyncGenerator<StreamEvent> {
         const release = await before(req);
         let usage: Usage | undefined;
@@ -217,7 +221,7 @@ export class AiLimiter {
    * that doesn't say) it still counts as a request, so a failing provider can't
    * be retried past the ceiling.
    */
-  private async record(task: LimiterTask, model: string, usage: Usage | undefined): Promise<void> {
+  private async record(task: LimiterTask | "byHand", model: string, usage: Usage | undefined): Promise<void> {
     const book = await this.load();
     const day = dayOf(this.host.now());
     const tally = ((book[day] ??= {})[task] ??= emptyTally());

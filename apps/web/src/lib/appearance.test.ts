@@ -42,6 +42,7 @@ const { snack } = await import("~/lib/snack");
 
 const SERVER: AppSettings = {
   localMode: true,
+  summaries: { enabled: false, enabledAt: null, acknowledged: [] },
   composeSuggestions: true,
   senderIcons: false,
   googlePhotos: {}, googlePhotosPending: [], favoriteFolders: [],

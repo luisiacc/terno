@@ -1222,9 +1222,11 @@ export function createHandlers(b: Backend): Handlers {
       const updating = settingsUpdates.then(async () => {
         try {
           const was = await readSettings(store);
-          const next = await updateSettings(store, patch);
+          const next = await updateSettings(store, patch, b.now());
           b.aiAssist.settingsChanged(patch);
           if (patch.ai && (patch.ai.provider !== undefined || patch.ai.model !== undefined || patch.ai.baseURL !== undefined || patch.ai.preset !== undefined || patch.ai.tasks)) b.aiService.configChanged();
+          // plan 132: turned off, nothing further goes; a change may unblock what was paused
+          if (patch.ai || patch.summaries) b.summaries.settingsChanged(next);
           if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
           if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
           // plan 22: website icons turned off: nothing in flight lands, windows forget them
@@ -1248,13 +1250,28 @@ export function createHandlers(b: Backend): Handlers {
     "ai.providers": () => b.aiService.providers(),
     "ai.listModels": ({ provider, baseURL, preset }) => b.aiService.listModels({ provider, baseURL, preset }),
     "ai.test": ({ provider, model, baseURL, preset }) => b.aiService.test({ provider, model, baseURL, preset }),
-    "ai.setKey": ({ provider, preset, value }) => b.aiService.setKey(provider, preset, value),
+    "ai.setKey": async ({ provider, preset, value }) => {
+      const next = await b.aiService.setKey(provider, preset, value);
+      b.summaries.settingsChanged(next);
+      return next;
+    },
     "ai.cancel": ({ requestId }, ctx) => {
       b.aiService.cancel(requestId, ctx.clientId);
       return { ok: true };
     },
     "ai.usage": () => b.aiService.limiter.report(),
-    "ai.confirmKey": ({ provider, preset }) => b.aiService.confirmKey(provider, preset),
+    "ai.confirmKey": async ({ provider, preset }) => {
+      const next = await b.aiService.confirmKey(provider, preset);
+      b.summaries.settingsChanged(next);
+      return next;
+    },
+    "ai.summarize": ({ threadId, requestId, acknowledge }, ctx) => b.summaries.request(threadId, requestId, ctx.clientId, acknowledge),
+    "ai.summaries.get": ({ threadId }) => b.summaries.read(threadId),
+    "ai.summaries.status": () => b.summaries.status(),
+    "ai.summaries.clear": async () => {
+      await store.aiSummaries.clear();
+      return { ok: true };
+    },
 
     "identity.get": () => store.owner.get(),
     "identity.changeOwner": ({ accountId, password }) => changeOwnerTo(b, accountId, password),

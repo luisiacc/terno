@@ -17,6 +17,7 @@ import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
 import { AiAssist } from "./ai-assist";
+import { SummaryWorker } from "./summaries";
 import { Attention, type AttentionHost } from "./attention";
 import { hydrateSendAttachments } from "./attachments";
 import { Categorizer } from "./categorizer";
@@ -32,7 +33,7 @@ import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreada
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
 import { CARRY_SLICE, carryRenamed } from "./folders";
 import { followFolderFilters } from "./similar";
-import { followFavoriteFolders, readAutoCategorize, readComposeSuggestions, readGooglePhotos, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
+import { acknowledgeSummaryProvider, followFavoriteFolders, readAutoCategorize, readComposeSuggestions, readGooglePhotos, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
 import { IconService } from "./icons/service";
 import type { IconTransport } from "./icons/transport";
 import { browserUnsubscribeTransport, type UnsubscribeTransport } from "./unsubscribe";
@@ -260,6 +261,8 @@ export class BackendCore {
   readonly aiService: AiService;
   readonly categorizer: Categorizer;
   readonly aiAssist: AiAssist;
+  /** plan 132: summaries of new mail, and by hand; asleep on an empty queue */
+  readonly summaries: SummaryWorker;
   /** plan 18: recipient and body suggestions, in memory, built on first use */
   readonly autocomplete: Autocomplete;
   /** plan 17: the thread facts' backfill, woken at start and by changes */
@@ -298,6 +301,16 @@ export class BackendCore {
     this.aiService = new AiService(this, options.aiFactory ?? defaultAiFactory);
     this.categorizer = new Categorizer(this);
     this.aiAssist = new AiAssist(this);
+    this.summaries = new SummaryWorker({
+      store: this.store,
+      now: () => this.now(),
+      settings: () => readSettings(this.store),
+      forTask: (o) => this.aiService.forTask("summary", o),
+      begin: (requestId, clientId) => this.aiService.begin(requestId, clientId),
+      acknowledge: (provider) => acknowledgeSummaryProvider(this.store, provider),
+      ready: (threadId) => this.server.emit("aiSummary", { threadId }, { origins: ["renderer", "dev"] }),
+      log: (level, message, extra) => this.log(level, message, extra),
+    });
     this.facts = new FactsBackfill(this);
     this.reminders = new Reminders({
       store: this.store,
@@ -555,6 +568,11 @@ export class BackendCore {
       captureError(error, { code: "forward.failed" });
       this.log("warn", "forwards couldn't start", error instanceof Error ? error.message : error);
     });
+    // plan 132: summaries a quit left queued
+    void this.summaries.start().catch((error: unknown) => {
+      captureError(error, { code: "ai.failed" });
+      this.log("warn", "summaries couldn't start", error instanceof Error ? error.message : error);
+    });
     // plan 68: a folder rebuild a quit interrupted goes on where it was
     void this.rebuildFolders();
     // a resume that fails waits for the next start (its journal is intact); it must never crash the backend
@@ -608,6 +626,8 @@ export class BackendCore {
       this.scheduled.poke();
       this.forwards.poke();
     }
+    // plan 132: what waited for the provider to be reachable
+    if (online) this.summaries.wake({ network: true });
     if (this.options.autoSync === false) return;
     breadcrumb("sync", "net.changed", { netReason: reason, online });
     this.connectivity.network(online, reason);
@@ -781,6 +801,7 @@ export class BackendCore {
     const openingRetirement = this.store.cancelOpening?.();
     void this.ready.catch(() => {});
     this.aiAssist.stop();
+    this.summaries.stop();
     this.incoming.close();
     const retirement = (async () => {
       let failed: { error: unknown } | undefined;
@@ -1167,7 +1188,9 @@ export class BackendCore {
       checkCurrent?.();
       // plan 116: live mail may be forwarded (marked with its insertion), only while a rule forwards
       const forwardEligible = live && this.forwards.isActive;
-      const ingest = async (batch: IncomingMessage[]) => (batch.length ? this.store.sync.ingest(batch, { applyFilters, now: this.now(), classifier, observation, check: checkCurrent, forwardEligible }) : null);
+      // plan 131 revision 5: and it's new mail the AI features may want, with the message or never (off: this one boolean)
+      const newMail = live && this.summaries.isActive ? { summary: true } : undefined;
+      const ingest = async (batch: IncomingMessage[]) => (batch.length ? this.store.sync.ingest(batch, { applyFilters, now: this.now(), classifier, observation, check: checkCurrent, forwardEligible, newMail }) : null);
       // plan 69: a sync pass's slice never overlaps a storage removal unit, and leaves out what one removed
       const write = () => (pass ? this.evictions.ingest(pass.accountId, pass.pass, chunk, ingest) : ingest(chunk));
       const r = await (life ? this.accountWrite(life, write) : write());
@@ -1189,6 +1212,8 @@ export class BackendCore {
         this.planForwards({ messageIds: forwardEligible ? r.inserted : [], threadIds: r.touched });
         void this.forwards.filesArrived({ threadIds: r.touched }).catch(() => {});
       }
+      // plan 132: what it queued, and any body it completed for what waits
+      this.summaries.wake();
     });
     return { inserted };
   }
@@ -2524,6 +2549,8 @@ export class BackendCore {
 
   /** Plan 116: a body arrived (a sync's, or one the reader asked for): its filters and category may make it go; a forward waiting for its files goes now. */
   private bodyArrived(messageId: number): void {
+    // plan 132: a summary may have waited for it (both ways a body arrives come here)
+    this.summaries.wake();
     if (!this.forwards.isActive) return;
     this.planForwards({ messageIds: [messageId] });
     void this.forwards.filesArrived({ messageIds: [messageId] }).catch(() => {});
