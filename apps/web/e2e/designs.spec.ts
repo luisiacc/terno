@@ -188,7 +188,7 @@ test.describe("switching designs", () => {
       });
     // a viewport that starts partway into a row (Codex review #3: the restore must keep the same row, at the same depth)
     await page.locator("[data-keep-scroll=list]").evaluate((el) => el.scrollBy(0, 30));
-    for (const id of ["atelier", "lumen", "macos"] as const) {
+    for (const id of ["atelier", "lumen", "graphite", "macos"] as const) {
       const before = await anchor();
       expect(before.into).toBeGreaterThan(0.05);
       const card = page.getByTestId(`design-card-${id}`);

@@ -37,7 +37,7 @@ export default defineConfig({
   projects: [
     { name: "e2e", testIgnore: /perf\.spec\.ts/ },
     // plan 15: the flows tagged @design again in the other designs (the suite above runs in macOS); their baselines apart
-    ...(["lumen", "atelier", "luma"] as const).map((design) => ({
+    ...(["lumen", "atelier", "luma", "graphite"] as const).map((design) => ({
       name: `e2e-${design}`,
       testIgnore: /perf\.spec\.ts/,
       // E2E_DESIGN_ALL=1 runs every flow in this design (a full pass, not the gate)
