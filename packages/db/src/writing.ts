@@ -227,7 +227,7 @@ function boundProfiles(db: Db): void {
 
 export function commitProfiles(db: Db, c: ProfilesCommit): void {
   db.tx(() => {
-    const named = new Set<string>();
+    const named = new Set<string>((c.keep ?? []).map((k) => `${k.scopeKey}\n${k.language}`));
     for (const u of c.upserts) {
       if (!profileFits(u)) continue;
       named.add(`${u.scopeKey}\n${u.language}`);
@@ -236,7 +236,6 @@ export function commitProfiles(db: Db, c: ProfilesCommit): void {
          VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
          ON CONFLICT (scope_key, language) DO UPDATE SET
            samples = excluded.samples,
-           new_since = new_since + max(0, excluded.samples - samples),
            habits_json = CASE WHEN edited = 1 THEN habits_json ELSE excluded.habits_json END,
            phrases_json = CASE WHEN edited = 1 THEN phrases_json ELSE excluded.phrases_json END,
            updated_at = CASE WHEN edited = 1 THEN updated_at ELSE excluded.updated_at END`,
@@ -250,6 +249,7 @@ export function commitProfiles(db: Db, c: ProfilesCommit): void {
         c.now,
       );
     }
+    for (const i of c.incorporated ?? []) db.run("UPDATE writing_profiles SET new_since = new_since + ? WHERE scope_key = ? AND language = ?", i.count, i.scopeKey, i.language);
     const stale = (rows: { id: number; scope_key: string; language: string }[]) => rows.filter((r) => !named.has(`${r.scope_key}\n${r.language}`)).map((r) => r.id);
     const gone = [
       ...(c.replaceAccount !== undefined ? stale(db.all("SELECT id, scope_key, language FROM writing_profiles WHERE account_id = ? AND edited = 0", c.replaceAccount)) : []),

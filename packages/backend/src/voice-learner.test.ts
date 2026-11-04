@@ -437,6 +437,79 @@ describe("the optional model step (§3)", () => {
     expect(t.model.requests.length).toBe(atChange);
   });
 
+  describe("what's new since a judgment (plan 133 review)", () => {
+    const newSince = async (t: Awaited<ReturnType<typeof prepared>>) => (await t.backend.store.writing.profiles.list({ scope: "account", accountId: t.account.id, limit: 1 }))[0]!.newSince;
+
+    it("a full window keeps refreshing: mail coming in counts though the same number left", async () => {
+      const t = await prepared();
+      await t.client.call("writing.studyStyle", { requestId: "new1", confirm: { provider: "fake", accountIds: [t.account.id] } });
+      await t.finish();
+      const size = (await t.backend.store.writing.profiles.list({ scope: "account", accountId: t.account.id, limit: 1 }))[0]!.samples;
+      expect(await newSince(t)).toBe(0);
+      const before = t.model.requests.length;
+      // as a full window does: the oldest leave as the new arrive, so the samples don't grow
+      const oldest = (await t.backend.store.writing.corpus.headers({ accountId: t.account.id, limit: 500 })).slice(-25).map((h) => h.id);
+      await t.backend.store.sync.remove(oldest);
+      await t.sentMany(25, (i) => ({ date: t.clock.now + i, bodyText: `A fresh line of text ${i}, thanks.` }));
+      t.clock.now += 3600_000;
+      await t.learned();
+      const row = (await t.backend.store.writing.profiles.list({ scope: "account", accountId: t.account.id, limit: 1 }))[0]!;
+      expect(row.samples).toBe(size);
+      expect(t.model.requests.length).toBeGreaterThan(before);
+    });
+
+    it("counts per scope: mail to Tom moves Tom's row and the account's, not someone else's", async () => {
+      const t = await setup();
+      const ana = { name: "Ana", email: "ana@acme.test" };
+      await t.sentMany(20);
+      await t.sentMany(20, () => ({ to: [ana] }));
+      await t.learned();
+      const row = async (address: string) => (await t.backend.store.writing.profiles.read([{ scopeKey: `person:${t.account.id}:${address}`, language: "" }]))[0]!;
+      const account = async () => (await t.backend.store.writing.profiles.read([{ scopeKey: `account:${t.account.id}`, language: "" }]))[0]!;
+      expect((await row(ana.email)).newSince).toBe(0);
+      await t.sentMany(6, (i) => ({ date: t.clock.now + i, bodyText: `Another line for Tom ${i}, thanks.` }));
+      t.clock.now += 3600_000;
+      await t.backend.writing.learner.rebuild(t.account.id);
+      await t.learned();
+      expect((await row(TOM.email)).newSince).toBe(6);
+      expect((await row(ana.email)).newSince).toBe(0);
+      expect((await account()).newSince).toBe(6);
+    });
+
+    it("what's new on \"you\" follows what its accounts incorporated", async () => {
+      const t = await setup();
+      await t.sentMany(30);
+      await t.learned();
+      const you = async () => (await t.backend.store.writing.profiles.read([{ scopeKey: "you", language: "" }]))[0]!;
+      const first = (await you()).newSince;
+      await t.sentMany(6, (i) => ({ date: t.clock.now + i, bodyText: `Another line ${i}, thanks.` }));
+      t.clock.now += 3600_000;
+      await t.backend.writing.learner.rebuild(t.account.id);
+      await t.learned();
+      expect((await you()).newSince).toBe(first + 6);
+    });
+
+    it("a pass that stops part way leaves what's new to the pass that finishes: nothing counted twice", async () => {
+      const t = await setup();
+      await t.sentMany(30);
+      await t.learned();
+      await t.sentMany(6, (i) => ({ date: t.clock.now + i, bodyText: `Another line ${i}, thanks.` }));
+      t.clock.now += 3600_000;
+      await t.backend.writing.learner.rebuild(t.account.id);
+      const real = t.backend.store.writing.profiles.commit.bind(t.backend.store.writing.profiles);
+      // the commit that holds the window fails, the way a stop or a crash would leave it
+      vi.spyOn(t.backend.store.writing.profiles, "commit").mockImplementation(async (c) => {
+        if (Object.keys(c.state).length) throw new Error("stopped here");
+        return real(c);
+      });
+      await t.learned();
+      vi.mocked(t.backend.store.writing.profiles.commit).mockRestore();
+      await t.backend.writing.learner.rebuild(t.account.id);
+      await t.learned();
+      expect((await t.backend.store.writing.profiles.read([{ scopeKey: `account:${t.account.id}`, language: "" }]))[0]!.newSince).toBe(6);
+    });
+  });
+
   describe("consent follows where the mail goes (plan 133 review)", () => {
     const moreMail = async (t: Awaited<ReturnType<typeof prepared>>, word: string) => {
       await t.sentMany(25, (i) => ({ date: t.clock.now + i, bodyText: `A ${word} line of text ${i}, thanks.` }));

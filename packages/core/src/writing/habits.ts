@@ -74,30 +74,55 @@ export function mailFeatures(m: WrittenMail): MailFeatures {
   };
 }
 
-export function habitsOf(features: readonly MailFeatures[]): Habits {
+/** A generator for the same reason as `phraseSteps`: an account's window is thousands of messages, summed many ways. */
+export function* habitsSteps(features: readonly MailFeatures[]): Generator<void, Habits, void> {
   const total = features.length;
   const words = features.map((m) => m.words).sort((a, b) => a - b);
+  yield;
   const count = (test: (m: MailFeatures) => boolean) => {
     let n = 0;
     for (const m of features) if (test(m)) n++;
     return n;
   };
+  const sentenceWords = median(features.flatMap((m) => m.sentenceLengths));
+  yield;
+  const greetings = tally(features.map((m) => m.greeting), total);
+  const noGreeting = ratio(total - count((m) => !!m.greeting), total);
+  yield;
+  const signOffs = tally(features.map((m) => m.signOff), total);
+  const noSignOff = ratio(total - count((m) => !!m.signOff), total);
+  yield;
+  const exclamation = ratio(count((m) => m.exclamation), total);
+  const emoji = ratio(count((m) => m.emoji), total);
+  const bullets = ratio(count((m) => m.bullets), total);
+  const lowercase = ratio(count((m) => m.lowercase), total);
+  yield;
+  const languages = tally(features.map((m) => m.language || null), total);
+  yield;
   return {
     messages: total,
     words: { median: percentile(words, 0.5), p80: percentile(words, 0.8) },
-    sentenceWords: median(features.flatMap((m) => m.sentenceLengths)),
-    greetings: tally(features.map((m) => m.greeting), total),
-    noGreeting: ratio(total - count((m) => !!m.greeting), total),
-    signOffs: tally(features.map((m) => m.signOff), total),
-    noSignOff: ratio(total - count((m) => !!m.signOff), total),
-    exclamation: ratio(count((m) => m.exclamation), total),
-    emoji: ratio(count((m) => m.emoji), total),
-    bullets: ratio(count((m) => m.bullets), total),
-    lowercase: ratio(count((m) => m.lowercase), total),
-    languages: tally(features.map((m) => m.language || null), total),
+    sentenceWords,
+    greetings,
+    noGreeting,
+    signOffs,
+    noSignOff,
+    exclamation,
+    emoji,
+    bullets,
+    lowercase,
+    languages,
     replies: ratio(count((m) => m.isReply), total),
     oneToOne: ratio(count((m) => m.oneToOne), total),
   };
+}
+
+export function habitsOf(features: readonly MailFeatures[]): Habits {
+  const steps = habitsSteps(features);
+  for (;;) {
+    const step = steps.next();
+    if (step.done) return step.value;
+  }
 }
 
 export const computeHabits = (mails: readonly WrittenMail[]): Habits => habitsOf(mails.map(mailFeatures));
@@ -189,6 +214,43 @@ function phraseRuns(text: string): string[][] {
 
 /** Past this many qualifying sequences, only the likeliest are compared with each other (that step is quadratic). */
 const MAX_FOUND = 1000;
+/** How much of a sweep over what was counted runs between two looks at the clock: a corpus can qualify tens of thousands. */
+const SWEEP_SLICE = 64;
+
+interface Found {
+  key: string;
+  messages: number;
+  n: number;
+  forms: Map<string, number>;
+}
+
+/** Negative when `a` is likelier than `b`: the most used, weighing longer ones up, then by key so a tie is stable. */
+const byUse = (a: Found, b: Found) => b.messages * b.n - a.messages * a.n || (a.key < b.key ? -1 : 1);
+
+/** Holds the `MAX_FOUND` likeliest, with the least likely on top: a binary heap, so nothing ever sorts the lot. */
+function offerFound(heap: Found[], entry: Found): void {
+  if (heap.length === MAX_FOUND) {
+    if (byUse(entry, heap[0]!) >= 0) return;
+    heap[0] = entry;
+    for (let at = 0; ; ) {
+      const left = at * 2 + 1;
+      const right = left + 1;
+      let least = at;
+      if (left < heap.length && byUse(heap[left]!, heap[least]!) > 0) least = left;
+      if (right < heap.length && byUse(heap[right]!, heap[least]!) > 0) least = right;
+      if (least === at) return;
+      [heap[at], heap[least]] = [heap[least]!, heap[at]!];
+      at = least;
+    }
+  }
+  heap.push(entry);
+  for (let at = heap.length - 1; at > 0; ) {
+    const parent = (at - 1) >> 1;
+    if (byUse(heap[at]!, heap[parent]!) <= 0) return;
+    [heap[at], heap[parent]] = [heap[parent]!, heap[at]!];
+    at = parent;
+  }
+}
 
 /**
  * Word sequences of 3 to 8 in at least 3 messages to at least 2 recipients, with no digits (§2). Repetition across
@@ -210,7 +272,7 @@ export function* phraseSteps(mails: readonly WrittenMail[]): Generator<void, str
     runs.push({ recipients: m.to, runs: kept });
     yield;
   }
-  const found = new Map<string, { text: string; messages: number; n: number }>();
+  const found: Found[] = [];
   let survivors: Set<string> | null = null;
   for (let n = MIN_N; n <= MAX_N; n++) {
     const grams = new Map<string, Gram>();
@@ -234,25 +296,29 @@ export function* phraseSteps(mails: readonly WrittenMail[]): Generator<void, str
       yield;
     }
     const next = new Set<string>();
+    let swept = 0;
     for (const [key, gram] of grams) {
+      if (++swept % SWEEP_SLICE === 0) yield;
       if (gram.messages < MIN_MESSAGES || gram.recipients.size < MIN_RECIPIENTS) continue;
       next.add(key);
-      const text = [...gram.forms].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0]![0];
-      found.set(key, { text, messages: gram.messages, n });
+      offerFound(found, { key, messages: gram.messages, n, forms: gram.forms });
     }
     if (next.size === 0) break;
     survivors = next;
-  }
-  const byUse = (a: [string, { messages: number; n: number }], b: [string, { messages: number; n: number }]) => b[1].messages * b[1].n - a[1].messages * a[1].n || (a[0] < b[0] ? -1 : 1);
-  const all = [...found].sort(byUse).slice(0, MAX_FOUND);
-  // a part of a longer phrase, used no more often than the whole, says nothing the whole doesn't
-  const kept: typeof all = [];
-  for (const entry of all) {
-    const [key, f] = entry;
-    if (!isFragment(f.text) && !all.some(([other, o]) => other !== key && o.messages >= f.messages && !isFragment(o.text) && ` ${other} `.includes(` ${key} `))) kept.push(entry);
     yield;
   }
-  return kept.slice(0, MAX_PHRASES).map(([, f]) => f.text);
+  const all: { key: string; messages: number; text: string }[] = [];
+  for (const f of found.sort(byUse)) {
+    all.push({ key: f.key, messages: f.messages, text: [...f.forms].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0]![0] });
+    if (all.length % SWEEP_SLICE === 0) yield;
+  }
+  // a part of a longer phrase, used no more often than the whole, says nothing the whole doesn't
+  const kept: string[] = [];
+  for (const f of all) {
+    if (!isFragment(f.text) && !all.some((o) => o.key !== f.key && o.messages >= f.messages && !isFragment(o.text) && ` ${o.key} `.includes(` ${f.key} `))) kept.push(f.text);
+    yield;
+  }
+  return kept.slice(0, MAX_PHRASES);
 }
 
 export function stockPhrases(mails: readonly WrittenMail[]): string[] {

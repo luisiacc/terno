@@ -54,8 +54,9 @@ async function runLearner(store: MailStore, label: string, gate: boolean): Promi
     begin: () => ({ signal: new AbortController().signal, release: () => {} }),
     studyProgress: () => {},
     log: () => {},
-    sliceMs: 6,
   });
+  // what the seeding left in the WAL is a checkpoint any next writer would pay for: not this test's subject (as load.perf)
+  if (store instanceof SqlMailStore) store.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
   // the longest time the event loop waited while it ran: what anything else in the backend would have waited
   let stall = 0;
   let last = performance.now();
@@ -71,6 +72,9 @@ async function runLearner(store: MailStore, label: string, gate: boolean): Promi
   setImmediate(beat);
   await learner.activate();
   await learner.idle();
+  // the run's last stretch ended with no macrotask after it: let the beat see that one too
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
   beating = false;
   const ms = performance.now() - started;
   const window = await store.settings.get<number[]>(windowKey(accountId), []);
@@ -80,7 +84,7 @@ async function runLearner(store: MailStore, label: string, gate: boolean): Promi
   expect(rows).toBeGreaterThan(50);
   expect(learner.longestSliceMs).toBeLessThanOrEqual(30 * MULT);
   // SQLite's reads are in process; fake-indexeddb's commits are this test's own, and say nothing of a real one
-  if (gate) expect(stall).toBeLessThanOrEqual(60 * MULT);
+  if (gate) expect(stall).toBeLessThanOrEqual(8 * MULT);
   expect(ms).toBeLessThanOrEqual(60_000 * MULT);
 }
 

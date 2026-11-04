@@ -4,7 +4,7 @@ import { captureError } from "@terno/core/diag";
 import {
   chooseSample,
   CONSUMER_DOMAINS,
-  habitsOf,
+  habitsSteps,
   mailFeatures,
   mergeHabits,
   mergePhrases,
@@ -28,7 +28,7 @@ import {
   type WritingStudyResult,
   type WrittenMail,
 } from "@terno/core";
-import { CORPUS_WINDOW, RevisionError, sameRevision, type CorpusHeader, type MailStore, type Platform, type ProfileUpsert, type Revision, type WritingProfileRow } from "@terno/store";
+import { CORPUS_WINDOW, profileFits, RevisionError, sameRevision, type CorpusHeader, type MailStore, type Platform, type ProfilesCommit, type ProfileUpsert, type Revision, type WritingProfileRow } from "@terno/store";
 import { SliceClock } from "@terno/store/autocomplete";
 
 /**
@@ -48,8 +48,10 @@ export const LEARNER_KEY = "writing:learner";
 export const STUDY_KEY = "writing:study";
 export const windowKey = (accountId: number): string => `writing:window:${accountId}`;
 
-const HEADER_PAGE = 200;
+const HEADER_PAGE = 64;
 const BODY_PAGE = 16;
+/** Rows a commit writes: SQLite's are in process, so a pass's whole set at once would hold the event loop. */
+const COMMIT_ROWS = 8;
 /** what's kept of the user's words per message, for phrases and a sample: the rest of a long message adds little */
 const WRITTEN_CHARS = 8000;
 /** the newest mails phrases are counted over: the counting grows with the words, and these are plenty for a stock phrase */
@@ -84,6 +86,8 @@ export interface LearnerCheckpoint {
   /** the accounts "you" was last merged from */
   merged: number[];
   youStale: boolean;
+  /** messages the accounts have incorporated since "you" was last merged, by language */
+  youNew?: Record<string, number>;
   refreshDay: string | null;
   refreshes: number;
   /** sent messages the profiles count, for Settings */
@@ -157,6 +161,8 @@ interface CountedMail {
   features: MailFeatures;
 }
 
+type Incorporated = NonNullable<ProfilesCommit["incorporated"]>[number];
+
 export class VoiceLearner {
   private stopped = false;
   private running: Promise<void> | null = null;
@@ -182,7 +188,8 @@ export class VoiceLearner {
   }
 
   constructor(private readonly host: VoiceLearnerHost) {
-    this.clock = new SliceClock({ yield: host.platform.yield, sliceMs: host.sliceMs ?? 6 });
+    // a look at the clock can come a stretch late (a person's whole habits, a commit), and the budget is 8 ms in all
+    this.clock = new SliceClock({ yield: host.platform.yield, sliceMs: host.sliceMs ?? 3 });
   }
 
   /** Boot: one setting read. Nothing runs unless the feature has been used. */
@@ -325,6 +332,9 @@ export class VoiceLearner {
     const prefs = await this.host.prefs();
     const accounts = await store.accounts.list();
     const ids = new Set(accounts.map((a) => a.id));
+    // whatever woke it may have done its own work in this same turn
+    await this.host.platform.yield();
+    if (!live()) return;
     this.clock.restart();
 
     for (const id of this.pendingForced) if (ids.has(id) && !cp.forced.includes(id)) cp.forced.push(id);
@@ -375,7 +385,7 @@ export class VoiceLearner {
           if (!live()) return start;
           const sent = batch.messages.filter((m) => m.sent);
           const usable = new Set(sent.length ? await store.writing.corpus.usable(sent.map((m) => m.id)) : []);
-          this.clock.restart();
+          await this.clock.tick();
           for (const m of sent) {
             if (!usesSentMail(prefs, m.accountId)) continue;
             const window = await this.windowOf(m.accountId);
@@ -440,8 +450,9 @@ export class VoiceLearner {
     for (const h of headers) for (const [address, name] of Object.entries(h.names)) names.set(address, name);
     for (let i = 0; i < headers.length; i += BODY_PAGE) {
       if (!live()) return null;
+      // on SQLite this ran in process, and the clock keeps counting it: many cheap pages in a row are still a stall
       const texts = await this.host.store.writing.corpus.texts(headers.slice(i, i + BODY_PAGE).map((h) => h.id));
-      this.clock.restart();
+      await this.clock.tick();
       for (const t of texts) {
         const base = writtenText(t.text, { signature: account.signature }).slice(0, WRITTEN_CHARS);
         bases.set(t.id, base);
@@ -463,16 +474,28 @@ export class VoiceLearner {
     return out;
   }
 
-  private async countScope(scope: VoiceScope, scopeKey: string, accountId: number | null, mails: readonly CountedMail[], upserts: ProfileUpsert[], live: () => boolean): Promise<boolean> {
+  /** `before`: what the window held at the last pass; null when there wasn't one, so nothing is new against it. */
+  private async countScope(scope: VoiceScope, scopeKey: string, accountId: number | null, mails: readonly CountedMail[], out: { upserts: ProfileUpsert[]; incorporated: Incorporated[]; before: ReadonlySet<number> | null }, live: () => boolean): Promise<boolean> {
     if (mails.length < MIN_SAMPLES[scope]) return true;
+    const { upserts, incorporated, before } = out;
     const write = async (language: string, subset: readonly CountedMail[]): Promise<boolean> => {
-      const habits = habitsOf(subset.map((m) => m.features));
+      const counting = habitsSteps(subset.map((m) => m.features));
+      let counted = counting.next();
+      for (; !counted.done; counted = counting.next()) {
+        if (this.clock.due) {
+          await this.clock.pause();
+          if (!live()) return false;
+        }
+      }
+      const habits = counted.value;
       await this.clock.tick();
       const steps = phraseSteps(subset.slice(0, PHRASE_MAILS).map((m) => m.mail));
       for (;;) {
         const step = steps.next();
         if (step.done) {
           upserts.push({ scope, scopeKey, language, accountId, habitsJson: JSON.stringify(habits), phrasesJson: JSON.stringify(step.value), samples: subset.length });
+          const count = before ? subset.reduce((n, m) => (before.has(m.mail.id) ? n : n + 1), 0) : 0;
+          if (count > 0) incorporated.push({ scopeKey, language, count });
           return true;
         }
         if (this.clock.due) {
@@ -497,9 +520,17 @@ export class VoiceLearner {
     return true;
   }
 
-  /** One account, whole: its rows, its window and the checkpoint in one commit. Null: it was stopped; nothing was written. */
+  /**
+   * One account, whole: its rows, then in one commit its window, the checkpoint and what's new per row. Rows that land
+   * before something stops it are recounted by the next pass, which sets them to the same thing; what's new, and the
+   * window it's measured against, only move together. Null: it was stopped; the pass didn't happen.
+   */
   private async pass(account: Account, cp: LearnerCheckpoint, live: () => boolean): Promise<LearnerCheckpoint | null> {
     const { store } = this.host;
+    // what's on disk, not what's held: the log has already moved that, ahead of what's been counted
+    const lastWindow = await store.settings.get<number[] | null>(windowKey(account.id), null);
+    const before = lastWindow ? new Set(lastWindow) : null;
+    await this.host.platform.yield();
     const headers = await this.walk(account.id, live);
     if (!live()) return null;
     const mails = await this.read(account, headers, live);
@@ -525,19 +556,32 @@ export class VoiceLearner {
     }
     await this.clock.tick();
 
-    const upserts: ProfileUpsert[] = [];
-    if (!(await this.countScope("account", scopeKeys.account(account.id), account.id, mails, upserts, live))) return null;
+    const counting = { upserts: [] as ProfileUpsert[], incorporated: [] as Incorporated[], before };
+    const { upserts, incorporated } = counting;
+    if (!(await this.countScope("account", scopeKeys.account(account.id), account.id, mails, counting, live))) return null;
     const topPeople = [...people].filter(([, list]) => list.length >= MIN_SAMPLES.person).sort((a, b) => b[1].length - a[1].length || (a[0] < b[0] ? -1 : 1)).slice(0, PERSONS_MAX);
-    for (const [address, list] of topPeople) if (!(await this.countScope("person", scopeKeys.person(account.id, address), account.id, list, upserts, live))) return null;
+    for (const [address, list] of topPeople) if (!(await this.countScope("person", scopeKeys.person(account.id, address), account.id, list, counting, live))) return null;
     const topDomains = [...domains].filter(([, d]) => d.addresses.size >= DOMAIN_MIN_ADDRESSES).sort((a, b) => b[1].mails.size - a[1].mails.size || (a[0] < b[0] ? -1 : 1)).slice(0, DOMAINS_MAX);
-    for (const [domain, d] of topDomains) if (!(await this.countScope("domain", scopeKeys.domain(account.id, domain), account.id, [...d.mails], upserts, live))) return null;
+    for (const [domain, d] of topDomains) if (!(await this.countScope("domain", scopeKeys.domain(account.id, domain), account.id, [...d.mails], counting, live))) return null;
     if (!live()) return null;
 
+    for (let i = 0; i < upserts.length; i += COMMIT_ROWS) {
+      await this.host.platform.yield();
+      if (!live()) return null;
+      await store.writing.profiles.commit({ upserts: upserts.slice(i, i + COMMIT_ROWS), state: {}, now: this.host.now() });
+    }
+    await this.host.platform.yield();
+    this.clock.restart();
+    if (!live()) return null;
     const dirty = { ...cp.dirty };
     delete dirty[String(account.id)];
-    const next: LearnerCheckpoint = { ...cp, dirty, forced: cp.forced.filter((id) => id !== account.id), youStale: true, updatedAt: this.host.now() };
+    // "you" counts what its accounts' rows counted, per language
+    const youNew = { ...cp.youNew };
+    const accountKey = scopeKeys.account(account.id);
+    for (const i of incorporated) if (i.scopeKey === accountKey) youNew[i.language] = (youNew[i.language] ?? 0) + i.count;
+    const next: LearnerCheckpoint = { ...cp, dirty, forced: cp.forced.filter((id) => id !== account.id), youStale: true, youNew, updatedAt: this.host.now() };
     const ids = headers.map((h) => h.id);
-    await store.writing.profiles.commit({ upserts, replaceAccount: account.id, state: { [LEARNER_KEY]: next, [windowKey(account.id)]: ids }, now: this.host.now() });
+    await store.writing.profiles.commit({ upserts: [], keep: upserts.filter(profileFits).map(({ scopeKey, language }) => ({ scopeKey, language })), replaceAccount: account.id, incorporated, state: { [LEARNER_KEY]: next, [windowKey(account.id)]: ids }, now: this.host.now() });
     this.windows.set(account.id, new Set(ids));
     this.host.log("info", "voice learner: account pass", { messages: mails.length, rows: upserts.length });
     return next;
@@ -546,6 +590,8 @@ export class VoiceLearner {
   /** "You", from what the accounts hold: no message read. */
   private async mergeYou(cp: LearnerCheckpoint, accounts: readonly number[], epoch: number): Promise<LearnerCheckpoint> {
     const { store } = this.host;
+    // a pass has just committed, and this reads and commits on top of it
+    await this.host.platform.yield();
     const rows: WritingProfileRow[] = [];
     for (const id of accounts) rows.push(...(await store.writing.profiles.list({ scope: "account", accountId: id, limit: 16 })));
     const languages = new Map<string, { habits: Habits[]; phrases: string[][] }>();
@@ -568,13 +614,18 @@ export class VoiceLearner {
       upserts.push({ scope: "you", scopeKey: scopeKeys.you, language, accountId: null, habitsJson: JSON.stringify(merged), phrasesJson: JSON.stringify(mergePhrases(phrases)), samples: merged.messages });
     }
     const messages = rows.filter((r) => r.language === "").reduce((n, r) => n + r.samples, 0);
-    const next: LearnerCheckpoint = { ...cp, merged: [...accounts], youStale: false, messages };
+    const next: LearnerCheckpoint = { ...cp, merged: [...accounts], youStale: false, youNew: {}, messages };
     if (epoch !== this.epoch) return next;
+    const incorporated = upserts.flatMap(({ language }) => {
+      const count = cp.youNew?.[language] ?? 0;
+      return count > 0 ? [{ scopeKey: scopeKeys.you, language, count }] : [];
+    });
     // an account that went: its window with it (the id never comes back)
     const known = new Set((await store.accounts.list()).map((a) => a.id));
     const gone = cp.merged.filter((id) => !known.has(id));
     for (const id of gone) this.windows.delete(id);
-    await store.writing.profiles.commit({ upserts, replaceYou: true, state: { [LEARNER_KEY]: next, ...Object.fromEntries(gone.map((id) => [windowKey(id), null])) }, now: this.host.now() });
+    await this.host.platform.yield();
+    await store.writing.profiles.commit({ upserts, incorporated, replaceYou: true, state: { [LEARNER_KEY]: next, ...Object.fromEntries(gone.map((id) => [windowKey(id), null])) }, now: this.host.now() });
     return next;
   }
 

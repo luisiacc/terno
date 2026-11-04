@@ -138,6 +138,10 @@ export interface ProfilesCommit {
   replaceAccount?: number;
   /** "you" is rebuilt from the accounts: its languages that no longer exist go */
   replaceYou?: boolean;
+  /** rows this pass wrote in earlier commits: `replaceAccount` and `replaceYou` leave them alone too */
+  keep?: readonly { scopeKey: string; language: string }[];
+  /** messages newly part of a row, whatever else left its window meanwhile: what `newSince` counts */
+  incorporated?: readonly { scopeKey: string; language: string; count: number }[];
   /** settings written in the same commit: the learner's checkpoint */
   state: Readonly<Record<string, unknown>>;
   now: number;

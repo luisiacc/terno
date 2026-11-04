@@ -185,7 +185,7 @@ function boundProfiles(c: Ctx): void {
 
 export function commitProfiles(c: Ctx, commit: ProfilesCommit): void {
   const table = T(c, "writing_profiles");
-  const named = new Set<string>();
+  const named = new Set<string>((commit.keep ?? []).map((k) => `${k.scopeKey}\n${k.language}`));
   for (const u of commit.upserts) {
     if (!profileFits(u)) continue;
     named.add(`${u.scopeKey}\n${u.language}`);
@@ -194,9 +194,12 @@ export function commitProfiles(c: Ctx, commit: ProfilesCommit): void {
       table.insert({ scope: u.scope, scope_key: u.scopeKey, language: u.language, account_id: u.accountId, habits_json: u.habitsJson, phrases_json: u.phrasesJson, judgment_json: null, samples: u.samples, new_since: 0, sample_hash: null, edited: 0, model: null, provider: null, prompt_version: null, updated_at: commit.now });
       continue;
     }
-    const newSince = (row.new_since ?? 0) + Math.max(0, u.samples - row.samples);
-    if (row.edited === 1) table.update(row, { samples: u.samples, new_since: newSince });
-    else table.update(row, { samples: u.samples, new_since: newSince, habits_json: u.habitsJson, phrases_json: u.phrasesJson, updated_at: commit.now });
+    if (row.edited === 1) table.update(row, { samples: u.samples });
+    else table.update(row, { samples: u.samples, habits_json: u.habitsJson, phrases_json: u.phrasesJson, updated_at: commit.now });
+  }
+  for (const i of commit.incorporated ?? []) {
+    const row = identityOf(c, i.scopeKey, i.language);
+    if (row) table.update(row, { new_since: (row.new_since ?? 0) + i.count });
   }
   const stale = (rows: R[]) => rows.filter((r) => r.edited !== 1 && !named.has(`${r.scope_key}\n${r.language}`));
   if (commit.replaceAccount !== undefined) for (const r of stale(table.by("fk_account_id", commit.replaceAccount))) table.deleteRow(r);

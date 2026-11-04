@@ -253,13 +253,33 @@ export function defineWritingConformance(fresh: () => Promise<MailStore>, reopen
         const { store, accountId } = await setup();
         const a = upsert({ accountId, scopeKey: `person:${accountId}:tom@acme.com` });
         await store.writing.profiles.commit({ upserts: [a, { ...a, language: "es", samples: 8, habitsJson: '{"es":1}' }, { scope: "you", scopeKey: "you", language: "", accountId: null, habitsJson: "{}", phrasesJson: "[]", samples: 50 }], state: { [STATE]: { at: 1 } }, now: NOW });
-        await store.writing.profiles.commit({ upserts: [{ ...a, samples: 9, habitsJson: '{"v":2}' }], state: { [STATE]: { at: 2 } }, now: NOW + 1 });
+        await store.writing.profiles.commit({ upserts: [{ ...a, samples: 9, habitsJson: '{"v":2}' }], incorporated: [{ scopeKey: a.scopeKey, language: "", count: 4 }], state: { [STATE]: { at: 2 } }, now: NOW + 1 });
         const again = await reopen(store);
         const rows = await again.writing.profiles.read([{ scopeKey: a.scopeKey, language: "" }, { scopeKey: a.scopeKey, language: "es" }, { scopeKey: "you", language: "" }, { scopeKey: "none", language: "" }]);
         expect(rows.map((r) => [r.scopeKey, r.language, r.samples, r.habitsJson])).toEqual([[a.scopeKey, "", 9, '{"v":2}'], [a.scopeKey, "es", 8, '{"es":1}'], ["you", "", 50, "{}"]]);
         expect(rows[0]).toMatchObject({ newSince: 4, edited: false, accountId, updatedAt: NOW + 1, judgmentJson: null });
         expect(rows[2]!.accountId).toBeNull();
         expect(await again.settings.get(STATE, null)).toEqual({ at: 2 });
+      });
+
+      it("what's new counts what was incorporated, even when the samples don't grow because the window is full", async () => {
+        const { store, accountId } = await setup();
+        const a = upsert({ accountId, scopeKey: `person:${accountId}:tom@acme.com`, samples: 3000 });
+        await store.writing.profiles.commit({ upserts: [a], state: {}, now: NOW });
+        for (const at of [1, 2]) await store.writing.profiles.commit({ upserts: [a], incorporated: [{ scopeKey: a.scopeKey, language: "", count: 25 }], state: {}, now: NOW + at });
+        expect((await store.writing.profiles.read([{ scopeKey: a.scopeKey, language: "" }]))[0]).toMatchObject({ samples: 3000, newSince: 50 });
+        // shrinking samples take nothing back, and a row gone isn't an error
+        await store.writing.profiles.commit({ upserts: [{ ...a, samples: 10 }], incorporated: [{ scopeKey: "person:none", language: "", count: 5 }], state: {}, now: NOW + 3 });
+        expect((await store.writing.profiles.read([{ scopeKey: a.scopeKey, language: "" }]))[0]).toMatchObject({ samples: 10, newSince: 50 });
+      });
+
+      it("a pass in several commits: the last one's replacement leaves what the earlier ones wrote", async () => {
+        const { store, accountId } = await setup();
+        const key = (n: string) => `person:${accountId}:${n}@x.test`;
+        await store.writing.profiles.commit({ upserts: ["a", "b", "c"].map((n) => upsert({ accountId, scopeKey: key(n) })), state: {}, now: NOW });
+        await store.writing.profiles.commit({ upserts: [upsert({ accountId, scopeKey: key("a"), samples: 7 })], state: {}, now: NOW + 1 });
+        await store.writing.profiles.commit({ upserts: [], keep: [{ scopeKey: key("a"), language: "" }, { scopeKey: key("b"), language: "" }], replaceAccount: accountId, state: {}, now: NOW + 2 });
+        expect((await store.writing.profiles.list({ accountId, limit: 10 })).map((r) => [r.scopeKey, r.samples])).toEqual([[key("a"), 7], [key("b"), 5]]);
       });
 
       it("a commit that fails leaves nothing behind, the checkpoint included", async () => {
@@ -291,7 +311,7 @@ export function defineWritingConformance(fresh: () => Promise<MailStore>, reopen
         const a = upsert({ accountId, scopeKey: `person:${accountId}:tom@acme.com` });
         await store.writing.profiles.commit({ upserts: [a], state: {}, now: NOW });
         await store.writing.profiles.edit({ scopeKey: a.scopeKey, language: "", habitsJson: '{"mine":1}', judgmentJson: '{"notes":["mine"]}', now: NOW + 1 });
-        await store.writing.profiles.commit({ upserts: [{ ...a, samples: 8, habitsJson: '{"counted":1}', phrasesJson: '["counted"]' }], state: {}, now: NOW + 2 });
+        await store.writing.profiles.commit({ upserts: [{ ...a, samples: 8, habitsJson: '{"counted":1}', phrasesJson: '["counted"]' }], incorporated: [{ scopeKey: a.scopeKey, language: "", count: 3 }], state: {}, now: NOW + 2 });
         const [row] = await store.writing.profiles.read([{ scopeKey: a.scopeKey, language: "" }]);
         expect(row).toMatchObject({ habitsJson: '{"mine":1}', phrasesJson: "[]", judgmentJson: '{"notes":["mine"]}', edited: true, samples: 8, newSince: 3, updatedAt: NOW + 1 });
         expect(await store.writing.profiles.judge({ scopeKey: a.scopeKey, language: "", judgmentJson: '{"notes":["model"]}', sampleHash: "h", model: "m", provider: "p", promptVersion: 1, now: NOW + 3 })).toBe(false);
@@ -307,7 +327,7 @@ export function defineWritingConformance(fresh: () => Promise<MailStore>, reopen
         await store.writing.profiles.commit({ upserts: [a, b], state: {}, now: NOW });
         await store.writing.profiles.commit({ upserts: [{ ...a, samples: 9 }], state: {}, now: NOW });
         for (const key of [a.scopeKey, b.scopeKey]) expect(await store.writing.profiles.judge({ scopeKey: key, language: "", judgmentJson: '{"notes":[]}', sampleHash: "h", model: "m", provider: "p", promptVersion: 1, now: NOW + 1 })).toBe(true);
-        await store.writing.profiles.commit({ upserts: [{ ...a, samples: 10, habitsJson: '{"v":2}' }], state: {}, now: NOW + 2 });
+        await store.writing.profiles.commit({ upserts: [{ ...a, samples: 10, habitsJson: '{"v":2}' }], incorporated: [{ scopeKey: a.scopeKey, language: "", count: 1 }], state: {}, now: NOW + 2 });
         const [row] = await store.writing.profiles.read([{ scopeKey: a.scopeKey, language: "" }]);
         expect(row).toMatchObject({ judgmentJson: '{"notes":[]}', sampleHash: "h", model: "m", provider: "p", promptVersion: 1, newSince: 1, habitsJson: '{"v":2}' });
         await store.writing.profiles.clearJudgments(accountId);
