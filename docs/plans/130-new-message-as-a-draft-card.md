@@ -83,3 +83,5 @@ Round 1 raised 2 points, both fixed:
 
 1. The link bubble chose its side only on editor updates, so scrolling an open bubble left it on the wrong side and clipped. It now re-places itself on the scroller's scroll and resize, with listeners only while a bubble is open (regression test: it changes sides both ways).
 2. The blank-pane drop test dispatched on the form directly, so it would pass even if the form no longer covered that point. It now asserts the form is what's under the point, near the pane's foot.
+
+Round 2 raised 1 point, left as a known edge case (rare, and the old layout did the same): a link long enough to wrap, its start scrolled above the view, clicked on a later line, opens its bubble at the link's start, out of view. Pinning the bubble to the scroller's edge would fix this, but would leave a bubble stuck at the edge whenever an open link is scrolled away, which is far more common. The fix if it ever matters: anchor the bubble to the fragment that was clicked.
