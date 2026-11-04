@@ -1,6 +1,6 @@
 import { detectWritingLanguage } from "./language";
 import { normalizeText } from "../text";
-import type { SentMail, WritingLanguage, WrittenMail } from "./types";
+import type { SentMail, WrittenMail } from "./types";
 
 /**
  * Plan 133 §2: what the user wrote in a sent message. Unlike the phrase model's `ownText`, this doesn't stop at the
