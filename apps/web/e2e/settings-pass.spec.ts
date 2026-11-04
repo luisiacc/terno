@@ -524,6 +524,23 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 980, height: 600 
   });
 }
 
+// the close is pinned to the sheet: with the title in the pane, a scrolled section ran under it
+test("scrolled, the section's title and the close keep their row: nothing runs under the close, a hairline marks the edge", async ({ app: page }) => {
+  await page.getByTestId("open-settings").click();
+  await show(page, "appearance");
+  const scroller = panel(page).locator("xpath=..");
+  const header = page.getByTestId("settings-header");
+  await expect(header).not.toHaveAttribute("data-scrolled");
+  await scroller.hover();
+  await page.mouse.wheel(0, 400);
+  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await expect(header).toHaveAttribute("data-scrolled");
+  await expect(header.getByRole("heading")).toBeInViewport();
+  const close = (await dialog(page).locator("[data-slot=dialog-close]").boundingBox())!;
+  const pane = (await scroller.boundingBox())!;
+  expect(close.y + close.height).toBeLessThanOrEqual(pane.y);
+});
+
 test.describe("motion", () => {
   test.use({ reducedMotion: "no-preference" });
   test("the dialog opens on --motion (≤ 100 ms) and not at all at 0", async ({ app: page, server }) => {

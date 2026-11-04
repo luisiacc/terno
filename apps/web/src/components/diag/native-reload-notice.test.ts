@@ -15,6 +15,7 @@ const { useDiag, restartEngine } = await import("~/state/diag");
 const { copyDraft, createDraft, draftsSaved, editDraft, flushDraft, forgetDraft, markDraftMissing, setDraftTransport, useDrafts } = await import("~/lib/drafts");
 const { newFields } = await import("~/lib/compose-fields");
 vi.stubGlobal("matchMedia", (media: string) => ({ media, matches: false, addEventListener() {}, removeEventListener() {} }));
+vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
 const { SettingsDialog } = await import("../settings-dialog");
 const { useApp } = await import("~/state/app");
 const { DEFAULT_SETTINGS } = await import("../../../../../packages/backend/src/settings");

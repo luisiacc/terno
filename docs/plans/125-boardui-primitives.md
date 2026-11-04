@@ -225,3 +225,7 @@ A second Codex pass over those six fixes found three more problems, each fixed w
 ## After the review: the pickers fill their row
 
 Luis pointed at the hole beside Appearance's style cards: fixed 180 px cards wrapped in pairs, leaving a third of the row empty. The style cards are now a two-column grid and their previews stretch with them, taller and with more rows, so a mock reads as a list running on. The color cards had the same hole and now use first run's `repeat(auto-fill, minmax(144px, 1fr))`: three columns in the dialog, two in a narrow window. A fixed three columns cut off "Catppuccin Latte" at 640 px (Codex review, `themes.spec`'s narrow window test seen failing without the fix). First run's style cards go from three columns to four, so Luma isn't alone on a row.
+
+## After the review: nothing runs under Settings' close
+
+The round close is pinned to the sheet (the restyle moved it onto the title's line), but the title scrolled with the section, so scrolled content ran under the close. The section's title now has a row of its own above the scrolling pane, with the existing `scroll-hairline` marking the edge once content has scrolled; at rest the sheet looks the same (no baseline changed). The Codex review found that the recovery tests open Settings in jsdom, which has no `IntersectionObserver`; they stub it as the reader's tests do.

@@ -5,6 +5,7 @@ import {expect,it,vi} from "vitest";
 vi.mock("~/rpc/connection",()=>({client:{}}));
 vi.mock("~/state/diag",async()=>{const{create}=await import("zustand");return{useDiag:create(()=>({view:{engine:"running",reporting:{dsn:false}}})),restartEngine:vi.fn(),exportDiagnostics:vi.fn(),refreshDiag:vi.fn()};});
 vi.stubGlobal("matchMedia",(media:string)=>({media,matches:false,addEventListener(){},removeEventListener(){}}));
+vi.stubGlobal("IntersectionObserver",class{observe(){} unobserve(){} disconnect(){}});
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
 const{ModalHostProvider}=await import("@terno/ui/components/modal-host");
 const{ShortcutsDialog}=await import("~/components/shortcuts-dialog");

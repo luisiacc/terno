@@ -1,6 +1,7 @@
 import { Dialog, DialogContent, DialogTitle } from "@terno/ui/components/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@terno/ui/components/tabs";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { installScrollHairline } from "~/lib/scroll-hairline";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp, type SettingsTab } from "~/state/app";
@@ -32,6 +33,31 @@ function initialFocus(): boolean | HTMLElement {
   // used once: a later visit to the tab opens nothing by itself
   setApp({ settingsAccount: null });
   return row ?? switchFocus();
+}
+
+/**
+ * A section: its title on a row of its own, level with the sheet's close, and the content scrolling below it, so nothing
+ * runs under the close. The padding around the row's edge keeps the first control's focus ring from being clipped.
+ */
+function SettingsPane({ title, children }: { title: string; children: React.ReactNode }) {
+  const headerRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const [root, sentinel, header] = [scrollerRef.current, sentinelRef.current, headerRef.current];
+    return root && sentinel && header ? installScrollHairline(root, sentinel, header) : undefined;
+  }, []);
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div ref={headerRef} data-testid="settings-header" className="scroll-hairline shrink-0 px-6 pt-5 pb-2">
+        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+      </div>
+      <div ref={scrollerRef} className="relative min-h-0 flex-1 overflow-y-auto px-6 pt-2 pb-4">
+        <div ref={sentinelRef} aria-hidden className="absolute top-0 h-px w-px" />
+        {children}
+      </div>
+    </div>
+  );
 }
 
 export function SettingsDialog() {
@@ -85,8 +111,7 @@ export function SettingsDialog() {
               ))}
             </TabsList>
           </nav>
-          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 pt-5 pb-4">
-            <h2 className="mb-4 text-lg font-semibold tracking-tight">{settingsTabLabel(tab)}</h2>
+          <SettingsPane title={settingsTabLabel(tab)}>
             {/* a section that fails to render stays a section: the sheet and the other tabs keep working */}
             <PaneBoundary area="settings" resetKey={tab} title={t("settings.sectionError")}>
               <TabsContent value="general">
@@ -129,7 +154,7 @@ export function SettingsDialog() {
                 <AgentsTab settings={settings} update={update} />
               </TabsContent>
             </PaneBoundary>
-          </div>
+          </SettingsPane>
         </Tabs>
         <ReportPreview />
       </DialogContent>
