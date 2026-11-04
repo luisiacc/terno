@@ -227,12 +227,12 @@ export function editProfile(c: Ctx, e: ProfileEdit): boolean {
 
 export function resetProfile(c: Ctx, scopeKey: string, language?: string): void {
   const table = T(c, "writing_profiles");
-  for (const r of [...table.all()]) if (r.scope_key === scopeKey && (language === undefined || r.language === language)) table.deleteRow(r);
+  for (const r of Array.from(table.all())) if (r.scope_key === scopeKey && (language === undefined || r.language === language)) table.deleteRow(r);
 }
 
 export function clearJudgments(c: Ctx, accountId?: number): void {
   const table = T(c, "writing_profiles");
-  for (const r of [...table.all()]) {
+  for (const r of Array.from(table.all())) {
     if ((r.judgment_json ?? null) !== null && r.edited !== 1 && (accountId === undefined || r.account_id === accountId)) table.update(r, { judgment_json: null, sample_hash: null, model: null, provider: null, prompt_version: null });
   }
 }
@@ -240,7 +240,7 @@ export function clearJudgments(c: Ctx, accountId?: number): void {
 export function clearWriting(c: Ctx, stateKeys: readonly string[]): void {
   for (const name of ["writing_profiles", "writing_generations"]) {
     const table = T(c, name);
-    for (const r of [...table.all()]) table.deleteRow(r);
+    for (const r of Array.from(table.all())) table.deleteRow(r);
   }
   for (const key of stateKeys) T(c, "settings").delete(key);
 }

@@ -164,6 +164,7 @@ export class VoiceLearner {
   private readonly windows = new Map<number, Set<number>>();
   private readonly clock: SliceClock;
   private studying: { requestId: string; total: number } | null = null;
+  private studyRun: Promise<void> | null = null;
   private starting: Promise<void> | null = null;
   /** the longest stretch between yields, for the budget test */
   get longestSliceMs(): number {
@@ -230,6 +231,7 @@ export class VoiceLearner {
   async stop(): Promise<void> {
     this.stopped = true;
     await this.running?.catch(() => {});
+    await this.studyRun;
   }
 
   /** Rebuild, Reset: `accountId` undefined means every account. */
@@ -262,8 +264,9 @@ export class VoiceLearner {
     this.epoch++;
     this.active = false;
     await this.running?.catch(() => {});
-    const keys = [LEARNER_KEY, STUDY_KEY, ...(await this.host.store.accounts.list()).map((a) => windowKey(a.id))];
-    await this.host.store.writing.profiles.clear(keys);
+    const cp = await this.checkpoint();
+    const ids = new Set([...(cp?.merged ?? []), ...(await this.host.store.accounts.list()).map((a) => a.id)]);
+    await this.host.store.writing.profiles.clear([LEARNER_KEY, STUDY_KEY, ...[...ids].map(windowKey)]);
     this.windows.clear();
     this.pendingForced.clear();
   }
@@ -551,7 +554,11 @@ export class VoiceLearner {
     const messages = rows.filter((r) => r.language === "").reduce((n, r) => n + r.samples, 0);
     const next: LearnerCheckpoint = { ...cp, merged: [...accounts], youStale: false, messages };
     if (epoch !== this.epoch) return next;
-    await store.writing.profiles.commit({ upserts, replaceYou: true, state: { [LEARNER_KEY]: next }, now: this.host.now() });
+    // an account that went: its window with it (the id never comes back)
+    const known = new Set((await store.accounts.list()).map((a) => a.id));
+    const gone = cp.merged.filter((id) => !known.has(id));
+    for (const id of gone) this.windows.delete(id);
+    await store.writing.profiles.commit({ upserts, replaceYou: true, state: { [LEARNER_KEY]: next, ...Object.fromEntries(gone.map((id) => [windowKey(id), null])) }, now: this.host.now() });
     return next;
   }
 
@@ -676,7 +683,7 @@ export class VoiceLearner {
     const { signal, release } = this.host.begin(p.requestId, p.clientId);
     const epoch = this.epoch;
     const live = () => !this.stopped && epoch === this.epoch && !signal.aborted;
-    void (async () => {
+    this.studyRun = (async () => {
       let done = 0;
       try {
         for (const row of targets) {

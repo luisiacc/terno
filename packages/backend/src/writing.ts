@@ -184,7 +184,7 @@ export class WritingService {
 
   /** A window closed: nothing it held has anywhere to go. */
   disconnected(clientId: string): void {
-    for (const key of [...this.snapshots.keys()]) if (key.startsWith(`${clientId}\n`)) this.snapshots.delete(key);
+    for (const key of this.snapshots.keys()) if (key.startsWith(`${clientId}\n`)) this.snapshots.delete(key);
   }
 
   endSession(session: string, clientId: string): void {
