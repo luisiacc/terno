@@ -1,14 +1,17 @@
+export type ComposeFocusTarget = "body" | "to" | "ai";
 export interface EarlyComposeInput {
   owns(el: Element | null): boolean;
-  arm(key: string, target: "body" | "to"): void;
+  arm(key: string, target: ComposeFocusTarget): void;
   cancel(): void;
 }
+/** plan 133: where each target's focus goes; "ai" falls to the body once the row has moved past its field */
+export const focusSelector = (target: ComposeFocusTarget): string => target === "to" ? "[data-testid=compose-to]" : target === "ai" ? "[data-testid=ai-row-input], [data-testid=compose-body]" : "[data-testid=compose-body]";
 type EarlyText = { text: string; start: number; end: number; direction: "forward" | "backward" | "none" };
 let earlyInput: { owns(el: Element | null): boolean; take(): EarlyText; armed(el: HTMLElement): boolean; wait(resume: () => void): boolean } | null = null;
 
 /** Native text input while source admission has no editor yet. The lease owns its lifetime. */
 export function prepareEarlyComposeInput(valid: () => boolean, cancel: () => void, label: string): EarlyComposeInput {
-  let receiver: HTMLTextAreaElement | null = null, destination: { key: string; target: "body" | "to" } | null = null, finished = false;
+  let receiver: HTMLTextAreaElement | null = null, destination: { key: string; target: ComposeFocusTarget } | null = null, finished = false;
   const initial = document.activeElement;
   let composing = false, resume: (() => void) | undefined;
   const owns = (el: Element | null) => receiver !== null && el === receiver;
@@ -46,7 +49,7 @@ export function prepareEarlyComposeInput(valid: () => boolean, cancel: () => voi
     // Keep the browser's native insertion, including Unicode, but not page shortcuts.
     e.stopImmediatePropagation();
   };
-  const session = { owns, wait: (next: () => void) => { if (!composing) return false; resume = next; return true; }, armed: (el: HTMLElement) => !!destination && valid() && el.closest("[data-draft-key]")?.getAttribute("data-draft-key") === destination.key && el.dataset.testid === (destination.target === "to" ? "compose-to" : el.dataset.testid === "compose-body-loading" ? "compose-body-loading" : "compose-body"), take: () => { const value: EarlyText = { text: receiver?.value ?? "", start: receiver?.selectionStart ?? 0, end: receiver?.selectionEnd ?? 0, direction: receiver?.selectionDirection ?? "none" }; stop(); return value; } };
+  const session = { owns, wait: (next: () => void) => { if (!composing) return false; resume = next; return true; }, armed: (el: HTMLElement) => !!destination && valid() && el.closest("[data-draft-key]")?.getAttribute("data-draft-key") === destination.key && el.dataset.testid === (destination.target === "to" ? "compose-to" : destination.target === "ai" && el.dataset.testid === "ai-row-input" ? "ai-row-input" : el.dataset.testid === "compose-body-loading" ? "compose-body-loading" : "compose-body"), take: () => { const value: EarlyText = { text: receiver?.value ?? "", start: receiver?.selectionStart ?? 0, end: receiver?.selectionEnd ?? 0, direction: receiver?.selectionDirection ?? "none" }; stop(); return value; } };
   earlyInput = session;
   document.addEventListener("keydown", key, true);
   document.addEventListener("visibilitychange", hidden, true);

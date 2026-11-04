@@ -9,8 +9,11 @@ import { pinnedKey } from "~/lib/pinned-draft-state";
  * key while its form is mounted.
  */
 export interface DraftCommands {
-  send(): void;
+  /** `at`: Send Later, as the form's own Send would */
+  send(at?: number): void;
   discard(): void;
+  /** plan 133: what Esc does in this form (collapse, leave the new message, step out of the card) */
+  close?(): void;
   attach(): void;
   showCc(): void;
   showBcc(): void;
@@ -56,7 +59,7 @@ export function draftKeyOf(el: Element | null): string | null {
  * handlers (the latest render's); Cc, Bcc and Attach press its own controls,
  * so their reveal, focus and file picker are exactly a click's.
  */
-export function DraftCommandsHost({ draftKey: key, root, ...own }: { draftKey: string; root: RefObject<HTMLElement | null>; send(): void; discard(): void; sending: boolean }): null {
+export function DraftCommandsHost({ draftKey: key, root, ...own }: { draftKey: string; root: RefObject<HTMLElement | null>; send(at?: number): void; discard(): void; close?(): void; sending: boolean }): null {
   const latest = useRef(own);
   useLayoutEffect(() => {
     latest.current = own;
@@ -64,8 +67,9 @@ export function DraftCommandsHost({ draftKey: key, root, ...own }: { draftKey: s
   useLayoutEffect(() => {
     const control = (testId: string) => root.current?.querySelector<HTMLElement>(`[data-testid=${testId}]`) ?? null;
     return registerDraftCommands(key, {
-      send: () => latest.current.send(),
+      send: (at) => latest.current.send(at),
       discard: () => latest.current.discard(),
+      close: () => latest.current.close?.(),
       attach: () => control("attachment-input")?.click(),
       showCc: () => control("compose-show-cc")?.click(),
       showBcc: () => control("compose-show-bcc")?.click(),

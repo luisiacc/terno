@@ -111,6 +111,20 @@ export function summaryTarget(ai: AiSettings): SummaryTarget {
   return ai.local ? { state: "ready", provider: ai.provider, model: ai.model } : { state: "ask", provider: ai.provider };
 }
 
+const LOCAL_PROVIDERS: readonly AiProviderId[] = ["ollama", "lmstudio", "fake"];
+
+/**
+ * Plan 133: what drafts run on, by the backend's rule (`AiService.targetFor`): the task's own choice, else the
+ * configured provider. Whether asking can work, and whether mail would leave this Mac; the backend has the last word.
+ */
+export function writingTarget(ai: AiSettings | null | undefined): { ready: boolean; provider: AiProviderId; local: boolean } {
+  if (!ai) return { ready: false, provider: "none", local: true };
+  const chosen = ai.tasks.writing;
+  if (!chosen) return { ready: aiReady(ai), provider: ai.provider, local: ai.local };
+  const local = LOCAL_PROVIDERS.includes(chosen.provider) || (chosen.provider === ai.provider && ai.local);
+  return { ready: local || chosen.provider === "compatible" || ai.keys[chosen.provider]?.hasKey === true, provider: chosen.provider, local };
+}
+
 /** A provider by name, wherever it's named outside its own settings. */
 export function providerLabel(provider: AiProviderId, ai?: Pick<AiSettings, "provider" | "preset" | "local">): string {
   if (provider === "compatible") return ai?.provider === "compatible" ? providerName(ai) : choiceLabel("compatible");

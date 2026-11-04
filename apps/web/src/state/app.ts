@@ -12,6 +12,8 @@ export interface ComposeState {
   key: string;
   seq: number;
   readonly storedFocusSeq?: number;
+  /** plan 133: opened for the AI row: focus goes to it instead of To */
+  readonly target?: "ai";
 }
 
 /** "Select all N": the selection is every thread of the current view or search, acted on by the backend. */
@@ -76,7 +78,7 @@ export interface AppState {
 
   compose: ComposeState | null;
   /** an inline draft to focus (set when one is opened explicitly; seq makes each request distinct) */
-  draftFocus: { key: string; target: "body" | "to"; seq: number; readonly leased?: true; readonly move?: import("~/lib/compose-focus-move").InlineFocusMove } | null;
+  draftFocus: { key: string; target: "body" | "to" | "ai"; seq: number; readonly leased?: true; readonly move?: import("~/lib/compose-focus-move").InlineFocusMove } | null;
   /** a conversation's draft opened explicitly (from the strip): shown inline instead of its newest one */
   draftShown: { threadId: number; key: string } | null;
   dialog: DialogName;

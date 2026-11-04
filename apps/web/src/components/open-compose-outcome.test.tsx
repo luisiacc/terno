@@ -7,6 +7,46 @@ import { setup } from "./draft-presentation-r1-harness";
 // plan 57: an open that still matters never ends in silence
 const opened = (h: Awaited<ReturnType<typeof setup>>) => Object.values(h.drafts.useDrafts.getState().drafts).filter((d) => d.mode === "reply" && d.inReplyToMessageId === 3);
 
+// plan 133 §5.2: the seam names where it landed, and says so before anything takes focus
+it("composeLanding names the draft it made, resumed, converted or was sent to; a superseded one lands nowhere", async () => {
+  const h = await setup("split", true);
+  const { composeLanding, openCompose } = await import("~/lib/compose"), { pinDraft, unpinDraft } = await import("~/lib/pinned-draft");
+  try {
+    h.drafts.forgetDraft(h.key);
+    const told: string[] = [];
+    let created: Awaited<ReturnType<typeof composeLanding>> = { kind: "none" };
+    await act(async () => { created = await composeLanding("reply", 7, 0, undefined, undefined, { onLanded: (l) => told.push(`${l.kind}:${l.key}`) }); });
+    await h.flush();
+    expect(created).toMatchObject({ kind: "created" });
+    const key = (created as { key: string }).key;
+    expect(told).toEqual([`created:${key}`]);
+    expect(opened(h).map((d) => d.key)).toEqual([key]);
+
+    let resumed: typeof created = { kind: "none" };
+    await act(async () => { resumed = await composeLanding("reply", 7); });
+    expect(resumed).toEqual({ kind: "resumed", key });
+
+    let converted: typeof created = { kind: "none" };
+    await act(async () => { converted = await composeLanding("replyAll", 7); });
+    await h.flush();
+    expect(converted).toEqual({ kind: "converted", key });
+
+    await act(async () => { pinDraft(key); });
+    let pinned: typeof created = { kind: "none" };
+    await act(async () => { pinned = await composeLanding("reply", 7); });
+    expect(pinned).toEqual({ kind: "pinned", key });
+    await act(async () => { unpinDraft(key, { focus: false }); });
+
+    let superseded: typeof created = { kind: "resumed", key: "x" };
+    await act(async () => {
+      const first = composeLanding("reply", 8);
+      void openCompose("new");
+      superseded = await first;
+    });
+    expect(superseded).toEqual({ kind: "none" });
+  } finally { await h.cleanup(); }
+});
+
 it("a refresh that replaces the conversation mid-open is retried with it, and the reply opens", async () => {
   const h = await setup("split", true);
   const { openCompose } = await import("~/lib/compose"), { gate } = await import("./draft-presentation-r1-harness"), { useSnack } = await import("~/lib/snack");

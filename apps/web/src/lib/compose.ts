@@ -1,5 +1,5 @@
 import { shallow } from "zustand/shallow";
-import type { AttachmentRef, ThreadDetail } from "@terno/core";
+import { formatAddressList, type AttachmentRef, type ThreadDetail } from "@terno/core";
 import { attachmentUploading, draftAttachmentBudget } from "./attachments";
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
@@ -17,7 +17,8 @@ import { ensureForwardFiles, fetchForwardFiles, setForwardOpenProbe } from "./fo
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
 import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead, sealForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type DraftFields, type LocalDraft } from "./drafts";
 import { focusPinned, pinnedKey, usePinned } from "./pinned-draft-state";
-import { prepareEarlyComposeInput, prepareInlineFocusMove, type EarlyComposeInput } from "./compose-focus-move";
+import { prepareEarlyComposeInput, prepareInlineFocusMove, type ComposeFocusTarget, type EarlyComposeInput } from "./compose-focus-move";
+import { aiDraftHooks } from "./ai-draft-state";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -188,7 +189,7 @@ export const supersedeCompose = (): void => {
 };
 
 /** Asks the inline draft to take focus (only an explicit open does; coming back to a thread never does). */
-export function focusDraft(key: string, target: "body" | "to", owner?: number) {
+export function focusDraft(key: string, target: ComposeFocusTarget, owner?: number) {
   const current = intent;
   if (owner !== undefined && owner !== current) return;
   const originalLease = focusLease && focusLease.intent === owner ? focusLease : null;
@@ -441,6 +442,23 @@ export async function openStoredDraft(key: string): Promise<void> {
 /** Why an open that still mattered stopped short: the conversation was refreshed under it, or loading it failed. */
 type OpenOutcome = "stale" | "failed" | undefined;
 
+/** Plan 133: where an open landed: the draft it made, the one it resumed or converted, the pinned one, or nowhere. */
+export type ComposeLanding = { kind: "created" | "resumed" | "converted" | "pinned"; key: string } | { kind: "none" };
+const NOWHERE: ComposeLanding = { kind: "none" };
+
+export interface ComposeOpenOptions {
+  /** where focus goes in the draft it lands on, instead of To or the body */
+  target?: "ai";
+  /** told the moment the draft is known, before anything takes focus or paints, so its row shows with it */
+  onLanded?: (landing: Exclude<ComposeLanding, { kind: "none" }>) => void;
+}
+type LandingCell = { landing: ComposeLanding; options: ComposeOpenOptions | undefined };
+function land(cell: LandingCell, kind: "created" | "resumed" | "converted" | "pinned", key: string): void {
+  const landing = { kind, key };
+  cell.landing = landing;
+  cell.options?.onLanded?.(landing);
+}
+
 /** opens in flight: the background forward files (plan 60) never edit a draft under one */
 let openingNow = 0;
 setForwardOpenProbe(() => openingNow > 0);
@@ -448,21 +466,30 @@ setForwardOpenProbe(() => openingNow > 0);
 /**
  * `prefill` (plan 93, a new message from a snippet): the fields the new
  * message starts with, in the same step that creates it. `from` (plan 106,
- * an account's menu): the account a new message is from.
+ * an account's menu): the account a new message is from. Resolves to where it
+ * landed (plan 133 §5.2's seam): `none` when a newer choice took over, it
+ * failed, or there's no single target.
  */
-export async function openCompose(mode: DraftMode = "new", threadId: number | null = getApp().selectedId, attempt = 0, prefill?: (accountId: number) => Partial<DraftFields>, from?: number): Promise<void> {
+export async function composeLanding(mode: DraftMode = "new", threadId: number | null = getApp().selectedId, attempt = 0, prefill?: (accountId: number) => Partial<DraftFields>, from?: number, options?: ComposeOpenOptions): Promise<ComposeLanding> {
   const finish = beginDraftWork();
-  if (!finish) return;
+  if (!finish) return NOWHERE;
   markSelectionIntent();
   const mine = ++intent;
   const state = getApp();
+  const cell: LandingCell = { landing: NOWHERE, options };
   // plan 115: the conversation's draft is pinned: r / a / f go to its card (never a second editor, never a conversion)
-  if (mode !== "new" && threadId !== null && pinnedFor(threadId, state.draftShown)) { finish(); focusPinned(); return; }
+  if (mode !== "new" && threadId !== null && pinnedFor(threadId, state.draftShown)) {
+    finish();
+    const pinned = pinnedKey();
+    if (options?.target !== "ai") focusPinned();
+    if (pinned) land(cell, "pinned", pinned);
+    return cell.landing;
+  }
   const wantsLease = mode !== "new" && threadId !== null && state.selectedId === threadId && state.scope === null && state.checked.size < 2;
   const lease = wantsLease ? beginFocusLease(mine, threadId) : null;
-  if (wantsLease && !lease) { finish(); return; }
-  if (!lease && focusLease && releaseForAcquisition(focusLease, true)) { finish(); return; }
-  if (mine !== intent) { finish(); return; }
+  if (wantsLease && !lease) { finish(); return NOWHERE; }
+  if (!lease && focusLease && releaseForAcquisition(focusLease, true)) { finish(); return NOWHERE; }
+  if (mine !== intent) { finish(); return NOWHERE; }
   const unsubSelection = !lease && mode !== "new" && threadId !== null ? useApp.subscribe((current) => {
     if (mine === intent && (current.scope !== null || current.checked.size >= 2)) supersedeCompose();
   }) : undefined;
@@ -472,7 +499,7 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   );
   let outcome: OpenOutcome;
   openingNow++;
-  try { outcome = await openComposeNow(mode, threadId, mine, lease ?? null, prefill, from); } finally {
+  try { outcome = await openComposeNow(mode, threadId, mine, lease ?? null, prefill, from, cell); } finally {
     openingNow--;
     lease?.stopSelection?.(); if (lease) lease.stopSelection = undefined;
     lease?.stopContext?.(); if (lease) lease.stopContext = undefined;
@@ -483,12 +510,16 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   }
   // nothing newer was asked for: a refresh that replaced the conversation mid-open (a sync, its own read state, a send
   // landing) is retried with it, and a failure says so instead of leaving the click without an answer
-  if (mine !== intent || !outcome) return;
-  if (outcome === "stale" && attempt < 2) return openCompose(mode, threadId, attempt + 1, prefill, from);
+  if (mine !== intent || !outcome) return cell.landing;
+  if (outcome === "stale" && attempt < 2) return composeLanding(mode, threadId, attempt + 1, prefill, from, options);
   snack.error(t(mode === "forward" ? "compose.openFailed.forward" : "compose.openFailed.reply"));
+  return cell.landing;
 }
 
-async function openComposeNow(mode: DraftMode, threadId: number | null, mine: number, lease: FocusLease | null, prefill?: (accountId: number) => Partial<DraftFields>, from?: number): Promise<OpenOutcome> {
+/** The same open, for every caller that doesn't need to know where it landed. */
+export const openCompose = composeLanding as unknown as (mode?: DraftMode, threadId?: number | null, attempt?: number, prefill?: (accountId: number) => Partial<DraftFields>, from?: number) => Promise<void>;
+
+async function openComposeNow(mode: DraftMode, threadId: number | null, mine: number, lease: FocusLease | null, prefill: ((accountId: number) => Partial<DraftFields>) | undefined, from: number | undefined, cell: LandingCell): Promise<OpenOutcome> {
   const focusAllowed = () => !lease || (lease.valid && focusLease === lease && lease.selectionRevision === getSelectionWriteRevision() && destinationAvailable(lease));
   if (mine !== intent || (lease && !lease.valid)) return;
   if (!destinationAvailable(lease)) {
@@ -515,11 +546,12 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     const filled = prefill?.(defaultAccount);
     if (filled) editDraft(key, filled);
     if (mine !== intent) return;
-    setApp({ compose: { key, seq: ++seq }, checked: new Set(), scope: null, readerOpen: false });
+    land(cell, "created", key);
+    setApp({ compose: { key, seq: ++seq, ...(cell.options?.target ? { target: cell.options.target } : {}) }, checked: new Set(), scope: null, readerOpen: false });
     return;
   }
   if (s.scope !== null || s.checked.size >= 2) return;
-  const target = mode === "forward" ? "to" : "body";
+  const target: ComposeFocusTarget = cell.options?.target ?? (mode === "forward" ? "to" : "body");
   let drafts = useDrafts.getState().drafts;
   let existingKey = shownDraftKey(drafts, threadId, getApp().draftShown);
   const candidate = (sources: readonly number[] = []) => {
@@ -544,7 +576,11 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   let existing = existingKey ? materialize(existingKey) : undefined;
   if (existing && !sameStoredDraft(existing)) return;
   // plan 115: a pinned draft is answered in its card, never opened (or converted) a second time
-  if (existing && existing.key === pinnedKey()) { focusPinned(); return; }
+  if (existing && existing.key === pinnedKey()) {
+    if (cell.options?.target !== "ai") focusPinned();
+    land(cell, "pinned", existing.key);
+    return;
+  }
   let proof: DraftAckRead | undefined, noWriter = false;
   const sameModeSource = Boolean(existing && existing.mode === mode && existing.showSourceContext && !existing.presentationExpired && !existing.recovery && activeSourceId(existing) !== null && lease);
   if (existing && (existing.mode !== mode || sameModeSource) && !existing.presentationExpired && lease) {
@@ -573,7 +609,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     });
   }
   if (existing?.presentationExpired && activeSourceId(existing) === null && (existing.mode === "new" || (existing.threadId === null && existing.departedThreadId === threadId && authored(existing)))) {
-    showStoredStandalone(existing.key, mine, undefined, lease);
+    if (showStoredStandalone(existing.key, mine, undefined, lease)) land(cell, "resumed", existing.key);
     return;
   }
   if (existing?.showSourceContext) {
@@ -590,7 +626,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     const current = proof ? readDraftAck(proof) : existingKey ? materialize(existingKey) : undefined;
     if (mine !== intent || !destinationAvailable(lease) || getApp().selectedId !== s.selectedId || (lease && !lease.valid) || !current || (!proof && !sameStoredDraft(snapshot))) return;
     if (!context || context.threadId !== threadId) {
-      showStoredStandalone(current.key, mine, undefined, lease);
+      if (showStoredStandalone(current.key, mine, undefined, lease)) land(cell, "resumed", current.key);
       return;
     }
     if (sameModeSource && proof) {
@@ -616,6 +652,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     }) : undefined;
     try { setDraftUi(existing.key, "open"); } finally { stop?.(); }
     const exact = !sameModeSource || (expected === existing ? transitions === 0 : transitions === 1 && receipt === useDrafts.getState().drafts[existing.key] && !!receipt && shallow(receipt, expected));
+    if (exact) land(cell, "resumed", existing.key);
     if (exact && focusAllowed() && sameStoredDraft(expected)) focusDraft(existing.key, target, mine);
     // Forward again: files that didn't come (or were never asked for, after a reload) are asked for again (plan 60)
     if (mode === "forward" && exact && mine === intent) void ensureForwardFiles(existing.key, threadId);
@@ -765,6 +802,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     };
     const fresh = () => mine === intent && currentIntent() && sameStoredDraft(expected);
     if (!shallow(receipt, expected) || !fresh()) return;
+    land(cell, "converted", original.key);
     if (takeFocus && focusAllowed()) focusDraft(original.key, target, mine);
     if (!fresh()) { if (lease && focusLease === lease) releaseFocusLease(lease, false); return; }
     if (!written(original)) return;
@@ -775,8 +813,29 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     return;
   }
   const { key, created } = createDraftWithReceipt(converted);
+  land(cell, "created", key);
   if (forwardSource) fetchForwardFiles(key, forwardSource, converted.attachments ?? []);
   if (takeFocus && mine === intent && destinationAvailable(lease) && focusAllowed() && getApp().selectedId === selected && useDrafts.getState().drafts[key] === created && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === key) focusDraft(key, target, mine);
+}
+
+/**
+ * Plan 133 §5.2: a reply to someone who may not be its last sender: it answers their newest message, to them alone
+ * (a Bcc'd or Cc'd person with no message keeps the reply's source). Only for a draft Terno filled in: a person's own
+ * recipients are never replaced. False when nothing changed.
+ */
+export async function addressReply(key: string, threadId: number, person: { name: string; address: string }): Promise<boolean> {
+  const detail = await loadThread(threadId);
+  const d = materialize(key);
+  if (!detail || !d || d.sending || d.mode === "new" || d.mode === "forward" || authored(d)) return false;
+  const accounts = getApp().accounts;
+  const account = accounts.find((a) => a.id === detail.thread.accountId) ?? accounts.find((a) => a.id === d.accountId);
+  if (!account) return false;
+  const address = person.address.toLowerCase();
+  const source = [...detail.messages].reverse().find((m) => !m.isSent && m.from.email.toLowerCase() === address);
+  const fields = replyFields("reply", detail, account, { identities: accounts.map((a) => a.email), ...(source ? { sourceId: source.id } : {}) });
+  const to = source ? fields.toText : formatAddressList([{ name: person.name, email: person.address }]);
+  const patch: DraftFields = { ...fields, showSourceContext: true, toText: to, ccText: "", auto: { to: source ? fields.auto.to : [person.address], cc: [], bcc: [] } };
+  return editDraft(key, patch);
 }
 
 /** Shows a new-message draft in the reader pane again (from the drafts strip). */
@@ -892,6 +951,8 @@ function showRecipient(key: string, field: "to" | "cc" | "bcc") {
 
 async function send(key: string, sendAt?: number): Promise<boolean> {
   if (draftEditsHeld()) return false;
+  // plan 133 §10.4: buttons, shortcuts, the palette and Send Later all come through here
+  if (aiDraftHooks.blocksSend(key, sendAt)) return false;
   if (useDrafts.getState().drafts[key]?.recovery) { snack.error(t("compose.recovery.sendBlocked")); return false; }
   const draft = useDrafts.getState().drafts[key];
   if (draft && !getApp().accounts.some((a) => a.id === draft.accountId)) { snack.error(t("errors.accountGone")); return false; }
@@ -920,6 +981,7 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
       return false;
     }
     breadcrumb("action", "action.send");
+    await aiDraftHooks.provenance(key);
     const body = await bodyParts(d);
     const signature = getApp().accounts.find((a) => a.id === d.accountId)?.signature;
     // plan 76: an image taken out of the text (and not put back) isn't sent
@@ -939,6 +1001,8 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
       draftRevision: d.id ? d.revision : undefined,
       draftGeneration: d.generation,
       attachments,
+      // plan 133 §8: the body as the user left it, before signature and quote: without it the message counts as the model's
+      authoredText: body.text,
     };
     if (sendAt !== undefined) {
       // draftForSend gave a saved draft (id, generation, revision): those fence the schedule
