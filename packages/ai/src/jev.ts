@@ -30,21 +30,34 @@ function failure(status: number): AiError {
 
 async function call<T>(config: ProviderConfig, path: string, signal: AbortSignal | undefined, init: RequestInit = {}): Promise<T> {
   const base = resolveBaseURL(config)!.replace(/\/+$/, "");
-  let res: Response;
+  // the whole of it, through the last byte of the body: a stalled response would otherwise hold AiAssist's only drain
+  const deadline = AbortSignal.timeout(config.timeoutMs);
+  const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
+  // what a body read may not notice itself
+  const givenUp = new Promise<never>((_, reject) => {
+    combined.addEventListener("abort", () => reject(combined.reason), { once: true });
+  });
+  givenUp.catch(() => {});
   try {
-    res = await config.fetch(`${base}${path}`, {
-      ...init,
-      signal,
-      redirect: "error",
-      headers: { authorization: `Bearer ${config.apiKey ?? ""}`, "content-type": "application/json", ...init.headers },
-    });
+    const res = await Promise.race([
+      config.fetch(`${base}${path}`, {
+        ...init,
+        signal: combined,
+        redirect: "error",
+        headers: { authorization: `Bearer ${config.apiKey ?? ""}`, "content-type": "application/json", ...init.headers },
+      }),
+      givenUp,
+    ]);
+    if (!res.ok) throw failure(res.status);
+    return (await Promise.race([res.json(), givenUp])) as T;
   } catch (error) {
+    if (error instanceof AiError) throw error;
     if (signal?.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
+    if (deadline.aborted) throw new AiError(L("errors.ai.timeout", { provider: INFO.label }), "timeout");
+    if (error instanceof SyntaxError) throw new AiError(L("errors.ai.invalidOutput", { detail: "not JSON" }), "invalid_output");
     if ((error as { name?: string })?.name === "NetworkPolicyError") throw new AiError(L("errors.ai.cannotConnect", { provider: INFO.label, host: "api.typesafe.ai" }), "blocked");
     throw new AiError(L("errors.ai.cannotConnect", { provider: INFO.label, host: "api.typesafe.ai" }), "unavailable");
   }
-  if (!res.ok) throw failure(res.status);
-  return (await res.json()) as T;
 }
 
 /** Discovery and the connection test: free, and proves the key. */

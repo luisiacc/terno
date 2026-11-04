@@ -9,7 +9,7 @@ import { budgetedTransport, BudgetExceededError, type SpendLedger } from "./spen
 import { costOf } from "./prices";
 import { streamCompletion } from "./stream";
 import { createAi } from "./tasks";
-import { jevTasks } from "./jev";
+import { jevModels, jevTasks } from "./jev";
 import { AiError, type CompletionRequest, type ModelTransport, type ProviderConfig } from "./types";
 
 const req = (over: Partial<CompletionRequest> = {}): CompletionRequest => ({ system: "s", messages: [{ role: "user", content: "hello" }], output: "text", maxTokens: 1000, signal: new AbortController().signal, ...over });
@@ -269,5 +269,43 @@ describe("JEV", () => {
     const status = (s: number): typeof fetch => (async () => new Response("{}", { status: s })) as typeof fetch;
     await expect(jevTasks(config(status(401))).classify(input)).rejects.toMatchObject({ kind: "auth" });
     await expect(jevTasks(config(status(429))).classify(input)).rejects.toMatchObject({ kind: "rate_limited" });
+  });
+
+  describe("a deadline over the whole request (plan 134 review)", () => {
+    const soon = (fetcher: typeof fetch): ProviderConfig => ({ ...config(fetcher), timeoutMs: 20 });
+
+    it("a server that never answers is a timeout, and the request is aborted", async () => {
+      let seen: AbortSignal | undefined;
+      const silent = ((_u: string, init: RequestInit) => ((seen = init.signal ?? undefined), new Promise(() => {}))) as unknown as typeof fetch;
+      await expect(jevTasks(soon(silent)).classify(input)).rejects.toMatchObject({ kind: "timeout" });
+      expect(seen?.aborted).toBe(true);
+    });
+
+    it("a response whose body stalls is a timeout too: it can't hold the only drain", async () => {
+      const stalled = (async () => {
+        const res = new Response("{}");
+        Object.defineProperty(res, "json", { value: () => new Promise(() => {}) });
+        return res;
+      }) as typeof fetch;
+      await expect(jevTasks(soon(stalled)).classify(input)).rejects.toMatchObject({ kind: "timeout" });
+    });
+
+    it("the caller's own cancel stays a cancel", async () => {
+      const controller = new AbortController();
+      const silent = (() => new Promise(() => {})) as unknown as typeof fetch;
+      const asked = jevTasks(config(silent)).classify(input, controller.signal);
+      controller.abort();
+      await expect(asked).rejects.toMatchObject({ kind: "cancelled" });
+    });
+
+    it("what isn't JSON says so, not that it couldn't connect", async () => {
+      const garbled = (async () => new Response("<html>")) as typeof fetch;
+      await expect(jevTasks(config(garbled)).classify(input)).rejects.toMatchObject({ kind: "invalid_output" });
+    });
+
+    it("listing models has the same deadline", async () => {
+      const silent = (() => new Promise(() => {})) as unknown as typeof fetch;
+      await expect(jevModels(soon(silent)).listModels!(new AbortController().signal)).rejects.toMatchObject({ kind: "timeout" });
+    });
   });
 });
