@@ -15,7 +15,7 @@ interface Box {
 const fake = vi.hoisted(() => {
   const g = globalThis as Record<string, unknown>;
   const state = { targets: [] as unknown[] };
-  g.document = { documentElement: { dataset: {}, classList: { contains: () => false }, setAttribute() {}, removeAttribute() {} }, querySelector: () => null, querySelectorAll: (sel: string) => (sel === "[data-drop-target]" ? state.targets : []) };
+  g.document = { documentElement: { dataset: {}, classList: { contains: () => false }, setAttribute() {}, removeAttribute() {} }, querySelector: () => null, querySelectorAll: (sel: string) => (sel.includes("[data-drop-target]") ? state.targets : []) };
   g.window = globalThis;
   g.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   g.localStorage = { setItem() {}, getItem: () => null };

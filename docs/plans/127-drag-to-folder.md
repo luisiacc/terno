@@ -142,6 +142,8 @@ Round 1 (`f363b27a..ef2e5266`) found five issues. Each is fixed with a test chec
 
 Round 2 (`f363b27a..` with round 1's fixes) found one issue, fixed with a test that fails without it: **a search from inside a folder was read as that folder's list.** Search keeps the folder in the state but lists everywhere, so a result dropped on that folder showed "already" and did nothing, the menu disabled it, and a drop on another folder took the thread out of the one you'd searched from. `listingFolder` and `sourceFolder` now read the query too. Test: `folder-rules.test.ts`. The review stopped here: this round's only finding was this one small fix.
 
+A wider run after the rebase caught what the targeted runs had missed, none of it in a shipped path: the probe forced an index that a schema before v47 doesn't have, so the fixtures that drive today's ingest over an old mailbox failed. A real upgrade migrates first, but a missing index shouldn't fail a write: `folderOpsPending` falls back to a plain read. Test: `folder-move.test.ts`. Two tests were also behind the code: `capture-repair-upgrade`'s rewind didn't drop the new index, and `drag-install`'s fake document only answered the old selector.
+
 ## Known edge cases (left on purpose)
 
 - **A move that fails for good leaves the thread in Archive,** with the op's error snack: the archive that follows it still runs. Nothing is lost, and the folder doesn't claim it. On a server without UIDPLUS every move fails this way; such servers are rare, and the message says what to do.

@@ -51,8 +51,17 @@ SELECT t.id, t.account_id, k.folder, t.last_date, t.unread_count > 0 FROM (
  * `ops_folder_moves` holds only the unsettled ones: with none on its way, this probe is all it costs.
  */
 export const FOLDER_OPS_PENDING = "SELECT 1 FROM ops INDEXED BY ops_folder_moves WHERE kind IN ('moveToFolder', 'leaveFolder') AND state IN ('queued', 'running') LIMIT 1";
+/** Forced, or the planner reads `ops_ready`; but a missing index (a schema before v47) only costs a plain read: it never fails the write it's part of. */
+export function folderOpsPending(db: Db): boolean {
+  try {
+    return db.get(FOLDER_OPS_PENDING) !== undefined;
+  } catch (error) {
+    if (!(error instanceof Error && error.message.includes("no such index"))) throw error;
+    return db.get(FOLDER_OPS_PENDING.replace(" INDEXED BY ops_folder_moves", "")) !== undefined;
+  }
+}
 function overlayFolderOps(db: Db, json: string): void {
-  if (!db.get(FOLDER_OPS_PENDING)) return;
+  if (!folderOpsPending(db)) return;
   const pending = db.all<{ thread_id: number; message_id: number; kind: string; payload_json: string }>(
     `SELECT m.thread_id, m.id AS message_id, o.kind, o.payload_json
      FROM messages m JOIN op_targets ot ON ot.message_id = m.id AND ot.grp = 'location' JOIN ops o ON o.id = ot.op_id

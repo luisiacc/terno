@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { FOLDER_OPS_PENDING } from "./folders";
+import { FOLDER_OPS_PENDING, folderOpsPending } from "./folders";
 import { Db } from "./sqlite";
 import { sqliteDriver } from "./index";
 import { migrate } from "./migrations";
@@ -22,6 +22,20 @@ it("the probe for a pending folder move reads the partial index, however many ot
     expect(db.get(probe)).toBeDefined();
     db.run("UPDATE ops SET state = 'failed' WHERE id = 'm'");
     expect(db.get(probe)).toBeUndefined();
+  } finally {
+    db.close();
+  }
+});
+
+it("without the index (a schema before v47) the probe still answers: it never fails the write it's part of", () => {
+  const db = new Db(sqliteDriver(), ":memory:");
+  try {
+    migrate(db);
+    db.run("INSERT INTO accounts (id,kind,email,display_name,created_at) VALUES (1,'gmail','a@test.com','A',0)");
+    db.exec("DROP INDEX ops_folder_moves");
+    expect(folderOpsPending(db)).toBe(false);
+    db.run("INSERT INTO ops (id,seq,account_id,kind,target_json,payload_json,state,created_at,updated_at,next_attempt_at) VALUES ('m',1,1,'moveToFolder','{}','{}','queued',0,0,0)");
+    expect(folderOpsPending(db)).toBe(true);
   } finally {
     db.close();
   }
