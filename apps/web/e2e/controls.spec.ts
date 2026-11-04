@@ -129,8 +129,16 @@ for (const design of DESIGN_IDS) for (const mode of ["light", "dark"] as const) 
       expect(centre.bg).toBe(await css(page, "probe-primary-ink-on-bg", "background-color"));
       expect(centre.scale).toBe("1");
       expect(off.bg).toBe(await css(page, "probe-card", "background-color"));
-      expect(off.border).toBe(await css(page, "probe-input-border", "border-top-color"));
+      expect(off.border).toBe(await css(page, "probe-control-edge", "border-top-color"));
       expect(offCentre.scale).toBe("0");
+      // plan 137: hovered, the edge firms up on its own token
+      // (the probe panel is fixed and runs past the window: bring this radio into it)
+      await page.getByTestId("radio-off").evaluate((el) => {
+        const panel = document.getElementById("controls-probe")!;
+        panel.style.top = `${panel.offsetTop + 200 - el.getBoundingClientRect().top}px`;
+      });
+      await page.getByTestId("radio-off").hover();
+      await expect.poll(async () => (await dot("radio-off")).border).toBe(await css(page, "probe-control-edge-hover", "border-top-color"));
       await expect(page.getByTestId("radio-on")).toHaveAttribute("aria-checked", "true");
     });
 

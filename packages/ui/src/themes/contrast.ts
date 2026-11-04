@@ -97,7 +97,7 @@ export const STAR_ON_ROWS: readonly ContrastPair[] = ui("star", ["row-hover", "r
  * Plan 137: an unchecked box's edge and an off switch's track, on the surfaces controls sit on. The older palettes draw
  * these in `input`, a faint wash well under 3:1, left as it is rather than repainting every design; Graphite's holds it.
  */
-export const CONTROL_EDGES: readonly ContrastPair[] = ui("control-edge", ["background", "card", "popover"]);
+export const CONTROL_EDGES: readonly ContrastPair[] = (["control-edge", "control-edge-hover"] as const).flatMap((edge) => ui(edge, ["background", "card", "popover"]));
 
 export interface ContrastFailure {
   pair: string;

@@ -138,6 +138,7 @@
   --color-success-ink: var(--success-ink);
   --color-sidebar-glyph: var(--sidebar-glyph);
   --color-control-edge: var(--control-edge);
+  --color-control-edge-hover: var(--control-edge-hover);
   --color-popover-glass: var(--popover-glass);
   --color-drop-target: color-mix(in oklch, var(--primary) 16%, transparent);
   /* plan 118: the filled field, a wash of ink so it reads on white and on grey groups alike */

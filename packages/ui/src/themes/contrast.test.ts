@@ -23,8 +23,11 @@ describe("WCAG AA in every built-in theme", () => {
     if (theme.mode === "dark") expect(contrast(withAlpha(parseColor(theme.tokens["control-edge"]), 0.8), theme.tokens.popover, theme.tokens.background)).toBeGreaterThanOrEqual(3);
   });
 
-  it("control-edge is input in every other palette, so no other design's controls moved", () => {
-    for (const theme of THEMES.filter((t) => !t.id.startsWith("graphite-"))) expect(theme.tokens["control-edge"], theme.id).toBe(theme.tokens.input);
+  it("control-edge is input, and its hover the ink at 30%, in every other palette, so no other design's controls moved", () => {
+    for (const theme of THEMES.filter((t) => !t.id.startsWith("graphite-"))) {
+      expect(theme.tokens["control-edge"], theme.id).toBe(theme.tokens.input);
+      expect(parseColor(theme.tokens["control-edge-hover"]), theme.id).toEqual(withAlpha(parseColor(theme.tokens.foreground), 0.3));
+    }
   });
 
   it("checks the pairs the plan requires", () => {

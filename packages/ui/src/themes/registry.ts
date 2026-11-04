@@ -178,6 +178,7 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("sidebar-primary-ink", () => stepUntil(o("sidebar-primary"), [formatOklch(o("sidebar")), formatOklch(o("sidebar-accent"))], 4.5, bg, o("sidebar-foreground"), light));
   // plan 137: an unchecked box's edge and an off switch's track; `input` also tints fields, so a palette that holds these to 3:1 sets this instead
   def("control-edge", () => o("input"));
+  def("control-edge-hover", () => withAlpha(o("foreground"), 0.3));
   def("sidebar-glyph", () => stepUntil(o("sidebar-primary"), [formatOklch(o("sidebar")), formatOklch(o("sidebar-accent")), hovered], 3, bg, o("muted-foreground"), light));
   // plan 94: toward its text while that still reads at 4.5:1, else away from it (a fill already near 4.5:1 can only darken)
   def("primary-hover", () => {
@@ -541,7 +542,7 @@ export const THEMES: readonly Theme[] = [
       "sidebar-accent": "#F4F4F4",
     },
     cats: cats(".645 .17 16 | .64 .13 66 | .62 .13 131 | .61 .11 163 | .61 .1 225 | .585 .14 277 | .606 .15 300 | .56 .01 257"),
-    overrides: { "sidebar-foreground": "#5D5D5D", "sidebar-glyph": "#5D5D5D", "sidebar-accent-foreground": "#292929", "control-edge": "#949494" },
+    overrides: { "sidebar-foreground": "#5D5D5D", "sidebar-glyph": "#5D5D5D", "sidebar-accent-foreground": "#292929", "control-edge": "#949494", "control-edge-hover": "#5D5D5D" },
   }),
   defineTheme({
     id: "terno-dark",
@@ -919,7 +920,7 @@ export const THEMES: readonly Theme[] = [
       "sidebar-accent": "#2A2A2A",
     },
     cats: cats(".72 .13 16 | .8 .12 75 | .78 .13 131 | .74 .11 163 | .76 .09 225 | .7 .12 277 | .72 .12 300 | .7 .01 257"),
-    overrides: { "sidebar-foreground": "#9E9E9E", "sidebar-glyph": "#9E9E9E", "sidebar-accent-foreground": "#EDEDED", "control-edge": "#808080" },
+    overrides: { "sidebar-foreground": "#9E9E9E", "sidebar-glyph": "#9E9E9E", "sidebar-accent-foreground": "#EDEDED", "control-edge": "#808080", "control-edge-hover": "#9E9E9E" },
   }),
 ];
 

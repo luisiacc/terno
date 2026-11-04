@@ -74,7 +74,7 @@ function RadioDot({ className, ...props }: React.ComponentProps<"span">) {
       data-slot="radio-dot"
       aria-hidden
       className={cn(
-        "relative flex size-4 shrink-0 items-center justify-center rounded-full border border-control-edge bg-card shadow-xs transition-colors group-data-unchecked/radio:group-hover/radio:border-foreground/30",
+        "relative flex size-4 shrink-0 items-center justify-center rounded-full border border-control-edge bg-card shadow-xs transition-colors group-data-unchecked/radio:group-hover/radio:border-control-edge-hover",
         "group-data-checked/radio:border-primary group-data-checked/radio:bg-primary group-data-checked/radio:bg-linear-to-b group-data-checked/radio:from-highlight group-data-checked/radio:to-transparent group-data-checked/radio:shadow-[inset_0_1px_var(--highlight)]",
         // the centre, scaled in when chosen
         "after:size-1.5 after:scale-0 after:rounded-full after:bg-primary-foreground after:transition-transform group-data-checked/radio:after:scale-100",
