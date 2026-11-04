@@ -26,10 +26,11 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 25 adds exact incoming body parts (SQL v45).
  * Version 26 adds shared body transaction authority (SQL v46).
  * Version 27 adds the AI new-mail marks and summaries (SQL v48, plans 131 and 132).
+ * Version 28 adds writing profiles and generations (SQL v50, plan 133); SQL v49 is an index with no persisted shape here.
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 48;
+export const LOGICAL_SCHEMA = 50;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -56,7 +57,7 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   {
     name: "messages",
     key: ["id"],
-    indexes: { ...fk("thread_id"), ...fk("account_id"), provider: ["account_id", "provider_msg_id"], rfc: ["account_id", "rfc_message_id"], from: ["from_email"], domain: ["from_domain"], list: ["list_id"], body_state: ["body_state"], attachment_pending: ["account_id", "attachment_pending"], twins: { columns: ["account_id", "from_email", "date", "size", "subject"], where: (r) => !r.rfc_message_id }, pending_bodies: { columns: ["account_id"], where: (r) => r.attachment_pending === 1 || (r.body_state !== "full" && r.attachments_captured !== 2) } },
+    indexes: { ...fk("thread_id"), ...fk("account_id"), sent: { columns: ["account_id"], where: (r) => r.is_sent === 1 && r.is_draft !== 1 }, provider: ["account_id", "provider_msg_id"], rfc: ["account_id", "rfc_message_id"], from: ["from_email"], domain: ["from_domain"], list: ["list_id"], body_state: ["body_state"], attachment_pending: ["account_id", "attachment_pending"], twins: { columns: ["account_id", "from_email", "date", "size", "subject"], where: (r) => !r.rfc_message_id }, pending_bodies: { columns: ["account_id"], where: (r) => r.attachment_pending === 1 || (r.body_state !== "full" && r.attachments_captured !== 2) } },
   },
   { name: "message_bodies", key: ["message_id"], lazy: true },
   { name: "message_refs", key: ["account_id", "ref", "message_id"], indexes: { ...fk("message_id"), ref: ["account_id", "ref"] } },
@@ -95,6 +96,9 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   // plan 131 revision 5: new mail the AI features want; plan 132: a thread's summary and the queue
   { name: "ai_new_mail", key: ["message_id"], indexes: { ...fk("message_id"), thread: ["thread_id"], wants_summary: ["wants_summary"], wants_category: ["wants_category"] } },
   { name: "ai_summaries", key: ["thread_id"], indexes: { ...fk("thread_id"), state: ["state"] } },
+  // plan 133: `identity` is the logical key: a memory index omits nulls and isn't unique, so `scope_key` is never null
+  { name: "writing_profiles", key: ["id"], autoId: true, indexes: { ...fk("account_id"), identity: ["scope_key", "language"], scope: ["scope"] } },
+  { name: "writing_generations", key: ["id"], autoId: true, indexes: { ...fk("account_id"), ...fk("draft_id"), ...fk("message_id"), texts: { columns: ["has_text"], where: (r) => r.generated !== "" }, markers: { columns: ["has_text"], where: (r) => r.generated === "" } } },
   { name: "send_copies", early: true, key: ["opId"], indexes: fk("accountId") },
   { name: "send_copy_bytes", key: ["id"], lazy: true },
   { name: "recipient_receipts", early: true, key: ["opId"], indexes: fk("accountId") },
@@ -170,6 +174,10 @@ export const FOREIGN_KEYS: readonly ForeignKey[] = [
   c("forward_recipients", "forward_id", "forwards"),
   c("ai_new_mail", "message_id", "messages"),
   c("ai_summaries", "thread_id", "threads"),
+  c("writing_profiles", "account_id", "accounts"),
+  c("writing_generations", "account_id", "accounts"),
+  c("writing_generations", "draft_id", "drafts"),
+  c("writing_generations", "message_id", "messages"),
   { table: "drafts", column: "thread_id", parent: "threads", onDelete: "setNull" },
   { table: "owner", column: "account_id", parent: "accounts", onDelete: "setNull" },
   c("cls_examples", "thread_id", "threads"),
@@ -350,6 +358,8 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       if (event.oldVersion >= 1 && event.oldVersion < 24) for (const name of ["forward_eligible", "forwards", "forward_recipients"]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
       // plans 131, 132 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 27) for (const name of ["ai_new_mail", "ai_summaries"]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
+      // plan 133 (likewise)
+      if (event.oldVersion >= 1 && event.oldVersion < 28) for (const name of ["writing_profiles", "writing_generations"]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
       if (event.oldVersion < 20) {
         const counter = event.oldVersion === 0 ? tx.objectStore("category_counter") : db.createObjectStore("category_counter");
         let ceiling = 0;

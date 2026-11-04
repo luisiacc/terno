@@ -1,4 +1,4 @@
-import { bodyPrefix, bodyTestKey, bodyPartRange, finishBodyClose } from "@terno/store";
+import { bodyPrefix, bodyTestKey, bodyPartRange, CORPUS_TEXTS_MAX, finishBodyClose, readThreadContext } from "@terno/store";
 import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
 import { publishBody } from "@terno/store";
 import { resolvable, parseSearch } from "@terno/core";
@@ -89,6 +89,7 @@ import {
   type ClassifyResult,
 } from "./categorize";
 import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
+import { clearJudgments, clearWriting, commitGeneration, commitProfiles, corpusHeaders, corpusUsable, editProfile, generationForDraft, generationForMessage, generationPairs, judgeProfile, listProfiles, readProfiles, resetProfile, sentTo as writingSentTo, threadRecipients, threadsWith as writingThreadsWith, transferGeneration } from "./writing";
 import { attemptSummary, clearNewMail, clearSummaries, consumeNewMail, dropPendingSummaries, dropSummary, failSummary, finishSummary, getSummary, lastSummaryFailure, markNewMail, newMailPage, pendingSummaries, pendingSummaryCount, pruneNewMail, pruneSummaries, summarySources } from "./ai-summaries";
 import { cancelWaiting, filesReady, waitingCount, forwardRuleGone, forwardWork, approveRule, cancelForwards, claimForward, eligiblePage, failForward, forwardHolds, forwardSendOpen, forwardsActive, getForward, linkForwardSend, listForwards, markEligible, nextForwardDue, planForwards, pruneForwards, retryForward, setCategoryForward, stopRule, waitForFiles } from "./forwards";
 import { deleteScheduled, failScheduled, getScheduled, listScheduled, putScheduled, rescheduleScheduled, stillScheduled } from "./scheduled";
@@ -1058,6 +1059,7 @@ export class SqlMailStore implements MailStore {
         if (account.kind === "imap") { if (!preparedRecipients) throw new RpcError("BAD_REQUEST", L("errors.accountGone")); reserveRecipientReceipt(sqlRecipientReceipts(this.db), opId, p.accountId, p.now, preparedRecipients); }
         if (account.kind === "imap") reserveSendCopy(sqlSendCopies(this.db), opId, p.accountId, p.now, p.to.length + p.cc.length + p.bcc.length, !!(cfg.config as { appendToSent?: boolean }).appendToSent);
         linkAssets(sqlAssets(this.db), "op", opId, attachments);
+        if (p.draftId) transferGeneration(this.db, { draftId: p.draftId, draftGeneration: p.draftGeneration ?? "", messageId: localId, opId, transfer: p.writing, now: p.now });
         if (p.draftId) deleteDraft(this.db, p.draftId);
         if (p.forward) linkForwardSend(this.db, p.forward, opId, p.now);
         if (replyThreadId && p.recordReply) recordUserActions(this.db, [replyThreadId], "reply", p.now);
@@ -1105,6 +1107,38 @@ export class SqlMailStore implements MailStore {
     dropPending: async () => dropPendingSummaries(this.db),
     clear: async () => clearSummaries(this.db),
     prune: async (now, maxRows) => pruneSummaries(this.db, now, maxRows),
+  };
+
+  // ───────────────────────────── drafting (plan 133) ─────────────────────────────
+
+  readonly writing: MailStore["writing"] = {
+    corpus: {
+      headers: async (p) => corpusHeaders(this.db, p),
+      texts: async (ids) => (await this.autocomplete.sentTexts(ids.slice(0, CORPUS_TEXTS_MAX))).map((t) => ({ id: t.id, text: t.text })),
+      usable: async (ids) => corpusUsable(this.db, ids),
+    },
+    sentTo: async (p) => writingSentTo(this.db, p, this.yieldTo),
+    threadsWith: async (p) => writingThreadsWith(this.db, p, this.yieldTo),
+    threadContext: async (threadId, budget) => {
+      const sources = await this.aiSummaries.sources(threadId);
+      return sources ? readThreadContext(sources, threadRecipients(this.db, threadId), budget, (requests) => this.aiSummaries.text(requests)) : null;
+    },
+    profiles: {
+      read: async (keys) => readProfiles(this.db, keys),
+      list: async (p) => listProfiles(this.db, p),
+      commit: async (c) => commitProfiles(this.db, c),
+      judge: async (w) => judgeProfile(this.db, w),
+      edit: async (e) => editProfile(this.db, e),
+      reset: async (scopeKey, language) => resetProfile(this.db, scopeKey, language),
+      clearJudgments: async (accountId) => clearJudgments(this.db, accountId),
+      clear: async (stateKeys) => clearWriting(this.db, stateKeys),
+    },
+    generations: {
+      commit: async (c) => commitGeneration(this.db, c),
+      forDraft: async (draftId) => generationForDraft(this.db, draftId),
+      forMessage: async (messageId) => generationForMessage(this.db, messageId),
+      pairs: async (p) => generationPairs(this.db, p),
+    },
   };
 
   // ───────────────────────────── forwards (plan 116) ─────────────────────────────
@@ -1686,7 +1720,7 @@ export function openingSqlStore(open: (signal: AbortSignal) => Promise<SqlMailSt
       return Reflect.apply(method, object, args);
     };
   } });
-  const names = new Set(["feed", "threads", "sync", "ops", "attachments", "recipientReceipts", "sendCopies", "compose", "filters", "folders", "categories", "reminders", "similar", "storage", "categorize", "accounts", "owner", "drafts", "providerCooldown", "settings", "secrets", "learning", "facts", "debug", "dev", "autocomplete", "captureRepairs", "tabs"]);
+  const names = new Set(["feed", "threads", "sync", "ops", "attachments", "recipientReceipts", "sendCopies", "compose", "filters", "folders", "categories", "reminders", "similar", "storage", "categorize", "accounts", "owner", "drafts", "providerCooldown", "settings", "secrets", "learning", "facts", "debug", "dev", "autocomplete", "captureRepairs", "tabs", "newMail", "aiSummaries"]);
   const namespaces = new Map<PropertyKey, object>();
   const facade = new Proxy({} as MailStore, { get(object, member) {
     if (Object.hasOwn(object, member)) return Reflect.get(object, member);

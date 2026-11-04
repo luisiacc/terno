@@ -126,6 +126,12 @@ export class Autocomplete {
     return { items: c.suggest(query, o), ready: true };
   }
 
+  /** Plan 133 §5.1: `cold` is never "no such person". */
+  resolveExact(token: string, o: { accountId?: number; limit?: number } = {}): { state: "ready" | "cold"; hits: ContactHit[] } {
+    const c = this.contacts;
+    return c ? { state: "ready", hits: c.resolveExact(token, o) } : { state: "cold", hits: [] };
+  }
+
   /**
    * The best few people for each first letter and digit: a recipient field
    * shows them the moment a first letter is typed, before its lookup answers.

@@ -10,4 +10,5 @@ export * from "./perf";
 export * from "./twins-perf";
 export * from "./forwards-perf";
 export * from "./ai-summaries-perf";
+export * from "./writing-perf";
 export * from "./smart-categorization-perf";

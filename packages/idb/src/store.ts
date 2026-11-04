@@ -1,4 +1,4 @@
-import { finishBodyClose } from "@terno/store";
+import { CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readThreadContext, type SentRef } from "@terno/store";
 import { projectBodyTokens, messageBodiesReleased } from "@terno/store";
 import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
 import { releaseMessageBodies } from "@terno/store";
@@ -176,6 +176,7 @@ import type { Key, MemDb } from "./mem";
 import { idbCachedPage, IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, PartialCommit, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
 import { UncertainWriteError } from "./uncertainty";
+import { clearJudgments, clearWriting, commitGeneration, commitProfiles, corpusHeaders, corpusUsable, editProfile, everWrittenTo, exactInSlice, fromAddress, generationForDraft, generationForMessage, generationPairs, hasBody, judgeProfile, listProfiles, liveThreads, readProfiles, resetProfile, sentIds, sentNeedles, threadRecipients, transferGeneration, type ExactProgress } from "./writing";
 import { attemptSummary, clearNewMail, clearSummaries, consumeNewMail, dropPendingSummaries, dropSummary, failSummary, finishSummary, getSummary, lastSummaryFailure, markNewMail, newMailPage, pendingSummaries, pendingSummaryCount, pruneNewMail, pruneSummaries, summarySources } from "./ai-summaries";
 import { cancelWaiting, filesReady, waitingCount, forwardRuleGone, forwardWork, approveRule, cancelForwards, claimForward, eligiblePage, failForward, forwardHolds, forwardSendOpen, forwardsActive, getForward, linkForwardSend, listForwards, markEligible, nextForwardDue, planForwards, pruneForwards, retryForward, setCategoryForward, stopRule, waitForFiles } from "./forwards";
 import { deleteScheduled, failScheduled, getScheduled, listScheduled, putScheduled, rescheduleScheduled, stillScheduled } from "./scheduled";
@@ -196,6 +197,8 @@ const BODY_CACHE_BYTES = 8 * 1024 * 1024;
 export const EXPORT_LEASES_MAX = 4;
 /** ids per exclusive slice when the feed reads bodies */
 const SLICE = 500;
+/** Plan 133: sent rows looked at per unit: the substring test is cheap, and what passes it is rare */
+const WRITING_SLICE_ROWS = 4000;
 /** a scan's slice: this long at most, in chunks of this many messages, before yielding */
 const SCAN_SLICE_MS = 8;
 const SCAN_CHUNK = 256;
@@ -1699,6 +1702,7 @@ export class IdbMailStore implements MailStore {
         if (account.kind === "imap") { if (!preparedRecipients) throw new RpcError("BAD_REQUEST", L("errors.accountGone")); reserveRecipientReceipt(idbRecipientReceipts(this.db), opId, p.accountId, p.now, preparedRecipients); }
         if (account.kind === "imap") reserveSendCopy(idbSendCopies(this.db), opId, p.accountId, p.now, p.to.length + p.cc.length + p.bcc.length, !!(cfg.config as { appendToSent?: boolean }).appendToSent);
         linkAssets(idbAssets(this.db), "op", opId, attachments);
+        if (p.draftId) transferGeneration(this.c, { draftId: p.draftId, draftGeneration: p.draftGeneration ?? "", messageId: localId, opId, transfer: p.writing, now: p.now });
         if (p.draftId) T(this.c, "drafts").delete(p.draftId);
         if (p.forward) linkForwardSend(this.c, p.forward, opId, p.now);
         if (replyThreadId && p.recordReply) recordUserActions(this.c, [replyThreadId], "reply", p.now);
@@ -1939,6 +1943,77 @@ export class IdbMailStore implements MailStore {
     dropPending: () => this.command(() => dropPendingSummaries(this.c)),
     clear: () => this.command(() => clearSummaries(this.c)),
     prune: (now, maxRows) => this.command(() => pruneSummaries(this.c, now, maxRows)),
+  };
+
+  /** Plan 133: mail to these addresses exactly, over the account's sent rows, in slices: this is the backend's only thread. */
+  private async exactSent(p: { addresses: readonly string[]; accountId?: number }): Promise<ExactProgress> {
+    const addresses = new Set(p.addresses.map((a) => a.toLowerCase()));
+    const out: ExactProgress = { refs: [], sawLong: false };
+    if (!addresses.size) return out;
+    const needles = sentNeedles([...addresses]);
+    const ids = await this.read(() => sentIds(this.c, p.accountId));
+    for (let i = 0; i < ids.length; i += WRITING_SLICE_ROWS) {
+      if (i) await this.o.platform.yield();
+      await this.read(() => exactInSlice(this.c, ids.slice(i, i + WRITING_SLICE_ROWS), { addresses, needles }, out));
+    }
+    return out;
+  }
+
+  readonly writing: MailStore["writing"] = {
+    corpus: {
+      headers: (p) => this.read(() => corpusHeaders(this.c, p)),
+      texts: async (ids) => (await this.autocomplete.sentTexts(ids.slice(0, CORPUS_TEXTS_MAX))).map((t) => ({ id: t.id, text: t.text })),
+      usable: (ids) => this.read(() => corpusUsable(this.c, ids)),
+    },
+    sentTo: async (p) => {
+      const { refs, sawLong } = await this.exactSent(p);
+      if (!refs.length) return { refs: [], state: sawLong && (await this.read(() => everWrittenTo(this.c, p.addresses))) ? "unavailable" : "none" };
+      const usable = await this.read(() => refs.filter((r) => hasBody(this.c, r.id)));
+      if (!usable.length) return { refs: [], state: "unavailable" };
+      // what's left has a body in the database: read one at a time, for those it picks only
+      const ranked = rankSentRefs(usable, usable.length);
+      const kept: SentRef[] = [];
+      for (let i = 0; i < ranked.length && kept.length < p.limit; i += CORPUS_TEXTS_MAX) {
+        const chunk = ranked.slice(i, i + CORPUS_TEXTS_MAX);
+        const texts = new Set((await this.writing.corpus.texts(chunk.map((r) => r.id))).filter((t) => t.text.length > 0).map((t) => t.id));
+        for (const r of chunk) if (texts.has(r.id)) kept.push(r);
+      }
+      return kept.length ? { refs: kept.slice(0, p.limit), state: "found" } : { refs: [], state: "unavailable" };
+    },
+    threadsWith: async (p) => {
+      const { refs } = await this.exactSent({ addresses: [p.address], ...(p.accountId !== undefined ? { accountId: p.accountId } : {}) });
+      return this.read(() => {
+        const latest = new Map<number, number>();
+        const note = (threadId: number, date: number) => {
+          if (threadId !== p.exclude && date > (latest.get(threadId) ?? -Infinity)) latest.set(threadId, date);
+        };
+        for (const r of refs) note(r.threadId, r.date);
+        for (const r of fromAddress(this.c, p.address, p.accountId)) note(r.threadId, r.date);
+        const threads = liveThreads(this.c, latest.keys());
+        return [...latest].filter(([id]) => threads.has(id)).sort((a, b) => b[1] - a[1] || b[0] - a[0]).slice(0, p.limit).map(([id]) => id);
+      });
+    },
+    threadContext: async (threadId, budget) => {
+      const sources = await this.aiSummaries.sources(threadId);
+      if (!sources) return null;
+      return readThreadContext(sources, await this.read(() => threadRecipients(this.c, threadId)), budget, (requests) => this.aiSummaries.text(requests));
+    },
+    profiles: {
+      read: (keys) => this.read(() => readProfiles(this.c, keys)),
+      list: (p) => this.read(() => listProfiles(this.c, p)),
+      commit: (c) => this.command(() => commitProfiles(this.c, c)),
+      judge: (w) => this.command(() => judgeProfile(this.c, w)),
+      edit: (e) => this.command(() => editProfile(this.c, e)),
+      reset: (scopeKey, language) => this.command(() => resetProfile(this.c, scopeKey, language)),
+      clearJudgments: (accountId) => this.command(() => clearJudgments(this.c, accountId)),
+      clear: (stateKeys) => this.command(() => clearWriting(this.c, stateKeys)),
+    },
+    generations: {
+      commit: (g) => this.command(() => commitGeneration(this.c, g)),
+      forDraft: (draftId) => this.read(() => generationForDraft(this.c, draftId)),
+      forMessage: (messageId) => this.read(() => generationForMessage(this.c, messageId)),
+      pairs: (p) => this.read(() => generationPairs(this.c, p)),
+    },
   };
 
   // plan 116: messages are read by most of these, so they wait for them (the list and the next due don't)

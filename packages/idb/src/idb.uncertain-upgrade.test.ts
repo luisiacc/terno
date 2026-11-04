@@ -31,12 +31,12 @@ async function image(db: IDBDatabase): Promise<StoreImage[]> {
   await finished; return values;
 }
 
-/** what an upgrade adds empty: physical11's operation parts, physical12's folders (plan 68), physical13's Sent recovery, physical24's forwards (plan 116), physical27's AI marks and summaries (plan 132) */
+/** what an upgrade adds empty: physical11's operation parts, physical12's folders (plan 68), physical13's Sent recovery, physical24's forwards (plan 116), physical27's AI marks and summaries (plan 132), physical28's writing tables (plan 133) */
 function withEmptyParts(source: StoreImage[]): StoreImage[] {
   // the legacy-body upgrade (w11) records the last body it scanned
   const bodies = source.find((store) => store.name === "message_bodies")?.keys ?? [];
   const scanned = (store: StoreImage): StoreImage => ({ ...store, values: store.values.map((value, i) => store.keys[i] === "bodyPartsUpgrade" ? { ...(value as object), after: bodies.at(-1) ?? 0 } : value) });
-  return [...source.map((store) => store.name === "meta" ? scanned(store) : store.name !== "messages" ? store : ({ ...store, indexes: [...store.indexes, { name: "cached_provider", keyPath: ["account_id", "provider_msg_id"], unique: false, multiEntry: false }] })), ...["imap_identity_holds", "op_control", "op_target", "op_error", "folders", "thread_folders", "folder_rebuilds", "send_copies", "send_copy_bytes", "recipient_receipts", "recipient_receipt_parts", "reminders", "scheduled_sends", "forward_eligible", "forwards", "forward_recipients", "ai_new_mail", "ai_summaries"].map((name) => ({
+  return [...source.map((store) => store.name === "meta" ? scanned(store) : store.name !== "messages" ? store : ({ ...store, indexes: [...store.indexes, { name: "cached_provider", keyPath: ["account_id", "provider_msg_id"], unique: false, multiEntry: false }] })), ...["imap_identity_holds", "op_control", "op_target", "op_error", "folders", "thread_folders", "folder_rebuilds", "send_copies", "send_copy_bytes", "recipient_receipts", "recipient_receipt_parts", "reminders", "scheduled_sends", "forward_eligible", "forwards", "forward_recipients", "ai_new_mail", "ai_summaries", "writing_profiles", "writing_generations"].map((name) => ({
     name, keyPath: null, autoIncrement: false, indexes: [], keys: [], values: [],
   })),
   { name: "category_counter", keyPath: null, autoIncrement: false, indexes: [], keys: [1], values: [{ id: 1, last_id: 0 }] },

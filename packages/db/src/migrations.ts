@@ -1271,6 +1271,45 @@ CREATE INDEX ai_summaries_pending ON ai_summaries(created_at, thread_id) WHERE s
 ` },
   // plan 134: a category's newest placements by the user, read in a few rows however many examples it holds
   { version: 49, name: "category evidence (plan 134)", sql: "CREATE INDEX cls_examples_evidence ON cls_examples(category_id, at) WHERE label > 0 AND source IN ('user', 'suggestion', 'bulk');" },
+  // plan 133: how someone writes, kept per scope and language, and what the model wrote until it's sent and after. Empty: the backend fills them in slices.
+  { version: 50, name: "writing profiles and generations (plan 133)", sql: `
+CREATE TABLE writing_profiles (
+  id INTEGER PRIMARY KEY,
+  scope TEXT NOT NULL CHECK (scope IN ('you', 'account', 'domain', 'person')),
+  scope_key TEXT NOT NULL,
+  language TEXT NOT NULL DEFAULT '',
+  account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
+  habits_json TEXT NOT NULL,
+  phrases_json TEXT NOT NULL,
+  judgment_json TEXT,
+  samples INTEGER NOT NULL,
+  new_since INTEGER NOT NULL DEFAULT 0,
+  sample_hash TEXT,
+  edited INTEGER NOT NULL DEFAULT 0,
+  model TEXT,
+  provider TEXT,
+  prompt_version INTEGER,
+  updated_at INTEGER NOT NULL,
+  UNIQUE (scope_key, language)
+);
+CREATE INDEX writing_profiles_account ON writing_profiles(account_id);
+CREATE TABLE writing_generations (
+  id INTEGER PRIMARY KEY,
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  draft_id INTEGER REFERENCES drafts(id) ON DELETE CASCADE,
+  draft_generation TEXT,
+  message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+  op_id TEXT,
+  address TEXT NOT NULL,
+  generated TEXT NOT NULL,
+  final TEXT,
+  at INTEGER NOT NULL
+);
+CREATE INDEX writing_generations_draft ON writing_generations(draft_id);
+CREATE INDEX writing_generations_message ON writing_generations(message_id);
+CREATE INDEX writing_generations_account ON writing_generations(account_id, at);
+CREATE INDEX messages_sent_date ON messages(account_id, date DESC, id DESC) WHERE is_sent = 1 AND is_draft = 0;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

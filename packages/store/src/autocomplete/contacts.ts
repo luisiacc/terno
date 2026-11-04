@@ -847,6 +847,38 @@ export class ContactIndex {
     return { name: this.names[id]!, email: this.emails[id]! };
   }
 
+  /**
+   * Plan 133 §5.1: who has this exact word as a name or address token, best first. Not a prefix ranking: a word of a
+   * sentence ("tom") either is someone's token or isn't, and `suggest` would answer "tomorrow" with Tomás. Entries are
+   * sorted, so the exact ones open each range and the walk stops there.
+   */
+  resolveExact(token: string, o: { accountId?: number; limit?: number } = {}): ContactHit[] {
+    const limit = Math.max(1, Math.min(o.limit ?? 8, 20));
+    // "jean-luc" is two tokens here: the first says who
+    const t = fold(token.trim()).split(TERM_SPLIT).find(Boolean)?.slice(0, MAX_TOKEN);
+    if (!t) return [];
+    const bytes = encodeString(t);
+    const bit = o.accountId === undefined ? 0 : this.accountBit(o.accountId, false);
+    const found = new Set<number>();
+    const take = (id: number) => {
+      const f = this.flags[id]!;
+      if (f & DEAD || f & OWN || (f & SPAM && !(this.sent[id]! > 0))) return;
+      found.add(id);
+    };
+    const m = this.main;
+    const [from, to] = segmentRange(m, bytes);
+    for (let i = from; i < to && m.len[i] === bytes.length; i++) take(m.ids[i]!);
+    for (const d of this.merging ? [this.merging, this.delta] : [this.delta]) {
+      const [lo, hi] = deltaRange(d, t);
+      for (let i = lo; i < hi; i++) if (d.tok[i]!.length === t.length) take(d.id[i]!);
+    }
+    return [...found]
+      .map((id) => ({ id, score: this.key[id]! * (bit && this.accounts[id]! & bit ? SAME_ACCOUNT : 1) }))
+      .sort((a, b) => b.score - a.score || this.last[b.id]! - this.last[a.id]! || a.id - b.id)
+      .slice(0, limit)
+      .map((x) => this.hit(x.id));
+  }
+
   /** A candidate's score, matched through a token of class `cls`; `whole`: a term is one of its whole tokens. */
   private score(id: number, cls: number, whole: boolean, bit: number): number {
     let s = this.key[id]! * CLASS_WEIGHT[cls]!;

@@ -195,6 +195,8 @@ export interface SendCommand {
   scheduledAt?: number;
   /** plan 116: one send of a claimed forward: only while that send isn't queued yet (STALE "forwardGone" otherwise) */
   forward?: { id: number; chunk: number };
+  /** plan 133 §8: a draft's generation becomes this message's, in this transaction */
+  writing?: import("./writing").GenerationTransfer;
   now: number;
 }
 
@@ -540,6 +542,53 @@ export interface MailStore {
     clear(): Promise<void>;
     /** the bounds: pending rows past their moment, then the oldest results over `maxRows`; how many went */
     prune(now: number, maxRows: number): Promise<number>;
+  };
+
+  /**
+   * Plan 133: what drafting reads and keeps. Mail content: only ever behind renderer-only RPCs. Not exported, not
+   * synced, not searched; an account takes its rows with it.
+   */
+  writing: {
+    corpus: {
+      /** Sent mail worth learning from (no drafts, spam, trash, body-less, oversized or unchanged AI text), newest first by (date, id). No bodies. */
+      headers(p: { accountId: number; before?: import("./writing").CorpusCursor; limit: number }): Promise<import("./writing").CorpusHeader[]>;
+      /** Bodies for chosen ids (at most CORPUS_TEXTS_MAX, at most 64 KB each). */
+      texts(ids: readonly number[]): Promise<import("./writing").CorpusText[]>;
+      /** Which of these `headers` would return. */
+      usable(ids: readonly number[]): Promise<number[]>;
+    };
+    /** Newest first by date, exact address in To or Cc, usable body. Bounded candidate pages, in slices. */
+    sentTo(p: { addresses: readonly string[]; accountId?: number; limit: number }): Promise<import("./writing").SentToResult>;
+    /** Threads with this person on this account, newest first: mail to them, mail from them; no spam or trash. */
+    threadsWith(p: { address: string; accountId?: number; exclude?: number; limit: number }): Promise<number[]>;
+    /** Headers first, then body prefixes for the ids it selects. Never reads every body. */
+    threadContext(threadId: number, budget: import("./writing").ThreadBudget): Promise<import("./writing").ThreadContext | null>;
+    profiles: {
+      /** Single lookups by identity, in the order asked; a missing one is left out. */
+      read(keys: readonly { scopeKey: string; language: string }[]): Promise<import("./writing").WritingProfileRow[]>;
+      /** A page by (scope_key, language), optionally one scope or account. */
+      list(p: { scope?: import("@terno/core").VoiceScope; accountId?: number; after?: { scopeKey: string; language: string }; limit: number }): Promise<import("./writing").WritingProfileRow[]>;
+      /** One pass's rows and the learner's checkpoint, in one commit; the bounds apply in it. An edited row keeps its content. */
+      commit(c: import("./writing").ProfilesCommit): Promise<void>;
+      /** A model's judgment, resetting `new_since`; false when it was edited meanwhile or is gone. */
+      judge(w: import("./writing").ProfileJudgmentWrite): Promise<boolean>;
+      /** The user's edit, pinning the row; false when it's gone or doesn't fit. */
+      edit(e: import("./writing").ProfileEdit): Promise<boolean>;
+      /** Unpins and removes it: the next pass builds it again. */
+      reset(scopeKey: string, language?: string): Promise<void>;
+      /** "Learn from my sent mail" off: judgments go, counts stay until cleared. All of them, or one account's. */
+      clearJudgments(accountId?: number): Promise<void>;
+      /** Every profile and generation, and these settings, in one commit. */
+      clear(stateKeys: readonly string[]): Promise<void>;
+    };
+    generations: {
+      /** A commit of model text into a draft (the latest for a draft wins); false when that draft or generation is gone. */
+      commit(c: import("./writing").GenerationCommit): Promise<boolean>;
+      forDraft(draftId: number): Promise<import("./writing").GenerationRow | null>;
+      forMessage(messageId: number): Promise<import("./writing").GenerationRow | null>;
+      /** What people changed: sent rows with both texts, newest first. */
+      pairs(p: { accountId: number; address?: string; limit: number }): Promise<{ generated: string; final: string; address: string; at: number }[]>;
+    };
   };
 
   /**
