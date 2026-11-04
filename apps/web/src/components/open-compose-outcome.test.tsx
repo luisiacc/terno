@@ -14,36 +14,29 @@ it("composeLanding names the draft it made, resumed, converted or was sent to; a
   try {
     h.drafts.forgetDraft(h.key);
     const told: string[] = [];
-    let created: Awaited<ReturnType<typeof composeLanding>> = { kind: "none" };
-    await act(async () => { created = await composeLanding("reply", 7, 0, undefined, undefined, { onLanded: (l) => told.push(`${l.kind}:${l.key}`) }); });
-    await h.flush();
+    const landing = async (open: () => ReturnType<typeof composeLanding>) => {
+      const out: { landed?: Awaited<ReturnType<typeof composeLanding>> } = {};
+      await act(async () => { out.landed = await open(); });
+      await h.flush();
+      return out.landed;
+    };
+    const created = await landing(() => composeLanding("reply", 7, 0, undefined, undefined, { onLanded: (l) => told.push(`${l.kind}:${l.key}`) }));
     expect(created).toMatchObject({ kind: "created" });
     const key = (created as { key: string }).key;
     expect(told).toEqual([`created:${key}`]);
     expect(opened(h).map((d) => d.key)).toEqual([key]);
-
-    let resumed: typeof created = { kind: "none" };
-    await act(async () => { resumed = await composeLanding("reply", 7); });
-    expect(resumed).toEqual({ kind: "resumed", key });
-
-    let converted: typeof created = { kind: "none" };
-    await act(async () => { converted = await composeLanding("replyAll", 7); });
-    await h.flush();
-    expect(converted).toEqual({ kind: "converted", key });
+    expect(await landing(() => composeLanding("reply", 7))).toEqual({ kind: "resumed", key });
+    expect(await landing(() => composeLanding("replyAll", 7))).toEqual({ kind: "converted", key });
 
     await act(async () => { pinDraft(key); });
-    let pinned: typeof created = { kind: "none" };
-    await act(async () => { pinned = await composeLanding("reply", 7); });
-    expect(pinned).toEqual({ kind: "pinned", key });
+    expect(await landing(() => composeLanding("reply", 7))).toEqual({ kind: "pinned", key });
     await act(async () => { unpinDraft(key, { focus: false }); });
 
-    let superseded: typeof created = { kind: "resumed", key: "x" };
-    await act(async () => {
+    expect(await landing(() => {
       const first = composeLanding("reply", 8);
       void openCompose("new");
-      superseded = await first;
-    });
-    expect(superseded).toEqual({ kind: "none" });
+      return first;
+    })).toEqual({ kind: "none" });
   } finally { await h.cleanup(); }
 });
 
