@@ -270,7 +270,7 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
     {
       title: "Create a filter",
       description:
-        "Creates a filter for incoming mail. rule = { match: 'all'|'any', conditions: [{ field: from|fromDomain|recipients|subject|body|listId, op: contains|equals|startsWith|endsWith, value, negate? } | { field: 'hasAttachment', op: 'is', value: boolean } | { field: 'ageDays', op: 'gt'|'lt', value: number }], actions: [{ type: archive|trash|spam|markRead|star } | { type: 'addCategory', categoryId } | { type: 'moveToFolder', accountId, folder }] }. Set dryRun to preview matches without saving.",
+        "Creates a filter for incoming mail. rule = { match: 'all'|'any', conditions: [{ field: from|fromDomain|recipients|subject|body|listId, op: contains|equals|startsWith|endsWith, value, negate? } | { field: 'hasAttachment', op: 'is', value: boolean } | { field: 'ageDays', op: 'gt'|'lt', value: number }], actions: [{ type: archive|trash|spam|markRead|star } | { type: 'addCategory', categoryId }] }. Set dryRun to preview matches without saving.",
       inputSchema: { name: z.string().min(1).max(120), rule: filterRuleSchema, dryRun: z.boolean().default(false) },
     },
     async ({ name, rule, dryRun }) => {

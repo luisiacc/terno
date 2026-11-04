@@ -61,7 +61,7 @@ The builder's "then" row gains a folder select beside the category one (`action-
 ### Elsewhere
 
 - **Backups:** an action's account maps by address, as `account` conditions do (waits in `pending`). Folder keys are the server's, so they survive; a missing one just does nothing.
-- **AI generation:** not offered (the wire schema doesn't include it). An agent over MCP may save one; the tool's description says so.
+- **AI generation and agents:** not offered. The AI's wire schema doesn't include it, and MCP's tool doesn't describe it: an agent has no way to list folder keys.
 - **Filter names:** "Uber → Recibos" isn't rewritten on rename, as a category filter's isn't today.
 
 ## Out of scope
@@ -98,3 +98,21 @@ Eight points. Four change the design, three are recorded and left, one was wrong
 6. **Left, known edge: a rename while a move is queued.** The op still names the old path, so it fails with the folder-gone error and the mail stays in Archive. Folder changes hold the queue while they run, so this needs a rename in that exact window; drops have the same edge. Not lost.
 7. **Left, known edge: rename inside the Undo's ten seconds.** `SimilarFilters.undo` compares states, so the renamed filter stays and shows in Settings. Harmless.
 8. **Left, not from this change: a filter waiting in `import:pending` isn't in the next backup.** True of every filter that names an account today.
+
+## What the Codex code review changed
+
+One round (`19db94cb..`), two findings. It looked at both stores, the ops, the undo chain and retargeting, and found nothing else.
+
+1. **MCP advertised an action an agent couldn't use.** No tool lists folder keys, so a Gmail target couldn't be named and `filters.save` refused it. The description no longer offers it (AI writing folder rules is out of scope above). Not a behaviour to test: the description is back to what it was.
+2. **Left, known edge: a sender rule and a body rule to two folders, on IMAP.** Mail arrives without its body, the sender rule moves it to A, and when the body arrives it's no longer in the Inbox, so the body rule's B doesn't apply and its claim stands. The mail is in A; nothing is lost. Treating "claimed by a filter" as "reached the Inbox" would fix it and break something worse: a body fetched weeks later would pull old archived mail out into a folder. Knowing for sure needs a stored "was in the Inbox on arrival", which this combination doesn't justify.
+
+## Known edge cases (left on purpose)
+
+- The two left above (revisions 6 and 7), and finding 2 of the code review.
+- **Moving mail out of a folder doesn't turn its filter off** (plan 90's "Stop filing" is out of scope): new mail from that sender keeps going there until the filter is off in Settings, or a line for another folder retargets it.
+
+## Verification
+
+Unit, conformance (SQLite native, WASM, IndexedDB), IMAP integration against imapkit (arrival moved on the server, kept copied, undo, rename, delete, backup), `folder-drop.spec.ts` in all four designs, the related specs, the UI perf gates, and light and dark screenshots of the snack and the builder looked at.
+
+`filter-folder.perf.test.ts`, 50k threads and 250 folders, 200 new messages all moved in one slice: about 86 ms against 42 ms for an archive filter (the gate first measured 181 ms: a second recompute of every thread, removed). Budgets: 120 ms, and 2.5× the archive's. Single arrivals, the normal case, are a fraction of that, and a rule that doesn't match costs nothing.
