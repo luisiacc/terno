@@ -1,6 +1,6 @@
 # Plan 133: AI drafting
 
-- **Status:** third version, after two Codex rounds. The pure core is built (`packages/core/src/writing/`, `packages/ai/src/writing.ts`) and the thin experiment has run on synthetic mail: read "What the experiment found" before the sections it changes (§3, §4, §6.3 to §6.7). No store, RPC or UI yet. Your blind read (§11) is still the release gate, and it hasn't happened.
+- **Status:** third version, after two Codex rounds. The pure core is built (`packages/core/src/writing/`, `packages/ai/src/writing.ts`), the thin experiment has run on synthetic mail, and the backend is built (steps 2, 3, 5, 6 and the data side of 9): read "What the experiment found" and "What building it changed" before the sections they change. The composer and Settings work from "Composer contract" at the end. No UI yet, no real-model proof of this path yet, no Codex review of this code yet. Your blind read (§11) is still the release gate, and it hasn't happened.
 - **Builds on:** plan 131 (base), plan 85 §6, decisions 9 and 10, revisions 4, 5, 7, 9, 11, plans 16, 44, 60, 93, 115, 130 (the composer), plan 18 (recipients and sent-mail reading).
 
 ## The requests
@@ -574,6 +574,30 @@ Second-pass judge on notes: nothing got past for it to catch. Invented samples, 
 - **"What the profile really saves":** the plan's case for model-judged profiles assumed they'd carry the voice. On this corpus, counting does.
 - **§6.5's first draft** was too permissive on what a draft may add and too prescriptive about filling gaps. "Mark the open points with [placeholders]" produced invented promises wearing a placeholder.
 
+## What building it changed
+
+Built to the decisions above: the profile is local by default, sends no other person's prose and needs no consent; traits and notes wait behind "Let AI study my style".
+
+- **A pass is a recount, not a subtraction (§2).** Nothing is kept per message, so a removal or a message leaving the window can't linger. A pass rebuilds one account from its window; the log only says when: changes to the window reaching a twentieth of it (between 1 and 20). Reading bodies is the expensive part, and a habit barely moves in one message. A person's habits can lag by those few messages, but a draft reads messages to them fresh.
+- **"You" is merged from the accounts' rows,** with no mail read twice: rates and shares weighted by volume, lengths a weighted median of medians. An estimate, and enough: the experiment found this level matters only where an account has no profile. It's also what makes resuming simple: accounts done before a quit aren't read again.
+- **The learner reads the log at most every 30 s when woken by changes.** A sync's burst shouldn't read the log twice over. There's no timer, so the last changes of a burst wait for the next wake-up or start. Nothing depends on it being sooner.
+- **A pruned log costs a walk of headers,** compared with the saved window, rather than the rebuild the search engines take. The log is byte-bounded, so this is the ordinary case after a long time closed.
+- **Unchanged generations outlive their bound as markers (§9).** Past 200 rows or 1 MB, oldest first, a pair goes, but an unchanged send fades to a row with no text (at most 20,000), or that message would rejoin the corpus at the next pass and the voice would drift. No third table.
+- **`writing_generations` has a real foreign key to drafts,** and `op_id`, and `draft_generation` is text, as drafts' is. A discarded draft's row goes with it: discards are not counted as a weak negative yet, since nothing would read the count.
+- **A new partial index, `messages_sent_date`.** Reading sent mail by date otherwise walks the whole date index for an account with few sent. It's built in the migration, within the gate. IndexedDB has the same as an in-memory partial index, with no persisted change.
+- **A send nobody vouched for reads as the model's.** Only the renderer knows what was typed. An agent's send of a draft with a generation, or a renderer send without `authoredText`, stays out of the corpus. Losing a sample costs nothing; a sample of the model's own text teaches the wrong voice.
+- **`sentTo` says `unavailable` rather than `none` when it can't tell:** past its 5,000 look-alikes, or with a recipient list too long to read (over 16 KB), and `correspondents` says they've been written to. A message to more people than that isn't evidence of how you write to one anyway.
+- **Unchanged AI text is out of `sentTo` too,** so the model never reads its own drafts as examples.
+- **Small windows get proportionate output:** a quarter of the window, up to 8,000. Plan 133 §6.3's 8,000 against an unknown local model's 4,096 could never fit, so `ComposeOptions.maxTokens` is new.
+- **The message answered is cut to 12,000 tokens, and read to 128 KB.** Its tail can only be the tail of what was read: a message longer than that loses its real end. A huge message otherwise spends most of a cloud window, at the user's cost.
+- **The refinement snapshot is the assembled prompt, keyed by what it was made from:** the thread's stamp, recipients, subject, account, instructions, signature and target. A profile refreshed during a session doesn't invalidate it, on purpose: that's what keeps cache 2.
+- **`used.levels` lists profiles used, not lines rendered.** A person who reads just like their account renders nothing, and "In your voice with Tom" is still true.
+- **Corrections are worked out at assembly** from the bounded pairs, rather than stored: repeating 3 times and once among the newest 6, at the person if it's about them, else the account. Nothing to migrate or back off. They're lines in `<voice>`, not `do`-style rules in `system`, because they come from mail-adjacent text.
+- **Errors leave as their kind.** Failures that aren't the provider's verdict are reported by name and stack only (`scrubbed`), since a JSON parser's message quotes what it was parsing.
+- **Fixed in passing:** `capture-repair-upgrade.int.test.ts` was already failing at plan 134's v49 (it didn't drop that index). `phraseSteps` replaced `stockPhrases`'s body so it can yield; past 1,000 qualifying sequences only the likeliest are compared. Tests updated for the new tables: `idb.uncertain-upgrade.test.ts`, `capture-repair-upgrade.int.test.ts`, and `legacy.worker.ts` in the web e2e.
+
+**Not built, or not proven:** the composer and Settings UI (steps 7, 8). Step 9's correction guidance is built; whether it helps is a question for the eval. A real-model run through this path. The learner's slices measure 8 ms, but the event loop's longest wait during a whole pass on SQLite measured 35 ms, once: the gate allows 60 ms rather than the 8 ms target, and I haven't traced it (a commit, or garbage collection from the phrase counting). Prompt-version staleness of judgments is noticed only after a pass, not when a draft needs one. Message identity on IMAP is relied on rather than tested end to end: the local row keeps its id through `sendCopies.record`, and only the adoption by RFC id is in the conformance suite. A row whose message is deleted and re-ingested loses provenance, and the mail would then count as the user's.
+
 ## The Codex reviews
 
 Both by `gpt-6.1-sol`, high, read-only, against `f787771c`.
@@ -598,3 +622,81 @@ Two were later overridden by the user's direction, for stated reasons:
 10. Deltas go stale when parents change: whole profiles, differences computed at assembly (§1).
 11. Voice needs situations, and edits need caution: `situations` as an eval arm, corrections only when repeated (§3, §8).
 12. A reproducible gate and an earlier experiment: hard checks beside your read, a bounded own-mail fixture, a thin experiment first, and existing text as notes in the first release (§10.2, §11, §12).
+
+## Composer contract
+
+What the renderer builds on. Types are in `packages/core/src/writing/contract.ts`, parameters in `packages/core/src/rpc/contract.ts`. Everything is renderer-only: MCP gets `FORBIDDEN`, and none of it is in `AppSettings`, an account or `app.bootstrap`.
+
+### Errors
+
+A failed call rejects with `RpcError`. `CANCELLED` means it was stopped. Otherwise `details.aiErrorKind` is an `AiErrorKind`, for `errorHelp(kind)`:
+
+| Kind | What the row does |
+|---|---|
+| `not_configured` | No provider or key, or drafting is off: "Drafting needs an AI provider" with the link to Settings → AI |
+| `refused` | "The model declined…"; discard what streamed |
+| `unsupported` | Too long for this model; the message says what to shorten |
+| `timeout`, `unavailable`, `rate_limited`, `auth`, `blocked` | Show the message and Try again; **keep the partial text** with Insert: the stream's last event came before this rejection. No automatic retry |
+| `invalid_output` | Only from `parseIntent` and judgments, which handle it themselves |
+
+`NOT_FOUND` means the thread or account has gone.
+
+### `ai.compose`
+
+`{ requestId, session, accountId, kind: "reply"|"new", threadId?, answeringMessageId?, to, cc?, subject?, needsSubject?, instruction?, draft?, previousDraft?, attachments?: filenames, timezone }`
+
+- **`requestId`** is unique per call, at most 64 characters. Stop with `ai.cancel({ requestId })`. It's also stopped by the window closing, the provider or a task's model changing, and shutting down: all reject with `CANCELLED`, and nothing has been written.
+- **`session`** is the draft's refinement session (the draft key does nicely). Regenerate and "Shorter" in one session with the same recipients, subject and settings assemble nothing. Any change to the thread, recipients, signature, instructions or model assembles again, by itself. Call `ai.composeEnd({ session })` when the strip goes.
+- **`instruction`**, at most 1,000 characters; empty answers what the thread needs. Send "Shorter. Keep every fact and commitment." for the chip, with `previousDraft`.
+- **`draft`** is the words already in the body, as notes: they're kept as close as possible. **`previousDraft`** is the text being refined.
+- **Stream:** `client.on("aiCompose", ({ requestId, text }) => …)`: append `text`, ignore other `requestId`s. Text only, the body only: never the subject, a signature or the model thinking aloud. About every 30 ms, and the last one arrives before the call returns.
+- **Returns:**
+
+```ts
+| { status: "waitingBody"; messageId: number }   // "Still downloading this message"; ask again when the thread changes. Nothing was sent.
+| { status: "done";
+    text: string;             // the body, trimmed: commit this, not the stream's concatenation
+    subject: string | null;   // only if needsSubject
+    stop: "end" | "length";   // "length": keep it, with "This was cut off"
+    used: {
+      levels: VoiceScope[]; personFromOtherAccount: boolean; examples: number; pastConversations: number; threadMessages: number;
+      history: "none" | "found" | "unavailable";  // "unavailable": they're known; never call them new
+      learning: boolean;      // "Still learning how you write"
+      inboundSnippetOnly: boolean;  // too big to keep: say it read only the snippet
+      language: string; provider: AiProviderId; model: string; reused: boolean;
+    };
+    checks: {
+      specifics: { kind: "number"|"amount"|"date"|"url"|"address"; text: string }[];  // the strip's "Check: …" line
+      placeholders: string[];  // in order: the caret goes to the first
+    };
+  }
+```
+
+The body is yours to open or fetch: `waitingBody` only says the text isn't here. An open reader is already fetching it.
+
+### `ai.resolveIntent`
+
+`{ requestId, instruction, surface: {kind:"thread",threadId} | {kind:"list"} | {kind:"draft",recipients}, accountId?, waitForContacts? }` returns `{ decision, fromAccountId, confirmFailed }`.
+
+- **`decision`** is `IntentDecision`: `{kind:"route",route}` or `{kind:"ask",question}`, per §5.2; or `{kind:"wait",tokens}`: show "Looking up Tom…" and call again with `waitForContacts: true`, which answers when the index is warm, with nothing to poll. A `wait` from that second call means the index can't be built here: treat it as nobody.
+- `confirm` never reaches you: it's resolved inside, sending the instruction and matched names at most. **`confirmFailed`:** the model couldn't say, so the route stayed as it was; the row says so.
+- **`fromAccountId`:** for a new message, the account that last wrote to them; null keeps the current one. To, From and where it's going must be on screen before any text.
+
+### `writing.commitGeneration` and `compose.send`: provenance
+
+- **On commit** of model text into a draft (not a preview): `writing.commitGeneration({ accountId, draftId, draftGeneration, address, text })`, with the first To. `{ ok: false }` means that draft has gone or moved on; that isn't an error. Do this after the first save has given the draft its id. A later commit replaces it.
+- **On send and Send Later:** add `authoredText` to `compose.send` and `compose.schedule`: the body from the controller as the user left it, before signature and quote. It's compared with what was committed, ignoring line endings and trailing space. It travels with a scheduled send. **Without it, the message counts as the model's and stays out of learning,** so send it from every path, with or without AI in the draft: the shared `sendDraft`.
+
+### `writing.*`: Settings
+
+| RPC | What it's for |
+|---|---|
+| `writing.prefs.get` | `{ global: { enabled, instructions, useSentMail }, accounts: { [id]: { instructions?, useGeneral?, useSentMail? } } }`. No side effects, so the row can read it at boot |
+| `writing.prefs.set` | `{ global?: partial, account?: { accountId, prefs: partial or null } }`, returns the whole. Off stops the job and takes the judgments |
+| `writing.activate` | Settings → AI → Drafting opened. The first compose, intent or profile list does this too |
+| `writing.profiles.list` | `{ scope?, accountId?, after?, limit? }` returns `{ items: WritingProfileView[], next, status }`. `status`: `{ state: "off"|"idle"|"learning"|"ready", messages, updatedAt, study }` for "Learned from 412 messages, updated yesterday". `language: ""` is the scope's own row; `"en"`/`"es"` are kept only when they differ enough to be worth it |
+| `writing.profiles.edit` | `{ scopeKey, language?, phrases?, greetings?, signOffs?, judgment? }`: pins it. `newSince > 0` on a pinned row offers "Update", which is `reset` |
+| `writing.profiles.reset`, `.rebuild`, `.clear` | Per scope, per account or all, all, and everything: never gated. `clear` belongs with Clear AI data, beside `ai.summaries.clear` |
+| `writing.studyStyle` | `{ requestId, confirm? }`. Without `confirm`, nothing is sent: `{ status: "consent", provider, messages, tokens, usd, accountIds }` for the consent wording (`usd` null where the price is unknown). Show it, and call again with `confirm: { provider, accountIds }`. Then `{ status: "started", total }`, with `aiStudy` events `{ requestId, state: "running"|"done"|"failed"|"cancelled", done, total, errorKind? }`, stopped by `ai.cancel`. `{ status: "nothing" }`: not enough mail yet. A local provider asks nothing. A new account or provider asks again |
+
+Clear AI data and the strip's words are yours. Every string here's in the catalog already: `errors.ai.draftFailed`, `draftingOff`, `draftTooLarge`, `errors.writing.profileGone`, `profileTooLarge`.
