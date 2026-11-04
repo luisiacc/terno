@@ -1,3 +1,4 @@
+import type { FolderMoved, MoveToFolderResult } from "./folder-move";
 import type { ProviderCooldownStore, OpAdmission } from "./provider-cooldown";
 import type { AutocompleteSource } from "./autocomplete-source";
 import type {
@@ -24,7 +25,7 @@ import type {
   QuickActions,
   Reason,
   Reminder,
-  SimilarAction,
+  SimilarTarget,
   SimilarOffers,
   SimilarPage,
   SimilarScope,
@@ -386,6 +387,14 @@ export interface MailStore {
      * learning signal.
      */
     restore(c: { messages: readonly MessageState[]; now: number }): Promise<{ threadIds: number[]; opIds: string[] } & FlagReconciliation>;
+    /**
+     * Plan 127: threads into one of their account's folders (others of another account, or in Trash or Spam, are
+     * skipped), out of `from` and out of the Inbox unless kept there. Local change and ops, atomically: a thread's
+     * membership shows at once, and it's out of the Inbox the way an archive takes it (same flags, intents and undo).
+     */
+    moveToFolder(c: { threadIds: readonly number[]; accountId: number; folder: string; from: string | null; now: number }): Promise<MoveToFolderResult & FlagReconciliation>;
+    /** Plan 127: an undo's first half: what a move put in the folder comes out (`restore` then brings the Inbox back). */
+    leaveFolder(c: { moved: FolderMoved; now: number }): Promise<{ threadIds: number[]; opIds: string[] }>;
   };
 
   sync: {
@@ -668,7 +677,7 @@ export interface MailStore {
   /** Plan 63: received mail similar to some threads (same sender, sender + subject, domain or list), for archive, trash and spam. */
   similar: {
     /** what the threads' root inbound messages share (≤ 200 read), with eligible counts; targets still in place count too */
-    offers(threadIds: readonly number[], action: SimilarAction): Promise<SimilarOffers>;
+    offers(threadIds: readonly number[], action: SimilarTarget): Promise<SimilarOffers>;
     /** plan 80: the same shared scopes, not counted (the sender's display name with them) */
     scopes(threadIds: readonly number[]): Promise<{ senderName: string | null; scopes: SimilarScope[] }>;
     /**
@@ -676,7 +685,7 @@ export interface MailStore {
      * `cursor` (this store's own token from the last page's `next`; null: from the start, and the
      * targets still in place join). Ids are threads in place, not starred or replied unless targeted.
      */
-    resolvePage(scope: SimilarScope, action: SimilarAction, targets: readonly number[], cursor: number | null, limit: number): Promise<SimilarPage>;
+    resolvePage(scope: SimilarScope, action: SimilarTarget, targets: readonly number[], cursor: number | null, limit: number): Promise<SimilarPage>;
     /** plan 90: each thread's root inbound message (what sender and subject rules decide on) */
     roots(threadIds: readonly number[]): Promise<number[]>;
     /** plan 91: every thread is known not to be from a person (its facts computed: person = 0, never still unknown) */

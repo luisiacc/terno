@@ -15,6 +15,8 @@ import { sqlRecipientReceipts } from "./recipient-receipts";
 import { detachedReply } from "@terno/store";
 import { sqlSendCopies } from "./send-copies";
 import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, clearRecipientWarning, sendWarningFlags, submissionAccepted } from "@terno/store";
+import { isFolderOp } from "@terno/store";
+import { leaveFolder, moveThreadsToFolder, settleFolderOp } from "./folder-move";
 import { carryFolder, clearFolder, countFolderMessages, listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { exportBody, exportIds, exportMessages } from "./folder-export";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
@@ -490,6 +492,13 @@ export class SqlMailStore implements MailStore {
         }
         return { threadIds: r.threadIds, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }),
+    moveToFolder: async (c) =>
+      this.db.tx(() => {
+        const flagBefore = flagEpochs(sqlFlags(this.db));
+        const r = moveThreadsToFolder(this.db, c);
+        return { threadIds: r.threadIds, opIds: r.opIds, before: r.archived.before, moved: r.moved, kept: r.kept, leftInbox: r.archived.threadIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
+      }),
+    leaveFolder: async (c) => this.db.tx(() => leaveFolder(this.db, c)),
   };
 
   /** Provider ops for a locally applied action, one per account. */
@@ -717,6 +726,8 @@ export class SqlMailStore implements MailStore {
         const touched: number[] = [];
         const deltas: ModelDelta[] = [];
         if (!op) return { touched, deltas };
+        // plan 127: Gmail's labels change now, and membership stops reading the op
+        if (isFolderOp(op.kind)) touched.push(...settleFolderOp(this.db, op, true));
         if (op.kind === "send") sqlAssets(this.db).unlink("op", id);
         if (op.kind === "send" && result?.sendAccepted) { sqlSendCopies(this.db).markSubmissionAccepted(id); publishRecipientReceipt(sqlRecipientReceipts(this.db), id, result.sendAccepted.outcomes, result.sendAccepted.warning); }
         const receipt = sqlSendCopies(this.db).get(id);
@@ -745,6 +756,7 @@ export class SqlMailStore implements MailStore {
         const current = getOp(this.db, id);
         if (current && current.state !== "running") return current.state;
         const state = failOp(this.db, id, error, retryable, now, park);
+        if (state === "failed" && current && isFolderOp(current.kind)) settleFolderOp(this.db, current, false);
         // plan 17 (Codex R8): a send that failed answered nobody; its thread and what it replied to count again
         const op = state === "failed" ? getOp(this.db, id) : null;
         const localId = op?.kind === "send" ? (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0] : undefined;

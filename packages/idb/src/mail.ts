@@ -1666,7 +1666,7 @@ export function findRuleMatches(c: Ctx, rule: FilterRule, now: number, messageId
 
 const OPPOSITE: Record<string, string> = { markRead: "markUnread", markUnread: "markRead", star: "unstar", unstar: "star" };
 const SUPERSEDABLE = new Set(["read", "star"]);
-const GROUP: Record<string, string> = { markRead: "read", markUnread: "read", star: "star", unstar: "star", archive: "location", trash: "location", spam: "location", notSpam: "location", moveToInbox: "location" };
+const GROUP: Record<string, string> = { markRead: "read", markUnread: "read", star: "star", unstar: "star", archive: "location", trash: "location", spam: "location", notSpam: "location", moveToInbox: "location", moveToFolder: "location", leaveFolder: "location" };
 export const MAX_OP_ATTEMPTS = 8;
 
 const targetOf = (op: R) => JSON.parse(op.target_json) as { messageIds?: number[] } & Record<string, unknown>;

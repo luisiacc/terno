@@ -1,6 +1,6 @@
 import { folderRef, listFilterOf, waitingCutoff, type Folder, type ThreadSummary } from "@terno/core";
-import type { FolderCountCursor, FolderPlace, ListParams, Page, ProviderFolder, ScopeParams } from "@terno/store";
-import { keepInPage, mergedBehind } from "@terno/store";
+import type { FolderCountCursor, FolderPlace, LeaveFolderPayload, ListParams, MoveToFolderPayload, Page, ProviderFolder, ScopeParams } from "@terno/store";
+import { applyFolderOp, isFolderOp, keepInPage, mergedBehind } from "@terno/store";
 import { forgetStretch, pendingAfter, stretch, threadStretch } from "./folder-export";
 import { FILTER_TEST, seekAfter, T, threadMerges, toSummary, VIEW_TEST, type Ctx, type R } from "./mail";
 import type { Key } from "./mem";
@@ -21,6 +21,18 @@ const userLabels = (m: R): string[] => {
   }
 };
 
+/** Plan 127: the folder ops on their way for this message, oldest first. */
+export function pendingFolderOps(c: Ctx, messageId: number): R[] {
+  const ops = T(c, "ops");
+  return T(c, "op_targets")
+    .by("message", messageId)
+    .flatMap((t) => {
+      const op = t.grp === "location" ? ops.get(t.op_id) : undefined;
+      return op && isFolderOp(op.kind as string) && (op.state === "queued" || op.state === "running") ? [op] : [];
+    })
+    .sort((x, y) => x.seq - y.seq);
+}
+
 /** Rewrites these threads' memberships from their messages; rows that didn't change aren't written. */
 export function refreshFolders(c: Ctx, threadIds: Iterable<number>): void {
   const memberships = T(c, "thread_folders");
@@ -28,18 +40,26 @@ export function refreshFolders(c: Ctx, threadIds: Iterable<number>): void {
   const messages = T(c, "messages");
   const locations = T(c, "message_locations");
   const folders = T(c, "folders");
+  const ops = T(c, "ops");
   for (const id of threadIds) {
     const t = threads.get(id);
     const keys = new Set<string>();
     if (t) {
       // a pending rename's aliases (round 16 #1): the account's few folders that have any, by the partial index
       const aliased = folders.count("aliased", t.account_id) ? folders.by("aliased", t.account_id) : null;
+      // plan 127: a folder move or its undo on its way decides membership, replayed per message: only while one is
+      const moving = ops.count("folder_moves", t.account_id) > 0;
       for (const m of messages.by("fk_thread_id", id)) {
         if (m.is_trash || m.is_spam) continue;
-        for (const l of userLabels(m)) keys.add(l);
+        const own = moving ? new Set<string>() : keys;
+        for (const l of userLabels(m)) own.add(l);
         for (const l of locations.by("fk_message_id", m.id)) {
-          if (ownGeneration(folders.get(t.account_id, l.mailbox), l.uidvalidity as number)) keys.add(l.mailbox as string);
-          if (aliased) for (const f of aliased) if (aliasOf(f, l)) keys.add(f.key as string);
+          if (ownGeneration(folders.get(t.account_id, l.mailbox), l.uidvalidity as number)) own.add(l.mailbox as string);
+          if (aliased) for (const f of aliased) if (aliasOf(f, l)) own.add(f.key as string);
+        }
+        if (moving) {
+          for (const op of pendingFolderOps(c, m.id as number)) applyFolderOp(own, op.kind as string, JSON.parse(op.payload_json as string) as MoveToFolderPayload | LeaveFolderPayload);
+          for (const f of own) keys.add(f);
         }
       }
     }

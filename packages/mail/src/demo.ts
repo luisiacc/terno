@@ -1,5 +1,5 @@
 import { demoFolderChange } from "./folder-changes";
-import type { ProviderFolder } from "@terno/store";
+import { isFolderOp, MOVE_TO_FOLDER, type LeaveFolderPayload, type MoveToFolderPayload, type ProviderFolder } from "@terno/store";
 import type { MailProvider, ProviderContext, ProviderRegistry, SyncSink } from "./types";
 
 /**
@@ -102,6 +102,19 @@ export function createDemoProvider(ctx: ProviderContext, latencyMs = 40): MailPr
     async execute(op) {
       await wait();
       if (op.kind === "send") return { providerMsgId: `demo-sent-${op.id}` };
+      // plan 127: the places a server's answer would write (a Gmail-like account's labels change when the op settles)
+      if (gmail || !isFolderOp(op.kind)) return;
+      const ids = op.target.messageIds ?? [];
+      const put = (mailbox: string) => locations.upsertMany(mailbox, DEMO_UIDVALIDITY, ids.map((messageId) => ({ messageId, uid: DEMO_MOVED_UID + messageId, flags: [] })));
+      if (op.kind === MOVE_TO_FOLDER) {
+        const { folder, from } = op.payload as MoveToFolderPayload;
+        await put(folder);
+        if (from !== null) await locations.removeMany(ids, from, { deleted: true });
+      } else {
+        const { folder, back, stays } = op.payload as LeaveFolderPayload;
+        if (back !== null) await put(back);
+        if (!stays) await locations.removeMany(ids, folder, { deleted: true });
+      }
     },
     async createFolder({ parent, name, folders }) {
       await wait();
@@ -149,6 +162,8 @@ export function createDemoProvider(ctx: ProviderContext, latencyMs = 40): MailPr
 
 /** the generation the demo's seeded places have (mock-data's `locations`) */
 const DEMO_UIDVALIDITY = 1;
+/** plan 127: a moved message's UID in its new place: above anything the seed uses */
+const DEMO_MOVED_UID = 1_000_000;
 
 /** places copied or removed a page at a time, a write each and a turn between (a few milliseconds of SQLite) */
 const PAGE = 200;

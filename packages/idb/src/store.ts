@@ -9,6 +9,8 @@ import { bodyOwnership } from "./body-ownership";
 import { iterateBodyTokens, type TextOp } from "@terno/core";
 import { bodyPartRange, decodeBodyPart, assembleBody, prepareBodySnippet, bodyPartWrites, bodyPartCount, BODY_PART_UNITS, bodyTestKey, matchBodyParts, type BodyPartSource, type BodyTest, type BodyTestResults, prepareBodyTokens, browserBodyPreparationFactory } from "@terno/store";
 import { idbCaptureRepairs, idbCaptureStorage, idbCapturePage } from "./capture-repair";
+import { isFolderOp } from "@terno/store";
+import { leaveFolder, moveThreadsToFolder, settleFolderOp } from "./folder-move";
 import { exportBody, exportIds, exportMessages, sliceBody } from "./folder-export";
 import { completeCapture, retryCapture } from "@terno/store";
 class CredentialAdmissionExpired extends Error {}
@@ -1120,6 +1122,13 @@ export class IdbMailStore implements MailStore {
         }
         return { threadIds: r.threadIds, opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
       }),
+    moveToFolder: (o) =>
+      this.command(() => {
+        const flagBefore = flagEpochs(idbFlags(this.c));
+        const r = moveThreadsToFolder(this.c, o);
+        return { threadIds: r.threadIds, opIds: r.opIds, before: r.archived.before, moved: r.moved, kept: r.kept, leftInbox: r.archived.threadIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
+      }),
+    leaveFolder: (o) => this.command(() => leaveFolder(this.c, o)),
   };
 
   private queueActionOps(result: ActionResult, action: ThreadAction, now: number): string[] {
@@ -1365,6 +1374,8 @@ export class IdbMailStore implements MailStore {
         const touched: number[] = [];
         const deltas: ModelDelta[] = [];
         if (!op) return { touched, deltas };
+        // plan 127: Gmail's labels change now, and membership stops reading the op
+        if (isFolderOp(op.kind)) touched.push(...settleFolderOp(this.c, op, true));
         if (op.kind === "send") idbAssets(this.db).unlink("op", id);
         if (op.kind === "send" && result?.sendAccepted) { idbSendCopies(this.db).markSubmissionAccepted(id); publishRecipientReceipt(idbRecipientReceipts(this.db), id, result.sendAccepted.outcomes, result.sendAccepted.warning); }
         const receipt = idbSendCopies(this.db).get(id);
@@ -1393,6 +1404,7 @@ export class IdbMailStore implements MailStore {
         const current = getOp(this.c, id);
         if (current && current.state !== "running") return current.state;
         const state = failOp(this.c, id, error, retryable, now, park);
+        if (state === "failed" && current && isFolderOp(current.kind)) settleFolderOp(this.c, current, false);
         // plan 17 (Codex R8): a send that failed answered nobody; its thread and what it replied to count again
         const op = state === "failed" ? T(this.c, "ops").get(id) : undefined;
         const localId = op?.kind === "send" ? (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0] : undefined;

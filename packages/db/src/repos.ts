@@ -355,6 +355,9 @@ const GROUP: Record<string, string> = {
   spam: "location",
   notSpam: "location",
   moveToInbox: "location",
+  // plan 127: in order with the archive and moveToInbox on the same messages
+  moveToFolder: "location",
+  leaveFolder: "location",
 };
 export const MAX_OP_ATTEMPTS = 8;
 

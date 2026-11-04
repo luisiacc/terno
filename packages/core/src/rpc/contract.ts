@@ -711,7 +711,7 @@ export const contract = {
   /** Plan 63: what these threads share, each scope with how many threads it would move now (targets still in place included; ≤ 200 targets, else nothing). */
   /** Plan 91: the offers after an action (archive, trash, spam, or a move to a category), and whether the targets' senders are automated. */
   "offers.forAction": m<SimilarOffers & { automated: boolean }>()(
-    z.object({ threadIds: z.array(id).min(1).max(200), action: z.union([z.enum(SIMILAR_ACTIONS), z.object({ category: id })]) }),
+    z.object({ threadIds: z.array(id).min(1).max(200), action: z.union([z.enum(SIMILAR_ACTIONS), z.object({ category: id }), z.object({ accountId: id, folder: folderKey })]) }),
   ),
   "similar.offers": m<SimilarOffers>()(z.object({ threadIds: z.array(id).min(1).max(200), action: z.enum(SIMILAR_ACTIONS) })),
   /**
@@ -986,6 +986,19 @@ export const contract = {
   "folders.rename": m<{ renamed: FolderRename[] }>()(z.object({ accountId: id, key: folderKey, name: folderName }), { timeoutMs: 120_000 }),
   /** Plan 107: deletes a folder and its subfolders on the server (IMAP: with their mail). `deleted`: their keys. */
   "folders.delete": m<{ deleted: string[] }>()(z.object({ accountId: id, key: folderKey }), { timeoutMs: 300_000 }),
+  /**
+   * Plan 127: threads into a folder of their account, out of `from` (the folder they're dragged from) and out of the
+   * Inbox, unless they're in a category shown there and none hidden (`kept` of them stay). `threads.undo` takes it back.
+   */
+  "folders.moveThreads": m<{ affected: number; kept: number; undoId: number | null }>()(
+    z.object({ accountId: id, folder: folderKey, from: folderKey.nullable(), threadIds: z.array(id).min(1).max(5000), jobId: jobId.optional() }),
+    { timeoutMs: 300_000 },
+  ),
+  /** Plan 127: the same for a scope, resolved once and sliced with progress. A failure after some slices carries `{ undoId }` in its details. */
+  "folders.moveScope": m<{ affected: number; kept: number; undoId: number | null }>()(
+    z.object({ accountId: id, folder: folderKey, from: folderKey.nullable(), scope: similarScope, jobId: jobId.optional() }),
+    { timeoutMs: 300_000 },
+  ),
   /** Plan 107: what a delete takes with it, for its confirmation (messages in the folder and its subfolders, here) */
   "folders.count": m<{ messages: number; folders: number }>()(z.object({ accountId: id, key: folderKey })),
   /** Plan 107: a folder (or a standard row) below Starred, or not: the list kept, with its revision (as `favoriteFolders`) */

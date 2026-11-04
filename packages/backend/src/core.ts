@@ -10,7 +10,7 @@ import { asciiEmail, decodeText, encodeText, messageOf, textRef, type Account, t
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { AWAITING_AUTH, FlagObservationError, operationFlagFields, type FlagObservation, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
+import { AWAITING_AUTH, FlagObservationError, isFolderOp, operationFlagFields, type FlagObservation, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
 import type { ImapAccountConfig } from "@terno/mail";
 import { IncomingPipeline, ProviderIdentityError, ProviderCooldownError, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type RequestDescriptor, type MailAdmission, type SendPayload, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
@@ -137,7 +137,7 @@ interface AccountLifetime {
 const COUNTS_EVERY_MS = 200;
 
 const accountKindOf = (kind: string | undefined): FieldValueOf<"accountKind"> => (kind === "imap" || kind === "gmail" ? kind : "other");
-const OP_KINDS = new Set<string>(["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar", "send", "move", "toPrimary", "toPromotions", "toSocial", "toUpdates", "toForums", "toNoCategory"]);
+const OP_KINDS = new Set<string>(["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar", "send", "move", "moveToFolder", "leaveFolder", "toPrimary", "toPromotions", "toSocial", "toUpdates", "toForums", "toNoCategory"]);
 const opKindOf = (kind: string): FieldValueOf<"opKind"> => (OP_KINDS.has(kind) ? (kind as FieldValueOf<"opKind">) : "other");
 
 const OP_SUMMARY = {
@@ -151,6 +151,8 @@ const OP_SUMMARY = {
   star: "backend.op.star",
   unstar: "backend.op.unstar",
   move: "backend.op.move",
+  moveToFolder: "backend.op.move",
+  leaveFolder: "backend.op.move",
 } as const;
 
 /** What an op is, for the outbox and failure notices: English, plus the catalog message the renderer shows. */
@@ -2471,8 +2473,8 @@ export class BackendCore {
           const retryAt = pe?.retryable && pe.httpResponse?.status === 403 ? this.google.get(op.account_id)?.retryAt() : undefined;
           state = await this.store.ops.fail(op.id, message, pe ? pe.retryable : true, this.now(), retryPark(pe, retryAt, this.connectivity.inOutage(op.account_id)));
         }
-        // A permanently failed send answered nobody: recomputed lists and counts follow.
-        if (state === "failed" && sending) this.notifyChanged([]);
+        // A permanently failed send answered nobody: recomputed lists and counts follow. So do a folder move's (plan 127).
+        if (state === "failed" && (sending || isFolderOp(op.kind))) this.notifyChanged([]);
       };
       await recovery.record();
     }

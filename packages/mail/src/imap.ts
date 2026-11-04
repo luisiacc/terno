@@ -9,7 +9,7 @@ import type { IncomingMessage, ProviderFolder, ImapLocation, FlagSnapshotPage } 
 import { headerFields, messageAddresses, parseListId, parseRaw, splitIds } from "./mime";
 import { isNetworkError } from "./net-errors";
 import { IncomingProcessingError } from "./incoming-processing";
-import { ImapIdentityError } from "@terno/store";
+import { ImapIdentityError, LEAVE_FOLDER, MOVE_TO_FOLDER, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
 import { sendViaSmtp } from "./smtp";
 import { nameTaken, planImapCreate, ROLE_NAME_HINTS, planImapDelete, planImapRename, refusedBy, serverReason } from "./folder-changes";
 import { BACKFILL_CHUNK_MS, type FolderChange, type FolderMove, ProviderAuthError, ProviderIdentityError, ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
@@ -1648,11 +1648,48 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           for (const item of items) admission.expected.push({ ...item, mailbox: target, uidvalidity: epoch, uid: mapping.find((m) => m.messageId === item.message_id)!.uid });
         }
         else if (mode === "move") await locations.removeMany(items.map((i) => i.message_id), mailbox);
-
+        // plan 127: a copy with no usable map changed nothing of the source: its hold goes (the next pass places the copy)
+        else if (holdOwner) await locations.refused(items.map((l) => l.message_id), holdOwner);
       } finally {
         lock.release();
       }
     }
+  }
+
+  /**
+   * Plan 127: copies of messages that have another one: gone from their mailboxes, by UID, and from the store with
+   * no identity hold (the message is still where its other copy is). The caller has checked that it has one.
+   */
+  async function deleteCopies(c: ImapFlow, items: Loc[], beforeMutation: () => void, admission: { ids: readonly number[]; expected: ImapLocation[] }) {
+    const byMailbox = new Map<string, Loc[]>();
+    for (const l of items) byMailbox.set(l.mailbox, [...(byMailbox.get(l.mailbox) ?? []), l]);
+    for (const [mailbox, group] of byMailbox) {
+      const lock = await c.getMailboxLock(mailbox);
+      try {
+        await assertValidity(c, mailbox, group);
+        if (c.mailbox && c.mailbox.readOnly) throw new ProviderError(L("errors.imap.readOnly"), false);
+        beforeMutation();
+        clearRefusal(c);
+        const deleted = await locations.dispatch(admission.ids, admission.expected, () => c.messageDelete(group.map((l) => l.uid), { uid: true }));
+        if (!deleted) refusedChange(c, L("errors.imap.changeRefused"), "refused");
+        const ids = new Set(group.map((l) => l.message_id));
+        await locations.removeMany([...ids], mailbox, { deleted: true });
+        admission.expected = admission.expected.filter((l) => !(ids.has(l.message_id) && l.mailbox === mailbox));
+      } finally {
+        lock.release();
+      }
+    }
+  }
+
+  /** Plan 127: said before anything changes: a move with no UID map can't keep the message's identity (and a copy couldn't be told from new mail). */
+  async function requireFolderMove(c: ImapFlow, destination: string): Promise<void> {
+    if (!targetedCapability(c, "UIDPLUS")) throw new ProviderError(L("errors.imap.unsafeMove"), false);
+    // the server answered that it isn't there (a lost connection or a busy server is another matter, and goes again)
+    const status = await c.status(destination, { uidValidity: true }).catch((error: unknown) => {
+      if (isNetworkError(error) || temporaryRefusal(error)) throw error;
+      return null;
+    });
+    if (!status) throw new ProviderError(L("errors.folderExport.gone"), false);
   }
 
   async function ensureMailbox(c: ImapFlow, role: Role, fallbackName: string): Promise<string> {
@@ -2311,7 +2348,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
     async execute(op: ProviderOp) {
       if (op.kind === "send") return send(op.payload as SendPayload, op);
-      if (!["markRead", "markUnread", "star", "unstar", "archive", "trash", "spam", "notSpam", "moveToInbox"].includes(op.kind)) throw new ProviderError(`Unsupported operation ${op.kind}`, false);
+      if (!["markRead", "markUnread", "star", "unstar", "archive", "trash", "spam", "notSpam", "moveToInbox", MOVE_TO_FOLDER, LEAVE_FOLDER].includes(op.kind)) throw new ProviderError(`Unsupported operation ${op.kind}`, false);
       const ids = op.target.messageIds ?? [];
       if (ids.length === 0) return;
       await withConnection(async (c, beforeMutation) => {
@@ -2383,8 +2420,66 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           case "moveToInbox": {
             const away = locs.filter((l) => l.mailbox !== r.inbox && l.mailbox !== r.sent);
             const all = away.filter((l) => l.mailbox === r.all);
-            await moveLocations(c, away.filter((l) => l.mailbox !== r.all), r.inbox!, beforeMutation, admission);
+            // plan 127: a copy kept in a folder stays: a role's copies come back, and a folder's only when it's the message's one way back
+            const role = (l: Loc) => l.mailbox === r.trash || l.mailbox === r.junk || l.mailbox === r.archive;
+            const placed = new Set(locs.filter((l) => l.mailbox === r.inbox || l.mailbox === r.all || role(l)).map((l) => l.message_id));
+            const own = new Map<number, Loc>();
+            for (const l of away) if (!placed.has(l.message_id) && !own.has(l.message_id) && l.mailbox !== r.all && !role(l)) own.set(l.message_id, l);
+            await moveLocations(c, [...away.filter(role), ...own.values()], r.inbox!, beforeMutation, admission);
             if (all.length) await moveLocations(c, all, r.inbox!, beforeMutation, admission, "copy");
+            return;
+          }
+          // plan 127: one source per message (`from`, else INBOX, else Archive, else a copy), so a leaveFolder takes it back exactly
+          case MOVE_TO_FOLDER: {
+            const { folder, from, keepInbox } = op.payload as MoveToFolderPayload;
+            await requireFolderMove(c, folder);
+            const moves: Loc[] = [], copies: Loc[] = [], surplus: Loc[] = [];
+            for (const id of ids) {
+              const mine = locs.filter((l) => l.message_id === id);
+              const inFolder = mine.some((l) => l.mailbox === folder);
+              const source = mine.find((l) => l.mailbox === from);
+              if (inFolder) {
+                if (source) surplus.push(source);
+                continue;
+              }
+              const inbox = mine.find((l) => l.mailbox === r.inbox);
+              const archived = mine.find((l) => l.mailbox === r.archive);
+              if (source) moves.push(source);
+              else if (keepInbox) { if (mine[0]) copies.push(inbox ?? mine[0]); }
+              else if (inbox ?? archived) moves.push((inbox ?? archived)!);
+              else {
+                const any = mine.find((l) => l.mailbox !== r.trash && l.mailbox !== r.junk);
+                if (any) copies.push(any);
+              }
+            }
+            await moveLocations(c, moves, folder, beforeMutation, admission);
+            await moveLocations(c, copies, folder, beforeMutation, admission, "copy");
+            await deleteCopies(c, surplus, beforeMutation, admission);
+            return;
+          }
+          case LEAVE_FOLDER: {
+            const { folder, back, toInbox, stays } = op.payload as LeaveFolderPayload;
+            const destination = toInbox ? r.inbox! : back;
+            if (destination) await requireFolderMove(c, destination);
+            else if (!targetedCapability(c, "UIDPLUS")) throw new ProviderError(L("errors.imap.unsafeMove"), false);
+            const moves: Loc[] = [], copies: Loc[] = [], surplus: Loc[] = [], toArchive: Loc[] = [];
+            for (const id of ids) {
+              const mine = locs.filter((l) => l.message_id === id);
+              const here = mine.find((l) => l.mailbox === folder);
+              if (!here) continue;
+              const there = destination ? mine.some((l) => l.mailbox === destination) : false;
+              if (stays) { if (!there) copies.push(here); }
+              else if (destination && !there) moves.push(here);
+              else if (mine.length > 1) surplus.push(here);
+              // its only copy, nowhere else to go: where it came from, as nothing says otherwise. Never deleted
+              else toArchive.push(here);
+            }
+            if (destination) {
+              await moveLocations(c, moves, destination, beforeMutation, admission);
+              await moveLocations(c, copies, destination, beforeMutation, admission, "copy");
+            }
+            await deleteCopies(c, surplus, beforeMutation, admission);
+            if (toArchive.length) await moveLocations(c, toArchive, r.archive ?? (() => ensureMailbox(c, "archive", "Archive")), beforeMutation, admission);
             return;
           }
           default:

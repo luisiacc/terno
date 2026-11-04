@@ -12,6 +12,16 @@ import { normalizeText } from "./text";
 export const SIMILAR_ACTIONS = ["archive", "trash", "spam"] as const;
 export type SimilarAction = DestructiveAction;
 
+/**
+ * Plan 127: what a sweep moves mail to: a place action, or one of an account's folders (its threads not in it yet, not
+ * in Trash or Spam; nothing is left out for being starred or replied: filing isn't disposal).
+ */
+export interface SimilarFolder {
+  accountId: number;
+  folder: string;
+}
+export type SimilarTarget = SimilarAction | SimilarFolder;
+
 export type SimilarScope =
   | { kind: "sender"; email: string }
   /** the same sender and this subject, any numbers in it standing for any number (plan 89) */

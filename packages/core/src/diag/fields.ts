@@ -65,7 +65,7 @@ export const FIELD_TYPES = {
   /** how a quit ended: the database closed, a send kept it open (deferred), or the deadline passed */
   outcome: enumOf("closed", "sending", "forced", "timeout", "other", "unsaved", "rolled-back", "completed"),
   op: enumOf("encrypt", "decrypt", "legacy", "sync", "send", "move", "import", "export", "persist", "rebuild", "restore", "generate", "test", "classify", "other"),
-  opKind: enumOf(...THREAD_ACTIONS, "send", "move", "other"),
+  opKind: enumOf(...THREAD_ACTIONS, "send", "move", "moveToFolder", "leaveFolder", "other"),
   packaged: bool,
   reason: enumOf("clean-exit", "abnormal-exit", "killed", "crashed", "oom", "launch-failed", "integrity-failure", "memory-eviction", "policy", "rate", "size", "schema", "error", "sending", "host", "local-mode", "other"),
   retryable: bool,

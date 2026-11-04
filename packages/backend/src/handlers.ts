@@ -1,7 +1,7 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
 import { capFilterName, categoryRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction, type AccountPrefs, type Reminder, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
 import { L } from "@terno/i18n";
-import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@terno/store";
+import { movedNothing, SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type FolderMoved, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
 import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
@@ -200,11 +200,70 @@ export function createHandlers(b: Backend): Handlers {
     );
     return restored;
   };
+  /** plan 127: what each slice of a folder move changed, by its undo id: an undo takes it out of the folder first */
+  const folderMoves = new Map<number, FolderMoved[]>();
+  /**
+   * Plan 127: a folder move over these threads, one store command per slice. Never a learning signal. An undo id holds
+   * it all, also after a failure partway (the slices that committed stay undoable).
+   */
+  const moveToFolder = async (accountId: number, folder: string, from: string | null, threadIds: readonly number[], progress?: (done: number) => void) => {
+    const listed = (await store.folders.list()).filter((f) => f.accountId === accountId);
+    if (!listed.some((f) => f.key === folder && f.selectable)) throw new RpcError("NOT_FOUND", L("errors.folderExport.gone"));
+    const source = from !== null && from !== folder && listed.some((f) => f.key === from) ? from : null;
+    const moved: FolderMoved[] = [];
+    const before: MessageState[] = [];
+    const ended: Reminder[] = [];
+    const changed = new Set<number>();
+    let kept = 0;
+    let done = 0;
+    const save = () => {
+      if (!moved.length && !before.length && !ended.length) return null;
+      const id = remember(before, ended);
+      folderMoves.set(id, moved);
+      for (const key of folderMoves.keys()) if (folderMoves.size > 16) folderMoves.delete(key);
+      return id;
+    };
+    try {
+      await b.runBudgeted([...threadIds], async (chunk) => {
+        const r = await store.threads.moveToFolder({ threadIds: chunk, accountId, folder, from: source, now: b.now() });
+        for (const t of r.threadIds) changed.add(t);
+        for (const m of r.before) before.push(m);
+        if (!movedNothing(r.moved)) moved.push(r.moved);
+        kept += r.kept.length;
+        b.opsQueued(r.opIds);
+        b.reconcileFlags(r.flagReconcileAccounts);
+        b.notifyChanged(r.threadIds);
+        // a due reminder ends when its conversation is put away, as an archive's does
+        if (r.leftInbox.length) for (const x of await b.reminders.endDue(r.leftInbox)) ended.push(x);
+        progress?.((done += chunk.length));
+      });
+    } catch (error) {
+      const undoId = save();
+      if (undoId === null) throw error;
+      if (error instanceof RpcError) throw new RpcError(error.code, error.message, { undoId }, { expected: error.expected, diag: error.diag, i18n: error.i18n, cause: error });
+      throw new RpcError("INTERNAL", error instanceof Error ? error.message : String(error), { undoId }, { expected: false, cause: error });
+    }
+    return { affected: changed.size, kept, undoId: save() };
+  };
   /** Takes back an action by its undo id: its messages, then the reminders it ended (plan 87). How many threads came back. */
   const undoActs = async (undoId: number, jobId: string | undefined) => {
     const before = undoJournal.take(undoId);
     if (!before) throw new RpcError("NOT_FOUND", L("errors.undoGone"));
     try {
+      // plan 127: out of the folder first: the moveToInbox the restore queues then finds each message in place
+      const moved = folderMoves.get(undoId);
+      if (moved) {
+        const touched = new Set<number>();
+        for (const m of moved) {
+          const r = await store.threads.leaveFolder({ moved: m, now: b.now() });
+          for (const t of r.threadIds) touched.add(t);
+          b.opsQueued(r.opIds);
+          await b.yieldTurn();
+        }
+        folderMoves.delete(undoId);
+        b.notifyChanged([...touched]);
+        if (!before.length) return touched.size;
+      }
       // the reminders it ended first: refused (the cap), nothing is taken back and the Undo stays for a retry
       const ended = endedReminders.get(undoId);
       if (ended && !(await b.reminders.restore([], ended))) throw new RpcError("BAD_REQUEST", L("errors.remindersFull", { max: REMINDERS_MAX }));
@@ -376,6 +435,31 @@ export function createHandlers(b: Backend): Handlers {
       return { items };
     },
 
+    "folders.moveThreads": ({ accountId, folder, from, threadIds, jobId }) => {
+      const progress = progressReporter(b, jobId, threadIds.length);
+      return moveToFolder(accountId, folder, from, threadIds, progress);
+    },
+    "folders.moveScope": async ({ accountId, folder, from, scope, jobId }) => {
+      // resolved once, as a sweep is: filing changes the scope's own "not in it yet"
+      const ids = await resolving(async () => {
+        const cap = b.options.similarCap ?? SCOPE_CAP;
+        const found = new Set<number>();
+        for (let cursor: number | null = null; ; ) {
+          const page = await store.similar.resolvePage(scope, { accountId, folder }, [], cursor, b.options.similarPage ?? SIMILAR_PAGE);
+          for (const id of page.ids) found.add(id);
+          if (found.size > cap) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
+          if (page.next === null) break;
+          cursor = page.next;
+          await b.yieldTurn();
+        }
+        return [...found];
+      });
+      const progress = progressReporter(b, jobId, ids.length);
+      progress(0);
+      const r = await moveToFolder(accountId, folder, from, ids, progress);
+      progress(ids.length);
+      return r;
+    },
     "similar.offers": ({ threadIds, action }) => store.similar.offers(threadIds, action),
     "similar.apply": async ({ threadIds, scope, action, jobId, filterName }) => {
       const targets = new Set(threadIds);
@@ -582,7 +666,7 @@ export function createHandlers(b: Backend): Handlers {
     "offers.forAction": async ({ threadIds, action }) => {
       // known not to be a person's, every one (not merely "not known to be": the facts may still be coming)
       const automated = await store.similar.automated(threadIds);
-      if (typeof action === "string") return { ...(await store.similar.offers(threadIds, action)), automated };
+      if (typeof action === "string" || "folder" in action) return { ...(await store.similar.offers(threadIds, action)), automated };
       await requireCategory(action.category);
       const { senderName, scopes } = await store.similar.scopes(threadIds);
       const offers = await Promise.all(

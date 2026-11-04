@@ -1,10 +1,12 @@
-import { COUNT_CAP, normalizeText, similarScopes, subjectMatcher, type SimilarAction, type SimilarOffers, type SimilarPage, type SimilarScope } from "@terno/core";
+import { COUNT_CAP, normalizeText, similarScopes, subjectMatcher, type SimilarOffers, type SimilarPage, type SimilarScope, type SimilarTarget } from "@terno/core";
 import { ownAddresses, rootRefs, type OwnAddresses } from "./categorize";
 import { T, type Ctx, type R } from "./mail";
 
 /** Where a thread must still be for the action to move it. */
-function inPlace(t: R | undefined, action: SimilarAction): t is R {
+function inPlace(c: Ctx, t: R | undefined, action: SimilarTarget): t is R {
   if (!t || t.in_trash || t.in_spam) return false;
+  // plan 127: a folder move files anything of the account not there yet
+  if (typeof action !== "string") return t.account_id === action.accountId && !T(c, "thread_folders").has(t.id, action.folder);
   return action !== "archive" || t.in_inbox === 1;
 }
 /** Mail the user values: never swept along (an explicit target still is acted on). */
@@ -49,7 +51,7 @@ function keepWalk(c: Ctx, walk: Iterator<unknown>): number {
 }
 
 /** One page, folded into threads: at most `limit` index entries, each checked (subject, own addresses, place, value), never skipped by the walk. */
-function page(c: Ctx, scope: SimilarScope, action: SimilarAction, own: OwnAddresses, targets: ReadonlySet<number>, cursor: number | null, limit: number, keep = true): SimilarPage {
+function page(c: Ctx, scope: SimilarScope, action: SimilarTarget, own: OwnAddresses, targets: ReadonlySet<number>, cursor: number | null, limit: number, keep = true): SimilarPage {
   const messages = T(c, "messages");
   const threads = T(c, "threads");
   // with numbers, the subject's key (plan 89): "Tu pedido 1" and "Tu pedido 2" are one subject
@@ -65,21 +67,21 @@ function page(c: Ctx, scope: SimilarScope, action: SimilarAction, own: OwnAddres
     const m = messages.get(step.value as number);
     if (!m || m.is_sent || own.emails.has(m.from_email) || (subject !== null && !subject(m.subject_norm))) continue;
     const t = threads.get(m.thread_id);
-    if (!inPlace(t, action)) continue;
-    if (kept(t) && !targets.has(t.id)) left.add(t.id);
+    if (!inPlace(c, t, action)) continue;
+    if (typeof action === "string" && kept(t) && !targets.has(t.id)) left.add(t.id);
     else ids.add(t.id);
   }
   // an offer only needs to know there is more: it keeps no walk (a sweep's would be crowded out)
   return { ids: [...ids], kept: [...left], next: keep ? keepWalk(c, walk) : 0 };
 }
 
-const placedOf = (c: Ctx, ids: readonly number[], action: SimilarAction) => {
+const placedOf = (c: Ctx, ids: readonly number[], action: SimilarTarget) => {
   const threads = T(c, "threads");
-  return [...new Set(ids)].filter((id) => inPlace(threads.get(id), action));
+  return [...new Set(ids)].filter((id) => inPlace(c, threads.get(id), action));
 };
 
 /** One page of what a sweep acts on (the first also holds the targets still in place). */
-export function resolveSimilarPage(c: Ctx, scope: SimilarScope, action: SimilarAction, targets: readonly number[], cursor: number | null, limit: number): SimilarPage {
+export function resolveSimilarPage(c: Ctx, scope: SimilarScope, action: SimilarTarget, targets: readonly number[], cursor: number | null, limit: number): SimilarPage {
   const p = page(c, scope, action, ownAddresses(c), new Set(targets), cursor, limit);
   return cursor === null ? { ...p, ids: [...new Set([...placedOf(c, targets, action), ...p.ids])] } : p;
 }
@@ -120,7 +122,7 @@ export function similarScopesOf(c: Ctx, threadIds: readonly number[]): { senderN
 export const OFFER_TARGETS_MAX = 200;
 
 /** Plan 63's offers: what every target shares, each with how many threads it would move now (at least that many when capped). */
-export function similarOffers(c: Ctx, threadIds: readonly number[], action: SimilarAction): SimilarOffers {
+export function similarOffers(c: Ctx, threadIds: readonly number[], action: SimilarTarget): SimilarOffers {
   const own = ownAddresses(c);
   const targets = [...new Set(threadIds)];
   const shared = sharedScopes(c, targets, own);

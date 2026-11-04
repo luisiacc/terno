@@ -1,4 +1,4 @@
-import { COUNT_CAP, normalizeText, similarScopes, subjectTest, type SimilarAction, type SimilarOffers, type SimilarPage, type SimilarScope } from "@terno/core";
+import { COUNT_CAP, normalizeText, similarScopes, subjectTest, type SimilarAction, type SimilarOffers, type SimilarPage, type SimilarScope, type SimilarTarget } from "@terno/core";
 import { ownAddresses, rootRefs, type OwnAddresses } from "./categorize";
 import type { Db, Param } from "./sqlite";
 
@@ -10,6 +10,11 @@ const PLACE: Record<SimilarAction, string> = {
 };
 /** Mail the user values: never swept along (an explicit target still is acted on). */
 const KEPT = "(t.is_starred = 1 OR t.has_sent = 1)";
+/** Where a thread must still be, and whether it's left out: plan 127's folder moves file anything of the account not there yet. */
+const placeOf = (target: SimilarTarget): { placed: string; params: Param[]; kept: string } =>
+  typeof target === "string"
+    ? { placed: PLACE[target], params: [], kept: KEPT }
+    : { placed: "t.account_id = ? AND t.in_trash = 0 AND t.in_spam = 0 AND NOT EXISTS (SELECT 1 FROM thread_folders tf WHERE tf.thread_id = t.id AND tf.folder = ?)", params: [target.accountId, target.folder], kept: "0" };
 /** An offer reads at most this many of the scope's messages: a dominant sender costs the same as any other. */
 export const OFFER_SCAN = 2000;
 
@@ -21,20 +26,21 @@ export const OFFER_SCAN = 2000;
  * all-archived scope can't turn it into a walk of the whole sender. A later
  * page seeks its cursor in the index (`m.id > ?` is a range of it).
  */
-export function pageSql(scope: SimilarScope, action: SimilarAction, own: OwnAddresses, cursor: number | null, limit: number): { sql: string; params: Param[] } {
+export function pageSql(scope: SimilarScope, action: SimilarTarget, own: OwnAddresses, cursor: number | null, limit: number): { sql: string; params: Param[] } {
   const [index, column, value] =
     scope.kind === "domain" ? ["messages_domain", "m.from_domain", normalizeText(scope.domain.trim().replace(/^@/, ""))]
     : scope.kind === "list" ? ["messages_list", "m.list_id", normalizeText(scope.listId.trim())]
     : ["messages_from", "m.from_email", normalizeText(scope.email.trim())];
   // what the rule's evaluators compare: the normalized subject, untrimmed (an offer never has padding); with numbers, its key (plan 89)
   const subject = scope.kind === "subject" ? subjectSql(scope.subject) : null;
+  const place = placeOf(action);
   return {
     sql: `SELECT m.id, m.thread_id, ${subject?.sql ?? "1"} AND m.is_sent = 0 AND m.from_email NOT IN (SELECT value FROM json_each(?)) AS match,
-                 ${PLACE[action]} AS placed, ${KEPT} AS kept
+                 ${place.placed} AS placed, ${place.kept} AS kept
           FROM messages m INDEXED BY ${index} JOIN threads t ON t.id = m.thread_id
           WHERE ${column} = ?${cursor === null ? "" : " AND m.id > ?"}
           ORDER BY m.id LIMIT ?`,
-    params: [...(subject?.params ?? []), JSON.stringify([...own.emails]), value, ...(cursor === null ? [] : [cursor]), limit],
+    params: [...(subject?.params ?? []), JSON.stringify([...own.emails]), ...place.params, value, ...(cursor === null ? [] : [cursor]), limit],
   };
 }
 
@@ -47,7 +53,7 @@ export function subjectSql(subject: string): { sql: string; params: Param[] } {
     : { sql: "m.subject_norm = ?", params: [test.normalized] };
 }
 
-function page(db: Db, scope: SimilarScope, action: SimilarAction, own: OwnAddresses, cursor: number | null, limit: number) {
+function page(db: Db, scope: SimilarScope, action: SimilarTarget, own: OwnAddresses, cursor: number | null, limit: number) {
   const q = pageSql(scope, action, own, cursor, limit);
   return db.all<{ id: number; thread_id: number; match: number; placed: number; kept: number }>(q.sql, ...q.params);
 }
@@ -64,11 +70,13 @@ function fold(rows: ReturnType<typeof page>, targets: ReadonlySet<number>, limit
   return { ids: [...ids], kept: [...kept], next: rows.length === limit ? rows[rows.length - 1]!.id : null };
 }
 
-const inPlace = (db: Db, ids: readonly number[], action: SimilarAction) =>
-  db.all<{ id: number }>(`SELECT t.id FROM json_each(?) j JOIN threads t ON t.id = j.value WHERE ${PLACE[action]}`, JSON.stringify([...new Set(ids)])).map((r) => r.id);
+const inPlace = (db: Db, ids: readonly number[], action: SimilarTarget) => {
+  const place = placeOf(action);
+  return db.all<{ id: number }>(`SELECT t.id FROM json_each(?) j JOIN threads t ON t.id = j.value WHERE ${place.placed}`, JSON.stringify([...new Set(ids)]), ...place.params).map((r) => r.id);
+};
 
 /** One page of what a sweep acts on (the first also holds the targets still in place). */
-export function resolveSimilarPage(db: Db, scope: SimilarScope, action: SimilarAction, targets: readonly number[], cursor: number | null, limit: number): SimilarPage {
+export function resolveSimilarPage(db: Db, scope: SimilarScope, action: SimilarTarget, targets: readonly number[], cursor: number | null, limit: number): SimilarPage {
   const p = fold(page(db, scope, action, ownAddresses(db), cursor, limit), new Set(targets), limit);
   return cursor === null ? { ...p, ids: [...new Set([...inPlace(db, targets, action), ...p.ids])] } : p;
 }
@@ -118,7 +126,7 @@ export const OFFER_TARGETS_MAX = 200;
  * would move now. A count is exact when the scope's first OFFER_SCAN
  * messages are all of it, else at least that many (capped).
  */
-export function similarOffers(db: Db, threadIds: readonly number[], action: SimilarAction): SimilarOffers {
+export function similarOffers(db: Db, threadIds: readonly number[], action: SimilarTarget): SimilarOffers {
   const own = ownAddresses(db);
   const targets = [...new Set(threadIds)];
   const shared = sharedScopes(db, targets, own);

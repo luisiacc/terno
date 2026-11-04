@@ -1,7 +1,7 @@
 import { retainedIncomingBytes } from "./incoming-size";
 import { gmailSendBody } from "./outgoing-wire";
 import { L } from "@terno/i18n";
-import type { IncomingMessage, ProviderFolder } from "@terno/store";
+import { LEAVE_FOLDER, MOVE_TO_FOLDER, type IncomingMessage, type LeaveFolderPayload, type MoveToFolderPayload, type ProviderFolder } from "@terno/store";
 import { CATEGORY_ACTIONS, CATEGORY_LABELS, FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX, isValidEmail } from "@terno/core";
 import { collectGooglePhotos, PEOPLE_API, type GoogleFailureReason } from "./google-photos";
 import type { ParsedMessage } from "./mime";
@@ -418,6 +418,9 @@ const LABEL_OPS: Record<string, { add?: string[]; remove?: string[] }> = {
   // plan 86: a message's category (its inbox tab): the one asked for, none of the others
   ...Object.fromEntries(Object.entries(CATEGORY_ACTIONS).map(([kind, c]) => [kind, { add: c ? [CATEGORY_LABELS[c]] : [], remove: CATEGORY_LABELS.filter((l, i) => l && i !== c) }])),
 };
+
+const folderLabels = ({ folder, from }: MoveToFolderPayload) => ({ add: [folder], remove: from === null ? [] : [from] });
+const leaveLabels = ({ folder, back, stays }: LeaveFolderPayload) => ({ add: back === null ? [] : [back], remove: stays ? [] : [folder] });
 
 /** Where the provider gets access tokens: a refresh token on desktop, Google's token model (memory only) on the web. */
 export interface GmailTokenSource {
@@ -1533,7 +1536,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         for (const id of gmailIds) await api(`/messages/${id}/trash`, { method: "POST", requestRun: op.requestRun });
         return;
       }
-      const labels = LABEL_OPS[op.kind];
+      // plan 127: into and out of an account's folders; the Inbox's own label goes with the archive op that follows
+      const labels = op.kind === MOVE_TO_FOLDER ? folderLabels(op.payload as MoveToFolderPayload) : op.kind === LEAVE_FOLDER ? leaveLabels(op.payload as LeaveFolderPayload) : LABEL_OPS[op.kind];
       if (!labels) throw new ProviderError(`Unsupported operation ${op.kind}`, false);
       for (let i = 0; i < gmailIds.length; i += 1000) {
         await api("/messages/batchModify", { method: "POST", requestRun: op.requestRun, responseMode: "void", body: JSON.stringify({ ids: gmailIds.slice(i, i + 1000), addLabelIds: labels.add ?? [], removeLabelIds: labels.remove ?? [] }) });

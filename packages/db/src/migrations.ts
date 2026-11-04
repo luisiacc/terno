@@ -1233,6 +1233,8 @@ CREATE TRIGGER body_fact_imap_identity_holds_insert AFTER INSERT ON imap_identit
 CREATE TRIGGER body_fact_imap_identity_holds_update AFTER UPDATE ON imap_identity_holds BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
 CREATE TRIGGER body_fact_imap_identity_holds_delete AFTER DELETE ON imap_identity_holds BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
 ` },
+  // plan 127: unsettled folder moves, which membership reads: one probe however many other ops wait
+  { version: 47, name: "pending folder moves", sql: "CREATE INDEX ops_folder_moves ON ops(seq) WHERE kind IN ('moveToFolder', 'leaveFolder') AND state IN ('queued', 'running');" },
 
 ];
 

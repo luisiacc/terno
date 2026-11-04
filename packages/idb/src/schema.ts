@@ -78,7 +78,8 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "reminders", early: true, key: ["thread_id"] },
   { name: "filters", early: true, key: ["id"], autoId: true },
   { name: "filter_applications", key: ["filter_id", "message_id"], indexes: { ...fk("filter_id"), ...fk("message_id") } },
-  { name: "ops", early: true, key: ["id"], indexes: { ...fk("account_id"), state: ["state"] }, track: ["seq"] },
+  // plan 127: `folder_moves`, the unsettled folder moves membership reads (one lookup, however many other ops wait; in memory only)
+  { name: "ops", early: true, key: ["id"], indexes: { ...fk("account_id"), state: ["state"], folder_moves: { columns: ["account_id"], where: (r) => (r.kind === "moveToFolder" || r.kind === "leaveFolder") && (r.state === "queued" || r.state === "running") } }, track: ["seq"] },
   { name: "op_targets", early: true, key: ["op_id", "message_id"], indexes: { ...fk("op_id"), message: ["message_id"] } },
   { name: "user_actions", key: ["id"], autoId: true },
   { name: "dismissed_suggestions", early: true, key: ["key"] },

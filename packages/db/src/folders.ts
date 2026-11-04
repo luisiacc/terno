@@ -1,5 +1,5 @@
 import type { Folder } from "@terno/core";
-import { mergedBehind, type FolderCountCursor, type FolderPlace, type ProviderFolder } from "@terno/store";
+import { applyFolderOp, mergedBehind, type FolderCountCursor, type FolderPlace, type LeaveFolderPayload, type MoveToFolderPayload, type ProviderFolder } from "@terno/store";
 import { threadMerges } from "./ingest";
 import { unreadSlot } from "./migrations";
 import { placeholders, type Db } from "./sqlite";
@@ -45,6 +45,51 @@ SELECT t.id, t.account_id, k.folder, t.last_date, t.unread_count > 0 FROM (
 ) k JOIN threads t ON t.id = k.tid`;
 
 /**
+ * Plan 127: a folder move or its undo on its way decides these threads' membership, replayed per message over what
+ * its labels and locations say, in queue order: IMAP has no location until the server answers, and Gmail's labels
+ * change when the op succeeds. Read from the ops themselves, so settling one is only the refresh its settling does.
+ * `ops_folder_moves` holds only the unsettled ones: with none on its way, this probe is all it costs.
+ */
+function overlayFolderOps(db: Db, json: string): void {
+  if (!db.get(`SELECT 1 FROM ops WHERE kind IN ('moveToFolder', 'leaveFolder') AND state IN ('queued', 'running') LIMIT 1`)) return;
+  const pending = db.all<{ thread_id: number; message_id: number; kind: string; payload_json: string }>(
+    `SELECT m.thread_id, m.id AS message_id, o.kind, o.payload_json
+     FROM messages m JOIN op_targets ot ON ot.message_id = m.id AND ot.grp = 'location' JOIN ops o ON o.id = ot.op_id
+     WHERE m.thread_id IN (SELECT value FROM json_each(?)) AND m.is_trash = 0 AND m.is_spam = 0 AND o.kind IN ('moveToFolder', 'leaveFolder') AND o.state IN ('queued', 'running')
+     ORDER BY o.seq`,
+    json,
+  );
+  if (!pending.length) return;
+  const threads = JSON.stringify([...new Set(pending.map((p) => p.thread_id))]);
+  const byMessage = new Map<number, { thread: number; folders: Set<string> }>();
+  for (const m of db.all<{ id: number; thread_id: number; labels: string | null }>("SELECT id, thread_id, CASE WHEN instr(gmail_labels, 'Label_') THEN gmail_labels END AS labels FROM messages WHERE thread_id IN (SELECT value FROM json_each(?)) AND is_trash = 0 AND is_spam = 0", threads)) {
+    byMessage.set(m.id, { thread: m.thread_id, folders: new Set(m.labels ? userLabels(m.labels) : []) });
+  }
+  for (const r of db.all<{ id: number; folder: string }>(
+    `SELECT m.id, l.mailbox AS folder FROM messages m JOIN message_locations l ON l.message_id = m.id JOIN folders f ON f.account_id = l.account_id AND f.key = l.mailbox
+      WHERE m.thread_id IN (SELECT value FROM json_each(?)) AND ${OWN("l", "f")}
+     UNION ALL SELECT m.id, a.key FROM messages m JOIN message_locations l ON l.message_id = m.id JOIN folder_aliases a ON a.account_id = l.account_id AND a.mailbox = l.mailbox AND a.uidvalidity = l.uidvalidity
+      WHERE m.thread_id IN (SELECT value FROM json_each(?))`,
+    threads,
+    threads,
+  )) byMessage.get(r.id)?.folders.add(r.folder);
+  for (const p of pending) {
+    const m = byMessage.get(p.message_id);
+    if (m) applyFolderOp(m.folders, p.kind, JSON.parse(p.payload_json) as MoveToFolderPayload | LeaveFolderPayload);
+  }
+  const want = new Map<number, Set<string>>();
+  for (const m of byMessage.values()) {
+    const set = want.get(m.thread);
+    if (set) for (const f of m.folders) set.add(f);
+    else want.set(m.thread, new Set(m.folders));
+  }
+  for (const [thread, folders] of want) {
+    for (const r of db.all<{ folder: string }>("SELECT folder FROM thread_folders WHERE thread_id = ?", thread)) if (!folders.delete(r.folder)) db.run("DELETE FROM thread_folders WHERE thread_id = ? AND folder = ?", thread, r.folder);
+    for (const folder of folders) db.run("INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread) SELECT id, account_id, ?, last_date, unread_count > 0 FROM threads WHERE id = ?", folder, thread);
+  }
+}
+
+/**
  * Rewrites these threads' folder memberships from their messages, set at a time (a thread that's gone has none:
  * the cascade). A message whose labels hold no user label is never parsed; with no folder listed, no location is read.
  */
@@ -54,6 +99,7 @@ export function refreshFolders(db: Db, threadIds: Iterable<number>): void {
   const json = JSON.stringify(ids);
   db.run("DELETE FROM thread_folders WHERE thread_id IN (SELECT value FROM json_each(?))", json);
   db.run(MEMBERSHIP, json, json, json);
+  overlayFolderOps(db, json);
 }
 
 /** A message's user labels (Gmail `Label_*`) from its raw labels; anything malformed has none. */
@@ -108,6 +154,7 @@ export function writeFolders(db: Db, threads: readonly FoldedThread[]): void {
     }
     for (const folder of keys) if (!rows?.has(folder)) db.run("INSERT INTO thread_folders (thread_id, account_id, folder, last_date, unread) VALUES (?, ?, ?, ?, ?)", t.id, t.accountId, folder, t.lastDate, t.unread);
   }
+  overlayFolderOps(db, json);
 }
 
 /** The threads of these messages, for a membership refresh after their locations changed. */
