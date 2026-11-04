@@ -22,6 +22,7 @@ import {
   Copy,
   Filter,
   Forward,
+  Folder as FolderIcon,
   FolderInput,
   Inbox,
   Mail,
@@ -56,6 +57,8 @@ import { isMac, scopeRows, selectAll } from "~/lib/select";
 import { openThread } from "~/lib/page";
 import { menuTargets } from "~/lib/selection";
 import { openPrint } from "~/lib/print-open";
+import { useFolderRows } from "~/lib/account-folders";
+import { factsOf, moveToFolder } from "~/lib/folder-move";
 import { getApp, inSeparateTab, setApp, useApp, type ScopeSelection } from "~/state/app";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { listKey, useList } from "~/state/list";
@@ -431,6 +434,30 @@ function searchPlaceItems(p: NonNullable<ReturnType<typeof placeActions>>, runOn
  * Plan 80: a Review row's answers, the keyboard's way to its ✓ and Always ▾
  * (one conversation only: the offers are what its own mail shares).
  */
+/** Plan 127: "Move to"'s folders: those of the one account the rows are in (mounted while the submenu is open). */
+function MoveToFolderItems({ rows, ids }: { rows: readonly ThreadSummary[]; ids: readonly number[] }) {
+  const facts = factsOf(rows);
+  const accountId = facts.accounts.size === 1 ? [...facts.accounts][0]! : null;
+  const folders = useApp((s) => s.folders);
+  const here = useApp((s) => (s.accountId === accountId ? s.folder : null));
+  const list = useFolderRows(folders, accountId ?? -1, accountId !== null);
+  const own = list.filter((f) => f.selectable && f.key !== null).slice(0, 250);
+  if (accountId === null || facts.disposed || own.length === 0) return null;
+  return (
+    <>
+      <ContextMenuSeparator />
+      {own.map((f) => (
+        <ContextMenuItem key={f.id} data-testid={`menu-move-folder-${f.key}`} disabled={f.key === here} onClick={() => void moveToFolder({ accountId, key: f.key!, name: f.name }, ids)}>
+          <FolderIcon />
+          <span className="truncate" style={{ paddingInlineStart: `${f.depth * 0.75}rem` }}>
+            {f.name}
+          </span>
+        </ContextMenuItem>
+      ))}
+    </>
+  );
+}
+
 function ReviewItems({ thread }: { thread: ThreadSummary }) {
   const category = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
   const offers = useAlwaysOffers(category ? thread.id : null, category?.id ?? null);
@@ -608,6 +635,8 @@ function MenuItems() {
           <ContextMenuItem data-testid="menu-move-new" onClick={() => picker("move")}>
             <Plus /> {t("threadMenu.newCategory")}
           </ContextMenuItem>
+          {/* plan 127: the keyboard's way to what a drag onto a folder does */}
+          {scope === null && <MoveToFolderItems rows={rows} ids={ids} />}
         </ContextMenuSubContent>
       </ContextMenuSub>
       {sender && (

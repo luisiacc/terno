@@ -18,6 +18,7 @@ import { createCategory as createNamedCategory } from "~/lib/tabs";
 import { usePendingTip } from "~/lib/tips";
 import { ACCOUNT_VIEWS, SOLO_VIEWS, listedByAccount, useFolderRows, toggleAccount, useOpenAccount, type FolderRow } from "~/lib/account-folders";
 import { renderProbe } from "~/lib/render-probe";
+import type { DropId } from "~/lib/drag";
 import { useDropState } from "~/state/drag";
 import { CloudAiPill } from "./cloud-ai-pill";
 import { FirstSyncPill } from "./first-sync-pill";
@@ -125,8 +126,8 @@ function NavItem({
   /** the inbox's count in the unread color (the design decides) */
   countTone?: "muted" | "unread";
   testId?: string;
-  /** a category: rows can be dropped on it */
-  dropTarget?: number;
+  /** rows can be dropped on it: a category's id, or (plan 127) a folder's `folderRef` */
+  dropTarget?: DropId;
   /** room at the end for a control drawn over the row (a review badge; "icon": the sign-in key, plan 25) */
   reserveEnd?: boolean | "icon";
   /** a folder under its account (plan 67) */
@@ -160,7 +161,8 @@ function NavItem({
       aria-current={active ? "page" : undefined}
       aria-expanded={expanded}
       aria-controls={controls}
-      data-drop-target={dropTarget}
+      data-drop-target={typeof dropTarget === "number" ? dropTarget : undefined}
+      data-drop-folder={typeof dropTarget === "string" ? dropTarget : undefined}
       data-drop-state={drop ?? undefined}
       onClick={onClick}
       className={cn(
@@ -172,9 +174,10 @@ function NavItem({
         "data-active:type-nav-strong data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground",
         "data-[drop-state=over]:bg-drop-target data-[drop-state=over]:text-sidebar-accent-foreground data-[drop-state=over]:ring-1 data-[drop-state=over]:ring-primary data-[drop-state=over]:ring-inset",
         "data-[drop-state=already]:bg-sidebar-accent data-[drop-state=already]:text-muted-foreground",
+        "data-[drop-state=refused]:bg-transparent data-[drop-state=refused]:text-muted-foreground",
       )}
     >
-      <span className="flex size-4 items-center justify-center text-sidebar-glyph transition-transform group-data-[drop-state=over]:scale-125">{icon}</span>
+      <span data-slot="nav-icon" className="flex size-4 items-center justify-center text-sidebar-glyph transition-transform group-data-[drop-state=over]:scale-125">{icon}</span>
       {expanded === undefined ? (
         note ? (
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -367,6 +370,7 @@ function FavoriteRows() {
             <div>
               <NavItem
                 testId={`nav-fav-${f.accountId}-${f.folder ?? f.view}`}
+                dropTarget={f.folder !== null ? folderRef(f.accountId, f.folder) : undefined}
                 active={active}
                 onClick={() => (f.folder !== null ? navigate({ accountId: f.accountId, folder: f.folder }) : navigate({ accountId: f.accountId, view: f.view! }))}
                 icon={icon}
@@ -556,6 +560,7 @@ const OwnFolderRow = memo(function OwnFolderRow({ accountId, accountKind, folder
       <div className="group/row relative">
         <NavItem
           testId={`nav-own-${accountId}-${folderKey}`}
+          dropTarget={folderRef(accountId, folderKey)}
           // plan 108: flush at the top when focused on the account
           inset={!solo || depth > 0}
           depth={solo ? depth - 1 : depth}

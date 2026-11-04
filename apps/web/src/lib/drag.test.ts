@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DragController, exceedsThreshold, exclusivelyIn, hitTest, newIds, payloadFor, type DragEnv, type DropState, type TargetRect } from "./drag";
+import { DragController, exceedsThreshold, exclusivelyIn, hitTest, newIds, payloadFor, type DragEnv, type DropId, type DropState, type TargetRect } from "./drag";
 
 const RECTS: TargetRect[] = [
   { id: 1, left: 0, right: 200, top: 100, bottom: 128 },
@@ -12,12 +12,12 @@ const MEMBERS: Record<number, number[]> = { 10: [2], 11: [], 12: [2, 3] };
 
 function setup(overrides: Partial<DragEnv> = {}) {
   const log: string[] = [];
-  const targets: [number | null, DropState | null][] = [];
+  const targets: [DropId | null, DropState | null][] = [];
   let measured = 0;
   const env: DragEnv = {
     payload: (id) => payloadFor(id, new Set([11, 12]), [10, 11, 12]),
     targets: () => (measured++, RECTS),
-    isAlready: (cat, ids) => exclusivelyIn(ids, cat, (id) => MEMBERS[id]),
+    isAlready: (cat, ids) => exclusivelyIn(ids, cat as number, (id) => MEMBERS[id]),
     start: (ids) => log.push(`start ${ids.join(",")}`),
     move: () => {},
     target: (id, state) => targets.push([id, state]),
@@ -161,7 +161,7 @@ describe("DragController", () => {
 describe("targets that move during a drag (Codex review)", () => {
   it("the drop is tested against targets measured at the drop, not at the start", () => {
     let rects = RECTS;
-    const drops: number[] = [];
+    const drops: DropId[] = [];
     const { ctl } = setup({ targets: () => rects, drop: (id) => drops.push(id) });
     ctl.down(11, { x: 300, y: 300 });
     ctl.move({ x: 300, y: 310 });
@@ -181,8 +181,8 @@ describe("a category that is a target twice (plan 24: its sidebar item and its L
   ];
 
   it("moving from one to the other is a target change (the drop flies to the one under the pointer)", () => {
-    const seen: [number | null, number | undefined][] = [];
-    const drops: [number, number | undefined][] = [];
+    const seen: [DropId | null, number | undefined][] = [];
+    const drops: [DropId, number | undefined][] = [];
     const { ctl } = setup({ targets: () => TWICE, target: (id, _s, at) => seen.push([id, at]), drop: (id, _ids, at) => drops.push([id, at]) });
     ctl.down(11, { x: 300, y: 300 });
     ctl.move({ x: 300, y: 310 });
@@ -194,5 +194,38 @@ describe("a category that is a target twice (plan 24: its sidebar item and its L
       [1, 1],
     ]);
     expect(drops).toEqual([[1, 1]]);
+  });
+});
+
+describe("folders (plan 127)", () => {
+  const FOLDER = [{ id: "3:Recibos", left: 0, right: 200, top: 400, bottom: 430 }];
+  it("a string target takes the drop", () => {
+    const drops: DropId[] = [];
+    const { ctl, targets } = setup({ targets: () => FOLDER, isAlready: () => false, drop: (id) => drops.push(id) });
+    ctl.down(11, { x: 300, y: 300 });
+    ctl.move({ x: 300, y: 310 });
+    ctl.move({ x: 50, y: 410 });
+    expect(targets.at(-1)).toEqual(["3:Recibos", "over"]);
+    ctl.up({ x: 50, y: 410 });
+    expect(drops).toEqual(["3:Recibos"]);
+  });
+  it("a target that refuses them shows it, never takes the drop, and says why after the cancel", () => {
+    const refused: DropId[] = [];
+    const { ctl, log, targets } = setup({ targets: () => FOLDER, isAlready: () => false, refuses: () => true, refused: (id) => refused.push(id) });
+    ctl.down(11, { x: 300, y: 300 });
+    ctl.move({ x: 300, y: 310 });
+    ctl.move({ x: 50, y: 410 });
+    expect(targets.at(-1)).toEqual(["3:Recibos", "refused"]);
+    ctl.up({ x: 50, y: 410 });
+    expect(log).toEqual(["start 11,12", "cancel"]);
+    expect(refused).toEqual(["3:Recibos"]);
+  });
+  it("released anywhere else, nothing is said", () => {
+    const refused: DropId[] = [];
+    const { ctl } = setup({ targets: () => FOLDER, refuses: () => true, refused: (id) => refused.push(id) });
+    ctl.down(11, { x: 300, y: 300 });
+    ctl.move({ x: 300, y: 310 });
+    ctl.up({ x: 300, y: 310 });
+    expect(refused).toEqual([]);
   });
 });

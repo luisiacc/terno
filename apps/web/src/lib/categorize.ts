@@ -189,7 +189,7 @@ async function reconcileCounts(b: Bump): Promise<void> {
  * A move out of the category being viewed: the rows leave the list in this
  * frame (the rest slide up) and the selection moves on, as with archive.
  */
-function leaveView(ids: readonly number[]): void {
+export function leaveView(ids: readonly number[]): void {
   const s = getApp();
   // List's conversation page (plan 24): the open thread moved out of this list, so the list comes back
   const backToList = s.selectedId !== null && ids.includes(s.selectedId) && listLayout() && currentPage() === "thread";

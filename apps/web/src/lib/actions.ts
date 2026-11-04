@@ -371,7 +371,7 @@ export async function markAccountRead(accountId: number, count: number): Promise
  * Undo: the backend puts back each message the action changed, exactly
  * as it was (read, star, place). Large ones show their progress.
  */
-async function undoActions(undoIds: readonly number[], n: number): Promise<void> {
+export async function undoActions(undoIds: readonly number[], n: number): Promise<void> {
   const progress = n > 200 ? trackJob(t("actions.undoing", { count: n })) : null;
   try {
     let restored = 0;

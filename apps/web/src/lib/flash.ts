@@ -53,6 +53,11 @@ export function flashDrop(ids: readonly number[], categoryId: number): void {
   );
 }
 
+/** Plan 127: a drop on a folder whose rows stay on screen: they flash; there's no dot to pop. */
+export function flashRows(ids: readonly number[]): void {
+  if (ids.length) play(`${rowSelector(ids)}{animation:drop-flash var(--motion-slow) var(--motion-ease)}`, Math.min(motionMs() * 1.33, 100));
+}
+
 let reflowTimer: ReturnType<typeof setTimeout> | null = null;
 /**
  * Rows are leaving the list (archive, trash, a move out of the category view): the ones leaving fade

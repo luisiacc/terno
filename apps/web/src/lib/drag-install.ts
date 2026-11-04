@@ -2,19 +2,24 @@
  * Binds the drag controller to the DOM: one delegated pointerdown on the
  * listbox (it stays mounted while rows virtualize away) and pointer capture on
  * it once the drag starts; the ghost moves imperatively in rAF; targets are
- * the sidebar's [data-drop-target] items, measured at drag start. A drop is
- * an exclusive move (the threads end up in that category only). During a
+ * the sidebar's [data-drop-target] categories and [data-drop-folder] folders
+ * (plan 127), measured at drag start. A drop on a category is an exclusive
+ * move (the threads end up in that category only). During a
  * drag no row renders: the dimming is a keyed CSS rule (lib/flash.ts) and only
  * the two NavItems whose state changes re-render.
  */
 import { formatNumber, t } from "@terno/i18n";
 import { motionMs } from "~/lib/appearance";
 import { isExclusivelyIn, moveToCategory } from "~/lib/categorize";
-import { DragController, newIds, payloadFor, type PointerLike, type TargetRect } from "~/lib/drag";
+import { DragController, newIds, payloadFor, type DropId, type PointerLike, type TargetRect } from "~/lib/drag";
 import { dimRows, flashDrop } from "~/lib/flash";
+import { factsOf, moveToFolder, parseFolderRef, refusalText, refusesFolder, type DragFacts } from "~/lib/folder-move";
+import { snack } from "~/lib/snack";
 import { getApp } from "~/state/app";
 import { useDrag } from "~/state/drag";
 import { useList } from "~/state/list";
+
+const folderName = (accountId: number, key: string) => getApp().folders.find((f) => f.accountId === accountId && f.key === key)?.path.at(-1) ?? key;
 
 const GHOST_OFFSET = { x: 12, y: 8 };
 /** The sidebar scrolls while the pointer is this close to its top or bottom edge. */
@@ -46,7 +51,7 @@ let measured: HTMLElement[] = [];
 export function measureTargets(): TargetRect[] {
   const out: TargetRect[] = [];
   measured = [];
-  for (const el of document.querySelectorAll<HTMLElement>("[data-drop-target]")) {
+  for (const el of document.querySelectorAll<HTMLElement>("[data-drop-target], [data-drop-folder]")) {
     if (el.closest("[inert]")) continue;
     const r = el.getBoundingClientRect();
     const clip = el.closest<HTMLElement>("[data-drop-scroll]")?.getBoundingClientRect();
@@ -55,7 +60,7 @@ export function measureTargets(): TargetRect[] {
     const left = Math.max(r.left, clip?.left ?? -Infinity);
     const right = Math.min(r.right, clip?.right ?? Infinity);
     if (bottom - top < 4 || right - left < 4) continue; // scrolled out of its container
-    out.push({ id: Number(el.dataset.dropTarget), at: measured.length, left, right, top, bottom });
+    out.push({ id: el.dataset.dropFolder ?? Number(el.dataset.dropTarget), at: measured.length, left, right, top, bottom });
     measured.push(el);
   }
   return out;
@@ -113,12 +118,12 @@ function fadeGhost() {
   setTimeout(() => g.querySelector("[data-ghost-body]")?.hasAttribute("data-leaving") && hideGhost(), Math.round(ms * 0.66) + 20);
 }
 
-/** Drop: the ghost flies into the dot of the target it landed on (the sidebar's item or the tab) and fades. */
-function flyGhost(categoryId: number, at?: number) {
+/** Drop: the ghost flies into the dot (a folder: the icon) of the target it landed on (the sidebar's item or the tab) and fades. */
+function flyGhost(id: DropId, at?: number) {
   if (!ghost) return;
   const ms = motionMs();
-  const target = (at !== undefined ? measured[at] : undefined) ?? document.querySelector(`[data-drop-target="${categoryId}"]`);
-  const dot = target?.querySelector("[data-slot=category-dot]")?.getBoundingClientRect();
+  const target = (at !== undefined ? measured[at] : undefined) ?? (typeof id === "number" ? document.querySelector(`[data-drop-target="${id}"]`) : null);
+  const dot = (target?.querySelector("[data-slot=category-dot]") ?? target?.querySelector("[data-slot=nav-icon]"))?.getBoundingClientRect();
   if (ms === 0 || !dot) return hideGhost();
   const duration = Math.min(Math.round(ms * 1.33), 100);
   const from = ghost.style.transform;
@@ -156,15 +161,29 @@ function tick() {
 }
 
 export function installDragController(list: HTMLElement): () => void {
+  /** plan 127: what the dragged rows are, read once: pointer moves never walk them for a folder */
+  let facts: DragFacts = factsOf([]);
   const ctl = new DragController({
     payload: (id) => {
       const checked = getApp().checked;
       return checked.has(id) ? payloadFor(id, checked, useList.getState().items.map((t) => t.id)) : [id];
     },
     targets: measureTargets,
-    // a drop moves exclusively: it changes nothing only when every thread is in that category alone
-    isAlready: (categoryId, ids) => isExclusivelyIn(categoryId, ids),
+    // a drop moves exclusively: it changes nothing only when every thread is in that category alone; a folder: its own list
+    isAlready: (target, ids) => {
+      if (typeof target === "number") return isExclusivelyIn(target, ids);
+      const { accountId, key } = parseFolderRef(target);
+      const s = getApp();
+      return s.folder === key && s.accountId === accountId;
+    },
+    refuses: (target) => typeof target === "string" && refusesFolder(facts, parseFolderRef(target).accountId),
+    refused: (target) => {
+      if (typeof target !== "string") return;
+      const { accountId, key } = parseFolderRef(target);
+      snack(refusalText(facts, folderName(accountId, key)));
+    },
     start: (ids, at) => {
+      facts = factsOf(ids.flatMap((id) => row(id) ?? []));
       html().setAttribute("data-dragging", "");
       dimRows(ids);
       showGhost(ids, at);
@@ -175,12 +194,17 @@ export function installDragController(list: HTMLElement): () => void {
       if (!frame) frame = requestAnimationFrame(tick);
     },
     target: (overTarget, overState) => useDrag.setState({ overTarget, overState }),
-    drop: (categoryId, ids, at) => {
-      flyGhost(categoryId, at);
+    drop: (target, ids, at) => {
+      flyGhost(target, at);
       end();
-      const added = newIds(ids, categoryId, (id) => row(id)?.categoryIds);
-      void moveToCategory(categoryId, ids, { source: "dnd" });
-      flashDrop(added.length ? added : ids, categoryId);
+      if (typeof target === "string") {
+        const { accountId, key } = parseFolderRef(target);
+        void moveToFolder({ accountId, key, name: folderName(accountId, key) }, ids);
+        return;
+      }
+      const added = newIds(ids, target, (id) => row(id)?.categoryIds);
+      void moveToCategory(target, ids, { source: "dnd" });
+      flashDrop(added.length ? added : ids, target);
     },
     cancel: () => {
       fadeGhost();

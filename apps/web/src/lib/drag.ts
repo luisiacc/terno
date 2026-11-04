@@ -21,8 +21,11 @@ export interface PointerLike {
   altKey?: boolean;
 }
 
+/** What a drop lands on: a category (its id) or an account's folder (plan 127: its `folderRef`). */
+export type DropId = number | string;
+
 export interface TargetRect {
-  id: number;
+  id: DropId;
   /** which measured element it is (a category can be a target twice: its sidebar item and its tab, plan 24) */
   at?: number;
   left: number;
@@ -31,7 +34,8 @@ export interface TargetRect {
   bottom: number;
 }
 
-export type DropState = "over" | "already";
+/** `refused` (plan 127): a target these rows can't go to (another account's folder): no highlight, a drop only says why. */
+export type DropState = "over" | "already" | "refused";
 
 export interface DragEnv {
   /** ids to drag when the press started on `id` (checked rows travel together, in list order) */
@@ -39,21 +43,25 @@ export interface DragEnv {
   /** drop targets, measured once at drag start (and again after the sidebar scrolls) */
   targets(): TargetRect[];
   /** dropping here would change nothing: every thread is already in it, and in it alone (a drop moves) */
-  isAlready(categoryId: number, ids: readonly number[]): boolean;
+  isAlready(target: DropId, ids: readonly number[]): boolean;
+  /** plan 127: these rows can't go here (absent: anything can) */
+  refuses?(target: DropId, ids: readonly number[]): boolean;
   start(ids: number[], at: PointerLike): void;
   /** every pointermove while dragging (the binding coalesces to one frame) */
   move(at: PointerLike): void;
-  target(categoryId: number | null, state: DropState | null, at?: number): void;
-  /** an exclusive move: afterwards the threads are in this category only (`at`: the element it was dropped on) */
-  drop(categoryId: number, ids: number[], at?: number): void;
+  target(target: DropId | null, state: DropState | null, at?: number): void;
+  /** a category: an exclusive move, afterwards the threads are in it only; a folder: plan 127's move (`at`: the element it was dropped on) */
+  drop(target: DropId, ids: number[], at?: number): void;
   cancel(): void;
+  /** plan 127: dropped on a target that refuses them, after `cancel` */
+  refused?(target: DropId, ids: readonly number[]): void;
 }
 
 export function exceedsThreshold(dx: number, dy: number): boolean {
   return Math.hypot(dx, dy) >= DRAG_THRESHOLD;
 }
 
-export function hitTest(rects: readonly TargetRect[], x: number, y: number): number | null {
+export function hitTest(rects: readonly TargetRect[], x: number, y: number): DropId | null {
   return hitRect(rects, x, y)?.id ?? null;
 }
 
@@ -82,7 +90,7 @@ export function newIds(ids: readonly number[], categoryId: number, categoriesOf:
   return ids.filter((id) => !categoriesOf(id)?.includes(categoryId));
 }
 
-type Phase = { kind: "idle" } | { kind: "pressed"; id: number; x: number; y: number; pointerId?: number } | { kind: "dragging"; ids: number[]; over: number | null; at: number | undefined; state: DropState | null; rects: TargetRect[]; last: PointerLike };
+type Phase = { kind: "idle" } | { kind: "pressed"; id: number; x: number; y: number; pointerId?: number } | { kind: "dragging"; ids: number[]; over: DropId | null; at: number | undefined; state: DropState | null; rects: TargetRect[]; last: PointerLike };
 
 export class DragController {
   private phase: Phase = { kind: "idle" };
@@ -133,7 +141,7 @@ export class DragController {
     this.env.move(e);
     const hit = hitRect(p.rects, e.x, e.y);
     const over = hit?.id ?? null;
-    const state: DropState | null = over === null ? null : this.env.isAlready(over, p.ids) ? "already" : "over";
+    const state = over === null ? null : this.stateOf(over, p.ids);
     if (over !== p.over || state !== p.state || hit?.at !== p.at) {
       p.over = over;
       p.at = hit?.at;
@@ -142,14 +150,20 @@ export class DragController {
     }
   }
 
+  private stateOf(target: DropId, ids: readonly number[]): DropState {
+    return this.env.refuses?.(target, ids) ? "refused" : this.env.isAlready(target, ids) ? "already" : "over";
+  }
+
   up(e: PointerLike): void {
     const p = this.phase;
     this.phase = { kind: "idle" };
     if (p.kind !== "dragging") return;
     // measured again for the drop itself: a target may have moved since the drag started (a tab widened by a new count, into More)
     const hit = hitRect(this.env.targets(), e.x, e.y);
-    if (hit && !this.env.isAlready(hit.id, p.ids)) this.env.drop(hit.id, p.ids, hit.at);
-    else this.env.cancel();
+    const state = hit && this.stateOf(hit.id, p.ids);
+    if (hit && state === "over") return this.env.drop(hit.id, p.ids, hit.at);
+    this.env.cancel();
+    if (hit && state === "refused") this.env.refused?.(hit.id, p.ids);
   }
 
   /** Esc, pointercancel, window blur: nothing happens, the ghost fades. */

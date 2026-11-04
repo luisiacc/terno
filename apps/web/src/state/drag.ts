@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { DropState } from "~/lib/drag";
+import type { DropId, DropState } from "~/lib/drag";
 
 /**
  * Drag-and-drop state React needs: which sidebar target is under the pointer
@@ -10,11 +10,11 @@ import type { DropState } from "~/lib/drag";
 export interface DragState {
   phase: "idle" | "dragging";
   ids: readonly number[];
-  overTarget: number | null;
+  overTarget: DropId | null;
   overState: DropState | null;
 }
 
 export const useDrag = create<DragState>(() => ({ phase: "idle", ids: [], overTarget: null, overState: null }));
 
 /** A NavItem's own drop state (null unless it is the target). */
-export const useDropState = (categoryId: number | undefined) => useDrag((s) => (categoryId !== undefined && s.overTarget === categoryId ? s.overState : null));
+export const useDropState = (target: DropId | undefined) => useDrag((s) => (target !== undefined && s.overTarget === target ? s.overState : null));
