@@ -113,6 +113,12 @@ function Profile({ initial, onChanged }: { initial: WritingProfileView; onChange
   const accounts = useApp((s) => s.accounts);
   const [p, setP] = useState(initial);
   const [editing, setEditing] = useState(false);
+  // a pass finished or a reset landed: the row follows, unless someone is editing it
+  const [read, setRead] = useState(initial);
+  if (initial !== read && !editing) {
+    setRead(initial);
+    setP(initial);
+  }
   const language = p.language ? new Intl.DisplayNames([getLocale()], { type: "language" }).of(p.language) : null;
   const title = language ? `${scopeTitle(p, accounts)} · ${language}` : scopeTitle(p, accounts);
   const lines = habitLines(p.habits);
@@ -175,7 +181,7 @@ function Section({ scope, title, testId, version, onChanged }: { scope: "domain"
         </CollapsibleTrigger>
         <CollapsiblePanel>
           <div className="hairline-divide rounded-[calc(var(--radius-lg)+2px)] bg-tint px-4">
-            {items === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : items.length === 0 ? <SettingsNote testId={`${testId}-empty`}>{t(scope === "domain" ? "aiDraft.style.noDomains" : "aiDraft.style.noPeople")}</SettingsNote> : items.map((p) => <Profile key={`${p.scopeKey}|${p.language}|${p.updatedAt}|${p.edited}`} initial={p} onChanged={onChanged} />)}
+            {items === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : items.length === 0 ? <SettingsNote testId={`${testId}-empty`}>{t(scope === "domain" ? "aiDraft.style.noDomains" : "aiDraft.style.noPeople")}</SettingsNote> : items.map((p) => <Profile key={`${p.scopeKey}|${p.language}`} initial={p} onChanged={onChanged} />)}
           </div>
           {next && (
             <Button variant="link-secondary" className="mt-1.5 ml-1 text-xs" data-testid={`${testId}-more`} onClick={() => void read(next).catch(failed)}>
@@ -284,6 +290,13 @@ export default function WritingStyle() {
     })().catch(failed);
     return () => { current = false; };
   }, [version]);
+  // there's no event for a pass finishing: while this page is open and one is due or running, it looks again, for a while
+  const learning = status?.state === "learning" || status?.state === "idle";
+  useEffect(() => {
+    if (!learning || version >= 60) return;
+    const timer = setTimeout(changed, 2000);
+    return () => clearTimeout(timer);
+  }, [learning, version, changed]);
   const line = !status ? "" : status.state === "off" ? t("aiDraft.style.off") : status.state === "ready" && status.messages > 0 && status.updatedAt !== null ? t("aiDraft.style.learned", { count: status.messages, when: dayAgo(status.updatedAt) }) : status.state === "learning" ? t("aiDraft.style.learning") : t("aiDraft.style.idle");
   return (
     <div data-testid="writing-style">
@@ -291,7 +304,7 @@ export default function WritingStyle() {
         <ChevronLeft /> {t("aiDraft.settings.title")}
       </Button>
       <SettingsGroup title={t("aiDraft.style.title")} testId="style-own" footer={<span data-testid="style-status">{line}</span>}>
-        {own === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : own.length === 0 ? <SettingsNote testId="style-empty">{t("aiDraft.style.empty")}</SettingsNote> : own.map((p) => <Profile key={`${p.scopeKey}|${p.language}|${p.updatedAt}|${p.edited}`} initial={p} onChanged={changed} />)}
+        {own === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : own.length === 0 ? <SettingsNote testId="style-empty">{t("aiDraft.style.empty")}</SettingsNote> : own.map((p) => <Profile key={`${p.scopeKey}|${p.language}`} initial={p} onChanged={changed} />)}
       </SettingsGroup>
       <Section scope="domain" title={t("aiDraft.style.domains")} testId="style-domains" version={version} onChanged={changed} />
       <Section scope="person" title={t("aiDraft.style.people")} testId="style-people" version={version} onChanged={changed} />

@@ -14,6 +14,8 @@ async function aiTabWithOllama(page: Page, ollamaUrl: string) {
   await page.getByTestId("ai-provider").click();
   await page.getByTestId("ai-choice-ollama").click();
   await page.getByTestId("ai-endpoint").fill(`${ollamaUrl}/v1`);
+  // the stub's list, not a real Ollama's on this machine, answering the default endpoint for a moment before the new one is saved
+  await expect(page.getByTestId("ai-model-option").first()).toContainText("qwen3:8b");
   await page.getByTestId("ai-model-option").first().click();
   await expect(page.getByTestId("ai-model-option").first()).toContainText("40k ctx");
   await page.getByTestId("ai-test").click();

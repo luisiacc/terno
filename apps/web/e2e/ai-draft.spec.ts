@@ -689,9 +689,9 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(page.getByTestId("writing-style")).toBeVisible();
     await expect(page.getByTestId("style-status")).toBeVisible();
     const profile = page.getByTestId("style-profile").first();
-    // (learned from the demo mail by the real pass, since opening Drafting activated it)
-    await expect(profile).toContainText(/Usually about \d+ words/);
-    await expect(page.getByTestId("style-status")).toContainText(/Learned from \d+ messages/);
+    // (learned from the demo mail by the real pass, which this page started)
+    await expect(profile).toContainText(/Usually about \d+ words/, { timeout: 20_000 });
+    await expect(page.getByTestId("style-status")).toContainText(/Learned from \d+ messages/, { timeout: 20_000 });
     expect((await new AxeBuilder({ page }).include("[data-testid=writing-style]").analyze()).violations).toEqual([]);
     for (const theme of ["dark", "light"] as const) {
       await page.emulateMedia({ colorScheme: theme });

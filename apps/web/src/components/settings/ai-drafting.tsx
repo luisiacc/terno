@@ -34,16 +34,15 @@ function writingModel(ai: AppSettings["ai"]): string {
   return ai.tasks.writing?.model ?? (ai.provider === "anthropic" ? WRITING_CLAUDE_MODEL : ai.model);
 }
 
-/** Settings → AI → Drafting. Opening it is what lets the local learner run (the contract's `writing.activate`). */
+/** Settings → AI → Drafting. It starts nothing: the local learner runs from the first draft or the Writing style page, not from looking at the AI tab. */
 export function DraftingGroup({ settings }: { settings: AppSettings }) {
   const { ai } = settings;
   const [prefs, save] = usePrefs();
-  useEffect(() => { void client.call("writing.activate", {}).catch(() => {}); }, []);
   const target = writingTarget(ai);
   return (
     <SettingsGroup title={t("aiDraft.settings.title")} testId="ai-drafting">
       <SettingsRow label={t("aiDraft.settings.enabled")} hint={t("aiDraft.settings.enabledHint", { key: isMac ? "⌘J" : "Ctrl+J" })}>
-        {(a) => <Switch {...a} checked={prefs?.global.enabled ?? true} disabled={!prefs} data-testid="ai-drafting-enabled" onCheckedChange={(enabled) => void save({ global: { enabled } }).catch(failed)} />}
+        {(a) => <Switch {...a} checked={prefs?.global.enabled ?? true} data-testid="ai-drafting-enabled" onCheckedChange={(enabled) => void save({ global: { enabled } }).catch(failed)} />}
       </SettingsRow>
       {(prefs?.global.enabled ?? true) && (
         <>
@@ -51,7 +50,7 @@ export function DraftingGroup({ settings }: { settings: AppSettings }) {
             {(a) => <CommitInput multiline a11y={a} data-testid="ai-drafting-instructions" value={prefs?.global.instructions ?? ""} placeholder={t("aiDraft.settings.instructionsPlaceholder")} maxLength={WRITING_INSTRUCTIONS_MAX} onCommit={(instructions) => save({ global: { instructions } })} />}
           </SettingsRow>
           <SettingsRow label={t("aiDraft.settings.sentMail")} hint={t("aiDraft.settings.sentMailHint")}>
-            {(a) => <Switch {...a} checked={prefs?.global.useSentMail ?? true} disabled={!prefs} data-testid="ai-drafting-sent-mail" onCheckedChange={(useSentMail) => void save({ global: { useSentMail } }).catch(failed)} />}
+            {(a) => <Switch {...a} checked={prefs?.global.useSentMail ?? true} data-testid="ai-drafting-sent-mail" onCheckedChange={(useSentMail) => void save({ global: { useSentMail } }).catch(failed)} />}
           </SettingsRow>
           <SettingsRow label={t("aiDraft.style.title")} hint={t("aiDraft.settings.styleHint")} testId="ai-drafting-style">
             {({ id: _id, "aria-labelledby": _l, "aria-describedby": described }) => (
