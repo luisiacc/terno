@@ -443,9 +443,13 @@ async function keySummary(store: SettingsStore): Promise<AiSettings["keys"]> {
 export async function stampSmartCategorize(store: SettingsStore): Promise<void> {
   const raw = await store.settings.get<StoredSettings>("app", {});
   if (raw.smartCategorizeVersion === 1) return;
+  // an empty row is how a new install is told from an old one (migrateAppearance), and it has no switch to reset:
+  // turning the switch on later stamps it (patchedSettings)
+  if (Object.keys(raw).length === 0) return;
   await store.settings.update<StoredSettings, void>("app", {}, (latest) => {
-    const s = migrate(latest);
-    return { value: { ...s, smartCategorizeVersion: 1, ...(s.aiCategorize ? { aiCategorize: false, aiCategorizeWidened: true } : {}) }, result: undefined };
+    // only the stamp: read-time migrations stay unwritten until a write of the user's
+    const wasOn = migrate(latest).aiCategorize === true;
+    return { value: { ...latest, smartCategorizeVersion: 1, ...(wasOn ? { aiCategorize: false, aiCategorizeWidened: true } : {}) }, result: undefined };
   });
 }
 
@@ -558,7 +562,7 @@ function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: 
     else if (target) tasks[task] = target;
   }
   const monthlyLimitUsd = aiPatch?.monthlyLimitUsd ?? s.ai?.monthlyLimitUsd;
-  return { ...kept, ...general, ai: { ...s.ai, provider, profiles, tasks, ...(monthlyLimitUsd !== undefined ? { monthlyLimitUsd } : {}) } };
+  return { ...kept, ...general, ...(patch.aiCategorize !== undefined ? { smartCategorizeVersion: 1 } : {}), ai: { ...s.ai, provider, profiles, tasks, ...(monthlyLimitUsd !== undefined ? { monthlyLimitUsd } : {}) } };
 }
 
 /** What was observed for a provider, endpoint and model (plan 131: a task's model isn't the configured one's). */
