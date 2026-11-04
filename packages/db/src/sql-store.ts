@@ -84,6 +84,8 @@ import {
   applyMoveSlice,
   unfinishedMoves,
   vetoesFor,
+  aiFilingBar,
+  categoryEvidence,
   type ClassifyResult,
 } from "./categorize";
 import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
@@ -185,7 +187,7 @@ const FLAG_COLUMNS: Record<string, string> = {
   isDraft: "is_draft",
 };
 
-const NO_CLASSIFICATION: ClassifyResult = { deltas: [], auto: new Map(), touched: new Set(), suggested: 0, uncertain: [], backfill: 0 };
+const NO_CLASSIFICATION: ClassifyResult = { deltas: [], auto: new Map(), touched: new Set(), suggested: 0, backfill: 0 };
 
 export interface SqlMailStoreOptions {
   /** run WAL checkpoints on the driver's worker (desktop) */
@@ -644,7 +646,7 @@ export class SqlMailStore implements MailStore {
         const c = this.classify(classifier, result.inserted, result.bodyCompleted, now);
         for (const t of c.touched) touched.add(t);
         this.flushFolderMoves(folderMoves, now, opIds, touched);
-        return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
+        return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }));
       }, check); } finally {
         for (const m of staged) if (m.bodyCapture) await finishBodyStage(this.db, m.bodyCapture.id, this.yieldTo);
@@ -1335,6 +1337,25 @@ export class SqlMailStore implements MailStore {
         );
         return true;
       }),
+    recordAiFiling: async (f) =>
+      this.db.tx(() => {
+        const none = { outcome: "none" as const, deltas: [] };
+        if (!this.aiCandidate(f.threadId)) return none;
+        const v = vetoesFor(this.db, f.threadId, f.sender, [f.categoryId], f.now).get(f.categoryId);
+        if (v?.hard || (v && senderVetoed(v)) || f.model.lookAlike(f.encoded)) return none;
+        const bar = aiFilingBar(this.db, f.categoryId);
+        if (bar === "gone") return none;
+        const decide = (kind: "auto" | "suggest", explain: typeof f.explain) =>
+          this.db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, ?, ?, ?, ?)", f.threadId, f.categoryId, kind, f.p, JSON.stringify(explain), f.now);
+        if (bar === "suggest") {
+          decide("suggest", f.suggestExplain);
+          return { outcome: "suggested" as const, deltas: [] };
+        }
+        decide("auto", f.explain);
+        this.db.run("INSERT OR IGNORE INTO thread_categories (thread_id, category_id, added_by, added_at) VALUES (?, ?, 'auto', ?)", f.threadId, f.categoryId, f.now);
+        return { outcome: "filed" as const, deltas: [{ op: "unbackground" as const, threadId: f.threadId }] };
+      }),
+    categoryEvidence: async (o) => categoryEvidence(this.db, o),
   };
 
   /** New-mail-like (inbox, not spam/trash/draft) and nobody decided on it yet. */

@@ -166,7 +166,6 @@ export interface IngestOutcome extends FlagReconciliation {
   deltas: ModelDelta[];
   auto: ClassifyResult["auto"];
   backfill: number;
-  uncertain: number[];
   /** provider ops the command queued (filter actions) */
   opIds: string[];
 }
@@ -765,6 +764,14 @@ export interface MailStore {
     vetoes(threadId: number, sender: string, categoryIds: readonly number[], now: number): Promise<Map<number, Vetoes>>;
     /** records the AI's suggestion if the thread is still undecided and nothing vetoes it now */
     recordAiSuggestion(s: { threadId: number; categoryId: number; p: number; explain: Reason[]; sender: string; encoded: Uint32Array; model: CategorizerModel; now: number }): Promise<boolean>;
+    /**
+     * Plan 134: files the thread as the engine would (auto, never trains, a removal is a revert) if every rule still
+     * holds in this transaction. A category with auto-apply off, too few examples, a paused valve, hidden from the Inbox
+     * or forwarding gets a suggestion instead; a veto or a thread someone decided on gets nothing.
+     */
+    recordAiFiling(f: { threadId: number; categoryId: number; p: number; explain: Reason[]; suggestExplain: Reason[]; sender: string; encoded: Uint32Array; model: CategorizerModel; now: number }): Promise<{ outcome: import("./types").AiFilingOutcome; deltas: ModelDelta[] }>;
+    /** Plan 134: every category, most recently used first, with its newest threads the user placed by hand, accepted or bulk-added. */
+    categoryEvidence(o: { perCategory: number; limit: number }): Promise<import("./types").CategoryEvidence[]>;
   };
 
   accounts: {

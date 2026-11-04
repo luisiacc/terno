@@ -551,7 +551,8 @@ export class BackendCore {
       if (this.stopped) return;
     }
     if (this.stopped) return;
-    if (!this.categorizer.ready) void this.categorizer.rebuild();
+    // plan 134: marked mail waits for the engine's turn
+    if (!this.categorizer.ready) void this.categorizer.rebuild().then(() => this.aiAssist.wake());
     // plan 41: the badge as it is now (a restarted backend puts it back), before any sync changes it
     await this.attention.start().catch((error: unknown) => void captureError(error, { code: "notify.failed" }));
     if (this.stopped) return;
@@ -572,6 +573,11 @@ export class BackendCore {
     await this.summaries.start().catch((error: unknown) => {
       captureError(error, { code: "ai.failed" });
       this.log("warn", "summaries couldn't start", error instanceof Error ? error.message : error);
+    });
+    // plan 134: the one-time reset, then what a quit left marked; awaited like summaries, for ingest's question
+    await this.aiAssist.start().catch((error: unknown) => {
+      captureError(error, { code: "ai.failed" });
+      this.log("warn", "categorization assist couldn't start", error instanceof Error ? error.message : error);
     });
     // plan 68: a folder rebuild a quit interrupted goes on where it was
     void this.rebuildFolders();
@@ -627,7 +633,10 @@ export class BackendCore {
       this.forwards.poke();
     }
     // plan 132: what waited for the provider to be reachable
-    if (online) this.summaries.wake({ network: true });
+    if (online) {
+      this.summaries.wake({ network: true });
+      this.aiAssist.wake({ network: true });
+    }
     if (this.options.autoSync === false) return;
     breadcrumb("sync", "net.changed", { netReason: reason, online });
     this.connectivity.network(online, reason);
@@ -1189,7 +1198,8 @@ export class BackendCore {
       // plan 116: live mail may be forwarded (marked with its insertion), only while a rule forwards
       const forwardEligible = live && this.forwards.isActive;
       // plan 131 revision 5: and it's new mail the AI features may want, with the message or never (off: this one boolean)
-      const newMail = live && this.summaries.isActive ? { summary: true } : undefined;
+      const wants = live ? { summary: this.summaries.isActive, category: await this.aiAssist.wanted() } : null;
+      const newMail = wants && (wants.summary || wants.category) ? wants : undefined;
       const ingest = async (batch: IncomingMessage[]) => (batch.length ? this.store.sync.ingest(batch, { applyFilters, now: this.now(), classifier, observation, check: checkCurrent, forwardEligible, newMail }) : null);
       // plan 69: a sync pass's slice never overlaps a storage removal unit, and leaves out what one removed
       const write = () => (pass ? this.evictions.ingest(pass.accountId, pass.pass, chunk, ingest) : ingest(chunk));
@@ -1201,8 +1211,6 @@ export class BackendCore {
       // RAM follows the database, never the other way round
       this.categorizer.apply(r.deltas);
       this.categorizer.noteBackfill(r.backfill);
-      // the optional AI looks at what the engine was unsure about, after commit, outside the slice
-      void this.aiAssist.enqueue(r.uncertain);
       this.announceAuto(r.auto);
       this.opsQueued(r.opIds);
       this.reconcileFlags(r.flagReconcileAccounts);
@@ -1214,6 +1222,8 @@ export class BackendCore {
       }
       // plan 132: what it queued, and any body it completed for what waits
       this.summaries.wake();
+      // plan 134: after commit, outside the slice
+      this.aiAssist.wake();
     });
     return { inserted };
   }
@@ -1222,6 +1232,11 @@ export class BackendCore {
   async classifier(): Promise<ClassifierInput | null> {
     const model = this.categorizer.model;
     return model ? { model, mode: await readAutoCategorize(this.store) } : null;
+  }
+
+  /** Plan 134: the AI filed it; announced like the engine's. */
+  announceFiled(categoryId: number, threadId: number): void {
+    this.announceAuto(new Map([[categoryId, [threadId]]]));
   }
 
   /** One "Terno added N conversations to X" per category at most every 30 s. */
@@ -2549,8 +2564,9 @@ export class BackendCore {
 
   /** Plan 116: a body arrived (a sync's, or one the reader asked for): its filters and category may make it go; a forward waiting for its files goes now. */
   private bodyArrived(messageId: number): void {
-    // plan 132: a summary may have waited for it (both ways a body arrives come here)
+    // plan 132: a summary may have waited for it (both ways a body arrives come here); plan 134: so may the AI's look
     this.summaries.wake();
+    this.aiAssist.wake();
     if (!this.forwards.isActive) return;
     this.planForwards({ messageIds: [messageId] });
     void this.forwards.filesArrived({ messageIds: [messageId] }).catch(() => {});

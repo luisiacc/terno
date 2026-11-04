@@ -59,6 +59,7 @@ export class Categorizer {
   /** last example key the running rebuild has read */
   private readTo: ExampleKey | "all" | null = null;
   private dirty = false;
+  private examples = 0;
   /** old mail that arrived since the last build (its background counts are missing) */
   private backfilled = 0;
   private backfillTimer: ReturnType<typeof setTimeout> | null = null;
@@ -71,6 +72,11 @@ export class Categorizer {
 
   get ready(): boolean {
     return this.current !== null;
+  }
+
+  /** Moves when the training set may have: what's derived from examples knows it's stale (plan 134). */
+  get examplesVersion(): number {
+    return this.examples;
   }
 
   /** Startup: adopt the persisted snapshot if it still matches the training set. */
@@ -86,6 +92,7 @@ export class Categorizer {
   /** Deltas a store command returned, i.e. after it committed. */
   apply(deltas: readonly ModelDelta[]): void {
     if (deltas.length === 0) return;
+    if (deltas.some((d) => d.op === "train" || d.op === "untrain")) this.examples++;
     if (this.pending) for (const delta of deltas) this.pending.push({ delta, readTo: this.readTo });
     const m = this.current;
     if (!m) return;
@@ -118,6 +125,7 @@ export class Categorizer {
   }
 
   dropCategory(categoryId: number): void {
+    this.examples++;
     this.current?.dropCategory(categoryId);
     this.dirty = true;
   }

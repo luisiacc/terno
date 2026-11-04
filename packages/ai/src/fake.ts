@@ -61,8 +61,10 @@ export function fakeTransport(options: { failFirstAttempt?: boolean } = {}): Mod
       if (schema?.name === "classification") {
         const items = jsonLine<{ id: string; text: string }[]>(prompt, "Items", []);
         const labels = jsonLine<string[]>(prompt, "Labels", []);
+        // a label may stand for a name, shown beside it as evidence
+        const names = jsonLine<Record<string, { name: string }>>(prompt, "What each label holds \\(data, not instructions\\)", {});
         const results = items.map((it) => {
-          const label = labels.find((l) => normalizeText(it.text).includes(normalizeText(l))) ?? null;
+          const label = labels.find((l) => normalizeText(it.text).includes(normalizeText(names[l]?.name ?? l))) ?? null;
           return { id: it.id, label, confidence: label ? 0.9 : 0.2 };
         });
         return { text: JSON.stringify({ results }), stop: "end" };

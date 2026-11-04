@@ -1253,6 +1253,8 @@ export function createHandlers(b: Backend): Handlers {
     "ai.setKey": async ({ provider, preset, value }) => {
       const next = await b.aiService.setKey(provider, preset, value);
       b.summaries.settingsChanged(next);
+      // plan 134: a JEV key chooses where categorization runs
+      b.aiAssist.targetChanged();
       return next;
     },
     "ai.cancel": ({ requestId }, ctx) => {

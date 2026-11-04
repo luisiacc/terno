@@ -59,6 +59,8 @@ import { InstantSearch, WEB_SEARCH_MEMORY, type InstantSearchOptions } from "@te
 import {
   addToCategory,
   aiCandidate,
+  aiFilingBar,
+  categoryEvidence,
   autoReasons,
   backfillCandidates,
   backfillExamples,
@@ -199,7 +201,7 @@ const SCAN_SLICE_MS = 8;
 const SCAN_CHUNK = 256;
 
 const FLAG_COLUMNS: Record<string, string> = { isRead: "is_read", isStarred: "is_starred", inInbox: "in_inbox", isTrash: "is_trash", isSpam: "is_spam", isSent: "is_sent", isDraft: "is_draft" };
-const NO_CLASSIFICATION: ClassifyResult = { deltas: [], auto: new Map(), touched: new Set(), suggested: 0, uncertain: [], backfill: 0 };
+const NO_CLASSIFICATION: ClassifyResult = { deltas: [], auto: new Map(), touched: new Set(), suggested: 0, backfill: 0 };
 
 export interface IdbMailStoreOptions {
   /** the mailbox: one IndexedDB database per name (terno-<name>) */
@@ -1275,7 +1277,7 @@ export class IdbMailStore implements MailStore {
           const c = this.classify(classifier, result.inserted, result.bodyCompleted, now);
           for (const t of c.touched) touched.add(t);
           this.flushFolderMoves(folderMoves, now, opIds, touched);
-          return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain, opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
+          return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
         }),
         { durability: "relaxed", check, bodyTicket: this.preparedTickets.get(prepared) },
       );
@@ -2117,6 +2119,24 @@ export class IdbMailStore implements MailStore {
         if (v?.hard || (v && senderVetoed(v)) || s.model.lookAlike(s.encoded)) return false;
         return T(this.c, "cls_decisions").insert({ thread_id: s.threadId, category_id: s.categoryId, kind: "suggest", p: s.p, explain_json: JSON.stringify(s.explain), at: s.now, outcome: null });
       }),
+    recordAiFiling: (f) =>
+      this.command(() => {
+        const none = { outcome: "none" as const, deltas: [] };
+        if (!aiCandidate(this.c, f.threadId)) return none;
+        const v = vetoesFor(this.c, f.threadId, f.sender, [f.categoryId], f.now).get(f.categoryId);
+        if (v?.hard || (v && senderVetoed(v)) || f.model.lookAlike(f.encoded)) return none;
+        const bar = aiFilingBar(this.c, f.categoryId);
+        if (bar === "gone") return none;
+        const decide = (kind: "auto" | "suggest", explain: typeof f.explain) => T(this.c, "cls_decisions").insert({ thread_id: f.threadId, category_id: f.categoryId, kind, p: f.p, explain_json: JSON.stringify(explain), at: f.now, outcome: null });
+        if (bar === "suggest") {
+          decide("suggest", f.suggestExplain);
+          return { outcome: "suggested" as const, deltas: [] };
+        }
+        decide("auto", f.explain);
+        T(this.c, "thread_categories").insert({ thread_id: f.threadId, category_id: f.categoryId, added_by: "auto", added_at: f.now, batch_id: null });
+        return { outcome: "filed" as const, deltas: [{ op: "unbackground" as const, threadId: f.threadId }] };
+      }),
+    categoryEvidence: (o) => this.read(() => categoryEvidence(this.c, o)),
   };
 
   /** every match of a query through the index (bulk scopes read past one page) */

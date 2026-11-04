@@ -43,6 +43,8 @@ interface StoredSettings extends Partial<General> {
   errorReportsVersion?: number;
   /** plan 97: 1 once local mode stopped deciding the network (see migrateLocalMail) */
   localMailVersion?: number;
+  /** plan 134: 1 once a switch that was on before it sent more mail was turned off (see stampSmartCategorize) */
+  smartCategorizeVersion?: number;
 }
 
 export const APPEARANCE_VERSION = 3;
@@ -146,6 +148,7 @@ export const DEFAULT_SETTINGS: General = {
   syncWindowDays: 180,
   autoCategorize: "auto",
   aiCategorize: false,
+  aiCategorizeWidened: false,
   summaries: { enabled: false, enabledAt: null, acknowledged: [] },
   errorReports: "ask",
   // new installs follow the system: English unless it's a language Terno ships
@@ -432,9 +435,29 @@ async function keySummary(store: SettingsStore): Promise<AiSettings["keys"]> {
   return out;
 }
 
+/**
+ * Plan 134: the switch now sends all new mail nothing else placed, with samples from the user's categories, where it
+ * used to send only what the engine was unsure of. Whoever turned it on agreed to the narrower thing: off, once, with a
+ * line in Settings → Categories. At boot, before any sync, since no mail may go in between.
+ */
+export async function stampSmartCategorize(store: SettingsStore): Promise<void> {
+  const raw = await store.settings.get<StoredSettings>("app", {});
+  if (raw.smartCategorizeVersion === 1) return;
+  await store.settings.update<StoredSettings, void>("app", {}, (latest) => {
+    const s = migrate(latest);
+    return { value: { ...s, smartCategorizeVersion: 1, ...(s.aiCategorize ? { aiCategorize: false, aiCategorizeWidened: true } : {}) }, result: undefined };
+  });
+}
+
+/** One read, for ingest's question on a live slice. */
+export async function readSmartCategorize(store: SettingsStore): Promise<boolean> {
+  const s = await stored(store);
+  return s.aiCategorize === true && (s.autoCategorize ?? DEFAULT_SETTINGS.autoCategorize) !== "off";
+}
+
 export async function readSettings(store: SettingsStore): Promise<AppSettings> {
   const s = await stored(store);
-  const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, remoteImagesVersion: _r, errorReportsVersion: _e, localMailVersion: _l, gmailClientId: _g, ...general } = s;
+  const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, remoteImagesVersion: _r, errorReportsVersion: _e, localMailVersion: _l, smartCategorizeVersion: _c, gmailClientId: _g, ...general } = s;
   const { provider, profiles, capabilities } = aiState(s, s.aiProvider === undefined && !s.ai?.provider && (await store.secrets.has(keySecretName("anthropic"))));
   const profile = profiles[provider] ?? { model: "" };
   const secret = keySecretName(provider, profile.preset);

@@ -11,6 +11,7 @@ import {
   featuresToBlob,
   POLICY,
   SOURCE_WEIGHT,
+  valvePaused,
   type AutoCategorize,
   type CategorizerModel,
   type CategoryPolicy,
@@ -18,7 +19,7 @@ import {
   type Vetoes,
   type TrainExample,
 } from "@terno/core";
-import type { AddedBy, ClassifyResult, ExampleKey, ModelDelta, MovePhase, RootMessage, ThreadFeatureSet } from "@terno/store";
+import type { AddedBy, CategoryEvidence, ClassifyResult, ExampleKey, ModelDelta, MovePhase, RootMessage, ThreadFeatureSet } from "@terno/store";
 import type { Db } from "./sqlite";
 
 export type { AddedBy, ClassifyResult, ExampleKey, ModelDelta, MovePhase, RootMessage, ThreadFeatureSet } from "@terno/store";
@@ -1052,7 +1053,64 @@ export function backfillCandidates(db: Db, now: number, limit = 5000): number[] 
 }
 
 function emptyResult(): ClassifyResult {
-  return { deltas: [], auto: new Map(), suggested: 0, touched: new Set(), uncertain: [], backfill: 0 };
+  return { deltas: [], auto: new Map(), suggested: 0, touched: new Set(), backfill: 0 };
+}
+
+/**
+ * Plan 134: each category with its newest threads the user placed. A whitelist of sources (revision 3): an agent's
+ * example or the engine's own filing never speaks for the user. Spam and trash don't either, so it reads a few more
+ * than it keeps. A few indexed rows per category, however many examples it holds.
+ */
+export function categoryEvidence(db: Db, o: { perCategory: number; limit: number }): CategoryEvidence[] {
+  const own = ownAddresses(db);
+  const positives = new Map(db.all<{ category_id: number; n: number }>("SELECT category_id, count(*) AS n FROM cls_examples INDEXED BY cls_examples_cat WHERE label > 0 GROUP BY category_id").map((r) => [r.category_id, r.n]));
+  const categories = db.all<{ id: number; name: string }>("SELECT id, name FROM categories ORDER BY position, id").map((c) => {
+    const examples = db.all<{ thread_id: number; at: number }>(
+      `SELECT thread_id, at FROM cls_examples INDEXED BY cls_examples_evidence
+       WHERE category_id = ? AND label > 0 AND source IN ('user', 'suggestion', 'bulk') ORDER BY at DESC, thread_id DESC LIMIT ?`,
+      c.id,
+      o.perCategory * 3,
+    );
+    return { ...c, examples, usedAt: examples[0]?.at ?? 0 };
+  });
+  const chosen = [...categories].sort((a, b) => b.usedAt - a.usedAt).slice(0, o.limit);
+  const refs = new Map(rootRefs(db, chosen.flatMap((c) => c.examples.map((e) => e.thread_id)), own).map((r) => [r.threadId, r]));
+  const fields = new Map(
+    db
+      .all<{ id: number; from_name: string; from_email: string; subject: string }>(
+        "SELECT id, from_name, from_email, subject FROM messages WHERE id IN (SELECT value FROM json_each(?))",
+        JSON.stringify([...refs.values()].map((r) => r.messageId)),
+      )
+      .map((m) => [m.id, m]),
+  );
+  return chosen.map((c) => ({
+    id: c.id,
+    name: c.name,
+    positives: positives.get(c.id) ?? 0,
+    samples: c.examples
+      .flatMap((e) => {
+        const ref = refs.get(e.thread_id);
+        const m = ref && !ref.spam && !ref.trash ? fields.get(ref.messageId) : undefined;
+        return m ? [{ fromName: m.from_name, fromDomain: m.from_email.slice(m.from_email.lastIndexOf("@") + 1), subject: m.subject }] : [];
+      })
+      .slice(0, o.perCategory),
+  }));
+}
+
+/** Plan 134 revision 5: where an AI filing may land, read inside its transaction. */
+export function aiFilingBar(db: Db, categoryId: number): "file" | "suggest" | "gone" {
+  const c = db.get<{ auto_apply: number; show_in_inbox: number; forward_json: string | null }>("SELECT auto_apply, show_in_inbox, forward_json FROM categories WHERE id = ?", categoryId);
+  if (!c) return "gone";
+  // forwarding and hiding aren't a model's call; a suggestion costs one keystroke
+  if (c.auto_apply !== 1 || c.show_in_inbox !== 1 || c.forward_json !== null) return "suggest";
+  const { n } = db.get<{ n: number }>("SELECT count(*) AS n FROM (SELECT 1 FROM cls_examples INDEXED BY cls_examples_cat WHERE category_id = ? AND label > 0 LIMIT ?)", categoryId, POLICY.autoMinPositives)!;
+  if (n < POLICY.autoMinPositives) return "suggest";
+  const v = db.get<{ kept: number; reverted: number }>(
+    `SELECT coalesce(sum(outcome = 'kept'), 0) AS kept, coalesce(sum(outcome = 'reverted'), 0) AS reverted
+     FROM cls_decisions INDEXED BY cls_decisions_outcomes WHERE category_id = ? AND kind = 'auto' AND outcome IS NOT NULL`,
+    categoryId,
+  )!;
+  return valvePaused(v.kept, v.reverted) ? "suggest" : "file";
 }
 
 function decideThreads(
@@ -1073,7 +1131,6 @@ function decideThreads(
     const likely = candidateCategories(scores);
     if (likely.length === 0) {
       withdrawSuggestions(db, threadId, []);
-      if (scores.some((s) => s.p >= 0.5)) out.uncertain.push(threadId);
       continue;
     }
     policies ??= policyContext(db);

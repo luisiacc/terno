@@ -24,7 +24,6 @@ const GENERAL_KEYS = [
   "layout",
   "syncWindowDays",
   "autoCategorize",
-  "aiCategorize",
   "language",
   // plan 41: the badge's switch (notifications and their preview only ever go off: settingsFrom)
   "dockBadge",

@@ -30,7 +30,7 @@ import {
   type Vetoes,
   subjectMatcher,
 } from "@terno/core";
-import type { AddedBy, ClassifyResult, ExampleKey, ModelDelta, MovePhase, PendingSuggestion, RootMessage, ThreadFeatureSet } from "@terno/store";
+import type { AddedBy, CategoryEvidence, ClassifyResult, ExampleKey, ModelDelta, MovePhase, PendingSuggestion, RootMessage, ThreadFeatureSet } from "@terno/store";
 import { pendingSuggestionCounts, T, type Ctx, type R } from "./mail";
 
 /**
@@ -749,7 +749,7 @@ function undecided(c: Ctx, threadIds: Iterable<number>): number[] {
   );
 }
 
-const emptyResult = (): ClassifyResult => ({ deltas: [], auto: new Map(), suggested: 0, touched: new Set(), uncertain: [], backfill: 0 });
+const emptyResult = (): ClassifyResult => ({ deltas: [], auto: new Map(), suggested: 0, touched: new Set(), backfill: 0 });
 
 export function classifyNewThreads(c: Ctx, req: ClassifyRequest): ClassifyResult {
   if (!c.db.inTransaction) throw new Error("classifyNewThreads runs inside the ingestion transaction");
@@ -826,7 +826,6 @@ function decideThreads(c: Ctx, roots: Map<number, RootMessage>, req: { now: numb
     const likely = candidateCategories(scores);
     if (likely.length === 0) {
       withdrawSuggestions(c, threadId, []);
-      if (scores.some((s) => s.p >= 0.5)) out.uncertain.push(threadId);
       continue;
     }
     policies ??= policyContext(c);
@@ -1047,4 +1046,56 @@ export function aiCandidate(c: Ctx, threadId: number): boolean {
   const root = rootRefs(c, [threadId])[0];
   if (!root || !root.inInbox || root.spam || root.trash || root.draft) return false;
   return !T(c, "thread_categories").count("fk_thread_id", threadId) && !T(c, "cls_decisions").count("fk_thread_id", threadId) && !T(c, "cls_examples").count("fk_thread_id", threadId);
+}
+
+const EVIDENCE_SOURCES: ReadonlySet<string> = new Set<ExampleSource>(["user", "suggestion", "bulk"]);
+
+/**
+ * Plan 134: each category with its newest threads the user placed. A whitelist of sources (revision 3): an agent's
+ * example or the engine's own filing never speaks for the user. Spam and trash don't either, so it reads a few more
+ * than it keeps. One in-memory walk of the category's examples.
+ */
+export function categoryEvidence(c: Ctx, o: { perCategory: number; limit: number }): CategoryEvidence[] {
+  const examples = T(c, "cls_examples");
+  const messages = T(c, "messages");
+  const own = ownAddresses(c);
+  const categories = [...T(c, "categories").all()]
+    .sort((a, b) => a.position - b.position || a.id - b.id)
+    .map((row) => {
+      let positives = 0;
+      const placed: R[] = [];
+      for (const e of examples.by("fk_category_id", row.id)) {
+        if (e.label <= 0) continue;
+        positives++;
+        if (EVIDENCE_SOURCES.has(e.source)) placed.push(e);
+      }
+      const newest = placed.sort((a, b) => b.at - a.at || b.thread_id - a.thread_id).slice(0, o.perCategory * 3);
+      return { id: row.id as number, name: row.name as string, positives, newest, usedAt: (newest[0]?.at as number | undefined) ?? 0 };
+    });
+  return categories
+    .sort((a, b) => b.usedAt - a.usedAt)
+    .slice(0, o.limit)
+    .map((cat) => {
+      const refs = new Map(rootRefs(c, cat.newest.map((e) => e.thread_id as number), own).map((r) => [r.threadId, r]));
+      const samples = cat.newest.flatMap((e) => {
+        const ref = refs.get(e.thread_id);
+        if (!ref || ref.spam || ref.trash) return [];
+        const m = messages.get(ref.messageId)!;
+        return [{ fromName: m.from_name as string, fromDomain: String(m.from_email).slice(String(m.from_email).lastIndexOf("@") + 1), subject: m.subject as string }];
+      });
+      return { id: cat.id, name: cat.name, positives: cat.positives, samples: samples.slice(0, o.perCategory) };
+    });
+}
+
+/** Plan 134 revision 5: where an AI filing may land, read inside its command. */
+export function aiFilingBar(c: Ctx, categoryId: number): "file" | "suggest" | "gone" {
+  const row = T(c, "categories").get(categoryId);
+  if (!row) return "gone";
+  // forwarding and hiding aren't a model's call; a suggestion costs one keystroke
+  if (row.auto_apply !== 1 || row.show_in_inbox === 0 || row.forward_json) return "suggest";
+  let positives = 0;
+  for (const e of T(c, "cls_examples").by("fk_category_id", categoryId)) if (e.label > 0 && ++positives >= POLICY.autoMinPositives) break;
+  if (positives < POLICY.autoMinPositives) return "suggest";
+  const v = valveStats(c).get(categoryId) ?? { kept: 0, reverted: 0 };
+  return valvePaused(v.kept, v.reverted) ? "suggest" : "file";
 }

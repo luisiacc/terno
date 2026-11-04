@@ -1269,7 +1269,8 @@ CREATE TABLE ai_summaries (
 ) WITHOUT ROWID;
 CREATE INDEX ai_summaries_pending ON ai_summaries(created_at, thread_id) WHERE state = 'pending';
 ` },
-
+  // plan 134: a category's newest placements by the user, read in a few rows however many examples it holds
+  { version: 49, name: "category evidence (plan 134)", sql: "CREATE INDEX cls_examples_evidence ON cls_examples(category_id, at) WHERE label > 0 AND source IN ('user', 'suggestion', 'bulk');" },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

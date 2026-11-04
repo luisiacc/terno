@@ -209,11 +209,20 @@ export interface ClassifyResult {
   suggested: number;
   /** threads with a decision (for change notifications) */
   touched: Set<number>;
-  /** uncertain band threads (0.5 ≤ p < auto threshold, no decision): candidates for the optional AI assist */
-  uncertain: number[];
   /** old threads that arrived (backfill): background and suggestions are stale by this many */
   backfill: number;
 }
+
+/** Plan 134: what the AI is told a category holds: the user's own placements, with a domain and never an address. */
+export interface CategoryEvidence {
+  id: number;
+  name: string;
+  positives: number;
+  samples: { fromName: string; fromDomain: string; subject: string }[];
+}
+
+/** What an AI filing became: the category's rules are re-read in its transaction (plan 134 revision 5). */
+export type AiFilingOutcome = "filed" | "suggested" | "none";
 
 export interface PendingSuggestion {
   threadId: number;

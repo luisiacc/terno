@@ -162,8 +162,10 @@ export interface AppSettings {
   syncWindowDays: number;
   /** what the categorization engine may do with new mail */
   autoCategorize: AutoCategorize;
-  /** let the configured AI suggest categories for mail the engine is unsure about (never auto-applies) */
+  /** plan 134: let the AI place new mail the filters and the engine can't (it suggests; a calibrated model may file) */
   aiCategorize: boolean;
+  /** plan 134: the switch was on when it came to send more mail, and went off once: Settings → Categories says so, once */
+  aiCategorizeWidened: boolean;
   /** plan 132: summarize new mail as it arrives (off unless the user turns it on: it sends mail with no click); mail from before `enabledAt` never */
   summaries: AiSummariesSetting;
   /** anonymous error reports (builds with a DSN, outside local mode): ask each time, send, or never */
@@ -460,6 +462,7 @@ const settingsPatch = z.object({
   syncWindowDays: syncWindow.optional(),
   autoCategorize: z.enum(["off", "suggest", "auto"]).optional(),
   aiCategorize: z.boolean().optional(),
+  aiCategorizeWidened: z.boolean().optional(),
   /** `enabledAt` is the backend's: the moment it went on */
   summaries: z.object({ enabled: z.boolean() }).strict().optional(),
   errorReports: z.enum(["ask", "always", "never"]).optional(),

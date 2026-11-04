@@ -572,6 +572,8 @@ describe("categorizer: training hooks", () => {
 });
 
 describe("categorizer: auto-apply at ingestion", () => {
+  /** The AI's label for the one category these mailboxes have (plan 134: stable labels, the name beside them). */
+  const FACTURAS = "c1";
   const SENDERS = [
     { name: "Uber Receipts", email: "uber.receipts@uber.com" },
     { name: "Rappi", email: "recibos@rappi.com" },
@@ -615,7 +617,8 @@ describe("categorizer: auto-apply at ingestion", () => {
     await backend.categorizer.rebuildNow();
     const arrive = async (over: Partial<IncomingMessage>) => {
       const m = incoming(acct, { date: NOW - 3_600_000, ...over });
-      await backend.ingestSliced([m]);
+      // as a live sync brings it: the AI only looks at new mail (plan 134)
+      await backend.ingestSliced([m], true, undefined, undefined, undefined, undefined, undefined, true);
       return { thread: sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", m.providerMsgId)!.thread_id, message: m };
     };
     const decision = (thread: number) => sqlDb(backend.store).get<{ kind: string; outcome: string | null; explain_json: string }>("SELECT kind, outcome, explain_json FROM cls_decisions WHERE thread_id = ? AND category_id = ?", thread, cat);
@@ -766,7 +769,7 @@ describe("categorizer: auto-apply at ingestion", () => {
 
   function classification(req: Parameters<ModelTransport["complete"]>[0]) {
     const items = JSON.parse(promptText(req.messages[0]!.content).split("\nItems: ")[1]!) as { id: string }[];
-    return { stop: "end" as const, text: JSON.stringify({ results: items.map(({ id }) => ({ id, label: "Facturas", confidence: 0.95 })) }) };
+    return { stop: "end" as const, text: JSON.stringify({ results: items.map(({ id }) => ({ id, label: FACTURAS, confidence: 0.95 })) }) };
   }
 
   async function publicAssist(count: number, complete: ModelTransport["complete"]) {
@@ -1158,7 +1161,7 @@ describe("categorizer: auto-apply at ingestion", () => {
     expect(t.decision(t.threads[1]!)?.kind).toBe("suggest");
   });
 
-  it.each([{ label: null, confidence: 0.95 }, { label: "Facturas", confidence: 0.2 }])("retains accepted $label/$confidence admission before drain resumes", async (result) => {
+  it.each([{ label: null, confidence: 0.95 }, { label: "c1", confidence: 0.2 }])("retains accepted $label/$confidence admission before drain resumes", async (result) => {
     let calls = 0;
     const t = await publicAssist(1, async (req) => {
       calls++;
@@ -1408,10 +1411,10 @@ describe("categorizer: auto-apply at ingestion", () => {
       async complete(req) {
         calls++;
         const input = JSON.parse(promptText(req.messages[0]!.content).split("\nItems: ")[1]!) as { id: string }[];
-        const results: { id: string; label: string | null; confidence: number }[] = [{ id: !valid && invalid === "id" ? sentinel : input[0]!.id, label: !valid && invalid === "label" ? sentinel : "Facturas", confidence: 0.95 }];
+        const results: { id: string; label: string | null; confidence: number }[] = [{ id: !valid && invalid === "id" ? sentinel : input[0]!.id, label: !valid && invalid === "label" ? sentinel : FACTURAS, confidence: 0.95 }];
         if (!valid && invalid.startsWith("duplicate-")) {
           if (invalid === "duplicate-claim") results[0]!.label = null;
-          results.push({ id: input[0]!.id, label: invalid === "duplicate-null" ? null : "Facturas", confidence: invalid === "duplicate-low" ? 0.2 : 0.95 });
+          results.push({ id: input[0]!.id, label: invalid === "duplicate-null" ? null : FACTURAS, confidence: invalid === "duplicate-low" ? 0.2 : 0.95 });
         }
         return { stop: "end", text: JSON.stringify({ results }) };
       },
@@ -1439,7 +1442,7 @@ describe("categorizer: auto-apply at ingestion", () => {
     expect(sqlDb(backend.store).get("SELECT count(*) AS n FROM cls_decisions WHERE thread_id = ?", thread)).toEqual({ n: 1 });
   });
 
-  it.each([{ label: null, confidence: 0.95 }, { label: "Facturas", confidence: 0.2 }])("keeps a valid non-decision $label/$confidence once per thread", async (result) => {
+  it.each([{ label: null, confidence: 0.95 }, { label: "c1", confidence: 0.2 }])("keeps a valid non-decision $label/$confidence once per thread", async (result) => {
     let calls = 0;
     const transport: ModelTransport = {
       async complete(req) {
@@ -1480,6 +1483,20 @@ describe("categorizer: auto-apply at ingestion", () => {
     }
   });
 
+  it("what the engine filed isn't sent to the AI, and its mark goes (plan 134)", async () => {
+    const { backend, arrive, decision, inCategory } = await trained();
+    setSetting(sqlDb(backend.store), "app", { ai: { provider: "fake" }, aiCategorize: true });
+    let asked = 0;
+    const real = backend.ai.bind(backend);
+    backend.ai = async () => (asked++, real());
+    const { thread } = await arrive(receipt(SENDERS[0]!, 98));
+    await backend.aiAssist.drain();
+    expect(inCategory(thread)).toBe("auto");
+    expect(decision(thread)?.kind).toBe("auto");
+    expect(asked).toBe(0);
+    expect(await backend.store.newMail.page("category", null, 10)).toEqual([]);
+  });
+
   it("the AI never suggests past a veto: look-alike senders aren't even asked", async () => {
     const { backend, acct, cat, arrive, decision } = await trained();
     // a trained bank's display name from another domain
@@ -1507,7 +1524,7 @@ describe("categorizer: auto-apply at ingestion", () => {
           local: true,
           classify: async (input: { items: { id: string }[] }) => {
             await answered;
-            return input.items.map((i) => ({ id: i.id, label: "Facturas", confidence: 0.95 }));
+            return input.items.map((i) => ({ id: i.id, label: FACTURAS, confidence: 0.95 }));
           },
         }) as never;
       const { thread } = await arrive(draft);

@@ -536,8 +536,11 @@ const en = {
   "settings.categories.smart": "Smart categorization",
   "settings.categories.smart.hint": "Learns from how you file. No AI, no network: it all happens on this Mac.",
   "settings.categories.askAi": "Ask AI for help",
-  "settings.categories.askAi.hint": "For uncertain mail: it only suggests, never adds on its own. Uses the AI in Settings → AI.",
+  "settings.categories.askAi.hint": "Suggest a category for new mail the filters and engine can't place. Sends each one to {provider}, with a few sender names and subjects from your categories.",
   "settings.categories.askAi.noAi": "Connect an AI in Settings → AI to use it here.",
+  "settings.categories.askAi.widened": "This is now off. It used to ask about mail the engine was unsure of; it now sends all new mail nothing else can place, with a few sender names and subjects from your categories. Turn it on if that's fine with you.",
+  "settings.categories.jev": "JEV API key",
+  "settings.categories.jev.hint": "With a key here, Ask AI runs on JEV instead of the provider in Settings → AI. JEV files new mail when it's very sure and suggests a category otherwise. It sends each new mail's sender, subject and start of text, plus a few sender names and subjects from your categories, to TypeSafe AI.",
   "settings.categories.footer": "With categorization set to “Automatic”, Terno can add to each category on its own.",
   "settings.categories.footer.auto": "Each category’s switch lets Terno add to it on its own when it’s sure.",
   "settings.categories.examples": { one: "# example", other: "# examples" },
@@ -1037,6 +1040,7 @@ const en = {
   "reader.category.remove": "Remove {category}",
   "reader.suggestion": "{category}?",
   "reader.suggestion.title": "Looks like {category} ({percent}%)",
+  "reader.suggestion.aiTitle": "Looks like {category} (the AI's confidence: {percent}%)",
   "reader.suggestion.hint": "y: add · n: not it",
   "reader.full.show": "Show full message",
   "reader.full.back": "Back to conversation",
@@ -2122,6 +2126,7 @@ It contains none of your mail, contacts, settings or keys.
   "reason.intent.consumer": "comes from a personal address",
   "reason.aiLocal": "the AI (on this Mac) thinks it belongs in {category}",
   "reason.aiCloud": "the AI ({provider}) thinks it belongs in {category}",
+  "reason.aiFiled": "the AI ({provider}) was very sure it belongs in {category}",
 
   // ── web (storage, gate, onboarding)
   // @web

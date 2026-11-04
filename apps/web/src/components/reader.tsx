@@ -401,7 +401,8 @@ function ThreadChips({ detail, account, cats, accountChip, className }: { detail
                   </button>
                 }
               />
-              <Reasons title={t("reader.suggestion.title", { category: c.name, percent: Math.round(sg.p * 100) })} reasons={sg.reasons} hint={keyed(i, c.id) ? t("reader.suggestion.hint") : undefined} />
+              {/* plan 134: the AI's own confidence, not the engine's score: said as such */}
+              <Reasons title={t(sg.reasons.some((r) => typeof r !== "string" && (r.k === "reason.aiLocal" || r.k === "reason.aiCloud")) ? "reader.suggestion.aiTitle" : "reader.suggestion.title", { category: c.name, percent: Math.round(sg.p * 100) })} reasons={sg.reasons} hint={keyed(i, c.id) ? t("reader.suggestion.hint") : undefined} />
             </Tooltip>
           </Chip>
         );

@@ -529,8 +529,11 @@ const es = {
   "settings.categories.smart": "Categorización inteligente",
   "settings.categories.smart.hint": "Aprende de cómo archivas. Sin IA ni red: todo ocurre en este Mac.",
   "settings.categories.askAi": "Pedir ayuda a la IA",
-  "settings.categories.askAi.hint": "Para el correo dudoso: solo sugiere, nunca añade por su cuenta. Usa la IA de Ajustes → IA.",
+  "settings.categories.askAi.hint": "Sugiere una categoría para el correo nuevo que los filtros y el motor no pueden colocar. Envía cada uno a {provider}, con algunos remitentes y asuntos de tus categorías.",
   "settings.categories.askAi.noAi": "Conecta una IA en Ajustes → IA para usarla aquí.",
+  "settings.categories.askAi.widened": "Esto ahora está desactivado. Antes preguntaba por el correo del que el motor dudaba; ahora envía todo el correo nuevo que nada más puede colocar, con algunos remitentes y asuntos de tus categorías. Actívalo si te parece bien.",
+  "settings.categories.jev": "Clave de API de JEV",
+  "settings.categories.jev.hint": "Con una clave aquí, Pedir ayuda a la IA funciona con JEV en lugar del proveedor de Ajustes → IA. JEV coloca el correo nuevo en una categoría cuando está muy seguro y, si no, sugiere una. Envía a TypeSafe AI el remitente, el asunto y el inicio del texto de cada correo nuevo, además de algunos remitentes y asuntos de tus categorías.",
   "settings.categories.footer": "Con la categorización en «Automática», cada categoría puede añadirse sola.",
   "settings.categories.footer.auto": "El interruptor de cada una deja que Terno la añada por su cuenta cuando está seguro.",
   "settings.categories.examples": { one: "# ejemplo", other: "# ejemplos" },
@@ -1028,6 +1031,7 @@ const es = {
   "reader.category.remove": "Quitar {category}",
   "reader.suggestion": "¿{category}?",
   "reader.suggestion.title": "Parece de {category} ({percent}%)",
+  "reader.suggestion.aiTitle": "Parece de {category} (confianza de la IA: {percent}%)",
   "reader.suggestion.hint": "y: añadir · n: no es",
   "reader.full.show": "Mostrar mensaje completo",
   "reader.full.back": "Volver a la conversación",
@@ -2107,6 +2111,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "reason.intent.consumer": "viene de un correo personal",
   "reason.aiLocal": "la IA (en este Mac) cree que es de {category}",
   "reason.aiCloud": "la IA ({provider}) cree que es de {category}",
+  "reason.aiFiled": "la IA ({provider}) estaba muy segura de que es de {category}",
 
   // ── web (storage, gate, onboarding)
   // @web
