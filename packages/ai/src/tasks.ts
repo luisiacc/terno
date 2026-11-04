@@ -9,6 +9,7 @@ import { describeProvider, isLocalProvider, resolveBaseURL } from "./providers";
 import { summarizeTask } from "./summarize";
 import { AiError, type AiTasks, type Capabilities, type ClassifyInput, type ModelInfo, type ModelTransport, type OutputMode, type ProviderConfig } from "./types";
 import { convertWireFilter, EXAMPLE_WIRE_FILTER, systemPrompt, wireFilterSchema } from "./wire";
+import { judgeVoiceTask, parseIntentTask, runCompose } from "./writing";
 
 /** Rough size of the filter system prompt + schema, for the context-window warning. */
 export const FILTER_PROMPT_TOKENS = 1500;
@@ -92,6 +93,18 @@ export function createAi(config: ProviderConfig, options: AiOptions = {}): AiTas
 
     summarize(input, signal) {
       return run(summarizeTask(input), signal);
+    },
+
+    compose(input, composeOptions) {
+      return runCompose(transport, input, composeOptions);
+    },
+
+    judgeVoice(input, signal) {
+      return run(judgeVoiceTask(input), signal);
+    },
+
+    parseIntent(input, signal) {
+      return run(parseIntentTask(input), signal);
     },
 
     generateFilter(prompt, ctx, signal) {

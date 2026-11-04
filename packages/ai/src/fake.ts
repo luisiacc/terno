@@ -1,8 +1,9 @@
 import { normalizeText } from "@terno/core";
 import { keyRef } from "@terno/i18n";
 import { fakeSummary } from "./summarize";
-import { promptText, type ModelTransport } from "./types";
+import { AiError, promptText, type CompletionRequest, type ModelTransport, type StreamEvent } from "./types";
 import type { WireFilter } from "./wire";
+import { fakeComposeScript, fakeIntent, fakeJudgment, isComposeRequest } from "./writing";
 
 function filterFor(prompt: string, categories: { id: number; name: string }[]): WireFilter {
   const p = normalizeText(prompt);
@@ -71,10 +72,37 @@ export function fakeTransport(options: { failFirstAttempt?: boolean } = {}): Mod
       }
       if (schema?.name === "probe") return { text: '{"ok":true}', stop: "end" };
       if (schema?.name === "thread_summary") return { text: JSON.stringify(fakeSummary(promptText(system), prompt)), stop: "end" };
+      if (schema?.name === "voice_judgment") return { text: JSON.stringify(fakeJudgment(prompt)), stop: "end" };
+      if (schema?.name === "parse_intent") return { text: JSON.stringify(fakeIntent(prompt)), stop: "end" };
+      if (isComposeRequest(promptText(system))) {
+        const script = fakeComposeScript(promptText(system), prompt);
+        return { text: script.stop === "refusal" ? "" : script.text, stop: script.stop };
+      }
       const wire = filterFor(prompt, jsonLine(promptText(system), "Categories", []));
       // Simulates a model mistake to exercise the repair loop.
       const out = options.failFirstAttempt && !repairing ? { ...wire, actions: [{ type: "archive", categoryId: null }, { type: "trash", categoryId: null }] } : wire;
       return { text: JSON.stringify(out), stop: "end" };
+    },
+    async *stream(req: CompletionRequest): AsyncGenerator<StreamEvent> {
+      calls++;
+      // scripted by a marker in the instruction, so a flow test reaches each failure through the real path
+      const script = fakeComposeScript(promptText(req.system), promptText(req.messages[0]?.content ?? ""));
+      if (script.slowMs) await new Promise((resolve) => setTimeout(resolve, script.slowMs));
+      let sent = 0;
+      for (const chunk of script.chunks) {
+        // i18n-ignore: a scripted failure of the offline model, seen only in tests
+        if (script.fail === sent) throw new AiError("The connection dropped.", "unavailable");
+        if (script.stall && sent === 1) {
+          await new Promise((_, reject) => {
+            if (req.signal.aborted) reject(new Error("aborted"));
+            req.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+          });
+        }
+        if (script.stop === "refusal") break;
+        yield { type: "delta", text: chunk };
+        sent++;
+      }
+      yield { type: "done", stop: script.stop, usage: { inputTokens: 1, outputTokens: sent } };
     },
     async listModels() {
       return [{ id: "demo", label: keyRef("ai.model.demo"), contextTokens: 32_768, loaded: true }];

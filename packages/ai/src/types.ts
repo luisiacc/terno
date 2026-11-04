@@ -2,6 +2,7 @@ import { textRef, type AiErrorKind, type AiProviderId, type Capabilities, type C
 import type { Localized } from "@terno/i18n";
 import type { z } from "zod";
 import type { SummarizeInput, ThreadSummaryResult } from "./summarize";
+import type { ComposeInput, ComposeOptions, ComposeResult, JudgeVoiceInput, JudgeVoiceResult, ParseIntentInput, ParseIntentResult } from "./writing";
 
 export type { AiErrorKind, AiProviderId, Capabilities, CompatiblePreset, ModelInfo, OutputMode, PresetDescriptor, ProviderDescriptor } from "@terno/core";
 
@@ -127,6 +128,12 @@ export interface AiTasks {
   generateFilter(prompt: string, ctx: FilterGenerationContext, signal?: AbortSignal): Promise<GeneratedFilter>;
   /** plan 132: a conversation's summary; items citing a message that isn't in it are dropped */
   summarize(input: SummarizeInput, signal?: AbortSignal): Promise<ThreadSummaryResult>;
+  /** plan 133: a draft in the user's voice, streamed; a refusal throws, and text past a failure is the caller's to keep */
+  compose(input: ComposeInput, options: ComposeOptions): Promise<ComposeResult>;
+  /** plan 133: what counting can't say about how someone writes; the notes come back through the local screen */
+  judgeVoice(input: JudgeVoiceInput, signal?: AbortSignal): Promise<JudgeVoiceResult>;
+  /** plan 133: who an instruction is for, from the names it matched. Carries no mail. */
+  parseIntent(input: ParseIntentInput, signal?: AbortSignal): Promise<ParseIntentResult>;
   /** One result per input, in input order; malformed responses are repaired or rejected as a whole. */
   classify<L extends string>(input: ClassifyInput<L>, signal?: AbortSignal): Promise<{ id: string; label: L | null; confidence: number }[]>;
   /** declared only; built with the categorization agent */
