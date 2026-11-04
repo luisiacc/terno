@@ -107,6 +107,11 @@ Found while implementing:
 - `levels` is deliberate (w11). The plan's `join("")` would have put back a whole-body copy in one task.
 - The first reconnect test passed against the old code: a sync finishing also resumes parked mail. The test now holds that sync.
 
+The code review changed these:
+
+- **Photos:** the early read's parsing could reject while the lists ran, with nothing attached yet, and the desktop backend exits on an unhandled rejection (rare: a 200 with a null body). A malformed answer now costs only that photo, and a test watches for the rejection.
+- **Tests that passed on the old code:** the RPC failure, reattach and deadline tests now assert a whole wave was in flight, and the proof-404 test now fails its proof on the concurrent reads, not on `/history`.
+
 ## What was measured
 
 Simulated latency, seven-sample median for threads and one run for Gmail, against the previous code. The thread cases use a 1 ms handler and a test transport, so they show the shape of the gain and not absolute times. The Gmail cases run without the quota pacer: in production the gain applies inside the 900-unit burst (45 reads or trashes at 20 units each), and past that the pacer's rate decides.

@@ -247,6 +247,8 @@ describe("exact body part reads", () => {
       const other = client.call("counts.get", {});
       await expect(client.call("threads.get", { threadId: 1 })).rejects.toMatchObject({ code: "STALE" });
       expect(client.pendingCount).toBe(1);
+      // its siblings were in flight beside it when it failed
+      expect(started).toEqual(expect.arrayContaining([5, 6, 7]));
       const begun = started.length;
       expect(begun).toBeLessThan(16);
       release();
@@ -258,11 +260,12 @@ describe("exact body part reads", () => {
   });
 
   it("parts not yet asked for never reach a replacement connection", async () => {
-    let release!: () => void, waiting!: () => void;
+    let release!: () => void, waiting!: () => void, holding = 0;
     const held = new Promise<void>((resolve) => { release = resolve; }), reached = new Promise<void>((resolve) => { waiting = resolve; });
     const { client, disconnect } = setup({
       "threads.get": () => wave(16),
-      "threads.bodyPart": (async ({ ordinal }: { ordinal: number }) => { if (ordinal < 4) return "x"; waiting(); await held; return "late"; }) as never,
+      // a whole wave is in flight when the connection changes
+      "threads.bodyPart": (async ({ ordinal }: { ordinal: number }) => { if (ordinal < 4) return "x"; if (++holding === 4) waiting(); await held; return "late"; }) as never,
     });
     const read = client.call("threads.get", { threadId: 1 }).then(() => "published", (error: RpcError) => error.code);
     await reached;
@@ -290,6 +293,8 @@ describe("exact body part reads", () => {
       await expect(client.call("threads.get", { threadId: 1 })).rejects.toMatchObject({ code: "TIMEOUT" });
       expect(client.pendingCount).toBe(0);
       const begun = started.length;
+      // the first wave, then a second held whole
+      expect(begun).toBe(8);
       release();
       await after(5);
       expect(started).toHaveLength(begun);

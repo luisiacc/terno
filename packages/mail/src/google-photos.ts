@@ -91,7 +91,7 @@ async function pages(get: AuthorizedGet, path: string, mask: string, out: Map<st
 /** Both sources, as far as each is granted; one failing keeps the other's photos. Rejects when `signal` aborts. */
 export async function collectGooglePhotos(get: AuthorizedGet, userinfo: string, want: PhotoWant, signal?: AbortSignal): Promise<GooglePhotos> {
   // beside the lists: nothing here depends on it, and turning photos on in Settings waits for all of this
-  const ownPhoto = get<{ picture?: string }>(userinfo, signal).then((i) => photoUrl(i.picture), () => null);
+  const ownPhoto = get<{ picture?: string }>(userinfo, signal).then((i) => photoUrl(i.picture)).catch(() => null);
   signal?.throwIfAborted();
   const found = new Map<string, string>();
   const source = async (wanted: boolean, path: string, mask: string): Promise<PhotoSourceState> => {

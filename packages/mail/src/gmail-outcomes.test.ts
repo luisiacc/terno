@@ -153,19 +153,22 @@ it("a failure past the first page keeps what was written, moves no cursor and re
 });
 
 it("an identity proof's own 404 is no message's absence, whichever read it interrupts", async () => {
+  let reads = 0;
   const box = mailbox((url) => {
-    if (url.pathname.endsWith("/history")) return Response.json({ historyId: "12", history: [{ labelsAdded: ["a", "b", "c"].map((id) => ({ message: { id } })) }] });
-    if (url.pathname.endsWith("/profile")) return new Response(null, { status: 404 });
+    if (url.pathname.endsWith("/history")) {
+      // the proof falls due on the reads that follow, all of them at once
+      box.needsProof = true;
+      return Response.json({ historyId: "12", history: [{ labelsAdded: ["a", "b", "c"].map((id) => ({ message: { id } })) }] });
+    }
+    if (url.pathname.endsWith("/profile")) { reads++; return new Response(null, { status: 404 }); }
     throw new Error("a message read without its proof");
   }, { historyId: "10" });
   ["a", "b", "c"].forEach((id, i) => box.rows.set(id, { id: i + 1, providerMsgId: id, bytes: "cached", labels: ["INBOX"] }));
-  await box.sync().catch(() => {});
-  // /history proved first; now the proof is due on the reads
-  box.needsProof = true;
   await expect(box.sync()).rejects.toBeDefined();
+  expect(reads).toBeGreaterThan(0);
   expect(box.removals).toEqual([]);
   expect(box.rows.size).toBe(3);
-  expect(box.checkpoints.filter((c) => (c as { historyId?: string }).historyId === "12")).toHaveLength(0);
+  expect(box.checkpoints).toEqual([]);
 });
 
 it.each([200, 404])("list omission plus terminal empty page requires a separate cached GET (%i)", async (status) => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { collectGooglePhotos, PEOPLE_API, photoUrl, type AuthorizedGet } from "./google-photos";
 
 const USERINFO = "https://openidconnect.googleapis.com/v1/userinfo";
@@ -79,14 +79,25 @@ describe("Google photos (plan 22)", () => {
     expect(await collecting).toMatchObject({ own: expect.any(String), connections: "ok", contacts: [{ email: "a@x.com" }] });
   });
 
-  it("cancelled while only the user's own photo was read: rejects, and its late answer is nobody's problem", async () => {
-    const ctl = new AbortController();
-    const reading: AuthorizedGet = async <T,>(_url: string, signal?: AbortSignal) => {
-      ctl.abort();
-      signal?.throwIfAborted();
-      return {} as T;
-    };
-    await expect(collectGooglePhotos(reading, USERINFO, { connections: false, otherContacts: false }, ctl.signal)).rejects.toThrow();
+  it("a malformed answer about the user's own photo costs only that photo, even while the lists are still reading (Codex review)", async () => {
+    let finish!: () => void;
+    const lists = new Promise<void>((resolve) => { finish = resolve; });
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const { get } = people({ connections: [[person(["a@x.com"], [{ url: PHOTO }])]] });
+      const malformed: AuthorizedGet = async <T,>(url: string, signal?: AbortSignal) => {
+        if (url === USERINFO) return null as T;
+        await lists;
+        return get<T>(url, signal);
+      };
+      const collecting = collectGooglePhotos(malformed, USERINFO, { connections: true, otherContacts: false });
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      finish();
+      expect(await collecting).toMatchObject({ own: null, connections: "ok", contacts: [{ email: "a@x.com" }] });
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally { process.off("unhandledRejection", unhandled); }
   });
 
   it("cancelled mid-list: not one more page, and every request carried the signal (Codex review)", async () => {
