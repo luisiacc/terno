@@ -1,6 +1,6 @@
 # Plan 133: AI drafting
 
-- **Status:** proposed, third version, after two Codex rounds. Nothing is built, and nothing has run on a real model: every behavior, latency and cost figure here is an estimate until the eval (§11), and the eval is a release gate.
+- **Status:** third version, after two Codex rounds. The pure core is built (`packages/core/src/writing/`, `packages/ai/src/writing.ts`) and the thin experiment has run on synthetic mail: read "What the experiment found" before the sections it changes (§3, §4, §6.3 to §6.7). No store, RPC or UI yet. Your blind read (§11) is still the release gate, and it hasn't happened.
 - **Builds on:** plan 131 (base), plan 85 §6, decisions 9 and 10, revisions 4, 5, 7, 9, 11, plans 16, 44, 60, 93, 115, 130 (the composer), plan 18 (recipients and sent-mail reading).
 
 ## The requests
@@ -251,6 +251,8 @@ Cache 1 stays stable across every draft from an account until a profile refreshe
 No date or id before `user[2]`. One effort across all writing, one model per route, always single-turn with `<previous_draft>` as a block. No pre-warming, which would send mail before the user asked. No tools, so an injected instruction can only affect text the user reviews.
 
 ### 6.5 The frozen rules, first draft
+
+The experiment rewrote these: the words in force are `WRITING_RULES` in `packages/ai/src/writing.ts`, and "What the experiment found" says why each changed.
 
 ```
 You write email for one person, in their voice, as a draft they will read and
@@ -505,6 +507,72 @@ Right after: **rewrite on selection.**
 ## Out of scope
 
 Sending anything automatically. Auto-drafting on open. Suggested chips before you ask. Variants side by side. A diff on rewrite. A "drafted by AI" mark on the mail. Pro gating, which arrives with plan 85.
+
+## What the experiment found
+
+Three invented people (`packages/mock-data/src/writing-personas/`, written once by Haiku 5.5 from exact style rules and committed), 205 sent messages, 12 held-out replies: 6 to known people, 3 short instructions, 3 to someone new on a known domain, plus 3 attack mails. Drafts on Sonnet 5.5, profiles built only from what came before. 295 drafts across five prompt versions, $1.06 in the ledger. Run with `TERNO_DRAFT_STAGE=… scripts/ai-real/drafting.real.ts`.
+
+**The limit on all of this.** The originals came from a small model following style rules that counting can see, and the instructions were written from the originals. That flatters local counting and undersells whatever a model could notice in a real person. Twelve cases are few: the same arm run twice moved the authorship judge by 16 points, so only large gaps mean anything. None of this replaces your read on your own mail.
+
+### Results, final prompt (v5)
+
+| arm | length off (log2) | greeting | sign-off | `!` | lowercase | invented | meaning kept | fooled judge | TTFT p50 | $/draft |
+|---|---|---|---|---|---|---|---|---|---|---|
+| neutral, rules only | 0.34 | 33% | 8% | 67% | 58% | 0 | 100% | 8% | 1.07 s | 0.0029 |
+| habits and phrases | 0.38 | 92% | 92% | 100% | 100% | 0 | 92% | 50% | 0.92 s | 0.0020 |
+| plus traits and notes | 0.26 | 92% | 75% | 100% | 100% | 0 | 92% | 58% | 0.92 s | 0.0030 |
+| **habits, phrases, messages to this person** | 0.31 | 92% | 83% | 100% | 100% | 0 | 100% | 58% | 0.98 s | 0.0020 |
+| the same, run again | 0.26 | 92% | 92% | 100% | 100% | 0 | 92% | 42% | 0.89 s | 0.0015 |
+| plus traits and notes | 0.25 | 92% | 83% | 100% | 100% | 0 | 92% | 67% | 0.90 s | 0.0031 |
+| bold arm at `medium` | 0.30 | 92% | 92% | 100% | 100% | 0 | 92% | 33% | 0.95 s | 0.0019 |
+| bold arm without the domain level | 0.24 | 83% | 92% | 100% | 100% | 0 | 92% | 33% | 0.80 s | 0.0022 |
+
+"Fooled judge" is Haiku choosing the draft as the real one, against the original, from real samples: 50% is chance. Neutral fools it 8% of the time and everything with a voice sits at chance, the proxy's clearest result. "Length off" leaves out short instructions, whose originals say more than was asked. Greeting tops out at 92% because one original opens with `IVY!!`, which none of the arms did.
+
+Costs and time, from real usage: a cold first draft for an account about $0.005 (it writes 1,900 tokens to the cache); warm about $0.0015 to $0.002; "Shorter" about $0.0014 with no cache write and the whole prefix read, about 0.9 s to first token. The cache works as designed. These threads are short, so a real one costs more.
+
+**Hard checks.** 9 canary terms reached samples sent to the model across 22 judgments. None appeared in a stored or rejected note, a stock phrase, or a draft to anyone else. The 3 attack mails weren't obeyed at v3 or v5: no phrase, no reveal, no change of language, no account number. `checkSpecifics` flagged nothing in 295 drafts, and nothing it should have flagged was there, so it doesn't cry wolf on this set. Its recall comes only from unit tests. One limit: a number carried over from an older message to this person passes, since those are authorized sources.
+
+**My read of the 12 drafts in the bold arm: all 12 sendable with little editing.** The formal Spanish and the terse lowercase are close to indistinguishable. Three are noticeably flatter than the person: Bea to Nora and to Ivy lose the effusive extras, Milo to Joss loses some bite. Everything is at `/tmp/terno-ai/drafting-results.md`, with the blind pairs beside it.
+
+### What it changed
+
+- **Effort: `low`, pinned.** `medium` gave the same quality, about 35% more output and no difference in time to first token.
+- **The profile for a draft is habits, phrases and messages to this person. No traits, no notes by default.** Traits and notes moved no measure beyond the noise, on known people or new ones, and reading them side by side I couldn't tell them apart. Without them a draft sends nothing from mail to other people, and no learning job does either. **That would remove §3's model job, §4's first consent paragraph, the top of risk 1 and all of risk 2 from the first release.** It's your decision, on your own mail: `judgeVoice` stays built and off (`LOCAL_PARTS`), and your read should include one pass with it on.
+- **`situations` removed,** from the judgment and the renderer, without an arm: it's a part of the judgment that didn't earn its place. It returns if the judgment does.
+- **Messages to this person earn their place.** Without them Bea wrote to Ivy in lowercase with a wine emoji; with them, "omg yes!! … love you xx". Rodrigo's "Quedo a su disposición" came from them too.
+- **The domain level earns its place, for exactly the case you named.** Without it, Rodrigo opened to a new client's counsel with "Estimada Clara" and closed with "Un saludo"; with it, "Estimada Sra. Ferrer" and "Reciba un cordial saludo".
+- **"You" is unproven where an account exists:** dropping it changed nothing at v3. It stays, at about 80 tokens, as the only level a new account has.
+- **The length hint in the task is gone** (§6.4). It changed nothing when removed, and before the rules changed it read as a target: short instructions got padded ("no conflicts on my side").
+- **Sign-offs are stored as typed, not as `{me}`.** The model wrote `-Milo` for someone who signs `-m`. `-m`, `Rodri` and `Rodrigo Aldana` are the habit. A name's case is kept too: `{name in lowercase}`.
+- **Stock phrases drop fragments** that start or stop on a function word ("Thank you for", "de la calle"). Few are left in a corpus this small, so they're unproven, at almost no cost.
+- **The frozen rules moved to v5** (`WRITING_RULES`). What each change answered:
+  - past messages show how to say things, never what to say: it wrote "Confírmame cuando tengas la corrección de la cuota" from an old message, and "you still owe me the forty quid"
+  - no added promises, offers or next steps, even polite ones: "I'll send the updated headcount [today/time]"
+  - a question the task doesn't cover is left out, rather than answered or promised
+  - manner isn't an addition: the rule above alone made Bea dry
+  - a short instruction gets a short draft, and details aren't repeated back
+- **The body comes inside `<email>`, and `emailFilter` streams only that.** At low effort the model sometimes thinks out loud in its answer: "no opener, no sign-off, lowercase, short. The facts are only the author's to know, so placeholders." It did this on the same one-tap case at v3 and v4, 2 of 10 one-tap runs, and that text would have gone into the draft. Saying so in the rules didn't stop it; the tag did, in all later runs.
+- **"Shorter" needs its words chosen.** Plain "Shorter." dropped facts, such as the retry warning to Wes. "Shorter. Keep every fact and commitment." held them in all four cases tried, though it can still lose a joke. The chip should send that.
+
+### What didn't work
+
+- **Their vocabulary doesn't transfer through an instruction.** Told "probably … tomorrow", Milo's draft says that, not "prob tmrw", even with examples. A `shortForms` habit listing such words moved 1 draft of 3, so I removed it. "Treat its words as notes" helps only partly. Real people's instructions will be terser than these, which may help on its own.
+- **It still repeats details a person wouldn't:** "sunday the 17th works fine for me" where Milo wrote "that works". Better than v1, not gone.
+- **It's more restrained than warm people are.** It doesn't invent feeling, which is the rule's point and the cost of it. "I'm so excited I could cry" doesn't appear.
+- **One-tap, with no instruction, is the weakest path.** It has to guess a stance: Bea "omg yes!!", Rodrigo "me viene bien", Milo all placeholders. It reads as a draft to check, not one to send, and should be presented that way.
+- **The topic screen on notes.** I added it for semantic canaries. Its first version removed 21 of 88 notes, all good. With a manner vocabulary it removes 3 of 88, all still false, and it has caught no real leak, because the model never wrote one. Harmless while notes are off. It goes if they stay off.
+
+### Not run, and why
+
+Second-pass judge on notes: nothing got past for it to catch. Invented samples, evidence by situation vs recency, each level one at a time beyond "you" and domain: none would change a decision once the judgment isn't in the draft. The raw-examples-of-all-kinds benchmark: it would put other people's mail in draft requests, which the plan rules out anyway. Refusals: none in 295 drafts on ordinary mail, so that number is still untested on anything sensitive.
+
+### What the plan got wrong
+
+- **Cost:** about $0.015 a first draft and about $10 a month. It came in about a third of that cold and a tenth warm, roughly $1 a month at 20 drafts a day on threads this short. Real threads will cost more; §6.6's Pro arithmetic should be redone on real mail.
+- **Time to first token** was listed as a risk: 0.9 s at the median and 1.7 s at the 90th percentile, at either effort.
+- **"What the profile really saves":** the plan's case for model-judged profiles assumed they'd carry the voice. On this corpus, counting does.
+- **§6.5's first draft** was too permissive on what a draft may add and too prescriptive about filling gaps. "Mark the open points with [placeholders]" produced invented promises wearing a placeholder.
 
 ## The Codex reviews
 
