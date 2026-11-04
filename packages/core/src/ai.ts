@@ -1,6 +1,21 @@
 /** AI provider vocabulary shared by the backend, the RPC contract and the renderer. */
-export const AI_PROVIDER_IDS = ["anthropic", "openai", "compatible", "ollama", "lmstudio", "fake", "none"] as const;
+export const AI_PROVIDER_IDS = ["anthropic", "openai", "compatible", "ollama", "lmstudio", "jev", "fake", "none"] as const;
 export type AiProviderId = (typeof AI_PROVIDER_IDS)[number];
+
+/** What a provider and model can be chosen for (plan 131). */
+export const AI_TASK_NAMES = ["summary", "writing", "categorize"] as const;
+export type AiTaskName = (typeof AI_TASK_NAMES)[number];
+
+/** Which provider and model runs a task, when the user chose. */
+export interface AiTaskTarget {
+  provider: AiProviderId;
+  model: string;
+}
+
+/** The defaults the user decided (plan 131 §2); a choice in Settings wins. */
+export const WRITING_CLAUDE_MODEL = "claude-sonnet-5-5";
+export const SUMMARY_DEFAULT_MODEL = "gpt-6-luna";
+export const JEV_DEFAULT_MODEL = "jev-latest";
 
 export const COMPATIBLE_PRESETS = ["openrouter", "groq", "together", "azure", "custom"] as const;
 export type CompatiblePreset = (typeof COMPATIBLE_PRESETS)[number];
@@ -18,7 +33,7 @@ export interface ProviderDescriptor {
   defaultBaseURL?: string;
   presets?: CompatiblePreset[];
   declared: { output: OutputMode; embeddings: boolean };
-  discovery: "openai" | "ollama" | "lmstudio" | "anthropic" | "none";
+  discovery: "openai" | "ollama" | "lmstudio" | "anthropic" | "jev" | "none";
 }
 
 export interface PresetDescriptor {

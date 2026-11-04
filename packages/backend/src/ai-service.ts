@@ -19,13 +19,14 @@ import {
   type ModelInfo,
   type ProviderConfig,
 } from "@terno/ai";
-import { messageOf, textRef } from "@terno/core";
+import { JEV_DEFAULT_MODEL, messageOf, SUMMARY_DEFAULT_MODEL, textRef, WRITING_CLAUDE_MODEL, type AiTaskName } from "@terno/core";
 import { RpcError, type AiTestResult, type AppSettings } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { BackendCore as Backend } from "./core";
 import { SecretUnreadableError } from "./keychain";
 import { NetworkPolicyError } from "./net-policy";
-import { bindKeyOrigin, endpointOrigin, keyOrigins, readSettings, saveCapabilities, setKeyHint } from "./settings";
+import { AiLimiter, type LimiterTask } from "./ai-limiter";
+import { bindKeyOrigin, capabilitiesFor, endpointOrigin, keyOrigins, readSettings, saveCapabilities, setKeyHint } from "./settings";
 
 export type AiFactory = (config: ProviderConfig, options: AiOptions) => AiTasks;
 export const defaultAiFactory: AiFactory = (config, options) => createAi(config, options);
@@ -60,14 +61,53 @@ export class AiService {
   private readonly models = new Map<string, { at: number; models: ModelInfo[] }>();
   /** in-flight filters.generate per client: a newer request aborts the previous one */
   private readonly generating = new Map<string, AbortController>();
+  /** in-flight foreground requests by id: only the connection that started one can stop it */
+  private readonly requests = new Map<string, { clientId: string; controller: AbortController }>();
+  readonly limiter: AiLimiter;
 
   constructor(
     private readonly b: Backend,
     private readonly factory: AiFactory,
-  ) {}
+  ) {
+    this.limiter = new AiLimiter({
+      store: b.store,
+      now: () => b.now(),
+      monthlyLimitUsd: async () => (await readSettings(b.store)).ai.monthlyLimitUsd,
+    });
+  }
+
+  /** Starts a cancellable request for a connection; `release` when it settles. */
+  begin(requestId: string, clientId: string): { signal: AbortSignal; release: () => void } {
+    if (this.requests.has(requestId)) throw new RpcError("BAD_REQUEST", L("errors.ai.requestInUse"));
+    const controller = new AbortController();
+    const entry = { clientId, controller };
+    this.requests.set(requestId, entry);
+    return {
+      signal: AbortSignal.any([controller.signal, this.b.abort.signal]),
+      release: () => {
+        if (this.requests.get(requestId) === entry) this.requests.delete(requestId);
+      },
+    };
+  }
+
+  cancel(requestId: string, clientId: string): void {
+    const entry = this.requests.get(requestId);
+    if (entry?.clientId === clientId) entry.controller.abort();
+  }
+
+  /** A window closed: nothing it asked for has anywhere to go. */
+  disconnected(clientId: string): void {
+    for (const entry of this.requests.values()) if (entry.clientId === clientId) entry.controller.abort();
+  }
+
+  /** The provider or a task's target changed: nothing more goes where the user just left (plan 85 decision 10). */
+  configChanged(): void {
+    for (const entry of this.requests.values()) entry.controller.abort();
+    this.clients.clear();
+  }
 
   providers() {
-    const providers = PROVIDERS.filter((p) => p.id !== "fake" || this.b.options.demoAi);
+    const providers = PROVIDERS.filter((p) => p.id !== "jev" && (p.id !== "fake" || this.b.options.demoAi));
     return { providers: [...providers], presets: Object.values(PRESETS) };
   }
 
@@ -129,23 +169,60 @@ export class AiService {
     return { provider: ai.provider, model: ai.model, baseURL: ai.baseURL ?? undefined, preset: ai.preset ?? undefined };
   }
 
-  /** The configured provider, ready to run tasks. Throws AiError when it can't. */
-  async current(): Promise<AiTasks> {
+  /** What a task runs on: the user's choice, else its default. Never another provider without the user having set it up. */
+  private async targetFor(task: AiTaskName | "filter" | "voice", settings: AppSettings): Promise<Target> {
+    const name = task === "voice" ? "writing" : task;
+    const chosen = name === "filter" ? undefined : settings.ai.tasks[name];
+    const configured = this.currentTarget(settings);
+    const profiled = (provider: AiProviderId, model: string): Target => {
+      const profile = settings.ai.profiles[provider];
+      return { provider, model, baseURL: profile?.baseURL, preset: profile?.preset };
+    };
+    if (chosen) return profiled(chosen.provider, chosen.model);
+    if (name === "writing" && configured.provider === "anthropic") return { ...configured, model: WRITING_CLAUDE_MODEL };
+    if (name === "categorize" && settings.ai.keys.jev?.hasKey) return profiled("jev", JEV_DEFAULT_MODEL);
+    if (name === "summary") {
+      if (settings.ai.keys.openai?.hasKey) return profiled("openai", SUMMARY_DEFAULT_MODEL);
+      // a local model costs nothing and stays here; a paid one is the user's call, since this runs on every new mail
+      if (!isLocalProvider({ id: configured.provider, baseURL: configured.baseURL, preset: configured.preset }) && configured.provider !== "none") {
+        throw new AiError(L("errors.ai.summaryProvider"), "not_configured");
+      }
+    }
+    return configured;
+  }
+
+  /**
+   * The one place that decides what runs a task. The AiTasks it returns are
+   * immutable for their configuration: a change in Settings gives the next
+   * caller others, and aborts what's in flight (configChanged).
+   */
+  async forTask(task: AiTaskName | "filter" | "voice", o: { foreground?: boolean } = {}): Promise<AiTasks> {
     const settings = await readSettings(this.b.store);
-    const target = this.currentTarget(settings);
-    const config = { ...(await this.config(target)), capabilities: settings.ai.capabilities ?? undefined };
+    const target = await this.targetFor(task, settings);
+    const stored = await this.config(target);
+    const capabilities = (await capabilitiesFor(this.b.store, target)) ?? undefined;
+    // the limiter counts every request, so the SDK's own retries (unseen by it) stay off for these tasks
+    const config: ProviderConfig = { ...stored, capabilities, maxRetries: task === "filter" ? stored.maxRetries : 0 };
     const { fetch: _fetch, ...hashed } = config;
-    const key = await sha256Hex(JSON.stringify(hashed));
+    const foreground = o.foreground ?? (task === "filter" || task === "writing");
+    const key = await sha256Hex(JSON.stringify({ ...hashed, task, foreground }));
     let ai = this.clients.get(key);
     if (!ai) {
-      if (this.clients.size > 8) this.clients.clear();
+      if (this.clients.size > 16) this.clients.clear();
+      const local = isLocalProvider({ id: target.provider, baseURL: target.baseURL, preset: target.preset });
       ai = this.factory(config, {
-        onCapabilities: (capabilities) =>
-          void saveCapabilities(this.b.store, target.provider, { model: target.model, baseURL: target.baseURL, preset: target.preset }, capabilities),
+        wrapTransport: (transport) => this.limiter.wrap(transport, { task: task as LimiterTask, model: target.model, local, foreground }),
+        onCapabilities: (next) =>
+          void saveCapabilities(this.b.store, target.provider, { model: target.model, baseURL: target.baseURL, preset: target.preset }, next),
       });
       this.clients.set(key, ai);
     }
     return ai;
+  }
+
+  /** The configured provider, ready to run tasks. Throws AiError when it can't. */
+  current(): Promise<AiTasks> {
+    return this.forTask("filter");
   }
 
   async generateFilter(prompt: string, clientId: string): Promise<GeneratedFilter> {

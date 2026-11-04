@@ -396,6 +396,7 @@ export class BackendCore {
         await this.ready;
         return this.authorize(method, ctx);
       },
+      onDisconnect: (ctx) => this.aiService.disconnected(ctx.clientId),
     });
   }
 
@@ -2669,9 +2670,9 @@ export class BackendCore {
 
   // ───────────────────────────── AI ─────────────────────────────
 
-  /** The configured AI, ready to run tasks; throws AiError (not configured, paused by local mode, blocked). */
+  /** What categorizes, ready to run tasks; throws AiError (not configured, blocked). */
   ai(): Promise<AiTasks> {
-    return this.aiService.current();
+    return this.aiService.forTask("categorize");
   }
 
 }

@@ -50,6 +50,16 @@ export const PROVIDERS: readonly ProviderDescriptor[] = [
     declared: { output: "json_schema", embeddings: true },
     discovery: "lmstudio",
   },
+  // JEV only picks among choices: never in the main provider list, only for categorization (plan 134)
+  {
+    id: "jev",
+    label: "JEV",
+    locality: "cloud",
+    needsKey: true,
+    defaultBaseURL: "https://api.typesafe.ai",
+    declared: { output: "json_schema", embeddings: false },
+    discovery: "jev",
+  },
   { id: "fake", label: keyRef("ai.choice.fake"), locality: "local", needsKey: false, declared: { output: "json_schema", embeddings: false }, discovery: "none" },
   { id: "none", label: keyRef("ai.choice.none"), locality: "local", needsKey: false, declared: { output: "text", embeddings: false }, discovery: "none" },
 ];

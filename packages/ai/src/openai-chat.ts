@@ -1,14 +1,18 @@
 import type OpenAI from "openai";
-import type { ChatCompletionCreateParamsNonStreaming } from "openai/resources/chat/completions";
+import type { ChatCompletionChunk, ChatCompletionCreateParamsNonStreaming } from "openai/resources/chat/completions";
 import { L } from "@terno/i18n";
 import { describeProvider, isLocalProvider, needsKey, PRESETS, resolveBaseURL } from "./providers";
 import { mapNetworkError, mapSdkError, type ErrorInfo } from "./sdk-errors";
-import { AiError, type ModelInfo, type ModelTransport, type ProviderConfig } from "./types";
+import { AiError, promptText, type CompletionRequest, type ModelInfo, type ModelTransport, type ProviderConfig, type StreamEvent, type Usage } from "./types";
 
 type Sdk = typeof import("openai");
 
 /** GA version with structured outputs (json_schema) on chat completions. */
 export const AZURE_API_VERSION = "2024-10-21";
+function usageOf(u: { prompt_tokens: number; completion_tokens: number; prompt_tokens_details?: { cached_tokens?: number } | null } | null | undefined): Usage | undefined {
+  return u ? { inputTokens: u.prompt_tokens, outputTokens: u.completion_tokens, cacheReadTokens: u.prompt_tokens_details?.cached_tokens ?? 0 } : undefined;
+}
+
 /** OpenRouter attributes traffic to the calling app with these. */
 const OPENROUTER_HEADERS = { "HTTP-Referer": "https://terno.app", "X-Title": "Terno" };
 
@@ -101,14 +105,12 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
       .map((m) => ({ id: m.id, contextTokens: m.max_context_length, loaded: m.state === "loaded" }));
   }
 
-  return {
-    async complete(req) {
-      const { sdk, client } = await load();
+  const request = async (req: CompletionRequest): Promise<ChatCompletionCreateParamsNonStreaming> => {
       const { zodResponseFormat } = await import("openai/helpers/zod");
       const tokenLimit = config.id === "openai" || azure ? { max_completion_tokens: req.maxTokens } : { max_tokens: req.maxTokens };
-      const body: ChatCompletionCreateParamsNonStreaming = {
+      return {
         model: config.model,
-        messages: [{ role: "system", content: req.system }, ...req.messages],
+        messages: [{ role: "system", content: promptText(req.system) }, ...req.messages.map((m) => ({ role: m.role, content: promptText(m.content) }))],
         ...tokenLimit,
         ...(req.output === "json_schema" && req.schema
           ? { response_format: zodResponseFormat(req.schema.zod, req.schema.name) }
@@ -116,12 +118,41 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
             ? { response_format: { type: "json_object" as const } }
             : {}),
       };
+  };
+
+  return {
+    async complete(req) {
+      const { sdk, client } = await load();
+      const body = await request(req);
       try {
         const completion = await client.chat.completions.create(body, { signal: req.signal });
         const choice = completion.choices[0];
         if (!choice) throw new AiError(L("errors.ai.emptyAnswer", { provider: info.label }), "invalid_output");
         if (choice.message.refusal) return { text: "", stop: "refusal" };
-        return { text: choice.message.content ?? "", stop: choice.finish_reason === "length" ? "length" : "end" };
+        return { text: choice.message.content ?? "", stop: choice.finish_reason === "length" ? "length" : "end", usage: usageOf(completion.usage) };
+      } catch (error) {
+        throw mapSdkError(error, sdk.default, info);
+      }
+    },
+
+    async *stream(req): AsyncGenerator<StreamEvent> {
+      const { sdk, client } = await load();
+      const body = await request(req);
+      try {
+        // only OpenAI promises this option; a local server might refuse an unknown one
+        const options = config.id === "openai" ? { stream_options: { include_usage: true } } : {};
+        const stream = (await client.chat.completions.create({ ...body, ...options, stream: true } as never, { signal: req.signal })) as unknown as AsyncIterable<ChatCompletionChunk>;
+        let stop: "end" | "length" | "refusal" = "end";
+        let usage: Usage | undefined;
+        for await (const chunk of stream) {
+          usage = usageOf(chunk.usage) ?? usage;
+          const choice = chunk.choices[0];
+          if (!choice) continue;
+          if (choice.delta.refusal) stop = "refusal";
+          if (choice.finish_reason === "length") stop = "length";
+          if (choice.delta.content) yield { type: "delta", text: choice.delta.content };
+        }
+        yield { type: "done", stop, usage };
       } catch (error) {
         throw mapSdkError(error, sdk.default, info);
       }

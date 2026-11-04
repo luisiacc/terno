@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { parseModelJson } from "./json";
 import { L } from "@terno/i18n";
-import { AiError, type ChatMsg, type ModelTransport, type OutputMode } from "./types";
+import { AiError, type ChatMsg, type Effort, type ModelTransport, type OutputMode } from "./types";
 
 export type Validation<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -14,6 +14,7 @@ export interface StructuredTask<W, T> {
   /** one valid instance, shown to models without native structured output */
   example: W;
   maxTokens: number;
+  effort?: Effort;
 }
 
 export interface LadderOptions {
@@ -67,6 +68,7 @@ export async function runStructured<W, T>(transport: ModelTransport, task: Struc
         schema: { name: task.schema.name, zod: task.schema.zod },
         maxTokens: task.maxTokens,
         signal: options.signal,
+        ...(task.effort ? { effort: task.effort } : {}),
       });
     } catch (error) {
       const weaker = WEAKER[output];

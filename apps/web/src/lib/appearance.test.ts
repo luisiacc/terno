@@ -67,7 +67,7 @@ const SERVER: AppSettings = {
   aiCategorize: false,
   errorReports: "ask",
   language: "system",
-  ai: { provider: "none", model: "", baseURL: null, preset: null, hasKey: false, keyUnreadable: false, keyHint: null, keyOrigin: null, keyConfirmed: true, local: true, capabilities: null, profiles: {} },
+  ai: { provider: "none", model: "", baseURL: null, preset: null, hasKey: false, keyUnreadable: false, keyHint: null, keyOrigin: null, keyConfirmed: true, local: true, capabilities: null, profiles: {}, tasks: {}, keys: {}, monthlyLimitUsd: 10 },
 };
 /** The backend's state, as each answer would report it. */
 let server: AppSettings;

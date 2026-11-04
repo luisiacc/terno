@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import dc from "node:diagnostics_channel";
 import { encodeFeatures, extractFeatures } from "@terno/core";
-import { createAi, type CompletionRequest, type ModelTransport } from "@terno/ai";
+import { createAi, promptText, type CompletionRequest, type ModelTransport } from "@terno/ai";
 import { addToCategory, createAccount, createCategory, ingestMessages, putSecret, seedDataset, setSetting, type IncomingMessage, sqlDb } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
 import { generateDataset } from "@terno/mock-data";
@@ -765,7 +765,7 @@ describe("categorizer: auto-apply at ingestion", () => {
   }
 
   function classification(req: Parameters<ModelTransport["complete"]>[0]) {
-    const items = JSON.parse(req.messages[0]!.content.split("\nItems: ")[1]!) as { id: string }[];
+    const items = JSON.parse(promptText(req.messages[0]!.content).split("\nItems: ")[1]!) as { id: string }[];
     return { stop: "end" as const, text: JSON.stringify({ results: items.map(({ id }) => ({ id, label: "Facturas", confidence: 0.95 })) }) };
   }
 
@@ -1407,7 +1407,7 @@ describe("categorizer: auto-apply at ingestion", () => {
     const transport: ModelTransport = {
       async complete(req) {
         calls++;
-        const input = JSON.parse(req.messages[0]!.content.split("\nItems: ")[1]!) as { id: string }[];
+        const input = JSON.parse(promptText(req.messages[0]!.content).split("\nItems: ")[1]!) as { id: string }[];
         const results: { id: string; label: string | null; confidence: number }[] = [{ id: !valid && invalid === "id" ? sentinel : input[0]!.id, label: !valid && invalid === "label" ? sentinel : "Facturas", confidence: 0.95 }];
         if (!valid && invalid.startsWith("duplicate-")) {
           if (invalid === "duplicate-claim") results[0]!.label = null;
@@ -1444,7 +1444,7 @@ describe("categorizer: auto-apply at ingestion", () => {
     const transport: ModelTransport = {
       async complete(req) {
         calls++;
-        const input = JSON.parse(req.messages[0]!.content.split("\nItems: ")[1]!) as { id: string }[];
+        const input = JSON.parse(promptText(req.messages[0]!.content).split("\nItems: ")[1]!) as { id: string }[];
         return { stop: "end", text: JSON.stringify({ results: [{ id: input[0]!.id, ...result }] }) };
       },
     };

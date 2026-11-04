@@ -1224,6 +1224,7 @@ export function createHandlers(b: Backend): Handlers {
           const was = await readSettings(store);
           const next = await updateSettings(store, patch);
           b.aiAssist.settingsChanged(patch);
+          if (patch.ai && (patch.ai.provider !== undefined || patch.ai.model !== undefined || patch.ai.baseURL !== undefined || patch.ai.preset !== undefined || patch.ai.tasks)) b.aiService.configChanged();
           if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
           if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
           // plan 22: website icons turned off: nothing in flight lands, windows forget them
@@ -1248,6 +1249,11 @@ export function createHandlers(b: Backend): Handlers {
     "ai.listModels": ({ provider, baseURL, preset }) => b.aiService.listModels({ provider, baseURL, preset }),
     "ai.test": ({ provider, model, baseURL, preset }) => b.aiService.test({ provider, model, baseURL, preset }),
     "ai.setKey": ({ provider, preset, value }) => b.aiService.setKey(provider, preset, value),
+    "ai.cancel": ({ requestId }, ctx) => {
+      b.aiService.cancel(requestId, ctx.clientId);
+      return { ok: true };
+    },
+    "ai.usage": () => b.aiService.limiter.report(),
     "ai.confirmKey": ({ provider, preset }) => b.aiService.confirmKey(provider, preset),
 
     "identity.get": () => store.owner.get(),

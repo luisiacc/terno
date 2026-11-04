@@ -7,9 +7,12 @@ import { TABS } from "../tabs";
 import { FORWARD_ADDRESSES_MAX_CHARS } from "../forwarding";
 import {
   AI_PROVIDER_IDS,
+  AI_TASK_NAMES,
   COMPATIBLE_PRESETS,
   type AiErrorKind,
   type AiProviderId,
+  type AiTaskName,
+  type AiTaskTarget,
   type Capabilities,
   type CompatiblePreset,
   type ModelInfo,
@@ -105,6 +108,19 @@ export interface AiSettings {
   local: boolean;
   capabilities: Capabilities | null;
   profiles: Partial<Record<AiProviderId, AiProfile>>;
+  /** plan 131: what a task runs on when the user chose; absent: its default */
+  tasks: Partial<Record<AiTaskName, AiTaskTarget>>;
+  /** whether a provider other than the current one has a key, for the task rows */
+  keys: Partial<Record<AiProviderId, { hasKey: boolean; keyHint: string | null }>>;
+  /** a ceiling on what background AI may spend in a calendar month, in US dollars; 0: none */
+  monthlyLimitUsd: number;
+}
+
+/** What AI use has cost so far on the user's own keys, as far as prices are known (plan 131). */
+export interface AiUsageReport {
+  today: { requests: number; usd: number };
+  month: { requests: number; usd: number };
+  monthBackgroundUsd: number;
 }
 
 export interface AppSettings {
@@ -390,6 +406,7 @@ const endpointUrl = z
   .max(500)
   .url()
   .refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL");
+const aiTaskTarget = z.object({ provider: z.enum(AI_PROVIDER_IDS), model: z.string().trim().min(1).max(200) }).strict();
 const aiTarget = z.object({
   provider: z.enum(AI_PROVIDER_IDS),
   baseURL: endpointUrl.optional(),
@@ -413,10 +430,17 @@ const settingsPatch = z.object({
   remoteImages: z.enum(["ask", "always"]).optional(),
   ai: z
     .object({
-      provider: z.enum(AI_PROVIDER_IDS).optional(),
+      // JEV only picks among choices: it can't be the provider that writes
+      provider: z.enum(AI_PROVIDER_IDS).refine((p) => p !== "jev").optional(),
       model: z.string().trim().max(200).optional(),
       baseURL: endpointUrl.nullable().optional(),
       preset: z.enum(COMPATIBLE_PRESETS).nullable().optional(),
+      /** null clears a task's choice, back to its default */
+      tasks: z
+        .object(Object.fromEntries(AI_TASK_NAMES.map((t) => [t, aiTaskTarget.nullable().optional()])) as Record<AiTaskName, z.ZodOptional<z.ZodNullable<typeof aiTaskTarget>>>)
+        .strict()
+        .optional(),
+      monthlyLimitUsd: z.number().min(0).max(100_000).optional(),
     })
     .strict()
     .optional(),
@@ -1047,6 +1071,10 @@ export const contract = {
   "ai.setKey": m<AppSettings>()(
     z.object({ provider: z.enum(AI_PROVIDER_IDS), preset: z.enum(COMPATIBLE_PRESETS).optional(), value: z.string().trim().max(1000) }),
   ),
+
+  /** Stops one of this connection's requests. */
+  "ai.cancel": m<{ ok: true }>()(z.object({ requestId: z.string().min(1).max(64) })),
+  "ai.usage": m<AiUsageReport>()(empty),
 
   "identity.get": m<OwnerIdentity | null>()(empty),
   "identity.changeOwner": m<OwnerIdentity>()(z.object({ accountId: id, password: z.string().min(1).max(1000).optional() }), { timeoutMs: 300_000 }),

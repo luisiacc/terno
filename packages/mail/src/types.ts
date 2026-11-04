@@ -374,7 +374,7 @@ export interface ProviderRegistry {
   beginGmailRenewal?(options: GmailRenewalOptions): Promise<GmailRenewalProof>;
   /** plan 125: withdraw a removed account's Google grant (desktop only: the endpoint has no CORS; absent in test and
    * demo registries, which never try) */
-  revokeGoogle?(token: string, netFetch: typeof globalThis.fetch, signal: AbortSignal): Promise<"revoked" | "failed">;
+  revokeGoogle?(token: string, netFetch: typeof fetch, signal: AbortSignal): Promise<"revoked" | "failed">;
 }
 
 export interface RequestRun { markDispatched(): void; markSubmissionDispatched?(): void }

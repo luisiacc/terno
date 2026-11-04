@@ -7,7 +7,7 @@ import {
   type Capabilities,
   type CompatiblePreset,
 } from "@terno/ai";
-import { AI_PROVIDER_IDS, canonicalThemeId, COMPATIBLE_PRESETS, DEFAULT_DESIGN, DESIGN_IDS, DESIGN_PALETTE, fitsMode, isDesignId, textRef, themeMode, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
+import { AI_PROVIDER_IDS, canonicalThemeId, COMPATIBLE_PRESETS, DEFAULT_DESIGN, DESIGN_IDS, DESIGN_PALETTE, fitsMode, isDesignId, JEV_DEFAULT_MODEL, textRef, themeMode, type AiTaskName, type AiTaskTarget, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
 import { FAVORITES_MAX, type FavoriteFolder } from "@terno/core";
 import { isLanguageSetting, L, type Localized } from "@terno/i18n";
@@ -26,6 +26,9 @@ interface StoredSettings extends Partial<General> {
     profiles?: Partial<Record<AiProviderId, AiProfile>>;
     /** observed by Test connection (or a ladder downgrade), per provider + endpoint + model */
     capabilities?: Record<string, Capabilities>;
+    /** plan 131 */
+    tasks?: Partial<Record<AiTaskName, AiTaskTarget>>;
+    monthlyLimitUsd?: number;
   };
   /** plan 123: a Google client of the user's own (before it); dropped on read */
   gmailClientId?: string;
@@ -166,8 +169,12 @@ const DEFAULT_PROFILES: Partial<Record<AiProviderId, AiProfile>> = {
   ollama: { model: "" },
   lmstudio: { model: "" },
   compatible: { model: "", preset: "custom" },
+  jev: { model: JEV_DEFAULT_MODEL },
   fake: { model: "demo" },
 };
+
+/** Background AI's monthly ceiling until the user sets another: plenty for normal use, far from a surprise bill. */
+export const DEFAULT_MONTHLY_LIMIT_USD = 10;
 
 /** The last 4 characters of each saved key, so the UI can say which key is stored without ever seeing it. */
 const KEY_HINTS = "ai:keyHints";
@@ -413,6 +420,17 @@ function resolveThemes(g: General): General {
   };
 }
 
+/** The named providers' keys, for rows that offer another provider than the current one. */
+async function keySummary(store: SettingsStore): Promise<AiSettings["keys"]> {
+  const hints = await store.settings.get<Record<string, string>>(KEY_HINTS, {});
+  const out: AiSettings["keys"] = {};
+  for (const provider of ["anthropic", "openai", "jev"] as const) {
+    const secret = keySecretName(provider);
+    out[provider] = { hasKey: await store.secrets.has(secret), keyHint: hints[secret] ?? null };
+  }
+  return out;
+}
+
 export async function readSettings(store: SettingsStore): Promise<AppSettings> {
   const s = await stored(store);
   const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, remoteImagesVersion: _r, errorReportsVersion: _e, localMailVersion: _l, gmailClientId: _g, ...general } = s;
@@ -435,6 +453,9 @@ export async function readSettings(store: SettingsStore): Promise<AppSettings> {
     local: isLocalProvider({ id: provider, baseURL: profile.baseURL, preset: profile.preset }),
     capabilities: capabilities[capabilityKey(provider, profile)] ?? null,
     profiles,
+    tasks: s.ai?.tasks ?? {},
+    keys: await keySummary(store),
+    monthlyLimitUsd: s.ai?.monthlyLimitUsd ?? DEFAULT_MONTHLY_LIMIT_USD,
   };
   return { ...resolveThemes({ ...DEFAULT_SETTINGS, ...general, language: languageOf(s) }), ai };
 }
@@ -492,7 +513,20 @@ function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: 
     if (id !== undefined && !fitsMode(id, mode, custom)) throw new SettingsError(L(mode === "light" ? "errors.themeUnknownLight" : "errors.themeUnknownDark", { id }));
   }
   const { aiProvider: _p, aiModel: _m, ...kept } = s;
-  return { ...kept, ...general, ai: { ...s.ai, provider, profiles } };
+  const tasks = { ...s.ai?.tasks };
+  for (const [task, target] of Object.entries(aiPatch?.tasks ?? {}) as [AiTaskName, AiTaskTarget | null | undefined][]) {
+    if (target === null) delete tasks[task];
+    else if (target) tasks[task] = target;
+  }
+  const monthlyLimitUsd = aiPatch?.monthlyLimitUsd ?? s.ai?.monthlyLimitUsd;
+  return { ...kept, ...general, ai: { ...s.ai, provider, profiles, tasks, ...(monthlyLimitUsd !== undefined ? { monthlyLimitUsd } : {}) } };
+}
+
+/** What was observed for a provider, endpoint and model (plan 131: a task's model isn't the configured one's). */
+export async function capabilitiesFor(store: SettingsStore, target: { provider: AiProviderId; model: string; baseURL?: string; preset?: CompatiblePreset }): Promise<Capabilities | null> {
+  const s = await stored(store);
+  const { provider, ...profile } = target;
+  return s.ai?.capabilities?.[capabilityKey(provider, profile)] ?? null;
 }
 
 export async function saveCapabilities(store: SettingsStore, provider: AiProviderId, profile: AiProfile, capabilities: Capabilities): Promise<void> {

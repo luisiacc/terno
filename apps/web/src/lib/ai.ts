@@ -3,7 +3,7 @@ import type { AiSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 
 /** What the AI tab's selector shows: compatible appears twice (a server on this Mac, or a cloud API). */
-export type ProviderChoice = Exclude<AiProviderId, "compatible"> | "local-server" | "compatible";
+export type ProviderChoice = Exclude<AiProviderId, "compatible" | "jev"> | "local-server" | "compatible";
 
 export const LOCAL_CHOICES: ProviderChoice[] = ["ollama", "lmstudio", "local-server"];
 export const CLOUD_CHOICES: ProviderChoice[] = ["anthropic", "openai", "compatible"];
@@ -47,7 +47,8 @@ const CLOUD_HOST: Partial<Record<AiProviderId, string>> = { anthropic: "api.anth
 
 export function choiceOf(ai: Pick<AiSettings, "provider" | "preset" | "local">): ProviderChoice {
   if (ai.provider === "compatible") return ai.preset === "custom" && ai.local ? "local-server" : "compatible";
-  return ai.provider;
+  // JEV is never the main provider (the contract refuses it): it only categorizes
+  return ai.provider === "jev" ? "none" : ai.provider;
 }
 
 export function isLoopbackUrl(url: string): boolean {

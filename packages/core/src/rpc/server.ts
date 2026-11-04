@@ -18,6 +18,8 @@ export interface RpcServerOptions {
   onError?: (error: unknown, method: string, payload: RpcErrorPayload) => void;
   /** Return false to reject a method for a given connection (e.g. MCP permissions). */
   authorize?: (method: MethodName, ctx: CallContext) => boolean | Promise<boolean>;
+  /** a connection went away: what it started has no one to report to */
+  onDisconnect?: (ctx: CallContext) => void;
 }
 
 /**
@@ -49,11 +51,14 @@ export class RpcServer {
     const offMessage = transport.onMessage((msg) => {
       if (msg.t === "req") void this.dispatch(transport, ctx, msg);
     });
-    const offClose = transport.onClose(() => this.connections.delete(transport));
+    const closed = () => {
+      if (this.connections.delete(transport)) this.options.onDisconnect?.(ctx);
+    };
+    const offClose = transport.onClose(closed);
     return () => {
       offMessage();
       offClose();
-      this.connections.delete(transport);
+      closed();
     };
   }
 
@@ -90,6 +95,18 @@ export class RpcServer {
   emit<E extends EventName>(event: E, payload: Events[E], options: { origins?: readonly CallContext["origin"][] } = {}): void {
     for (const [transport, ctx] of this.connections) {
       if (options.origins && !options.origins.includes(ctx.origin)) continue;
+      try {
+        transport.send({ v: RPC_VERSION, t: "evt", e: event, p: payload });
+      } catch {
+        this.connections.delete(transport);
+      }
+    }
+  }
+
+  /** Pushes an event to one connection: a stream belongs to whoever asked for it (plan 131). */
+  emitTo<E extends EventName>(clientId: string, event: E, payload: Events[E]): void {
+    for (const [transport, ctx] of this.connections) {
+      if (ctx.clientId !== clientId || ctx.origin === "mcp") continue;
       try {
         transport.send({ v: RPC_VERSION, t: "evt", e: event, p: payload });
       } catch {
