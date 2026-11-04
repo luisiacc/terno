@@ -73,21 +73,23 @@ test.describe("dragging mail onto a folder", { tag: "@design" }, () => {
     const account = accountOf(server, "Acme Studio");
     await openAccount(page, account);
     const db = sqlDb(server.backend.store);
-    // a sender with several threads in this account
-    const sender = db.get<{ last_from_email: string }>("SELECT last_from_email FROM threads WHERE account_id = ? AND in_inbox = 1 AND message_count = 1 AND has_sent = 0 AND last_from_email != '' GROUP BY last_from_email HAVING count(*) >= 3 ORDER BY count(*) DESC LIMIT 1", account)!.last_from_email;
-    const ids = db.all<{ id: number }>("SELECT id FROM threads WHERE account_id = ? AND in_inbox = 1 AND message_count = 1 AND last_from_email = ? ORDER BY last_date DESC", account, sender).map((r) => r.id);
-    await page.getByTestId("search-input").fill(`from:${sender}`);
-    await expect(row(page, ids[0]!)).toBeVisible();
-    await dragTo(page, row(page, ids[0]!), own(page, account, "Label_23"));
+    // the row on top, and everything of this account from who wrote it
+    const first = await rowOutside(page, inFolder(server, account, "Label_23"));
+    const sender = db.get<{ from_email: string }>("SELECT from_email FROM messages WHERE thread_id = ? AND is_sent = 0 ORDER BY date LIMIT 1", first)!.from_email;
+    const ids = db.all<{ id: number }>("SELECT DISTINCT t.id FROM messages m JOIN threads t ON t.id = m.thread_id WHERE m.account_id = ? AND m.from_email = ? AND m.is_sent = 0 AND t.in_trash = 0 AND t.in_spam = 0", account, sender).map((r) => r.id);
+    const before = new Map(db.all<{ id: number; in_inbox: number }>(`SELECT id, in_inbox FROM threads WHERE id IN (${ids.join(",")})`).map((r) => [r.id, r.in_inbox]));
+    await dragTo(page, row(page, first), own(page, account, "Label_23"));
     await page.mouse.up();
     await expect(page.getByTestId("folder-snackbar")).toBeVisible();
+    // only the dropped one has moved
+    await expect.poll(() => inFolder(server, account, "Label_23").has(first)).toBe(true);
     const line = page.getByTestId("folder-sender");
     await expect(line).toBeVisible();
     await line.click();
     await expect.poll(() => ids.every((id) => inFolder(server, account, "Label_23").has(id))).toBe(true);
     await page.keyboard.press("z");
     await expect.poll(() => ids.every((id) => !inFolder(server, account, "Label_23").has(id))).toBe(true);
-    await expect.poll(() => db.get<{ n: number }>(`SELECT count(*) AS n FROM threads WHERE id IN (${ids.join(",")}) AND in_inbox = 1`)!.n).toBe(ids.length);
+    await expect.poll(() => db.all<{ id: number; in_inbox: number }>(`SELECT id, in_inbox FROM threads WHERE id IN (${ids.join(",")})`).every((r) => before.get(r.id) === r.in_inbox)).toBe(true);
   });
 
   test("a thread in a category shown in the Inbox stays there and the note says why", async ({ app: page, server }) => {
@@ -112,6 +114,8 @@ test.describe("dragging mail onto a folder", { tag: "@design" }, () => {
     const account = accountOf(server, "Acme Studio");
     await page.getByTestId(`nav-account-${account}`).click();
     await own(page, account, "Label_21").click();
+    const members = inFolder(server, account, "Label_21");
+    await expect.poll(async () => members.has(Number(await page.locator("[data-testid=thread-row]").first().getAttribute("data-thread-id")))).toBe(true);
     const id = await rowOutside(page, inFolder(server, account, "Label_23"));
     await dragTo(page, row(page, id), own(page, account, "Label_23"));
     await page.mouse.up();
@@ -130,6 +134,7 @@ test.describe("dragging mail onto a folder", { tag: "@design" }, () => {
     const target = own(page, account, "Label_21");
     await target.click();
     const first = page.locator("[data-testid=thread-row]").first();
+    await expect.poll(async () => inFolder(server, account, "Label_21").has(Number(await first.getAttribute("data-thread-id")))).toBe(true);
     await dragTo(page, first, target);
     await expect(target).toHaveAttribute("data-drop-state", "already");
     await page.mouse.up();
