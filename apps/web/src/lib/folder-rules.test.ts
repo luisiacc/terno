@@ -1,7 +1,7 @@
 import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import { describe, expect, it } from "vitest";
-import { factsOf, keptNote, leavesList, parseFolderRef, refusesFolder, sourceFolder, staysInInbox } from "./folder-rules";
+import { factsOf, keptNote, leavesList, listingFolder, parseFolderRef, refusesFolder, sourceFolder, staysInInbox } from "./folder-rules";
 
 setLocale("en", en);
 
@@ -37,10 +37,20 @@ describe("plan 127: what a drop on a folder does to the rows on screen", () => {
   });
 
   it("the folder you're in is what it leaves, only if it's this account's and not the target", () => {
-    expect(sourceFolder({ accountId: 3, folder: "A" }, { accountId: 3, key: "B" })).toBe("A");
-    expect(sourceFolder({ accountId: 3, folder: "B" }, { accountId: 3, key: "B" })).toBe(null);
-    expect(sourceFolder({ accountId: 4, folder: "A" }, { accountId: 3, key: "B" })).toBe(null);
-    expect(sourceFolder({ accountId: 3, folder: null }, { accountId: 3, key: "B" })).toBe(null);
+    const q = { query: "" };
+    expect(sourceFolder({ ...q, accountId: 3, folder: "A" }, { accountId: 3, key: "B" })).toBe("A");
+    expect(sourceFolder({ ...q, accountId: 3, folder: "B" }, { accountId: 3, key: "B" })).toBe(null);
+    expect(sourceFolder({ ...q, accountId: 4, folder: "A" }, { accountId: 3, key: "B" })).toBe(null);
+    expect(sourceFolder({ ...q, accountId: 3, folder: null }, { accountId: 3, key: "B" })).toBe(null);
+  });
+
+  it("a search from inside a folder lists everywhere: its results aren't that folder's (Codex code review)", () => {
+    const searching = { accountId: 3, folder: "A", query: "uber" };
+    expect(listingFolder(searching, 3, "A")).toBe(false);
+    expect(sourceFolder(searching, { accountId: 3, key: "B" })).toBe(null);
+    expect(listingFolder({ ...searching, query: "  " }, 3, "A")).toBe(true);
+    expect(listingFolder({ ...searching, query: "" }, 3, "B")).toBe(false);
+    expect(listingFolder({ ...searching, query: "" }, 4, "A")).toBe(false);
   });
 
   it("refuses rows of another account, of several, and anything in Trash or Spam", () => {

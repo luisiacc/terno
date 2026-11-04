@@ -32,9 +32,12 @@ export const refusesFolder = (facts: DragFacts, accountId: number): boolean => f
 /** Why, in words; said when one is dropped anyway. */
 export const refusalText = (facts: DragFacts, folder: string): string => (facts.disposed ? t("folder.move.refusedPlace", { folder }) : t("folder.move.refusedAccount", { folder }));
 
-/** The folder you're looking at, when it's another of this account's: a move leaves it. */
-export function sourceFolder(s: { accountId: number | null; folder: string | null }, to: Pick<FolderDrop, "accountId" | "key">): string | null {
-  return s.folder !== null && s.accountId === to.accountId && s.folder !== to.key ? s.folder : null;
+/** The folder whose list is on screen (a search keeps the folder in the state, but lists everywhere): dropping there does nothing. */
+export const listingFolder = (s: { accountId: number | null; folder: string | null; query: string }, accountId: number, key: string): boolean => !s.query.trim() && s.folder === key && s.accountId === accountId;
+
+/** The folder whose list you're moving from, when it's another of this account's: a move leaves it. */
+export function sourceFolder(s: { accountId: number | null; folder: string | null; query: string }, to: Pick<FolderDrop, "accountId" | "key">): string | null {
+  return !s.query.trim() && s.folder !== null && s.accountId === to.accountId && s.folder !== to.key ? s.folder : null;
 }
 
 /** Does this row leave the list on screen? A search, All Mail, Sent, a category's list and the like keep it. */

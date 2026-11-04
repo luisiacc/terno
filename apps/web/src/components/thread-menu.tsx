@@ -59,7 +59,7 @@ import { menuTargets } from "~/lib/selection";
 import { openPrint } from "~/lib/print-open";
 import { useFolderRows } from "~/lib/account-folders";
 import { moveToFolder } from "~/lib/folder-move";
-import { factsOf } from "~/lib/folder-rules";
+import { factsOf, listingFolder } from "~/lib/folder-rules";
 import { getApp, inSeparateTab, setApp, useApp, type ScopeSelection } from "~/state/app";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { listKey, useList } from "~/state/list";
@@ -440,7 +440,7 @@ function MoveToFolderItems({ rows, ids }: { rows: readonly ThreadSummary[]; ids:
   const facts = factsOf(rows);
   const accountId = facts.accounts.size === 1 ? [...facts.accounts][0]! : null;
   const folders = useApp((s) => s.folders);
-  const here = useApp((s) => (s.accountId === accountId ? s.folder : null));
+  const here = useApp((s) => (accountId !== null && s.folder !== null && listingFolder(s, accountId, s.folder) ? s.folder : null));
   const list = useFolderRows(folders, accountId ?? -1, accountId !== null);
   const own = list.filter((f) => f.selectable && f.key !== null).slice(0, 250);
   if (accountId === null || facts.disposed || own.length === 0) return null;

@@ -14,7 +14,7 @@ import { isExclusivelyIn, moveToCategory } from "~/lib/categorize";
 import { DragController, newIds, payloadFor, type DropId, type PointerLike, type TargetRect } from "~/lib/drag";
 import { dimRows, flashDrop } from "~/lib/flash";
 import { moveToFolder } from "~/lib/folder-move";
-import { factsOf, parseFolderRef, refusalText, refusesFolder, type DragFacts } from "~/lib/folder-rules";
+import { factsOf, listingFolder, parseFolderRef, refusalText, refusesFolder, type DragFacts } from "~/lib/folder-rules";
 import { snack } from "~/lib/snack";
 import { getApp } from "~/state/app";
 import { useDrag } from "~/state/drag";
@@ -174,8 +174,7 @@ export function installDragController(list: HTMLElement): () => void {
     isAlready: (target, ids) => {
       if (typeof target === "number") return isExclusivelyIn(target, ids);
       const { accountId, key } = parseFolderRef(target);
-      const s = getApp();
-      return s.folder === key && s.accountId === accountId;
+      return listingFolder(getApp(), accountId, key);
     },
     refuses: (target) => typeof target === "string" && refusesFolder(facts, parseFolderRef(target).accountId),
     refused: (target) => {

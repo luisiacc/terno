@@ -139,3 +139,18 @@ Round 1 (`f363b27a..ef2e5266`) found five issues. Each is fixed with a test chec
 3. **A row could leave a list while its thread stayed in that folder.** A sent-only conversation in A that later got a reply kept its own copy in A when moved to B. A thread's copies in the folder it leaves all move, yours too. Test: conformance, both stores.
 4. **A bulk move that failed partway lost its Undo.** The failure snack ignored what committed. It now offers an Undo of the earlier calls and the slices the backend names. Test: `folder-move.test.ts`.
 5. **An unknown outcome left the folder claiming the mail.** A lost answer stopped counting as pending but nothing recomputed. It recomputes and the lists follow. Test: conformance, both stores.
+
+Round 2 (`f363b27a..` with round 1's fixes) found one issue, fixed with a test that fails without it: **a search from inside a folder was read as that folder's list.** Search keeps the folder in the state but lists everywhere, so a result dropped on that folder showed "already" and did nothing, the menu disabled it, and a drop on another folder took the thread out of the one you'd searched from. `listingFolder` and `sourceFolder` now read the query too. Test: `folder-rules.test.ts`. The review stopped here: this round's only finding was this one small fix.
+
+## Known edge cases (left on purpose)
+
+- **A move that fails for good leaves the thread in Archive,** with the op's error snack: the archive that follows it still runs. Nothing is lost, and the folder doesn't claim it. On a server without UIDPLUS every move fails this way; such servers are rare, and the message says what to do.
+- **A lost answer (`unknown`)** shows only what's known until the next sync pass finds where the message is, as for any IMAP move.
+- **A copy of a message moved from Sent, All Mail or another folder stays there:** the move adds one in the destination (Archive's moves only when it's the message's one copy).
+- **Undo while a sync is reading labels:** a Gmail read from before the op settled can show the old labels until the next history event; it heals itself.
+
+## Verification
+
+Unit, conformance (SQLite native, WASM, IndexedDB), IMAP integration against imapkit, `folder-drop.spec.ts` in all four designs (twice each), the related specs (`dnd`, `similar`, `account-own-folders`, `folder-actions`), the UI perf gates, web conformance, and light and dark screenshots looked at.
+
+`offers.perf.test.ts`: offers after a drop on a folder 8.3 ms p95 (budget 16); a line moving one account's mail from a sender: 783 ms, stall 18.9 ms (budget 50), list p95 1.6 ms. Its pattern-filter heap comparison fails, the same way on the commit this branched from (`f363b27a`: +54.5 MB against a limit of +49.4 MB): not from this change.
