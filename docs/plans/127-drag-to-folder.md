@@ -10,7 +10,7 @@ The attached screenshot points at an open account's own folders (Familia, Recibo
 
 Decisions taken without asking, each reversible:
 
-- **One-time offers.** The offers move what's there now. They make no filter: no filter action can move mail to a folder today, and adding one is a feature of its own (below, Out of scope).
+- **One-time offers.** The offers move what's there now. They make no filter: no filter action can move mail to a folder today, and adding one is a feature of its own (below, Out of scope). Plan 128 added it: the lines now catch new mail too.
 - **"Stays" is decided at the drop.** A thread is kept in the Inbox when, at the drop, it's in a category shown there and in none hidden (plan 83: hidden wins). Filing a thread already in a folder into a shown category doesn't bring it back, as filing an archived one doesn't today.
 - **A move leaves the Inbox and the folder you're looking at.** Other folders and labels stay. That's what Gmail's own "Move to" does, and a label someone set elsewhere is never stripped silently.
 
