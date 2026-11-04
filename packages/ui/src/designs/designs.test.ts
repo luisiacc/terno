@@ -3,10 +3,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_DESIGN, DESIGN_IDS } from "@terno/core";
 import { describe, expect, it } from "vitest";
+import { oklchToRgb, parseColor } from "../themes/color";
 import { builtinTheme } from "../themes/registry";
 import { designVars, generateDesignsCss, generateTypeRolesCss } from "./generate";
 import { designById, DESIGNS } from "./index";
-import { TYPE_ROLES } from "./types";
+import { TEXT_STEPS, TYPE_ROLES } from "./types";
 
 const styles = join(import.meta.dirname, "../styles");
 
@@ -51,6 +52,58 @@ describe("designs (plan 15)", () => {
     expect(m.rows).toEqual({ comfortable: 68, compact: 40, wide: 44 });
     expect(m.avatar.row).toBe(0);
     expect(m.palette).toEqual({ light: "terno-light", dark: "terno-dark" });
+  });
+
+  // plan 137: the blueprint, value by value (e2e/graphite.spec.ts checks what the running app draws)
+  describe("Graphite holds its blueprint", () => {
+    const g = designById("graphite");
+    const px = (rem: string) => parseFloat(rem) * 16;
+    const hex = (color: string) => {
+      const { r, g: green, b } = oklchToRgb(parseColor(color));
+      return `#${[r, green, b].map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+    };
+
+    it("type: 12, 13, 14 and 24 px, regular and medium, -0.15px", () => {
+      for (const step of TEXT_STEPS) expect([12, 13, 14, 24]).toContain(px(g.text[step][0]));
+      expect([12, 13, 14, 24]).toContain(px(g.controlText));
+      for (const role of TYPE_ROLES) {
+        const spec = g.type[role];
+        expect([12, 13, 14, 24], role).toContain(px(spec.size));
+        expect([400, 500], role).toContain(spec.weight);
+        expect([400, 500], role).toContain(spec.strong);
+        expect(spec.tracking, role).toBe("-0.15px");
+      }
+      expect(g.weights).toEqual({ semibold: 500, bold: 500 });
+      expect(g.tracking).toEqual({ tight: "-0.15px", display: "-0.15px", base: "-0.15px", wide: "-0.15px" });
+    });
+
+    it("shape: 8 px navigation, 16 px cards, pill buttons, 14 px navigation icons", () => {
+      expect(px(g.layout.navRadius)).toBe(8);
+      expect(px(g.layout.cardRadius)).toBe(16);
+      expect(px(g.radius["2xl"])).toBe(16);
+      expect(g.surfaces.cta).toBe("pill");
+      expect(g.icon.nav).toBe(14);
+    });
+
+    it("hierarchy: #292929 and #5D5D5D in light, #EDEDED and #9E9E9E in dark", () => {
+      const light = builtinTheme("graphite-light")!.tokens;
+      const dark = builtinTheme("graphite-dark")!.tokens;
+      expect([light.foreground, light.primary, light["muted-foreground"], light.input].map(hex)).toEqual(["#292929", "#292929", "#5D5D5D", "#9E9E9E"]);
+      expect([dark.foreground, dark["muted-foreground"], dark.input].map(hex)).toEqual(["#EDEDED", "#9E9E9E", "#5D5D5D"]);
+    });
+  });
+
+  it("the values Graphite added leave the other designs as they were", () => {
+    for (const d of DESIGNS.filter((x) => x.id !== "graphite")) {
+      expect(d.weights, d.id).toEqual({ semibold: 600, bold: 700 });
+      expect(d.tracking.base, d.id).toBe("normal");
+      expect(d.icon.nav, d.id).toBe(16);
+      expect(d.surfaces.cta, d.id).toBe("control");
+      expect(d.surfaces.card, d.id).toBe("tint");
+      expect(d.controlText, d.id).toBe("0.8rem");
+      expect(d.tracking.wide, d.id).toBe("0.025em");
+      expect(d.layout.commandRadius, d.id).toBe("var(--ds-radius-xl)");
+    }
   });
 
   it("generated CSS is up to date (run `pnpm --filter @terno/ui gen:designs`)", () => {

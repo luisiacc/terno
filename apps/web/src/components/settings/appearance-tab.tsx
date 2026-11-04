@@ -36,6 +36,7 @@ function DesignPreview({ design, mode }: { design: DesignDefinition; mode: Theme
       <div className="flex w-[30%] shrink-0 flex-col gap-1 bg-sidebar p-1.5">
         {v.compose === "sidebar-pill" && <span className="h-3 rounded-full bg-primary" />}
         {v.compose === "sidebar-outline" && <span className="h-3 rounded-[3px] bg-card shadow-hairline" />}
+        {v.compose === "sidebar-row" && <span className="h-1 w-4/5 rounded-full bg-muted-foreground" />}
         <span className="mt-0.5 h-2 rounded-[calc(var(--nav-radius)*0.4)] bg-sidebar-accent" />
         <span className="h-1 w-4/5 rounded-full bg-muted-foreground" />
         <span className="h-1 w-3/5 rounded-full bg-muted-foreground" />

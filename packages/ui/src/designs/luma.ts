@@ -13,6 +13,8 @@ export const luma: DesignDefinition = {
   vibrancy: false,
   // Inter as designed: no stylistic sets (the others' cv11 would give Inter a single-storey a)
   fonts: { sans: INTER, display: INTER, features: '"kern"', faces: ['400 1em "Inter Variable"', '500 1em "Inter Variable"', '600 1em "Inter Variable"'] },
+  weights: { semibold: 600, bold: 700 },
+  controlText: "0.8rem",
   // 11 · 12 · 13 · 14 · 16 · 18 · 24 (caption 2, caption 1, body 2, body, headline, title 3, title 1)
   text: {
     "2xs": ["0.6875rem", "0.9375rem"],
@@ -25,7 +27,7 @@ export const luma: DesignDefinition = {
   },
   // 4 badges and checkboxes · 8 menu rows · 10 buttons and fields · 12 · 16 menus · 24 cards
   radius: { sm: "0.25rem", md: "0.5rem", lg: "0.625rem", xl: "0.75rem", "2xl": "1rem", "3xl": "1.5rem", "4xl": "1.75rem" },
-  tracking: { tight: "-0.006em", display: "-0.02em" },
+  tracking: { tight: "-0.006em", display: "-0.02em", base: "normal", wide: "0.025em" },
   type: {
     listTitle: { family: "display", size: "1.25rem", leading: "1.625rem", weight: 600, strong: 600, tracking: "-0.017em", style: "normal" },
     greeting: { family: "display", size: "1.25rem", leading: "1.625rem", weight: 600, strong: 600, tracking: "-0.017em", style: "normal" },
@@ -40,11 +42,11 @@ export const luma: DesignDefinition = {
     body: { family: "sans", size: "0.875rem", leading: "1.6", weight: 400, strong: 600, tracking: "0em", style: "normal" },
     compose: { family: "sans", size: "0.875rem", leading: "1.25rem", weight: 500, strong: 600, tracking: "-0.006em", style: "normal" },
   },
-  icon: { stroke: 1.5, toolbar: 1.5 },
-  layout: { sidebar: "240px", listMin: "340px", listMax: "min(400px, 32vw)", readerMin: 360, readerMax: "800px", readerPadX: "2rem", rowRadius: "0.625rem", navRadius: "0.5rem", navHeight: "2rem" },
+  icon: { stroke: 1.5, toolbar: 1.5, nav: 16 },
+  layout: { sidebar: "240px", listMin: "340px", listMax: "min(400px, 32vw)", readerMin: 360, readerMax: "800px", readerPadX: "2rem", rowRadius: "0.625rem", navRadius: "0.5rem", navHeight: "2rem", cardRadius: "calc(var(--ds-radius-lg) + 2px)", commandRadius: "var(--ds-radius-xl)" },
   rows: { comfortable: 76, compact: 44, wide: 48 },
   avatar: { row: 32, rowCompact: 20, rowWide: 24, message: 32, collapsed: 24, senderCard: 0 },
-  surfaces: { draft: "outline", reviewBadge: "tinted", inboxCount: "muted" },
+  surfaces: { draft: "outline", reviewBadge: "tinted", inboxCount: "muted", cta: "control", card: "tint" },
   variants: {
     compose: "sidebar-pill",
     listHeader: "title",

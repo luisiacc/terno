@@ -117,8 +117,8 @@ export function FolderNameRow({
     <div data-testid={`${testId}-row`} className="min-w-0">
       {/* the indent replaces the row's own left padding, as a folder row's does: the icon sits on its siblings' line */}
       <div className={cn("type-nav flex h-(--nav-h) min-w-0 items-center gap-2.5 px-2 text-sidebar-foreground", inset)}>
-        <span className="flex size-4 items-center justify-center text-sidebar-glyph">
-          <FolderIcon className="size-4" />
+        <span className="flex size-(--icon-nav) items-center justify-center text-sidebar-glyph">
+          <FolderIcon className="size-(--icon-nav)" />
         </span>
         {/* the text starts where a name does: the field's padding sits outside the label's line */}
         <input

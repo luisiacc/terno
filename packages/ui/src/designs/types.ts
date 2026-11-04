@@ -23,11 +23,22 @@ export interface DesignDefinition {
     /** the faces to have loaded before this design paints (CSS font shorthands; empty: system fonts) */
     faces: readonly string[];
   };
+  /** what font-semibold and font-bold draw (plan 137: a design may cap them) */
+  weights: { semibold: number; bold: number };
+  /** small buttons' and toggles' text (rem) */
+  controlText: string;
   /** the shared dense scale, as [size, line height] (rem): utilities like text-sm read these */
   text: Record<TextStep, readonly [string, string]>;
   /** the radius ladder (utilities rounded-sm … rounded-4xl) */
   radius: Record<RadiusStep, string>;
-  tracking: { tight: string; display: string };
+  tracking: {
+    tight: string;
+    display: string;
+    /** the whole UI's letter spacing, under the roles and tracking-* utilities */
+    base: string;
+    /** tracking-wide: small uppercase labels and verification codes */
+    wide: string;
+  };
   /** where designs actually differ in type: components use `type-<role>` (and `type-<role>-strong` for the emphasized weight) */
   type: Record<TypeRole, TypeSpec>;
   icon: {
@@ -35,6 +46,8 @@ export interface DesignDefinition {
     stroke: number;
     /** the reader toolbar's */
     toolbar: number;
+    /** a sidebar item's icon and its slot (px): the text line and the section labels stay on one line at any size */
+    nav: number;
   };
   layout: {
     /** grid: the sidebar's width and the list column's min/max */
@@ -51,6 +64,10 @@ export interface DesignDefinition {
     navRadius: string;
     /** a sidebar item's height */
     navHeight: string;
+    /** the corners of a group of rows on a card (Settings' groups, the snippet editor) */
+    cardRadius: string;
+    /** a command list's rows (the palette, the category picker): its panel is these plus their 8 px inset */
+    commandRadius: string;
   };
   /** list row heights in px: the virtualizer reads these; `wide` is the one-line row of the List layout's full-width list at comfortable density (plan 24) */
   rows: Record<"comfortable" | "compact" | "wide", number>;
@@ -63,6 +80,10 @@ export interface DesignDefinition {
     reviewBadge: "plain" | "tinted";
     /** the inbox's unread count in the sidebar: quiet, or in the unread color */
     inboxCount: "muted" | "unread";
+    /** a button with words on it: the control's corners, or a pill */
+    cta: "control" | "pill";
+    /** a group of rows: on the tint, or outlined on its surface */
+    card: "tint" | "outline";
   };
   variants: DesignVariants;
 }
@@ -105,7 +126,7 @@ export interface TypeSpec {
 /** The structural variants (plan 15 §3.3). Adding a value is a compile error until every `variant()` map handles it. */
 export interface DesignVariants {
   /** where "new message" lives */
-  compose: "list-header" | "sidebar-outline" | "sidebar-pill";
+  compose: "list-header" | "sidebar-outline" | "sidebar-pill" | "sidebar-row";
   /** the list header's title area */
   listHeader: "title" | "display" | "greeting";
   /** search: always a field, or a button that opens one */

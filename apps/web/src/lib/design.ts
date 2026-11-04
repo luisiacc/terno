@@ -62,9 +62,9 @@ export async function loadDesignFaces(design: DesignDefinition, capMs: number): 
 
 /** A design's name and one-line description, in the active language. */
 export function designName(id: DesignId): string {
-  return id === "macos" ? t("design.macos") : id === "atelier" ? t("design.atelier") : id === "luma" ? t("design.luma") : t("design.lumen");
+  return id === "macos" ? t("design.macos") : id === "atelier" ? t("design.atelier") : id === "luma" ? t("design.luma") : id === "graphite" ? t("design.graphite") : t("design.lumen");
 }
 
 export function designDescription(id: DesignId): string {
-  return id === "macos" ? t("design.macos.description") : id === "atelier" ? t("design.atelier.description") : id === "luma" ? t("design.luma.description") : t("design.lumen.description");
+  return id === "macos" ? t("design.macos.description") : id === "atelier" ? t("design.atelier.description") : id === "luma" ? t("design.luma.description") : id === "graphite" ? t("design.graphite.description") : t("design.lumen.description");
 }

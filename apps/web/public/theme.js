@@ -37,7 +37,7 @@
     var N = "(?:\\d+(?:\\.\\d+)?|\\.\\d+)";
     var COLOR = new RegExp("^(?:#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|oklch\\(\\s*" + N + "%?\\s+" + N + "\\s+" + N + "(?:deg)?\\s*(?:\\/\\s*" + N + "%?\\s*)?\\))$", "i");
     // plan 15: designs (@terno/core DESIGN_IDS) and the default's own palettes
-    var DESIGNS = ["macos", "atelier", "lumen", "luma"];
+    var DESIGNS = ["macos", "atelier", "lumen", "luma", "graphite"];
     var LUMEN = { v: 2, design: "lumen", light: "lumen-light", dark: "lumen-dark", vibrancy: { light: false, dark: false } };
     // plan 98: a new install's defaults (the backend's DEFAULT_SETTINGS); LUMEN above stays what older caches move to
     var FRESH = { design: "lumen", light: "github-light", dark: "github-dark" };

@@ -169,8 +169,8 @@ export function FirstRun() {
           // the chosen style chosen again (clicked, or arrowed back onto) cancels a switch still waiting for its faces
           // (Codex code review #2, second pass #3)
           onReselect={(design) => pick({ design: design as AppSettings["design"] })}
-          // one row, one column per style: three columns left the fourth alone on a row of its own
-          className="grid shrink-0 grid-cols-4 gap-2"
+          // one row, one column per style: fewer columns would leave the last one alone on a row of its own
+          className="grid shrink-0 grid-cols-5 gap-2"
         >
           {DESIGNS.map((d) => (
             <RadioCard key={d.id} value={d.id} data-testid={`first-run-design-${d.id}`} className="min-w-0 flex-col items-center gap-1.5 px-1 pt-2.5 pb-2">

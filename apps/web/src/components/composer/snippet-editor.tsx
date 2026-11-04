@@ -243,7 +243,7 @@ export default function SnippetEditor({ id, fresh, selectName }: { id: string; f
         </Button>
         <Status id={id} tooLong={tooLong} onTheirs={() => void theirs()} />
       </div>
-      <div className="hairline-divide rounded-[calc(var(--radius-lg)+2px)] bg-tint">
+      <div className="hairline-divide card-group">
         <div className="flex items-center gap-3 px-4 py-1.5">
           <label htmlFor={`${base}-name`} className="w-16 shrink-0 text-sm text-muted-foreground">{t("snippets.name")}</label>
           <Input
@@ -293,7 +293,7 @@ export default function SnippetEditor({ id, fresh, selectName }: { id: string; f
           {t("snippets.alsoFills")}
         </CollapsibleTrigger>
         <CollapsiblePanel>
-          <div className="mt-1.5 hairline-divide rounded-[calc(var(--radius-lg)+2px)] bg-tint px-4">
+          <div className="mt-1.5 hairline-divide card-group px-4">
             {fillRow("subject", t("compose.subject"))}
             {fillRow("to", t("compose.to"))}
             {fillRow("cc", t("compose.cc"))}

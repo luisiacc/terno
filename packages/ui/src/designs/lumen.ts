@@ -8,6 +8,9 @@ export const lumen: DesignDefinition = {
   palette: { light: "lumen-light", dark: "lumen-dark" },
   vibrancy: false,
   fonts: { sans: FIGTREE, display: FIGTREE, features: '"cv11", "ss01"', faces: ['400 1em "Figtree Variable"', '600 1em "Figtree Variable"', '700 1em "Figtree Variable"'] },
+
+  weights: { semibold: 600, bold: 700 },
+  controlText: "0.8rem",
   text: {
     "2xs": ["0.6875rem", "0.875rem"],
     xs: ["0.75rem", "1rem"],
@@ -18,7 +21,7 @@ export const lumen: DesignDefinition = {
     xl: ["1.5rem", "1.875rem"],
   },
   radius: { sm: "0.375rem", md: "0.625rem", lg: "0.75rem", xl: "1rem", "2xl": "1.25rem", "3xl": "1.5rem", "4xl": "1.75rem" },
-  tracking: { tight: "-0.012em", display: "-0.022em" },
+  tracking: { tight: "-0.012em", display: "-0.022em", base: "normal", wide: "0.025em" },
   type: {
     listTitle: { family: "display", size: "1.5rem", leading: "1.875rem", weight: 700, strong: 700, tracking: "-0.02em", style: "normal" },
     greeting: { family: "display", size: "1.5rem", leading: "1.875rem", weight: 700, strong: 700, tracking: "-0.02em", style: "normal" },
@@ -33,11 +36,11 @@ export const lumen: DesignDefinition = {
     body: { family: "sans", size: "0.96875rem", leading: "1.65", weight: 400, strong: 600, tracking: "0em", style: "normal" },
     compose: { family: "sans", size: "0.84375rem", leading: "1.25rem", weight: 600, strong: 600, tracking: "0em", style: "normal" },
   },
-  icon: { stroke: 1.5, toolbar: 1.5 },
-  layout: { sidebar: "248px", listMin: "340px", listMax: "min(400px, 32vw)", readerMin: 380, readerMax: "760px", readerPadX: "2.5rem", rowRadius: "1rem", navRadius: "0.75rem", navHeight: "2.125rem" },
+  icon: { stroke: 1.5, toolbar: 1.5, nav: 16 },
+  layout: { sidebar: "248px", listMin: "340px", listMax: "min(400px, 32vw)", readerMin: 380, readerMax: "760px", readerPadX: "2.5rem", rowRadius: "1rem", navRadius: "0.75rem", navHeight: "2.125rem", cardRadius: "calc(var(--ds-radius-lg) + 2px)", commandRadius: "var(--ds-radius-xl)" },
   rows: { comfortable: 84, compact: 48, wide: 56 },
   avatar: { row: 44, rowCompact: 24, rowWide: 32, message: 32, collapsed: 32, senderCard: 64 },
-  surfaces: { draft: "card", reviewBadge: "tinted", inboxCount: "unread" },
+  surfaces: { draft: "card", reviewBadge: "tinted", inboxCount: "unread", cta: "control", card: "tint" },
   variants: {
     compose: "sidebar-pill",
     listHeader: "greeting",

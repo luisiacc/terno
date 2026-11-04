@@ -20,7 +20,7 @@ import { Search as SearchIcon, Check as CheckIcon } from "@terno/ui/icons"
 
 /*
  * BoardUI's command palette (plan 125): a search row over a full-width divider, a list of 40 px medium rows 2 px apart
- * at an 8 px inset (their xl corners concentric with the panel's rounded-palette), muted section headings, and a hint
+ * at an 8 px inset (their --command-radius corners concentric with the panel's rounded-palette), muted section headings, and a hint
  * row. Everything sits on one line 20 px in: the search glyph, the rows' icons, the headings and the hints. Terno keeps
  * its width and placement (640 px at 18%): long subjects need the room.
  */
@@ -199,7 +199,7 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "group/command-item relative flex h-10 cursor-default items-center gap-2 rounded-xl px-3 text-sm font-medium outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:text-muted-foreground data-selected:bg-accent data-selected:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground",
+        "group/command-item relative flex h-10 cursor-default items-center gap-2 rounded-(--command-radius) px-3 text-sm font-medium outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:text-muted-foreground data-selected:bg-accent data-selected:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground",
         className
       )}
       {...props}

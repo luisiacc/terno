@@ -37,7 +37,7 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
     "border-0 bg-transparent bg-none shadow-none hover:bg-primary-hover aria-expanded:bg-primary-hover focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-[inset_0_0_0_2px_var(--primary),inset_0_0_0_3.5px_var(--primary-foreground)] active:not-aria-[haspopup]:scale-100 unavailable:bg-transparent unavailable:text-primary-foreground";
   return (
     <div
-      className={cn("flex shrink-0 items-stretch overflow-hidden rounded-[min(var(--radius-md),12px)] bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground dark:from-primary dark:to-primary-hover shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] has-disabled:opacity-50", className)}
+      className={cn("flex shrink-0 items-stretch overflow-hidden rounded-[max(var(--cta-floor),min(var(--ds-radius-md),12px))] bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground dark:from-primary dark:to-primary-hover shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] has-disabled:opacity-50", className)}
       data-testid="compose-send-group"
     >
       <Button type="submit" size="sm" data-testid="compose-send" aria-busy={d.sending} disabled={disabled} className={cn(half, "peer gap-2 rounded-r-none pr-2")}>

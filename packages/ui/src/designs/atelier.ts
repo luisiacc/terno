@@ -8,6 +8,9 @@ export const atelier: DesignDefinition = {
   palette: { light: "atelier-light", dark: "atelier-dark" },
   vibrancy: false,
   fonts: { sans: SANS, display: SANS, features: '"cv11", "ss01"', faces: ['400 1em "Instrument Sans Variable"', '600 1em "Instrument Sans Variable"'] },
+
+  weights: { semibold: 600, bold: 700 },
+  controlText: "0.8rem",
   text: {
     "2xs": ["0.6875rem", "0.875rem"],
     xs: ["0.75rem", "1rem"],
@@ -18,7 +21,7 @@ export const atelier: DesignDefinition = {
     xl: ["1.375rem", "1.75rem"],
   },
   radius: { sm: "0.3125rem", md: "0.5rem", lg: "0.625rem", xl: "0.75rem", "2xl": "0.875rem", "3xl": "1.125rem", "4xl": "1.375rem" },
-  tracking: { tight: "-0.006em", display: "-0.01em" },
+  tracking: { tight: "-0.006em", display: "-0.01em", base: "normal", wide: "0.025em" },
   type: {
     listTitle: { family: "display", size: "1.5rem", leading: "1.875rem", weight: 600, strong: 600, tracking: "-0.02em", style: "normal" },
     greeting: { family: "display", size: "1.5rem", leading: "1.875rem", weight: 600, strong: 600, tracking: "-0.02em", style: "normal" },
@@ -33,11 +36,11 @@ export const atelier: DesignDefinition = {
     body: { family: "sans", size: "0.9375rem", leading: "1.625", weight: 400, strong: 600, tracking: "0em", style: "normal" },
     compose: { family: "sans", size: "0.84375rem", leading: "1.25rem", weight: 500, strong: 600, tracking: "0em", style: "normal" },
   },
-  icon: { stroke: 1.5, toolbar: 1.5 },
-  layout: { sidebar: "240px", listMin: "340px", listMax: "min(390px, 32vw)", readerMin: 380, readerMax: "768px", readerPadX: "2.5rem", rowRadius: "0.75rem", navRadius: "0.625rem", navHeight: "2rem" },
+  icon: { stroke: 1.5, toolbar: 1.5, nav: 16 },
+  layout: { sidebar: "240px", listMin: "340px", listMax: "min(390px, 32vw)", readerMin: 380, readerMax: "768px", readerPadX: "2.5rem", rowRadius: "0.75rem", navRadius: "0.625rem", navHeight: "2rem", cardRadius: "calc(var(--ds-radius-lg) + 2px)", commandRadius: "var(--ds-radius-xl)" },
   rows: { comfortable: 84, compact: 44, wide: 52 },
   avatar: { row: 36, rowCompact: 22, rowWide: 26, message: 40, collapsed: 28, senderCard: 0 },
-  surfaces: { draft: "outline", reviewBadge: "plain", inboxCount: "muted" },
+  surfaces: { draft: "outline", reviewBadge: "plain", inboxCount: "muted", cta: "control", card: "tint" },
   variants: {
     compose: "sidebar-outline",
     listHeader: "display",

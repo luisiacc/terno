@@ -5,6 +5,8 @@ import { cn } from "cn"
 
 import { Spinner } from "@terno/ui/components/spinner"
 
+const WORDED: ("default" | "outline" | "secondary" | "destructive")[] = ["default", "outline", "secondary", "destructive"]
+
 const buttonVariants = cva(
   "group/button relative inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-[background-color,color,box-shadow,transform] outline-none select-none focus-visible:ring-2 focus-visible:ring-ring active:not-aria-[haspopup]:scale-[0.98] unavailable:active:scale-100 disabled:pointer-events-none aria-busy:pointer-events-none aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em]",
   {
@@ -33,7 +35,7 @@ const buttonVariants = cva(
         default:
           "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
         xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs font-semibold in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5",
-        sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5",
+        sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[length:var(--ds-text-control)] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5",
         lg: "h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
         icon: "size-8 [&_svg:not([class*='size-'])]:size-4",
         "icon-xs":
@@ -44,7 +46,14 @@ const buttonVariants = cva(
       },
     },
     // BoardUI's link button: text, no box
-    compoundVariants: [{ variant: ["link", "link-secondary"], class: "h-auto rounded-sm border-0 p-0 has-data-[icon=inline-end]:pr-0 has-data-[icon=inline-start]:pl-0" }],
+    compoundVariants: [
+      { variant: ["link", "link-secondary"], class: "h-auto rounded-sm border-0 p-0 has-data-[icon=inline-end]:pr-0 has-data-[icon=inline-start]:pl-0" },
+      // Plan 137: a button with words on it is a pill where the design says so (the floor is 0 elsewhere). Outline too: it
+      // sits beside the primary in every dialog footer. Icon-only and quiet buttons keep the ladder
+      { variant: WORDED, size: ["default", "lg"], class: "rounded-[max(var(--cta-floor),var(--ds-radius-lg))]" },
+      { variant: WORDED, size: "sm", class: "rounded-[max(var(--cta-floor),min(var(--ds-radius-md),12px))]" },
+      { variant: WORDED, size: "xs", class: "rounded-[max(var(--cta-floor),min(var(--ds-radius-md),10px))]" },
+    ],
     defaultVariants: {
       variant: "default",
       size: "default",

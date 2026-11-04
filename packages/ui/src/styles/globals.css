@@ -41,6 +41,8 @@
   --font-heading: var(--ds-font-sans);
   --font-title: var(--ds-font-display);
   --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", monospace;
+  --font-weight-semibold: var(--ds-weight-semibold);
+  --font-weight-bold: var(--ds-weight-bold);
 
   /* the dense scale (macOS: 11 · 12 · 13 · 14 · 15 · 17 · 20); each design sets its own values */
   --text-2xs: var(--ds-text-2xs);
@@ -59,6 +61,8 @@
   --text-xl--line-height: var(--ds-text-xl-leading);
   --tracking-tight: var(--ds-tracking-tight);
   --tracking-display: var(--ds-tracking-display);
+  --tracking-normal: var(--ds-tracking-base);
+  --tracking-wide: var(--ds-tracking-wide);
 
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -216,6 +220,11 @@
     @apply font-sans antialiased;
     font-feature-settings: var(--ds-font-features);
     text-rendering: optimizeLegibility;
+  }
+  /* on the root and on a nested preview: letter spacing inherits as a computed length, so a preview must reset it */
+  html,
+  [data-design] {
+    letter-spacing: var(--ds-tracking-base);
   }
   body {
     @apply bg-background text-foreground;
@@ -471,9 +480,15 @@
 @utility rounded-menu {
   border-radius: calc(var(--radius-md) + var(--spacing) * 1.5);
 }
-/* the same for a command list (the palette, the category picker): BoardUI's xl rows (plan 125), 2 in (the list's p-2) */
+/* a group of rows on a card (plan 137): the design's corners, and either its tint or an outline on the surface */
+@utility card-group {
+  border-radius: var(--card-radius);
+  background-color: var(--card-bg);
+  box-shadow: 0 0 0 var(--hairline-w) var(--card-ring);
+}
+/* the same for a command list (the palette, the category picker): the design's command rows, 2 in (the list's p-2) */
 @utility rounded-palette {
-  border-radius: calc(var(--radius-xl) + var(--spacing) * 2);
+  border-radius: calc(var(--command-radius) + var(--spacing) * 2);
 }
 /*
  * Translucent menus (DropdownMenu, ContextMenu, Select popups only: modal, so

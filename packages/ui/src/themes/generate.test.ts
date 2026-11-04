@@ -17,12 +17,12 @@ describe("generated theme CSS", () => {
     const css = generateThemesCss();
     for (const t of THEMES) expect(css).toContain(`[data-theme="${t.id}"] {`);
     expect(css).toMatch(/^:root,\n\[data-theme="lumen-light"\] \{/m);
-    expect(css.match(/color-scheme: dark;/g)).toHaveLength(11);
+    expect(css.match(/color-scheme: dark;/g)).toHaveLength(12);
   });
 
-  // plan 117: 9 KB with Luma's pair (about 400 bytes a pair)
-  it("stays small: ≤ 9 KB gzip", () => {
-    expect(gzipSync(readFileSync(file)).length).toBeLessThanOrEqual(9 * 1024);
+  // plan 137: 10 KB with Graphite's pair (about 400 bytes a pair)
+  it("stays small: ≤ 10 KB gzip", () => {
+    expect(gzipSync(readFileSync(file)).length).toBeLessThanOrEqual(10 * 1024);
   });
 
   it("is imported by globals.css, which no longer hard-codes theme values", () => {

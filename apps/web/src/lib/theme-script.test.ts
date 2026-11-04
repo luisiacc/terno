@@ -122,7 +122,7 @@ describe("theme.js", () => {
   });
 
   it("paints a cached design (v2) before React", () => {
-    for (const design of ["macos", "atelier", "lumen"]) {
+    for (const design of ["macos", "atelier", "lumen", "graphite"]) {
       const r = run({ storage: { "terno:appearance": JSON.stringify({ v: 2, design, mode: "light", light: "github-light", dark: "nord", motion: 75 }) } });
       expect(r.attrs.get("data-design")).toBe(design);
       expect(r.attrs.get("data-theme")).toBe("github-light");

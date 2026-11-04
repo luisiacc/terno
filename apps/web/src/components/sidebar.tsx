@@ -177,7 +177,7 @@ function NavItem({
         "data-[drop-state=refused]:bg-transparent data-[drop-state=refused]:text-muted-foreground",
       )}
     >
-      <span data-slot="nav-icon" className="flex size-4 items-center justify-center text-sidebar-glyph transition-transform group-data-[drop-state=over]:scale-125">{icon}</span>
+      <span data-slot="nav-icon" className="flex size-(--icon-nav) items-center justify-center text-sidebar-glyph transition-transform group-data-[drop-state=over]:scale-125">{icon}</span>
       {expanded === undefined ? (
         note ? (
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -270,6 +270,29 @@ function categoryHelp(unread: number, suggested: number): string | null {
   return u && s ? t("sidebar.categoryHelp.both", { unread: u, suggested: s }) : u ?? s;
 }
 
+/** Graphite: "New message" as a plain row above the mailboxes, on their line; the calls to action are the only pills. */
+function ComposeRow() {
+  return (
+    <div className="shrink-0 px-2 pb-2">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button type="button" data-testid="compose-button" onPointerEnter={preloadComposer} onFocus={preloadComposer} onClick={() => openCompose("new")} className="type-compose flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-hover hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring">
+              <span className="flex size-(--icon-nav) items-center justify-center text-sidebar-glyph">
+                <SquarePen className="size-(--icon-nav)" />
+              </span>
+              <span className="min-w-0 flex-1 truncate">{t("compose.newMessage")}</span>
+            </button>
+          }
+        />
+        <TooltipContent side="right">
+          {t("compose.newMessage")} <Shortcut keys="c" />
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
 /** A category's pending suggestions as a badge in its row (Atelier, Lumen): its own control, drawn over the row's end. */
 function ReviewBadge({ id, name, n, active }: { id: number; name: string; n: number; active: boolean }) {
   return (
@@ -323,10 +346,10 @@ function FavoriteRows() {
     if (!account) return [];
     if (f.folder !== null) {
       const folder = folders.find((x) => x.accountId === f.accountId && x.key === f.folder && x.selectable);
-      return folder ? [{ f, account, name: folder.path.at(-1)!, icon: <FolderIcon className="size-4" />, count: counts.folderUnread?.[folderRef(f.accountId, f.folder)] }] : [];
+      return folder ? [{ f, account, name: folder.path.at(-1)!, icon: <FolderIcon className="size-(--icon-nav)" />, count: counts.folderUnread?.[folderRef(f.accountId, f.folder)] }] : [];
     }
     const Icon = VIEWS.find((v) => v.view === f.view)!.icon;
-    return [{ f, account, name: viewLabel(f.view!), icon: <Icon className="size-4" />, count: f.view === "inbox" ? counts.inboxUnreadByAccount[f.accountId] : undefined }];
+    return [{ f, account, name: viewLabel(f.view!), icon: <Icon className="size-(--icon-nav)" />, count: f.view === "inbox" ? counts.inboxUnreadByAccount[f.accountId] : undefined }];
   });
   // a focused favorite that goes from under the keyboard (removed or renamed in another window, round 25 #4): the
   // one now in its place takes the focus (a rename keeps its place), else the last, else its account's row
@@ -475,7 +498,7 @@ function MoreFolders({ view, folder, reminders }: { view: View | null; folder: (
         }}
         className={cn("group/more type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-muted-foreground transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground", ROW_SEAM)}
       >
-        <span className="flex size-4 items-center justify-center">
+        <span className="flex size-(--icon-nav) items-center justify-center">
           <ChevronDown className={cn("size-3.5 transition-transform duration-base ease-motion", !open && "-rotate-90")} />
         </span>
         <span className="min-w-0 flex-1 truncate">{open ? t("sidebar.less") : t("sidebar.more")}</span>
@@ -566,7 +589,7 @@ const OwnFolderRow = memo(function OwnFolderRow({ accountId, accountKind, folder
           depth={solo ? depth - 1 : depth}
           active={active}
           onClick={() => navigate({ accountId, folder: folderKey })}
-          icon={<FolderIcon className="size-4" />}
+          icon={<FolderIcon className="size-(--icon-nav)" />}
           label={name}
           count={count || undefined}
           hoverAction
@@ -777,7 +800,7 @@ function AccountFolders({
                 inset={!solo}
                 active={active === v}
                 onClick={() => navigate({ accountId: account.id, view: v })}
-                icon={<Icon className="size-4" />}
+                icon={<Icon className="size-(--icon-nav)" />}
                 label={viewLabel(v)}
                 count={(v === "inbox" ? unread : isCounted(v) ? viewUnread[v] : 0) || undefined}
                 countTone={v === "inbox" ? countTone : "muted"}
@@ -806,7 +829,7 @@ function AccountFolders({
                 inset={!solo}
                 active={activeTab === tab}
                 onClick={() => navigate({ accountId: account.id, gmailTab: tab })}
-                icon={<Icon className="size-4" />}
+                icon={<Icon className="size-(--icon-nav)" />}
                 label={t(`view.tab.${tab}`)}
                 count={tabUnread[tab] || undefined}
               />
@@ -840,8 +863,8 @@ function AccountFolders({
               // a parent that only groups what's under it: not a place to go
               // keyed by its full path (Codex R6: "A/X/Y" and "B/X/Z" both draw an "X")
               <div key={r.id} data-testid="nav-own-group" className={cn("type-nav flex h-(--nav-h) items-center gap-2.5 px-2 text-muted-foreground", insetOf(r.depth, solo))}>
-                <span className="flex size-4 items-center justify-center text-sidebar-glyph">
-                  <FolderIcon className="size-4" />
+                <span className="flex size-(--icon-nav) items-center justify-center text-sidebar-glyph">
+                  <FolderIcon className="size-(--icon-nav)" />
                 </span>
                 <span className="min-w-0 flex-1 truncate">{r.name}</span>
               </div>
@@ -858,7 +881,7 @@ function AccountFolders({
             }}
             className={cn("type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-muted-foreground transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground", ROW_SEAM, insetOf(0, solo))}
           >
-            <span className="flex size-4 items-center justify-center">
+            <span className="flex size-(--icon-nav) items-center justify-center">
               <ChevronDown className="size-3.5" />
             </span>
             <span className="min-w-0 flex-1 truncate">{t("sidebar.moreOwnFolders", { count: hidden })}</span>
@@ -942,7 +965,7 @@ function RenameRow({ account, active, count, reserveEnd, onDone, home }: { accou
         "data-active:type-nav-strong data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground",
       )}
     >
-      <span className="flex size-4 items-center justify-center text-sidebar-glyph">
+      <span className="flex size-(--icon-nav) items-center justify-center text-sidebar-glyph">
         <CategoryDot color={account.color as CategoryColor} />
       </span>
       {/* the text starts where the name did: the field's padding sits outside the label's line */}
@@ -1112,8 +1135,8 @@ function SoloSidebar({ account: a, countTone }: { account: Account; countTone: "
                   onClick={() => leaveSoloKeepingFocus(a.id)}
                   className={cn("group type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-muted-foreground transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground", ROW_SEAM)}
                 >
-                  <span className="flex size-4 items-center justify-center">
-                    <ArrowLeft className="size-4" />
+                  <span className="flex size-(--icon-nav) items-center justify-center">
+                    <ArrowLeft className="size-(--icon-nav)" />
                   </span>
                   <span className="min-w-0 flex-1 truncate">{t("sidebar.allAccounts")}</span>
                 </button>
@@ -1126,7 +1149,7 @@ function SoloSidebar({ account: a, countTone }: { account: Account; countTone: "
               <RenameRow account={a} active={false} reserveEnd={a.syncState.authRequired} onDone={() => setRenaming(false)} home='[data-testid="solo-back"]' />
             ) : (
               <div data-testid="solo-title" className={cn("flex min-h-(--nav-h) items-center gap-2.5 px-2 py-1", a.syncState.authRequired && "pr-8")}>
-                <span className="flex size-4 shrink-0 items-center justify-center">
+                <span className="flex size-(--icon-nav) shrink-0 items-center justify-center">
                   <CategoryDot color={a.color as CategoryColor} />
                 </span>
                 <span className="min-w-0 flex-1">
@@ -1232,7 +1255,7 @@ export function Sidebar() {
       testId={`nav-${v}`}
       active={folderView === v}
       onClick={() => navigate({ view: v, accountId: null })}
-      icon={<Icon className="size-4" />}
+      icon={<Icon className="size-(--icon-nav)" />}
       label={viewLabel(v)}
       count={(v === "inbox" ? counts.inboxUnread : isCounted(v) ? viewTotals[v] : 0) || undefined}
       countTone={v === "inbox" ? design.surfaces.inboxCount : "muted"}
@@ -1271,7 +1294,7 @@ export function Sidebar() {
             testId="nav-reminders"
             active={inReminders}
             onClick={() => navigate({ reminders: true })}
-            icon={<Bell className="size-4" />}
+            icon={<Bell className="size-(--icon-nav)" />}
             label={t("view.reminders")}
             count={dueReminders}
             countTone={design.surfaces.inboxCount}
@@ -1399,7 +1422,7 @@ export function Sidebar() {
           onClick={() => setApp({ dialog: "addAccount" })}
           className="mt-0.5 flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
         >
-          <Plus className="size-4" /> {t("sidebar.addAccount")}
+          <Plus className="size-(--icon-nav)" /> {t("sidebar.addAccount")}
         </button>
       </div>
     </>
@@ -1408,7 +1431,7 @@ export function Sidebar() {
   return (
     <aside id="app-sidebar" data-testid="sidebar" className="flex h-full min-h-0 w-full flex-col bg-sidebar text-sidebar-foreground">
       <div className="drag-region h-[52px] shrink-0" />
-      {variant(design.variants.compose, { "list-header": null, "sidebar-outline": <ComposeOutline />, "sidebar-pill": <ComposePill /> })}
+      {variant(design.variants.compose, { "list-header": null, "sidebar-outline": <ComposeOutline />, "sidebar-pill": <ComposePill />, "sidebar-row": <ComposeRow /> })}
       <nav ref={navRef} data-drop-scroll aria-label={soloAccount ? t("sidebar.solo.nav", { account: soloAccount.displayName }) : undefined} className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {/* keyed: another account focused is another sidebar (Codex code review #1: never the last one's rows) */}
         {soloAccount ? <SoloSidebar key={soloAccount.id} account={soloAccount} countTone={design.surfaces.inboxCount} /> : all}

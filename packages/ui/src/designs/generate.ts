@@ -13,6 +13,9 @@ export function designVars(d: DesignDefinition): [string, string][] {
     ["--ds-font-sans", d.fonts.sans],
     ["--ds-font-display", d.fonts.display],
     ["--ds-font-features", d.fonts.features],
+    ["--ds-weight-semibold", String(d.weights.semibold)],
+    ["--ds-weight-bold", String(d.weights.bold)],
+    ["--ds-text-control", d.controlText],
   ];
   for (const step of TEXT_STEPS) {
     const [size, leading] = d.text[step];
@@ -21,7 +24,7 @@ export function designVars(d: DesignDefinition): [string, string][] {
   for (const step of RADIUS_STEPS) out.push([`--ds-radius-${step}`, d.radius[step]]);
   // shadcn's base radius (input groups compute from it)
   out.push(["--radius", d.radius.lg]);
-  out.push(["--ds-tracking-tight", d.tracking.tight], ["--ds-tracking-display", d.tracking.display]);
+  out.push(["--ds-tracking-tight", d.tracking.tight], ["--ds-tracking-display", d.tracking.display], ["--ds-tracking-base", d.tracking.base], ["--ds-tracking-wide", d.tracking.wide]);
   for (const role of TYPE_ROLES) {
     const t = d.type[role as TypeRole];
     const p = `--type-${kebab(role)}`;
@@ -38,6 +41,7 @@ export function designVars(d: DesignDefinition): [string, string][] {
   out.push(
     ["--icon-stroke", String(d.icon.stroke)],
     ["--icon-stroke-toolbar", String(d.icon.toolbar)],
+    ["--icon-nav", `${d.icon.nav}px`],
     ["--sidebar-w", d.layout.sidebar],
     ["--list-min", d.layout.listMin],
     ["--list-max", d.layout.listMax],
@@ -47,6 +51,12 @@ export function designVars(d: DesignDefinition): [string, string][] {
     ["--row-radius", d.layout.rowRadius],
     ["--nav-radius", d.layout.navRadius],
     ["--nav-h", d.layout.navHeight],
+    ["--card-radius", d.layout.cardRadius],
+    ["--command-radius", d.layout.commandRadius],
+    // plan 137: the floor under a worded button's corners: max(floor, its radius), so "control" draws what it always did
+    ["--cta-floor", d.surfaces.cta === "pill" ? "9999px" : "0px"],
+    ["--card-bg", d.surfaces.card === "tint" ? "var(--tint)" : "transparent"],
+    ["--card-ring", d.surfaces.card === "tint" ? "transparent" : "var(--border)"],
     ["--row-h", `${d.rows.comfortable}px`],
     ["--row-h-compact", `${d.rows.compact}px`],
     ["--avatar-row", `${d.avatar.row}px`],

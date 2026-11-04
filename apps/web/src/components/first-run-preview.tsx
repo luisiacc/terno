@@ -88,7 +88,7 @@ function Sidebar({ design, sample }: { design: DesignDefinition; sample: SampleM
   const unread = sample.threads.filter((x) => x.unread).length;
   const item = (icon: React.ReactNode, label: string, active = false, count?: number) => (
     <div className={cn(NAV, active && "type-nav-strong bg-sidebar-accent text-sidebar-accent-foreground")}>
-      <span className="flex size-4 items-center justify-center text-sidebar-glyph">{icon}</span>
+      <span className="flex size-(--icon-nav) items-center justify-center text-sidebar-glyph">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {count ? <span className={cn("inline-block text-xs tabular", design.surfaces.inboxCount === "unread" ? "font-semibold text-unread-ink" : "text-muted-foreground")}>{formatNumber(count)}</span> : null}
     </div>
@@ -107,6 +107,16 @@ function Sidebar({ design, sample }: { design: DesignDefinition; sample: SampleM
             </div>
           </div>
         ),
+        "sidebar-row": (
+          <div className="shrink-0 px-2 pb-2">
+            <div className="type-compose flex h-(--nav-h) w-full items-center gap-2.5 px-2 text-sidebar-foreground">
+              <span className="flex size-(--icon-nav) items-center justify-center text-sidebar-glyph">
+                <SquarePen className="size-(--icon-nav)" />
+              </span>
+              <span className="min-w-0 flex-1 truncate">{t("compose.newMessage")}</span>
+            </div>
+          </div>
+        ),
         "sidebar-pill": (
           <div className="shrink-0 px-2.5 pb-4">
             <div className="type-compose flex h-10 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-primary-foreground shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)]">
@@ -117,9 +127,9 @@ function Sidebar({ design, sample }: { design: DesignDefinition; sample: SampleM
         ),
       })}
       <nav className="min-h-0 flex-1 px-2 pb-3">
-        {item(<Inbox className="size-4" />, viewLabel("inbox"), true, unread)}
-        {item(<Star className="size-4" />, viewLabel("starred"))}
-        {item(<Send className="size-4" />, viewLabel("sent"))}
+        {item(<Inbox className="size-(--icon-nav)" />, viewLabel("inbox"), true, unread)}
+        {item(<Star className="size-(--icon-nav)" />, viewLabel("starred"))}
+        {item(<Send className="size-(--icon-nav)" />, viewLabel("sent"))}
         <div className="mt-4 mb-0.5 flex min-h-5 items-center px-2">
           <span className="type-section-label text-muted-foreground">{t("sidebar.categories")}</span>
         </div>
