@@ -200,7 +200,8 @@ test.describe("recipient chips", { tag: "@design" }, () => {
     // Tab into the collapsed field lands in its input, never on a button that goes away (Codex code review 7)
     await page.getByTestId("compose-subject").focus();
     await expect(page.getByTestId("recipient-more")).toBeVisible();
-    await page.getByTestId("compose-from").focus();
+    // (from the control before it: the first row's Pin, as in a reply; plan 130)
+    await page.getByTestId("compose-pin").focus();
     await page.keyboard.press("Tab");
     await expect(to(page)).toBeFocused();
     await expect(chips(page)).toHaveCount(200);

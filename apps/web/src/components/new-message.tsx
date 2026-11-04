@@ -1,34 +1,34 @@
 import { AttachButton, DraftAttachments } from "./attachments";
 import { useComposerDrop } from "./composer-drop";
 import { t } from "@terno/i18n";
-import { Button } from "@terno/ui/components/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
+import { IconButton } from "@terno/ui/components/icon-button";
 import { isSendLaterKey, openSendLater, SendButton } from "./send-button";
 import { cn } from "@terno/ui/lib/utils";
-import { Pin, Trash2 } from "@terno/ui/icons";
+import { ChevronDown, Pin, Trash2 } from "@terno/ui/icons";
 import { useEffect, useId, useRef } from "react";
 import { registerUndo, snack } from "~/lib/snack";
 import { composeFocusPending, finishComposeFocus, leaveNewDraft, leaveNewDraftWithFocus, sendDraft, showNewDraft } from "~/lib/compose";
 import { discardDraft, restoreDiscarded, useDrafts } from "~/lib/drafts";
 import { setApp, useApp } from "~/state/app";
-import { DraftFieldsForm, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
+import { DRAFT_SURFACE, DraftFieldsForm, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
 import { popupOpen } from "./composer/controller";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
 import { warmAutocomplete } from "~/lib/autocomplete";
 import { DraftCommandsHost } from "~/lib/draft-commands";
 import { pinDraft } from "~/lib/pinned-draft";
 
-/** Esc and sending leave the new message; focus goes to its strip item (kept) or back to the list. */
+/** Esc, Collapse and sending leave the new message; focus goes to its strip item (kept) or back to the list. */
 function leave(key: string) {
   const request = leaveNewDraftWithFocus(key);
   if (request?.valid()) focusSoon(`[data-testid=strip-item][data-key="${key}"]`, null, 12, () => true, request.valid, request.watch);
 }
 
 /**
- * A new message, written in the reader pane: the toolbar becomes Discard ·
- * Send, a title mirrors the subject, the fields are borderless hairline
- * rows and the body fills the pane. The draft stays in the strip above the
- * list while another conversation is read.
+ * A new message, written in the reader pane as a conversation's draft is
+ * (plan 130): a title that mirrors the subject over the same card, which hugs
+ * its text so the format bar and Send stay next to it. A long message scrolls
+ * inside the card, under its fixed foot. The draft stays in the strip above
+ * the list while another conversation is read.
  */
 export function NewMessage() {
   const compose = useApp((s) => s.compose);
@@ -87,7 +87,7 @@ export function NewMessage() {
       data-testid="composer"
       data-draft-key={key}
       data-mode="new"
-      className="relative flex h-full min-h-0 flex-col bg-background animate-in fade-in-0 slide-in-from-bottom-1 duration-base"
+      className="flex h-full min-h-0 flex-col bg-background animate-in fade-in-0 slide-in-from-bottom-1 duration-base"
       {...drop.handlers}
       onSubmit={(e) => {
         e.preventDefault();
@@ -110,60 +110,58 @@ export function NewMessage() {
         }
       }}
     >
-      <div className="drag-region flex h-[52px] shrink-0 items-center gap-3 px-3.5">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button type="button" variant="ghost" size="icon-sm" aria-label={t("compose.discard")} disabled={d.sending} onClick={() => void discard()} className="no-drag text-muted-foreground hover:text-foreground" data-testid="compose-discard">
-                <Trash2 />
-              </Button>
-            }
-          />
-          <TooltipContent>{t("compose.discard")}</TooltipContent>
-        </Tooltip>
-        <span className="text-sm text-muted-foreground">{t("compose.newMessage")}</span>
-        {/* plan 115: kept at the bottom right while conversations are read */}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button type="button" variant="ghost" size="icon-sm" aria-label={t("compose.pin")} disabled={d.sending} onClick={() => pinDraft(key)} className="no-drag ml-auto text-muted-foreground hover:text-foreground" data-testid="compose-pin">
-                <Pin />
-              </Button>
-            }
-          />
-          <TooltipContent>{t("compose.pin")}</TooltipContent>
-        </Tooltip>
-        <SendButton d={d} onSend={(at) => void send(at)} className="no-drag" />
-      </div>
+      {/* the window's drag strip: the title stays on the line of a conversation's subject */}
+      <div className="drag-region h-[52px] shrink-0" />
+      {/* scrolls only where the card's minimum doesn't fit (a short window under a tall pinned card) */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex min-h-full max-w-(--reader-max) flex-col px-(--reader-pad-x) pt-5 pb-10">
-          <h2 className={cn("type-reader-subject mb-4 text-balance", !d.subject && "text-muted-foreground")} data-testid="compose-title">
+        <div className="mx-auto flex h-full max-w-(--reader-max) flex-col px-(--reader-pad-x) pt-5 pb-5">
+          <h2 className={cn("type-reader-subject mb-4 line-clamp-2 shrink-0 text-balance", !d.subject && "text-muted-foreground")} data-testid="compose-title">
             {d.subject || t("compose.untitled")}
           </h2>
-          <div className="-mx-3.5">
-            <DraftFieldsForm d={d} accounts={accounts} showSubject flat />
+          <div className={cn("relative flex min-h-60 flex-col", DRAFT_SURFACE)} data-testid="composer-card">
+            {/* pt-0.5: the first row's text field keeps its whole focus ring */}
+            <div className="min-h-0 overflow-y-auto pt-0.5" data-draft-scroll>
+              <DraftFieldsForm
+                d={d}
+                accounts={accounts}
+                showSubject
+                // plan 115: kept at the bottom right while conversations are read
+                corner={
+                  <IconButton label={t("compose.pin")} onClick={() => pinDraft(key)} data-testid="compose-pin" disabled={d.sending}>
+                    <Pin />
+                  </IconButton>
+                }
+              />
+              <ComposerBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="block min-h-[220px] w-full px-3.5 pt-3 pb-1 text-base" />
+              <DraftAttachments d={d} />
+              <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
+              <Quote d={d} />
+            </div>
+            <div className="shrink-0">
+              <ComposerFormatBar draftKey={key} id={formatId} className="px-2 pt-1.5" />
+              {/* wraps: the status can hold a recovery action, and a narrow pane still reaches Discard */}
+              <div className="flex flex-wrap items-center gap-1 px-2.5 pt-2 pb-2.5">
+                <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
+                <FormatToggle controls={formatId} />
+                <AttachButton d={d} />
+                <LinkButton draftKey={key} disabled={d.sending} />
+                <span className="ml-1.5 min-w-0">
+                  <SaveState d={d} />
+                </span>
+                <span className="ml-auto flex gap-0.5">
+                  <IconButton label={t("compose.discard")} onClick={() => void discard()} data-testid="compose-discard" disabled={d.sending}>
+                    <Trash2 />
+                  </IconButton>
+                  <IconButton label={t("compose.collapse")} shortcut="escape" onClick={() => leave(key)} data-testid="compose-collapse">
+                    <ChevronDown />
+                  </IconButton>
+                </span>
+              </div>
+            </div>
+            {drop.layer}
           </div>
-          <ComposerBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="block min-h-[260px] w-full flex-1 pt-4 text-base" />
-          <DraftAttachments d={d} />
-          <Quote d={d} />
-          <SignaturePreview accountId={d.accountId} className="pt-2" />
         </div>
       </div>
-      {/* the format bar and its toggle stay at hand at the pane's foot while the text scrolls */}
-      <div className="shrink-0 px-(--reader-pad-x) pt-2 pb-3">
-        <div className="mx-auto flex max-w-(--reader-max) flex-col gap-1.5">
-          <ComposerFormatBar draftKey={key} id={formatId} className="-mx-1" />
-          <div className="-ml-1.5 flex items-center gap-1">
-            <FormatToggle controls={formatId} />
-            <AttachButton d={d} />
-            <LinkButton draftKey={key} disabled={d.sending} />
-            <span className="ml-1.5">
-              <SaveState d={d} />
-            </span>
-          </div>
-        </div>
-      </div>
-      {drop.layer}
       <DraftCommandsHost draftKey={key} root={rootRef} send={() => void send()} discard={() => void discard()} sending={d.sending} />
     </form>
   );

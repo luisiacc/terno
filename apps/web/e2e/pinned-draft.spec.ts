@@ -35,6 +35,34 @@ async function footClearsCard(page: Page): Promise<void> {
   expect(slot!.y + slot!.height).toBeLessThanOrEqual(pinned!.y);
 }
 
+/** Plan 130: a tall pinned card over the foot of a short window: the new message's own foot stays reachable, above it. */
+async function newMessageUnderTallPin(page: Page, opener: () => Promise<unknown>): Promise<void> {
+  await page.setViewportSize({ width: 980, height: 600 });
+  await rows(page).nth(1).click();
+  await focusList(page);
+  await page.keyboard.press("r");
+  await expect(page.getByTestId("reader").getByTestId("compose-body")).toBeFocused();
+  await page.getByTestId("reader").getByTestId("compose-pin").click();
+  await expect(cardBody(page)).toBeFocused();
+  await page.keyboard.type(Array.from({ length: 30 }, (_, i) => `línea ${i}`).join("\n"));
+  await page.keyboard.press("Escape");
+  await opener();
+  await focusList(page);
+  await page.keyboard.press("c");
+  const composer = page.locator("[data-testid=composer][data-mode=new]");
+  await expect(composer.getByTestId("compose-to")).toBeFocused();
+  const send = composer.getByTestId("compose-send"), collapse = composer.getByTestId("compose-collapse");
+  await collapse.scrollIntoViewIfNeeded();
+  const pinned = (await card(page).boundingBox())!;
+  for (const control of [send, collapse]) {
+    const b = (await control.boundingBox())!;
+    expect(b.y + b.height).toBeLessThanOrEqual(pinned.y);
+  }
+  await collapse.click();
+  await expect(composer).toHaveCount(0);
+  await expect(card(page)).toBeVisible();
+}
+
 test.describe("a pinned draft", { tag: "@design" }, () => {
   test("stays while other conversations are read; its own shows it pinned; r there goes to the card", async ({ app: page }) => {
     const first = await pinReply(page, 1, "Pinned while I look something up");
@@ -81,6 +109,10 @@ test.describe("a pinned draft", { tag: "@design" }, () => {
     await expect(page.locator("[data-testid=thread-row][data-cursor]")).toHaveAttribute("data-thread-id", id);
     const inline = page.getByTestId("reader").getByTestId("compose-body");
     await expect(inline).toContainText("Saved away");
+  });
+
+  test("plan 130: a new message's foot clears a tall pinned card, in a short window", async ({ app: page }) => {
+    await newMessageUnderTallPin(page, async () => {});
   });
 
   test("a new message pinned stays while conversations are opened, and sends from the card", async ({ app: page }) => {
@@ -150,6 +182,10 @@ test.describe("a pinned draft", { tag: "@design" }, () => {
 
 test.describe("a pinned draft in the List layout", () => {
   test.use({ layout: "list" });
+
+  test("plan 130: a new message's foot clears a tall pinned card, in a short window", async ({ app: page }) => {
+    await newMessageUnderTallPin(page, () => page.getByTestId("reader").getByRole("button", { name: /back/i }).first().click());
+  });
 
   test("stays over the list and the conversations opened from it; their end scrolls clear of it", async ({ app: page }) => {
     await rows(page).nth(1).click();

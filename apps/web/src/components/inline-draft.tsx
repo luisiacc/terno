@@ -43,11 +43,14 @@ function Row({ label, htmlFor, children, hidden }: { label: string; htmlFor?: st
   );
 }
 
+/** The tinted card a draft is written in: a conversation's, and a new message's (plan 130). */
+export const DRAFT_SURFACE = "rounded-xl bg-(--draft-bg) [box-shadow:0_0_0_var(--hairline-w)_var(--draft-ring),var(--draft-shadow)]";
+
 const input = "h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground";
 
 /** The draft's fields, shared by the inline reply and the new message in the reader. */
 /** `corner`: a control at the end of the first row, the form's top right (the inline draft's Pin, plan 115) */
-export function DraftFieldsForm({ d, accounts, showSubject, flat, corner }: { d: LocalDraft; accounts: Account[]; showSubject: boolean; flat?: boolean; corner?: React.ReactNode }) {
+export function DraftFieldsForm({ d, accounts, showSubject, corner }: { d: LocalDraft; accounts: Account[]; showSubject: boolean; corner?: React.ReactNode }) {
   const id = useId();
   const cancelReveal = useRef<(() => void) | null>(null);
   useEffect(() => () => cancelReveal.current?.(), []);
@@ -131,12 +134,13 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat, corner }: { d:
   // on the first row's line (its label's), whichever row that is
   const cornerSlot = corner && <span className="-mr-1 mt-[5px] flex shrink-0 self-start">{corner}</span>;
   return (
-    <div className={cn(flat && "hairline-t")} data-draft-key={d.key}>
+    <div data-draft-key={d.key}>
       {fromRow && (
         <Row label={t("compose.from")}>
           <Select disabled={d.sending || draftSenderLocked(d)} value={String(d.accountId)} onValueChange={(v) => update({ accountId: Number(v) })} items={accounts.map((a) => ({ value: String(a.id), label: `${a.displayName} · ${a.email}` }))}>
-            <SelectTrigger size="sm" aria-label={t("compose.from")}className="-ml-2 h-7 border-0 bg-transparent shadow-none dark:bg-transparent dark:hover:bg-muted" data-testid="compose-from" title={draftSenderLocked(d) ? t("attachments.senderLocked") : undefined}>
-              <SelectValue />
+            <SelectTrigger size="sm" aria-label={t("compose.from")}className="-ml-2 h-7 min-w-0 border-0 bg-transparent shadow-none dark:bg-transparent dark:hover:bg-muted" data-testid="compose-from" title={draftSenderLocked(d) ? t("attachments.senderLocked") : undefined}>
+              {/* a long address truncates in a narrow pane: the corner's Pin stays in the row */}
+              <SelectValue className="block! min-w-0 truncate" />
             </SelectTrigger>
             <SelectContent>
               {accounts.map((a) => (
@@ -146,7 +150,7 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat, corner }: { d:
               ))}
             </SelectContent>
           </Select>
-          {cornerSlot && <span className="ml-auto flex">{cornerSlot}</span>}
+          {cornerSlot && <span className="ml-auto flex self-start">{cornerSlot}</span>}
         </Row>
       )}
       <Row label={t("compose.to")} htmlFor={`${id}-to`}>
@@ -387,7 +391,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
   const drop = useComposerDrop(d?.key ?? "", d?.sending ?? false);
 
   return (
-    <div ref={rootRef} className="mt-5 rounded-xl bg-(--draft-bg) [box-shadow:0_0_0_var(--hairline-w)_var(--draft-ring),var(--draft-shadow)]" data-testid="draft-slot" data-state={state} data-thread={threadId}>
+    <div ref={rootRef} className={cn("mt-5", DRAFT_SURFACE)} data-testid="draft-slot" data-state={state} data-thread={threadId}>
       <Expand open={state === "bar"}>
         <div className="flex h-10 items-center gap-0.5 pr-1.5 pl-2.5" data-testid="reply-bar">
           <button type="button" onClick={() => void openCompose("reply", threadId)} data-testid="quick-reply" className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground">

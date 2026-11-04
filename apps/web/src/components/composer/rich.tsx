@@ -402,7 +402,10 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
     if (!at || !wrap) return setBubble((b) => (b ? null : b));
     const start = view.coordsAtPos(at.from);
     const box = wrap.getBoundingClientRect();
-    const top = start.bottom - box.top + 4;
+    // under a draft's own scroller (plan 130) a bubble below the last visible line would be cut off: above it, if it fits there
+    const scroller = wrap.closest("[data-draft-scroll]")?.getBoundingClientRect();
+    const above = scroller && start.bottom + 4 + BUBBLE_HEIGHT > scroller.bottom && start.top - 4 - BUBBLE_HEIGHT >= scroller.top;
+    const top = above ? start.top - box.top - 4 - BUBBLE_HEIGHT : start.bottom - box.top + 4;
     const left = Math.max(0, Math.min(start.left - box.left, box.width - 280));
     setBubble((b) => (b && b.from === at.from && b.to === at.to && b.href === at.href && b.top === top && b.left === left ? b : { ...at, top, left }));
   }
@@ -697,6 +700,9 @@ export function LinkPopover({ view, draft, onClose, canEdit, palette = true }: {
 }
 
 /** Under a link the caret is in: where it goes, open, edit, remove. In the editor's flow, so Tab reaches it. */
+/** The link bubble's height: one row of `icon-xs` buttons in its `py-0.5`. */
+const BUBBLE_HEIGHT = 28;
+
 function LinkBubble({ href, top, left, onOpen, onEdit, onRemove }: { href: string; top: number; left: number; onOpen: () => void; onEdit: () => void; onRemove: () => void }) {
   const keep = (e: React.MouseEvent) => e.preventDefault();
   return (

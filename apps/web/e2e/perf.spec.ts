@@ -1214,6 +1214,30 @@ test("a 2 MB draft of short lines: typing stays within a frame; no serialization
   await expect(editor).toBeFocused();
 });
 
+test("plan 130: a 2 MB new message: its card opens from the strip and typing stays within a frame, the foot in view", async ({ app: page, server }) => {
+  const db = sqlDb(server.backend.store);
+  const account = db.get<{ id: number }>("SELECT id FROM accounts ORDER BY id LIMIT 1")!.id;
+  const lines = Math.ceil(2_000_000 / (LINE.length + 1));
+  await server.backend.store.drafts.save({ accountId: account, threadId: null, mode: "new", to: [{ name: "", email: "ana@example.com" }], cc: [], subject: "Largo", bodyText: Array.from({ length: lines }, (_, i) => `${i} ${LINE}`).join("\n") }, Date.now());
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+  await rows(page).first().waitFor();
+  const item = page.getByTestId("strip-item").first();
+  const t0 = Date.now();
+  await item.dispatchEvent("click");
+  const editor = page.getByTestId("compose-body");
+  await editor.waitFor({ timeout: 20_000 });
+  await expect(editor).toHaveAttribute("contenteditable", "true", { timeout: 20_000 });
+  const openMs = Date.now() - t0;
+  expect(stat("2 MB new message: strip → editable", HUGE_OPEN_MS, [openMs]).max).toBeLessThanOrEqual(HUGE_OPEN_MS * MULT);
+  await editor.focus();
+  await page.keyboard.press("ControlOrMeta+End");
+  const handled = await typeAndMeasure(page, "2 MB new message", "Gracias por todo.");
+  expect(handled.p95).toBeLessThanOrEqual(HUGE_MS * MULT);
+  await expect(page.getByTestId("compose-send")).toBeInViewport({ ratio: 1 });
+  expect(await editor.evaluate((el) => el.lastElementChild!.textContent)).toMatch(/Gracias por todo\.$/);
+});
+
 test("a 2 MB draft with dense formatting (a mark on every few words, lists): typing stays within a frame", async ({ app: page, server }) => {
   const words = LINE.split(" ");
   const line = (i: number) => words.map((w, j) => ((i + j) % 3 === 0 ? `<b>${w}</b>` : (i + j) % 5 === 0 ? `<span style="color:#b3261e">${w}</span>` : w)).join(" ");

@@ -159,7 +159,7 @@ export function PinnedDraft({ list }: { list: boolean }) {
             <TooltipContent>{t("compose.unpin")}</TooltipContent>
           </Tooltip>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto" data-draft-scroll>
           <DraftFieldsForm d={d} accounts={accounts} showSubject={d.mode === "forward" || d.mode === "new"} />
           <ComposerBody draftKey={key} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="block min-h-[132px] w-full px-3.5 pt-3 pb-1 text-base" />
           <DraftAttachments d={d} />

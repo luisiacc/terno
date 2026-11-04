@@ -1,7 +1,7 @@
 import { parseRaw } from "@terno/mail";
 import AxeBuilder from "@axe-core/playwright";
 import type { JSHandle, Locator, Page } from "@playwright/test";
-import { expect, openRow, stabilize, test } from "./fixtures";
+import { expect, focusList, openRow, stabilize, test } from "./fixtures";
 import { dragAfter } from "./helpers/composer-drop";
 
 /**
@@ -104,6 +104,41 @@ test("an image dropped on the text goes where the pointer is; undo takes it out;
   expect(cid).toMatch(/^terno-img-[0-9a-f-]+@terno$/);
   expect(sent.html).toContain(`<img src="cid:${cid}" alt="chart.png" width="120"`);
   expect(sent.text).toContain("Hello[image: chart.png] world");
+});
+
+test("plan 130: a new message takes a drop anywhere in the pane; the layer rings its card; the text still places an image @design", async ({ app: page }) => {
+  await focusList(page);
+  await page.keyboard.press("c");
+  await page.getByTestId("compose-to").fill("ana@example.com");
+  const form = page.getByTestId("composer"), card = page.getByTestId("composer-card");
+  const pdf = await transfer(page, [{ name: "notes.pdf", type: "application/pdf" }]);
+  // the empty pane under the card
+  const c = (await card.boundingBox())!, f = (await form.boundingBox())!;
+  const blank = { x: f.x + f.width / 2, y: (c.y + c.height + f.y + f.height) / 2 };
+  await drag(form, pdf, blank, "dragenter", "dragover");
+  await expect(page.getByTestId("compose-drop")).toHaveAttribute("data-state", "attach");
+  const layer = (await page.getByTestId("compose-drop").boundingBox())!;
+  expect(layer).toEqual(c);
+  await drag(form, pdf, blank, "drop");
+  await expect(page.getByTestId("compose-drop")).toHaveCount(0);
+  await expect(page.getByTestId("draft-attachment").filter({ hasText: "notes.pdf" })).toBeVisible();
+  // the fields attach too
+  const to = page.getByTestId("compose-to");
+  const again = await transfer(page, [{ name: "more.pdf", type: "application/pdf" }]);
+  await drag(to, again, await centre(to), "dragenter", "dragover", "drop");
+  await expect(page.getByTestId("draft-attachment").filter({ hasText: "more.pdf" })).toBeVisible();
+  // an image on the text goes in the text, even with the text scrolled
+  const body = page.getByTestId("compose-body");
+  await body.click();
+  for (let i = 0; i < 40; i++) { await page.keyboard.type(`línea ${i}`); await page.keyboard.press("Enter"); }
+  await page.keyboard.type("el final");
+  const image = await transfer(page, [{ name: "chart.png", type: "image/png", width: 120, height: 60 }]);
+  const point = await after(page, "el final");
+  await drag(body, image, point, "dragenter", "dragover");
+  await expect(page.getByTestId("compose-drop")).toHaveAttribute("data-state", "text");
+  await drag(body, image, point, "drop");
+  await expect(body.locator('img[alt="chart.png"]')).toBeVisible();
+  await expect(page.getByTestId("compose-drop")).toHaveCount(0);
 });
 
 test("a file dropped off the text, or one that isn't an image, attaches as a chip @design", async ({ app: page }, testInfo) => {

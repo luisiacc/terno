@@ -672,9 +672,17 @@ test.describe("drafts keep their formatting", { tag: "@design" }, () => {
 });
 
 test.describe("the new message", { tag: "@design" }, () => {
-  test("its foot carries the bar and Aa; formatting there works the same", async ({ app: page }) => {
+  /** c from the list; the To field takes focus. */
+  async function compose(page: Page) {
     await focusList(page);
     await page.keyboard.press("c");
+    await expect(page.getByTestId("compose-to")).toBeFocused();
+  }
+  const card = (page: Page) => page.getByTestId("composer-card");
+  const box = async (l: Locator) => (await l.boundingBox())!;
+
+  test("its foot carries the bar and Aa; formatting there works the same", async ({ app: page }) => {
+    await compose(page);
     await page.getByTestId("compose-to").fill("ana@example.com");
     await body(page).click();
     await page.keyboard.type("Nuevo ");
@@ -684,6 +692,111 @@ test.describe("the new message", { tag: "@design" }, () => {
     await expect(page.getByTestId("format-toggle")).toBeVisible();
     await expect(page.getByTestId("compose-link")).toBeVisible();
   });
+
+  test("plan 130: a card that hugs the text: the bar right under it, far from the pane's foot, every control inside", async ({ app: page }) => {
+    await compose(page);
+    await body(page).click();
+    await page.keyboard.type("Hola");
+    const text = await box(body(page)), bar = await box(page.getByTestId("format-bar")), c = await box(card(page)), pane = await box(page.getByTestId("composer"));
+    expect(bar.y - (text.y + text.height)).toBeLessThan(24);
+    expect(pane.y + pane.height - (c.y + c.height)).toBeGreaterThan(150);
+    for (const id of ["compose-send", "compose-send-later", "compose-pin", "compose-discard", "compose-collapse", "format-toggle", "compose-link"]) await expect(card(page).getByTestId(id)).toBeVisible();
+    // nothing left in the strip above it: the only controls are the card's
+    expect(await page.getByTestId("composer").locator("button").count()).toBe(await card(page).locator("button").count());
+    // the title once: no label repeating it
+    await expect(page.getByTestId("composer").getByText("New message", { exact: true })).toHaveCount(1);
+  });
+
+  test("plan 130: a message longer than the pane scrolls inside the card; the bar and Send stay, the line being typed shows above them", async ({ app: page }) => {
+    await compose(page);
+    await body(page).click();
+    for (let i = 0; i < 50; i++) { await page.keyboard.type(`línea ${i}`); await page.keyboard.press("Enter"); }
+    await page.keyboard.type("la última");
+    const c = await box(card(page)), pane = await box(page.getByTestId("composer")), bar = await box(page.getByTestId("format-bar")), send = await box(page.getByTestId("compose-send"));
+    expect(c.y + c.height).toBeLessThanOrEqual(pane.y + pane.height);
+    expect(send.y + send.height).toBeLessThanOrEqual(c.y + c.height);
+    const scroller = card(page).locator("[data-draft-scroll]");
+    expect(await scroller.evaluate((el) => el.scrollHeight > el.clientHeight && el.scrollTop > 0)).toBe(true);
+    const caret = await page.evaluate(() => window.getSelection()!.getRangeAt(0).getBoundingClientRect().bottom);
+    expect(caret).toBeLessThanOrEqual(bar.y);
+    // the area around the card has nothing to scroll: one scrollbar, the card's
+    expect(await scroller.evaluate((el) => { const outer = el.closest("[data-testid=composer-card]")!.parentElement!.parentElement!; return outer.scrollHeight - outer.clientHeight; })).toBeLessThanOrEqual(0);
+  });
+
+  test("plan 130: a link on the last visible line opens its bubble whole, above the link", async ({ app: page }) => {
+    await compose(page);
+    await body(page).click();
+    for (let i = 0; i < 50; i++) { await page.keyboard.type(`línea ${i}`); await page.keyboard.press("Enter"); }
+    await page.keyboard.type("el enlace");
+    await select(page, "enlace");
+    await page.keyboard.press("ControlOrMeta+l");
+    await page.getByTestId("link-url").fill("acme.example/propuesta");
+    await page.keyboard.press("Enter");
+    await expect(body(page).locator("a")).toHaveText("enlace");
+    await body(page).locator("a").click();
+    const bubble = page.getByTestId("link-bubble");
+    await expect(bubble).toBeVisible();
+    const b = await box(bubble), scroller = await box(card(page).locator("[data-draft-scroll]"));
+    expect(b.y).toBeGreaterThanOrEqual(scroller.y);
+    expect(b.y + b.height).toBeLessThanOrEqual(scroller.y + scroller.height);
+    const link = await box(body(page).locator("a"));
+    expect(b.y + b.height).toBeLessThanOrEqual(link.y);
+    // and it works from there
+    await page.getByTestId("link-bubble-remove").click();
+    await expect(body(page).locator("a")).toHaveCount(0);
+  });
+
+  test("plan 130: Collapse steps away: what's written is kept in the strip, with focus; an untouched one goes, and the list reads on", async ({ app: page }) => {
+    await compose(page);
+    await page.getByTestId("compose-collapse").click();
+    await expect(page.getByTestId("composer")).toHaveCount(0);
+    await expect(page.getByTestId("strip-item")).toHaveCount(0);
+    await page.keyboard.press("j");
+    await expect(page.locator("[data-testid=thread-row][data-cursor]")).toHaveCount(1);
+    await compose(page);
+    await page.getByTestId("compose-to").fill("ana@example.com");
+    await body(page).click();
+    await page.keyboard.type("Lo sigo luego");
+    const key = await page.getByTestId("composer").getAttribute("data-draft-key");
+    await page.getByTestId("compose-collapse").click();
+    await expect(page.getByTestId("composer")).toHaveCount(0);
+    await expect(page.locator(`[data-testid=strip-item][data-key="${key}"]`)).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(body(page)).toContainText("Lo sigo luego");
+  });
+
+  test("plan 130: a very long subject is the title's two lines at most; the card keeps its foot in view", async ({ app: page }) => {
+    await page.setViewportSize({ width: 980, height: 600 });
+    await compose(page);
+    await page.getByTestId("compose-subject").fill("Una propuesta larguísima de colaboración ".repeat(12).trim());
+    const title = page.getByTestId("compose-title");
+    expect(await title.evaluate((el) => el.clientHeight < el.scrollHeight)).toBe(true);
+    await expect(page.getByTestId("compose-send")).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId("compose-collapse")).toBeInViewport({ ratio: 1 });
+  });
+});
+
+test("plan 130: at the narrowest window, in Spanish, with a long status, every control in a new message's foot stays reachable", async ({ app: page, server }) => {
+  await server.backend.server.invoke("settings.update", { language: "es" }, ctx);
+  await page.addInitScript(() => localStorage.setItem("terno:language", "es"));
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+  await expect(page.locator("html")).toHaveAttribute("lang", /^es/);
+  await page.setViewportSize({ width: 980, height: 700 });
+  await focusList(page);
+  await page.keyboard.press("c");
+  await page.getByTestId("compose-to").fill("ana@example.com");
+  // the longest that row gets: a failed save and its actions
+  await page.getByTestId("draft-status").evaluate((el) => { const long = document.createElement("span"); long.textContent = "No se pudo guardar el borrador. Reintentar o guardar una copia aparte"; el.append(long); });
+  const c = (await page.getByTestId("composer-card").boundingBox())!;
+  // nothing runs off the side (a long From address truncates, the Pin beside it stays)
+  expect(await page.getByTestId("composer-card").locator("[data-draft-scroll]").evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+  for (const id of ["compose-pin", "compose-send", "format-toggle", "compose-link", "compose-discard", "compose-collapse"]) {
+    const b = (await page.getByTestId(id).boundingBox())!;
+    expect(b.x).toBeGreaterThanOrEqual(c.x);
+    expect(b.x + b.width).toBeLessThanOrEqual(c.x + c.width);
+    expect(b.y + b.height).toBeLessThanOrEqual(c.y + c.height);
+  }
 });
 
 test.describe("an install with nothing open", () => {
