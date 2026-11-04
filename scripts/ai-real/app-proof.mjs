@@ -158,43 +158,43 @@ await step("stop", async () => {
   log("stop", { body: await text(body()).catch(() => "(no body)"), previewGone: !(await page.getByTestId("ai-preview").isVisible()) });
 });
 
-await step("draft-other-person", async () => {
-  await openThread("maintenance window");
+await step("thread-not-participant", async () => {
+  await openThread("Hacker Newsletter");
   await page.keyboard.press(CMD_J);
   const field = page.getByTestId("ai-row-input");
   await field.waitFor({ timeout: 5000 });
-  await field.fill("ask dana when the billing deploy can go out");
+  await field.fill("tell dana that this is just fine");
   await page.keyboard.press("Enter");
+  const telling = page.getByTestId("ai-telling-continue");
+  if (await telling.waitFor({ timeout: 1200 }).then(() => true).catch(() => false)) await telling.click();
   const question = page.getByTestId("ai-question");
   await question.waitFor({ timeout: 20_000 });
-  await shot("draft-other-person-question");
-  log("draft-other-person", { question: await text(question) });
+  await shot("thread-not-participant-question");
+  log("thread-not-participant", { question: await text(question), body: await text(body()).catch(() => "") });
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
-});
-
-await step("thread-not-participant", async () => {
-  await openThread("webhook docs");
-  await page.getByTestId("compose-discard").click({ timeout: 2000 }).catch(() => {});
-  await page.waitForTimeout(300);
-  await page.keyboard.press("Escape");
-  await page.getByTestId("thread-row").filter({ hasText: "birthday" }).first().click({ timeout: 800 }).catch(() => {});
-  log("thread-not-participant", { note: "routing by e2e; question screenshot above" });
+  await page.getByTestId("compose-discard").click({ timeout: 1500 }).catch(() => {});
 });
 
 await step("new-message", async () => {
-  await page.getByTestId("compose-button").or(page.getByRole("button", { name: "Compose" })).first().click();
+  await page.getByRole("button", { name: "Compose" }).first().click();
   await page.waitForTimeout(500);
   await page.keyboard.press(CMD_J);
   const field = page.getByTestId("ai-row-input");
   await field.waitFor({ timeout: 5000 });
   await field.fill("ask dana when the billing deploy can go out");
+  const started = Date.now();
   await page.keyboard.press("Enter");
-  await page.waitForTimeout(1500);
-  await shot("new-message-1");
-  await page.getByTestId("ai-strip").or(page.getByTestId("ai-question")).first().waitFor({ timeout: 60_000 });
+  const telling = page.getByTestId("ai-telling-continue");
+  if (await telling.waitFor({ timeout: 1200 }).then(() => true).catch(() => false)) await telling.click();
+  const question = page.getByTestId("ai-question");
+  await question.waitFor({ timeout: 20_000 });
+  await shot("new-message-1-question");
+  const asked = await text(question);
+  await page.keyboard.press("Enter");
+  await page.getByTestId("ai-strip").waitFor({ timeout: 60_000 });
   await shot("new-message-2-done");
-  log("new-message", { body: await text(body()).catch(() => ""), subject: await page.getByTestId("compose-subject").inputValue().catch(() => null), to: await text(page.getByTestId("draft-slot").first()).then((t) => t.slice(0, 90)).catch(() => null) });
+  log("new-message", { asked, ms: Date.now() - started, to: await text(page.getByTestId("draft-slot").first()).then((t) => t.slice(0, 70)).catch(() => null), subject: await page.getByTestId("compose-subject").inputValue().catch(() => null), body: await text(body()) });
 });
 
 await step("summary", async () => {
