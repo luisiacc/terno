@@ -43,27 +43,107 @@ function bodySentences(m: WrittenMail): string[] {
   return sentences(lines.slice(from, Math.max(from, to)).join("\n"));
 }
 
-export function computeHabits(mails: readonly WrittenMail[]): Habits {
-  const total = mails.length;
-  const words = mails.map((m) => m.words).sort((a, b) => a - b);
-  const sentenceLengths = mails.flatMap((m) => bodySentences(m).map(countWords));
-  const hasGreeting = mails.filter((m) => m.greeting).length;
-  const hasSignOff = mails.filter((m) => m.signOff).length;
+/** What habits need of one message: worked out once, then summed cheaply for every scope the message belongs to. */
+export interface MailFeatures {
+  words: number;
+  sentenceLengths: number[];
+  greeting: string | null;
+  signOff: string | null;
+  exclamation: boolean;
+  emoji: boolean;
+  bullets: boolean;
+  lowercase: boolean;
+  language: string;
+  isReply: boolean;
+  oneToOne: boolean;
+}
+
+export function mailFeatures(m: WrittenMail): MailFeatures {
+  return {
+    words: m.words,
+    sentenceLengths: bodySentences(m).map(countWords),
+    greeting: m.greeting,
+    signOff: m.signOff,
+    exclamation: m.text.includes("!") || m.text.includes("¡"),
+    emoji: EMOJI.test(m.text),
+    bullets: BULLET.test(m.text),
+    lowercase: startsLowercase(m.text),
+    language: m.language,
+    isReply: m.isReply,
+    oneToOne: m.to.length + m.cc.length === 1,
+  };
+}
+
+export function habitsOf(features: readonly MailFeatures[]): Habits {
+  const total = features.length;
+  const words = features.map((m) => m.words).sort((a, b) => a - b);
+  const count = (test: (m: MailFeatures) => boolean) => {
+    let n = 0;
+    for (const m of features) if (test(m)) n++;
+    return n;
+  };
   return {
     messages: total,
     words: { median: percentile(words, 0.5), p80: percentile(words, 0.8) },
-    sentenceWords: median(sentenceLengths),
-    greetings: tally(mails.map((m) => m.greeting), total),
-    noGreeting: ratio(total - hasGreeting, total),
-    signOffs: tally(mails.map((m) => m.signOff), total),
-    noSignOff: ratio(total - hasSignOff, total),
-    exclamation: ratio(mails.filter((m) => m.text.includes("!") || m.text.includes("¡")).length, total),
-    emoji: ratio(mails.filter((m) => EMOJI.test(m.text)).length, total),
-    bullets: ratio(mails.filter((m) => BULLET.test(m.text)).length, total),
-    lowercase: ratio(mails.filter((m) => startsLowercase(m.text)).length, total),
-    languages: tally(mails.map((m) => m.language || null), total),
-    replies: ratio(mails.filter((m) => m.isReply).length, total),
-    oneToOne: ratio(mails.filter((m) => m.to.length + m.cc.length === 1).length, total),
+    sentenceWords: median(features.flatMap((m) => m.sentenceLengths)),
+    greetings: tally(features.map((m) => m.greeting), total),
+    noGreeting: ratio(total - count((m) => !!m.greeting), total),
+    signOffs: tally(features.map((m) => m.signOff), total),
+    noSignOff: ratio(total - count((m) => !!m.signOff), total),
+    exclamation: ratio(count((m) => m.exclamation), total),
+    emoji: ratio(count((m) => m.emoji), total),
+    bullets: ratio(count((m) => m.bullets), total),
+    lowercase: ratio(count((m) => m.lowercase), total),
+    languages: tally(features.map((m) => m.language || null), total),
+    replies: ratio(count((m) => m.isReply), total),
+    oneToOne: ratio(count((m) => m.oneToOne), total),
+  };
+}
+
+export const computeHabits = (mails: readonly WrittenMail[]): Habits => habitsOf(mails.map(mailFeatures));
+
+function mergeShares(parts: readonly { habits: Habits; pick: (h: Habits) => readonly Share[] }[], total: number): Share[] {
+  const counts = new Map<string, number>();
+  for (const { habits, pick } of parts) for (const s of pick(habits)) counts.set(s.text, (counts.get(s.text) ?? 0) + s.share * habits.messages);
+  return [...counts]
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+    .slice(0, TOP)
+    .map(([text, n]) => ({ text, share: ratio(n, total) }));
+}
+
+/**
+ * "You" from the accounts' profiles, with no message read again: rates and shares weighted by volume, lengths a
+ * weighted median of the accounts' medians. An estimate, and enough: the experiment found this level matters only
+ * where an account has none of its own.
+ */
+export function mergeHabits(list: readonly Habits[]): Habits {
+  const total = list.reduce((n, h) => n + h.messages, 0);
+  const weighted = (pick: (h: Habits) => number) => (total === 0 ? 0 : Math.round((list.reduce((n, h) => n + pick(h) * h.messages, 0) / total) * 100) / 100);
+  const weightedMedian = (pick: (h: Habits) => number) => {
+    const sorted = [...list].sort((a, b) => pick(a) - pick(b));
+    let seen = 0;
+    for (const h of sorted) {
+      seen += h.messages;
+      if (seen * 2 >= total) return pick(h);
+    }
+    return 0;
+  };
+  const shares = (pick: (h: Habits) => readonly Share[]) => mergeShares(list.map((habits) => ({ habits, pick })), total);
+  return {
+    messages: total,
+    words: { median: weightedMedian((h) => h.words.median), p80: weightedMedian((h) => h.words.p80) },
+    sentenceWords: weightedMedian((h) => h.sentenceWords),
+    greetings: shares((h) => h.greetings),
+    noGreeting: weighted((h) => h.noGreeting),
+    signOffs: shares((h) => h.signOffs),
+    noSignOff: weighted((h) => h.noSignOff),
+    exclamation: weighted((h) => h.exclamation),
+    emoji: weighted((h) => h.emoji),
+    bullets: weighted((h) => h.bullets),
+    lowercase: weighted((h) => h.lowercase),
+    languages: shares((h) => h.languages),
+    replies: weighted((h) => h.replies),
+    oneToOne: weighted((h) => h.oneToOne),
   };
 }
 
@@ -107,12 +187,17 @@ function phraseRuns(text: string): string[][] {
   return runs;
 }
 
+/** Past this many qualifying sequences, only the likeliest are compared with each other (that step is quadratic). */
+const MAX_FOUND = 1000;
+
 /**
  * Word sequences of 3 to 8 in at least 3 messages to at least 2 recipients, with no digits (§2). Repetition across
  * recipients is what makes them safe: a private detail rarely recurs across unrelated people. Grown from what already
  * qualifies (each n only extends an (n-1) that made it), so a large corpus doesn't count every sequence in it.
+ *
+ * A generator: it yields at each message and comparison so a backend in slices can look at its clock.
  */
-export function stockPhrases(mails: readonly WrittenMail[]): string[] {
+export function* phraseSteps(mails: readonly WrittenMail[]): Generator<void, string[], void> {
   const runs = mails.map((m) => {
     let left = MAX_WORDS_READ;
     const kept: string[][] = [];
@@ -144,6 +229,7 @@ export function stockPhrases(mails: readonly WrittenMail[]): string[] {
         gram.forms.set(form, (gram.forms.get(form) ?? 0) + 1);
         for (const r of mail.recipients) gram.recipients.add(r);
       }
+      yield;
     }
     const next = new Set<string>();
     for (const [key, gram] of grams) {
@@ -155,11 +241,37 @@ export function stockPhrases(mails: readonly WrittenMail[]): string[] {
     if (next.size === 0) break;
     survivors = next;
   }
+  const byUse = (a: [string, { messages: number; n: number }], b: [string, { messages: number; n: number }]) => b[1].messages * b[1].n - a[1].messages * a[1].n || (a[0] < b[0] ? -1 : 1);
+  const all = [...found].sort(byUse).slice(0, MAX_FOUND);
   // a part of a longer phrase, used no more often than the whole, says nothing the whole doesn't
-  const kept = [...found].filter(([key, f]) => ![...found].some(([other, o]) => other !== key && o.messages >= f.messages && !isFragment(o.text) && ` ${other} `.includes(` ${key} `)));
-  return kept
-    .filter(([, f]) => !isFragment(f.text))
-    .sort((a, b) => b[1].messages * b[1].n - a[1].messages * a[1].n || (a[0] < b[0] ? -1 : 1))
-    .slice(0, MAX_PHRASES)
-    .map(([, f]) => f.text);
+  const kept: typeof all = [];
+  for (const entry of all) {
+    const [key, f] = entry;
+    if (!isFragment(f.text) && !all.some(([other, o]) => other !== key && o.messages >= f.messages && !isFragment(o.text) && ` ${other} `.includes(` ${key} `))) kept.push(entry);
+    yield;
+  }
+  return kept.slice(0, MAX_PHRASES).map(([, f]) => f.text);
+}
+
+export function stockPhrases(mails: readonly WrittenMail[]): string[] {
+  const steps = phraseSteps(mails);
+  for (;;) {
+    const step = steps.next();
+    if (step.done) return step.value;
+  }
+}
+
+/** "You" from the accounts' phrases: the ones in most accounts, then the most used. */
+export function mergePhrases(lists: readonly (readonly string[])[]): string[] {
+  const seen = new Map<string, { text: string; lists: number; order: number }>();
+  let order = 0;
+  for (const list of lists) {
+    for (const text of list) {
+      const key = text.toLowerCase();
+      const entry = seen.get(key);
+      if (entry) entry.lists++;
+      else seen.set(key, { text, lists: 1, order: order++ });
+    }
+  }
+  return [...seen.values()].sort((a, b) => b.lists - a.lists || a.order - b.order).slice(0, MAX_PHRASES).map((e) => e.text);
 }

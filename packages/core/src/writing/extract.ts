@@ -92,17 +92,45 @@ export function repeatedTrailers(bodies: readonly string[], signature?: string |
   return out;
 }
 
+/**
+ * The same count as `repeatedTrailers`, one message at a time over its `writtenText`, so a learner in slices needn't
+ * hold every body to know what repeats.
+ */
+export class TrailerCounter {
+  private readonly counts = new Map<string, number>();
+  private bodies = 0;
+
+  add(written: string): void {
+    this.bodies++;
+    const lines = written.split("\n").map(flatten).filter(Boolean);
+    if (lines.length < 2) return;
+    for (const line of new Set(lines.slice(-3))) this.counts.set(line, (this.counts.get(line) ?? 0) + 1);
+  }
+
+  trailers(): ReadonlySet<string> {
+    const needed = Math.max(5, Math.ceil(this.bodies * 0.3));
+    const out = new Set<string>();
+    for (const [line, n] of this.counts) if (n >= needed && isBoilerplate(line)) out.add(line);
+    return out;
+  }
+}
+
 export interface ExtractContext {
   signature?: string | null;
   trailers?: ReadonlySet<string>;
 }
 
-export function writtenText(body: string, context: ExtractContext = {}): string {
-  let lines = stripSignature(firstPass(body), context.signature);
-  const trailers = context.trailers;
+function takeTrailers(lines: string[], trailers: ReadonlySet<string> | undefined): string[] {
   if (trailers?.size) while (lines.length > 0 && trailers.has(flatten(lines[lines.length - 1]!))) lines = dropTrailingBlank(lines.slice(0, -1));
-  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return lines;
 }
+
+export function writtenText(body: string, context: ExtractContext = {}): string {
+  return takeTrailers(stripSignature(firstPass(body), context.signature), context.trailers).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** `writtenText`'s last step, for text already through the rest of it. */
+export const withoutTrailers = (text: string, trailers: ReadonlySet<string>): string => takeTrailers(text.split("\n"), trailers).join("\n").trim();
 
 /** `Hi Tom,` → `Hi {name},`. Titles stay: `Estimado Sr. García:` says something `Estimado {name}:` wouldn't. */
 export function normalizeGreeting(text: string, toNames: readonly string[] = []): string | null {
@@ -193,25 +221,27 @@ export interface CorpusContext {
   namesOf?: (address: string) => readonly string[];
 }
 
+/** A message and the text the user wrote in it, as the rest of the pipeline reads it. */
+export function reduceMail(m: Omit<SentMail, "body">, text: string, context: CorpusContext = {}): WrittenMail {
+  const toNames = context.namesOf ? m.to.flatMap((a) => context.namesOf!(a)) : [];
+  return {
+    id: m.id,
+    to: m.to,
+    cc: m.cc,
+    at: m.at,
+    isReply: m.isReply,
+    bulk: m.bulk ?? false,
+    fromModel: m.fromModel ?? false,
+    text,
+    words: countWords(text),
+    greeting: normalizeGreeting(text, toNames),
+    signOff: normalizeSignOff(text, context.selfNames),
+    language: detectWritingLanguage(text),
+  };
+}
+
 /** One account's sent mail, reduced. The trailers are measured on all of it, so call it per account. */
 export function readCorpus(mails: readonly SentMail[], context: CorpusContext = {}): WrittenMail[] {
   const trailers = repeatedTrailers(mails.map((m) => m.body), context.signature);
-  return mails.map((m) => {
-    const text = writtenText(m.body, { signature: context.signature, trailers });
-    const toNames = context.namesOf ? m.to.flatMap((a) => context.namesOf!(a)) : [];
-    return {
-      id: m.id,
-      to: m.to,
-      cc: m.cc,
-      at: m.at,
-      isReply: m.isReply,
-      bulk: m.bulk ?? false,
-      fromModel: m.fromModel ?? false,
-      text,
-      words: countWords(text),
-      greeting: normalizeGreeting(text, toNames),
-      signOff: normalizeSignOff(text, context.selfNames),
-      language: detectWritingLanguage(text),
-    };
-  });
+  return mails.map((m) => reduceMail(m, writtenText(m.body, { signature: context.signature, trailers }), context));
 }

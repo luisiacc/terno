@@ -92,6 +92,14 @@ export interface VoiceProfile {
   fromOtherAccount?: boolean;
 }
 
+/** The scopes' identities, one format in every store and in the UI (§9). */
+export const scopeKeys = {
+  you: "you",
+  account: (accountId: number) => `account:${accountId}`,
+  domain: (accountId: number, domain: string) => `domain:${accountId}:${domain.toLowerCase()}`,
+  person: (accountId: number, address: string) => `person:${accountId}:${address.toLowerCase()}`,
+};
+
 /** The fewest messages a scope needs (§1). */
 export const MIN_SAMPLES: Readonly<Record<VoiceScope, number>> = { you: 20, account: 15, domain: 8, person: 5 };
 
