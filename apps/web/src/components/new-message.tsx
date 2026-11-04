@@ -16,6 +16,9 @@ import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadCompo
 import { warmAutocomplete } from "~/lib/autocomplete";
 import { DraftCommandsHost } from "~/lib/draft-commands";
 import { pinDraft } from "~/lib/pinned-draft";
+import { AiDraftButton } from "./composer/ai-slot";
+import { aiDraftHooks, preloadAiDraft } from "~/lib/ai-draft-state";
+import { focusSelector } from "~/lib/compose-focus-move";
 
 /** Esc, Collapse and sending leave the new message; focus goes to its strip item (kept) or back to the list. */
 function leave(key: string) {
@@ -43,11 +46,12 @@ export function NewMessage() {
   useEffect(() => () => { for (const stop of sendWatches.current) stop(); }, []);
   // a new message: suggestions get ready (once per session)
   useEffect(warmAutocomplete, []);
+  useEffect(preloadAiDraft, []);
   useEffect(() => {
     if (!compose) return;
     const generation = ++focusGeneration.current;
     const owned = compose.storedFocusSeq === undefined ? null : { key: compose.key, seq: compose.storedFocusSeq };
-    focusSoon("[data-testid=compose-to]", rootRef.current, 12, owned ? (fallback) => focusGeneration.current === generation && finishComposeFocus(owned.key, owned.seq, fallback) : undefined, owned ? () => focusGeneration.current === generation && useApp.getState().compose === compose && composeFocusPending(null, owned.key, owned.seq) : undefined);
+    focusSoon(focusSelector(compose.target ?? "to"), rootRef.current, 12, owned ? (fallback) => focusGeneration.current === generation && finishComposeFocus(owned.key, owned.seq, fallback) : undefined, owned ? () => focusGeneration.current === generation && useApp.getState().compose === compose && composeFocusPending(null, owned.key, owned.seq) : undefined);
     if (owned && useApp.getState().draftFocus?.seq === owned.seq) setApp({ draftFocus: null });
     return () => {
       if (owned) queueMicrotask(() => { if (focusGeneration.current === generation) finishComposeFocus(owned.key, owned.seq, false); });
@@ -106,7 +110,8 @@ export function NewMessage() {
         } else if (e.key === "Escape" && !popupOpen()) {
           e.preventDefault();
           e.stopPropagation();
-          leave(key);
+          // the AI row's first: it stops a stream, closes itself (§10.4)
+          if (!aiDraftHooks.escape(key)) leave(key);
         }
       }}
     >
@@ -145,6 +150,7 @@ export function NewMessage() {
                 <FormatToggle controls={formatId} />
                 <AttachButton d={d} />
                 <LinkButton draftKey={key} disabled={d.sending} />
+                <AiDraftButton draftKey={key} disabled={d.sending} testId="compose-ai" />
                 <span className="ml-1.5 min-w-0">
                   <SaveState d={d} />
                 </span>
@@ -162,7 +168,7 @@ export function NewMessage() {
           </div>
         </div>
       </div>
-      <DraftCommandsHost draftKey={key} root={rootRef} send={() => void send()} discard={() => void discard()} sending={d.sending} />
+      <DraftCommandsHost draftKey={key} root={rootRef} send={(at) => void send(at)} discard={() => void discard()} close={() => leave(key)} sending={d.sending} />
     </form>
   );
 }

@@ -18,7 +18,9 @@ import { DraftFieldsForm, focusSoon, Quote, SaveState, SignaturePreview } from "
 import { isSendLaterKey, openSendLater, SendButton } from "./send-button";
 import { popupOpen } from "./composer/controller";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
-import type { InlineFocusMove } from "~/lib/compose-focus-move";
+import { focusSelector, type InlineFocusMove } from "~/lib/compose-focus-move";
+import { AiDraftButton } from "./composer/ai-slot";
+import { aiDraftHooks, preloadAiDraft } from "~/lib/ai-draft-state";
 
 /** The card's distance from the pane's edges (px; right-3 bottom-3). */
 const GAP = 12;
@@ -51,6 +53,7 @@ export function PinnedDraft({ list }: { list: boolean }) {
 
   useEffect(preloadComposer, []);
   useEffect(warmAutocomplete, []);
+  useEffect(preloadAiDraft, []);
   useEffect(() => () => move.current?.cancel(), []);
 
   // List: the snack dock is at the bottom left; where the pane is too narrow for both, the card stands on it
@@ -81,7 +84,7 @@ export function PinnedDraft({ list }: { list: boolean }) {
   // an explicit focus request for this draft (Unpin → pin again, a palette command): honored here, as the slot would
   useEffect(() => {
     if (!draftFocus || useApp.getState().draftFocus !== draftFocus) return;
-    const selector = draftFocus.target === "to" ? "[data-testid=compose-to]" : "[data-testid=compose-body]";
+    const selector = focusSelector(draftFocus.target);
     if (draftFocus.move) {
       if (draftFocus.move.bind(rootRef.current, selector)) move.current = draftFocus.move;
     } else focusSoon(selector, rootRef.current, 12, draftFocus.leased ? (fallback) => finishComposeFocus(draftFocus.key, draftFocus.seq, fallback) : undefined);
@@ -138,6 +141,8 @@ export function PinnedDraft({ list }: { list: boolean }) {
           } else if (e.key === "Escape" && !popupOpen()) {
             e.preventDefault();
             e.stopPropagation();
+            // the AI row's first: it stops a stream, closes itself (§10.4)
+            if (aiDraftHooks.escape(key)) return;
             // Esc leaves the card (it stays pinned): back to the list, or List's page, so j/k read on
             focusReading(false);
           }
@@ -173,6 +178,7 @@ export function PinnedDraft({ list }: { list: boolean }) {
             <FormatToggle controls={formatId} />
             <AttachButton d={d} />
             <LinkButton draftKey={key} disabled={d.sending} />
+            <AiDraftButton draftKey={key} disabled={d.sending} testId="compose-ai" />
             <span className="ml-1.5 min-w-0">
               <SaveState d={d} />
             </span>
@@ -191,7 +197,7 @@ export function PinnedDraft({ list }: { list: boolean }) {
           </div>
         </div>
         {drop.layer}
-        <DraftCommandsHost draftKey={key} root={rootRef} send={() => void send()} discard={() => void discard()} sending={d.sending} />
+        <DraftCommandsHost draftKey={key} root={rootRef} send={(at) => void send(at)} discard={() => void discard()} sending={d.sending} />
       </form>
     </section>
   );

@@ -16,6 +16,7 @@ import { activeFilter, isUnreadOnly } from "~/lib/unread-filter";
 import { DESIGNS } from "@terno/ui/designs/index";
 import { designName } from "~/lib/design";
 import { aiReady } from "~/lib/ai";
+import { openAiDraft, useAiDraftUi } from "~/lib/ai-draft-state";
 import { checkForUpdates, installUpdate, useHasUpdates, useUpdates } from "~/lib/updates";
 import { englishWords as english } from "~/lib/palette-words";
 import { getApp, navigate, setApp, useApp } from "~/state/app";
@@ -109,6 +110,7 @@ export function CommandPalette() {
   const supported = useApp((s) => s.supportedFilters);
   const design = useApp((s) => (open ? (s.settings?.design ?? null) : null));
   const canAi = useApp((s) => open && aiReady(s.settings?.ai));
+  const drafting = useAiDraftUi((s) => s.enabled);
   const updatesAvailable = useHasUpdates();
   const readyVersion = useUpdates((s) => (open && s.state?.ready && s.state.status !== "installing" ? s.state.ready.version : null));
   const [value, setValue] = useState("");
@@ -170,6 +172,8 @@ export function CommandPalette() {
     // ── the draft the palette was opened from
     if (draft && draftState) {
       if (draftState.send) add({ id: "draft.send", group: "draft", label: t("common.send"), icon: <Send />, shortcut: isMac ? "⌘↵" : "Ctrl+↵", testId: "palette-draft-send", ...synonyms("palette.alias.send", english("common.send")), draft: true, run: inDraft((d) => d.send()) });
+      // plan 133: the row, in this draft
+      if (drafting && draftState.link) add({ id: "draft.ai", group: "draft", label: t("palette.aiDraft"), icon: <Sparkles />, shortcut: isMac ? "⌘J" : "Ctrl+J", testId: "palette-draft-ai", ...synonyms("palette.alias.aiDraft", english("palette.aiDraft")), draft: true, run: () => draftKey && runInDraft(draftKey, () => openAiDraft({ key: draftKey })) });
       // plan 93: snippets, while the text can change
       if (draftState.link) add({ id: "draft.snippet", group: "draft", label: t("palette.insertSnippet"), icon: <NotepadText />, shortcut: isMac ? "⌘;" : "Ctrl+;", testId: "palette-draft-snippet", ...synonyms("palette.alias.snippet", english("palette.insertSnippet")), page: "snippets" });
       if (draftState.attach) add({ id: "draft.attach", group: "draft", label: t("attachments.attach"), icon: <Paperclip />, testId: "palette-draft-attach", ...synonyms("palette.alias.attach", english("attachments.attach")), draft: true, run: inDraft((d) => d.attach()) });
@@ -235,6 +239,8 @@ export function CommandPalette() {
 
     // ── actions
     add({ id: "compose.new", group: "actions", label: t("palette.compose"), icon: <PenLine />, shortcut: "C", ...synonyms("palette.alias.compose"), keywords: [...english("palette.compose"), ...english("palette.alias.compose").flatMap(words)], run: () => void openCompose("new") });
+    // plan 133: from a conversation or the list, the draft §5.2 opens, with its row
+    if (drafting && !draft) add({ id: "compose.ai", group: "actions", label: t("palette.aiDraft"), icon: <Sparkles />, shortcut: isMac ? "⌘J" : "Ctrl+J", testId: "palette-ai-draft", ...synonyms("palette.alias.aiDraft", english("palette.aiDraft")), run: () => openAiDraft() });
     if (replyable) {
       add({ id: "compose.reply", group: "actions", label: t("palette.reply"), icon: <Reply />, shortcut: "R", testId: "palette-reply", ...synonyms("palette.alias.reply", english("palette.reply")), run: () => reply("reply") });
       add({ id: "compose.replyAll", group: "actions", label: t("palette.replyAll"), icon: <ReplyAll />, shortcut: "A", testId: "palette-reply-all", keywords: english("palette.replyAll"), run: () => reply("replyAll") });

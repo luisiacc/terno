@@ -25,9 +25,11 @@ import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadCompo
 import { focusPinned, usePinned } from "~/lib/pinned-draft-state";
 import { pinDraft, unpinDraft } from "~/lib/pinned-draft";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
+import { AiDraftButton, AiRowSlot } from "./composer/ai-slot";
+import { aiDraftHooks, preloadAiDraft, useAiDraftUi } from "~/lib/ai-draft-state";
 
 export { focusSoon } from "~/lib/compose-focus-move";
-import { focusSoon, focusMoveGeneration, type InlineFocusMove } from "~/lib/compose-focus-move";
+import { focusSelector, focusSoon, focusMoveGeneration, type InlineFocusMove } from "~/lib/compose-focus-move";
 
 /** A borderless field row: a real label, the control, hairline below. */
 function Row({ label, htmlFor, children, hidden }: { label: string; htmlFor?: string; children: React.ReactNode; hidden?: boolean }) {
@@ -171,6 +173,7 @@ export function DraftFieldsForm({ d, accounts, showSubject, corner }: { d: Local
       <Row label={t("compose.subject")} htmlFor={`${id}-subject`} hidden={!subject}>
         <input id={`${id}-subject`} data-testid="compose-subject" className={input} value={d.subject} onChange={(e) => update({ subject: e.target.value, subjectEdited: true })} />
       </Row>
+      <AiRowSlot draftKey={d.key} />
     </div>
   );
 }
@@ -309,6 +312,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
 
   // a conversation is open: its reply may come next, so the editor starts loading (once)
   useEffect(preloadComposer, []);
+  // and ⌘J may too, on someone who has AI set up: the row answers in the frame of the key
+  useEffect(preloadAiDraft, []);
   // a draft is open: suggestions get ready (once per session)
   useEffect(() => {
     if (state === "open") warmAutocomplete();
@@ -323,7 +328,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
       if (useApp.getState().draftFocus === focus) setApp({ draftFocus: null });
       return;
     }
-    const selector = focus.target === "to" ? "[data-testid=compose-to]" : "[data-testid=compose-body]";
+    const selector = focusSelector(focus.target);
     if (focus.move && !focus.move.bind(rootRef.current, selector)) {
       if (useApp.getState().draftFocus === focus) setApp({ draftFocus: null });
       return;
@@ -389,6 +394,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
   const who = d ? d.toText.split(",")[0]?.replace(/<.*$/, "").replace(/"/g, "").trim() || d.toText : "";
   const label = !d ? "" : d.mode === "new" ? t("compose.newMessage") : formLabel(d.mode === "forward", who);
   const drop = useComposerDrop(d?.key ?? "", d?.sending ?? false);
+  const aiBadge = useAiDraftUi((s) => (d ? s.rows[d.key] : undefined));
 
   return (
     <div ref={rootRef} className={cn("mt-5", DRAFT_SURFACE)} data-testid="draft-slot" data-state={state} data-thread={threadId}>
@@ -404,6 +410,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
           <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => void openCompose("forward", threadId)} data-testid="quick-forward">
             <Forward /> {t("compose.bar.forward")}
           </Button>
+          <AiDraftButton threadId={threadId} testId="quick-ai" />
         </div>
       </Expand>
       <Expand open={state === "pinned"}>
@@ -424,7 +431,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
             <PenLine className="size-4 shrink-0 text-primary" />
             <span className="shrink-0 font-medium">{t("compose.draft")}</span>
             <span className="min-w-0 flex-1 truncate text-muted-foreground">
-              {t(d.mode === "forward" ? "compose.collapsed.forward" : "compose.collapsed.to", { to: recipientSummary(d.toText) || "—", preview: d.bodyText.split("\n").find((l) => l.trim()) ?? "" })}
+              {t(d.mode === "forward" ? "compose.collapsed.forward" : "compose.collapsed.to", { to: recipientSummary(d.toText) || "—", preview: aiBadge === "writing" ? t("aiDraft.writing") : aiBadge === "ready" ? t("aiDraft.choice.ready") : (d.bodyText.split("\n").find((l) => l.trim()) ?? "") })}
             </span>
             <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
           </button>
@@ -456,7 +463,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
               } else if (e.key === "Escape" && !popupOpen()) {
                 e.preventDefault();
                 e.stopPropagation();
-                collapse();
+                // the AI row's first: it stops a stream, closes itself (§10.4)
+                if (!aiDraftHooks.escape(d.key)) collapse();
               }
             }}
           >
@@ -481,6 +489,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
               <FormatToggle controls={formatId} />
               <AttachButton d={d} />
               <LinkButton draftKey={d.key} disabled={d.sending} />
+              <AiDraftButton draftKey={d.key} disabled={d.sending} testId="compose-ai" />
               <span className="ml-1.5 min-w-0">
                 <SaveState d={d} />
               </span>
@@ -494,7 +503,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
               </span>
             </div>
             {state === "open" && drop.layer}
-            {state === "open" && <DraftCommandsHost draftKey={d.key} root={rootRef} send={() => void send()} discard={() => void discard()} sending={d.sending} />}
+            {state === "open" && <DraftCommandsHost draftKey={d.key} root={rootRef} send={(at) => void send(at)} discard={() => void discard()} close={collapse} sending={d.sending} />}
           </form>
         )}
       </Expand>

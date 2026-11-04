@@ -19,6 +19,7 @@ import { t } from "@terno/i18n";
 import { snack } from "~/lib/snack";
 import { noteOpen, openRemind } from "~/lib/reminders";
 import { togglePalette, toggleSnippets } from "~/lib/palette-open";
+import { openAiDraft } from "~/lib/ai-draft-state";
 
 /** Toggles act once per press: no key repeat, and the desktop menu's echo of a key just handled is dropped. */
 const TOGGLES = new Set<Command>(["nav.back", "nav.forward"]);
@@ -150,6 +151,7 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "compose.reply": () => reply("reply"),
   "compose.replyAll": () => reply("replyAll"),
   "compose.forward": () => reply("forward"),
+  "compose.ai": () => openAiDraft(),
   "search.focus": () => {
     uncoverList();
     focusSearch();
