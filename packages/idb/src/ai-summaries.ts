@@ -233,7 +233,8 @@ export function dropPendingSummaries(c: Ctx): void {
 
 export function clearSummaries(c: Ctx): void {
   const rows = T(c, "ai_summaries");
-  for (const r of [...rows.all()]) rows.deleteRow(r);
+  const all = [...rows.all()];
+  for (const r of all) rows.deleteRow(r);
   clearNewMail(c, "summary");
 }
 

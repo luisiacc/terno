@@ -1097,7 +1097,7 @@ const es = {
   "summary.kind.date": "Fecha",
   "summary.kind.action": "Acción",
   "summary.kind.question": "Pregunta",
-  "summary.goTo": "{kind}: {text}. Ir al mensaje.",
+  "summary.goTo": "Ir al mensaje",
   "summary.running": "Resumiendo…",
   "summary.stop": "Detener",
   "summary.downloading": "Este mensaje aún se está descargando",

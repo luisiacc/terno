@@ -2,8 +2,10 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
 /** A stand-in for Ollama on 127.0.0.1: model list, model details and an OpenAI-compatible chat endpoint. */
-export async function startOllamaStub(options: { chatDelayMs?: number } = {}): Promise<{ url: string; requests: string[]; close: () => Promise<void> }> {
+export async function startOllamaStub(options: { chatDelayMs?: number; summaryFails?: () => number | null } = {}): Promise<{ url: string; requests: string[]; summaries: string[]; close: () => Promise<void> }> {
   const requests: string[] = [];
+  /** what each thread_summary request carried */
+  const summaries: string[] = [];
   const server: Server = createServer((req, res) => {
     let data = "";
     req.on("data", (c) => (data += c));
@@ -21,8 +23,16 @@ export async function startOllamaStub(options: { chatDelayMs?: number } = {}): P
       function answerChat() {
         const body = JSON.parse(data);
         const probe = body.response_format?.json_schema?.name === "probe";
+        const summary = body.response_format?.json_schema?.name === "thread_summary";
+        if (summary) {
+          summaries.push(JSON.stringify(body.messages));
+          const failure = options.summaryFails?.();
+          if (failure) return void res.writeHead(failure, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "The stub says no.", type: "error", code: null } }));
+        }
         const content = probe
           ? '{"ok":true}'
+          : summary
+          ? JSON.stringify({ summary: "The stub read the conversation and wrote this.", items: [{ kind: "action", text: "Reply to the stub", message: "m1" }] })
           : JSON.stringify({ name: "Uber", explanation: "Archiva los recibos de uber.com.", match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "uber.com", negate: false }], actions: [{ type: "archive", categoryId: null }] });
         json({ id: "c", object: "chat.completion", created: 0, model: body.model, choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content, refusal: null } }] });
       }
@@ -32,6 +42,7 @@ export async function startOllamaStub(options: { chatDelayMs?: number } = {}): P
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     requests,
+    summaries,
     close: () => new Promise((r) => (server.closeAllConnections(), server.close(() => r()))),
   };
 }

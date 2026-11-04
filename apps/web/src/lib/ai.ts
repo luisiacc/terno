@@ -1,4 +1,4 @@
-import type { AiErrorKind, AiProviderId, CompatiblePreset, OutputMode } from "@terno/core";
+import { SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type AiErrorKind, type AiProviderId, type CompatiblePreset, type OutputMode } from "@terno/core";
 import type { AiSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 
@@ -96,6 +96,31 @@ export function aiReady(ai: AiSettings | null | undefined): ai is AiSettings {
   const keyed = ai.provider === "anthropic" || ai.provider === "openai" || (ai.provider === "compatible" && (ai.preset ?? "custom") !== "custom");
   return !keyed || (ai.hasKey && ai.keyConfirmed);
 }
+
+/**
+ * Plan 131 §2 and plan 132 §2: what summaries run on, by the same rule as the backend's `AiService.targetFor`. A
+ * default never moves mail to a paid provider the user didn't pick: with only another cloud provider set up, it asks.
+ */
+export type SummaryTarget = { state: "ready"; provider: AiProviderId; model: string } | { state: "ask"; provider: AiProviderId } | { state: "none" };
+
+export function summaryTarget(ai: AiSettings): SummaryTarget {
+  const chosen = ai.tasks.summary;
+  if (chosen) return { state: "ready", provider: chosen.provider, model: chosen.model };
+  if (ai.keys.openai?.hasKey) return { state: "ready", provider: "openai", model: SUMMARY_DEFAULT_MODEL };
+  if (ai.provider === "none") return { state: "none" };
+  return ai.local ? { state: "ready", provider: ai.provider, model: ai.model } : { state: "ask", provider: ai.provider };
+}
+
+/** A provider by name, wherever it's named outside its own settings. */
+export function providerLabel(provider: AiProviderId, ai?: Pick<AiSettings, "provider" | "preset" | "local">): string {
+  if (provider === "compatible") return ai?.provider === "compatible" ? providerName(ai) : choiceLabel("compatible");
+  return provider === "jev" ? "JEV" : choiceLabel(provider);
+}
+
+const MODEL_NAME: Record<string, string> = { [SUMMARY_DEFAULT_MODEL]: "GPT Luna", [WRITING_CLAUDE_MODEL]: "Claude Sonnet 5.5" };
+
+/** A model as people say it; an id nobody named as itself. */
+export const modelName = (id: string): string => MODEL_NAME[id] ?? id;
 
 /** One line on what leaves the Mac when generating a filter. Never message content. */
 export function privacyLine(ai: AiSettings): string {

@@ -52,6 +52,7 @@ const ALLOWED_TOKENS = [
   "iCloud",
   "Ollama",
   "LM Studio",
+  "JEV",
   "OpenAI",
   "OpenRouter",
   "Groq",

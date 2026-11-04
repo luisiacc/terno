@@ -1106,7 +1106,7 @@ const en = {
   "summary.kind.date": "Date",
   "summary.kind.action": "Action",
   "summary.kind.question": "Question",
-  "summary.goTo": "{kind}: {text}. Go to the message.",
+  "summary.goTo": "Go to the message",
   "summary.running": "Summarizing…",
   "summary.stop": "Stop",
   "summary.downloading": "Still downloading this message",

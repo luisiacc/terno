@@ -72,6 +72,7 @@ export function summaryPrompt(input: SummarizeInput): string {
 
 /** Plain text, in one line's worth of room: a model's markup never reaches the reader. */
 const clean = (text: string, max: number) => {
+  // oxlint-disable-next-line no-control-regex
   const flat = text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").replace(/<[^>]*>/g, "").trim();
   return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
 };

@@ -642,7 +642,7 @@ describe("by hand", () => {
   });
 
   describe("where it goes", () => {
-    async function cloud(o: { key?: boolean; chosen?: boolean } = {}) {
+    async function cloud() {
       const s = await setup({ enabled: false, provider: "none" });
       const m = await s.arrive({ date: START - 400 * 86_400_000 }, false);
       return { ...s, ...m };

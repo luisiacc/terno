@@ -9,7 +9,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Bell, ChevronDown, ChevronLeft, ChevronUp, Forward, Inbox, Layers, MailOpen, OctagonAlert, Printer, Reply, ReplyAll, Star, Tag, Trash2 } from "@terno/ui/icons";
+import { Archive, Bell, ChevronDown, ChevronLeft, ChevronUp, Forward, Inbox, Layers, MailOpen, OctagonAlert, Printer, Reply, ReplyAll, Sparkles, Star, Tag, Trash2 } from "@terno/ui/icons";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
@@ -45,8 +45,23 @@ import { move } from "~/lib/keyboard";
 import { viewLabel } from "~/lib/format";
 import { useList } from "~/state/list";
 import { useSnack } from "~/lib/snack";
+import { summarizable, summarize, useSummaries } from "~/lib/summaries";
 
 const RemindPicker = lazy(() => import("./remind-picker").then((m) => ({ default: m.RemindPicker })));
+// plan 132: nothing of it until a thread opens
+const ThreadSummary = lazy(() => import("./thread-summary"));
+
+/** Plan 132 §7: a summary by hand. Never in spam or trash, nor with one spam message in the thread. Open already: the block shows it. */
+function SummarizeButton({ threadId }: { threadId: number }) {
+  const kind = useSummaries((s) => s.byThread.get(threadId)?.kind);
+  const updates = useApp((s) => kind === "stale" && !s.settings?.summaries.enabled);
+  return (
+    // a narrow reader (the minimum window) gives its place to the bell, as Mark as unread does; the palette keeps it
+    <IconButton className={cn(tool, "@max-[420px]:hidden")} label={updates ? t("actions.updateSummary") : t("actions.summarize")} onClick={() => void summarize(threadId)} data-testid="action-summarize" aria-busy={kind === "running" || undefined}>
+      <Sparkles />
+    </IconButton>
+  );
+}
 
 /** Plan 87: the bell. Set: filled, in the accent, its tooltip says when. Opens the picker below it (h too). */
 function RemindButton({ threadId }: { threadId: number }) {
@@ -216,6 +231,15 @@ function Conversation({ messages, icons, headless, knownEmail }: { messages: Mes
     if (sent !== null) revealMessage(sent);
   }, [messages]);
   const [own, setState] = useState<{ toggled: Map<number, boolean>; revealed: Set<number> }>({ toggled: new Map(), revealed: new Set() });
+  // plan 132: a summary's arrow: the message it names opens, wherever it's folded, and the reader goes to it
+  const summaryReveal = useSummaries((s) => s.reveal);
+  useEffect(() => {
+    if (!summaryReveal || !messages.some((m) => m.id === summaryReveal.messageId)) return;
+    const { messageId } = summaryReveal;
+    useSummaries.setState({ reveal: null });
+    setState((s) => ({ toggled: new Map(s.toggled).set(messageId, true), revealed: new Set([...s.revealed, messageId]) }));
+    revealMessage(messageId);
+  }, [summaryReveal, messages]);
   const isOpen = (m: MessageDetail) => own.toggled.get(m.id) ?? shown.get(m.id) ?? opensAt(m);
   const toggle = (id: number, now: boolean) => setState({ ...own, toggled: new Map(own.toggled).set(id, !now) });
   // every message of a revealed run stays unfolded, whatever opens or closes around it later
@@ -627,6 +651,7 @@ function ReaderContent() {
           <Star className={cn(thread?.starred && "fill-star")} />
         </IconButton>
         <RemindButton key={`remind-${selectedId}`} threadId={selectedId} />
+        {summarizable(thread) && <SummarizeButton threadId={selectedId} />}
         </div>
         <div className="ml-auto flex items-center gap-0.5" role="group" aria-label={t("reader.group.respond")}>
           {design.variants.replyAction === "pill" ? (
@@ -683,6 +708,9 @@ function ReaderContent() {
                 <div>
                   {/* inside the menu: Lumen's card can stand for the message (plan 59) */}
                   <ReaderHeader detail={detail} account={account} cats={cats} />
+                  <Suspense fallback={null}>
+                    <ThreadSummary key={detail.thread.id} detail={detail} />
+                  </Suspense>
                   <Conversation key={detail.thread.id} messages={detail.messages} icons={iconsFor(detail.thread)} headless={cardHeader} knownEmail={cardHeader ? senderOf(detail).email : null} />
                 </div>
               </MessageMenu>

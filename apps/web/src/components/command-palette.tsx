@@ -28,6 +28,8 @@ import { openSnippetEditor } from "~/lib/snippet-editor-state";
 import { arrange, itemValue, words, type PaletteCommand, type PaletteGroup, type PalettePage } from "~/lib/palette-commands";
 import { noteUse, readUsage, type Usage } from "~/lib/palette-usage";
 import { reply } from "~/lib/keyboard";
+import { summarizable, summarize } from "~/lib/summaries";
+import { useThread } from "~/state/threads";
 import { createCategory } from "./category-picker";
 import { snack } from "~/lib/snack";
 import { SETTINGS_TABS } from "./settings/tabs";
@@ -95,6 +97,7 @@ export function CommandPalette() {
   const printable = useApp((s) => open && s.selectedId !== null && !s.scope && s.checked.size < 2 && s.compose === null);
   // Reply, Reply all and Forward: the selected conversation, when it's the one target
   const replyable = useApp((s) => open && s.selectedId !== null && !s.scope && (s.checked.size === 0 || (s.checked.size === 1 && s.checked.has(s.selectedId))));
+  const openThread = useThread(useApp((s) => (replyable ? s.selectedId : null)));
   // plan 87: reminders need ids ("select all N" has none)
   const scoped = useApp((s) => s.scope !== null);
   const single = useApp((s) => (open && !s.scope && s.checked.size === 0 ? s.selectedId : null));
@@ -285,6 +288,10 @@ export function CommandPalette() {
         }
         if (reminder) add({ id: "remind:clear", group: "remindClear", label: t("remind.clear"), icon: <BellOff />, testId: "palette-remind-clear", run: () => void clearReminder([reminder.threadId]) });
       }
+    }
+    // plan 132 §7: the open conversation, never in spam or trash; no shortcut of its own
+    if (replyable && summarizable(openThread?.thread)) {
+      add({ id: "thread.summarize", group: "actions", label: t("palette.summarize"), icon: <Sparkles />, testId: "palette-summarize", ...synonyms("palette.alias.summarize", english("palette.summarize")), run: () => void summarize(openThread!.thread.id) });
     }
     if (printable) {
       add({ id: "thread.print", group: "actions", label: t("palette.print"), icon: <Printer />, shortcut: isMac ? "⌘P" : "Ctrl+P", testId: "palette-print", ...synonyms("palette.alias.print"), keywords: english("palette.print"), run: () => printCommand("print") });

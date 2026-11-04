@@ -10,6 +10,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { formatBytes, viewLabel } from "~/lib/format";
 import { snack } from "~/lib/snack";
 import { useStorageJob } from "~/lib/storage-job";
+import { clearSummaries } from "~/lib/summaries";
 import { StorageSection } from "~/lib/web-parts";
 import { client } from "~/rpc/connection";
 import { ConfirmDialog, SettingsGroup, SettingsRow } from "./parts";
@@ -176,6 +177,23 @@ export function StorageTab() {
                   onClick={() => setConfirming(true)}
                 >
                   {removing ? t("storage.removing", { percent }) : t("storage.remove")}
+                </Button>
+              )}
+            </SettingsRow>
+          </SettingsGroup>
+
+          {/* plan 132 §3 */}
+          <SettingsGroup testId="storage-ai">
+            <SettingsRow label={t("storage.clearAi")} hint={t("storage.clearAi.hint", { device: device() })}>
+              {({ id: _id, "aria-labelledby": _l, ...a }) => (
+                <Button
+                  {...a}
+                  variant="outline"
+                  size="sm"
+                  data-testid="storage-clear-ai"
+                  onClick={() => void clearSummaries().then(() => snack.success(t("storage.clearAi.done")), (e: unknown) => snack.error(e instanceof Error ? e.message : String(e)))}
+                >
+                  {t("storage.clearAi.button")}
                 </Button>
               )}
             </SettingsRow>

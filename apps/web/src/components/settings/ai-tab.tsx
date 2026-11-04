@@ -1,6 +1,7 @@
 import { localized } from "~/lib/i18n";
 import type { CompatiblePreset, ModelInfo, PresetDescriptor, ProviderDescriptor } from "@terno/core";
 import type { AiTestResult, AppSettings } from "@terno/core/rpc";
+import { AiUseGroup, SummariesGroup } from "./ai-summaries";
 import { SettingsGroup, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
 import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
@@ -382,6 +383,8 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
           </div>
         )}
       </SettingsGroup>
+      <SummariesGroup settings={settings} update={update} />
+      <AiUseGroup settings={settings} update={update} />
     </div>
   );
 }
