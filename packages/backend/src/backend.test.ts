@@ -125,6 +125,30 @@ function incoming(accountId: number, over: Partial<IncomingMessage> = {}): Incom
 
 const tick = () => new Promise((r) => setImmediate(r));
 
+describe("opening", () => {
+  it("bootstrap's reads go together: one slow read holds up nothing beside it, and agents never read the owner", async () => {
+    const { backend, client } = await setup();
+    const accounts = backend.store.accounts.list.bind(backend.store.accounts);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    // released by the last read the snapshot makes: read after the accounts, this would never answer
+    vi.spyOn(backend.store.accounts, "list").mockImplementationOnce(async () => { await held; return accounts(); });
+    const owner = vi.spyOn(backend.store.owner, "get").mockImplementationOnce(async () => { release(); return null; });
+    const boot = await client.call("app.bootstrap", {});
+    expect(owner).toHaveBeenCalledTimes(1);
+    expect(boot).toMatchObject({ owner: null, version: expect.any(String), filters: expect.any(Array), settings: expect.any(Object), counts: expect.any(Object) });
+    expect(boot.accounts.length).toBeGreaterThan(0);
+    expect(boot.accounts[0]!.syncState).toBeDefined();
+    owner.mockClear();
+    const [agent, remote] = createMemoryTransportPair();
+    backend.connect(remote, { clientId: "agent", origin: "mcp" });
+    const mcp = new RpcClient(agent);
+    expect((await mcp.call("app.bootstrap", {})).owner).toBeNull();
+    expect(owner).not.toHaveBeenCalled();
+    mcp.close();
+  });
+});
+
 describe("local-first actions", () => {
   it("archive updates the inbox immediately, queues one op, and the worker settles it", async () => {
     const { backend, client, providers, accountId, events } = await setup();

@@ -26,12 +26,12 @@ function setup(o: { settings?: Record<string, unknown>; host?: boolean; rows?: M
   const badges: number[] = [];
   const notices: MailNotice[] = [];
   const emitted: MailNotice[] = [];
-  let published = 0;
+  let published = 0, filterReads = 0;
   const attention = new Attention({
     store: {
       settings: { get: async (key: string, dflt: unknown) => (key === "app" ? app : dflt) },
       secrets: {},
-      filters: { list: async () => (filters.body ? [{ enabled: true, rule: { match: "all", conditions: [{ field: "body", op: "contains", value: "x" }], actions: [{ type: "archive" }] } }] : []) },
+      filters: { list: async () => (filterReads++, filters.body ? [{ enabled: true, rule: { match: "all", conditions: [{ field: "body", op: "contains", value: "x" }], actions: [{ type: "archive" }] } }] : []) },
       sync: {
         arrivals: async (ids: readonly number[]) => {
           reads.push([...ids]);
@@ -76,6 +76,7 @@ function setup(o: { settings?: Record<string, unknown>; host?: boolean; rows?: M
     attention, app, rows, reads, badges, notices, emitted, advance, filters,
     timers: () => timers.length,
     published: () => published,
+    filterReads: () => filterReads,
     hold: (p: Promise<void> | null) => (hold = p),
   };
 }
@@ -240,6 +241,27 @@ describe("notifications", () => {
     await t.advance(60_000);
     expect(t.notices).toEqual([]);
     expect(t.timers()).toBe(0);
+  });
+
+  it("the last look reads the mail and the filters together", async () => {
+    const t = setup({ rows: new Map([[1, person(1)]]) });
+    await primed(t);
+    const pass = t.attention.beginPass(1);
+    pass.add([1]);
+    pass.end();
+    // the screen looks; the notice waits for its last look
+    await t.advance(1);
+    expect(t.reads).toHaveLength(1);
+    let release!: () => void;
+    t.hold(new Promise<void>((r) => (release = r)));
+    const screened = t.filterReads();
+    await t.advance(60_000);
+    expect(t.reads).toHaveLength(2);
+    expect(t.filterReads()).toBe(screened + 1);
+    t.hold(null);
+    release();
+    await t.advance(60_000);
+    expect(t.notices).toHaveLength(1);
   });
 
   it("a pass that began before notifications went off hands over nothing", async () => {

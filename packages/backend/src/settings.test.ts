@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient, type RpcError } from "@terno/core/rpc";
 import { getSetting, setSetting, sqlDb } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
-import { followFavoriteFolders } from "./settings";
+import { followFavoriteFolders, readSettings } from "./settings";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -236,5 +236,21 @@ describe("favorite folders (plan 107)", () => {
     // the stale one first: the same
     setSetting(sqlDb(backend.store), "app", { favoriteFolders: [{ accountId: 7, folder: "Job", view: null }, { accountId: 7, folder: "Work", view: null }] });
     expect(await followFavoriteFolders(backend.store, 7, { renamed: [{ from: "Work", to: "Job" }] })).toEqual([{ accountId: 7, folder: "Job", view: null }]);
+  });
+});
+
+describe("reading the settings", () => {
+  it("what the AI section shows is read together: a slow read holds up nothing beside it", async () => {
+    const { backend } = await setup();
+    const get = backend.store.settings.get.bind(backend.store.settings);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    // the origins wait for the hints: read one after the other, this would never answer
+    vi.spyOn(backend.store.settings, "get").mockImplementation(async (key: string, fallback: unknown) => {
+      if (key === "ai:keyOrigins") await held;
+      if (key === "ai:keyHints") release();
+      return get(key, fallback) as never;
+    });
+    await expect(readSettings(backend.store)).resolves.toMatchObject({ ai: { hasKey: false, keyHint: null } });
   });
 });

@@ -316,21 +316,28 @@ export function createHandlers(b: Backend): Handlers {
 
   return {
     "app.bootstrap": async (_p, ctx) => {
-      const snapshot = {
+      const [accounts, categories, folders, counts, settings, owner] = await Promise.all([
+        store.accounts.list(),
+        store.categories.list(),
+        store.folders.list(),
+        store.threads.counts(b.now()),
+        readSettings(store),
+        // agents get the mailboxes, not the person's identity
+        ctx.origin === "mcp" ? null : store.owner.get(),
+      ]);
+      return {
         host: { ...b.host, storage: store.capabilities.engine },
-        accounts: await store.accounts.list(),
-        categories: await store.categories.list(),
-        folders: await store.folders.list(),
-        counts: await store.threads.counts(b.now()),
+        accounts: await b.accountViews(accounts),
+        categories,
+        folders,
+        counts,
         // plan 17 (Codex R12): the quick filters this backend knows; a renderer offers only these
         filters: [...LIST_FILTERS],
-        settings: await readSettings(store),
-        // agents get the mailboxes, not the person's identity
-        owner: ctx.origin === "mcp" ? null : await store.owner.get(),
+        settings,
+        owner,
         demo: b.demo,
         version: b.options.version,
       };
-      return { ...snapshot, accounts: await b.accountViews(snapshot.accounts) };
     },
 
     "app.export": () => exportMailbox(b),

@@ -247,9 +247,8 @@ export class Attention {
     const generation = this.generation;
     const queued = new Map(this.important);
     this.important.clear();
-    const rows = await this.o.store.sync.arrivals([...queued.keys()]);
-    // a filter that reads bodies, turned on since the screen: mail whose body hasn't come waits for it (Codex re-review #3)
-    const bodyFilters = await this.bodyFilters();
+    // bodyFilters: one that reads bodies, turned on since the screen: mail whose body hasn't come waits for it (Codex re-review #3)
+    const [rows, bodyFilters] = await Promise.all([this.o.store.sync.arrivals([...queued.keys()]), this.bodyFilters()]);
     if (generation !== this.generation || this.stopped) return;
     const now = this.o.now();
     const news = rows.filter((m) => {

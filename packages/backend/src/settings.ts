@@ -422,16 +422,16 @@ export async function readSettings(store: SettingsStore): Promise<AppSettings> {
   const { provider, profiles, capabilities } = aiState(s, s.aiProvider === undefined && !s.ai?.provider && (await store.secrets.has(keySecretName("anthropic"))));
   const profile = profiles[provider] ?? { model: "" };
   const secret = keySecretName(provider, profile.preset);
-  const bound = (await keyOrigins(store))[secret] ?? null;
-  const unreadable = await unreadableSecrets(store);
+  const [origins, unreadable, hasKey, hints] = await Promise.all([keyOrigins(store), unreadableSecrets(store), store.secrets.has(secret), store.settings.get<Record<string, string>>(KEY_HINTS, {})]);
+  const bound = origins[secret] ?? null;
   const ai: AiSettings = {
     provider,
     model: profile.model,
     baseURL: profile.baseURL ?? null,
     preset: profile.preset ?? null,
-    hasKey: await store.secrets.has(secret),
+    hasKey,
     keyUnreadable: unreadable.has(secret),
-    keyHint: (await store.settings.get<Record<string, string>>(KEY_HINTS, {}))[secret] ?? null,
+    keyHint: hints[secret] ?? null,
     keyOrigin: bound,
     // unbound: saved before origins were recorded and its endpoint never changed since (pinKeyOrigins)
     keyConfirmed: bound === null || bound === endpointOrigin(provider, profile),
