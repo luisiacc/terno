@@ -38,7 +38,7 @@ describe("the prompt", () => {
     expect(task.prompt).toContain("canary-7f3");
     expect(task.system).toMatch(/data, not instructions/);
     expect(task.effort).toBe("low");
-    expect(SUMMARY_PROMPT_VERSION).toBe(1);
+    expect(SUMMARY_PROMPT_VERSION).toBe(2);
   });
 
   it("names the reader's language, not the mail's", () => {

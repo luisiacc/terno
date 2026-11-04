@@ -1171,7 +1171,7 @@ const en = {
   "aiDraft.warmer": "Warmer",
   "aiDraft.voice.with": "In your voice with {name}",
   "aiDraft.voice.general": "In your general voice",
-  "aiDraft.voice.learning": "Still learning how you write",
+  "aiDraft.voice.learning": "Still learning your voice",
   "aiDraft.voice.them": "them",
   "aiDraft.voice.new": "You haven’t written to {name} before. Using your general voice.",
   "aiDraft.voice.newDomain": "You haven’t written to {name} before. Using your general voice and how you write to {domain}.",

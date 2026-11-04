@@ -7,7 +7,7 @@ import type { StructuredTask } from "./ladder";
  * Plan 132 §5: a conversation's summary. The prompt is frozen and versioned: a stored summary is reused only at the
  * version it was made with, so any change to the words below bumps this.
  */
-export const SUMMARY_PROMPT_VERSION = 1;
+export const SUMMARY_PROMPT_VERSION = 2;
 const SUMMARY_MAX_TOKENS = 3000;
 const SUMMARY_MAX_CHARS = 800;
 const SUMMARY_MAX_ITEMS = 6;
@@ -59,7 +59,7 @@ Return:
 - "summary": one to three plain sentences on where the conversation stands now, most recent first.
 - "items": at most six things the reader needs: "decision" (something settled), "date" (a date or deadline that matters), "action" (something the reader has to do), "question" (a question waiting for the reader's answer). Each has a short "text" and "message", the id of the message that says it. No item is better than a padded one.
 
-Only state what the messages say. Never invent a date, an amount, a name or a commitment. Plain text only: no markdown, no HTML.`;
+Write dates as a person would: "today", "Thursday", "12 March", never 2026-03-12. Only state what the messages say. Never invent a date, an amount, a name or a commitment. Plain text only: no markdown, no HTML.`;
 
 /** Mail can't close its own block, or open one: the only `</message>` the model sees is ours. */
 const dataText = (text: string) => text.replace(/<(\/?)(message|subject)/gi, "<$1​$2");

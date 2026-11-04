@@ -14,7 +14,7 @@ export const DAILY_INPUT_TOKENS: Readonly<Record<BackgroundTask, number>> = { su
 const MAX_WAITING = 64;
 
 export type BackgroundTask = "summary" | "categorize" | "voice";
-export type LimiterTask = AiTaskName | "filter" | "voice";
+export type LimiterTask = AiTaskName | "filter" | "voice" | "intent";
 
 interface Tally {
   requests: number;

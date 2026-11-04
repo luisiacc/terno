@@ -570,7 +570,7 @@ export class WritingService {
         const named = candidates.map((c, i) => ({ id: `p${i}`, name: c.name || c.address }));
         let answer: string | null = null;
         try {
-          const ai = await this.b.aiService.forTask("writing", { foreground: true });
+          const ai = await this.b.aiService.forTask("intent", { foreground: true });
           const { recipient } = await ai.parseIntent({ instruction: p.instruction, candidates: named }, signal);
           const at = recipient === null ? -1 : named.findIndex((c) => c.id === recipient);
           confirmed = candidates[at] ?? null;

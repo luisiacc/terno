@@ -1,4 +1,4 @@
-import { SUMMARY_DEFAULT_MODEL, type AiProviderId, type AiSummariesStatus, type ModelInfo } from "@terno/core";
+import { SUMMARY_CLAUDE_MODEL, SUMMARY_DEFAULT_MODEL, type AiProviderId, type AiSummariesStatus, type ModelInfo } from "@terno/core";
 import type { AiSettings, AiUsageReport, AppSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
@@ -78,7 +78,7 @@ function TargetRow({ ai, update }: { ai: AiSettings; update: SettingsUpdate }) {
                 {t("ai.summaries.addKey")}
               </Button>
               {configured && (
-                <Button variant="outline" size="sm" data-testid="ai-summaries-use" onClick={() => void update({ ai: { tasks: { summary: { provider: configured, model: ai.model } } } })}>
+                <Button variant="outline" size="sm" data-testid="ai-summaries-use" onClick={() => void update({ ai: { tasks: { summary: { provider: configured, model: configured === "anthropic" ? SUMMARY_CLAUDE_MODEL : ai.model } } } })}>
                   {t("ai.summaries.use", { provider: providerLabel(configured, ai) })}
                 </Button>
               )}

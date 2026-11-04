@@ -19,7 +19,7 @@ import {
   type ModelInfo,
   type ProviderConfig,
 } from "@terno/ai";
-import { JEV_DEFAULT_MODEL, messageOf, SUMMARY_DEFAULT_MODEL, textRef, WRITING_CLAUDE_MODEL, type AiTaskName } from "@terno/core";
+import { INTENT_CLAUDE_MODEL, JEV_DEFAULT_MODEL, messageOf, SUMMARY_DEFAULT_MODEL, textRef, WRITING_CLAUDE_MODEL, type AiTaskName } from "@terno/core";
 import { RpcError, type AiTestResult, type AppSettings } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { BackendCore as Backend } from "./core";
@@ -170,8 +170,10 @@ export class AiService {
   }
 
   /** What a task runs on: the user's choice, else its default. Never another provider without the user having set it up. */
-  private async targetFor(task: AiTaskName | "filter" | "voice", settings: AppSettings): Promise<Target> {
-    const name = task === "voice" ? "writing" : task;
+  private async targetFor(task: AiTaskName | "filter" | "voice" | "intent", settings: AppSettings): Promise<Target> {
+    // who a sentence is for is a tiny question with no mail in it, asked before the first word: speed is all that matters
+    if (task === "intent" && settings.ai.provider === "anthropic" && !settings.ai.tasks.writing) return { ...this.currentTarget(settings), model: INTENT_CLAUDE_MODEL };
+    const name = task === "voice" || task === "intent" ? "writing" : task;
     const chosen = name === "filter" ? undefined : settings.ai.tasks[name];
     const configured = this.currentTarget(settings);
     const profiled = (provider: AiProviderId, model: string): Target => {
@@ -196,7 +198,7 @@ export class AiService {
    * immutable for their configuration: a change in Settings gives the next
    * caller others, and aborts what's in flight (configChanged).
    */
-  async forTask(task: AiTaskName | "filter" | "voice", o: { foreground?: boolean } = {}): Promise<AiTasks> {
+  async forTask(task: AiTaskName | "filter" | "voice" | "intent", o: { foreground?: boolean } = {}): Promise<AiTasks> {
     const settings = await readSettings(this.b.store);
     const target = await this.targetFor(task, settings);
     const stored = await this.config(target);

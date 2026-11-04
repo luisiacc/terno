@@ -148,7 +148,7 @@ export function resolveIntent(input: IntentInput): IntentDecision {
     if (result.state === "cold") cold.push(word);
     else contactHits.push(...result.hits);
   }
-  const candidates = uniquePeople([...localHits, ...contactHits]);
+  const candidates = uniquePeople(localHits.length ? localHits : contactHits);
   // a matched participant is enough to go on; otherwise "not ready" can't be read as "nobody"
   if (cold.length > 0 && localHits.length === 0) return { kind: "wait", tokens: cold };
   if (candidates.length === 0) return nobody(input);

@@ -1162,7 +1162,7 @@ const es = {
   "aiDraft.warmer": "Más cálido",
   "aiDraft.voice.with": "Con tu voz para {name}",
   "aiDraft.voice.general": "Con tu voz general",
-  "aiDraft.voice.learning": "Aún aprendiendo cómo escribes",
+  "aiDraft.voice.learning": "Aún aprendiendo tu voz",
   "aiDraft.voice.them": "esta persona",
   "aiDraft.voice.new": "No le has escrito a {name} antes. Usa tu voz general.",
   "aiDraft.voice.newDomain": "No le has escrito a {name} antes. Usa tu voz general y cómo escribes a {domain}.",

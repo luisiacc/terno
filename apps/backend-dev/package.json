@@ -10,6 +10,7 @@
     "seed": "tsx src/seed.ts"
   },
   "dependencies": {
+    "@terno/ai": "workspace:*",
     "@terno/backend": "workspace:*",
     "@terno/core": "workspace:*",
     "@terno/mail": "workspace:*",

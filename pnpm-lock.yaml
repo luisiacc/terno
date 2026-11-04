@@ -208,6 +208,9 @@ importers:
 
   apps/backend-dev:
     dependencies:
+      '@terno/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@terno/backend':
         specifier: workspace:*
         version: link:../../packages/backend

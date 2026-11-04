@@ -109,6 +109,12 @@ function ProfileEditor({ p, onDone }: { p: WritingProfileView; onDone: (next: Wr
   );
 }
 
+/** A scope with rows per language doesn't also show the row that merges them. */
+function oncePerScope<T extends { scopeKey: string; language: string }>(items: readonly T[]): T[] {
+  const split = new Set(items.filter((p) => p.language).map((p) => p.scopeKey));
+  return items.filter((p) => p.language || !split.has(p.scopeKey));
+}
+
 function Profile({ initial, onChanged }: { initial: WritingProfileView; onChanged: () => void }) {
   const accounts = useApp((s) => s.accounts);
   const [p, setP] = useState(initial);
@@ -181,7 +187,7 @@ function Section({ scope, title, testId, version, onChanged }: { scope: "domain"
         </CollapsibleTrigger>
         <CollapsiblePanel>
           <div className="hairline-divide rounded-[calc(var(--radius-lg)+2px)] bg-tint px-4">
-            {items === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : items.length === 0 ? <SettingsNote testId={`${testId}-empty`}>{t(scope === "domain" ? "aiDraft.style.noDomains" : "aiDraft.style.noPeople")}</SettingsNote> : items.map((p) => <Profile key={`${p.scopeKey}|${p.language}`} initial={p} onChanged={onChanged} />)}
+            {items === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : items.length === 0 ? <SettingsNote testId={`${testId}-empty`}>{t(scope === "domain" ? "aiDraft.style.noDomains" : "aiDraft.style.noPeople")}</SettingsNote> : oncePerScope(items).map((p) => <Profile key={`${p.scopeKey}|${p.language}`} initial={p} onChanged={onChanged} />)}
           </div>
           {next && (
             <Button variant="link-secondary" className="mt-1.5 ml-1 text-xs" data-testid={`${testId}-more`} onClick={() => void read(next).catch(failed)}>
@@ -307,7 +313,7 @@ export default function WritingStyle() {
         <ChevronLeft /> {t("aiDraft.settings.title")}
       </Button>
       <SettingsGroup title={t("aiDraft.style.title")} testId="style-own" footer={<span data-testid="style-status">{line}</span>}>
-        {own === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : own.length === 0 ? <SettingsNote testId="style-empty">{t("aiDraft.style.empty")}</SettingsNote> : own.map((p) => <Profile key={`${p.scopeKey}|${p.language}`} initial={p} onChanged={changed} />)}
+        {own === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : own.length === 0 ? <SettingsNote testId="style-empty">{t("aiDraft.style.empty")}</SettingsNote> : oncePerScope(own).map((p) => <Profile key={`${p.scopeKey}|${p.language}`} initial={p} onChanged={changed} />)}
       </SettingsGroup>
       <Section scope="domain" title={t("aiDraft.style.domains")} testId="style-domains" version={version} onChanged={changed} />
       <Section scope="person" title={t("aiDraft.style.people")} testId="style-people" version={version} onChanged={changed} />

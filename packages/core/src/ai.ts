@@ -15,6 +15,9 @@ export interface AiTaskTarget {
 /** The defaults the user decided (plan 131 §2); a choice in Settings wins. */
 export const WRITING_CLAUDE_MODEL = "claude-sonnet-5-5";
 export const SUMMARY_DEFAULT_MODEL = "gpt-6-luna";
+/** "Use Claude" for summaries: they run on every new mail, so never the install's default Opus. */
+export const SUMMARY_CLAUDE_MODEL = "claude-haiku-5-5";
+export const INTENT_CLAUDE_MODEL = "claude-haiku-5-5";
 export const JEV_DEFAULT_MODEL = "jev-latest";
 
 /** Plan 132: what a summary can point out. */
