@@ -194,6 +194,108 @@ describe("exact body part reads", () => {
     client.close(); replacement?.[1].close(); disconnect();
   });
 
+  const wave = (textParts: number) => ({ id: 1, messages: [{ id: 7, accountId: 3, bodyText: null, bodyHtml: null, bodyReference: { version: "capture", textParts, htmlParts: null } }] }) as unknown as import("../types").ThreadDetail;
+  const after = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  it("reads parts a few at a time and reassembles them exactly, whatever order they answer in", async () => {
+    const texts = ["a\ud83d", "\ude00b", "c\r", "\nd", "", "e\u0301", "f", "g", "h", "i\ud83d", "\ude00"], htmls = ["<p>", "x", "</p>"];
+    let active = 0, peak = 0;
+    const answered: string[] = [];
+    const part = async ({ messageId, field, ordinal }: { messageId: number; field: "text" | "html"; ordinal: number }) => {
+      active++; peak = Math.max(peak, active);
+      // earlier ordinals answer later
+      await after(ordinal % 4 === 0 ? 6 : ordinal % 4 === 1 ? 4 : 1);
+      active--; answered.push(`${messageId}${field}${ordinal}`);
+      return (messageId === 7 && field === "text" ? texts : htmls)[ordinal]!;
+    };
+    const { client, disconnect } = setup({
+      "threads.get": () => ({ id: 1, messages: [
+        { id: 7, accountId: 3, bodyText: null, bodyHtml: null, bodyReference: { version: "a", textParts: texts.length, htmlParts: null } },
+        { id: 8, accountId: 3, bodyText: "inline", bodyHtml: "inline" },
+        { id: 9, accountId: 3, bodyText: null, bodyHtml: null, bodyReference: { version: "b", textParts: 0, htmlParts: htmls.length } },
+      ] }) as never,
+      "threads.bodyPart": part as never,
+    });
+    try {
+      const read = await client.call("threads.get", { threadId: 1 });
+      expect(read.messages[0]).toMatchObject({ bodyText: texts.join(""), bodyHtml: null });
+      expect(read.messages[0]!.bodyReference).toBeUndefined();
+      expect(read.messages[1]).toMatchObject({ bodyText: "inline", bodyHtml: "inline" });
+      expect(read.messages[2]).toMatchObject({ bodyText: "", bodyHtml: htmls.join("") });
+      expect(peak).toBe(4);
+      expect(answered.indexOf("7text1")).toBeLessThan(answered.indexOf("7text0"));
+      expect(client.pendingCount).toBe(0);
+    } finally { client.close(); disconnect(); }
+  });
+
+  it("a part refused in a later wave ends the read at once: its own requests dropped, no more parts begun, other calls untouched", async () => {
+    const started: number[] = [];
+    let release!: () => void, unrelated!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; }), elsewhere = new Promise<void>((resolve) => { unrelated = resolve; });
+    const { client, disconnect } = setup({
+      "threads.get": () => wave(16),
+      "threads.bodyPart": (async ({ ordinal }: { ordinal: number }) => {
+        started.push(ordinal);
+        if (ordinal < 4) return "x";
+        if (ordinal === 4) { await after(1); throw new RpcError("STALE", "Synthetic source replacement"); }
+        await held;
+        return "late";
+      }) as never,
+      "counts.get": (async () => { await elsewhere; return { inboxUnread: 1, inboxUnreadByAccount: {}, categoryUnread: {}, categoryTotal: {}, categorySuggestions: {} }; }) as never,
+    });
+    try {
+      const other = client.call("counts.get", {});
+      await expect(client.call("threads.get", { threadId: 1 })).rejects.toMatchObject({ code: "STALE" });
+      expect(client.pendingCount).toBe(1);
+      const begun = started.length;
+      expect(begun).toBeLessThan(16);
+      release();
+      await after(5);
+      expect(started).toHaveLength(begun);
+      unrelated();
+      await expect(other).resolves.toMatchObject({ inboxUnread: 1 });
+    } finally { client.close(); disconnect(); }
+  });
+
+  it("parts not yet asked for never reach a replacement connection", async () => {
+    let release!: () => void, waiting!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; }), reached = new Promise<void>((resolve) => { waiting = resolve; });
+    const { client, disconnect } = setup({
+      "threads.get": () => wave(16),
+      "threads.bodyPart": (async ({ ordinal }: { ordinal: number }) => { if (ordinal < 4) return "x"; waiting(); await held; return "late"; }) as never,
+    });
+    const read = client.call("threads.get", { threadId: 1 }).then(() => "published", (error: RpcError) => error.code);
+    await reached;
+    const [local, remote] = createMemoryTransportPair();
+    const seen: string[] = [];
+    remote.onMessage((message) => { if (message.t === "req") seen.push(message.m); });
+    client.attach(local);
+    release();
+    expect(await read).toBe("UNAVAILABLE");
+    await after(5);
+    expect(seen).toEqual([]);
+    expect(client.pendingCount).toBe(0);
+    client.close(); remote.close(); disconnect();
+  });
+
+  it("the deadline covers the whole read, past an earlier wave that answered", async () => {
+    const started: number[] = [];
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const { client, disconnect } = setup({
+      "threads.get": () => wave(16),
+      "threads.bodyPart": (async ({ ordinal }: { ordinal: number }) => { started.push(ordinal); if (ordinal >= 4) await held; return "x"; }) as never,
+    });
+    try {
+      await expect(client.call("threads.get", { threadId: 1 })).rejects.toMatchObject({ code: "TIMEOUT" });
+      expect(client.pendingCount).toBe(0);
+      const begun = started.length;
+      release();
+      await after(5);
+      expect(started).toHaveLength(begun);
+    } finally { release(); client.close(); disconnect(); }
+  });
+
   it("keeps the original whole-read deadline while a real part handler is held", async () => {
     let release!: () => void;
     const held = new Promise<void>((resolve) => { release = resolve; });
