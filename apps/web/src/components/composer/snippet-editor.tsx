@@ -84,6 +84,13 @@ function Body({ editorKey, initial, onChange, viewRef }: { editorKey: string; in
       dropCaret: () => {},
       insertSnippet: () => null,
       snapshot: () => serialize(withoutImages(view.state.doc)),
+      // no AI in a snippet's editor
+      insertGenerated: () => null,
+      undoGenerated: () => null,
+      docToken: () => view.state.doc,
+      subscribeDoc: () => () => {},
+      empty: () => false,
+      dismissGhost: () => {},
       focus: () => view.focus(),
       dom: view.dom as HTMLElement,
       getState: () => format,

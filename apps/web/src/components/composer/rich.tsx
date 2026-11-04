@@ -57,6 +57,9 @@ import { attachFilesInTurn } from "~/lib/attachments";
 import { imageUrl, isInlineImage, newImageCid, seedImageUrl } from "~/lib/inline-images";
 import { snack } from "~/lib/snack";
 import { insertSnippetTr, snippetDoc, withoutImages } from "./snippets";
+import { generatedTr } from "./generated";
+import { AiPreviewSlot } from "./ai-slot";
+import { aiDraftHooks } from "~/lib/ai-draft-state";
 import { appendTyped, applyLink, COMMANDS, createEditor, docOf, formatState, isEmpty, keepState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
 
 /**
@@ -193,6 +196,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
       construction.supplyState(lease || early || retained ? "other" : kept ? "kept" : "raw", state, state.doc, kept);
       let format: FormatState = EMPTY_FORMAT;
       const listeners = new Set<() => void>();
+      const docListeners = new Set<() => void>();
       let frame = 0;
       let focusedOnce = false;
       let formatted: { state: EditorState; editable: boolean; undo: number; redo: number } | undefined;
@@ -247,6 +251,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
             construction.changed();
             bodyRef.current?.changed();
             if (viewRef.current) emptyClass(viewRef.current);
+            for (const l of docListeners) l();
           },
           onUpdate: schedule,
           onLink: () => openLinkRef.current(),
@@ -299,6 +304,29 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
             return { undo: () => viewRef.current === view && view.state.doc === after && canMutate() && undo(view.state, view.dispatch) };
           },
           snapshot: () => serialize(withoutImages(view.state.doc)),
+          insertGenerated: (text, how, placeholder) => {
+            if (!canMutate()) return null;
+            dismissGhost(view);
+            const hadFocus = view.hasFocus();
+            const tr = generatedTr(view.state, text, how, placeholder);
+            // only someone in the text has their view moved: reading the conversation, it stays where it is
+            view.dispatch(hadFocus ? tr.scrollIntoView() : tr);
+            // and what's typed next is a step of its own
+            view.dispatch(closeHistory(view.state.tr));
+            focusedOnce = true;
+            return { doc: view.state.doc };
+          },
+          undoGenerated: (doc) => {
+            if (viewRef.current !== view || view.state.doc !== doc || !canMutate() || !undo(view.state, view.dispatch)) return null;
+            return { doc: view.state.doc };
+          },
+          docToken: () => view.state.doc,
+          subscribeDoc: (l) => {
+            docListeners.add(l);
+            return () => docListeners.delete(l);
+          },
+          empty: () => isEmpty(view.state.doc),
+          dismissGhost: () => dismissGhost(view),
           focus,
           dom: view.dom as HTMLElement,
           getState: () => format,
@@ -441,9 +469,11 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
   };
 
   return (
-    <div ref={wrapRef} className="relative">
+    // a grid so plan 133's preview can share the editor's cell: its height is theirs together, and nothing jumps at commit
+    <div ref={wrapRef} className="relative grid grid-cols-[minmax(0,1fr)]">
       {/* the ghost layer's containing block (beside the editor's own element) */}
-      <div ref={mountRef} className="relative" />
+      <div ref={mountRef} className="relative [grid-area:1/1]" data-editor-mount />
+      <AiPreviewSlot draftKey={draftKey} className={className} />
       <span ref={announceRef} className="sr-only" aria-live="polite" data-testid="compose-ghost-announce" />
       <div ref={caretRef} className="rt-drop-caret" aria-hidden="true" data-testid="compose-drop-caret" hidden />
       {link && viewRef.current && <LinkPopover view={viewRef.current} draft={link} onClose={closeLink} canEdit={canMutate} />}
@@ -589,7 +619,7 @@ function ghostContext(draftKey: string): { names: string[]; me: string | undefin
 /** What the ghost plugin asks of the draft: whether suggestions are on, and one for the text before the caret. */
 function ghostHooks(draftKey: string, editable: () => boolean, announce: (text: string) => void): GhostHooks {
   return {
-    enabled: () => editable() && useApp.getState().settings?.composeSuggestions !== false,
+    enabled: () => editable() && useApp.getState().settings?.composeSuggestions !== false && !aiDraftHooks.busy(draftKey),
     suggest: async (before) => {
       const asked = ghostContext(draftKey);
       if (!asked) return null;

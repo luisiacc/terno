@@ -86,6 +86,29 @@
   contain-intrinsic-size: auto calc(var(--pm-group-blocks) * 1.6em);
 }
 
+/* plan 133: a draft on its way, in the body's place and the body's type, so committing it moves nothing. Lines as the
+   editor makes them; the empty editor stays above it, focused and editable, without its placeholder or caret */
+.rt-ai-preview {
+  word-wrap: break-word;
+  white-space: break-spaces;
+  font-variant-ligatures: none;
+}
+[data-ai-overlay="overlay"] .rt-body.is-empty::before {
+  content: none;
+}
+[data-ai-overlay="overlay"] .rt-body,
+[data-ai-overlay="refine"] .rt-body {
+  caret-color: transparent;
+}
+/* refining: the new text takes the old one's place as it comes, and the height holds until it's in */
+[data-ai-overlay="refine"] > [data-editor-mount] {
+  opacity: 0;
+}
+/* a suggestion under what's there: no empty stretch between the words and it */
+[data-ai-overlay="below"] .rt-body {
+  min-height: 0;
+}
+
 /* plan 18: ghost text, the rest of a sentence the user often writes. A layer beside the editor (never in its DOM),
    wrapped like the caret's line and in its font (set inline); muted, still AA as text; never selectable or clickable */
 .rt-ghost-layer {

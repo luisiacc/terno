@@ -86,6 +86,22 @@ export interface ComposerController {
   insertSnippet(html: string, text: string, values: SnippetValues): { undo(): boolean } | null;
   /** plan 93: the text as the editor has it now, without images (Save as snippet…) */
   snapshot(): { html: string; text: string };
+  /**
+   * Plan 133: model text into the document as one undo step: over everything (`replace`) or after it (`below`), the
+   * caret on its first placeholder, else at its end. Never through `fillText`: a literal `{first_name}` stays literal.
+   * Returns the document it made (what `undoGenerated` checks), or null when the draft can't change now.
+   */
+  insertGenerated(text: string, how: "replace" | "below", placeholder?: string): { doc: unknown } | null;
+  /** plan 133: takes it back while the document is still that one; returns the document it restored, null if it isn't */
+  undoGenerated(doc: unknown): { doc: unknown } | null;
+  /** plan 133: an opaque identity of the document: a change of anything but the selection changes it, in O(1) */
+  docToken(): unknown;
+  /** plan 133: told after every change of the document, at once */
+  subscribeDoc(listener: () => void): () => void;
+  /** plan 133: the document has nothing in it */
+  empty(): boolean;
+  /** plan 133: a suggestion made before a preview came up goes */
+  dismissGhost(): void;
   /** focus the editor, its caret where it was (or at the end the first time) */
   focus(where?: "end" | "keep"): void;
   /** the editable root */
