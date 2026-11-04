@@ -94,7 +94,7 @@ function writeLedger(frame: Frame, terminal: "retired" | "uncertain") {
   frame.ledgerWritten = true;
 }
 
-type AuxMethod = "threads.list" | "compose.warm" | "compose.suggestRecipients" | "compose.recipientInitials";
+type AuxMethod = "threads.list" | "compose.warm" | "compose.suggestRecipients" | "compose.recipientInitials" | "ai.summaries.get";
 type AuxResults = { [M in AuxMethod]: ResultOf<M> };
 // Independent closed fixture world: archived source cache, empty Inbox and learned-contact catalog.
 const AUX_RESULTS = freeze({
@@ -102,6 +102,8 @@ const AUX_RESULTS = freeze({
   "compose.warm": { ok: true },
   "compose.suggestRecipients": { items: [], ready: true },
   "compose.recipientInitials": {},
+  // plan 132: the reader asks for the open thread's summary; this world has none
+  "ai.summaries.get": { state: "none" },
 } satisfies AuxResults);
 function isAuxMethod(method: string): method is AuxMethod {
   return Object.hasOwn(AUX_RESULTS, method);
@@ -119,6 +121,8 @@ function auxiliaryCall(method: AuxMethod, params: unknown): AuxResults[AuxMethod
   } else if (method === "compose.suggestRecipients") {
     const p = contract[method].params.strict().parse(params); assertOwnedAccount(p.accountId);
     if (p.limit !== 6) throw new Error("Unknown presentation suggestion limit");
+  } else if (method === "ai.summaries.get") {
+    contract[method].params.strict().parse(params);
   } else contract["compose.warm"].params.strict().parse(params);
   return AUX_RESULTS[method];
 }

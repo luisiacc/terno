@@ -370,7 +370,8 @@ test.describe("editable, persisted and in effect", () => {
 
   test("AI: provider, endpoint (validated, announced), model, all persisted", async ({ app: page }) => {
     await openVia(page, "gear", "ai");
-    await page.getByRole("combobox", { name: "Provider" }).click();
+    // exact: the Summaries group has its own provider and model (plan 132)
+    await page.getByRole("combobox", { name: "Provider", exact: true }).click();
     await page.getByTestId("ai-choice-ollama").click();
     const endpoint = page.getByRole("textbox", { name: "Endpoint" });
     await endpoint.fill("ftp://nada");
@@ -378,14 +379,14 @@ test.describe("editable, persisted and in effect", () => {
     await expect(endpoint).toHaveAccessibleDescription(/an http:\/\/ or https:\/\/ URL/);
     await endpoint.fill("http://127.0.0.1:9/v1");
     await expect(page.getByTestId("ai-endpoint-error")).toHaveCount(0);
-    const model = page.getByRole("textbox", { name: "Model" });
+    const model = page.getByRole("textbox", { name: "Model", exact: true });
     await model.fill("qwen3:8b");
     await model.press("Enter");
 
     await reopen(page, "ai");
-    await expect(page.getByRole("combobox", { name: "Provider" })).toContainText("Ollama");
+    await expect(page.getByRole("combobox", { name: "Provider", exact: true })).toContainText("Ollama");
     await expect(page.getByRole("textbox", { name: "Endpoint" })).toHaveValue("http://127.0.0.1:9/v1");
-    await expect(page.getByRole("textbox", { name: "Model" })).toHaveValue("qwen3:8b");
+    await expect(page.getByRole("textbox", { name: "Model", exact: true })).toHaveValue("qwen3:8b");
   });
 
   test("AI: a saved key isn't sent to an endpoint it wasn't saved for (an import, say) until confirmed", async ({ app: page, server }) => {

@@ -64,7 +64,8 @@ export async function loadSummary(threadId: number): Promise<void> {
   const current = useSummaries.getState().byThread.get(threadId);
   // what the user is in the middle of stays until they or the request end it
   if (current && current.kind !== "none" && current.kind !== "stale" && current.kind !== "ready") return;
-  const read = await client.call("ai.summaries.get", { threadId }).catch(() => null);
+  // a read that fails shows nothing, and the next change of the thread asks again
+  const read = await (async () => client.call("ai.summaries.get", { threadId }))().catch(() => null);
   if (!read || reads.get(threadId) !== seq) return;
   const now = useSummaries.getState().byThread.get(threadId);
   if (now && now.kind !== "none" && now.kind !== "stale" && now.kind !== "ready") return;

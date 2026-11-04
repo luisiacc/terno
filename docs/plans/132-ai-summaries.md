@@ -1,6 +1,6 @@
 # Plan 132: AI summaries of new mail
 
-- **Status:** proposed. Nothing is built.
+- **Status:** built (see "What building it changed"). The Codex code review and the real-model eval haven't run.
 - **Builds on:** plan 131 (base), plan 85 §6 and revision 9 (changes noted below), plan 116 (what "new mail" means), plan 36 (visible text), plan 112 (migrations).
 
 ## The request
@@ -176,3 +176,21 @@ Codex (`gpt-6.1-sol`, high, read-only, against `f787771c`) raised 5 points on th
 3. **Staleness follows the sources.** `through_message_id` can't see a removed older message, a replaced body or a merge (`packages/db/src/ingest.ts:161`, `packages/idb/src/mail.ts:728`). The row keeps a `source_stamp` covering member ids and body versions, checked against the current thread before the write and before display. A mismatch hides the summary. Any source change invalidates; a merge always invalidates, and re-queues only if a message in the surviving thread still has a live marker. Otherwise the stale result goes.
 4. **Blocked work can't stall the queue.** States are explicit: runnable, waiting for a body, and paused. A drain skips non-runnable rows in a bounded pass. Every `AiErrorKind` has a transition (`packages/core/src/ai.ts:47`): `rate_limited`, `unavailable`, `timeout` retry up to 3 attempts; `invalid_output` and `refused` fail at once; `auth`, `not_configured`, `blocked` pause until settings change; `cancelled` stays runnable with no attempt spent. Resumes come from existing events: connectivity, settings, body arrival. When rate-limited with work left, one timer to the limiter's next slot, and none on an empty queue.
 5. **Reuse requires the same execution target.** The hash check in §4 compares provider and endpoint as well as model, since one model id can sit behind several (plan 85 revision 9). A reused result keeps its original provenance; a provider change never relabels it.
+
+## What building it changed
+
+- **Both a marker and a row.** `ai_new_mail` (the fact: this arrived as new mail) and the `pending` row (the queue) are written together in the ingest commit. `markNewMail` marks only what isn't spam, trash, a draft or from one of your addresses. The filter, tab and word-count checks wait for the worker, since filters run after the mark and text can come later.
+- **The stamp is computed without reading bodies.** It hashes each source's id, `body_state`, capture id and `body_tail_norm`, all available in both stores with no body read. An inline body replaced by one with the same tail would go unnoticed; every other change hides the summary.
+- **A dropped row keeps its result.** §4 says delete the row when a re-check fails. When the row held an earlier result, it goes back to `ready`, hidden by its stamp, and the marks go. That earlier result can then return with no request if the thread returns to the same text. A row that never had a result is deleted.
+- **Failures hold the queue for a minute.** "Next wake-up" meant a burst of new mail could spend all 3 attempts in a second. After `rate_limited`, `unavailable` or `timeout`, new mail doesn't ask the provider again for 60 s. The network coming back and settings changes end the wait, and the one timer of revision 4 is only armed for `rate_limited`. The pass ends at such a failure, so one down provider costs one attempt on one row.
+- **A long conversation is capped.** "From, date and snippet for the rest" had no limit, so 1,000 messages would send 1,000 snippets. It keeps the newest 40.
+- **`AiLimiter` counts by-hand summaries apart.** They used to land in the same day's tally as the worker's, which would have counted toward the daily cap. They now go under `byHand`, in the usage report but outside both ceilings.
+- **`forTask("summary")` with no provider** now says `errors.ai.summaryProvider`, not the filter-worded message.
+- **`AiTasks` gained `endpoint`** for revision 5's comparison.
+- **The consent line is the backend's.** `ai.summarize` answers `{ status: "consent" }` unless the provider is in `settings.summaries.acknowledged`, and `acknowledge: true` records it. A hash match asks nothing, since nothing would be sent.
+- **A waiting body is the renderer's to retry.** `ai.summarize` answers `waitingBody` and holds no state; the block asks again when the thread's messages change.
+- **An import never turns summaries on:** `summaries` isn't in the import's settings keys.
+- **The toolbar button gives way at the narrowest reader,** as Mark as unread does; the palette keeps it. Pressed while a summary shows, it opens the disclosure.
+- **Scroll.** A result arriving above a scrolled reader doesn't move the text, through Chromium's scroll anchoring (e2e). Two limits: at `scrollTop` 0 the content below moves down, since the user is at the top and the block is what they asked for, and Safari on the web build has no scroll anchoring.
+- **Memory on the web build.** `ai_summaries` is an in-memory table there like the others, so 5,000 results hold about 5 MB after boot. Only someone with the feature on for a long time gets near it.
+- **Not built:** `load.perf.test.ts` wasn't extended. `ai-summaries.perf.test.ts` measures ingest on and off at 50k threads in both stores instead. The real-model eval is written (`scripts/ai-real/summaries.real.ts`), not run.

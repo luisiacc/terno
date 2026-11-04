@@ -29,6 +29,8 @@ it("SQL35 upgrades capture schema without changing cached mail, cursor or accoun
     legacy.exec("DROP TRIGGER IF EXISTS body_fact_body_heads_insert; DROP TRIGGER IF EXISTS body_fact_body_heads_update; DROP TRIGGER IF EXISTS body_fact_body_heads_delete; DROP TRIGGER IF EXISTS body_fact_filters_insert; DROP TRIGGER IF EXISTS body_fact_filters_update; DROP TRIGGER IF EXISTS body_fact_filters_delete; DROP TRIGGER IF EXISTS body_fact_accounts_insert; DROP TRIGGER IF EXISTS body_fact_accounts_update; DROP TRIGGER IF EXISTS body_fact_accounts_delete; DROP TRIGGER IF EXISTS body_fact_secrets_insert; DROP TRIGGER IF EXISTS body_fact_secrets_update; DROP TRIGGER IF EXISTS body_fact_secrets_delete; DROP TRIGGER IF EXISTS body_fact_message_locations_insert; DROP TRIGGER IF EXISTS body_fact_message_locations_update; DROP TRIGGER IF EXISTS body_fact_message_locations_delete; DROP TRIGGER IF EXISTS body_fact_imap_identity_holds_insert; DROP TRIGGER IF EXISTS body_fact_imap_identity_holds_update; DROP TRIGGER IF EXISTS body_fact_imap_identity_holds_delete; DROP TABLE body_protocol;");
     // Remove the later committed v41-v43 schema before rebuilding the exact SQL35 fixture.
     legacy.exec("DROP TRIGGER threads_view_unread_ai; DROP TRIGGER threads_view_unread_ad; DROP TRIGGER threads_view_unread_au; DROP TABLE view_unread; DROP TABLE view_unread_backfill; DROP TABLE folder_aliases; ALTER TABLE folders DROP COLUMN except_json");
+    // plans 131 and 132's v48
+    legacy.exec("DROP TABLE ai_summaries; DROP TABLE ai_new_mail");
     // plan 127's v47
     legacy.exec("DROP INDEX ops_folder_moves");
     // plan 116's v44

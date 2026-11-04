@@ -568,8 +568,8 @@ export class BackendCore {
       captureError(error, { code: "forward.failed" });
       this.log("warn", "forwards couldn't start", error instanceof Error ? error.message : error);
     });
-    // plan 132: summaries a quit left queued
-    void this.summaries.start().catch((error: unknown) => {
+    // plan 132: summaries a quit left queued; awaited (one settings read): no sync may start before ingest knows it's on
+    await this.summaries.start().catch((error: unknown) => {
       captureError(error, { code: "ai.failed" });
       this.log("warn", "summaries couldn't start", error instanceof Error ? error.message : error);
     });
