@@ -76,3 +76,9 @@ No work until a press on a handle. During a drag: one style write per pointer ev
 - **The close animation test.** Settings, Filters and Add account unmount at once on close (`app.tsx`), so only Category forwarding fades. The test uses that one with motion on.
 - **Dismissal coverage.** After a drag released over the backdrop, a plain backdrop click still closes.
 - **Not taken:** `no-drag` on the backdrop. Today a press on a title strip with a dialog open moves the window; making it dismiss the dialog instead would take that away, and it is unrelated to this feature.
+
+## What the Codex code review changed
+
+No runtime defects. One test gap: the e2e test named for the scrollbar never touched one (headless Chromium hides them), so the guard could have been removed unnoticed. It is now a unit test on the popup's real layout numbers, confirmed to fail without the guard, and the e2e test is named for what it checks.
+
+**Native window drag not exercised.** The e2e runs in Chromium, so Electron's own hit testing of `-webkit-app-region` while a moved dialog sits over a title-bar strip rests on the existing `no-drag` rule, not on a test here.

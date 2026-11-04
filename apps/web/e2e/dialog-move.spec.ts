@@ -195,7 +195,7 @@ test.describe("config dialogs move (plan 129)", { tag: "@design" }, () => {
     expect((await box(dialog)).x - start.x).toBeCloseTo(100, 0);
   });
 
-  test("Add account drags by its margin, not its scrollbar", async ({ app: page }) => {
+  test("Add account drags by its margin", async ({ app: page }) => {
     await page.getByTestId("open-settings").click();
     await page.getByTestId("tab-accounts").click();
     await page.getByTestId("settings-add-account").click();

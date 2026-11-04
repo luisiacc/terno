@@ -61,3 +61,31 @@ it("a press in a portalled child doesn't move the dialog it bubbles to", async (
     root.remove()
   }
 })
+
+it("a press on the popup's own scrollbar scrolls, its margin drags", async () => {
+  const root = document.createElement("div")
+  document.body.append(root)
+  const mounted = createRoot(root)
+  const capture = vi.fn()
+  HTMLElement.prototype.setPointerCapture = capture
+  await act(async () => mounted.render(
+    <Dialog open><DialogContent movable="unit-scroller" data-testid="scroller"><DialogTitle>Title</DialogTitle></DialogContent></Dialog>
+  ))
+  try {
+    const popup = document.querySelector<HTMLElement>("[data-testid=scroller]")!
+    // 400 × 300 inside, with a 12 px bar beyond that in both directions
+    Object.defineProperty(popup, "clientWidth", { value: 400 })
+    Object.defineProperty(popup, "clientHeight", { value: 300 })
+    const press = (clientX: number, clientY: number) => act(async () => {
+      popup.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 1, pointerType: "mouse", clientX, clientY }))
+    })
+    await press(405, 100)
+    await press(100, 305)
+    expect(capture).not.toHaveBeenCalled()
+    await press(395, 295)
+    expect(capture).toHaveBeenCalledOnce()
+  } finally {
+    await act(async () => mounted.unmount())
+    root.remove()
+  }
+})
