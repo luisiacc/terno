@@ -200,6 +200,19 @@ describe("Ask's server search", () => {
     await bounded(t.backend.syncAccount(t.account.id), "a pass after the deadline");
   });
 
+  it("with no roles known yet, one LIST does it: a second that hangs can't start the search over", async () => {
+    const t = await setup({ searchMs: 800, extra: (add) => void add("INBOX", "coldword", 300) });
+    (t.backend as unknown as { providers: Map<number, unknown> }).providers.delete(t.account.id);
+    const provider = (await t.backend.provider(t.account.id))!;
+    let lists = 0;
+    t.w.server.script.add({ on: "command", command: "LIST", when: () => ++lists > 2, send: "* OK still listing\r\n" } as never);
+    const r = await provider.search!(criteria(["coldword"]));
+    // one list is a LIST and its subscribed flavour
+    expect(lists).toBe(2);
+    expect(r.hits).toHaveLength(1);
+    expect(r.partial).toBe(false);
+  });
+
   it("fetching stores them as old mail with no notices; a later pass of the provider keeps them", async () => {
     const t = await setup({ extra: (add) => void add("INBOX", "lease-old", 300) });
     const noticesBefore = t.notices.length;

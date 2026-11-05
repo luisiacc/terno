@@ -1936,7 +1936,7 @@ export class IdbMailStore implements MailStore {
     const messages = this.db.table<R>("messages");
     const ids: { id: number; threadId: number }[] = [];
     const walk = Math.min(candidates.length, ASK_MATCH_MESSAGES);
-    let partsLeft = workParts;
+    let partsSeen = 0;
     for (let i = 0; i < walk; ) {
       if (signal?.aborted) return { ids, incomplete: true };
       await this.exclusive(async () => {
@@ -1949,10 +1949,10 @@ export class IdbMailStore implements MailStore {
           const unit = at < 0 ? chunk : chunk.slice(0, at + 1);
           const capture = at < 0 ? null : (this.c.body(chunk[at]!)!.capture_id as string);
           const parts = capture === null ? 0 : (T(this.c, "body_captures").get(capture)?.token_parts as number | undefined) ?? 0;
-          // past the work's limit a captured body isn't read, and the answer says so
-          const reading = capture !== null && parts <= partsLeft;
+          // past the work's limit a captured body isn't read, nor any after it, newest first as SQLite does; the answer says so
+          partsSeen += parts;
+          const reading = capture !== null && partsSeen <= workParts;
           if (capture !== null && !reading) incomplete = true;
-          if (reading) partsLeft -= parts;
           const prepared = reading ? await this.prepareBodyTests(tests, unit) : new Map();
           for (const id of unit) {
             const m = messages.get(id);

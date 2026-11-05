@@ -37,6 +37,8 @@ export interface AskState {
   olderFound: number | null;
   /** a server's search may not have found everything */
   olderPartial: boolean;
+  /** ups each time conversations go in any window: what was reading them, or lists them, looks again */
+  gone: number;
   /** a source now in Spam or Trash, asked for once: the next ask opens it */
   armedSource: number | null;
   /** just finished: for screen readers */
@@ -44,9 +46,9 @@ export interface AskState {
   usedAt: number;
 }
 
-const EMPTY: Omit<AskState, "usedAt" | "ready"> = { conversationId: null, turns: [], sources: {}, running: null, consent: null, error: null, noProvider: false, older: { kind: "none" }, incomplete: false, olderFound: null, olderPartial: false, armedSource: null };
+const EMPTY: Omit<AskState, "usedAt" | "ready" | "gone"> = { conversationId: null, turns: [], sources: {}, running: null, consent: null, error: null, noProvider: false, older: { kind: "none" }, incomplete: false, olderFound: null, olderPartial: false, armedSource: null };
 
-export const useAsk = create<AskState>(() => ({ ...EMPTY, ready: 0, usedAt: 0 }));
+export const useAsk = create<AskState>(() => ({ ...EMPTY, ready: 0, usedAt: 0, gone: 0 }));
 
 const timezone = () => {
   try {
@@ -144,9 +146,10 @@ export function returning(now = Date.now()): void {
 }
 
 async function reload(conversationId: number): Promise<void> {
+  const gone = useAsk.getState().gone;
   const saved = await client.call("ai.askConversation", { conversationId }).catch(() => undefined);
   const s = useAsk.getState();
-  if (saved === undefined || s.conversationId !== conversationId || s.running) return;
+  if (saved === undefined || s.conversationId !== conversationId || s.running || s.gone !== gone) return;
   if (saved === null) return useAsk.setState({ ...EMPTY, usedAt: Date.now() });
   useAsk.setState({ turns: saved.turns, sources: saved.sources, older: saved.older });
 }
@@ -159,6 +162,7 @@ export function askConfigChanged(): void {
 /** Another window deleted or cleared it, or its account went. */
 client.on("aiAskGone", ({ conversationIds }) => {
   const { conversationId } = useAsk.getState();
+  useAsk.setState((s) => ({ gone: s.gone + 1 }));
   if (conversationIds === null || (conversationId !== null && conversationIds.includes(conversationId))) useAsk.setState({ ...EMPTY, usedAt: 0 });
 });
 
@@ -170,8 +174,10 @@ export function declineConsent(): void {
 
 /** A saved conversation: no request. */
 export async function openConversation(conversationId: number): Promise<boolean> {
+  const gone = useAsk.getState().gone;
   const saved = await client.call("ai.askConversation", { conversationId });
-  if (!saved) return false;
+  // it was read before something went: this copy may be what's gone
+  if (!saved || useAsk.getState().gone !== gone) return false;
   stopAsking();
   useAsk.setState({ ...EMPTY, conversationId, turns: saved.turns, sources: saved.sources, older: saved.older, usedAt: Date.now() });
   return true;
@@ -181,7 +187,10 @@ export async function openConversation(conversationId: number): Promise<boolean>
  * Enter on a source, or its inline number: the palette closes and the thread opens at that message, in the thread it's
  * in now. One now in Spam or Trash needs asking twice; one that's gone doesn't open.
  */
-export function openSource(source: AskSourceRef): void {
+export async function openSource(source: AskSourceRef): Promise<void> {
+  // what it is now, not when it was shown: another window may have moved it, or a merge taken its thread
+  const fresh = await client.call("ai.askSources", { messageIds: [source.messageId] }).catch(() => null);
+  if (fresh) useAsk.setState((s) => ({ sources: { ...s.sources, ...fresh } }));
   const s = useAsk.getState();
   const view = s.sources[source.messageId];
   if (view?.state === "gone") return;

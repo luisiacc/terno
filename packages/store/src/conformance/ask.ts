@@ -125,6 +125,15 @@ export function defineAskConformance(fresh: () => Promise<MailStore>, reopen: (s
         expect(out.incomplete).toBe(true);
       });
 
+      it("the limit is the same in both stores: once a body is past it, an older one isn't read either", async () => {
+        const { put, passages } = await setup();
+        const older = await put(chain(0, { bodyText: `${"short filler ".repeat(4000)} zzkey is here.` }));
+        const newer = await put(chain(1, { bodyText: "long filler words ".repeat(30_000) }));
+        const out = await passages([older.thread], [{ terms: ["zzkey"] }], { workParts: 6, maxMessages: 1 });
+        expect(out.incomplete).toBe(true);
+        expect(out.messages.map((m) => m.messageId)).toEqual([newer.id]);
+      });
+
       it("a stop ends it where it stands", async () => {
         const { put, passages } = await setup();
         const a = await put({ subject: "House", bodyText: "The door code." });

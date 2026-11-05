@@ -2216,7 +2216,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           if (expired.signal.aborted) return [];
           throw error;
         });
-        const found = list.length ? await discoverRoles(c) : ({} as Awaited<ReturnType<typeof discoverRoles>>);
+        // from this LIST: a second one could hang, past what the catch below sees
+        const found = list.length ? await discoverRoles(c, list) : ({} as Awaited<ReturnType<typeof discoverRoles>>);
         const left = new Set([found.junk, found.trash, found.drafts]);
         const rank = (path: string) => (path === found.inbox ? 0 : path === found.sent ? 1 : 2);
         const paths = list.filter(selectableMailbox).map((m) => m.path).filter((path) => !left.has(path)).sort((a, b) => rank(a) - rank(b));

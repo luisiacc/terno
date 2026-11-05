@@ -2147,6 +2147,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.ai.askNoPlan": "No he podido convertir eso en una búsqueda. Prueba a preguntarlo de otra forma.",
   "errors.ai.askFailed": "No se pudo preguntar. Inténtalo de nuevo.",
   "errors.ai.askRefused": "El modelo se ha negado a responder.",
+  "errors.ai.askTooSmall": "Esta pregunta es demasiado larga para este modelo. Acórtala o elige un modelo con más capacidad.",
   "errors.ai.askGone": "Esta pregunta se ha eliminado.",
   "errors.ai.askTooLong": "Esta conversación ya es bastante larga. Empieza una pregunta nueva.",
   "ask.placeholder": "Pregunta a tu correo…",

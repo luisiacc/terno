@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerFilter, answerPrompt, askBudget, ASK_ANSWER_RULES, cleanAnswer, fitAskMaterial, planAskPrompt } from "./ask";
+import { answerFilter, answerPrompt, askBudget, ASK_ANSWER_RULES, cleanAnswer, fitAskPrompt, fitPlanEarlier, planAskPrompt } from "./ask";
 import { createAi } from "./tasks";
 import { fakeTransport } from "./fake";
 import type { ProviderConfig } from "./types";
@@ -86,13 +86,25 @@ describe("the answer (plan 141)", () => {
   it("the whole prompt fits what's left, whatever the headers hold: the last messages go, then the one left is cut", () => {
     const long = (i: number) => ({ ...material("text ".repeat(100), `m${i}`), from: "n".repeat(5000), subject: "s".repeat(5000) });
     const input = { question: "q", today: "2026-11-05", material: [long(1), long(2), long(3), long(4)] };
-    const fitted = fitAskMaterial(input, 1800);
-    expect(answerPrompt({ ...input, material: fitted }).length).toBeLessThanOrEqual(1800);
-    expect(fitted.map((m) => m.label)).toEqual(["m1"]);
-    expect(fitted[0]!.from).toHaveLength(300);
-    expect(fitAskMaterial(input, Infinity)).toHaveLength(4);
+    const fitted = fitAskPrompt(input, 1800)!;
+    expect(answerPrompt({ ...input, material: fitted.material }).length).toBeLessThanOrEqual(1800);
+    expect(fitted.material.map((m) => m.label)).toEqual(["m1"]);
+    expect(fitted.material[0]!.from).toHaveLength(300);
+    expect(fitAskPrompt(input, Infinity)!.material).toHaveLength(4);
     const budget = askBudget(4000, 100);
     expect(budget.promptChars).toBeLessThan(4000 * 4);
+  });
+
+  it("a long follow-up fits a small window, its context going first; what can't fit at all is refused, not sent", () => {
+    const earlier = Array.from({ length: 3 }, () => ({ question: "q".repeat(1000), answer: "a".repeat(1000) }));
+    const input = { question: "x".repeat(1000), today: "2026-11-05", material: [material("text ".repeat(400))], earlier };
+    const room = askBudget(2048, answerPrompt({ question: input.question, today: input.today, material: [], earlier }).length).promptChars;
+    const fitted = fitAskPrompt(input, room)!;
+    expect(answerPrompt({ question: input.question, today: input.today, ...fitted }).length).toBeLessThanOrEqual(room);
+    expect(fitted.earlier.length).toBeLessThan(3);
+    expect(fitAskPrompt(input, 500)).toBeNull();
+    expect(fitPlanEarlier(earlier, 2600).length).toBeLessThan(3);
+    expect(fitPlanEarlier(earlier, null)).toHaveLength(3);
   });
 
   it("the budget counts the rules and what's fixed, and never exceeds what the plan allows", () => {

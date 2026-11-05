@@ -23,7 +23,7 @@ vi.mock("~/rpc/connection", () => ({
 const opened = vi.hoisted(() => ({ threads: [] as number[] }));
 vi.mock("~/lib/page", () => ({ openThread: (id: number) => opened.threads.push(id), readerShown: () => true, listLayout: () => false }));
 
-const { askConfigChanged, askQuestion, openSource, returning, useAsk } = await import("./ask");
+const { askConfigChanged, askQuestion, openConversation, openSource, returning, useAsk } = await import("./ask");
 const { askReady } = await import("./ai");
 
 const source: AskSourceRef = { messageId: 5, threadId: 2, accountId: 1, fromName: "Ana", fromEmail: "a@x.test", subject: "S", date: 1 };
@@ -63,22 +63,46 @@ describe("what's shown goes when what it quotes goes", () => {
   });
 });
 
+describe("a read that was under way when something went", () => {
+  it("opening from the history doesn't bring back what was cleared meanwhile", async () => {
+    showing({ conversationId: null, turns: [] });
+    let answer!: (v: unknown) => void;
+    rpc.answer.set("ai.askConversation", new Promise((r) => (answer = r)));
+    const opening = openConversation(7);
+    rpc.events.get("aiAskGone")!({ conversationIds: null });
+    answer({ turns: [turn], sources: {}, older: { kind: "none" } });
+    expect(await opening).toBe(false);
+    expect(useAsk.getState().turns).toEqual([]);
+  });
+});
+
 describe("a source opens as it is now", () => {
-  it("in the thread it's in now, after a merge", () => {
-    showing({ sources: { 5: { state: "ok", threadId: 44 } } });
-    openSource(source);
+  it("in the thread it's in now, asked at the moment: a merge in another window counts", async () => {
+    showing({ sources: { 5: { state: "ok", threadId: 2 } } });
+    rpc.answer.set("ai.askSources", { 5: { state: "ok", threadId: 44 } });
+    await openSource(source);
     expect(opened.threads).toEqual([44]);
   });
 
-  it("one in Spam or Trash needs asking twice, however it's asked; one that's gone never opens", () => {
-    showing({ sources: { 5: { state: "spam", threadId: 2 } } });
-    openSource(source);
+  it("moved to Spam in another window since it was shown: the first click only says so", async () => {
+    showing({ sources: { 5: { state: "ok", threadId: 2 } } });
+    rpc.answer.set("ai.askSources", { 5: { state: "spam", threadId: 2 } });
+    await openSource(source);
     expect(opened.threads).toEqual([]);
     expect(useAsk.getState().armedSource).toBe(5);
-    openSource(source);
+  });
+
+  it("one in Spam or Trash needs asking twice, however it's asked; one that's gone never opens", async () => {
+    showing();
+    rpc.answer.set("ai.askSources", { 5: { state: "spam", threadId: 2 } });
+    await openSource(source);
+    expect(opened.threads).toEqual([]);
+    expect(useAsk.getState().armedSource).toBe(5);
+    await openSource(source);
     expect(opened.threads).toEqual([2]);
-    showing({ sources: { 5: { state: "gone" } } });
-    openSource(source);
+    showing();
+    rpc.answer.set("ai.askSources", { 5: { state: "gone" } });
+    await openSource(source);
     expect(opened.threads).toEqual([2]);
   });
 });

@@ -31,7 +31,7 @@ function AnswerText({ text, sources }: { text: string; sources: readonly AskSour
         const source = cited ? sources[Number(cited[1]) - 1] : undefined;
         if (!source || views[source.messageId]?.state === "gone") return <span key={i}>{part}</span>;
         return (
-          <button key={i} type="button" data-testid="ask-citation" onKeyDown={stopKeys} onClick={() => openSource(source)} className="mx-px rounded-sm px-0.5 text-xs text-muted-foreground tabular underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" aria-label={t("ask.citation", { n: cited![1]!, subject: source.subject })}>
+          <button key={i} type="button" data-testid="ask-citation" onKeyDown={stopKeys} onClick={() => void openSource(source)} className="mx-px rounded-sm px-0.5 text-xs text-muted-foreground tabular underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" aria-label={t("ask.citation", { n: cited![1]!, subject: source.subject })}>
             {part}
           </button>
         );
@@ -194,7 +194,7 @@ function SourceRow({ source, n }: { source: AskSourceRef; n: number }) {
   const gone = view === "gone";
   const moved = view === "spam" || view === "trash";
   return (
-    <CommandItem value={`source\u0000${source.messageId}\u0000${n}`} disabled={gone} data-testid="ask-source" data-state-view={view} onSelect={() => openSource(source)}>
+    <CommandItem value={`source\u0000${source.messageId}\u0000${n}`} disabled={gone} data-testid="ask-source" data-state-view={view} onSelect={() => void openSource(source)}>
       <span className="w-5 shrink-0 text-xs text-muted-foreground tabular">[{n}]</span>
       <span className="w-32 shrink-0 truncate">{source.fromName || source.fromEmail}</span>
       <span className="min-w-0 flex-1 truncate text-muted-foreground">{gone ? t("ask.source.gone") : moved ? t(armed ? "ask.source.pressAgain" : view === "spam" ? "ask.source.spam" : "ask.source.trash") : source.subject}</span>
@@ -398,8 +398,17 @@ function when(ms: number): string {
 function AskHistoryPage({ value, setValue, onBack }: { value: string; setValue: (v: string) => void; onBack: () => void }) {
   const [list, setList] = useState<AskConversationSummary[] | null>(null);
   const [deleted, setDeleted] = useState<AskConversationSummary | null>(null);
+  /** the delete of this page: its own event doesn't take away its Undo */
+  const deletedHere = useRef<number | null>(null);
   const refresh = () => void loadAskHistory().then(setList, () => setList([]));
-  useEffect(refresh, []);
+  // anything going, here or in another window: the list as it is now, and no Undo for what can't come back
+  const gone = useAsk((s) => s.gone);
+  useEffect(() => {
+    refresh();
+    const own = deletedHere.current;
+    deletedHere.current = null;
+    if (gone) setDeleted((d) => (d && own === d.id ? d : null));
+  }, [gone]);
   const query = value.trim().toLowerCase();
   const shown = useMemo(() => (list ?? []).filter((c) => !query || c.title.toLowerCase().includes(query)), [list, query]);
   const open = async (id: number) => {
@@ -415,6 +424,7 @@ function AskHistoryPage({ value, setValue, onBack }: { value: string; setValue: 
         if (!id) return;
         e.preventDefault();
         e.stopPropagation();
+        deletedHere.current = id;
         setDeleted(list?.find((c) => c.id === id) ?? null);
         void deleteConversation(id).then(refresh);
       }}

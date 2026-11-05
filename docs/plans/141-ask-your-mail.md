@@ -292,3 +292,5 @@ Codex raised 15 points, all fixed, each with a test.
 - **Off means off for older mail too,** whatever a stale page still shows.
 - **The prompt is fitted whole:** headers bounded, the last messages dropped, then the one left cut.
 - **No ring around the answer pane** (plan 52). It stays reachable by Tab, to scroll.
+
+A second round, on the fixes, raised 6, all fixed: a read under way when something goes can't bring it back; an open history empties and drops its Undo when another window clears; a source's state is asked at the moment it's opened; once a captured body is past the work's limit no older one is read, the same in both stores; a follow-up's context goes first on a small window, and a question that still can't fit is refused rather than sent; and a cold IMAP search uses one LIST, so a second can't hang past the deadline.

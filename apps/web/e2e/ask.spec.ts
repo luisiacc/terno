@@ -105,6 +105,16 @@ test.describe("ask your mail (plan 141)", () => {
       await page.getByTestId("ask-history-undo").click();
       await expect(item).toHaveCount(1);
     });
+
+    await scenario("cleared from another window, an open history empties and offers no Undo", async () => {
+      const item = page.getByTestId("ask-history-item");
+      await item.first().hover();
+      await ask(page).press("ControlOrMeta+Backspace");
+      await expect(page.getByTestId("ask-history-undo")).toBeVisible();
+      await server.backend.server.invoke("ai.summaries.clear", {}, dev);
+      await expect(page.getByTestId("ask-history-undo")).toHaveCount(0);
+      await expect(item).toHaveCount(0);
+    });
   });
 
   test("not found offers older mail; a click finds it, keeps it as mail, and answers from it", async ({ app: page, server }) => {

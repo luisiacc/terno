@@ -180,17 +180,29 @@ export function askBudget(contextTokens: number | null, fixedChars: number): { o
 }
 
 /**
- * The whole serialized prompt within what's left of the window, whatever the headers hold: the last messages go first,
- * being the least relevant, and then the one left is cut. A label left out can't be cited, so nothing has a gap.
+ * The whole serialized prompt within what's left of the window, whatever the headers and a follow-up's context hold.
+ * What goes first says least: earlier turns, oldest first; then the last messages; then the words of the one left; then
+ * its long headers. A label left out can't be cited, so nothing has a gap. Null: the question alone can't fit.
  */
-export function fitAskMaterial(input: Pick<AnswerFromMailInput, "question" | "today" | "material" | "earlier">, promptChars: number): AskMaterial[] {
+export function fitAskPrompt(input: Pick<AnswerFromMailInput, "question" | "today" | "material" | "earlier">, promptChars: number): { material: AskMaterial[]; earlier: { question: string; answer: string }[] } | null {
   let material = input.material.map((m) => ({ ...m, from: m.from.slice(0, ASK_HEADER_CHARS), subject: m.subject.slice(0, ASK_HEADER_CHARS) }));
-  if (promptChars === Infinity) return material;
-  const size = () => answerPrompt({ ...input, material }).length;
+  let earlier = [...(input.earlier ?? [])];
+  if (promptChars === Infinity) return { material, earlier };
+  const size = () => answerPrompt({ question: input.question, today: input.today, material, earlier }).length;
+  while (size() > promptChars && earlier.length) earlier = earlier.slice(1);
   while (size() > promptChars && material.length > 1) material = material.slice(0, -1);
-  const over = size() - promptChars;
-  if (over > 0 && material[0]) material = [{ ...material[0], text: material[0].text.slice(0, Math.max(0, material[0].text.length - over)) }];
-  return material;
+  if (size() > promptChars && material[0]) material = [{ ...material[0], text: material[0].text.slice(0, Math.max(0, material[0].text.length - (size() - promptChars))) }];
+  if (size() > promptChars && material[0]) material = [{ ...material[0], from: material[0].from.slice(0, 60), subject: material[0].subject.slice(0, 60) }];
+  return size() > promptChars ? null : { material, earlier };
+}
+
+/** A follow-up's context within what the planning model's window holds: the newest turns stay. */
+export function fitPlanEarlier<T extends { question: string; answer: string }>(earlier: readonly T[], contextTokens: number | null): T[] {
+  if (contextTokens === null) return [...earlier];
+  const room = (contextTokens - PLAN_MAX_TOKENS - PLAN_SYSTEM("2026-01-01", "UTC").length / CHARS_PER_TOKEN - 300) * CHARS_PER_TOKEN;
+  let kept = [...earlier];
+  while (kept.length && kept.reduce((n, t) => n + t.question.length + t.answer.length, 0) > room) kept = kept.slice(1);
+  return kept;
 }
 
 const STATUS = /<status>\s*(answered|partial|not_found)\s*<\/status>/i;

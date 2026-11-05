@@ -1,4 +1,4 @@
-import { AiError, ASK_PROMPT_VERSION, askBudget, answerPrompt, fitAskMaterial, type AiTasks, type AskMaterial } from "@terno/ai";
+import { AiError, ASK_PROMPT_VERSION, askBudget, answerPrompt, fitAskPrompt, fitPlanEarlier, type AiTasks, type AskMaterial } from "@terno/ai";
 import {
   ASK_QUESTION_MAX,
   ASK_TURNS_MAX,
@@ -195,7 +195,7 @@ export class AskService {
         timezone: p.timezone,
         accounts: (await store.accounts.list()).map((a) => ({ name: a.displayName, address: a.email })),
         categories: (await store.categories.list()).map((c) => c.name),
-        ...(earlier.length ? { earlier } : {}),
+        ...(earlier.length ? { earlier: fitPlanEarlier(earlier, planner.contextTokens) } : {}),
       };
       await this.stillThere(destination, signal);
       this.b.server.emitTo(clientId, "aiAsk", { requestId: p.requestId, phase: "searching" });
@@ -283,7 +283,9 @@ export class AskService {
     if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
     for (const m of passages.messages) o.entry.accounts.add(m.accountId);
     const drafted = materialOf(passages.messages, o.p.timezone);
-    const material = fitAskMaterial({ question, today, material: drafted.material, earlier }, budget.promptChars);
+    const fitted = fitAskPrompt({ question, today, material: drafted.material, earlier }, budget.promptChars);
+    if (!fitted) throw new AiError(L("errors.ai.askTooSmall"), "unsupported");
+    const { material } = fitted;
     const labels = new Map(material.map((m, i) => [m.label, i]));
     const conversationId = o.conversationIdOverride ?? o.p.conversationId ?? null;
     const empty = { unlinked: false, unsupported: [] };
@@ -296,7 +298,7 @@ export class AskService {
     let raw = "";
     let sent = "";
     const result = await ai.answerFromMail(
-      { question, today, material, ...(earlier.length ? { earlier } : {}) },
+      { question, today, material, ...(fitted.earlier.length ? { earlier: fitted.earlier } : {}) },
       {
         signal,
         maxTokens: budget.outputTokens,

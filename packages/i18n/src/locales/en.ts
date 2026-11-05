@@ -2162,6 +2162,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.ai.askNoPlan": "I couldn’t turn that into a search. Try asking another way.",
   "errors.ai.askFailed": "Asking failed. Try again.",
   "errors.ai.askRefused": "The model declined to answer this.",
+  "errors.ai.askTooSmall": "This question is too long for this model. Shorten it, or choose a model with more room.",
   "errors.ai.askGone": "This question was deleted.",
   "errors.ai.askTooLong": "This conversation is long enough. Start a new question.",
   "ask.placeholder": "Ask your mail…",
