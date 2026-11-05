@@ -1,4 +1,4 @@
-import { SUMMARY_CLAUDE_MODEL, SUMMARY_DEFAULT_MODEL, type AiProviderId, type AiSummariesStatus, type ModelInfo } from "@terno/core";
+import { ASK_CLAUDE_MODEL, SUMMARY_CLAUDE_MODEL, SUMMARY_DEFAULT_MODEL, type AiProviderId, type AiSummariesStatus, type AiTaskName, type ModelInfo } from "@terno/core";
 import type { AiSettings, AiUsageReport, AppSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
@@ -7,7 +7,7 @@ import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
 import { useEffect, useState } from "react";
-import { errorHelp, modelName, providerLabel, summaryTarget } from "~/lib/ai";
+import { askTarget, errorHelp, modelName, providerLabel, summaryTarget } from "~/lib/ai";
 import { reconcileSettings } from "~/lib/appearance";
 import { localized } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
@@ -88,36 +88,40 @@ function TargetRow({ ai, update }: { ai: AiSettings; update: SettingsUpdate }) {
       </SettingsRow>
     );
   }
-  const choices = providerChoices(ai);
-  const hasModel = models.some((m) => m.id === target.model);
-  const shownModels = hasModel || !target.model ? models : [{ id: target.model }, ...models];
+  return <TaskTargetRow ai={ai} update={update} task="summary" provider={target.provider} model={target.model} choices={providerChoices(ai)} modelFor={(next) => modelFor(ai, next) || target.model} models={models} prefix="ai-summaries" labels={{ row: t("ai.summaries.target"), hint: t("ai.summaries.targetHint"), provider: t("ai.summaries.targetProvider"), model: t("ai.summaries.targetModel") }} />;
+}
+
+/** The provider and model a feature runs on: plan 131 §2's row, one per feature, naming where its mail goes. */
+export function TaskTargetRow({ ai, update, task, provider, model, choices, modelFor: nextModel, models, prefix, labels }: { ai: AiSettings; update: SettingsUpdate; task: AiTaskName; provider: AiProviderId; model: string; choices: readonly AiProviderId[]; modelFor: (provider: AiProviderId) => string; models: readonly ModelInfo[]; prefix: string; labels: { row: string; hint: string; provider: string; model: string } }) {
+  const hasModel = models.some((m) => m.id === model);
+  const shownModels = hasModel || !model ? models : [{ id: model }, ...models];
   return (
-    <SettingsRow stacked label={t("ai.summaries.target")} hint={t("ai.summaries.targetHint")} testId="ai-summaries-target">
+    <SettingsRow stacked label={labels.row} hint={labels.hint} testId={`${prefix}-target`}>
       {({ id: _id, "aria-describedby": described }) => (
         <div className="flex items-center gap-2">
           <Select
-            value={target.provider}
+            value={provider}
             onValueChange={(v) => {
               const next = v as AiProviderId;
-              if (next !== target.provider) void update({ ai: { tasks: { summary: { provider: next, model: modelFor(ai, next) || target.model } } } });
+              if (next !== provider) void update({ ai: { tasks: { [task]: { provider: next, model: nextModel(next) } } } });
             }}
             items={choices.map((p) => ({ value: p, label: providerLabel(p, ai) }))}
           >
-            <SelectTrigger aria-label={t("ai.summaries.targetProvider")} aria-describedby={described} size="sm" className="w-44 shrink-0" data-testid="ai-summaries-provider">
+            <SelectTrigger aria-label={labels.provider} aria-describedby={described} size="sm" className="w-44 shrink-0" data-testid={`${prefix}-provider`}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {choices.map((p) => (
-                <SelectItem key={p} value={p} data-testid={`ai-summaries-provider-${p}`}>
+                <SelectItem key={p} value={p} data-testid={`${prefix}-provider-${p}`}>
                   {providerLabel(p, ai)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           {/* the offline demo has one model, nothing to choose (as the row above) */}
-          {target.provider === "fake" ? null : shownModels.length > 1 ? (
-            <Select value={target.model} onValueChange={(v) => void update({ ai: { tasks: { summary: { provider: target.provider, model: v as string } } } })} items={shownModels.map((m) => ({ value: m.id, label: modelName(m.id) }))}>
-              <SelectTrigger aria-label={t("ai.summaries.targetModel")} size="sm" className="min-w-0 flex-1" data-testid="ai-summaries-model">
+          {provider === "fake" ? null : shownModels.length > 1 ? (
+            <Select value={model} onValueChange={(v) => void update({ ai: { tasks: { [task]: { provider, model: v as string } } } })} items={shownModels.map((m) => ({ value: m.id, label: modelName(m.id) }))}>
+              <SelectTrigger aria-label={labels.model} size="sm" className="min-w-0 flex-1" data-testid={`${prefix}-model`}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -131,12 +135,12 @@ function TargetRow({ ai, update }: { ai: AiSettings; update: SettingsUpdate }) {
           ) : (
             <div className="min-w-0 flex-1">
               <CommitInput
-                a11y={{ "aria-label": t("ai.summaries.targetModel") }}
-                data-testid="ai-summaries-model-input"
+                a11y={{ "aria-label": labels.model }}
+                data-testid={`${prefix}-model-input`}
                 className="h-7 bg-background font-mono text-xs dark:bg-input/30"
-                value={target.model}
-                onCommit={async (model) => {
-                  if (model.trim()) await update({ ai: { tasks: { summary: { provider: target.provider, model: model.trim() } } } }, { quiet: true });
+                value={model}
+                onCommit={async (value) => {
+                  if (value.trim()) await update({ ai: { tasks: { [task]: { provider, model: value.trim() } } } }, { quiet: true });
                 }}
               />
             </div>
@@ -144,6 +148,28 @@ function TargetRow({ ai, update }: { ai: AiSettings; update: SettingsUpdate }) {
         </div>
       )}
     </SettingsRow>
+  );
+}
+
+/** Plan 141 §7: on by default, since nothing runs until someone asks. The row names where a question and its mail go. */
+export function AskGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
+  const { ai, ask } = settings;
+  const target = askTarget(ai);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  useEffect(() => {
+    setModels([]);
+    if (target.provider === "none") return;
+    let current = true;
+    void client.call("ai.listModels", { provider: target.provider }).then((r) => current && setModels(r.models), () => {});
+    return () => { current = false; };
+  }, [target.provider]);
+  return (
+    <SettingsGroup title={t("ai.ask.title")} testId="ai-ask">
+      <SettingsRow label={t("ai.ask.switch")} hint={t("ai.ask.hint", { provider: providerLabel(target.provider, ai) })}>
+        {(a) => <Switch {...a} checked={ask.enabled} data-testid="ai-ask-switch" onCheckedChange={(enabled) => void update({ ask: { enabled } })} />}
+      </SettingsRow>
+      {target.provider !== "none" && <TaskTargetRow ai={ai} update={update} task="ask" provider={target.provider} model={target.model} choices={[...new Set([...providerChoices(ai), target.provider])]} modelFor={(next) => (next === "anthropic" ? ASK_CLAUDE_MODEL : modelFor(ai, next) || target.model)} models={models} prefix="ai-ask" labels={{ row: t("ai.ask.target"), hint: t("ai.ask.targetHint"), provider: t("ai.ask.targetProvider"), model: t("ai.ask.targetModel") }} />}
+    </SettingsGroup>
   );
 }
 
@@ -190,6 +216,9 @@ export function AiUseGroup({ settings, update }: { settings: AppSettings; update
       <SettingsRow label={t("ai.usage.label")} hint={usage?.estimated ? t("ai.usage.hintEstimated") : t("ai.usage.hint")} testId="ai-usage">
         {() => <span className="text-sm text-muted-foreground tabular" data-testid="ai-usage-value">{usage ? t(usage.estimated ? "ai.usage.valueEstimated" : "ai.usage.value", { count: usage.month.requests, usd: usd(usage.month.usd) }) : "…"}</span>}
       </SettingsRow>
+      {usage && usage.monthAsk.requests > 0 && (
+        <SettingsNote testId="ai-usage-ask">{t("ai.ask.usage", { count: usage.monthAsk.requests, usd: usd(usage.monthAsk.usd) })}</SettingsNote>
+      )}
       <SettingsRow labelFor label={t("ai.limit.label")} hint={t("ai.limit.hint")} testId="ai-limit">
         {(a) => (
           <NumberField

@@ -1,4 +1,4 @@
-import { SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type AiErrorKind, type AiProviderId, type CompatiblePreset, type OutputMode } from "@terno/core";
+import { ASK_CLAUDE_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type AiErrorKind, type AiProviderId, type CompatiblePreset, type OutputMode } from "@terno/core";
 import type { AiSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 
@@ -109,6 +109,13 @@ export function summaryTarget(ai: AiSettings): SummaryTarget {
   if (ai.keys.openai?.hasKey) return { state: "ready", provider: "openai", model: SUMMARY_DEFAULT_MODEL };
   if (ai.provider === "none") return { state: "none" };
   return ai.local ? { state: "ready", provider: ai.provider, model: ai.model } : { state: "ask", provider: ai.provider };
+}
+
+/** Plan 141 §6: where a question goes, by the backend's rule: the task's own choice, else the configured provider (Sonnet on Claude). */
+export function askTarget(ai: AiSettings): { provider: AiProviderId; model: string } {
+  const chosen = ai.tasks.ask;
+  if (chosen) return chosen;
+  return { provider: ai.provider, model: ai.provider === "anthropic" ? ASK_CLAUDE_MODEL : ai.model };
 }
 
 const LOCAL_PROVIDERS: readonly AiProviderId[] = ["ollama", "lmstudio", "fake"];

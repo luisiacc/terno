@@ -39,6 +39,7 @@ export type Command =
   | "search.focus"
   | "palette.open"
   | "snippets.open"
+  | "ask.open"
   | "go.inbox"
   | "go.starred"
   | "go.sent"
@@ -147,6 +148,8 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "mod+k", command: "palette.open", inEditable: true, inDialog: true },
   // plan 93: Superhuman's snippets key, while writing above all (a chord types nothing)
   { keys: "mod+;", command: "snippets.open", inEditable: true, inDialog: true },
+  // plan 141: a question, from anywhere, also while writing
+  { keys: "mod+shift+k", command: "ask.open", inEditable: true, inDialog: true },
   { keys: "g i", command: "go.inbox" },
   { keys: "g s", command: "go.starred" },
   { keys: "g t", command: "go.sent" },

@@ -1,0 +1,434 @@
+import { answerWithoutCitations, type AskConversationSummary, type AskSourceRef, type AskTurn } from "@terno/core";
+import { t } from "@terno/i18n";
+import { Button } from "@terno/ui/components/button";
+import { Chip } from "@terno/ui/components/chip";
+import { CommandDescription, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
+import { Spinner } from "@terno/ui/components/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
+import { Clock, Mail, Plus, Search, Sparkles, Undo2 } from "@terno/ui/icons";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { aiReady, errorHelp, modelName, providerLabel } from "~/lib/ai";
+import { askQuestion, atTurnLimit, declineConsent, deleteConversation, loadAskHistory, newQuestion, openConversation, openSource, restoreConversation, returning, searchOlder, stopAsking, useAsk } from "~/lib/ask";
+import { fullDate, listDate } from "~/lib/format";
+import { askFrom, paletteKeys, setPalettePage } from "~/lib/palette-open";
+import { isMac } from "~/lib/select";
+import { snack } from "~/lib/snack";
+import { useApp, setApp } from "~/state/app";
+
+const stopKeys = (e: KeyboardEvent) => {
+  // a control's own Enter and Space stay out of the list's: cmdk selects the active row whichever control has focus (revision 12)
+  if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+};
+
+/** "…renews on 1 March. [1]": an inline [1] is a button to that source; everything else stays plain text, never a link. */
+function AnswerText({ text, sources }: { text: string; sources: readonly AskSourceRef[] }) {
+  const parts = text.split(/(\[\d+\])/);
+  return (
+    <p className="whitespace-pre-wrap break-words text-sm leading-relaxed" data-testid="ask-answer">
+      {parts.map((part, i) => {
+        const cited = /^\[(\d+)\]$/.exec(part);
+        const source = cited ? sources[Number(cited[1]) - 1] : undefined;
+        if (!source) return <span key={i}>{part}</span>;
+        return (
+          <button key={i} type="button" data-testid="ask-citation" onKeyDown={stopKeys} onClick={() => openSource(source)} className="mx-px rounded-sm px-0.5 text-xs text-muted-foreground tabular underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" aria-label={t("ask.citation", { n: cited![1]!, subject: source.subject })}>
+            {part}
+          </button>
+        );
+      })}
+    </p>
+  );
+}
+
+function Checks({ turn }: { turn: AskTurn }) {
+  const { unlinked, unsupported } = turn.checks;
+  if (!unlinked && !unsupported.length) return null;
+  return (
+    <div className="mt-1.5 space-y-0.5 text-xs text-muted-foreground" data-testid="ask-checks">
+      {unsupported.map((value) => (
+        <p key={value} data-testid="ask-check-unsupported" className="text-destructive-ink">{t("ask.check.unsupported", { value })}</p>
+      ))}
+      {unlinked && <p data-testid="ask-check-unlinked">{t("ask.check.unlinked")}</p>}
+    </div>
+  );
+}
+
+/** One question and what came of it. */
+function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated: boolean }) {
+  const running = useAsk((s) => s.running !== null);
+  if (!turn.answer && !last) return null;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(answerWithoutCitations(turn.answer ?? ""));
+      snack.success(t("ask.copied"));
+    } catch {
+      snack.error(t("ask.copyFailed"));
+    }
+  };
+  return (
+    <section className="space-y-1.5" data-testid="ask-turn" data-status={turn.status}>
+      {/* the header already says it, as does the turn before it when older mail answered again */}
+      <h3 className={repeated ? "sr-only" : "text-xs font-medium text-muted-foreground"} data-testid="ask-question">{turn.question}</h3>
+      {turn.answer ? <AnswerText text={turn.answer} sources={turn.sources} /> : null}
+      {turn.status === "stopped" && <p className="text-xs text-muted-foreground" data-testid="ask-stopped">{t("ask.stopped")}</p>}
+      <Checks turn={turn} />
+      {turn.answer && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Button variant="link-secondary" size="xs" data-testid="ask-copy" onKeyDown={stopKeys} onClick={() => void copy()}>{t("ask.copy")}</Button>
+          <span aria-hidden>·</span>
+          <Tooltip>
+            <TooltipTrigger render={<span tabIndex={0} data-testid="ask-provenance" className="rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" />}>{t("ask.writtenBy", { model: modelName(turn.model ?? "") })}</TooltipTrigger>
+            <TooltipContent>{t("ask.provenance", { model: modelName(turn.model ?? ""), date: fullDate(turn.createdAt) })}</TooltipContent>
+          </Tooltip>
+          {last && !running && (
+            <>
+              <span aria-hidden>·</span>
+              <Button variant="link-secondary" size="xs" data-testid="ask-again" onKeyDown={stopKeys} onClick={() => askQuestion(turn.question)}>{t("ask.again")}</Button>
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Older mail, on a click: the main action when nothing here answers, a quiet link otherwise. */
+function Older() {
+  const offer = useAsk((s) => s.older);
+  const last = useAsk((s) => s.turns.at(-1));
+  const found = useAsk((s) => s.olderFound);
+  const running = useAsk((s) => s.running !== null);
+  if (found === 0) return <p className="text-sm text-muted-foreground" data-testid="ask-older-nothing">{t("ask.older.nothing")}</p>;
+  if (running || !last) return null;
+  const main = last.status === "not_found" || last.status === "partial";
+  if (offer.kind === "none") return main && last.status === "not_found" ? <p className="text-sm text-muted-foreground" data-testid="ask-not-found">{t("ask.notFound")}</p> : null;
+  const lead = main && last.status === "not_found" && <p className="text-sm text-muted-foreground" data-testid="ask-not-found">{"since" in offer && offer.since ? t("ask.notFoundSince", { date: listDate(offer.since) }) : t("ask.notFound")}</p>;
+  if (offer.kind === "downloading") return <div className="space-y-1">{lead}<p className="text-xs text-muted-foreground" data-testid="ask-older-downloading">{t("ask.older.downloading")}</p></div>;
+  if (offer.kind === "offline") return <div className="space-y-1">{lead}<p className="text-xs text-muted-foreground" data-testid="ask-older-offline">{t("ask.older.offline")}</p></div>;
+  return (
+    <div className="space-y-1.5">
+      {lead}
+      {main ? (
+        <Button size="sm" variant="secondary" data-testid="ask-older" onKeyDown={stopKeys} onClick={searchOlder}>{t("ask.older.button")}</Button>
+      ) : (
+        <Button variant="link-secondary" size="xs" data-testid="ask-older" onKeyDown={stopKeys} onClick={searchOlder}>{t("ask.older.button")}</Button>
+      )}
+    </div>
+  );
+}
+
+function Running() {
+  const running = useAsk((s) => s.running);
+  const shownTitle = useAsk((s) => s.turns.at(-1)?.question ?? s.turns[0]?.question ?? s.running?.question);
+  if (!running) return null;
+  const { older, searchingOlder, text, question } = running;
+  const looking = searchingOlder && !text ? (older ? t("ask.older.progress", { done: older.done, total: older.total }) : t("ask.older.looking")) : t("ask.looking");
+  return (
+    <section className="space-y-1.5" data-testid="ask-running">
+      <h3 className={question === shownTitle ? "sr-only" : "text-xs font-medium text-muted-foreground"} data-testid="ask-question">{question}</h3>
+      {text ? (
+        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed" data-testid="ask-streaming">{text}</p>
+      ) : (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="ask-looking">
+          <Spinner className="size-3.5" /> {looking}
+        </p>
+      )}
+      <Button variant="link-secondary" size="xs" data-testid="ask-stop" onKeyDown={stopKeys} onClick={() => stopAsking()}>{t("ask.stop")}</Button>
+    </section>
+  );
+}
+
+/** Once a destination: where this goes, before anything leaves. */
+function Consent() {
+  const consent = useAsk((s) => s.consent);
+  const ai = useApp((s) => s.settings?.ai);
+  if (!consent) return null;
+  return (
+    <section className="space-y-2" data-testid="ask-consent">
+      <p className="text-sm">{t("ask.consent", { provider: providerLabel(consent.provider as Parameters<typeof providerLabel>[0], ai ?? undefined) })}</p>
+      <div className="flex gap-2">
+        <Button size="sm" data-testid="ask-consent-continue" onKeyDown={stopKeys} onClick={() => askQuestion(consent.question, { acknowledge: true })}>{t("common.continue")}</Button>
+        <Button size="sm" variant="secondary" data-testid="ask-consent-settings" onKeyDown={stopKeys} onClick={() => { declineConsent(); setApp({ dialog: "settings", settingsTab: "ai" }); }}>{t("common.settings")}</Button>
+      </div>
+    </section>
+  );
+}
+
+function Failure() {
+  const error = useAsk((s) => s.error);
+  const ai = useApp((s) => s.settings?.ai);
+  if (!error) return null;
+  const help = ai ? errorHelp(error.kind, ai) : null;
+  return (
+    <section className="space-y-1.5" data-testid="ask-error">
+      <p className="text-sm text-destructive-ink">{error.message}</p>
+      {help && <p className="text-xs text-muted-foreground">{help}</p>}
+      <Button size="sm" variant="secondary" data-testid="ask-retry" onKeyDown={stopKeys} onClick={() => askQuestion(error.question)}>{t("ask.tryAgain")}</Button>
+    </section>
+  );
+}
+
+function SourceRow({ source, n }: { source: AskSourceRef; n: number }) {
+  const view = useAsk((s) => s.sources[source.messageId] ?? "ok");
+  const [armed, setArmed] = useState(false);
+  const gone = view === "gone";
+  const moved = view === "spam" || view === "trash";
+  const select = () => {
+    if (gone) return;
+    // one now in Spam or Trash doesn't open with a click from here without a second one
+    if (moved && !armed) return setArmed(true);
+    openSource(source);
+  };
+  return (
+    <CommandItem value={`source\u0000${source.messageId}\u0000${n}`} disabled={gone} data-testid="ask-source" data-state-view={view} onSelect={select}>
+      <span className="w-5 shrink-0 text-xs text-muted-foreground tabular">[{n}]</span>
+      <span className="w-32 shrink-0 truncate">{source.fromName || source.fromEmail}</span>
+      <span className="min-w-0 flex-1 truncate text-muted-foreground">{gone ? t("ask.source.gone") : moved ? t(armed ? "ask.source.pressAgain" : view === "spam" ? "ask.source.spam" : "ask.source.trash") : source.subject}</span>
+      <CommandDescription>{listDate(source.date)}</CommandDescription>
+    </CommandItem>
+  );
+}
+
+/** The page's own keys: Esc stops first, the follow-up box types, arrows still walk the rows. */
+function FollowUp({ disabled }: { disabled: boolean }) {
+  const [value, setValue] = useState("");
+  const running = useAsk((s) => s.running !== null);
+  const ref = useRef<HTMLInputElement>(null);
+  const armed = useRef(false);
+  useLayoutEffect(() => ref.current?.focus(), []);
+  return (
+    <div className="border-t border-border/60 px-[18px] py-2">
+      <input
+        ref={ref}
+        data-testid="ask-follow-up"
+        data-ask-followup
+        aria-label={t("ask.followUp")}
+        placeholder={disabled ? t("ask.tooLong") : t("ask.followUp")}
+        disabled={disabled}
+        value={value}
+        onChange={(e) => {
+          armed.current = false;
+          setValue(e.target.value);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            armed.current = true;
+            return;
+          }
+          if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+          // a row walked to with the arrows opens; otherwise Enter here is this box's
+          if (!value.trim() && armed.current) return;
+          e.stopPropagation();
+          e.preventDefault();
+          if (!value.trim() || running) return;
+          askQuestion(value);
+          setValue("");
+        }}
+        className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
+      />
+    </div>
+  );
+}
+
+function Conversation({ onBack }: { onBack: () => void }) {
+  const turns = useAsk((s) => s.turns);
+  const running = useAsk((s) => s.running);
+  const incomplete = useAsk((s) => s.incomplete);
+  const atLimit = useAsk(atTurnLimit);
+  const title = turns[0]?.question ?? running?.question ?? "";
+  const last = turns.at(-1);
+  const area = useRef<HTMLDivElement>(null);
+  const size = (running?.text.length ?? 0) + turns.length;
+  useLayoutEffect(() => {
+    const el = area.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [size]);
+  return (
+    <>
+      <div className="flex h-11 items-center gap-2 border-b border-border/60 px-3 text-sm" data-testid="ask-header">
+        <Sparkles className="size-[1.15em] shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate" data-testid="ask-title">{title}</span>
+        <Chip data-testid="palette-page" onRemove={onBack} removeLabel={t("palette.back")} removeProps={{ "data-testid": "palette-back", onKeyDown: stopKeys }}>{t("palette.ask.page")}</Chip>
+      </div>
+      {/* tabbable: it scrolls, and a keyboard has to reach what it holds */}
+      <div ref={area} tabIndex={0} data-testid="ask-area" className="max-h-72 space-y-4 overflow-y-auto px-[18px] py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+        {turns.map((turn, i) => (
+          <Turn key={turn.id} turn={turn} last={turn === last} repeated={turn.question === (i === 0 ? title : turns[i - 1]!.question)} />
+        ))}
+        <Running />
+        <Consent />
+        <Failure />
+        <Older />
+        {incomplete && <p className="text-xs text-muted-foreground" data-testid="ask-incomplete">{t("ask.incomplete")}</p>}
+      </div>
+      <CommandList label={t("ask.sources")} className="max-h-44 border-t border-border/60 p-1.5">
+        {last && last.sources.length > 0 && (
+          <CommandGroup heading={t("ask.sources")} data-group="ask-sources">
+            {last.sources.map((source, i) => (
+              <SourceRow key={source.messageId} source={source} n={i + 1} />
+            ))}
+          </CommandGroup>
+        )}
+        <CommandGroup value="ask-actions" forceMount>
+          <CommandItem forceMount value="ask-new" data-testid="ask-new" onSelect={() => newQuestion()}>
+            <Plus /> {t("ask.new")}
+          </CommandItem>
+          <CommandItem forceMount value="ask-history" data-testid="ask-history-row" onSelect={() => setPalettePage("askHistory")}>
+            <Clock /> {t("palette.askHistory")}
+          </CommandItem>
+        </CommandGroup>
+      </CommandList>
+      <FollowUp disabled={atLimit} />
+    </>
+  );
+}
+
+/** No question yet: the palette's own input, and Enter on a row. */
+function Empty({ value, setValue, onBack }: { value: string; setValue: (v: string) => void; onBack: () => void }) {
+  const running = useAsk((s) => s.running);
+  const consent = useAsk((s) => s.consent);
+  const error = useAsk((s) => s.error);
+  const query = value.trim();
+  const busy = running !== null || consent !== null || error !== null;
+  return (
+    <>
+      <CommandInput
+        autoFocus
+        placeholder={t("ask.placeholder")}
+        value={value}
+        onValueChange={setValue}
+        data-testid="palette-input"
+        addon={<Chip data-testid="palette-page" onRemove={onBack} removeLabel={t("palette.back")} removeProps={{ "data-testid": "palette-back", onKeyDown: stopKeys }}>{t("palette.ask.page")}</Chip>}
+      />
+      {busy && (
+        <div className="space-y-3 px-[18px] py-3" data-testid="ask-area">
+          <Running />
+          <Consent />
+          <Failure />
+        </div>
+      )}
+      {!busy && (
+        <CommandList label={t("palette.results")}>
+          {query && (
+            <CommandGroup value="ask-go" forceMount>
+              <CommandItem forceMount value={`ask\u0000${value}`} data-testid="ask-submit" onSelect={() => { askQuestion(value); setValue(""); }}>
+                <Search /> {t("palette.askRow", { query: value })}
+              </CommandItem>
+            </CommandGroup>
+          )}
+          <CommandGroup value="ask-actions" forceMount>
+            <CommandItem forceMount value="ask-history" data-testid="ask-history-row" onSelect={() => setPalettePage("askHistory")}>
+              <Clock /> {t("palette.askHistory")}
+            </CommandItem>
+          </CommandGroup>
+        </CommandList>
+      )}
+    </>
+  );
+}
+
+function NoProvider() {
+  return (
+    <div className="space-y-3 px-[18px] py-5" data-testid="ask-no-provider">
+      <p className="text-sm">{t("ask.noProvider")}</p>
+      <Button size="sm" data-testid="ask-open-settings" onKeyDown={stopKeys} onClick={() => setApp({ dialog: "settings", settingsTab: "ai" })}>{t("ask.noProvider.open")}</Button>
+    </div>
+  );
+}
+
+function AskQuestionPage({ value, setValue, onBack }: { value: string; setValue: (v: string) => void; onBack: () => void }) {
+  const ready = useApp((s) => aiReady(s.settings?.ai));
+  const noProvider = useAsk((s) => s.noProvider);
+  const hasConversation = useAsk((s) => s.conversationId !== null || s.turns.length > 0);
+  const running = useAsk((s) => s.running);
+  const announced = useAsk((s) => s.ready);
+  const announcedAtOpen = useRef(announced);
+  // what the palette's last row asked, and where ⌘⇧K returns
+  useEffect(() => {
+    returning();
+    const asked = askFrom.question;
+    askFrom.question = null;
+    if (asked) askQuestion(asked);
+  }, []);
+  useEffect(() => {
+    paletteKeys.escape = () => stopAsking();
+    return () => {
+      paletteKeys.escape = null;
+    };
+  }, []);
+  const content: ReactNode = !ready || noProvider ? <NoProvider /> : hasConversation || running ? <Conversation onBack={onBack} /> : <Empty value={value} setValue={setValue} onBack={onBack} />;
+  return (
+    <>
+      {content}
+      {/* never the deltas: what's underway, and that it's done */}
+      <div role="status" aria-live="polite" className="sr-only" data-testid="ask-live">
+        {running ? t("ask.lookingShort") : announced !== announcedAtOpen.current ? t("ask.ready") : ""}
+      </div>
+    </>
+  );
+}
+
+function when(ms: number): string {
+  return listDate(ms);
+}
+
+/** Previous AI questions: filtered as you type, in memory over the 100 rows. */
+function AskHistoryPage({ value, setValue, onBack }: { value: string; setValue: (v: string) => void; onBack: () => void }) {
+  const [list, setList] = useState<AskConversationSummary[] | null>(null);
+  const [deleted, setDeleted] = useState<AskConversationSummary | null>(null);
+  const refresh = () => void loadAskHistory().then(setList, () => setList([]));
+  useEffect(refresh, []);
+  const query = value.trim().toLowerCase();
+  const shown = useMemo(() => (list ?? []).filter((c) => !query || c.title.toLowerCase().includes(query)), [list, query]);
+  const open = async (id: number) => {
+    if (await openConversation(id)) setPalettePage("ask");
+    else refresh();
+  };
+  return (
+    <div
+      onKeyDownCapture={(e) => {
+        if (!((e.metaKey || e.ctrlKey) && e.key === "Backspace")) return;
+        const row = e.currentTarget.querySelector<HTMLElement>('[data-slot="command-item"][data-selected="true"]');
+        const id = Number(row?.dataset.conversation);
+        if (!id) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setDeleted(list?.find((c) => c.id === id) ?? null);
+        void deleteConversation(id).then(refresh);
+      }}
+    >
+      <CommandInput
+        autoFocus
+        placeholder={t("palette.askHistoryPlaceholder")}
+        value={value}
+        onValueChange={setValue}
+        data-testid="palette-input"
+        addon={<Chip data-testid="palette-page" onRemove={onBack} removeLabel={t("palette.back")} removeProps={{ "data-testid": "palette-back", onKeyDown: stopKeys }}>{t("palette.askHistory")}</Chip>}
+      />
+      <CommandList label={t("palette.askHistory")}>
+        {list !== null && !deleted && <CommandEmpty>{query ? t("palette.empty") : t("palette.askHistoryEmpty")}</CommandEmpty>}
+        {deleted && (
+          <CommandGroup value="ask-undo" forceMount>
+            <CommandItem forceMount value="ask-undo" data-testid="ask-history-undo" onSelect={() => { const id = deleted.id; setDeleted(null); void restoreConversation(id).then(refresh); }}>
+              <Undo2 /> <span className="truncate">{t("ask.deleted", { title: deleted.title })}</span>
+              <CommandDescription>{t("common.undo")}</CommandDescription>
+            </CommandItem>
+          </CommandGroup>
+        )}
+        {shown.map((c) => (
+          <CommandItem key={c.id} value={`c${c.id}`} data-conversation={c.id} data-testid="ask-history-item" onSelect={() => void open(c.id)}>
+            <Mail /> <span className="truncate">{c.title}</span>
+            {c.followUps > 0 && <span className="shrink-0 text-xs text-muted-foreground" data-testid="ask-history-followups">{t("ask.history.followUps", { count: c.followUps })}</span>}
+            <CommandDescription>{when(c.updatedAt)}</CommandDescription>
+            <CommandShortcut className="ms-3 hidden in-data-[selected=true]:inline">{isMac ? "⌘⌫" : "Ctrl+⌫"}</CommandShortcut>
+          </CommandItem>
+        ))}
+      </CommandList>
+    </div>
+  );
+}
+
+export default function AskPages({ page, value, setValue, onBack }: { page: "ask" | "askHistory"; value: string; setValue: (v: string) => void; onBack: () => void }) {
+  return page === "ask" ? <AskQuestionPage value={value} setValue={setValue} onBack={onBack} /> : <AskHistoryPage value={value} setValue={setValue} onBack={onBack} />;
+}
+
+

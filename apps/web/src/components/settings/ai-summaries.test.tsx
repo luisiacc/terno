@@ -48,14 +48,14 @@ describe("summaries on Claude", () => {
 
 describe("AI use this month", () => {
   it("says so when part of the figure is an estimate", async () => {
-    vi.mocked(client.call).mockResolvedValue({ today: { requests: 1, usd: 0.5 }, month: { requests: 2, usd: 1.5 }, monthBackgroundUsd: 1.5, estimated: true } as never);
+    vi.mocked(client.call).mockResolvedValue({ today: { requests: 1, usd: 0.5 }, month: { requests: 2, usd: 1.5 }, monthAsk: { requests: 0, usd: 0 }, monthBackgroundUsd: 1.5, estimated: true } as never);
     const host = await render(<AiUseGroup settings={settings()} update={vi.fn() as never} />);
     expect(host.querySelector('[data-testid="ai-usage-value"]')!.textContent).toMatch(/2 requests · about \$1\.50/);
     expect(host.textContent).toMatch(/counted high/);
   });
 
   it("states the figure outright when every price is known", async () => {
-    vi.mocked(client.call).mockResolvedValue({ today: { requests: 1, usd: 0.5 }, month: { requests: 2, usd: 1.5 }, monthBackgroundUsd: 1.5, estimated: false } as never);
+    vi.mocked(client.call).mockResolvedValue({ today: { requests: 1, usd: 0.5 }, month: { requests: 2, usd: 1.5 }, monthAsk: { requests: 0, usd: 0 }, monthBackgroundUsd: 1.5, estimated: false } as never);
     const host = await render(<AiUseGroup settings={settings()} update={vi.fn() as never} />);
     expect(host.querySelector('[data-testid="ai-usage-value"]')!.textContent).toMatch(/2 requests · \$1\.50/);
     expect(host.textContent).not.toMatch(/counted high/);

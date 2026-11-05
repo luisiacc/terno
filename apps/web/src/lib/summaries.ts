@@ -153,6 +153,8 @@ export function revealSummaryMessage(messageId: number): void {
 export async function clearSummaries(): Promise<void> {
   await client.call("ai.summaries.clear", {});
   useSummaries.setState({ byThread: new Map() });
+  // plan 141: what the palette shows, only if it was ever loaded
+  void import("~/lib/ask").then((m) => m.forgetAsk()).catch(() => {});
 }
 
 /** Never offered in spam or trash, nor with one spam message in the thread (plan 132 revision 1). */

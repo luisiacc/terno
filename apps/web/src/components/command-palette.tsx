@@ -4,8 +4,8 @@ import { t, type TextKey } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Chip } from "@terno/ui/components/chip";
 import { Command, CommandDescription, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, AtSign, Bell, BellOff, BookmarkPlus, CalendarClock, CheckCheck, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Archive, AtSign, Bell, BellOff, BookmarkPlus, CalendarClock, CheckCheck, Clock, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory } from "~/lib/categorize";
 import { currentTargets, isMac, selectAll } from "~/lib/select";
@@ -22,7 +22,7 @@ import { englishWords as english } from "~/lib/palette-words";
 import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { openRemind, presetLabel, reminderShort, setReminder, clearReminder, useReminders } from "~/lib/reminders";
 import { draftCommands, type DraftCommands } from "~/lib/draft-commands";
-import { paletteFrom, setPalettePage, usePalettePage } from "~/lib/palette-open";
+import { askFrom, paletteFrom, paletteKeys, setPalettePage, usePalettePage } from "~/lib/palette-open";
 import { loadSnippets, newSnippetId, useSnippets } from "~/lib/snippets";
 import { insertSnippetInto, newMessageFromSnippet, saveDraftAsSnippet } from "~/lib/snippet-insert";
 import { openSnippetEditor } from "~/lib/snippet-editor-state";
@@ -34,6 +34,9 @@ import { useThread } from "~/state/threads";
 import { createCategory } from "./category-picker";
 import { snack } from "~/lib/snack";
 import { SETTINGS_TABS } from "./settings/tabs";
+
+/** Plan 141: the question, its answer and the history are a chunk of their own. */
+const AskPages = lazy(() => import("./ask-page"));
 
 const NONE: readonly never[] = [];
 const NO_USAGE: Usage = new Map();
@@ -110,6 +113,7 @@ export function CommandPalette() {
   const supported = useApp((s) => s.supportedFilters);
   const design = useApp((s) => (open ? (s.settings?.design ?? null) : null));
   const canAi = useApp((s) => open && aiReady(s.settings?.ai));
+  const canAsk = useApp((s) => open && s.settings?.ask.enabled === true);
   const drafting = useAiDraftUi((s) => s.enabled);
   const updatesAvailable = useHasUpdates();
   const readyVersion = useUpdates((s) => (open && s.state?.ready && s.state.status !== "installing" ? s.state.ready.version : null));
@@ -322,6 +326,11 @@ export function CommandPalette() {
       }
     }
     add({ id: "action.undo", group: "actions", label: t("common.undo"), icon: <Undo2 />, shortcut: "Z", ...synonyms("palette.alias.undo"), keywords: [...english("common.undo"), ...english("palette.alias.undo").flatMap(words)], run: undoLast });
+    // plan 141: there with or without a provider: the page says what it needs
+    if (canAsk) {
+      add({ id: "ask.open", group: "actions", label: t("palette.ask"), icon: <Sparkles />, shortcut: isMac ? "⇧⌘K" : "Ctrl+Shift+K", testId: "palette-ask", ...synonyms("palette.alias.ask", english("palette.ask")), page: "ask" });
+      add({ id: "ask.history", group: "actions", label: t("palette.askHistory"), icon: <Clock />, testId: "palette-ask-history", keywords: english("palette.askHistory"), page: "askHistory" });
+    }
     if (canAi) add({ id: "filters.ai", group: "actions", label: t("palette.aiFilter"), icon: <Sparkles />, ...synonyms("palette.alias.aiFilter"), keywords: [...english("palette.aiFilter"), ...english("palette.alias.aiFilter").flatMap(words)], run: () => setApp({ dialog: "filters" }) });
     add({
       id: "appearance.theme",
@@ -391,6 +400,8 @@ export function CommandPalette() {
     addTo: t("palette.group.addTo", { count: targets }),
     remind: t("remind.title"),
     snippets: t("palette.group.snippets"),
+    ask: t("palette.ask.page"),
+    askHistory: t("palette.askHistory"),
   };
   const placeholder = page === "root" ? t("palette.placeholder") : page === "remind" ? t("palette.remindPlaceholder") : page === "snippets" ? t("palette.snippetsPlaceholder") : t("category.picker.placeholder");
 
@@ -407,13 +418,27 @@ export function CommandPalette() {
           // a page: Esc, or Backspace with nothing typed, goes back to all commands (Esc at the root closes)
           // (not while an input method composes, nor a held Backspace that just emptied the text)
           if (e.nativeEvent.isComposing) return;
-          if (e.key === "Escape" || (e.key === "Backspace" && value === "" && !e.repeat)) {
+          // plan 141: a running answer stops first; a second Esc goes back
+          if (e.key === "Escape" && paletteKeys.escape?.()) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+          // only the palette's own input: a follow-up box types its own Backspace
+          const inInput = (e.target as Element | null)?.closest?.("[data-testid=palette-input]") != null;
+          if (e.key === "Escape" || (e.key === "Backspace" && inInput && value === "" && !e.repeat && !e.metaKey && !e.ctrlKey)) {
             e.preventDefault();
             e.stopPropagation();
             back();
           }
         }}
       >
+        {page === "ask" || page === "askHistory" ? (
+          <Suspense fallback={null}>
+            <AskPages page={page} value={value} setValue={setValue} onBack={back} />
+          </Suspense>
+        ) : (
+        <>
         <CommandInput
           placeholder={placeholder}
           value={value}
@@ -465,7 +490,17 @@ export function CommandPalette() {
               </CommandItem>
             </CommandGroup>
           )}
+          {/* plan 141: last, like search: Enter on a command that matches still wins */}
+          {page === "root" && query && canAsk && (
+            <CommandGroup value="ask" forceMount>
+              <CommandItem forceMount value={`ask\u0000${value}`} data-testid="palette-ask-row" onSelect={() => { askFrom.question = value; goTo("ask"); }}>
+                <Sparkles /> {t("palette.askRow", { query: value })}
+              </CommandItem>
+            </CommandGroup>
+          )}
         </CommandList>
+        </>
+        )}
       </Command>
     </CommandDialog>
   );

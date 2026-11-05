@@ -18,7 +18,7 @@ import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { snack } from "~/lib/snack";
 import { noteOpen, openRemind } from "~/lib/reminders";
-import { togglePalette, toggleSnippets } from "~/lib/palette-open";
+import { toggleAsk, togglePalette, toggleSnippets } from "~/lib/palette-open";
 import { openAiDraft } from "~/lib/ai-draft-state";
 
 /** Toggles act once per press: no key repeat, and the desktop menu's echo of a key just handled is dropped. */
@@ -158,6 +158,7 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   },
   "palette.open": togglePalette,
   "snippets.open": toggleSnippets,
+  "ask.open": toggleAsk,
   "go.inbox": () => goToFolder("inbox"),
   "go.starred": () => goToFolder("starred"),
   "go.sent": () => goToFolder("sent"),

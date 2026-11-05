@@ -7,7 +7,7 @@ import { boost, recentIds, type Usage } from "./palette-usage";
  * which groups show. Pure: the component builds the records and renders.
  */
 
-export type PalettePage = "root" | "move" | "addTo" | "remind" | "snippets";
+export type PalettePage = "root" | "move" | "addTo" | "remind" | "snippets" | "ask" | "askHistory";
 export type PaletteGroup = "draft" | "recent" | "goTo" | "actions" | "settings" | "move" | "addTo" | "remindAlways" | "remindNoReply" | "remindClear" | "snippets" | "snippetsManage";
 
 export interface PaletteCommand {
@@ -48,6 +48,9 @@ export const PAGE_GROUPS: Record<PalettePage, readonly PaletteGroup[]> = {
   remind: ["remindAlways", "remindNoReply", "remindClear"],
   // plan 93: the snippets, then New snippet…
   snippets: ["snippets", "snippetsManage"],
+  // plan 141: its own chunk draws its rows
+  ask: [],
+  askHistory: [],
 };
 
 /**

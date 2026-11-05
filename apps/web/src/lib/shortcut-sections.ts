@@ -18,6 +18,7 @@ export const SECTIONS: { title: Label; rows: [Command, Label][] }[] = [
       ["list.filterUnread", "shortcuts.filterUnread"],
       ["list.filterAll", "shortcuts.filterAll"],
       ["palette.open", "shortcuts.palette"],
+      ["ask.open", "shortcuts.ask"],
       ["help.shortcuts", "shortcuts.title"],
       ["settings.open", "common.settings"],
       ["snackbar.focus", "shortcuts.focusSnack"],
