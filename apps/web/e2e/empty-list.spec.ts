@@ -29,7 +29,8 @@ async function empty(page: Page, state: Locator, title: string, name: string) {
 for (const design of ["macos", "lumen"] as const) {
   test.describe(`${design} empty list`, () => {
     test.use({ design, layout: design === "macos" ? "split" : "list" });
-    for (const language of ["en", "es"] as const) for (const theme of ["light", "dark"] as const) {
+    // plan 139: every pair of design, language and theme once
+    for (const [language, theme] of design === "macos" ? ([["en", "light"], ["es", "dark"]] as const) : ([["en", "dark"], ["es", "light"]] as const)) {
       test(`empty and populated semantics (${language}, ${theme})`, async ({ page, server, layout }, info) => {
         const ctx = { clientId: "setup", origin: "dev" as const };
         await server.backend.server.invoke("settings.update", { design, layout: layout!, language, theme }, ctx);

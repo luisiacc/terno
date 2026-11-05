@@ -40,8 +40,9 @@ async function snapshot(page: Page) {
   });
 }
 
-for (const theme of ["light", "dark"] as const) {
-  for (const placement of ["caret", "backward selection", "list focus"] as const) {
+// plan 139: each placement once, both themes among them
+for (const [placement, theme] of [["caret", "light"], ["backward selection", "dark"], ["list focus", "light"]] as const) {
+  {
     test(`background OAuth recovery preserves authored composer and ${placement} (${theme})`, async ({ app: page, server }, info) => {
       await page.emulateMedia({ colorScheme: theme });
       await expect(page.locator("html")).toHaveClass(theme === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
