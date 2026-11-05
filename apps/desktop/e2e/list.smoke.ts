@@ -7,14 +7,13 @@
  * entry: no reconnect storm, no blocked navigation). Runs against the dev
  * build (`pnpm build`) with TERNO_LIST_SMOKE_DEV=1, or the packaged app.
  */
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { copyTree, seededProfile } from "./packaged-fixture";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const repo = join(here, "../../..");
 const DEV = process.env.TERNO_LIST_SMOKE_DEV === "1";
 const SOURCE_APP = join(here, "../release/mac-arm64/Terno.app");
 
@@ -28,7 +27,7 @@ test.beforeAll(async () => {
   test.skip(!DEV && !existsSync(SOURCE_APP), "run `pnpm dist:mac` first");
   workdir = mkdtempSync(join("/tmp", "terno-list-smoke-"));
   const profile = join(workdir, "profile");
-  execFileSync("pnpm", ["--filter", "@terno/backend-dev", "exec", "tsx", "src/seed.ts", "--out", profile, "--accounts", "2", "--threads", "300"], { cwd: repo, stdio: "ignore" });
+  seededProfile(profile);
   const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: profile };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.TERNO_DEV_URL;
@@ -36,7 +35,7 @@ test.beforeAll(async () => {
     app = await electron.launch({ executablePath: join(here, "../node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"), args: [join(here, "../dist/main.cjs")], env });
   } else {
     const appPath = join(workdir, "Terno.app");
-    execFileSync("ditto", [SOURCE_APP, appPath]);
+    copyTree(SOURCE_APP, appPath);
     app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env });
   }
   page = await app.firstWindow();

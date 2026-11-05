@@ -5,14 +5,13 @@
  * start (main's locale.json), and English again after switching back.
  * Runs against the packaged app, or the dev build with TERNO_I18N_SMOKE_DEV=1.
  */
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { copyTree, seededProfile } from "./packaged-fixture";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const repo = join(here, "../../..");
 const DEV = process.env.TERNO_I18N_SMOKE_DEV === "1";
 const SOURCE_APP = join(here, "../release/mac-arm64/Terno.app");
 
@@ -56,9 +55,9 @@ test.beforeAll(async () => {
   test.skip(!DEV && !existsSync(SOURCE_APP), "run `pnpm dist:mac` first");
   workdir = mkdtempSync(join("/tmp", "terno-i18n-smoke-"));
   profile = join(workdir, "profile");
-  execFileSync("pnpm", ["--filter", "@terno/backend-dev", "exec", "tsx", "src/seed.ts", "--out", profile, "--accounts", "2", "--threads", "200"], { cwd: repo, stdio: "ignore" });
+  seededProfile(profile);
   appPath = join(workdir, "Terno.app");
-  if (!DEV) execFileSync("ditto", [SOURCE_APP, appPath]);
+  if (!DEV) copyTree(SOURCE_APP, appPath);
   await launch();
 });
 

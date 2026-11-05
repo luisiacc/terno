@@ -12,6 +12,7 @@
     "dist:mac": "node scripts/package.mjs",
     "release:mac": "node scripts/release.mjs",
     "test:smoke": "playwright test -c playwright.smoke.config.ts",
+    "test:startup": "playwright test -c playwright.startup.config.ts",
     "typecheck": "tsc -p tsconfig.json",
     "dev:demo": "node scripts/dev.mjs --demo",
     "dev:seeded": "node scripts/dev.mjs --seeded"

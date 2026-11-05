@@ -162,8 +162,8 @@ test("a mailbox from a newer Terno: the gate says so, and the backend isn't rest
   await expect(page.getByTestId("update-now")).toBeVisible();
   await expect(page.getByTestId("update-now")).toHaveText("Update Terno");
   await expect(page.getByTestId("engine-stopped")).toHaveCount(0);
-  // the restart policy would have tried again within 0.5 + 1 + 2 + 4 s
-  await page.waitForTimeout(9_000);
+  // the restart policy's first try would come at 0.5 s, and one more start is what fails below
+  await page.waitForTimeout(2_000);
   await closePackaged(app);
   app = undefined;
   expect(logged(userData, "backend.started")).toBe(1);

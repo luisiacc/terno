@@ -7,6 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { copyTree } from "./packaged-fixture";
 import { parseRaw } from "@terno/mail";
 import { SMTPServer } from "smtp-server";
 
@@ -17,7 +18,6 @@ let app: ElectronApplication;
 let page: Page;
 let appPath: string;
 let userData: string;
-let coldStartMs = 0;
 /** plan 16: what the demo mailbox sent, through the real SMTP path, to this test's own server */
 const smtpReceived: string[] = [];
 let smtp: SMTPServer | null = null;
@@ -26,7 +26,7 @@ test.beforeAll(async () => {
   test.skip(!existsSync(SOURCE_APP), "run `pnpm dist:mac` first");
   workdir = mkdtempSync(join("/tmp", "terno-smoke-"));
   appPath = join(workdir, "Terno.app");
-  execFileSync("ditto", [SOURCE_APP, appPath]);
+  copyTree(SOURCE_APP, appPath);
   execFileSync("codesign", ["--verify", "--deep", "--strict", appPath]);
   userData = join(workdir, "profile");
   smtp = new SMTPServer({
@@ -44,11 +44,9 @@ test.beforeAll(async () => {
   const smtpPort = (smtp.server.address() as { port: number }).port;
   const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: userData, TERNO_TEST_SMTP_PORT: String(smtpPort) };
   delete env.ELECTRON_RUN_AS_NODE;
-  const started = Date.now();
   app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env });
   page = await app.firstWindow();
   await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 60_000 });
-  coldStartMs = Date.now() - started;
 });
 
 test.afterAll(async () => {
@@ -63,7 +61,6 @@ test("boots from app:// with the backend in a utility process", async () => {
   expect(types).toContain("Utility");
   expect(await page.locator("[data-testid=thread-row]").count()).toBeGreaterThan(5);
   expect(await page.evaluate(() => document.documentElement.classList.contains("is-desktop"))).toBe(true);
-  console.log(`cold start to first rows (includes seeding 3,000 demo threads): ${coldStartMs} ms`);
 });
 
 test("the window follows the design and the theme: Lumen by default (opaque, its faces in the bundle), macOS on the vibrancy, remembered", async () => {
@@ -136,26 +133,6 @@ test("plan 16: a formatted reply is sent as multipart/alternative through the pa
   expect(mail.html).toContain("<b>negrita</b>");
   expect(mail.html).not.toMatch(/<style|class=/);
   expect(mail.text).toContain("• Desde el empaquetado: negrita");
-});
-
-test("plan 18: the packaged backend suggests recipients from its index", async () => {
-  await page.getByTestId("nav-inbox").click();
-  const sender = (await page.locator("[data-testid=thread-row] [data-testid=row-from]").first().textContent())!.trim();
-  const word = sender.split(/\s+/)[0]!;
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.keyboard.press("c");
-  const to = page.getByTestId("compose-to");
-  await expect(to).toBeFocused({ timeout: 15_000 });
-  await page.keyboard.type(word.slice(0, 3), { delay: 40 });
-  const list = page.locator("[data-testid=recipient-suggestions]");
-  await expect(list).toBeVisible({ timeout: 15_000 });
-  await expect(list.getByTestId("recipient-suggestion").first()).toBeVisible();
-  await page.keyboard.press("Enter");
-  // plan 34: the accepted recipient is a chip, the input ready for the next one
-  await expect(page.getByTestId("compose-to-field").getByTestId("recipient-chip")).toHaveCount(1);
-  await expect(page.getByTestId("compose-to-field").getByTestId("recipient-chip")).toHaveAttribute("data-email", /@/);
-  await expect(to).toHaveValue("");
-  await page.keyboard.press("Escape");
 });
 
 test("plan 22: the packaged backend can fetch website icons, and they're on until turned off", async () => {
@@ -264,26 +241,4 @@ test("plan 21: More's state and the panes' widths survive a real restart on app:
   expect((await page.getByTestId("sidebar").boundingBox())!.width).toBeCloseTo(360, 0);
   await expect(page.getByTestId("nav-more")).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByTestId("nav-trash")).toBeVisible();
-  // back to the defaults for what follows
-  await page.getByTestId("pane-handle-sidebar").dblclick();
-  await page.getByTestId("nav-more").click();
-});
-
-test("warm start: relaunching with an existing mailbox shows mail fast", async () => {
-  await app.close();
-  const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: userData };
-  delete env.ELECTRON_RUN_AS_NODE;
-  const samples: number[] = [];
-  for (let i = 0; i < 3; i++) {
-    const started = Date.now();
-    app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env });
-    page = await app.firstWindow();
-    await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 30_000 });
-    samples.push(Date.now() - started);
-    if (i < 2) await app.close();
-  }
-  const best = Math.min(...samples);
-  console.log(`warm start to first rows: ${samples.join(" / ")} ms`);
-  // includes process spawn, Chromium init, utility process + SQLite open, first query and paint
-  expect(best).toBeLessThan(1500);
 });

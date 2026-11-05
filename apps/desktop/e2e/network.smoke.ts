@@ -3,11 +3,12 @@
  * child of main, comes back when it dies, and is gone after quit. Runs against the packaged app,
  * or the dev build (`pnpm build`) with TERNO_NETWORK_SMOKE_DEV=1.
  */
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication } from "@playwright/test";
+import { copyTree } from "./packaged-fixture";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const DEV = process.env.TERNO_NETWORK_SMOKE_DEV === "1";
@@ -38,7 +39,7 @@ test.beforeAll(async () => {
     app = await electron.launch({ executablePath: join(here, "../node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"), args: [join(here, "../dist/main.cjs")], env });
   } else {
     const appPath = join(workdir, "Terno.app");
-    execFileSync("ditto", [SOURCE_APP, appPath]);
+    copyTree(SOURCE_APP, appPath);
     app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env });
   }
   mainPid = app.process().pid!;

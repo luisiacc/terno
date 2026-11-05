@@ -24,7 +24,7 @@ import imapkit from "imapkit";
 import { SMTPServer } from "smtp-server";
 
 import type { Socket } from "node:net";
-import { blockExternal, cleanupOwned, closePackaged } from "./packaged-fixture";
+import { blockExternal, cleanupOwned, closePackaged, copyTree } from "./packaged-fixture";
 
 const smtpSockets = new Set<Socket>();
 const here = dirname(fileURLToPath(import.meta.url));
@@ -80,7 +80,7 @@ test.beforeAll(async () => {
 
   workdir = mkdtempSync(join("/tmp", "terno-notify-smoke-"));
   const appPath = join(workdir, "Terno.app");
-  execFileSync("ditto", [SOURCE_APP, appPath]);
+  copyTree(SOURCE_APP, appPath);
   const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)), TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: join(workdir, "profile"), TERNO_TEST_IMAP_INSECURE: "1" };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.TERNO_DEV_URL;

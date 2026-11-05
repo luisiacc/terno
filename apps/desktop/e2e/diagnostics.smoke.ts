@@ -8,11 +8,13 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { once } from "node:events";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { copyTree } from "./packaged-fixture";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "../../..");
@@ -75,6 +77,8 @@ async function setReports(value: "ask" | "always" | "never"): Promise<void> {
   await page.keyboard.press("Escape");
 }
 
+const nothingPending = () => expect.poll(() => hooks((h) => h.view().pending.length)).toBe(0);
+
 // one app and one profile, in order: a failure stops the rest instead of restarting into a fresh profile
 test.describe.configure({ mode: "serial" });
 
@@ -98,7 +102,7 @@ test.beforeAll(async () => {
   dsn = `http://publickey@127.0.0.1:${(sink.address() as AddressInfo).port}/1`;
   workdir = mkdtempSync(join("/tmp", "terno-diag-smoke-"));
   appPath = join(workdir, "Terno.app");
-  execFileSync("ditto", [SOURCE_APP, appPath]);
+  copyTree(SOURCE_APP, appPath);
   userData = join(workdir, "profile");
   await launch();
 });
@@ -147,7 +151,7 @@ test("always: one scrubbed event per error, exactly what 'What gets sent' showed
   requests = 0;
   await setReports("always");
   // switching to always sends what this run recorded and nobody acted on: let that settle first
-  await page.waitForTimeout(1500);
+  await nothingPending();
   const before = envelopes.length;
   const id = (await hooks((h) => h.throwKnown())) as string;
   await expect.poll(() => envelopes.length).toBe(before + 1);
@@ -171,7 +175,7 @@ test("always: one scrubbed event per error, exactly what 'What gets sent' showed
 test("never sends nothing, even when asked; ask sends exactly what was approved", async () => {
   // "always" sends what earlier tests left pending (so the row is about this exit alone), then "never"
   await setReports("always");
-  await page.waitForTimeout(1500);
+  await nothingPending();
   await setReports("never");
   const sent = envelopes.length;
   const refused = (await hooks((h) => h.counters())).refused;
@@ -274,12 +278,13 @@ test("the export is Terno's diagnostics only, scrubbed; native dumps only when a
 test("killed outright: the next start finds the marker and says Terno quit unexpectedly; with Never nothing goes", async () => {
   // "always" sends what earlier tests left pending (so the row is about this exit alone), then "never"
   await setReports("always");
-  await page.waitForTimeout(1500);
+  await nothingPending();
   await setReports("never");
   const sent = envelopes.length;
   const pid = app.process().pid!;
+  const gone = once(app.process(), "exit");
   process.kill(pid, "SIGKILL");
-  await new Promise((r) => setTimeout(r, 1500));
+  await gone;
   await launch();
   await expect(page.getByTestId("report-row-title")).toHaveText("Terno quit unexpectedly");
   await expect(page.getByTestId("report-row")).toHaveAttribute("data-offer", "local");

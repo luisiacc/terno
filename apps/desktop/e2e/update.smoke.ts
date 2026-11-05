@@ -12,8 +12,8 @@
  * - Squirrel's caches and its launchd job for the test bundle id are cleaned
  *   before and after (a stale cached download would be reused).
  */
-import { execFileSync, spawnSync } from "node:child_process";
-import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, copyFileSync } from "node:fs";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
+import { constants, createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, copyFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { homedir } from "node:os";
@@ -22,6 +22,7 @@ import { DatabaseSync } from "node:sqlite";
 import { SMTPServer } from "smtp-server";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { copyTree, seededProfile } from "./packaged-fixture";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktop = join(here, "..");
@@ -72,35 +73,69 @@ const bundle = () => join(work, "Applications", "Terno.app");
 const bundleVersion = () => execFileSync("defaults", ["read", join(bundle(), "Contents/Info.plist"), "CFBundleShortVersionString"], { encoding: "utf8" }).trim();
 
 /** Two test builds of this tree, as 0.1.0 and 0.1.1, with this run's feed and profile baked in. */
-function buildTwo() {
+async function buildTwo() {
   if (!existsSync(join(repo, "apps/web/dist/index.html"))) throw new Error("apps/web/dist missing: run `pnpm build` first");
   const baked = JSON.stringify({ feed: feedUrl, userData: profile(), appData: join(root(), "appdata"), appName: APP_NAME, checkDelayMs: 3_600_000 });
-  for (const version of ["0.1.0", "0.1.1"]) {
-    const env = { ...process.env, TERNO_VERSION: version, TERNO_TEST_BUILD: baked, TERNO_BUILD_OUT: join(work, `dist-${version}`), TERNO_PACKAGE_OUT: join(work, `release-${version}`), TERNO_SIGN_IDENTITY: identity! };
+  const node = (script: string, env: NodeJS.ProcessEnv) => new Promise<void>((resolve, reject) => {
+    // quiet unless it fails: electron-builder prints a line per signed helper
+    execFile("node", [join(desktop, "scripts", script)], { env, maxBuffer: 64 * 2 ** 20 }, (error, _out, err) => (error ? reject(new Error(`${script}: ${error.message}\n${err}`)) : resolve()));
+  });
+  // side by side: each has its own output directories, so nothing but this machine's cores is shared
+  await Promise.all(["0.1.0", "0.1.1"].map(async (version) => {
+    const env: NodeJS.ProcessEnv = { ...process.env, TERNO_VERSION: version, TERNO_TEST_BUILD: baked, TERNO_BUILD_OUT: join(work, `dist-${version}`), TERNO_PACKAGE_OUT: join(work, `release-${version}`), TERNO_SIGN_IDENTITY: identity! };
     delete env.ELECTRON_RUN_AS_NODE;
-    execFileSync("node", [join(desktop, "scripts/build.mjs")], { env, stdio: "inherit" });
-    execFileSync("node", [join(desktop, "scripts/package.mjs")], { env, stdio: ["ignore", "ignore", "inherit"] });
-  }
+    await node("build.mjs", env);
+    await node("package.mjs", env);
+  }));
 }
+
+/**
+ * Holds main's shutdown request to the backend until the test says, then lets it ask with no time to spare, so the real
+ * drain answers "sending" at once. The deadline's length is shutdown.test.ts's; the 30 s it would take here prove nothing more.
+ */
+async function holdShutdownRequest() {
+  await app!.evaluate(async ({ utilityProcess }, script) => {
+    const probe = utilityProcess.fork(script);
+    await new Promise((spawned) => probe.once("spawn", spawned));
+    const proto = Object.getPrototypeOf(probe) as { postMessage(message: unknown, transfer?: unknown): void };
+    probe.kill();
+    const post = proto.postMessage;
+    proto.postMessage = function (this: unknown, message: unknown, transfer?: unknown) {
+      const shutdown = message as { type?: string; force?: boolean };
+      if (shutdown?.type !== "shutdown" || shutdown.force) return post.call(this, message, transfer);
+      // once: the install that follows the drain asks as it always does
+      Reflect.set(globalThis, "releaseShutdown", () => { proto.postMessage = post; post.call(this, { ...shutdown, deadlineMs: 0 }, transfer); });
+    };
+  }, join(work, "noop.cjs"));
+}
+const releaseShutdown = () => expect.poll(() => app!.evaluate(() => {
+  const release = Reflect.get(globalThis, "releaseShutdown") as (() => void) | undefined;
+  release?.();
+  return Boolean(release);
+})).toBe(true);
 
 /** A fresh 0.1.0 in a temp "Applications", a fresh profile, and the 0.1.1 feed (its zip tampered with when asked). */
 function stage(o: { tamper: boolean; minimum?: string }) {
   // first: the last test's quit may have handed a staged update to ShipIt, which swaps the bundle at this path once
   // that app is gone; stopped after the copy below, it had already put 0.1.1 where the fresh 0.1.0 went
   cleanSquirrel();
+  // and the copy it relaunched, which would hold this profile's single-instance lock: exactly this run's bundle
+  for (const pid of pidsOfBundle()) process.kill(pid, "SIGKILL");
+  for (const until = Date.now() + 5_000; pidsOfBundle().length && Date.now() < until; ) spawnSync("sleep", ["0.05"]);
   rmSync(root(), { recursive: true, force: true });
   rmSync(join(work, "Applications"), { recursive: true, force: true });
   rmSync(join(work, "feed"), { recursive: true, force: true });
   mkdirSync(join(work, "Applications"), { recursive: true });
   mkdirSync(join(work, "feed"), { recursive: true });
-  mkdirSync(profile(), { recursive: true });
+  mkdirSync(root(), { recursive: true });
+  seededProfile(profile());
   // manual mode: a check offers, downloading is the user's step (automatic mode, the default, downloads right after a
   // check, local mode or not: plan 97), so each test drives every step itself
   mkdirSync(join(profile(), "updates"), { recursive: true });
   writeFileSync(join(profile(), "updates/prefs.json"), JSON.stringify({ mode: "manual", channel: "stable", checkedAt: null }));
-  execFileSync("ditto", [join(work, "release-0.1.0/mac-arm64/Terno.app"), bundle()]);
+  copyTree(join(work, "release-0.1.0/mac-arm64/Terno.app"), bundle());
   const zip = "Terno-0.1.1-arm64-mac.zip";
-  for (const f of ["latest-mac.yml", zip, `${zip}.blockmap`]) copyFileSync(join(work, "release-0.1.1", f), join(work, "feed", f));
+  for (const f of ["latest-mac.yml", zip, `${zip}.blockmap`]) copyFileSync(join(work, "release-0.1.1", f), join(work, "feed", f), constants.COPYFILE_FICLONE);
   if (o.tamper) {
     // one byte in the middle: same size, a different sha512 than latest-mac.yml says
     const file = join(work, "feed", zip);
@@ -147,6 +182,8 @@ const pidsOfBundle = () =>
 test.describe.configure({ mode: "serial", timeout: 900_000 });
 
 test.beforeAll(async () => {
+  // awaited now, so it counts: two builds and two signatures (measured under 90 s on a machine doing nothing else)
+  test.setTimeout(300_000);
   test.skip(!identity, "no stable signing identity (Developer ID Application or Apple Development) in the keychain: Squirrel refuses updates to ad-hoc builds, so this can't run here");
   test.skip(process.platform !== "darwin" || process.arch !== "arm64", "macOS on Apple silicon only");
   work = mkdtempSync(join("/tmp", "terno-update-e2e-"));
@@ -170,7 +207,8 @@ test.beforeAll(async () => {
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   feedUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
-  buildTwo();
+  writeFileSync(join(work, "noop.cjs"), "");
+  await buildTwo();
 });
 
 test.afterEach(async () => {
@@ -253,6 +291,7 @@ test("saved renderer ACK holds editing throughout a real active-send drain, then
   try {
     stage({ tamper: false });
     await launch({ TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_TEST_SMTP_PORT: String(port) });
+    await holdShutdownRequest();
     await updates("check"); await updates("download");
     await expect.poll(async () => (await state()).status, { timeout: 180_000 }).toBe("ready");
     await page.getByTestId("thread-row").first().click(); await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("r");
@@ -265,7 +304,8 @@ test("saved renderer ACK holds editing throughout a real active-send drain, then
     await body.focus(); await page.keyboard.type(" must not replace work");
     await expect(body).toHaveText("exact retained work"); expect(bundleVersion()).toBe("0.1.0");
     expect((await app!.evaluate(({ app: a }) => a.getAppMetrics())).some((m) => m.type === "Utility")).toBe(true);
-    await expect.poll(async () => (await state()).status, { timeout: 45_000 }).toBe("ready");
+    await releaseShutdown();
+    await expect.poll(async () => (await state()).status, { timeout: 15_000 }).toBe("ready");
     await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
     await page.keyboard.press("Escape"); await body.focus(); await body.press("End"); await page.keyboard.type(" editing restored");
     await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");

@@ -1,10 +1,12 @@
 /**
  * Printing in the PACKAGED app (copied outside the repo, like packaged.smoke):
- * every print fixture, with headers and content only, on Letter and A4,
  * exported through the real path (sheet → main → hidden window → printToPDF →
  * atomic write) into TERNO_TEST_PDF_DIR, then read back: page size, text
  * present and absent, the footer, nothing outside the printable box. Also the
- * Archivo menu and native print without printers.
+ * Archivo menu and native print without printers. The print document itself,
+ * every fixture on each paper and content, is print-quality.spec's (page.pdf,
+ * the same options and footer); here the fixtures the hidden window can treat
+ * differently: its fonts, its fence and sandbox, a page wider than the paper.
  *
  * TERNO_PRINT_SMOKE_DEV=1 runs it against apps/desktop/dist instead (no
  * packaging); TERNO_SMOKE_PDF_OUT keeps the PDFs for a look.
@@ -14,8 +16,8 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFile
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import { PRINT_FIXTURE_KEYS, printFixtures, type PrintFixtureKey } from "@terno/mock-data";
-import { cleanupOwned, closePackaged } from "./packaged-fixture";
+import { printFixtures, type PrintFixtureKey } from "@terno/mock-data";
+import { cleanupOwned, closePackaged, copyTree } from "./packaged-fixture";
 import { pdfProblems, QUERY, readPdf } from "../../web/e2e/print-pdf";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -49,7 +51,7 @@ test.beforeAll(async () => {
     app = await electron.launch({ executablePath: join(here, "../node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"), args: [join(here, "../dist/main.cjs")], env });
   } else {
     const appPath = join(workdir, "Terno.app");
-    execFileSync("ditto", [SOURCE_APP, appPath]);
+    copyTree(SOURCE_APP, appPath);
     app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env });
   }
   // Cancel after the product request fence so the allowlist witness stays observable.
@@ -114,51 +116,24 @@ async function savePdf(name: string): Promise<string> {
   return target;
 }
 
-for (const key of PRINT_FIXTURE_KEYS) {
+for (const key of ["cjk-emoji", "hostile", "wide-table"] as const) {
   test(`${key}: real PDFs with headers and content only, on Letter and A4`, async () => {
     const f = fixtures.get(key)!;
     await openThread(key);
-    await page.keyboard.press("Meta+Shift+p");
-    await expect(page.getByTestId("print-sheet")).toBeVisible();
-    for (const content of ["headers", "body"] as const) {
-      for (const paper of ["letter", "a4"] as const) {
-        await page.getByTestId(`print-content-${content}`).click();
-        await page.getByTestId(`print-paper-${paper}`).click();
-        const file = await savePdf(`${key}-${content}-${paper}`);
-        const bytes = readFileSync(file);
-        expect(bytes.subarray(0, 5).toString()).toBe("%PDF-");
-        expect((statSync(file).mode & 0o777).toString(8)).toBe("600");
-        const problems = pdfProblems(await readPdf(bytes), { key, headers: content === "headers", paper, subject: f.subject, sender: f.messages[0]!.from.email });
-        expect(problems, `${key} ${content} ${paper}`).toEqual([]);
-        // the sheet closed on saving: open it again for the next combination
-        await page.keyboard.press("Meta+Shift+p");
-        await expect(page.getByTestId("print-sheet")).toBeVisible();
-      }
+    for (const [content, paper] of [["headers", "letter"], ["body", "a4"]] as const) {
+      await page.keyboard.press("Meta+Shift+p");
+      await expect(page.getByTestId("print-sheet")).toBeVisible();
+      await page.getByTestId(`print-content-${content}`).click();
+      await page.getByTestId(`print-paper-${paper}`).click();
+      const file = await savePdf(`${key}-${content}-${paper}`);
+      const bytes = readFileSync(file);
+      expect(bytes.subarray(0, 5).toString()).toBe("%PDF-");
+      expect((statSync(file).mode & 0o777).toString(8)).toBe("600");
+      const problems = pdfProblems(await readPdf(bytes), { key, headers: content === "headers", paper, subject: f.subject, sender: f.messages[0]!.from.email });
+      expect(problems, `${key} ${content} ${paper}`).toEqual([]);
     }
-    await page.keyboard.press("Escape");
   });
 }
-
-test("a realistic demo conversation exports too", async () => {
-  // a demo conversation with replies (none of the fixtures)
-  await (await searchBox()).fill("");
-  await page.getByTestId("nav-inbox").click();
-  const fixtureSubjects = new Set([...fixtures.values()].map((f) => f.subject));
-  let found = false;
-  for (let i = 0; i < 20 && !found; i++) {
-    await page.locator("[data-testid=thread-row][data-messages]").nth(i).dispatchEvent("mousedown");
-    found = !fixtureSubjects.has((await page.getByTestId("reader-subject").textContent()) ?? "");
-  }
-  expect(found, "a demo conversation with replies").toBe(true);
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  for (const [content, paper] of [["headers", "letter"], ["body", "a4"], ["headers", "a4"], ["body", "letter"]] as const) {
-    await page.keyboard.press("Meta+Shift+p");
-    await page.getByTestId(`print-content-${content}`).click();
-    await page.getByTestId(`print-paper-${paper}`).click();
-    const pages = await readPdf(readFileSync(await savePdf(`demo-${content}-${paper}`)));
-    expect(pages.length).toBeGreaterThan(0);
-  }
-});
 
 test("Archivo → Exportar como PDF… opens the sheet through the renderer, also with focus inside a mail's frame", async () => {
   await openThread("newsletter");

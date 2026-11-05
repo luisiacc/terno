@@ -13,7 +13,7 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 
-import { blockExternal, cleanupOwned, closePackaged } from "./packaged-fixture";
+import { blockExternal, cleanupOwned, closePackaged, copyTree } from "./packaged-fixture";
 import { assertPackagedUpgrade, packagedSchemaVersion, profileFacts, toV13 } from "./people-profile";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -52,7 +52,7 @@ test.beforeAll(async () => {
   expect(profileFacts(dbPath)).toEqual(preserved);
   expect(read<{ user_version: number }>("PRAGMA user_version").user_version).toBe(13);
   const appPath = join(workdir, "Terno.app");
-  execFileSync("ditto", [SOURCE_APP, appPath]);
+  copyTree(SOURCE_APP, appPath);
   const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)), TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: profile };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.TERNO_DEV_URL;

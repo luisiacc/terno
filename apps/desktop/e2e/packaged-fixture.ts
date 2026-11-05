@@ -50,12 +50,15 @@ async function joinOwned(child: ChildProcess, owned: OwnedProcess[]): Promise<vo
   if (owned.some(alive)) throw new Error("Owned Electron helpers remain alive");
 }
 
+/** What main itself allows a quit (DRAFTS_DEADLINE_MS + SEND_DEADLINE_MS + BACKEND_GRACE_MS): less fails a healthy app on a busy machine. */
+const QUIT_MS = 40_000;
+
 export async function closePackaged(app: ElectronApplication | undefined): Promise<void> {
   if (!app) return;
   const child = app.process();
   const owned = child.pid ? descendants(child.pid) : [];
   nativeLifecycle("closePackaged-entry", { pid: child.pid, owned, code: child.exitCode, signal: child.signalCode });
-  try { nativeLifecycle("app.close-call", { pid: child.pid }); await within(app.close(), 5000, "Electron close"); nativeLifecycle("app.close-resolved", { pid: child.pid }); }
+  try { nativeLifecycle("app.close-call", { pid: child.pid }); await within(app.close(), QUIT_MS, "Electron close"); nativeLifecycle("app.close-resolved", { pid: child.pid }); }
   finally { await joinOwned(child, owned); }
 }
 
@@ -66,6 +69,17 @@ export async function cleanupOwned(steps: (() => Promise<unknown> | void)[]): Pr
     try { await within(Promise.resolve().then(step), 10_000, "Fixture cleanup"); } catch (error) { failures.push(error); }
   }
   if (failures.length) throw new AggregateError(failures, "Packaged fixture cleanup failed");
+}
+
+/** An instant copy where the disk clones (APFS, 0.15 s against ditto's 2 s): the same bytes, so the same signature. */
+export function copyTree(source: string, target: string): void {
+  try { execFileSync("cp", ["-c", "-Rp", source, target], { stdio: "ignore" }); }
+  catch { execFileSync("ditto", [source, target]); }
+}
+
+/** The run's 300-thread mailbox (global-setup.ts) as a profile of its own. */
+export function seededProfile(target: string): void {
+  copyTree(process.env.TERNO_SMOKE_SEED!, target);
 }
 
 export async function blockExternal(app: ElectronApplication): Promise<void> {

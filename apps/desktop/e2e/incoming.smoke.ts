@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication } from "@playwright/test";
+import { copyTree } from "./packaged-fixture";
 
 const sourceApp = fileURLToPath(new URL("../release/mac-arm64/Terno.app", import.meta.url));
 
@@ -12,7 +13,7 @@ test("the signed copied app executes its shipped incoming worker inside a utilit
   let application: ElectronApplication | undefined;
   try {
     const copied = join(work, "Terno.app");
-    execFileSync("ditto", [sourceApp, copied]);
+    copyTree(sourceApp, copied);
     execFileSync("codesign", ["--verify", "--deep", "--strict", copied]);
     const host = join(work, "incoming-host.cjs");
     writeFileSync(host, `

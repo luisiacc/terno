@@ -9,11 +9,12 @@
  * nothing is lost and Settings asks for the key again.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, renameSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { copyTree } from "./packaged-fixture";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SOURCE_APP = join(here, "../release/mac-arm64/Terno.app");
@@ -25,6 +26,7 @@ const SECRETS = { "account:1:password": "throwaway-imap-pässword", "ai:openai:a
 
 let workdir: string;
 let appPath: string;
+let legacy: { appData: string; profile: string; threads: number; sealed: Record<string, number[]> } | undefined;
 const running: ElectronApplication[] = [];
 
 /** An explicit profile path, or (appData) the default profile under that stand-in for Application Support. */
@@ -62,7 +64,15 @@ const threadCount = (file: string) => {
  * localStorage on the old renderer origin. Returns the profile path Terno will use.
  */
 async function legacyProfile(name: string): Promise<{ appData: string; profile: string; threads: number; sealed: Record<string, number[]> }> {
+  // built once (two starts, a demo seed), then each test renames a clone of its own
+  legacy ??= await buildLegacyProfile(join(workdir, "legacy"));
   const appData = join(workdir, name);
+  mkdirSync(appData);
+  copyTree(join(legacy.appData, "Unica"), join(appData, "Unica"));
+  return { ...legacy, appData, profile: join(appData, "Terno") };
+}
+
+async function buildLegacyProfile(appData: string): Promise<{ appData: string; profile: string; threads: number; sealed: Record<string, number[]> }> {
   const profile = join(appData, "Terno");
   const app = await launch({ profile }, { TERNO_TEST_APP_NAME: LEGACY });
   const page = await app.firstWindow();
@@ -96,7 +106,7 @@ test.beforeAll(() => {
   test.skip(!existsSync(SOURCE_APP), "run `pnpm dist:mac` first");
   workdir = mkdtempSync(join("/tmp", "terno-migration-"));
   appPath = join(workdir, "Terno.app");
-  execFileSync("ditto", [SOURCE_APP, appPath]);
+  copyTree(SOURCE_APP, appPath);
 });
 
 test.afterAll(async () => {
