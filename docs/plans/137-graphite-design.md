@@ -178,3 +178,5 @@ At five styles each tile is 60 px wide, and four things had gone wrong:
 Now one flat tile, as Apple Books' theme tiles are: the specimen on the card, the name below it in the color cards' `text-xs font-medium`. The size lives on a wrapper outside `[data-design]`, so all five share it whatever the design's scale, and its line sets the baseline (the specimen has no line height of its own, or a font with a taller ascent would push that baseline down). The tile is a fixed 64 px instead of 86, which gives the 22 px back to the palettes and keeps the row's height through a style change. 22 px is an exception in `source-scan.test.ts`: a specimen, not text to read.
 
 The row itself still moves up to 8 px between styles, because the dialog's title and description above it draw in the chosen design's scale. That's the preview being live, and wasn't asked about.
+
+The Codex review found no defects, so it changed nothing.
