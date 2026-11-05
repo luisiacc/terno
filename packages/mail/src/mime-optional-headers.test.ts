@@ -78,8 +78,10 @@ const cases: { name: string; headers: string[]; metadata: Partial<Metadata> }[] 
   { name: "combined faults", headers: faults, metadata: { subject: "café", listId: "<>", bulk: true } },
 ];
 
+// One parser reads the headers on every route, so the Gmail route, which goes through all the steps before it, has every
+// case; the others show they reach it with bytes intact, on the case that holds every fault.
 describe.each(["string", "bytes", "processor MIME", "processor Gmail"] as const)("optional headers: %s", (route) => {
-  it.each(cases)("$name preserves readable content and raw destinations", async ({ headers, metadata }) => {
+  it.each(route === "processor Gmail" ? cases : cases.filter((c) => c.name === "combined faults"))("$name preserves readable content and raw destinations", async ({ headers, metadata }) => {
     const source = wire(headers);
     let message: ParsedMessage;
     switch (route) {

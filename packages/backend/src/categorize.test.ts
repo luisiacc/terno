@@ -1,14 +1,14 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import dc from "node:diagnostics_channel";
 import { encodeFeatures, extractFeatures } from "@terno/core";
 import { createAi, promptText, type CompletionRequest, type ModelTransport } from "@terno/ai";
-import { addToCategory, createAccount, createCategory, ingestMessages, putSecret, seedDataset, setSetting, type IncomingMessage, sqlDb } from "@terno/db";
+import { addToCategory, createAccount, createCategory, ingestMessages, openDatabase, putSecret, seedDataset, setSetting, type IncomingMessage, sqlDb } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
 import { generateDataset } from "@terno/mock-data";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher, type BackendOptions } from "./backend";
 
 const NOW = Date.UTC(2026, 9, 22, 12);
@@ -17,6 +17,8 @@ const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
+const seedDirs: string[] = [];
+afterAll(() => { for (const dir of seedDirs) rmSync(dir, { recursive: true, force: true }); });
 
 function gate() {
   let release!: () => void;
@@ -31,8 +33,9 @@ function open(dir: string, now: () => number = () => NOW, options: Pick<BackendO
   return { backend, client: new RpcClient(c) };
 }
 
-async function setup(options: { seed?: boolean } & Pick<BackendOptions, "aiFactory" | "log"> = {}) {
+async function setup(options: { seed?: boolean; from?: string } & Pick<BackendOptions, "aiFactory" | "log"> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "terno-cat-"));
+  if (options.from) copyFileSync(options.from, join(dir, "terno.db"));
   const { backend, client } = open(dir, () => NOW, options);
   await backend.store.ready;
   let stopped = false;
@@ -589,10 +592,13 @@ describe("categorizer: auto-apply at ingestion", () => {
   });
 
   /** A mailbox where the user filed 6 receipt senders into Facturas (examples 120 days old) next to uncategorized personal mail and promotions. */
-  async function trained(options: { examplesAt?: number } & Pick<BackendOptions, "aiFactory" | "log"> = {}) {
-    const { backend, client } = await setup(options);
-    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
-    const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
+  function seedTrained(examplesAt = NOW - 120 * DAY) {
+    const seedDir = mkdtempSync(join(tmpdir(), "terno-cat-seed-"));
+    seedDirs.push(seedDir);
+    const path = join(seedDir, "terno.db");
+    const db = openDatabase(path);
+    const acct = createAccount(db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const cat = createCategory(db, "Facturas", "amber").id;
     const old: IncomingMessage[] = [];
     SENDERS.forEach((s, k) => {
       for (let i = 0; i < 6; i++) old.push(incoming(acct, { ...receipt(s, k * 10 + i), date: NOW - (40 + k * 6 + i) * DAY, inInbox: false }));
@@ -605,15 +611,25 @@ describe("categorizer: auto-apply at ingestion", () => {
     for (let i = 0; i < 100; i++) {
       old.push(incoming(acct, { from: { name: `Tienda ${i % 10}`, email: `info@tienda${i % 10}.com` }, listId: `ofertas.tienda${i % 10}.com`, subject: "Ofertas de la semana en tu cuenta", bodyText: "Descuentos en toda la tienda. Darse de baja", date: NOW - (20 + (i % 150)) * DAY, inInbox: false }));
     }
-    const r = ingestMessages(sqlDb(backend.store), old, NOW);
-    const filed = sqlDb(backend.store)
+    const r = ingestMessages(db, old, NOW);
+    const filed = db
       .all<{ thread_id: number }>(
         "SELECT DISTINCT thread_id FROM messages WHERE id IN (SELECT value FROM json_each(?)) AND from_email IN (SELECT value FROM json_each(?))",
         JSON.stringify(r.inserted),
         JSON.stringify(SENDERS.map((x) => x.email)),
       )
       .map((x) => x.thread_id);
-    addToCategory(sqlDb(backend.store), { categoryId: cat, threadIds: filed, addedBy: "user", now: options.examplesAt ?? NOW - 120 * DAY });
+    addToCategory(db, { categoryId: cat, threadIds: filed, addedBy: "user", now: examplesAt });
+    db.close();
+    return { path, acct, cat };
+  }
+  // seeding is most of what these tests would spend: done once in this file, copied per test
+  let usual: ReturnType<typeof seedTrained> | undefined;
+
+  async function trained(options: { examplesAt?: number; from?: ReturnType<typeof seedTrained> } & Pick<BackendOptions, "aiFactory" | "log"> = {}) {
+    const seed = options.from ?? (options.examplesAt === undefined ? (usual ??= seedTrained()) : seedTrained(options.examplesAt));
+    const { backend, client, dir } = await setup({ ...options, from: seed.path });
+    const { acct, cat } = seed;
     await backend.categorizer.rebuildNow();
     const arrive = async (over: Partial<IncomingMessage>) => {
       const m = incoming(acct, { date: NOW - 3_600_000, ...over });
@@ -623,7 +639,7 @@ describe("categorizer: auto-apply at ingestion", () => {
     };
     const decision = (thread: number) => sqlDb(backend.store).get<{ kind: string; outcome: string | null; explain_json: string }>("SELECT kind, outcome, explain_json FROM cls_decisions WHERE thread_id = ? AND category_id = ?", thread, cat);
     const inCategory = (thread: number) => sqlDb(backend.store).get<{ added_by: string }>("SELECT added_by FROM thread_categories WHERE thread_id = ? AND category_id = ?", thread, cat)?.added_by ?? null;
-    return { backend, client, acct, cat, arrive, decision, inCategory };
+    return { backend, client, dir, acct, cat, arrive, decision, inCategory };
   }
 
   it("files new inbox mail from a filed sender, explains why, and never trains on it", async () => {
@@ -760,9 +776,21 @@ describe("categorizer: auto-apply at ingestion", () => {
     throw new Error(`no uncertain draft: ${seen.join(" ")}`);
   }
 
-  async function assistMail(count: number, options: Pick<BackendOptions, "aiFactory" | "log"> = {}) {
-    const t = await trained(options);
+  // the search above rebuilds the model up to 80 times: its result is kept with a copy of the mailbox it ended on
+  let uncertain: { seed: ReturnType<typeof seedTrained>; draft: Partial<IncomingMessage> } | undefined;
+  async function uncertainSeed() {
+    if (uncertain) return uncertain;
+    const seed = seedTrained();
+    const t = await trained({ from: seed });
     const draft = await uncertainMail(t.backend, t.acct, t.cat);
+    await t.backend.stop();
+    copyFileSync(join(t.dir, "terno.db"), seed.path);
+    return (uncertain = { seed, draft });
+  }
+
+  async function assistMail(count: number, options: Pick<BackendOptions, "aiFactory" | "log"> = {}) {
+    const { seed, draft } = await uncertainSeed();
+    const t = await trained({ ...options, from: seed });
     const threads = [...ingestMessages(sqlDb(t.backend.store), Array.from({ length: count }, () => incoming(t.acct, draft)), NOW).touchedThreads];
     return { ...t, threads };
   }

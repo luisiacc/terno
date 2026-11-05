@@ -380,6 +380,8 @@ describe("finite native identity requests through public admission", () => {
   it.each([false, true])("inspected subject continuity and timeout preserve the account (browser=%s)", async (web) => {
     const t = await setup(web);
     let subject = identity.sub, delay = 0;
+    // shorter than the held answer only when there is one: a whole sign-in doesn't always fit in 100 ms on a busy machine
+    const deadline = () => (delay ? 100 : 15_000);
     const server = createServer(async (req, res) => {
       for await (const _chunk of req) { /* Drain synthetic token exchange. */ }
       if (req.url === "/userinfo") {
@@ -393,8 +395,8 @@ describe("finite native identity requests through public admission", () => {
     const address = server.address(); if (!address || typeof address === "string") throw new Error("Missing fixture address");
     const origin = `http://127.0.0.1:${address.port}`;
     const endpoints = { token: origin + "/token", api: origin, userinfo: origin + "/userinfo" };
-    t.inspect.mockImplementation(async (token, netFetch, options) => inspectGmailToken(token, netFetch, { ...options, endpoints, timeoutMs: 100 }));
-    t.connect.mockImplementation(async (options) => connectGmail({ ...options, endpoints, timeoutMs: 100, openExternal: async (url) => {
+    t.inspect.mockImplementation(async (token, netFetch, options) => inspectGmailToken(token, netFetch, { ...options, endpoints, timeoutMs: deadline() }));
+    t.connect.mockImplementation(async (options) => connectGmail({ ...options, endpoints, timeoutMs: deadline(), openExternal: async (url) => {
       const auth = new URL(url), callback = new URL(auth.searchParams.get("redirect_uri")!);
       callback.searchParams.set("state", auth.searchParams.get("state")!); callback.searchParams.set("code", "synthetic-code");
       await fetch(callback).then((r) => r.text());

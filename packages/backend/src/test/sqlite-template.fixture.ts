@@ -4,10 +4,10 @@
  * of them asks: packages/db proves both (migrations.test.ts, repos.test.ts), a database that already exists still
  * migrates here, and the perf project runs without this file.
  */
-import { copyFileSync, existsSync, mkdtempSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { expect } from "vitest";
+import { dirname, join } from "node:path";
+import { afterAll, expect } from "vitest";
 
 if (expect.getState().testPath?.includes("/packages/backend/src/")) {
   const { nodeSqliteDriver, openDatabaseWith, useSqliteDriver } = await import("@terno/db");
@@ -19,6 +19,7 @@ if (expect.getState().testPath?.includes("/packages/backend/src/")) {
     openDatabaseWith(nodeSqliteDriver, path).close();
     return (template = path);
   };
+  afterAll(() => { if (template) rmSync(dirname(template), { recursive: true, force: true }); });
   useSqliteDriver({
     ...nodeSqliteDriver,
     features: { ...nodeSqliteDriver.features, checkpointWorker: false },

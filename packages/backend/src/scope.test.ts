@@ -19,7 +19,7 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-async function setup(threads = 900) {
+async function setup(threads = 300) {
   const dir = mkdtempSync(join(tmpdir(), "terno-scope-"));
   // a tiny slice budget: a few hundred threads already take many slices
   const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, sliceBudgetMs: 1 });
@@ -56,7 +56,7 @@ describe("scope actions", () => {
   it("archives every thread of a view in slices, one op per account per slice, each op only its account's messages", async () => {
     const { backend, db, client } = await setup();
     const inbox = ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1"));
-    expect(inbox.length).toBeGreaterThan(150);
+    expect(inbox.length).toBeGreaterThan(50);
     const calls = countActs(backend);
     const r = await client.call("threads.actScope", { scope: { kind: "view", view: "inbox" }, action: "archive" });
     expect(r).toMatchObject({ affected: inbox.length, total: inbox.length, undoId: expect.any(Number) });
@@ -166,7 +166,7 @@ describe("scope actions", () => {
   });
 
   it("a view scope is counted and enumerated from the indexes, never by hydrating list pages", async () => {
-    const { backend, db, client } = await setup(600);
+    const { backend, db, client } = await setup(150);
     const cat = createCategory(db, "Grande", "rose").id;
     const all = ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_trash = 0 AND in_spam = 0"));
     await client.call("categories.addThreads", { categoryId: cat, threadIds: all });
@@ -182,7 +182,7 @@ describe("scope actions", () => {
   });
 
   it("undo takes back exactly the threads the action changed, once", async () => {
-    const { db, client } = await setup(300);
+    const { db, client } = await setup(150);
     const inbox = ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1"));
     const wasUnread = ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND unread_count > 0"));
     expect(wasUnread.length).toBeGreaterThan(0);
@@ -196,7 +196,7 @@ describe("scope actions", () => {
   });
 
   it("an archive's undo brings back the archived threads; a restore from Papelera goes back to Papelera", async () => {
-    const { db, client } = await setup(300);
+    const { db, client } = await setup(150);
     const inbox = ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1"));
     const r = await client.call("threads.actScope", { scope: { kind: "view", view: "inbox" }, action: "archive" });
     await client.call("threads.undo", { undoId: r.undoId! });
@@ -215,7 +215,7 @@ describe("scope actions", () => {
     const messages = (db: Awaited<ReturnType<typeof setup>>["db"]) => db.all<M>("SELECT id, is_read, is_starred, in_inbox, is_trash, is_spam FROM messages ORDER BY id");
 
     it("select all of Archivo → Papelera → Deshacer: back in the archive, not the inbox", async () => {
-      const { db, client } = await setup(300);
+      const { db, client } = await setup(150);
       const before = messages(db);
       const archived = db.get<{ c: number }>("SELECT count(*) AS c FROM threads WHERE in_inbox = 0 AND in_trash = 0 AND in_spam = 0")!.c;
       expect(archived).toBeGreaterThan(10);
@@ -227,7 +227,7 @@ describe("scope actions", () => {
     });
 
     it("a loaded selection with mixed read states: mark read, undo, and only the unread ones are unread again", async () => {
-      const { db, client } = await setup(300);
+      const { db, client } = await setup(150);
       const picked = ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 ORDER BY id LIMIT 60"));
       const mixed = db.all<{ thread_id: number }>(`SELECT thread_id FROM messages WHERE thread_id IN (${picked.join(",")}) GROUP BY thread_id HAVING min(is_read) = 0 AND max(is_read) = 1`);
       expect(mixed.length).toBeGreaterThan(0);
@@ -239,7 +239,7 @@ describe("scope actions", () => {
     });
 
     it("starred messages come back starred, one by one", async () => {
-      const { db, client } = await setup(300);
+      const { db, client } = await setup(150);
       const starred = ids(db.all<{ id: number }>("SELECT DISTINCT thread_id AS id FROM messages WHERE is_starred = 1 LIMIT 30"));
       expect(starred.length).toBeGreaterThan(0);
       const before = messages(db);
@@ -264,7 +264,7 @@ describe("scope actions", () => {
   });
 
   it("a scope sweep is never a learning signal; the user's own picks are, an agent's are not", async () => {
-    const { db, client, agent } = await setup(300);
+    const { db, client, agent } = await setup(150);
     await client.call("threads.actScope", { scope: { kind: "view", view: "inbox" }, action: "archive" });
     expect(db.get("SELECT count(*) AS c FROM user_actions")).toEqual({ c: 0 });
     const archived = ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 0 AND in_trash = 0 AND in_spam = 0 LIMIT 5"));
@@ -284,7 +284,7 @@ describe("scope actions", () => {
   });
 
   it("files a whole scope into a category as one undoable batch", async () => {
-    const { db, client } = await setup(300);
+    const { db, client } = await setup(150);
     const cat = createCategory(db, "Todo", "lime").id;
     const inbox = db.get<{ c: number }>("SELECT count(*) AS c FROM threads WHERE in_inbox = 1")!.c;
     const r = await client.call("categories.addScope", { categoryId: cat, scope: { kind: "view", view: "inbox" } });

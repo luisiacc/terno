@@ -34,10 +34,11 @@ function* repeated(header: string, block: string, count: number) {
   while (count) { const n = Math.min(count, 1024); yield block.repeat(n); count -= n; }
 }
 
-it("processes valid36/70MiB Gmail wire through the actual emitted worker with exact attachment bytes", async () => {
+it("processes valid 70 MiB Gmail wire through the actual emitted worker with exact attachment bytes", async () => {
   const processor = createNodeIncomingProcessor();
   try {
-    for (const mib of [36, 70]) {
+    // no limit sits below this but the one the next test crosses
+    for (const mib of [70]) {
       const header = 'From: Sender <sender@test.com>\r\nSubject: large worker\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename="large.bin"\r\nContent-Transfer-Encoding: base64\r\n\r\n';
       const line = "paWl".repeat(19) + "\r\n";
       const lines = Math.floor((mib * 1024 * 1024 - header.length) / line.length);
