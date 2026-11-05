@@ -173,5 +173,8 @@ describe("the facts backfill at 145,000 threads (IndexedDB)", () => {
     for (const run of runs) console.log(`facts backfill (IndexedDB, ${mirror(store).db.table("threads").rows.size} threads): ${run.line}`);
     const best = runs.reduce((a, b) => (b.stall < a.stall ? b : a));
     expect(best.stall, best.line).toBeLessThanOrEqual(STALL_MS * MULT);
+    // the whole backfill is seconds, linear in the threads: what a slice costs that stays within its stall (a sort of all
+    // of them per slice is 40 ms, and 4 minutes in all) shows here
+    expect(Math.min(...runs.map((r) => r.ms)), "the whole backfill (ms)").toBeLessThanOrEqual(30_000 * MULT);
   });
 });
