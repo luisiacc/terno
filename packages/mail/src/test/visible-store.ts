@@ -3,11 +3,39 @@ import type { FilterRule } from "@terno/core";
 import type { MailStore } from "@terno/store";
 import { ingest, msg, withAccounts } from "../../../store/src/conformance/fixtures";
 import { parseRaw } from "../mime";
-import { visibleReviewCases } from "./visible-review-cases";
+import { visibleReviewCases, type VisibleReviewCase } from "./visible-review-cases";
 
 export const visibleSource = (html: string) => `From: Sender <sender@example.test>\r\nSubject: Normalization\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n${html}`;
 
-export function defineVisibleStore(name: string, harness: { open(): Promise<MailStore>; reopen(store: MailStore): Promise<MailStore> }): void {
+/**
+ * The HTML rules decide in the parser (`visible-mail-text.test.ts`, every case). A store only sees the parsed
+ * text: it matches the rule and indexes that, and keeps the HTML as an opaque column for the reader. So what can
+ * differ between stores is (text, rule value, query, outcome), one case each. SQLite runs every case.
+ */
+export function storeFacingCases(): VisibleReviewCase[] {
+  return [...new Map(visibleReviewCases.map((c) => [JSON.stringify([c.text, c.value, c.query, c.matches]), c])).values()];
+}
+
+/** One store per rule: a rule is global, so cases sharing a value and query share a store and each one's outcome is still exact. */
+function byRule(cases: VisibleReviewCase[]): VisibleReviewCase[][] {
+  const groups = new Map<string, VisibleReviewCase[]>();
+  for (const c of cases) {
+    const key = JSON.stringify([c.value, c.query]);
+    groups.set(key, [...(groups.get(key) ?? []), c]);
+  }
+  return [...groups.values()];
+}
+
+export interface VisibleStoreHarness {
+  open(): Promise<MailStore>;
+  reopen(store: MailStore): Promise<MailStore>;
+  cases: "all" | "store-facing";
+  /** the index catches up before each search, and `strategy` proves it answered rather than a silent scan */
+  settle?(store: MailStore): Promise<void>;
+  strategy?: RegExp;
+}
+
+export function defineVisibleStore(name: string, harness: VisibleStoreHarness): void {
   let store: MailStore;
   afterEach(async () => { if (store?.isOpen) await store.close(); });
   describe(`HTML-only body rules and search: ${name}`, () => {
@@ -74,30 +102,51 @@ export function defineVisibleStore(name: string, harness: { open(): Promise<Mail
       expect((await store.debug.snapshot()).ops).toHaveLength(2);
       await store.debug.verify();
     });
-    for (const fixture of visibleReviewCases) for (const capture of ["ingest", "setBody"]) it(`${fixture.name}: ${capture} exact actions/search through reopen`, async () => {
+    for (const group of byRule(harness.cases === "store-facing" ? storeFacingCases() : visibleReviewCases)) it(`${group.length} cases of the rule "${group[0]!.value}": exact actions/search through reopen, by ingest and by setBody`, async () => {
       store = await harness.open();
       const [accountId] = await withAccounts(store, 1);
-      const rule: FilterRule = { match: "all", conditions: [{ field: "body", op: "contains", value: fixture.value }], actions: [{ type: "archive" }, { type: "star" }] };
+      const { value, query } = group[0]!;
+      const rule: FilterRule = { match: "all", conditions: [{ field: "body", op: "contains", value }], actions: [{ type: "archive" }, { type: "star" }] };
       await store.filters.save({ name: "reader policy", enabled: true, source: "manual", rule }, 0);
-      const parsed = await parseRaw(visibleSource(fixture.html));
-      const result = await ingest(store, [msg({ accountId: accountId!, providerMsgId: fixture.name, subject: parsed.subject, bodyState: capture === "ingest" ? "full" : "partial", bodyText: capture === "ingest" ? parsed.text : null, bodyHtml: capture === "ingest" ? parsed.html : null })]);
-      const id = result.inserted[0]!;
-      if (capture === "ingest") expect.soft(result.opIds).toHaveLength(fixture.matches ? 2 : 0);
-      else {
-        expect(result.opIds).toEqual([]);
-        expect.soft((await store.sync.setBody(id, parsed.text, parsed.html, { now: 0, classifier: null })).opIds).toHaveLength(fixture.matches ? 2 : 0);
+      const added: { name: string; fixture: VisibleReviewCase; id: number; parsed: Awaited<ReturnType<typeof parseRaw>> }[] = [];
+      for (const fixture of group) {
+        const parsed = await parseRaw(visibleSource(fixture.html));
+        for (const capture of ["ingest", "setBody"]) {
+          const name = `${fixture.name}: ${capture}`;
+          const result = await ingest(store, [msg({ accountId: accountId!, providerMsgId: name, subject: parsed.subject, bodyState: capture === "ingest" ? "full" : "partial", bodyText: capture === "ingest" ? parsed.text : null, bodyHtml: capture === "ingest" ? parsed.html : null })]);
+          const id = result.inserted[0]!;
+          if (capture === "ingest") expect.soft(result.opIds, name).toHaveLength(fixture.matches ? 2 : 0);
+          else {
+            expect(result.opIds, name).toEqual([]);
+            expect.soft((await store.sync.setBody(id, parsed.text, parsed.html, { now: 0, classifier: null })).opIds, name).toHaveLength(fixture.matches ? 2 : 0);
+          }
+          added.push({ name, fixture, id, parsed });
+        }
       }
+      const matching = added.filter((a) => a.fixture.matches);
+      const nameOf = new Map(added.map((a) => [a.id, a.name]));
       for (let pass = 0; pass < 3; pass++) {
         const snapshot = await store.debug.snapshot();
-        const message = snapshot.messages.find((m) => m.id === id)!;
-        expect.soft((await store.threads.get(message.threadId))!).toMatchObject({ thread: { inInbox: !fixture.matches }, messages: [{ isStarred: fixture.matches, bodyText: fixture.text }] });
-        expect.soft((await store.threads.searchText({ query: fixture.query, now: 0, limit: 10 })).items.map((thread) => thread.id)).toEqual(fixture.matches ? [message.threadId] : []);
-        expect.soft(await store.filters.preview(rule, 0, 5)).toMatchObject({ count: fixture.matches ? 1 : 0 });
-        expect.soft(snapshot.ops.map((op) => ({ kind: op.kind, messageIds: op.messageIds })).sort((a, b) => a.kind.localeCompare(b.kind))).toEqual(fixture.matches ? [{ kind: "archive", messageIds: [id] }, { kind: "star", messageIds: [id] }] : []);
-        if (pass === 1) expect((await store.sync.setBody(id, parsed.text, parsed.html, { now: 1, classifier: null })).opIds).toEqual([]);
+        const threadOf = new Map(snapshot.messages.map((m) => [m.id, m.threadId]));
+        const nameOfThread = new Map(added.map((a) => [threadOf.get(a.id)!, a.name]));
+        for (const { name, fixture, id } of added) expect.soft((await store.threads.get(threadOf.get(id)!))!, name).toMatchObject({ thread: { inInbox: !fixture.matches }, messages: [{ isStarred: fixture.matches, bodyText: fixture.text }] });
+        await harness.settle?.(store);
+        const found: string[] = [];
+        let cursor: Parameters<MailStore["threads"]["searchText"]>[0]["cursor"];
+        do {
+          const page = await store.threads.searchText({ query, now: 0, limit: 200, cursor });
+          if (harness.strategy) expect(page.strategy, query).toMatch(harness.strategy);
+          found.push(...page.items.map((thread) => nameOfThread.get(thread.id)!));
+          cursor = page.nextCursor ?? undefined;
+        } while (cursor);
+        expect.soft(found.sort(), query).toEqual(matching.map((a) => a.name).sort());
+        expect.soft(await store.filters.preview(rule, 0, 5)).toMatchObject({ count: matching.length });
+        // an action per message, whatever a scheduler batches: named, so a failure says which case
+        expect.soft(snapshot.ops.flatMap((op) => op.messageIds.map((id) => `${nameOf.get(id)} ${op.kind}`)).sort()).toEqual(matching.flatMap((a) => [`${a.name} archive`, `${a.name} star`]).sort());
+        if (pass === 1) for (const { name, id, parsed } of added) expect((await store.sync.setBody(id, parsed.text, parsed.html, { now: 1, classifier: null })).opIds, name).toEqual([]);
         if (pass < 2) store = await harness.reopen(store);
       }
       await store.debug.verify();
-    });
+    }, 60_000);
   });
 }
