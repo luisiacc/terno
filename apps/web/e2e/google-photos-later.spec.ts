@@ -5,7 +5,7 @@ import { expect, stabilize, test } from "./fixtures";
 const ctx = { clientId: "setup", origin: "dev" as const };
 
 for (const theme of ["light", "dark"] as const) {
-  test(`switching photos on waits for the next sign-in, with "Sign in now" beside it (${theme})`, async ({ app: page, server }, testInfo) => {
+  test(`switching photos on waits for the next sign-in, with "Sign in now" beside it (${theme})`, async ({ app: page, server }) => {
     const gmail = (await server.backend.store.accounts.list()).find((a) => a.kind === "gmail")!;
     await server.backend.server.invoke("settings.update", { theme }, ctx);
     await page.reload();
@@ -30,8 +30,7 @@ for (const theme of ["light", "dark"] as const) {
     expect((await server.backend.server.invoke("settings.update", {}, ctx)).googlePhotosPending).toEqual([gmail.id]);
     await page.mouse.move(0, 0);
     await stabilize(page);
-    await row.screenshot({ path: testInfo.outputPath(`pending-${theme}.png`) });
-    const axe = await new AxeBuilder({ page }).include(`[data-testid=google-photos-${gmail.id}]`).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+    const axe = await new AxeBuilder({ page }).setLegacyMode().include(`[data-testid=google-photos-${gmail.id}]`).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
     expect(axe.violations.map((v) => v.id)).toEqual([]);
     // off: it no longer waits
     await sw.click();

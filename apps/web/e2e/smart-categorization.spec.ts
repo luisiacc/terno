@@ -2,7 +2,6 @@
  * Plan 134 in the page, on the offline fake model and an in-process calibrated fake: nothing here reaches a provider,
  * JEV included (its Test is stubbed). New mail comes through a real sync pass.
  */
-import { mkdirSync } from "node:fs";
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { CategorizerModel } from "@terno/core";
@@ -10,10 +9,8 @@ import type { SettingsPatch } from "@terno/core/rpc";
 import { sqlDb } from "../../backend-dev/src/server";
 import type { IncomingMessage } from "@terno/store";
 import { E2E_NOW } from "./constants";
-import { expect, focusList, rows, stabilize, test, type DevServerFixture } from "./fixtures";
+import { expect, focusList, rows, test, type DevServerFixture } from "./fixtures";
 import { englishLeaks } from "./i18n-leaks";
-
-const SHOTS = "/tmp/terno-scratch/smart-categorization";
 
 test.use({ backendOptions: { network: true } });
 
@@ -68,16 +65,6 @@ async function openCategoriesTab(page: Page) {
   await expect(page.getByTestId("categories-tab")).toBeVisible();
 }
 
-async function shots(page: Page, name: string) {
-  mkdirSync(SHOTS, { recursive: true });
-  for (const theme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: theme });
-    await expect(page.locator("html")).toHaveClass(theme === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
-    await stabilize(page);
-    await page.screenshot({ path: `${SHOTS}/${name}-${theme}.png` });
-  }
-  await page.emulateMedia({ colorScheme: "light" });
-}
 
 test.describe("smart categorization (plan 134)", () => {
   test("new mail from an unknown sender shows a suggestion: y files and trains, n stays out", async ({ app: page, server }) => {
@@ -149,8 +136,7 @@ test.describe("smart categorization (plan 134)", () => {
     await expect(row).toContainText("TypeSafe AI");
     await expect(page.getByTestId("jev-key")).toHaveValue("");
     await expect(page.getByTestId("jev-key")).toHaveAttribute("type", "password");
-    await shots(page, "settings-empty");
-    expect((await new AxeBuilder({ page }).include("[data-testid=categories-tab]").analyze()).violations).toEqual([]);
+    expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=categories-tab]").analyze()).violations).toEqual([]);
 
     await page.getByTestId("jev-key").fill("jev-synthetic-key-9876");
     await page.getByTestId("jev-key-save").click();
@@ -168,8 +154,7 @@ test.describe("smart categorization (plan 134)", () => {
     await page.getByTestId("jev-key-test").click();
     await expect(page.getByTestId("jev-key-test-result")).toBeVisible();
     expect(tests[0]).toMatchObject({ provider: "jev", model: "jev-latest" });
-    await shots(page, "settings-saved");
-    expect((await new AxeBuilder({ page }).include("[data-testid=categories-tab]").analyze()).violations).toEqual([]);
+    expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=categories-tab]").analyze()).violations).toEqual([]);
     await page.getByTestId("jev-key-test").click();
     await expect(page.getByTestId("jev-key-test-error")).toContainText("refused");
 
@@ -182,7 +167,6 @@ test.describe("smart categorization (plan 134)", () => {
     await settingUp(page, server, { ai: { provider: "fake" }, aiCategorizeWidened: true });
     await openCategoriesTab(page);
     await expect(page.getByTestId("ai-categorize-widened")).toContainText("This is now off");
-    await shots(page, "settings-widened");
     await expect.poll(async () => ((await server.backend.server.invoke("app.bootstrap", {}, dev)) as { settings: { aiCategorizeWidened: boolean } }).settings.aiCategorizeWidened).toBe(false);
     // it says "this is now off": not once it's on again
     await page.getByTestId("ai-categorize-switch").click();
@@ -205,7 +189,6 @@ test.describe("smart categorization (plan 134)", () => {
     await openCategoriesTab(page);
     await expect(page.getByTestId("jev-key-row")).toContainText("TypeSafe AI");
     await expect(page.getByTestId("ai-categorize-widened")).toContainText("desactivado");
-    await shots(page, "settings-es");
     expect(await englishLeaks(page)).toEqual([]);
   });
 });

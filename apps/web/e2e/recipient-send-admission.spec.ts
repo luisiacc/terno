@@ -6,7 +6,7 @@ import { addRecipients, chipsOf, expect, openRow, recipientEmails, stabilize, te
 test.use({ backendOptions: { smtpCapture: true } });
 
 for (const placement of ["new", "inline"] as const) {
-  test(`${placement} recipients stay read-only through Send refusal and retry`, async ({ app: page, server }, testInfo) => {
+  test(`${placement} recipients stay read-only through Send refusal and retry`, async ({ app: page, server }) => {
     if (placement === "new") {
       await page.keyboard.press("c");
       await addRecipients(page, "compose-to", "initial@example.test");
@@ -42,8 +42,7 @@ for (const placement of ["new", "inline"] as const) {
       await expect(page.getByTestId("compose-to")).toHaveValue("");
       for (const theme of ["light", "dark"] as const) {
         await page.emulateMedia({ colorScheme: theme }); await stabilize(page);
-        expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-        await page.screenshot({ path: testInfo.outputPath(`pending-${theme}.png`) });
+        expect((await new AxeBuilder({ page }).setLegacyMode().analyze()).violations).toEqual([]);
       }
       release();
       await expect(page.getByTestId("compose-send")).toBeEnabled();

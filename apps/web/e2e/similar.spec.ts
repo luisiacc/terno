@@ -6,9 +6,9 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, selectThread, test } from "./fixtures";
+import { expect, focusList, selectThread, test, fresh, scenario } from "./fixtures";
 
-const wcag = (page: Page) => new AxeBuilder({ page }).include("[data-testid=snack-dock]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
+const wcag = (page: Page) => new AxeBuilder({ page }).setLegacyMode().include("[data-testid=snack-dock]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
 
 /** The inbox sender with the most plain (not starred, not replied) inbox threads; what each action's scope holds for it. */
 function senderSetup(server: DevServer) {
@@ -33,31 +33,75 @@ function senderSetup(server: DevServer) {
 const result = (page: Page, text: string | RegExp) => page.locator("[data-testid=snack]").filter({ hasText: text });
 
 test.describe("similar mail", () => {
-  test("archiving one thread offers the rest from its sender: 1 archives them, one Undo brings back all", async ({ app: page, server }) => {
-    const { email, ids, inInbox } = senderSetup(server);
-    expect(ids.length).toBeGreaterThan(2);
-    await selectThread(page, ids[0]!, `in:inbox from:${email}`);
-    await page.keyboard.press("e");
+  test("similar mail: 1 archives the rest with one Undo; Mark similar as spam; the submenu by keyboard", async ({ app: page, server }) => {
+    await scenario("archiving one thread offers the rest from its sender: 1 archives them, one Undo brings back all", async () => {
+      const { email, ids, inInbox } = senderSetup(server);
+      expect(ids.length).toBeGreaterThan(2);
+      await selectThread(page, ids[0]!, `in:inbox from:${email}`);
+      await page.keyboard.press("e");
 
-    const snack = page.getByTestId("similar-snackbar");
-    await expect(snack.getByTestId("snack-message")).toHaveText("Archived");
-    await expect(snack.getByTestId("similar-sender")).toContainText("Everything from");
-    await expect(snack.getByTestId("similar-sender-count")).toHaveText(`${ids.length - 1}`);
-    await expect.poll(inInbox).toBe(ids.length - 1);
-    // plan 91: archiving has no default; the lines are the category snackbar's, the same sender and subject first
-    await expect(snack.getByTestId("snackbar-only")).toHaveCount(0);
-    const keys = await snack.getByTestId("similar-offers").locator("kbd").allTextContents();
-    expect(keys).toEqual(keys.map((_, i) => String(i + 1)));
+      const snack = page.getByTestId("similar-snackbar");
+      await expect(snack.getByTestId("snack-message")).toHaveText("Archived");
+      await expect(snack.getByTestId("similar-sender")).toContainText("Everything from");
+      await expect(snack.getByTestId("similar-sender-count")).toHaveText(`${ids.length - 1}`);
+      await expect.poll(inInbox).toBe(ids.length - 1);
+      // plan 91: archiving has no default; the lines are the category snackbar's, the same sender and subject first
+      await expect(snack.getByTestId("snackbar-only")).toHaveCount(0);
+      const keys = await snack.getByTestId("similar-offers").locator("kbd").allTextContents();
+      expect(keys).toEqual(keys.map((_, i) => String(i + 1)));
 
-    await page.keyboard.press((await snack.getByTestId("similar-sender").locator("kbd").textContent())!);
-    const done = result(page, `Archived ${ids.length - 1}`);
-    await expect(done).toBeVisible();
-    await expect.poll(inInbox).toBe(0);
-    // Always is offered for the future
-    await expect(done.getByTestId("snack-secondary")).toHaveText("Always");
+      await page.keyboard.press((await snack.getByTestId("similar-sender").locator("kbd").textContent())!);
+      const done = result(page, `Archived ${ids.length - 1}`);
+      await expect(done).toBeVisible();
+      await expect.poll(inInbox).toBe(0);
+      // Always is offered for the future
+      await expect(done.getByTestId("snack-secondary")).toHaveText("Always");
 
-    await page.keyboard.press("z");
-    await expect.poll(inInbox).toBe(ids.length);
+      await page.keyboard.press("z");
+      await expect.poll(inInbox).toBe(ids.length);
+    });
+    await scenario("right-click → Mark similar as spam → sender: all of it goes to Spam and future mail with it; Undo takes both back", async () => {
+      await fresh(page);
+      const { email, ids, anywhere, inSpam } = senderSetup(server);
+      await selectThread(page, ids[0]!, `in:inbox from:${email}`);
+      await page.locator(`[data-testid=thread-row][data-thread-id="${ids[0]}"]`).click({ button: "right" });
+      await page.getByTestId("menu-spam-similar").hover();
+      const list = page.getByTestId("menu-spam-similar-list");
+      await expect(list.getByTestId("menu-spam-similar-note")).toHaveText("Their future mail goes to Spam too.");
+      await expect(list.getByTestId("menu-similar-sender-count")).toHaveText(String(anywhere.length));
+      // the full address follows the name, so same-named senders tell apart
+      await expect(list.getByTestId("menu-similar-sender")).toContainText(new RegExp(`^Everything from .+ ${email.replace(/[.+]/g, "\\$&")}`));
+      await list.getByTestId("menu-similar-sender").click();
+
+      const done = result(page, `Marked ${anywhere.length} as spam`);
+      await expect(done).toBeVisible();
+      await expect(done).toContainText("Future mail like this goes to Spam too.");
+      await expect.poll(inSpam).toBe(anywhere.length);
+      const filters = async () => (await server.backend.store.filters.list()).filter((f) => f.rule.conditions.some((c) => "value" in c && c.value === email));
+      await expect.poll(async () => (await filters()).map((f) => [f.rule.conditions, f.rule.actions])).toEqual([[[{ field: "from", op: "equals", value: email }], [{ type: "spam" }]]]);
+
+      await done.getByTestId("snack-action").click();
+      await expect.poll(inSpam).toBe(0);
+      await expect.poll(async () => (await filters()).length).toBe(0);
+    });
+    await scenario("the submenu is reachable with the keyboard", async () => {
+      await fresh(page);
+      const { email, ids, inInbox } = senderSetup(server);
+      await selectThread(page, ids[0]!, `in:inbox from:${email}`);
+      await focusList(page);
+      await page.keyboard.press("Shift+F10");
+      await expect(page.getByTestId("thread-menu")).toBeVisible();
+      const trigger = page.getByTestId("menu-archive-similar");
+      // down the menu to the trigger, then into its submenu
+      for (let i = 0; i < 20 && !(await trigger.evaluate((el) => el === document.activeElement || el.hasAttribute("data-highlighted"))); i++) await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowRight");
+      await expect(page.getByTestId("menu-similar-sender")).toBeVisible();
+      await expect(page.getByTestId("menu-similar-sender-count")).toHaveText(String(ids.length));
+      // plan 91: the plain action comes first, focused: Enter archives only this one
+      await expect(page.getByTestId("menu-similar-only")).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect.poll(inInbox).toBe(ids.length - 1);
+    });
   });
 
   test("the snackbar is axe-clean in light and dark", async ({ app: page, server }) => {
@@ -73,45 +117,4 @@ test.describe("similar mail", () => {
     }
   });
 
-  test("right-click → Mark similar as spam → sender: all of it goes to Spam and future mail with it; Undo takes both back", async ({ app: page, server }) => {
-    const { email, ids, anywhere, inSpam } = senderSetup(server);
-    await selectThread(page, ids[0]!, `in:inbox from:${email}`);
-    await page.locator(`[data-testid=thread-row][data-thread-id="${ids[0]}"]`).click({ button: "right" });
-    await page.getByTestId("menu-spam-similar").hover();
-    const list = page.getByTestId("menu-spam-similar-list");
-    await expect(list.getByTestId("menu-spam-similar-note")).toHaveText("Their future mail goes to Spam too.");
-    await expect(list.getByTestId("menu-similar-sender-count")).toHaveText(String(anywhere.length));
-    // the full address follows the name, so same-named senders tell apart
-    await expect(list.getByTestId("menu-similar-sender")).toContainText(new RegExp(`^Everything from .+ ${email.replace(/[.+]/g, "\\$&")}`));
-    await list.getByTestId("menu-similar-sender").click();
-
-    const done = result(page, `Marked ${anywhere.length} as spam`);
-    await expect(done).toBeVisible();
-    await expect(done).toContainText("Future mail like this goes to Spam too.");
-    await expect.poll(inSpam).toBe(anywhere.length);
-    const filters = async () => (await server.backend.store.filters.list()).filter((f) => f.rule.conditions.some((c) => "value" in c && c.value === email));
-    await expect.poll(async () => (await filters()).map((f) => [f.rule.conditions, f.rule.actions])).toEqual([[[{ field: "from", op: "equals", value: email }], [{ type: "spam" }]]]);
-
-    await done.getByTestId("snack-action").click();
-    await expect.poll(inSpam).toBe(0);
-    await expect.poll(async () => (await filters()).length).toBe(0);
-  });
-
-  test("the submenu is reachable with the keyboard", async ({ app: page, server }) => {
-    const { email, ids, inInbox } = senderSetup(server);
-    await selectThread(page, ids[0]!, `in:inbox from:${email}`);
-    await focusList(page);
-    await page.keyboard.press("Shift+F10");
-    await expect(page.getByTestId("thread-menu")).toBeVisible();
-    const trigger = page.getByTestId("menu-archive-similar");
-    // down the menu to the trigger, then into its submenu
-    for (let i = 0; i < 20 && !(await trigger.evaluate((el) => el === document.activeElement || el.hasAttribute("data-highlighted"))); i++) await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("ArrowRight");
-    await expect(page.getByTestId("menu-similar-sender")).toBeVisible();
-    await expect(page.getByTestId("menu-similar-sender-count")).toHaveText(String(ids.length));
-    // plan 91: the plain action comes first, focused: Enter archives only this one
-    await expect(page.getByTestId("menu-similar-only")).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect.poll(inInbox).toBe(ids.length - 1);
-  });
 });

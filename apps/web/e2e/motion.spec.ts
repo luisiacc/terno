@@ -64,6 +64,9 @@ function hold(server: DevServer, method: string) {
   };
 }
 
+/** What a change started is running by the frame after it, and the sampler reads every frame. */
+const frames = (page: Page) => page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+
 /**
  * Opens and closes a dialog, a select popup and a menu-like popover, expands a
  * collapsed message, opens an inline reply and collapses it, and shows a toast.
@@ -73,7 +76,7 @@ async function exercise(page: Page) {
   await expect(page.getByTestId("settings-dialog")).toBeVisible();
   await page.getByTestId("settings-dialog").getByRole("combobox").first().click();
   await expect(page.getByRole("listbox")).toBeVisible();
-  await page.waitForTimeout(150);
+  await frames(page);
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
@@ -82,24 +85,24 @@ async function exercise(page: Page) {
   const collapsed = page.locator("[data-testid=message-toggle][aria-expanded=false]").first();
   if (await collapsed.count()) {
     await collapsed.click();
-    await page.waitForTimeout(150);
+    await frames(page);
     await page.locator("[data-testid=message-toggle][aria-expanded=true]").first().click();
-    await page.waitForTimeout(150);
+    await frames(page);
   }
   // the inline reply opens and collapses
   await focusList(page);
   await page.keyboard.press("r");
   await expect(page.getByTestId("compose-body")).toBeFocused();
-  await page.waitForTimeout(150);
+  await frames(page);
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("draft-collapsed")).toBeVisible();
-  await page.waitForTimeout(150);
+  await frames(page);
   await focusList(page);
   await rows(page).first().dispatchEvent("mousedown");
   await page.keyboard.press("e");
   await expect(page.locator("[data-testid=snack]").first()).toBeVisible();
   await expect(page.getByTestId("snack-ring")).toBeVisible();
-  await page.waitForTimeout(150);
+  await frames(page);
 }
 
 /** Loading states that loop: the AI filter builder's spinner and the snackbar's count skeleton, held on screen. */
@@ -109,7 +112,7 @@ async function exerciseLoading(page: Page, server: DevServer) {
   await page.getByTestId("ai-prompt").fill("archiva los correos de uber.com");
   await page.getByTestId("ai-generate").click();
   await expect(page.getByTestId("ai-generate").locator(".animate-spin")).toBeVisible();
-  await page.waitForTimeout(200);
+  await frames(page);
   releaseAi();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("ai-generate")).toHaveCount(0);
@@ -122,7 +125,7 @@ async function exerciseLoading(page: Page, server: DevServer) {
   await page.keyboard.press("l");
   await page.getByTestId(`pick-category-${facturas}`).click();
   await expect(page.getByTestId("snackbar-count-loading").first()).toBeVisible();
-  await page.waitForTimeout(200);
+  await frames(page);
   releaseCount();
 }
 

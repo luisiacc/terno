@@ -197,22 +197,19 @@ test.describe("snippets", () => {
     test(`the tab, the editor and the palette page are axe-clean, ${mode}`, async ({ app: page, server }) => {
       await seed(server, { ...intro, to: "ana@example.test" });
       await page.emulateMedia({ colorScheme: mode });
-      const wcag = () => new AxeBuilder({ page }).include("[role=dialog]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
+      const wcag = () => new AxeBuilder({ page }).setLegacyMode().include("[role=dialog]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
       await page.keyboard.press("ControlOrMeta+Comma");
       await page.getByTestId("tab-snippets").click();
       await expect(page.getByTestId("settings-snippet")).toHaveCount(1);
       expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
-      await page.screenshot({ path: test.info().outputPath(`snippets-tab-${mode}.png`) });
       await page.getByTestId("settings-snippet-edit").click();
       await expect(page.getByTestId("snippet-body")).toContainText("Let’s talk");
       expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
-      await page.screenshot({ path: test.info().outputPath(`snippet-editor-${mode}.png`) });
       await page.keyboard.press("Escape");
       await reply(page);
       await page.keyboard.press("ControlOrMeta+;");
       await expect(page.getByTestId(`palette-snippet-${intro.id}`)).toBeVisible();
       expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
-      await page.screenshot({ path: test.info().outputPath(`snippets-palette-${mode}.png`) });
     });
   }
 });

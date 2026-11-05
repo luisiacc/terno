@@ -7,8 +7,9 @@ const ctx = { clientId: "setup", origin: "dev" as const };
 test.use({ backendOptions: { smtpCapture: true } });
 
 for (const mode of ["reply", "replyAll"] as const) {
-  for (const theme of ["light", "dark"] as const) {
-    test(`Reply-To ${mode} (${theme}): displayed destinations match the queued payload and SMTP envelope`, mode === "reply" && theme === "light" ? { tag: "@variant" } : {}, async ({ app: page, server }, testInfo) => {
+  {
+    const theme = "light";
+    test(`Reply-To ${mode}: displayed destinations match the queued payload and SMTP envelope`, mode === "reply" ? { tag: "@variant" } : {}, async ({ app: page, server }) => {
       const [account] = await server.backend.store.accounts.list();
       const now = Date.now();
       const incoming: IncomingMessage = {
@@ -32,7 +33,6 @@ for (const mode of ["reply", "replyAll"] as const) {
       await page.getByTestId("compose-body").fill("Thanks for helping.");
       await expect(page.locator("html")).toHaveClass(theme === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
       await stabilize(page);
-      await page.screenshot({ path: testInfo.outputPath(`reply-to-${mode}-${theme}.png`) });
       await page.getByTestId("compose-send").click();
       await expect.poll(() => server.smtp.length).toBe(1);
       const destinations = mode === "replyAll" ? ["session@help.test", "list@help.test", "other@help.test"] : ["session@help.test", "list@help.test"];

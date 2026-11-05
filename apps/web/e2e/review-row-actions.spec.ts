@@ -189,9 +189,8 @@ test("the controls and the open menu are axe-clean and read well in light and da
     await row(page, threads[1]!).hover();
     await row(page, threads[1]!).getByTestId("row-review-always").click();
     await expect(page.getByTestId("review-always-subject-count")).toBeVisible();
-    const r = await new AxeBuilder({ page }).include("[data-testid=review-always-menu]").include("[data-testid=thread-list]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+    const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=review-always-menu]").include("[data-testid=thread-list]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
     expect(r.violations.map((v) => `${theme} ${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
-    await page.screenshot({ path: `/tmp/terno-review-actions-${test.info().project.name}-${theme}.png` });
     await page.keyboard.press("Escape");
   }
 });

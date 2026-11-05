@@ -1,149 +1,154 @@
 import { sqlDb } from "../../backend-dev/src/server";
 import { readFileSync } from "node:fs";
 import { connect } from "node:net";
-import { expect, navTo, test } from "./fixtures";
+import { expect, navTo, test, fresh, scenario } from "./fixtures";
 
 test.describe("accounts, settings and command palette", () => {
-  test("IMAP presets autofill servers; the account is added and appears in the sidebar", async ({ app: page }) => {
-    await page.getByTestId("sidebar").getByText("Add account").click();
-    const dialog = page.getByTestId("add-account-dialog");
-    await page.getByTestId("imap-email").fill("ana@icloud.com");
-    await expect(page.getByTestId("imap-host")).toHaveValue("imap.mail.me.com");
-    await expect(page.getByTestId("smtp-host")).toHaveValue("smtp.mail.me.com");
-    // required password: the form is not submitted
-    await page.getByTestId("imap-submit").click();
-    await expect(dialog).toBeVisible();
-    await page.getByTestId("imap-password").fill("app-password");
-    await page.getByTestId("imap-submit").click();
-    await expect(dialog).toHaveCount(0);
-    await expect(page.locator("[data-testid^=nav-account-]").filter({ hasText: "ana@icloud.com" })).toBeVisible();
-  });
-
-  test("theme switches to dark; Agents shows the MCP setup", async ({ app: page }) => {
-    await page.getByTestId("open-settings").click();
-    await page.getByTestId("tab-appearance").click();
-    await page.getByTestId("mode-dark").click();
-    await expect(page.locator("html")).toHaveClass(/dark/);
-    await page.getByTestId("tab-agents").click();
-    await expect(page.getByTestId("mcp-claude")).toContainText('claude mcp add terno -- "/Applications/Terno.app/Contents/Resources/bin/terno-mcp"');
-    await page.reload();
-    await expect(page.locator("html")).toHaveClass(/dark/); // persisted before React mounts
-  });
-
-  test("the settings tab list is vertical: ↓/↑ move between tabs, Esc returns focus to the gear", async ({ app: page }) => {
-    await page.getByTestId("open-settings").click();
-    const general = page.getByTestId("tab-general");
-    await expect(page.getByRole("tablist")).toHaveAttribute("aria-orientation", "vertical");
-    await general.focus();
-    await page.keyboard.press("ArrowDown");
-    await expect(page.getByTestId("tab-appearance")).toBeFocused();
-    await expect(page.getByTestId("tab-appearance")).toHaveAttribute("aria-selected", "true");
-    await page.keyboard.press("ArrowUp");
-    await expect(general).toBeFocused();
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
-    await expect(page.getByTestId("open-settings")).toBeFocused();
-  });
-
-  test("every settings tab opens from the palette; ⌘, opens settings, also from the search field", async ({ app: page }) => {
-    for (const [tab, label] of [["general", "General"], ["appearance", "Appearance"], ["accounts", "Accounts"], ["categories", "Categories"], ["filters", "Filters"], ["ai", "AI"], ["agents", "Agents"], ["data", "Data"], ["storage", "Storage"]] as const) {
-      await page.keyboard.press("Meta+k");
-      await page.getByTestId("palette-input").fill(`settings ${label}`);
-      await expect(page.getByRole("option", { selected: true })).toHaveAttribute("data-testid", `palette-settings-${tab}`);
-      await page.keyboard.press("Enter");
-      await expect(page.getByTestId("palette-input")).toHaveCount(0);
-      await expect(page.getByTestId(`tab-${tab}`)).toHaveAttribute("aria-selected", "true");
+  test("accounts, tabs and the palette: IMAP, the vertical tabs, every tab, ⌘K, g i and ?", async ({ app: page }) => {
+    await scenario("IMAP presets autofill servers; the account is added and appears in the sidebar", async () => {
+      await page.getByTestId("sidebar").getByText("Add account").click();
+      const dialog = page.getByTestId("add-account-dialog");
+      await page.getByTestId("imap-email").fill("ana@icloud.com");
+      await expect(page.getByTestId("imap-host")).toHaveValue("imap.mail.me.com");
+      await expect(page.getByTestId("smtp-host")).toHaveValue("smtp.mail.me.com");
+      // required password: the form is not submitted
+      await page.getByTestId("imap-submit").click();
+      await expect(dialog).toBeVisible();
+      await page.getByTestId("imap-password").fill("app-password");
+      await page.getByTestId("imap-submit").click();
+      await expect(dialog).toHaveCount(0);
+      await expect(page.locator("[data-testid^=nav-account-]").filter({ hasText: "ana@icloud.com" })).toBeVisible();
+    });
+    await scenario("the settings tab list is vertical: ↓/↑ move between tabs, Esc returns focus to the gear", async () => {
+      await fresh(page);
+      await page.getByTestId("open-settings").click();
+      const general = page.getByTestId("tab-general");
+      await expect(page.getByRole("tablist")).toHaveAttribute("aria-orientation", "vertical");
+      await general.focus();
+      await page.keyboard.press("ArrowDown");
+      await expect(page.getByTestId("tab-appearance")).toBeFocused();
+      await expect(page.getByTestId("tab-appearance")).toHaveAttribute("aria-selected", "true");
+      await page.keyboard.press("ArrowUp");
+      await expect(general).toBeFocused();
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
-    }
-    await page.getByTestId("search-input").focus();
-    await page.keyboard.press("Meta+Comma");
-    await expect(page.getByTestId("tab-general")).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByTestId("open-settings")).toBeFocused();
+    });
+    await scenario("every settings tab opens from the palette; ⌘, opens settings, also from the search field", async () => {
+      await fresh(page);
+      for (const [tab, label] of [["general", "General"], ["appearance", "Appearance"], ["accounts", "Accounts"], ["categories", "Categories"], ["filters", "Filters"], ["ai", "AI"], ["agents", "Agents"], ["data", "Data"], ["storage", "Storage"]] as const) {
+        await page.keyboard.press("Meta+k");
+        await page.getByTestId("palette-input").fill(`settings ${label}`);
+        await expect(page.getByRole("option", { selected: true })).toHaveAttribute("data-testid", `palette-settings-${tab}`);
+        await page.keyboard.press("Enter");
+        await expect(page.getByTestId("palette-input")).toHaveCount(0);
+        await expect(page.getByTestId(`tab-${tab}`)).toHaveAttribute("aria-selected", "true");
+        await page.keyboard.press("Escape");
+        await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
+      }
+      await page.getByTestId("search-input").focus();
+      await page.keyboard.press("Meta+Comma");
+      await expect(page.getByTestId("tab-general")).toHaveAttribute("aria-selected", "true");
+    });
+    await scenario("⌘K jumps to a category and runs a search", async () => {
+      await fresh(page);
+      await page.keyboard.press("Meta+k");
+      await page.getByTestId("palette-input").fill("Viajes");
+      await expect(page.getByRole("option", { selected: true })).toContainText("Viajes");
+      await expect(page.getByRole("option", { selected: true })).not.toContainText("Search");
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("list-title")).toHaveText("Viajes");
+      await page.keyboard.press("Meta+k");
+      await page.getByTestId("palette-input").fill("presupuesto");
+      await page.getByRole("option", { name: /Search for “presupuesto”/ }).click();
+      await expect(page.getByTestId("search-input")).toHaveValue("presupuesto");
+      await expect(page.getByTestId("search-stats")).toBeVisible();
+    });
+    await scenario("g then i returns to the inbox from anywhere; ? shows the shortcuts", async () => {
+      await fresh(page);
+      await navTo(page, "archive");
+      await expect(page.getByTestId("list-title")).toHaveText("Archive");
+      await page.keyboard.press("g");
+      await page.keyboard.press("i");
+      await expect(page.getByTestId("list-title")).toHaveText("Inbox");
+      await page.keyboard.press("?");
+      await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeVisible();
+    });
+    await scenario("theme switches to dark; Agents shows the MCP setup", async () => {
+      await fresh(page);
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-appearance").click();
+      await page.getByTestId("mode-dark").click();
+      await expect(page.locator("html")).toHaveClass(/dark/);
+      await page.getByTestId("tab-agents").click();
+      await expect(page.getByTestId("mcp-claude")).toContainText('claude mcp add terno -- "/Applications/Terno.app/Contents/Resources/bin/terno-mcp"');
+      await page.reload();
+      await expect(page.locator("html")).toHaveClass(/dark/); // persisted before React mounts
+    });
   });
 
-  test("plan 90: Terno's filters sit under “Created for you”; editing one makes it the user's; Turn all off has an Undo", async ({ app: page, server }) => {
-    const ctx = { clientId: "t", origin: "dev" as const };
-    const facturas = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
-    await server.backend.server.invoke("categorize.apply", { categoryId: facturas, scope: { kind: "sender", email: "uber.receipts@uber.com" }, always: true, filterName: "Uber → Facturas" }, ctx);
-    await server.backend.server.invoke("categorize.apply", { categoryId: facturas, scope: { kind: "sender", email: "recibos@rappi.com" }, always: true, filterName: "Rappi → Facturas" }, ctx);
-    const mine = await server.backend.server.invoke("filters.save", { name: "Boletines", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "news.example" }], actions: [{ type: "archive" }] } }, ctx);
-    await page.keyboard.press("Meta+k");
-    await page.getByTestId("palette-input").fill("settings filters");
-    await page.keyboard.press("Enter");
-    const yours = page.getByTestId("settings-filters-yours");
-    const auto = page.getByTestId("settings-filters-auto");
-    await expect(yours.locator(`[data-filter-id="${mine.id}"]`)).toBeVisible();
-    await expect(auto).toContainText("Created for you");
-    await expect(auto).toContainText("Terno made these when you sorted mail. Edit one and it becomes yours.");
-    await expect(auto.getByTestId("settings-filter")).toHaveCount(2);
+  test("Settings → Filters: Created for you, and turn off, edit, delete", async ({ app: page, server }) => {
+    await scenario("plan 90: Terno's filters sit under “Created for you”; editing one makes it the user's; Turn all off has an Undo", async () => {
+      const ctx = { clientId: "t", origin: "dev" as const };
+      const facturas = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+      await server.backend.server.invoke("categorize.apply", { categoryId: facturas, scope: { kind: "sender", email: "uber.receipts@uber.com" }, always: true, filterName: "Uber → Facturas" }, ctx);
+      await server.backend.server.invoke("categorize.apply", { categoryId: facturas, scope: { kind: "sender", email: "recibos@rappi.com" }, always: true, filterName: "Rappi → Facturas" }, ctx);
+      const mine = await server.backend.server.invoke("filters.save", { name: "Boletines", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "news.example" }], actions: [{ type: "archive" }] } }, ctx);
+      await page.keyboard.press("Meta+k");
+      await page.getByTestId("palette-input").fill("settings filters");
+      await page.keyboard.press("Enter");
+      const yours = page.getByTestId("settings-filters-yours");
+      const auto = page.getByTestId("settings-filters-auto");
+      await expect(yours.locator(`[data-filter-id="${mine.id}"]`)).toBeVisible();
+      await expect(auto).toContainText("Created for you");
+      await expect(auto).toContainText("Terno made these when you sorted mail. Edit one and it becomes yours.");
+      await expect(auto.getByTestId("settings-filter")).toHaveCount(2);
 
-    // Turn all off, then Undo: both back on
-    await auto.getByTestId("settings-filters-auto-off").click();
-    await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).filter((f) => f.auto && f.enabled).length).toBe(0);
-    await expect(page.locator("[data-testid=snack]").filter({ hasText: "Turned off 2 filters" })).toBeVisible();
-    await auto.getByRole("button", { name: "Undo turning them off" }).click();
-    await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).filter((f) => f.auto && f.enabled).length).toBe(2);
+      // Turn all off, then Undo: both back on
+      await auto.getByTestId("settings-filters-auto-off").click();
+      await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).filter((f) => f.auto && f.enabled).length).toBe(0);
+      await expect(page.locator("[data-testid=snack]").filter({ hasText: "Turned off 2 filters" })).toBeVisible();
+      await auto.getByRole("button", { name: "Undo turning them off" }).click();
+      await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).filter((f) => f.auto && f.enabled).length).toBe(2);
 
-    // saved in the builder without a change: still Terno's (rules compare as rules, not as text)
-    await auto.getByRole("button", { name: "Edit “Uber → Facturas”" }).click();
-    await page.getByTestId("filter-save").click();
-    await expect(page.locator("[data-testid=snack]").filter({ hasText: "Filter saved" })).toBeVisible();
-    expect((await server.backend.server.invoke("filters.list", {}, ctx)).find((f) => f.name === "Uber → Facturas")?.auto).toBe(true);
-    // edited in the builder: the user's now
-    await page.getByTestId("filter-name").fill("Uber receipts");
-    await page.getByTestId("filter-save").click();
-    await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).find((f) => f.name === "Uber receipts")?.auto).toBe(false);
-    await page.keyboard.press("Escape");
-    await expect(yours).toContainText("Uber receipts");
-    await expect(auto.getByTestId("settings-filter")).toHaveCount(1);
+      // saved in the builder without a change: still Terno's (rules compare as rules, not as text)
+      await auto.getByRole("button", { name: "Edit “Uber → Facturas”" }).click();
+      await page.getByTestId("filter-save").click();
+      await expect(page.locator("[data-testid=snack]").filter({ hasText: "Filter saved" })).toBeVisible();
+      expect((await server.backend.server.invoke("filters.list", {}, ctx)).find((f) => f.name === "Uber → Facturas")?.auto).toBe(true);
+      // edited in the builder: the user's now
+      await page.getByTestId("filter-name").fill("Uber receipts");
+      await page.getByTestId("filter-save").click();
+      await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).find((f) => f.name === "Uber receipts")?.auto).toBe(false);
+      await page.keyboard.press("Escape");
+      await expect(yours).toContainText("Uber receipts");
+      await expect(auto.getByTestId("settings-filter")).toHaveCount(1);
+    });
+    await scenario("Settings → Filters: turn off, edit in the builder (closing comes back), delete after confirming", async () => {
+      await fresh(page);
+      const ctx = { clientId: "t", origin: "dev" as const };
+      const f = await server.backend.server.invoke("filters.save", { name: "Boletines", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "news.example" }], actions: [{ type: "archive" }] } }, ctx);
+      await page.keyboard.press("Meta+k");
+      await page.getByTestId("palette-input").fill("settings filters");
+      await page.keyboard.press("Enter");
+      const row = page.locator(`[data-filter-id="${f.id}"]`);
+      await expect(row).toContainText("Domain is “news.example”");
+      await row.getByRole("switch", { name: "Turn on “Boletines”" }).click();
+      await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).find((x) => x.id === f.id)!.enabled).toBe(false);
+      await row.getByRole("button", { name: "Edit “Boletines”" }).click();
+      await expect(page.getByTestId("filter-name")).toHaveValue("Boletines");
+      await page.getByTestId("filter-name").fill("Boletines semanales");
+      await page.getByTestId("filter-save").click();
+      await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).filter((x) => x.id === f.id).map((x) => [x.name, x.enabled])).toEqual([["Boletines semanales", false]]);
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("tab-filters")).toHaveAttribute("aria-selected", "true");
+      await row.getByRole("button", { name: "Delete “Boletines semanales”" }).click();
+      await page.getByTestId("settings-filter-delete-dialog-confirm").click();
+      await expect(row).toHaveCount(0);
+      expect((await server.backend.server.invoke("filters.list", {}, ctx)).some((x) => x.id === f.id)).toBe(false);
+    });
   });
 
-  test("Settings → Filters: turn off, edit in the builder (closing comes back), delete after confirming", async ({ app: page, server }) => {
-    const ctx = { clientId: "t", origin: "dev" as const };
-    const f = await server.backend.server.invoke("filters.save", { name: "Boletines", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "news.example" }], actions: [{ type: "archive" }] } }, ctx);
-    await page.keyboard.press("Meta+k");
-    await page.getByTestId("palette-input").fill("settings filters");
-    await page.keyboard.press("Enter");
-    const row = page.locator(`[data-filter-id="${f.id}"]`);
-    await expect(row).toContainText("Domain is “news.example”");
-    await row.getByRole("switch", { name: "Turn on “Boletines”" }).click();
-    await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).find((x) => x.id === f.id)!.enabled).toBe(false);
-    await row.getByRole("button", { name: "Edit “Boletines”" }).click();
-    await expect(page.getByTestId("filter-name")).toHaveValue("Boletines");
-    await page.getByTestId("filter-name").fill("Boletines semanales");
-    await page.getByTestId("filter-save").click();
-    await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).filter((x) => x.id === f.id).map((x) => [x.name, x.enabled])).toEqual([["Boletines semanales", false]]);
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("tab-filters")).toHaveAttribute("aria-selected", "true");
-    await row.getByRole("button", { name: "Delete “Boletines semanales”" }).click();
-    await page.getByTestId("settings-filter-delete-dialog-confirm").click();
-    await expect(row).toHaveCount(0);
-    expect((await server.backend.server.invoke("filters.list", {}, ctx)).some((x) => x.id === f.id)).toBe(false);
-  });
-
-  test("⌘K jumps to a category and runs a search", async ({ app: page }) => {
-    await page.keyboard.press("Meta+k");
-    await page.getByTestId("palette-input").fill("Viajes");
-    await expect(page.getByRole("option", { selected: true })).toContainText("Viajes");
-    await expect(page.getByRole("option", { selected: true })).not.toContainText("Search");
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId("list-title")).toHaveText("Viajes");
-    await page.keyboard.press("Meta+k");
-    await page.getByTestId("palette-input").fill("presupuesto");
-    await page.getByRole("option", { name: /Search for “presupuesto”/ }).click();
-    await expect(page.getByTestId("search-input")).toHaveValue("presupuesto");
-    await expect(page.getByTestId("search-stats")).toBeVisible();
-  });
-
-  test("g then i returns to the inbox from anywhere; ? shows the shortcuts", async ({ app: page }) => {
-    await navTo(page, "archive");
-    await expect(page.getByTestId("list-title")).toHaveText("Archive");
-    await page.keyboard.press("g");
-    await page.keyboard.press("i");
-    await expect(page.getByTestId("list-title")).toHaveText("Inbox");
-    await page.keyboard.press("?");
-    await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeVisible();
-  });
 });
 
 test.describe("agents", () => {

@@ -13,8 +13,9 @@ const forwarded = { name: "Forward recipient", email: "forward@example.test" };
 test.use({ backendOptions: { smtpCapture: true } });
 
 for (const mode of ["reply", "replyAll", "forward"] as const) {
-  for (const theme of ["light", "dark"] as const) {
-    test(`own alias copy ${mode} (${theme}): chips, queue and SMTP keep recipients and source`, async ({ app: page, server }, testInfo) => {
+  {
+    const theme = "light";
+    test(`own alias copy ${mode}: chips, queue and SMTP keep recipients and source`, async ({ app: page, server }) => {
       const [account] = await server.backend.store.accounts.list();
       const me = { name: "Me", email: account!.email };
       const first: IncomingMessage = {
@@ -58,7 +59,6 @@ for (const mode of ["reply", "replyAll", "forward"] as const) {
       await page.getByTestId("compose-send").scrollIntoViewIfNeeded();
       await expect(page.locator("html")).toHaveClass(theme === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
       await stabilize(page);
-      await page.screenshot({ path: testInfo.outputPath(`own-${mode}-${theme}.png`) });
       await page.getByTestId("compose-send").click();
       await expect.poll(() => server.smtp.length).toBe(1);
       expect(server.smtp[0]!.rcpt).toEqual([...displayedTo, ...displayedCc]);

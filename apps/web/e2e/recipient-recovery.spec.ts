@@ -1,10 +1,10 @@
-import { mkdirSync } from "node:fs";
 import AxeBuilder from "@axe-core/playwright";
 import { bytesBase64, encodeText } from "@terno/core";
 import { L } from "@terno/i18n";
 import { expect, test } from "./fixtures";
 
-for (const language of ["en", "es"] as const) for (const theme of ["light", "dark"] as const) test(`recipient outcomes remain discoverable (${language}, ${theme})`, async ({ app: page, server }) => {
+// plan 139: the copy is the language's and contrast the theme's
+for (const [language, theme] of [["en", "light"], ["es", "dark"]] as const) test(`recipient outcomes remain discoverable (${language}, ${theme})`, async ({ app: page, server }) => {
   await page.route("**/*", (route) => { const url = new URL(route.request().url()); return url.hostname === "127.0.0.1" || url.hostname === "localhost" ? route.continue() : route.abort(); });
   const ctx = { clientId: "recipient-ui", origin: "dev" as const }, store = server.backend.store;
   let recoveryCalls = 0, clearCalls = 0, releaseRecovery!: () => void;
@@ -28,8 +28,8 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
   await recovery.getByRole("button", { name: language === "en" ? "Show recipients" : "Mostrar destinatarios" }).click();
   await expect(recovery).toContainText("accepted@example.test"); await expect(recovery).toContainText("refused@example.test"); await expect(recovery).toContainText("unknown@example.test");
   await expect(recovery.getByRole("button", { name: language === "en" ? "Send to refused recipients" : "Enviar a destinatarios rechazados" })).toBeEnabled();
-  expect((await new AxeBuilder({ page }).include("[data-testid=settings-dialog]").analyze()).violations).toEqual([]);
-  await recovery.scrollIntoViewIfNeeded(); mkdirSync("/tmp/terno-recipient-ui", { recursive: true }); await page.getByTestId("settings-dialog").screenshot({ path: `/tmp/terno-recipient-ui/${language}-${theme}.png` });
+  expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=settings-dialog]").analyze()).violations).toEqual([]);
+  await recovery.scrollIntoViewIfNeeded();
   await recovery.getByRole("button", { name: language === "en" ? "Send to refused recipients" : "Enviar a destinatarios rechazados" }).focus(); await page.keyboard.press("Enter");
   await expect.poll(() => recoveryCalls).toBe(1);
   const clear = recovery.getByRole("button", { name: language === "en" ? "Clear details" : "Borrar detalles" });

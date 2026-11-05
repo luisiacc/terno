@@ -68,7 +68,7 @@ test.describe("Gmail's Promotions and Social (plan 86)", () => {
 
     await page.getByTestId(`nav-account-${freelance}`).click();
     await expect(page.locator(`#account-folders-${freelance} [data-testid^=nav-tab-]`)).toHaveCount(0);
-    expect((await new AxeBuilder({ page }).include("#app-sidebar").analyze()).violations).toEqual([]);
+    expect((await new AxeBuilder({ page }).setLegacyMode().include("#app-sidebar").analyze()).violations).toEqual([]);
   });
 
   test("a lone Gmail account opens to its standard folders and tabs; turned off, the tabs go and focus goes to its Inbox", async ({ app: page, server }) => {

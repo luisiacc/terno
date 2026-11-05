@@ -10,7 +10,7 @@ import { waitingCutoff, type DesignId, type ListFilter } from "@terno/core";
 import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
-import { expect, focusList, selectedRow, test } from "./fixtures";
+import { expect, focusList, selectedRow, test, fresh, scenario } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 const db = (server: DevServer) => sqlDb(server.backend.store);
@@ -93,103 +93,113 @@ test.describe("the People filter", () => {
     else await expect(page.getByTestId("filter-criterion")).toContainText("People");
   });
 
-  test("the palette offers People and Waiting, and Show all turns them off", async ({ app: page }) => {
-    await page.keyboard.press("ControlOrMeta+k");
-    await page.getByTestId("palette-filter-people").click();
-    await showing(page, "people");
-    await page.keyboard.press("ControlOrMeta+k");
-    await expect(page.getByTestId("palette-filter-people")).toHaveCount(0);
-    await page.getByTestId("palette-filter-waiting").click();
-    await showing(page, "waiting");
-    await page.keyboard.press("ControlOrMeta+k");
-    await page.getByTestId("palette-filter-all").click();
-    await showing(page, null);
+  test("macOS: the palette offers People and Waiting; the menu's Filtered by", async ({ app: page, server }) => {
+    const fresh = async () => {
+      await page.evaluate(() => localStorage.removeItem("terno:list-filter"));
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await page.getByTestId("thread-row").first().waitFor();
+    };
+    await scenario("the palette offers People and Waiting, and Show all turns them off", async () => {
+      await page.keyboard.press("ControlOrMeta+k");
+      await page.getByTestId("palette-filter-people").click();
+      await showing(page, "people");
+      await page.keyboard.press("ControlOrMeta+k");
+      await expect(page.getByTestId("palette-filter-people")).toHaveCount(0);
+      await page.getByTestId("palette-filter-waiting").click();
+      await showing(page, "waiting");
+      await page.keyboard.press("ControlOrMeta+k");
+      await page.getByTestId("palette-filter-all").click();
+      await showing(page, null);
+    });
+    await scenario("Filtered by → People, then Waiting for reply; the empty Waiting list says what it would hold", async () => {
+      await fresh();
+      await chooseFilter(page, "macos", "people");
+      await showing(page, "people");
+      await expect(page.getByTestId("filter-criterion")).toContainText("People");
+      await chooseFilter(page, "macos", "waiting");
+      await showing(page, "waiting");
+      await expect(page.getByTestId("filter-criterion")).toContainText("Waiting for reply");
+      const waiting = new Set(ids(server, "waiting_since >= ?", cutoff));
+      expect((await loadedIds(page)).every((id) => waiting.has(id))).toBe(true);
+      // a new, empty category: the empty state says what the filter would hold
+      const c = (await server.backend.server.invoke("categories.create", { name: "Pendientes", color: "violet" }, ctx)) as { id: number };
+      await page.locator(`[data-drop-target="${c.id}"]`).click();
+      await chooseFilter(page, "macos", "waiting");
+      await expect(page.getByTestId("unread-empty")).toHaveAttribute("data-filter", "waiting");
+      await expect(page.getByTestId("unread-empty")).toContainText("Nothing is waiting for your reply");
+    });
   });
 });
 
-test.describe("macOS: the menu", () => {
-  test("Filtered by → People, then Waiting for reply; the empty Waiting list says what it would hold", async ({ app: page, server }) => {
-    await chooseFilter(page, "macos", "people");
-    await showing(page, "people");
-    await expect(page.getByTestId("filter-criterion")).toContainText("People");
-    await chooseFilter(page, "macos", "waiting");
-    await showing(page, "waiting");
-    await expect(page.getByTestId("filter-criterion")).toContainText("Waiting for reply");
-    const waiting = new Set(ids(server, "waiting_since >= ?", cutoff));
-    expect((await loadedIds(page)).every((id) => waiting.has(id))).toBe(true);
-    // a new, empty category: the empty state says what the filter would hold
-    const c = (await server.backend.server.invoke("categories.create", { name: "Pendientes", color: "violet" }, ctx)) as { id: number };
-    await page.locator(`[data-drop-target="${c.id}"]`).click();
-    await chooseFilter(page, "macos", "waiting");
-    await expect(page.getByTestId("unread-empty")).toHaveAttribute("data-filter", "waiting");
-    await expect(page.getByTestId("unread-empty")).toContainText("Nothing is waiting for your reply");
-  });
-});
 
 test.describe("Lumen: waiting for your reply", () => {
   test.use({ design: "lumen" });
 
-  test("the greeting counts the inbox's conversations waiting for you; the count filters to them, with its chip, and clears", async ({ app: page, server }) => {
-    const n = waitingInInbox(server).length;
-    expect(n).toBeGreaterThan(0);
-    const count = page.getByTestId("waiting-count");
-    await expect(count).toHaveText(`${n} waiting for your reply`);
-    await expect(page.getByTestId("list-subtitle")).toContainText(" unread · ");
-    await expect(page.getByTestId("quick-filter-waiting")).toHaveCount(0);
-    await count.click();
-    await showing(page, "waiting");
-    await expect(count).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("quick-filter-waiting")).toHaveAttribute("aria-pressed", "true");
-    const waiting = new Set(waitingInInbox(server));
-    const shown = await loadedIds(page);
-    expect(shown.length).toBe(Math.min(n, shown.length));
-    expect(shown.every((id) => waiting.has(id))).toBe(true);
-    const results = await new AxeBuilder({ page }).include("[data-testid=list-header]").analyze();
-    expect(results.violations).toEqual([]);
-    await count.click();
-    await showing(page, null);
-    await expect(page.getByTestId("quick-filter-waiting")).toHaveCount(0);
-    // the keyboard reaches it, and Enter toggles it like a click
-    await count.focus();
-    await page.keyboard.press("Enter");
-    await showing(page, "waiting");
+  test("Lumen's waiting count: the greeting, an account's own, in Spanish, while the store doesn't know", async ({ app: page, server }) => {
+    await scenario("the greeting counts the inbox's conversations waiting for you; the count filters to them, with its chip, and clears", async () => {
+      const n = waitingInInbox(server).length;
+      expect(n).toBeGreaterThan(0);
+      const count = page.getByTestId("waiting-count");
+      await expect(count).toHaveText(`${n} waiting for your reply`);
+      await expect(page.getByTestId("list-subtitle")).toContainText(" unread · ");
+      await expect(page.getByTestId("quick-filter-waiting")).toHaveCount(0);
+      await count.click();
+      await showing(page, "waiting");
+      await expect(count).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByTestId("quick-filter-waiting")).toHaveAttribute("aria-pressed", "true");
+      const waiting = new Set(waitingInInbox(server));
+      const shown = await loadedIds(page);
+      expect(shown.length).toBe(Math.min(n, shown.length));
+      expect(shown.every((id) => waiting.has(id))).toBe(true);
+      const results = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=list-header]").analyze();
+      expect(results.violations).toEqual([]);
+      await count.click();
+      await showing(page, null);
+      await expect(page.getByTestId("quick-filter-waiting")).toHaveCount(0);
+      // the keyboard reaches it, and Enter toggles it like a click
+      await count.focus();
+      await page.keyboard.press("Enter");
+      await showing(page, "waiting");
+    });
+    await scenario("an account's inbox counts its own; answering one drops the count", async () => {
+      await fresh(page);
+      const account = db(server).get<{ account_id: number }>("SELECT account_id FROM threads WHERE in_inbox = 1 AND waiting_since >= ? GROUP BY account_id ORDER BY count(*) DESC LIMIT 1", cutoff)!.account_id;
+      await page.getByTestId(`nav-account-${account}`).click();
+      const mine = waitingInInbox(server, account);
+      await expect(page.getByTestId("waiting-count")).toHaveText(`${mine.length} waiting for your reply`);
+      // reply to the newest of them
+      const target = db(server).get<{ id: number; from_email: string }>(`SELECT m.id, m.from_email FROM messages m JOIN threads t ON t.id = m.thread_id WHERE t.id = ${mine[0]} ORDER BY m.date DESC LIMIT 1`)!;
+      await server.backend.server.invoke("compose.send", { accountId: account, to: [{ name: "", email: target.from_email }], subject: "Re: hola", bodyText: "Te respondo.", inReplyToMessageId: target.id }, ctx);
+      await expect(page.getByTestId("waiting-count")).toHaveText(`${mine.length - 1} waiting for your reply`);
+    });
+    await scenario("while the store doesn't know yet (its backfill), there is no count, never a wrong one", async () => {
+      await fresh(page);
+      const store = server.backend.store;
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      const real = store.facts.backfill.bind(store.facts);
+      store.facts.backfill = async (o) => {
+        await held;
+        return real(o);
+      };
+      await store.debug.resetFacts();
+      server.backend.notifyChanged([]);
+      await expect(page.getByTestId("waiting-count")).toHaveCount(0);
+      await expect(page.getByTestId("list-subtitle")).toContainText("unread");
+      release();
+      await expect.poll(() => store.facts.idle()).toBe(true);
+      await expect(page.getByTestId("waiting-count")).toHaveText(`${waitingInInbox(server).length} waiting for your reply`);
+    });
+    await scenario("in Spanish: the chips and the count", async () => {
+      await fresh(page);
+      await server.backend.server.invoke("settings.update", { language: "es" }, ctx);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await expect(page.getByTestId("quick-filter-people")).toHaveText("Personas");
+      const n = waitingInInbox(server).length;
+      await expect(page.getByTestId("waiting-count")).toHaveText(`${n} ${n === 1 ? "espera" : "esperan"} tu respuesta`);
+    });
   });
 
-  test("an account's inbox counts its own; answering one drops the count", async ({ app: page, server }) => {
-    const account = db(server).get<{ account_id: number }>("SELECT account_id FROM threads WHERE in_inbox = 1 AND waiting_since >= ? GROUP BY account_id ORDER BY count(*) DESC LIMIT 1", cutoff)!.account_id;
-    await page.getByTestId(`nav-account-${account}`).click();
-    const mine = waitingInInbox(server, account);
-    await expect(page.getByTestId("waiting-count")).toHaveText(`${mine.length} waiting for your reply`);
-    // reply to the newest of them
-    const target = db(server).get<{ id: number; from_email: string }>(`SELECT m.id, m.from_email FROM messages m JOIN threads t ON t.id = m.thread_id WHERE t.id = ${mine[0]} ORDER BY m.date DESC LIMIT 1`)!;
-    await server.backend.server.invoke("compose.send", { accountId: account, to: [{ name: "", email: target.from_email }], subject: "Re: hola", bodyText: "Te respondo.", inReplyToMessageId: target.id }, ctx);
-    await expect(page.getByTestId("waiting-count")).toHaveText(`${mine.length - 1} waiting for your reply`);
-  });
-
-  test("while the store doesn't know yet (its backfill), there is no count, never a wrong one", async ({ app: page, server }) => {
-    const store = server.backend.store;
-    let release!: () => void;
-    const held = new Promise<void>((r) => (release = r));
-    const real = store.facts.backfill.bind(store.facts);
-    store.facts.backfill = async (o) => {
-      await held;
-      return real(o);
-    };
-    await store.debug.resetFacts();
-    server.backend.notifyChanged([]);
-    await expect(page.getByTestId("waiting-count")).toHaveCount(0);
-    await expect(page.getByTestId("list-subtitle")).toContainText("unread");
-    release();
-    await expect.poll(() => store.facts.idle()).toBe(true);
-    await expect(page.getByTestId("waiting-count")).toHaveText(`${waitingInInbox(server).length} waiting for your reply`);
-  });
-
-  test("in Spanish: the chips and the count", async ({ app: page, server }) => {
-    await server.backend.server.invoke("settings.update", { language: "es" }, ctx);
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await expect(page.getByTestId("quick-filter-people")).toHaveText("Personas");
-    const n = waitingInInbox(server).length;
-    await expect(page.getByTestId("waiting-count")).toHaveText(`${n} ${n === 1 ? "espera" : "esperan"} tu respuesta`);
-  });
 });

@@ -8,11 +8,11 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { E2E_NOW } from "./constants";
-import { expect, focusList, openRow, rows, selectedRow, test, timeText, typeTime } from "./fixtures";
+import { expect, focusList, openRow, rows, selectedRow, test, timeText, typeTime, fresh, scenario } from "./fixtures";
 
 const snackWith = (page: Page, text: string | RegExp) => page.locator("[data-testid=snack]").filter({ hasText: text });
 const rowOf = (page: Page, id: string | number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
-const wcag = (page: Page, root: string) => new AxeBuilder({ page }).include(root).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
+const wcag = (page: Page, root: string) => new AxeBuilder({ page }).setLegacyMode().include(root).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
 
 async function goReminders(page: Page) {
   await focusList(page);
@@ -53,98 +53,100 @@ test.describe("remind me", () => {
     await expect(page.getByTestId("list-empty")).toContainText("No reminders");
   });
 
-  test("from the reader's bell: If no reply on a date and time of your own; a past one is refused", async ({ app: page }) => {
-    await openRow(page, 1);
-    await page.getByTestId("action-remind").click();
-    const popover = page.getByTestId("remind-popover");
-    await expect(popover).toBeVisible();
-    await popover.getByTestId("remind-kind-noReply").click();
-    await expect(popover.getByTestId("remind-preset-in3d")).toContainText("Sun 10:00 AM");
-    await popover.getByTestId("remind-pick").click();
-    // the calendar (tomorrow chosen) offers no day before today
-    await expect(popover.getByTestId("remind-date")).toHaveText("Fri, Oct 23");
-    await popover.getByTestId("remind-date").click();
-    const calendar = page.getByTestId("remind-calendar");
-    await expect(calendar.locator('button[data-day="2026-10-21"]')).toBeDisabled();
-    // today at a time already gone: refused, said why
-    await calendar.locator('button[data-day="2026-10-22"]').click();
-    await expect(calendar).toBeHidden();
-    await expect(popover.getByTestId("remind-past")).toHaveText("Pick a time in the future.");
-    await expect(popover.getByTestId("remind-set")).toBeDisabled();
-    await popover.getByTestId("remind-date").click();
-    await calendar.locator('button[data-day="2026-10-30"]').click();
-    await typeTime(popover.getByTestId("remind-time"), 2, 0, "PM");
-    expect(await timeText(popover.getByTestId("remind-time"))).toBe("2:00 PM");
-    await popover.getByTestId("remind-set").click();
-    await expect(popover).toBeHidden();
-    await expect(snackWith(page, "I'll remind you on Oct 30 at 2:00 PM if they don't answer")).toBeVisible();
-    await expect(page.getByTestId("action-remind")).toHaveAttribute("data-set", "true");
-    await expect(page.getByTestId("action-remind")).toHaveAccessibleName("Reminder: Oct 30 2:00 PM");
-    // h opens it again, now with the reminder there is and Clear
-    await focusList(page);
-    await page.keyboard.press("h");
-    await expect(popover.getByTestId("remind-current")).toHaveText("Reminds you on Oct 30 at 2:00 PM if they don't answer");
-    await popover.getByTestId("remind-clear").click();
-    await expect(snackWith(page, "Reminder cleared")).toBeVisible();
-    await expect(page.getByTestId("action-remind")).not.toHaveAttribute("data-set");
-  });
+  test("reminders: the bell's own time, a due one on top, archiving it, the menu's picker", async ({ app: page, server }) => {
+    await scenario("from the reader's bell: If no reply on a date and time of your own; a past one is refused", async () => {
+      await openRow(page, 1);
+      await page.getByTestId("action-remind").click();
+      const popover = page.getByTestId("remind-popover");
+      await expect(popover).toBeVisible();
+      await popover.getByTestId("remind-kind-noReply").click();
+      await expect(popover.getByTestId("remind-preset-in3d")).toContainText("Sun 10:00 AM");
+      await popover.getByTestId("remind-pick").click();
+      // the calendar (tomorrow chosen) offers no day before today
+      await expect(popover.getByTestId("remind-date")).toHaveText("Fri, Oct 23");
+      await popover.getByTestId("remind-date").click();
+      const calendar = page.getByTestId("remind-calendar");
+      await expect(calendar.locator('button[data-day="2026-10-21"]')).toBeDisabled();
+      // today at a time already gone: refused, said why
+      await calendar.locator('button[data-day="2026-10-22"]').click();
+      await expect(calendar).toBeHidden();
+      await expect(popover.getByTestId("remind-past")).toHaveText("Pick a time in the future.");
+      await expect(popover.getByTestId("remind-set")).toBeDisabled();
+      await popover.getByTestId("remind-date").click();
+      await calendar.locator('button[data-day="2026-10-30"]').click();
+      await typeTime(popover.getByTestId("remind-time"), 2, 0, "PM");
+      expect(await timeText(popover.getByTestId("remind-time"))).toBe("2:00 PM");
+      await popover.getByTestId("remind-set").click();
+      await expect(popover).toBeHidden();
+      await expect(snackWith(page, "I'll remind you on Oct 30 at 2:00 PM if they don't answer")).toBeVisible();
+      await expect(page.getByTestId("action-remind")).toHaveAttribute("data-set", "true");
+      await expect(page.getByTestId("action-remind")).toHaveAccessibleName("Reminder: Oct 30 2:00 PM");
+      // h opens it again, now with the reminder there is and Clear
+      await focusList(page);
+      await page.keyboard.press("h");
+      await expect(popover.getByTestId("remind-current")).toHaveText("Reminds you on Oct 30 at 2:00 PM if they don't answer");
+      await popover.getByTestId("remind-clear").click();
+      await expect(snackWith(page, "Reminder cleared")).toBeVisible();
+      await expect(page.getByTestId("action-remind")).not.toHaveAttribute("data-set");
+    });
+    await scenario("a due reminder brings its conversation to the top of the Inbox, archived or not, until it's opened", async () => {
+      await fresh(page);
+      const id = Number(await rows(page).nth(6).getAttribute("data-thread-id"));
+      const dev = { clientId: "setup", origin: "dev" as const };
+      await server.backend.server.invoke("threads.act", { threadIds: [id], action: "archive" }, dev);
+      await expect(rowOf(page, id)).toHaveCount(0);
+      // its time came (the backend's clock is E2E_NOW)
+      await server.backend.server.invoke("reminders.set", { threadIds: [id], dueAt: E2E_NOW, kind: "always" }, dev);
+      await expect(rows(page).first()).toHaveAttribute("data-thread-id", String(id));
+      await expect(rows(page).first().getByTestId("row-reminder")).toHaveAttribute("data-due", "true");
+      // the sidebar's Reminders shows, with More closed, and counts it
+      const nav = page.getByTestId("nav-reminders");
+      await expect(nav).toBeVisible();
+      await expect(nav.locator("[data-slot=nav-count]")).toHaveText("1");
+      // the Unread filter keeps it too
+      await focusList(page);
+      await page.keyboard.press("Shift+U");
+      await expect(rows(page).first()).toHaveAttribute("data-thread-id", String(id));
+      await page.keyboard.press("Shift+A");
 
-  test("a due reminder brings its conversation to the top of the Inbox, archived or not, until it's opened", async ({ app: page, server }) => {
-    const id = Number(await rows(page).nth(6).getAttribute("data-thread-id"));
-    const dev = { clientId: "setup", origin: "dev" as const };
-    await server.backend.server.invoke("threads.act", { threadIds: [id], action: "archive" }, dev);
-    await expect(rowOf(page, id)).toHaveCount(0);
-    // its time came (the backend's clock is E2E_NOW)
-    await server.backend.server.invoke("reminders.set", { threadIds: [id], dueAt: E2E_NOW, kind: "always" }, dev);
-    await expect(rows(page).first()).toHaveAttribute("data-thread-id", String(id));
-    await expect(rows(page).first().getByTestId("row-reminder")).toHaveAttribute("data-due", "true");
-    // the sidebar's Reminders shows, with More closed, and counts it
-    const nav = page.getByTestId("nav-reminders");
-    await expect(nav).toBeVisible();
-    await expect(nav.locator("[data-slot=nav-count]")).toHaveText("1");
-    // the Unread filter keeps it too
-    await focusList(page);
-    await page.keyboard.press("Shift+U");
-    await expect(rows(page).first()).toHaveAttribute("data-thread-id", String(id));
-    await page.keyboard.press("Shift+A");
-
-    // opened: the reminder ends after a moment, the row stays while it's open, and goes when the selection moves on
-    await rows(page).first().dispatchEvent("mousedown");
-    await rows(page).first().dispatchEvent("click");
-    await expect(nav.locator("[data-slot=nav-count]")).toHaveCount(0);
-    await expect(rows(page).first()).toHaveAttribute("data-thread-id", String(id));
-    await focusList(page);
-    await page.keyboard.press("j");
-    await expect(rowOf(page, id)).toHaveCount(0);
-  });
-
-  test("archiving a due one ends it; Undo brings it back on top", async ({ app: page, server }) => {
-    const id = Number(await rows(page).nth(4).getAttribute("data-thread-id"));
-    await server.backend.server.invoke("reminders.set", { threadIds: [id], dueAt: E2E_NOW, kind: "always" }, { clientId: "setup", origin: "dev" });
-    await expect(rows(page).first()).toHaveAttribute("data-thread-id", String(id));
-    await rows(page).first().click({ button: "right" });
-    await page.getByTestId("menu-archive").click();
-    await expect(rowOf(page, id)).toHaveCount(0);
-    await expect(page.getByTestId("nav-reminders").locator("[data-slot=nav-count]")).toHaveCount(0);
-    await focusList(page);
-    await page.keyboard.press("z");
-    await expect(rows(page).first()).toHaveAttribute("data-thread-id", String(id));
-    await expect(page.getByTestId("nav-reminders").locator("[data-slot=nav-count]")).toHaveText("1");
-  });
-
-  test("the menu's Pick date & time… opens the picker on the kind it was under, over the reminder's own", async ({ app: page, server }) => {
-    const row = rows(page).nth(2);
-    const id = Number(await row.getAttribute("data-thread-id"));
-    await server.backend.server.invoke("reminders.set", { threadIds: [id], dueAt: E2E_NOW + 86_400_000, kind: "always" }, { clientId: "setup", origin: "dev" });
-    await expect(rowOf(page, id).getByTestId("row-reminder")).toBeVisible();
-    await row.click({ button: "right" });
-    await page.getByTestId("menu-remind-noReply").hover();
-    await page.getByTestId("menu-remind-noReply-pick").click();
-    const dialog = page.getByTestId("remind-dialog");
-    await expect(dialog.getByTestId("remind-kind-noReply")).toHaveAttribute("aria-pressed", "true");
-    await expect(dialog.getByTestId("remind-custom")).toBeVisible();
-    await dialog.getByTestId("remind-set").click();
-    await expect(snackWith(page, "if they don't answer")).toBeVisible();
+      // opened: the reminder ends after a moment, the row stays while it's open, and goes when the selection moves on
+      await rows(page).first().dispatchEvent("mousedown");
+      await rows(page).first().dispatchEvent("click");
+      await expect(nav.locator("[data-slot=nav-count]")).toHaveCount(0);
+      await expect(rows(page).first()).toHaveAttribute("data-thread-id", String(id));
+      await focusList(page);
+      await page.keyboard.press("j");
+      await expect(rowOf(page, id)).toHaveCount(0);
+    });
+    await scenario("archiving a due one ends it; Undo brings it back on top", async () => {
+      await fresh(page);
+      const id = Number(await rows(page).nth(4).getAttribute("data-thread-id"));
+      await server.backend.server.invoke("reminders.set", { threadIds: [id], dueAt: E2E_NOW, kind: "always" }, { clientId: "setup", origin: "dev" });
+      await expect(rows(page).first()).toHaveAttribute("data-thread-id", String(id));
+      await rows(page).first().click({ button: "right" });
+      await page.getByTestId("menu-archive").click();
+      await expect(rowOf(page, id)).toHaveCount(0);
+      await expect(page.getByTestId("nav-reminders").locator("[data-slot=nav-count]")).toHaveCount(0);
+      await focusList(page);
+      await page.keyboard.press("z");
+      await expect(rows(page).first()).toHaveAttribute("data-thread-id", String(id));
+      await expect(page.getByTestId("nav-reminders").locator("[data-slot=nav-count]")).toHaveText("1");
+    });
+    await scenario("the menu's Pick date & time… opens the picker on the kind it was under, over the reminder's own", async () => {
+      await fresh(page);
+      const row = rows(page).nth(2);
+      const id = Number(await row.getAttribute("data-thread-id"));
+      await server.backend.server.invoke("reminders.set", { threadIds: [id], dueAt: E2E_NOW + 86_400_000, kind: "always" }, { clientId: "setup", origin: "dev" });
+      await expect(rowOf(page, id).getByTestId("row-reminder")).toBeVisible();
+      await row.click({ button: "right" });
+      await page.getByTestId("menu-remind-noReply").hover();
+      await page.getByTestId("menu-remind-noReply-pick").click();
+      const dialog = page.getByTestId("remind-dialog");
+      await expect(dialog.getByTestId("remind-kind-noReply")).toHaveAttribute("aria-pressed", "true");
+      await expect(dialog.getByTestId("remind-custom")).toBeVisible();
+      await dialog.getByTestId("remind-set").click();
+      await expect(snackWith(page, "if they don't answer")).toBeVisible();
+    });
   });
 
   for (const mode of ["light", "dark"] as const) {

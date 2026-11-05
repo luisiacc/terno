@@ -41,7 +41,7 @@ for (const theme of ["light", "dark"] as const) {
       const input = node as HTMLInputElement;
       return [input.selectionStart, input.selectionEnd, input.selectionDirection];
     })).toEqual([2, 7, "backward"]);
-    expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze()).violations.map((v) => v.id)).toEqual([]);
+    expect((await new AxeBuilder({ page }).setLegacyMode().withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze()).violations.map((v) => v.id)).toEqual([]);
     const shots = process.env.SIGN_IN_RESTORATION_SHOTS;
     if (shots) await page.screenshot({ path: join(shots, `${info.project.name}-${theme}-surviving-password.png`) });
     await page.keyboard.press("Escape");

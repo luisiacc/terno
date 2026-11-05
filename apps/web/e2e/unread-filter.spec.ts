@@ -218,53 +218,44 @@ test.describe("with motion on", () => {
 });
 
 test.describe("acting on a filtered mailbox", () => {
-  test("acting on a filtered mailbox: ⌘A with its undo, then select all N of the unread", async ({ app: page, server }) => {
-    const fresh = async () => {
-      await page.evaluate(() => localStorage.removeItem("terno:list-filter"));
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      await page.getByTestId("thread-row").first().waitFor();
-    };
-    await scenario("⌘A + archive archives the threads shown (the unread ones and the open one), nothing else read; undo brings them back", async () => {
-      await filterOn(page);
-      const open = Number(await selectedRow(page).getAttribute("data-thread-id"));
-      const read = readInbox(server).filter((id) => id !== open);
-      const shown = await loadedIds(page);
-      expect(shown).toContain(open);
-      await page.keyboard.press("ControlOrMeta+a");
-      await page.keyboard.press("e");
-      await expect.poll(() => db(server).get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE in_inbox = 1 AND id IN (${shown.join(",")})`)!.c).toBe(0);
-      expect(readInbox(server)).toEqual(read);
-      await toast(page, /Archived/).getByTestId("snack-action").click();
-      await expect.poll(() => db(server).get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE in_inbox = 1 AND id IN (${shown.join(",")})`)!.c).toBe(shown.length);
-    });
-    await scenario("“select all N” is the unread threads of the mailbox: the banner counts them and archive reaches them only", async () => {
-      await fresh();
-      // enough unread for more than one page
-      const read = readInbox(server).slice(0, 150);
-      await server.backend.server.invoke("threads.act", { threadIds: read, action: "markUnread" }, ctx);
-      await filterOn(page);
-      // past the 450 ms dwell the open thread is read (⌘A inside it would leave it unread): count once it is, not racing it
-      const open = Number(await selectedRow(page).getAttribute("data-thread-id"));
-      await expect.poll(() => db(server).get<{ u: number }>("SELECT unread_count AS u FROM threads WHERE id = ?", open)!.u).toBe(0);
-      const unread = unreadInbox(server);
-      expect(unread.length).toBeGreaterThan(100);
-      const stillRead = readInbox(server);
-      expect(stillRead.length).toBeGreaterThan(0);
-      await page.keyboard.press("ControlOrMeta+a");
-      const banner = page.getByTestId("select-all-scope-button");
-      await expect(banner).toHaveText(`Select all ${unread.length.toLocaleString("en-US")} conversations in “Inbox · Unread”`);
-      await banner.click();
-      await expect(page.getByTestId("select-all-scope")).toContainText("Inbox · Unread");
-      await page.keyboard.press("e");
-      await expect.poll(() => unreadInbox(server).length).toBe(0);
-      expect(readInbox(server)).toEqual(stillRead);
-      // read, it was outside the scope; it stays while it is open (the empty state has its own test below)
-      await expect(page.getByTestId("thread-row")).toHaveCount(1);
-      await expect(row(page, open)).toBeVisible();
-    });
+  test("⌘A + archive archives the threads shown (the unread ones and the open one), nothing else read; undo brings them back", async ({ app: page, server }) => {
+    await filterOn(page);
+    const open = Number(await selectedRow(page).getAttribute("data-thread-id"));
+    const read = readInbox(server).filter((id) => id !== open);
+    const shown = await loadedIds(page);
+    expect(shown).toContain(open);
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.press("e");
+    await expect.poll(() => db(server).get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE in_inbox = 1 AND id IN (${shown.join(",")})`)!.c).toBe(0);
+    expect(readInbox(server)).toEqual(read);
+    await toast(page, /Archived/).getByTestId("snack-action").click();
+    await expect.poll(() => db(server).get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE in_inbox = 1 AND id IN (${shown.join(",")})`)!.c).toBe(shown.length);
   });
 
+  test("“select all N” is the unread threads of the mailbox: the banner counts them and archive reaches them only", async ({ app: page, server }) => {
+    // enough unread for more than one page
+    const read = readInbox(server).slice(0, 150);
+    await server.backend.server.invoke("threads.act", { threadIds: read, action: "markUnread" }, ctx);
+    await filterOn(page);
+    // past the 450 ms dwell the open thread is read (⌘A inside it would leave it unread): count once it is, not racing it
+    const open = Number(await selectedRow(page).getAttribute("data-thread-id"));
+    await expect.poll(() => db(server).get<{ u: number }>("SELECT unread_count AS u FROM threads WHERE id = ?", open)!.u).toBe(0);
+    const unread = unreadInbox(server);
+    expect(unread.length).toBeGreaterThan(100);
+    const stillRead = readInbox(server);
+    expect(stillRead.length).toBeGreaterThan(0);
+    await page.keyboard.press("ControlOrMeta+a");
+    const banner = page.getByTestId("select-all-scope-button");
+    await expect(banner).toHaveText(`Select all ${unread.length.toLocaleString("en-US")} conversations in “Inbox · Unread”`);
+    await banner.click();
+    await expect(page.getByTestId("select-all-scope")).toContainText("Inbox · Unread");
+    await page.keyboard.press("e");
+    await expect.poll(() => unreadInbox(server).length).toBe(0);
+    expect(readInbox(server)).toEqual(stillRead);
+    // read, it was outside the scope; it stays while it is open (the empty state has its own test below)
+    await expect(page.getByTestId("thread-row")).toHaveCount(1);
+    await expect(row(page, open)).toBeVisible();
+  });
 });
 
 test.describe("nothing unread", () => {

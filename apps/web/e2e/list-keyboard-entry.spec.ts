@@ -5,8 +5,9 @@ import { expect, rows, selectedRow, test } from "./fixtures";
 for (const layout of ["list", "split"] as const) {
   test.describe(`${layout} keyboard entry`, () => {
     test.use({ layout });
-    for (const theme of ["light", "dark"] as const) {
-      test(`Tab reaches the conversation list (${theme})`, theme === "light" ? { tag: "@variant" } : {}, async ({ app: page, server }, info) => {
+    // plan 139: a layout in each mode: the highlight and contrast are the mode's, what Tab does is the layout's
+    for (const theme of [layout === "list" ? "light" : "dark"] as const) {
+      test(`Tab reaches the conversation list (${theme})`, { tag: "@variant" }, async ({ app: page, server }, info) => {
         await server.backend.server.invoke("settings.update", { theme }, { clientId: "setup", origin: "dev" });
         await page.reload();
         await page.locator("[data-ready]").waitFor();
@@ -40,7 +41,7 @@ for (const layout of ["list", "split"] as const) {
           await expect(list).toBeFocused();
           await expect(page.getByTestId("list-page")).toHaveCount(0);
         }
-        expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze()).violations.map((v) => v.id)).toEqual([]);
+        expect((await new AxeBuilder({ page }).setLegacyMode().withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze()).violations.map((v) => v.id)).toEqual([]);
         const shots = process.env.LIST_KEYBOARD_SHOTS;
         if (shots) await page.screenshot({ path: join(shots, `${info.project.name}-${layout}-${theme}-list-focus.png`) });
         await page.keyboard.press("Tab");

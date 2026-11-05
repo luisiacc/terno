@@ -73,7 +73,7 @@ test.describe("connection pill", () => {
       server.backend.networkChanged(false, "offline");
       const pill = page.getByTestId("connection-pill");
       await expect(pill).toBeVisible();
-      const wcag = () => new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).include("[data-testid=connection-pill]");
+      const wcag = () => new AxeBuilder({ page }).setLegacyMode().withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).include("[data-testid=connection-pill]");
       expect((await wcag().analyze()).violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 140)).join(", ")}`)).toEqual([]);
       let release!: () => void;
       server.net.hold = new Promise((r) => (release = r));

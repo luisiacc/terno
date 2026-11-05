@@ -89,7 +89,7 @@ test.describe("plan 91: defaults and the same offers everywhere", () => {
     for (const scheme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: scheme });
       await snack.hover();
-      expect((await new AxeBuilder({ page }).include("[data-testid=snack-dock]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze()).violations, scheme).toEqual([]);
+      expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=snack-dock]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze()).violations, scheme).toEqual([]);
     }
 
     await focusList(page);
@@ -237,14 +237,18 @@ test.describe("plan 91: defaults and the same offers everywhere", () => {
       await words.first().click();
       await words.first().click();
       await words.first().click();
-      await page.waitForTimeout(500);
+      // past the debounce, on the page's clock
+      await page.clock.runFor(500);
+      await page.evaluate(() => new Promise((r) => setTimeout(r)));
       expect(count(ours(toggles), "categorize.count"), ours(toggles).join(", ")).toBeLessThanOrEqual(2);
     }
     // gone: idle means idle (no polling, no recount, no retries)
     await page.keyboard.press("Escape");
     await expect(snack).toHaveCount(0);
     const after = Date.now();
-    await page.waitForTimeout(3000);
+    // a minute on the page's clock: any polling, recount or retry would have fired, many times over
+    await page.clock.runFor(60_000);
+    await page.evaluate(() => new Promise((r) => setTimeout(r)));
     expect(ours(after), ours(after).join(", ")).toEqual([]);
   });
 

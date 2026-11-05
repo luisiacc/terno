@@ -142,7 +142,7 @@ test.describe("search everywhere", () => {
     await expect(rows(page)).toHaveCount(4);
     for (const scheme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: scheme });
-      const r = await new AxeBuilder({ page }).include("[data-testid=thread-list]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+      const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=thread-list]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
       expect(r.violations, scheme).toEqual([]);
     }
   });

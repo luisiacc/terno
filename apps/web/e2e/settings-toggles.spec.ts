@@ -5,7 +5,7 @@ import { expect, stabilize, test } from "./fixtures";
 const ctx = { clientId: "setup", origin: "dev" as const };
 
 for (const theme of ["light", "dark"] as const) {
-  test(`the chosen option stands out (${theme})`, async ({ app: page, server }, testInfo) => {
+  test(`the chosen option stands out (${theme})`, async ({ app: page, server }) => {
     await server.backend.server.invoke("settings.update", { theme }, ctx);
     await page.reload();
     await page.locator("[data-ready]").waitFor();
@@ -27,8 +27,7 @@ for (const theme of ["light", "dark"] as const) {
     expect(chosen.shadow, "raised off the track").not.toBe("none");
     expect(other.shadow).toBe("none");
     await stabilize(page);
-    await page.getByTestId("motion-toggle").locator("xpath=ancestor::section[1]").screenshot({ path: testInfo.outputPath(`toggles-${theme}.png`) });
-    const r = await new AxeBuilder({ page }).include("[data-testid=motion-toggle]").include("[data-testid=mode-toggle]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+    const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=motion-toggle]").include("[data-testid=mode-toggle]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
     expect(r.violations.map((v) => v.id)).toEqual([]);
   });
 }
