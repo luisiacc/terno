@@ -124,6 +124,18 @@ describe("new mail", () => {
     await expect(read(thread)).resolves.toMatchObject({ state: "ready", summary: { threadId: thread, summary: "Ana needs a signature.", items: [{ kind: "action", text: "Sign the contract", messageId: id }], provider: "fake", model: "demo", generatedAt: START } });
   });
 
+  it("while the language follows the system, it's the window's: the backend can't see the system's", async () => {
+    const { client, arrive, row } = await setup();
+    await client.call("app.locale", { locale: "es" });
+    const { thread } = await arrive();
+    await until(async () => expect((await row(thread))?.state).toBe("ready"));
+    expect((await row(thread))?.language).toBe("es");
+    await client.call("settings.update", { language: "en" });
+    const second = await arrive({ providerMsgId: "second", providerThreadId: "second", rfcMessageId: "<second@test>", subject: "Another" });
+    await until(async () => expect((await row(second.thread))?.state).toBe("ready"));
+    expect((await row(second.thread))?.language).toBe("en");
+  });
+
   it("does nothing while off, and mail from before it was on never goes", async () => {
     const { client, backend, model, arrive, row, clock } = await setup({ enabled: false });
     expect(backend.summaries.isActive).toBe(false);

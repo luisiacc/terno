@@ -2,10 +2,11 @@ import { AiError, SUMMARY_PROMPT_VERSION, summaryBudget, summaryPrompt, type AiT
 import type { AiErrorKind, AiProviderId, AiSummarizeResult, AiSummariesStatus, AiSummary, AiSummaryRead } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
-import { getLocale, L } from "@terno/i18n";
+import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { NEW_MAIL_MS, SUMMARY_MAX_ROWS, summaryBlocked, type AiSummaryRow, type MailStore, type SummarySources, type SummarySourceMessage } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { toRpcError } from "./ai-service";
+import { UI_LOCALE_KEY } from "./forwarding";
 
 /** Attempts a queued summary gets at a passing failure before it's failed. */
 const MAX_ATTEMPTS = 3;
@@ -385,7 +386,7 @@ export class SummaryWorker {
     const ai = o.ai ?? (await this.host.forTask({ foreground: o.foreground }));
     const { subject, thread, labels } = await assemble(store, sources, ai.contextTokens);
     const contentHash = await sha256(JSON.stringify({ subject, thread }));
-    const language = getLocale();
+    const language = await this.readerLanguage();
     const base = { threadId: sources.threadId, stamp: sources.stamp, expectThrough: row?.throughMessageId ?? null, now: this.host.now(), clearGeneration };
     if (reusable(row, { contentHash, language, ai })) {
       const outcome = await store.aiSummaries.finish({ ...base, reuse: true });
@@ -474,7 +475,15 @@ export class SummaryWorker {
   private async wouldReuse(sources: SummarySources, row: AiSummaryRow | null, ai: AiTasks): Promise<boolean> {
     if (!row?.bodyJson) return false;
     const { subject, thread } = await assemble(this.host.store, sources, ai.contextTokens);
-    return reusable(row, { contentHash: await sha256(JSON.stringify({ subject, thread })), language: getLocale(), ai });
+    return reusable(row, { contentHash: await sha256(JSON.stringify({ subject, thread })), language: await this.readerLanguage(), ai });
+  }
+
+  /** The setting, or while that follows the system, what the window said: the backend can't see the system's. */
+  private async readerLanguage(): Promise<LocaleId> {
+    const { language } = await this.host.settings();
+    if (isLocaleId(language)) return language;
+    const ui = await this.host.store.settings.get<string | null>(UI_LOCALE_KEY, null);
+    return isLocaleId(ui) ? ui : DEFAULT_LOCALE;
   }
 }
 
