@@ -33,7 +33,8 @@ it("a mailbox of 100,000 locations read for a reset: the longest stall within a 
       return worst;
     };
     await read();
-    const worst = Math.min(await read(), await read(), await read());
+    let worst = Infinity;
+    for (let attempt = 0; attempt < 3 && worst >= 16 * MULT; attempt++) worst = Math.min(worst, await read());
     console.log(`read a mailbox of 100,000: longest stall ${worst.toFixed(1)} ms`);
     expect(worst).toBeLessThan(16 * MULT);
     // Codex R41: and the reset itself, its ids taken as each slice deletes them. Over the frame it's run again, up to

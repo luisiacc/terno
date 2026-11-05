@@ -21,7 +21,7 @@ import vm from "node:vm";
 import { checkPattern } from "@terno/core";
 import type { IncomingMessage } from "@terno/store";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
-import { sqlDb, type SqlMailStore } from "@terno/db";
+import { openDatabase, sqlDb, type SqlMailStore } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
 import { generateDataset } from "@terno/mock-data";
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -48,16 +48,19 @@ let category: number;
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "terno-offersperf-"));
   copyMailbox(PERF_MAILBOX, join(dir, "perf.db"));
+  // a third of the setup: changed ahead of the backend, so its search index is built once
+  const seeded = openDatabase(join(dir, "perf.db"));
+  // a fifth of all received mail: one shop, one numbered subject; two more fifths: the same shop, other subjects
+  seeded.exec(`UPDATE messages SET from_email = '${SHOP}', from_domain = 'shop.example', from_name = 'Shop', from_name_norm = 'shop',
+             subject = 'Tu pedido ' || id || ' está en camino', subject_norm = 'tu pedido ' || id || ' esta en camino' WHERE is_sent = 0 AND thread_id % 5 = 0`);
+  seeded.exec(`UPDATE messages SET from_email = '${SHOP}', from_domain = 'shop.example', from_name = 'Shop', from_name_norm = 'shop',
+             subject = 'Factura ' || id, subject_norm = 'factura ' || id WHERE is_sent = 0 AND thread_id % 5 IN (1, 2)`);
+  seeded.exec("UPDATE threads SET person = 0");
+  seeded.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  seeded.close();
   backend = new Backend({ dbPath: join(dir, "perf.db"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: true });
   await backend.store.ready;
   const db = sqlDb(backend.store);
-  // a fifth of all received mail: one shop, one numbered subject; two more fifths: the same shop, other subjects
-  db.exec(`UPDATE messages SET from_email = '${SHOP}', from_domain = 'shop.example', from_name = 'Shop', from_name_norm = 'shop',
-             subject = 'Tu pedido ' || id || ' está en camino', subject_norm = 'tu pedido ' || id || ' esta en camino' WHERE is_sent = 0 AND thread_id % 5 = 0`);
-  db.exec(`UPDATE messages SET from_email = '${SHOP}', from_domain = 'shop.example', from_name = 'Shop', from_name_norm = 'shop',
-             subject = 'Factura ' || id, subject_norm = 'factura ' || id WHERE is_sent = 0 AND thread_id % 5 IN (1, 2)`);
-  db.exec("UPDATE threads SET person = 0");
-  db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
   expect(await (backend.store as SqlMailStore).instant!.settled()).toBe(true);
   meta.messages = db.get<{ c: number }>("SELECT count(*) c FROM messages")!.c;
   meta.shopMessages = db.get<{ c: number }>("SELECT count(*) c FROM messages WHERE from_email = ?", SHOP)!.c;
