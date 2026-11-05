@@ -12,16 +12,14 @@ it("creates and reclaims assets within 15 ms CPU with 100,000 pinned IDB reserva
   try {
     const [accountId] = await withAccounts(store, 1);
     const draft = (await store.drafts.save({ accountId: accountId!, to: [], cc: [], subject: "pins", bodyText: "" }, 0))!;
-    await store.close();
-    const raw = await openIdb(indexedDB, options.name);
-    const tx = raw.transaction(["attachment_assets", "attachment_links"], "readwrite");
-    for (let i = 0; i < 100000; i++) {
-      tx.objectStore("attachment_assets").put({ id: `pin-${i}`, account_id: accountId, filename: "empty", mime: "text/plain", size: 0, received: 0, chunks: 0, complete: 1, created_at: 0 }, `pin-${i}`);
-      tx.objectStore("attachment_links").put({ id: `link-${i}`, asset_id: `pin-${i}`, draft_id: draft.id }, `link-${i}`);
-    }
-    await new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); raw.close();
-    store = await IdbMailStore.open(options);
+    await store.whenLoaded();
     await store.attachments.current(accountId!, { id: -1 });
+    // the reservations as loaded into the mirror (written to fake-indexeddb first they're 20 s, and it's the mirror that's walked)
+    const db = (store as unknown as { db: { table(n: string): { load(row: Record<string, unknown>): void } } }).db;
+    for (let i = 0; i < 100000; i++) {
+      db.table("attachment_assets").load({ id: `pin-${i}`, account_id: accountId, filename: "empty", mime: "text/plain", size: 0, received: 0, chunks: 0, complete: 1, created_at: 0 });
+      db.table("attachment_links").load({ id: `link-${i}`, asset_id: `pin-${i}`, draft_id: draft.id });
+    }
     let maxCpu = 0, maxWall = 0;
     for (let i = 0; i < 20; i++) {
       const cpu = host.process.threadCpuUsage(), wall = performance.now();

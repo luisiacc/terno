@@ -94,8 +94,9 @@ describe("plan 69: the storage report and removal", () => {
       const pack = candidates.slice(at, at + 20);
       at += 20;
       removed += (await store.storage.remove({ threadIds: pack, buckets: [...REMOVABLE_BUCKETS], cutoff, maxMessages: 30 })).messages;
-    }, 20, () => store.settle());
-    expect(removed).toBeGreaterThan(300);
+      // a write's tail is checkpoints: 60 samples, so a p95 isn't one or two of them
+    }, 60, () => store.settle());
+    expect(removed).toBeGreaterThan(1000);
   });
 
   it("one conversation of 20k messages: its report row is one aggregate, and removing it goes by units bounded by its recompute", async () => {

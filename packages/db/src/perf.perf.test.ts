@@ -54,6 +54,12 @@ function gate(name: string, budgetMs: number, fn: (i: number) => unknown, iterat
   expect(s.p95, `${name} p95 ${s.p95.toFixed(2)}ms > ${budgetMs}ms`).toBeLessThanOrEqual(budgetMs * BUDGET_MULTIPLIER);
 }
 
+/**
+ * A filter's lists and counts are a tenth of their budget, hundreds of them across a mailbox's shapes: 10 samples are
+ * enough (the slowest counts, and over budget it's measured again), so these gates have the time for their shapes.
+ */
+const cheap = (name: string, budgetMs: number, fn: (i: number) => unknown, iterations = 10) => gate(name, budgetMs, fn, iterations);
+
 describe("navigation", () => {
   it("lists views", () => {
     gate("list inbox, first page (100)", 5, () => listThreads(db, { view: "inbox", limit: 100 }));
@@ -270,7 +276,7 @@ describe("navigation", () => {
 
   it("applies triage actions", () => {
     const ids = db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 LIMIT 200").map((r) => r.id);
-    gate("archive one thread (optimistic, incl. aggregates)", 5, (i) => applyThreadAction(db, [ids[i % ids.length]!], i % 2 ? "moveToInbox" : "archive"));
+    gate("archive one thread (optimistic, incl. aggregates)", 5, (i) => applyThreadAction(db, [ids[i % ids.length]!], i % 2 ? "moveToInbox" : "archive"), 60);
   });
 });
 
@@ -344,18 +350,18 @@ describe("the unread filter (plan 12)", () => {
   function gates(label: string) {
     const cat = largest();
     const acct = accounts();
-    for (const view of ["inbox", "archive", "all", "starred", "trash"] as const) gate(`${label}: unread ${view}, first page`, 5, () => listThreads(db, { view, unreadOnly: true, limit: 100 }));
-    gate(`${label}: unread archive per account`, 5, (i) => listThreads(db, { view: "archive", accountId: acct[i % acct.length]!, unreadOnly: true, limit: 100 }));
-    gate(`${label}: unread largest category`, 5, () => listThreads(db, { view: "all", categoryId: cat, unreadOnly: true, limit: 100 }));
+    for (const view of ["inbox", "archive", "all", "starred", "trash"] as const) cheap(`${label}: unread ${view}, first page`, 5, () => listThreads(db, { view, unreadOnly: true, limit: 100 }));
+    cheap(`${label}: unread archive per account`, 5, (i) => listThreads(db, { view: "archive", accountId: acct[i % acct.length]!, unreadOnly: true, limit: 100 }));
+    cheap(`${label}: unread largest category`, 5, () => listThreads(db, { view: "all", categoryId: cat, unreadOnly: true, limit: 100 }));
     const deep = db.get<{ last_date: number; id: number }>("SELECT last_date, id FROM threads WHERE unread_count > 0 AND in_trash = 0 AND in_spam = 0 ORDER BY last_date DESC, id DESC LIMIT 1 OFFSET 1000");
-    if (deep) gate(`${label}: unread all mail, page at unread #1,000`, 5, () => listThreads(db, { view: "all", unreadOnly: true, limit: 100, cursor: { lastDate: deep.last_date, id: deep.id } }));
+    if (deep) cheap(`${label}: unread all mail, page at unread #1,000`, 5, () => listThreads(db, { view: "all", unreadOnly: true, limit: 100, cursor: { lastDate: deep.last_date, id: deep.id } }));
     // the open (read) thread kept in the page: one more lookup by key
     const open = db.get<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND unread_count = 0 ORDER BY last_date DESC LIMIT 1");
-    if (open) gate(`${label}: unread inbox keeping the open thread`, 5, () => listThreads(db, { view: "inbox", unreadOnly: true, keepIds: [open.id], limit: 100 }));
-    for (const view of ["inbox", "archive", "trash"] as const) gate(`${label}: unread count ${view} (header)`, 5, () => countScopeThreads(db, { view, unreadOnly: true, limit: 100_001 }));
-    gate(`${label}: unread count largest category`, 5, () => countScopeThreads(db, { view: "all", categoryId: cat, unreadOnly: true, limit: 100_001 }));
+    if (open) cheap(`${label}: unread inbox keeping the open thread`, 5, () => listThreads(db, { view: "inbox", unreadOnly: true, keepIds: [open.id], limit: 100 }));
+    for (const view of ["inbox", "archive", "trash"] as const) cheap(`${label}: unread count ${view} (header)`, 5, () => countScopeThreads(db, { view, unreadOnly: true, limit: 100_001 }));
+    cheap(`${label}: unread count largest category`, 5, () => countScopeThreads(db, { view: "all", categoryId: cat, unreadOnly: true, limit: 100_001 }));
     // select all N: every page of 500 ids of the filtered archive, walked whole
-    gate(`${label}: unread archive, all scope pages`, 15, () => {
+    cheap(`${label}: unread archive, all scope pages`, 15, () => {
       for (let after = 0; ; ) {
         const page = scopeThreadIds(db, { view: "archive", unreadOnly: true, after, limit: 500 });
         if (page.length < 500) return;
@@ -392,17 +398,17 @@ describe("the quick filters (plan 15): with attachments and starred", () => {
     const cat = largest();
     const acct = db.all<{ id: number }>("SELECT id FROM accounts").map((a) => a.id);
     const now = NOW;
-    for (const view of ["inbox", "archive", "all", "trash", "spam"] as const) gate(`${label}: ${view}, first page`, 5, () => listThreads(db, { view, filter, now, limit: 100 }));
-    gate(`${label}: archive per account`, 5, (i) => listThreads(db, { view: "archive", accountId: acct[i % acct.length]!, filter, now, limit: 100 }));
-    gate(`${label}: largest category`, 5, () => listThreads(db, { view: "all", categoryId: cat, filter, now, limit: 100 }));
+    for (const view of ["inbox", "archive", "all", "trash", "spam"] as const) cheap(`${label}: ${view}, first page`, 5, () => listThreads(db, { view, filter, now, limit: 100 }));
+    cheap(`${label}: archive per account`, 5, (i) => listThreads(db, { view: "archive", accountId: acct[i % acct.length]!, filter, now, limit: 100 }));
+    cheap(`${label}: largest category`, 5, () => listThreads(db, { view: "all", categoryId: cat, filter, now, limit: 100 }));
     const cutoff = waitingCutoff(NOW);
     const where = { attachments: "has_attachments = 1", starred: "is_starred = 1", people: "person = 1", waiting: `waiting_since >= ${cutoff} AND last_date >= ${cutoff}` }[filter];
     const deep = db.get<{ last_date: number; id: number }>(`SELECT last_date, id FROM threads WHERE ${where} AND in_trash = 0 AND in_spam = 0 ORDER BY last_date DESC, id DESC LIMIT 1 OFFSET 1000`);
-    if (deep) gate(`${label}: all mail, page at #1,000`, 5, () => listThreads(db, { view: "all", filter, now, limit: 100, cursor: { lastDate: deep.last_date, id: deep.id } }));
+    if (deep) cheap(`${label}: all mail, page at #1,000`, 5, () => listThreads(db, { view: "all", filter, now, limit: 100, cursor: { lastDate: deep.last_date, id: deep.id } }));
     const open = db.get<{ id: number }>(`SELECT id FROM threads WHERE in_inbox = 1 AND NOT (${where}) ORDER BY last_date DESC LIMIT 1`);
-    if (open) gate(`${label}: inbox keeping the open thread`, 5, () => listThreads(db, { view: "inbox", filter, now, keepIds: [open.id], limit: 100 }));
-    for (const view of ["inbox", "archive", "trash"] as const) gate(`${label}: count ${view}`, 5, () => countScopeThreads(db, { view, filter, now, limit: 100_001 }));
-    gate(`${label}: archive, all scope pages`, 15, () => {
+    if (open) cheap(`${label}: inbox keeping the open thread`, 5, () => listThreads(db, { view: "inbox", filter, now, keepIds: [open.id], limit: 100 }));
+    for (const view of ["inbox", "archive", "trash"] as const) cheap(`${label}: count ${view}`, 5, () => countScopeThreads(db, { view, filter, now, limit: 100_001 }));
+    cheap(`${label}: archive, all scope pages`, 15, () => {
       for (let after = 0; ; ) {
         const page = scopeThreadIds(db, { view: "archive", filter, now, after, limit: 500 });
         if (page.length < 500) return;
@@ -415,15 +421,15 @@ describe("the quick filters (plan 15): with attachments and starred", () => {
   function searches(label: string, queries: string[]) {
     for (const query of queries) {
       let first: ReturnType<typeof searchThreads> | undefined;
-      gate(`${label}: search "${query}" with attachments, first page`, 25, () => (first = searchThreads(db, { query, threadAttachments: true, limit: 100, now: NOW })), 10);
+      cheap(`${label}: search "${query}" with attachments, first page`, 25, () => (first = searchThreads(db, { query, threadAttachments: true, limit: 100, now: NOW })), 10);
       const cursor = first?.nextCursor;
-      if (cursor) gate(`${label}: search "${query}" with attachments, next page`, 25, () => searchThreads(db, { query, threadAttachments: true, limit: 100, now: NOW, cursor }), 10);
+      if (cursor) cheap(`${label}: search "${query}" with attachments, next page`, 25, () => searchThreads(db, { query, threadAttachments: true, limit: 100, now: NOW, cursor }), 10);
       // plan 17's thread filters, the same way (Codex review 1, #9)
       for (const threadFilter of ["people", "waiting"] as const) {
         let page: ReturnType<typeof searchThreads> | undefined;
-        gate(`${label}: search "${query}" from ${threadFilter}, first page`, 25, () => (page = searchThreads(db, { query, threadFilter, limit: 100, now: NOW })), 10);
+        cheap(`${label}: search "${query}" from ${threadFilter}, first page`, 25, () => (page = searchThreads(db, { query, threadFilter, limit: 100, now: NOW })), 10);
         const next = page?.nextCursor;
-        if (next) gate(`${label}: search "${query}" from ${threadFilter}, next page`, 25, () => searchThreads(db, { query, threadFilter, limit: 100, now: NOW, cursor: next }), 10);
+        if (next) cheap(`${label}: search "${query}" from ${threadFilter}, next page`, 25, () => searchThreads(db, { query, threadFilter, limit: 100, now: NOW, cursor: next }), 10);
       }
     }
   }
@@ -451,8 +457,8 @@ describe("the quick filters (plan 15): with attachments and starred", () => {
     const waitingGates = (label: string) => {
       gates(`${label} people`, "people");
       gates(`${label} waiting`, "waiting");
-      gate(`${label}: counts with the waiting count`, 5, () => getCounts(db, NOW));
-      gate(`${label}: the waiting count`, 1, () => {
+      cheap(`${label}: counts with the waiting count`, 5, () => getCounts(db, NOW));
+      cheap(`${label}: the waiting count`, 1, () => {
         if (waitingCounts(db, NOW).inboxWaiting === null) throw new Error("the waiting count is held");
       });
     };

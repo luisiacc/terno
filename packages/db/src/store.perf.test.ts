@@ -71,15 +71,17 @@ describe("reads", () => {
 describe("writes", () => {
   it("commits a triage action with its op in well under a frame", async () => {
     const ids = store.db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 LIMIT 200").map((r) => r.id);
+    // a write's tail is checkpoints: 60 samples, so a p95 isn't one or two of them
+    const WRITES = 60;
     await gate("act: archive / restore one thread (+ op)", 5, (i) =>
       store.threads.act({ threadIds: [ids[i % ids.length]!], action: i % 2 ? "moveToInbox" : "archive", signal: null, now: NOW }),
-    );
+    WRITES);
     const last = store.db.get<{ bytes: number }>("SELECT bytes FROM search_outbox ORDER BY seq DESC LIMIT 1")!.bytes;
     stats.push({ name: `outbox: one triage action appends a ${last}-byte batch`, budgetMs: 0, p50: last, p95: last, max: last, iterations: 1 });
     const category = store.db.get<{ id: number }>("SELECT id FROM categories LIMIT 1")!.id;
-    await gate("categories.add one thread (+ example)", 5, (i) => store.categories.add({ categoryId: category, threadIds: [ids[(i * 7) % ids.length]!], addedBy: "user", now: NOW }));
+    await gate("categories.add one thread (+ example)", 5, (i) => store.categories.add({ categoryId: category, threadIds: [ids[(i * 7) % ids.length]!], addedBy: "user", now: NOW }), WRITES);
     const pending = store.db.all<{ id: number }>("SELECT id FROM messages ORDER BY random() LIMIT 80").map((r) => r.id);
-    await gate("sync.setBody (reindex + aggregates)", 5, (i) => store.sync.setBody(pending[i % pending.length]!, `Cuerpo nuevo ${i} con la factura`, null, { now: NOW, classifier: null }));
+    await gate("sync.setBody (reindex + aggregates)", 5, (i) => store.sync.setBody(pending[i % pending.length]!, `Cuerpo nuevo ${i} con la factura`, null, { now: NOW, classifier: null }), WRITES);
   });
 
   it("ingests new mail in slices at ≥ 1k msgs/s", async () => {
@@ -269,7 +271,7 @@ describe("a category hidden from the Inbox (plan 83)", () => {
 describe("an account's Mark all as read (plan 106)", () => {
   it("its Inbox's unread scope walks within budget when another account's unread fills the mailbox and it has none or ten", async () => {
     const sparse = accountIds[0]!;
-    store.db.exec("CREATE TEMP TABLE unread_saved AS SELECT id, unread_count FROM threads");
+    // (not put back: of what's after this, the delete's count reads no unread)
     // Codex R4: the scope walks the global unread index testing account and place: the worst case is every other thread unread
     store.db.run("UPDATE threads SET unread_count = max(unread_count, 1) WHERE account_id != ?", sparse);
     store.db.run("UPDATE threads SET unread_count = 0 WHERE account_id = ?", sparse);
@@ -284,7 +286,7 @@ describe("an account's Mark all as read (plan 106)", () => {
         after = page[page.length - 1]!;
       }
     };
-    try {
+    {
       expect(await walk()).toEqual([]);
       await gate("mark all read, account with none unread: the whole id walk", 16, walk, 20);
       await gate("mark all read, account with none unread: count", 16, () => store.threads.scopeCount({ ...scope, limit: 100_001 }), 20);
@@ -292,9 +294,6 @@ describe("an account's Mark all as read (plan 106)", () => {
       for (const id of ten) store.db.run("UPDATE threads SET unread_count = 1 WHERE id = ?", id);
       expect((await walk()).length).toBeLessThanOrEqual(10);
       await gate("mark all read, account with ten unread: the whole id walk", 16, walk, 20);
-    } finally {
-      store.db.exec("UPDATE threads SET unread_count = (SELECT unread_count FROM unread_saved s WHERE s.id = threads.id)");
-      store.db.exec("DROP TABLE unread_saved");
     }
   });
 });

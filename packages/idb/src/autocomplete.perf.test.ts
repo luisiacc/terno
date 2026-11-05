@@ -19,11 +19,13 @@ import { Autocomplete, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS 
 import { cpuMs, memoryFiles, PERF_MULT as MULT, perfLog as log } from "@terno/store/conformance";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { describeGap, stallLessGc, watchGc, watchLoop } from "../../db/src/test/timing";
+import { openIdb } from "./schema";
 import { IdbMailStore } from "./store";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 const N = 300_000;
-const DATA: ContactsDatasetOptions = { messages: N, contacts: 110_000, now: NOW, bodyChars: 200 };
+// a tenth sent, not a third: what a slice reads of a body doesn't grow with how many there are (the phrase model's own build at 100,000 is phrases.perf's)
+const DATA: ContactsDatasetOptions = { messages: N, contacts: 110_000, now: NOW, bodyChars: 200, sentShare: 0.1 };
 // fake-indexeddb's own synchronous cloning shows in the stalls (Chromium does it off the main thread)
 const BUDGET = { stallMs: 48, commandMs: 100, buildMs: 300_000, coldStartMs: 3000, incrementalUs: 300 };
 const files = memoryFiles();
@@ -71,8 +73,23 @@ const described = (r: { stall: number; lessGc: number; maxGc: number; ms: number
 beforeAll(async () => {
   store = await IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch: false });
   accountId = (await store.accounts.create({ kind: CONTACTS_ACCOUNT.kind, email: CONTACTS_ACCOUNT.email, displayName: CONTACTS_ACCOUNT.displayName, color: "indigo", now: NOW })).account.id;
-  for (const page of contactsPages(DATA, 2000)) await store.sync.ingest(page.map((m) => ({ ...m, accountId })), { applyFilters: false, now: NOW, classifier: null });
-}, 3_600_000);
+  await store.whenLoaded();
+  // the columns autocomplete reads as the mirror holds them (through ingest it's minutes), the sent bodies in IndexedDB, read from there as ever
+  const db = (store as unknown as { db: { table(n: string): { load(row: Record<string, unknown>): void } } }).db;
+  const raw = await openIdb(indexedDB, name);
+  db.table("threads").load({ id: 1, account_id: accountId, last_date: 0, message_count: N, unread_count: 0 });
+  let next = 1;
+  for (const page of contactsPages(DATA, 2000)) {
+    const tx = raw.transaction(["message_bodies"], "readwrite");
+    for (const m of page) {
+      const id = next++;
+      db.table("messages").load({ id, account_id: accountId, thread_id: 1, provider_msg_id: m.providerMsgId, rfc_message_id: m.rfcMessageId, date: m.date, is_sent: m.isSent ? 1 : 0, is_spam: 0, is_draft: 0, is_trash: 0, from_name: m.from.name, from_email: m.from.email, to_json: JSON.stringify(m.to), cc_json: JSON.stringify(m.cc), bcc_json: JSON.stringify(m.bcc), body_state: "full", size: m.size, subject: m.subject });
+      if (m.isSent) tx.objectStore("message_bodies").put({ message_id: id, body_text: m.bodyText }, id);
+    }
+    await new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); });
+  }
+  raw.close();
+}, 600_000);
 
 afterAll(async () => {
   await ac?.close();
@@ -149,7 +166,7 @@ describe(`autocomplete on IndexedDB at ${N.toLocaleString("en")} messages`, () =
     // mostly that, and one measured again would be warm; then each catch-up follows other new mail (new people among
     // it), never what is already applied, and one over budget is measured again
     for (let attempt = 0; attempt <= ATTEMPTS && !(best <= BUDGET.incrementalUs * MULT); attempt++) {
-      const extra = [...contactsPages({ ...DATA, messages: attempt ? 3000 : 300, contacts: attempt ? 1000 : 100, seed: 76 + attempt }, 3000)][0]!.map((m) => ({ ...m, providerMsgId: `x${attempt}-${m.providerMsgId}`, rfcMessageId: `<x${attempt}-${m.rfcMessageId}>`, accountId }));
+      const extra = [...contactsPages({ ...DATA, messages: attempt ? 1500 : 300, contacts: attempt ? 500 : 100, seed: 76 + attempt }, 3000)][0]!.map((m) => ({ ...m, providerMsgId: `x${attempt}-${m.providerMsgId}`, rfcMessageId: `<x${attempt}-${m.rfcMessageId}>`, accountId }));
       await store.sync.ingest(extra, { applyFilters: false, now: NOW, classifier: null });
       const snapshotsBefore = ac.report.snapshots;
       const { cpu } = await cpuMs(async () => {

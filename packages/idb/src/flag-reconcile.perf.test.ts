@@ -12,10 +12,20 @@ it("IDB: sparse durable IMAP confirmation in 50,000 messages stays within the wo
   const store = await IdbMailStore.open({ name: "synthetic-flag-perf", factory: new IDBFactory(), platform, instantSearch: false });
   try {
     const [, account] = await withAccounts(store);
-    for (let i = 0; i < 50_000; i += 1000) await ingest(store, Array.from({ length: 1000 }, (_, j) => msg({ accountId: account!, providerMsgId: `f${i + j}`, providerThreadId: `t${i + j}`, locations: [{ mailbox: "INBOX", uidvalidity: 7, uid: i + j + 1, flags: [] }] })));
+    await store.whenLoaded();
+    // 123 messages through ingest, 399 others loaded into the mirror between each: the sparse ones are real, what's in their way is rows
+    const db = (store as unknown as { db: { table(n: string): { highestKey(): number; load(row: Record<string, unknown>): void } } }).db;
+    const targets: { threadId: number }[] = [];
+    for (let n = 0; n < 124; n++) {
+      await ingest(store, [msg({ accountId: account!, providerMsgId: `f${n}`, providerThreadId: `t${n}`, locations: [{ mailbox: "INBOX", uidvalidity: 7, uid: n * 400 + 1, flags: [] }] })]);
+      const top = db.table("messages").highestKey();
+      if (n < 123) targets.push({ threadId: db.table("threads").highestKey() });
+      for (let i = 1; i < 400; i++) {
+        db.table("messages").load({ id: top + i, account_id: account, thread_id: 1_000_000, provider_msg_id: `f${n}-${i}`, date: 0, is_trash: 0, is_spam: 0 });
+        db.table("message_locations").load({ message_id: top + i, account_id: account, mailbox: "INBOX", uidvalidity: 7, uid: n * 400 + 1 + i, flags: "[]" });
+      }
+    }
     await store.sync.beginObservation(account!, { authoritativeFlags: true });
-    const targets = (await store.debug.snapshot()).messages.filter((message) => message.id % 400 === 1).slice(0, 123);
-    expect(targets).toHaveLength(123);
     await store.threads.act({ threadIds: targets.map((message) => message.threadId), action: "star", signal: null, now: 1 });
     const [op] = await store.ops.claimReady(2, 1);
     await store.ops.complete(op!.id, undefined, 3);

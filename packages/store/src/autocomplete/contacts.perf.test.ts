@@ -140,7 +140,7 @@ describe(`the contact index at ${N.toLocaleString("en")} messages`, () => {
   it("answers a keystroke in microseconds: p95 and p99 over 5,000 realistic queries", () => {
     // warm the JIT on other queries first
     lookups(index, queries.slice(0, 500));
-    const r = bestRounds(5, () => lookups(index, queries));
+    const r = bestRounds(2, () => lookups(index, queries));
     log(`contacts lookup: p50 ${(r.p50 * 1000).toFixed(1)} µs, p95 ${(r.p95 * 1000).toFixed(1)} µs, p99 ${(r.p99 * 1000).toFixed(1)} µs, max ${r.max.toFixed(2)} ms`);
     expect(r.p95, "lookup p95 (ms)").toBeLessThanOrEqual(BUDGET.p95 * MULT);
     expect(r.p99, "lookup p99 (ms)").toBeLessThanOrEqual(BUDGET.p99 * MULT);
@@ -152,7 +152,8 @@ describe(`the contact index at ${N.toLocaleString("en")} messages`, () => {
   it("injected regression: the same lookups by scanning every contact fail the gate", () => {
     setContactsScanForTests(true);
     try {
-      const r = bestRounds(2, () => lookups(index, queries.slice(0, 60)));
+      // a scan is tens of milliseconds a lookup: a few show it
+      const r = bestRounds(1, () => lookups(index, queries.slice(0, 8)));
       log(`contacts lookup, injected scan: p95 ${r.p95.toFixed(1)} ms`);
       expect(r.p95).toBeGreaterThan(BUDGET.p99 * MULT);
     } finally {

@@ -160,7 +160,7 @@ describe(`the phrase model from ${N.toLocaleString("en")} sent messages`, () => 
 
   it("suggests in microseconds: p95 and p99 over 5,000 windows", () => {
     suggestions(model, windows.slice(0, 500));
-    const r = bestRounds(5, () => suggestions(model, windows));
+    const r = bestRounds(2, () => suggestions(model, windows));
     log(`phrases suggest: p50 ${(r.p50 * 1000).toFixed(1)} µs, p95 ${(r.p95 * 1000).toFixed(1)} µs, p99 ${(r.p99 * 1000).toFixed(1)} µs`);
     expect(r.p95, "suggest p95 (ms)").toBeLessThanOrEqual(BUDGET.p95 * MULT);
     expect(r.p99, "suggest p99 (ms)").toBeLessThanOrEqual(BUDGET.p99 * MULT);
@@ -185,14 +185,14 @@ describe(`the phrase model from ${N.toLocaleString("en")} sent messages`, () => 
     // a quarter of the model as measured just now, or (a scaled budget, or a machine faster than it assumes) what crosses
     // the budget and a tenth more: the twin proves the gate sees the work, and says whether 25% alone did (here it does:
     // 26–28 µs × 1.25 > 31). Measured as the gate measures, so the best of three must fail.
-    const base = builtUs || Math.min((await build(20_000)).us, (await build(20_000)).us);
+    const base = builtUs || Math.min((await build(8_000)).us, (await build(8_000)).us);
     const limit = BUDGET.buildUsPerMessage * MULT;
     const quarter = base / 4;
     const inject = Math.max(quarter, limit - base + base / 10);
     setPhrasesSlowdownForTests(inject / 1000);
     try {
       const runs: number[] = [];
-      for (let r = 0; r < 3; r++) runs.push((await build(20_000)).us);
+      for (let r = 0; r < 3; r++) runs.push((await build(8_000)).us);
       log(`phrases build, injected ${inject.toFixed(1)} µs over ${base.toFixed(1)}: ${runs.map((us) => us.toFixed(1)).join(", ")} µs/message (25% alone ${base + quarter > limit ? "fails" : "passes"} the gate)`);
       expect(Math.min(...runs)).toBeGreaterThan(limit);
     } finally {

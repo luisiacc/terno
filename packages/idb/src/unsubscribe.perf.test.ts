@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto";
-import type { IncomingMessage, Platform } from "@terno/store";
+import type { Platform } from "@terno/store";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { sampleAsync, settle } from "../../db/src/test/timing";
 import { IdbMailStore } from "./store";
@@ -19,16 +19,20 @@ let threadId = 0;
 beforeAll(async () => {
   store = await IdbMailStore.open({ name: `unsubscribe-perf-${Date.now()}`, factory: indexedDB, platform, instantSearch: false });
   const { account } = await store.accounts.create({ kind: "gmail", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
-  const msg = (i: number): IncomingMessage => ({
-    accountId: account.id, providerMsgId: `m${i}`, providerThreadId: "one", rfcMessageId: `m${i}@perf.test`, inReplyTo: null, references: [],
-    from: { name: "List", email: i % 3 ? "list@lists.example" : "me@example.com" }, to: [{ name: "", email: "me@example.com" }], cc: [], bcc: [],
-    subject: "Digest", date: 1_700_000_000_000 + ((i * 7919) % SIZE) * 1000, snippet: "", bodyText: null, bodyHtml: null, bodyState: "none", listId: "lists.example",
-    // a third carry the header, scattered through the conversation's dates
-    unsubscribe: i < SIZE / 3 ? { url: "https://lists.example/u" } : null,
-    isRead: true, isStarred: false, inInbox: false, isSent: i % 3 === 0, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100,
-  });
-  for (let i = 0; i < SIZE; i += 2000) await store.sync.ingest(Array.from({ length: 2000 }, (_, j) => msg(i + j)), { applyFilters: false, now: 0, classifier: null });
-  threadId = (await store.debug.snapshot()).threads[0]!.id;
+  await store.whenLoaded();
+  // the conversation as the mirror holds it (through ingest, a reply chain of 60,000 is minutes)
+  const db = (store as unknown as { db: { table(n: string): { load(row: Record<string, unknown>): void } } }).db;
+  threadId = 1;
+  db.table("threads").load({ id: threadId, account_id: account.id, provider_thread_id: "one", last_date: 1_700_000_000_000 + SIZE * 1000, message_count: SIZE, unread_count: 0 });
+  for (let i = 0; i < SIZE; i++) {
+    db.table("messages").load({
+      id: i + 1, account_id: account.id, thread_id: threadId, provider_msg_id: `m${i}`, rfc_message_id: `m${i}@perf.test`, from_name: "List", from_email: i % 3 ? "list@lists.example" : "me@example.com",
+      subject: "Digest", date: 1_700_000_000_000 + ((i * 7919) % SIZE) * 1000, body_state: "none", list_id: "lists.example",
+      // a third carry the header, scattered through the conversation's dates
+      unsubscribe: i < SIZE / 3 ? JSON.stringify({ url: "https://lists.example/u" }) : null,
+      is_sent: i % 3 === 0 ? 1 : 0, is_draft: 0, is_trash: 0, is_spam: 0, size: 100,
+    });
+  }
 }, 900_000);
 afterAll(async () => {
   await store?.close();

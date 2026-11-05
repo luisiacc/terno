@@ -16,17 +16,19 @@
 import { contactsPages, CONTACTS_ACCOUNT, type ContactsDatasetOptions } from "@terno/mock-data";
 import { Autocomplete } from "@terno/store/autocomplete";
 import { cpuMs, PERF_MULT as MULT, perfLog as log } from "@terno/store/conformance";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { nodePlatform, openDatabase } from "./index";
 import { SqlMailStore } from "./sql-store";
+import { kept } from "./test/perf-mailbox";
 import { describeGap, stallLessGc, watchGc, watchLoop } from "./test/timing";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 const N = 300_000;
-const DATA: ContactsDatasetOptions = { messages: N, contacts: 110_000, now: NOW, bodyChars: 200 };
+// a tenth sent, not a third: what a slice reads of a body doesn't grow with how many there are (the phrase model's own build at 100,000 is phrases.perf's)
+const DATA: ContactsDatasetOptions = { messages: N, contacts: 110_000, now: NOW, bodyChars: 200, sentShare: 0.1 };
 // stalls: two frames (store reads, JSON parsing and the models' slices together)
 const BUDGET = { stallMs: 32, commandMs: 50, buildMs: 120_000, coldStartMs: 1500, incrementalUs: 150 };
 const dir = mkdtempSync(join(tmpdir(), "terno-ac-perf-"));
@@ -70,10 +72,35 @@ const described = (r: { stall: number; lessGc: number; maxGc: number; ms: number
   `${r.ms.toFixed(0)} ms, stall ${r.stall.toFixed(1)} ms (${r.lessGc.toFixed(1)} less its GC, longest GC ${r.maxGc.toFixed(1)}; longest gap ${r.longest}; ${r.descheduled} descheduled, ${r.held.toFixed(0)} ms held)`;
 
 beforeAll(async () => {
+  // the columns autocomplete reads, written in SQL with the triggers down (through ingest it's minutes), and kept
+  const seeded = await kept("autocomplete-300k", async (at) => {
+    const db = openDatabase(join(at, "m.db"));
+    const creating = new SqlMailStore(db, { platform: nodePlatform });
+    const id = (await creating.accounts.create({ kind: CONTACTS_ACCOUNT.kind, email: CONTACTS_ACCOUNT.email, displayName: CONTACTS_ACCOUNT.displayName, color: "indigo", now: NOW })).account.id;
+    expect(id).toBe(1);
+    const triggers = db.all<{ name: string; sql: string }>("SELECT name, sql FROM sqlite_master WHERE type = 'trigger'");
+    for (const t of triggers) db.exec(`DROP TRIGGER "${t.name}"`);
+    db.exec("PRAGMA foreign_keys = OFF");
+    db.tx(() => {
+      db.run("INSERT INTO threads (id, account_id, provider_thread_id) VALUES (1, 1, 'all')");
+      let next = 1;
+      for (const page of contactsPages(DATA, 2000)) {
+        for (const m of page) {
+          const message = next++;
+          db.run("INSERT INTO messages (id, account_id, thread_id, provider_msg_id, rfc_message_id, date, is_sent, from_name, from_email, to_json, cc_json, bcc_json, body_state, size, subject) VALUES (?, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'full', ?, ?)",
+            message, m.providerMsgId, m.rfcMessageId, m.date, m.isSent ? 1 : 0, m.from.name, m.from.email, JSON.stringify(m.to), JSON.stringify(m.cc), JSON.stringify(m.bcc), m.size, m.subject);
+          if (m.isSent) db.run("INSERT INTO message_bodies (message_id, body_text) VALUES (?, ?)", message, m.bodyText);
+        }
+      }
+    });
+    for (const t of triggers) db.exec(t.sql);
+    db.exec("PRAGMA foreign_keys = ON");
+    await creating.close();
+  });
+  copyFileSync(join(seeded, "m.db"), path);
   store = new SqlMailStore(openDatabase(path), { platform: nodePlatform });
-  accountId = (await store.accounts.create({ kind: CONTACTS_ACCOUNT.kind, email: CONTACTS_ACCOUNT.email, displayName: CONTACTS_ACCOUNT.displayName, color: "indigo", now: NOW })).account.id;
-  for (const page of contactsPages(DATA, 2000)) await store.sync.ingest(page.map((m) => ({ ...m, accountId })), { applyFilters: false, now: NOW, classifier: null });
-}, 1_200_000);
+  accountId = 1;
+}, 600_000);
 
 afterAll(async () => {
   await ac?.close();
@@ -165,7 +192,7 @@ describe(`autocomplete on SQLite at ${N.toLocaleString("en")} messages`, () => {
     // mostly that, and one measured again would be warm; then each catch-up follows other new mail (new people among
     // it), never what is already applied, and one over budget is measured again
     for (let attempt = 0; attempt <= ATTEMPTS && !(best <= BUDGET.incrementalUs * MULT); attempt++) {
-      const extra = [...contactsPages({ ...DATA, messages: attempt ? 3000 : 300, contacts: attempt ? 1000 : 100, seed: 76 + attempt }, 3000)][0]!.map((m) => ({ ...m, providerMsgId: `x${attempt}-${m.providerMsgId}`, rfcMessageId: `<x${attempt}-${m.rfcMessageId}>`, accountId }));
+      const extra = [...contactsPages({ ...DATA, messages: attempt ? 1500 : 300, contacts: attempt ? 500 : 100, seed: 76 + attempt }, 3000)][0]!.map((m) => ({ ...m, providerMsgId: `x${attempt}-${m.providerMsgId}`, rfcMessageId: `<x${attempt}-${m.rfcMessageId}>`, accountId }));
       await store.sync.ingest(extra, { applyFilters: false, now: NOW, classifier: null });
       const snapshotsBefore = ac.report.snapshots;
       const { cpu } = await cpuMs(async () => {

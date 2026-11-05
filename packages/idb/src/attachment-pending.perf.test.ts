@@ -1,17 +1,20 @@
 import "fake-indexeddb/auto";
 import { expect, it } from "vitest";
-import { generateDataset } from "@terno/mock-data";
 import { IdbMailStore } from "./store";
 
 it("idle IMAP pending lookups stay below 5 ms over 50,000 completed IndexedDB rows", async () => {
   const store = await IdbMailStore.open({ name: "capture-pending-perf-50k", factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: () => Promise.resolve() } });
   try {
-    const data = generateDataset({ threads: 30000, accounts: 1, seed: 7, now: 0, bodyScale: 0.01 });
-    for (const m of data.messages) { m.attachments = []; m.hasAttachments = false; m.bodyState = "full"; }
-    const { accountIds, messageCount } = await store.dev.seed(data, { now: 0, categorizeRate: 0 });
-    expect(messageCount).toBeGreaterThanOrEqual(50000);
+    await store.whenLoaded();
+    const { account } = await store.accounts.create({ kind: "imap", email: "pending@example.test", displayName: "P", color: "indigo", now: 0 });
+    // 50,000 complete messages in the mirror (SQLite's test writes the same in SQL): nothing to capture among them
+    const db = (store as unknown as { db: { table(n: string): { load(row: Record<string, unknown>): void } } }).db;
+    for (let i = 1; i <= 50_000; i++) {
+      db.table("messages").load({ id: i, account_id: account.id, thread_id: 1, provider_msg_id: `complete:${i}`, date: i, body_state: "full", attachments_captured: 1, attachment_pending: 0, is_trash: 0, is_spam: 0 });
+      db.table("message_locations").load({ message_id: i, account_id: account.id, mailbox: "INBOX", uidvalidity: 1, uid: i, flags: "[]" });
+    }
     const times: number[] = [];
-    const provider = store.providerStore(accountIds[0]!);
+    const provider = store.providerStore(account.id);
     for (let i = 0; i < 100; i++) {
       const start = performance.now();
       expect(await provider.pendingBodies(50)).toEqual([]);

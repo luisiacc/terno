@@ -5,8 +5,8 @@
  *  1. plan 64: search looks everywhere: the shipping web configuration, the index current at the web's cap (a cold-start
  *     workload: it's first, on the store as seeded). A whole search through the store within 5 ms, everywhere and in:all.
  *  2. Then the store reopened without the index: the exact scan (no index yet) never stalls a frame and finishes in its
- *     budget, for every strategy; a free-text scan reads every body, in both scopes and with what's left no longer reading
- *     them all (idb.perf holds the same stalls at 50k messages for three more).
+ *     budget, for every strategy; a free-text scan reads every body, once with nothing left out and once by category
+ *     (idb.perf holds the same stalls at 50k messages for three more).
  *  3. The workloads the stores share (conformance/*-perf.ts): arrivals only reads; summaries wants no filters, so it's
  *     before forwards; each says what it needs before it times.
  *  4. Plan 69's storage perf last: its removal deletes bodies, and nothing after it reads them.
@@ -106,10 +106,10 @@ it("plan 64: the instant index: every search through the store within 5 ms, ever
   expect(over).toEqual([]);
 }, 600_000);
 
-/** a free-text scan reads every body, so one of its kind per scope; the rest of them are the same pass of the bodies with a different test */
+/** a free-text scan reads every body, the same pass with a different test: "everywhere" reads the most of them, so it holds the budget for the rest */
 const SCANNED: readonly (readonly [string, (q: string) => string, string])[] = [
   ...QUERIES.filter((q) => scanBudget(q) < 10_000).flatMap((q) => SCOPES.map(([s, f]) => [s, f, q] as const)),
-  ...SCOPES.map(([s, f]) => [s, f, "zzqxjv"] as const),
+  ["everywhere", SCOPES[0][1], "zzqxjv"],
   ["everywhere", SCOPES[0][1], "category:facturas uber"],
 ];
 
