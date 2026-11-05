@@ -62,3 +62,7 @@ Known edges, left as they are (both need rare timing or a rare file):
 
 - A palette save refused by the backend while a style switch is queued behind it: the switch still saves the refused palette under the style it left. Saves only fail on an id the UI doesn't offer.
 - A backup from a newer release with a style this build doesn't know fails the map's validation, so the import drops the whole map, as it drops its `design`. Those styles start from their own colors.
+
+## The Codex code review
+
+One round, no findings. The review changed nothing.
