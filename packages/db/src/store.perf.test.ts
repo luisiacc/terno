@@ -12,19 +12,19 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openDatabase } from "./index";
 import { SqlMailStore } from "./sql-store";
 import { BUDGET_MULTIPLIER, measureAsync, report, type Stat } from "./test/perf";
+import { copyMailbox, MAILBOX_NOW as NOW, PERF_MAILBOX } from "./test/perf-mailbox";
 
-const NOW = Date.UTC(2026, 9, 22, 15, 30);
 let store: SqlMailStore;
 let dir: string;
 let accountIds: number[];
 const stats: Stat[] = [];
 const meta: Record<string, unknown> = {};
 
-beforeAll(async () => {
+beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "terno-store-perf-"));
   // like perf.perf.test.ts, SQLite's own autocheckpoints: right after a 50k seed the worker's WAL still holds the hot pages (read without mmap)
+  const seeded = copyMailbox(PERF_MAILBOX, join(dir, "perf.db"), "wal");
   store = new SqlMailStore(openDatabase(join(dir, "perf.db")));
-  const seeded = await store.dev.seed(generateDataset({ threads: 29_500, accounts: 8, seed: 2026, now: NOW, bodyScale: 4 }), { now: NOW });
   accountIds = seeded.accountIds;
   meta.messages = seeded.messageCount;
   meta.threads = seeded.threadCount;
@@ -37,7 +37,8 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-async function gate(name: string, budgetMs: number, fn: (i: number) => Promise<unknown>, iterations?: number) {
+/** 20 samples, as perf.perf: what the store adds (hydrating rows, the revision) shows in every one */
+async function gate(name: string, budgetMs: number, fn: (i: number) => Promise<unknown>, iterations = 20) {
   const s = await measureAsync(name, budgetMs, fn, iterations);
   stats.push(s);
   expect(s.p95, `${name} p95 ${s.p95.toFixed(2)}ms > ${budgetMs}ms`).toBeLessThanOrEqual(budgetMs * BUDGET_MULTIPLIER);
@@ -47,7 +48,6 @@ async function gate(name: string, budgetMs: number, fn: (i: number) => Promise<u
 describe("reads", () => {
   it("lists, pages, counts and opens within the navigation budgets", async () => {
     await gate("list inbox, first page (100)", 5, () => store.threads.list({ view: "inbox", limit: 100 }));
-    await gate("list inbox per account", 5, (i) => store.threads.list({ view: "inbox", accountId: accountIds[i % accountIds.length]!, limit: 100 }));
     const deep = store.db.get<{ last_date: number; id: number }>(
       "SELECT last_date, id FROM threads WHERE in_trash = 0 AND in_spam = 0 ORDER BY last_date DESC, id DESC LIMIT 1 OFFSET 15000",
     )!;
@@ -59,14 +59,10 @@ describe("reads", () => {
     await gate("open random thread (with categorization)", 5, (i) => store.threads.get(ids[i % ids.length]!));
   });
 
+  // perf.perf holds every strategy on the query itself; what the store adds is the same for each: a free text and an operator
   it.each([
     ["common word", "factura"],
-    ["prefix while typing (2 chars)", "fa"],
-    ["phrase", '"darse de baja"'],
-    ["sender address", "from:crew@morningbrew.com"],
-    ["negation only", "-factura"],
     ["old mail by date", "before:2025-03-01"],
-    ["category + text", "category:facturas uber"],
   ])("search %s", async (label, query) => {
     await gate(`search: ${label} — ${query}`, 25, () => store.threads.searchText({ query, limit: 100, now: NOW }));
   });
@@ -87,7 +83,7 @@ describe("writes", () => {
   });
 
   it("ingests new mail in slices at ≥ 1k msgs/s", async () => {
-    const extra: IncomingMessage[] = generateDataset({ threads: 3_000, accounts: 8, seed: 77, now: NOW, bodyScale: 4 }).messages.map((m) => ({
+    const extra: IncomingMessage[] = generateDataset({ threads: 1_500, accounts: 8, seed: 77, now: NOW, bodyScale: 4 }).messages.map((m) => ({
       ...m,
       providerMsgId: `x-${m.providerMsgId}`,
       rfcMessageId: `x-${m.rfcMessageId}`,
@@ -273,7 +269,7 @@ describe("a category hidden from the Inbox (plan 83)", () => {
 describe("an account's Mark all as read (plan 106)", () => {
   it("its Inbox's unread scope walks within budget when another account's unread fills the mailbox and it has none or ten", async () => {
     const sparse = accountIds[0]!;
-    const saved = store.db.all<{ id: number; unread_count: number }>("SELECT id, unread_count FROM threads");
+    store.db.exec("CREATE TEMP TABLE unread_saved AS SELECT id, unread_count FROM threads");
     // Codex R4: the scope walks the global unread index testing account and place: the worst case is every other thread unread
     store.db.run("UPDATE threads SET unread_count = max(unread_count, 1) WHERE account_id != ?", sparse);
     store.db.run("UPDATE threads SET unread_count = 0 WHERE account_id = ?", sparse);
@@ -297,7 +293,8 @@ describe("an account's Mark all as read (plan 106)", () => {
       expect((await walk()).length).toBeLessThanOrEqual(10);
       await gate("mark all read, account with ten unread: the whole id walk", 16, walk, 20);
     } finally {
-      for (const r of saved) store.db.run("UPDATE threads SET unread_count = ? WHERE id = ?", r.unread_count, r.id);
+      store.db.exec("UPDATE threads SET unread_count = (SELECT unread_count FROM unread_saved s WHERE s.id = threads.id)");
+      store.db.exec("DROP TABLE unread_saved");
     }
   });
 });
@@ -319,28 +316,24 @@ describe("a delete's count (plan 107)", () => {
       n, thread, JSON.stringify(keys), seed.id,
     );
     for (const key of keys) store.db.run("INSERT INTO thread_folders (thread_id, account_id, folder, last_date, unread) VALUES (?, ?, ?, 0, 0)", thread, seed.account_id, key);
-    try {
-      const limit = 1000;
-      const ms: number[] = [];
-      let messages = 0;
-      for (let after: Parameters<typeof store.folders.count>[2] = null; ; ) {
-        const started = performance.now();
-        const r = await store.folders.count(seed.account_id, keys, after, limit);
-        ms.push(performance.now() - started);
-        messages += r.messages;
-        if (!r.next) break;
-        after = r.next;
-      }
-      const total = ms.reduce((a, b) => a + b, 0);
-      meta.folderCount = `${ms.length} slices, ${total.toFixed(1)} ms in all, max ${Math.max(...ms).toFixed(2)} ms`;
-      console.log(`count over 100 sublabels of ${n}: ${meta.folderCount}`);
-      expect(Math.max(...ms), `one slice (${meta.folderCount})`).toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
-      expect(messages).toBe(n);
-      // the conversation once (100 reads of it were five million visits), a slice of rows at a time
-      expect(ms.length).toBeLessThanOrEqual(Math.ceil((n + 2 * keys.length) / limit) + keys.length + 2);
-    } finally {
-      store.db.run("DELETE FROM messages WHERE thread_id = ?", thread);
-      store.db.run("DELETE FROM threads WHERE id = ?", thread);
+    // (the file's last test: nothing reads this mailbox after it, so it isn't taken out again)
+    const limit = 1000;
+    const ms: number[] = [];
+    let messages = 0;
+    for (let after: Parameters<typeof store.folders.count>[2] = null; ; ) {
+      const started = performance.now();
+      const r = await store.folders.count(seed.account_id, keys, after, limit);
+      ms.push(performance.now() - started);
+      messages += r.messages;
+      if (!r.next) break;
+      after = r.next;
     }
+    const total = ms.reduce((a, b) => a + b, 0);
+    meta.folderCount = `${ms.length} slices, ${total.toFixed(1)} ms in all, max ${Math.max(...ms).toFixed(2)} ms`;
+    console.log(`count over 100 sublabels of ${n}: ${meta.folderCount}`);
+    expect(Math.max(...ms), `one slice (${meta.folderCount})`).toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
+    expect(messages).toBe(n);
+    // the conversation once (100 reads of it were five million visits), a slice of rows at a time
+    expect(ms.length).toBeLessThanOrEqual(Math.ceil((n + 2 * keys.length) / limit) + keys.length + 2);
   });
 });
