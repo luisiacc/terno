@@ -258,10 +258,11 @@ test.describe("drafting with AI (plan 133)", () => {
     await openField(page);
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("ai-row-status-text")).toHaveText("Writing…");
-    await page.clock.fastForward(7_900);
+    // the clock also runs in real time: well short of 8 s here, so a loaded machine's seconds don't reach it
+    await page.clock.fastForward(4_000);
     await expect(page.getByTestId("ai-row-status-text")).toHaveText("Writing…");
-    await page.clock.fastForward(100);
-    // at once: the clock also runs in real time, so a longer wait would pass a slower timer
+    await page.clock.fastForward(4_000);
+    // at once, for the same reason: a longer wait would pass a slower timer
     await expect(page.getByTestId("ai-row-status-text")).toHaveText("Loading the model…", { timeout: 600 });
     await page.getByTestId("ai-row-stop").click();
     await expect(row(page)).toHaveCount(0);

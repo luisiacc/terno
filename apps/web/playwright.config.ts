@@ -57,13 +57,14 @@ export default defineConfig({
       use: { design },
       snapshotPathTemplate: `{testDir}/__screenshots__/${design}/{testFilePath}/{arg}{ext}`,
     })),
-    // perf runs alone (no CPU contention from parallel workers)
+    // no e2e beside it, and two browsers at most (plan 139): one spec after another in each, on a machine with cores to spare
     // (no trace: its snapshots walk the whole DOM on every action, on the page's main thread, inside the timings)
-    { name: "perf", testMatch: /perf\.spec\.ts/, dependencies: ["e2e"], fullyParallel: false, workers: 1, use: { deviceScaleFactor: 1, trace: "off", actionTimeout: 0 } },
+    { name: "perf", testMatch: /perf\.spec\.ts/, dependencies: ["e2e"], fullyParallel: false, workers: 2, use: { deviceScaleFactor: 1, trace: "off", actionTimeout: 0 } },
   ],
   webServer: {
     // a test build (render probe on) in its own directory, so it never ships
-    command: `VITE_RENDER_PROBE=1 pnpm vite build --outDir ${OUT} && pnpm vite preview --outDir ${OUT} --port ${PORT} --strictPort --host 127.0.0.1`,
+    // (E2E_PREBUILT: `pnpm test:all` made this build already)
+    command: `${process.env.E2E_PREBUILT ? "" : `VITE_RENDER_PROBE=1 pnpm vite build --outDir ${OUT} && `}pnpm vite preview --outDir ${OUT} --port ${PORT} --strictPort --host 127.0.0.1`,
     url: `http://127.0.0.1:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

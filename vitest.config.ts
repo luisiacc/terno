@@ -52,15 +52,17 @@ export default defineConfig({
         resolve: { alias: [{ find: /^~\//, replacement: webSrc }] },
         test: {
           name: "perf",
-          globalSetup: ["packages/backend/scripts/test-worker-setup.mjs"],
+          globalSetup: ["packages/backend/scripts/test-worker-setup.mjs", "packages/backend/src/test/perf-snapshots.ts"],
           include: ["packages/*/src/**/*.perf.test.ts", "apps/*/src/**/*.perf.test.ts"],
           // memory gates measure the heap after a full collection
           execArgv: ["--expose-gc"],
           environment: "node",
           testTimeout: 600_000,
           hookTimeout: 600_000,
-          // timing samples must not compete for CPU
-          fileParallelism: false,
+          // plan 139: three files at a time on 12 cores, each with a core of its own; never more than the machine has free,
+          // since timing samples must not compete for CPU
+          fileParallelism: true,
+          maxWorkers: 3,
           sequence: { concurrent: false },
         },
       },

@@ -1582,8 +1582,11 @@ describe("categorizer: auto-apply at ingestion", () => {
     for (let i = 0; i < 25; i++) threads.push((await arrive(draft)).thread);
     await backend.aiAssist.enqueue(threads); // again: once per thread
     await backend.aiAssist.drain();
-    expect(asked).toBe(20);
-    expect(backend.aiAssist.pending).toBe(5);
+    // (a pass a wake-up began may still be asking when drain returns; 20 asked and 5 left is the cap, whichever way it got there)
+    await vi.waitFor(() => {
+      expect(asked).toBe(20);
+      expect(backend.aiAssist.pending).toBe(5);
+    });
     backend.aiAssist.stop();
   });
 

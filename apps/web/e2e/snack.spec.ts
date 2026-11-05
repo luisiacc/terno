@@ -147,8 +147,9 @@ test.describe("the docked snackbar", () => {
     await page.mouse.move(1300, 100);
     await archiveOne(page);
     // the ring's offset is set on its first frame: until then it reads as nothing (NaN), not as full
-    await expect.poll(() => drained(page)).not.toBeNaN();
-    const a = await drained(page);
+    // (the value the poll saw: the ring can restart between two reads, and read as nothing again)
+    let a = NaN;
+    await expect.poll(async () => (a = await drained(page))).not.toBeNaN();
     await expect.poll(() => drained(page)).toBeGreaterThan(a + 5);
     await dock(page).hover();
     await expect.poll(() => ringState(page)).toBe("paused");

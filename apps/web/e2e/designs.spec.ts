@@ -2,11 +2,11 @@
  * Plan 15: designs. `e2e` runs every flow once, in macOS. What repeats in the other designs (plan 139) is what they can change:
  *
  * - **@design, all five:** what any design's type, shape, density or palette can change: this file's first part (layout at the
- *   minimum window, row heights, keyboard and scroll, the parts every variant keeps, a baseline of each key screen), the axe
- *   sweep (design-axe.spec.ts), other baselines, the icon line, motion, corners, and the List layout's round trip.
+ *   minimum window, row heights, keyboard and scroll, the parts every variant keeps, a baseline of each key screen), other
+ *   baselines, the icon line, corners, and the List layout's round trip.
  * - **@variant, Lumen and Atelier:** a flow that goes through a structural variant macOS doesn't hold (designs/types.ts:
  *   compose, listHeader, search, quickFilters, row, categoryReview, readerHeader, replyAction, categoryTabs), or a part only
- *   those rows have (an avatar's icon).
+ *   those rows have (an avatar's icon); and the axe sweep (design-axe.spec.ts) and motion, which change only with a structure.
  * - **@variant-graphite, also Graphite:** a flow through its own value, the sidebar's compose row. Luma adds no value.
  *
  * A flow that reads the same in every design takes no tag: one run. A flow tied to one design says so with `test.use({ design })`,

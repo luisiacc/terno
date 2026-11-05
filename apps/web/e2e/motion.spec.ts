@@ -132,7 +132,7 @@ async function exerciseLoading(page: Page, server: DevServer) {
 test.describe("motion", () => {
   test.use({ reducedMotion: "no-preference" });
 
-  test("in a design: nothing runs longer than 100 ms at the default; 0, or the OS asking, turns everything off", { tag: "@design" }, async ({ app: page, server }) => {
+  test("in a design: nothing runs longer than 100 ms at the default; 0, or the OS asking, turns everything off", { tag: "@variant" }, async ({ app: page, server }) => {
     await scenario("at the default 75 ms nothing runs longer than 100 ms; loading loops run", async () => {
       await expect(page.locator("html")).toHaveAttribute("data-motion", "on");
       await startSampler(page);

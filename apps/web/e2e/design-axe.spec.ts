@@ -1,7 +1,8 @@
 /**
- * Plan 139: axe in every design (@design), light and dark, once per surface. A design changes type, shape and structure over
- * the same tokens, so a surface can fail in one design only; so each surface a flow checks in macOS is reached here too, in a
- * sweep rather than a flow per design. A failure names the surface and the mode, and the rest still run. A new surface: a line here.
+ * Plan 139: axe per structure, light and dark, once per surface: macOS here, then the designs holding a variant macOS lacks
+ * (@variant: Lumen, Atelier). Names and roles change only with a variant, and Luma adds none. Colors don't need it:
+ * contrast.test.ts holds every pair in every palette. Each surface a flow checks in macOS is reached here too, in a sweep rather
+ * than a flow per design. A failure names the surface and the mode, and the rest still run. A new surface: a line here.
  *
  * Names, roles and structure can't change between light and dark; only contrast does. So each surface, once reached, is read
  * whole in light, then the OS turns dark (the app follows it live, as it does for a user on System) for `color-contrast` alone.
@@ -55,7 +56,7 @@ const closeAll = async (page: Page) => {
   await page.keyboard.press("Escape");
 };
 
-test.describe("axe", { tag: "@design" }, () => {
+test.describe("axe", { tag: "@variant" }, () => {
   test.setTimeout(120_000);
   // the sweep's rare surfaces: a provider behind a network it can switch off, an offline model, a tip
   test.use({ backendOptions: { network: true }, actionTimeout: 30_000, tips: true });

@@ -106,13 +106,14 @@ test.describe("the first new category's tip (plan 113)", () => {
       await freshStart(page);
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-categories").click();
-      await page.getByTestId("category-new").fill("LinkedIn");
+      // its own name: the last scenario's LinkedIn is still on this backend
+      await page.getByTestId("category-new").fill("Boletines");
       await page.getByTestId("category-create").click();
-      await expect(page.getByTestId("sidebar").getByText("LinkedIn", { exact: true })).toBeAttached();
+      await expect(page.getByTestId("sidebar").getByText("Boletines", { exact: true })).toBeAttached();
       await expect(tip(page)).toHaveCount(0);
       await page.keyboard.press("Escape");
       await expect(tip(page)).toBeVisible();
-      const row = (await page.getByTestId(`nav-category-${categoryId(server, "LinkedIn")}`).boundingBox())!;
+      const row = (await page.getByTestId(`nav-category-${categoryId(server, "Boletines")}`).boundingBox())!;
       expect((await tip(page).boundingBox())!.x).toBeGreaterThan(row.x + row.width);
     });
   });

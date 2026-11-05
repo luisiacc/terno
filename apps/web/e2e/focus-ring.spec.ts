@@ -76,9 +76,13 @@ test.describe("focus rings", () => {
       await page.keyboard.press("e"); // archive: a shortcut, no ring
       await expect(page.getByTestId("snack-action")).toBeVisible();
       await expect(page.locator("html")).not.toHaveAttribute("data-focus-ring");
-      await page.keyboard.press("F6");
-      await expect(page.getByTestId("snack-action")).toBeFocused();
-      expect((await ringed(page))!.ring).toBe(true);
+      // the archive's own focus move (to the next conversation) lands after the snack shows, and can take F6's back
+      await expect(async () => {
+        const action = page.getByTestId("snack-action");
+        if (!(await action.evaluate((el) => el === document.activeElement))) await page.keyboard.press("F6");
+        await expect(action).toBeFocused({ timeout: 1_000 });
+        expect((await ringed(page))?.ring).toBe(true);
+      }).toPass();
     });
   });
 

@@ -80,7 +80,8 @@ function once(name: string, build: (scratch: string) => void): string {
     renameSync(scratch, dir);
   } catch (error) {
     rmSync(scratch, { recursive: true, force: true });
-    throw error;
+    // two files built it at once and the other was first: its copy is the same
+    if (!existsSync(dir)) throw error;
   }
   return dir;
 }
@@ -184,7 +185,7 @@ export async function kept(name: string, build: (dir: string) => Promise<void>):
     renameSync(scratch, dir);
   } catch (error) {
     rmSync(scratch, { recursive: true, force: true });
-    throw error;
+    if (!existsSync(dir)) throw error;
   }
   return dir;
 }
