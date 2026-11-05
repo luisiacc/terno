@@ -92,7 +92,8 @@ describe.each(["SQL", "IDB"] as const)("W02 independent canonical actions: %s", 
     let worker: Promise<number> | undefined;
     try {
       await frozen.entered.promise;
-      expect(t.reads.at(-1)).toMatchObject({ id: "m0", labels: ["INBOX", "UNREAD"] });
+      // The provider reads concurrently, so m0 needn't be the last read when it's held.
+      expect(t.reads.filter((read) => read.id === "m0").at(-1)).toMatchObject({ id: "m0", labels: ["INBOX", "UNREAD"] });
       await t.client.call("threads.act", { threadIds: [threadId], action: "markRead" });
       worker = t.backend.runWorker(); await held.entered.promise;
       for (const action of ["markUnread", "star", "archive"] as const) await t.client.call("threads.act", { threadIds: [threadId], action });
