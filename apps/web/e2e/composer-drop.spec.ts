@@ -1,7 +1,6 @@
 import { parseRaw } from "@terno/mail";
-import AxeBuilder from "@axe-core/playwright";
 import type { JSHandle, Locator, Page } from "@playwright/test";
-import { expect, focusList, openRow, stabilize, test } from "./fixtures";
+import { axeBothModes, expect, focusList, openRow, stabilize, test } from "./fixtures";
 import { dragAfter } from "./helpers/composer-drop";
 
 /**
@@ -53,7 +52,7 @@ const after = (page: Page, text: string) => page.getByTestId("compose-body").eva
 
 const centre = async (l: Locator) => { const b = (await l.boundingBox())!; return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
 
-test("an image dropped on the text goes where the pointer is; undo takes it out; it is sent inline", async ({ app: page, server }, testInfo) => {
+test("an image dropped on the text goes where the pointer is; undo takes it out; it is sent inline", async ({ app: page, server }) => {
   await openRow(page, 0);
   await page.getByTestId("quick-reply").click();
   const body = page.getByTestId("compose-body");
@@ -66,11 +65,7 @@ test("an image dropped on the text goes where the pointer is; undo takes it out;
   await expect(layer).toHaveAttribute("data-state", "text");
   await expect(page.getByTestId("compose-drop-label")).toHaveText("Drop to place the image here");
   await expect(page.getByTestId("compose-drop-caret")).toBeVisible();
-  for (const theme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: theme });
-    await stabilize(page);
-    await page.getByTestId("composer").screenshot({ path: testInfo.outputPath(`drag-text-${theme}.png`) });
-  }
+  await stabilize(page);
   await drag(body, dt, spot, "drop");
   await expect(layer).toHaveCount(0);
   const image = body.locator("img.rt-image");
@@ -80,12 +75,8 @@ test("an image dropped on the text goes where the pointer is; undo takes it out;
   // in the text where it was dropped, never a chip
   expect(await body.evaluate((el) => el.innerHTML.replace(/<img class="ProseMirror-separator"[^>]*>/g, "").replace(/<img[^>]*>/, "[img]").replace(/<[^>]+>/g, ""))).toBe("Hello[img] world");
   await expect(page.getByTestId("draft-attachment")).toHaveCount(0);
-  for (const theme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: theme });
-    await stabilize(page);
-    expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-    await page.getByTestId("composer").screenshot({ path: testInfo.outputPath(`placed-${theme}.png`) });
-  }
+  await stabilize(page);
+  await axeBothModes(page, "[data-testid=composer]");
   // one undo step: out, and back
   await page.keyboard.press("ControlOrMeta+z");
   await expect(image).toHaveCount(0);
@@ -144,7 +135,7 @@ test("plan 130: a new message takes a drop anywhere in the pane; the layer rings
   await expect(page.getByTestId("compose-drop")).toHaveCount(0);
 });
 
-test("a file dropped off the text, or one that isn't an image, attaches as a chip", async ({ app: page }, testInfo) => {
+test("a file dropped off the text, or one that isn't an image, attaches as a chip", async ({ app: page }) => {
   await openRow(page, 0);
   await page.getByTestId("quick-reply").click();
   const dt = await transfer(page, [{ name: "notes.pdf", type: "application/pdf" }]);
@@ -154,11 +145,7 @@ test("a file dropped off the text, or one that isn't an image, attaches as a chi
   await expect(page.getByTestId("compose-drop")).toHaveAttribute("data-state", "attach");
   await expect(page.getByTestId("compose-drop-label")).toHaveText("Drop to attach");
   await expect(page.getByTestId("compose-drop-caret")).toBeHidden();
-  for (const theme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: theme });
-    await stabilize(page);
-    await page.getByTestId("composer").screenshot({ path: testInfo.outputPath(`drag-attach-${theme}.png`) });
-  }
+  await stabilize(page);
   // leaving clears it at once
   await drag(to, dt, await centre(to), "dragleave");
   await expect(page.getByTestId("compose-drop")).toHaveCount(0);

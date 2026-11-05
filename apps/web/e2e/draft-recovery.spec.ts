@@ -1,12 +1,7 @@
-import AxeBuilder from "@axe-core/playwright";
 import { RpcError } from "@terno/core/rpc";
-import { mkdirSync } from "node:fs";
-import { expect, openRow, stabilize, test } from "./fixtures";
+import { axeBothModes, expect, openRow, stabilize, test } from "./fixtures";
 
-const shots = "/tmp/terno-missing-draft-shots";
-mkdirSync(shots, { recursive: true });
-
-test("terminal draft copy keeps rich history, caret, recipient chips and exact files", async ({ app: page, server }, info) => {
+test("terminal draft copy keeps rich history, caret, recipient chips and exact files", async ({ app: page, server }) => {
   await openRow(page, 0); await page.getByTestId("quick-reply").click();
   const body = page.getByTestId("compose-body");
   await body.fill("bold authored work"); await body.press("Meta+a"); await body.press("Meta+b"); await body.press("ArrowRight");
@@ -31,11 +26,8 @@ test("terminal draft copy keeps rich history, caret, recipient chips and exact f
     const exact = await body.innerHTML();
     await body.press("Meta+Enter"); await expect(body).toBeFocused();
     expect((await server.backend.store.ops.recent(10)).filter((o) => o.kind === "send")).toEqual([]);
-    for (const theme of ["light", "dark"] as const) {
-      await page.emulateMedia({ colorScheme: theme }); await stabilize(page);
-      expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-      await page.screenshot({ path: `${shots}/missing-${info.project.name}-${theme}.png` });
-    }
+    await stabilize(page);
+    await axeBothModes(page, "[data-testid=composer]");
     await body.focus(); await body.press("ArrowLeft");
     await page.getByTestId("format-italic").click();
     await expect(page.getByTestId("format-italic")).toHaveAttribute("aria-pressed", "true");
@@ -60,7 +52,7 @@ test("terminal draft copy keeps rich history, caret, recipient chips and exact f
   } finally { release(); server.backend.store.drafts.save = save; }
 });
 
-test("an uncertain copy is disclosed and only another explicit copy can proceed", async ({ app: page, server }, info) => {
+test("an uncertain copy is disclosed and only another explicit copy can proceed", async ({ app: page, server }) => {
   await openRow(page, 0); await page.getByTestId("quick-reply").click();
   const body = page.getByTestId("compose-body"); await body.fill("keep uncertain work");
   await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.body_text).toBe("keep uncertain work");
@@ -76,11 +68,8 @@ test("an uncertain copy is disclosed and only another explicit copy can proceed"
     await expect(page.getByTestId("compose-send")).toBeDisabled();
     await body.focus(); await body.press("End"); await page.keyboard.type(" still here");
     await body.press("Meta+Enter"); expect(creates).toBe(1);
-    for (const theme of ["light", "dark"] as const) {
-      await page.emulateMedia({ colorScheme: theme }); await stabilize(page);
-      expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-      await page.screenshot({ path: `${shots}/unknown-${info.project.name}-${theme}.png` });
-    }
+    await stabilize(page);
+    await axeBothModes(page, "[data-testid=composer]");
     expect(creates).toBe(1);
     await page.getByTestId("draft-save-copy").focus(); await page.keyboard.press("Enter");
     await expect(page.getByTestId("draft-save-copy")).toHaveCount(0);
@@ -128,7 +117,7 @@ test("missing account and files stay explicit; removing refs permits the sole co
   expect((await server.backend.store.drafts.list())[0]).toMatchObject({ account_id: remaining.id, body_text: "account recovery text retained", attachments_json: "[]" });
 });
 
-test("restart hold preserves the rich document, caret, history and marks until cancellation", async ({ app: page, server }, info) => {
+test("restart hold preserves the rich document, caret, history and marks until cancellation", async ({ app: page, server }) => {
   await openRow(page, 0); await page.getByTestId("quick-reply").click();
   const body = page.getByTestId("compose-body"); await body.fill("exact rich work");
   await body.press("Meta+a"); await body.press("Meta+b"); await body.press("ArrowRight"); await body.press("ArrowLeft");
@@ -141,12 +130,11 @@ test("restart hold preserves the rich document, caret, history and marks until c
   await page.keyboard.type("blocked"); await page.keyboard.press("Meta+z"); await page.keyboard.press("c");
   expect(await body.innerHTML()).toBe(html);
   expect(await page.evaluate(() => ({ offset: window.getSelection()?.anchorOffset, text: window.getSelection()?.anchorNode?.textContent }))).toEqual(caret);
-  for (const theme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: theme }); await stabilize(page);
-    expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-    await page.screenshot({ path: `${shots}/restart-${info.project.name}-${theme}.png` });
-  }
+  await stabilize(page);
+  await axeBothModes(page, "[data-testid=composer]");
   await page.evaluate("window.releaseDraftHold()");
+  // the hold is over only when it stops saying so: focus and the italic button never left, and a key before this is refused
+  await expect(page.getByTestId("draft-status")).not.toHaveText("Preparing to restart. Draft editing is paused.");
   await expect(body).toBeFocused();
   await expect(page.getByTestId("format-italic")).toHaveAttribute("aria-pressed", "true");
   await page.clock.setFixedTime(new Date((await page.evaluate(() => Date.now())) + 1000));

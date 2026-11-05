@@ -1,8 +1,7 @@
-import AxeBuilder from "@axe-core/playwright";
 import { msg } from "@terno/store/conformance";
-import { expect, selectThread, test } from "./fixtures";
+import { axeBothModes, expect, selectThread, test } from "./fixtures";
 
-test("Forward refuses 101 files before mutation; continued typing and the 100-file boundary stay durable", async ({ app: page, server }, testInfo) => {
+test("Forward refuses 101 files before mutation; continued typing and the 100-file boundary stay durable", async ({ app: page, server }) => {
   const store = server.backend.store, [account] = await store.accounts.list();
   const { touched } = await store.sync.ingest([msg({ accountId: account!.id, providerMsgId: "capacity-forward", subject: "Forward capacity fixture", attachments: [{ filename: "source-empty.txt", mime: "text/plain", size: 0, bytes: new Uint8Array() }] })], { applyFilters: false, now: Date.now(), classifier: null });
   await page.reload(); await selectThread(page, touched[0]!, 'subject:"Forward capacity fixture"');
@@ -20,11 +19,7 @@ test("Forward refuses 101 files before mutation; continued typing and the 100-fi
   await expect(page.getByTestId("draft-attachment")).toHaveCount(100);
   expect(await store.drafts.list()).toEqual([before]);
   await page.getByTestId("snack-dock").hover();
-  for (const theme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: theme });
-    expect((await new AxeBuilder({ page }).include("[data-testid=composer]").include('[aria-label="Notifications"]').analyze()).violations).toEqual([]);
-    await page.screenshot({ path: `/tmp/terno-attachments-r4-evidence/capacity-${testInfo.project.name}-${theme}.png` });
-  }
+  await axeBothModes(page, "[data-testid=composer]", '[aria-label="Notifications"]');
   await page.keyboard.press("Meta+Comma");
   await page.getByTestId("language-select").click(); await page.getByTestId("language-es").click();
   await expect(page.locator("html")).toHaveAttribute("lang", "es-MX");
@@ -32,7 +27,6 @@ test("Forward refuses 101 files before mutation; continued typing and the 100-fi
   await forward.click();
   await expect(page.getByTestId("snack-message")).toContainText("Este mensaje es demasiado grande.");
   await page.getByTestId("snack-dock").hover();
-  expect((await new AxeBuilder({ page }).include("[data-testid=composer]").include('[aria-label="Notificaciones"]').analyze()).violations).toEqual([]);
   await body.fill("Later body is still durably saved");
   await expect.poll(async () => (await store.drafts.list())[0]?.body_text).toBe("Later body is still durably saved");
   await page.reload(); await selectThread(page, touched[0]!, 'subject:"Forward capacity fixture"');

@@ -4,10 +4,9 @@
  * again and join the draft when they come; ones that never come are named, with
  * Try again, and the forward still sends without them.
  */
-import AxeBuilder from "@axe-core/playwright";
 import { msg } from "@terno/store/conformance";
 import { parseRaw } from "@terno/mail";
-import { expect, selectThread, test } from "./fixtures";
+import { axeBothModes, expect, selectThread, test } from "./fixtures";
 
 test.use({ backendOptions: { smtpCapture: true } });
 
@@ -31,11 +30,7 @@ test("Forward opens while the original downloads; its files join when captured, 
   const status = page.getByTestId("forward-files");
   await expect(status).toHaveText("Getting the original’s files…");
   await expect.poll(async () => (await store.drafts.list())[0]?.mode).toBe("forward");
-  for (const theme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: theme });
-    expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-  }
-  await page.emulateMedia({ colorScheme: "light" });
+  await axeBothModes(page, "[data-testid=composer]");
 
   // the capture lands (as a sync would bring it): the files join the forward, and are saved with it
   const messageId = (await store.threads.get(touched[0]!))!.messages[0]!.id;
@@ -75,11 +70,7 @@ test("files that never come are named with Try again, and the forward sends with
   await expect.poll(async () => (await page.clock.fastForward(20_000), status.getAttribute("data-status"))).toBe("failed");
   await expect(status).toContainText("Couldn’t get report.pdf, so this forward won’t include it.");
   expect(retries).toBe(3);
-  for (const theme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: theme });
-    expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-  }
-  await page.emulateMedia({ colorScheme: "light" });
+  await axeBothModes(page, "[data-testid=composer]");
   // Try again: three more tries
   await page.getByTestId("forward-files-retry").click();
   await expect(status).toHaveAttribute("data-status", "fetching");

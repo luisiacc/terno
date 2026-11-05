@@ -5,11 +5,9 @@
  * r/a/f resume or convert it without losing what was written, and discarding
  * can be undone.
  */
-import AxeBuilder from "@axe-core/playwright";
-import { mkdirSync } from "node:fs";
 import type { Page } from "@playwright/test";
 import { E2E_NOW } from "./constants";
-import { addRecipients, chipsOf, expect, navTo, focusList, ingestConversation, openRow, recipientEmails, rows, selectThread, stabilize, test } from "./fixtures";
+import { axeBothModes, addRecipients, chipsOf, expect, navTo, focusList, ingestConversation, openRow, recipientEmails, rows, selectThread, stabilize, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 const composer = (page: Page) => page.getByTestId("reader").getByTestId("composer");
@@ -386,12 +384,8 @@ test.describe("new message, in the reader pane", () => {
     const pendingDraft = (await server.backend.store.drafts.list())[0]!;
     expect(pendingDraft).toMatchObject({ subject: "Una sola vez", body_text: "Texto", revision: 1 });
     expect(pendingDraft.generation).toBeTruthy();
-    mkdirSync("/tmp/terno-renderer-admission/shots", { recursive: true });
-    for (const theme of ["light", "dark"] as const) {
-      await page.emulateMedia({ colorScheme: theme }); await stabilize(page);
-      expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-      await page.screenshot({ path: `/tmp/terno-renderer-admission/shots/pending-send-${theme}.png` });
-    }
+    await stabilize(page);
+    await axeBothModes(page, "[data-testid=composer]");
     release();
     handlers["compose.send"] = original;
     await expect.poll(sends).toBe(before + 1);

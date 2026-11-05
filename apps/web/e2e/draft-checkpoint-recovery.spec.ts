@@ -1,11 +1,4 @@
-import AxeBuilder from "@axe-core/playwright";
-import { mkdtempSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { expect, stabilize, test } from "./fixtures";
-
-const shots = process.env.TERNO_R6_CHECKPOINT_SHOTS ?? mkdtempSync(join(tmpdir(), "terno-r6-checkpoint-"));
-mkdirSync(shots, { recursive: true });
+import { axeBothModes, expect, stabilize, test } from "./fixtures";
 
 type Probe = { composerReadFault(enabled?: boolean): number; throwIn(area: string): void; composerDoc(): unknown; setComposerCaret(index: number, offset?: number): boolean; parseMailHtml(html: string): unknown };
 const fault = (page: import("@playwright/test").Page, enabled?: boolean) => page.evaluate((value) => (window as unknown as { __terno: Probe }).__terno.composerReadFault(value), enabled);
@@ -14,7 +7,7 @@ const selection = (page: import("@playwright/test").Page) => page.evaluate(() =>
   return { anchor: s?.anchorOffset, focus: s?.focusOffset, anchorText: s?.anchorNode?.textContent, focusText: s?.focusNode?.textContent };
 });
 
-for (const position of ["backward range", "italic caret"] as const) test(`fatal Review restores a persistently unread rich checkpoint with ${position}`, async ({ app: page, server }, info) => {
+for (const position of ["backward range", "italic caret"] as const) test(`fatal Review restores a persistently unread rich checkpoint with ${position}`, async ({ app: page, server }) => {
   let navigations = 0;
   page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) navigations++; });
   try {
@@ -76,12 +69,11 @@ for (const position of ["backward range", "italic caret"] as const) test(`fatal 
     expect(await server.backend.store.drafts.list()).toHaveLength(0);
     await expect(page.getByTestId("draft-status")).not.toHaveText("Draft saved");
     const reads = await fault(page);
-    await page.waitForTimeout(5_100);
+    await page.clock.fastForward(5_100);
     expect(await fault(page)).toBe(reads); expect(await server.backend.store.drafts.list()).toHaveLength(0); expect(navigations).toBe(0);
-    for (const theme of ["light", "dark"] as const) {
-      await page.emulateMedia({ colorScheme: theme }); await stabilize(page);
-      expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-      await page.screenshot({ path: join(shots, `checkpoint-${position.replace(" ", "-")}-${info.project.name}-${theme}.png`) });
+    if (position === "italic caret") {
+      await stabilize(page);
+      await axeBothModes(page);
     }
     await page.getByTestId("recovery-details").click();
     await expect(page.getByTestId("app-boundary")).toBeVisible(); expect(await fault(page)).toBe(reads);

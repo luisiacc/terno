@@ -1,10 +1,9 @@
 import { ingest, msg } from "@terno/store/conformance";
-import AxeBuilder from "@axe-core/playwright";
 import { mkdirSync } from "node:fs";
-import { expect, openRow, stabilize, test } from "./fixtures";
+import { axeBothModes, expect, openRow, stabilize, test } from "./fixtures";
 mkdirSync("/tmp/terno-missing-draft-r2-shots", { recursive: true });
 
-for (const normalization of ["missing original", "cross-account"] as const) test(`copy context normalization keeps its original inline editor (${normalization})`, async ({ app: page, server }, info) => {
+for (const normalization of ["missing original", "cross-account"] as const) test(`copy context normalization keeps its original inline editor (${normalization})`, async ({ app: page, server }) => {
   const account = (await server.backend.store.accounts.list())[0]!;
   await ingest(server.backend.store, [msg({ accountId: account.id, providerMsgId: "r2-first", rfcMessageId: "r2-first@example.test", date: Date.now() + 1000 }), msg({ accountId: account.id, providerMsgId: "r2-second", references: ["r2-first@example.test"], date: Date.now() + 2000 })]);
   await page.reload(); await page.getByTestId("thread-row").first().waitFor();
@@ -47,11 +46,8 @@ for (const normalization of ["missing original", "cross-account"] as const) test
     await expect(page.getByTestId("format-italic")).toHaveAttribute("aria-pressed", "true");
     await page.clock.setFixedTime(new Date((await page.evaluate(() => Date.now())) + 1000));
     await page.keyboard.type("X"); await body.press("Meta+z"); expect(await body.innerHTML()).toBe(html);
-    for (const theme of ["light", "dark"] as const) {
-      await page.emulateMedia({ colorScheme: theme }); await stabilize(page);
-      expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-      await page.screenshot({ path: `/tmp/terno-missing-draft-r2-shots/normalized-${normalization.replace(" ", "-")}-${info.project.name}-${theme}.png` });
-    }
+    await stabilize(page);
+    await axeBothModes(page, "[data-testid=composer]");
     await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.body_text).toBe("inline exact work latest during copy");
     expect((await server.backend.store.drafts.list())[0]).toMatchObject(normalization === "cross-account" ? { thread_id: null, mode: "reply" } : { mode: "reply", in_reply_to_message_id: original.in_reply_to_message_id, reply_context_json: original.reply_context_json });
   } finally { release(); server.backend.store.drafts.save = save; }

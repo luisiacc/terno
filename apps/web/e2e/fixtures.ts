@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import AxeBuilder from "@axe-core/playwright";
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
 import { sqlDb, startDevServer, type DevServer } from "../../backend-dev/src/server";
 import { TIPS, tipKey } from "../src/lib/tips";
@@ -220,6 +221,25 @@ export async function scenario(name: string, body: () => Promise<void>): Promise
   } catch (e) {
     expect.soft(e instanceof Error ? e.message : String(e), name).toBe("");
   }
+}
+
+/**
+ * Axe on what's on screen, or these parts of it (mail frames aside: legacy mode, which doesn't open a page per call). Names,
+ * roles and structure can't change between light and dark, so dark reads contrast alone. The app must be following the OS.
+ */
+export async function axeBothModes(page: Page, ...scopes: string[]): Promise<void> {
+  const read = async (axe: AxeBuilder, mode: string) => {
+    for (const scope of scopes) axe = axe.include(scope);
+    const { violations } = await axe.exclude("iframe").setLegacyMode().analyze();
+    expect(violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`), mode).toEqual([]);
+  };
+  const html = page.locator("html");
+  await read(new AxeBuilder({ page }), "light");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(html).toHaveClass(/\bdark\b/);
+  await read(new AxeBuilder({ page }).withRules(["color-contrast"]), "dark");
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(html).not.toHaveClass(/\bdark\b/);
 }
 
 export const rows = (page: Page): Locator => page.getByTestId("thread-row");

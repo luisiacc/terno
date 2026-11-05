@@ -131,10 +131,6 @@ test.describe("dragging mail onto a folder", () => {
     await page.getByRole("option").filter({ hasText: FOLDER_NAME }).first().click();
     await expect(page.getByTestId("action-toggle-archive")).toHaveAttribute("aria-pressed", "false");
     await expect(page.getByTestId("filter-folder-account")).toBeVisible();
-    for (const colorScheme of ["light", "dark"] as const) {
-      await page.emulateMedia({ colorScheme });
-      await page.screenshot({ path: test.info().outputPath(`builder-${colorScheme}.png`) });
-    }
     await page.getByTestId("action-toggle-archive").click();
     await expect(page.getByTestId("action-folder-select")).toContainText("No folder");
     await page.getByTestId("action-folder-select").click();

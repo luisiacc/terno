@@ -1,14 +1,13 @@
 import { parseRaw } from "@terno/mail";
 import { msg } from "@terno/store/conformance";
 import type { IncomingMessage } from "@terno/store";
-import AxeBuilder from "@axe-core/playwright";
 import { readFileSync } from "node:fs";
-import { expect, openRow, selectThread, stabilize, test } from "./fixtures";
+import { axeBothModes, expect, openRow, selectThread, stabilize, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 test.use({ backendOptions: { smtpCapture: true } });
 
-test("last attachment removal keeps From locked until acknowledgement, then edits autosave across reload", async ({ app: page, server }, testInfo) => {
+test("last attachment removal keeps From locked until acknowledgement, then edits autosave across reload", async ({ app: page, server }) => {
   await openRow(page, 0);
   await page.getByTestId("quick-reply").click();
   await page.getByTestId("attachment-input").setInputFiles({ name: "remove.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 255, 128]) });
@@ -47,16 +46,12 @@ test("last attachment removal keeps From locked until acknowledgement, then edit
     await expect(page.getByTestId("compose-body")).toHaveText("later edit survives account change");
     await expect(page.getByTestId("compose-from")).toContainText(other.email);
     await expect(page.getByTestId("draft-attachment")).toHaveCount(0);
-    for (const theme of ["light", "dark"] as const) {
-      await page.emulateMedia({ colorScheme: theme });
-      await stabilize(page);
-      expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-      await page.screenshot({ path: testInfo.outputPath(`from-${theme}.png`) });
-    }
+    await stabilize(page);
+    await axeBothModes(page, "[data-testid=composer]");
   } finally { release(); server.backend.store.drafts.save = save; }
 });
 
-test("attachments attach/remove/reload/send/download exact bytes", async ({ app: page, server }, testInfo) => {
+test("attachments attach/remove/reload/send/download exact bytes", async ({ app: page, server }) => {
   await openRow(page, 0);
   await page.getByTestId("quick-reply").click();
   const bytes = Buffer.from([0, 255, 128, 1, 2, 13, 10]);
@@ -67,24 +62,15 @@ test("attachments attach/remove/reload/send/download exact bytes", async ({ app:
   await expect(page.getByTestId("draft-attachment")).toHaveCount(2);
   await page.getByRole("button", { name: "Remove empty.txt" }).click();
   await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
-  for (const theme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: theme });
-    await expect(page.locator("html")).toHaveClass(theme === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
-    await stabilize(page);
-    expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-    await page.screenshot({ path: testInfo.outputPath(`composer-${theme}.png`) });
-  }
+  await stabilize(page);
+  await axeBothModes(page, "[data-testid=composer]");
   await page.getByTestId("compose-send").click();
   await expect(page.getByTestId("composer")).toHaveCount(0);
   const tile = page.getByTestId("message").last().getByRole("button", { name: "Download résumé.bin" });
   const download = page.waitForEvent("download");
   await tile.click();
   const result = await download;
-  for (const theme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: theme });
-    await stabilize(page);
-    await page.screenshot({ path: testInfo.outputPath(`reader-${theme}.png`) });
-  }
+  await stabilize(page);
   expect(result.suggestedFilename()).toBe("résumé.bin");
   expect(readFileSync((await result.path())!)).toEqual(bytes);
   await expect.poll(() => server.smtp.length).toBe(1);
@@ -153,7 +139,7 @@ test("sending during attachment staging refuses a partial revision", async ({ ap
 });
 
 
-test("attachment-only reply survives reload and mode conversion with exact Undo", async ({ app: page, server }, testInfo) => {
+test("attachment-only reply survives reload and mode conversion with exact Undo", async ({ app: page, server }) => {
   await openRow(page, 0);
   await page.getByTestId("quick-reply").click();
   const bytes = Buffer.from([0, 255, 128, 13, 10]);
@@ -175,17 +161,13 @@ test("attachment-only reply survives reload and mode conversion with exact Undo"
   await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "replyAll");
   await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
   expect(JSON.parse(saved()!.attachments_json)).toEqual(refs);
-  for (const theme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: theme });
-    await stabilize(page);
-    await page.screenshot({ path: testInfo.outputPath(`conversion-${theme}.png`) });
-  }
+  await stabilize(page);
   await page.getByTestId("compose-send").click();
   await expect.poll(() => server.smtp.length).toBe(1);
   expect((await parseRaw(server.smtp[0]!.raw)).attachments[0]!.bytes).toEqual(new Uint8Array(bytes));
 });
 
-test("Forward refuses foreign account refs before changing authored work, with keyboard recovery", async ({ app: page, server }, testInfo) => {
+test("Forward refuses foreign account refs before changing authored work, with keyboard recovery", async ({ app: page, server }) => {
   const accounts = await server.backend.store.accounts.list();
   const source = accounts[0]!, other = accounts[1]!;
   const { touched } = await server.backend.store.sync.ingest([msg({ accountId: source.id, providerMsgId: "from-convert", subject: "From conversion fixture", attachments: [
@@ -211,12 +193,7 @@ test("Forward refuses foreign account refs before changing authored work, with k
   await expect(page.getByTestId("snack-message").getByText(`To forward these attachments, choose ${source.email} in From.`, { exact: true })).toBeVisible();
   expect(await server.backend.store.drafts.list()).toEqual([before]);
   await page.getByTestId("snack-dock").hover();
-  for (const theme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: theme });
-    await page.addStyleTag({ content: "*{caret-color:transparent!important}" });
-    expect((await new AxeBuilder({ page }).include("[data-testid=composer]").include('[aria-label="Notifications"]').analyze()).violations).toEqual([]);
-    await page.screenshot({ path: testInfo.outputPath(`forward-${theme}.png`) });
-  }
+  await axeBothModes(page, "[data-testid=composer]", '[aria-label="Notifications"]');
   await body.fill("later text remains savable");
   await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.body_text).toBe("later text remains savable");
   await page.reload();
