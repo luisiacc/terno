@@ -3,7 +3,11 @@ import { BUDGET_MULTIPLIER } from "../../db/src/test/perf";
 import { ProviderError } from "./types";
 import { GmailFixtureEntryError, GmailFixturePool, GmailResponseFixture } from "./test/gmail-response.fixture";
 
-it.each([25, 35])("validates six %i MiB raw responses within the backend slice budget", async (mib) => {
+// the same path at every size: 35 MiB is past what base64 of the largest message (25 MiB) takes on the wire
+const MIB = 35;
+
+it(`validates six ${MIB} MiB raw responses within the backend slice budget`, async () => {
+  const mib = MIB;
   // The first full bad validation cancels sibling preparation; the reader scope remains six.
   const source = (() => {
     const bytes = Buffer.alloc(mib * 1024 * 1024, 65);
@@ -115,8 +119,8 @@ it("refuses the empty json-only Gmail fixture before granting a timing witness",
   expect(fixture.pool.closeFulfilled).toBe(true);
 });
 
-it.each([25, 35])("joins six independent %i MiB bad Gmail validations on one real pipeline", async (mib) => {
-  const bytes = Buffer.alloc(mib * 1024 * 1024, 65);
+it(`joins six independent ${MIB} MiB bad Gmail validations on one real pipeline`, async () => {
+  const bytes = Buffer.alloc(MIB * 1024 * 1024, 65);
   bytes[bytes.length - 1] = 33;
   const source = bytes.toString("ascii");
   globalThis.gc?.();

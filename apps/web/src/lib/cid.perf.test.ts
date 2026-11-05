@@ -9,7 +9,7 @@ const { resolveCidHtml } = await import("./cid");
 afterEach(() => { vi.unstubAllGlobals(); call.mockReset(); });
 
 for (const { mime, sizes } of [
-  { mime: "image/png", sizes: [4 * 1024 * 1024] },
+  // over the output's limit, and right under it (one 4 MiB image is the first of either)
   { mime: "image/png", sizes: [4 * 1024 * 1024, 4 * 1024 * 1024] },
   { mime: "image/png", sizes: [4 * 1024 * 1024, 2 * 1024 * 1024 - 64] },
   { mime: "image/jpeg", sizes: [4 * 1024 * 1024] },

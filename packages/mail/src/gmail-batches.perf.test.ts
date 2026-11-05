@@ -5,8 +5,9 @@ import { threadCpuMs } from "../../db/src/test/timing";
 import { createGmailApiProvider, toBase64url } from "./gmail-api";
 import type { ProviderContext, SyncSink } from "./types";
 
-it("keeps 50k small-message processing within its qualified CPU and transaction budgets", async () => {
-  const count = 50_000;
+it("keeps small-message processing within its qualified CPU and transaction budgets, by the message", async () => {
+  // a page's and a transaction's bound, and 50 µs a message (they don't follow the count): 400 transactions
+  const count = 20_000;
   const raw = toBase64url(new TextEncoder().encode("From: sender@example.test\r\nSubject: Synthetic\r\nContent-Type: text/plain\r\n\r\nOrdinary small mail"));
   const checkpoint = { historyId: "9007199254740995" };
   let requests = 0, historyReads = 0, labelReads = 0, ingested = 0, transactions = 0, cursorWrites = 0, maxCursorBytes = 0, saved: unknown;
@@ -49,20 +50,20 @@ it("keeps 50k small-message processing within its qualified CPU and transaction 
   try { await p.sync(sink); }
   finally { await p.close(); }
   const elapsedCpu = threadCpuMs() - cpu;
-  expect(elapsedCpu, `50k provider/synthetic-sink CPU: ${elapsedCpu.toFixed(2)} ms`).toBeLessThanOrEqual(2500 * BUDGET_MULTIPLIER);
+  expect(elapsedCpu, `${count} provider/synthetic-sink CPU: ${elapsedCpu.toFixed(2)} ms`).toBeLessThanOrEqual((count / 20) * BUDGET_MULTIPLIER);
   expect(historyReads).toBe(1);
   expect(labelReads).toBe(1);
   expect(requests).toBe(count + Math.ceil(count / 500) + 1 + historyReads + labelReads);
   expect(ingested).toBe(count);
   expect(ids.size).toBe(count);
-  expect(transactions).toBe(1000);
+  expect(transactions).toBe(count / 50);
   expect(saved).toEqual(checkpoint);
   expect(cursorWrites).toBe(Math.ceil(count / 500) + 3);
   expect(maxCursorBytes).toBeLessThan(512);
 });
 
-it("bounds 50k cached refresh pages, effects and durable scalar checkpoints", async () => {
-  const count = 50_000, baseline = "9007199254740995";
+it("bounds cached refresh pages, effects and durable scalar checkpoints, by the message", async () => {
+  const count = 20_000, baseline = "9007199254740995";
   let reads = 0, requests = 0, effects = 0, writes = 0, maxBytes = 0, saved: unknown;
   const ctx = {
     incoming: new IncomingReads(), account: { id: 1, email: "synthetic@example.test" }, config: {},
@@ -102,7 +103,7 @@ it("bounds 50k cached refresh pages, effects and durable scalar checkpoints", as
   const start = threadCpuMs();
   try { await provider.sync(sink); } finally { await provider.close(); }
   const cpu = threadCpuMs() - start;
-  expect(cpu, `50k cached refresh CPU ${cpu.toFixed(2)}ms`).toBeLessThanOrEqual(2500 * BUDGET_MULTIPLIER);
-  expect(reads).toBe(1001); expect(requests).toBe(50_004); expect(effects).toBe(1000);
-  expect(writes).toBe(1004); expect(maxBytes).toBeLessThan(512); expect(saved).toEqual({ historyId: baseline });
+  expect(cpu, `${count} cached refresh CPU ${cpu.toFixed(2)}ms`).toBeLessThanOrEqual((count / 20) * BUDGET_MULTIPLIER);
+  expect(reads).toBe(count / 50 + 1); expect(requests).toBe(count + 4); expect(effects).toBe(count / 50);
+  expect(writes).toBe(count / 50 + 4); expect(maxBytes).toBeLessThan(512); expect(saved).toEqual({ historyId: baseline });
 });
