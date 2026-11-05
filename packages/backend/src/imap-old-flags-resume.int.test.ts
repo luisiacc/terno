@@ -140,7 +140,7 @@ describe("W06 A26/S14: supported host signals reconcile cached old flags automat
     if (idle) await expect.poll(() => t.w.commands.some((c) => c.command === "IDLE")).toBe(true);
     else expect(t.w.commands.some((c) => c.command === "IDLE")).toBe(false);
     await t.stop();
-    expect(t.ctl.sessions()).toEqual([]);
+    await expect.poll(() => t.ctl.sessions()).toEqual([]);
   });
 
   it.each(["network", "online"] as const)("%s transition schedules a custom-folder pass without manual sync", async (reason) => {
@@ -199,7 +199,7 @@ describe("W06 A26/S14: supported host signals reconcile cached old flags automat
     expect(t.w.commands.slice(start).filter((c) => c.command === "LOGIN" && /testuser/.test(c.data))).toEqual([]);
     expect(t.ctl.sessions().every((session) => session.user === "sibling")).toBe(true);
     await t.stop();
-    expect(t.ctl.sessions()).toEqual([]);
+    await expect.poll(() => t.ctl.sessions()).toEqual([]);
   });
 
   it("a stopped backend admits no new wake work", async () => {
@@ -209,7 +209,7 @@ describe("W06 A26/S14: supported host signals reconcile cached old flags automat
     t.backend.networkChanged(true, "wake");
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(t.w.commands.slice(start)).toEqual([]);
-    expect(t.ctl.sessions()).toEqual([]);
+    await expect.poll(() => t.ctl.sessions()).toEqual([]);
   });
 
   it("2,001 actually cached old messages use three flag FETCH batches and no raw backfill", async () => {

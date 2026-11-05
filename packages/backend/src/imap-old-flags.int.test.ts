@@ -144,7 +144,7 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     const before = cursor(t, t.account.id);
     expect(before.fullCheck).toBeUndefined();
     await t.stop();
-    expect(t.ctl.sessions()).toEqual([]);
+    await expect.poll(() => t.ctl.sessions()).toEqual([]);
     t.advance();
     expect(t.message.date).toBeLessThan(t.now() - 30 * DAY);
     const status = t.ctl.getMailbox(path);

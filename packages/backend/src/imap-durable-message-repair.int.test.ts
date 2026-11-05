@@ -96,7 +96,7 @@ async function mailbox() {
     get backend() { return session.backend; },
     add(id: string, depth = 0, files = 1) { const source = raw(id, depth, files); const identity = w.server.control.addMessage("Projects", { raw: source, internaldate: new Date(now - 1000) }); return { source, ...identity }; },
     sync() { const run = session.backend.syncAccount(account.id); runs.push(run); return bounded(run, "sync completes"); },
-    async reopen() { await session.stop(); expect(w.server.control.sessions()).toEqual([]); session = await open(); },
+    async reopen() { await session.stop(); await expect.poll(() => w.server.control.sessions()).toEqual([]); session = await open(); },
     async locators() { return session.backend.store.providerStore(account.id).locations.of((await rows()).map((m) => m.id)); },
     async sourceUnchanged(uid: number, source: Buffer) { expect(w.server.control.getMessage("Projects", uid).raw).toEqual(source); },
   };

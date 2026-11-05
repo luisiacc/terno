@@ -107,7 +107,7 @@ async function setup() {
       await new Promise<void>((resolve) => smtp.close(resolve));
       await expect.poll(() => smtp.connections.size).toBe(0);
     });
-    if (imapStarted) await attempt(async () => { await imap.stop(); expect(imap.control.sessions()).toEqual([]); });
+    if (imapStarted) await attempt(async () => { await imap.stop(); await expect.poll(() => imap.control.sessions()).toEqual([]); });
     rmSync(dir, { recursive: true, force: true });
     if (errors.length) throw new AggregateError(errors, "Fixture resources did not close");
   });
