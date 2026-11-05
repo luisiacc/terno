@@ -270,7 +270,8 @@ function terminalDelivery(factory: IDBFactory) {
     return { seen, release: () => release() };
   } };
 }
-type StoreMode = "SQL" | "IDB off" | "IDB on";
+// the instant index answers searches and filters, never this ledger: "07 IDB on" above is the one reopen with it on
+type StoreMode = "SQL" | "IDB off";
 async function storeFixture(mode: StoreMode) {
   const dir = mkdtempSync(join(tmpdir(), "terno-cooldown-stage1-")), factory = new IDBFactory(), name = crypto.randomUUID();
   const terminal = terminalDelivery(factory);
@@ -279,7 +280,7 @@ async function storeFixture(mode: StoreMode) {
   let owner: Backend | undefined;
   cleanup.push(async () => { try { await owner?.stop(); } finally { rmSync(dir, { recursive: true, force: true }); } });
   const open = async () => {
-    owner = new Backend({ dbPath: join(dir, "fixture.db"), store: mode === "SQL" ? undefined : await IdbMailStore.open({ name, factory, platform, instantSearch: mode === "IDB on" }), platform, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null, checkClockOnStart: false });
+    owner = new Backend({ dbPath: join(dir, "fixture.db"), store: mode === "SQL" ? undefined : await IdbMailStore.open({ name, factory, platform, instantSearch: false }), platform, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null, checkClockOnStart: false });
     await owner.ready;
     return owner.store;
   };
@@ -296,7 +297,7 @@ const emptyAdmission = { blockedAccountIds: [] as number[], verifiedAccountIds: 
 function rowLedger() {
   return JSON.stringify({ version: 1, revision: "1", overflow: false, bindings: [], rows: [{ owner: mailboxA, service: "gmail-api", revision: "1", phaseRevision: "1", minimum: "121000", wall: "1000", replay: "120000", sample: 2000, position: 1, hold: null, repair: null }] });
 }
-for (const mode of ["SQL", "IDB off", "IDB on"] as const) {
+for (const mode of ["SQL", "IDB off"] as const) {
   describe(`private cooldown store ${mode}`, () => {
     it("02 ordinary and other scope survive reopen", async () => {
       const f = await storeFixture(mode);
@@ -585,7 +586,7 @@ async function reviewPhase(mode: StoreMode, outcome: "normal" | "before" | "afte
   };
 }
 
-for (const mode of ["SQL", "IDB off", "IDB on"] as const) {
+for (const mode of ["SQL", "IDB off"] as const) {
   describe(`cooldown review real store ${mode}`, () => {
     it("F1 two binds retain second accepted phase", async () => {
       const f = await reviewPhase(mode);
@@ -856,7 +857,7 @@ async function r2BoundRollback(mode: StoreMode, kind: "elapsed" | "wall" | "frac
   expect(f.samples()).toBe(1); expect(f.calls()).toBe(1);
 }
 
-for (const mode of ["SQL", "IDB off", "IDB on"] as const) {
+for (const mode of ["SQL", "IDB off"] as const) {
   describe(`R2 bind clock ${mode}`, () => {
     it("01 repeat bind preserves elapsed rollback evidence", async () => { await r2BoundRollback(mode, "elapsed"); });
     it("02 no bind detects the same elapsed rollback", async () => { await r2BoundRollback(mode, "no-bind"); });

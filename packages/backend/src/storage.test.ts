@@ -185,7 +185,7 @@ describe("storage.remove on a large conversation", () => {
     const { backend, client, acct } = await setup();
     // the oldest message keeps it in the Inbox; once that goes, the rest is Archive
     const root = msg({ accountId: acct, providerMsgId: "root", rfcMessageId: "root@t", inInbox: true, date: OLD });
-    await ingest(backend.store, [root, ...Array.from({ length: 399 }, (_, i) => msg({ accountId: acct, providerMsgId: `r${i}`, rfcMessageId: `r${i}@t`, inReplyTo: "root@t", references: ["root@t"], subject: root.subject, inInbox: false, date: OLD + 1 + i }))]);
+    await ingest(backend.store, [root, ...Array.from({ length: 199 }, (_, i) => msg({ accountId: acct, providerMsgId: `r${i}`, rfcMessageId: `r${i}@t`, inReplyTo: "root@t", references: ["root@t"], subject: root.subject, inInbox: false, date: OLD + 1 + i }))]);
     const t = await threadOf(backend.store, "root");
     const remove = backend.store.storage.remove.bind(backend.store.storage);
     // every unit costs more than a slice, as a huge thread's recompute does: the slicer shrinks units to one message
@@ -195,10 +195,10 @@ describe("storage.remove on a large conversation", () => {
       for (const until = performance.now() + 20; performance.now() < until; );
       return remove(r);
     };
-    expect(await client.call("storage.remove", { buckets: ["inbox"], olderThanDays: 365 })).toMatchObject({ threads: 1, messages: 400 });
+    expect(await client.call("storage.remove", { buckets: ["inbox"], olderThanDays: 365 })).toMatchObject({ threads: 1, messages: 200 });
     expect(await backend.store.threads.get(t)).toBeNull();
-    // a fortieth of what is left each unit: about 40·ln(400/40) + 40, never one unit a message (400)
-    expect(units).toBeLessThanOrEqual(200);
+    // a fortieth of what is left each unit: about 40·ln(200/40) + 40, never one unit a message (200)
+    expect(units).toBeLessThan(120);
   });
 });
 

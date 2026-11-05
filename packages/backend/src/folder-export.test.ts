@@ -108,11 +108,8 @@ describe("folders.export (plan 107)", () => {
     const { text, calls, last } = await drain(client, exportId, async (i) => {
       if (i === 0) await backend.store.sync.remove([gone]);
     });
-    for (const c of calls) {
-      expect(c.size).toBeLessThanOrEqual(EXPORT_TEXT_MAX + MBOX_PIECE);
-      // the budget, plus at most one unit of work begun inside it (a batch read, a piece)
-      expect(c.ms).toBeLessThan(60);
-    }
+    // what a call may take is folder-export.perf's; here, that only time ended some of them (more calls than sizes ask)
+    for (const c of calls) expect(c.size).toBeLessThanOrEqual(EXPORT_TEXT_MAX + MBOX_PIECE);
     expect(calls.length).toBeGreaterThan(6);
     // the attachment alone took several calls
     expect(calls.filter((c) => c.done === 119).length).toBeGreaterThan(1);
@@ -124,7 +121,7 @@ describe("folders.export (plan 107)", () => {
   it("a message deleted while the one before it is still being written isn't in it (Codex code review round 2 #7)", async () => {
     const { client, backend, gmail } = await setup();
     await ingest(backend.store, [
-      msg({ accountId: gmail, providerMsgId: "long", providerThreadId: "a", subject: "Long", date: NOW - 2000, bodyText: "word ".repeat(800_000) }),
+      msg({ accountId: gmail, providerMsgId: "long", providerThreadId: "a", subject: "Long", date: NOW - 2000, bodyText: "word ".repeat(300_000) }),
       msg({ accountId: gmail, providerMsgId: "next", providerThreadId: "b", subject: "Next", date: NOW - 1000 }),
     ]);
     const gone = (await backend.store.debug.snapshot()).messages.find((m) => m.providerMsgId === "next")!.id;

@@ -67,7 +67,10 @@ async function startImap(extra: Record<string, unknown> = {}) {
   const server: ImapKitServer = imapkit({ plugins: ["IDLE", "MOVE", "UIDPLUS", "SPECIAL-USE", "ENABLE", "CONDSTORE"], storage: structuredClone(STORAGE), ...extra });
   const port = await server.start(0, "127.0.0.1");
   cleanups.push(() => server.stop());
-  return { server, port };
+  // a push can only arrive once the server has seen IDLE
+  let idles = 0;
+  server.script.add({ on: "command", run: true, when(context) { if (context.command === "IDLE") idles++; return false; } });
+  return { server, port, idles: () => idles };
 }
 
 interface Captured {
@@ -178,6 +181,8 @@ async function setup(opts: { smtp?: Parameters<typeof startSmtp>[0]; imap?: Reco
       imap: { host: "127.0.0.1", port, secure: false, user: "testuser" },
       smtp: { host: "127.0.0.1", port: smtp.port, secure: false, user: "testuser" },
       password: "testpass",
+      // the two logins this checks are "rejects a wrong password" and registry.verifyImap's own; smtp-server holds each greeting 100 ms
+      verify: false,
     });
   return { imap, smtp, backend, client, addAccount, dir, stop };
 }
@@ -1036,7 +1041,7 @@ describe("IMAP provider against ImapKit", () => {
   it("picks up new mail through IDLE without polling", async () => {
     const { imap, client, addAccount } = await setup();
     await addAccount(imap.port);
-    await new Promise((r) => setTimeout(r, 500)); // IDLE connection established
+    await expect.poll(imap.idles, { timeout: 8000 }).toBeGreaterThan(0);
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "¡Llegó por IDLE!" }) });
     await expect.poll(async () => (await client.call("threads.list", { view: "inbox" })).items.map((t) => t.subject), { timeout: 8000 }).toContain("¡Llegó por IDLE!");
   });
@@ -1050,7 +1055,9 @@ describe("IMAP provider against ImapKit", () => {
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Ya estaba" }) });
     await addAccount(imap.port);
     await expect.poll(async () => (await client.call("threads.list", { view: "inbox" })).items.length, { timeout: 8000 }).toBe(1);
-    await new Promise((r) => setTimeout(r, 1500)); // the first pass over, IDLE established
+    // the first pass over, IDLE established
+    await expect.poll(async () => (await client.call("app.bootstrap", {})).accounts[0]?.syncState.status, { timeout: 8000 }).toBe("idle");
+    await expect.poll(imap.idles, { timeout: 8000 }).toBeGreaterThan(0);
     expect(notices).toEqual([]);
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Boletín", from: "Xataka <boletin@xataka.com>", listId: "boletin.xataka.com" }) });
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "¿Comemos?", body: "¿El jueves?" }) });

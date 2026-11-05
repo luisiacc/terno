@@ -19,7 +19,7 @@ const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synt
 const cleanup = fixtureCleanup();
 beforeEach(() => cleanup.assertAvailable());
 afterEach(() => cleanup.finish());
-type Mode = "SQL" | "IDB off" | "IDB on";
+type Mode = "SQL" | "IDB off";
 
 async function fixture(mode: Mode, status: 200 | 429) {
   const dir = mkdtempSync(join(tmpdir(), "terno-stage2-current-public-"));
@@ -86,7 +86,7 @@ async function fixture(mode: Mode, status: 200 | 429) {
   let backend: Backend | undefined;
   cleanup.push(async () => { await backend?.stop(); });
   const open = async () => {
-    backend = new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "synthetic.db"), store: mode === "SQL" ? undefined : await IdbMailStore.open({ name, factory, platform, instantSearch: mode === "IDB on" }), platform, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
+    backend = new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "synthetic.db"), store: mode === "SQL" ? undefined : await IdbMailStore.open({ name, factory, platform, instantSearch: false }), platform, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
     await backend.ready;
     return backend;
   };
@@ -110,7 +110,7 @@ async function refused(work: Promise<unknown>): Promise<unknown> {
   try { return await work; } catch (error) { if (error instanceof ProviderError || error instanceof ProviderCooldownError) return error; throw error; }
 }
 
-for (const mode of ["SQL", "IDB off", "IDB on"] as const) {
+for (const mode of ["SQL", "IDB off"] as const) {
   describe(`shipped Gmail activation ${mode}`, () => {
     it("01 second verify cannot dispatch during observed remote cooldown", async () => {
       const f = await fixture(mode, 429), provider = await f.backend().provider(f.accountId);

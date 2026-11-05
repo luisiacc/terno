@@ -5,7 +5,7 @@ import type { AccountPrefs } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createAccount, sqlDb } from "@terno/db";
 import type { MailProvider, ProviderRegistry } from "@terno/mail";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
 // Plan 101 (Codex review 1, 11): what records a backfill request, by each account's effective window.
@@ -173,8 +173,13 @@ it("plan 103 (Codex review): a pass that leaves its backfill still pending keeps
 });
 
 it("plan 103: live progress never sends the accounts event (the reader and the composer would re-render every 2 s)", async () => {
+  // each report past the 2 s throttle, without waiting for it
+  let skew = 0;
+  const now = performance.now.bind(performance);
+  vi.spyOn(performance, "now").mockImplementation(() => now() + skew);
+  cleanups.push(async () => { vi.restoreAllMocks(); });
   const count = async (reports: number) => {
-    const t = await chunked(async (sink) => { for (let i = 0; i < reports; i++) { sink.progress?.({ done: i, total: reports, unit: "messages" }); await new Promise((r) => setTimeout(r, reports > 1 ? 25 : 0)); } });
+    const t = await chunked(async (sink) => { for (let i = 0; i < reports; i++) { skew += 2100; sink.progress?.({ done: i, total: reports, unit: "messages" }); await new Promise((r) => setImmediate(r)); } });
     let accounts = 0;
     const server = (t.backend as unknown as { server: { emit: (name: string, payload: unknown) => void } }).server;
     const emit = server.emit.bind(server);
@@ -182,6 +187,6 @@ it("plan 103: live progress never sends the accounts event (the reader and the c
     await t.backend.syncAccount(t.id);
     return accounts;
   };
-  // a pass reporting 120 times over 3 s sends as many accounts events as one reporting once
-  expect(await count(120)).toBe(await count(1));
+  // a pass reporting past the throttle again and again sends as many accounts events as one reporting once
+  expect(await count(4)).toBe(await count(1));
 });

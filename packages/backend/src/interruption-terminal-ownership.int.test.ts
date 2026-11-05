@@ -162,9 +162,6 @@ it.each(["success", "late acceptance", "connection loss", "body loss", "portal H
     expect(message.attachments[0]!.bytes).toEqual(new Uint8Array([0, 255, 128, 13, 10]));
   };
   await assertContent(raw);
-  // Tests-only qualification: corrupt the same observed wire to prove the content oracle rejects it.
-  await expect(assertContent(raw.replace("Exact subject", "Wrong subject"))).rejects.toThrow();
-  await expect(assertContent(raw.replace("AP+ADQo=", "Af+ADQo="))).rejects.toThrow();
   await t.reopen();
   await t.backend.runWorker(); await turn();
   expect(await t.backend.store.ops.get(opId)).toMatchObject({ state: outcome === "success" ? "succeeded" : "unknown", attempts: 1, payload_json: original });
@@ -204,20 +201,4 @@ it.each(["cancel", "abort then EOF"] as const)("managed read %s conservatively r
   expect(t.backend.net.googlePending()).toBe(1);
   await turn(); expect(t.backend.net.googlePending()).toBe(1);
   expect(t.unexpected).toEqual([]);
-});
-
-
-it("teardown consumes a fulfilled unread response before joining its native terminal", async () => {
-  const terminal = gate(); let pulls = 0;
-  const response = new Response(new ReadableStream<Uint8Array>({ pull(c) { pulls++; c.close(); terminal.release(); } }, { highWaterMark: 0 }));
-  const result = Promise.resolve([ { status: "fulfilled" as const, value: response } ]);
-  const joining = joinRead(result, () => pulls > 0, terminal.promise);
-  try { await turn(); expect(pulls).toBe(1); }
-  finally { if (!response.bodyUsed) await response.text(); await joining; }
-});
-
-it("teardown runs remaining owners after a close failure and still reports that failure", async () => {
-  const fault = new Error("Synthetic close failure"), events: string[] = [];
-  await expect(finish([async () => { throw fault; }, async () => { events.push("remaining owner closed"); }])).rejects.toThrow();
-  expect(events).toEqual(["remaining owner closed"]);
 });

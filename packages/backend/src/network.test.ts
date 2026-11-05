@@ -162,16 +162,16 @@ describe("plan 20: the backend and the network", () => {
   });
 
   it("the poll leaves accounts in backoff alone, asks push for a heartbeat, and does nothing offline", async () => {
-    const t = await setup({ syncIntervalMs: 200, accounts: 2 });
+    const t = await setup({ syncIntervalMs: 100, accounts: 2 });
     await t.backend.start();
     await expect.poll(() => t.providers.size).toBe(2);
     const [a, b] = t.ids as [number, number];
     await expect.poll(() => t.state(a).status).toBe("idle");
     t.providers.get(a)!.up = false;
-    // a's failures back off (150, 300, 600 ms …); b is polled every 200 ms
+    // a's failures back off (150, 300, 600 ms …); b is polled every 100 ms
     await t.backend.syncAccount(a);
     const before = { a: t.providers.get(a)!.syncs, b: t.providers.get(b)!.syncs };
-    await tick(1000);
+    await tick(500);
     const polled = { a: t.providers.get(a)!.syncs - before.a, b: t.providers.get(b)!.syncs - before.b };
     expect(polled.b).toBeGreaterThanOrEqual(3);
     expect(polled.a).toBeLessThanOrEqual(3);
@@ -180,7 +180,7 @@ describe("plan 20: the backend and the network", () => {
     t.backend.networkChanged(false, "offline");
     await tick(50);
     const offline = { a: t.providers.get(a)!.syncs, b: t.providers.get(b)!.syncs, hb: t.providers.get(b)!.heartbeats };
-    await tick(800);
+    await tick(350);
     expect({ a: t.providers.get(a)!.syncs, b: t.providers.get(b)!.syncs, hb: t.providers.get(b)!.heartbeats }).toEqual(offline);
   });
 

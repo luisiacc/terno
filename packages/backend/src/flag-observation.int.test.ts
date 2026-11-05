@@ -14,7 +14,7 @@ const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); vi.restoreAllMocks(); });
 function gate() { let release!: () => void; const promise = new Promise<void>((resolve) => { release = resolve; }); return { promise, release }; }
 
-async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false, messageCount = 1) {
+async function setup(kind: "SQL" | "IDB", automatic = false, messageCount = 1) {
   let timeAdvance = 0;
   const elapsedNow = performance.now.bind(performance);
   const dir = mkdtempSync(join(tmpdir(), "terno-observation-"));
@@ -101,7 +101,7 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false, mes
     async verifyImap() {}, async connectGmail() { throw new Error("Unused synthetic consent"); },
   };
   const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
-  const store = kind === "SQL" ? undefined : await IdbMailStore.open({ name: "synthetic-observation", factory: new IDBFactory(), platform, instantSearch: kind === "IDB instant" });
+  const store = kind === "SQL" ? undefined : await IdbMailStore.open({ name: "synthetic-observation", factory: new IDBFactory(), platform, instantSearch: false });
   const backend = new Backend({ dbPath: join(dir, "synthetic.db"), store, platform: store ? platform : undefined, providers, cipher: plaintextCipher, version: "test", autoSync: automatic, instantSearch: false, iconTransport: null, now: () => Date.now() + timeAdvance });
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "synthetic", origin: "renderer" });
@@ -259,7 +259,8 @@ it("a committed terminal flag still reconciles when its event cannot be emitted"
   expect((await t.backend.store.debug.snapshot()).ops[0]?.state).toBe("succeeded");
 });
 
-describe.each(["SQL", "IDB", "IDB instant"] as const)("%s settled flag observation", (kind) => {
+// nothing here searches or lists, so the instant index has no say
+describe.each(["SQL", "IDB"] as const)("%s settled flag observation", (kind) => {
   it.each(["markRead", "star", "archive"] as const)("fresh snapshots reconcile acknowledged %s even after its history was consumed", async (action) => {
     const t = await setup(kind);
     await t.client.call("threads.act", { threadIds: [t.threadId], action });

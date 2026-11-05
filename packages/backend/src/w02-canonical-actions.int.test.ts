@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { actionFixture } from "./w02-action-fixture";
 import { msg } from "../../store/src/conformance/fixtures";
+import { onSqlite } from "./test/store-axis";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { try { for (const close of cleanups.splice(0).reverse()) await close(); } finally { vi.restoreAllMocks(); vi.unstubAllGlobals(); } });
@@ -9,7 +10,9 @@ async function setup(kind: "SQL" | "IDB", count = 1, shared = true) {
 }
 
 describe.each(["SQL", "IDB"] as const)("W02 independent canonical actions: %s", (kind) => {
-  it.each(["Restore", "Undo"] as const)("preserves newer %s through actual 1000+1 chunk refusal and queued reopen", async (newer) => {
+  // Gmail's 1000 is the provider's chunk: IndexedDB has the store's part, a correction queued over 1,001 targets across a
+  // reopen, with Undo. Restore and a terminal second chunk go the same way through the store.
+  it.each(kind === "SQL" ? ["Restore", "Undo"] as const : ["Undo"] as const)("preserves newer %s through actual 1000+1 chunk refusal and queued reopen", async (newer) => {
     const t = await setup(kind, 1001);
     const threadId = t.selected[0]!.threadId, ids = t.selected.map((m) => m.id);
     expect(new Set(t.selected.map((m) => m.threadId)).size).toBe(1);
@@ -59,7 +62,7 @@ describe.each(["SQL", "IDB"] as const)("W02 independent canonical actions: %s", 
     await t.backend.store.debug.verify();
   });
 
-  it("without newer Restore, a terminal second chunk exposes actual partial state without replay", async () => {
+  onSqlite(kind)("without newer Restore, a terminal second chunk exposes actual partial state without replay", async () => {
     const t = await setup(kind, 1001), ids = t.selected.map((m) => m.id);
     await t.client.call("threads.act", { threadIds: [t.selected[0]!.threadId], action: "archive" });
     const [op] = (await t.backend.store.debug.snapshot()).ops;

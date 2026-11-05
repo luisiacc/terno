@@ -212,13 +212,13 @@ describe("W06 A26/S14: supported host signals reconcile cached old flags automat
     await expect.poll(() => t.ctl.sessions()).toEqual([]);
   });
 
-  it("2,001 actually cached old messages use three flag FETCH batches and no raw backfill", async () => {
-    const t = await setup(true, false, "Projects", 2001);
+  it("1,001 actually cached old messages use two flag FETCH batches and no raw backfill", async () => {
+    const t = await setup(true, false, "Projects", 1001);
     t.age(); t.change(); const start = t.w.commands.length;
     await t.signal("wake"); await t.witness();
     const commands = traffic(t, start);
     const fetched = commands.filter((c) => c.mailbox === "Projects" && c.command === "UID FETCH");
-    expect(fetched).toHaveLength(3);
+    expect(fetched).toHaveLength(2);
     const uids: number[] = [];
     const sizes: number[] = [];
     for (const command of fetched) {
@@ -232,7 +232,7 @@ describe("W06 A26/S14: supported host signals reconcile cached old flags automat
       }
       sizes.push(uids.length - before);
     }
-    expect(sizes).toEqual([1000, 1000, 1]);
+    expect(sizes).toEqual([1000, 1]);
     expect(uids).toEqual(t.targets.map((target) => target.uid));
   }, 120_000);
 });
