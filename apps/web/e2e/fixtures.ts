@@ -223,6 +223,13 @@ export async function scenario(name: string, body: () => Promise<void>): Promise
   }
 }
 
+/** The app again on the same backend, for a scenario that needs a clean page: focus, selection, dialogs and open drafts go, what the backend holds stays. */
+export async function fresh(page: Page): Promise<void> {
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+  await rows(page).first().waitFor();
+}
+
 /**
  * Axe on what's on screen, or these parts of it (mail frames aside: legacy mode, which doesn't open a page per call). Names,
  * roles and structure can't change between light and dark, so dark reads contrast alone. The app must be following the OS.
