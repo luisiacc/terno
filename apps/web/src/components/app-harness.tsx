@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { vi } from "vitest";
+import { beforeAll, vi } from "vitest";
 import type { Account, ThreadDetail } from "@terno/core";
 type OwnedRpcOption = typeof import("./draft-presentation-owned-rpc")["presentationOwnedRpc"];
 const gate = vi.hoisted(() => ({ load: vi.fn(), call: vi.fn(), ownedCall: undefined as undefined | ((method: string, params: unknown) => unknown) }));
@@ -24,6 +24,8 @@ vi.stubGlobal("matchMedia", (media: string) => ({ media, matches: false, addEven
 HTMLElement.prototype.scrollIntoView = () => {};
 if (!Range.prototype.getClientRects) Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
 if (!Range.prototype.getBoundingClientRect) Range.prototype.getBoundingClientRect = () => new DOMRect();
+// the App's first import, once and outside any test's timeout: on a loaded machine it's what would time out
+beforeAll(async () => { await import("~/app"); }, 120_000);
 export function deferred<T>() { let resolve!: (v: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { resolve, promise }; }
 export async function setup(layout: "list" | "split", reader = false, options: { rpc?: OwnedRpcOption } = {}) {
   if (gate.ownedCall) throw new Error("Presentation RPC owner is still active");

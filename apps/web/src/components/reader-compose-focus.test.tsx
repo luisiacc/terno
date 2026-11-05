@@ -213,7 +213,8 @@ it.each([false, true])("a pending reply focus %s a newer gated forward", async (
       await entered.promise;
     }
     await h.flushFrame();
-    expect(document.activeElement).toBe(forward ? toolbar : body);
+    // the real editor may have replaced the stand-in meanwhile, when its chunk arrives under load
+    expect(document.activeElement).toBe(forward ? toolbar : h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
     if (forward) {
       await act(async () => { waiting.resolve(); await opening; });
       await h.flushFrame();

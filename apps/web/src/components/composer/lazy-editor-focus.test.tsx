@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TextSelection } from "prosemirror-state";
 import { closeHistory, redo, redoDepth, undo, undoDepth } from "prosemirror-history";
 import type { EditorView } from "prosemirror-view";
@@ -18,6 +18,8 @@ vi.stubGlobal("matchMedia", (media: string) => ({ media, matches: false, addEven
 if (!Range.prototype.getClientRects) Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
 if (!Range.prototype.getBoundingClientRect) Range.prototype.getBoundingClientRect = () => new DOMRect();
 
+// transforms once, outside any test's timeout; each reset only evaluates again
+beforeAll(async () => { await import("./rich"); await import("../inline-draft"); }, 120_000);
 beforeEach(() => {
   vi.resetModules();
   gate.ready = new Promise<void>((resolve) => { gate.release = resolve; }); gate.fail = false; gate.views = []; probe.fail = false; probe.reads = 0;

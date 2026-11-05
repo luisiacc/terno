@@ -10,10 +10,12 @@ describe("canonical-only strip work", () => {
     const h = await realSetup(adapter), { withAccounts, ingest, msg, threadOf } = await import("@terno/store/conformance");
     try {
       const [a] = await withAccounts(h.store);
-      await ingest(h.store, [msg({ accountId: a!, providerMsgId: "canonical", attachments: [] })]);
-      const threadId = await threadOf(h.store, "canonical");
+      await ingest(h.store, [msg({ accountId: a!, providerMsgId: "canonical", isRead: true, attachments: [] })]);
+      const threadId = await threadOf(h.store, "canonical"), detail = (await h.store.threads.get(threadId))!;
       const saved = (await h.client.call("drafts.save", { accountId: a!, threadId, mode: "reply", ...(intent === undefined ? {} : { showSourceContext: intent }), bodyText: "exact canonical work" }))!;
       expect(saved).toMatchObject({ threadId, mode: "reply", inReplyToMessageId: null, showSourceContext: false }); await h.publish(saved);
+      // read and cached: a slow machine reaches Reader's 40 ms hydration and its mark-read before the forced reload lands, each a threads.get of its own
+      h.useThreads.setState((state) => ({ details: new Map(state.details).set(threadId, detail) }));
       gate.load.mockClear(); h.methods.length = 0;
       const button = h.host.querySelector<HTMLButtonElement>('[data-testid="strip-item"]')!; button.focus(); await act(async () => button.click()); for (let i = 0; i < 5; i++) await h.flush();
       expect(gate.load.mock.calls.filter(([, force]) => force)).toEqual([[threadId, true]]);
