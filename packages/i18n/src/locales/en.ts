@@ -1196,6 +1196,7 @@ const en = {
   "aiDraft.used.personOther": "How you write to {name}, from your other account",
   "aiDraft.used.examples": { one: "# of your messages to {name}", other: "# of your messages to {name}" },
   "aiDraft.used.thread": { one: "This conversation (# message)", other: "This conversation (# messages)" },
+  "aiDraft.used.mentions": { one: "# other email that mentions {name}", other: "# other emails that mention {name}" },
   "aiDraft.used.past": { one: "The subject of # earlier conversation with {name}", other: "The subjects of # earlier conversations with {name}" },
   "aiDraft.used.snippetOnly": "The message was too big to keep, so it read only its snippet.",
   "aiDraft.used.model": "Written by {model} on {provider}.",

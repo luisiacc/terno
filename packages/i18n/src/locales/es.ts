@@ -1187,6 +1187,7 @@ const es = {
   "aiDraft.used.personOther": "Cómo le escribes a {name}, desde tu otra cuenta",
   "aiDraft.used.examples": { one: "# de tus mensajes a {name}", other: "# de tus mensajes a {name}" },
   "aiDraft.used.thread": { one: "Esta conversación (# mensaje)", other: "Esta conversación (# mensajes)" },
+  "aiDraft.used.mentions": { one: "# correo más que menciona a {name}", other: "# correos más que mencionan a {name}" },
   "aiDraft.used.past": { one: "El asunto de # conversación anterior con {name}", other: "Los asuntos de # conversaciones anteriores con {name}" },
   "aiDraft.used.snippetOnly": "El mensaje era demasiado grande para guardarlo, así que solo leyó su extracto.",
   "aiDraft.used.model": "Escrito por {model} en {provider}.",

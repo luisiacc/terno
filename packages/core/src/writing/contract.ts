@@ -45,6 +45,8 @@ export interface WritingUsed {
   /** whole messages to this person */
   examples: number;
   pastConversations: number;
+  /** other mail naming someone they've no history with: a contact form, a notification, an introduction */
+  mentions: number;
   threadMessages: number;
   /** `none`: never written to; `unavailable`: written to, but with no usable text here; never call that person new */
   history: "none" | "found" | "unavailable";

@@ -46,7 +46,7 @@ import {
 import { captureError } from "@terno/core/diag";
 import { RpcError, type ParsedParamsOf } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { GENERATIONS_MAX_ROWS, type MailStore, type SummarySourceMessage, type ThreadContextMessage, type WritingProfileRow } from "@terno/store";
+import { GENERATIONS_MAX_ROWS, summaryBlocked, type MailStore, type SummarySourceMessage, type ThreadContextMessage, type WritingProfileRow } from "@terno/store";
 import type { BackendCore as Backend } from "./core";
 import { toRpcError } from "./ai-service";
 import { withoutQuotes } from "./summaries";
@@ -68,6 +68,10 @@ const EXAMPLES = 4;
 /** A message longer than this isn't a usable example of someone's voice, and would shut out the others. */
 const EXAMPLE_MAX_CHARS = 4800;
 const PAST_CONVERSATIONS = 5;
+/** Mail naming someone with no history: enough to know who they are and what they said, not a search of the mailbox. */
+const MENTIONS = 2;
+const MENTION_CHARS = 3000;
+const MENTION_CANDIDATES = 6;
 /** Cloud models with no reported window: all of them hold this and more. */
 const CLOUD_ASSUMED_CAPACITY = 200_000;
 /** §6.1: a session's snapshot, in memory: released with the session, or the oldest past this. */
@@ -438,6 +442,9 @@ export class WritingService {
       });
     }
 
+    // never written to, never heard from: the reason for writing may still be in the mailbox
+    const mentions = address && useMail && p.kind === "new" && p.threadId === undefined && history === "none" && past.length === 0 ? await this.mailNaming(address, account.id, p.timezone) : [];
+
     const instructions = [...(prefs.accounts[String(account.id)]?.useGeneral === false ? [] : [prefs.global.instructions]), prefs.accounts[String(account.id)]?.instructions ?? ""].filter(Boolean);
     const others = (context?.messages ?? []).filter((m) => m !== answering);
     const before = answering ? others.filter((m) => m.date < answering.date || (m.date === answering.date && m.id < answering.id)).length : others.length;
@@ -447,7 +454,7 @@ export class WritingService {
     const voiceText = (v: RenderedVoice) => v.text;
     const general = voice.filter((v) => v.scope === "you" || v.scope === "account");
     const specific = voice.filter((v) => v.scope === "domain" || v.scope === "person");
-    const fixedText = [WRITING_RULES, account.senderName, account.signature, ...instructions, p.instruction, p.draft ?? "", p.previousDraft ?? "", ...addressesOf(p.to), ...addressesOf(p.cc)].join("\n");
+    const fixedText = [WRITING_RULES, account.senderName, account.signature, ...mentions.map((m) => m.text), ...instructions, p.instruction, p.draft ?? "", p.previousDraft ?? "", ...addressesOf(p.to), ...addressesOf(p.cc)].join("\n");
     const fitted = fitDraftBudget(
       {
         fixedTokens: estimateTokens(fixedText),
@@ -470,6 +477,7 @@ export class WritingService {
       voice: [...general.slice(0, fitted.voiceGeneral.length), ...specific.slice(0, fitted.voiceSpecific.length)],
       messagesToPerson: examples.slice(0, fitted.messagesToPerson.length),
       pastConversations: past.slice(0, fitted.pastConversations.length),
+      mentions,
       thread,
       subject: context?.subject ?? (p.subject || null),
     };
@@ -481,6 +489,7 @@ export class WritingService {
       personFromOtherAccount: usedChain.some((v) => v.fromOtherAccount),
       examples: input.messagesToPerson.length,
       pastConversations: input.pastConversations.length,
+      mentions: mentions.length,
       threadMessages: thread.length,
       history,
       learning: useMail && chain.length === 0 && (await this.learner.status()).state === "learning",
@@ -490,8 +499,28 @@ export class WritingService {
       provider: ai.providerId,
       model: ai.model,
     };
-    const authorized = [...thread.map((t) => t.text), ...input.messagesToPerson.map((m) => m.text), ...instructions, account.signature, account.email, account.senderName, context?.subject ?? ""];
+    const authorized = [...thread.map((t) => t.text), ...input.messagesToPerson.map((m) => m.text), ...mentions.map((m) => m.text), ...instructions, account.signature, account.email, account.senderName, context?.subject ?? ""];
     return { key, input, used, authorized, maxTokens: outputTokens };
+  }
+
+  /** Mail in this account that really names this address, never from Spam or Trash. A failed search costs the draft nothing. */
+  private async mailNaming(address: string, accountId: number, zone: string): Promise<{ date: string; subject: string; text: string }[]> {
+    const { store } = this.b;
+    const out: { date: string; subject: string; text: string }[] = [];
+    try {
+      const found = await store.threads.searchText({ query: `"${address}"`, accountId, limit: MENTION_CANDIDATES, now: this.b.now() });
+      for (const { id } of found.items) {
+        if (out.length >= MENTIONS) break;
+        const sources = await store.aiSummaries.sources(id);
+        if (!sources || summaryBlocked(sources)) continue;
+        const context = await store.writing.threadContext(id, { maxBodies: MENTIONS, maxChars: MENTION_CHARS * MENTIONS });
+        const message = context?.messages.find((m) => !m.own && m.text?.toLowerCase().includes(address));
+        if (context && message?.text) out.push({ date: dayIn(message.date, zone), subject: context.subject, text: withoutQuotes(message.text).slice(0, MENTION_CHARS) });
+      }
+    } catch (error) {
+      if (!(error instanceof AiError)) captureError(scrubbed(error), { code: "ai.failed" });
+    }
+    return out;
   }
 
   /** One session's sources and settings: anything else re-assembles. Reads headers, no bodies. */

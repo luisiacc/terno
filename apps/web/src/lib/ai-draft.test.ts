@@ -84,7 +84,7 @@ function editor(key: string, initial = "") {
 
 const done = (text: string, over: Partial<Extract<AiComposeResult, { status: "done" }>> = {}): AiComposeResult => ({
   status: "done", text, subject: null, stop: "end",
-  used: { levels: ["you", "account"], personFromOtherAccount: false, examples: 0, pastConversations: 0, threadMessages: 2, history: "found", learning: false, inboundSnippetOnly: false, language: "en", languageReason: "inbound", provider: "fake", model: "demo", reused: false },
+  used: { levels: ["you", "account"], personFromOtherAccount: false, examples: 0, pastConversations: 0, mentions: 0, threadMessages: 2, history: "found", learning: false, inboundSnippetOnly: false, language: "en", languageReason: "inbound", provider: "fake", model: "demo", reused: false },
   checks: { specifics: [], placeholders: [] },
   ...over,
 });

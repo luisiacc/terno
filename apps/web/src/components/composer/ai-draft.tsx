@@ -90,6 +90,7 @@ function voiceLines(strip: AiStrip, who: string, domain: string): string[] {
   if (used.examples > 0) out.push(t("aiDraft.used.examples", { count: used.examples, name }));
   if (used.threadMessages > 0) out.push(t("aiDraft.used.thread", { count: used.threadMessages }));
   if (used.pastConversations > 0) out.push(t("aiDraft.used.past", { count: used.pastConversations, name }));
+  if (used.mentions > 0) out.push(t("aiDraft.used.mentions", { count: used.mentions, name }));
   if (used.inboundSnippetOnly) out.push(t("aiDraft.used.snippetOnly"));
   return out;
 }

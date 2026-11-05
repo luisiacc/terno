@@ -113,6 +113,47 @@ describe("a real mailbox", () => {
     expect((await t.backend.writing.learner.templatedIn(gone.id)).size).toBe(0);
   });
 
+  describe("someone they've never written to", () => {
+    const LIZ = { name: "", email: "liz@else.test" };
+    const NOTICE = "New suggestion from a user.\nName: Liz Example\nEmail: liz@else.test\nThe filters could also cover legal journals and the procurement observatories.";
+    const form = { name: "Web form", email: "form@ours.test" };
+
+    it("what the mailbox says about them goes along, and the strip says so", async () => {
+      const t = await setup();
+      await t.received({ from: form, subject: "New suggestion", bodyText: NOTICE });
+      const r = await t.compose({ to: [LIZ], instruction: "thank her for the comment she sent" });
+      expect(r.status === "done" && r.used.mentions).toBe(1);
+      const prompt = textOf(last(t));
+      expect(prompt).toContain("<mail_naming_recipient>");
+      expect(prompt).toContain("procurement observatories");
+    });
+
+    it("mail that only looks like a match, or sits in Spam or Trash, doesn't", async () => {
+      const t = await setup();
+      await t.received({ from: form, subject: "Spammy", bodyText: NOTICE, isSpam: true, inInbox: false });
+      await t.received({ from: form, subject: "Binned", bodyText: NOTICE, isTrash: true, inInbox: false });
+      await t.received({ from: form, subject: "Other", bodyText: "Liz wrote about something else entirely, no address here." });
+      const r = await t.compose({ to: [LIZ], instruction: "thank her" });
+      expect(r.status === "done" && r.used.mentions).toBe(0);
+      expect(textOf(last(t))).not.toContain("procurement observatories");
+    });
+
+    it("not for a reply, for someone with history, or when sent mail is off", async () => {
+      const t = await setup();
+      await t.received({ from: form, subject: "New suggestion", bodyText: NOTICE });
+      const { thread } = await t.received({ from: LIZ, subject: "Hello", bodyText: "Hello there, a question about my account please." });
+      const reply = await t.compose({ kind: "reply", threadId: thread, to: [LIZ] });
+      expect(reply.status === "done" && reply.used.mentions).toBe(0);
+      const known = await t.compose({ session: "known", to: [LIZ] });
+      expect(known.status === "done" && known.used.mentions).toBe(0);
+      const other = { name: "", email: "someone@else.test" };
+      await t.received({ from: form, subject: "Another", bodyText: "Name: Someone\nEmail: someone@else.test\nA suggestion." });
+      await t.client.call("writing.prefs.set", { global: { useSentMail: false } });
+      const off = await t.compose({ session: "off", to: [other] });
+      expect(off.status === "done" && off.used.mentions).toBe(0);
+    });
+  });
+
   it("clearing what's learned takes what it knew about templates too", async () => {
     const t = await setup();
     await campaign(t);
