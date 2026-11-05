@@ -62,29 +62,29 @@ test.describe("the first new category's tip (plan 113)", () => {
       await expect(page.getByTestId(`nav-category-hidden-${id}`)).toHaveCount(0);
       await expect(tip(page)).toHaveCount(0);
     });
-    await scenario("Escape closes it, and only it", async () => {
-      await freshStart(page);
-      const id = await create(page, server, "LinkedIn");
-      await expect(tip(page)).toBeVisible();
-      const before = await page.evaluate(() => (window as unknown as { __terno: { getApp(): { categoryId: number | null } } }).__terno.getApp().categoryId);
-      expect(before).toBe(id);
-      await page.keyboard.press("Escape");
-      await expect(tip(page)).toHaveCount(0);
-      expect(await page.evaluate(() => (window as unknown as { __terno: { getApp(): { categoryId: number | null } } }).__terno.getApp().categoryId)).toBe(id);
-    });
-    await scenario("Escape while typing a search closes the tip and leaves the search as it was (Codex review)", async () => {
-      await freshStart(page);
-      await create(page, server, "LinkedIn");
-      await expect(tip(page)).toBeVisible();
-      await page.keyboard.press("/");
-      const search = page.getByTestId("search-input");
-      await expect(search).toBeFocused();
-      await page.keyboard.type("factura");
-      await page.keyboard.press("Escape");
-      await expect(tip(page)).toHaveCount(0);
-      await expect(search).toHaveValue("factura");
-      await expect(search).toBeFocused();
-    });
+  });
+
+  test("Escape while typing a search closes the tip and leaves the search as it was (Codex review)", async ({ app: page, server }) => {
+    await create(page, server, "LinkedIn");
+    await expect(tip(page)).toBeVisible();
+    await page.keyboard.press("/");
+    const search = page.getByTestId("search-input");
+    await expect(search).toBeFocused();
+    await page.keyboard.type("factura");
+    await page.keyboard.press("Escape");
+    await expect(tip(page)).toHaveCount(0);
+    await expect(search).toHaveValue("factura");
+    await expect(search).toBeFocused();
+  });
+
+  test("Escape closes it, and only it", async ({ app: page, server }) => {
+    const id = await create(page, server, "LinkedIn");
+    await expect(tip(page)).toBeVisible();
+    const before = await page.evaluate(() => (window as unknown as { __terno: { getApp(): { categoryId: number | null } } }).__terno.getApp().categoryId);
+    expect(before).toBe(id);
+    await page.keyboard.press("Escape");
+    await expect(tip(page)).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as { __terno: { getApp(): { categoryId: number | null } } }).__terno.getApp().categoryId)).toBe(id);
   });
 
   test("the tip waits for what's in front: the picker, Settings", async ({ app: page, server }) => {

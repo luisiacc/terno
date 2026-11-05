@@ -1,6 +1,5 @@
-import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
-import { expect, rows, searchBox, selectedRow, test } from "./fixtures";
+import { axeBothModes, expect, rows, searchBox, selectedRow, test } from "./fixtures";
 import { E2E_NOW } from "./constants";
 
 const copy = {
@@ -9,7 +8,7 @@ const copy = {
 };
 
 const scrollerOf = (page: Page) => page.locator('[data-testid=thread-list] [data-keep-scroll=list]');
-const axe = async (page: Page) => expect((await new AxeBuilder({ page }).include("[data-testid=thread-list]").analyze()).violations).toEqual([]);
+const axe = (page: Page) => axeBothModes(page, "[data-testid=thread-list]");
 
 async function empty(page: Page, state: Locator, title: string, name: string) {
   await expect(state).toBeVisible();
@@ -29,11 +28,11 @@ async function empty(page: Page, state: Locator, title: string, name: string) {
 for (const design of ["macos", "lumen"] as const) {
   test.describe(`${design} empty list`, () => {
     test.use({ design, layout: design === "macos" ? "split" : "list" });
-    // plan 139: every pair of design, language and theme once
-    for (const [language, theme] of design === "macos" ? ([["en", "light"], ["es", "dark"]] as const) : ([["en", "dark"], ["es", "light"]] as const)) {
-      test(`empty and populated semantics (${language}, ${theme})`, async ({ page, server, layout }, info) => {
+    // plan 139: a design and a language don't meet here; both modes on each surface
+    for (const language of design === "macos" ? (["en"] as const) : (["es"] as const)) {
+      test(`empty and populated semantics (${language})`, async ({ page, server, layout }) => {
         const ctx = { clientId: "setup", origin: "dev" as const };
-        await server.backend.server.invoke("settings.update", { design, layout: layout!, language, theme }, ctx);
+        await server.backend.server.invoke("settings.update", { design, layout: layout!, language, theme: "system" }, ctx);
         // A real account with no messages gives ordinary empty Inbox and Trash views.
         const { account } = await server.backend.store.accounts.create({ kind: "gmail", email: "empty@example.test", displayName: "Empty account", color: "indigo", now: E2E_NOW });
         await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=e2e`);
@@ -57,7 +56,6 @@ for (const design of ["macos", "lumen"] as const) {
         await empty(page, page.getByTestId("list-empty"), copy[language].search, copy[language].name);
         await expect(page.getByTestId("search-coverage")).toBeVisible();
         await expect(input).toHaveAccessibleDescription(await page.getByTestId("search-coverage").innerText());
-        await page.screenshot({ path: info.outputPath(`empty-search-${design}-${language}-${theme}.png`) });
         await page.getByTestId("nav-inbox").focus();
         for (let step = 0; step < 24; step++) {
           await page.keyboard.press("Tab");
@@ -89,7 +87,6 @@ for (const design of ["macos", "lumen"] as const) {
         await scroller.evaluate((el) => el.focus());
         await expect(page.getByTestId("unread-empty-clear")).toBeFocused();
         await expect(page.getByTestId("unread-empty-clear")).toHaveAccessibleName(copy[language].clear);
-        await page.screenshot({ path: info.outputPath(`empty-filter-${design}-${language}-${theme}.png`) });
         await page.getByTestId("unread-empty-clear").click();
         await expect(filtered).toHaveCount(0);
         await expect(page.locator('[data-testid=unread-filter], [data-testid=quick-filter-all]').filter({ visible: true }).first()).toBeFocused();

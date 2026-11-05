@@ -2,9 +2,8 @@
  * Plan 98: a fresh install's setup. The layout, then the style and colors,
  * each previewed as the whole app in sample mail, then the first account.
  */
-import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { expect, isolateLocalDiscovery, test } from "./fixtures";
+import { axeBothModes, expect, isolateLocalDiscovery, test } from "./fixtures";
 import { startOllamaStub } from "./ollama-stub";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
@@ -299,18 +298,12 @@ test.describe("first-run setup", () => {
     await expect(preview(page).getByTestId("first-run-preview-chips")).toHaveCount(0);
   });
 
-  for (const scheme of ["light", "dark"] as const) {
-    test.describe(scheme, () => {
-      test.use({ colorScheme: scheme });
-      test(`every step is axe-clean (${scheme})`, async ({ app: page, server }) => {
-        await open(page, server);
-        for (const s of ["layout", "look", "account"]) {
-          await expect(step(page)).toHaveAttribute("data-step", s);
-          const r = await new AxeBuilder({ page }).include("[data-testid=first-run]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
-          expect(r.violations.map((v) => `${s} ${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
-          if (s !== "account") await page.getByTestId("first-run-continue").click();
-        }
-      });
-    });
-  }
+  test("every step is axe-clean, light and dark", async ({ app: page, server }) => {
+    await open(page, server);
+    for (const s of ["layout", "look", "account"]) {
+      await expect(step(page)).toHaveAttribute("data-step", s);
+      await axeBothModes(page, "[data-testid=first-run]");
+      if (s !== "account") await page.getByTestId("first-run-continue").click();
+    }
+  });
 });

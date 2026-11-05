@@ -32,7 +32,10 @@ async function drag(page: Page, handle: Locator, dx: number, dy: number, { relea
   await page.mouse.down();
   await page.mouse.move(x + dx / 2, y + dy / 2);
   await page.mouse.move(x + dx, y + dy);
-  if (release) await page.mouse.up();
+  if (!release) return;
+  await page.mouse.up();
+  // the drag ends on the capture's loss, a task later: a press before that starts over from where this one began
+  await expect(page.locator("[data-moving]")).toHaveCount(0);
 }
 
 test.describe("config dialogs move (plan 129)", () => {

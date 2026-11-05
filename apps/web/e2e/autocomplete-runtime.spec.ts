@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Page } from "@playwright/test";
 import type { Node as PMNode } from "prosemirror-model";
 import { fromPlainText, toEmailHtml } from "@terno/richtext";
@@ -5,6 +6,8 @@ import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 import { expect, focusOn, readerShown, rows, test } from "./fixtures";
 
 test.use({ fixedClock: false, trace: "off" });
+
+const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 /** A reply draft with this body on the newest conversation, opened (r) and focused. */
 async function openDraft(page: Page, server: DevServer, bodyText: string) {
@@ -74,13 +77,15 @@ test("a fitted suggestion at the true 10 MB model midpoint preserves the full dr
   await page.keyboard.press("Tab");
   lines[index + 1] += shown!;
   const check = async () => {
-    const actual = await body.evaluate(root => {
+    // digests: the document itself takes 3.5 s to cross from the page, each time
+    const actual = await body.evaluate(async root => {
       const doc = (root as unknown as { pmViewDesc: { node: PMNode } }).pmViewDesc.node;
-      return { json: doc.toJSON(), text: [...root.querySelectorAll("p")].map(p => p.textContent).join("\n") };
+      const digest = async (text: string) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, "0")).join("");
+      return { json: await digest(JSON.stringify(doc.toJSON())), text: await digest([...root.querySelectorAll("p")].map(p => p.textContent).join("\n")) };
     });
     const expected = lines.join("\n");
-    expect(actual.json).toEqual(fromPlainText(expected).toJSON());
-    expect(actual.text).toBe(expected);
+    expect(actual.json, "the document").toBe(sha256(JSON.stringify(fromPlainText(expected).toJSON())));
+    expect(actual.text, "the text on screen").toBe(sha256(expected));
     await expect(body).toBeFocused();
     await expect(page.getByTestId("draft-status")).toHaveText(/saved/i, { timeout: 60_000 });
     const saved = await server.backend.server.invoke("drafts.list", {}, { clientId: "autocomplete-runtime", origin: "dev" });
