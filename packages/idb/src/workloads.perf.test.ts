@@ -13,11 +13,12 @@
  *
  * Timings are medians of warm runs; on a busy machine, CPU time (as idb.perf).
  */
+import { nodeBodyPreparationFactory } from "../../db/src/node-driver";
 import "fake-indexeddb/auto";
 import { REMOVABLE_BUCKETS, storageCutoff } from "@terno/core";
 import { generateDataset } from "@terno/mock-data";
 import type { Platform } from "@terno/store";
-import { measureAiSummaries, measureCategoryEvidence, measureForwards, measureWriting, type WorkloadMailbox } from "@terno/store/conformance";
+import { measureAsk, measureAiSummaries, measureCategoryEvidence, measureForwards, measureWriting, type WorkloadMailbox } from "@terno/store/conformance";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { machineBusy, sampleAsync, settle, watchLoop } from "../../db/src/test/timing";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -32,7 +33,7 @@ const MULT = Number(env.PERF_BUDGET_MULTIPLIER ?? "1");
 const FRAME = 16;
 const SLICE = 15;
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
-const platform: Pick<Platform, "uuid" | "yield"> = { uuid: () => crypto.randomUUID(), yield: () => new Promise((r) => setTimeout(r, 0)) };
+const platform: Pick<Platform, "uuid" | "yield" | "bodyPreparation"> = { uuid: () => crypto.randomUUID(), yield: () => new Promise((r) => setTimeout(r, 0)), bodyPreparation: nodeBodyPreparationFactory };
 const name = `workloads-${Date.now()}`;
 let store: IdbMailStore;
 let accountIds: number[];
@@ -156,6 +157,7 @@ describe("the workloads the stores share", () => {
     log(`arrivals(200): p95 ${p95.toFixed(3)} ms`);
   }, 600_000);
   it("plan 132: summaries: marking a live slice and the worker's and reader's reads hold", () => measureAiSummaries(mailbox()), 600_000);
+  it("plan 141: a question's search and passages hold, wherever the word is", () => measureAsk(mailbox(), { totalMs: 2000, passagesMs: 500, stallMs: 32 }), 600_000);
   it("plan 133: drafting's reads hold, with thousands of look-alikes in the way", () => measureWriting(mailbox()), 600_000);
   it("plan 134: categories: what the AI is told and an AI filing hold", () => measureCategoryEvidence(mailbox()), 600_000);
   it("plan 116: forwards: a live slice's planning and the queue's reads hold", () => measureForwards(mailbox()), 600_000);

@@ -1,5 +1,6 @@
 import { AiError, SUMMARY_PROMPT_VERSION, summaryBudget, summaryPrompt, type AiTasks, type ThreadText } from "@terno/ai";
-import type { AiErrorKind, AiProviderId, AiSummarizeResult, AiSummariesStatus, AiSummary, AiSummaryRead } from "@terno/core";
+import { withoutQuotes, type AiErrorKind, type AiProviderId, type AiSummarizeResult, type AiSummariesStatus, type AiSummary, type AiSummaryRead } from "@terno/core";
+export { withoutQuotes };
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -37,18 +38,6 @@ export interface SummaryHost {
   /** tells open readers, never MCP */
   ready(threadId: number): void;
   log(level: "info" | "warn" | "error", message: string, extra?: unknown): void;
-}
-
-/** The reader's own words: what they quote from earlier is in those earlier messages. */
-export function withoutQuotes(text: string): string {
-  const kept: string[] = [];
-  for (const line of text.split(/\r?\n/)) {
-    const l = line.trim();
-    if (/^(on\b.{0,200}\bwrote:|el\b.{0,200}\bescribió:|-{2,}\s*(original message|mensaje original)\s*-{2,})$/i.test(l)) break;
-    if (l.startsWith(">")) continue;
-    kept.push(line);
-  }
-  return kept.join("\n").trim();
 }
 
 const wordsIn = (text: string) => (text.match(/\S+/g) ?? []).length;

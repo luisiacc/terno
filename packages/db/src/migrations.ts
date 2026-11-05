@@ -1310,6 +1310,32 @@ CREATE INDEX writing_generations_message ON writing_generations(message_id);
 CREATE INDEX writing_generations_account ON writing_generations(account_id, at);
 CREATE INDEX messages_sent_date ON messages(account_id, date DESC, id DESC) WHERE is_sent = 1 AND is_draft = 0;
 ` },
+  { version: 51, name: "ask your mail (plan 141)", sql: `
+CREATE TABLE ai_conversations (
+  id INTEGER PRIMARY KEY,
+  title TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX ai_conversations_recent ON ai_conversations(updated_at DESC, id DESC);
+CREATE TABLE ai_turns (
+  id INTEGER PRIMARY KEY,
+  conversation_id INTEGER NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('question','command')),
+  question TEXT NOT NULL,
+  answer TEXT,
+  status TEXT NOT NULL,
+  sources_json TEXT NOT NULL,
+  queries_json TEXT NOT NULL,
+  checks_json TEXT,
+  account_ids_json TEXT NOT NULL,
+  model TEXT,
+  provider TEXT,
+  prompt_version INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX ai_turns_conversation ON ai_turns(conversation_id, id);
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

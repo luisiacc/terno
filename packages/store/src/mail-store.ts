@@ -518,6 +518,13 @@ export interface MailStore {
    * Plan 132: a thread's summary and the queue of those still to make. Queueing happens in `sync.ingest`; a delete
    * cascades from the thread; a merge invalidates. Not exported, not synced, not searched.
    */
+  /** Plan 141: a question's passages and the history of questions (the last 100 conversations). */
+  ask: {
+    passages(request: import("./ask").AskPassageRequest): Promise<import("./ask").AskPassages>;
+    /** where a source is now, for showing it; absent: it's gone */
+    sourceStates(messageIds: readonly number[]): Promise<Map<number, "ok" | "spam" | "trash">>;
+    history: import("./ask").AskHistory;
+  };
   aiSummaries: {
     get(threadId: number): Promise<import("./ai-summaries").AiSummaryRow | null>;
     /** the thread and its messages as summaries see them, no bodies: an indexed read of one thread */

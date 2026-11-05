@@ -1,4 +1,5 @@
-import { CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readThreadContext, type SentRef } from "@terno/store";
+import { ASK_MATCH_MESSAGES, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
+import { addAskTurn, askAccountsOf, askCandidates, askHeaders, askNewest, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
 import { projectBodyTokens, messageBodiesReleased } from "@terno/store";
 import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
 import { releaseMessageBodies } from "@terno/store";
@@ -29,7 +30,7 @@ import { mergeBefore, sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObse
 import { bindIdbPromotedFlags, idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
-import { categoryOf, COUNT_CAP, filterState, LIST_FILTERS, sameFilterState, parseSearch, searchTerms, resolvable, resolveSearch, senderVetoed, type Address, type FilterAction, type FilterRule, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
+import { categoryOf, COUNT_CAP, filterState, LIST_FILTERS, sameFilterState, parseSearch, searchTerms, resolvable, resolveSearch, senderVetoed, type Address, type FilterAction, type ResolvedSearch, type FilterRule, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -1919,6 +1920,82 @@ export class IdbMailStore implements MailStore {
   };
 
   private summaryClears = 0;
+
+  private askClears = 0;
+
+  /**
+   * Plan 141 revision 5: the query's whole predicate on each of these threads' messages, in slices: each its own unit
+   * (commands run between them), at most a frame, and only as far as the work's limit.
+   */
+  private async askMatching(query: ResolvedSearch, threadIds: readonly number[], signal?: { readonly aborted: boolean }): Promise<{ ids: { id: number; threadId: number }[]; incomplete: boolean }> {
+    const plan = await this.read(() => planScan(this.c, query));
+    if (plan.impossible) return { ids: [], incomplete: false };
+    const candidates = await this.read(() => askCandidates(this.c, threadIds).map((m) => m.id as number));
+    const incomplete = candidates.length > ASK_MATCH_MESSAGES;
+    const tests = searchTerms(query.query).filter((t) => t.field === "text").map((t) => ({ op: "contains" as const, value: t.value, prefix: t.prefix }));
+    const messages = this.db.table<R>("messages");
+    const ids: { id: number; threadId: number }[] = [];
+    const walk = Math.min(candidates.length, ASK_MATCH_MESSAGES);
+    for (let i = 0; i < walk; ) {
+      if (signal?.aborted) return { ids, incomplete: true };
+      await this.exclusive(async () => {
+        const started = performance.now();
+        while (i < walk && performance.now() - started < SCAN_SLICE_MS) {
+          const chunk = candidates.slice(i, i + SCAN_CHUNK);
+          if (plan.needsBodies) await this.readBodies(chunk);
+          const prepared = plan.needsBodies ? await this.prepareBodyTests(tests, chunk) : new Map();
+          for (const id of chunk) {
+            const m = messages.get(id);
+            if (!m) continue;
+            let cols: ReturnType<typeof columnsOf> | null = null;
+            const columns = () => {
+              if (cols) return cols;
+              const body = plan.needsBodies ? this.c.body(id) : null;
+              cols = columnsOf(m, body?.body_text ?? null);
+              if (body?.capture_id) cols.bodyTest = (value, prefix) => this.preparedBodyTest(prepared, body.capture_id!, "contains", value, prefix);
+              return cols;
+            };
+            if (plan.messageOk(m, columns)) ids.push({ id, threadId: m.thread_id });
+          }
+          i += chunk.length;
+        }
+      });
+      await this.o.platform.yield();
+    }
+    return { ids, incomplete };
+  }
+
+  readonly ask: MailStore["ask"] = {
+    passages: (req) => this.bodyCommand(() => readPassages(req, {
+      matching: (query, threadIds, signal) => this.askMatching(query, threadIds, signal),
+      newest: (threadIds) => this.read(() => askNewest(this.c, threadIds)),
+      headers: (ids) => this.read(() => askHeaders(this.c, ids)),
+      text: (id) => this.exclusive(async () => {
+        await this.readBodies([id]);
+        const body = this.c.body(id);
+        if (!body) return null;
+        if (!body.capture_id) return (body.body_text as string | null | undefined) ?? null;
+        return T(this.c, "body_captures").get(body.capture_id)!.text_parts === null ? null : this.bodyPartSource(body.capture_id, 0);
+      }),
+    })),
+    sourceStates: (ids) => this.read(() => new Map([...askHeaders(this.c, ids)].map(([id, m]) => [id, m.spam ? "spam" : m.trash ? "trash" : "ok"] as const))),
+    history: {
+      // inside the command: commands run one at a time, so a clear can't land between the check and the write
+      add: (write) => this.command(() => (write.clearGeneration === this.askClears ? addAskTurn(this.c, write) : null)),
+      list: () => this.read(() => listAskConversations(this.c)),
+      turns: (id) => this.read(() => askTurns(this.c, id)),
+      turnCount: (id) => this.read(() => askTurnCount(this.c, id)),
+      accountsOf: (id) => this.read(() => askAccountsOf(this.c, id)),
+      remove: (id) => this.command(() => removeAskConversation(this.c, id)),
+      restore: (copy) => this.command(() => restoreAskConversation(this.c, copy)),
+      removeForAccount: (accountId) => this.command(() => removeAskForAccount(this.c, accountId)),
+      clear: () => this.command(() => {
+        this.askClears++;
+        clearAsk(this.c);
+      }),
+      clearGeneration: () => this.askClears,
+    },
+  };
 
   readonly aiSummaries: MailStore["aiSummaries"] = {
     get: (threadId) => this.read(() => getSummary(this.c, threadId)),

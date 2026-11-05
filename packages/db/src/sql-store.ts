@@ -1,9 +1,10 @@
-import { bodyPrefix, bodyTestKey, bodyPartRange, CORPUS_TEXTS_MAX, finishBodyClose, readThreadContext } from "@terno/store";
+import { bodyPrefix, bodyTestKey, bodyPartRange, CORPUS_TEXTS_MAX, finishBodyClose, readPassages, readThreadContext } from "@terno/store";
 import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
 import { publishBody } from "@terno/store";
 import { resolvable, parseSearch, searchTerms } from "@terno/core";
 import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, BODY_READY_APPLICATION_ID } from "./body-upgrade";
 import { unsubscribeBodyParts, decodeBodyPart } from "@terno/store";
+import { addAskTurn, askAccountsOf, askHeaders, askMatching, askNewest, askText, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
 import { retainBody, observeBodyRetirement, bodyReadReference, sqlBodyParts, cleanupBodies, finishBodyStage, withBodySelection, hydrateBodyReference, stageBody, prepareBodyMatches, withBodyMatches } from "./body-parts";
 import { sqlCaptureRepairs, sqlCaptureStorage } from "./capture-repair";
 import { unsubscribeSource } from "./unsubscribe";
@@ -1080,6 +1081,34 @@ export class SqlMailStore implements MailStore {
   };
 
   private summaryClears = 0;
+
+  private askClears = 0;
+
+  readonly ask: MailStore["ask"] = {
+    passages: (req) => this.bodyCommand(() => readPassages(req, {
+      matching: (query, threadIds, signal) => askMatching(this.db, query, threadIds, this.yieldTo, signal),
+      newest: async (threadIds) => askNewest(this.db, threadIds),
+      headers: async (ids) => askHeaders(this.db, ids),
+      text: async (id) => askText(this.db, id, this.yieldTo),
+    })),
+    sourceStates: async (ids) => new Map([...askHeaders(this.db, ids)].map(([id, m]) => [id, m.spam ? "spam" : m.trash ? "trash" : "ok"] as const)),
+    history: {
+      // the check and the write are one synchronous step, as is clear
+      add: async (write) => (write.clearGeneration === this.askClears ? addAskTurn(this.db, write) : null),
+      list: async () => listAskConversations(this.db),
+      turns: async (id) => askTurns(this.db, id),
+      turnCount: async (id) => askTurnCount(this.db, id),
+      accountsOf: async (id) => askAccountsOf(this.db, id),
+      remove: async (id) => removeAskConversation(this.db, id),
+      restore: async (copy) => restoreAskConversation(this.db, copy),
+      removeForAccount: async (accountId) => removeAskForAccount(this.db, accountId),
+      clear: async () => {
+        this.askClears++;
+        clearAsk(this.db);
+      },
+      clearGeneration: () => this.askClears,
+    },
+  };
 
   readonly aiSummaries: MailStore["aiSummaries"] = {
     get: async (threadId) => getSummary(this.db, threadId),

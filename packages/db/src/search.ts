@@ -1,4 +1,5 @@
 import { isFullEmail, normalizeText, parseSearch, resolveSearch, searchTerms, tokenize, type MessageTerm, type ResolvedSearch, type ScopeLookup, type SearchView, type ThreadFilter } from "@terno/core";
+import { bodyTestKey } from "@terno/store";
 import { pageFrom, SUMMARY_COLUMNS, SEARCH_VIEW_WHERE, type Cursor, type Page, type SummaryRow } from "./queries";
 import { placeholders, type Db, type Param } from "./sqlite";
 
@@ -346,6 +347,45 @@ export function ftsTermMessages(db: Db, term: MessageTerm): number[] {
   const ids = ftsIndexedTermMessages(db, term);
   if (term.field === "text") for (const row of db.all<{ id: number }>("SELECT message_id AS id FROM body_heads WHERE terno_part_match(capture_id,'contains',?,?)", term.value, term.prefix ? 1 : 0)) ids.push(row.id);
   return [...new Set(ids)];
+}
+
+const RARE_HITS = 2000;
+
+/**
+ * Plan 141 revision 5: the messages in these threads that the query's whole predicate holds for, on one message, newest
+ * first, never Spam or Trash, nor drafts. `captured`: by body test, the messages whose captured body holds that word
+ * (the caller read what it could: FTS5 knows the rest).
+ */
+export function searchMessagesIn(db: Db, resolved: ResolvedSearch, threadsJson: string, captured: ReadonlyMap<string, readonly number[]>, limit: number): { id: number; threadId: number }[] {
+  const q = resolved.query;
+  const inCapture = (t: MessageTerm) => captured.get(bodyTestKey("contains", t.value, t.prefix)) ?? [];
+  const reads = (t: MessageTerm) => t.field === "text" && inCapture(t).length > 0;
+  const terms = q.terms.filter(reads);
+  const groups = q.anyOf.filter((g) => g.some(reads));
+  const c = compileSearch(terms.length || groups.length ? { ...resolved, query: { ...q, terms: q.terms.filter((t) => !reads(t)), anyOf: q.anyOf.filter((g) => !groups.includes(g)) } } : resolved);
+  if (c.impossible) return [];
+  const predicate = (t: MessageTerm): { sql: string; params: Param[] } => {
+    if (!reads(t)) return exactPredicate(t, false);
+    return { sql: "(m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?) OR m.id IN (SELECT value FROM json_each(?)))", params: [ftsTerm(t)!, JSON.stringify(inCapture(t))] };
+  };
+  for (const t of terms) {
+    const p = predicate(t);
+    c.messageWhere.push(p.sql);
+    c.messageParams.push(...p.params);
+  }
+  for (const g of groups) {
+    const ps = g.map(predicate);
+    c.messageWhere.push(`(${ps.map((p) => p.sql).join(" OR ")})`);
+    c.messageParams.push(...ps.flatMap((p) => p.params));
+  }
+  const where = ["m.thread_id IN (SELECT value FROM json_each(?))", "m.is_spam = 0", "m.is_trash = 0", "m.is_draft = 0", ...c.messageWhere].join(" AND ");
+  // from the threads' own rows: a common word's whole doclist would cost what the found threads' messages don't
+  const rows = db.all<{ id: number; thread_id: number }>(`SELECT m.id, m.thread_id FROM messages m INDEXED BY messages_thread WHERE ${where} ORDER BY m.date DESC, m.id DESC LIMIT ?`, threadsJson, ...c.messageParams, limit);
+  if (!c.match) return rows.map((r) => ({ id: r.id, threadId: r.thread_id }));
+  // a rare word's hits are few, a long thread's rows many: whichever is the short list decides what's walked
+  const hits = db.all<{ id: number }>("SELECT rowid AS id FROM messages_fts WHERE messages_fts MATCH ? LIMIT ?", c.match, RARE_HITS + 1);
+  const held = new Set((hits.length <= RARE_HITS ? hits : db.all<{ id: number }>("SELECT rowid AS id FROM messages_fts WHERE messages_fts MATCH ? AND rowid IN (SELECT value FROM json_each(?))", c.match, JSON.stringify(rows.map((r) => r.id)))).map((r) => r.id));
+  return rows.flatMap((r) => (held.has(r.id) ? [{ id: r.id, threadId: r.thread_id }] : []));
 }
 
 /** True while some messages still lack a full body (search may be incomplete). */

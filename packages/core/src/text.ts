@@ -25,3 +25,15 @@ const SUBJECT_PREFIX = /^\s*((re|fw|fwd|rv|reenv|aw|wg|tr|sv)(\[\d+\])?\s*:\s*)+
 export function baseSubject(subject: string): string {
   return subject.replace(SUBJECT_PREFIX, "").trim();
 }
+
+/** The reader's own words: what they quote from earlier is in those earlier messages. */
+export function withoutQuotes(text: string): string {
+  const kept: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const l = line.trim();
+    if (/^(on\b.{0,200}\bwrote:|el\b.{0,200}\bescribió:|-{2,}\s*(original message|mensaje original)\s*-{2,})$/i.test(l)) break;
+    if (l.startsWith(">")) continue;
+    kept.push(line);
+  }
+  return kept.join("\n").trim();
+}
