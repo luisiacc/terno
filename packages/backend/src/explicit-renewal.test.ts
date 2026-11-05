@@ -8,6 +8,7 @@ import { IDBFactory } from "fake-indexeddb";
 import { ProviderAuthError, type GmailConnectResult, type GmailRenewalProof, type ProviderRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
+import { onSqlite } from "./test/store-axis";
 import { setGooglePhotoState } from "./settings";
 
 // plan 123: only Terno's own Google clients exist; tests carry a synthetic one
@@ -70,6 +71,7 @@ async function setup(kind: "SQL" | "IndexedDB") {
 }
 
 describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal", (kind) => {
+  const sqlite = onSqlite(kind);
   it.each(["reconnect", "owner", "photos"] as const)("%s subject refusal preserves exact credential/config/history/queue/rules", async (method) => {
     const t = await setup(kind);
     await t.mark();
@@ -118,7 +120,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     await expect(t.client.call("identity.changeOwner", { accountId: t.account.id })).resolves.toMatchObject({ accountId: t.account.id });
   });
 
-  it("failed newer consent waits for a superseded write to refuse before reopening", async () => {
+  sqlite("failed newer consent waits for a superseded write to refuse before reopening", async () => {
     const t = await setup(kind), entered = t.gate(), blocked = t.gate(), declined = t.gate();
     const commit = t.backend.store.secrets.commit.bind(t.backend.store.secrets);
     vi.spyOn(t.backend.store.secrets, "commit").mockImplementationOnce(async (...args) => { entered.release(); await blocked.promise; return commit(...args); });
@@ -304,7 +306,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(sends).toBe(1); expect((await t.client.call("ops.list", {})).find((row) => row.id === sent.opId)?.state).toBe("succeeded");
   });
 
-  it.each(["execution", "acknowledgement"] as const)("owner proof expiry gates transaction %s without an unreported claim", async (delay) => {
+  sqlite.each(["execution", "acknowledgement"] as const)("owner proof expiry gates transaction %s without an unreported claim", async (delay) => {
     const t = await setup(kind), entered = t.gate(), blocked = t.gate();
     t.answer({ refreshToken: null }); t.rotate("rotated-refresh");
     const proof: GmailRenewalProof = { scopeSource: "resource-proof", refreshToken: "rotated-refresh", expiresAt: Date.now() + 60_000, inspect: t.inspect, provePhotos: t.photos };
@@ -325,7 +327,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     }
   });
 
-  it.each(["reconnect", "owner"] as const)("%s IMAP snapshot failures stay private and preserve read/send authorization", async (method) => {
+  sqlite.each(["reconnect", "owner"] as const)("%s IMAP snapshot failures stay private and preserve read/send authorization", async (method) => {
     const t = await setup(kind);
     for (const authScope of [null, "send"] as const) {
       const config = { imap: { host: "imap.example.test", port: 993, secure: true, user: "imap@example.test" }, smtp: { host: "smtp.example.test", port: 465, secure: true, user: "imap@example.test" }, senderName: "Synthetic", signature: "Saved signature" };
@@ -346,7 +348,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     }
   });
 
-  it("initial omission and malformed present values save no new account", async () => {
+  sqlite("initial omission and malformed present values save no new account", async () => {
     const t = await setup(kind); const before = (await t.client.call("app.bootstrap", {})).accounts.map((a) => ({ id: a.id, email: a.email }));
     for (const refreshToken of [null, undefined, "", 123]) {
       t.answer({ refreshToken } as Partial<GmailConnectResult>);
@@ -367,7 +369,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     if (method === "icons.googlePhotos") expect(t.photos).toHaveBeenCalledWith([PHOTO], expect.any(AbortSignal));
   });
 
-  it.each(["missing", "unreadable", "refused", "wrong mailbox", "wrong subject", "unsupported"] as const)("omission fails safely for %s old grant", async (scenario) => {
+  sqlite.each(["missing", "unreadable", "refused", "wrong mailbox", "wrong subject", "unsupported"] as const)("omission fails safely for %s old grant", async (scenario) => {
     const t = await setup(kind); await t.mark(); t.answer({ refreshToken: null });
     if (scenario === "missing") await t.backend.store.secrets.delete(t.name);
     if (scenario === "unreadable") t.decrypt.mockRejectedValue(new Error("PRIVATE_REFRESH_ADDRESS_SUBJECT"));
@@ -388,7 +390,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(t.begin).toHaveBeenCalledOnce();
   });
 
-  it("mail-proven rotation survives denied optional photo proof, without enabling or clearing auth", async () => {
+  sqlite("mail-proven rotation survives denied optional photo proof, without enabling or clearing auth", async () => {
     const t = await setup(kind); await t.mark(); t.answer({ refreshToken: null }); t.rotate("rotated-refresh");
     t.photos.mockRejectedValue(new Error("PRIVATE_PHOTO_TOKEN"));
     const result = await outcome(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true }));
@@ -408,7 +410,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(t.begin).toHaveBeenCalledOnce(); expect(await t.backend.getSecret(t.name)).toBe("rotated-refresh");
   });
 
-  it.each(["reconnect", "owner", "photo-on", "photo-off", "removal"] as const)("a blocked photo consent loses to newer %s", async (newer) => {
+  sqlite.each(["reconnect", "owner", "photo-on", "photo-off", "removal"] as const)("a blocked photo consent loses to newer %s", async (newer) => {
     const t = await setup(kind); const entered = t.gate(), blocked = t.gate();
     t.connect.mockImplementationOnce(async () => { entered.release(); await blocked.promise; return { ...who, refreshToken: "stale-photo" }; });
     const old = outcome(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true })); await entered.promise;
@@ -423,7 +425,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     if (newer === "photo-off") expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos).toEqual({});
   });
 
-  it.each(["reconnect", "owner", "photo-on"] as const)("newer %s wins while older reconnect encrypts", async (newer) => {
+  sqlite.each(["reconnect", "owner", "photo-on"] as const)("newer %s wins while older reconnect encrypts", async (newer) => {
     const t = await setup(kind); const entered = t.gate(), blocked = t.gate();
     t.encrypt.mockImplementationOnce(async (value) => { entered.release(); await blocked.promise; return plaintextCipher.encrypt(value); });
     t.answer({ refreshToken: "stale-refresh" }); const old = outcome(t.client.call("accounts.reconnect", { id: t.account.id })); await entered.promise;
@@ -434,7 +436,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     blocked.release(); expect(await old).toHaveProperty("error"); expect(await t.backend.getSecret(t.name)).toBe("newer-refresh");
   });
 
-  it.each(["commit", "signedIn lookup"] as const)("a newer reconnect owns finalization during old %s", async (stage) => {
+  sqlite.each(["commit", "signedIn lookup"] as const)("a newer reconnect owns finalization during old %s", async (stage) => {
     const t = await setup(kind); const entered = t.gate(), blocked = t.gate(), newerAnswered = t.gate();
     if (stage === "commit") {
       const commit = t.backend.store.secrets.commit.bind(t.backend.store.secrets);
@@ -455,7 +457,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect((await t.backend.store.accounts.get(t.account.id))?.syncState.authRequired).toBe(false);
   });
 
-  it("old photo-on cannot enable after off during admitted settings persistence", async () => {
+  sqlite("old photo-on cannot enable after off during admitted settings persistence", async () => {
     const t = await setup(kind), entered = t.gate(), blocked = t.gate();
     const update = t.backend.store.settings.update.bind(t.backend.store.settings);
     vi.spyOn(t.backend.store.settings, "update").mockImplementationOnce(async (...args) => { entered.release(); await blocked.promise; return update(...args); });
@@ -467,7 +469,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos).toEqual({});
   });
 
-  it("stamp change during proof never saves rotation or claims owner", async () => {
+  sqlite("stamp change during proof never saves rotation or claims owner", async () => {
     const t = await setup(kind); t.answer({ refreshToken: null }); t.rotate("rotated-refresh");
     t.inspect.mockImplementationOnce(async () => { await t.backend.store.accounts.remove(t.account.id); return { ...who }; });
     const before = await t.backend.store.owner.get();
@@ -484,7 +486,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(await t.backend.provider(t.account.id)).not.toBeNull(); expect(await t.backend.getSecret(t.name)).toBe("old-refresh");
   });
 
-  it("a malformed renewed registry credential cannot bypass normalization", async () => {
+  sqlite("a malformed renewed registry credential cannot bypass normalization", async () => {
     const t = await setup(kind);
     for (const refreshToken of [undefined, "", 12]) {
       t.answer({ refreshToken } as Partial<GmailConnectResult>);
@@ -493,7 +495,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(await t.backend.getSecret(t.name)).toBe("old-refresh"); expect(t.begin).not.toHaveBeenCalled();
   });
 
-  it("a verified pending candidate cannot bless a different renewed subject", async () => {
+  sqlite("a verified pending candidate cannot bless a different renewed subject", async () => {
     const t = await setup(kind); t.answer({ refreshToken: null }); t.rotate("rotated-refresh");
     vi.spyOn(t.backend.store.secrets, "commit").mockRejectedValueOnce(new Error("synthetic disk failure"));
     await expect(t.client.call("accounts.reconnect", { id: t.account.id })).rejects.toThrow();
@@ -502,7 +504,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(await t.backend.getSecret(t.name)).toBe("old-refresh");
   });
 
-  it("an expired known candidate may recover its credential but cannot partially claim owner", async () => {
+  sqlite("an expired known candidate may recover its credential but cannot partially claim owner", async () => {
     const t = await setup(kind); t.answer({ refreshToken: null }); t.rotate("rotated-refresh");
     const proof: GmailRenewalProof = { scopeSource: "resource-proof", refreshToken: "rotated-refresh", expiresAt: Date.now() + 3600_000, inspect: t.inspect, provePhotos: t.photos };
     t.begin.mockResolvedValueOnce(proof);
@@ -515,7 +517,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(t.begin).toHaveBeenCalledTimes(2);
   });
 
-  it.each(["reconnect", "owner", "photo"] as const)("%s never returns private encryption exception text", async (method) => {
+  sqlite.each(["reconnect", "owner", "photo"] as const)("%s never returns private encryption exception text", async (method) => {
     const t = await setup(kind); t.answer({ refreshToken: "new-refresh" });
     t.encrypt.mockRejectedValueOnce(new Error("PRIVATE_REFRESH_ADDRESS_SUBJECT"));
     const result = await outcome<unknown>(method === "reconnect" ? t.client.call("accounts.reconnect", { id: t.account.id }) : method === "owner" ? t.client.call("identity.changeOwner", { accountId: t.account.id }) : t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true }));
@@ -524,13 +526,13 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(JSON.stringify(t.logs)).not.toContain("PRIVATE_REFRESH_ADDRESS_SUBJECT");
   });
 
-  it("photo renewal requires explicit effective mail scope", async () => {
+  sqlite("photo renewal requires explicit effective mail scope", async () => {
     const t = await setup(kind); t.answer({ refreshToken: "new-refresh", grantedScopes: undefined });
     await expect(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true })).rejects.toThrow();
     expect(await t.backend.getSecret(t.name)).toBe("old-refresh");
   });
 
-  it("raw credential snapshot failures never expose private store text", async () => {
+  sqlite("raw credential snapshot failures never expose private store text", async () => {
     const t = await setup(kind); t.answer({ refreshToken: null });
     const get = t.backend.store.secrets.get.bind(t.backend.store.secrets);
     vi.spyOn(t.backend.store.secrets, "get").mockImplementation(async (name) => { if (name === t.name) throw new Error("PRIVATE_STORE_REFRESH"); return get(name); });
@@ -538,7 +540,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(result).toHaveProperty("error"); expect(String("error" in result ? result.error : result)).not.toContain("PRIVATE_STORE_REFRESH");
   });
 
-  it("a known exchange retries failed identity proof without spending the old grant twice", async () => {
+  sqlite("a known exchange retries failed identity proof without spending the old grant twice", async () => {
     const t = await setup(kind); t.answer({ refreshToken: null }); t.rotate("rotated-refresh");
     t.inspect.mockRejectedValueOnce(new Error("PRIVATE_PROFILE_TOKEN"));
     const first = await outcome(t.client.call("accounts.reconnect", { id: t.account.id }));
@@ -549,7 +551,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(JSON.stringify(t.logs)).not.toContain("PRIVATE_PROFILE_TOKEN");
   });
 
-  it("photo failure plus storage failure keeps one mail-proven candidate for an explicit reconnect", async () => {
+  sqlite("photo failure plus storage failure keeps one mail-proven candidate for an explicit reconnect", async () => {
     const t = await setup(kind); t.answer({ refreshToken: null }); t.rotate("rotated-refresh");
     t.photos.mockRejectedValueOnce(new Error("synthetic photo denied"));
     vi.spyOn(t.backend.store.secrets, "commit").mockRejectedValueOnce(new Error("synthetic disk failure"));
@@ -580,7 +582,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(await t.backend.store.owner.get()).toEqual(owner); expect(await t.backend.getSecret(t.name)).toBe("newer-secret");
   });
 
-  it("photo-off cancels a pending final listing before waiting for old finalization", async () => {
+  sqlite("photo-off cancels a pending final listing before waiting for old finalization", async () => {
     const t = await setup(kind); t.answer({ refreshToken: "photo-refresh" }); const entered = t.gate();
     let photoSignal: AbortSignal | undefined;
     const create = t.registry.create.bind(t.registry);
@@ -599,7 +601,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(cancelled).toBe(true); expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos).toEqual({});
   });
 
-  it.each(["photo-off", "removal"] as const)("%s finishes while the old provider ignores listing cancellation", async (intent) => {
+  sqlite.each(["photo-off", "removal"] as const)("%s finishes while the old provider ignores listing cancellation", async (intent) => {
     const t = await setup(kind); t.answer({ refreshToken: "photo-refresh" }); const entered = t.gate(), blocked = t.gate();
     const create = t.registry.create.bind(t.registry);
     vi.spyOn(t.registry, "create").mockImplementation((ctx) => ({ ...create(ctx), photos: async () => {
@@ -615,7 +617,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(finishedBeforeNetwork).toBe(true); expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos).toEqual({});
   });
 
-  it("old photo completion and cleanup preserve a newer coalesced listing", async () => {
+  sqlite("old photo completion and cleanup preserve a newer coalesced listing", async () => {
     const t = await setup(kind), firstEntered = t.gate(), secondEntered = t.gate(), firstBlocked = t.gate(), secondBlocked = t.gate();
     const state = { connections: true, otherContacts: false, apiDisabled: false };
     await setGooglePhotoState(t.backend.store, t.account.id, state);
@@ -653,7 +655,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
   });
 
   // plan 74, Codex review round 2: switched off at any moment of a reconnect asking for waiting photos, they stay off
-  it("photos switched off during the reconnect's photo proof stay off; mail is signed in", async () => {
+  sqlite("photos switched off during the reconnect's photo proof stay off; mail is signed in", async () => {
     const t = await setup(kind); const entered = t.gate(), held = t.gate();
     t.answer({ refreshToken: null, grantedScopes: [MAIL, PHOTO] }); t.rotate("rotated-refresh");
     t.photos.mockImplementationOnce(async (scopes) => { entered.release(); await held.promise; return [...scopes]; });
@@ -666,7 +668,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(settings.googlePhotos).toEqual({}); expect(settings.googlePhotosPending).toEqual([]);
   });
 
-  it("photos switched off while the reconnect lists the people go off and are forgotten", async () => {
+  sqlite("photos switched off while the reconnect lists the people go off and are forgotten", async () => {
     const t = await setup(kind); const entered = t.gate(), held = t.gate();
     t.answer({ refreshToken: "new-refresh", grantedScopes: [MAIL, PHOTO] });
     const create = t.registry.create.bind(t.registry);

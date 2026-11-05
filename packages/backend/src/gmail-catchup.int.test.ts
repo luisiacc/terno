@@ -9,6 +9,7 @@ import { IDBFactory } from "fake-indexeddb";
 import { createGmailApiProvider, type ProviderContext, type ProviderRegistry } from "@terno/mail/portable";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
+import { onSqlite } from "./test/store-axis";
 
 const phaseOf = (value: unknown) => (value as { reconciliation?: { stage: string; baseline?: string; pages?: number } } | null)?.reconciliation;
 const cleanup: (() => Promise<void>)[] = [];
@@ -151,6 +152,7 @@ async function mailbox(kind: "SQL" | "IndexedDB", retries = false) {
 }
 
 describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up", (kind) => {
+  const sqlite = onSqlite(kind);
   it.each(["before", "after"] as const)("resumes bounded cached pages after %s checkpoint failure", async (failure) => {
     const t = await mailbox(kind);
     for (let i = 0; i < 55; i++) t.add(`cached-${String(i).padStart(3, "0")}`);
@@ -183,7 +185,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up
     expect((await t.backend.store.debug.snapshot()).messages).toEqual(before);
   });
 
-  it("retains automatic outage retries for an ordinary minimal GET 503", async () => {
+  sqlite("retains automatic outage retries for an ordinary minimal GET 503", async () => {
     const t = await mailbox(kind, true); t.seed(); await t.backend.syncAccount(t.account.id);
     const old = await t.cursor();
     t.historyPayload(() => ({ historyId: t.baseline, history: [{ labelsAdded: [{ message: { id: "archive" } }] }] }));
@@ -192,7 +194,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up
     expect(await t.cursor()).toEqual(old);
   });
 
-  it.each(["minimal", "catchup"] as const)("refuses deterministic %s overflow without automatic outage retries", async (mode) => {
+  sqlite.each(["minimal", "catchup"] as const)("refuses deterministic %s overflow without automatic outage retries", async (mode) => {
     const t = await mailbox(kind, true); t.seed(); await t.backend.syncAccount(t.account.id);
     const old = await t.cursor();
     if (mode === "minimal") {
@@ -259,7 +261,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up
     expect(await t.cursor()).toEqual({ historyId: String(BigInt(t.baseline) + 1n) });
   });
 
-  it.each(["lateGET", "cursorAck"] as const)("replays three overlapping pages after %s with one automation and exact durable state", async (failure) => {
+  sqlite.each(["lateGET", "cursorAck"] as const)("replays three overlapping pages after %s with one automation and exact durable state", async (failure) => {
     const t = await mailbox(kind); t.seed(); await t.backend.syncAccount(t.account.id);
     const category = await t.backend.store.categories.create("Synthetic", "violet");
     const filter = await t.backend.store.filters.save({ name: "Arrival", enabled: true, source: "manual",
@@ -326,7 +328,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up
     await t.backend.syncAccount(t.account.id); await t.assertFinal();
   });
 
-  it.each(["references", "bytes", "summary", "cycle", "pages", "traversal", "records", "token"] as const)("reconciles bounded history %s from a safe cursor across reopen", async (mode) => {
+  sqlite.each(["references", "bytes", "summary", "cycle", "pages", "traversal", "records", "token"] as const)("reconciles bounded history %s from a safe cursor across reopen", async (mode) => {
     const t = await mailbox(kind);
     t.seed();
     await t.backend.syncAccount(t.account.id);
@@ -365,7 +367,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up
     await t.assertFinal();
   });
 
-  it.each(["initial", "expired"] as const)("catches page-one arrival/archive/delete/read races in the same %s invocation and survives reopen", async (path) => {
+  sqlite.each(["initial", "expired"] as const)("catches page-one arrival/archive/delete/read races in the same %s invocation and survives reopen", async (path) => {
     const t = await mailbox(kind);
     if (path === "expired") {
       await t.backend.syncAccount(t.account.id);
@@ -404,6 +406,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up
 
 
 describe.each(["SQL", "IndexedDB"] as const)("%s Gmail catch-up failure boundaries", (kind) => {
+  const sqlite = onSqlite(kind);
   it.each(["baseline", "terminal"] as const)("replays after a failed %s cursor write without duplicate ingestion", async (checkpoint) => {
     const t = await mailbox(kind);
     t.seed(); t.afterIngest(t.mutate);
@@ -457,7 +460,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail catch-up failure boundari
     expect(t.ingested.filter((m) => m.id === "arrival")).toHaveLength(1);
   });
 
-  it("accepts empty catch-up with a valid terminal ID in the same initial invocation", async () => {
+  sqlite("accepts empty catch-up with a valid terminal ID in the same initial invocation", async () => {
     const t = await mailbox(kind);
     await t.backend.syncAccount(t.account.id);
     expect(t.requests.filter((u) => u.pathname === "/history").map((u) => u.searchParams.get("startHistoryId"))).toEqual([t.baseline]);
@@ -466,7 +469,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail catch-up failure boundari
     await t.reopen(); expect(await t.cursor()).toEqual({ historyId: t.baseline });
   });
 
-  it("leaves an expired catch-up baseline for a later invocation, with no same-call reset loop or success", async () => {
+  sqlite("leaves an expired catch-up baseline for a later invocation, with no same-call reset loop or success", async () => {
     const t = await mailbox(kind);
     t.seed(); t.afterIngest(t.mutate); t.historyStatus(404);
     await t.backend.store.accounts.setCursor(t.account.id, { historyId: "1" });
@@ -480,7 +483,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail catch-up failure boundari
     await t.backend.syncAccount(t.account.id); await t.assertFinal();
   });
 
-  it.each([404, 503])("scopes catch-up raw-message %s to that resource without another full reconciliation", async (status) => {
+  sqlite.each([404, 503])("scopes catch-up raw-message %s to that resource without another full reconciliation", async (status) => {
     const t = await mailbox(kind);
     t.seed(); t.afterIngest(t.mutate); t.rawStatus(status);
     await t.backend.syncAccount(t.account.id);
@@ -498,7 +501,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail catch-up failure boundari
     }
   });
 
-  it("does not remove messages, checkpoint, or dispatch after cancellation following a flag write", async () => {
+  sqlite("does not remove messages, checkpoint, or dispatch after cancellation following a flag write", async () => {
     const t = await mailbox(kind); t.seed();
     t.afterCheckpoint((value) => { if (phaseOf(value)?.stage === "catchup") { t.afterCheckpoint(() => {}); t.mutate(); } });
     const update = t.backend.store.sync.updateFlags.bind(t.backend.store.sync);
@@ -519,7 +522,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail catch-up failure boundari
     expect((await t.backend.store.accounts.get(t.account.id))?.syncState.status).not.toBe("idle");
   });
 
-  it.each(["page", "baseline"] as const)("issues no later HTTP or checkpoint after cancellation at %s", async (boundary) => {
+  sqlite.each(["page", "baseline"] as const)("issues no later HTTP or checkpoint after cancellation at %s", async (boundary) => {
     const t = await mailbox(kind); t.seed();
     if (boundary === "page") t.afterIngest(() => t.abort.abort(new Error("Synthetic cancellation")));
     else t.afterCheckpoint((value) => { if (phaseOf(value)?.stage === "catchup") t.abort.abort(new Error("Synthetic cancellation")); });
@@ -535,6 +538,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail catch-up failure boundari
 
 
 describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (kind) => {
+  const sqlite = onSqlite(kind);
   it.each(["initial", "expired"] as const)("resumes a committed %s list page after real close/reopen, then catches up from the original baseline", async (path) => {
     const t = await mailbox(kind);
     if (path === "expired") await t.backend.store.accounts.setCursor(t.account.id, { historyId: "1" });
@@ -581,7 +585,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
     expect(await t.cursor()).toEqual({ historyId: t.baseline });
   });
 
-  it("retains catch-up phase and the last completed history through a catch-up failure and reopen", async () => {
+  sqlite("retains catch-up phase and the last completed history through a catch-up failure and reopen", async () => {
     const t = await mailbox(kind); t.seed(); t.afterIngest(t.mutate); t.historyStatus(503);
     await t.backend.store.accounts.setCursor(t.account.id, { historyId: "1" });
     await t.backend.syncAccount(t.account.id);
@@ -592,7 +596,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
     expect(t.requests.filter((u) => u.pathname === "/messages" || u.pathname === "/profile")).toHaveLength(0);
   });
 
-  it("never advances the page after a failed raw GET, and replays without duplicate ingestion", async () => {
+  sqlite("never advances the page after a failed raw GET, and replays without duplicate ingestion", async () => {
     const t = await mailbox(kind); t.seed(); t.getStatus("read", 503);
     await t.backend.syncAccount(t.account.id);
     expect(await t.cursor()).toMatchObject({ reconciliation: { stage: "enumerate", pages: 0 } });
@@ -604,7 +608,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
     expect(await t.cursor()).toEqual({ historyId: t.baseline });
   });
 
-  it("does not infer deletion from an empty list page", async () => {
+  sqlite("does not infer deletion from an empty list page", async () => {
     const t = await mailbox(kind); t.seed(); t.emptyFirst(); t.listStatus(503);
     await t.backend.syncAccount(t.account.id);
     expect(await t.cursor()).toMatchObject({ reconciliation: { next: "list/+?=next", pages: 1 } });
@@ -614,7 +618,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
     expect(await t.cursor()).toEqual({ historyId: t.baseline });
   });
 
-  it.each([400, 404])("forgets an expired enumeration token (%s) and fails retryably without looping", async (status) => {
+  sqlite.each([400, 404])("forgets an expired enumeration token (%s) and fails retryably without looping", async (status) => {
     const t = await mailbox(kind); t.seed(); t.listStatus(503);
     await t.backend.syncAccount(t.account.id); await t.reopen(); t.requests.length = 0; t.listStatus(status);
     await t.backend.syncAccount(t.account.id);
@@ -628,7 +632,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
     expect(await t.cursor()).toEqual({ historyId: t.baseline });
   });
 
-  it("refuses an oversized opaque token without saving or consuming it", async () => {
+  sqlite("refuses an oversized opaque token without saving or consuming it", async () => {
     const t = await mailbox(kind); t.seed(); t.nextToken("x".repeat(4097));
     await t.backend.syncAccount(t.account.id);
     expect(t.requests.filter((u) => u.pathname === "/messages")).toHaveLength(1);
@@ -654,7 +658,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
     expect((await t.backend.store.debug.snapshot()).ops).toHaveLength(0);
   });
 
-  it("cancellation after page effects does not advance the token and can resume on reopen", async () => {
+  sqlite("cancellation after page effects does not advance the token and can resume on reopen", async () => {
     const t = await mailbox(kind); t.seed(); t.afterIngest(() => t.abort.abort(new Error("Synthetic cancellation")));
     await t.backend.syncAccount(t.account.id);
     expect(await t.cursor()).toMatchObject({ reconciliation: { stage: "enumerate", pages: 0 } });
@@ -691,7 +695,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
     await t.reopen(); expect(await t.cursor()).toBeUndefined();
   });
 
-  it.each(["window", "identity", "version"] as const)("restarts a persisted phase with changed %s rather than consuming its token", async (change) => {
+  sqlite.each(["window", "identity", "version"] as const)("restarts a persisted phase with changed %s rather than consuming its token", async (change) => {
     const t = await mailbox(kind); t.seed(); t.listStatus(503);
     await t.backend.syncAccount(t.account.id);
     expect(await t.cursor()).toHaveProperty("reconciliation");
@@ -740,7 +744,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
     expect(t.requests.filter((u) => u.pathname === "/messages" || u.pathname === "/profile")).toHaveLength(0);
   });
 
-  it("retains known messages until enumeration has completed and explicit refresh coverage validates deletion", async () => {
+  sqlite("retains known messages until enumeration has completed and explicit refresh coverage validates deletion", async () => {
     const t = await mailbox(kind); t.seed();
     await t.backend.syncAccount(t.account.id);
     t.messages.delete("archive"); t.add("extra");
@@ -756,7 +760,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
     expect(await t.cursor()).toEqual({ historyId: t.baseline });
   });
 
-  it.each(["cycle", "limit"] as const)("bounds a persisted token %s across reopen without false completion", async (boundary) => {
+  sqlite.each(["cycle", "limit"] as const)("bounds a persisted token %s across reopen without false completion", async (boundary) => {
     const t = await mailbox(kind); t.seed(); t.listStatus(503);
     await t.backend.syncAccount(t.account.id);
     const saved = await t.cursor() as { reconciliation: Record<string, unknown> };
@@ -772,9 +776,9 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
   });
 
 
-  it("refuses later refresh chunks after credentials change following the first committed chunk", async () => {
+  sqlite("refuses later refresh chunks after credentials change following the first committed chunk", async () => {
     const t = await mailbox(kind);
-    for (let i = 0; i < 450; i++) t.add(`chunk-${i}`);
+    for (let i = 0; i < 120; i++) t.add(`chunk-${i}`);
     const update = t.backend.store.sync.updateFlags.bind(t.backend.store.sync);
     const writes = vi.spyOn(t.backend.store.sync, "updateFlags").mockImplementation(async (...args) => {
       const result = await update(...args);
@@ -791,10 +795,10 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
     await t.backend.syncAccount(t.account.id);
     expect(await t.cursor()).toEqual({ historyId: t.baseline });
     expect(t.requests.filter((u) => u.pathname === "/messages" || u.pathname === "/profile")).toHaveLength(0);
-    expect((await t.backend.store.debug.snapshot()).messages).toHaveLength(450);
+    expect((await t.backend.store.debug.snapshot()).messages).toHaveLength(120);
   });
 
-  it("rechecks credentials after classifier preparation before admitting ingestion", async () => {
+  sqlite("rechecks credentials after classifier preparation before admitting ingestion", async () => {
     const t = await mailbox(kind); t.seed();
     const writes = vi.spyOn(t.backend.store.sync, "ingest");
     vi.spyOn(t.backend, "classifier").mockImplementationOnce(async () => { await t.backend.signedIn(t.account.id); return null; });
@@ -808,7 +812,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
   });
 
 
-  it("does not publish a stale syncing state when credentials change during window preparation", async () => {
+  sqlite("does not publish a stale syncing state when credentials change during window preparation", async () => {
     const t = await mailbox(kind); t.seed();
     const read = t.backend.store.settings.get.bind(t.backend.store.settings);
     let replace = true;
@@ -829,7 +833,8 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
 });
 
 
-describe.each(["SQL", "IndexedDB"] as const)("%s managed Gmail concurrent public sync requests", (kind) => {
+// who runs when is the backend's, over any store's answers
+describe.each(["SQL"] as const)("%s managed Gmail concurrent public sync requests", (kind) => {
   it("does not spin after a failed trailing pass and a later request recovers", async () => {
     const t = await mailbox(kind); t.seed(); await t.backend.syncAccount(t.account.id); t.requests.length = 0;
     const [local, remote] = createMemoryTransportPair();

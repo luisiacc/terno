@@ -166,11 +166,15 @@ describe.each(["SQL", "IndexedDB"] as const)("%s cached-refresh checkpoint admis
 
 });
 
+// Who yields to whom is the backend's and the provider's, page by page over any store's pages (the store contract has
+// pendingFlagSnapshots and syncedMessagePage): one store. A peer's whole pass takes a few dozen event loop turns, so
+// these stay long enough for it to finish well before the last page.
+const IDENTITIES = 1050;
 
-describe.each(["SQL", "IndexedDB"] as const)("%s local cached-refresh fairness", (kind) => {
-  it.each(["normal", "local", "gone"] as const)("allows a concurrent account to complete during 1050 %s identities and an empty continuation", async (mode) => {
+describe.each(["SQL"] as const)("%s local cached-refresh fairness", (kind) => {
+  it.each(["normal", "local", "gone"] as const)("allows a concurrent account to complete during %s identities and an empty continuation", async (mode) => {
     const t = await mailbox(kind, mode, true);
-    await t.seed(Array.from({ length: 1050 }, (_, i) => `m${String(i).padStart(4, "0")}`));
+    await t.seed(Array.from({ length: IDENTITIES }, (_, i) => `m${String(i).padStart(4, "0")}`));
     const peer = await t.peer();
     let pages = 0, completedAt: number | undefined, caughtUpAt: number | undefined;
     let scheduled: Promise<void> | undefined;
@@ -189,12 +193,12 @@ describe.each(["SQL", "IndexedDB"] as const)("%s local cached-refresh fairness",
     expect(await t.cursor()).toEqual({ historyId: baseline });
     expect(t.requests.filter((url) => url.pathname.endsWith("/messages") && url.searchParams.has("pageToken")).map((url) => url.searchParams.get("pageToken"))).toEqual(["opaque/+?=empty"]);
     const rows = (await t.rows()).filter((m) => m.providerMsgId !== "sibling");
-    expect(rows).toHaveLength(mode === "gone" ? 0 : 1050);
+    expect(rows).toHaveLength(mode === "gone" ? 0 : IDENTITIES);
   });
 
-  it.each(["normal", "local", "gone"] as const)("honors cancellation before draining 1050 %s identities", async (mode) => {
+  it.each(["normal", "local", "gone"] as const)("honors cancellation before draining %s identities", async (mode) => {
     const t = await mailbox(kind, mode);
-    await t.seed(Array.from({ length: 1050 }, (_, i) => `m${String(i).padStart(4, "0")}`));
+    await t.seed(Array.from({ length: IDENTITIES }, (_, i) => `m${String(i).padStart(4, "0")}`));
     let scheduled: Promise<void> | undefined, catchup = false;
     t.checkpoint(async (value) => {
       const progress = (value as { reconciliation?: { stage: string; refreshAfter?: string } }).reconciliation;
@@ -205,7 +209,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s local cached-refresh fairness",
     expect(catchup).toBe(false);
     expect(await t.cursor()).toMatchObject({ reconciliation: { stage: "refresh", baseline } });
     const checkpoint = await t.cursor() as { reconciliation: { refreshAfter: string } };
-    expect(checkpoint.reconciliation.refreshAfter < (mode === "local" ? "local:m1049" : "m1049")).toBe(true);
+    expect(checkpoint.reconciliation.refreshAfter < (mode === "local" ? `local:m${IDENTITIES - 1}` : `m${IDENTITIES - 1}`)).toBe(true);
     const reads = t.requests.length;
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(t.requests).toHaveLength(reads);
@@ -213,11 +217,11 @@ describe.each(["SQL", "IndexedDB"] as const)("%s local cached-refresh fairness",
 });
 
 
-describe.each(["SQL", "IndexedDB"] as const)("%s pending repair fairness", (kind) => {
-  it.each([false, true])("yields 1050 actual all404 obligations to a peer/cancellation (cancel=%s)", async (cancel) => {
+describe.each(["SQL"] as const)("%s pending repair fairness", (kind) => {
+  it.each([false, true])("yields actual all404 obligations to a peer/cancellation (cancel=%s)", async (cancel) => {
     const t = await mailbox(kind, "gone");
     await t.sync();
-    await t.seed(Array.from({ length: 1050 }, (_, i) => `m${String(i).padStart(4, "0")}`));
+    await t.seed(Array.from({ length: IDENTITIES }, (_, i) => `m${String(i).padStart(4, "0")}`));
     expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toHaveLength(50);
     const peer = await t.peer();
     let reads = 0, completedAt: number | undefined;
@@ -228,15 +232,15 @@ describe.each(["SQL", "IndexedDB"] as const)("%s pending repair fairness", (kind
       if (!scheduled) scheduled = new Promise<void>((resolve) => setImmediate(resolve)).then(cancel ? () => t.backend.dropAccount(t.account.id) : peer).then(() => { completedAt = reads; });
     });
     await t.sync(); await scheduled;
-    expect(completedAt).toBeLessThan(1050);
+    expect(completedAt).toBeLessThan(IDENTITIES);
     if (cancel) {
-      expect(reads).toBeLessThan(1050);
+      expect(reads).toBeLessThan(IDENTITIES);
       expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items.length).toBeGreaterThan(0);
       const dispatched = t.requests.length;
       await new Promise<void>((resolve) => setImmediate(resolve));
       expect(t.requests).toHaveLength(dispatched);
     } else {
-      expect(reads).toBe(1050);
+      expect(reads).toBe(IDENTITIES);
       expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
     }
   });

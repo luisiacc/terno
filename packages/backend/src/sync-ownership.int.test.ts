@@ -10,6 +10,7 @@ import { createGmailApiProvider, type ProviderContext, type ProviderRegistry } f
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
+import { onSqlite } from "./test/store-axis";
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -74,7 +75,7 @@ async function fixture(kind: "SQL" | "IndexedDB", path?: string, enabled = false
   const open = async (autoSync: boolean) => {
     const b = new Backend({ dbPath: join(dir, "mail.db"), store: kind === "IndexedDB" ? await IdbMailStore.open({ name, factory, instantSearch: false,
       platform: { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((r) => setImmediate(r)) } }) : undefined,
-      providers, cipher: plaintextCipher, version: "test", autoSync,
+      providers, cipher: plaintextCipher, version: "test", autoSync, connectivity: { delays: [20] },
  instantSearch: false, iconTransport: null, syncIntervalMs: 3_600_000 });
     await b.ready; return b;
   };
@@ -135,6 +136,7 @@ async function settle(sync: { mock: { results: { value: unknown }[] } }): Promis
 }
 
 describe.each(["SQL", "IndexedDB"] as const)("%s local ownership", (kind) => {
+  const sqlite = onSqlite(kind);
   it.each(["live", "reopen"] as const)("B07 failed checkpoint retains replay after effects via %s", async (recovery) => {
     const t = await fixture(kind, undefined, true); t.newer();
     const save = vi.spyOn(t.backend.store.accounts, "setCursor").mockRejectedValueOnce(new Error("Synthetic checkpoint failure"));
@@ -186,7 +188,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s local ownership", (kind) => {
     await t.reopen(false); expect(await t.exact()).toEqual(before);
   });
 
-  it("B14 repeated public requests consume one trailing intent per active failing pass, then recover", async () => {
+  sqlite("B14 repeated public requests consume one trailing intent per active failing pass, then recover", async () => {
     const t = await fixture(kind, undefined, true); t.fail("400");
     const first = gate(), releaseFirst = gate(), second = gate(), releaseSecond = gate();
     cleanup.push(async () => { releaseFirst.release(); releaseSecond.release(); });
@@ -214,7 +216,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s local ownership", (kind) => {
     expect(t.backend.connectivity.timers).toBe(0); expect(t.unexpected).toEqual([]);
   });
 
-  it("B14 unchanged expired history performs one full reset per requested pass and retains recovery", async () => {
+  sqlite("B14 unchanged expired history performs one full reset per requested pass and retains recovery", async () => {
     const t = await fixture(kind, undefined, true); t.fail("404");
     const entered = gate(), released = gate(); cleanup.push(async () => { released.release(); });
     t.holdHistory(async () => { entered.release(); await released.promise; });
@@ -235,7 +237,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s local ownership", (kind) => {
     expect(t.backend.connectivity.timers).toBe(0); expect(t.unexpected).toEqual([]);
   });
 
-  it("B14 timer observation distinguishes legitimate retryable backoff and automatic recovery", async () => {
+  sqlite("B14 timer observation distinguishes legitimate retryable backoff and automatic recovery", async () => {
     const t = await fixture(kind, undefined, true); t.fail("503");
     const sync = vi.spyOn(t.backend, "syncAccount");
     await t.backend.syncAccount(t.account.id);
@@ -249,7 +251,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s local ownership", (kind) => {
     await t.exact(); expect(t.unexpected).toEqual([]);
   });
 
-  it("startup refuses a mismatched Google subject before history, then a legitimate owner recovers", async () => {
+  sqlite("startup refuses a mismatched Google subject before history, then a legitimate owner recovers", async () => {
     const t = await fixture(kind); t.newer(); t.identity("other@example.test");
     await t.reopen(true);
     expect(await t.cursor()).toEqual({ historyId: "100" });
@@ -263,7 +265,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s local ownership", (kind) => {
     await t.exact();
   });
 
-  it("startup alone replays history lost with a volatile overlapping trigger", async () => {
+  sqlite("startup alone replays history lost with a volatile overlapping trigger", async () => {
     const t = await fixture(kind);
     const entered = gate(), release = gate(); cleanup.push(async () => { release.release(); });
     t.holdHistory(async () => { entered.release(); await release.promise; });

@@ -8,6 +8,7 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createGmailProvider, inspectGmailToken, ProviderAuthError, ProviderError, type ProviderContext, type ProviderRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
+import { onSqlite } from "./test/store-axis";
 
 // plan 123: only Terno's own Google clients exist; tests carry a synthetic one
 const TEST_GOOGLE = { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] };
@@ -101,7 +102,8 @@ function followupReconnect(h: Awaited<ReturnType<typeof setup>>, proof?: () => v
 }
 
 for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account reason-aware recovery boundaries`, () => {
-  it.each([
+  const sqlite = onSqlite(kind);
+  sqlite.each([
     [403, "SERVICE_DISABLED", false, "SERVICE_DISABLED"],
     [403, "accessNotConfigured", false, "SERVICE_DISABLED"],
     [400, "failedPrecondition", false, undefined],
@@ -179,7 +181,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     }
   });
 
-  it("disabled Gmail suppresses ordinary periodic HTTP", async () => {
+  sqlite("disabled Gmail suppresses ordinary periodic HTTP", async () => {
     const intervals = vi.spyOn(globalThis, "setInterval");
     const h = await setup(true, kind);
     h.answer((r) => new URL(r.url).pathname === "/gmail/profile" ? failure(403, "SERVICE_DISABLED") : undefined);
@@ -222,7 +224,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect(await h.backend.store.ops.get(opId)).toEqual(queued);
   });
 
-  it("credential replacement retires the policy pause on a retained provider", async () => {
+  sqlite("credential replacement retires the policy pause on a retained provider", async () => {
     const h = await setup(false, kind);
     h.answer((r) => new URL(r.url).pathname === "/gmail/profile" ? failure(403, "insufficientPermissions") : undefined);
     await h.backend.syncAccount(h.account.id);
@@ -236,7 +238,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect(await h.backend.store.ops.get(opId)).toMatchObject({ state: "succeeded", attempts: 1 });
   });
 
-  it.each(["SERVICE_DISABLED", "userRateLimitExceeded"])("stale %s body cannot publish after credential replacement", async (reason) => {
+  sqlite.each(["SERVICE_DISABLED", "userRateLimitExceeded"])("stale %s body cannot publish after credential replacement", async (reason) => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();
     let release!: () => void, entered!: () => void;
@@ -255,7 +257,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect(await h.backend.store.ops.get(opId)).toMatchObject({ state: "succeeded", attempts: 1 });
   });
 
-  it.each(["SERVICE_DISABLED", "userRateLimitExceeded"])("labels %s stays nonidle and never advances through a policy error", async (reason) => {
+  sqlite.each(["SERVICE_DISABLED", "userRateLimitExceeded"])("labels %s stays nonidle and never advances through a policy error", async (reason) => {
     const h = await setup(false, kind);
     h.answer((r) => new URL(r.url).pathname === "/gmail/labels" ? failure(403, reason) : healthySync(r));
     await h.backend.syncAccount(h.account.id);
@@ -269,7 +271,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     if (reason === "SERVICE_DISABLED") expect(writes).not.toHaveBeenCalled();
   });
 
-  it("optional userinfo permission failure does not pause Gmail mail", async () => {
+  sqlite("optional userinfo permission failure does not pause Gmail mail", async () => {
     const h = await setup(false, kind);
     const provider = (await h.backend.provider(h.account.id))!;
     await provider.verify();
@@ -280,7 +282,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect(await h.backend.store.ops.get(opId)).toMatchObject({ state: "succeeded", attempts: 1 });
   });
 
-  it("contradictory disabled-service reason in a503 remains transient and does not pause admission", async () => {
+  sqlite("contradictory disabled-service reason in a503 remains transient and does not pause admission", async () => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();
     h.answer((r) => new URL(r.url).pathname === "/gmail/messages/send" ? failure(503, "SERVICE_DISABLED") : undefined);
@@ -316,7 +318,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect(h.paths().filter((path) => path === "/gmail/messages/send")).toHaveLength(1);
   });
 
-  it("a policy rejection first discovered by Send projects actionable account recovery", async () => {
+  sqlite("a policy rejection first discovered by Send projects actionable account recovery", async () => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();
     h.answer((r) => new URL(r.url).pathname === "/gmail/messages/send" ? failure(403, "SERVICE_DISABLED") : undefined);
@@ -326,7 +328,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "error", lastErrorI18n: { key: "errors.gmail.serviceDisabled" }, connection: null });
   });
 
-  it.each(["final account read", "next provider request"])("a concurrent Send policy refusal survives a sync waiting on its %s", async (boundary) => {
+  sqlite.each(["final account read", "next provider request"])("a concurrent Send policy refusal survives a sync waiting on its %s", async (boundary) => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();
     await h.backend.store.accounts.setCursor(h.account.id, { historyId: "9" });
@@ -388,7 +390,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     } finally { release(); await syncing; }
   });
 
-  it.each(["SERVICE_DISABLED", "domainPolicy", "insufficientPermissions", "badRequest"])("projects a later %s after the first parallel raw download fails400", async (reason) => {
+  sqlite.each(["SERVICE_DISABLED", "domainPolicy", "insufficientPermissions", "badRequest"])("projects a later %s after the first parallel raw download fails400", async (reason) => {
     const h = await setup(false, kind);
     const provider = (await h.backend.provider(h.account.id))!;
     await provider.verify();
@@ -455,7 +457,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     } finally { first.release(); later.release(); await syncing; }
   });
 
-  it("review follow-up keeps another unbound refresh dependency out of cached-token status", async () => {
+  sqlite("review follow-up keeps another unbound refresh dependency out of cached-token status", async () => {
     let wall = Date.now(), elapsed = performance.now();
     vi.spyOn(Date, "now").mockImplementation(() => wall);
     vi.spyOn(performance, "now").mockImplementation(() => elapsed);
@@ -476,7 +478,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect(accounts.find((account) => account.id === h.account.id)!.syncState).toMatchObject({ status: "idle", lastError: null, lastSyncAt: wall });
   });
 
-  it("review follow-up deletion fences a pending status initialization", async () => {
+  sqlite("review follow-up deletion fences a pending status initialization", async () => {
     const h = await setup(false, kind);
     let release!: () => void, entered = false;
     const held = new Promise<void>((resolve) => { release = resolve; });
@@ -495,7 +497,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     } finally { release(); await bootstrap; }
   });
 
-  it("review follow-up verified reconnect survives a shared pending status initialization", async () => {
+  sqlite("review follow-up verified reconnect survives a shared pending status initialization", async () => {
     const h = await setup(false, kind);
     h.answer(followupHealthy); followupReconnect(h);
     let release!: () => void, entered = false, signing = false;
@@ -619,7 +621,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     } finally { persistence.mockRestore(); sync.mockRestore(); }
   });
 
-  it("follow-up notification completion must deliver a later classified native auth fact", async () => {
+  sqlite("follow-up notification completion must deliver a later classified native auth fact", async () => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();
     await h.backend.store.accounts.setCursor(h.account.id, { historyId: "9" });
@@ -679,7 +681,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     }
   });
 
-  it("follow-up Send-first token429 projects its durable dependency hold without sync", async () => {
+  sqlite("follow-up Send-first token429 projects its durable dependency hold without sync", async () => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();
     h.answer((request) => {
@@ -703,7 +705,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "error", lastErrorI18n: { key: "errors.gmail.paused" }, connection: null });
   });
 
-  it("follow-up cached-token control remains usable during a real token endpoint hold", async () => {
+  sqlite("follow-up cached-token control remains usable during a real token endpoint hold", async () => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();
     h.answer((request) => new URL(request.url).pathname === "/token" ? failure(429, "rateLimitExceeded") : followupHealthy(request));
@@ -718,7 +720,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState.status).not.toBe("error");
   });
 
-  it("follow-up retired quota handles cannot outlive actual expiry and verified reconnect", async () => {
+  sqlite("follow-up retired quota handles cannot outlive actual expiry and verified reconnect", async () => {
     let wall = Date.now(), elapsed = performance.now();
     vi.spyOn(Date, "now").mockImplementation(() => wall);
     vi.spyOn(performance, "now").mockImplementation(() => elapsed);
@@ -748,7 +750,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "idle", lastError: null, lastErrorI18n: null, lastSyncAt: wall });
   });
 
-  it.each([429, 403])("R1 Send-first quota%i projects the existing admission hold without a sync", async (status) => {
+  sqlite.each([429, 403])("R1 Send-first quota%i projects the existing admission hold without a sync", async (status) => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();
     h.answer((request) => new URL(request.url).pathname === "/gmail/messages/send" ? failure(status, "userRateLimitExceeded") : healthySync(request));
@@ -785,7 +787,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect(h.paths().filter((path) => path === "/gmail/messages/send")).toHaveLength(1);
   });
 
-  it.each(["copy", "recovery"] as const)("redesign retains sign-in after raw400, Send invalid_grant and late raw403: %s", async (witness) => {
+  sqlite.each(["copy", "recovery"] as const)("redesign retains sign-in after raw400, Send invalid_grant and late raw403: %s", async (witness) => {
     const h = await setup(false, kind);
     const provider = (await h.backend.provider(h.account.id))!;
     await provider.verify();
@@ -849,7 +851,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     }
   });
 
-  it("redesign preserves policy when an already-admitted idle status write completes late", async () => {
+  sqlite("redesign preserves policy when an already-admitted idle status write completes late", async () => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();
     let entered = false, release!: () => void;
@@ -883,7 +885,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     } finally { release(); await Promise.allSettled([syncing, ...(sending ? [sending] : [])]); }
   });
 
-  it.each([["send", "policy first"], ["send", "auth first"], ["sync", "policy first"], ["sync", "auth first"]] as const)("surfaces invalid_grant despite concurrent policy refusal from %s: %s", async (policySource, order) => {
+  sqlite.each([["send", "policy first"], ["send", "auth first"], ["sync", "policy first"], ["sync", "auth first"]] as const)("surfaces invalid_grant despite concurrent policy refusal from %s: %s", async (policySource, order) => {
     const h = await setup(false, kind);
     const provider = (await h.backend.provider(h.account.id))!;
     await provider.verify();
@@ -963,7 +965,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     }
   });
 
-  it("an older policy body cannot relatch after explicit recovery in the same credential generation", async () => {
+  sqlite("an older policy body cannot relatch after explicit recovery in the same credential generation", async () => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();
     let release!: () => void, entered!: () => void;
@@ -982,7 +984,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect(await h.backend.store.ops.get(opId)).toMatchObject({ state: "succeeded", attempts: 1 });
   });
 
-  it("header-only nonquota403 never creates a cooldown or policy pause", async () => {
+  sqlite("header-only nonquota403 never creates a cooldown or policy pause", async () => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();
     h.answer((r) => new URL(r.url).pathname === "/gmail/messages/send" ? failure(403, "forbidden") : undefined);
@@ -996,7 +998,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect(await h.backend.store.ops.get(next.opId)).toMatchObject({ state: "succeeded", attempts: 1 });
   });
 
-  it("explicit user recovery resumes a disabled saved account without changing its credential", async () => {
+  sqlite("explicit user recovery resumes a disabled saved account without changing its credential", async () => {
     const h = await setup(false, kind);
     h.answer((r) => new URL(r.url).pathname === "/gmail/profile" ? failure(403, "SERVICE_DISABLED") : undefined);
     await h.backend.syncAccount(h.account.id);
@@ -1020,7 +1022,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect(await h.backend.getSecret(`account:${h.account.id}:refreshToken`)).toBe("synthetic-refresh");
   });
 
-  it("local physical capacity costs no attempt or remote cooldown and terminal EOF restores admission", async () => {
+  sqlite("local physical capacity costs no attempt or remote cooldown and terminal EOF restores admission", async () => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();
     const responses: Response[] = [];

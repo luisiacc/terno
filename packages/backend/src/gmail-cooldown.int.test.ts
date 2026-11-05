@@ -11,6 +11,7 @@ import { createGmailProvider, ProviderCooldownError, type ProviderRegistry, type
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
+import { onSqlite } from "./test/store-axis";
 
 // plan 123: only Terno's own Google clients exist; tests carry a synthetic one
 const TEST_GOOGLE = { preferred: "synthetic", clients: [{ clientId: "synthetic", clientSecret: "" }] };
@@ -61,7 +62,8 @@ function healthyProfile(_req: IncomingMessage, res: ServerResponse) {
 }
 
 for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail cooldown`, () => {
-  it("W05 automatically retries token503 through the existing worker timer", async () => {
+  const sqlite = onSqlite(kind);
+  sqlite("W05 automatically retries token503 through the existing worker timer", async () => {
     const h = await setup(kind, true);
     let tokens = 0;
     h.answer((req, res) => {
@@ -111,7 +113,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     expect((await h.backend.store.accounts.get(h.account.id))!.syncState.authRequired === true).toBe(status === 400);
   });
 
-  it("W05 retries a token503 queued send on its existing backoff without an unrelated sync", async () => {
+  sqlite("W05 retries a token503 queued send on its existing backoff without an unrelated sync", async () => {
     const h = await setup(kind);
     let tokens = 0;
     h.answer((req, res) => {
@@ -139,7 +141,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     expect(await h.backend.runWorker()).toBe(0);
   });
 
-  it("W05 exposes labels429 as an account error while retaining its durable deadline", async () => {
+  sqlite("W05 exposes labels429 as an account error while retaining its durable deadline", async () => {
     const h = await setup(kind);
     h.answer((req, res) => {
       if (healthyProfile(req, res)) return true;
@@ -209,7 +211,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     expect(h.requests).toEqual(["/token", "/gmail/profile"]);
   });
 
-  it("does not charge remote operation attempts or spin the worker while locally denied", async () => {
+  sqlite("does not charge remote operation attempts or spin the worker while locally denied", async () => {
     const h = await setup(kind);
     await (await h.backend.provider(h.account.id))!.verify().catch(() => {});
     const [local, remote] = createMemoryTransportPair();
@@ -240,7 +242,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     write.resolve();
   });
 
-  it("latches a failed bind before releasing its starter, until explicit drop/reconnect", async () => {
+  sqlite("latches a failed bind before releasing its starter, until explicit drop/reconnect", async () => {
     const h = await setup(kind); h.answer(healthyProfile);
     const bind = vi.spyOn(h.backend.store.providerCooldown, "bind").mockRejectedValueOnce(new Error("Synthetic binding write failure"));
     const provider = (await h.backend.provider(h.account.id))!;
@@ -274,7 +276,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     expect(h.requests).toEqual(["/token", "/gmail/profile"]);
   });
 
-  it("charges an operation that actually refreshed/proved, then blocks later local attempts", async () => {
+  sqlite("charges an operation that actually refreshed/proved, then blocks later local attempts", async () => {
     const h = await setup(kind);
     const [local, remote] = createMemoryTransportPair();
     h.backend.connect(remote, { clientId: "synthetic", origin: "renderer" });
@@ -288,7 +290,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
   });
 
 
-  it("shares a proved mailbox cooldown across saved accounts while keeping services distinct", async () => {
+  sqlite("shares a proved mailbox cooldown across saved accounts while keeping services distinct", async () => {
     const h = await setup(kind); h.answer(healthyProfile);
     const second = (await h.backend.store.accounts.create({ kind: "gmail", email: "SYNTHETIC@example.test", displayName: "Synthetic second", color: "indigo", providerConfig: {}, now: 2 })).account;
     await h.backend.setSecret(`account:${second.id}:refreshToken`, "synthetic-second-refresh");
@@ -312,7 +314,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
   });
 
 
-  it("preserves native token429 evidence when the exchange caller aborts during persistence", async () => {
+  sqlite("preserves native token429 evidence when the exchange caller aborts during persistence", async () => {
     const h = await setup(kind);
     h.answer((req, res) => {
       if (req.url !== "/token") return false;
@@ -334,7 +336,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
   });
 
 
-  it("R1 does not cache a pre-dispatch OAuth denial after admission becomes ready", async () => {
+  sqlite("R1 does not cache a pre-dispatch OAuth denial after admission becomes ready", async () => {
     const h = await setup(kind); h.answer(healthyProfile);
     const provider = (await h.backend.provider(h.account.id))!;
     const google = h.contexts.get(h.account.id)!.google!;
@@ -351,7 +353,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     expect(h.requests).toEqual(["/token", "/gmail/profile"]);
   });
 
-  it("R1 installation OAuth pause blocks a token-dependent bound account without claim/refund loops", async () => {
+  sqlite("R1 installation OAuth pause blocks a token-dependent bound account without claim/refund loops", async () => {
     const h = await setup(kind); h.answer(healthyProfile);
     await (await h.backend.provider(h.account.id))!.verify();
     const second = (await h.backend.store.accounts.create({ kind: "gmail", email: "other@example.test", displayName: "Other", color: "indigo", now: 2 })).account;
@@ -379,7 +381,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     expect(h.requests).toEqual(["/token", "/gmail/profile", "/installation-quota"]);
   });
 
-  it("R1 binding preserves a previously issued installation request's late429", async () => {
+  sqlite("R1 binding preserves a previously issued installation request's late429", async () => {
     const h = await setup(kind);
     const entered = latch(); let held: ServerResponse | undefined;
     cleanup.push(async () => { if (held && !held.writableEnded) held.end("{}"); });
@@ -400,7 +402,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     expect(JSON.parse((await h.backend.store.providerCooldown.read())!).rows).toEqual(expect.arrayContaining([expect.objectContaining({ owner: "installation", service: "oauth-token" })]));
   });
 
-  it("R1 public photos still reach a ready service during a Gmail-only cooldown", async () => {
+  sqlite("R1 public photos still reach a ready service during a Gmail-only cooldown", async () => {
     const original = globalThis.fetch;
     let userinfo = 0;
     vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
@@ -418,7 +420,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     expect(h.requests).toEqual(["/token", "/gmail/profile", "/gmail/profile"]);
   });
 
-  it("R1 rejects stale proof publication across bound-policy preparation", async () => {
+  sqlite("R1 rejects stale proof publication across bound-policy preparation", async () => {
     const h = await setup(kind); h.answer(healthyProfile);
     const entered = latch(), publish = latch();
     cleanup.push(async () => publish.resolve());
@@ -438,7 +440,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
   });
 
 
-  it("R2 stale initialization cannot replace a paused new lifetime and spin operation admission", async () => {
+  sqlite("R2 stale initialization cannot replace a paused new lifetime and spin operation admission", async () => {
     const h = await setup(kind); h.answer(healthyProfile);
     const entered = latch(), factory = latch();
     cleanup.push(async () => factory.resolve());
