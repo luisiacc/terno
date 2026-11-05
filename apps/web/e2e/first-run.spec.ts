@@ -41,6 +41,45 @@ test.describe("first-run setup", () => {
     await expect(section.locator("..")).toHaveCSS("min-height", "26px");
   });
 
+  test("the style tiles: one box each, one specimen size and baseline, names clear of the edges, in every style (plan 137)", async ({ app: page, server }) => {
+    await open(page, server);
+    await page.getByTestId("first-run-continue").click();
+    const tiles = page.locator('[data-testid^="first-run-design-"]');
+    const measure = () =>
+      tiles.evaluateAll((els) =>
+        els.map((tile) => {
+          const specimen = tile.querySelector<HTMLElement>("[data-design]")!;
+          const name = tile.lastElementChild as HTMLElement;
+          const box = tile.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(name);
+          const text = range.getBoundingClientRect();
+          // an empty inline block sits on its line's baseline
+          const probe = specimen.appendChild(document.createElement("span"));
+          probe.style.display = "inline-block";
+          const baseline = probe.getBoundingClientRect().bottom - box.top;
+          probe.remove();
+          return { left: box.left, width: box.width, height: box.height, size: getComputedStyle(specimen).fontSize, baseline, boxed: [specimen, specimen.parentElement!].some((el) => getComputedStyle(el).boxShadow !== "none"), inset: Math.min(text.left - box.left, box.right - text.right), clipped: name.scrollWidth > name.clientWidth };
+        }),
+      );
+    const first = await measure();
+    expect(first).toHaveLength(5);
+    // in each style's own text scale: the same tiles, every name fits
+    for (const id of ["lumen", "atelier", "macos", "luma", "graphite"]) {
+      await page.getByTestId(`first-run-design-${id}`).click();
+      await expect(preview(page)).toHaveAttribute("data-design", id);
+      const now = await measure();
+      expect(new Set(now.map((m) => m.size))).toEqual(new Set(["22px"]));
+      expect(new Set(now.map((m) => m.baseline)).size).toBe(1);
+      for (const [i, m] of now.entries()) {
+        expect(m.boxed).toBe(false);
+        expect(m.clipped).toBe(false);
+        expect(m.inset).toBeGreaterThanOrEqual(5);
+        expect([m.left, m.width, m.height]).toEqual([first[i]!.left, first[i]!.width, first[i]!.height]);
+      }
+    }
+  });
+
   test("layout, then style and colors, each live in the app and the preview; Back keeps the picks", async ({ app: page, server }) => {
     await open(page, server);
     await expect(step(page)).toHaveAttribute("data-step", "layout");

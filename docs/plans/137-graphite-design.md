@@ -161,3 +161,20 @@ Three layout values carry this (`sidebarPad`, `navSectionGap`, `navSectionHeight
 The reference's section labels are `#7C7C7C` (4.17:1 on white), below AA, so they stay `#5D5D5D`.
 
 The Codex review found one problem, fixed with a test that fails without the fix: first run's preview draws its own copy of the sidebar, and still had the old insets, section spacing and New message row.
+
+## First run's style tiles
+
+Follow-up request, verbatim (with a screenshot, an arrow on the Style row of "Make it yours"):
+
+> lets fix these on the starting dialog, the styles selectors look bad, fix them
+
+At five styles each tile is 60 px wide, and four things had gone wrong:
+
+- A box 2 px inside a box: the specimen's own hairline sat right against the card's, so every tile read as a double outline.
+- The name at 14 px: "Graphite" touched both edges.
+- Specimens at `text-xl` inside each nested `[data-design]`, so each took its own design's scale, and macOS's was visibly smaller than Graphite's.
+- `leading-none` centers each font on its own metrics, so baselines differed by a pixel across the row.
+
+Now one flat tile, as Apple Books' theme tiles are: the specimen on the card, the name below it in the color cards' `text-xs font-medium`. The size lives on a wrapper outside `[data-design]`, so all five share it whatever the design's scale, and its line sets the baseline (the specimen has no line height of its own, or a font with a taller ascent would push that baseline down). The tile is a fixed 64 px instead of 86, which gives the 22 px back to the palettes and keeps the row's height through a style change. 22 px is an exception in `source-scan.test.ts`: a specimen, not text to read.
+
+The row itself still moves up to 8 px between styles, because the dialog's title and description above it draw in the chosen design's scale. That's the preview being live, and wasn't asked about.

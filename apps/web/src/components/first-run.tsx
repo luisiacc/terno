@@ -173,13 +173,16 @@ export function FirstRun() {
           className="grid shrink-0 grid-cols-5 gap-2"
         >
           {DESIGNS.map((d) => (
-            <RadioCard key={d.id} value={d.id} data-testid={`first-run-design-${d.id}`} className="min-w-0 flex-col items-center gap-1.5 px-1 pt-2.5 pb-2">
-              {/* the style's own type, in its own design */}
-              <span data-design={d.id} aria-hidden className="flex h-10 w-14 items-center justify-center rounded-lg bg-background text-xl text-foreground shadow-hairline" style={{ fontFamily: "var(--type-list-title-family)", fontWeight: "var(--type-list-title-weight)", fontStyle: "var(--type-list-title-style)" }}>
-                {/* i18n-ignore: aria-hidden typography specimen, identical in every language */}
-                Aa
+            <RadioCard key={d.id} value={d.id} data-testid={`first-run-design-${d.id}`} className="h-16 min-w-0 flex-col items-center justify-center gap-1.5 px-1">
+              {/* the style's own type, in its own design: the line outside it sets one size and one baseline for all, so only the type differs */}
+              <span aria-hidden className="block h-5.5 text-[22px] leading-none">
+                {/* no line height of its own: a font's taller ascent would push the shared baseline down */}
+                <span data-design={d.id} className="leading-0" style={{ fontFamily: "var(--type-list-title-family)", fontWeight: "var(--type-list-title-weight)", fontStyle: "var(--type-list-title-style)" }}>
+                  {/* i18n-ignore: aria-hidden typography specimen, identical in every language */}
+                  Aa
+                </span>
               </span>
-              <span className="text-sm font-medium">{designName(d.id)}</span>
+              <span className="max-w-full truncate text-xs font-medium">{designName(d.id)}</span>
             </RadioCard>
           ))}
         </RadioGroup>

@@ -23,6 +23,8 @@ const TEXT_PX: Record<string, string[]> = {
   "apps/web/src/components/inline-draft.tsx": ["9.5px", "10px"],
   // the Style cards' mini-mocks (a picture of a window, not text to read)
   "apps/web/src/components/settings/appearance-tab.tsx": ["10px"],
+  // first run's Style specimens: one size in all of them, each design's own scale would make them uneven
+  "apps/web/src/components/first-run.tsx": ["22px"],
   // the print preview draws the document at its own scale
   "apps/web/src/components/print-sheet.tsx": ["12.5px"],
   // the HTML mail blocked-content note matches the mail's own size
