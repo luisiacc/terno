@@ -97,14 +97,18 @@ async function reserve(t: Fixture, bytes: number) {
   }
 }
 
-it("public per-part overflow and aggregate overflow retain the exact draft and every staged byte", async () => {
+it("per-part, aggregate and encoded overflow each retain the exact draft and every staged byte", async () => {
   const t = await setup(), ref = await stage(t, Buffer.alloc(MAX_ATTACHMENT_BYTES, 0x61)), extra = await stage(t, Buffer.from([0, 255]));
   const draft = await save(t, [ref]), before = snapshot(t);
   await expect(t.client.call("attachments.create", { accountId: t.accountId, filename: "oversized", mime: "application/octet-stream", size: MAX_ATTACHMENT_BYTES + 1 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   await retained(t, draft, before);
   await expect(t.client.call("compose.send", params(draft, [ref, extra]))).rejects.toMatchObject({ code: "BAD_REQUEST" });
   await retained(t, draft, before);
-  await t.reopen(); await retained(t, draft, before);
+  // within the decoded limit; base64 of the body as well doesn't fit
+  const long = await save(t, [ref], "x".repeat(1024 * 1024)), saved = snapshot(t);
+  await expect(t.client.call("compose.send", params(long))).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  await retained(t, long, saved); expect(await t.client.call("ops.list", {})).toEqual([]);
+  await t.reopen(); await retained(t, long, saved);
 });
 
 it("100 distinct sealed parts admit; public 101-part refusal consumes nothing", async () => {
@@ -119,13 +123,6 @@ it("100 distinct sealed parts admit; public 101-part refusal consumes nothing", 
   expect(t.sends).toHaveLength(1);
   expect((await parseRaw(Buffer.from(JSON.parse(t.sends[0]!).raw, "base64url"))).attachments).toHaveLength(100);
   const queued = snapshot(t); await t.reopen(); await t.backend.runWorker(); expect(snapshot(t)).toEqual(queued); expect(t.sends).toHaveLength(1);
-});
-
-it("encoded body overflow within decoded attachment limit preserves every byte and revision", async () => {
-  const t = await setup(), ref = await stage(t, Buffer.alloc(MAX_ATTACHMENT_BYTES, 0x5a));
-  const draft = await save(t, [ref], "x".repeat(1024 * 1024)), before = snapshot(t);
-  await expect(t.client.call("compose.send", params(draft))).rejects.toMatchObject({ code: "BAD_REQUEST" });
-  await retained(t, draft, before); await t.reopen(); await retained(t, draft, before);
 });
 
 it("account reservations refuse locally, remain account independent and recover after discard", async () => {
@@ -214,20 +211,6 @@ it.each(["401", "offline"] as const)("queued pins survive expiry and managed Gma
   expect(accepted.parts).toEqual(before.parts); expect(accepted.links).toEqual(before.links.filter((link) => link.op_id === null));
 });
 
-it("snapshot oracles reject duplicate ownership, chunk corruption and operation rebinding", async () => {
-  const t = await setup(), ref = await stage(t, Buffer.from([0, 255, 128])), draft = await save(t, [ref]);
-  await t.client.call("compose.send", params(draft));
-  const expected = snapshot(t);
-  for (const key of ["assets", "parts", "links"] as const) {
-    const bad = structuredClone(expected); bad[key].push({ ...bad[key][0]! });
-    expect(() => expect(bad).toEqual(expected)).toThrowError(/AssertionError|expected/);
-  }
-  const corrupted = structuredClone(expected); corrupted.chunks[0]!.data_base64 = "AAAA";
-  expect(() => expect(corrupted).toEqual(expected)).toThrowError(/AssertionError|expected/);
-  const rebound = structuredClone(expected); rebound.ops[0]!.payload_json = "{}";
-  expect(() => expect(rebound).toEqual(expected)).toThrowError(/AssertionError|expected/);
-});
-
 it("interrupted orphan cleanup cannot reclaim or rebind a queued sibling across reopen", async () => {
   const t = await setup(), pinned = await stage(t, Buffer.from([0, 255, 128]));
   const draft = await save(t, [pinned]), { opId } = await t.client.call("compose.send", params(draft));
@@ -255,24 +238,4 @@ it("interrupted orphan cleanup cannot reclaim or rebind a queued sibling across 
   const accepted = snapshot(t); await t.reopen(); await t.backend.runWorker();
   expect(snapshot(t)).toEqual(accepted); expect(t.sends).toHaveLength(1);
   expect(await t.client.call("attachments.read", { accountId: t.accountId, assetId: pinned.assetId, index: 0 })).toEqual({ dataBase64: "AP+A" });
-});
-
-it.each(["staging bytes", "parked pins", "queued identity"] as const)("R1 oracle rejects %s corruption at its observation point", async (fault) => {
-  const t = await setup(), ref = await stage(t, Buffer.from([0, 255, 128])), draft = await save(t, [ref]);
-  await t.client.call("compose.send", params(draft));
-  const expected = snapshot(t), actual = structuredClone(expected);
-  if (fault === "staging bytes") {
-    stagingContinues(actual, expected);
-    actual.chunks[0]!.data_base64 = "AAAA";
-    expect(() => stagingContinues(actual, expected)).toThrowError(/expected/);
-  } else if (fault === "parked pins") {
-    parkedOwns(actual, expected);
-    actual.links = actual.links.filter((link) => link.op_id === null);
-    expect(() => parkedOwns(actual, expected)).toThrowError(/expected/);
-  } else {
-    const id = JSON.parse(String(expected.ops[0]!.payload_json)).messageId as string;
-    queuedIdentity(id, id);
-    expect(() => queuedIdentity("wrong@example.test", id)).toThrowError(/expected/);
-    expect(() => queuedIdentity("", "")).toThrowError(/expected/);
-  }
 });

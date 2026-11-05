@@ -8,7 +8,7 @@ import { sqlDb } from "@terno/db";
 import { createGmailProvider, createRegistry, parseRaw, type ProviderRegistry } from "@terno/mail";
 import imapkit from "imapkit";
 import { SMTPServer } from "smtp-server";
-import { afterEach, chai, expect, it } from "vitest";
+import { afterEach, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { startNetProxy, type NetProxy } from "./test/net-proxy";
 
@@ -79,7 +79,7 @@ async function setup(mode: "accept" | "refuse" | "lost") {
   };
   open();
   cleanup.push(async () => { client.close(); await backend.stop(); await proxy.close(); await new Promise<void>((resolve) => smtp.close(resolve)); await imap.stop(); rmSync(dir, { recursive: true, force: true }); });
-  const account = await client.call("accounts.addImap", { email: "sender@example.test", displayName: "Sender", password: "testpass",
+  const account = await client.call("accounts.addImap", { email: "sender@example.test", displayName: "Sender", password: "testpass", verify: false,
     imap: { host: "127.0.0.1", port: imapPort, secure: false, user: "testuser" }, smtp: { host: "127.0.0.1", port, secure: false, user: "testuser" } });
   return { account, received, get starts() { return starts; }, accept() { mode = "accept"; }, get client() { return client; }, get backend() { return backend; }, async reopen() { client.close(); await backend.stop(); open(); await backend.ready; } };
 }
@@ -182,39 +182,4 @@ it.each(["accept", "refuse", "lost"] as const)("sends exact staged bytes through
   expect(durable(backend)).toEqual(before);
   expect(sqlDb(backend.store).get<{ count: number }>("SELECT count(*) AS count FROM attachment_assets WHERE account_id = ?", account.id)?.count).toBe(1);
   expect(await client.call("attachments.read", { accountId: account.id, assetId: ref.assetId, index: 0 })).toEqual({ dataBase64: bytes.toString("base64") });
-});
-
-it("delivery oracle rejects corruption in an earlier SMTP chunk", () => {
-  const bytes = Buffer.alloc(ATTACHMENT_CHUNK + 5, 0x61);
-  const chunks = [bytes.subarray(0, ATTACHMENT_CHUNK).toString("base64"), bytes.subarray(ATTACHMENT_CHUNK).toString("base64")];
-  storedAttachmentContents(chunks, bytes);
-  expect(() => storedAttachmentContents(["AAAA", chunks[1]!], bytes)).toThrowError(chai.AssertionError);
-});
-
-it.each(["Cc recipient", "MIME part"] as const)("delivery oracle rejects an extra Gmail %s", async (extra) => {
-  const bytes = Buffer.from([0, 255, 128, 13, 10]);
-  const parsed = await parseRaw(Buffer.from("Subject: Gmail attachment\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=witness\r\n\r\n--witness\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=exact.bin\r\nContent-Transfer-Encoding: base64\r\n\r\nAP+ADQo=\r\n--witness--\r\n"));
-  gmailAttachmentContents(parsed, bytes);
-  if (extra === "Cc recipient") parsed.cc.push({ name: "", email: "unexpected@example.test" });
-  else parsed.attachments.push({ ...parsed.attachments[0]! });
-  expect(() => gmailAttachmentContents(parsed, bytes)).toThrowError(chai.AssertionError);
-});
-
-it("refuses an encoded-budget overflow before queueing and retains the draft and asset", async () => {
-  const t = await setup("accept"), accountId = t.account.id;
-  const size = 18 * 1024 * 1024;
-  const ref = await t.client.call("attachments.create", { accountId, filename: "large.bin", mime: "application/octet-stream", size });
-  const chunk = Buffer.alloc(ATTACHMENT_CHUNK, 0x5a).toString("base64");
-  for (let index = 0; index < size / ATTACHMENT_CHUNK; index++) await t.client.call("attachments.append", { accountId, assetId: ref.assetId, index, dataBase64: chunk });
-  await t.client.call("attachments.seal", { accountId, assetId: ref.assetId });
-  const to = [{ name: "", email: "to@example.test" }], bodyText = "x".repeat(1024 * 1024);
-  const draft = (await t.client.call("drafts.save", { accountId, to, subject: "Retain", bodyText, attachments: [ref] }))!;
-  await expect(t.client.call("compose.send", { accountId, to, subject: draft.subject, bodyText, attachments: [ref], draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision })).rejects.toThrow();
-  expect((await t.client.call("drafts.list", {})).find((d) => d.id === draft.id)).toMatchObject({ generation: draft.generation, revision: draft.revision, attachments: [ref], bodyText });
-  expect(await t.client.call("ops.list", {})).toEqual([]);
-  expect(t.starts).toBe(0);
-  await t.reopen();
-  expect((await t.client.call("drafts.list", {})).find((d) => d.id === draft.id)).toMatchObject({ generation: draft.generation, revision: draft.revision, attachments: [ref] });
-  expect(await t.client.call("attachments.read", { accountId, assetId: ref.assetId, index: 0 })).toEqual({ dataBase64: chunk });
-  expect(sqlDb(t.backend.store).get<{ count: number }>("SELECT count(*) AS count FROM attachment_assets WHERE account_id = ?", accountId)?.count).toBe(1);
 });

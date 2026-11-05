@@ -5,7 +5,10 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { createGmailApiProvider, type ProviderRegistry } from "@terno/mail/portable";
 import { Backend, plaintextCipher } from "./backend";
 
-const COUNT = 50_000;
+// Every bound here holds per page and per batch (500 listed, 50 ingested or refreshed, six readers), and no limit in the
+// provider sits between this and 50k, so three list pages take as many of each step as it takes. 50k itself is in
+// gmail-batches.perf: "keeps 50k small-message processing" and "bounds 50k cached refresh pages".
+const COUNT = 1500;
 const idAt = (i: number) => `m${String(i).padStart(5, "0")}`;
 function mailbox() {
   const dir = mkdtempSync(join(tmpdir(), "terno-resource-"));
@@ -45,13 +48,11 @@ function mailbox() {
     if (!/^m\d{5}$/.test(id) || !expectedSet.has(id)) throw new Error("Unexpected synthetic identity");
     if (url.searchParams.get("format") === "minimal") {
       minimalIds.push(id);
-      if (minimalIds.length % 10000 === 0) observe("minimal", { count: minimalIds.length });
       if (recovery && id === idAt(COUNT - 1) && !refused) { refused = true; return Response.json({}, { status: 503 }); }
       return Response.json({ id, labelIds: recovery ? ["INBOX", "UNREAD"] : ["INBOX"] });
     }
     if (url.searchParams.get("format") !== "raw") throw new Error("Unexpected synthetic format");
     rawIds.push(id);
-    if (rawIds.length % 10000 === 0) observe("raw", { count: rawIds.length });
     const bytes = new TextEncoder().encode(JSON.stringify({ id, threadId: id, labelIds: ["INBOX"], raw: Buffer.from(`From: sender@example.test\r\nSubject: ${id}\r\nMessage-ID: <${id}@example.test>\r\nContent-Type: text/plain\r\n\r\nBody ${id}`).toString("base64url") }));
     const body = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(bytes); controller.close(); } });
     const getReader = body.getReader.bind(body);
@@ -171,7 +172,7 @@ function mailbox() {
       expect(boundaryStopped).toBe(true);
       expect(minimalIds).toHaveLength(0);
       await assertCoverage(() => true);
-      expect(await cursor()).toMatchObject({ reconciliation: { stage: "refresh", pages: 100 } });
+      expect(await cursor()).toMatchObject({ reconciliation: { stage: "refresh", pages: COUNT / 500 } });
       assertIdle();
       observe("initial-enumeration-complete", metrics());
     },
@@ -217,7 +218,7 @@ function mailbox() {
 }
 
 // Each case inherits the database and durable checkpoint produced by its predecessor.
-describe("native SQLite Gmail 50k ordered resource qualification", { concurrent: false }, () => {
+describe("native SQLite Gmail ordered resource qualification", { concurrent: false }, () => {
   let fixture: ReturnType<typeof mailbox> | undefined;
   let phase: Promise<void> | undefined;
   let completed = 0;
@@ -233,25 +234,25 @@ describe("native SQLite Gmail 50k ordered resource qualification", { concurrent:
     try { await phase?.catch(() => {}); }
     finally { await fixture?.close(); }
   });
-  it("initial provider enumeration persists all 50000 messages, threads and bodies before refresh", async () => {
+  it("initial provider enumeration persists all messages, threads and bodies before refresh", async () => {
     fixture = mailbox();
     phase = fixture.enumerate();
     await phase;
     completed = 1;
   });
-  it("initial refresh verifies all 50000 cached flags and completes history", async () => {
+  it("initial refresh verifies all cached flags and completes history", async () => {
     expect(completed, "initial enumeration must complete; dependent phases never skip").toBe(1);
     phase = fixture!.initialRefresh();
     await phase;
     completed = 2;
   });
-  it("recovery changes all 50000 flags and preserves the late 503 checkpoint", async () => {
+  it("recovery changes all flags and preserves the late 503 checkpoint", async () => {
     expect(completed, "initial sync must complete before recovery").toBe(2);
     phase = fixture!.recover();
     await phase;
     completed = 3;
   });
-  it("graceful reopen resumes exactly final 50 and verifies all 50000 identities and bodies", async () => {
+  it("graceful reopen resumes exactly final 50 and verifies all identities and bodies", async () => {
     expect(completed, "recovery refusal must settle before reopen").toBe(3);
     phase = fixture!.reopen();
     await phase;
