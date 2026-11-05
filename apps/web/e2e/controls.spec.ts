@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { DESIGN_IDS } from "@terno/core";
-import { addRecipients, expect as baseExpect, focusList, openRow, test, timeText, typeTime } from "./fixtures";
+import { addRecipients, expect as baseExpect, focusList, openRow, test, timeText, typeTime, scenario, freshStart, freshNoDrafts } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 
@@ -301,263 +301,285 @@ async function segmented(page: Page, track: string, on: string, off: string, mod
 // plan 118 review: call sites that restyle a control keep their states over its new base
 for (const mode of ["light", "dark"] as const) {
   test.describe(`controls restyled in place keep their states, ${mode} (plan 118)`, () => {
+    const probes = async (page: Page) => {
+      await page.evaluate((html) => document.body.insertAdjacentHTML("beforeend", html), markup());
+      // the probes are read, never pointed at: the sidebar under them stays reachable
+      await page.evaluate(() => document.getElementById("controls-probe")!.style.setProperty("pointer-events", "none"));
+    };
     test.beforeEach(async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
       await page.reload();
       await page.locator("[data-ready]").waitFor();
-      await page.evaluate((html) => document.body.insertAdjacentHTML("beforeend", html), markup());
-      // the probes are read, never pointed at: the sidebar under them stays reachable
-      await page.evaluate(() => document.getElementById("controls-probe")!.style.setProperty("pointer-events", "none"));
+      await probes(page);
     });
 
-    test("Send's schedule half, open, keeps its hover fill when the pointer leaves (no gradient over it)", async ({ app: page }) => {
-      await focusList(page);
-      await page.keyboard.press("c");
-      await page.getByTestId("compose-send-later").click();
-      await page.mouse.move(1, 1);
-      await baseExpect(page.getByTestId("compose-send-later")).toHaveAttribute("aria-expanded", "true");
-      baseExpect(await css(page, "compose-send-later", "background-image")).toBe("none");
-      baseExpect(await css(page, "compose-send-later", "background-color")).toBe(await css(page, "probe-primary-hover", "background-color"));
+    test("Send's half, a draft's From, the segmented choices", async ({ app: page, server }) => {
+      await scenario("Send's schedule half, open, keeps its hover fill when the pointer leaves (no gradient over it)", async () => {
+        await focusList(page);
+        await page.keyboard.press("c");
+        await page.getByTestId("compose-send-later").click();
+        await page.mouse.move(1, 1);
+        await baseExpect(page.getByTestId("compose-send-later")).toHaveAttribute("aria-expanded", "true");
+        baseExpect(await css(page, "compose-send-later", "background-image")).toBe("none");
+        baseExpect(await css(page, "compose-send-later", "background-color")).toBe(await css(page, "probe-primary-hover", "background-color"));
+      });
+      await scenario("the draft's From selector fills on hover", async () => {
+        await freshNoDrafts(page, server);
+        await probes(page);
+        await focusList(page);
+        await page.keyboard.press("c");
+        await page.getByTestId("compose-from").hover();
+        baseExpect(await css(page, "compose-from", "background-color")).toBe(await css(page, "probe-muted", "background-color"));
+      });
+      await scenario("the print sheet's and the remind popover's choices are the segmented control", async () => {
+        await freshNoDrafts(page, server);
+        await probes(page);
+        await openRow(page, 1);
+        await page.getByTestId("action-remind").click();
+        await segmented(page, "remind-kind", "remind-kind-always", "remind-kind-noReply", mode);
+        await page.keyboard.press("Escape");
+        await page.keyboard.press("ControlOrMeta+p");
+        await segmented(page, "print-content", "print-content-headers", "print-content-body", mode);
+      });
+      await scenario("Send later's time: Enter schedules it", async () => {
+        await freshNoDrafts(page, server);
+        await probes(page);
+        await focusList(page);
+        await page.keyboard.press("c");
+        await addRecipients(page, "compose-to", "ana@example.com");
+        await page.getByTestId("compose-send-later").click();
+        const popover = page.getByTestId("send-later-popover");
+        await popover.getByTestId("send-later-custom").click();
+        await typeTime(popover.getByTestId("send-later-time"), 10, 15, "AM");
+        await page.keyboard.press("Enter");
+        await baseExpect(page.locator("[data-testid=snack]").filter({ hasText: "10:15 AM" })).toBeVisible();
+      });
     });
 
     // plan 120: the print sheet's and the remind popover's own segmented controls are the shared one
-    test("the print sheet's and the remind popover's choices are the segmented control", async ({ app: page }) => {
-      await openRow(page, 1);
-      await page.getByTestId("action-remind").click();
-      await segmented(page, "remind-kind", "remind-kind-always", "remind-kind-noReply", mode);
-      await page.keyboard.press("Escape");
-      await page.keyboard.press("ControlOrMeta+p");
-      await segmented(page, "print-content", "print-content-headers", "print-content-body", mode);
-    });
-
-    test("the date picker's today keeps readable text when hovered and when chosen", async ({ app: page }) => {
-      await openRow(page, 1);
-      await page.getByTestId("action-remind").click();
-      const popover = page.getByTestId("remind-popover");
-      await popover.getByTestId("remind-pick").click();
-      await popover.getByTestId("remind-date").click();
-      const today = page.locator("[data-slot=calendar] button[data-today]");
-      const ink = await css(page, "probe-foreground", "color");
-      await today.hover();
-      baseExpect(await today.evaluate((el) => getComputedStyle(el).color)).toBe(ink);
-      await today.click();
-      await popover.getByTestId("remind-date").click();
-      await baseExpect(today).toHaveAttribute("data-selected", "true");
-      await page.mouse.move(1, 1);
-      baseExpect(await today.evaluate((el) => getComputedStyle(el).color)).toBe(ink);
+    test("the date picker and the Time Field", async ({ app: page, server }) => {
+      await scenario("the date picker's today keeps readable text when hovered and when chosen", async () => {
+        await openRow(page, 1);
+        await page.getByTestId("action-remind").click();
+        const popover = page.getByTestId("remind-popover");
+        await popover.getByTestId("remind-pick").click();
+        await popover.getByTestId("remind-date").click();
+        const today = page.locator("[data-slot=calendar] button[data-today]");
+        const ink = await css(page, "probe-foreground", "color");
+        await today.hover();
+        baseExpect(await today.evaluate((el) => getComputedStyle(el).color)).toBe(ink);
+        await today.click();
+        await popover.getByTestId("remind-date").click();
+        await baseExpect(today).toHaveAttribute("data-selected", "true");
+        await page.mouse.move(1, 1);
+        baseExpect(await today.evaluate((el) => getComputedStyle(el).color)).toBe(ink);
+      });
+      await scenario("the date picker's chosen day keeps readable text outside its month", async () => {
+        await freshNoDrafts(page, server);
+        await probes(page);
+        await openRow(page, 1);
+        await page.getByTestId("action-remind").click();
+        const popover = page.getByTestId("remind-popover");
+        await popover.getByTestId("remind-pick").click();
+        await popover.getByTestId("remind-date").click();
+        const calendar = page.locator("[data-slot=calendar]");
+        await calendar.locator(".rdp-button_next").click();
+        await calendar.locator(".rdp-button_next").click();
+        await calendar.locator('button[data-day="2026-12-01"]').click();
+        await popover.getByTestId("remind-date").click();
+        await calendar.locator(".rdp-button_previous").click();
+        const day = calendar.locator('button[data-day="2026-12-01"]');
+        await baseExpect(day).toHaveAttribute("data-outside", "true");
+        await baseExpect(day).toHaveAttribute("data-selected", "true");
+        await page.mouse.move(1, 1);
+        baseExpect(await day.evaluate((el) => getComputedStyle(el).color)).toBe(await css(page, "probe-foreground", "color"));
+      });
+      await scenario("the date and time: BoardUI's date trigger, both on the rows' width", async () => {
+        await freshNoDrafts(page, server);
+        await probes(page);
+        await openRow(page, 1);
+        await page.getByTestId("action-remind").click();
+        const popover = page.getByTestId("remind-popover");
+        await popover.getByTestId("remind-pick").click();
+        const box = async (id: string) => (await page.getByTestId(id).boundingBox())!;
+        const row = await box("remind-pick");
+        const date = await box("remind-date");
+        const time = await box("remind-time");
+        baseExpect(Math.abs(date.x - row.x), "the date starts on the row's edge").toBeLessThanOrEqual(0.5);
+        baseExpect(Math.abs(time.x + time.width - (row.x + row.width)), "the time ends on it").toBeLessThanOrEqual(0.5);
+        baseExpect(await css(page, "remind-date", "background-color"), "the secondary's card").toBe(await css(page, "probe-card", "background-color"));
+        baseExpect(await css(page, "remind-date", "border-top-width")).toBe("1px");
+        baseExpect(await css(page, "remind-date", "box-shadow")).not.toBe("none");
+      });
+      await scenario("the time is BoardUI's Time Field: typed segment by segment, the focused one in the primary", async () => {
+        await freshNoDrafts(page, server);
+        await probes(page);
+        await openRow(page, 1);
+        await page.getByTestId("action-remind").click();
+        const popover = page.getByTestId("remind-popover");
+        await popover.getByTestId("remind-pick").click();
+        const field = popover.getByTestId("remind-time");
+        await page.mouse.move(1, 1);
+        // the theme's secondary, as the date beside it: the card, a 1 px border, a shadow (no grey wash)
+        baseExpect(await css(page, "remind-time", "background-color"), "the card").toBe(await css(page, "probe-card", "background-color"));
+        baseExpect(await css(page, "remind-time", "background-color")).toBe(await css(page, "remind-date", "background-color"));
+        baseExpect(await css(page, "remind-time", "border-top-width")).toBe("1px");
+        baseExpect(await css(page, "remind-time", "box-shadow")).not.toBe("none");
+        await typeTime(field, 2, 30, "PM");
+        baseExpect(await timeText(field)).toBe("2:30 PM");
+        const minute = field.locator("[role=spinbutton]").nth(1);
+        await minute.click();
+        await page.keyboard.press("ArrowUp");
+        baseExpect(await timeText(field)).toBe("2:31 PM");
+        baseExpect(await minute.evaluate((el) => getComputedStyle(el).backgroundColor), "the focused segment").toBe(await css(page, "probe-primary", "background-color"));
+      });
+      await scenario("the Time Field: cleared it sets nothing, Enter sets it, a past time is marked", async () => {
+        await freshNoDrafts(page, server);
+        await probes(page);
+        await openRow(page, 1);
+        await page.getByTestId("action-remind").click();
+        const popover = page.getByTestId("remind-popover");
+        await popover.getByTestId("remind-pick").click();
+        const field = popover.getByTestId("remind-time");
+        // today (E2E_NOW is 9:30 AM) at 9:00 AM: past, the field's border in the error color
+        await popover.getByTestId("remind-date").click();
+        await page.locator('[data-slot=calendar] button[data-day="2026-10-22"]').click();
+        await typeTime(field, 9, 0, "AM");
+        await baseExpect(popover.getByTestId("remind-past")).toBeVisible();
+        baseExpect(await css(page, "remind-time", "border-top-color")).toBe(await css(page, "probe-destructive", "border-top-color"));
+        // cleared: Set is off, and Enter does nothing
+        await typeTime(field, 4, 0, "PM");
+        await field.locator("[role=spinbutton]").first().click();
+        await page.keyboard.press("Backspace");
+        await page.keyboard.press("Backspace");
+        await baseExpect(popover.getByTestId("remind-set")).toBeDisabled();
+        // the cleared hour, focused: its dashes in the primary's own text color, on the primary
+        const hour = field.locator("[role=spinbutton]").first();
+        await baseExpect(hour).toHaveAttribute("data-placeholder", "true");
+        baseExpect(await hour.evaluate((el) => getComputedStyle(el).color)).toBe(await css(page, "probe-primary-ink-on", "color"));
+        await page.keyboard.press("Enter");
+        await baseExpect(popover).toBeVisible();
+        // whole again and in the future: Enter sets it
+        await typeTime(field, 4, 0, "PM");
+        await baseExpect(popover.getByTestId("remind-set")).toBeEnabled();
+        await page.keyboard.press("Enter");
+        await baseExpect(popover).toBeHidden();
+        await baseExpect(page.locator("[data-testid=snack]").filter({ hasText: "4:00 PM" })).toBeVisible();
+      });
+      await scenario("the date picker marks today with a dot", async () => {
+        await freshNoDrafts(page, server);
+        await probes(page);
+        await openRow(page, 1);
+        await page.getByTestId("action-remind").click();
+        const popover = page.getByTestId("remind-popover");
+        await popover.getByTestId("remind-pick").click();
+        await popover.getByTestId("remind-date").click();
+        await page.mouse.move(1, 1);
+        // tomorrow is chosen by default: today rests unfilled
+        const today = page.locator("[data-slot=calendar] button[data-today]");
+        const dot = await today.evaluate((el) => ({ bg: getComputedStyle(el, "::after").backgroundColor, w: getComputedStyle(el, "::after").width, color: getComputedStyle(el).color }));
+        baseExpect(dot).toEqual({ bg: await css(page, "probe-primary", "background-color"), w: "4px", color: await css(page, "probe-foreground", "color") });
+      });
     });
 
     // plan 120 review: a chosen day shown as another month's (December 1 in November's last row) is the ink too
-    test("the date picker's chosen day keeps readable text outside its month", async ({ app: page }) => {
-      await openRow(page, 1);
-      await page.getByTestId("action-remind").click();
-      const popover = page.getByTestId("remind-popover");
-      await popover.getByTestId("remind-pick").click();
-      await popover.getByTestId("remind-date").click();
-      const calendar = page.locator("[data-slot=calendar]");
-      await calendar.locator(".rdp-button_next").click();
-      await calendar.locator(".rdp-button_next").click();
-      await calendar.locator('button[data-day="2026-12-01"]').click();
-      await popover.getByTestId("remind-date").click();
-      await calendar.locator(".rdp-button_previous").click();
-      const day = calendar.locator('button[data-day="2026-12-01"]');
-      await baseExpect(day).toHaveAttribute("data-outside", "true");
-      await baseExpect(day).toHaveAttribute("data-selected", "true");
-      await page.mouse.move(1, 1);
-      baseExpect(await day.evaluate((el) => getComputedStyle(el).color)).toBe(await css(page, "probe-foreground", "color"));
-    });
-
     // plan 121: BoardUI's date-picker trigger, the date and time as wide as the rows above them
-    test("the date and time: BoardUI's date trigger, both on the rows' width", async ({ app: page }) => {
-      await openRow(page, 1);
-      await page.getByTestId("action-remind").click();
-      const popover = page.getByTestId("remind-popover");
-      await popover.getByTestId("remind-pick").click();
-      const box = async (id: string) => (await page.getByTestId(id).boundingBox())!;
-      const row = await box("remind-pick");
-      const date = await box("remind-date");
-      const time = await box("remind-time");
-      baseExpect(Math.abs(date.x - row.x), "the date starts on the row's edge").toBeLessThanOrEqual(0.5);
-      baseExpect(Math.abs(time.x + time.width - (row.x + row.width)), "the time ends on it").toBeLessThanOrEqual(0.5);
-      baseExpect(await css(page, "remind-date", "background-color"), "the secondary's card").toBe(await css(page, "probe-card", "background-color"));
-      baseExpect(await css(page, "remind-date", "border-top-width")).toBe("1px");
-      baseExpect(await css(page, "remind-date", "box-shadow")).not.toBe("none");
-    });
-
     // plan 122: BoardUI's Time Field, typed segment by segment, in the theme's secondary chrome
-    test("the time is BoardUI's Time Field: typed segment by segment, the focused one in the primary", async ({ app: page }) => {
-      await openRow(page, 1);
-      await page.getByTestId("action-remind").click();
-      const popover = page.getByTestId("remind-popover");
-      await popover.getByTestId("remind-pick").click();
-      const field = popover.getByTestId("remind-time");
-      await page.mouse.move(1, 1);
-      // the theme's secondary, as the date beside it: the card, a 1 px border, a shadow (no grey wash)
-      baseExpect(await css(page, "remind-time", "background-color"), "the card").toBe(await css(page, "probe-card", "background-color"));
-      baseExpect(await css(page, "remind-time", "background-color")).toBe(await css(page, "remind-date", "background-color"));
-      baseExpect(await css(page, "remind-time", "border-top-width")).toBe("1px");
-      baseExpect(await css(page, "remind-time", "box-shadow")).not.toBe("none");
-      await typeTime(field, 2, 30, "PM");
-      baseExpect(await timeText(field)).toBe("2:30 PM");
-      const minute = field.locator("[role=spinbutton]").nth(1);
-      await minute.click();
-      await page.keyboard.press("ArrowUp");
-      baseExpect(await timeText(field)).toBe("2:31 PM");
-      baseExpect(await minute.evaluate((el) => getComputedStyle(el).backgroundColor), "the focused segment").toBe(await css(page, "probe-primary", "background-color"));
-    });
-
     // plan 122 review: a cleared time sets nothing; Enter in the time sets it; a past one shows the error border
-    test("the Time Field: cleared it sets nothing, Enter sets it, a past time is marked", async ({ app: page }) => {
-      await openRow(page, 1);
-      await page.getByTestId("action-remind").click();
-      const popover = page.getByTestId("remind-popover");
-      await popover.getByTestId("remind-pick").click();
-      const field = popover.getByTestId("remind-time");
-      // today (E2E_NOW is 9:30 AM) at 9:00 AM: past, the field's border in the error color
-      await popover.getByTestId("remind-date").click();
-      await page.locator('[data-slot=calendar] button[data-day="2026-10-22"]').click();
-      await typeTime(field, 9, 0, "AM");
-      await baseExpect(popover.getByTestId("remind-past")).toBeVisible();
-      baseExpect(await css(page, "remind-time", "border-top-color")).toBe(await css(page, "probe-destructive", "border-top-color"));
-      // cleared: Set is off, and Enter does nothing
-      await typeTime(field, 4, 0, "PM");
-      await field.locator("[role=spinbutton]").first().click();
-      await page.keyboard.press("Backspace");
-      await page.keyboard.press("Backspace");
-      await baseExpect(popover.getByTestId("remind-set")).toBeDisabled();
-      // the cleared hour, focused: its dashes in the primary's own text color, on the primary
-      const hour = field.locator("[role=spinbutton]").first();
-      await baseExpect(hour).toHaveAttribute("data-placeholder", "true");
-      baseExpect(await hour.evaluate((el) => getComputedStyle(el).color)).toBe(await css(page, "probe-primary-ink-on", "color"));
-      await page.keyboard.press("Enter");
-      await baseExpect(popover).toBeVisible();
-      // whole again and in the future: Enter sets it
-      await typeTime(field, 4, 0, "PM");
-      await baseExpect(popover.getByTestId("remind-set")).toBeEnabled();
-      await page.keyboard.press("Enter");
-      await baseExpect(popover).toBeHidden();
-      await baseExpect(page.locator("[data-testid=snack]").filter({ hasText: "4:00 PM" })).toBeVisible();
-    });
-
-    test("Send later's time: Enter schedules it", async ({ app: page }) => {
-      await focusList(page);
-      await page.keyboard.press("c");
-      await addRecipients(page, "compose-to", "ana@example.com");
-      await page.getByTestId("compose-send-later").click();
-      const popover = page.getByTestId("send-later-popover");
-      await popover.getByTestId("send-later-custom").click();
-      await typeTime(popover.getByTestId("send-later-time"), 10, 15, "AM");
-      await page.keyboard.press("Enter");
-      await baseExpect(page.locator("[data-testid=snack]").filter({ hasText: "10:15 AM" })).toBeVisible();
-    });
-
     // plan 125: BoardUI's alert dialog, its footer a plain row inside the panel, the confirm the solid danger
-    test("a confirm dialog: one surface, the actions inside its inset, the danger confirm solid", async ({ app: page }) => {
-      await page.locator("[data-testid^=nav-category-]").first().click({ button: "right" });
-      await page.getByTestId("category-menu-delete").click();
-      const dialog = page.getByTestId("category-delete-dialog");
-      await baseExpect(dialog).toBeVisible();
-      await dialog.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
-      const footer = dialog.locator("[data-slot=alert-dialog-footer]");
-      baseExpect(await footer.evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).borderTopWidth])).toEqual(["rgba(0, 0, 0, 0)", "0px"]);
-      const [panel, row] = [(await dialog.boundingBox())!, (await footer.boundingBox())!];
-      baseExpect(panel.y + panel.height - (row.y + row.height), "the footer sits 24 px above the panel's bottom, inside its corners").toBeCloseTo(24, 0);
-      baseExpect(await dialog.evaluate((el) => getComputedStyle(el).boxShadow)).not.toBe("none");
-      const confirm = page.getByTestId("category-delete-dialog-confirm");
-      baseExpect(await confirm.evaluate((el) => getComputedStyle(el).backgroundImage)).toContain("linear-gradient");
-      baseExpect(await confirm.evaluate((el) => getComputedStyle(el).color)).toBe(await css(page, "probe-danger-ink", "color"));
-      baseExpect(await confirm.evaluate((el) => getComputedStyle(el).getPropertyValue("--tw-gradient-from").trim())).toBe(await css(page, "probe-danger", "background-color"));
+    test("restyled surfaces: a confirm, a close, menu rows, a tooltip, a select", async ({ app: page }) => {
+      await scenario("a confirm dialog: one surface, the actions inside its inset, the danger confirm solid", async () => {
+        await page.locator("[data-testid^=nav-category-]").first().click({ button: "right" });
+        await page.getByTestId("category-menu-delete").click();
+        const dialog = page.getByTestId("category-delete-dialog");
+        await baseExpect(dialog).toBeVisible();
+        await dialog.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+        const footer = dialog.locator("[data-slot=alert-dialog-footer]");
+        baseExpect(await footer.evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).borderTopWidth])).toEqual(["rgba(0, 0, 0, 0)", "0px"]);
+        const [panel, row] = [(await dialog.boundingBox())!, (await footer.boundingBox())!];
+        baseExpect(panel.y + panel.height - (row.y + row.height), "the footer sits 24 px above the panel's bottom, inside its corners").toBeCloseTo(24, 0);
+        baseExpect(await dialog.evaluate((el) => getComputedStyle(el).boxShadow)).not.toBe("none");
+        const confirm = page.getByTestId("category-delete-dialog-confirm");
+        baseExpect(await confirm.evaluate((el) => getComputedStyle(el).backgroundImage)).toContain("linear-gradient");
+        baseExpect(await confirm.evaluate((el) => getComputedStyle(el).color)).toBe(await css(page, "probe-danger-ink", "color"));
+        baseExpect(await confirm.evaluate((el) => getComputedStyle(el).getPropertyValue("--tw-gradient-from").trim())).toBe(await css(page, "probe-danger", "background-color"));
+      });
+      await scenario("a dialog's close sits in its header row, at the panel's inset", async () => {
+        await freshStart(page);
+        await probes(page);
+        await focusList(page);
+        await page.keyboard.press("?");
+        const dialog = page.getByTestId("shortcuts-dialog");
+        await baseExpect(dialog).toBeVisible();
+        await dialog.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+        const close = dialog.getByRole("button", { name: "Close" });
+        const title = dialog.locator("[data-slot=dialog-title]");
+        const [panel, c, t] = [(await dialog.boundingBox())!, (await close.boundingBox())!, (await title.boundingBox())!];
+        const line = parseFloat(await title.evaluate((el) => getComputedStyle(el).lineHeight));
+        baseExpect(Math.abs(c.y + c.height / 2 - (t.y + line / 2)), "centred on the title's first line").toBeLessThanOrEqual(0.5);
+        baseExpect(panel.x + panel.width - (c.x + c.width), "at the 24 px inset").toBeCloseTo(24, 0);
+        baseExpect(await close.evaluate((el) => parseFloat(getComputedStyle(el).borderRadius) >= el.getBoundingClientRect().width / 2), "round").toBe(true);
+        baseExpect(await dialog.locator("[data-slot=dialog-header]").evaluate((el) => getComputedStyle(el).paddingInlineEnd)).toBe("32px");
+      });
+      await scenario("menu rows are medium, 2 px apart; separators run to the panel's edges", async () => {
+        await freshStart(page);
+        await probes(page);
+        await page.getByTestId("thread-row").first().click({ button: "right" });
+        const menu = page.locator("[data-slot=context-menu-content]");
+        await baseExpect(menu).toBeVisible();
+        await menu.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+        const [reply, all] = [menu.getByTestId("menu-reply"), menu.getByTestId("menu-reply-all")];
+        baseExpect(await reply.evaluate((el) => getComputedStyle(el).fontWeight)).toBe("500");
+        const [a, b] = [(await reply.boundingBox())!, (await all.boundingBox())!];
+        baseExpect(b.y - (a.y + a.height), "2 px between rows").toBeCloseTo(2, 1);
+        const sep = menu.locator("[role=separator]").first();
+        const [panel, line] = [(await menu.boundingBox())!, (await sep.boundingBox())!];
+        baseExpect(line.x, "from the panel's start").toBeCloseTo(panel.x, 1);
+        baseExpect(line.width, "to its end").toBeCloseTo(panel.width, 1);
+      });
+      await scenario("a tooltip is medium text with a caret", async () => {
+        await freshStart(page);
+        await probes(page);
+        await focusList(page);
+        await page.keyboard.press("c");
+        await page.getByTestId("compose-send-later").hover();
+        const tip = page.locator("[data-slot=tooltip-content]");
+        await baseExpect(tip).toBeVisible();
+        baseExpect(await tip.evaluate((el) => getComputedStyle(el).fontWeight)).toBe("500");
+        const arrow = tip.locator("[data-slot=tooltip-arrow]");
+        await baseExpect(arrow).toBeVisible();
+        baseExpect(await arrow.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await css(page, "probe-popover", "background-color"));
+        // the caret points at the trigger: it reaches past the tooltip's edge on the trigger's side
+        const [t, c] = [(await tip.boundingBox())!, (await arrow.boundingBox())!];
+        if ((await arrow.getAttribute("data-side")) === "bottom") baseExpect(c.y).toBeLessThan(t.y);
+        else baseExpect(c.y + c.height).toBeGreaterThan(t.y + t.height);
+      });
+      await scenario("a select opens below its trigger, the chosen row filled with no check, its chevron turned", async () => {
+        await freshStart(page);
+        await probes(page);
+        await focusList(page);
+        await page.keyboard.press("c");
+        const trigger = page.getByTestId("compose-from");
+        await trigger.click();
+        const popup = page.locator("[data-slot=select-content]");
+        await baseExpect(popup).toBeVisible();
+        await popup.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+        const [tr, pop] = [(await trigger.boundingBox())!, (await popup.boundingBox())!];
+        baseExpect(pop.y - (tr.y + tr.height), "4 px below the trigger, not over it").toBeCloseTo(4, 0);
+        baseExpect(pop.width).toBeGreaterThanOrEqual(tr.width - 0.5);
+        const chosen = popup.locator("[role=option][aria-selected=true]");
+        await page.mouse.move(1, 1);
+        baseExpect(await chosen.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await css(page, "probe-muted", "background-color"));
+        await baseExpect(chosen.locator("svg")).toHaveCount(0);
+        const turned = await trigger.locator("svg").last().evaluate((el) => getComputedStyle(el).rotate);
+        baseExpect(turned).toBe("180deg");
+      });
     });
 
     // plan 125: the dialog's close is the round CloseButton on the title's first line, the header leaving it room
-    test("a dialog's close sits in its header row, at the panel's inset", async ({ app: page }) => {
-      await focusList(page);
-      await page.keyboard.press("?");
-      const dialog = page.getByTestId("shortcuts-dialog");
-      await baseExpect(dialog).toBeVisible();
-      await dialog.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
-      const close = dialog.getByRole("button", { name: "Close" });
-      const title = dialog.locator("[data-slot=dialog-title]");
-      const [panel, c, t] = [(await dialog.boundingBox())!, (await close.boundingBox())!, (await title.boundingBox())!];
-      const line = parseFloat(await title.evaluate((el) => getComputedStyle(el).lineHeight));
-      baseExpect(Math.abs(c.y + c.height / 2 - (t.y + line / 2)), "centred on the title's first line").toBeLessThanOrEqual(0.5);
-      baseExpect(panel.x + panel.width - (c.x + c.width), "at the 24 px inset").toBeCloseTo(24, 0);
-      baseExpect(await close.evaluate((el) => parseFloat(getComputedStyle(el).borderRadius) >= el.getBoundingClientRect().width / 2), "round").toBe(true);
-      baseExpect(await dialog.locator("[data-slot=dialog-header]").evaluate((el) => getComputedStyle(el).paddingInlineEnd)).toBe("32px");
-    });
-
     // plan 125: BoardUI's menu rows, by a real right-click menu
-    test("menu rows are medium, 2 px apart; separators run to the panel's edges", async ({ app: page }) => {
-      await page.getByTestId("thread-row").first().click({ button: "right" });
-      const menu = page.locator("[data-slot=context-menu-content]");
-      await baseExpect(menu).toBeVisible();
-      await menu.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
-      const [reply, all] = [menu.getByTestId("menu-reply"), menu.getByTestId("menu-reply-all")];
-      baseExpect(await reply.evaluate((el) => getComputedStyle(el).fontWeight)).toBe("500");
-      const [a, b] = [(await reply.boundingBox())!, (await all.boundingBox())!];
-      baseExpect(b.y - (a.y + a.height), "2 px between rows").toBeCloseTo(2, 1);
-      const sep = menu.locator("[role=separator]").first();
-      const [panel, line] = [(await menu.boundingBox())!, (await sep.boundingBox())!];
-      baseExpect(line.x, "from the panel's start").toBeCloseTo(panel.x, 1);
-      baseExpect(line.width, "to its end").toBeCloseTo(panel.width, 1);
-    });
-
     // plan 125: BoardUI's tooltip has a caret, in the panel's fill
-    test("a tooltip is medium text with a caret", async ({ app: page }) => {
-      await focusList(page);
-      await page.keyboard.press("c");
-      await page.getByTestId("compose-send-later").hover();
-      const tip = page.locator("[data-slot=tooltip-content]");
-      await baseExpect(tip).toBeVisible();
-      baseExpect(await tip.evaluate((el) => getComputedStyle(el).fontWeight)).toBe("500");
-      const arrow = tip.locator("[data-slot=tooltip-arrow]");
-      await baseExpect(arrow).toBeVisible();
-      baseExpect(await arrow.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await css(page, "probe-popover", "background-color"));
-      // the caret points at the trigger: it reaches past the tooltip's edge on the trigger's side
-      const [t, c] = [(await tip.boundingBox())!, (await arrow.boundingBox())!];
-      if ((await arrow.getAttribute("data-side")) === "bottom") baseExpect(c.y).toBeLessThan(t.y);
-      else baseExpect(c.y + c.height).toBeGreaterThan(t.y + t.height);
-    });
-
     // plan 125: BoardUI's select, below its trigger, the chosen row filled, the chevron turned
-    test("a select opens below its trigger, the chosen row filled with no check, its chevron turned", async ({ app: page }) => {
-      await focusList(page);
-      await page.keyboard.press("c");
-      const trigger = page.getByTestId("compose-from");
-      await trigger.click();
-      const popup = page.locator("[data-slot=select-content]");
-      await baseExpect(popup).toBeVisible();
-      await popup.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
-      const [tr, pop] = [(await trigger.boundingBox())!, (await popup.boundingBox())!];
-      baseExpect(pop.y - (tr.y + tr.height), "4 px below the trigger, not over it").toBeCloseTo(4, 0);
-      baseExpect(pop.width).toBeGreaterThanOrEqual(tr.width - 0.5);
-      const chosen = popup.locator("[role=option][aria-selected=true]");
-      await page.mouse.move(1, 1);
-      baseExpect(await chosen.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await css(page, "probe-muted", "background-color"));
-      await baseExpect(chosen.locator("svg")).toHaveCount(0);
-      const turned = await trigger.locator("svg").last().evaluate((el) => getComputedStyle(el).rotate);
-      baseExpect(turned).toBe("180deg");
-    });
-
     // plan 125: BoardUI's calendar marks today with a dot in the primary, its number in the ink
-    test("the date picker marks today with a dot", async ({ app: page }) => {
-      await openRow(page, 1);
-      await page.getByTestId("action-remind").click();
-      const popover = page.getByTestId("remind-popover");
-      await popover.getByTestId("remind-pick").click();
-      await popover.getByTestId("remind-date").click();
-      await page.mouse.move(1, 1);
-      // tomorrow is chosen by default: today rests unfilled
-      const today = page.locator("[data-slot=calendar] button[data-today]");
-      const dot = await today.evaluate((el) => ({ bg: getComputedStyle(el, "::after").backgroundColor, w: getComputedStyle(el, "::after").width, color: getComputedStyle(el).color }));
-      baseExpect(dot).toEqual({ bg: await css(page, "probe-primary", "background-color"), w: "4px", color: await css(page, "probe-foreground", "color") });
-    });
-
-    test("the draft's From selector fills on hover", async ({ app: page }) => {
-      await focusList(page);
-      await page.keyboard.press("c");
-      await page.getByTestId("compose-from").hover();
-      baseExpect(await css(page, "compose-from", "background-color")).toBe(await css(page, "probe-muted", "background-color"));
-    });
   });
 }

@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { expect, rows, test } from "./fixtures";
+import { expect, rows, test, scenario, freshStart } from "./fixtures";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 
 // the tip is seen already in every other spec (fixtures): here it's a first category
@@ -50,68 +50,73 @@ test.describe("the first new category's tip (plan 113)", () => {
     await expect(tip(page)).toHaveCount(0);
   });
 
-  test("a right-click on the row closes it and opens the category's menu", async ({ app: page, server }) => {
-    const id = await create(page, server, "LinkedIn");
-    await expect(tip(page)).toBeVisible();
-    await page.getByTestId(`nav-category-${id}`).click({ button: "right" });
-    await expect(page.getByTestId(`category-menu-${id}`)).toBeVisible();
-    await expect(tip(page)).toHaveCount(0);
-    // Show in Inbox, as it said: the eye-off goes
-    await page.getByTestId("category-menu-show-in-inbox").click();
-    await expect(page.getByTestId(`nav-category-hidden-${id}`)).toHaveCount(0);
-    await expect(tip(page)).toHaveCount(0);
+  test("the tip closes: a right-click, Escape, in a search", async ({ app: page, server }) => {
+    await scenario("a right-click on the row closes it and opens the category's menu", async () => {
+      const id = await create(page, server, "LinkedIn");
+      await expect(tip(page)).toBeVisible();
+      await page.getByTestId(`nav-category-${id}`).click({ button: "right" });
+      await expect(page.getByTestId(`category-menu-${id}`)).toBeVisible();
+      await expect(tip(page)).toHaveCount(0);
+      // Show in Inbox, as it said: the eye-off goes
+      await page.getByTestId("category-menu-show-in-inbox").click();
+      await expect(page.getByTestId(`nav-category-hidden-${id}`)).toHaveCount(0);
+      await expect(tip(page)).toHaveCount(0);
+    });
+    await scenario("Escape closes it, and only it", async () => {
+      await freshStart(page);
+      const id = await create(page, server, "LinkedIn");
+      await expect(tip(page)).toBeVisible();
+      const before = await page.evaluate(() => (window as unknown as { __terno: { getApp(): { categoryId: number | null } } }).__terno.getApp().categoryId);
+      expect(before).toBe(id);
+      await page.keyboard.press("Escape");
+      await expect(tip(page)).toHaveCount(0);
+      expect(await page.evaluate(() => (window as unknown as { __terno: { getApp(): { categoryId: number | null } } }).__terno.getApp().categoryId)).toBe(id);
+    });
+    await scenario("Escape while typing a search closes the tip and leaves the search as it was (Codex review)", async () => {
+      await freshStart(page);
+      await create(page, server, "LinkedIn");
+      await expect(tip(page)).toBeVisible();
+      await page.keyboard.press("/");
+      const search = page.getByTestId("search-input");
+      await expect(search).toBeFocused();
+      await page.keyboard.type("factura");
+      await page.keyboard.press("Escape");
+      await expect(tip(page)).toHaveCount(0);
+      await expect(search).toHaveValue("factura");
+      await expect(search).toBeFocused();
+    });
   });
 
-  test("Escape closes it, and only it", async ({ app: page, server }) => {
-    const id = await create(page, server, "LinkedIn");
-    await expect(tip(page)).toBeVisible();
-    const before = await page.evaluate(() => (window as unknown as { __terno: { getApp(): { categoryId: number | null } } }).__terno.getApp().categoryId);
-    expect(before).toBe(id);
-    await page.keyboard.press("Escape");
-    await expect(tip(page)).toHaveCount(0);
-    expect(await page.evaluate(() => (window as unknown as { __terno: { getApp(): { categoryId: number | null } } }).__terno.getApp().categoryId)).toBe(id);
+  test("the tip waits for what's in front: the picker, Settings", async ({ app: page, server }) => {
+    await scenario("from the picker, it waits for the picker to close, then points at the row", async () => {
+      await rows(page).first().dispatchEvent("mousedown");
+      await page.keyboard.press("l");
+      await expect(page.getByTestId("category-picker").getByRole("combobox")).toBeFocused();
+      await page.keyboard.type("LinkedIn");
+      await page.getByTestId("create-category").click();
+      await expect(page.getByTestId("category-picker")).toHaveCount(0);
+      const id = categoryId(server, "LinkedIn");
+      await expect(tip(page)).toBeVisible();
+      const row = (await page.getByTestId(`nav-category-${id}`).boundingBox())!;
+      expect((await tip(page).boundingBox())!.x).toBeGreaterThan(row.x + row.width);
+      // a dialog over it ends it
+      await page.keyboard.press("Meta+k");
+      await expect(page.getByTestId("palette-input")).toBeVisible();
+      await expect(tip(page)).toHaveCount(0);
+    });
+    await scenario("from Settings, it waits for Settings to close", async () => {
+      await freshStart(page);
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-categories").click();
+      await page.getByTestId("category-new").fill("LinkedIn");
+      await page.getByTestId("category-create").click();
+      await expect(page.getByTestId("sidebar").getByText("LinkedIn", { exact: true })).toBeAttached();
+      await expect(tip(page)).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(tip(page)).toBeVisible();
+      const row = (await page.getByTestId(`nav-category-${categoryId(server, "LinkedIn")}`).boundingBox())!;
+      expect((await tip(page).boundingBox())!.x).toBeGreaterThan(row.x + row.width);
+    });
   });
 
-  test("Escape while typing a search closes the tip and leaves the search as it was (Codex review)", async ({ app: page, server }) => {
-    await create(page, server, "LinkedIn");
-    await expect(tip(page)).toBeVisible();
-    await page.keyboard.press("/");
-    const search = page.getByTestId("search-input");
-    await expect(search).toBeFocused();
-    await page.keyboard.type("factura");
-    await page.keyboard.press("Escape");
-    await expect(tip(page)).toHaveCount(0);
-    await expect(search).toHaveValue("factura");
-    await expect(search).toBeFocused();
-  });
-
-  test("from the picker, it waits for the picker to close, then points at the row", async ({ app: page, server }) => {
-    await rows(page).first().dispatchEvent("mousedown");
-    await page.keyboard.press("l");
-    await expect(page.getByTestId("category-picker").getByRole("combobox")).toBeFocused();
-    await page.keyboard.type("LinkedIn");
-    await page.getByTestId("create-category").click();
-    await expect(page.getByTestId("category-picker")).toHaveCount(0);
-    const id = categoryId(server, "LinkedIn");
-    await expect(tip(page)).toBeVisible();
-    const row = (await page.getByTestId(`nav-category-${id}`).boundingBox())!;
-    expect((await tip(page).boundingBox())!.x).toBeGreaterThan(row.x + row.width);
-    // a dialog over it ends it
-    await page.keyboard.press("Meta+k");
-    await expect(page.getByTestId("palette-input")).toBeVisible();
-    await expect(tip(page)).toHaveCount(0);
-  });
-
-  test("from Settings, it waits for Settings to close", async ({ app: page, server }) => {
-    await page.getByTestId("open-settings").click();
-    await page.getByTestId("tab-categories").click();
-    await page.getByTestId("category-new").fill("LinkedIn");
-    await page.getByTestId("category-create").click();
-    await expect(page.getByTestId("sidebar").getByText("LinkedIn", { exact: true })).toBeAttached();
-    await expect(tip(page)).toHaveCount(0);
-    await page.keyboard.press("Escape");
-    await expect(tip(page)).toBeVisible();
-    const row = (await page.getByTestId(`nav-category-${categoryId(server, "LinkedIn")}`).boundingBox())!;
-    expect((await tip(page).boundingBox())!.x).toBeGreaterThan(row.x + row.width);
-  });
 });
