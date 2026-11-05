@@ -154,7 +154,7 @@ async function smtpServer(owned = cleanup) {
 }
 
 // Both stores keep staged assets through an SMTP refusal, a reopen and a new composition, at several chunks. The size
-// limits are decided before any store command (backend/attachments.ts): attachment-limits-interruption.int has them.
+// limit below is each store's own check; attachment-limits-interruption.int has it end to end.
 async function refuseSmtp(adapter: "sql" | "idb", owned: typeof cleanup) {
   const smtp = await smtpServer(owned), t = await setup(adapter, smtp.port, owned);
   const bytes = [binary(ATTACHMENT_CHUNK * 2 + 13, 3), binary(ATTACHMENT_CHUNK + 7, 91)];
@@ -235,6 +235,16 @@ for (const adapter of ["sql", "idb"] as const) {
   });
 }
 
+// The size in the ref is what it reads, so nothing needs staging; without the check, an unknown asset is another refusal.
+it.each(["sql", "idb"] as const)("%s: a message whose encoding doesn't fit is refused before the draft goes", async (adapter) => {
+  const t = await setup(adapter), draft = await save(t, []);
+  const attachments = [{ assetId: "not-staged", filename: "large.bin", mime: "application/octet-stream", size: MAX_ATTACHMENT_BYTES }];
+  await expect(t.backend.store.compose.queueSend({ accountId: t.accountId, to, subject: draft.subject, bodyText: "x".repeat(1024 * 1024), attachments, draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision, now: 1000 }))
+    .rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("too large") });
+  expect(await t.client.call("drafts.list", {})).toEqual([draft]);
+  expect(await t.client.call("ops.list", {})).toEqual([]);
+});
+
 it("a message at the attachment limit reaches SMTP byte for byte", async () => {
   const smtp = await smtpServer(); smtp.accept();
   const t = await setup("sql", smtp.port), bytes = [binary(MAX_ATTACHMENT_BYTES - ATTACHMENT_CHUNK - 7, 3), binary(ATTACHMENT_CHUNK + 7, 91)];
@@ -244,7 +254,7 @@ it("a message at the attachment limit reaches SMTP byte for byte", async () => {
   expect((await t.backend.store.ops.get(opId))?.state).toBe("succeeded");
   expect(smtp.received).toHaveLength(1);
   await wire(smtp.received[0]!, bytes, JSON.parse(queued.payload).messageId);
-});
+}, 60_000); // 18 MB through JavaScript base64 three times: 10 s on a quiet machine
 
 it.each(["sql", "idb"] as const)("%s: managed Gmail unknown survives reopen and only public explicit retry publishes", async (adapter) => {
   const t = await setup(adapter), bytes = [binary(ATTACHMENT_CHUNK + 7, 17), binary(ATTACHMENT_CHUNK * 2 + 13, 43)];
