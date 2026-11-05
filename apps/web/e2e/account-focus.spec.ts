@@ -2,12 +2,10 @@
  * Plan 108: focus on one account. The sidebar shows only it (a way back, its name and address, every view, its
  * Gmail tabs and its own folders), shortcuts and search stay in it, and the back arrow is the all-accounts Inbox.
  */
-import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 import { expect, focusList, search, test } from "./fixtures";
 
-const ctx = { clientId: "setup", origin: "dev" as const };
 const accountOf = (server: DevServer, name: string) => sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM accounts WHERE display_name = ?", name)!.id;
 async function accountIds(page: Page): Promise<number[]> {
   const ids = await page.locator('[data-testid^="nav-account-"]').evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-testid")!.slice("nav-account-".length))));
@@ -184,6 +182,7 @@ test.describe("focus on one account", () => {
     await focusFromMenu(page, a!);
     await focusList(page);
     await page.keyboard.press("ControlOrMeta+k");
+    await expect(page.getByRole("dialog").getByRole("combobox")).toBeFocused();
     await page.keyboard.type("zzqx");
     await expect(page.getByRole("dialog")).toContainText(`Search for “zzqx” in ${name}`);
     await page.keyboard.press("Escape");
@@ -224,19 +223,6 @@ test.describe("focus on one account", () => {
     await expect(page.getByTestId(`nav-account-${last}`)).toBeInViewport();
     expect(Math.abs((await nav.evaluate((el) => el.scrollTop)) - scrolled)).toBeLessThan(40);
   });
-
-  for (const mode of ["light", "dark"] as const) {
-    test(`the focused sidebar is axe-clean, ${mode}`, async ({ app: page, server }) => {
-      await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      await focusFromMenu(page, accountOf(server, "Acme Studio"));
-      await page.getByTestId("solo-title").hover();
-      if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/focus-${mode}.png` });
-      const r = await new AxeBuilder({ page }).include("#app-sidebar").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
-      expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
-    });
-  }
 });
 
 test.describe("focus on one account, List layout", () => {

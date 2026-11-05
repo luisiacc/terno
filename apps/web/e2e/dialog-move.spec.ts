@@ -2,7 +2,6 @@
  * Plan 129: a config dialog drags aside to show what's behind it, stays where it's put for the session, and never gets
  * lost past the window's edge.
  */
-import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
 import { expect, focusList, test } from "./fixtures";
@@ -232,16 +231,6 @@ test.describe("config dialogs move (plan 129)", () => {
     await drag(page, dialog.locator("[data-slot=dialog-header]"), 100, 40);
     expect((await box(dialog)).x).toBeCloseTo(start.x, 0);
     await expect(dialog).not.toHaveAttribute("data-movable");
-  });
-
-  test("a moved Settings is still clean for axe, in light and dark", async ({ app: page }) => {
-    await openSettings(page);
-    await drag(page, page.getByTestId("settings-header"), -150, 40);
-    for (const theme of ["light", "dark"]) {
-      await page.evaluate((t) => { document.documentElement.dataset.theme = t; }, theme);
-      const { violations } = await new AxeBuilder({ page }).include("[data-testid=settings-dialog]").analyze();
-      expect(violations).toEqual([]);
-    }
   });
 });
 

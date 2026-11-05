@@ -3,7 +3,6 @@
  * mailbox: Acme Studio's labels ("Proyectos" › "Rediseño web", "Equipo"), Freelance's IMAP folders with a group
  * that's only a parent ("Facturación" › "2026").
  */
-import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 import { expect, test } from "./fixtures";
@@ -115,20 +114,6 @@ test.describe("an account's own folders", () => {
     await page.keyboard.press("Enter");
     await expect.poll(() => listFor(page)).toEqual(["all", acme, null, null, null, "Label_23", ""]);
   });
-
-  for (const mode of ["light", "dark"] as const) {
-    test(`axe with an account's folders open, ${mode}`, async ({ app: page, server }) => {
-      await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      const freelance = accountOf(server, "Freelance");
-      await page.getByTestId(`nav-account-${freelance}`).click();
-      await own(page, freelance, "Facturación/2026").click();
-      await own(page, freelance, "Clientes antiguos").hover();
-      const r = await new AxeBuilder({ page }).include("#app-sidebar").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
-      expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
-    });
-  }
 });
 
 test("Codex R1: an account with 2,000 folders mounts 250 of them; more come 250 at a time", async ({ app: page, server }) => {

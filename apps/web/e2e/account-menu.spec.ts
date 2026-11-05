@@ -2,12 +2,10 @@
  * Plan 106: an account's right-click menu in the sidebar: rename in place, color, a new message from it, check
  * for new mail, mark its Inbox read, sign in again, its settings, and remove it. Shift+F10 opens it from the row.
  */
-import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
 import { expect, rows, test } from "./fixtures";
 
-const ctx = { clientId: "setup", origin: "dev" as const };
 type Handlers = Record<string, (...a: unknown[]) => Promise<unknown>>;
 
 async function accountIds(page: Page): Promise<number[]> {
@@ -314,28 +312,4 @@ test.describe("the account menu", () => {
     await expect(page.getByTestId(`category-menu-${cat}`)).toBeVisible();
     await expect(page.getByTestId("thread-menu")).toHaveCount(0);
   });
-
-  for (const mode of ["light", "dark"] as const) {
-    test(`the menu and the rename field are axe-clean, ${mode}`, async ({ app: page, server }) => {
-      await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      const [a] = await accountIds(page);
-      await openMenu(page, a!);
-      await page.getByTestId("account-menu-color").hover();
-      await expect(page.getByTestId(`account-menu-colors-${a}`)).toBeVisible();
-      if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/menu-${mode}.png` });
-      const r = await new AxeBuilder({ page }).include(`[data-testid=account-menu-${a}]`).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
-      expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
-      await page.keyboard.press("Escape");
-      await page.keyboard.press("Escape");
-
-      await openMenu(page, a!);
-      await page.getByTestId("account-menu-rename").click();
-      await expect(page.getByTestId(`account-rename-input-${a}`)).toBeFocused();
-      if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/rename-${mode}.png` });
-      const e = await new AxeBuilder({ page }).include("#app-sidebar").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
-      expect(e.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
-    });
-  }
 });

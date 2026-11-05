@@ -1,4 +1,3 @@
-import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { expect, rows, test } from "./fixtures";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
@@ -115,19 +114,4 @@ test.describe("the first new category's tip (plan 113)", () => {
     const row = (await page.getByTestId(`nav-category-${categoryId(server, "LinkedIn")}`).boundingBox())!;
     expect((await tip(page).boundingBox())!.x).toBeGreaterThan(row.x + row.width);
   });
-
-  for (const mode of ["light", "dark"] as const) {
-    test(`is axe-clean, ${mode}`, async ({ app: page, server }) => {
-      await server.backend.server.invoke("settings.update", { theme: mode }, { clientId: "setup", origin: "dev" });
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      await create(page, server, "LinkedIn");
-      await expect(tip(page)).toBeVisible();
-      // past its fade-in
-      await page.waitForTimeout(300);
-      if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/tip-${test.info().project.name}-${mode}.png` });
-      const r = await new AxeBuilder({ page }).include("[data-testid=tip-category-inbox]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
-      expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
-    });
-  }
 });

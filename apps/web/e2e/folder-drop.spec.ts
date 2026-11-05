@@ -225,21 +225,19 @@ test.describe("dragging mail onto a folder", () => {
     await expect.poll(() => inFolder(server, account, "Label_23").has(id)).toBe(true);
   });
 
-  for (const theme of ["light", "dark"] as const) {
-    test(`mid-drag and with its offers, axe clean (${theme})`, async ({ app: page, server }) => {
-      await page.emulateMedia({ colorScheme: theme });
-      const account = accountOf(server, "Acme Studio");
-      await openAccount(page, account);
-      const id = await rowOutside(page, inFolder(server, account, "Label_23"));
-      await dragTo(page, row(page, id), own(page, account, "Label_23"));
-      await expect(own(page, account, "Label_23")).toHaveAttribute("data-drop-state", "over");
-      await page.screenshot({ path: test.info().outputPath(`drag-${theme}.png`) });
-      await page.mouse.up();
-      await expect(page.getByTestId("snack-message")).toBeVisible();
-      await page.waitForTimeout(150);
-      await page.screenshot({ path: test.info().outputPath(`dropped-${theme}.png`) });
-      const results = await new AxeBuilder({ page }).include("[data-testid=snack-dock]").analyze();
-      expect(results.violations).toEqual([]);
-    });
-  }
+  test("with its offers, axe clean in light and dark", async ({ app: page, server }) => {
+    const account = accountOf(server, "Acme Studio");
+    await openAccount(page, account);
+    const id = await rowOutside(page, inFolder(server, account, "Label_23"));
+    await dragTo(page, row(page, id), own(page, account, "Label_23"));
+    await expect(own(page, account, "Label_23")).toHaveAttribute("data-drop-state", "over");
+    await page.mouse.up();
+    await expect(page.getByTestId("snack-message")).toBeVisible();
+    // past its fade-in
+    await page.waitForTimeout(150);
+    expect((await new AxeBuilder({ page }).include("[data-testid=snack-dock]").analyze()).violations).toEqual([]);
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expect(page.locator("html")).toHaveClass(/dark/);
+    expect((await new AxeBuilder({ page }).include("[data-testid=snack-dock]").withRules(["color-contrast"]).analyze()).violations).toEqual([]);
+  });
 });

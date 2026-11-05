@@ -11,7 +11,7 @@ import { expect, selectThread, test } from "./fixtures";
 
 test.use({ backendOptions: { smtpCapture: true } });
 
-test("Forward opens while the original downloads; its files join when captured, and what was written survives", async ({ app: page, server }, testInfo) => {
+test("Forward opens while the original downloads; its files join when captured, and what was written survives", async ({ app: page, server }) => {
   const store = server.backend.store, [account] = await store.accounts.list();
   // the account's sync never captures it on its own here: the files come when the test says
   (server.backend as unknown as { syncAccount: () => Promise<void> }).syncAccount = async () => {};
@@ -34,7 +34,6 @@ test("Forward opens while the original downloads; its files join when captured, 
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme });
     expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-    await page.getByTestId("composer").screenshot({ path: `/tmp/terno-forward-files/fetching-${testInfo.project.name}-${theme}.png` });
   }
   await page.emulateMedia({ colorScheme: "light" });
 
@@ -58,8 +57,7 @@ test("Forward opens while the original downloads; its files join when captured, 
   expect(await store.attachments.read(account!.id, refs[0]!.assetId!, 0)).toBe("AP+A");
 });
 
-test("files that never come are named with Try again, and the forward sends without them", async ({ app: page, server }, testInfo) => {
-  test.setTimeout(90_000);
+test("files that never come are named with Try again, and the forward sends without them", async ({ app: page, server }) => {
   const store = server.backend.store, [account] = await store.accounts.list();
   // nothing captures it: every retry (and sync) leaves it where it is
   (server.backend as unknown as { syncAccount: () => Promise<void> }).syncAccount = async () => {};
@@ -73,14 +71,13 @@ test("files that never come are named with Try again, and the forward sends with
   await expect(page.getByTestId("compose-to")).toBeFocused();
   const status = page.getByTestId("forward-files");
   await expect(status).toHaveText("Getting report.pdf from the original…");
-  // three tries (now, ~4 s, ~15 s), then it says so and stops
-  await expect(status).toHaveAttribute("data-status", "failed", { timeout: 40_000 });
+  // three tries (now, ~4 s, ~15 s), then it says so and stops: the waits are the page's timers
+  await expect.poll(async () => (await page.clock.fastForward(20_000), status.getAttribute("data-status"))).toBe("failed");
   await expect(status).toContainText("Couldn’t get report.pdf, so this forward won’t include it.");
   expect(retries).toBe(3);
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme });
     expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-    await page.getByTestId("composer").screenshot({ path: `/tmp/terno-forward-files/failed-${testInfo.project.name}-${theme}.png` });
   }
   await page.emulateMedia({ colorScheme: "light" });
   // Try again: three more tries

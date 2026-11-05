@@ -178,6 +178,8 @@ test.describe("axe", { tag: "@design" }, () => {
     await page.getByTestId(`nav-own-${freelance}-Facturación/2026`).click();
     await page.getByTestId(`nav-own-${freelance}-Clientes antiguos`).hover();
     await clean(page, "an account open, its folders", "#app-sidebar");
+    await page.getByTestId(`nav-folder-${freelance}-sent`).hover();
+    await clean(page, "an account's Sent, under the pointer", "#app-sidebar");
 
     await page.getByTestId(`nav-account-${acme}`).click();
     await page.getByTestId(`nav-own-${acme}-Label_21`).click({ button: "right" });

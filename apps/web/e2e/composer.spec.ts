@@ -4,7 +4,6 @@
  * the caret; links, paste, undo, folding, keyboard and axe; drafts keep their
  * formatting; a stored hostile body runs and loads nothing.
  */
-import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
 import { expect, focusList, openRow, test } from "./fixtures";
@@ -564,33 +563,6 @@ test.describe("the format bar", () => {
     await expect(mark).toHaveCSS("color", "rgb(241, 243, 244)");
     await expect(mark).toHaveCSS("background-color", "rgb(79, 69, 16)");
   });
-
-  for (const theme of ["light", "dark"] as const) {
-    test(`axe: the composer with its bar, the color popover and the link popover (${theme})`, async ({ app: page, server }) => {
-      await server.backend.server.invoke("settings.update", { theme }, ctx);
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      await reply(page);
-      await select(page, "propuesta");
-      await page.getByTestId("format-bold").click();
-      const wcag = () => new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).disableRules(["scrollable-region-focusable"]).exclude("iframe");
-      const check = async () => {
-        // a popover that is still fading in is checked mid-way otherwise (colors at partial opacity)
-        await expect.poll(() => page.evaluate(() => document.getAnimations().filter((a) => a.playState === "running").length)).toBe(0);
-        const r = await wcag().analyze();
-        expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 140)).join(", ")}`)).toEqual([]);
-      };
-      await check();
-      await page.getByTestId("format-color").click();
-      await expect(page.getByTestId("format-color-popover")).toBeVisible();
-      await check();
-      await page.keyboard.press("Escape");
-      await select(page, "viernes");
-      await page.keyboard.press("ControlOrMeta+l");
-      await expect(page.getByTestId("link-popover")).toBeVisible();
-      await check();
-    });
-  }
 });
 
 test.describe("drafts keep their formatting", () => {

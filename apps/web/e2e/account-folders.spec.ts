@@ -3,7 +3,6 @@
  * An account row opens into its folders (one at a time), the top folders and categories are cross-account,
  * and at most one row is selected.
  */
-import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
 import { expect, test } from "./fixtures";
@@ -253,19 +252,6 @@ test.describe("accounts open into their folders", () => {
     await expect(row(page, a!)).toContainText("Renamed");
     await expect(row(page, a!)).not.toBeFocused();
   });
-
-  for (const mode of ["light", "dark"] as const) {
-    test(`axe with an account open, ${mode}`, async ({ app: page, server }) => {
-      await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      const [a] = await accountIds(page);
-      await row(page, a!).click();
-      await child(page, a!, "sent").hover();
-      const r = await new AxeBuilder({ page }).include("#app-sidebar").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
-      expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
-    });
-  }
 });
 
 test("with one account it opens to its Inbox, Sent, Archive, Spam and Trash like any account (as Mail lists them)", async ({ app: page, server }) => {

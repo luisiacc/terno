@@ -3,7 +3,6 @@
  * rename in place, favorites below Starred, export and delete. On the seeded demo mailbox: Acme Studio's labels
  * (Gmail-like keys, "Proyectos" › "Rediseño web", "Equipo") and Freelance's IMAP-like folders.
  */
-import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 import { expect, test } from "./fixtures";
@@ -597,31 +596,4 @@ test.describe("folder actions", () => {
     await server.backend.server.invoke("folders.favorite", { accountId: freelance, folder: to, view: null, on: false }, other);
     await expect(page.getByTestId(`nav-fav-${freelance}-${b.key}`)).toBeFocused();
   });
-
-  for (const mode of ["light", "dark"] as const) {
-    test(`the folder menu, the name field and favorites are axe-clean, ${mode}`, async ({ app: page, server }) => {
-      await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      const acme = accountOf(server, "Acme Studio");
-      await openAccount(page, acme);
-      await own(page, acme, "Label_21").click({ button: "right" });
-      await page.getByTestId("folder-menu-favorite").click();
-      await own(page, acme, "Label_21").click({ button: "right" });
-      const menu = page.getByTestId(`folder-menu-${acme}-Label_21`);
-      await expect(menu).toBeVisible();
-      if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/folder-menu-${mode}.png` });
-      const tags = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
-      const fmt = (r: Awaited<ReturnType<AxeBuilder["analyze"]>>) => r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`);
-      expect(fmt(await new AxeBuilder({ page }).include(`[data-testid=folder-menu-${acme}-Label_21]`).withTags(tags).analyze())).toEqual([]);
-      await page.keyboard.press("Escape");
-      await own(page, acme, "Label_21").hover();
-      await page.getByTestId(`folder-add-${acme}-Label_21`).click();
-      await page.getByTestId(`folder-new-${acme}`).fill("Rediseño web");
-      await page.getByTestId(`folder-new-${acme}`).press("Enter");
-      await expect(page.getByTestId(`folder-new-${acme}-error`)).toBeVisible();
-      if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/field-${mode}.png` });
-      expect(fmt(await new AxeBuilder({ page }).include("#app-sidebar").withTags(tags).analyze())).toEqual([]);
-    });
-  }
 });

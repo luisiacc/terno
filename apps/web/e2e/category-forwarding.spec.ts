@@ -5,7 +5,6 @@
  * to" saves a forward action. The send itself (after the 10 s) is the
  * backend's (forwarding.test.ts): the e2e backend's clock stands still.
  */
-import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { IncomingMessage } from "@terno/store";
 import { E2E_NOW } from "./constants";
@@ -137,30 +136,4 @@ test.describe("forwarding what lands in a category (plan 116)", () => {
     await expect(chipsOf(page, "filter-forward-to")).toHaveCount(1);
     await expect(chipsOf(page, "filter-forward-to")).toHaveAttribute("data-email", "ana@books.test");
   });
-
-  for (const mode of ["light", "dark"] as const) {
-    test(`the dialog, the sidebar's mark and the reader's line are axe-clean, ${mode}`, async ({ app: page, server }) => {
-      await server.backend.server.invoke("settings.update", { theme: mode }, SETUP);
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      const { cat, dialog } = await setUp(page, server);
-      await dialog.getByTestId("category-forward-to").pressSequentially("Ana <ana@books.test>, luis@books.test, ");
-      if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/forward-dialog-${mode}.png` });
-      const tags = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
-      const inDialog = await new AxeBuilder({ page }).include("[data-testid=category-forward-dialog]").withTags(tags).analyze();
-      expect(inDialog.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
-      await dialog.getByTestId("category-forward-save").click();
-      await expect(dialog).toBeHidden();
-
-      const accountId = (await server.backend.store.accounts.list())[0]!.id;
-      server.net.incoming.push(invoice(accountId, "Factura 0099"));
-      await server.backend.syncAccount(accountId);
-      await page.getByTestId(`nav-category-${cat}`).click();
-      await rows(page).filter({ hasText: "Factura 0099" }).click();
-      await expect(page.getByTestId("forward-line-item")).toHaveAttribute("data-status", "waiting");
-      if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/forward-reader-${mode}.png` });
-      const rest = await new AxeBuilder({ page }).include("[data-testid=forward-line]").include(`[data-testid=nav-category-${cat}]`).withTags(tags).analyze();
-      expect(rest.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
-    });
-  }
 });

@@ -1,4 +1,3 @@
-import AxeBuilder from "@axe-core/playwright";
 import { expect, rows, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
@@ -129,20 +128,6 @@ test.describe("a category hidden from the Inbox (plan 83)", () => {
     expect(db.get("SELECT id FROM categories WHERE id = ?", cat)).toBeUndefined();
     expect(threads()).toBe(before);
   });
-
-  for (const mode of ["light", "dark"] as const) {
-    test(`the category menu, its Delete… highlighted, is axe-clean, ${mode}`, async ({ app: page, server }) => {
-      await server.backend.server.invoke("settings.update", { theme: mode }, { clientId: "setup", origin: "dev" });
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      const cat = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
-      await page.getByTestId(`nav-category-${cat}`).click({ button: "right" });
-      await page.getByTestId("category-menu-delete").hover();
-      if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/menu-${mode}.png` });
-      const r = await new AxeBuilder({ page }).include(`[data-testid=category-menu-${cat}]`).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
-      expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
-    });
-  }
 
   test("Settings → Categories: the Show in Inbox switch hides it, and says so in the row", async ({ app: page, server }) => {
     const db = sqlDb(server.backend.store);
