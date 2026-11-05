@@ -7,8 +7,8 @@ import { E2E_NOW } from "./constants";
 import { expect, focusList, ingestConversation, openRow, search, selectThread, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
-test.describe("reader conversation", { tag: "@design" }, () => {
-  test("messages are disclosure buttons that work with Enter and Space; collapsed bodies aren't mounted", async ({ app: page, server }) => {
+test.describe("reader conversation", () => {
+  test("messages are disclosure buttons that work with Enter and Space; collapsed bodies aren't mounted", { tag: "@variant" }, async ({ app: page, server }) => {
     const id = await ingestConversation(server, { subject: "Propuesta campaña de Navidad", count: 3, now: E2E_NOW });
     await selectThread(page, id, 'subject:"Propuesta campaña de Navidad"');
     const reader = page.getByTestId("reader");
@@ -151,14 +151,7 @@ test.describe("plan 37: “Load content” for every remote image the frame woul
     ];
     const results = await page.evaluate((list) => list.map(([html, , rel]) => (window as unknown as Probe).__terno.hasRemoteContent(html, rel)), cases);
     expect(results).toEqual(cases.map(([, expected]) => expected));
-    // the old regex rescanned on every "<image": 56 KB of them took ~140 ms; a parse is linear
-    const ms = await page.evaluate(() => {
-      const hostile = "<image ".repeat(40_000);
-      const t0 = performance.now();
-      (window as unknown as Probe).__terno.hasRemoteContent(hostile);
-      return performance.now() - t0;
-    });
-    expect(ms).toBeLessThan(100);
+    // (that it stays linear on hostile input is timed alone: reader-input.perf.spec.ts)
   });
 
   test("an SVG image with an encoded scheme gets the row and its button; the button loads it", async ({ app: page, server }) => {
