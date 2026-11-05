@@ -13,6 +13,12 @@ import { IdbMailStore } from "./store";
 const MULT = Number(process.env.PERF_BUDGET_MULTIPLIER ?? "1");
 const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
 
+/** until the folder orders a read asked for have finished building in the background */
+async function ordersBuilt(store: IdbMailStore): Promise<void> {
+  const order = (store as unknown as { c: { scopes: { folderBuilds: Map<unknown, unknown>; folderIdBuilds: Map<unknown, unknown> } } }).c.scopes;
+  while (order.folderBuilds.size || order.folderIdBuilds.size) await new Promise((resolve) => setTimeout(resolve, 5));
+}
+
 it("300,000 messages, 1 in 20 labelled: every rebuild slice of the backfill within a frame, every label a membership", { timeout: 600_000 }, async () => {
   const store = await IdbMailStore.open({ factory: new IDBFactory(), name: crypto.randomUUID(), instantSearch: false, platform });
   await store.whenLoaded();
@@ -157,7 +163,7 @@ it("Codex R49: Unread in a folder of 150,000 unread threads, cold and after many
   expect(coldSample.result.items).toHaveLength(100);
   const cold = settle([coldSample]).ms[0]!;
   // let the order be built, then 100 read: more than the kept order places by search, so it's built again
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  await ordersBuilt(store);
   c.db.tx(() => {
     for (let i = 1; i <= 100; i++) {
       c.db.table("threads").put({ ...c.db.table("threads").get(i)!, unread_count: 0 });
@@ -244,7 +250,7 @@ it("Codex R51: select all in a folder of 150,000 threads, cold and after an arri
     reads.push(settle([s]).ms[0]!);
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+  await ordersBuilt(store);
   // an arrival: one more member
   c.db.table("threads").load({ id: 150_001, account_id: account, last_date: 1, unread_count: 0, message_count: 1, in_inbox: 0, in_trash: 0, in_spam: 0 });
   c.db.tx(() => c.db.table("thread_folders").put({ thread_id: 150_001, account_id: account, folder: "Label_big", last_date: 1, unread: 0 }));

@@ -17,13 +17,15 @@
 import { parseSearch, resolveSearch } from "@terno/core";
 import type { Revision } from "@terno/store";
 import type { InstantSearchEngine } from "@terno/store/instant";
+import { copyFileSync } from "node:fs";
 import { loadavg } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { nodePlatform, openDatabase } from "./index";
 import { loadScope, searchThreadIds, searchThreads } from "./search";
 import { SqlMailStore } from "./sql-store";
 import { BUDGET_MULTIPLIER, measure, measureAsync, report, type Stat } from "./test/perf";
-import { copyMailbox, LARGE_MAILBOX, MAILBOX_NOW as NOW, scratchDir } from "./test/perf-mailbox";
+import { copyMailbox, kept, LARGE_MAILBOX, MAILBOX_NOW as NOW, scratchDir } from "./test/perf-mailbox";
 
 /**
  * The FTS path's budget at this size. It runs only while the instant index catches
@@ -40,23 +42,20 @@ const meta: Record<string, unknown> = {};
 
 beforeAll(async () => {
   const path = scratch.path("perf.db");
-  const seeded = copyMailbox(LARGE_MAILBOX, path);
-  meta.threads = seeded.threadCount;
-  meta.messages = seeded.messageCount;
-  expect(seeded.threadCount).toBeGreaterThanOrEqual(50_000);
-  expect(seeded.messageCount).toBeGreaterThanOrEqual(100_000);
-  // a fifth in Spam, another in Trash, moved by the store (an index built after it reads what the store left)
-  const move = new SqlMailStore(openDatabase(path));
-  const ids = move.db.all<{ id: number }>("SELECT id FROM threads ORDER BY id").map((r) => r.id);
-  const spam = ids.filter((id) => id % 5 === 1);
-  const trash = ids.filter((id) => id % 5 === 2);
-  for (const [action, set] of [["spam", spam], ["trash", trash]] as const) {
-    for (let i = 0; i < set.length; i += 2000) await move.threads.act({ threadIds: set.slice(i, i + 2000), action, signal: null, now: NOW });
-  }
-  move.db.exec("ANALYZE");
-  meta.spamThreads = spam.length;
-  meta.trashThreads = trash.length;
-  await move.close();
+  // a fifth in Spam, another in Trash, moved by the store (an index built after it reads what the store left), and kept
+  const moved = await kept("large-spam-trash", async (at) => {
+    const seeded = copyMailbox(LARGE_MAILBOX, join(at, "m.db"));
+    expect(seeded.threadCount).toBeGreaterThanOrEqual(50_000);
+    expect(seeded.messageCount).toBeGreaterThanOrEqual(100_000);
+    const move = new SqlMailStore(openDatabase(join(at, "m.db")));
+    const ids = move.db.all<{ id: number }>("SELECT id FROM threads ORDER BY id").map((r) => r.id);
+    for (const [action, set] of [["spam", ids.filter((id) => id % 5 === 1)], ["trash", ids.filter((id) => id % 5 === 2)]] as const) {
+      for (let i = 0; i < set.length; i += 2000) await move.threads.act({ threadIds: set.slice(i, i + 2000), action, signal: null, now: NOW });
+    }
+    move.db.exec("ANALYZE");
+    await move.close();
+  });
+  copyFileSync(join(moved, "m.db"), path);
   store = new SqlMailStore(openDatabase(path), { instantSearch: true, platform: nodePlatform });
   expect(await store.instant!.settled(600_000)).toBe(true);
 }, 1_200_000);

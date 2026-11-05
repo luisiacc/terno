@@ -307,14 +307,14 @@ describe("search", () => {
     let total = 0;
     gate(`search: ${label} — ${query}`, 25, () => {
       total = searchThreads(db, { query, limit: 100, now: NOW }).items.length;
-    });
+    }, 10);
     stats[stats.length - 1]!.note = `${total} results`;
   });
 
   it("type-ahead: every keystroke of a query stays within budget", () => {
     const typed = "presupuesto";
     for (let i = 2; i <= typed.length; i++) {
-      gate(`type-ahead "${typed.slice(0, i)}"`, 25, () => searchThreads(db, { query: typed.slice(0, i), limit: 100, now: NOW }));
+      gate(`type-ahead "${typed.slice(0, i)}"`, 25, () => searchThreads(db, { query: typed.slice(0, i), limit: 100, now: NOW }), 10);
     }
   });
 });

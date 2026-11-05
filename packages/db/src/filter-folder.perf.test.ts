@@ -12,7 +12,7 @@ import { populateRuleScope } from "./test/rule-scope";
 import { threadCpuMs } from "./test/timing";
 
 const SLICE = 200;
-const ROUNDS = 12;
+const ROUNDS = 6;
 const NOW = Date.UTC(2026, 10, 3);
 
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;

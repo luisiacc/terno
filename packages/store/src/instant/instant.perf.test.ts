@@ -47,24 +47,25 @@ function words(n: number, seed: number): string[] {
   });
 }
 
-describe("stalls with a 500k-term vocabulary", () => {
+// rule 4 of plan 139: a sort or a merge of 200,000 terms in one slice is many frames, so more only makes the gate slower
+describe("stalls with a 200k-term vocabulary", () => {
   it("sorting it yields at least every frame", async () => {
-    const terms = words(500_000, 7);
+    const terms = words(200_000, 7);
     const input = new Int32Array(terms.length);
     for (let i = 0; i < input.length; i++) input[i] = i;
     const m = stallMeter();
     const ids = await sortSliced(input, (a, b) => terms[a]! < terms[b]!, new SliceClock({ yield: m.yield, sliceMs: 4 }));
     const stall = m.done();
     for (let i = 1; i < ids.length; i++) expect(terms[ids[i - 1]!]! <= terms[ids[i]!]!).toBe(true);
-    log(`sort 500k terms: longest stretch ${stall.toFixed(1)} ms over ${m.yields.count} yields`);
+    log(`sort 200k terms: longest stretch ${stall.toFixed(1)} ms over ${m.yields.count} yields`);
     expect(stall).toBeLessThanOrEqual(FRAME * MULT);
   }, 120_000);
 
   it("building an index with it yields at least every frame", async () => {
-    const vocabulary = words(500_000, 11);
-    const base = corpusFromDataset(generateDataset({ threads: 20_000, accounts: 4, seed: 5, now: NOW }));
-    // every message carries ~15 rare tokens on top of its text (ids, codes, names): 500k distinct terms
-    const messages: SearchMessageDoc[] = base.messages.map((d, i) => ({ ...d, body: `${d.body} ${vocabulary.slice((i * 15) % 499_985, ((i * 15) % 499_985) + 15).join(" ")}` }));
+    const vocabulary = words(200_000, 11);
+    const base = corpusFromDataset(generateDataset({ threads: 8_000, accounts: 4, seed: 5, now: NOW }));
+    // every message carries ~15 rare tokens on top of its text (ids, codes, names): 200k distinct terms
+    const messages: SearchMessageDoc[] = base.messages.map((d, i) => ({ ...d, body: `${d.body} ${vocabulary.slice((i * 15) % 199_985, ((i * 15) % 199_985) + 15).join(" ")}` }));
     const m = stallMeter();
     const e = new InstantSearchEngine({ yield: m.yield, sliceMs: 4 });
     e.beginBuild({ epoch: "p", seq: 0 });
@@ -80,7 +81,7 @@ describe("stalls with a 500k-term vocabulary", () => {
     await e.finishBuild();
     const stall = m.done();
     log(`build with ${e.stats().terms} terms: longest stretch ${stall.toFixed(1)} ms`);
-    expect(e.stats().terms).toBeGreaterThan(450_000);
+    expect(e.stats().terms).toBeGreaterThan(180_000);
     expect(stall).toBeLessThanOrEqual(FRAME * MULT);
   }, 300_000);
 });
