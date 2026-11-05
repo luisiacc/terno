@@ -18,12 +18,30 @@ const loadPanel = () =>
     return m;
   });
 const Lazy = lazy(loadPanel);
+
+/**
+ * The chunk came after the popover opened, when it had nothing to focus but itself: what its first focus would have found
+ * takes over. Only then: a popover holding focus later has its reasons (an account's section went), and wherever the
+ * person has gone since, focus stays.
+ */
+function FirstFocusOnArrival() {
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active?.matches('[role="dialog"][data-sign-in-ui]')) active.querySelector<HTMLElement>("[data-sign-in-action]")?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  return null;
+}
+
 function SignInPanel(props: PanelProps) {
   return Loaded ? (
     <Loaded {...props} />
   ) : (
     <Suspense fallback={null}>
       <Lazy {...props} />
+      <FirstFocusOnArrival />
     </Suspense>
   );
 }
