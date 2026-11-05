@@ -23,7 +23,7 @@ async function newMessage(page: Page, subject: string) {
   await page.keyboard.type("See you at nine.");
 }
 
-test.describe("send later", { tag: "@design" }, () => {
+test.describe("send later", () => {
   test("the clock: Tomorrow at 8:00 schedules it, the strip shows it at its time, Undo brings the draft back", async ({ app: page }) => {
     await newMessage(page, "Standup notes");
     await page.getByTestId("compose-send-later").click();
@@ -110,7 +110,7 @@ test.describe("send later", { tag: "@design" }, () => {
     await expect(page.getByTestId("compose-subject")).toHaveValue("Budget");
   });
 
-  test("Send and the clock are one filled shape: no seam, a hairline that hides on hover or open, a ring Tab can see", async ({ app: page }) => {
+  test("Send and the clock are one filled shape: no seam, a hairline that hides on hover or open, a ring Tab can see", { tag: "@design" }, async ({ app: page }) => {
     await newMessage(page, "Seam");
     const group = page.getByTestId("compose-send-group");
     const send = page.getByTestId("compose-send");

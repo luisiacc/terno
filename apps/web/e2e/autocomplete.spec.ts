@@ -1,6 +1,5 @@
 /**
- * Plan 18: autocomplete while writing. Tagged @design, so it runs in macOS,
- * Lumen and Atelier. Recipients: suggestions from the mailbox for names
+ * Plan 18: autocomplete while writing. Recipients: suggestions from the mailbox for names
  * (accents optional), initials and addresses, keyboard (↑ ↓ Enter Tab Esc ,)
  * and mouse, what's already in the draft and the user's own addresses left
  * out, pasted lists; Esc closes the list, not the draft. Body: ghost text
@@ -66,7 +65,7 @@ async function axeClean(page: Page) {
   expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
 }
 
-test.describe("recipients", { tag: "@design" }, () => {
+test.describe("recipients", () => {
   test("a name prefix suggests people, written-to first; ↓ ↑ and Enter accept; the list closes", async ({ app: page, server }) => {
     await seed(server);
     await newMessage(page);
@@ -229,7 +228,7 @@ test.describe("recipients", { tag: "@design" }, () => {
   }
 });
 
-test.describe("ghost text", { tag: "@design" }, () => {
+test.describe("ghost text", () => {
   test("a phrase the user keeps writing shows muted after the caret; Tab accepts it as one undo step", async ({ app: page, server }) => {
     await seed(server);
     await newMessage(page);

@@ -46,7 +46,7 @@ async function fileWithPicker(page: Page, categoryId: number) {
   await focusList(page);
 }
 
-test.describe("categorization snackbar", { tag: "@design" }, () => {
+test.describe("categorization snackbar", () => {
   test("filing one thread offers all mail from its sender: 1 files it and their future mail, the result toast undoes both", async ({ app: page, server }) => {
     const { db, facturas, target, outside } = uberSetup(server);
     const filters = () => db.all<{ rule_json: string }>("SELECT rule_json FROM filters WHERE rule_json LIKE '%uber.receipts@uber.com%'").map((r) => JSON.parse(r.rule_json));
@@ -226,7 +226,7 @@ test.describe("Terno's filters (plan 90)", () => {
   });
 });
 
-test.describe("everything about X and Y", { tag: "@design" }, () => {
+test.describe("everything about X and Y", () => {
   test("topic chips recount as they toggle, View previews the query, 4 files it", async ({ app: page, server }) => {
     const { db, facturas, target } = uberSetup(server);
     await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
@@ -411,7 +411,7 @@ test.describe("everything about X and Y", { tag: "@design" }, () => {
   });
 });
 
-test.describe("the engine's suggestions and auto adds in the UI", { tag: "@design" }, () => {
+test.describe("the engine's suggestions and auto adds in the UI", () => {
   /** Two uncategorized inbox threads with a pending Facturas suggestion, then a fresh page (counts at boot). */
   async function withSuggestions(page: Page, server: DevServer) {
     const db = sqlDb(server.backend.store);
@@ -437,7 +437,7 @@ test.describe("the engine's suggestions and auto adds in the UI", { tag: "@desig
     return { db, facturas, threads };
   }
 
-  test("Review lists the suggestions; y accepts (with the snackbar), n rejects", async ({ app: page, server }) => {
+  test("Review lists the suggestions; y accepts (with the snackbar), n rejects", { tag: "@variant" }, async ({ app: page, server }) => {
     const { db, facturas, threads } = await withSuggestions(page, server);
     const review = page.getByTestId(`nav-review-${facturas}`);
     await expect(review).toContainText("2");

@@ -31,7 +31,7 @@ async function rightClick(page: Page, target: Locator) {
   await expect(menu(page)).toBeVisible();
 }
 
-test.describe("context menu on one thread", { tag: "@design" }, () => {
+test.describe("context menu on one thread", () => {
   test("acts on the row it opened on: read state, star, archive with undo", async ({ app: page, server }) => {
     const unread = page.locator("[data-testid=thread-row][data-unread]").nth(1);
     const id = (await unread.getAttribute("data-thread-id"))!;
@@ -219,7 +219,7 @@ test.describe("context menu on one thread", { tag: "@design" }, () => {
   });
 });
 
-test.describe("category picker modes", { tag: "@design" }, () => {
+test.describe("category picker modes", () => {
   test("after v (Move to…) is dismissed, the reader's Category button toggles again: picking C keeps A and B", async ({ app: page, server }) => {
     const [lecturas, clientes, viajes] = ["Lecturas", "Clientes", "Viajes"].map((n) => db(server).get<{ id: number }>("SELECT id FROM categories WHERE name = ?", n)!.id) as [number, number, number];
     const id = Number(await page.locator("[data-testid=thread-row]:not(:has([data-cat-dot]))").first().getAttribute("data-thread-id"));
@@ -240,7 +240,7 @@ test.describe("category picker modes", { tag: "@design" }, () => {
   });
 });
 
-test.describe("multi-selection", { tag: "@design" }, () => {
+test.describe("multi-selection", () => {
   test("⇧-click selects a range, ⌘-click toggles, Esc clears; the reader becomes the bulk bar", async ({ app: page }) => {
     const ids = await idsOf(rows(page));
     await row(page, ids[1]!).dispatchEvent("mousedown", { button: 0 });
@@ -397,7 +397,7 @@ test.describe("multi-selection", { tag: "@design" }, () => {
   });
 });
 
-test.describe("undo is exact", { tag: "@design" }, () => {
+test.describe("undo is exact", () => {
   test("all of Archive to Trash, then Undo: they're back in Archive, none in Inbox", async ({ app: page, server }) => {
     const count = (where: string) => db(server).get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE ${where}`)!.c;
     const archived = count("in_inbox = 0 AND in_trash = 0 AND in_spam = 0");
@@ -430,7 +430,7 @@ test.describe("undo is exact", { tag: "@design" }, () => {
   });
 });
 
-test.describe("select all N and dragging", { tag: "@design" }, () => {
+test.describe("select all N and dragging", () => {
   test("with all N of a view selected, rows don't drag (only part of them would move)", async ({ app: page, server }) => {
     const viajes = db(server).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
     await focusList(page);
@@ -453,7 +453,7 @@ test.describe("select all N and dragging", { tag: "@design" }, () => {
   });
 });
 
-test.describe("accessibility", { tag: "@design" }, () => {
+test.describe("accessibility", () => {
   test("the listbox is multi-selectable: aria-selected follows the real selection, the open thread is the active descendant", async ({ app: page }) => {
     const list = page.getByRole("listbox", { name: "Conversations" });
     const selectedOptions = page.locator("[role=option][aria-selected=true]");
@@ -486,7 +486,7 @@ test.describe("accessibility", { tag: "@design" }, () => {
   });
 });
 
-test.describe("help", { tag: "@design" }, () => {
+test.describe("help", () => {
   test("the shortcuts dialog lists the new keys", async ({ app: page }) => {
     await focusList(page);
     await page.keyboard.press("?");

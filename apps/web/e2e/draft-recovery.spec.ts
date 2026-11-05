@@ -6,7 +6,7 @@ import { expect, openRow, stabilize, test } from "./fixtures";
 const shots = "/tmp/terno-missing-draft-shots";
 mkdirSync(shots, { recursive: true });
 
-test("terminal draft copy keeps rich history, caret, recipient chips and exact files @design", async ({ app: page, server }, info) => {
+test("terminal draft copy keeps rich history, caret, recipient chips and exact files", async ({ app: page, server }, info) => {
   await openRow(page, 0); await page.getByTestId("quick-reply").click();
   const body = page.getByTestId("compose-body");
   await body.fill("bold authored work"); await body.press("Meta+a"); await body.press("Meta+b"); await body.press("ArrowRight");
@@ -60,7 +60,7 @@ test("terminal draft copy keeps rich history, caret, recipient chips and exact f
   } finally { release(); server.backend.store.drafts.save = save; }
 });
 
-test("an uncertain copy is disclosed and only another explicit copy can proceed @design", async ({ app: page, server }, info) => {
+test("an uncertain copy is disclosed and only another explicit copy can proceed", async ({ app: page, server }, info) => {
   await openRow(page, 0); await page.getByTestId("quick-reply").click();
   const body = page.getByTestId("compose-body"); await body.fill("keep uncertain work");
   await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.body_text).toBe("keep uncertain work");
@@ -90,7 +90,7 @@ test("an uncertain copy is disclosed and only another explicit copy can proceed 
   } finally { server.backend.store.drafts.save = save; }
 });
 
-test("typing during a copy ACK keeps focus and busy activation shares one creation @design", async ({ app: page, server }) => {
+test("typing during a copy ACK keeps focus and busy activation shares one creation", async ({ app: page, server }) => {
   await openRow(page, 0); await page.getByTestId("quick-reply").click();
   const body = page.getByTestId("compose-body"); await body.fill("copy baseline");
   await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.body_text).toBe("copy baseline");
@@ -110,7 +110,7 @@ test("typing during a copy ACK keeps focus and busy activation shares one creati
   } finally { release(); server.backend.store.drafts.save = save; }
 });
 
-test("missing account and files stay explicit; removing refs permits the sole connected From account @design", async ({ app: page, server }) => {
+test("missing account and files stay explicit; removing refs permits the sole connected From account", async ({ app: page, server }) => {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("c");
   const body = page.getByTestId("compose-body"); await body.fill("account recovery text");
   await page.getByTestId("attachment-input").setInputFiles({ name: "unavailable.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 255, 128]) });
@@ -128,7 +128,7 @@ test("missing account and files stay explicit; removing refs permits the sole co
   expect((await server.backend.store.drafts.list())[0]).toMatchObject({ account_id: remaining.id, body_text: "account recovery text retained", attachments_json: "[]" });
 });
 
-test("restart hold preserves the rich document, caret, history and marks until cancellation @design", async ({ app: page, server }, info) => {
+test("restart hold preserves the rich document, caret, history and marks until cancellation", async ({ app: page, server }, info) => {
   await openRow(page, 0); await page.getByTestId("quick-reply").click();
   const body = page.getByTestId("compose-body"); await body.fill("exact rich work");
   await body.press("Meta+a"); await body.press("Meta+b"); await body.press("ArrowRight"); await body.press("ArrowLeft");

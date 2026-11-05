@@ -24,7 +24,7 @@ function handlers(server: { backend: { server: unknown } }) {
   return (server.backend.server as { handlers: Record<string, (...a: unknown[]) => unknown> }).handlers;
 }
 
-test.describe("the docked snackbar", { tag: "@design" }, () => {
+test.describe("the docked snackbar", () => {
   test("archive: the bar sits inside the list column, compact, over neither the sidebar nor the reader", async ({ app: page }) => {
     await page.mouse.move(1300, 100);
     await archiveOne(page);

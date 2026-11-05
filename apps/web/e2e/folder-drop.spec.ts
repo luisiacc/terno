@@ -41,7 +41,7 @@ const rowOutside = async (page: Page, members: Set<number>) => {
 };
 const row = (page: Page, id: number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
 
-test.describe("dragging mail onto a folder", { tag: "@design" }, () => {
+test.describe("dragging mail onto a folder", () => {
   for (const [name, key] of [["Acme Studio", "Label_23"], ["Freelance", "Clientes antiguos"]] as const) {
     test(`${name}: only the dropped one moves, it leaves the Inbox, and z brings it back`, async ({ app: page, server }) => {
       const account = accountOf(server, name);

@@ -6,7 +6,7 @@ import { addRecipients, chipsOf, expect, openRow, recipientEmails, stabilize, te
 test.use({ backendOptions: { smtpCapture: true } });
 
 for (const placement of ["new", "inline"] as const) {
-  test(`${placement} recipients stay read-only through Send refusal and retry @design`, async ({ app: page, server }, testInfo) => {
+  test(`${placement} recipients stay read-only through Send refusal and retry`, async ({ app: page, server }, testInfo) => {
     if (placement === "new") {
       await page.keyboard.press("c");
       await addRecipients(page, "compose-to", "initial@example.test");

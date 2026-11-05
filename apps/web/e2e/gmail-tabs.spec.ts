@@ -32,8 +32,8 @@ async function seedTabs(page: Page, server: DevServer, accountId: number) {
 const inboxUnread = (server: DevServer) =>
   sqlDb(server.backend.store).get<{ c: number }>("SELECT count(*) AS c FROM threads t JOIN accounts a ON a.id = t.account_id WHERE t.in_inbox = 1 AND t.unread_count > 0 AND (t.tab = 0 OR coalesce(json_extract(a.provider_config, '$.separateTabs') = 0, 0)) AND NOT EXISTS (SELECT 1 FROM thread_categories h JOIN categories k ON k.id = h.category_id WHERE h.thread_id = t.id AND k.show_in_inbox = 0)")!.c;
 
-test.describe("Gmail's Promotions and Social (plan 86)", { tag: "@design" }, () => {
-  test("a Gmail account lists them after Trash with their counts; an IMAP one doesn't; a promotion is out of every Inbox and in its tab", async ({ app: page, server }) => {
+test.describe("Gmail's Promotions and Social (plan 86)", () => {
+  test("a Gmail account lists them after Trash with their counts; an IMAP one doesn't; a promotion is out of every Inbox and in its tab", { tag: "@variant" }, async ({ app: page, server }) => {
     const personal = accountOf(server, "Personal");
     const freelance = accountOf(server, "Freelance");
     const { promo, social } = await seedTabs(page, server, personal);

@@ -1,12 +1,18 @@
 /**
- * Plan 15: designs. Tagged @design, the first part runs in every design's
- * project (macOS in `e2e`, then `e2e-lumen` and `e2e-atelier`): layout at
- * the minimum window, row heights, keyboard and scroll, the parts every
- * variant keeps, axe in light and dark, and a baseline of each key screen.
- * The rest (switching live, the default, the move from before designs,
- * fonts) runs once.
+ * Plan 15: designs. `e2e` runs every flow once, in macOS. What repeats in the other designs (plan 139) is what they can change:
+ *
+ * - **@design, all five:** what any design's type, shape, density or palette can change: this file's first part (layout at the
+ *   minimum window, row heights, keyboard and scroll, the parts every variant keeps, a baseline of each key screen), the axe
+ *   sweep (design-axe.spec.ts), other baselines, the icon line, motion, corners, and the List layout's round trip.
+ * - **@variant, Lumen and Atelier:** a flow that goes through a structural variant macOS doesn't hold (designs/types.ts:
+ *   compose, listHeader, search, quickFilters, row, categoryReview, readerHeader, replyAction, categoryTabs), or a part only
+ *   those rows have (an avatar's icon).
+ * - **@variant-graphite, also Graphite:** a flow through its own value, the sidebar's compose row. Luma adds no value.
+ *
+ * A flow that reads the same in every design takes no tag: one run. A flow tied to one design says so with `test.use({ design })`,
+ * and runs once, in `e2e`. Adding a design that holds a new value: its project's grep (playwright.config.ts) and a @variant flow.
+ * The rest of this file (switching live, the default, the move from before designs, fonts) runs once.
  */
-import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
@@ -135,28 +141,6 @@ test.describe("in every design", { tag: "@design" }, () => {
     await page.getByText("Add account").scrollIntoViewIfNeeded();
     await expect(page.getByText("Add account")).toBeInViewport();
   });
-
-  for (const mode of ["light", "dark"] as const) {
-    test(`axe in ${mode}: the main window, the reader, Settings → Appearance and the palette`, async ({ app: page, server }) => {
-      await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      await openRow(page, 2);
-      await expect(page.getByTestId("message").first()).toBeVisible();
-      // WCAG A/AA; the list is a listbox driven by the window's keys (j/k, aria-activedescendant), not by Tab, so its scroller isn't a tab stop
-      const wcag = () => new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).disableRules(["scrollable-region-focusable"]);
-      const main = await wcag().exclude("iframe").analyze();
-      expect(main.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
-      await page.getByTestId("open-settings").click();
-      await page.getByTestId("tab-appearance").click();
-      const settings = await wcag().include("[data-testid=settings-dialog]").analyze();
-      expect(settings.violations.map((v) => v.id)).toEqual([]);
-      await page.keyboard.press("Escape");
-      await page.keyboard.press("ControlOrMeta+k");
-      const palette = await wcag().include("[role=dialog]").analyze();
-      expect(palette.violations.map((v) => v.id)).toEqual([]);
-    });
-  }
 
   test.describe("baselines", () => {
     test.use({ deviceScaleFactor: 1 });
@@ -302,17 +286,20 @@ test.describe("switching designs", () => {
     const loaded = (family: string) => page.evaluate((f) => [...document.fonts].filter((x) => x.family.replace(/"/g, "") === f).some((x) => x.status === "loaded"), family);
     expect(await loaded("Figtree Variable")).toBe(false);
     expect(await loaded("Instrument Sans Variable")).toBe(false);
+    // the face doesn't come until the switch has happened: a switch that waited for it never would (plan 139: no clock to flake)
+    let arrive!: () => void;
+    const held = new Promise<void>((r) => (arrive = r));
     await page.route(/instrument-sans.*\.woff2$/, async (route) => {
-      await new Promise((r) => setTimeout(r, 1500));
+      await held;
       await route.continue();
     });
-    const t0 = Date.now();
     await page.keyboard.press("ControlOrMeta+k");
     await page.getByTestId("palette-design-atelier").click();
     await expect(page.locator("html")).toHaveAttribute("data-design", "atelier");
-    expect(Date.now() - t0).toBeLessThan(1400);
     // text shows in a fallback meanwhile (swap), then the face arrives
     await expect(page.getByTestId("list-title")).toBeVisible();
+    expect(await loaded("Instrument Sans Variable")).toBe(false);
+    arrive();
     // Atelier is Instrument Sans throughout (649d46cd)
     await expect.poll(() => loaded("Instrument Sans Variable"), { timeout: 8000 }).toBe(true);
     expect(await loaded("Figtree Variable")).toBe(false);

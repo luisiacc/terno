@@ -10,7 +10,7 @@ test.use({ backendOptions: { network: true } });
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 
-test.describe("connection pill", { tag: "@design" }, () => {
+test.describe("connection pill", () => {
   test("a blip shows nothing; a second failure shows the account offline with its retry; Retry now brings it back", async ({ app: page, server }) => {
     const [account] = await server.backend.store.accounts.list();
     const pill = page.getByTestId("connection-pill");

@@ -41,7 +41,7 @@ async function expectSofterHover(page: Page, surface: Locator, plain: Locator, s
 }
 
 for (const mode of ["light", "dark"] as const) {
-  test(`a hovered sidebar row is lighter than the selected one, ${mode} @design`, async ({ app: page, server }) => {
+  test(`a hovered sidebar row is lighter than the selected one, ${mode}`, { tag: "@design" }, async ({ app: page, server }) => {
     await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
     await page.reload();
     await page.locator("[data-ready]").waitFor();

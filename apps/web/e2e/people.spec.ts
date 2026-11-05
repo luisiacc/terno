@@ -2,7 +2,7 @@
  * Plan 17: the People filter, everywhere the quick filters are (Lumen's
  * chips, the "Filtered by" menu of macOS and Atelier, the palette), and
  * Lumen's "· M waiting for your reply", which filters to those conversations.
- * The People flow is @design: it holds in every design.
+ * The People flow goes through the quick filters' variant (@variant).
  */
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
@@ -31,8 +31,8 @@ async function chooseFilter(page: Page, design: DesignId | null, filter: ListFil
   await page.getByTestId(`filter-option-${filter}`).click();
 }
 
-test.describe("the People filter", { tag: "@design" }, () => {
-  test("keeps the conversations whose newest inbound mail is from a person; the open one stays until the selection moves", async ({ app: page, server, design }) => {
+test.describe("the People filter", () => {
+  test("keeps the conversations whose newest inbound mail is from a person; the open one stays until the selection moves", { tag: "@variant" }, async ({ app: page, server, design }) => {
     await chooseFilter(page, design, "people");
     await showing(page, "people");
     const people = new Set(ids(server, "person = 1"));

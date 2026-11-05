@@ -54,8 +54,8 @@ async function everyPlace(server: DevServer) {
 
 const row = (page: Page, id: number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
 
-test.describe("search everywhere", { tag: "@design" }, () => {
-  test("typed in Inbox, a search finds Inbox, Archive, Spam and Trash mail at once; Spam and Trash rows say so", async ({ app: page, server }) => {
+test.describe("search everywhere", () => {
+  test("typed in Inbox, a search finds Inbox, Archive, Spam and Trash mail at once; Spam and Trash rows say so", { tag: "@variant" }, async ({ app: page, server }) => {
     const ids = await everyPlace(server);
     await search(page, "pepinillo");
     await expect(rows(page)).toHaveCount(4);
@@ -84,7 +84,7 @@ test.describe("search everywhere", { tag: "@design" }, () => {
     await expect(row(page, ids.spam)).toHaveCount(0);
   });
 
-  test("no sender icon is asked for a spam row, in any search (a row in the Inbox is)", async ({ app: page, server }) => {
+  test("no sender icon is asked for a spam row, in any search (a row in the Inbox is)", { tag: "@variant" }, async ({ app: page, server }) => {
     // classic rows have no avatar, so no icon to ask for (icons.spec)
     const id = await page.locator("html").getAttribute("data-design");
     test.skip(DESIGNS.find((d) => d.id === id)!.variants.row === "classic", "classic rows show no avatar");

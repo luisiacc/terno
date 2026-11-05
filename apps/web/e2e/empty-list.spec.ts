@@ -30,7 +30,7 @@ for (const design of ["macos", "lumen"] as const) {
   test.describe(`${design} empty list`, () => {
     test.use({ design, layout: design === "macos" ? "split" : "list" });
     for (const language of ["en", "es"] as const) for (const theme of ["light", "dark"] as const) {
-      test(`empty and populated semantics (${language}, ${theme}) @design`, async ({ page, server, layout }, info) => {
+      test(`empty and populated semantics (${language}, ${theme})`, async ({ page, server, layout }, info) => {
         const ctx = { clientId: "setup", origin: "dev" as const };
         await server.backend.server.invoke("settings.update", { design, layout: layout!, language, theme }, ctx);
         // A real account with no messages gives ordinary empty Inbox and Trash views.
@@ -112,7 +112,7 @@ for (const design of ["macos", "lumen"] as const) {
 }
 
 for (const populated of [false, true]) {
-  test(`zero-row loading keeps focus until its ${populated ? "populated" : "empty"} answer @design`, async ({ app: page, server }) => {
+  test(`zero-row loading keeps focus until its ${populated ? "populated" : "empty"} answer`, async ({ app: page, server }) => {
     const input = await searchBox(page);
     await input.fill("zzqx-no-such-mail");
     await expect(page.getByTestId("list-empty")).toBeVisible();

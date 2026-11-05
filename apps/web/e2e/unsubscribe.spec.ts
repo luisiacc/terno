@@ -36,7 +36,7 @@ async function recordOpens(page: Page): Promise<() => Promise<string[]>> {
 const ONE_CLICK = { oneClick: "https://weekly.example/u/1", url: "https://weekly.example/u/1" };
 
 for (const theme of ["light", "dark"] as const) {
-  test(`one-click: the menu offers it and it's done in one click (${theme})`, { tag: "@design" }, async ({ app: page, server }, testInfo) => {
+  test(`one-click: the menu offers it and it's done in one click (${theme})`, async ({ app: page, server }, testInfo) => {
     const id = await ingest(server, { id: `weekly-${theme}`, subject: `Weekly issue ${theme}`, unsubscribe: ONE_CLICK });
     await server.backend.server.invoke("settings.update", { theme }, ctx);
     await page.reload();

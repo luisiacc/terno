@@ -1,6 +1,6 @@
 /**
  * Plan 23: in views across accounts, each row names the account its mail came to (Apple Mail's
- * All Inboxes). Tagged @design: every flow runs in macOS, Lumen and Atelier, in both densities.
+ * All Inboxes). The row's layout is a variant, so the first flow is @variant, in both densities.
  */
 import type { Page } from "@playwright/test";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
@@ -58,8 +58,8 @@ async function expectContained(page: Page) {
   expect(escaped).toEqual([]);
 }
 
-test.describe("the receiving account on rows", { tag: "@design" }, () => {
-  test("the unified inbox names each row's account under the date (before it in compact), muted, within the row, and read out once at the end", async ({ app: page, server }) => {
+test.describe("the receiving account on rows", () => {
+  test("the unified inbox names each row's account under the date (before it in compact), muted, within the row, and read out once at the end", { tag: "@variant" }, async ({ app: page, server }) => {
     const d = await design(page);
     for (const density of ["comfortable", "compact"] as const) {
       if (density === "compact") await setDensity(page, server, "compact");

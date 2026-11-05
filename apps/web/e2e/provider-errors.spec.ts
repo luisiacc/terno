@@ -39,7 +39,7 @@ async function inViewport(page: Page, element: Locator) {
 }
 
 for (const design of ["macos", "lumen"] as const) for (const language of ["en", "es"] as const) for (const theme of ["light", "dark"] as const) for (const entry of ["notice", "marker"] as const) {
-  test(`long provider refusal (${design}, ${language}, ${theme}, ${entry}) @design`, async ({ page }, info) => {
+  test(`long provider refusal (${design}, ${language}, ${theme}, ${entry})`, async ({ page }, info) => {
     await page.setViewportSize(design === "lumen" ? { width: 420, height: 560 } : { width: 1280, height: 800 });
     const dir = mkdtempSync(join(tmpdir(), "terno-provider-errors-"));
     let server: DevServer | undefined;

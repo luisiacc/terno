@@ -4,7 +4,7 @@ import { mkdirSync } from "node:fs";
 import { expect, openRow, stabilize, test } from "./fixtures";
 mkdirSync("/tmp/terno-missing-draft-r2-shots", { recursive: true });
 
-for (const normalization of ["missing original", "cross-account"] as const) test(`copy context normalization keeps its original inline editor (${normalization}) @design`, async ({ app: page, server }, info) => {
+for (const normalization of ["missing original", "cross-account"] as const) test(`copy context normalization keeps its original inline editor (${normalization})`, async ({ app: page, server }, info) => {
   const account = (await server.backend.store.accounts.list())[0]!;
   await ingest(server.backend.store, [msg({ accountId: account.id, providerMsgId: "r2-first", rfcMessageId: "r2-first@example.test", date: Date.now() + 1000 }), msg({ accountId: account.id, providerMsgId: "r2-second", references: ["r2-first@example.test"], date: Date.now() + 2000 })]);
   await page.reload(); await page.getByTestId("thread-row").first().waitFor();

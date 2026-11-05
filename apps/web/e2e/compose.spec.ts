@@ -15,7 +15,7 @@ import { sqlDb } from "../../backend-dev/src/server";
 const composer = (page: Page) => page.getByTestId("reader").getByTestId("composer");
 const toast = (page: Page, text: string) => page.locator("[data-testid=snack]").filter({ hasText: text });
 
-test.describe("inline reply, reply-all, forward", { tag: "@design" }, () => {
+test.describe("inline reply, reply-all, forward", () => {
   test("r opens a reply inline, focused, with the quote apart; ⌘↵ sends and the message appears in the thread", async ({ app: page }) => {
     await openRow(page, 0);
     const subject = (await page.getByTestId("reader-subject").textContent())!;
@@ -146,7 +146,7 @@ test.describe("inline reply, reply-all, forward", { tag: "@design" }, () => {
   });
 });
 
-test.describe("drafts are kept", { tag: "@design" }, () => {
+test.describe("drafts are kept", () => {
   test("Esc collapses the draft (focus on it), the text survives switching threads, and Enter reopens it", async ({ app: page }) => {
     const id = await openRow(page, 0);
     await focusList(page);
@@ -288,7 +288,21 @@ test.describe("drafts are kept", { tag: "@design" }, () => {
   });
 });
 
-test.describe("new message, in the reader pane", { tag: "@design" }, () => {
+test.describe("new message, in the reader pane", () => {
+  // plan 139: where the control is, a design's variant: the list header, the sidebar's pill, outline or row
+  test("the compose control opens a new message, focused in To, and it can be left and come back to", { tag: ["@variant", "@variant-graphite"] }, async ({ app: page }) => {
+    await page.getByTestId("compose-button").click();
+    await expect(page.getByRole("form", { name: "New message" })).toBeVisible();
+    await expect(page.getByTestId("compose-to")).toBeFocused();
+    await page.keyboard.type("ana@example.com");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("composer")).toHaveCount(0);
+    await expect(page.getByTestId("strip-item").first()).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("compose-to-field").getByTestId("recipient-chip")).toHaveCount(1);
+  });
+
   test("c writes a new message in the reader (no dialog), with the drafts strip; it lands in Sent", async ({ app: page }) => {
     await openRow(page, 0);
     await focusList(page);

@@ -70,7 +70,7 @@ async function shots(page: Page, name: string) {
 }
 
 test.describe("summaries (plan 132)", () => {
-  test("@design turned on, new mail gets a summary between the header and the conversation; old mail has none; axe-clean in both modes", async ({ app: page, server, design }) => {
+  test("turned on, new mail gets a summary between the header and the conversation; old mail has none; axe-clean in both modes", { tag: "@variant" }, async ({ app: page, server, design }) => {
     const accountId = await firstAccount(server);
     await settingUp(page, server, { ai: { provider: "fake" } });
 
@@ -137,7 +137,7 @@ test.describe("summaries (plan 132)", () => {
     await expect(page.getByTestId("summary-text")).toBeVisible();
   });
 
-  test("@design by hand on an old conversation: appears at once, can be stopped, and its arrow goes to the message", async ({ app: page, server, design }) => {
+  test("by hand on an old conversation: appears at once, can be stopped, and its arrow goes to the message", async ({ app: page, server, design }) => {
     const stub = await startOllamaStub({ chatDelayMs: 4000 });
     try {
       await settingUp(page, server, { ai: { provider: "ollama", baseURL: `${stub.url}/v1`, model: "qwen3:8b" } });

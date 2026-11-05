@@ -8,7 +8,7 @@ test.use({ backendOptions: { smtpCapture: true } });
 
 for (const mode of ["reply", "replyAll"] as const) {
   for (const theme of ["light", "dark"] as const) {
-    test(`Reply-To ${mode} (${theme}): displayed destinations match the queued payload and SMTP envelope`, { tag: "@design" }, async ({ app: page, server }, testInfo) => {
+    test(`Reply-To ${mode} (${theme}): displayed destinations match the queued payload and SMTP envelope`, mode === "reply" && theme === "light" ? { tag: "@variant" } : {}, async ({ app: page, server }, testInfo) => {
       const [account] = await server.backend.store.accounts.list();
       const now = Date.now();
       const incoming: IncomingMessage = {

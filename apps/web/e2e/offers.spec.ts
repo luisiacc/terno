@@ -60,7 +60,7 @@ function group(server: DevServer, categoryId: number) {
 
 const catId = (server: DevServer, name: string) => sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = ?", name)!.id;
 
-test.describe("plan 91: defaults and the same offers everywhere", { tag: "@design" }, () => {
+test.describe("plan 91: defaults and the same offers everywhere", () => {
   test("a drag of bulk mail moves its sender + subject group and files their new mail; 0 keeps only the drag; z undoes the drag", async ({ app: page, server }) => {
     const facturas = catId(server, "Facturas");
     const g = group(server, facturas);

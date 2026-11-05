@@ -5,7 +5,7 @@ import { expect, stabilize, test } from "./fixtures";
 const ctx = { clientId: "setup", origin: "dev" as const };
 
 for (const theme of ["light", "dark"] as const) {
-  test(`switching photos on waits for the next sign-in, with "Sign in now" beside it (${theme})`, { tag: "@design" }, async ({ app: page, server }, testInfo) => {
+  test(`switching photos on waits for the next sign-in, with "Sign in now" beside it (${theme})`, async ({ app: page, server }, testInfo) => {
     const gmail = (await server.backend.store.accounts.list()).find((a) => a.kind === "gmail")!;
     await server.backend.server.invoke("settings.update", { theme }, ctx);
     await page.reload();

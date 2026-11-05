@@ -9,11 +9,17 @@ import { defineConfig, devices } from "@playwright/test";
 const PORT = Number(process.env.E2E_PORT ?? 5180);
 const OUT = process.env.E2E_PORT ? `dist-e2e-${PORT}` : "dist-e2e";
 
+/**
+ * What each design's project runs, beyond `e2e` (macOS), which runs every flow once: @design everywhere, and a design's own
+ * structural variants only where it holds a value macOS lacks (designs.spec.ts says when to use which). Luma adds no value.
+ */
+const FLOWS = { lumen: /@design|@variant(?!-)/, atelier: /@design|@variant(?!-)/, luma: /@design/, graphite: /@design|@variant-graphite/ } as const;
+
 export default defineConfig({
   testDir: "e2e",
   globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
-  workers: process.env.CI ? 2 : 4,
+  workers: process.env.CI ? 2 : 8,
   retries: 0,
   timeout: 45_000,
   expect: {
@@ -36,12 +42,12 @@ export default defineConfig({
   },
   projects: [
     { name: "e2e", testIgnore: /perf\.spec\.ts/ },
-    // plan 15: the flows tagged @design again in the other designs (the suite above runs in macOS); their baselines apart
+    // plan 15: the other designs, their baselines apart (plan 139: what a design can change, not every flow again)
     ...(["lumen", "atelier", "luma", "graphite"] as const).map((design) => ({
       name: `e2e-${design}`,
       testIgnore: /perf\.spec\.ts/,
       // E2E_DESIGN_ALL=1 runs every flow in this design (a full pass, not the gate)
-      grep: process.env.E2E_DESIGN_ALL ? undefined : /@design/,
+      grep: process.env.E2E_DESIGN_ALL ? undefined : FLOWS[design],
       use: { design },
       snapshotPathTemplate: `{testDir}/__screenshots__/${design}/{testFilePath}/{arg}{ext}`,
     })),

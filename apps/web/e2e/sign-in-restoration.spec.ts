@@ -6,7 +6,7 @@ test.use({ backendOptions: { network: true } });
 const ctx = { clientId: "setup", origin: "dev" as const };
 
 for (const theme of ["light", "dark"] as const) {
-  test(`deferred popup restoration preserves the password and later focus (${theme}) @design`, async ({ app: page, server }, info) => {
+  test(`deferred popup restoration preserves the password and later focus (${theme})`, async ({ app: page, server }, info) => {
     await server.backend.server.invoke("settings.update", { theme }, ctx);
     await page.reload();
     await page.locator("[data-ready]").waitFor();

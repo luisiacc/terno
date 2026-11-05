@@ -25,7 +25,7 @@ async function focusFromMenu(page: Page, id: number) {
   await expect(page.getByTestId("solo-back")).toBeVisible();
 }
 
-test.describe("focus on one account", { tag: "@design" }, () => {
+test.describe("focus on one account", () => {
   test("the menu focuses an account: only its places show, Starred and All Mail its own; the back arrow is all accounts", async ({ app: page, server }) => {
     const [a, b] = await accountIds(page);
     const account = (await server.backend.store.accounts.get(a!))!;
@@ -84,7 +84,7 @@ test.describe("focus on one account", { tag: "@design" }, () => {
     await expect(page.getByTestId("solo-back")).toBeFocused();
   });
 
-  test("a search looks only in the focused account; Search all accounts widens it and shows every account again", async ({ app: page, server }) => {
+  test("a search looks only in the focused account; Search all accounts widens it and shows every account again", { tag: "@variant" }, async ({ app: page, server }) => {
     const [a, b] = await accountIds(page);
     const db = sqlDb(server.backend.store);
     // a word in the other account's newest subject

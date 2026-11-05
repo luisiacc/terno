@@ -63,7 +63,7 @@ async function newMessageUnderTallPin(page: Page, opener: () => Promise<unknown>
   await expect(card(page)).toBeVisible();
 }
 
-test.describe("a pinned draft", { tag: "@design" }, () => {
+test.describe("a pinned draft", () => {
   test("stays while other conversations are read; its own shows it pinned; r there goes to the card", async ({ app: page }) => {
     const first = await pinReply(page, 1, "Pinned while I look something up");
     // its conversation keeps a quiet line in its place, no second editor

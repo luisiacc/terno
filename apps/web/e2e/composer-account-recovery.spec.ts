@@ -42,7 +42,7 @@ async function snapshot(page: Page) {
 
 for (const theme of ["light", "dark"] as const) {
   for (const placement of ["caret", "backward selection", "list focus"] as const) {
-    test(`background OAuth recovery preserves authored composer and ${placement} (${theme}) @design`, async ({ app: page, server }, info) => {
+    test(`background OAuth recovery preserves authored composer and ${placement} (${theme})`, async ({ app: page, server }, info) => {
       await page.emulateMedia({ colorScheme: theme });
       await expect(page.locator("html")).toHaveClass(theme === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
       const account = (await server.backend.store.accounts.list()).find((a) => a.kind === "gmail")!;

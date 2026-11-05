@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import { msg } from "@terno/store/conformance";
 import { expect, selectThread, stabilize, test } from "./fixtures";
 
-test("reader attachment controls include all visible labels and localized download purpose @design", async ({ app: page, server }, testInfo) => {
+test("reader attachment controls include all visible labels and localized download purpose", async ({ app: page, server }, testInfo) => {
   const [account] = await server.backend.store.accounts.list();
   const { touched } = await server.backend.store.sync.ingest([msg({ accountId: account!.id, providerMsgId: "attachment-controls", subject: "Attachment controls fixture", attachments: [
     { filename: "résumé.bin", mime: "application/octet-stream", size: 3, bytes: new Uint8Array([0, 255, 128]) },

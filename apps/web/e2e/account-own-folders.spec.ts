@@ -16,7 +16,7 @@ const own = (page: Page, accountId: number, key: string) => page.getByTestId(`na
 const listFor = (page: Page) => page.getByTestId("thread-list").getAttribute("data-results-for").then((k) => JSON.parse(k!) as unknown[]);
 const rowIds = (page: Page) => page.locator("[data-testid=thread-row]").evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-thread-id"))));
 
-test.describe("an account's own folders", { tag: "@design" }, () => {
+test.describe("an account's own folders", () => {
   test("an open account lists its own folders under its standard ones, nested, with unread counts; one lists its threads", async ({ app: page, server }) => {
     const acme = accountOf(server, "Acme Studio");
     await page.getByTestId(`nav-account-${acme}`).click();

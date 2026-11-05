@@ -13,7 +13,7 @@ async function trashed(page: Page) {
   await expect(page.getByText("Moved to Trash").first()).toBeVisible();
 }
 
-test.describe("no focus ring around the conversation list @design", () => {
+test.describe("no focus ring around the conversation list", () => {
   test("after trashing with the keyboard, the list keeps focus without a ring", async ({ app: page }) => {
     const list = page.getByRole("listbox", { name: "Conversations", exact: true });
     await rows(page).nth(1).click();

@@ -8,7 +8,7 @@ import { sqlDb } from "../../backend-dev/src/server";
 
 test.use({ backendOptions: { smtpCapture: true } });
 
-test("last attachment removal keeps From locked until acknowledgement, then edits autosave across reload @design", async ({ app: page, server }, testInfo) => {
+test("last attachment removal keeps From locked until acknowledgement, then edits autosave across reload", async ({ app: page, server }, testInfo) => {
   await openRow(page, 0);
   await page.getByTestId("quick-reply").click();
   await page.getByTestId("attachment-input").setInputFiles({ name: "remove.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 255, 128]) });
@@ -56,7 +56,7 @@ test("last attachment removal keeps From locked until acknowledgement, then edit
   } finally { release(); server.backend.store.drafts.save = save; }
 });
 
-test("attachments attach/remove/reload/send/download exact bytes @design", async ({ app: page, server }, testInfo) => {
+test("attachments attach/remove/reload/send/download exact bytes", async ({ app: page, server }, testInfo) => {
   await openRow(page, 0);
   await page.getByTestId("quick-reply").click();
   const bytes = Buffer.from([0, 255, 128, 1, 2, 13, 10]);
@@ -96,7 +96,7 @@ test("attachments attach/remove/reload/send/download exact bytes @design", async
 });
 
 
-test("offline CID consent and forwarding retain exact account-owned bytes @design", async ({ app: page, server }) => {
+test("offline CID consent and forwarding retain exact account-owned bytes", async ({ app: page, server }) => {
   const [account] = await server.backend.store.accounts.list();
   const bytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aVuoAAAAASUVORK5CYII=", "base64");
   const now = Date.now();
@@ -128,7 +128,7 @@ test("offline CID consent and forwarding retain exact account-owned bytes @desig
 });
 
 
-test("sending during attachment staging refuses a partial revision @design", async ({ app: page, server }) => {
+test("sending during attachment staging refuses a partial revision", async ({ app: page, server }) => {
   await openRow(page, 0);
   await page.getByTestId("quick-reply").click();
   const store = server.backend.store;
@@ -153,7 +153,7 @@ test("sending during attachment staging refuses a partial revision @design", asy
 });
 
 
-test("attachment-only reply survives reload and mode conversion with exact Undo @design", async ({ app: page, server }, testInfo) => {
+test("attachment-only reply survives reload and mode conversion with exact Undo", async ({ app: page, server }, testInfo) => {
   await openRow(page, 0);
   await page.getByTestId("quick-reply").click();
   const bytes = Buffer.from([0, 255, 128, 13, 10]);
@@ -185,7 +185,7 @@ test("attachment-only reply survives reload and mode conversion with exact Undo 
   expect((await parseRaw(server.smtp[0]!.raw)).attachments[0]!.bytes).toEqual(new Uint8Array(bytes));
 });
 
-test("Forward refuses foreign account refs before changing authored work, with keyboard recovery @design", async ({ app: page, server }, testInfo) => {
+test("Forward refuses foreign account refs before changing authored work, with keyboard recovery", async ({ app: page, server }, testInfo) => {
   const accounts = await server.backend.store.accounts.list();
   const source = accounts[0]!, other = accounts[1]!;
   const { touched } = await server.backend.store.sync.ingest([msg({ accountId: source.id, providerMsgId: "from-convert", subject: "From conversion fixture", attachments: [

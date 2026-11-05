@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { expect, openRow, stabilize, test } from "./fixtures";
 mkdirSync("/tmp/terno-missing-draft-r2-shots", { recursive: true });
 
-test("render-error recovery reviews exact draft history and files outside the broken app @design", async ({ app: page, server }, info) => {
+test("render-error recovery reviews exact draft history and files outside the broken app", async ({ app: page, server }, info) => {
   await openRow(page, 0); await page.getByTestId("quick-reply").click();
   const body = page.getByTestId("compose-body"); await body.fill("recovered rich work");
   await body.press("Meta+a"); await body.press("Meta+b"); await body.click(); await body.press("ArrowRight"); await body.press("Meta+ArrowRight");

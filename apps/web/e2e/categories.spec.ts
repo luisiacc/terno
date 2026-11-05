@@ -2,7 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, rows, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
-test.describe("categories", { tag: "@design" }, () => {
+test.describe("categories", () => {
   test("creates a new category from the picker by typing its name; new categories keep their mail out of the Inbox", async ({ app: page, server }) => {
     const first = rows(page).first();
     const id = await first.getAttribute("data-thread-id");
@@ -55,7 +55,7 @@ test.describe("categories", { tag: "@design" }, () => {
   });
 });
 
-test.describe("a category hidden from the Inbox (plan 83)", { tag: "@design" }, () => {
+test.describe("a category hidden from the Inbox (plan 83)", () => {
   test("right-click → Show in Inbox off: its rows leave the Inbox and its count; the category keeps them; Undo brings them back", async ({ app: page, server }) => {
     const db = sqlDb(server.backend.store);
     // the category with the most Inbox threads in the seed

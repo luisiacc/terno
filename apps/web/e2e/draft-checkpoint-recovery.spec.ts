@@ -14,7 +14,7 @@ const selection = (page: import("@playwright/test").Page) => page.evaluate(() =>
   return { anchor: s?.anchorOffset, focus: s?.focusOffset, anchorText: s?.anchorNode?.textContent, focusText: s?.focusNode?.textContent };
 });
 
-for (const position of ["backward range", "italic caret"] as const) test(`fatal Review restores a persistently unread rich checkpoint with ${position} @design`, async ({ app: page, server }, info) => {
+for (const position of ["backward range", "italic caret"] as const) test(`fatal Review restores a persistently unread rich checkpoint with ${position}`, async ({ app: page, server }, info) => {
   let navigations = 0;
   page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) navigations++; });
   try {

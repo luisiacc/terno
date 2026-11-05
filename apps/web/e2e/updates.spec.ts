@@ -80,7 +80,7 @@ async function shoot(page: Page, name: string) {
   await page.locator("aside").first().screenshot({ path: `${SHOTS}/${name}.png` });
 }
 
-test.describe("updates: the sidebar pill", { tag: "@design" }, () => {
+test.describe("updates: the sidebar pill", () => {
   test("nothing while idle or up to date; an offer, a download with its ring, then an accent restart", async ({ app: page }) => {
     await fakeMain(page, { status: "up-to-date", checkedAt: Date.now() });
     await expect(pill(page)).toHaveCount(0);
@@ -173,7 +173,7 @@ test.describe("updates: the sidebar pill", { tag: "@design" }, () => {
   }
 });
 
-test.describe("updates: Settings and ⌘K", { tag: "@design" }, () => {
+test.describe("updates: Settings and ⌘K", () => {
   test("Settings → General → Updates: automatic/manual, channel, check now with its answer; where updates come from is disclosed", async ({ app: page }) => {
     const now = await page.evaluate(() => Date.now()); // the page runs on the fixture's frozen clock
     await fakeMain(page, { status: "idle", checkedAt: now - 5 * 60_000 }, { check: { status: "up-to-date", checkedAt: now } });

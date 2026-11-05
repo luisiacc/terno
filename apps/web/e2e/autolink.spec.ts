@@ -2,8 +2,7 @@
  * Plan 39: live autolinks in the composer, in a real browser. The user's
  * report first (type a URL, delete ".com", type "qwe.com": one link to what
  * it says), then the variations: brackets and quotes, ⇧Enter, undo/redo,
- * paste and copy, an IME composition, a draft reopened. Tagged @design: the
- * link's look and its bubble hold in macOS, Lumen and Atelier.
+ * paste and copy, an IME composition, a draft reopened.
  */
 import type { Page } from "@playwright/test";
 import { expect, focusList, openRow, test } from "./fixtures";
@@ -83,7 +82,7 @@ async function honest(page: Page) {
       );
 }
 
-test.describe("live autolinks", { tag: "@design" }, () => {
+test.describe("live autolinks", () => {
   test("the report: https://santo.com, delete .com, type qwe.com → one link to https://santoqwe.com; the bubble shows it", async ({
     app: page,
   }) => {
@@ -320,7 +319,6 @@ test.describe("live autolinks", { tag: "@design" }, () => {
 
 test.describe(
   "screenshots of a live-edited link (AUTOLINK_SHOTS=1)",
-  { tag: "@design" },
   () => {
     test.skip(!process.env.AUTOLINK_SHOTS, "visual check only");
     for (const mode of ["light", "dark"] as const)

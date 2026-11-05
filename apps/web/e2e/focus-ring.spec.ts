@@ -13,7 +13,7 @@ const ringed = (page: Page) => page.evaluate(() => {
   return { dbg: `${s.outlineStyle} ${s.outlineColor} | ${s.boxShadow} | flag=${document.documentElement.hasAttribute("data-focus-ring")}`, ring: s.outlineStyle !== "none" || s.boxShadow.includes(ring), focusVisible: el.matches(":focus-visible"), tag: `${el.tagName} ${el.dataset.testid ?? ""}` };
 });
 
-test.describe("focus rings @design", () => {
+test.describe("focus rings", () => {
   test("r then Esc leaves focus on the reply bar without a ring", async ({ app: page }) => {
     await openRow(page, 0);
     await page.keyboard.press("r");

@@ -2,7 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { msg } from "@terno/store/conformance";
 import { expect, selectThread, test } from "./fixtures";
 
-test("Forward refuses 101 files before mutation; continued typing and the 100-file boundary stay durable @design", async ({ app: page, server }, testInfo) => {
+test("Forward refuses 101 files before mutation; continued typing and the 100-file boundary stay durable", async ({ app: page, server }, testInfo) => {
   const store = server.backend.store, [account] = await store.accounts.list();
   const { touched } = await store.sync.ingest([msg({ accountId: account!.id, providerMsgId: "capacity-forward", subject: "Forward capacity fixture", attachments: [{ filename: "source-empty.txt", mime: "text/plain", size: 0, bytes: new Uint8Array() }] })], { applyFilters: false, now: Date.now(), classifier: null });
   await page.reload(); await selectThread(page, touched[0]!, 'subject:"Forward capacity fixture"');

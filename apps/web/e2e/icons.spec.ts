@@ -1,6 +1,7 @@
 /**
  * Plan 22: sender icons. The backend's real fetcher runs against e2e/icon-stub.ts (no internet):
- * a few seeded senders' sites have icons, the rest 404. Tagged @design: every design, light.
+ * a few seeded senders' sites have icons, the rest 404. Classic rows have no avatar to ask an icon for, so what
+ * rows ask is proved in the designs with avatars (@variant); where the icon sits, in every design (@design).
  */
 import type { Page } from "@playwright/test";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
@@ -19,8 +20,8 @@ async function reload(page: Page) {
   await rows(page).first().waitFor();
 }
 
-test.describe("sender icons", { tag: "@design" }, () => {
-  test("turned off: the list and the reader ask nothing, nothing is requested", async ({ app: page, server }) => {
+test.describe("sender icons", () => {
+  test("turned off: the list and the reader ask nothing, nothing is requested", { tag: "@variant" }, async ({ app: page, server }) => {
     await rows(page).nth(2).dispatchEvent("mousedown", { button: 0 });
     await expect(page.getByTestId("reader-subject")).toBeVisible();
     await page.getByTestId("thread-list").locator("[role=listbox]").evaluate((el) => (el.scrollTop = 4000));
@@ -29,7 +30,7 @@ test.describe("sender icons", { tag: "@design" }, () => {
     await expect(page.getByTestId("sender-icon")).toHaveCount(0);
   });
 
-  test("turned on, icons appear in the avatar's own box (no layout shift); unknown sites and freemail keep their initials; one request chain per site", async ({ app: page, server }) => {
+  test("turned on, icons appear in the avatar's own box (no layout shift); unknown sites and freemail keep their initials; one request chain per site", { tag: "@design" }, async ({ app: page, server }) => {
     const d = await design(page);
     await server.backend.server.invoke("settings.update", { senderIcons: true }, ctx);
     await reload(page);
@@ -59,7 +60,7 @@ test.describe("sender icons", { tag: "@design" }, () => {
     expect(server.icons.requests.every((u) => !new URL(u).search)).toBe(true);
   });
 
-  test("the Spam view asks for nothing", async ({ app: page, server }) => {
+  test("the Spam view asks for nothing", { tag: "@variant" }, async ({ app: page, server }) => {
     await server.backend.server.invoke("settings.update", { senderIcons: true }, ctx);
     await reload(page);
     await page.waitForTimeout(400);

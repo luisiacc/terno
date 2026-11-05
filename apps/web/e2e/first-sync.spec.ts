@@ -11,7 +11,7 @@ const NEW = "new-account@example.test";
 
 // plan 79: the window is asked for when connecting, the account downloads that, and the sidebar says so while it does
 for (const theme of ["light", "dark"] as const) {
-  test(`a new account: the window asked for, a quiet pill while its first sync runs (${theme}) @design`, async ({ page }, info) => {
+  test(`a new account: the window asked for, a quiet pill while its first sync runs (${theme})`, async ({ page }, info) => {
     const dir = mkdtempSync(join(tmpdir(), "terno-first-sync-"));
     let server: DevServer | undefined;
     let release!: () => void;

@@ -40,8 +40,8 @@ const movedTo = (category: string) => new RegExp(`^Moved (to ${category}|\\d+ em
 
 const navCount = async (page: Page, catId: number) => Number((await page.getByTestId(`nav-category-${catId}`).locator("[data-slot=nav-count]").textContent().catch(() => "0")) || 0);
 
-test.describe("drag and drop to a category", { tag: "@design" }, () => {
-  test("one row: ghost, target highlight, dot, count, the snackbar and its undo", async ({ app: page, server }) => {
+test.describe("drag and drop to a category", () => {
+  test("one row: ghost, target highlight, dot, count, the snackbar and its undo", { tag: "@variant" }, async ({ app: page, server }) => {
     const viajes = categoryId(server, "Viajes");
     const target = page.getByTestId(`nav-category-${viajes}`);
     // an unread one, so the sidebar's unread count moves too

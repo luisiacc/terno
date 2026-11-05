@@ -37,7 +37,7 @@ async function setUp(page: Page, server: Parameters<Parameters<typeof test>[2]>[
   return { db, cat, dialog };
 }
 
-test.describe("forwarding what lands in a category (plan 116)", { tag: "@design" }, () => {
+test.describe("forwarding what lands in a category (plan 116)", () => {
   test("the menu sets it up; new mail filed there waits with one notice and Cancel; the reader says so", async ({ app: page, server }) => {
     const { db, cat, dialog } = await setUp(page, server);
     await expect(dialog.getByRole("heading")).toHaveText("Forward new mail from Facturas");

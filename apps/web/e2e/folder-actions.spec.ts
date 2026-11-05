@@ -22,7 +22,7 @@ async function openAccount(page: Page, id: number) {
   await expect(row).toHaveAttribute("aria-expanded", "true");
 }
 
-test.describe("folder actions", { tag: "@design" }, () => {
+test.describe("folder actions", () => {
   test("the \"+\" shows on hover of an open account and of a folder, and the count steps aside", async ({ app: page, server }) => {
     const acme = accountOf(server, "Acme Studio");
     const add = page.getByTestId(`account-add-folder-${acme}`);

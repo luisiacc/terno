@@ -32,7 +32,7 @@ function senderSetup(server: DevServer) {
 
 const result = (page: Page, text: string | RegExp) => page.locator("[data-testid=snack]").filter({ hasText: text });
 
-test.describe("similar mail", { tag: "@design" }, () => {
+test.describe("similar mail", () => {
   test("archiving one thread offers the rest from its sender: 1 archives them, one Undo brings back all", async ({ app: page, server }) => {
     const { email, ids, inInbox } = senderSetup(server);
     expect(ids.length).toBeGreaterThan(2);

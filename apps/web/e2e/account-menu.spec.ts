@@ -28,7 +28,7 @@ const inboxUnread = (db: ReturnType<typeof sqlDb>, account: number) =>
     account,
   )!.c;
 
-test.describe("the account menu", { tag: "@design" }, () => {
+test.describe("the account menu", () => {
   test.describe("an account that needs a sign-in", () => {
     test.use({ backendOptions: { network: true } });
     test("shows its actions; Sign in again… only for an account that needs it", async ({ app: page, server }) => {

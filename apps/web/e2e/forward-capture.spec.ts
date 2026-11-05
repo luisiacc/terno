@@ -11,7 +11,7 @@ import { expect, selectThread, test } from "./fixtures";
 
 test.use({ backendOptions: { smtpCapture: true } });
 
-test("Forward opens while the original downloads; its files join when captured, and what was written survives @design", async ({ app: page, server }, testInfo) => {
+test("Forward opens while the original downloads; its files join when captured, and what was written survives", async ({ app: page, server }, testInfo) => {
   const store = server.backend.store, [account] = await store.accounts.list();
   // the account's sync never captures it on its own here: the files come when the test says
   (server.backend as unknown as { syncAccount: () => Promise<void> }).syncAccount = async () => {};

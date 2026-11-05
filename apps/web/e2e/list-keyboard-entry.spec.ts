@@ -6,7 +6,7 @@ for (const layout of ["list", "split"] as const) {
   test.describe(`${layout} keyboard entry`, () => {
     test.use({ layout });
     for (const theme of ["light", "dark"] as const) {
-      test(`Tab reaches the conversation list (${theme}) @design`, async ({ app: page, server }, info) => {
+      test(`Tab reaches the conversation list (${theme})`, theme === "light" ? { tag: "@variant" } : {}, async ({ app: page, server }, info) => {
         await server.backend.server.invoke("settings.update", { theme }, { clientId: "setup", origin: "dev" });
         await page.reload();
         await page.locator("[data-ready]").waitFor();
@@ -47,7 +47,7 @@ for (const layout of ["list", "split"] as const) {
         await expect(list).not.toBeFocused();
         expect(await list.evaluate((node) => node.contains(document.activeElement))).toBe(false);
       });
-      if (layout === "list") test(`Tab preserves a scrolled list without a missing active descendant (${theme}) @design`, async ({ app: page, server }) => {
+      if (layout === "list") test(`Tab preserves a scrolled list without a missing active descendant (${theme})`, async ({ app: page, server }) => {
         await server.backend.server.invoke("settings.update", { theme }, { clientId: "setup", origin: "dev" });
         await page.reload(); await page.locator("[data-ready]").waitFor(); await rows(page).first().waitFor();
         if (theme === "dark") await expect(page.locator("html")).toHaveClass(/dark/);

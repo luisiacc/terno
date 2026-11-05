@@ -25,7 +25,7 @@ async function ingestCode(server: DevServerFixture, o: { id: string; subject: st
 const rowOf = (page: Page, id: number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
 
 for (const theme of ["light", "dark"] as const) {
-  test(`a fresh verification code copies from its row (${theme})`, { tag: "@design" }, async ({ app: page, server, context }, testInfo) => {
+  test(`a fresh verification code copies from its row (${theme})`, theme === "light" ? { tag: "@variant" } : {}, async ({ app: page, server, context }, testInfo) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     const id = await ingestCode(server, { id: `code-${theme}`, subject: "Your Acme sign-in code", ageMs: 5 * 60_000 });
     // a second one, open, so the screenshots show a chip on a plain row and on the selected one

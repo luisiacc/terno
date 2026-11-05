@@ -87,7 +87,7 @@ function important(accountId: number, subject: string): IncomingMessage {
 }
 
 test.describe("notifications and the unread count (plan 41)", () => {
-  test("@design Settings → General → Notifications: the switches save, the preview follows the main switch, axe-clean; screenshots", async ({ page, server, design }) => {
+  test("Settings → General → Notifications: the switches save, the preview follows the main switch, axe-clean; screenshots", async ({ page, server, design }) => {
     await load(page, server, design);
     const group = await openNotifications(page);
     await expect(page.getByTestId("notify-switch")).toHaveAttribute("aria-checked", "true");

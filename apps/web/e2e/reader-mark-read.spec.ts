@@ -61,7 +61,7 @@ async function markedRead(page: Page, threadId: number, release: () => void): Pr
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 }
 
-test.describe("reader through the read-after-dwell", { tag: "@design" }, () => {
+test.describe("reader through the read-after-dwell", () => {
   test("a focused message toggle, the scroll and the open messages survive the mark-read", async ({ app: page, server }) => {
     const id = await ingestConversation(server, { subject: "Plan de lanzamiento", count: 6, html: 6, unread: 3, now: E2E_NOW });
     const release = holdActions(server);

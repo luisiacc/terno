@@ -104,7 +104,7 @@ test.describe("Lumen's sender card", () => {
   });
 });
 
-test("a one-message conversation has one header in every design @design", async ({ app: page, server, design }) => {
+test("a one-message conversation has one header in every design", { tag: "@variant" }, async ({ app: page, server, design }) => {
   const id = await ingestConversation(server, { subject: "Una sola nota", count: 1, now: E2E_NOW });
   await selectThread(page, id, 'subject:"Una sola nota"');
   await expect(reader(page).getByTestId("message-date")).toHaveCount(design === "lumen" ? 1 : 0);

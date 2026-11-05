@@ -62,8 +62,8 @@ const cursor = async (page: Page) => (await page.locator("[data-testid=thread-ro
 
 const row = (page: Page, id: number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
 
-test.describe("Review list: answering from the rows (plan 80)", { tag: "@design" }, () => {
-  test("only Review rows have the controls; ✓ files it as accepted, the row leaves, nothing opens", async ({ app: page, server }) => {
+test.describe("Review list: answering from the rows (plan 80)", () => {
+  test("only Review rows have the controls; ✓ files it as accepted, the row leaves, nothing opens", { tag: "@variant" }, async ({ app: page, server }) => {
     await expect(page.getByTestId("thread-row").first()).toBeVisible();
     await expect(page.getByTestId("row-review-accept")).toHaveCount(0);
     const { facturas, threads, filed } = await reviewing(page, server);
@@ -181,7 +181,7 @@ test.describe("Review list: answering from the rows (plan 80)", { tag: "@design"
   });
 });
 
-test("the controls and the open menu are axe-clean and read well in light and dark", { tag: "@design" }, async ({ app: page, server }) => {
+test("the controls and the open menu are axe-clean and read well in light and dark", async ({ app: page, server }) => {
   for (const theme of ["light", "dark"] as const) {
     await server.backend.server.invoke("settings.update", { theme }, ctx);
     const { threads } = await reviewing(page, server);

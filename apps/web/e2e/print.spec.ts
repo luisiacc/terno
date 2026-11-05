@@ -29,7 +29,7 @@ test.beforeEach(async ({ page }) => {
   await page.route(/^https?:\/\//, (route) => ["127.0.0.1", "localhost", "[::1]"].includes(new URL(route.request().url()).hostname) ? route.continue() : route.abort());
 });
 
-test.describe("print sheet", { tag: "@design" }, () => {
+test.describe("print sheet", () => {
   test("⌘P opens it on the open conversation, ⇧⌘P on “Save PDF…”; Esc closes; nothing to print, nothing opens", async ({ app: page, server }) => {
     // a new message in the reader pane: nothing to print, and the browser doesn't print the app either
     await focusList(page);
@@ -61,7 +61,7 @@ test.describe("print sheet", { tag: "@design" }, () => {
     await page.keyboard.press("Escape");
   });
 
-  test("from the toolbar (focus comes back to it), the thread menu, a message's menu, inside an HTML mail, and the palette", async ({ app: page, server }) => {
+  test("from the toolbar (focus comes back to it), the thread menu, a message's menu, inside an HTML mail, and the palette", { tag: "@variant" }, async ({ app: page, server }) => {
     const ids = await open(page, server, "inline-replies", 'subject:"Preguntas sobre el contrato"');
     await page.getByTestId("action-print").click();
     await expect(sheet(page)).toBeVisible();

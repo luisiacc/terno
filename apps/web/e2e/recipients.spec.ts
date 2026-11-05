@@ -1,7 +1,6 @@
 /**
  * Plan 34: recipients as chips, and reply-all addresses that survive other
- * clients. Tagged @design, so it runs in macOS, Lumen and Atelier. Typing and
- * the commit keys; Backspace selects then removes (a held key never does);
+ * clients. Typing and the commit keys; Backspace selects then removes (a held key never does);
  * arrows, Home/End, ⌘A, ⌘C/⌘X/⌘V, Delete, edit by Enter and double click, ×;
  * undo and redo (keys and the Edit menu's path); blur; the single-key
  * shortcuts stay off a focused chip; 200 recipients collapse and expand, and
@@ -40,7 +39,7 @@ async function axeClean(page: Page) {
   expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
 }
 
-test.describe("recipient chips", { tag: "@design" }, () => {
+test.describe("recipient chips", () => {
   test("comma, semicolon, Enter, a space after an address and blur commit chips; a name keeps typing", async ({ app: page }) => {
     await newMessage(page);
     await page.keyboard.type("ana@x.io,");
@@ -258,7 +257,7 @@ async function replyAll(page: Page, threadId: number, subject: string) {
   await expect(page.getByTestId("compose-cc")).toBeVisible();
 }
 
-test.describe("reply-all with addresses other clients mangled", { tag: "@design" }, () => {
+test.describe("reply-all with addresses other clients mangled", () => {
   test("the user's Cc, as the broken client wrote it: two clean recipients, never me", async ({ app: page, server }) => {
     const id = await ingestRaw(server, "Presupuesto Sucre", `Cc: ${MANGLED_CC}`);
     await replyAll(page, id, "Presupuesto Sucre");

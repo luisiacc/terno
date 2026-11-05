@@ -2,7 +2,8 @@
  * Plan 24: the List layout. The list takes the full width with category tabs
  * on top; opening a thread makes the conversation the page, and Esc, ⌘[,
  * the menu's Back and the browser's Back return to the list exactly as it
- * was (scroll, cursor, focus). The core flows run in every design (@design).
+ * was (scroll, cursor, focus). The round trip and the look run in every design (@design): row
+ * height, scroll and focus depend on it; the category tabs go through a variant (@variant).
  */
 import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
@@ -41,8 +42,8 @@ function rpcLog(page: Page): string[] {
   return calls;
 }
 
-test.describe("the List layout", { tag: "@design" }, () => {
-  test("the list is full width with tabs; a click opens the conversation as the page; Esc comes back to the same scroll, row and focus", async ({ app: page }) => {
+test.describe("the List layout", () => {
+  test("the list is full width with tabs; a click opens the conversation as the page; Esc comes back to the same scroll, row and focus", { tag: "@design" }, async ({ app: page }) => {
     await expect(page.locator("html")).toHaveAttribute("data-layout", "list");
     await expect(page.locator("main")).toHaveCount(0);
     await expect(page.getByTestId("pane-handle-list")).toHaveCount(0);
@@ -309,8 +310,8 @@ test.describe("the List layout: what stays put", () => {
   });
 });
 
-test.describe("category tabs", { tag: "@design" }, () => {
-  test("All, Unread and the categories: the same state as the sidebar and the unread toggle, with unread counts", async ({ app: page, server }) => {
+test.describe("category tabs", () => {
+  test("All, Unread and the categories: the same state as the sidebar and the unread toggle, with unread counts", { tag: "@variant" }, async ({ app: page, server }) => {
     const viajes = categoryId(server, "Viajes");
     const all = page.getByTestId("list-tab-all");
     const unread = page.getByTestId("list-tab-unread");

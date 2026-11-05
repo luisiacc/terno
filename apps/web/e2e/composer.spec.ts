@@ -1,6 +1,5 @@
 /**
- * Plan 16: the rich composer. Tagged @design, so it runs in macOS, Lumen and
- * Atelier: select text and click (or press the shortcut) applies to exactly
+ * Plan 16: the rich composer: select text and click (or press the shortcut) applies to exactly
  * the selection, a caret sets what is typed next, the bar shows the state at
  * the caret; links, paste, undo, folding, keyboard and axe; drafts keep their
  * formatting; a stored hostile body runs and loads nothing.
@@ -67,7 +66,7 @@ const html = (page: Page) => body(page).evaluate((el) => el.innerHTML.replace(/ 
 const pressed = (l: Locator) => expect(l).toHaveAttribute("aria-pressed", "true");
 const notPressed = (l: Locator) => expect(l).toHaveAttribute("aria-pressed", "false");
 
-test.describe("formatting the selection", { tag: "@design" }, () => {
+test.describe("formatting the selection", () => {
   test("bold, italic, underline and strikethrough apply to exactly the selected words, and the bar shows them", async ({ app: page }) => {
     await reply(page);
     for (const [id, tag] of [["bold", "b"], ["italic", "i"], ["underline", "u"], ["strike", "s"]] as const) {
@@ -220,7 +219,7 @@ test.describe("formatting the selection", { tag: "@design" }, () => {
   });
 });
 
-test.describe("links", { tag: "@design" }, () => {
+test.describe("links", () => {
   test("⌘L links the selection; the bubble opens, edits and removes it; Enter and Esc in the popover never send or collapse", async ({ app: page }) => {
     await reply(page);
     await select(page, "propuesta");
@@ -285,7 +284,7 @@ async function paste(page: Page, data: Record<string, string>) {
   }, data);
 }
 
-test.describe("Codex review (plan 16)", { tag: "@design" }, () => {
+test.describe("Codex review (plan 16)", () => {
   test("Enter right after a typed URL links it and starts the next line (no error thrown)", async ({ app: page }) => {
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
@@ -463,7 +462,7 @@ test.describe("before the editor has loaded", () => {
   });
 });
 
-test.describe("paste", { tag: "@design" }, () => {
+test.describe("paste", () => {
   test("rich paste keeps bold, italic, lists and links and drops styles, classes, scripts and images; ⇧⌘V pastes plain text", async ({ app: page }) => {
     const requests: string[] = [];
     page.on("request", (r) => {
@@ -493,7 +492,7 @@ test.describe("paste", { tag: "@design" }, () => {
   });
 });
 
-test.describe("the format bar", { tag: "@design" }, () => {
+test.describe("the format bar", () => {
   test("Aa hides and shows it, remembered after a reload; shortcuts work either way", async ({ app: page }) => {
     await reply(page, "texto");
     await expect(page.getByTestId("format-bar")).toBeVisible();
@@ -539,7 +538,7 @@ test.describe("the format bar", { tag: "@design" }, () => {
     await expect(bar.locator(":focus")).toHaveCount(0);
   });
 
-  test("at the narrowest window the bar fits: the least used groups fold under More, bold and lists stay", async ({ app: page }) => {
+  test("at the narrowest window the bar fits: the least used groups fold under More, bold and lists stay", { tag: "@design" }, async ({ app: page }) => {
     await page.setViewportSize({ width: 980, height: 700 });
     await reply(page, "texto");
     const bar = page.getByTestId("format-bar");
@@ -594,7 +593,7 @@ test.describe("the format bar", { tag: "@design" }, () => {
   }
 });
 
-test.describe("drafts keep their formatting", { tag: "@design" }, () => {
+test.describe("drafts keep their formatting", () => {
   test("autosaved as HTML beside its text, restored after a reload exactly; collapsing keeps undo", async ({ app: page, server }) => {
     await reply(page);
     await select(page, "propuesta");
@@ -671,7 +670,7 @@ test.describe("drafts keep their formatting", { tag: "@design" }, () => {
   });
 });
 
-test.describe("the new message", { tag: "@design" }, () => {
+test.describe("the new message", () => {
   /** c from the list; the To field takes focus. */
   async function compose(page: Page) {
     await focusList(page);
@@ -693,7 +692,7 @@ test.describe("the new message", { tag: "@design" }, () => {
     await expect(page.getByTestId("compose-link")).toBeVisible();
   });
 
-  test("plan 130: a card that hugs the text: the bar right under it, far from the pane's foot, every control inside", async ({ app: page }) => {
+  test("plan 130: a card that hugs the text: the bar right under it, far from the pane's foot, every control inside", { tag: "@variant" }, async ({ app: page }) => {
     await compose(page);
     await body(page).click();
     await page.keyboard.type("Hola");

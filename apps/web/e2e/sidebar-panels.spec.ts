@@ -3,7 +3,7 @@
  * Archive, All Mail, Spam and Trash wait behind a quiet More, which takes no
  * space while closed: opening slides what's below down (plan 40). Part B: the sidebar's and the
  * list's widths follow their edges (pointer and keyboard), clamp to the
- * window, and are remembered. Both run in every design (@design).
+ * window, and are remembered. What a design's layout sets (the section gap, the rows' pitch, the panes' limits) runs in every design (@design).
  */
 import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
@@ -23,7 +23,7 @@ const reload = async (page: Page) => {
   await page.locator("[data-ready]").waitFor();
 };
 
-test.describe("Part A: More", { tag: "@design" }, () => {
+test.describe("Part A: More", () => {
   const more = (page: Page) => page.getByTestId("nav-more");
   const slot = (page: Page, view: string) => page.locator(`[data-more-slot="${view}"]`);
   /** the rows behind More: Reminders (plan 87) and the five folders */
@@ -87,7 +87,7 @@ test.describe("Part A: More", { tag: "@design" }, () => {
       };
     });
 
-  test("closed, the group takes no space: Categories sit under More at the gap between sections; open, under Trash, six rows lower (plan 40, 87)", async ({ app: page }) => {
+  test("closed, the group takes no space: Categories sit under More at the gap between sections; open, under Trash, six rows lower (plan 40, 87)", { tag: "@design" }, async ({ app: page }) => {
     const closed = await layout(page);
     // the design's gap between sections: the same as between the last category and Accounts
     const gap = closed.accountsTop - closed.lastCategoryBottom;
@@ -514,7 +514,7 @@ test.describe("Part A: More", { tag: "@design" }, () => {
     });
   }
 
-  test("a category (\"all\" underneath) or its suggestions never reveal All Mail", async ({ app: page, server }) => {
+  test("a category (\"all\" underneath) or its suggestions never reveal All Mail", { tag: "@variant" }, async ({ app: page, server }) => {
     const db = sqlDb(server.backend.store);
     const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
     await page.getByTestId(`nav-category-${facturas}`).click();
@@ -543,7 +543,7 @@ test.describe("Part A: More", { tag: "@design" }, () => {
   });
 });
 
-test.describe("Part B: resizable panes", { tag: "@design" }, () => {
+test.describe("Part B: resizable panes", () => {
   const sidebar = (page: Page) => page.getByTestId("sidebar");
   const list = (page: Page) => page.locator("#app-list");
   const reader = (page: Page) => page.locator("main");
@@ -641,7 +641,7 @@ test.describe("Part B: resizable panes", { tag: "@design" }, () => {
     await expect(selectedRow(page)).toHaveAttribute("data-thread-id", open!);
   });
 
-  test("clamped: past the limits it stops; at the minimum window nothing overflows and the reader keeps its minimum; a wide window gives the widths back", async ({ app: page }) => {
+  test("clamped: past the limits it stops; at the minimum window nothing overflows and the reader keeps its minimum; a wide window gives the widths back", { tag: "@design" }, async ({ app: page }) => {
     const d = await designOf(page);
     await drag(page, "sidebar", 400);
     expect(await width(sidebar(page))).toBeCloseTo(360, 0);

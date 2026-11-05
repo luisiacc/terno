@@ -21,8 +21,8 @@ async function goReminders(page: Page) {
   await expect(page.getByTestId("list-title")).toHaveText("Reminders");
 }
 
-test.describe("remind me", { tag: "@design" }, () => {
-  test("from the menu: Tomorrow sets it, the row shows a bell, Reminders lists it at its time, Undo takes it back", async ({ app: page }) => {
+test.describe("remind me", () => {
+  test("from the menu: Tomorrow sets it, the row shows a bell, Reminders lists it at its time, Undo takes it back", { tag: "@variant" }, async ({ app: page }) => {
     const row = rows(page).nth(2);
     const id = (await row.getAttribute("data-thread-id"))!;
     await row.click({ button: "right" });

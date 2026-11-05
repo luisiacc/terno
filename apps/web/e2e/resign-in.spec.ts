@@ -41,7 +41,7 @@ const notice = (page: Page) => page.getByTestId("sign-in-notice");
 const marker = (page: Page, a: Account) => page.getByTestId(`sign-in-marker-${a.id}`);
 const popover = (page: Page) => page.getByTestId("sign-in-popover");
 
-test.describe("signing in again", { tag: "@design" }, () => {
+test.describe("signing in again", () => {
   test("one Gmail account: a key on its row and one calm line; mail stays readable; Continue with Google clears both", async ({ app: page, server }) => {
     const { personal } = await accounts(server);
     await refuse(server, personal);
@@ -204,7 +204,7 @@ test.describe("signing in again", { tag: "@design" }, () => {
   });
 
   for (const theme of ["light", "dark"] as const) {
-    test(`axe and a look: the line, the key and the open panel (${theme})`, async ({ app: page, server }, testInfo) => {
+    test(`axe and a look: the line, the key and the open panel (${theme})`, { tag: "@design" }, async ({ app: page, server }, testInfo) => {
       await server.backend.server.invoke("settings.update", { theme }, ctx);
       await page.reload();
       await page.locator("[data-ready]").waitFor();

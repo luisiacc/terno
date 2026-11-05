@@ -24,8 +24,8 @@ const listFor = (page: Page) => page.getByTestId("thread-list").getAttribute("da
 const selected = (page: Page) => page.locator("#app-sidebar [aria-current=page]");
 const count = (l: Locator) => l.locator("[data-slot=nav-count]");
 
-test.describe("accounts open into their folders", { tag: "@design" }, () => {
-  test("a click opens an account into its Inbox; another closes it; clicking an open one closes it and you stay", async ({ app: page, design }) => {
+test.describe("accounts open into their folders", () => {
+  test("a click opens an account into its Inbox; another closes it; clicking an open one closes it and you stay", { tag: "@variant" }, async ({ app: page, design }) => {
     const [a, b] = await accountIds(page);
     await expect(group(page, a!)).toHaveAttribute("inert", "");
     await row(page, a!).click();

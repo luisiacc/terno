@@ -132,7 +132,7 @@ test.afterEach(() => {
 });
 
 test.describe("drafting with AI (plan 133)", () => {
-  test("@design ⌘J from a conversation: the row, the stream in the body's place, one commit that moves nothing, the strip", async ({ app: page, server, design }) => {
+  test("⌘J from a conversation: the row, the stream in the body's place, one commit that moves nothing, the strip", async ({ app: page, server, design }) => {
     await ready(page, server);
     await openThread(page, /Contract review/);
     await openField(page);
@@ -309,7 +309,7 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(page.getByTestId("quick-reply")).toBeFocused();
   });
 
-  test("@design ⌘J from a draft and from the list", async ({ app: page, server }) => {
+  test("⌘J from a draft and from the list", async ({ app: page, server }) => {
     await ready(page, server);
     // the list, with nothing open: a new message, the row focused, asks who when it can't tell
     await page.getByTestId("thread-list").locator("[data-keep-scroll=list]").focus();
@@ -713,7 +713,7 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(page.getByTestId("ai-telling")).toHaveCount(0);
   });
 
-  test("@design Settings: Drafting, an account's instructions, and Writing style's edit and reset; axe-clean in both modes", async ({ app: page, server }) => {
+  test("Settings: Drafting, an account's instructions, and Writing style's edit and reset; axe-clean in both modes", async ({ app: page, server }) => {
     const { accountId } = await ready(page, server);
     await page.getByTestId("open-settings").click();
     await page.getByTestId("tab-ai").click();
@@ -769,7 +769,7 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect.poll(async () => ((await server.backend.server.invoke("writing.prefs.get", {}, dev)) as { accounts: Record<string, { useGeneral?: boolean; instructions?: string }> }).accounts[String(accountId)]).toEqual({ instructions: "Exclamation marks are fine here.", useGeneral: false });
   });
 
-  test("@design axe in light and dark: the row, the stream, the question and the strip", async ({ app: page, server }) => {
+  test("axe in light and dark: the row, the stream, the question and the strip", async ({ app: page, server }) => {
     await ready(page, server);
     fakeDraft.paceMs = 60;
     await openThread(page, /Contract review/);
@@ -809,7 +809,7 @@ test.describe("drafting with AI (plan 133)", () => {
   });
 
   // ── looked at: frames during the stream and across the commit (AI_DRAFT_FRAMES=1), in each project's design
-  test("@design frames", async ({ app: page, server, design }) => {
+  test("frames", async ({ app: page, server, design }) => {
     test.skip(!process.env.AI_DRAFT_FRAMES, "only when looking");
     test.setTimeout(120_000);
     await ready(page, server);
@@ -842,7 +842,7 @@ test.describe("drafting with AI (plan 133)", () => {
     await page.emulateMedia({ colorScheme: "light" });
   });
 
-  test("@design frames across a commit, as fast as they can be taken, of the card alone", async ({ app: page, server, design }) => {
+  test("frames across a commit, as fast as they can be taken, of the card alone", async ({ app: page, server, design }) => {
     test.skip(!process.env.AI_DRAFT_FRAMES, "only when looking");
     test.setTimeout(120_000);
     await ready(page, server);
@@ -862,7 +862,7 @@ test.describe("drafting with AI (plan 133)", () => {
     }
   });
 
-  test("@design frames of every other state", async ({ app: page, server, design }) => {
+  test("frames of every other state", async ({ app: page, server, design }) => {
     test.skip(!process.env.AI_DRAFT_FRAMES, "only when looking");
     test.setTimeout(180_000);
     await ready(page, server);

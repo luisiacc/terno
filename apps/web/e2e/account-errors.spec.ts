@@ -63,7 +63,7 @@ async function inViewport(page: Page, element: Locator) {
 }
 
 for (const design of ["macos", "lumen"] as const) for (const language of ["en", "es"] as const) for (const theme of ["light", "dark"] as const) for (const surface of ["settings", "add"] as const) {
-  test(`long account refusal (${design}, ${language}, ${theme}, ${surface}) @design`, async ({ page }, info) => {
+  test(`long account refusal (${design}, ${language}, ${theme}, ${surface})`, async ({ page }, info) => {
     await page.setViewportSize(surface === "add" ? { width: 420, height: 560 } : design === "lumen" ? { width: 800, height: 650 } : { width: 1280, height: 800 });
     const dir = mkdtempSync(join(tmpdir(), "terno-account-errors-"));
     let server: DevServer | undefined;
@@ -237,7 +237,7 @@ for (const design of ["macos", "lumen"] as const) for (const language of ["en", 
 }
 
 for (const language of ["en", "es"] as const) for (const theme of ["light", "dark"] as const) {
-  test(`account recovery controls (${language}, ${theme}) @design`, async ({ page }) => {
+  test(`account recovery controls (${language}, ${theme})`, async ({ page }) => {
     const dir = mkdtempSync(join(tmpdir(), "terno-account-controls-"));
     const external: string[] = [];
     const googleCalls: (string | undefined)[] = [];

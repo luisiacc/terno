@@ -1,6 +1,5 @@
 /**
- * Plan 19: Terno's mark where it is shown, in every design (@design), and
- * the page's icons. The mark is decorative next to text that names Terno.
+ * Plan 19: Terno's mark where it is shown, and the page's icons. The mark is decorative next to text that names Terno.
  */
 import AxeBuilder from "@axe-core/playwright";
 import { expect, isolateLocalDiscovery, test } from "./fixtures";
@@ -8,7 +7,7 @@ import { expect, isolateLocalDiscovery, test } from "./fixtures";
 const ctx = { clientId: "setup", origin: "dev" as const };
 const wcag = (page: import("@playwright/test").Page) => new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
 
-test.describe("the mark @design", () => {
+test.describe("the mark", () => {
   test.use({ backendOptions: { empty: true, ownerClaims: true } });
 
   test("first run greets with the mark; the dialog is still named by its title", async ({ app: page, server }) => {

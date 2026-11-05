@@ -53,7 +53,7 @@ const after = (page: Page, text: string) => page.getByTestId("compose-body").eva
 
 const centre = async (l: Locator) => { const b = (await l.boundingBox())!; return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
 
-test("an image dropped on the text goes where the pointer is; undo takes it out; it is sent inline @design", async ({ app: page, server }, testInfo) => {
+test("an image dropped on the text goes where the pointer is; undo takes it out; it is sent inline", async ({ app: page, server }, testInfo) => {
   await openRow(page, 0);
   await page.getByTestId("quick-reply").click();
   const body = page.getByTestId("compose-body");
@@ -106,7 +106,7 @@ test("an image dropped on the text goes where the pointer is; undo takes it out;
   expect(sent.text).toContain("Hello[image: chart.png] world");
 });
 
-test("plan 130: a new message takes a drop anywhere in the pane; the layer rings its card; the text still places an image @design", async ({ app: page }) => {
+test("plan 130: a new message takes a drop anywhere in the pane; the layer rings its card; the text still places an image", async ({ app: page }) => {
   await focusList(page);
   await page.keyboard.press("c");
   await page.getByTestId("compose-to").fill("ana@example.com");
@@ -144,7 +144,7 @@ test("plan 130: a new message takes a drop anywhere in the pane; the layer rings
   await expect(page.getByTestId("compose-drop")).toHaveCount(0);
 });
 
-test("a file dropped off the text, or one that isn't an image, attaches as a chip @design", async ({ app: page }, testInfo) => {
+test("a file dropped off the text, or one that isn't an image, attaches as a chip", async ({ app: page }, testInfo) => {
   await openRow(page, 0);
   await page.getByTestId("quick-reply").click();
   const dt = await transfer(page, [{ name: "notes.pdf", type: "application/pdf" }]);

@@ -19,7 +19,7 @@ async function create(page: Page, server: DevServer, name: string): Promise<numb
   return categoryId(server, name);
 }
 
-test.describe("the first new category's tip (plan 113)", { tag: "@design" }, () => {
+test.describe("the first new category's tip (plan 113)", () => {
   test("shows once, to the right of the new row, with the right-click pictured; Got it closes it for good", async ({ app: page, server }) => {
     const id = await create(page, server, "LinkedIn");
     await expect(tip(page)).toBeVisible();

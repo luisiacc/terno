@@ -36,7 +36,7 @@ async function drag(page: Page, handle: Locator, dx: number, dy: number, { relea
   if (release) await page.mouse.up();
 }
 
-test.describe("config dialogs move (plan 129)", { tag: "@design" }, () => {
+test.describe("config dialogs move (plan 129)", () => {
   test("Settings drags by its title row and its sidebar, a pixel for a pixel", async ({ app: page }) => {
     const start = await openSettings(page);
     await drag(page, page.getByTestId("settings-header"), -150, 40);
@@ -174,6 +174,8 @@ test.describe("config dialogs move (plan 129)", { tag: "@design" }, () => {
     await page.getByTestId("tab-general").focus();
     // the keyboard's way there: off the selected tab and back
     await page.keyboard.press("Shift+Tab");
+    // past the dialog's guard, which hands focus on a moment later: a Tab sooner than a person's races it to Close
+    await expect(settings(page).locator("[data-slot=dialog-close]")).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(page.getByTestId("tab-general")).toBeFocused();
     await expect.poll(async () => (await page.getByTestId("tab-general").boundingBox())!.x).toBeGreaterThanOrEqual(0);

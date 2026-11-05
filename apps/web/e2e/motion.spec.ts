@@ -126,10 +126,10 @@ async function exerciseLoading(page: Page, server: DevServer) {
   releaseCount();
 }
 
-test.describe("motion", { tag: "@design" }, () => {
+test.describe("motion", () => {
   test.use({ reducedMotion: "no-preference" });
 
-  test("at the default 75 ms nothing runs longer than 100 ms; loading loops run", async ({ app: page, server }) => {
+  test("at the default 75 ms nothing runs longer than 100 ms; loading loops run", { tag: "@design" }, async ({ app: page, server }) => {
     await expect(page.locator("html")).toHaveAttribute("data-motion", "on");
     await startSampler(page);
     await exercise(page);
@@ -157,7 +157,7 @@ test.describe("motion", { tag: "@design" }, () => {
     }
   });
 
-  test("0 turns every animation, transition and loop off", async ({ app: page, server }) => {
+  test("0 turns every animation, transition and loop off", { tag: "@design" }, async ({ app: page, server }) => {
     await page.getByTestId("open-settings").click();
     await page.getByTestId("tab-appearance").click();
     await page.getByTestId("motion-0").click();
@@ -192,10 +192,10 @@ test.describe("motion", { tag: "@design" }, () => {
   });
 });
 
-test.describe("motion under the OS reduced-motion preference", { tag: "@design" }, () => {
+test.describe("motion under the OS reduced-motion preference", () => {
   test.use({ reducedMotion: "reduce" });
 
-  test("overrides the setting: nothing animates", async ({ app: page, server }) => {
+  test("overrides the setting: nothing animates", { tag: "@design" }, async ({ app: page, server }) => {
     await server.backend.server.invoke("settings.update", { motionMs: 100 }, ctx);
     await page.reload();
     await page.locator("[data-ready]").waitFor();
