@@ -9,7 +9,7 @@ import type { Page } from "@playwright/test";
 import { contrast } from "../../../packages/ui/src/themes/color";
 import { THEMES } from "../../../packages/ui/src/themes/registry";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
-import { expect, rows, test } from "./fixtures";
+import { expect, fresh, rows, scenario, test } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 const COLOR_NAMES = { rose: "Rose", amber: "Amber", lime: "Lime", emerald: "Emerald", cyan: "Cyan", indigo: "Indigo", violet: "Violet", slate: "Slate" } as const;
@@ -43,6 +43,9 @@ async function openVia(page: Page, how: "gear" | "palette" | "keyboard", tab: Ta
     await page.keyboard.press("Enter");
     // the palette has finished closing (Esc meant for settings must not reach it)
     await expect(page.getByTestId("palette-input")).toHaveCount(0);
+    // the palette's close hands focus back to the gear for a frame, whose tooltip would take an Esc: settled once it's in the sheet
+    await expect(page.getByTestId(`tab-${tab}`)).toBeFocused();
+    await expect(page.locator("[data-slot=tooltip-content]")).toHaveCount(0);
   } else {
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press("Meta+Comma");
@@ -62,7 +65,7 @@ async function reopen(page: Page, tab: Tab) {
 }
 
 async function axe(page: Page, only?: string[]) {
-  const builder = new AxeBuilder({ page }).include("[data-testid=settings-dialog]");
+  const builder = new AxeBuilder({ page }).setLegacyMode().include("[data-testid=settings-dialog]");
   if (only) builder.withRules(only);
   const r = await builder.analyze();
   return r.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`);
@@ -78,9 +81,9 @@ async function show(page: Page, tab: Tab) {
   if (tab === "categories") await own.getByTestId("category-toggle").first().click();
 }
 
-test.describe("reachable", () => {
+test("every tab is reachable: from the gear (focus comes back to it), the palette and the keyboard", async ({ app: page }) => {
   for (const [tab] of TABS) {
-    test(`${tab}: from the gear (focus comes back to it), the palette and the keyboard`, async ({ app: page }) => {
+    await scenario(tab, async () => {
       await openVia(page, "gear", tab);
       await page.keyboard.press("Escape");
       await expect(dialog(page)).toHaveCount(0);
@@ -103,28 +106,44 @@ test.describe("reachable", () => {
   }
 });
 
-test("the sidebar's rows stand 1 px apart: a hovered row's fill never runs into the selected one's", async ({ app: page }) => {
-  await openVia(page, "gear", "general");
-  const general = await page.getByTestId("tab-general").boundingBox();
-  const appearance = page.getByTestId("tab-appearance");
-  await appearance.hover();
-  const below = await appearance.boundingBox();
-  expect(below!.y - (general!.y + general!.height)).toBeCloseTo(1, 1);
-  // the hovered row is filled, and the line between them is the sidebar's own
-  const fill = (id: string) => page.getByTestId(id).evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(await fill("tab-appearance")).not.toBe("rgba(0, 0, 0, 0)");
-  expect(await fill("tab-general")).not.toBe(await fill("tab-appearance"));
-  if (process.env.SETTINGS_SHOTS) {
-    for (const scheme of ["light", "dark"] as const) {
-      await page.emulateMedia({ colorScheme: scheme });
-      await appearance.hover();
-      await page.getByTestId("settings-dialog").locator("nav").screenshot({ path: `${process.env.SETTINGS_SHOTS}/settings-nav-hover-${scheme}.png` });
+test("General and Appearance edit, persist and take effect; the sidebar's rows; a scrolled section's title", async ({ app: page }) => {
+  await scenario("the sidebar's rows stand 1 px apart: a hovered row's fill never runs into the selected one's", async () => {
+    await openVia(page, "gear", "general");
+    const general = await page.getByTestId("tab-general").boundingBox();
+    const appearance = page.getByTestId("tab-appearance");
+    await appearance.hover();
+    const below = await appearance.boundingBox();
+    expect(below!.y - (general!.y + general!.height)).toBeCloseTo(1, 1);
+    // the hovered row is filled, and the line between them is the sidebar's own
+    const fill = (id: string) => page.getByTestId(id).evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(await fill("tab-appearance")).not.toBe("rgba(0, 0, 0, 0)");
+    expect(await fill("tab-general")).not.toBe(await fill("tab-appearance"));
+    if (process.env.SETTINGS_SHOTS) {
+      for (const scheme of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        await appearance.hover();
+      }
     }
-  }
-});
-
-test.describe("editable, persisted and in effect", () => {
-  test("General: remote images, density (row height), sync window (validated); no local-mode row (plan 97)", async ({ app: page }) => {
+  });
+  // the close is pinned to the sheet: with the title in the pane, a scrolled section ran under it
+  await scenario("scrolled, the section's title and the close keep their row: nothing runs under the close, a hairline marks the edge", async () => {
+    await fresh(page);
+    await page.getByTestId("open-settings").click();
+    await show(page, "appearance");
+    const scroller = panel(page).locator("xpath=..");
+    const header = page.getByTestId("settings-header");
+    await expect(header).not.toHaveAttribute("data-scrolled");
+    await scroller.hover();
+    await page.mouse.wheel(0, 400);
+    await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    await expect(header).toHaveAttribute("data-scrolled");
+    await expect(header.getByRole("heading")).toBeInViewport();
+    const close = (await dialog(page).locator("[data-slot=dialog-close]").boundingBox())!;
+    const pane = (await scroller.boundingBox())!;
+    expect(close.y + close.height).toBeLessThanOrEqual(pane.y);
+  });
+  await scenario("General: remote images, density (row height), sync window (validated); no local-mode row (plan 97)", async () => {
+    await fresh(page);
     await openVia(page, "gear", "general");
     await expect(page.getByTestId("general-tab")).not.toContainText("Local mode");
     const images = page.getByRole("switch", { name: "Always load remote images" });
@@ -157,8 +176,8 @@ test.describe("editable, persisted and in effect", () => {
     await page.getByTestId("open-shortcuts").click();
     await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toContainText("Settings");
   });
-
-  test("Appearance: mode, light and dark themes, motion (--motion), HTML mail", async ({ app: page }) => {
+  await scenario("Appearance: mode, light and dark themes, motion (--motion), HTML mail", async () => {
+    await fresh(page);
     await openVia(page, "gear", "appearance");
     await page.getByTestId("theme-card-solarized-light").click();
     await page.getByTestId("theme-card-nord").click();
@@ -176,257 +195,267 @@ test.describe("editable, persisted and in effect", () => {
     await expect(page.locator("html")).toHaveAttribute("data-theme", "solarized-light");
     await expect(page.getByTestId("theme-card-solarized-light")).toHaveAttribute("aria-checked", "true");
   });
+});
 
-  test("Accounts: name, sender, color, signature (sent and shown under the draft), sync window, reconnect, remove", async ({ app: page, server }) => {
-    const db = sqlDb(server.backend.store);
-    const imap = db.get<{ id: number; email: string }>("SELECT id, email FROM accounts WHERE kind = 'imap' ORDER BY id LIMIT 1")!;
-    await openVia(page, "gear", "accounts");
-    const item = page.locator(`[data-testid=settings-account][data-account-id="${imap.id}"]`);
-    await item.getByTestId("account-toggle").click();
-    await expect(item.getByTestId("account-toggle")).toHaveAttribute("aria-expanded", "true");
-    await item.getByRole("textbox", { name: "Name", exact: true }).fill("Freelance (nuevo)");
-    await item.getByRole("textbox", { name: "Name", exact: true }).press("Enter");
-    await expect(page.getByTestId(`nav-account-${imap.id}`)).toContainText("Freelance (nuevo)");
-    await item.getByRole("textbox", { name: "Sender name" }).fill("Luis C.");
-    await item.getByRole("textbox", { name: "Sender name" }).blur();
-    await item.getByRole("radiogroup", { name: "Color" }).getByRole("radio", { name: "Violet" }).check();
-    await item.getByRole("textbox", { name: "Signature" }).fill("Luis Cordero\nhola@luiscordero.dev");
-    await item.getByRole("textbox", { name: "Signature" }).blur();
-    await item.getByLabel("Sync window").fill("30");
-    await item.getByLabel("Sync window").press("Enter");
-    await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === imap.id)).toMatchObject({
-      displayName: "Freelance (nuevo)",
-      senderName: "Luis C.",
-      color: "violet",
-      signature: "Luis Cordero\nhola@luiscordero.dev",
-      syncWindowDays: 30,
+test.describe("editable, persisted and in effect", () => {
+
+  test("Accounts edit, persist and take effect, and keyboard edits keep focus", async ({ app: page, server }) => {
+    await scenario("keyboard edits keep focus: arrows walk the color palette (saving each), Enter saves and the field stays focused", async () => {
+      await openVia(page, "gear", "accounts");
+      const item = page.locator("[data-testid=settings-account]").first();
+      const id = Number(await item.getAttribute("data-account-id"));
+      await item.getByTestId("account-toggle").click();
+      const colorOf = async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.color;
+      const start = await colorOf();
+      await item.getByRole("radio", { name: COLOR_NAMES[start as keyof typeof COLOR_NAMES] }).focus();
+      for (let i = 0; i < 2; i++) {
+        const before = await colorOf();
+        await page.keyboard.press("ArrowRight");
+        await expect.poll(colorOf).not.toBe(before);
+        // the radio that took the pick still has focus after the save
+        await expect(item.getByRole("radio", { name: COLOR_NAMES[(await colorOf()) as keyof typeof COLOR_NAMES] })).toBeFocused();
+      }
+      const name = item.getByRole("textbox", { name: "Name", exact: true });
+      await name.fill("Uno");
+      await name.press("Enter");
+      await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.displayName).toBe("Uno");
+      await expect(name).toBeFocused();
+      await page.keyboard.type(" y dos");
+      await page.keyboard.press("Enter");
+      await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.displayName).toBe("Uno y dos");
+      await expect(name).toBeFocused();
+      // a slow save: what is typed after Enter survives the save's late echo
+      const handlers = (server.backend.server as unknown as { handlers: Record<string, (...a: unknown[]) => unknown> }).handlers;
+      const original = handlers["accounts.update"]!;
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      handlers["accounts.update"] = async (...args: unknown[]) => {
+        await gate;
+        return original(...args);
+      };
+      await name.fill("Tres");
+      await name.press("Enter");
+      await page.keyboard.type(" y cuatro");
+      release();
+      await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.displayName).toBe("Tres");
+      await expect(name).toHaveValue("Tres y cuatro");
+      handlers["accounts.update"] = original;
+      await name.press("Enter");
+      await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.displayName).toBe("Tres y cuatro");
+      const days = item.getByLabel("Sync window");
+      await days.fill("20");
+      await days.press("Enter");
+      await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.syncWindowDays).toBe(20);
+      await expect(days).toBeFocused();
+
+      // a category: rename with Enter twice, colors with arrows
+      await show(page, "categories");
+      const cat = panel(page).locator("[data-category-id]").first();
+      const catId = Number(await cat.getAttribute("data-category-id"));
+      const rename = cat.getByRole("textbox", { name: "Name" });
+      await rename.fill("Primera");
+      await rename.press("Enter");
+      await expect(rename).toBeFocused();
+      await page.keyboard.type(" vez");
+      await page.keyboard.press("Enter");
+      await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).categories.find((c) => c.id === catId)!.name).toBe("Primera vez");
+      await expect(rename).toBeFocused();
+      const catColor = async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).categories.find((c) => c.id === catId)!.color;
+      await cat.getByRole("radio", { name: COLOR_NAMES[(await catColor()) as keyof typeof COLOR_NAMES] }).focus();
+      for (let i = 0; i < 2; i++) {
+        const before = await catColor();
+        await page.keyboard.press("ArrowLeft");
+        await expect.poll(catColor).not.toBe(before);
+        await expect(cat.getByRole("radio", { name: COLOR_NAMES[(await catColor()) as keyof typeof COLOR_NAMES] })).toBeFocused();
+      }
     });
-    // reconnect: the password is checked by a live login (the demo registry accepts it)
-    await item.getByTestId("account-reconnect").click();
-    await item.getByLabel(`Password for ${imap.email}`).fill("app-password");
-    await item.getByTestId("account-reconnect-submit").click();
-    await expect(page.getByTestId("snack-message").getByText(`${imap.email} is connected again`)).toBeVisible();
+    await scenario("Accounts: name, sender, color, signature (sent and shown under the draft), sync window, reconnect, remove", async () => {
+      await fresh(page);
+      const db = sqlDb(server.backend.store);
+      const imap = db.get<{ id: number; email: string }>("SELECT id, email FROM accounts WHERE kind = 'imap' ORDER BY id LIMIT 1")!;
+      await openVia(page, "gear", "accounts");
+      const item = page.locator(`[data-testid=settings-account][data-account-id="${imap.id}"]`);
+      await item.getByTestId("account-toggle").click();
+      await expect(item.getByTestId("account-toggle")).toHaveAttribute("aria-expanded", "true");
+      await item.getByRole("textbox", { name: "Name", exact: true }).fill("Freelance (nuevo)");
+      await item.getByRole("textbox", { name: "Name", exact: true }).press("Enter");
+      await expect(page.getByTestId(`nav-account-${imap.id}`)).toContainText("Freelance (nuevo)");
+      await item.getByRole("textbox", { name: "Sender name" }).fill("Luis C.");
+      await item.getByRole("textbox", { name: "Sender name" }).blur();
+      await item.getByRole("radiogroup", { name: "Color" }).getByRole("radio", { name: "Violet" }).check();
+      await item.getByRole("textbox", { name: "Signature" }).fill("Luis Cordero\nhola@luiscordero.dev");
+      await item.getByRole("textbox", { name: "Signature" }).blur();
+      await item.getByLabel("Sync window").fill("30");
+      await item.getByLabel("Sync window").press("Enter");
+      await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === imap.id)).toMatchObject({
+        displayName: "Freelance (nuevo)",
+        senderName: "Luis C.",
+        color: "violet",
+        signature: "Luis Cordero\nhola@luiscordero.dev",
+        syncWindowDays: 30,
+      });
+      // reconnect: the password is checked by a live login (the demo registry accepts it)
+      await item.getByTestId("account-reconnect").click();
+      await item.getByLabel(`Password for ${imap.email}`).fill("app-password");
+      await item.getByTestId("account-reconnect-submit").click();
+      await expect(page.getByTestId("snack-message").getByText(`${imap.email} is connected again`)).toBeVisible();
 
-    await reopen(page, "accounts");
-    await item.getByTestId("account-toggle").click();
-    await expect(item.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Freelance (nuevo)");
-    await expect(item.getByRole("radio", { name: "Violet" })).toBeChecked();
-    await expect(item.getByRole("textbox", { name: "Signature" })).toHaveValue("Luis Cordero\nhola@luiscordero.dev");
-    await expect(item.getByLabel("Sync window")).toHaveValue("30");
-    // emptied: back to the general window
-    await item.getByLabel("Sync window").fill("");
-    await item.getByLabel("Sync window").press("Enter");
-    await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === imap.id)!.syncWindowDays).toBeNull();
+      await reopen(page, "accounts");
+      await item.getByTestId("account-toggle").click();
+      await expect(item.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Freelance (nuevo)");
+      await expect(item.getByRole("radio", { name: "Violet" })).toBeChecked();
+      await expect(item.getByRole("textbox", { name: "Signature" })).toHaveValue("Luis Cordero\nhola@luiscordero.dev");
+      await expect(item.getByLabel("Sync window")).toHaveValue("30");
+      // emptied: back to the general window
+      await item.getByLabel("Sync window").fill("");
+      await item.getByLabel("Sync window").press("Enter");
+      await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === imap.id)!.syncWindowDays).toBeNull();
 
-    // the signature shows under a new message from that account, and is what gets sent below the text
-    await page.keyboard.press("Escape");
-    await page.getByTestId(`nav-account-${imap.id}`).click();
-    await page.getByTestId("compose-button").click();
-    await expect(page.getByTestId("compose-signature")).toHaveText("-- \nLuis Cordero\nhola@luiscordero.dev");
+      // the signature shows under a new message from that account, and is what gets sent below the text
+      await page.keyboard.press("Escape");
+      await page.getByTestId(`nav-account-${imap.id}`).click();
+      await page.getByTestId("compose-button").click();
+      await expect(page.getByTestId("compose-signature")).toHaveText("-- \nLuis Cordero\nhola@luiscordero.dev");
 
-    await page.keyboard.press("Meta+Comma");
-    await page.getByTestId("tab-accounts").click();
-    await item.getByTestId("account-toggle").click();
-    await item.getByTestId("account-remove").click();
-    await expect(page.getByTestId("account-remove-dialog")).toContainText(`Remove ${imap.email}?`);
-    await page.getByTestId("account-remove-dialog-confirm").click();
-    await expect(item).toHaveCount(0);
-    await expect(page.getByTestId(`nav-account-${imap.id}`)).toHaveCount(0);
+      await page.keyboard.press("Meta+Comma");
+      await page.getByTestId("tab-accounts").click();
+      await item.getByTestId("account-toggle").click();
+      await item.getByTestId("account-remove").click();
+      await expect(page.getByTestId("account-remove-dialog")).toContainText(`Remove ${imap.email}?`);
+      await page.getByTestId("account-remove-dialog-confirm").click();
+      await expect(item).toHaveCount(0);
+      await expect(page.getByTestId(`nav-account-${imap.id}`)).toHaveCount(0);
+    });
   });
 
-  test("keyboard edits keep focus: arrows walk the color palette (saving each), Enter saves and the field stays focused", async ({ app: page, server }) => {
-    await openVia(page, "gear", "accounts");
-    const item = page.locator("[data-testid=settings-account]").first();
-    const id = Number(await item.getAttribute("data-account-id"));
-    await item.getByTestId("account-toggle").click();
-    const colorOf = async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.color;
-    const start = await colorOf();
-    await item.getByRole("radio", { name: COLOR_NAMES[start as keyof typeof COLOR_NAMES] }).focus();
-    for (let i = 0; i < 2; i++) {
-      const before = await colorOf();
-      await page.keyboard.press("ArrowRight");
-      await expect.poll(colorOf).not.toBe(before);
-      // the radio that took the pick still has focus after the save
-      await expect(item.getByRole("radio", { name: COLOR_NAMES[(await colorOf()) as keyof typeof COLOR_NAMES] })).toBeFocused();
-    }
-    const name = item.getByRole("textbox", { name: "Name", exact: true });
-    await name.fill("Uno");
-    await name.press("Enter");
-    await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.displayName).toBe("Uno");
-    await expect(name).toBeFocused();
-    await page.keyboard.type(" y dos");
-    await page.keyboard.press("Enter");
-    await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.displayName).toBe("Uno y dos");
-    await expect(name).toBeFocused();
-    // a slow save: what is typed after Enter survives the save's late echo
-    const handlers = (server.backend.server as unknown as { handlers: Record<string, (...a: unknown[]) => unknown> }).handlers;
-    const original = handlers["accounts.update"]!;
-    let release!: () => void;
-    const gate = new Promise<void>((r) => (release = r));
-    handlers["accounts.update"] = async (...args: unknown[]) => {
-      await gate;
-      return original(...args);
-    };
-    await name.fill("Tres");
-    await name.press("Enter");
-    await page.keyboard.type(" y cuatro");
-    release();
-    await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.displayName).toBe("Tres");
-    await expect(name).toHaveValue("Tres y cuatro");
-    handlers["accounts.update"] = original;
-    await name.press("Enter");
-    await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.displayName).toBe("Tres y cuatro");
-    const days = item.getByLabel("Sync window");
-    await days.fill("20");
-    await days.press("Enter");
-    await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.syncWindowDays).toBe(20);
-    await expect(days).toBeFocused();
+  test("Categories edit, persist and take effect; deleting the one whose Review is open", async ({ app: page, server }) => {
+    await scenario("deleting the category whose Review view is open leaves that view for the inbox", async () => {
+      // a pending suggestion, so Facturas has its Review view
+      const db = sqlDb(server.backend.store);
+      const id = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+      const thread = db.get<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1")!.id;
+      db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.91, '[]', ?)", thread, id, Date.now());
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      const review = page.getByTestId(`nav-review-${id}`);
+      await review.click();
+      await expect(review).toHaveAttribute("data-active", "true");
+      await openVia(page, "gear", "categories");
+      const item = page.locator(`[data-category-id="${id}"]`);
+      await item.getByTestId("category-toggle").click();
+      await item.getByTestId("category-delete").click();
+      await page.getByTestId("category-delete-dialog-confirm").click();
+      await expect(item).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("list-title")).toHaveText("Inbox");
+      expect(await page.evaluate(() => (window as unknown as { __terno: { getApp(): { reviewCategoryId: number | null; categoryId: number | null; view: string } } }).__terno.getApp())).toMatchObject({ reviewCategoryId: null, categoryId: null, view: "inbox" });
+    });
+    await scenario("Categories: engine mode, AI help, rename, color, order (sidebar), auto-filing, create, delete", async () => {
+      await fresh(page);
+      const cats = (await server.backend.server.invoke("app.bootstrap", {}, ctx)).categories;
+      const [first, second] = cats as [(typeof cats)[number], (typeof cats)[number]];
+      await openVia(page, "gear", "categories");
+      await page.getByRole("combobox", { name: "Smart categorization" }).click();
+      await page.getByTestId("auto-categorize-suggest").click();
+      await expect(page.getByRole("switch", { name: `Auto-add to “${first.name}”` })).toBeDisabled();
+      await page.getByRole("combobox", { name: "Smart categorization" }).click();
+      await page.getByTestId("auto-categorize-auto").click();
+      await page.getByRole("switch", { name: `Auto-add to “${first.name}”` }).click();
+      await page.getByRole("switch", { name: "Ask AI for help" }).click();
 
-    // a category: rename with Enter twice, colors with arrows
-    await show(page, "categories");
-    const cat = panel(page).locator("[data-category-id]").first();
-    const catId = Number(await cat.getAttribute("data-category-id"));
-    const rename = cat.getByRole("textbox", { name: "Name" });
-    await rename.fill("Primera");
-    await rename.press("Enter");
-    await expect(rename).toBeFocused();
-    await page.keyboard.type(" vez");
-    await page.keyboard.press("Enter");
-    await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).categories.find((c) => c.id === catId)!.name).toBe("Primera vez");
-    await expect(rename).toBeFocused();
-    const catColor = async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).categories.find((c) => c.id === catId)!.color;
-    await cat.getByRole("radio", { name: COLOR_NAMES[(await catColor()) as keyof typeof COLOR_NAMES] }).focus();
-    for (let i = 0; i < 2; i++) {
-      const before = await catColor();
-      await page.keyboard.press("ArrowLeft");
-      await expect.poll(catColor).not.toBe(before);
-      await expect(cat.getByRole("radio", { name: COLOR_NAMES[(await catColor()) as keyof typeof COLOR_NAMES] })).toBeFocused();
-    }
+      const item = page.locator(`[data-category-id="${second.id}"]`);
+      await item.getByTestId("category-toggle").click();
+      await item.getByRole("textbox", { name: "Name" }).fill("Clientes VIP");
+      await item.getByRole("textbox", { name: "Name" }).press("Enter");
+      await item.getByRole("radio", { name: "Rose" }).check();
+      await item.getByRole("button", { name: "Move up “Clientes VIP”" }).click();
+      // the moved button keeps focus; the sidebar follows
+      await expect(item.getByRole("button", { name: "Move up “Clientes VIP”" })).toBeFocused();
+      await expect(page.locator("[data-testid^=nav-category-]").first()).toContainText("Clientes VIP");
+
+      await page.getByTestId("category-new").fill("Mudanza");
+      await page.getByTestId("category-create").click();
+      await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Mudanza" })).toBeVisible();
+
+      await reopen(page, "categories");
+      await expect(page.getByRole("combobox", { name: "Smart categorization" })).toContainText("Automatic");
+      await expect(page.getByRole("switch", { name: `Auto-add to “${first.name}”` })).not.toBeChecked();
+      await expect(page.getByRole("switch", { name: "Ask AI for help" })).toBeChecked();
+      await expect(panel(page).getByTestId("category-name").first()).toHaveText("Clientes VIP");
+      const boot = await server.backend.server.invoke("app.bootstrap", {}, ctx);
+      expect(boot.categories[0]).toMatchObject({ id: second.id, name: "Clientes VIP", color: "rose" });
+
+      const mudanza = boot.categories.find((c) => c.name === "Mudanza")!;
+      const m = page.locator(`[data-category-id="${mudanza.id}"]`);
+      await m.getByTestId("category-toggle").click();
+      await m.getByTestId("category-delete").click();
+      await page.getByTestId("category-delete-dialog-confirm").click();
+      await expect(m).toHaveCount(0);
+      await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Mudanza" })).toHaveCount(0);
+    });
   });
 
-  test("Categories: engine mode, AI help, rename, color, order (sidebar), auto-filing, create, delete", async ({ app: page, server }) => {
-    const cats = (await server.backend.server.invoke("app.bootstrap", {}, ctx)).categories;
-    const [first, second] = cats as [(typeof cats)[number], (typeof cats)[number]];
-    await openVia(page, "gear", "categories");
-    await page.getByRole("combobox", { name: "Smart categorization" }).click();
-    await page.getByTestId("auto-categorize-suggest").click();
-    await expect(page.getByRole("switch", { name: `Auto-add to “${first.name}”` })).toBeDisabled();
-    await page.getByRole("combobox", { name: "Smart categorization" }).click();
-    await page.getByTestId("auto-categorize-auto").click();
-    await page.getByRole("switch", { name: `Auto-add to “${first.name}”` }).click();
-    await page.getByRole("switch", { name: "Ask AI for help" }).click();
+  test("AI, Agents and Data edit and persist; a saved key waits for its endpoint", async ({ app: page, server }) => {
+    await scenario("AI: provider, endpoint (validated, announced), model, all persisted", async () => {
+      await openVia(page, "gear", "ai");
+      // exact: the Summaries group has its own provider and model (plan 132)
+      await page.getByRole("combobox", { name: "Provider", exact: true }).click();
+      await page.getByTestId("ai-choice-ollama").click();
+      const endpoint = page.getByRole("textbox", { name: "Endpoint" });
+      await endpoint.fill("ftp://nada");
+      await expect(page.getByTestId("ai-endpoint-error")).toHaveText("Enter an http:// or https:// URL");
+      await expect(endpoint).toHaveAccessibleDescription(/an http:\/\/ or https:\/\/ URL/);
+      await endpoint.fill("http://127.0.0.1:9/v1");
+      await expect(page.getByTestId("ai-endpoint-error")).toHaveCount(0);
+      const model = page.getByRole("textbox", { name: "Model", exact: true });
+      await model.fill("qwen3:8b");
+      await model.press("Enter");
 
-    const item = page.locator(`[data-category-id="${second.id}"]`);
-    await item.getByTestId("category-toggle").click();
-    await item.getByRole("textbox", { name: "Name" }).fill("Clientes VIP");
-    await item.getByRole("textbox", { name: "Name" }).press("Enter");
-    await item.getByRole("radio", { name: "Rose" }).check();
-    await item.getByRole("button", { name: "Move up “Clientes VIP”" }).click();
-    // the moved button keeps focus; the sidebar follows
-    await expect(item.getByRole("button", { name: "Move up “Clientes VIP”" })).toBeFocused();
-    await expect(page.locator("[data-testid^=nav-category-]").first()).toContainText("Clientes VIP");
+      await reopen(page, "ai");
+      await expect(page.getByRole("combobox", { name: "Provider", exact: true })).toContainText("Ollama");
+      await expect(page.getByRole("textbox", { name: "Endpoint" })).toHaveValue("http://127.0.0.1:9/v1");
+      await expect(page.getByRole("textbox", { name: "Model", exact: true })).toHaveValue("qwen3:8b");
+    });
+    await scenario("AI: a saved key isn't sent to an endpoint it wasn't saved for (an import, say) until confirmed", async () => {
+      await fresh(page);
+      await server.backend.server.invoke("settings.update", { localMode: false, ai: { provider: "openai", model: "gpt-x" } }, ctx);
+      await server.backend.server.invoke("ai.setKey", { provider: "openai", value: "sk-e2e-0123456789" }, ctx);
+      await server.backend.server.invoke("app.import", { data: { format: "terno-export", version: 1, settings: { ai: { provider: "openai", model: "gpt-x", baseURL: "https://evil.example/v1" } } } as never }, ctx);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await openVia(page, "gear", "ai");
+      await expect(page.getByRole("textbox", { name: "Endpoint" })).toHaveValue("https://evil.example/v1");
+      await expect(page.getByTestId("ai-key-unconfirmed")).toContainText("https://api.openai.com");
+      await page.getByTestId("ai-key-confirm").click();
+      await expect(page.getByTestId("ai-key-saved")).toBeVisible();
+    });
+    await scenario("Agents and Data: agent sending persists; export downloads and imports back", async () => {
+      await fresh(page);
+      await openVia(page, "gear", "agents");
+      await page.getByRole("switch", { name: "Allow agents to send mail" }).click();
+      await reopen(page, "agents");
+      await expect(page.getByRole("switch", { name: "Allow agents to send mail" })).toBeChecked();
 
-    await page.getByTestId("category-new").fill("Mudanza");
-    await page.getByTestId("category-create").click();
-    await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Mudanza" })).toBeVisible();
-
-    await reopen(page, "categories");
-    await expect(page.getByRole("combobox", { name: "Smart categorization" })).toContainText("Automatic");
-    await expect(page.getByRole("switch", { name: `Auto-add to “${first.name}”` })).not.toBeChecked();
-    await expect(page.getByRole("switch", { name: "Ask AI for help" })).toBeChecked();
-    await expect(panel(page).getByTestId("category-name").first()).toHaveText("Clientes VIP");
-    const boot = await server.backend.server.invoke("app.bootstrap", {}, ctx);
-    expect(boot.categories[0]).toMatchObject({ id: second.id, name: "Clientes VIP", color: "rose" });
-
-    const mudanza = boot.categories.find((c) => c.name === "Mudanza")!;
-    const m = page.locator(`[data-category-id="${mudanza.id}"]`);
-    await m.getByTestId("category-toggle").click();
-    await m.getByTestId("category-delete").click();
-    await page.getByTestId("category-delete-dialog-confirm").click();
-    await expect(m).toHaveCount(0);
-    await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Mudanza" })).toHaveCount(0);
+      await page.getByTestId("tab-data").click();
+      const download = page.waitForEvent("download");
+      await page.getByTestId("data-export").click();
+      const file = await download;
+      const dump = JSON.parse(await (await import("node:fs/promises")).readFile((await file.path())!, "utf8")) as { categories: { name: string }[]; accounts: { email: string }[]; drafts: unknown[] };
+      dump.categories.push({ ...dump.categories[0]!, name: "Desde el archivo", id: 999 } as never);
+      dump.drafts.push({ accountEmail: dump.accounts[0]!.email, mode: "new", to: [{ name: "", email: "copia@x.dev" }], cc: [], bcc: [], subject: "Desde la copia", subjectEdited: true, bodyText: "Hola", quotedText: "", includeQuote: false, inReplyTo: null, forwardOf: null, uiState: "open", updatedAt: 1 });
+      const input = page.getByTestId("data-import-input");
+      await input.setInputFiles({ name: "terno.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
+      await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Desde el archivo" })).toBeVisible();
+      // its draft shows at once, and importing the same file again doesn't add it twice
+      await expect(page.getByTestId("strip-item").filter({ hasText: "copia@x.dev" })).toHaveCount(1);
+      await input.setInputFiles({ name: "terno.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
+      await expect(page.getByTestId("snack-message").getByText(/Imported: 0 new categories/)).toBeVisible();
+      await expect(page.getByTestId("strip-item").filter({ hasText: "copia@x.dev" })).toHaveCount(1);
+      expect((await server.backend.server.invoke("drafts.list", {}, ctx)).filter((d) => d.subject === "Desde la copia")).toHaveLength(1);
+      expect((await server.backend.server.invoke("app.bootstrap", {}, ctx)).categories.some((c) => c.name === "Desde el archivo")).toBe(true);
+    });
   });
 
-  test("deleting the category whose Review view is open leaves that view for the inbox", async ({ app: page, server }) => {
-    // a pending suggestion, so Facturas has its Review view
-    const db = sqlDb(server.backend.store);
-    const id = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
-    const thread = db.get<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1")!.id;
-    db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.91, '[]', ?)", thread, id, Date.now());
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    const review = page.getByTestId(`nav-review-${id}`);
-    await review.click();
-    await expect(review).toHaveAttribute("data-active", "true");
-    await openVia(page, "gear", "categories");
-    const item = page.locator(`[data-category-id="${id}"]`);
-    await item.getByTestId("category-toggle").click();
-    await item.getByTestId("category-delete").click();
-    await page.getByTestId("category-delete-dialog-confirm").click();
-    await expect(item).toHaveCount(0);
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("list-title")).toHaveText("Inbox");
-    expect(await page.evaluate(() => (window as unknown as { __terno: { getApp(): { reviewCategoryId: number | null; categoryId: number | null; view: string } } }).__terno.getApp())).toMatchObject({ reviewCategoryId: null, categoryId: null, view: "inbox" });
-  });
-
-  test("AI: provider, endpoint (validated, announced), model, all persisted", async ({ app: page }) => {
-    await openVia(page, "gear", "ai");
-    // exact: the Summaries group has its own provider and model (plan 132)
-    await page.getByRole("combobox", { name: "Provider", exact: true }).click();
-    await page.getByTestId("ai-choice-ollama").click();
-    const endpoint = page.getByRole("textbox", { name: "Endpoint" });
-    await endpoint.fill("ftp://nada");
-    await expect(page.getByTestId("ai-endpoint-error")).toHaveText("Enter an http:// or https:// URL");
-    await expect(endpoint).toHaveAccessibleDescription(/an http:\/\/ or https:\/\/ URL/);
-    await endpoint.fill("http://127.0.0.1:9/v1");
-    await expect(page.getByTestId("ai-endpoint-error")).toHaveCount(0);
-    const model = page.getByRole("textbox", { name: "Model", exact: true });
-    await model.fill("qwen3:8b");
-    await model.press("Enter");
-
-    await reopen(page, "ai");
-    await expect(page.getByRole("combobox", { name: "Provider", exact: true })).toContainText("Ollama");
-    await expect(page.getByRole("textbox", { name: "Endpoint" })).toHaveValue("http://127.0.0.1:9/v1");
-    await expect(page.getByRole("textbox", { name: "Model", exact: true })).toHaveValue("qwen3:8b");
-  });
-
-  test("AI: a saved key isn't sent to an endpoint it wasn't saved for (an import, say) until confirmed", async ({ app: page, server }) => {
-    await server.backend.server.invoke("settings.update", { localMode: false, ai: { provider: "openai", model: "gpt-x" } }, ctx);
-    await server.backend.server.invoke("ai.setKey", { provider: "openai", value: "sk-e2e-0123456789" }, ctx);
-    await server.backend.server.invoke("app.import", { data: { format: "terno-export", version: 1, settings: { ai: { provider: "openai", model: "gpt-x", baseURL: "https://evil.example/v1" } } } as never }, ctx);
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await openVia(page, "gear", "ai");
-    await expect(page.getByRole("textbox", { name: "Endpoint" })).toHaveValue("https://evil.example/v1");
-    await expect(page.getByTestId("ai-key-unconfirmed")).toContainText("https://api.openai.com");
-    await page.getByTestId("ai-key-confirm").click();
-    await expect(page.getByTestId("ai-key-saved")).toBeVisible();
-  });
-
-  test("Agents and Data: agent sending persists; export downloads and imports back", async ({ app: page, server }) => {
-    await openVia(page, "gear", "agents");
-    await page.getByRole("switch", { name: "Allow agents to send mail" }).click();
-    await reopen(page, "agents");
-    await expect(page.getByRole("switch", { name: "Allow agents to send mail" })).toBeChecked();
-
-    await page.getByTestId("tab-data").click();
-    const download = page.waitForEvent("download");
-    await page.getByTestId("data-export").click();
-    const file = await download;
-    const dump = JSON.parse(await (await import("node:fs/promises")).readFile((await file.path())!, "utf8")) as { categories: { name: string }[]; accounts: { email: string }[]; drafts: unknown[] };
-    dump.categories.push({ ...dump.categories[0]!, name: "Desde el archivo", id: 999 } as never);
-    dump.drafts.push({ accountEmail: dump.accounts[0]!.email, mode: "new", to: [{ name: "", email: "copia@x.dev" }], cc: [], bcc: [], subject: "Desde la copia", subjectEdited: true, bodyText: "Hola", quotedText: "", includeQuote: false, inReplyTo: null, forwardOf: null, uiState: "open", updatedAt: 1 });
-    const input = page.getByTestId("data-import-input");
-    await input.setInputFiles({ name: "terno.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
-    await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Desde el archivo" })).toBeVisible();
-    // its draft shows at once, and importing the same file again doesn't add it twice
-    await expect(page.getByTestId("strip-item").filter({ hasText: "copia@x.dev" })).toHaveCount(1);
-    await input.setInputFiles({ name: "terno.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
-    await expect(page.getByTestId("snack-message").getByText(/Imported: 0 new categories/)).toBeVisible();
-    await expect(page.getByTestId("strip-item").filter({ hasText: "copia@x.dev" })).toHaveCount(1);
-    expect((await server.backend.server.invoke("drafts.list", {}, ctx)).filter((d) => d.subject === "Desde la copia")).toHaveLength(1);
-    expect((await server.backend.server.invoke("app.bootstrap", {}, ctx)).categories.some((c) => c.name === "Desde el archivo")).toBe(true);
-  });
 });
 
 async function setMode(server: DevServer, page: Page, patch: object) {
@@ -435,35 +464,30 @@ async function setMode(server: DevServer, page: Page, patch: object) {
   await page.locator("[data-ready]").waitFor();
 }
 
-for (const scheme of ["light", "dark"] as const) {
-  test.describe(`accessible (${scheme})`, () => {
-    test(`axe finds nothing serious on any tab; controls have names and the right roles`, async ({ app: page, server }) => {
-      test.setTimeout(90_000);
-      await setMode(server, page, { theme: scheme });
-      await page.getByTestId("open-settings").click();
-      for (const [tab] of TABS) {
-        await show(page, tab);
-        expect(await axe(page), `tab ${tab}`).toEqual([]);
-        // every switch, select and text field in the panel has a name
-        const unnamed = await panel(page).evaluate((el) =>
-          [...el.querySelectorAll<HTMLElement>("[role=switch], [role=combobox], input:not([type=hidden]):not([aria-hidden=true]), textarea, button")]
-            .filter((c) => c.offsetParent !== null)
-            .filter((c) => {
-              const named = c.getAttribute("aria-label") || c.getAttribute("aria-labelledby") || (c.id && el.ownerDocument.querySelector(`label[for="${c.id}"]`)) || c.closest("label") || (c.textContent ?? "").trim();
-              return !named;
-            })
-            .map((c) => c.outerHTML.slice(0, 120)),
-        );
-        expect(unnamed, `tab ${tab}`).toEqual([]);
-      }
-      // the color pickers are radio groups; descriptions are linked
-      await show(page, "accounts");
-      await expect(panel(page).getByRole("radiogroup", { name: "Color" }).getByRole("radio")).toHaveCount(8);
-      await page.getByTestId("tab-general").click();
-      await expect(page.getByRole("switch", { name: "Always load remote images" })).toHaveAccessibleDescription(/Blocked by default to prevent tracking/);
-    });
-  });
-}
+test("accessible: axe finds nothing serious on any tab, light and dark; controls have names and the right roles", async ({ app: page, server }) => {
+  await setMode(server, page, { theme: "light" });
+  await page.getByTestId("open-settings").click();
+  for (const [tab] of TABS) {
+    await show(page, tab);
+    expect(await axe(page), `tab ${tab}`).toEqual([]);
+    // every switch, select and text field in the panel has a name
+    const unnamed = await panel(page).evaluate((el) =>
+      [...el.querySelectorAll<HTMLElement>("[role=switch], [role=combobox], input:not([type=hidden]):not([aria-hidden=true]), textarea, button")]
+        .filter((c) => c.offsetParent !== null)
+        .filter((c) => {
+          const named = c.getAttribute("aria-label") || c.getAttribute("aria-labelledby") || (c.id && el.ownerDocument.querySelector(`label[for="${c.id}"]`)) || c.closest("label") || (c.textContent ?? "").trim();
+          return !named;
+        })
+        .map((c) => c.outerHTML.slice(0, 120)),
+    );
+    expect(unnamed, `tab ${tab}`).toEqual([]);
+  }
+  // the color pickers are radio groups; descriptions are linked
+  await show(page, "accounts");
+  await expect(panel(page).getByRole("radiogroup", { name: "Color" }).getByRole("radio")).toHaveCount(8);
+  await page.getByTestId("tab-general").click();
+  await expect(page.getByRole("switch", { name: "Always load remote images" })).toHaveAccessibleDescription(/Blocked by default to prevent tracking/);
+});
 
 // plan 139: the contrast suite proves every listed pair in every palette (themes/contrast.test.ts). What only a page shows is a
 // pair Settings draws that isn't listed, the same pair in every palette: it fails first where its text is nearest its surface.
@@ -475,85 +499,77 @@ function nearestTheLimit() {
 
 test("contrast: axe's color-contrast rule passes on every tab in the palettes nearest the limit", async ({ app: page, server }) => {
   test.setTimeout(120_000);
-  for (const theme of nearestTheLimit()) {
-    await setMode(server, page, theme.mode === "light" ? { theme: "light", lightTheme: theme.id } : { theme: "dark", darkTheme: theme.id });
-    await expect(page.locator("html")).toHaveAttribute("data-theme", theme.id);
+  // the design's own dark (names and roles don't change with the mode, so dark reads contrast alone), then the nearest
+  for (const theme of [null, ...nearestTheLimit()]) {
+    await setMode(server, page, !theme ? { theme: "dark" } : theme.mode === "light" ? { theme: "light", lightTheme: theme.id } : { theme: "dark", darkTheme: theme.id });
+    if (theme) await expect(page.locator("html")).toHaveAttribute("data-theme", theme.id);
     await page.getByTestId("open-settings").click();
     for (const [tab] of TABS) {
       await show(page, tab);
-      expect(await axe(page, ["color-contrast"]), `${theme.id} / ${tab}`).toEqual([]);
+      expect(await axe(page, ["color-contrast"]), `${theme?.id ?? "dark"} / ${tab}`).toEqual([]);
     }
   }
 });
 
-test.describe("at the minimum window size (980×600)", () => {
+test.describe("at the minimum window size (980×600), and a wide one", () => {
   test.use({ viewport: { width: 980, height: 600 } });
-  test("every tab fits: the tab list is whole, nothing scrolls sideways, the dialog stays in the window", async ({ app: page }) => {
-    await page.getByTestId("open-settings").click();
-    for (const [tab] of TABS) {
-      await show(page, tab);
-      const box = (await dialog(page).boundingBox())!;
-      expect(box.x).toBeGreaterThanOrEqual(0);
-      expect(box.y).toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width).toBeLessThanOrEqual(980);
-      expect(box.y + box.height).toBeLessThanOrEqual(600);
-      await expect(page.getByTestId(`tab-${TABS.at(-1)![0]}`)).toBeInViewport();
-      const sideways = await panel(page).evaluate((el) => {
-        const scroller = el.parentElement!;
-        return scroller.scrollWidth - scroller.clientWidth;
-      });
-      expect(sideways, tab).toBeLessThanOrEqual(0);
-    }
-  });
-});
-
-// the dialog is a grid: without a bounded row, the tabs grew to their content and the pane never scrolled
-for (const viewport of [{ width: 1440, height: 900 }, { width: 980, height: 600 }]) {
-  test.describe(`scrolling at ${viewport.width}×${viewport.height}`, () => {
-    test.use({ viewport });
-    test("every tab's pane stays inside the dialog and scrolls with the wheel to its last control", async ({ app: page }) => {
+  test("every tab fits and every pane scrolls with the wheel to its last control; nothing in Settings animates", async ({ app: page }) => {
+    await scenario("every tab fits: the tab list is whole, nothing scrolls sideways, the dialog stays in the window", async () => {
       await page.getByTestId("open-settings").click();
-      const box = (await dialog(page).boundingBox())!;
-      const scrolled: Tab[] = [];
       for (const [tab] of TABS) {
         await show(page, tab);
-        // the leaving panel lingers for a moment and would add its height
-        await expect(dialog(page).getByRole("tabpanel")).toHaveCount(1);
-        const scroller = panel(page).locator("xpath=..");
-        const sizes = await scroller.evaluate((el) => ({ top: el.getBoundingClientRect().top, bottom: el.getBoundingClientRect().bottom, client: el.clientHeight, scroll: el.scrollHeight }));
-        expect(sizes.bottom, tab).toBeLessThanOrEqual(box.y + box.height + 1);
-        if (sizes.scroll <= sizes.client + 1) continue;
-        await scroller.hover();
-        // (a tab's rows can still be arriving, and the end move further down: wheel again until it's reached)
-        await expect
-          .poll(async () => {
-            await page.mouse.wheel(0, sizes.scroll);
-            return scroller.evaluate((el) => el.scrollTop > 0 && Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight);
-          }, { message: tab })
-          .toBe(true);
-        scrolled.push(tab);
+        const box = (await dialog(page).boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.y).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(980);
+        expect(box.y + box.height).toBeLessThanOrEqual(600);
+        await expect(page.getByTestId(`tab-${TABS.at(-1)![0]}`)).toBeInViewport();
+        const sideways = await panel(page).evaluate((el) => {
+          const scroller = el.parentElement!;
+          return scroller.scrollWidth - scroller.clientWidth;
+        });
+        expect(sideways, tab).toBeLessThanOrEqual(0);
       }
-      // Appearance (13 themes) always overflows: the wheel really had something to scroll
-      expect(scrolled).toContain("appearance");
+    });
+    // the dialog is a grid: without a bounded row, the tabs grew to their content and the pane never scrolled
+    for (const viewport of [{ width: 980, height: 600 }, { width: 1440, height: 900 }]) {
+      await scenario(`at ${viewport.width}×${viewport.height}, every tab's pane stays inside the dialog and scrolls with the wheel to its last control`, async () => {
+        await page.setViewportSize(viewport);
+        await fresh(page);
+        await page.getByTestId("open-settings").click();
+        const box = (await dialog(page).boundingBox())!;
+        const scrolled: Tab[] = [];
+        for (const [tab] of TABS) {
+          await show(page, tab);
+          // the leaving panel lingers for a moment and would add its height
+          await expect(dialog(page).getByRole("tabpanel")).toHaveCount(1);
+          const scroller = panel(page).locator("xpath=..");
+          const sizes = await scroller.evaluate((el) => ({ top: el.getBoundingClientRect().top, bottom: el.getBoundingClientRect().bottom, client: el.clientHeight, scroll: el.scrollHeight }));
+          expect(sizes.bottom, tab).toBeLessThanOrEqual(box.y + box.height + 1);
+          if (sizes.scroll <= sizes.client + 1) continue;
+          await scroller.hover();
+          // (a tab's rows can still be arriving, and the end move further down: wheel again until it's reached)
+          await expect
+            .poll(async () => {
+              await page.mouse.wheel(0, sizes.scroll);
+              return scroller.evaluate((el) => el.scrollTop > 0 && Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight);
+            }, { message: tab })
+            .toBe(true);
+          scrolled.push(tab);
+        }
+        // Appearance (13 themes) always overflows: the wheel really had something to scroll
+        expect(scrolled).toContain("appearance");
+      });
+    }
+    await scenario("reduced motion from the OS: nothing in settings animates", async () => {
+      await fresh(page);
+      await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-accounts").click();
+      await page.getByTestId("account-toggle").first().click();
+      expect(await dialog(page).evaluate((el) => el.getAnimations({ subtree: true }).filter((a) => Number(a.effect?.getTiming().duration ?? 0) > 0).length)).toBe(0);
     });
   });
-}
-
-// the close is pinned to the sheet: with the title in the pane, a scrolled section ran under it
-test("scrolled, the section's title and the close keep their row: nothing runs under the close, a hairline marks the edge", async ({ app: page }) => {
-  await page.getByTestId("open-settings").click();
-  await show(page, "appearance");
-  const scroller = panel(page).locator("xpath=..");
-  const header = page.getByTestId("settings-header");
-  await expect(header).not.toHaveAttribute("data-scrolled");
-  await scroller.hover();
-  await page.mouse.wheel(0, 400);
-  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-  await expect(header).toHaveAttribute("data-scrolled");
-  await expect(header.getByRole("heading")).toBeInViewport();
-  const close = (await dialog(page).locator("[data-slot=dialog-close]").boundingBox())!;
-  const pane = (await scroller.boundingBox())!;
-  expect(close.y + close.height).toBeLessThanOrEqual(pane.y);
 });
 
 test.describe("motion", () => {
@@ -568,15 +584,5 @@ test.describe("motion", () => {
     await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
     await page.getByTestId("open-settings").click();
     expect(await dialog(page).evaluate((el) => getComputedStyle(el).transitionDuration.split(",").every((d) => parseFloat(d) === 0))).toBe(true);
-  });
-});
-
-test.describe("reduced motion from the OS", () => {
-  test("nothing in settings animates", async ({ app: page }) => {
-    await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
-    await page.getByTestId("open-settings").click();
-    await page.getByTestId("tab-accounts").click();
-    await page.getByTestId("account-toggle").first().click();
-    expect(await dialog(page).evaluate((el) => el.getAnimations({ subtree: true }).filter((a) => Number(a.effect?.getTiming().duration ?? 0) > 0).length)).toBe(0);
   });
 });
