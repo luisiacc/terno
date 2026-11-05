@@ -210,6 +210,18 @@ export const test = base.extend<Fixtures>({
   },
 });
 
+/**
+ * One scenario of a test that merges several on one backend and page (plan 139): named in the report, and a failure is
+ * recorded without stopping the scenarios after it, so a merge hides nothing. Steps that depend on each other use test.step.
+ */
+export async function scenario(name: string, body: () => Promise<void>): Promise<void> {
+  try {
+    await test.step(name, body);
+  } catch (e) {
+    expect.soft(e instanceof Error ? e.message : String(e), name).toBe("");
+  }
+}
+
 export const rows = (page: Page): Locator => page.getByTestId("thread-row");
 
 /** A recipient field's chips (plan 34): `field` is the input's test id ("compose-to"). */
