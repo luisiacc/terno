@@ -1,11 +1,10 @@
 import type { MethodName, ParamsOf } from "@terno/core/rpc";
 import AxeBuilder from "@axe-core/playwright";
-import { mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-const shots = "/tmp/terno-missing-draft-r2-shots";
-mkdirSync(shots, { recursive: true });
 
-for (const surface of ["worker", "render"] as const) for (const recovery of ["missing", "unknown"] as const) test(`${surface} failure Retry preserves ${recovery} work and Review drafts remains accessible`, async ({ page }) => {
+// which fatal screen (surface) and which recovery state are independent: the screen asks only "is there unsaved work",
+// and native-reload.test.ts holds each state on its own. So each value once, not the product.
+for (const [surface, recovery] of [["worker", "missing"], ["render", "unknown"]] as const) test(`${surface} failure Retry preserves ${recovery} work and Review drafts remains accessible`, async ({ page }) => {
   await page.addInitScript(`{
     const OriginalWorker = window.Worker;
     window.Worker = class extends OriginalWorker {
@@ -36,10 +35,11 @@ for (const surface of ["worker", "render"] as const) for (const recovery of ["mi
   if (surface === "worker") await page.evaluate("window.failMailWorker()");
   else await page.evaluate("window.__terno.throwIn('app')");
   await expect(page.getByTestId(surface === "worker" ? "web-fatal" : "app-boundary")).toBeVisible();
-  const navigation = page.waitForEvent("framenavigated", { predicate: (f) => f === page.mainFrame(), timeout: 2000 }).then(() => true, () => false);
+  let navigations = 0; page.on("framenavigated", (f) => { if (f === page.mainFrame()) navigations++; });
   await page.getByTestId(surface === "worker" ? "web-reload" : "app-boundary-reload").click();
-  expect(await navigation).toBe(false);
+  // the click's other outcome: a reload that went ahead shows no warning, and the counter would see it
   await expect(page.getByTestId("recovery-reload-warning")).toContainText("unsaved changes");
+  expect(navigations).toBe(0);
   await page.getByTestId("recovery-review").focus(); await page.keyboard.press("Enter");
   await expect(page.getByTestId("recovery-workspace")).toBeVisible(); await expect(body).toHaveText("retained exact work latest");
   await expect(body.locator("b")).toHaveText("retained exact work latest");
@@ -50,7 +50,6 @@ for (const surface of ["worker", "render"] as const) for (const recovery of ["mi
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme });
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-    await page.screenshot({ path: `${shots}/${surface}-${recovery}-${theme}.png` });
   }
   await page.getByTestId("recovery-details").click();
   await page.getByTestId(surface === "worker" ? "web-reload" : "app-boundary-reload").click();

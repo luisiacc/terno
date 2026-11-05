@@ -38,8 +38,7 @@ function refusal(observed: { exports: number; carry: string | null; pin: string 
   expect(observed).toEqual({ exports: 0, carry: null, pin, navigations: 0 });
 }
 
-for (const scheme of ["light", "dark"] as const) test(`actual pending Send refuses Settings storage switching before export and preserves later missing work (${scheme})`, async ({ page }, testInfo) => {
-  await page.emulateMedia({ colorScheme: scheme });
+test("actual pending Send refuses Settings storage switching before export and preserves later missing work", async ({ page }) => {
   await page.context().route("**/*", (route) => new URL(route.request().url()).hostname === "127.0.0.1" ? route.continue() : route.abort());
   await page.goto("/?demo=200&storage=opfs-sqlite");
   await page.getByTestId("thread-row").first().waitFor({ timeout: 60_000 });
@@ -116,8 +115,11 @@ for (const scheme of ["light", "dark"] as const) test(`actual pending Send refus
   for (const field of ["to", "cc", "bcc"] as const) {
     await expect(page.locator(`[data-recipient-field="compose-${field}"] [data-email]`)).toHaveAttribute("data-email", authored[field][0]!.email);
   }
-  await page.screenshot({ path: testInfo.outputPath(`missing-${scheme}.png`) });
-  expect((await new AxeBuilder({ page }).include('[data-testid="composer"]').analyze()).violations).toEqual([]);
+  // all the scheme can change is what axe sees
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    expect((await new AxeBuilder({ page }).include('[data-testid="composer"]').analyze()).violations).toEqual([]);
+  }
   await page.getByTestId("draft-save-copy").focus(); await page.keyboard.press("Enter");
   await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
   const copy = await readWork(page);

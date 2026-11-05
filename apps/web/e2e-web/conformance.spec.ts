@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { OPFS_CONTRACT } from "./conformance/opfs-subset";
 
 interface Result {
   name: string;
@@ -9,7 +10,7 @@ interface Result {
 
 async function runSuite(page: Page, suite: string): Promise<Result[]> {
   await page.goto(`/?suite=${suite}`);
-  await page.waitForFunction(() => (window as unknown as { __conformance?: { done: boolean } }).__conformance?.done, null, { timeout: 600_000, polling: 500 });
+  await page.waitForFunction(() => (window as unknown as { __conformance?: { done: boolean } }).__conformance?.done, null, { timeout: 280_000, polling: 100 });
   const c = await page.evaluate(() => (window as unknown as { __conformance: { results: Result[]; error: string | null } }).__conformance);
   expect(c.error).toBeNull();
   return c.results;
@@ -26,25 +27,28 @@ test("the runner reports failures and skips (canary)", async ({ page }) => {
   ]);
 });
 
-test("the MailStore contract holds on SQLite-WASM over OPFS (sahpool) in a Chromium worker", async ({ page }) => {
-  test.setTimeout(900_000);
+test("what of the MailStore contract depends on real files holds on SQLite-WASM over OPFS (sahpool) in a Chromium worker", async ({ page }) => {
   const results = await runSuite(page, "opfs-sqlite");
   expect(failures(results)).toEqual([]);
-  // the whole suite ran: only the node:sqlite legacy-fixture upgrade is skipped
-  expect(results.filter((r) => r.state === "pass").length).toBeGreaterThan(90);
-  expect(results.filter((r) => r.state === "skip").map((r) => r.name)).toEqual([expect.stringContaining("upgrades data written by the previous schema")]);
+  // nothing skipped, the journal's own cases there, and no entry of the subset matched by nothing (a renamed test)
+  expect(results.every((r) => r.state === "pass")).toBe(true);
+  expect(results.filter((r) => r.name.startsWith("OPFS lifecycle > "))).toHaveLength(5);
+  for (const entry of OPFS_CONTRACT) expect(results.filter((r) => r.name.includes(entry)).length, entry).toBeGreaterThan(0);
+  // the 27 of send recovery, plus the rest of the subset
+  expect(results.length).toBeGreaterThan(40);
 });
 
-test("the MailStore contract holds on native IndexedDB in a Chromium worker (scan only, and with the instant index)", async ({ page }) => {
-  test.setTimeout(900_000);
+test("the MailStore contract holds on native IndexedDB in a Chromium worker, with the instant index answering", async ({ page }) => {
+  test.setTimeout(300_000);
   const results = await runSuite(page, "idb");
   expect(failures(results)).toEqual([]);
-  expect(results.filter((r) => r.state === "pass").length).toBeGreaterThan(180);
-  expect(results.filter((r) => r.state === "skip").map((r) => r.name)).toEqual([expect.stringContaining("upgrades data written"), expect.stringContaining("upgrades data written")]);
+  expect(results.filter((r) => r.state === "pass").length).toBeGreaterThan(500);
+  expect(results.filter((r) => r.state === "skip").map((r) => r.name)).toEqual([expect.stringContaining("upgrades data written")]);
+  // a contract search may scan while the index catches up: this one fails when a store never lets the index answer
+  expect(results.filter((r) => r.state === "pass" && r.name.startsWith("the instant index on native IndexedDB > "))).toHaveLength(1);
 });
 
 test("the instant engine's conformance holds in a Chromium worker", async ({ page }) => {
-  test.setTimeout(600_000);
   const results = await runSuite(page, "engine");
   expect(failures(results)).toEqual([]);
   expect(results.filter((r) => r.state === "pass").length).toBeGreaterThan(50);

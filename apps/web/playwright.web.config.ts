@@ -6,7 +6,7 @@ import { defineConfig, devices } from "@playwright/test";
  * playwright.config.ts so the desktop e2e run never builds it.
  *
  * - web: lifecycle (Web Locks, takeover, open errors), offline, gating, flows
- * - web-conformance: the MailStore and engine suites inside a Chromium worker
+ * - web-conformance: real OPFS and native IndexedDB under the MailStore contract, and the engine, inside a Chromium worker
  * - web-perf: budgets at 10k and 50k messages (persistent profile, real OPFS)
  */
 // WEB_PORT lets a second checkout run this suite alongside (the conformance server takes the next port)
@@ -17,7 +17,7 @@ const OUT = process.env.WEB_PORT ? `dist-web-e2e-${WEB}` : "dist-web-e2e";
 export default defineConfig({
   testDir: "e2e-web",
   fullyParallel: true,
-  workers: process.env.CI ? 2 : 3,
+  workers: process.env.CI ? 2 : 4,
   retries: 0,
   timeout: 90_000,
   expect: { timeout: 15_000 },

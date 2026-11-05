@@ -23,20 +23,17 @@ async function boot(page: Page, url = DEMO) {
 
 const web = (page: Page) => page.evaluate(() => window.__ternoWeb!);
 
-test("the backend runs in a worker on SQLite-WASM over OPFS: seeds, lists, searches, opens", async ({ page }) => {
+test("the backend runs in a worker on SQLite-WASM over OPFS: seeds, lists, searches, opens; a repeat visit opens the stored mailbox (no reseed) and actions persist", async ({ page }) => {
   await boot(page);
   const info = await web(page);
   expect(info.storage).toBe("opfs-sqlite");
   expect(await rows(page).count()).toBeGreaterThan(10);
+  const first = await rows(page).first().getAttribute("data-thread-id");
   await (await searchBox(page)).fill("factura");
   await expect(page.getByTestId("search-stats")).toBeVisible();
   await rows(page).first().dispatchEvent("mousedown");
   await expect(page.getByTestId("reader-subject")).toBeVisible();
-});
-
-test("a repeat visit opens the stored mailbox (no reseed) and actions persist", async ({ page }) => {
   await boot(page);
-  const first = await rows(page).first().getAttribute("data-thread-id");
   await rows(page).first().dispatchEvent("mousedown");
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press("e"); // archive
@@ -272,9 +269,9 @@ async function stubGoogle(context: import("@playwright/test").BrowserContext, em
   return seen;
 }
 
-test("Gmail in the browser: Google's token model through the page, the mailbox synced by the worker", async ({ context, page }) => {
+test("Gmail in the browser: Google's token model through the page, the mailbox synced by the worker; plan 25: after a reload it asks for a sign-in quietly (the sidebar's line, no banner); another Google account is refused; the right one clears it", async ({ context, page }) => {
   const seen = await stubGoogle(context);
-  await page.goto("/?demo=0&mailbox=gmail");
+  await page.goto("/?demo=0&mailbox=gmail-signin");
   await page.getByTestId("first-run").waitFor();
   await page.keyboard.press("Escape");
   await page.getByTestId("open-settings").click();
@@ -287,21 +284,6 @@ test("Gmail in the browser: Google's token model through the page, the mailbox s
   await expect(rows(page)).toHaveCount(2);
   await expect(rows(page).first()).toContainText("Desde Gmail");
   expect(seen).toContain("GET /gmail/v1/users/me/profile Bearer web-token");
-});
-
-test("plan 25: after a reload Gmail asks for a sign-in quietly (the sidebar's line, no banner); another Google account is refused; the right one clears it", async ({ context, page }) => {
-  await stubGoogle(context);
-  await page.goto("/?demo=0&mailbox=gmail-signin");
-  await page.getByTestId("first-run").waitFor();
-  await page.keyboard.press("Escape");
-  await page.getByTestId("open-settings").click();
-  const settings = page.getByTestId("settings-dialog");
-  await settings.getByTestId("tab-accounts").click();
-  await settings.getByRole("button", { name: "Add account" }).click();
-  await page.getByTestId("connect-gmail").click();
-  await expect(page.getByTestId("snack-message").getByText("luis@gmail.com connected")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(rows(page)).toHaveCount(2);
   // the hour-long token lives in memory only: after a reload the account asks, and its mail is still here
   await page.reload();
   await rows(page).first().waitFor();

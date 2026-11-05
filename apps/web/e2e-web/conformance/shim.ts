@@ -85,8 +85,18 @@ export interface TestResult {
 
 const message = (e: unknown) => (e instanceof Error ? `${e.message}\n${(e.stack ?? "").split("\n").slice(1, 6).join("\n")}` : String(e));
 
-/** Runs everything collected so far, reporting each test as it finishes. */
-export async function run(onResult: (r: TestResult) => void): Promise<TestResult[]> {
+/** Takes out every test whose whole name `keep` refuses: not run, not reported, and its suite's hooks with it when none is left. */
+function narrow(s: Suite, path: string[], keep: (name: string) => boolean): void {
+  s.items = s.items.filter((item) => {
+    if (!("items" in item)) return keep([...path, item.name].join(" > "));
+    narrow(item, [...path, item.name], keep);
+    return item.items.length > 0;
+  });
+}
+
+/** Runs everything collected so far (or what `keep` keeps), reporting each test as it finishes. */
+export async function run(onResult: (r: TestResult) => void, keep?: (name: string) => boolean): Promise<TestResult[]> {
+  if (keep) narrow(root, [], keep);
   const results: TestResult[] = [];
   const report = (r: TestResult) => (results.push(r), onResult(r));
   const tests = (s: Suite): Test[] => s.items.flatMap((i) => ("items" in i ? tests(i) : [i]));
