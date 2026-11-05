@@ -11,7 +11,7 @@ import type { Mark, Node as PMNode } from "prosemirror-model";
 import { EditorState, TextSelection, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { describe, expect, it } from "vitest";
-import { flushLinks, linkTypedUrl, liveKey, liveStats, reconcile, textSlice } from "./autolink";
+import { flushLinks, linkTypedUrl, liveKey, liveStats, textSlice } from "./autolink";
 import { applyLink, createPlugins } from "./editor";
 
 const { marks, nodes } = schema;
