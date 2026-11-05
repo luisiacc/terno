@@ -1,16 +1,16 @@
 /**
  * Plan 18 in the renderer (production build, Chromium): autocomplete never
- * costs typing. Huge drafts (5 and 10 MB of lines, a 1 MB paragraph) with the
- * caret at the start, the middle and the end: typing with suggestions on is
- * measured against the same typing with them off, interleaved (a paired
- * measurement: whatever else the machine does affects both), and must stay
- * within 1.10× + 1 ms at the median and 1.20× + 2 ms in the slowest quarter
- * (each the median of the rounds' ratios); a suggestion appears within its
- * budget after typing stops; positions that may ask actually ask (counted),
- * others don't; the editor's DOM changes only by the ghost; a long session
- * doesn't grow the heap; the recipient list paints within a frame of a
- * keystroke. An injected 6 ms of work per keystroke must fail the paired
- * gate.
+ * costs typing. A draft at the 5M-character limit with the caret at its start,
+ * 1 MB of Chinese (three bytes a character) at its end, and a long paragraph:
+ * typing with suggestions on is measured against the same typing with them
+ * off, interleaved (a paired measurement: whatever else the machine does
+ * affects both), and must stay within 1.10× + 1 ms at the median and 1.20× +
+ * 2 ms in the slowest quarter (each the median of the rounds' ratios); a
+ * suggestion appears within its budget after typing stops; positions that may
+ * ask actually ask (counted), others don't; the editor's DOM changes only by
+ * the ghost; a long session doesn't grow the heap; the recipient list paints
+ * within a frame of a keystroke. An injected 6 ms of work per keystroke, and
+ * 10 ms on one key in four, must fail the paired gate.
  */
 import type { CDPSession, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
@@ -97,43 +97,61 @@ const probe = (page: Page) => page.evaluate(() => (window as unknown as { __comp
 const setSuggestions = (page: Page, on: boolean) => page.evaluate((on) => (window as unknown as { __terno: { setComposeSuggestions(on: boolean): void } }).__terno.setComposeSuggestions(on), on);
 
 /**
- * Typing the habit with suggestions on, then the same with them off, `rounds`
- * times (each round types on the caret's fresh line, then removes what it
- * typed). 90 ms between keys: every key's suggestion is asked for and shown,
- * the worst case for what ours costs while typing.
+ * What a paired measurement samples (plan 139, measured over 10 rounds of 16 keys a position): keys vary by a millisecond
+ * within a burst and a round's ratio by a tenth, and 10 keys leave the slowest quarter its 2 keys. Three rounds is the
+ * fewest with a real median: two would take the worse of two, and a draft's first round runs cold (1.29 measured, and
+ * 1.19 once failed the gate at 5 MB).
  */
-async function paired(page: Page, rounds: number) {
+const BURST = HABIT.slice(0, 10);
+const ROUNDS = 3;
+
+/**
+ * The last burst's edits saved (past the 800 ms debounce): a huge draft's save holds the page ~300 ms and the in-process
+ * backend that types these keys ~200 ms, so keys then arrive a second apart and a save follows each. Which burst met it
+ * decided the ratio, not suggestions; a save's own cost is perf.spec's gate. An edit turns the status off at once, so it's
+ * only read a frame later, and on every frame: the time here is the debounce and the save, not a locator's backoff.
+ */
+async function saved(page: Page) {
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await page.waitForFunction(() => /saved/i.test(document.querySelector("[data-testid=draft-status]")?.textContent ?? ""), null, { polling: "raf", timeout: 60_000 });
+}
+
+/**
+ * Typing the habit with suggestions on, then the same with them off, `rounds`
+ * times (each burst types on the caret's fresh line, then removes what it
+ * typed). 90 ms between keys: every key's suggestion is asked for and shown,
+ * the worst case for what ours costs while typing. A round's two bursts follow
+ * each other inside the debounce, so no save lands between them; `settle`: the
+ * draft is big enough that a round has to start with none pending.
+ */
+async function paired(page: Page, { settle = true }: { settle?: boolean } = {}) {
   const on: number[] = [];
   const off: number[] = [];
-  /** each round's on/off ratio of medians: the two bursts are seconds apart, so the machine's load is about the same for both */
+  /** each round's on/off ratio of medians: the two bursts are a second apart, so the machine's load is about the same for both */
   const ratios: number[] = [];
   /** and of the slowest quarters' means: a regression on a share of the keys (one in four) moves these, not the medians */
   const tails: number[] = [];
   let requests = 0;
-  for (let r = 0; r < rounds; r++) {
+  for (let r = 0; r < ROUNDS; r++) {
+    if (settle) await saved(page);
     // the order alternates (on first, then off first): neither side always comes first
     const round: Record<string, number> = {};
     for (const enabled of r % 2 ? [false, true] : [true, false]) {
       await setSuggestions(page, enabled);
-      // the last burst's edits saved first (past the 800 ms debounce): a huge draft's save holds the page ~300 ms and
-      // the in-process backend that types these keys ~200 ms, so keys then arrive a second apart and a save follows
-      // each. Which burst met it decided the ratio, not suggestions; a save's own cost is perf.spec's gate.
-      await page.waitForTimeout(900);
-      await expect(page.getByTestId("draft-status")).toHaveText(/saved/i, { timeout: 60_000 });
       await resetProbe(page);
-      await page.keyboard.type(HABIT, { delay: 90 });
-      // a huge draft takes tens of ms a key: the suggestion is asked 60 ms after the last one is handled
-      await page.waitForTimeout(600);
+      await page.keyboard.type(BURST, { delay: 90 });
+      // the last key's transaction (a huge draft takes tens of ms a key); one that never comes fails below
+      await page.waitForFunction((n) => (window as unknown as { __kt: { handled: number[] } }).__kt.handled.length >= n, BURST.length, { polling: "raf", timeout: 1000 }).catch(() => {});
       const t = await readTimes(page);
       // every key was measured, in the open draft (an Esc here would collapse it: the next keys would type nowhere)
-      expect(t.handled.length, "keys measured in the burst").toBeGreaterThanOrEqual(HABIT.length - 1);
+      expect(t.handled.length, "keys measured in the burst").toBeGreaterThanOrEqual(BURST.length - 1);
       await expect(page.getByTestId("compose-body")).toBeFocused();
       (enabled ? on : off).push(...t.handled);
       round[enabled ? "on" : "off"] = stats(t.handled).p50;
       round[enabled ? "onTail" : "offTail"] = stats(t.handled).tail;
       if (enabled) requests += (await probe(page))["ghost-request"]?.length ?? 0;
       // back to where it was (a deletion dismisses a ghost)
-      for (let i = 0; i < HABIT.length; i++) await page.keyboard.press("Backspace");
+      for (let i = 0; i < BURST.length; i++) await page.keyboard.press("Backspace");
     }
     ratios.push(round.on! / round.off!);
     tails.push(round.onTail! / round.offTail!);
@@ -160,7 +178,7 @@ async function lines(megabytes: number) {
   return Array.from({ length: n }, (_, i) => `${i} ${LINE}`).join("\n");
 }
 
-/** Chinese lines: three bytes a character in UTF-8, so a 10 MB draft stays within the 5M-character draft limit (plan 16). */
+/** Chinese lines: three bytes a character in UTF-8, where a draft's bytes and the characters its limit counts (plan 16) differ. */
 const CHINESE = "你好，我把会议的笔记发给你，包括我们今天讨论的所有要点和下一步的安排。";
 function chineseLines(megabytes: number) {
   const n = Math.ceil((megabytes * 1_000_000) / (new TextEncoder().encode(CHINESE).length + 8));
@@ -172,72 +190,66 @@ async function waitForHabitGhost(page: Page) {
   await expect.poll(() => page.evaluate(() => document.querySelector<HTMLElement>('[data-testid="compose-ghost"]:not([hidden])')?.dataset.ghost ?? ""), { timeout: 10_000 }).toMatch(/^ look/);
 }
 
-for (const mb of [5, 10]) {
-  test(`a ${mb} MB draft: suggestions at the start, middle and end cost typing nothing beyond the paired gate, and appear in time`, async ({ app: page, server }) => {
-    test.setTimeout(1_500_000);
-    const body = mb === 10 ? chineseLines(10) : await lines(mb);
-    expect(body.length, "within the draft limit (characters)").toBeLessThanOrEqual(5_000_000);
-    expect(new TextEncoder().encode(body).length, "draft size in UTF-8").toBeGreaterThanOrEqual(mb * 0.95 * 1_000_000);
-    await openDraft(page, server, body);
+/**
+ * A draft's two directions, each once: at the limit with the caret at its start (anything that walks forward from the caret
+ * walks all of it), and at its end, the whole window behind it in Chinese (anything that walks back, and where bytes and
+ * characters differ). A caret in the middle walks less of both.
+ */
+for (const { title, mb, body, where, index, settle } of [
+  { title: "5 MB of lines, the 5M-character limit", mb: 5, body: () => lines(5), where: "start", index: 0, settle: true },
+  { title: "1 MB of Chinese", mb: 1, body: () => chineseLines(1), where: "end", index: -1, settle: false },
+] as const) {
+  test(`${title}: with the caret at its ${where}, suggestions cost typing nothing beyond the paired gate, and appear in time`, async ({ app: page, server }) => {
+    test.setTimeout(300_000);
+    const text = await body();
+    expect(text.length, "within the draft limit (characters)").toBeLessThanOrEqual(5_000_000);
+    expect(new TextEncoder().encode(text).length, "draft size in UTF-8").toBeGreaterThanOrEqual(mb * 0.95 * 1_000_000);
+    await openDraft(page, server, text);
     await installKeyTimer(page);
-    const blocks = await page.getByTestId("compose-body").evaluate((el) => el.querySelectorAll(":scope > p").length);
-    for (const [where, index] of [
-      ["start", 0],
-      ["middle", Math.floor(blocks / 2)],
-      ["end", -1],
-    ] as const) {
-      await caretAt(page, index);
-      // a fresh line under it: room for the ghost on the caret's line
-      await page.keyboard.press("Enter");
-      const r = await paired(page, mb === 10 ? 3 : 4);
-      const gate = pairedGate(r, `${mb} MB draft, caret at the ${where}`);
-      expect(withinGate(r, gate), `${where}: typing with suggestions vs without`).toBe(true);
-      // each position is at the end of its line: it asks (a gate that silently asked nothing would pass by doing nothing)
-      expect(r.requests, `${where}: suggestions were asked for`).toBeGreaterThan(0);
-      // a suggestion appears after a pause, within budget: the best of three tries (a multi-megabyte save landing at
-      // that moment holds the request behind it, plan 18 as shipped; it doesn't land every time)
-      let latency = Infinity;
-      for (let attempt = 0; attempt < 3 && latency > 120 * MULT; attempt++) {
-        await expect(page.getByTestId("draft-status")).toHaveText(/saved/i, { timeout: 60_000 });
-        await resetProbe(page);
-        await page.keyboard.type(HABIT, { delay: 30 });
-        await waitForHabitGhost(page);
-        // typing stopped → shown: the 60 ms pause, then the request (window, RPC, model) and the frame that places it
-        latency = Math.min(
-          latency,
-          await page.evaluate((delay) => {
-            const w = window as unknown as { __composer: Probe };
-            const placed = w.__composer["ghost-placed"]!.at(-1)!;
-            const asked = w.__composer["ghost-request"]!.filter((t) => t <= placed).at(-1)!;
-            return placed - asked + delay;
-          }, 60),
-        );
-        await page.keyboard.press("Escape");
-        await expect(page.locator("[data-testid=compose-ghost]:not([hidden])")).toHaveCount(0);
-        for (let i = 0; i < HABIT.length; i++) await page.keyboard.press("Backspace");
-      }
-      console.log(`${mb} MB draft, caret at the ${where}: typing stopped → ghost placed ${latency.toFixed(1)} ms (60 ms of it the pause before asking)`);
-      expect(latency, `${where}: a suggestion after typing stops`).toBeLessThanOrEqual(120 * MULT);
+    await caretAt(page, index);
+    // a fresh line under it: room for the ghost on the caret's line
+    await page.keyboard.press("Enter");
+    const r = await paired(page, { settle });
+    const gate = pairedGate(r, `${title}, caret at the ${where}`);
+    expect(withinGate(r, gate), `${where}: typing with suggestions vs without`).toBe(true);
+    // each position is at the end of its line: it asks (a gate that silently asked nothing would pass by doing nothing)
+    expect(r.requests, `${where}: suggestions were asked for`).toBeGreaterThan(0);
+    // a suggestion appears after a pause, within budget: the best of three tries (a multi-megabyte save landing at
+    // that moment holds the request behind it, plan 18 as shipped; it doesn't land every time)
+    let latency = Infinity;
+    for (let attempt = 0; attempt < 3 && latency > 120 * MULT; attempt++) {
+      if (settle) await saved(page);
+      await resetProbe(page);
+      await page.keyboard.type(HABIT, { delay: 30 });
+      await waitForHabitGhost(page);
+      // typing stopped → shown: the 60 ms pause, then the request (window, RPC, model) and the frame that places it
+      latency = Math.min(
+        latency,
+        await page.evaluate((delay) => {
+          const w = window as unknown as { __composer: Probe };
+          const placed = w.__composer["ghost-placed"]!.at(-1)!;
+          const asked = w.__composer["ghost-request"]!.filter((t) => t <= placed).at(-1)!;
+          return placed - asked + delay;
+        }, 60),
+      );
+      await page.keyboard.press("Escape");
+      await expect(page.locator("[data-testid=compose-ghost]:not([hidden])")).toHaveCount(0);
+      for (let i = 0; i < HABIT.length; i++) await page.keyboard.press("Backspace");
     }
+    console.log(`${title}, caret at the ${where}: typing stopped → ghost placed ${latency.toFixed(1)} ms (60 ms of it the pause before asking)`);
+    expect(latency, `${where}: a suggestion after typing stops`).toBeLessThanOrEqual(120 * MULT);
   });
 }
 
-test("a 1 MB paragraph: at its end, suggestions cost typing nothing beyond the paired gate", async ({ app: page, server }) => {
-  test.setTimeout(600_000);
-  const paragraph = "palabra ".repeat(125_000);
-  await openDraft(page, server, paragraph);
-  await installKeyTimer(page);
-  await caretAt(page, 0);
-  const end = await paired(page, 4);
-  const gate = pairedGate(end, "1 MB paragraph, caret at the end");
-  expect(withinGate(end, gate), "typing with suggestions vs without").toBe(true);
-  expect(end.requests).toBeGreaterThan(0);
-});
-
-test("a 250 KB paragraph: at its start and middle (text after the caret) nothing is asked", async ({ app: page, server }) => {
-  test.setTimeout(600_000);
+test("a 250 KB paragraph: at its end, suggestions cost typing nothing beyond the paired gate; at its start and middle (text after the caret) nothing is asked", async ({ app: page, server }) => {
+  test.setTimeout(300_000);
   await openDraft(page, server, "palabra ".repeat(31_250).trimEnd());
   await installKeyTimer(page);
+  await caretAt(page, 0);
+  const end = await paired(page, { settle: false });
+  const gate = pairedGate(end, "250 KB paragraph, caret at the end");
+  expect.soft(withinGate(end, gate), "typing with suggestions vs without").toBe(true);
+  expect.soft(end.requests).toBeGreaterThan(0);
   // typing inside a huge paragraph re-lays out all of it on every key (Chromium's cost): a few keys only
   for (const [where, offset] of [
     ["start", 0],
@@ -254,12 +266,13 @@ test("a 250 KB paragraph: at its start and middle (text after the caret) nothing
 
 test("a suggestion doesn't change the editor's DOM at all (it's a layer beside it); a 1 MB paste asks nothing", async ({ app: page, server }) => {
   test.setTimeout(300_000);
-  await openDraft(page, server, await lines(2));
+  // (a huge draft's way of laying out, past 2,000 lines, without a multi-megabyte save to wait out)
+  await openDraft(page, server, await lines(0.2));
   await installKeyTimer(page);
   await caretAt(page, -1);
   await page.keyboard.press("Enter");
-  // no save of the 2 MB draft in flight (it would hold the suggestion's request behind it)
-  await expect(page.getByTestId("draft-status")).toHaveText(/saved/i, { timeout: 60_000 });
+  // no save of the draft in flight (it would hold the suggestion's request behind it)
+  await saved(page);
   await page.keyboard.type(HABIT.slice(0, -1), { delay: 20 });
   await expect(page.locator("[data-testid=compose-ghost]:not([hidden])")).toBeVisible({ timeout: 15_000 });
   // (Esc only with a suggestion showing: otherwise it collapses the draft)
@@ -300,14 +313,22 @@ async function heapUsed(cdp: CDPSession): Promise<number> {
   return (await cdp.send("Runtime.getHeapUsage")).usedSize;
 }
 
-test("300 suggestions accepted, dismissed and undone don't grow the heap", async ({ app: page, server }) => {
-  test.setTimeout(600_000);
+/**
+ * The heap climbs while the editor's history and caches fill, up to 120 cycles (2.3 to 2.8 MiB, measured three times), and
+ * then all but stops: 2.2 KiB a cycle to 180, under 1 KiB after. So the window starts past the climb. The 2 MiB over 300
+ * cycles this was left about 3 KiB a cycle to a leak (1.2 MiB of it the climb's end); 5 KiB a cycle leaves it the same here.
+ */
+const HEAP_WARM = 120;
+const HEAP_CYCLES = 40;
+test(`${HEAP_CYCLES} suggestions accepted, dismissed and undone, after ${HEAP_WARM} to warm up, grow the heap by 5 KiB each at most`, async ({ app: page, server }) => {
+  test.setTimeout(300_000);
   await openDraft(page, server, "Hola,\n");
   await caretAt(page, -1);
   const cdp = await page.context().newCDPSession(page);
   const cycle = async (i: number) => {
-    await page.keyboard.type(HABIT, { delay: 5 });
-    await expect(page.locator("[data-testid=compose-ghost]:not([hidden])")).toBeVisible({ timeout: 5000 });
+    await page.keyboard.type(HABIT);
+    // A missing locator makes Playwright back off for up to half a second, each cycle
+    await page.waitForFunction(() => document.querySelector<HTMLElement>('[data-testid="compose-ghost"]:not([hidden])')?.checkVisibility() === true, null, { polling: "raf", timeout: 5000 });
     if (i % 3 === 0) {
       await page.keyboard.press("Tab");
       await page.keyboard.press("ControlOrMeta+z");
@@ -316,12 +337,12 @@ test("300 suggestions accepted, dismissed and undone don't grow the heap", async
     await page.keyboard.press("ControlOrMeta+a");
     await page.keyboard.press("Backspace");
   };
-  for (let i = 0; i < 30; i++) await cycle(i);
+  for (let i = 0; i < HEAP_WARM; i++) await cycle(i);
   const before = await heapUsed(cdp);
-  for (let i = 0; i < 300; i++) await cycle(i);
+  for (let i = 0; i < HEAP_CYCLES; i++) await cycle(i);
   const after = await heapUsed(cdp);
-  console.log(`300 suggestion cycles: heap ${((after - before) / 1048576).toFixed(2)} MiB`);
-  expect(after - before, "heap growth over 300 cycles").toBeLessThanOrEqual(2 * 1024 * 1024);
+  console.log(`${HEAP_CYCLES} suggestion cycles: heap ${((after - before) / 1024).toFixed(0)} KiB (${((after - before) / 1024 / HEAP_CYCLES).toFixed(1)} KiB a cycle)`);
+  expect(after - before, `heap growth over ${HEAP_CYCLES} cycles`).toBeLessThanOrEqual(5 * 1024 * HEAP_CYCLES);
 });
 
 test("recipients (plan 34): with 200 chips in the field, a keystroke is painted within a frame (p95, best of 3) and renders no chip", async ({ app: page }) => {
@@ -406,34 +427,29 @@ test("recipients: a keystroke to its suggestions painted within a frame (p95, be
   expect(best, "keystroke → suggestions painted p95").toBeLessThanOrEqual(16.7 * MULT);
 });
 
-test("injected regression: 6 ms of extra work per keystroke in the ghost plugin fails the paired gate", async ({ app: page, server }) => {
-  test.setTimeout(300_000);
-  await openDraft(page, server, await lines(1));
-  await installKeyTimer(page);
-  await caretAt(page, -1);
-  await page.keyboard.press("Enter");
-  // the injection only acts with suggestions on: the paired measurement sees it
-  await page.evaluate(() => ((window as unknown as { __ternoInject?: string }).__ternoInject = "ghost-busy"));
-  const r = await paired(page, 3);
-  const gate = pairedGate(r, "injected 6 ms per keystroke");
-  await page.evaluate(() => delete (window as unknown as { __ternoInject?: string }).__ternoInject);
-  expect(withinGate(r, gate)).toBe(false);
-});
-
-test("injected regression: 10 ms on one key in four fails the paired tail gate (the medians alone would pass)", async ({ app: page, server }) => {
-  test.setTimeout(300_000);
-  await openDraft(page, server, await lines(1));
-  await installKeyTimer(page);
-  await caretAt(page, -1);
-  await page.keyboard.press("Enter");
-  await page.evaluate(() => ((window as unknown as { __ternoInject?: string }).__ternoInject = "ghost-busy-sometimes"));
-  const r = await paired(page, 4);
-  const gate = pairedGate(r, "injected 10 ms on one key in four");
-  await page.evaluate(() => delete (window as unknown as { __ternoInject?: string }).__ternoInject);
-  expect(withinGate(r, gate)).toBe(false);
-  expect(r.tail).toBeGreaterThan(gate.tail * MULT);
-});
-
+/**
+ * What shows the paired gate can fail, with the sampling the gates above use, on 1 MB (no save to wait out; 3.2× against a
+ * limit of 1.5 measured, every round). The same 6 ms at 5 MB measured 1.6× against 1.2, so the gate holds there too (plan 139).
+ */
+for (const { title, inject, tailOnly } of [
+  { title: "6 ms of extra work per keystroke in the ghost plugin fails the paired gate", inject: "ghost-busy", tailOnly: false },
+  { title: "10 ms on one key in four fails the paired tail gate (the medians alone would pass)", inject: "ghost-busy-sometimes", tailOnly: true },
+]) {
+  test(`injected regression: ${title}`, async ({ app: page, server }) => {
+    test.setTimeout(300_000);
+    await openDraft(page, server, await lines(1));
+    await installKeyTimer(page);
+    await caretAt(page, -1);
+    await page.keyboard.press("Enter");
+    // the injection only acts with suggestions on: the paired measurement sees it
+    await page.evaluate((v) => ((window as unknown as { __ternoInject?: string }).__ternoInject = v), inject);
+    const r = await paired(page, { settle: false });
+    const gate = pairedGate(r, `injected ${inject}`);
+    await page.evaluate(() => delete (window as unknown as { __ternoInject?: string }).__ternoInject);
+    expect(withinGate(r, gate)).toBe(false);
+    if (tailOnly) expect(r.tail).toBeGreaterThan(gate.tail * MULT);
+  });
+}
 
 test("waiting for a pending ghost never measures the draft body", async ({ page }) => {
   await page.setContent('<main data-testid="compose-body" role="textbox" contenteditable="true">' + '<p>Draft line.</p>'.repeat(3000) + '</main><div data-testid="compose-ghost" hidden></div>');
