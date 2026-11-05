@@ -6,12 +6,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
-import { seedDataset, type IncomingMessage, sqlDb, type SqlMailStore } from "@terno/db";
+import { type IncomingMessage, type SqlMailStore } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
 import { generateDataset } from "@terno/mock-data";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { BUDGET_MULTIPLIER, report, type Stat } from "../../db/src/test/perf";
+import { copyMailbox, PERF_MAILBOX } from "../../db/src/test/perf-mailbox";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 let backend: Backend;
@@ -22,9 +23,9 @@ const stats: Stat[] = [];
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "terno-bperf-"));
-  backend = new Backend({ dbPath: join(dir, "sqlDb(b.store)"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: true });
+  accountIds = copyMailbox(PERF_MAILBOX, join(dir, "perf.db")).accountIds;
+  backend = new Backend({ dbPath: join(dir, "perf.db"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: true });
   await backend.store.ready;
-  accountIds = seedDataset(sqlDb(backend.store), generateDataset({ threads: 20_000, accounts: 8, seed: 5, now: NOW, bodyScale: 3 }), { now: NOW }).accountIds;
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "r", origin: "renderer" });
   client = new RpcClient(c);
@@ -33,7 +34,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  report("backend.json", "Backend RPC latency", { threads: 20_000, accounts: 8 }, stats);
+  report("backend.json", "Backend RPC latency", { threads: PERF_MAILBOX.dataset.threads, accounts: PERF_MAILBOX.dataset.accounts }, stats);
   await backend.stop();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -80,8 +81,9 @@ it("idle: RPC round trip adds little over the query itself", async () => {
   expect(bytes).toBeLessThan(60_000);
 });
 
-it("under load: interactive RPCs stay responsive during a 15k-message import + bulk filter", async () => {
-  const extra = generateDataset({ threads: 8_000, accounts: 8, seed: 99, now: NOW, bodyScale: 3 }).messages.map(
+// what the calls wait for is a slice, not the import's length: long enough for the bulk filter's whole walk beside it
+it("under load: interactive RPCs stay responsive during an import + bulk filter", async () => {
+  const extra = generateDataset({ threads: 1_200, accounts: 8, seed: 99, now: NOW, bodyScale: 3 }).messages.map(
     (m): IncomingMessage => ({ ...m, providerMsgId: `bg-${m.providerMsgId}`, rfcMessageId: `bg-${m.rfcMessageId}`, references: m.references.map((r) => `bg-${r}`), inReplyTo: m.inReplyTo ? `bg-${m.inReplyTo}` : null, accountId: accountIds[m.accountIndex]! }),
   );
   const filter = await client.call("filters.save", {

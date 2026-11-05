@@ -1,7 +1,9 @@
 /**
- * Plan 133 at 50,000 threads: the learner never holds the event loop past the slicer's budget, on either store, and a
+ * Plan 133 at 50,000+ threads: the learner never holds the event loop past the slicer's budget, on either store, and a
  * draft's assembly, a refinement and an intent are quick with 3,000 sent messages, thousands of look-alikes among them.
- * The model's a script: nothing leaves this process.
+ * One SQLite mailbox holds both. On IndexedDB the learner runs at 5,000 threads: what it reads is the 3,000 sent, and a
+ * read that walks the store instead still takes far longer than a slice there. The model's a script: nothing leaves
+ * this process.
  */
 import "fake-indexeddb/auto";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -10,13 +12,15 @@ import { join } from "node:path";
 import { createAi, type AiOptions, type ProviderConfig } from "@terno/ai";
 import { DEFAULT_WRITING_PREFS } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
-import { openDatabase, SqlMailStore } from "@terno/db";
+import { openDatabase, sqlDb, SqlMailStore } from "@terno/db";
 import { IdbMailStore } from "@terno/idb";
 import { demoRegistry } from "@terno/mail";
 import { generateDataset } from "@terno/mock-data";
 import { msg } from "@terno/store/conformance";
 import type { MailStore } from "@terno/store";
-import { expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
+import { copyMailbox, LARGE_MAILBOX } from "../../db/src/test/perf-mailbox";
+import { watchLoop } from "../../db/src/test/timing";
 import { Backend, plaintextCipher } from "./backend";
 import { say } from "./test/writing-fixture";
 import { VoiceLearner, windowKey } from "./voice-learner";
@@ -26,10 +30,8 @@ const MULT = Number(process.env.PERF_BUDGET_MULTIPLIER ?? "1");
 const TOM = { name: "Tom Reed", email: "tom@acme.test" };
 const LINES = ["Thanks for sending this over, it looks good to me.", "Let me know if that works for you and the team.", "I had a look at the numbers and we can go ahead with it.", "Sounds good, talk soon and have a great weekend.", "Could you send me the latest version when you get a chance?"];
 
-async function seed(store: MailStore): Promise<number> {
-  const seeded = await store.dev.seed(generateDataset({ threads: 50_000, accounts: 2, seed: 233, now: NOW, bodyScale: 0.02 }), { now: NOW, categorizeRate: 0 });
-  expect(seeded.threadCount).toBeGreaterThanOrEqual(50_000);
-  const accountId = seeded.accountIds[0]!;
+/** The sent mail the learner and the drafts read. */
+async function addSent(store: MailStore, accountId: number): Promise<void> {
   const me = { name: "Me", email: "me@perf.test" };
   for (let slice = 0; slice < 30; slice++) {
     const batch = Array.from({ length: 100 }, (_, i) => {
@@ -42,11 +44,22 @@ async function seed(store: MailStore): Promise<number> {
     });
     await store.sync.ingest(batch, { applyFilters: false, now: NOW, classifier: null });
   }
-  return accountId;
 }
 
-async function runLearner(store: MailStore, label: string, gate: boolean): Promise<void> {
-  const accountId = await seed(store);
+const dir = mkdtempSync(join(tmpdir(), "terno-writing-perf-"));
+const path = join(dir, "perf.db");
+let sqlAccount: number;
+
+beforeAll(async () => {
+  sqlAccount = copyMailbox(LARGE_MAILBOX, path).accountIds[0]!;
+  const store = new SqlMailStore(openDatabase(path));
+  await addSent(store, sqlAccount);
+  await store.close();
+}, 600_000);
+
+afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+async function runLearner(store: MailStore, accountId: number, label: string, gate: boolean): Promise<void> {
   const learner = new VoiceLearner({
     store,
     platform: { yield: () => new Promise<void>((resolve) => setImmediate(resolve)) },
@@ -57,27 +70,16 @@ async function runLearner(store: MailStore, label: string, gate: boolean): Promi
     studyProgress: () => {},
     log: () => {},
   });
-  // what the seeding left in the WAL is a checkpoint any next writer would pay for: not this test's subject (as load.perf)
-  if (store instanceof SqlMailStore) store.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-  // the longest time the event loop waited while it ran: what anything else in the backend would have waited
-  let stall = 0;
-  let last = performance.now();
-  let beating = true;
-  const beat = () => {
-    if (!beating) return;
-    const now = performance.now();
-    stall = Math.max(stall, now - last);
-    last = now;
-    setImmediate(beat);
-  };
+  // what the sent mail left in the WAL is a checkpoint any next writer would pay for: not this test's subject (as load.perf)
+  if (store instanceof SqlMailStore) sqlDb(store).exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  // the longest the event loop was held while it ran: what anything else in the backend would have waited
+  const loop = watchLoop(8 * MULT);
   const started = performance.now();
-  setImmediate(beat);
   await learner.activate();
   await learner.idle();
-  // the run's last stretch ended with no macrotask after it: let the beat see that one too
-  await new Promise((resolve) => setImmediate(resolve));
-  await new Promise((resolve) => setImmediate(resolve));
-  beating = false;
+  // the run's last stretch ended with no macrotask after it: let the watch see that one too
+  await new Promise((resolve) => setTimeout(resolve, 2));
+  const { stall } = loop.stop();
   const ms = performance.now() - started;
   const window = await store.settings.get<number[]>(windowKey(accountId), []);
   const rows = (await store.writing.profiles.list({ accountId, limit: 2000 })).length;
@@ -91,27 +93,26 @@ async function runLearner(store: MailStore, label: string, gate: boolean): Promi
 }
 
 it("the learner stays in its slices on SQLite at 50,000 threads", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "terno-learner-perf-"));
-  const store = new SqlMailStore(openDatabase(join(dir, "perf.db")));
+  const store = new SqlMailStore(openDatabase(path));
   try {
-    await runLearner(store, "SQL", true);
+    await runLearner(store, sqlAccount, "SQL", true);
   } finally {
     await store.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 }, 600_000);
 
-it("the learner stays in its slices on IndexedDB at 50,000 threads", async () => {
-  const store = await IdbMailStore.open({ name: "learner-perf-50k", factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) } });
+it("the learner stays in its slices on IndexedDB", async () => {
+  const store = await IdbMailStore.open({ name: "learner-perf", factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) } });
   try {
-    await runLearner(store, "IDB", false);
+    const seeded = await store.dev.seed(generateDataset({ threads: 5_000, accounts: 2, seed: 233, now: NOW, bodyScale: 0.02 }), { now: NOW, categorizeRate: 0 });
+    await addSent(store, seeded.accountIds[0]!);
+    await runLearner(store, seeded.accountIds[0]!, "IDB", false);
   } finally {
     await store.close();
   }
 }, 600_000);
 
 it("a draft's assembly, a refinement and an intent, at 50,000 threads", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "terno-draft-perf-"));
   const factory = (config: ProviderConfig, options: AiOptions) =>
     createAi(config, {
       ...options,
@@ -120,11 +121,11 @@ it("a draft's assembly, a refinement and an intent, at 50,000 threads", async ()
         stream: () => say("<email>Fine.</email>"),
       },
     });
-  const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, demoAi: true, aiFactory: factory, now: () => NOW });
+  const backend = new Backend({ dbPath: path, version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, demoAi: true, aiFactory: factory, now: () => NOW });
   await backend.store.ready;
   await backend.ready;
   try {
-    const accountId = await seed(backend.store);
+    const accountId = sqlAccount;
     const [c, s] = createMemoryTransportPair();
     backend.connect(s, { clientId: "r", origin: "renderer" });
     const client = new RpcClient(c);
@@ -158,6 +159,5 @@ it("a draft's assembly, a refinement and an intent, at 50,000 threads", async ()
     expect(intent).toBeLessThanOrEqual(16 * MULT);
   } finally {
     await backend.stop();
-    rmSync(dir, { recursive: true, force: true });
   }
 }, 600_000);
