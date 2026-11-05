@@ -5,7 +5,7 @@
 import type { Page } from "@playwright/test";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
-import { expect, rows, search, test, scenario, freshStart, freshStart } from "./fixtures";
+import { expect, rows, search, test, scenario, freshStart } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 const labels = (page: Page) => page.getByTestId("account-label");
