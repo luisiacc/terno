@@ -22,6 +22,9 @@
  * Slices the OS held are excused the same way, and list calls lose the time
  * such a gap held them. The injected slowness is spun, on the CPU, so a
  * slicer that stopped adapting is never excused.
+ *
+ * What's measured is a slice, so the jobs are the smallest that still take many (SLICE_MAILBOX): a sizer that keeps
+ * growing passes the budget inside each of them, one that doesn't shrink fails the slow disk.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -30,15 +33,16 @@ import { PerformanceObserver } from "node:perf_hooks";
 import { Worker } from "node:worker_threads";
 import type { ThreadSummary } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
-import { seedDataset, sqlDb } from "@terno/db";
+import { sqlDb } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
-import { generateDataset } from "@terno/mock-data";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { BUDGET_MULTIPLIER, report, type Stat } from "../../db/src/test/perf";
+import { copyMailbox } from "../../db/src/test/perf-mailbox";
 import { describeGap, HOLD_LIMIT_MS, holdsExcusable, loopActiveMs, machineBusy, sampleAsync, settle, threadCpuMs, watchLoop, type Gap } from "../../db/src/test/timing";
 
 import { loadFailureDetail } from "./load-failure-detail";
+import { SLICE_MAILBOX } from "./test/slice-mailbox";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 /** each slowed command burns this many times its own CPU time (I/O waits aren't multiplied)… */
@@ -50,6 +54,10 @@ const HARD_LIMIT = 250 * BUDGET_MULTIPLIER;
 /** what a slice aims at (slicer.ts): a single-item command over it can't be helped by slicing */
 const SLICE_TARGET = 15;
 const MAX_EXCUSED = 2;
+/** each one filed in 20 categories: a slice holds a few of them, and each of the move's four phases takes many slices */
+const MOVED = 400;
+/** the slow disk's job: past the 200 of the prefix, 3 ms an item keeps a slice to a few items, so over a hundred slices */
+const ON_SLOW_DISK = 350;
 const stats: Stat[] = [];
 
 /** every slowed store command of the stage: when it ran, what, on how many items */
@@ -112,13 +120,11 @@ function slowDown(target: Record<string, unknown>, names: string[]) {
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "terno-loadperf-"));
+  copyMailbox(SLICE_MAILBOX, join(dir, "load.db"));
   backend = new Backend({ dbPath: join(dir, "load.db"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: false });
   // the store opens asynchronously (w11): SQL waits for it
   await backend.store.ready;
-  seedDataset(sqlDb(backend.store), generateDataset({ threads: 20_000, accounts: 8, seed: 5, now: NOW, bodyScale: 3 }), { now: NOW });
   await backend.ready;
-  // the seed leaves a WAL of hundreds of MB that a running app, checkpointing all along, never has
-  sqlDb(backend.store).exec("PRAGMA wal_checkpoint(TRUNCATE)");
   await backend.categorizer.rebuildNow();
   slowDown(backend.store.threads as unknown as Record<string, unknown>, ["act", "restore", "scopeIds", "scopeCount"]);
   slowDown(backend.store.categories as unknown as Record<string, unknown>, ["add", "beginMove", "applyMoveSlice", "trainMoveSlice", "undoMoveBegin", "undoMoveSlice", "restoreMoveSlice", "undoBatchPart"]);
@@ -132,7 +138,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await Promise.all(workers.map((w) => w.terminate()));
-  report("load.json", `Bulk work under load (commands ×${SLOWDOWN} CPU + ${LATENCY_MS[0]}–${LATENCY_MS[1]} ms, ${workers.length} busy workers)`, { threads: 20_000, accounts: 8 }, stats);
+  report("load.json", `Bulk work under load (commands ×${SLOWDOWN} CPU + ${LATENCY_MS[0]}–${LATENCY_MS[1]} ms, ${workers.length} busy workers)`, { threads: SLICE_MAILBOX.dataset.threads, accounts: SLICE_MAILBOX.dataset.accounts }, stats);
   await backend.stop();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -238,7 +244,7 @@ async function underLoad(name: string, fn: () => Promise<unknown>) {
   expect(p95(listTimes(m.lists)), `${name}: list p95`).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);
 }
 
-it("a scope mark-read of an 18,000-thread category, and its undo", async () => {
+it("a scope mark-read of a category of every thread, and its undo", async () => {
   const db = sqlDb(backend.store);
   const cat = (await client.call("categories.create", { name: "Todo", color: "rose" })).id;
   db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) SELECT id, ?, 'user', 0 FROM threads WHERE in_trash = 0 AND in_spam = 0", cat);
@@ -255,20 +261,20 @@ it("a scope archive of every thread, and its undo", async () => {
   await underLoad("its undo", () => client.call("threads.undo", { undoId: undoId! }));
 }, 600_000);
 
-it("an exclusive move of 5,000 threads filed in 20 categories each, and its undo", async () => {
+it(`an exclusive move of ${MOVED} threads filed in 20 categories each, and its undo`, async () => {
   const db = sqlDb(backend.store);
   const sources: number[] = [];
   for (let k = 0; k < 20; k++) sources.push((await client.call("categories.create", { name: `Origen ${k}`, color: "slate" })).id);
   const to = (await client.call("categories.create", { name: "Destino", color: "cyan" })).id;
-  const ids = db.all<{ id: number }>("SELECT id FROM threads WHERE in_trash = 0 AND in_spam = 0 ORDER BY id LIMIT 5000").map((r) => r.id);
+  const ids = db.all<{ id: number }>("SELECT id FROM threads WHERE in_trash = 0 AND in_spam = 0 ORDER BY id LIMIT ?", MOVED).map((r) => r.id);
   db.exec("BEGIN");
   for (const cat of sources) db.run("INSERT OR IGNORE INTO thread_categories (thread_id, category_id, added_by, added_at) SELECT value, ?, 'user', 1 FROM json_each(?)", cat, JSON.stringify(ids));
   db.exec("COMMIT");
   let batchId = 0;
-  await underLoad("move 5,000 threads × 20 categories", async () => (batchId = (await client.call("categories.moveThreads", { to, threadIds: ids, source: "dnd" })).batchId));
-  expect(db.get("SELECT count(*) AS c FROM thread_categories WHERE category_id = ?", to)).toEqual({ c: 5000 });
+  await underLoad(`move ${MOVED} threads × 20 categories`, async () => (batchId = (await client.call("categories.moveThreads", { to, threadIds: ids, source: "dnd" })).batchId));
+  expect(db.get("SELECT count(*) AS c FROM thread_categories WHERE category_id = ?", to)).toEqual({ c: MOVED });
   await underLoad("its undo", () => client.call("categorize.undo", { batchId }));
-  expect(db.get(`SELECT count(*) AS c FROM thread_categories WHERE category_id IN (${sources.join(",")})`)).toEqual({ c: 100_000 });
+  expect(db.get(`SELECT count(*) AS c FROM thread_categories WHERE category_id IN (${sources.join(",")})`)).toEqual({ c: MOVED * 20 });
   for (const cat of [...sources, to]) await client.call("categories.delete", { id: cat });
 }, 600_000);
 
@@ -295,7 +301,12 @@ it("a disk that turns slow mid-job: a controlled controller restart overruns onc
     const detail = await client.call("threads.get", { threadId });
     return detail.messages.map((m) => ({ id: m.id, date: m.date, isRead: m.isRead, isStarred: m.isStarred, isSent: m.isSent }));
   };
-  const before = await readView("all");
+  const category = (await client.call("categories.create", { name: "Disco", color: "slate" })).id;
+  sqlDb(backend.store).run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) SELECT id, ?, 'user', 0 FROM threads WHERE in_trash = 0 AND in_spam = 0 ORDER BY id LIMIT ?", category, ON_SLOW_DISK);
+  const all = await readView("all");
+  const ids = new Set(sqlDb(backend.store).all<{ id: number }>("SELECT thread_id AS id FROM thread_categories WHERE category_id = ?", category).map((r) => r.id));
+  const before = all.filter((r) => ids.has(r.id));
+  expect(before).toHaveLength(ON_SLOW_DISK);
   const messageFlags = new Map<number, Awaited<ReturnType<typeof readMessageFlags>>>();
   const latestIds = new Map<number, number>();
   let expectedAffected = 0;
@@ -309,10 +320,9 @@ it("a disk that turns slow mid-job: a controlled controller restart overruns onc
   }
   const trash = await readView("trash");
   const spam = await readView("spam");
-  const scope = { kind: "view" as const, view: "all" as const };
+  const scope = { kind: "view" as const, view: "all" as const, categoryId: category };
   expect(await client.call("threads.scopeCount", { scope })).toEqual({ count: before.length, capped: false });
   expect(before.some((r) => !r.starred)).toBe(true);
-  expect(before.length).toBeGreaterThan(200);
   const originalRunBudgeted = backend.runBudgeted;
   const runBudgeted = backend.runBudgeted.bind(backend);
   let handoffs = 0;
@@ -350,7 +360,8 @@ it("a disk that turns slow mid-job: a controlled controller restart overruns onc
     let result: { total: number; affected: number } | undefined;
     const m = await measure(async () => { result = await client.call("threads.actScope", { scope, action: "star" }); });
     expect(result).toMatchObject({ total: before.length, affected: expectedAffected });
-    expect(await readView("all")).toEqual(before.map((r) => ({ ...r, starred: true })));
+    // what the job held starred, and nothing else moved
+    expect(await readView("all")).toEqual(all.map((r) => (ids.has(r.id) ? { ...r, starred: true } : r)));
     for (const [threadId, flags] of messageFlags) {
       expect(await readMessageFlags(threadId)).toEqual(flags.map((m) => ({ ...m, isStarred: m.id === latestIds.get(threadId) || m.isStarred })));
     }
@@ -382,7 +393,8 @@ it("a disk that turns slow mid-job: a controlled controller restart overruns onc
     expect(after.length).toBeGreaterThan(2);
     expect(checkedRecovery).toBe(true);
     for (const r of after) expect(r.injected, "real 3 ms/item injection persists").toBeGreaterThanOrEqual(3 * r.n!);
-    expect(after[0]!.end - after[0]!.start, "the first slow slice ran over the budget").toBeGreaterThan(BUDGET);
+    // the test's own 60 ms (20 items at 3 ms): a multiplier loosens what the product may do, not what's injected
+    expect(after[0]!.end - after[0]!.start, "the first slow slice ran over 50 ms").toBeGreaterThan(50);
     // that one overrun, then the slices are back within budget: past it, only the narrow excuses (the machine's, and a
     // single long command at most twice)
     const later = over.filter((g) => g.start > after[0]!.end && !m.descheduled.includes(g));
