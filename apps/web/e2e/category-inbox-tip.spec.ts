@@ -50,18 +50,16 @@ test.describe("the first new category's tip (plan 113)", () => {
     await expect(tip(page)).toHaveCount(0);
   });
 
-  test("the tip closes: a right-click, Escape, in a search", async ({ app: page, server }) => {
-    await scenario("a right-click on the row closes it and opens the category's menu", async () => {
-      const id = await create(page, server, "LinkedIn");
-      await expect(tip(page)).toBeVisible();
-      await page.getByTestId(`nav-category-${id}`).click({ button: "right" });
-      await expect(page.getByTestId(`category-menu-${id}`)).toBeVisible();
-      await expect(tip(page)).toHaveCount(0);
-      // Show in Inbox, as it said: the eye-off goes
-      await page.getByTestId("category-menu-show-in-inbox").click();
-      await expect(page.getByTestId(`nav-category-hidden-${id}`)).toHaveCount(0);
-      await expect(tip(page)).toHaveCount(0);
-    });
+  test("a right-click on the row closes it and opens the category's menu", async ({ app: page, server }) => {
+    const id = await create(page, server, "LinkedIn");
+    await expect(tip(page)).toBeVisible();
+    await page.getByTestId(`nav-category-${id}`).click({ button: "right" });
+    await expect(page.getByTestId(`category-menu-${id}`)).toBeVisible();
+    await expect(tip(page)).toHaveCount(0);
+    // Show in Inbox, as it said: the eye-off goes
+    await page.getByTestId("category-menu-show-in-inbox").click();
+    await expect(page.getByTestId(`nav-category-hidden-${id}`)).toHaveCount(0);
+    await expect(tip(page)).toHaveCount(0);
   });
 
   test("Escape while typing a search closes the tip and leaves the search as it was (Codex review)", async ({ app: page, server }) => {

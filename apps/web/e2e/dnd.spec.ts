@@ -88,7 +88,7 @@ test.describe("drag and drop to a category", () => {
     expect(sqlDb(server.backend.store).get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", Number(id), viajes)).toBeUndefined();
   });
 
-  test("dropping on a category: several, one it has, Esc, a press, the keyboard", async ({ app: page, server }) => {
+  test("dropping on a category: several, Esc, a press, the keyboard", async ({ app: page, server }) => {
     await scenario("a multi-selection travels together: the ghost says 3 and all three get the dot", async () => {
       const viajes = categoryId(server, "Viajes");
       const candidates = notIn(page, viajes);

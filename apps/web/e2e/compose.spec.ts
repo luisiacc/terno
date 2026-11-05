@@ -309,7 +309,7 @@ test.describe("new message, in the reader pane", () => {
     await expect(page.getByTestId("compose-to-field").getByTestId("recipient-chip")).toHaveCount(1);
   });
 
-  test("the new message: c, Esc, a bulk selection, Bcc", async ({ app: page, server }) => {
+  test("the new message: c, Esc, a bulk selection", async ({ app: page, server }) => {
     await scenario("c writes a new message in the reader (no dialog), with the drafts strip; it lands in Sent", async () => {
       await openRow(page, 0);
       await focusList(page);

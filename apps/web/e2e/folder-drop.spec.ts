@@ -141,7 +141,7 @@ test.describe("dragging mail onto a folder", () => {
     });
   });
 
-  test("what a folder's drop does elsewhere: a category, another folder, its own, another account's, the keyboard", async ({ app: page, server }) => {
+  test("what a folder's drop does elsewhere: a category, another folder, its own, another account's", async ({ app: page, server }) => {
     await scenario("a thread in a category shown in the Inbox stays there and the note says why", async () => {
       const account = accountOf(server, "Acme Studio");
       const db = sqlDb(server.backend.store);

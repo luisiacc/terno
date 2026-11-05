@@ -203,7 +203,7 @@ test.describe("config dialogs move (plan 129)", () => {
     await expect.poll(async () => (await page.getByTestId("tab-general").boundingBox())!.x).toBeGreaterThanOrEqual(0);
   });
 
-  test("Add account and Filters move; a dialog not opted in stays", async ({ app: page }) => {
+  test("Add account moves; a dialog not opted in stays", async ({ app: page }) => {
     await scenario("Add account drags by its margin", async () => {
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-accounts").click();
