@@ -216,7 +216,8 @@ it("plan 63: one sender sent everything: offers, a sweep's pages, Always offers 
 
 it("the exact scan never stalls the event loop and lets commands through (field-only and body searches)", async () => {
   expect(messages).toBeGreaterThan(48_000);
-  for (const query of ["subject:zzqxjv", "from:nadie-de-aqui", "presupuesto zzqxjv"]) {
+  // plan 140: an address decides on the row, without a body; a group is still one pass
+  for (const query of ["subject:zzqxjv", "from:nadie-de-aqui", "presupuesto zzqxjv", "nadie@nowhere.example ", "nadie@nowhere.example,otra@nowhere.example ", "zzqxjv,yyqxjv "]) {
     const r = await bestOf(3, async () => {
       let commandMs = Infinity;
       const run = await stalls(FRAME * MULT, async () => {

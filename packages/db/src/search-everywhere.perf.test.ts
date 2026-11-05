@@ -26,6 +26,7 @@ import { loadScope, searchThreadIds, searchThreads } from "./search";
 import { SqlMailStore } from "./sql-store";
 import { BUDGET_MULTIPLIER, measure, measureAsync, report, type Stat } from "./test/perf";
 import { copyMailbox, kept, LARGE_MAILBOX, MAILBOX_NOW as NOW, scratchDir } from "./test/perf-mailbox";
+import { msg } from "@terno/store/conformance";
 
 /**
  * The FTS path's budget at this size. It runs only while the instant index catches
@@ -33,6 +34,8 @@ import { copyMailbox, kept, LARGE_MAILBOX, MAILBOX_NOW as NOW, scratchDir } from
  * matches tens of thousands of messages here, in any scope: scaled with the mailbox.
  */
 const PAGE_MS = 35;
+/** Two phrases of frequent words that are rarely adjacent, with nothing to ask: verified doc by doc, twice plan 03's 22 ms for one. */
+const NO_DOCLIST_MS = 60;
 const scratch = scratchDir("search-everywhere");
 let store: SqlMailStore;
 const stats: Stat[] = [];
@@ -139,10 +142,104 @@ async function measureAll(label: string) {
   }
 }
 
+/** Plan 140's queries, with addresses this mailbox really has: its own (on nearly all its mail, the FTS narrowing's worst), a busy sender and a rare one. */
+function anyOfQueries() {
+  const own = store.db.get<{ email: string }>("SELECT email FROM accounts ORDER BY id LIMIT 1")!.email;
+  const senders = store.db.all<{ from_email: string }>("SELECT from_email FROM messages GROUP BY from_email ORDER BY count(*) DESC").map((r) => r.from_email);
+  const [busy, rare] = [senders[0]!, senders.at(-1)!];
+  return {
+    own, busy, rare,
+    queries: [
+      "factura,uber ", "tokio,zzqxjv ", "zzqxjv,yyqxjv ", "pro,pre", "factura,uber is:unread", "factura,uber has:attachment", "reunión factura,uber",
+      `${own} `, `${busy} `, `${rare} `, "nobody@nowhere.example ",
+      `${rare} ${busy} nobody@nowhere.example `, `${rare},${busy} is:unread `, `${busy} factura `, `${own} factura `, `${busy},factura `, `from:${busy},${rare} `,
+    ],
+    phrases: ['"darse de baja","propuesta de presupuesto"', 'darse.de.baja,morning.brew ', '"hola equipo","baja darse"', 'factura "hola equipo","baja darse"'],
+    typed: [`darse.de.baja,morning.brew`, `${rare},${busy}`, `${own}`],
+  };
+}
+
+async function measureAnyOf(label: string) {
+  head = await store.feed.head();
+  engine = store.instant!.at(head)!;
+  expect(engine, "the index is current").toBeTruthy();
+  const { queries, phrases, typed } = anyOfQueries();
+  for (const [scope, q] of SCOPES) {
+    for (const query of queries) {
+      keep(measure(`${label} · instant · ${scope} · ${query}`, 1, () => instantQuery(q(query)), 20), engine.lastStrategy);
+      let first: ReturnType<typeof searchThreads> | null = null;
+      keep(measure(`${label} · fts · ${scope} · ${query}: first page`, PAGE_MS, () => (first = searchThreads(store.db, { query: q(query), limit: 100, now: NOW })), 10), `${first!.items.length} results, ${first!.strategy}`);
+      let page = first!;
+      for (let i = 0; i < 4 && page.nextCursor; i++) page = searchThreads(store.db, { query: q(query), limit: 100, now: NOW, cursor: page.nextCursor });
+      const cursor = page.nextCursor;
+      if (cursor) keep(measure(`${label} · fts · ${scope} · ${query}: page 6`, PAGE_MS, () => searchThreads(store.db, { query: q(query), limit: 100, now: NOW, cursor }), 10));
+    }
+    for (const phrase of phrases) {
+      keep(measure(`${label} · instant · ${scope} · phrases ${phrase}`, 5, () => instantQuery(q(phrase)), 20), engine.lastStrategy);
+      let first: ReturnType<typeof searchThreads> | null = null;
+      keep(measure(`${label} · fts · ${scope} · phrases ${phrase}: first page`, PAGE_MS, () => (first = searchThreads(store.db, { query: q(phrase), limit: 100, now: NOW })), 10), `${first!.items.length} results, ${first!.strategy}`);
+    }
+    // the web's engine has no FTS5 to ask: frequent words rarely adjacent are verified doc by doc (plan 03 §6 accepts it until a positional sidecar)
+    const options = (engine as unknown as { o: { phrases?: unknown } }).o;
+    const doclist = options.phrases;
+    options.phrases = undefined;
+    for (const phrase of phrases) keep(measure(`${label} · instant, no doclist · ${scope} · phrases ${phrase}`, NO_DOCLIST_MS, () => instantQuery(q(phrase)), 10), engine.lastStrategy);
+    options.phrases = doclist;
+    // every keystroke through the store: the whole path, a comma and an address being typed
+    for (const text of typed) {
+      for (let i = 1; i <= text.length; i++) {
+        const query = q(text.slice(0, i));
+        const s = keep(await measureAsync(`${label} · store keystroke · ${scope} · "${query}"`, 5, () => store.threads.searchText({ query, limit: 100, now: NOW }), 10));
+        const r = await store.threads.searchText({ query, limit: 100, now: NOW });
+        expect(r.strategy, query).toMatch(/^instant/);
+        s.note = `${r.items.length} rows`;
+      }
+    }
+    // the same, cold: every set built again, as on the first search after a change
+    const cache = (engine as unknown as { cache: Map<string, Uint32Array> }).cache;
+    for (const text of typed) {
+      for (let i = 1; i <= text.length; i++) {
+        const query = q(text.slice(0, i));
+        keep(measure(`${label} · instant cold · ${scope} · "${query}"`, 5, () => { cache.clear(); return instantQuery(query); }, 8), engine.lastStrategy);
+      }
+    }
+  }
+}
+
 describe("search everywhere at 57k threads", () => {
+  it("any of and addresses (plan 140): the instant index and the FTS path within the same budgets", async () => {
+    over = [];
+    const { own, busy, rare } = anyOfQueries();
+    const count = (email: string) => store.db.get<{ c: number }>("SELECT count(*) AS c FROM messages m WHERE instr(' ' || m.from_email || ' ' || m.recipients_norm || ' ', ?) > 0", ` ${email} `)!.c;
+    meta.addresses = { own: count(own), busy: count(busy), rare: count(rare) };
+    await measureAnyOf("any of");
+    expect(over).toEqual([]);
+  }, 600_000);
+
+
   it("the instant index and the FTS path within their budgets, everywhere and in:all", async () => {
     expect(store.db.get<{ c: number }>("SELECT count(*) AS c FROM threads WHERE in_spam = 1 OR in_trash = 1")!.c).toBeGreaterThan(20_000);
     await measureAll("spam+trash heavy");
+    expect(over).toEqual([]);
+  }, 600_000);
+
+  it("any of and addresses, on a mailbox with captured bodies: the FTS path's form real mailboxes use, within the same budget", async () => {
+    over = [];
+    const { own, busy, rare } = anyOfQueries();
+    const path = scratch.path("segmented.db");
+    copyFileSync(scratch.path("perf.db"), path);
+    const segmented = new SqlMailStore(openDatabase(path), { instantSearch: false, platform: nodePlatform });
+    try {
+      const account = segmented.db.get<{ id: number }>("SELECT id FROM accounts ORDER BY id LIMIT 1")!.id;
+      await segmented.sync.ingest([msg({ accountId: account, bodyText: "unrelated large body ".repeat(5000), isTrash: true, inInbox: false })], { now: NOW, classifier: null, applyFilters: false });
+      expect(segmented.db.get("SELECT 1 FROM body_heads LIMIT 1")).toBeTruthy();
+      for (const query of ["factura", "tokio", "zzqxjv", "pro", "factura,uber ", "tokio,zzqxjv ", "zzqxjv,yyqxjv ", `${own} `, `${busy} `, `${rare} `, "nobody@nowhere.example ", `${rare},${busy} `, `${own} factura `, `${rare} factura `, `${own},factura `, `${rare},zzqxjv `, 'darse.de.baja,morning.brew ']) {
+        let strategy = "";
+        keep(await measureAsync(`segmented · fts · ${query}`, PAGE_MS, async () => (strategy = (await segmented.threads.searchText({ query, limit: 100, now: NOW })).strategy), 8), strategy);
+      }
+    } finally {
+      await segmented.close();
+    }
     expect(over).toEqual([]);
   }, 600_000);
 
