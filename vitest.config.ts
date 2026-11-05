@@ -30,6 +30,8 @@ export default defineConfig({
             "**/*.perf.test.ts", "**/node_modules/**",
             // native pragmas, live disk lifecycle and source scans; storage-images covers WASM persistence
             "packages/db/src/sqlite.test.ts", "packages/db/src/storage.test.ts", "packages/db/src/portable.test.ts", "packages/db/src/upgrade*.test.ts",
+            // these drive node:sqlite themselves whatever the project; the contract's `upgraded` case walks the migrations here
+            "packages/db/src/migrations.test.ts", "packages/db/src/open-errors.test.ts",
             // a zone decides in the parser, and a store gets two epochs; the contract's date queries run here
             "packages/db/src/date-timezones.test.ts", "packages/db/src/search-dates.test.ts",
             // the RAM index is JavaScript fed by the search log: the contract's replica proves the log here, its search cases FTS5

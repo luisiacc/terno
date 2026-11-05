@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ingestMessages, setMessageBody } from "./ingest";
+import { ingestMessages } from "./ingest";
 import { searchThreads } from "./search";
 import { ftsIntegrity, msg, testDb, threadOf, withAccounts } from "./test/helpers";
 

@@ -5,9 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 import { msg, withAccounts } from "../../store/src/conformance/fixtures";
 
 const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setTimeout(resolve, 0)) };
-for (const instantSearch of [false, true]) defineBodyCaptureConformance(`IDB (instant=${instantSearch})`, {
-  open: () => IdbMailStore.open({ name: `body-${crypto.randomUUID()}`, factory: indexedDB, platform, instantSearch }),
-  reopen: async (store) => { const name = (store as IdbMailStore).name; await store.close(); return IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch }); },
+// rules don't go through the index, and a search of what a body holds is the visible and search-state suites' (index answering)
+defineBodyCaptureConformance("IDB", {
+  open: () => IdbMailStore.open({ name: `body-${crypto.randomUUID()}`, factory: indexedDB, platform, instantSearch: false }),
+  reopen: async (store) => { const name = (store as IdbMailStore).name; await store.close(); return IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch: false }); },
 });
 
 for (const instantSearch of [false, true]) describe(`incomplete body reads (instant=${instantSearch})`, () => {
