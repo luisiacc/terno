@@ -17,6 +17,7 @@
     "typecheck": "pnpm -r --parallel typecheck",
     "lint": "oxlint --deny-warnings apps packages",
     "test": "vitest run --project unit && vitest run --project db-wasm",
+    "test:all": "node scripts/test-all.mjs",
     "test:watch": "vitest",
     "test:perf": "vitest run --project perf",
     "test:e2e": "pnpm --filter @terno/web test:e2e",

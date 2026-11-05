@@ -1,5 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "include": ["provider-resource.vitest.config.ts", "src/provider-resource-boundaries.int.test.ts"],
-  "exclude": []
-}

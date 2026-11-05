@@ -1,1 +1,0 @@
-{"extends":"./tsconfig.json","include":["src/desktop.d.ts","e2e/w06-reader.dev.ts","playwright.w06-reader.config.ts","../../packages/backend/src/test/w06-reader-fixture.ts"]}
