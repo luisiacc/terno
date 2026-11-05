@@ -44,7 +44,7 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
     {
       instructions:
         "Terno is the user's email client: one access point to all of their connected accounts (Gmail and IMAP). " +
-        "Search with Gmail-like operators (from:, to:, subject:, has:attachment, is:unread, in:inbox, account:, category:, before:, after:). " +
+        "Search with Gmail-like operators (from:, to:, subject:, has:attachment, is:unread, in:inbox, account:, category:, before:, after:); a comma means any of, and a bare email address finds mail where it is the sender or a recipient. " +
         "Never send email unless the user explicitly asked for it; prefer create_draft.",
     },
   );
@@ -96,7 +96,7 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
     "search_emails",
     {
       title: "Search email",
-      description: "Full-text search across all accounts, categories and places, Spam and Trash included (each result says its place). Narrow with operators: in:inbox|archive|sent|trash|spam|all (all = everything but Spam and Trash), from:, to:, subject:, has:attachment, is:unread, is:starred, account:, category:, before:YYYY-MM-DD, after:30d, \"exact phrase\", -negation.",
+      description: "Full-text search across all accounts, categories and places, Spam and Trash included (each result says its place). Narrow with operators: in:inbox|archive|sent|trash|spam|all (all = everything but Spam and Trash), from:, to:, subject:, has:attachment, is:unread, is:starred, account:, category:, before:YYYY-MM-DD, after:30d, \"exact phrase\", -negation. A comma means any of: acme.test,acme.studio or from:ana,bob. A bare email address finds mail where it is the sender or a recipient; several find any of them.",
       inputSchema: { query: z.string().describe("Search query"), limit: z.number().int().min(1).max(100).default(25) },
       annotations: { readOnlyHint: true },
     },
