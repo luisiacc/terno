@@ -216,6 +216,11 @@ describe("a comma means any of (plan 140)", () => {
 
   it("a number can be an alternative only as its own token", () => {
     expect(parsed("foo, 1,000 ")).toEqual({ terms: [], anyOf: [["text:foo", "text:1,000"]] });
+    expect(parsed("1,000, foo ")).toEqual({ terms: [], anyOf: [["text:1,000", "text:foo"]] });
+  });
+
+  it.each([["1,000,"], ["$1,200.50,"], ["12,50,,"]])("%s is the number, with the comma only separating it", (input) => {
+    expect(parsed(input)).toEqual({ terms: [`text:${input.replace(/,+$/, "")}`], anyOf: [] });
   });
 
   it("other operators keep their comma, and lose a trailing one", () => {
@@ -225,6 +230,9 @@ describe("a comma means any of (plan 140)", () => {
     expect(q.unread).toBe(true);
     expect(q.terms.map(said)).toEqual(["text:foo"]);
     expect(parsed('category:"a",b ')).toEqual({ terms: ["text:b"], anyOf: [] });
+    // an exclusion of a scope is that scope's: the word after it stays a word
+    expect(parsed('-category:"a", invoice ')).toEqual({ terms: ["text:invoice"], anyOf: [] });
+    expect(parsed('-account:"a", invoice ')).toEqual({ terms: ["text:invoice"], anyOf: [] });
   });
 
   it("an operator between terms ends the run", () => {

@@ -118,7 +118,7 @@ function lex(input: string): RawToken[] {
     const before = tokens[tokens.length - 1];
     const linked = comma && before !== undefined;
     // a comma carries the negation and the key along: -a,b is neither, from:a,b is from either
-    let negate = linked && before.negate;
+    let negate = linked && isListKey(before.key) && before.negate;
     if (input[i] === "-" && i + 1 < n && !/\s/.test(input[i + 1]!)) {
       negate = true;
       i++;
@@ -146,6 +146,7 @@ function lex(input: string): RawToken[] {
       if (i < n && input[i] === "," && NUMBER_START.test(input.slice(start, i))) {
         let end = i;
         while (end < n && !/\s/.test(input[end]!)) end++;
+        while (input[end - 1] === ",") end--; // a comma after the number separates, as after any word
         if (NUMBER.test(input.slice(start, end))) i = end;
       }
       value = input.slice(start, i);

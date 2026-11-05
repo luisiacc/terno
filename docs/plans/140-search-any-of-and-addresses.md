@@ -144,3 +144,10 @@ The gates changed the design in three places, all on the FTS path, which answers
 1. **An address on nearly every message missed the budget** (38 to 57 ms): it materialized 32,000 hits and checked the words of each. An address's search now counts its hits first (`LIMIT 4096`, about a millisecond), and past that walks threads newest-first, stopping at the page: 13 to 18 ms.
 2. **The segmented form walked every thread for a rare address** (96 to 133 ms). The gate ran on a mailbox with no captured body, and every real mailbox has one, so a new gate holds that form. What asks only for headers now leads through FTS5 on any mailbox, since a captured body can't change its answer (rare address: 0.7 ms). A word's captured-body test is one set for the statement rather than a lookup per message, which also took plain rare words from 31 to 24 ms and `pro` from 23 to 10 ms.
 3. **`(m.id IN (…) AND instr(…))` built the words of every message.** SQLite evaluates the side without a subquery first, so it became a `CASE`.
+
+## What the Codex code review changed
+
+Round 1 found two parser bugs, both fixed with a test that fails without the fix:
+
+1. **A quoted scope exclusion negated the next word.** `-category:"Work", invoice` excluded invoices: a comma carried the negation along from a key that isn't a list. It now does so only from a list key.
+2. **A trailing comma broke a number.** `1,000,` became 1 or 000, because the number test read the comma as part of the token. Trailing commas no longer count.
