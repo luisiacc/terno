@@ -6,6 +6,8 @@
  * stretch between two of our own yields, memory as heap plus ArrayBuffers
  * after a full collection.
  */
+import type { MailStore } from "../mail-store";
+
 type Proc = { cpuUsage(prev?: { user: number; system: number }): { user: number; system: number }; memoryUsage(): { heapUsed: number; arrayBuffers: number; external: number } };
 const proc = (globalThis as unknown as { process: Proc }).process;
 const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
@@ -38,6 +40,26 @@ export function bestRounds(rounds: number, run: () => number[]): { p50: number; 
     best.max = Math.min(best.max, s[s.length - 1]!);
   }
   return best;
+}
+
+/** What a workload's caller says about the mailbox it seeded (or copied) for it. */
+export interface WorkloadMailbox {
+  store: MailStore;
+  accountId: number;
+  now: number;
+  /** PERF_BUDGET_MULTIPLIER */
+  budget: number;
+  log: (line: string) => void;
+}
+
+/** A workload on a shared mailbox says what it needs before it times anything: another's leftovers are benchmark input. */
+export async function expectMailbox(m: WorkloadMailbox, need: { filters?: number }): Promise<void> {
+  const threads = await m.store.threads.scopeCount({ view: "all", limit: 100_001 });
+  if (threads < 40_000) throw new Error(`a workload at 50k+ threads got ${threads} out of Trash and Spam`);
+  if (need.filters !== undefined) {
+    const filters = (await m.store.filters.list()).length;
+    if (filters !== need.filters) throw new Error(`a workload wanting ${need.filters} filters got ${filters}`);
+  }
 }
 
 const macrotask = () => new Promise<void>((r) => setTimeout(r, 0));

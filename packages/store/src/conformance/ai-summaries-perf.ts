@@ -1,17 +1,17 @@
-import { generateDataset } from "@terno/mock-data";
 import { expect } from "vitest";
-import type { MailStore } from "../mail-store";
 import { msg } from "./fixtures";
+import { expectMailbox, type WorkloadMailbox } from "./perf";
 
 /**
  * Plan 132 at 50k+ threads, the same workload on both stores: 2,000 live messages arriving in slices of 200 with
  * summaries on, against the same slices with them off, and what the worker and the reader read while hundreds wait.
  * What marking costs follows the slice, never the mailbox; the reads follow one thread or one page.
  */
-export async function measureAiSummaries(store: MailStore, o: { now: number; budget: number; log: (line: string) => void }): Promise<void> {
-  const seeded = await store.dev.seed(generateDataset({ threads: 50_000, accounts: 4, seed: 132, now: o.now, bodyScale: 0.05 }), { now: o.now, categorizeRate: 0 });
-  expect(seeded.threadCount).toBeGreaterThanOrEqual(50_000);
-  const accountId = seeded.accountIds[0]!;
+export async function measureAiSummaries(o: WorkloadMailbox): Promise<void> {
+  const { store, accountId } = o;
+  // no filter to run under the slices (forwards' stay behind): what's compared is marking, on and off
+  await expectMailbox(o, { filters: 0 });
+  expect(await store.aiSummaries.pendingCount()).toBe(0);
   const slices = async (newMail: { summary: boolean } | undefined, salt: number) => {
     const times: number[] = [];
     for (let slice = 0; slice < 10; slice++) {

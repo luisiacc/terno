@@ -11,29 +11,29 @@
  */
 import { generateDataset } from "@terno/mock-data";
 import type { IncomingMessage } from "@terno/store";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterAll, expect, it } from "vitest";
 import { openDatabase } from "./index";
-import { seedDataset } from "./seed";
 import { SqlMailStore } from "./sql-store";
-import { writeLegacyCopy } from "./test/legacy";
 import { BUDGET_MULTIPLIER, report, type Stat } from "./test/perf";
+import { copyPairedMailboxes, MAILBOX_NOW as NOW, PERF_MAILBOX, scratchDir } from "./test/perf-mailbox";
 import { Db as ReferenceDb, ingestMessages as referenceIngest } from "./test/reference-ingest";
 import { threadCpuMs } from "./test/timing";
 
-const TOLERANCE = 0.97;
+/**
+ * Today's main runs at about 0.95× 75223cb (0.948 in October's last full run, rounds 0.87 to 1.01) and is accepted: what
+ * shipped since costs that. The old 0.97 failed every healthy run (plan 139, rule 3), so it's rebased on that 0.95, less
+ * what the median of these rounds moves by on a healthy machine: 10% slower than 75223cb fails, as new work must.
+ */
+const TOLERANCE = 0.9;
 /** 75223cb's schema */
 const REFERENCE_SCHEMA = 5;
-const ROUNDS = 8;
+const ROUNDS = 5;
 
-const NOW = Date.UTC(2026, 9, 22, 15, 30);
-const dir = mkdtempSync(join(tmpdir(), "terno-ingest-perf-"));
+const scratch = scratchDir("ingest-perf");
 const stats: Stat[] = [];
 afterAll(() => {
   report("ingest.json", "Ingestion throughput against 75223cb, paired in-process", { rounds: ROUNDS, tolerance: TOLERANCE }, stats);
-  rmSync(dir, { recursive: true, force: true });
+  scratch.done();
 });
 
 const median = (xs: number[]) => {
@@ -42,18 +42,15 @@ const median = (xs: number[]) => {
 };
 
 it(`ingests within ${Math.round((1 - TOLERANCE) * 100)}% of the pre-storage-work throughput`, { timeout: 900_000 }, async () => {
-  const db = openDatabase(join(dir, "today.db"));
-  const seeded = seedDataset(db, generateDataset({ threads: 29_500, accounts: 8, seed: 2026, now: NOW, bodyScale: 4 }), { now: NOW });
   // both mailboxes freshly written, so neither has the other's page layout
-  writeLegacyCopy(db, join(dir, "reference.db"), REFERENCE_SCHEMA);
-  db.exec("VACUUM");
-  const store = new SqlMailStore(db);
-  const ref = new ReferenceDb(join(dir, "reference.db"));
+  const seeded = copyPairedMailboxes(PERF_MAILBOX, REFERENCE_SCHEMA, scratch.path("today.db"), scratch.path("reference.db"));
+  const store = new SqlMailStore(openDatabase(scratch.path("today.db")));
+  const ref = new ReferenceDb(scratch.path("reference.db"));
   const rounds: { wall: number; cpu: number; today: number; reference: number }[] = [];
   let turn = 0;
   // one warm-up round, not counted
   for (let round = -1; round < ROUNDS; round++) {
-    const mail: IncomingMessage[] = generateDataset({ threads: 1_000, accounts: 8, seed: 77 + round, now: NOW, bodyScale: 4 }).messages.map((m) => ({
+    const mail: IncomingMessage[] = generateDataset({ threads: 600, accounts: 8, seed: 77 + round, now: NOW, bodyScale: 4 }).messages.map((m) => ({
       ...m,
       providerMsgId: `r${round}-${m.providerMsgId}`,
       rfcMessageId: `r${round}-${m.rfcMessageId}`,

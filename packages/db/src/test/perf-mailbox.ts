@@ -174,6 +174,21 @@ export function copyPairedMailboxes(spec: MailboxSpec, version: number, today: s
   return JSON.parse(readFileSync(join(seeded(spec), "result.json"), "utf8")) as SeedResult;
 }
 
+/** A gate's own expensive input, built once in `dir` like the mailboxes and kept under the same hash; its directory. */
+export async function kept(name: string, build: (dir: string) => Promise<void>): Promise<string> {
+  const dir = join(snapshots(), name);
+  if (existsSync(dir)) return dir;
+  const scratch = mkdtempSync(join(snapshots(), `${name}-building-`));
+  try {
+    await build(scratch);
+    renameSync(scratch, dir);
+  } catch (error) {
+    rmSync(scratch, { recursive: true, force: true });
+    throw error;
+  }
+  return dir;
+}
+
 /** A scratch directory for a test's copies, gone with `done()`. */
 export function scratchDir(name: string): { dir: string; path(file: string): string; done(): void } {
   const dir = mkdtempSync(join(tmpdir(), `terno-${name}-`));

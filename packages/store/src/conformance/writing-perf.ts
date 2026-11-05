@@ -1,17 +1,16 @@
-import { generateDataset } from "@terno/mock-data";
 import { expect } from "vitest";
-import type { MailStore } from "../mail-store";
 import { msg } from "./fixtures";
+import { expectMailbox, type WorkloadMailbox } from "./perf";
 
 /**
  * Plan 133 at 50k+ threads, the same workload on both stores. A draft's reads: profiles by identity, `sentTo` with
  * thousands of adversarial look-alikes in the way, `threadsWith`, a thread's context; the learner's: a page of headers,
  * what a page's bodies cost. Each follows what it's asked for, never the mailbox.
  */
-export async function measureWriting(store: MailStore, o: { now: number; budget: number; log: (line: string) => void }): Promise<void> {
-  const seeded = await store.dev.seed(generateDataset({ threads: 50_000, accounts: 4, seed: 133, now: o.now, bodyScale: 0.05 }), { now: o.now, categorizeRate: 0 });
-  expect(seeded.threadCount).toBeGreaterThanOrEqual(50_000);
-  const accountId = seeded.accountIds[0]!;
+export async function measureWriting(o: WorkloadMailbox): Promise<void> {
+  const { store, accountId } = o;
+  await expectMailbox(o, {});
+  const seedStart = performance.now();
   const me = { name: "Me", email: "me@perf.test" };
   const tom = { name: "Tom", email: "tom@acme.test" };
   // the phrase for tom@acme.test also matches x.tom@acme.test, 6,000 times
@@ -23,6 +22,7 @@ export async function measureWriting(store: MailStore, o: { now: number; budget:
   const { inserted } = await store.sync.ingest(real, { applyFilters: false, now: o.now, classifier: null });
   await store.sync.ingest(Array.from({ length: 2 }, (_, i) => msg({ accountId, from: tom, to: [me], bodyText: "Sure.", providerMsgId: `in-${i}`, rfcMessageId: `in-${i}@perf.test`, inReplyTo: `real-39@perf.test`, references: ["real-39@perf.test"], subject: "A long one", date: o.now - 3600_000 + i, inInbox: true })), { applyFilters: false, now: o.now, classifier: null });
   const profiles = Array.from({ length: 1500 }, (_, i) => ({ scope: "person" as const, scopeKey: `person:${accountId}:p${i}@x.test`, language: "", accountId, habitsJson: JSON.stringify({ messages: i }), phrasesJson: "[]", samples: 5 }));
+  o.log(`6,000 look-alikes and a conversation written in ${(performance.now() - seedStart).toFixed(0)} ms`);
   const commitStart = performance.now();
   await store.writing.profiles.commit({ upserts: profiles.slice(0, 250), replaceAccount: accountId, state: { "writing:perf": { window: Array.from({ length: 3000 }, (_, i) => i) } }, now: o.now });
   const commitMs = performance.now() - commitStart;

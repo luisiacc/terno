@@ -10,8 +10,8 @@ import { parseSearch, resolveSearch } from "@terno/core";
 import { generateDataset } from "@terno/mock-data";
 import type { Revision, SearchMessageDoc } from "@terno/store";
 import { InstantSearchEngine } from "@terno/store/instant";
-import { copyFileSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { loadavg, tmpdir } from "node:os";
+import { copyFileSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { loadavg } from "node:os";
 import { join } from "node:path";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -19,12 +19,12 @@ import { nodePlatform, openDatabase } from "./index";
 import { ftsTermMessages, loadScope } from "./search";
 import { SqlMailStore } from "./sql-store";
 import { BUDGET_MULTIPLIER, measure, measureAsync, report, type Stat } from "./test/perf";
+import { copyMailbox, kept, MAILBOX_NOW as NOW, PERF_MAILBOX, scratchDir } from "./test/perf-mailbox";
 
-const NOW = Date.UTC(2026, 9, 22, 15, 30);
 const MiB = 1024 * 1024;
 const gc = (globalThis as { gc?: () => void }).gc;
-let dir: string;
-let path: string;
+const scratch = scratchDir("instant-perf");
+const path = scratch.path("perf.db");
 let store: SqlMailStore;
 let engine: InstantSearchEngine;
 let head: Revision;
@@ -58,21 +58,18 @@ function samplesStat(name: string, budgetMs: number, samples: number[]): Stat {
   return { name, budgetMs, p50: q(0.5), p95: q(0.95), max: s[s.length - 1]!, iterations: s.length };
 }
 
-beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), "terno-instant-perf-"));
-  path = join(dir, "perf.db");
-  const seed = new SqlMailStore(openDatabase(path));
-  const seeded = await seed.dev.seed(generateDataset({ threads: 29_500, accounts: 8, seed: 2026, now: NOW, bodyScale: 4 }), { now: NOW });
+beforeAll(() => {
+  // a mailbox reopened: the index builds from a new connection, as at a start
+  const seeded = copyMailbox(PERF_MAILBOX, path);
   meta.messages = seeded.messageCount;
   meta.threads = seeded.threadCount;
   expect(seeded.messageCount).toBeGreaterThanOrEqual(50_000);
-  await seed.close();
 });
 
 afterAll(async () => {
   report("instant.json", "Instant search (51k messages)", meta, stats);
   await store?.close();
-  rmSync(dir, { recursive: true, force: true });
+  scratch.done();
 });
 
 describe("build", () => {
@@ -184,7 +181,7 @@ describe("the write path", () => {
     const accounts = store.db.all<{ id: number }>("SELECT id FROM accounts ORDER BY id").map((r) => r.id);
     const batch = (tag: string) => {
       const base = (uids.base += 1_000_000);
-      return generateDataset({ threads: 1_200, accounts: 8, seed: 31, now: NOW, bodyScale: 4 }).messages.map((m) => ({
+      return generateDataset({ threads: 600, accounts: 8, seed: 31, now: NOW, bodyScale: 4 }).messages.map((m) => ({
         ...newUids(m, base),
         providerMsgId: `${tag}-${m.providerMsgId}`,
         rfcMessageId: `${tag}-${m.rfcMessageId}`,
@@ -205,7 +202,7 @@ describe("the write path", () => {
       return { n: msgs.length, wall: performance.now() - t, cpu: (used.user + used.system) / 1000 };
     };
     // the same import into a copy without the index, interleaved: on, off, on, off
-    const copyPath = join(dir, "noindex.db");
+    const copyPath = scratch.path("noindex.db");
     store.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
     copyFileSync(path, copyPath);
     const plain = new SqlMailStore(openDatabase(copyPath));
@@ -330,49 +327,58 @@ describe("restore and compaction with a history", () => {
 
   beforeAll(async () => {
     // a copy of the perf mailbox that then lived a while, through store commands: new mail and edited bodies
-    // carrying realistic rare tokens, deletions and filing. An index built at its start follows every commit.
-    histPath = join(dir, "history.db");
-    store?.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-    copyFileSync(path, histPath);
+    // carrying realistic rare tokens, deletions and filing. An index built at its start follows every commit. Kept with
+    // the mailbox (a minute of commands, and what these gates read is what they leave).
+    const lived = await kept("perf-history", async (dir) => {
+      const lifetime = join(dir, "history.db");
+      copyMailbox(PERF_MAILBOX, lifetime);
+      const h = new SqlMailStore(openDatabase(lifetime));
+      const lease = await h.feed.beginBuild();
+      const e = new InstantSearchEngine({ identity: "sqlite-schema-7", yield: nodePlatform.yield, phrases: (term) => ftsTermMessages(h.db, term) });
+      e.beginBuild(lease.from);
+      for await (const page of lease.messages()) await e.loadMessages(page);
+      for await (const page of lease.threads()) e.loadThreads(page);
+      await e.finishBuild();
+      await lease.release();
+
+      const accounts = h.db.all<{ id: number }>("SELECT id FROM accounts ORDER BY id").map((r) => r.id);
+      const lived = generateDataset({ threads: 3_300, accounts: 8, seed: 404, now: NOW, bodyScale: 4 }).messages.slice(0, 8_000);
+      const livedBase = 1_000_000_000;
+      for (let i = 0; i < lived.length; i += 200) {
+        const slice = lived.slice(i, i + 200).map((m, k) => ({
+          ...newUids(m, livedBase),
+          providerMsgId: `h-${m.providerMsgId}`,
+          rfcMessageId: `h-${m.rfcMessageId}`,
+          references: m.references.map((r) => `h-${r}`),
+          inReplyTo: m.inReplyTo ? `h-${m.inReplyTo}` : null,
+          bodyText: `${m.bodyText} ${noise(i + k, 8)}`,
+          accountId: accounts[m.accountIndex]!,
+        }));
+        await h.sync.ingest(slice, { applyFilters: true, now: NOW, classifier: null });
+      }
+      const ids = h.db.all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id);
+      for (let i = 0; i < 3_000; i++) await h.sync.setBody(ids[(i * 17) % ids.length]!, `Cuerpo editado ${i}. ${noise(90_000 + i, 10)}`, null, { now: NOW, classifier: null });
+      for (let i = 0; i < 2_000; i += 100) await h.sync.remove(ids.slice(20_000 + i, 20_100 + i));
+      const threads = h.db.all<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 5000").map((r) => r.id);
+      const category = h.db.get<{ id: number }>("SELECT id FROM categories LIMIT 1")!.id;
+      await h.categories.add({ categoryId: category, threadIds: threads, addedBy: "bulk", now: NOW });
+      for (const head = await h.feed.head(); e.revision!.seq < head.seq; ) for (const b of await h.feed.changes(e.revision!, head, 50)) await e.apply(b);
+
+      const st = e.stats();
+      expect(st.tombstones).toBeGreaterThan(4_000);
+      expect(st.deltaDocs).toBeGreaterThan(8_000);
+      expect(e.needsCompaction()).toBe(true);
+      writeFileSync(join(dir, "history.search"), await e.snapshot());
+      writeFileSync(join(dir, "note.json"), JSON.stringify({ terms: st.terms, note: `history: ${st.messages} messages, ${st.terms} terms, ${st.tombstones} tombstones, ${st.deltaDocs} delta docs, ${(e.allocatedBytes() / MiB).toFixed(1)} MiB` }));
+      await h.close();
+    });
+    const recorded = JSON.parse(readFileSync(join(lived, "note.json"), "utf8")) as { terms: number; note: string };
+    meta.historyTerms = recorded.terms;
+    note(recorded.note, 0);
+    histPath = scratch.path("history.db");
+    copyFileSync(join(lived, "history.db"), histPath);
+    bytes = new Uint8Array(readFileSync(join(lived, "history.search")));
     hist = new SqlMailStore(openDatabase(histPath));
-    const lease = await hist.feed.beginBuild();
-    const e = new InstantSearchEngine({ identity: "sqlite-schema-7", yield: nodePlatform.yield, phrases: (term) => ftsTermMessages(hist.db, term) });
-    e.beginBuild(lease.from);
-    for await (const page of lease.messages()) await e.loadMessages(page);
-    for await (const page of lease.threads()) e.loadThreads(page);
-    await e.finishBuild();
-    await lease.release();
-
-    const accounts = hist.db.all<{ id: number }>("SELECT id FROM accounts ORDER BY id").map((r) => r.id);
-    const lived = generateDataset({ threads: 3_300, accounts: 8, seed: 404, now: NOW, bodyScale: 4 }).messages.slice(0, 8_000);
-    const livedBase = (uids.base += 1_000_000);
-    for (let i = 0; i < lived.length; i += 200) {
-      const slice = lived.slice(i, i + 200).map((m, k) => ({
-        ...newUids(m, livedBase),
-        providerMsgId: `h-${m.providerMsgId}`,
-        rfcMessageId: `h-${m.rfcMessageId}`,
-        references: m.references.map((r) => `h-${r}`),
-        inReplyTo: m.inReplyTo ? `h-${m.inReplyTo}` : null,
-        bodyText: `${m.bodyText} ${noise(i + k, 8)}`,
-        accountId: accounts[m.accountIndex]!,
-      }));
-      await hist.sync.ingest(slice, { applyFilters: true, now: NOW, classifier: null });
-    }
-    const ids = hist.db.all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id);
-    for (let i = 0; i < 3_000; i++) await hist.sync.setBody(ids[(i * 17) % ids.length]!, `Cuerpo editado ${i}. ${noise(90_000 + i, 10)}`, null, { now: NOW, classifier: null });
-    for (let i = 0; i < 2_000; i += 100) await hist.sync.remove(ids.slice(20_000 + i, 20_100 + i));
-    const threads = hist.db.all<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 5000").map((r) => r.id);
-    const category = hist.db.get<{ id: number }>("SELECT id FROM categories LIMIT 1")!.id;
-    await hist.categories.add({ categoryId: category, threadIds: threads, addedBy: "bulk", now: NOW });
-    for (const head = await hist.feed.head(); e.revision!.seq < head.seq; ) for (const b of await hist.feed.changes(e.revision!, head, 50)) await e.apply(b);
-
-    const st = e.stats();
-    expect(st.tombstones).toBeGreaterThan(4_000);
-    expect(st.deltaDocs).toBeGreaterThan(8_000);
-    expect(e.needsCompaction()).toBe(true);
-    meta.historyTerms = st.terms;
-    note(`history: ${st.messages} messages, ${st.terms} terms, ${st.tombstones} tombstones, ${st.deltaDocs} delta docs, ${(e.allocatedBytes() / MiB).toFixed(1)} MiB`, 0);
-    bytes = await e.snapshot();
   }, 600_000);
 
   afterAll(async () => {

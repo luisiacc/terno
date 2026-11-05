@@ -1,15 +1,15 @@
 import { CategorizerModel } from "@terno/core";
-import { generateDataset } from "@terno/mock-data";
 import { expect } from "vitest";
 import type { MailStore } from "../mail-store";
+import { expectMailbox, type WorkloadMailbox } from "./perf";
 
 /**
  * Plan 134 at 50k+ threads, the same workload on both stores: a category the user filled with thousands of threads next
  * to smaller ones, what the assist reads to know the categories, and an AI filing with every rule re-read.
  */
-export async function measureCategoryEvidence(store: MailStore, o: { now: number; budget: number; log: (line: string) => void }): Promise<void> {
-  const seeded = await store.dev.seed(generateDataset({ threads: 50_000, accounts: 4, seed: 134, now: o.now, bodyScale: 0.05 }), { now: o.now, categorizeRate: 0 });
-  expect(seeded.threadCount).toBeGreaterThanOrEqual(50_000);
+export async function measureCategoryEvidence(o: WorkloadMailbox): Promise<void> {
+  const { store } = o;
+  await expectMailbox(o, {});
   const threads: number[] = [];
   let cursor: Awaited<ReturnType<MailStore["threads"]["list"]>>["nextCursor"] | undefined;
   do {

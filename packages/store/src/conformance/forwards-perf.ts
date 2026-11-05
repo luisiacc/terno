@@ -1,8 +1,7 @@
 import { FORWARD_DELAY_MS, type FilterRule } from "@terno/core";
-import { generateDataset } from "@terno/mock-data";
 import { expect } from "vitest";
-import type { MailStore } from "../mail-store";
 import { msg } from "./fixtures";
+import { expectMailbox, type WorkloadMailbox } from "./perf";
 
 /**
  * Plan 116 at 50k+ threads, the same workload on both stores: a category
@@ -11,10 +10,10 @@ import { msg } from "./fixtures";
  * reads while hundreds of forwards wait. What a slice's planning costs
  * follows the slice, never the mailbox; the queue's reads follow their page.
  */
-export async function measureForwards(store: MailStore, o: { now: number; budget: number; log: (line: string) => void }): Promise<void> {
-  const seeded = await store.dev.seed(generateDataset({ threads: 50_000, accounts: 4, seed: 115, now: o.now, bodyScale: 0.05 }), { now: o.now, categorizeRate: 0 });
-  expect(seeded.threadCount).toBeGreaterThanOrEqual(50_000);
-  const accountId = seeded.accountIds[0]!;
+export async function measureForwards(o: WorkloadMailbox): Promise<void> {
+  const { store, accountId } = o;
+  await expectMailbox(o, { filters: 0 });
+  expect(await store.forwards.waitingCount()).toBe(0);
   const cat = await store.categories.create("Facturas reenviadas", "amber");
   await store.forwards.setCategory(cat.id, { addresses: [{ name: "Ana", email: "ana@books.test" }], enabled: true }, o.now);
   const fileRule: FilterRule = { match: "all", conditions: [{ field: "subject", op: "contains", value: "factura" }], actions: [{ type: "addCategory", categoryId: cat.id }] };
