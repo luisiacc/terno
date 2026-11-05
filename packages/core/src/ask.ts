@@ -101,7 +101,7 @@ export type AiAskResult =
   /** the first text this would send to this destination: said once */
   | { status: "consent"; provider: AiProviderId; endpoint: string | null }
   /** `turn` null: its conversation was deleted or cleared while it ran */
-  | { status: "done"; turn: AskTurn | null; incomplete: boolean; older: AskOlderOffer; olderFound?: number }
+  | { status: "done"; turn: AskTurn | null; incomplete: boolean; older: AskOlderOffer; olderFound?: number; olderPartial?: boolean }
   | { status: "failed"; turn: AskTurn | null; error: { kind: import("./ai").AiErrorKind; message: string; i18n?: import("./rpc/envelope").I18nRef }; older: AskOlderOffer };
 
 /** An answer as it streams: `text` to append; `phase`, what's underway; `older`, a fetch's progress. */

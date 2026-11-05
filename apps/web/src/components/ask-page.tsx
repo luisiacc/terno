@@ -116,6 +116,12 @@ function Older() {
   );
 }
 
+/** IMAP's search may miss other cases and accents, and a deadline may have left folders out. */
+function OlderLimit() {
+  const partial = useAsk((s) => s.olderPartial);
+  return partial ? <p className="text-xs text-muted-foreground" data-testid="ask-older-partial">{t("ask.older.partial")}</p> : null;
+}
+
 function Running() {
   const running = useAsk((s) => s.running);
   const shownTitle = useAsk((s) => s.turns.at(-1)?.question ?? s.turns[0]?.question ?? s.running?.question);
@@ -259,6 +265,7 @@ function Conversation({ onBack }: { onBack: () => void }) {
         <Failure />
         <Older />
         {incomplete && <p className="text-xs text-muted-foreground" data-testid="ask-incomplete">{t("ask.incomplete")}</p>}
+        <OlderLimit />
       </div>
       <CommandList label={t("ask.sources")} className="max-h-44 border-t border-border/60 p-1.5">
         {last && last.sources.length > 0 && (
@@ -344,10 +351,13 @@ function AskQuestionPage({ value, setValue, onBack }: { value: string; setValue:
   const announcedAtOpen = useRef(announced);
   // what the palette's last row asked, and where ⌘⇧K returns
   useEffect(() => {
-    returning();
     const asked = askFrom.question;
     askFrom.question = null;
-    if (asked) askQuestion(asked);
+    // the root's row is a question of its own, not a follow-up on the last conversation
+    if (asked) {
+      newQuestion();
+      askQuestion(asked);
+    } else returning();
   }, []);
   useEffect(() => {
     paletteKeys.escape = () => stopAsking();

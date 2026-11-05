@@ -35,12 +35,14 @@ export interface AskState {
   incomplete: boolean;
   /** what the last click on Search older mail found */
   olderFound: number | null;
+  /** a server's search may not have found everything */
+  olderPartial: boolean;
   /** just finished: for screen readers */
   ready: number;
   usedAt: number;
 }
 
-const EMPTY: Omit<AskState, "usedAt" | "ready"> = { conversationId: null, turns: [], sources: {}, running: null, consent: null, error: null, noProvider: false, older: { kind: "none" }, incomplete: false, olderFound: null };
+const EMPTY: Omit<AskState, "usedAt" | "ready"> = { conversationId: null, turns: [], sources: {}, running: null, consent: null, error: null, noProvider: false, older: { kind: "none" }, incomplete: false, olderFound: null, olderPartial: false };
 
 export const useAsk = create<AskState>(() => ({ ...EMPTY, ready: 0, usedAt: 0 }));
 
@@ -83,6 +85,7 @@ async function settle(call: Promise<AiAskResult>, requestId: string, question: s
       older: r.older,
       incomplete: r.status === "done" ? r.incomplete : false,
       olderFound: r.status === "done" ? (r.olderFound ?? null) : null,
+      olderPartial: r.status === "done" && r.olderPartial === true,
       error: r.status === "failed" ? { question, message: localized(r.error.message, r.error.i18n), kind: r.error.kind } : null,
       usedAt: Date.now(),
     }));
@@ -103,7 +106,7 @@ export function askQuestion(question: string, o: { acknowledge?: boolean } = {})
   const s = useAsk.getState();
   if (!text || s.running) return;
   const requestId = globalThis.crypto.randomUUID();
-  useAsk.setState({ running: { requestId, question: text, text: "", older: null, searchingOlder: false }, consent: null, error: null, noProvider: false, olderFound: null, usedAt: Date.now() });
+  useAsk.setState({ running: { requestId, question: text, text: "", older: null, searchingOlder: false }, consent: null, error: null, noProvider: false, olderFound: null, olderPartial: false, usedAt: Date.now() });
   void settle(client.call("ai.ask", { requestId, question: text, ...(s.conversationId !== null ? { conversationId: s.conversationId } : {}), timezone: timezone(), ...(o.acknowledge ? { acknowledge: true } : {}) }), requestId, text);
 }
 
@@ -113,7 +116,7 @@ export function searchOlder(): void {
   const turn = s.turns.at(-1);
   if (!turn || s.conversationId === null || s.running) return;
   const requestId = globalThis.crypto.randomUUID();
-  useAsk.setState({ running: { requestId, question: turn.question, text: "", older: null, searchingOlder: true }, error: null, olderFound: null, usedAt: Date.now() });
+  useAsk.setState({ running: { requestId, question: turn.question, text: "", older: null, searchingOlder: true }, error: null, olderFound: null, olderPartial: false, usedAt: Date.now() });
   void settle(client.call("ai.askOlder", { requestId, conversationId: s.conversationId, turnId: turn.id, timezone: timezone() }), requestId, turn.question);
 }
 

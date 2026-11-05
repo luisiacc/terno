@@ -1,6 +1,6 @@
 # Plan 141: Ask your mail
 
-- **Status:** proposed and Codex-critiqued. Nothing is built. "Revisions after the Codex review" overrides the sections before it.
+- **Status:** built (see "What building it changed"). The real-model eval (`scripts/ai-real/ask.real.ts`) is written and not run, and the owner's read on a copy of a real profile hasn't happened: both wait for the owner's go-ahead. "Revisions after the Codex review" overrides the sections before it.
 - **Builds on:** plan 131 (AI base), plan 85 §6 and revision 10 (Ask Your Inbox's contract, changes noted below), plan 88 (palette), plan 64 (search), plan 101 (older mail, `live: false`), plan 133 §6.7 (invented specifics), plan 140 (`anyOf` in search, proposed: Ask uses it once it lands).
 - **Used by:** plan 143 (actions share Ask's box and its history).
 
@@ -261,3 +261,16 @@ Codex (`gpt-6.1-sol`, high, read-only, `/tmp/terno-plans-141-145/141-ask-your-ma
 10. **The cap bounds the work, not just the output.** Finding a first term could scan thousands of large bodies. Selection is indexed, part scanning is bounded and cancellable with a work limit that returns `incomplete`. Gates cover a match in a body's tail and no match at all, on captured bodies, in both stores.
 11. **Everything has a length.** Question ≤ 1,000 characters. Planning context: the last 3 turns, each answer cut to 1,000. Terms ≤ 100, sources ≤ 30, source headers ≤ 300, turn JSON capped, and history is trimmed deterministically. The answer's budget counts headers, question and framing, not only passages (`summaryBudget`).
 12. **The palette's keys need work.** Its capture handler takes Esc on any page and goes to the root (`command-palette.tsx:405`), and cmdk's Enter selects the active row whichever control has focus. The parent routes Esc, stopping a running answer first. The follow-up box, Copy, Stop and citations sit outside the list's key handling. Tests press Enter on each.
+
+## What building it changed
+
+- **Terms and groups.** §2's `terms` said "synonyms and both languages welcome", but search holds every term on one message, so synonyms there would lose the mail. Plan 140 landed first, so `terms` are what must all be there and `anyOf` holds the alternatives, and the prompt says so.
+- **A stop.** The Tests section says a cancel writes nothing, and the schema has a `stopped` status. A stop with nothing written yet writes nothing. A stop mid-answer keeps what was written as `stopped`, since that's the user's position. A delete, a clear or a removed account keeps nothing, however far it got.
+- **An answer's sources are what it cites,** numbered by first appearance. What was read and not cited still counts in `account_ids_json` (revision 3), and isn't listed.
+- **Passages read from the found threads' own rows.** A common word's whole doclist would cost 30 ms a query. A rare word's short doclist is intersected instead, and otherwise the thread's rows are looked up in FTS5 one by one. It's held to 50 ms with the instant index current (`ask.perf.test.ts`). While the index catches up the search path has its own budget (plan 140's 60 ms for a query), so `workloads.perf.test.ts` holds passages to 100 ms and the whole to 250 ms there.
+- **Older mail's date.** Gmail's `messages.list` isn't documented to have an order, so each new id's date is read from `format=metadata`, which reads no body. That's up to 150 metadata reads for one click, within plan 62's pacing.
+- **IMAP's `search` runs a command per clause** and intersects the UIDs, since a search's keys are an object's and a repeated term can't be written as one command. Drafts are left out with Junk and Trash. A folder Terno hasn't read isn't fetched from: its first read takes it.
+- **Undo is a row of the history page.** A snack's dock sits behind the palette's modal, so its button can't be reached there.
+- **The usage line.** The plan says both "counted under `byHand`" and "under its own line". It's its own `ask` tally, which, like `byHand`, stays outside the background ceilings.
+- **A follow-up's consent line** names the question, account names and addresses, and earlier answers, as revision 1 asks.
+- **Not built:** the Try Pro button, which waits for plan 85.

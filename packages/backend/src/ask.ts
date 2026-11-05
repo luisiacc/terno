@@ -377,10 +377,10 @@ export class AskService {
       const earlier = turns.slice(-EARLIER_TURNS).filter((t) => t.id !== turn.id).map((t) => ({ question: t.question, answer: (t.answer ?? "").slice(0, EARLIER_ANSWER_CHARS) }));
       if (!threadIds.length && !fetched.ids.length) {
         const kept = await this.keep({ conversationId: p.conversationId, question: turn.question, status: "not_found", answer: null, sources: [], checks: { unlinked: false, unsupported: [] }, queries: turn.queries, ai, clearGeneration, entry });
-        return { status: "done", turn: kept, incomplete: fetched.partial, older: { kind: "none" }, olderFound: 0 };
+        return { status: "done", turn: kept, incomplete: false, older: { kind: "none" }, olderFound: 0, olderPartial: fetched.partial };
       }
       const answer = await this.answer({ p: { requestId: p.requestId, conversationId: p.conversationId, timezone: p.timezone }, clientId, signal, ai, destination, entry, threadIds, searches: valid.map((v) => v.search), first: fetched.ids, earlier, today: dayIn(now, p.timezone), question: turn.question, queries: turn.queries, clearGeneration, onText: (t) => (text = t), older: async () => ({ kind: "none" }) });
-      return answer.status === "done" ? { ...answer, incomplete: answer.incomplete || fetched.partial, olderFound: fetched.ids.length } : answer;
+      return answer.status === "done" ? { ...answer, olderFound: fetched.ids.length, olderPartial: fetched.partial } : answer;
     } catch (error) {
       if (signal.aborted || (error instanceof AiError && error.kind === "cancelled")) {
         if (text && !entry.dead) {
@@ -409,6 +409,8 @@ export class AskService {
     for (const account of accounts) {
       if (signal.aborted) break;
       const before = now - (account.syncWindowDays ?? general) * 86_400_000;
+      // nothing older than this account's window can match what the plan's dates allow
+      if (queries.every((q) => q.after !== undefined && q.after >= before)) continue;
       try {
         const r = await this.b.runForAccount(account.id, (provider) => provider.search?.({ queries, before, limit: OLDER_LIMIT, signal }) ?? Promise.resolve({ hits: [], partial: false }));
         partial ||= r.partial;

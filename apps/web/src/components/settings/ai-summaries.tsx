@@ -165,7 +165,7 @@ export function AskGroup({ settings, update }: { settings: AppSettings; update: 
   }, [target.provider]);
   return (
     <SettingsGroup title={t("ai.ask.title")} testId="ai-ask">
-      <SettingsRow label={t("ai.ask.switch")} hint={t("ai.ask.hint", { provider: providerLabel(target.provider, ai) })}>
+      <SettingsRow label={t("ai.ask.switch")} hint={target.provider === "none" ? t("ai.ask.hintNoProvider") : t("ai.ask.hint", { provider: providerLabel(target.provider, ai) })}>
         {(a) => <Switch {...a} checked={ask.enabled} data-testid="ai-ask-switch" onCheckedChange={(enabled) => void update({ ask: { enabled } })} />}
       </SettingsRow>
       {target.provider !== "none" && <TaskTargetRow ai={ai} update={update} task="ask" provider={target.provider} model={target.model} choices={[...new Set([...providerChoices(ai), target.provider])]} modelFor={(next) => (next === "anthropic" ? ASK_CLAUDE_MODEL : modelFor(ai, next) || target.model)} models={models} prefix="ai-ask" labels={{ row: t("ai.ask.target"), hint: t("ai.ask.targetHint"), provider: t("ai.ask.targetProvider"), model: t("ai.ask.targetModel") }} />}

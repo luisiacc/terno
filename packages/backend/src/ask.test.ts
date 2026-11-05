@@ -25,7 +25,7 @@ interface Model {
   answers: CompletionRequest[];
   configs: ProviderConfig[];
   /** queries by call, or a function of the request */
-  plan: (req: CompletionRequest, n: number) => unknown[];
+  plan: (req: CompletionRequest, n: number) => unknown[] | Promise<unknown[]>;
   answer: (req: CompletionRequest) => Promise<Completion> | Completion;
 }
 
@@ -41,7 +41,7 @@ async function setup(o: { cloud?: boolean; provider?: "fake" | "none" } = {}) {
       ...options,
       transport: {
         complete: async (req) => {
-          if (req.schema?.name === "ask_plan") return planOf(model.plan(req, model.plans.push(req) - 1));
+          if (req.schema?.name === "ask_plan") return planOf(await model.plan(req, model.plans.push(req) - 1));
           model.answers.push(req);
           return model.answer(req);
         },
@@ -227,14 +227,13 @@ describe("stopping and leaving", () => {
   it("the provider changing mid-question sends nothing further", async () => {
     const { client, model, put, ask } = await setup();
     await put();
-    const planning = held();
-    model.plan = () => {
-      void planning.gate;
-      return [query({ terms: ["lease"] })];
-    };
-    model.answer = async () => ({ text: "x [m1]", stop: "end" });
-    await client.call("settings.update", { ai: { provider: "none" } });
-    await expect(ask("q lease")).rejects.toMatchObject({ details: { aiErrorKind: "not_configured" } });
+    let release!: (q: unknown[]) => void;
+    model.plan = () => new Promise((r) => (release = r));
+    const running = ask("q lease").catch((e: RpcError) => e.code);
+    await expect.poll(() => model.plans.length).toBe(1);
+    await client.call("settings.update", { ai: { provider: "compatible", preset: "custom", model: "m", baseURL: "http://127.0.0.1:9/v1" } });
+    release([query({ terms: ["lease"] })]);
+    expect(await running).toBe("CANCELLED");
     expect(model.answers).toHaveLength(0);
   });
 
@@ -314,6 +313,14 @@ describe("history", () => {
     release({ text: "late [m1]", stop: "end" });
     expect(await running).toBe("CANCELLED");
     expect(await backend.store.ask.history.list()).toEqual([]);
+  });
+
+  it("a question is in no export", async () => {
+    const { client, put, ask } = await setup();
+    await put();
+    done(await ask("When does QCANARY renew? lease"));
+    const dump = JSON.stringify(await client.call("app.export", {}));
+    expect(dump).not.toContain("QCANARY");
   });
 
   it("what a person asks isn't on MCP, and none of its methods are", async () => {

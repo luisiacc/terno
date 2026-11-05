@@ -2246,7 +2246,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             if (deadline.aborted) break;
           }
         }
-        return { hits: [...hits.values()].sort((a, b) => b.date - a.date).slice(0, limit), partial };
+        // the RFC only promises ASCII's case, so a server may miss other case and accents: it's always said
+        return { hits: [...hits.values()].sort((a, b) => b.date - a.date).slice(0, limit), partial: partial || queries.some((q) => [...q.terms, ...(q.anyOf ?? []).flat()].some((t) => /[\u0080-\uffff]/.test(t))) };
       }, signal);
     },
 
