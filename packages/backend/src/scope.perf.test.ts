@@ -1,18 +1,22 @@
 /**
- * "Select all N" on the 50k-message perf mailbox: a scope archive of every
- * thread in a view (thousands) and its undo run in slices while a renderer
- * keeps listing; the event loop never stalls long and lists stay fast.
+ * "Select all N": a scope archive of every thread in a view (thousands) and its
+ * undo, and a whole category acted on, run in slices while a renderer keeps
+ * listing, the search index following along; the event loop never stalls long
+ * and lists stay fast. Acting is a slice's bound, measured at the size that holds
+ * it (SLICE_MAILBOX); what a scope reads, its count and its ids, holds at 50k+.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
-import { seedDataset, sqlDb, type SqlMailStore } from "@terno/db";
+import { sqlDb, type SqlMailStore } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
-import { generateDataset } from "@terno/mock-data";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
+import { resolveThreadScope } from "./scope";
+import { SLICE_MAILBOX } from "./test/slice-mailbox";
 import { BUDGET_MULTIPLIER, report, type Stat } from "../../db/src/test/perf";
+import { copyMailbox, LARGE_MAILBOX } from "../../db/src/test/perf-mailbox";
 import { sampleAsync, settle, watchLoop, type LoopReport, type Sample } from "../../db/src/test/timing";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
@@ -22,16 +26,14 @@ let backend: Backend;
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "terno-scopeperf-"));
+  copyMailbox(SLICE_MAILBOX, join(dir, "perf.db"));
   backend = new Backend({ dbPath: join(dir, "perf.db"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: true });
   await backend.store.ready;
-  seedDataset(sqlDb(backend.store), generateDataset({ threads: 20_000, accounts: 8, seed: 5, now: NOW, bodyScale: 3 }), { now: NOW });
-  // the seed leaves a WAL of hundreds of MB that a running app, checkpointing all along, never has
-  sqlDb(backend.store).exec("PRAGMA wal_checkpoint(TRUNCATE)");
   expect(await (backend.store as SqlMailStore).instant!.settled()).toBe(true);
 }, 600_000);
 
 afterAll(async () => {
-  report("scope.json", "Scope actions (select all N)", { threads: 20_000, accounts: 8 }, stats);
+  report("scope.json", "Scope actions (select all N)", { threads: SLICE_MAILBOX.dataset.threads, accounts: SLICE_MAILBOX.dataset.accounts }, stats);
   await backend.stop();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -63,7 +65,7 @@ async function underLoad(fn: () => Promise<unknown>, on: Backend = backend): Pro
   return { stall: watched.stall, cpu: watched.longest.cpu, list: settle(list).ms, descheduled: watched.descheduled.length };
 }
 
-it("archiving every thread of a view (≥ 5,000) and undoing it: no stall over 50 ms, threads.list p95 ≤ 20 ms", async () => {
+it("archiving every thread of a view (thousands) and undoing it, and a category marked read: no stall over 50 ms, threads.list p95 ≤ 20 ms", async () => {
   const [c, srv] = createMemoryTransportPair();
   backend.connect(srv, { clientId: "sweep", origin: "renderer" });
   const client = new RpcClient(c);
@@ -84,43 +86,49 @@ it("archiving every thread of a view (≥ 5,000) and undoing it: no stall over 5
     ["scope mark read of «Todo el correo»", () => client.call("threads.actScope", { scope: { kind: "view", view: "all" }, action: "markRead" })],
   ];
   const out: { name: string; stall: number; cpu: number; list: number }[] = [];
-  for (const [name, fn] of runs) {
+  const stage = async (name: string, fn: () => Promise<unknown>) => {
     const started = performance.now();
     const { stall, cpu, list } = await underLoad(fn);
     const took = performance.now() - started;
     out.push({ name, stall, cpu, list: p95(list) });
     stats.push({ name: `${name}: ${took.toFixed(0)} ms, max event-loop stall ${stall.toFixed(1)} ms (cpu ${cpu.toFixed(1)}), list RPC p95 ${p95(list).toFixed(1)} ms (${list.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: list.length });
     if (name.startsWith("scope archive")) {
-      expect(result.affected).toBeGreaterThanOrEqual(5000);
+      // dozens of slices
+      expect(result.affected).toBeGreaterThanOrEqual(2000);
       expect(result.affected).toBe(inboxBefore);
       expect(db.get("SELECT count(*) AS c FROM threads WHERE in_inbox = 1")).toEqual({ c: 0 });
     }
     if (name === "its undo") expect(db.get("SELECT count(*) AS c FROM threads WHERE in_inbox = 1")).toEqual({ c: inboxBefore });
-  }
+  };
+  for (const [name, fn] of runs) await stage(name, fn);
+  // last: filed like this, these threads leave the Inbox
+  const category = (await client.call("categories.create", { name: "Todo", color: "rose" })).id;
+  db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) SELECT id, ?, 'user', 0 FROM threads WHERE in_trash = 0 AND in_spam = 0", category);
+  const inCategory = db.get<{ c: number }>("SELECT count(*) AS c FROM thread_categories WHERE category_id = ?", category)!.c;
+  let categoryTotal = 0;
+  await stage("scope star of a whole category", async () => (categoryTotal = (await client.call("threads.actScope", { scope: { kind: "view", view: "all", categoryId: category }, action: "star" })).total));
   stats.push({ name: `threads archived by one scope action: ${result.affected}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+  expect(categoryTotal).toBe(inCategory);
   for (const r of out) {
     expect(r.stall, `${r.name} (cpu ${r.cpu.toFixed(1)} ms of it)`).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
     expect(r.list, r.name).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);
   }
 }, 600_000);
 
-it("a 50,000-thread category: counted in one indexed query, acted on with no stall over 50 ms", async () => {
+it("a 50,000-thread category: counted in one indexed query, its ids read with no stall over 50 ms", async () => {
   const dir50 = mkdtempSync(join(tmpdir(), "terno-scopeperf50-"));
+  copyMailbox(LARGE_MAILBOX, join(dir50, "big.db"));
   const big = new Backend({ dbPath: join(dir50, "big.db"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: false });
   try {
     await big.store.ready;
     const db = sqlDb(big.store);
-    seedDataset(db, generateDataset({ threads: 50_000, accounts: 8, seed: 9, now: NOW, bodyScale: 0.2 }), { now: NOW });
-    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-    // category ids are never reused (6543ec41): a new one takes the counter's next
-    db.run("INSERT INTO categories (id, name, color, position) VALUES ((SELECT last_id + 1 FROM category_counter WHERE id = 1), 'Todo', 'rose', 99)");
-    const cat = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Todo'")!.id;
-    db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) SELECT id, ?, 'user', 0 FROM threads WHERE in_trash = 0 AND in_spam = 0", cat);
-    const inCat = db.get<{ c: number }>("SELECT count(*) AS c FROM thread_categories WHERE category_id = ?", cat)!.c;
-    expect(inCat).toBeGreaterThanOrEqual(45_000);
     const [c, srv] = createMemoryTransportPair();
     big.connect(srv, { clientId: "big", origin: "renderer" });
     const client = new RpcClient(c);
+    const cat = (await client.call("categories.create", { name: "Todo", color: "rose" })).id;
+    db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) SELECT id, ?, 'user', 0 FROM threads WHERE in_trash = 0 AND in_spam = 0", cat);
+    const inCat = db.get<{ c: number }>("SELECT count(*) AS c FROM thread_categories WHERE category_id = ?", cat)!.c;
+    expect(inCat).toBeGreaterThanOrEqual(45_000);
     const scope = { kind: "view" as const, view: "all" as const, categoryId: cat };
     const counts: number[] = [];
     for (let i = 0; i < 25; i++) {
@@ -130,10 +138,10 @@ it("a 50,000-thread category: counted in one indexed query, acted on with no sta
     }
     const sc = { name: `count a ${inCat}-thread category (RPC)`, budgetMs: 25, p50: [...counts].sort((a, b) => a - b)[12]!, p95: p95(counts), max: Math.max(...counts), iterations: counts.length };
     stats.push(sc);
-    let result = { total: 0 };
-    const { stall, cpu, list } = await underLoad(async () => (result = await client.call("threads.actScope", { scope, action: "markRead" })), big);
-    stats.push({ name: `mark read a ${inCat}-thread category: max event-loop stall ${stall.toFixed(1)} ms (cpu ${cpu.toFixed(1)}), list RPC p95 ${p95(list).toFixed(1)} ms (${list.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: list.length });
-    expect(result.total).toBe(inCat);
+    let ids = 0;
+    const { stall, cpu, list } = await underLoad(async () => (ids = (await resolveThreadScope(big, scope)).ids.length), big);
+    stats.push({ name: `read the ids of a ${inCat}-thread category: max event-loop stall ${stall.toFixed(1)} ms (cpu ${cpu.toFixed(1)}), list RPC p95 ${p95(list).toFixed(1)} ms (${list.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: list.length });
+    expect(ids).toBe(inCat);
     expect(sc.p95).toBeLessThanOrEqual(25 * BUDGET_MULTIPLIER);
     expect(stall, `cpu ${cpu.toFixed(1)} ms of it`).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
     expect(p95(list)).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);

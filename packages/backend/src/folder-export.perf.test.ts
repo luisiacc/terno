@@ -1,7 +1,9 @@
 /**
- * Plan 107: exporting a 5,000-message folder (bodies, some attachments) as an .mbox, in both stores. Each `next`
- * stays within the slicer's budget (plus at most one unit begun inside it), and nothing in start or the nexts
- * stalls the event loop past it. One 50,000-message conversation's ids are read a bounded stretch at a time.
+ * Plan 107: exporting a folder (bodies, some attachments) as an .mbox, in both stores. Each `next` stays within the
+ * slicer's budget (plus at most one unit begun inside it), and nothing in start or the nexts stalls the event loop past
+ * it. One long conversation's ids are read a bounded stretch at a time. A next's bound and a stretch's don't follow the
+ * rows they don't read, so each case holds what takes many of them: 1,500 messages, a 3 MB body (12 stretches), a
+ * conversation of three ceilings' worth of ids, and whether a read stayed a stretch is asserted, not only timed.
  */
 import "fake-indexeddb/auto";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -19,8 +21,8 @@ import type { BackendCore } from "./core";
 import { FolderExports, sortByDate } from "./folder-export";
 
 const NOW = Date.UTC(2026, 10, 1, 12);
-const FOLDER = 5_000;
-const OTHER = 3_000;
+const FOLDER = 1_500;
+const OTHER = 500;
 /** a next: the 15 ms budget plus one unit begun inside it (a batch read, an attachment chunk, a piece) */
 const NEXT_MS = 25;
 const STALL_MS = 25;
@@ -86,7 +88,7 @@ async function exportAll(name: string, store: MailStore, accountId: number) {
   expect(r.stall, `${name}: event-loop stall`).toBeLessThanOrEqual(STALL_MS * BUDGET_MULTIPLIER);
 }
 
-const CONVERSATION = 50_000;
+const CONVERSATION = 15_000;
 /** one id read: the slicer's budget plus a stretch begun inside it */
 const IDS_MS = 25;
 
@@ -134,9 +136,9 @@ async function startConversation(name: string, store: MailStore, accountId: numb
   expect(r.stall, `${name}: event-loop stall`).toBeLessThanOrEqual(STALL_MS * BUDGET_MULTIPLIER);
 }
 
-const BIG = 20 * 1024 * 1024;
+const BIG = 3 * 1024 * 1024;
 
-/** a message whose stored body is 20 MB of short lines, and a short one */
+/** a message whose stored body is 3 MB of short lines, and a short one */
 async function seedBig(store: MailStore): Promise<number> {
   const { account } = await store.accounts.create({ kind: "gmail", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
   await store.folders.replace(account.id, [{ key: "Label_big", path: ["Clients"], selectable: true }]);
@@ -183,17 +185,19 @@ async function exportBig(name: string, store: MailStore, accountId: number) {
   const sorted = [...nexts].sort((a, b) => a - b);
   const max = sorted.at(-1)!;
   const p95 = sorted[Math.ceil(sorted.length * 0.95) - 1]!;
-  stats.push({ name: `${name}: a 20 MB body, ${nexts.length} nexts (${(bytes / 1e6).toFixed(1)} MB), most handed by one read ${handed}, max stall ${r.stall.toFixed(1)} ms (longest ${describeGap(r.longest)})`, budgetMs: NEXT_MS, p50: sorted[Math.floor(sorted.length / 2)]!, p95, max, iterations: nexts.length });
+  stats.push({ name: `${name}: a 3 MB body, ${nexts.length} nexts (${(bytes / 1e6).toFixed(1)} MB), most handed by one read ${handed}, max stall ${r.stall.toFixed(1)} ms (longest ${describeGap(r.longest)})`, budgetMs: NEXT_MS, p50: sorted[Math.floor(sorted.length / 2)]!, p95, max, iterations: nexts.length });
   expect(last).toMatchObject({ done: 2, finished: true, partialBodies: 0 });
   expect(bytes).toBeGreaterThan(BIG);
   expect(handed, `${name}: the most one store read handed on`).toBeLessThanOrEqual(BODY_READ);
+  // whatever BODY_READ says: a body this size, read whole, takes less time than a stall's budget
+  expect(handed, `${name}: read a stretch at a time`).toBeLessThanOrEqual(BIG / 4);
   // a SQLite next is all work; an IndexedDB one also waits on the store's queue, which holds nothing up: its stall says
   if (name === "SQLite") expect(p95, `${name}: next p95 ${p95.toFixed(1)} ms`).toBeLessThanOrEqual(NEXT_MS * BUDGET_MULTIPLIER);
   expect(r.stall, `${name}: event-loop stall`).toBeLessThanOrEqual(STALL_MS * BUDGET_MULTIPLIER);
 }
 
 describe("folder export (plan 107)", () => {
-  it("SQLite: a 20 MB body read a stretch at a time from disk (Codex code review round 6 #4)", async () => {
+  it("SQLite: a 3 MB body read a stretch at a time from disk (Codex code review round 6 #4)", async () => {
     const dir = mkdtempSync(join(tmpdir(), "terno-export-perf-"));
     dirs.push(dir);
     const path = join(dir, "perf.db");
@@ -208,7 +212,7 @@ describe("folder export (plan 107)", () => {
     }
   }, 300_000);
 
-  it("IndexedDB: a 20 MB body read a stretch at a time, after a reopen (Codex code review round 6 #4)", async () => {
+  it("IndexedDB: a 3 MB body read a stretch at a time, after a reopen (Codex code review round 6 #4)", async () => {
     const name = `export-big-perf-${Date.now()}`;
     const open = () => IdbMailStore.open({ name, factory: indexedDB, platform: { uuid: () => crypto.randomUUID(), yield: yieldTurn, bodyPreparation: nodePlatform.bodyPreparation }, instantSearch: false });
     const seeded = await open();
@@ -222,7 +226,7 @@ describe("folder export (plan 107)", () => {
     }
   }, 600_000);
 
-  it("SQLite: one 50,000-message conversation's ids, a bounded stretch a read", async () => {
+  it("SQLite: one long conversation's ids, a bounded stretch a read", async () => {
     const dir = mkdtempSync(join(tmpdir(), "terno-export-perf-"));
     dirs.push(dir);
     const store = new SqlMailStore(openDatabase(join(dir, "perf.db")));
@@ -233,7 +237,7 @@ describe("folder export (plan 107)", () => {
     }
   }, 300_000);
 
-  it("IndexedDB: one 50,000-message conversation's ids, a bounded stretch a read", async () => {
+  it("IndexedDB: one long conversation's ids, a bounded stretch a read", async () => {
     const store = await IdbMailStore.open({ name: `export-conversation-perf-${Date.now()}`, factory: indexedDB, platform: { uuid: () => crypto.randomUUID(), yield: yieldTurn }, instantSearch: false });
     try {
       await startConversation("IndexedDB", store, await seedConversation(store));
@@ -263,7 +267,7 @@ describe("folder export (plan 107)", () => {
     expect(max, `longest of ${stretches.length} stretches`).toBeLessThanOrEqual(STALL_MS * BUDGET_MULTIPLIER);
   }, 300_000);
 
-  it("SQLite: a 5,000-message folder, each next within budget", async () => {
+  it("SQLite: a folder, each next within budget", async () => {
     const dir = mkdtempSync(join(tmpdir(), "terno-export-perf-"));
     dirs.push(dir);
     const store = new SqlMailStore(openDatabase(join(dir, "perf.db")));
@@ -274,7 +278,7 @@ describe("folder export (plan 107)", () => {
     }
   }, 300_000);
 
-  it("IndexedDB: a 5,000-message folder, each next within budget", async () => {
+  it("IndexedDB: a folder, each next within budget", async () => {
     const store = await IdbMailStore.open({ name: `export-perf-${Date.now()}`, factory: indexedDB, platform: { uuid: () => crypto.randomUUID(), yield: yieldTurn }, instantSearch: false });
     try {
       await exportAll("IndexedDB", store, await seed(store));

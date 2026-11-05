@@ -1,31 +1,38 @@
 /**
- * Plan 17's backfill at scale on SQLite (node:sqlite): 300,000 messages, in
- * 145,000 conversations and one of 50,000 messages, from the migration's
- * state to every thread's facts, through the backend's runner (slices sized
- * by the slicer at the backend's budget). The gate is the event loop's
- * longest stall (test/timing.ts: rare OS holds excused on a busy machine,
- * collections inside a gap left out; a run over budget is run again, up to
- * three times, the best counting). Then a kill: the backfill in a child
- * process, SIGKILLed past 40% of the threads; a new store resumes from what
- * committed and ends where an uninterrupted one does.
+ * Plan 17's backfill on SQLite (node:sqlite): from the migration's state to
+ * every thread's facts, through the backend's runner (slices sized by the slicer
+ * at the backend's budget). The gate is the event loop's longest stall
+ * (test/timing.ts: rare OS holds excused on a busy machine, collections inside a
+ * gap left out; a run over budget is run again, up to three times, the best
+ * counting). Then a kill: the backfill in a child process, SIGKILLed past 40% of
+ * the threads; a new store resumes from what committed and ends where an
+ * uninterrupted one does.
+ *
+ * A stall is a slice's, and a slice takes the next pending threads off an index,
+ * each a walk bounded by FACTS_WINDOW: rows it doesn't reach don't make it
+ * longer. So this is the size that still takes many slices, with conversations
+ * far over that window.
  */
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openDatabase, seedDataset, sqlDb, SqlMailStore } from "@terno/db";
-import { generateDataset, type MockDataset } from "@terno/mock-data";
+import { openDatabase, sqlDb, SqlMailStore } from "@terno/db";
 import type { IncomingMessage, MailStore } from "@terno/store";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BUDGET_MULTIPLIER as MULT, report, type Stat } from "../../db/src/test/perf";
+import { copyMailbox } from "../../db/src/test/perf-mailbox";
 import { describeGap, stallLessGc, watchGc, watchLoop } from "../../db/src/test/timing";
 import { FACTS_SLICE, FactsBackfill } from "./facts";
+import { SLICE_MAILBOX } from "./test/slice-mailbox";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 /** two frames: a slice, its commit and whatever the loop owes besides */
 const STALL_MS = 32;
 const ATTEMPTS = 3;
+/** ten times FACTS_WINDOW, read through a store's pages (that it reads no further is people.test's, by the row) */
+const GIANT = 2_000;
 const CHILD = process.env.TERNO_FACTS_CHILD;
 const yieldTurn = () => new Promise<void>((r) => setImmediate(r));
 
@@ -81,15 +88,17 @@ if (CHILD) {
   it("child: backfills until killed", { timeout: 1_200_000 }, async () => {
     const store = new SqlMailStore(openDatabase(CHILD), { checkpointWorker: true });
     writeFileSync(`${CHILD}.pid`, String(process.pid));
-    for (;;) {
-      const r = await store.facts.backfill({ limit: 200 });
+    // through the senders at once, then a few threads a slice, paced, for the kill to land among them
+    for (let limit = 5000; ;) {
+      const r = await store.facts.backfill({ limit });
       appendFileSync(`${CHILD}.progress`, `${r.phase} ${r.processed}\n`);
       if (!r.more) break;
-      await yieldTurn();
+      limit = (r.next ?? r.phase) === "senders" ? 5000 : 10;
+      await new Promise((r) => setTimeout(r, 2));
     }
   });
 } else {
-  describe("the facts backfill at 300,000 messages (SQLite)", () => {
+  describe("the facts backfill (SQLite)", () => {
     const dir = mkdtempSync(join(tmpdir(), "terno-facts-perf-"));
     const path = join(dir, "perf.db");
     const killPath = join(dir, "kill.db");
@@ -99,16 +108,15 @@ if (CHILD) {
     const meta: Record<string, unknown> = {};
 
     beforeAll(async () => {
+      const accountId = copyMailbox(SLICE_MAILBOX, path).accountIds[0]!;
       // as the desktop backend opens it: WAL checkpoints on their worker (settle() waits for them between slices)
       store = new SqlMailStore(openDatabase(path), { checkpointWorker: true });
-      const data: MockDataset = generateDataset({ threads: 145_000, accounts: 4, seed: 17, now: NOW, bodyScale: 1 });
-      const seeded = seedDataset(sqlDb(store), data, { now: NOW, chunkSize: 2000 });
-      const giant = giantThread(seeded.accountIds[0]!, data.accounts[0]!.email, 50_000).concat(giantThread(seeded.accountIds[0]!, data.accounts[0]!.email, 10_000, "giant-trash", true));
-      for (let i = 0; i < giant.length; i += 5000) await store.sync.ingest(giant.slice(i, i + 5000), { applyFilters: false, now: NOW, classifier: null });
+      const email = sqlDb(store).get<{ email: string }>("SELECT email FROM accounts WHERE id = ?", accountId)!.email;
+      const giant = giantThread(accountId, email, GIANT).concat(giantThread(accountId, email, GIANT / 5, "giant-trash", true));
+      for (let i = 0; i < giant.length; i += 2000) await store.sync.ingest(giant.slice(i, i + 2000), { applyFilters: false, now: NOW, classifier: null });
       expected = factsRows(store);
       meta.messages = sqlDb(store).get<{ c: number }>("SELECT count(*) AS c FROM messages")!.c;
       meta.threads = expected.length;
-      expect(meta.messages as number).toBeGreaterThanOrEqual(300_000);
       expect(expected.some((r) => r.person === 1) && expected.some((r) => r.waiting_since !== null)).toBe(true);
       await store.debug.resetFacts();
       sqlDb(store).exec(`VACUUM INTO '${killPath}'`);
@@ -155,9 +163,9 @@ if (CHILD) {
       const done = () => (existsSync(`${killPath}.progress`) ? readFileSync(`${killPath}.progress`, "utf8").split("\n").filter((l) => l.startsWith("threads")).reduce((n, l) => n + Number(l.split(" ")[1]), 0) : 0);
       const started = performance.now();
       while (done() < threads * 0.4) {
-        if (performance.now() - started > 1_200_000) throw new Error("the child never got past 40%");
+        if (performance.now() - started > 120_000) throw new Error("the child never got past 40%");
         if (child.exitCode !== null) throw new Error(`the child ended first (${child.exitCode})`);
-        await new Promise((r) => setTimeout(r, 50));
+        await new Promise((r) => setTimeout(r, 5));
       }
       // the test's own worker, then the runner that forked it: both started here
       process.kill(Number(readFileSync(`${killPath}.pid`, "utf8")), "SIGKILL");

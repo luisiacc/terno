@@ -1,5 +1,6 @@
 /**
- * Plan 107 (Codex code review round 20 #5): a demo IMAP-like folder of 20,000 messages renamed through the backend.
+ * Plan 107 (Codex code review round 20 #5): a demo IMAP-like folder renamed through the backend, at the size that
+ * takes many pages and that one write for all of them would hold the loop for long past the budget.
  * The demo copies its places under the new path, then removes the old ones once the backend followed the move: a page
  * at a time with real turns between, so nothing holds the event loop past the slicer's budget (plus one write begun
  * inside it), and the mail is all there after.
@@ -15,7 +16,7 @@ import { BUDGET_MULTIPLIER, report, type Stat } from "../../db/src/test/perf";
 import { describeGap, watchLoop } from "../../db/src/test/timing";
 import { Backend, plaintextCipher } from "./backend";
 
-const FOLDER = 20_000;
+const FOLDER = 5_000;
 /** the slicer's 15 ms budget plus one write begun inside it */
 const STALL_MS = 25;
 const stats: Stat[] = [];
