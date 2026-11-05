@@ -34,7 +34,10 @@ async function startImap() {
   const server = imapkit({ plugins: ["IDLE", "MOVE", "UIDPLUS", "SPECIAL-USE", "ENABLE", "CONDSTORE"], storage: structuredClone(STORAGE) });
   const port = await server.start(0, "127.0.0.1");
   cleanups.push(() => server.stop());
-  return { server, port };
+  // a push can only arrive once the server has seen IDLE: what a test waits for instead of a fixed time
+  let idles = 0;
+  server.script.add({ on: "command", run: true, when(context) { if (context.command === "IDLE") idles++; return false; } });
+  return { server, port, idles: () => idles };
 }
 
 /** smtp-server that keeps what it receives; `hold` delays the answer to DATA, `afterData` runs once the message is in */
@@ -94,13 +97,14 @@ async function setup(o: { syncIntervalMs?: number; timeouts?: Partial<ImapTimeou
     imap: { host: "127.0.0.1", port: proxy.port, secure: false, user: "testuser" },
     smtp: { host: "127.0.0.1", port: smtpProxy.port, secure: false, user: "testuser" },
     password: "testpass",
+    verify: false,
   });
   const db = () => sqlDb(backend.store);
   const state = () => JSON.parse(db().get<{ s: string }>("SELECT sync_state s FROM accounts WHERE id = ?", account.id)!.s) as { status: string; connection?: { state: string; retryAt: number | null } | null };
   const subjects = async () => (await client.call("threads.list", { view: "inbox" })).items.map((t) => t.subject);
   // the first sync done and IDLE listening
   await expect.poll(() => state().status, { timeout: 10_000 }).toBe("idle");
-  await new Promise((r) => setTimeout(r, 400));
+  await expect.poll(imap.idles, { timeout: 10_000 }).toBeGreaterThan(0);
   return { imap, proxy, smtp, smtpProxy, backend, client, account, db, state, subjects };
 }
 
@@ -110,8 +114,8 @@ describe("plan 20: mail comes back after the network changes", () => {
     // the switch: every open socket goes silent, no error anywhere
     t.proxy.blackholeExisting();
     t.imap.server.control.addMessage("INBOX", { raw: raw("after the switch, unannounced") });
-    await new Promise((r) => setTimeout(r, 3000));
-    // IDLE is deaf and nothing else looks: the control
+    await new Promise((r) => setTimeout(r, 800));
+    // IDLE is deaf and nothing else looks: the control. A push that got through takes well under this
     expect(await t.subjects()).not.toContain("after the switch, unannounced");
 
     t.proxy.blackholeExisting();
@@ -130,17 +134,15 @@ describe("plan 20: mail comes back after the network changes", () => {
   });
 
   it("without any event the heartbeat and the command session's timeout recover within their bound", async () => {
-    const t = await setup({ syncIntervalMs: 1500 });
+    const t = await setup({ syncIntervalMs: 800 });
     t.proxy.blackholeExisting();
     const started = Date.now();
     t.imap.server.control.addMessage("INBOX", { raw: raw("found by the heartbeat") });
-    // bound: a tick (1.5 s) + the command session's stall timeout (2 s) + a reconnect
+    // bound: a tick (0.8 s) + the command session's stall timeout (2 s) + a reconnect
     await expect.poll(t.subjects, { timeout: 8000, interval: 50 }).toContain("found by the heartbeat");
-    console.log(`plan 20: black hole, no event → new mail listed in ${Date.now() - started} ms (tick 1.5 s, socket 2 s, heartbeat 1 s)`);
-    // push was restored by the heartbeat: the next message arrives between ticks
-    await new Promise((r) => setTimeout(r, 1600));
-    const before = t.proxy.accepted;
-    expect(before).toBeGreaterThanOrEqual(3);
+    console.log(`plan 20: black hole, no event → new mail listed in ${Date.now() - started} ms (tick 0.8 s, socket 2 s, heartbeat 1 s)`);
+    // push was restored by the heartbeat as well: a new connection besides the command session's
+    await expect.poll(() => t.proxy.accepted, { timeout: 5000 }).toBeGreaterThanOrEqual(3);
   });
 
   it("server down: quiet first retry, then offline with a retry time; back up, it syncs on its own", async () => {
@@ -306,7 +308,7 @@ describe("plan 20: mail comes back after the network changes", () => {
     await expect.poll(() => t.state().connection?.state ?? null).toBe("offline");
     await t.client.call("threads.act", { threadIds: [thread!.id], action: "star" });
     const op = () => t.db().get<{ state: string; attempts: number }>("SELECT state, attempts FROM ops WHERE kind = 'star'")!;
-    await new Promise((r) => setTimeout(r, 500));
+    expect(await t.backend.runWorker()).toBe(0);
     expect(op()).toEqual({ state: "queued", attempts: 0 });
     await t.proxy.pass();
     t.backend.networkChanged(true, "online");
@@ -330,10 +332,9 @@ describe("plan 20: mail comes back after the network changes", () => {
 describe("plan 20: sends across a network change are never duplicated", () => {
   it("a change while the server is answering DATA: delivered once, the op succeeded", async () => {
     let t!: Awaited<ReturnType<typeof setup>>;
-    t = await setup({ smtp: { holdMs: 800, afterData: () => t.backend.networkChanged(true, "network") } });
+    t = await setup({ smtp: { holdMs: 200, afterData: () => t.backend.networkChanged(true, "network") } });
     const { opId } = await t.client.call("compose.send", { accountId: t.account.id, to: [{ name: "", email: "ana@example.com" }], subject: "once", bodyText: "y" });
     await expect.poll(() => t.db().get<{ state: string }>("SELECT state FROM ops WHERE id = ?", opId)!.state, { timeout: 8000 }).toBe("succeeded");
-    await new Promise((r) => setTimeout(r, 500));
     expect(t.smtp.received.filter((m) => m.includes("Subject: once"))).toHaveLength(1);
   });
 
@@ -344,8 +345,9 @@ describe("plan 20: sends across a network change are never duplicated", () => {
     const opState = () => t.db().get<{ state: string }>("SELECT state FROM ops WHERE id = ?", opId)!.state;
     await expect.poll(opState, { timeout: 8000 }).toBe("unknown");
     t.backend.networkChanged(true, "network");
-    await new Promise((r) => setTimeout(r, 1500));
-    await t.backend.runWorker();
+    // past the change's settling time (100 ms here); the worker's own pass then shows nothing was put back in the queue
+    await new Promise((r) => setTimeout(r, 150));
+    expect(await t.backend.runWorker()).toBe(0);
     expect(opState()).toBe("unknown");
     expect(t.smtp.received.filter((m) => m.includes("Subject: maybe"))).toHaveLength(1);
   });
@@ -367,7 +369,7 @@ describe("plan 20: the IMAP provider's own connections", () => {
   const fixtures = new Map<number, Awaited<ReturnType<typeof startImap>>>();
   const probes = new WeakMap<ReturnType<typeof createImapProvider>, () => Promise<void>>();
 
-  async function provider(port: number, o: { secretDelayMs?: number; timeouts?: Partial<ImapTimeouts> } = {}) {
+  async function provider(port: number, o: { secret?: () => Promise<void>; timeouts?: Partial<ImapTimeouts> } = {}) {
     const fixture = fixtures.get(port);
     const dir = mkdtempSync(join(tmpdir(), "terno-net-session-"));
     const backend = new Backend({ dbPath: join(dir, "t.db"), version: "t", cipher: plaintextCipher,
@@ -381,7 +383,7 @@ describe("plan 20: the IMAP provider's own connections", () => {
     const config = { imap: { host: "127.0.0.1", port: fixture?.port ?? port, secure: false, user: "testuser" },
       smtp: { host: "127.0.0.1", port: smtp?.port ?? 1, secure: false, user: "t" } };
     const account = fixture
-      ? await client.call("accounts.addImap", { email: "luis@test.local", displayName: "Test", ...config, password: "testpass" })
+      ? await client.call("accounts.addImap", { email: "luis@test.local", displayName: "Test", ...config, password: "testpass", verify: false })
       : createAccount(sqlDb(backend.store), { kind: "imap", email: "luis@test.local", displayName: "Test", color: "blue", providerConfig: config });
     let messageId = 0;
     if (fixture) {
@@ -396,7 +398,7 @@ describe("plan 20: the IMAP provider's own connections", () => {
       account,
       config: { imap: { host: "127.0.0.1", port, secure: false, user: "testuser" }, smtp: { host: "127.0.0.1", port: 1, secure: false, user: "t" }, senderName: "", appendToSent: false },
       getSecret: async () => {
-        if (o.secretDelayMs) await new Promise((r) => setTimeout(r, o.secretDelayMs));
+        await o.secret?.();
         return "testpass";
       },
       store,
@@ -426,12 +428,13 @@ describe("plan 20: the IMAP provider's own connections", () => {
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
     cleanups.push(() => new Promise<void>((r) => server.close(() => r())));
     const p = await provider((server.address() as { port: number }).port, { timeouts: { reconnectMs: 50, reconnectMaxMs: 400 } });
+    const started = Date.now();
     const stop = p.watch!(() => {});
-    await new Promise((r) => setTimeout(r, 4000));
+    // the sixth comes after 50, 100, 200, 400, 400 ms (±20 %), never sooner; the old double scheduling made thousands
+    await expect.poll(() => attempts, { timeout: 8000, interval: 10 }).toBeGreaterThanOrEqual(6);
+    const took = Date.now() - started;
     stop();
-    // 50, 100, 200, 400, 400 … ms (±20 %): about 12 in 4 s; the old double scheduling made thousands
-    expect(attempts).toBeGreaterThan(5);
-    expect(attempts).toBeLessThan(20);
+    expect(took).toBeGreaterThanOrEqual(0.8 * 1150);
   });
 
   it("plan 25: a refused password isn't knocked with every minute: one login, none more; a network change tries once", async () => {
@@ -444,12 +447,12 @@ describe("plan 20: the IMAP provider's own connections", () => {
     const stop = p.watch!(() => {});
     cleanups.push(() => stop());
     await expect.poll(() => proxy.accepted).toBe(1);
-    // with the old loop: 50, 100, 200, 200 … ms, a dozen logins in this window
-    await new Promise((r) => setTimeout(r, 1500));
+    // with the old loop: 50, 100, 200, 200 … ms, four more logins in this window
+    await new Promise((r) => setTimeout(r, 600));
     expect(proxy.accepted).toBe(1);
     p.reset?.();
     await expect.poll(() => proxy.accepted).toBe(2);
-    await new Promise((r) => setTimeout(r, 800));
+    await new Promise((r) => setTimeout(r, 400));
     expect(proxy.accepted).toBe(2);
     // and a sync says it's a sign-in to redo
     await expect(p.sync({ signal: new AbortController().signal } as never)).rejects.toBeInstanceOf((await import("@terno/mail")).ProviderAuthError);
@@ -489,11 +492,14 @@ describe("plan 20: the IMAP provider's own connections", () => {
 
   it("a reset while the password is being read never connects on the old network (the call still succeeds)", async () => {
     const proxy = await behindProxy();
-    const p = await provider(proxy.port, { secretDelayMs: 300 });
+    let reading!: () => void, answer!: () => void;
+    const read = new Promise<void>((r) => { reading = r; }), answered = new Promise<void>((r) => { answer = r; });
+    const p = await provider(proxy.port, { secret: async () => { reading(); await answered; } });
     cleanups.push(() => p.close());
     const run = markRead(p);
-    await new Promise((r) => setTimeout(r, 100));
+    await read;
     p.reset!();
+    answer();
     await run;
     // the first attempt gave up before connecting; the retry made the only connection
     expect(proxy.accepted).toBe(1);
@@ -523,14 +529,13 @@ describe("plan 20: the IMAP provider's own connections", () => {
     const stop = p.watch!(() => void changes++);
     cleanups.push(stop);
     await expect.poll(() => proxy.accepted).toBe(1);
-    await new Promise((r) => setTimeout(r, 200));
     await proxy.pass();
     const started = Date.now();
     p.reset!();
     // the stuck attempt's socket is gone and a new session listens
     await expect.poll(() => proxy.accepted, { timeout: 2000 }).toBe(2);
     await expect.poll(() => proxy.open, { timeout: 2000 }).toBe(1);
-    await new Promise((r) => setTimeout(r, 300));
+    await expect.poll(imap.idles, { timeout: 2000 }).toBeGreaterThan(0);
     imap.server.control.addMessage("INBOX", { raw: raw("pushed after a reset mid-connect") });
     await expect.poll(() => changes, { timeout: 2000 }).toBeGreaterThan(0);
     expect(Date.now() - started).toBeLessThan(3000);
