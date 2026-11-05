@@ -120,7 +120,13 @@ function stage(o: { tamper: boolean; minimum?: string }) {
   // that app is gone; stopped after the copy below, it had already put 0.1.1 where the fresh 0.1.0 went
   cleanSquirrel();
   // and the copy it relaunched, which would hold this profile's single-instance lock: exactly this run's bundle
-  for (const pid of pidsOfBundle()) process.kill(pid, "SIGKILL");
+  for (const pid of pidsOfBundle()) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      /* gone */
+    }
+  }
   for (const until = Date.now() + 5_000; pidsOfBundle().length && Date.now() < until; ) spawnSync("sleep", ["0.05"]);
   rmSync(root(), { recursive: true, force: true });
   rmSync(join(work, "Applications"), { recursive: true, force: true });
@@ -217,6 +223,9 @@ test.afterEach(async () => {
 });
 
 test.afterAll(async () => {
+  server?.close();
+  // ShipIt first: it may still be about to relaunch the bundle
+  if (identity) cleanSquirrel();
   // the relaunched app is ours (this test updated it): stop exactly that one
   for (const pid of work ? pidsOfBundle() : []) {
     try {
@@ -225,8 +234,6 @@ test.afterAll(async () => {
       /* gone */
     }
   }
-  server?.close();
-  if (identity) cleanSquirrel();
   // the killed app may still be closing files in its profile here
   if (work && !process.env.TERNO_KEEP_UPDATE_E2E) rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });

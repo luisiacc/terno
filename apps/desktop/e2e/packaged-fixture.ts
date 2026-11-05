@@ -66,7 +66,7 @@ export async function closePackaged(app: ElectronApplication | undefined): Promi
 export async function cleanupOwned(steps: (() => Promise<unknown> | void)[]): Promise<void> {
   const failures: unknown[] = [];
   for (const step of steps) {
-    try { await within(Promise.resolve().then(step), 10_000, "Fixture cleanup"); } catch (error) { failures.push(error); }
+    try { await within(Promise.resolve().then(step), QUIT_MS + 15_000, "Fixture cleanup"); } catch (error) { failures.push(error); }
   }
   if (failures.length) throw new AggregateError(failures, "Packaged fixture cleanup failed");
 }
