@@ -8,11 +8,10 @@
  * dark; screenshots for the record.
  */
 import { mkdirSync } from "node:fs";
-import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { Address } from "@terno/core";
 import { msg } from "@terno/store/conformance";
-import { chipsOf, expect, focusList, openRow, recipientEmails, test, type CapturedMail } from "./fixtures";
+import { axeBothModes, chipsOf, expect, focusList, openRow, recipientEmails, test, type CapturedMail, scenario, freshNoDrafts } from "./fixtures";
 import type { DevServer } from "../../backend-dev/src/server";
 
 const SHOTS = "/tmp/terno-scratch/autocomplete-18";
@@ -58,90 +57,128 @@ async function typeBody(page: Page, text: string) {
   await page.keyboard.type(text);
 }
 
-const wcag = (page: Page) => new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).disableRules(["scrollable-region-focusable"]).exclude("iframe");
-async function axeClean(page: Page) {
-  await expect.poll(() => page.evaluate(() => document.getAnimations().filter((a) => a.playState === "running").length)).toBe(0);
-  const r = await wcag(page).analyze();
-  expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
-}
-
 test.describe("recipients", () => {
-  test("a name prefix suggests people, written-to first; ↓ ↑ and Enter accept; the list closes", async ({ app: page, server }) => {
-    await seed(server);
-    await newMessage(page);
-    const to = page.getByTestId("compose-to");
-    await page.keyboard.type("zu");
-    await expect(list(page)).toBeVisible();
-    // Zuleika (written to) above Zuleima (only wrote)
-    await expect(options(page).first()).toContainText("Zuleika Ñúñez");
-    await expect(options(page).filter({ hasText: "Zuleima Ríos" })).toHaveCount(1);
-    await expect(to).toHaveAttribute("aria-expanded", "true");
-    await expect(options(page).first()).toHaveAttribute("aria-selected", "true");
-    const second = options(page).nth(1);
-    await page.keyboard.press("ArrowDown");
-    await expect(second).toHaveAttribute("aria-selected", "true");
-    await expect(to).toHaveAttribute("aria-activedescendant", (await second.getAttribute("id"))!);
-    await page.keyboard.press("ArrowUp");
-    await expect(options(page).first()).toHaveAttribute("aria-selected", "true");
-    await page.keyboard.press("Enter");
-    // a chip (plan 34), the input empty for the next one
-    await expect(chipsOf(page, "compose-to")).toHaveText(["Zuleika Ñúñez"]);
-    await expect(chipsOf(page, "compose-to")).toHaveAttribute("data-email", "zuleika.nunez@acme.studio");
-    await expect(to).toHaveValue("");
-    await expect(list(page)).toBeHidden();
-    // still in the field, ready for the next one; Enter didn't send
-    await expect(to).toBeFocused();
-    await expect(page.getByTestId("compose-to")).toBeVisible();
-  });
-
-  test("accents optional, initials, an address part; Tab and comma accept; already added and own addresses are left out", async ({ app: page, server }) => {
-    const me = await seed(server);
-    await newMessage(page);
-    const to = page.getByTestId("compose-to");
-    await page.keyboard.type("zuleika nun");
-    await expect(options(page).first()).toContainText("Zuleika Ñúñez");
-    // the matched parts are set apart
-    await expect(options(page).first().locator("[data-match]").nth(1)).toHaveText("Ñúñ");
-    await page.keyboard.press("Tab");
-    await expect(chipsOf(page, "compose-to")).toHaveText(["Zuleika Ñúñez"]);
-    await expect(to).toBeFocused();
-    await page.keyboard.type("arjun p");
-    await expect(options(page).first()).toContainText("Arjun Patel");
-    await page.keyboard.press(",");
-    expect(await recipientEmails(page, "compose-to")).toEqual(["zuleika.nunez@acme.studio", "arjun.patel@zentrix.dev"]);
-    await expect(to).toHaveValue("");
-    // Zuleika is in the field already: not again
-    await page.keyboard.type("zul");
-    await expect(options(page).first()).toContainText("Zuleima Ríos");
-    await expect(options(page).filter({ hasText: "zuleika.nunez@acme.studio" })).toHaveCount(0);
-    await page.keyboard.press("Escape");
-    await expect(list(page)).toBeHidden();
-    // a complete address and a comma: that address, not a suggestion
-    await to.fill("someone@new.io");
-    await page.keyboard.type(",");
-    expect(await recipientEmails(page, "compose-to")).toEqual(["zuleika.nunez@acme.studio", "arjun.patel@zentrix.dev", "someone@new.io"]);
-    await expect(to).toHaveValue("");
-    // my own address isn't suggested from a prefix
-    await to.fill(me.email.slice(0, 4));
-    await page.waitForTimeout(150);
-    await expect(options(page).filter({ hasText: me.email })).toHaveCount(0);
-  });
-
-  test("the mouse: hover highlights, a click accepts and keeps focus in the field", async ({ app: page, server }) => {
-    await seed(server);
-    await newMessage(page);
-    await page.keyboard.type("quintanilla");
-    // nobody by that name: no list; then Arjun by his company's domain
-    await page.waitForTimeout(150);
-    await expect(list(page)).toBeHidden();
-    await page.getByTestId("compose-to").fill("");
-    await page.keyboard.type("zentrix");
-    await expect(options(page)).toHaveCount(1);
-    await options(page).first().hover();
-    await expect(options(page).first()).toHaveAttribute("aria-selected", "true");
-    await options(page).first().click();
-    expect(await recipientEmails(page, "compose-to")).toEqual(["arjun.patel@zentrix.dev"]);
-    await expect(page.getByTestId("compose-to")).toBeFocused();
+  test("recipients: suggestions by keyboard and mouse, a paste, undo, Esc", async ({ app: page, server }) => {
+    await scenario("a name prefix suggests people, written-to first; ↓ ↑ and Enter accept; the list closes", async () => {
+      await seed(server);
+      await newMessage(page);
+      const to = page.getByTestId("compose-to");
+      await page.keyboard.type("zu");
+      await expect(list(page)).toBeVisible();
+      // Zuleika (written to) above Zuleima (only wrote)
+      await expect(options(page).first()).toContainText("Zuleika Ñúñez");
+      await expect(options(page).filter({ hasText: "Zuleima Ríos" })).toHaveCount(1);
+      await expect(to).toHaveAttribute("aria-expanded", "true");
+      await expect(options(page).first()).toHaveAttribute("aria-selected", "true");
+      const second = options(page).nth(1);
+      await page.keyboard.press("ArrowDown");
+      await expect(second).toHaveAttribute("aria-selected", "true");
+      await expect(to).toHaveAttribute("aria-activedescendant", (await second.getAttribute("id"))!);
+      await page.keyboard.press("ArrowUp");
+      await expect(options(page).first()).toHaveAttribute("aria-selected", "true");
+      await page.keyboard.press("Enter");
+      // a chip (plan 34), the input empty for the next one
+      await expect(chipsOf(page, "compose-to")).toHaveText(["Zuleika Ñúñez"]);
+      await expect(chipsOf(page, "compose-to")).toHaveAttribute("data-email", "zuleika.nunez@acme.studio");
+      await expect(to).toHaveValue("");
+      await expect(list(page)).toBeHidden();
+      // still in the field, ready for the next one; Enter didn't send
+      await expect(to).toBeFocused();
+      await expect(page.getByTestId("compose-to")).toBeVisible();
+    });
+    await scenario("accents optional, initials, an address part; Tab and comma accept; already added and own addresses are left out", async () => {
+      await freshNoDrafts(page, server);
+      const me = await seed(server);
+      await newMessage(page);
+      const to = page.getByTestId("compose-to");
+      await page.keyboard.type("zuleika nun");
+      await expect(options(page).first()).toContainText("Zuleika Ñúñez");
+      // the matched parts are set apart
+      await expect(options(page).first().locator("[data-match]").nth(1)).toHaveText("Ñúñ");
+      await page.keyboard.press("Tab");
+      await expect(chipsOf(page, "compose-to")).toHaveText(["Zuleika Ñúñez"]);
+      await expect(to).toBeFocused();
+      await page.keyboard.type("arjun p");
+      await expect(options(page).first()).toContainText("Arjun Patel");
+      await page.keyboard.press(",");
+      expect(await recipientEmails(page, "compose-to")).toEqual(["zuleika.nunez@acme.studio", "arjun.patel@zentrix.dev"]);
+      await expect(to).toHaveValue("");
+      // Zuleika is in the field already: not again
+      await page.keyboard.type("zul");
+      await expect(options(page).first()).toContainText("Zuleima Ríos");
+      await expect(options(page).filter({ hasText: "zuleika.nunez@acme.studio" })).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(list(page)).toBeHidden();
+      // a complete address and a comma: that address, not a suggestion
+      await to.fill("someone@new.io");
+      await page.keyboard.type(",");
+      expect(await recipientEmails(page, "compose-to")).toEqual(["zuleika.nunez@acme.studio", "arjun.patel@zentrix.dev", "someone@new.io"]);
+      await expect(to).toHaveValue("");
+      // my own address isn't suggested from a prefix
+      await to.fill(me.email.slice(0, 4));
+      await page.waitForTimeout(150);
+      await expect(options(page).filter({ hasText: me.email })).toHaveCount(0);
+    });
+    await scenario("the mouse: hover highlights, a click accepts and keeps focus in the field", async () => {
+      await freshNoDrafts(page, server);
+      await seed(server);
+      await newMessage(page);
+      await page.keyboard.type("quintanilla");
+      // nobody by that name: no list; then Arjun by his company's domain
+      await page.waitForTimeout(150);
+      await expect(list(page)).toBeHidden();
+      await page.getByTestId("compose-to").fill("");
+      await page.keyboard.type("zentrix");
+      await expect(options(page)).toHaveCount(1);
+      await options(page).first().hover();
+      await expect(options(page).first()).toHaveAttribute("aria-selected", "true");
+      await options(page).first().click();
+      expect(await recipientEmails(page, "compose-to")).toEqual(["arjun.patel@zentrix.dev"]);
+      await expect(page.getByTestId("compose-to")).toBeFocused();
+    });
+    await scenario("a pasted list is parsed into recipients", async () => {
+      await freshNoDrafts(page, server);
+      await seed(server);
+      await newMessage(page);
+      await page.evaluate(() => {
+        const el = document.querySelector<HTMLInputElement>("[data-testid=compose-to]")!;
+        const data = new DataTransfer();
+        data.setData("text/plain", "ana@x.io; Bob Stone <bob@stone.io>\nmailto:carla@ruiz.mx");
+        el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+      });
+      expect(await recipientEmails(page, "compose-to")).toEqual(["ana@x.io", "bob@stone.io", "carla@ruiz.mx"]);
+      await expect(page.getByTestId("compose-to")).toHaveValue("");
+    });
+    await scenario("undo takes the suggestions for what it took back with it: Enter then adds nobody (Codex code review 6, plan 34)", async () => {
+      await freshNoDrafts(page, server);
+      await seed(server);
+      await newMessage(page);
+      await page.keyboard.type("zul");
+      await expect(options(page).first()).toBeVisible();
+      await page.keyboard.press("ControlOrMeta+z");
+      await expect(page.getByTestId("compose-to")).toHaveValue("");
+      await expect(list(page)).toHaveCount(0);
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(200);
+      await expect(chipsOf(page, "compose-to")).toHaveCount(0);
+    });
+    await scenario("in a reply, Esc closes the list first and the draft only on the next Esc", async () => {
+      await freshNoDrafts(page, server);
+      await seed(server);
+      await openRow(page, 0);
+      await focusList(page);
+      await page.keyboard.press("r");
+      await expect(body(page)).toBeFocused();
+      await page.getByTestId("compose-show-cc").click();
+      await expect(page.getByTestId("compose-cc")).toBeFocused();
+      await page.keyboard.type("arjun");
+      await expect(list(page)).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(list(page)).toBeHidden();
+      await expect(page.getByTestId("composer")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("draft-collapsed")).toBeVisible();
+    });
   });
 
   test("a suggestion for what was typed before can't be accepted for what is typed now (codex review)", async ({ app: page, server }) => {
@@ -169,172 +206,117 @@ test.describe("recipients", () => {
     }
   });
 
-  test("a pasted list is parsed into recipients", async ({ app: page, server }) => {
-    await seed(server);
-    await newMessage(page);
-    await page.evaluate(() => {
-      const el = document.querySelector<HTMLInputElement>("[data-testid=compose-to]")!;
-      const data = new DataTransfer();
-      data.setData("text/plain", "ana@x.io; Bob Stone <bob@stone.io>\nmailto:carla@ruiz.mx");
-      el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
-    });
-    expect(await recipientEmails(page, "compose-to")).toEqual(["ana@x.io", "bob@stone.io", "carla@ruiz.mx"]);
-    await expect(page.getByTestId("compose-to")).toHaveValue("");
-  });
-
-  test("undo takes the suggestions for what it took back with it: Enter then adds nobody (Codex code review 6, plan 34)", async ({ app: page, server }) => {
-    await seed(server);
-    await newMessage(page);
-    await page.keyboard.type("zul");
-    await expect(options(page).first()).toBeVisible();
-    await page.keyboard.press("ControlOrMeta+z");
-    await expect(page.getByTestId("compose-to")).toHaveValue("");
-    await expect(list(page)).toHaveCount(0);
-    await page.keyboard.press("Enter");
-    await page.waitForTimeout(200);
-    await expect(chipsOf(page, "compose-to")).toHaveCount(0);
-  });
-
-  test("in a reply, Esc closes the list first and the draft only on the next Esc", async ({ app: page, server }) => {
-    await seed(server);
-    await openRow(page, 0);
-    await focusList(page);
-    await page.keyboard.press("r");
-    await expect(body(page)).toBeFocused();
-    await page.getByTestId("compose-show-cc").click();
-    await expect(page.getByTestId("compose-cc")).toBeFocused();
-    await page.keyboard.type("arjun");
-    await expect(list(page)).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(list(page)).toBeHidden();
-    await expect(page.getByTestId("composer")).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("draft-collapsed")).toBeVisible();
-  });
-
-  for (const theme of ["light", "dark"] as const) {
-    test(`axe and a screenshot with the list open (${theme})`, async ({ app: page, server, design }) => {
-      await server.backend.server.invoke("settings.update", { theme }, ctx);
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      await seed(server);
-      await newMessage(page);
-      await page.keyboard.type("zu");
-      await expect(options(page).first()).toBeVisible();
-      await axeClean(page);
-      const box = (await page.getByTestId("compose-to").boundingBox())!;
-      await page.screenshot({ path: `${SHOTS}/recipients-${design ?? "lumen"}-${theme}.png`, clip: { x: Math.max(0, box.x - 120), y: Math.max(0, box.y - 60), width: 640, height: 400 } });
-    });
-  }
 });
 
 test.describe("ghost text", () => {
-  test("a phrase the user keeps writing shows muted after the caret; Tab accepts it as one undo step", async ({ app: page, server }) => {
-    await seed(server);
-    await newMessage(page);
-    await page.keyboard.type("arjun pa");
-    await expect(options(page).first()).toContainText("Arjun Patel");
-    await page.keyboard.press("Enter");
-    await typeBody(page, "Let me know i");
-    await expect(ghost(page)).toHaveAttribute("data-ghost", "f you have any questions.");
-    // not part of the text (nothing to copy, nothing a find or a save sees)
-    await expect(body(page)).toHaveText("Let me know i");
-    // muted: the theme's muted text color, not the text's
-    const [ghostColor, muted] = await ghost(page).evaluate((el) => [getComputedStyle(el).color, getComputedStyle(document.documentElement).getPropertyValue("--muted-foreground")]);
-    expect(muted.trim()).not.toBe("");
-    expect(ghostColor).not.toBe(await body(page).evaluate((el) => getComputedStyle(el).color));
-    // it continues the line exactly: its first glyph where the typed text's last one ends, on the same baseline
-    const geometry = await page.evaluate(() => {
-      const text = document.querySelector("[data-testid=compose-body] p")!.firstChild as Text;
-      const typed = document.createRange();
-      typed.setStart(text, text.length - 1);
-      typed.setEnd(text, text.length);
-      const layer = document.querySelector<HTMLElement>("[data-testid=compose-ghost]:not([hidden])")!;
-      const shown = document.createRange();
-      shown.setStart(layer.firstChild!, 0);
-      shown.setEnd(layer.firstChild!, 1);
-      const a = typed.getBoundingClientRect();
-      const b = shown.getBoundingClientRect();
-      return { dx: b.left - a.right, dy: b.top - a.top, dh: b.height - a.height };
+  test("ghost text: Tab, typing through, Esc, a greeting, the setting", async ({ app: page, server }) => {
+    await scenario("a phrase the user keeps writing shows muted after the caret; Tab accepts it as one undo step", async () => {
+      await seed(server);
+      await newMessage(page);
+      await page.keyboard.type("arjun pa");
+      await expect(options(page).first()).toContainText("Arjun Patel");
+      await page.keyboard.press("Enter");
+      await typeBody(page, "Let me know i");
+      await expect(ghost(page)).toHaveAttribute("data-ghost", "f you have any questions.");
+      // not part of the text (nothing to copy, nothing a find or a save sees)
+      await expect(body(page)).toHaveText("Let me know i");
+      // muted: the theme's muted text color, not the text's
+      const [ghostColor, muted] = await ghost(page).evaluate((el) => [getComputedStyle(el).color, getComputedStyle(document.documentElement).getPropertyValue("--muted-foreground")]);
+      expect(muted.trim()).not.toBe("");
+      expect(ghostColor).not.toBe(await body(page).evaluate((el) => getComputedStyle(el).color));
+      // it continues the line exactly: its first glyph where the typed text's last one ends, on the same baseline
+      const geometry = await page.evaluate(() => {
+        const text = document.querySelector("[data-testid=compose-body] p")!.firstChild as Text;
+        const typed = document.createRange();
+        typed.setStart(text, text.length - 1);
+        typed.setEnd(text, text.length);
+        const layer = document.querySelector<HTMLElement>("[data-testid=compose-ghost]:not([hidden])")!;
+        const shown = document.createRange();
+        shown.setStart(layer.firstChild!, 0);
+        shown.setEnd(layer.firstChild!, 1);
+        const a = typed.getBoundingClientRect();
+        const b = shown.getBoundingClientRect();
+        return { dx: b.left - a.right, dy: b.top - a.top, dh: b.height - a.height };
+      });
+      expect(Math.abs(geometry.dx)).toBeLessThanOrEqual(1);
+      expect(Math.abs(geometry.dy)).toBeLessThanOrEqual(1);
+      expect(Math.abs(geometry.dh)).toBeLessThanOrEqual(1);
+      // announced once for screen readers
+      await expect(page.getByTestId("compose-ghost-announce")).toHaveText(/f you have any questions\./);
+      await page.keyboard.press("Tab");
+      await expect(ghost(page)).toHaveCount(0);
+      await expect(body(page)).toHaveText("Let me know if you have any questions.");
+      await expect(body(page)).toBeFocused();
+      await page.keyboard.press("ControlOrMeta+z");
+      await expect(body(page)).toHaveText("Let me know i");
+      await page.keyboard.press("ControlOrMeta+Shift+z");
+      await expect(body(page)).toHaveText("Let me know if you have any questions.");
     });
-    expect(Math.abs(geometry.dx)).toBeLessThanOrEqual(1);
-    expect(Math.abs(geometry.dy)).toBeLessThanOrEqual(1);
-    expect(Math.abs(geometry.dh)).toBeLessThanOrEqual(1);
-    // announced once for screen readers
-    await expect(page.getByTestId("compose-ghost-announce")).toHaveText(/f you have any questions\./);
-    await page.keyboard.press("Tab");
-    await expect(ghost(page)).toHaveCount(0);
-    await expect(body(page)).toHaveText("Let me know if you have any questions.");
-    await expect(body(page)).toBeFocused();
-    await page.keyboard.press("ControlOrMeta+z");
-    await expect(body(page)).toHaveText("Let me know i");
-    await page.keyboard.press("ControlOrMeta+Shift+z");
-    await expect(body(page)).toHaveText("Let me know if you have any questions.");
-  });
-
-  test("typing through consumes it, a different letter dismisses it, → takes a word", async ({ app: page, server }) => {
-    await seed(server);
-    await newMessage(page);
-    await typeBody(page, "Let me know if");
-    await expect(ghost(page)).toHaveAttribute("data-ghost", " you have any questions.");
-    await page.keyboard.type(" yo");
-    await expect(ghost(page)).toHaveAttribute("data-ghost", "u have any questions.");
-    await page.keyboard.press("ArrowRight");
-    await expect(body(page)).toHaveText("Let me know if you");
-    await expect(ghost(page)).toHaveAttribute("data-ghost", " have any questions.");
-    await page.keyboard.type("x");
-    await expect(ghost(page)).toHaveCount(0);
-    await expect(body(page)).toHaveText("Let me know if youx");
-  });
-
-  test("in a reply, Esc dismisses it and leaves the draft open; the next Esc collapses", async ({ app: page, server }) => {
-    await seed(server);
-    await openRow(page, 0);
-    await focusList(page);
-    await page.keyboard.press("r");
-    await expect(body(page)).toBeFocused();
-    await page.keyboard.type("Let me know if");
-    await expect(ghost(page)).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(ghost(page)).toHaveCount(0);
-    await expect(page.getByTestId("composer")).toBeVisible();
-    await expect(body(page)).toHaveText("Let me know if");
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("draft-collapsed")).toBeVisible();
-  });
-
-  test("a greeting learns the recipient's name and fills in this draft's", async ({ app: page, server }) => {
-    await seed(server);
-    await newMessage(page);
-    await page.keyboard.type(`${beatriz.name} <${beatriz.email}>`);
-    await typeBody(page, "Hi ");
-    await expect(ghost(page)).toHaveAttribute("data-ghost", "Beatriz,");
-    await page.keyboard.press("Tab");
-    await expect(body(page)).toHaveText("Hi Beatriz,");
-  });
-
-  test("the setting turns it off (and back on)", async ({ app: page, server }) => {
-    await seed(server);
-    await server.backend.server.invoke("settings.update", { composeSuggestions: false }, ctx);
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await newMessage(page);
-    await typeBody(page, "Let me know if");
-    await page.waitForTimeout(400);
-    await expect(ghost(page)).toHaveCount(0);
-    // on from Settings → General
-    await focusList(page);
-    await page.getByTestId("open-settings").click();
-    const toggle = page.getByTestId("suggestions-switch");
-    await expect(toggle).not.toBeChecked();
-    await toggle.click();
-    await expect(toggle).toBeChecked();
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
-    await body(page).click();
-    await page.keyboard.press("End");
-    await page.keyboard.type(" ");
-    await expect(ghost(page)).toHaveAttribute("data-ghost", "you have any questions.");
+    await scenario("typing through consumes it, a different letter dismisses it, → takes a word", async () => {
+      await freshNoDrafts(page, server);
+      await seed(server);
+      await newMessage(page);
+      await typeBody(page, "Let me know if");
+      await expect(ghost(page)).toHaveAttribute("data-ghost", " you have any questions.");
+      await page.keyboard.type(" yo");
+      await expect(ghost(page)).toHaveAttribute("data-ghost", "u have any questions.");
+      await page.keyboard.press("ArrowRight");
+      await expect(body(page)).toHaveText("Let me know if you");
+      await expect(ghost(page)).toHaveAttribute("data-ghost", " have any questions.");
+      await page.keyboard.type("x");
+      await expect(ghost(page)).toHaveCount(0);
+      await expect(body(page)).toHaveText("Let me know if youx");
+    });
+    await scenario("in a reply, Esc dismisses it and leaves the draft open; the next Esc collapses", async () => {
+      await freshNoDrafts(page, server);
+      await seed(server);
+      await openRow(page, 0);
+      await focusList(page);
+      await page.keyboard.press("r");
+      await expect(body(page)).toBeFocused();
+      await page.keyboard.type("Let me know if");
+      await expect(ghost(page)).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(ghost(page)).toHaveCount(0);
+      await expect(page.getByTestId("composer")).toBeVisible();
+      await expect(body(page)).toHaveText("Let me know if");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("draft-collapsed")).toBeVisible();
+    });
+    await scenario("a greeting learns the recipient's name and fills in this draft's", async () => {
+      await freshNoDrafts(page, server);
+      await seed(server);
+      await newMessage(page);
+      await page.keyboard.type(`${beatriz.name} <${beatriz.email}>`);
+      await typeBody(page, "Hi ");
+      await expect(ghost(page)).toHaveAttribute("data-ghost", "Beatriz,");
+      await page.keyboard.press("Tab");
+      await expect(body(page)).toHaveText("Hi Beatriz,");
+    });
+    await scenario("the setting turns it off (and back on)", async () => {
+      await freshNoDrafts(page, server);
+      await seed(server);
+      await server.backend.server.invoke("settings.update", { composeSuggestions: false }, ctx);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await newMessage(page);
+      await typeBody(page, "Let me know if");
+      await page.waitForTimeout(400);
+      await expect(ghost(page)).toHaveCount(0);
+      // on from Settings → General
+      await focusList(page);
+      await page.getByTestId("open-settings").click();
+      const toggle = page.getByTestId("suggestions-switch");
+      await expect(toggle).not.toBeChecked();
+      await toggle.click();
+      await expect(toggle).toBeChecked();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
+      await body(page).click();
+      await page.keyboard.press("End");
+      await page.keyboard.type(" ");
+      await expect(ghost(page)).toHaveAttribute("data-ghost", "you have any questions.");
+    });
   });
 
   for (const blockedUp of [false, true]) test(`near the end of a line only the words that fit show, never wrapping over the text below (codex review)${blockedUp ? " with native Up blocked" : ""}`, async ({ app: page, server }) => {
@@ -410,20 +392,14 @@ test.describe("ghost text", () => {
     await expect(body(page)).toHaveText("Let me know if");
   });
 
-  for (const theme of ["light", "dark"] as const) {
-    test(`axe and a screenshot with a ghost shown (${theme})`, async ({ app: page, server, design }) => {
-      await server.backend.server.invoke("settings.update", { theme }, ctx);
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      await seed(server);
-      await openRow(page, 0);
-      await focusList(page);
-      await page.keyboard.press("r");
-      await expect(body(page)).toBeFocused();
-      await page.keyboard.type("Thanks for the update. Let me know i");
-      await expect(ghost(page)).toBeVisible();
-      await axeClean(page);
-      await page.getByTestId("composer").screenshot({ path: `${SHOTS}/ghost-${design ?? "lumen"}-${theme}.png` });
-    });
-  }
+  test("axe with a ghost shown, light and dark", async ({ app: page, server }) => {
+    await seed(server);
+    await openRow(page, 0);
+    await focusList(page);
+    await page.keyboard.press("r");
+    await expect(body(page)).toBeFocused();
+    await page.keyboard.type("Thanks for the update. Let me know i");
+    await expect(ghost(page)).toBeVisible();
+    await axeBothModes(page, "[data-testid=composer]");
+  });
 });

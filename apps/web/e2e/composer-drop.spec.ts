@@ -1,6 +1,6 @@
 import { parseRaw } from "@terno/mail";
 import type { JSHandle, Locator, Page } from "@playwright/test";
-import { axeBothModes, expect, focusList, openRow, stabilize, test } from "./fixtures";
+import { axeBothModes, expect, focusList, openRow, stabilize, test, scenario, freshNoDrafts } from "./fixtures";
 import { dragAfter } from "./helpers/composer-drop";
 
 /**
@@ -97,134 +97,205 @@ test("an image dropped on the text goes where the pointer is; undo takes it out;
   expect(sent.text).toContain("Hello[image: chart.png] world");
 });
 
-test("plan 130: a new message takes a drop anywhere in the pane; the layer rings its card; the text still places an image", async ({ app: page }) => {
-  await focusList(page);
-  await page.keyboard.press("c");
-  await page.getByTestId("compose-to").fill("ana@example.com");
-  const form = page.getByTestId("composer"), card = page.getByTestId("composer-card");
-  const pdf = await transfer(page, [{ name: "notes.pdf", type: "application/pdf" }]);
-  // the empty pane under the card
-  const c = (await card.boundingBox())!, f = (await form.boundingBox())!;
-  const blank = { x: f.x + f.width / 2, y: f.y + f.height - 12 };
-  expect(blank.y).toBeGreaterThan(c.y + c.height);
-  // the form really is what's under that point: a drop there reaches it
-  expect(await form.evaluate((el, p) => el.contains(document.elementFromPoint(p.x, p.y)), blank)).toBe(true);
-  await drag(form, pdf, blank, "dragenter", "dragover");
-  await expect(page.getByTestId("compose-drop")).toHaveAttribute("data-state", "attach");
-  const layer = (await page.getByTestId("compose-drop").boundingBox())!;
-  expect(layer).toEqual(c);
-  await drag(form, pdf, blank, "drop");
-  await expect(page.getByTestId("compose-drop")).toHaveCount(0);
-  await expect(page.getByTestId("draft-attachment").filter({ hasText: "notes.pdf" })).toBeVisible();
-  // the fields attach too
-  const to = page.getByTestId("compose-to");
-  const again = await transfer(page, [{ name: "more.pdf", type: "application/pdf" }]);
-  await drag(to, again, await centre(to), "dragenter", "dragover", "drop");
-  await expect(page.getByTestId("draft-attachment").filter({ hasText: "more.pdf" })).toBeVisible();
-  // an image on the text goes in the text, even with the text scrolled
-  const body = page.getByTestId("compose-body");
-  await body.click();
-  for (let i = 0; i < 40; i++) { await page.keyboard.type(`línea ${i}`); await page.keyboard.press("Enter"); }
-  await page.keyboard.type("el final");
-  const image = await transfer(page, [{ name: "chart.png", type: "image/png", width: 120, height: 60 }]);
-  const point = await after(page, "el final");
-  await drag(body, image, point, "dragenter", "dragover");
-  await expect(page.getByTestId("compose-drop")).toHaveAttribute("data-state", "text");
-  await drag(body, image, point, "drop");
-  await expect(body.locator('img[alt="chart.png"]')).toBeVisible();
-  await expect(page.getByTestId("compose-drop")).toHaveCount(0);
+test("drops into a new message and past the text", async ({ app: page, server }) => {
+  await scenario("plan 130: a new message takes a drop anywhere in the pane; the layer rings its card; the text still places an image", async () => {
+    await focusList(page);
+    await page.keyboard.press("c");
+    await page.getByTestId("compose-to").fill("ana@example.com");
+    const form = page.getByTestId("composer"), card = page.getByTestId("composer-card");
+    const pdf = await transfer(page, [{ name: "notes.pdf", type: "application/pdf" }]);
+    // the empty pane under the card
+    const c = (await card.boundingBox())!, f = (await form.boundingBox())!;
+    const blank = { x: f.x + f.width / 2, y: f.y + f.height - 12 };
+    expect(blank.y).toBeGreaterThan(c.y + c.height);
+    // the form really is what's under that point: a drop there reaches it
+    expect(await form.evaluate((el, p) => el.contains(document.elementFromPoint(p.x, p.y)), blank)).toBe(true);
+    await drag(form, pdf, blank, "dragenter", "dragover");
+    await expect(page.getByTestId("compose-drop")).toHaveAttribute("data-state", "attach");
+    const layer = (await page.getByTestId("compose-drop").boundingBox())!;
+    expect(layer).toEqual(c);
+    await drag(form, pdf, blank, "drop");
+    await expect(page.getByTestId("compose-drop")).toHaveCount(0);
+    await expect(page.getByTestId("draft-attachment").filter({ hasText: "notes.pdf" })).toBeVisible();
+    // the fields attach too
+    const to = page.getByTestId("compose-to");
+    const again = await transfer(page, [{ name: "more.pdf", type: "application/pdf" }]);
+    await drag(to, again, await centre(to), "dragenter", "dragover", "drop");
+    await expect(page.getByTestId("draft-attachment").filter({ hasText: "more.pdf" })).toBeVisible();
+    // an image on the text goes in the text, even with the text scrolled
+    const body = page.getByTestId("compose-body");
+    await body.click();
+    for (let i = 0; i < 40; i++) { await page.keyboard.type(`línea ${i}`); await page.keyboard.press("Enter"); }
+    await page.keyboard.type("el final");
+    const image = await transfer(page, [{ name: "chart.png", type: "image/png", width: 120, height: 60 }]);
+    const point = await after(page, "el final");
+    await drag(body, image, point, "dragenter", "dragover");
+    await expect(page.getByTestId("compose-drop")).toHaveAttribute("data-state", "text");
+    await drag(body, image, point, "drop");
+    await expect(body.locator('img[alt="chart.png"]')).toBeVisible();
+    await expect(page.getByTestId("compose-drop")).toHaveCount(0);
+  });
+  await scenario("a file dropped off the text, or one that isn't an image, attaches as a chip", async () => {
+    await freshNoDrafts(page, server);
+    await openRow(page, 0);
+    await page.getByTestId("quick-reply").click();
+    const dt = await transfer(page, [{ name: "notes.pdf", type: "application/pdf" }]);
+    // over the recipients: attach
+    const to = page.getByTestId("compose-to");
+    await drag(to, dt, await centre(to), "dragenter", "dragover");
+    await expect(page.getByTestId("compose-drop")).toHaveAttribute("data-state", "attach");
+    await expect(page.getByTestId("compose-drop-label")).toHaveText("Drop to attach");
+    await expect(page.getByTestId("compose-drop-caret")).toBeHidden();
+    await stabilize(page);
+    // leaving clears it at once
+    await drag(to, dt, await centre(to), "dragleave");
+    await expect(page.getByTestId("compose-drop")).toHaveCount(0);
+    // a PDF over the text: still a chip, no caret
+    const body = page.getByTestId("compose-body");
+    await drag(body, dt, await centre(body), "dragenter", "dragover");
+    await expect(page.getByTestId("compose-drop-label")).toHaveText("Drop to attach");
+    await expect(page.getByTestId("compose-drop-caret")).toBeHidden();
+    await drag(body, dt, await centre(body), "drop");
+    await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
+    await expect(page.getByTestId("draft-attachment")).toContainText("notes.pdf");
+    // an image dropped on the recipients attaches too (the label says how to place it instead)
+    const img = await transfer(page, [{ name: "photo.png", type: "image/png" }]);
+    await drag(to, img, await centre(to), "dragenter", "dragover");
+    await expect(page.getByTestId("compose-drop")).toContainText("Drop on the text to place images in it");
+    await drag(to, img, await centre(to), "drop");
+    await expect(page.getByTestId("draft-attachment")).toHaveCount(2);
+    await expect(body.locator("img.rt-image")).toHaveCount(0);
+  });
+  await scenario("images and other files dropped together: images in the text, the rest as chips; several drops in a row all land", async () => {
+    await freshNoDrafts(page, server);
+    await openRow(page, 0);
+    await page.getByTestId("quick-reply").click();
+    const body = page.getByTestId("compose-body");
+    await body.click();
+    await page.keyboard.type("One two");
+    const mixed = await transfer(page, [{ name: "a.png", type: "image/png" }, { name: "b.zip", type: "application/zip" }, { name: "c.jpg", type: "image/jpeg" }]);
+    const second = await transfer(page, [{ name: "d.gif", type: "image/gif" }]);
+    const store = server.backend.store;
+    const seal = store.attachments.seal;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered!: () => void;
+    const staging = new Promise<void>(resolve => { entered = resolve; });
+    store.attachments.seal = async (...args) => { entered(); await gate; return seal(...args); };
+    try {
+      await dragAfter(body, mixed, "One", ["dragenter", "dragover"]);
+      await expect(page.getByTestId("compose-drop-label")).toHaveText("Drop to place the images here and attach the rest");
+      await dragAfter(body, mixed, "One", ["drop"]);
+      await staging;
+      await expect(page.getByTestId("compose-image-adding")).toHaveCount(2);
+      await dragAfter(body, second, "two", ["dragenter", "dragover", "drop"]);
+      await expect(page.getByTestId("compose-image-adding")).toHaveCount(3);
+    } finally { release(); store.attachments.seal = seal; }
+    await expect(body.locator("img.rt-image:not([data-state])")).toHaveCount(3);
+    await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
+    await expect(page.getByTestId("draft-attachment")).toContainText("b.zip");
+    expect(await body.evaluate((el) => [...el.querySelectorAll("img.rt-image")].map((i) => (i as HTMLImageElement).alt))).toEqual(["a.png", "c.jpg", "d.gif"]);
+  });
+  await scenario("a file dropped outside the composer never leaves the app; dragging anywhere shows the composer takes files", async () => {
+    await freshNoDrafts(page, server);
+    await openRow(page, 0);
+    await page.getByTestId("quick-reply").click();
+    const url = page.url();
+    const dt = await transfer(page, [{ name: "notes.pdf", type: "application/pdf" }]);
+    const list = page.getByTestId("thread-row").first();
+    await drag(list, dt, await centre(list), "dragenter", "dragover");
+    await expect(page.getByTestId("compose-drop")).toHaveAttribute("data-state", "available");
+    await expect(page.getByTestId("compose-drop-label")).toHaveText("Drop files here to attach");
+    const prevented = await list.evaluate((el, dt) => { const e = new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }); el.dispatchEvent(e); return e.defaultPrevented; }, dt);
+    expect(prevented).toBe(true);
+    await expect(page.getByTestId("compose-drop")).toHaveCount(0);
+    expect(page.url()).toBe(url);
+    await expect(page.getByTestId("draft-attachment")).toHaveCount(0);
+  });
 });
 
-test("a file dropped off the text, or one that isn't an image, attaches as a chip", async ({ app: page }) => {
-  await openRow(page, 0);
-  await page.getByTestId("quick-reply").click();
-  const dt = await transfer(page, [{ name: "notes.pdf", type: "application/pdf" }]);
-  // over the recipients: attach
-  const to = page.getByTestId("compose-to");
-  await drag(to, dt, await centre(to), "dragenter", "dragover");
-  await expect(page.getByTestId("compose-drop")).toHaveAttribute("data-state", "attach");
-  await expect(page.getByTestId("compose-drop-label")).toHaveText("Drop to attach");
-  await expect(page.getByTestId("compose-drop-caret")).toBeHidden();
-  await stabilize(page);
-  // leaving clears it at once
-  await drag(to, dt, await centre(to), "dragleave");
-  await expect(page.getByTestId("compose-drop")).toHaveCount(0);
-  // a PDF over the text: still a chip, no caret
-  const body = page.getByTestId("compose-body");
-  await drag(body, dt, await centre(body), "dragenter", "dragover");
-  await expect(page.getByTestId("compose-drop-label")).toHaveText("Drop to attach");
-  await expect(page.getByTestId("compose-drop-caret")).toBeHidden();
-  await drag(body, dt, await centre(body), "drop");
-  await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
-  await expect(page.getByTestId("draft-attachment")).toContainText("notes.pdf");
-  // an image dropped on the recipients attaches too (the label says how to place it instead)
-  const img = await transfer(page, [{ name: "photo.png", type: "image/png" }]);
-  await drag(to, img, await centre(to), "dragenter", "dragover");
-  await expect(page.getByTestId("compose-drop")).toContainText("Drop on the text to place images in it");
-  await drag(to, img, await centre(to), "drop");
-  await expect(page.getByTestId("draft-attachment")).toHaveCount(2);
-  await expect(body.locator("img.rt-image")).toHaveCount(0);
-});
-
-test("images and other files dropped together: images in the text, the rest as chips; several drops in a row all land", async ({ app: page, server }) => {
-  await openRow(page, 0);
-  await page.getByTestId("quick-reply").click();
-  const body = page.getByTestId("compose-body");
-  await body.click();
-  await page.keyboard.type("One two");
-  const mixed = await transfer(page, [{ name: "a.png", type: "image/png" }, { name: "b.zip", type: "application/zip" }, { name: "c.jpg", type: "image/jpeg" }]);
-  const second = await transfer(page, [{ name: "d.gif", type: "image/gif" }]);
-  const store = server.backend.store;
-  const seal = store.attachments.seal;
-  let release!: () => void;
-  const gate = new Promise<void>(resolve => { release = resolve; });
-  let entered!: () => void;
-  const staging = new Promise<void>(resolve => { entered = resolve; });
-  store.attachments.seal = async (...args) => { entered(); await gate; return seal(...args); };
-  try {
-    await dragAfter(body, mixed, "One", ["dragenter", "dragover"]);
-    await expect(page.getByTestId("compose-drop-label")).toHaveText("Drop to place the images here and attach the rest");
-    await dragAfter(body, mixed, "One", ["drop"]);
-    await staging;
-    await expect(page.getByTestId("compose-image-adding")).toHaveCount(2);
-    await dragAfter(body, second, "two", ["dragenter", "dragover", "drop"]);
-    await expect(page.getByTestId("compose-image-adding")).toHaveCount(3);
-  } finally { release(); store.attachments.seal = seal; }
-  await expect(body.locator("img.rt-image:not([data-state])")).toHaveCount(3);
-  await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
-  await expect(page.getByTestId("draft-attachment")).toContainText("b.zip");
-  expect(await body.evaluate((el) => [...el.querySelectorAll("img.rt-image")].map((i) => (i as HTMLImageElement).alt))).toEqual(["a.png", "c.jpg", "d.gif"]);
-});
-
-test("a pasted screenshot goes in at the caret", async ({ app: page }) => {
-  await openRow(page, 0);
-  await page.getByTestId("quick-reply").click();
-  const body = page.getByTestId("compose-body");
-  await body.click();
-  await page.keyboard.type("See ");
-  const dt = await transfer(page, [{ name: "image.png", type: "image/png" }]);
-  await body.evaluate((el, dt) => el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })), dt);
-  await page.keyboard.type("above");
-  await expect(body.locator("img.rt-image:not([data-state])")).toHaveCount(1);
-  // every screenshot is "image.png": numbered, so they can be told apart
-  await expect(body.locator("img.rt-image")).toHaveAttribute("alt", "Pasted image 1.png");
-  expect(await body.evaluate((el) => el.innerHTML.replace(/<img class="ProseMirror-separator"[^>]*>/g, "").replace(/<img[^>]*>/, "[img]").replace(/<[^>]+>/g, ""))).toBe("See [img]above");
-});
-
-test("a file dropped outside the composer never leaves the app; dragging anywhere shows the composer takes files", async ({ app: page }) => {
-  await openRow(page, 0);
-  await page.getByTestId("quick-reply").click();
-  const url = page.url();
-  const dt = await transfer(page, [{ name: "notes.pdf", type: "application/pdf" }]);
-  const list = page.getByTestId("thread-row").first();
-  await drag(list, dt, await centre(list), "dragenter", "dragover");
-  await expect(page.getByTestId("compose-drop")).toHaveAttribute("data-state", "available");
-  await expect(page.getByTestId("compose-drop-label")).toHaveText("Drop files here to attach");
-  const prevented = await list.evaluate((el, dt) => { const e = new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }); el.dispatchEvent(e); return e.defaultPrevented; }, dt);
-  expect(prevented).toBe(true);
-  await expect(page.getByTestId("compose-drop")).toHaveCount(0);
-  expect(page.url()).toBe(url);
-  await expect(page.getByTestId("draft-attachment")).toHaveCount(0);
+test("an image in the text: pasted, moved, refused, undone, remeasured", async ({ app: page, server }) => {
+  await scenario("a pasted screenshot goes in at the caret", async () => {
+    await openRow(page, 0);
+    await page.getByTestId("quick-reply").click();
+    const body = page.getByTestId("compose-body");
+    await body.click();
+    await page.keyboard.type("See ");
+    const dt = await transfer(page, [{ name: "image.png", type: "image/png" }]);
+    await body.evaluate((el, dt) => el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })), dt);
+    await page.keyboard.type("above");
+    await expect(body.locator("img.rt-image:not([data-state])")).toHaveCount(1);
+    // every screenshot is "image.png": numbered, so they can be told apart
+    await expect(body.locator("img.rt-image")).toHaveAttribute("alt", "Pasted image 1.png");
+    expect(await body.evaluate((el) => el.innerHTML.replace(/<img class="ProseMirror-separator"[^>]*>/g, "").replace(/<img[^>]*>/, "[img]").replace(/<[^>]+>/g, ""))).toBe("See [img]above");
+  });
+  await scenario("moving an image within the text is a move: no drop layer, no copy", async () => {
+    await freshNoDrafts(page, server);
+    await openRow(page, 0);
+    await page.getByTestId("quick-reply").click();
+    const body = page.getByTestId("compose-body");
+    await body.click();
+    await page.keyboard.type("a b");
+    const dt = await transfer(page, [{ name: "m.png", type: "image/png" }]);
+    await drag(body, dt, await after(page, "a"), "dragenter", "dragover", "drop");
+    const image = body.locator("img.rt-image:not([data-state])");
+    await expect(image).toHaveCount(1);
+    // Chrome's drag of an <img> carries it as a file as well
+    const own = await transfer(page, [{ name: "m.png", type: "image/png" }]);
+    await image.dispatchEvent("dragstart", { dataTransfer: own, bubbles: true });
+    await drag(body, own, await after(page, "b"), "dragenter", "dragover");
+    await expect(page.getByTestId("compose-drop")).toHaveCount(0);
+    await drag(body, own, await after(page, "b"), "drop");
+    await image.dispatchEvent("dragend", { bubbles: true });
+    await expect(body.locator("img.rt-image")).toHaveCount(1);
+  });
+  await scenario("a file mail can't carry is named, with the limit; an image that can't be read says it was attached instead", async () => {
+    await freshNoDrafts(page, server);
+    await openRow(page, 0);
+    await page.getByTestId("quick-reply").click();
+    const body = page.getByTestId("compose-body");
+    const big = await transfer(page, [{ name: "footage.mov", type: "video/quicktime", bytes: 19 * 1024 * 1024 }]);
+    await drag(body, big, await centre(body), "dragenter", "dragover", "drop");
+    await expect(page.getByText("footage.mov is 19.0 MB; mail can carry files up to 18.0 MB.").first()).toBeVisible();
+    await expect(page.getByTestId("draft-attachment")).toHaveCount(0);
+    const broken = await transfer(page, [{ name: "broken.jpg", type: "application/x-broken" }]);
+    // a JPEG by its type whose bytes aren't one
+    await broken.evaluate((dt) => { const f = new File([new Uint8Array([1, 2, 3])], "broken.jpg", { type: "image/jpeg" }); dt.items.clear(); dt.items.add(f); });
+    await drag(body, broken, await centre(body), "dragenter", "dragover", "drop");
+    await expect(page.getByText("Couldn’t place broken.jpg in the text, so it’s attached instead.").first()).toBeVisible();
+    await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
+    await expect(body.locator("img")).toHaveCount(0);
+  });
+  await scenario("text typed right after an image lands is its own undo step (Codex review)", async () => {
+    await freshNoDrafts(page, server);
+    await openRow(page, 0);
+    await page.getByTestId("quick-reply").click();
+    const body = page.getByTestId("compose-body");
+    await body.click();
+    await page.keyboard.type("Hi ");
+    const dt = await transfer(page, [{ name: "u.png", type: "image/png" }]);
+    await body.evaluate((el, dt) => el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })), dt);
+    await expect(body.locator("img.rt-image:not([data-state])")).toHaveCount(1);
+    await page.keyboard.type("there");
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(body.locator("img.rt-image")).toHaveCount(1);
+    await expect(body).toHaveText("Hi ");
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(body.locator("img.rt-image")).toHaveCount(0);
+  });
+  await scenario("a text-targeted drop remeasures after synchronous drag layout changes", async () => {
+    await freshNoDrafts(page, server);
+    await openRow(page, 0);
+    await page.getByTestId("quick-reply").click();
+    const body = page.getByTestId("compose-body");
+    await body.click();
+    await page.keyboard.type("One two");
+    await body.evaluate(el => el.addEventListener("dragenter", () => { el.style.paddingLeft = "400px"; }, { once: true }));
+    const dt = await transfer(page, [{ name: "live.png", type: "image/png" }]);
+    await dragAfter(body, dt, "two", ["dragenter", "dragover", "drop"]);
+    await expect(body.locator("img.rt-image:not([data-state])")).toHaveCount(1);
+    expect(await body.evaluate(el => el.innerHTML.replace(/<img class="ProseMirror-separator"[^>]*>/g, "").replace(/<img[^>]*>/g, "[img]").replace(/<[^>]+>/g, ""))).toBe("One two[img]");
+  });
 });
 
 // ── what the persona run found (plan 76, "Revisions after the persona run")
@@ -273,71 +344,4 @@ test("a draft with many images shows every one after a reload", async ({ app: pa
   const images = page.getByTestId("compose-body").locator("img.rt-image");
   await expect(images).toHaveCount(5);
   await expect(page.getByTestId("compose-body").locator("img.rt-image:not([data-state])")).toHaveCount(5);
-});
-
-test("moving an image within the text is a move: no drop layer, no copy", async ({ app: page }) => {
-  await openRow(page, 0);
-  await page.getByTestId("quick-reply").click();
-  const body = page.getByTestId("compose-body");
-  await body.click();
-  await page.keyboard.type("a b");
-  const dt = await transfer(page, [{ name: "m.png", type: "image/png" }]);
-  await drag(body, dt, await after(page, "a"), "dragenter", "dragover", "drop");
-  const image = body.locator("img.rt-image:not([data-state])");
-  await expect(image).toHaveCount(1);
-  // Chrome's drag of an <img> carries it as a file as well
-  const own = await transfer(page, [{ name: "m.png", type: "image/png" }]);
-  await image.dispatchEvent("dragstart", { dataTransfer: own, bubbles: true });
-  await drag(body, own, await after(page, "b"), "dragenter", "dragover");
-  await expect(page.getByTestId("compose-drop")).toHaveCount(0);
-  await drag(body, own, await after(page, "b"), "drop");
-  await image.dispatchEvent("dragend", { bubbles: true });
-  await expect(body.locator("img.rt-image")).toHaveCount(1);
-});
-
-test("a file mail can't carry is named, with the limit; an image that can't be read says it was attached instead", async ({ app: page }) => {
-  await openRow(page, 0);
-  await page.getByTestId("quick-reply").click();
-  const body = page.getByTestId("compose-body");
-  const big = await transfer(page, [{ name: "footage.mov", type: "video/quicktime", bytes: 19 * 1024 * 1024 }]);
-  await drag(body, big, await centre(body), "dragenter", "dragover", "drop");
-  await expect(page.getByText("footage.mov is 19.0 MB; mail can carry files up to 18.0 MB.").first()).toBeVisible();
-  await expect(page.getByTestId("draft-attachment")).toHaveCount(0);
-  const broken = await transfer(page, [{ name: "broken.jpg", type: "application/x-broken" }]);
-  // a JPEG by its type whose bytes aren't one
-  await broken.evaluate((dt) => { const f = new File([new Uint8Array([1, 2, 3])], "broken.jpg", { type: "image/jpeg" }); dt.items.clear(); dt.items.add(f); });
-  await drag(body, broken, await centre(body), "dragenter", "dragover", "drop");
-  await expect(page.getByText("Couldn’t place broken.jpg in the text, so it’s attached instead.").first()).toBeVisible();
-  await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
-  await expect(body.locator("img")).toHaveCount(0);
-});
-
-test("text typed right after an image lands is its own undo step (Codex review)", async ({ app: page }) => {
-  await openRow(page, 0);
-  await page.getByTestId("quick-reply").click();
-  const body = page.getByTestId("compose-body");
-  await body.click();
-  await page.keyboard.type("Hi ");
-  const dt = await transfer(page, [{ name: "u.png", type: "image/png" }]);
-  await body.evaluate((el, dt) => el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })), dt);
-  await expect(body.locator("img.rt-image:not([data-state])")).toHaveCount(1);
-  await page.keyboard.type("there");
-  await page.keyboard.press("ControlOrMeta+z");
-  await expect(body.locator("img.rt-image")).toHaveCount(1);
-  await expect(body).toHaveText("Hi ");
-  await page.keyboard.press("ControlOrMeta+z");
-  await expect(body.locator("img.rt-image")).toHaveCount(0);
-});
-
-test("a text-targeted drop remeasures after synchronous drag layout changes", async ({ app: page }) => {
-  await openRow(page, 0);
-  await page.getByTestId("quick-reply").click();
-  const body = page.getByTestId("compose-body");
-  await body.click();
-  await page.keyboard.type("One two");
-  await body.evaluate(el => el.addEventListener("dragenter", () => { el.style.paddingLeft = "400px"; }, { once: true }));
-  const dt = await transfer(page, [{ name: "live.png", type: "image/png" }]);
-  await dragAfter(body, dt, "two", ["dragenter", "dragover", "drop"]);
-  await expect(body.locator("img.rt-image:not([data-state])")).toHaveCount(1);
-  expect(await body.evaluate(el => el.innerHTML.replace(/<img class="ProseMirror-separator"[^>]*>/g, "").replace(/<img[^>]*>/g, "[img]").replace(/<[^>]+>/g, ""))).toBe("One two[img]");
 });

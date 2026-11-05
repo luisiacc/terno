@@ -239,6 +239,17 @@ export async function freshStart(page: Page): Promise<void> {
   await fresh(page);
 }
 
+/** And no drafts: a draft left open is discarded through its own control (a reload would save it again), what's left in the store goes. */
+export async function freshNoDrafts(page: Page, server: DevServer): Promise<void> {
+  const discard = page.getByTestId("compose-discard");
+  while (await discard.count()) await discard.first().click();
+  await freshStart(page);
+  const left = await server.backend.store.drafts.list();
+  if (!left.length) return;
+  for (const d of left) await server.backend.store.drafts.delete(d.id, d.generation);
+  await fresh(page);
+}
+
 /**
  * Axe on what's on screen, or these parts of it (mail frames aside: legacy mode, which doesn't open a page per call). Names,
  * roles and structure can't change between light and dark, so dark reads contrast alone. The app must be following the OS.

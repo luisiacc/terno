@@ -6,7 +6,7 @@
  */
 import type { Locator, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, openRow, test } from "./fixtures";
+import { expect, focusList, openRow, test, scenario, freshNoDrafts } from "./fixtures";
 
 const body = (page: Page) => page.getByTestId("compose-body");
 const ctx = { clientId: "setup", origin: "dev" as const };
@@ -66,212 +66,248 @@ const pressed = (l: Locator) => expect(l).toHaveAttribute("aria-pressed", "true"
 const notPressed = (l: Locator) => expect(l).toHaveAttribute("aria-pressed", "false");
 
 test.describe("formatting the selection", () => {
-  test("bold, italic, underline and strikethrough apply to exactly the selected words, and the bar shows them", async ({ app: page }) => {
-    await reply(page);
-    for (const [id, tag] of [["bold", "b"], ["italic", "i"], ["underline", "u"], ["strike", "s"]] as const) {
+  test("formatting: on a selection, at a caret, by shortcut, as it's typed", async ({ app: page, server }) => {
+    await scenario("bold, italic, underline and strikethrough apply to exactly the selected words, and the bar shows them", async () => {
+      await reply(page);
+      for (const [id, tag] of [["bold", "b"], ["italic", "i"], ["underline", "u"], ["strike", "s"]] as const) {
+        await select(page, "propuesta");
+        await page.getByTestId(`format-${id}`).click();
+        await expect(body(page).locator(tag)).toHaveText("propuesta");
+        await pressed(page.getByTestId(`format-${id}`));
+      }
+      // nothing else changed
+      await expect(body(page)).toHaveText("Hola Ana, gracias por la propuesta del viernes.");
+      await select(page, "Hola");
+      for (const id of ["bold", "italic", "underline", "strike"]) await notPressed(page.getByTestId(`format-${id}`));
+      // all of a partly bold selection becomes bold; then all of it off (Word, Docs, Gmail)
+      await select(page, "la propuesta");
+      await page.getByTestId("format-bold").click();
+      await expect(body(page).locator("b")).toHaveText("la propuesta");
+      await page.getByTestId("format-bold").click();
+      await expect(body(page).locator("b")).toHaveCount(0);
+    });
+    await scenario("font, size, text color and highlight from their menus; the bar names the font at the caret", async () => {
+      await freshNoDrafts(page, server);
+      await reply(page);
       await select(page, "propuesta");
-      await page.getByTestId(`format-${id}`).click();
-      await expect(body(page).locator(tag)).toHaveText("propuesta");
-      await pressed(page.getByTestId(`format-${id}`));
-    }
-    // nothing else changed
-    await expect(body(page)).toHaveText("Hola Ana, gracias por la propuesta del viernes.");
-    await select(page, "Hola");
-    for (const id of ["bold", "italic", "underline", "strike"]) await notPressed(page.getByTestId(`format-${id}`));
-    // all of a partly bold selection becomes bold; then all of it off (Word, Docs, Gmail)
-    await select(page, "la propuesta");
-    await page.getByTestId("format-bold").click();
-    await expect(body(page).locator("b")).toHaveText("la propuesta");
-    await page.getByTestId("format-bold").click();
-    await expect(body(page).locator("b")).toHaveCount(0);
+      await page.getByTestId("format-font").click();
+      await page.getByTestId("format-font-serif").click();
+      await expect(body(page).locator("[data-rt-font=serif]")).toHaveText("propuesta");
+      await expect(page.getByTestId("format-font")).toContainText("Serif");
+      // focus went back to the text, the selection kept
+      await expect(body(page)).toBeFocused();
+      await page.getByTestId("format-size").click();
+      await page.getByTestId("format-size-huge").click();
+      await expect(body(page).locator("[data-rt-size=huge]")).toHaveText("propuesta");
+      await page.getByTestId("format-color").click();
+      await page.getByTestId("swatch-text-red").click();
+      await page.getByTestId("swatch-highlight-yellow").click();
+      await page.keyboard.press("Escape");
+      await expect(body(page).locator("[data-rt-color=red]")).toHaveText("propuesta");
+      await expect(body(page).locator("[data-rt-highlight=yellow]")).toHaveText("propuesta");
+      await expect(body(page)).toHaveText("Hola Ana, gracias por la propuesta del viernes.");
+      // Default and None take them off again
+      await select(page, "propuesta");
+      await page.getByTestId("format-color").click();
+      await page.getByTestId("swatch-text-none").click();
+      await page.getByTestId("swatch-highlight-none").click();
+      await page.keyboard.press("Escape");
+      await expect(body(page).locator("[data-rt-color], [data-rt-highlight]")).toHaveCount(0);
+    });
+    await scenario("alignment, lists, indent, quote and remove formatting act on the lines of the selection", async () => {
+      await freshNoDrafts(page, server);
+      await reply(page, "");
+      for (const [i, line] of ["uno", "dos", "tres"].entries()) {
+        if (i) await page.keyboard.press("Enter");
+        await page.keyboard.type(line);
+      }
+      await select(page, "dos");
+      await page.getByTestId("format-align").click();
+      await page.getByTestId("format-align-center").click();
+      await expect(body(page).locator("p", { hasText: "dos" })).toHaveCSS("text-align", "center");
+      await page.getByTestId("format-indent").click();
+      await expect(body(page).locator("p", { hasText: "dos" })).toHaveCSS("margin-left", "40px");
+      await page.getByTestId("format-outdent").click();
+      await expect(body(page).locator("p", { hasText: "dos" })).toHaveCSS("margin-left", "0px");
+      await page.getByTestId("format-clear").click();
+      await expect(body(page).locator("p", { hasText: "dos" })).toHaveCSS("text-align", "start");
+      await page.getByTestId("format-bulleted").click();
+      await expect(body(page).locator("ul li")).toHaveText(["dos"]);
+      await pressed(page.getByTestId("format-bulleted"));
+      // the other list kind switches the list; the same kind takes it off
+      await page.getByTestId("format-numbered").click();
+      await expect(body(page).locator("ol li")).toHaveText(["dos"]);
+      await page.getByTestId("format-numbered").click();
+      await expect(body(page).locator("ol, ul")).toHaveCount(0);
+      await page.getByTestId("format-quote").click();
+      await expect(body(page).locator("blockquote")).toHaveText("dos");
+      await pressed(page.getByTestId("format-quote"));
+      await page.getByTestId("format-quote").click();
+      await expect(body(page).locator("blockquote")).toHaveCount(0);
+      await expect(body(page).locator("p")).toHaveText(["uno", "dos", "tres"]);
+    });
+    await scenario("with a caret, a style is for what is typed next; the bar shows it before anything is typed", async () => {
+      await freshNoDrafts(page, server);
+      await reply(page, "Normal ");
+      await page.keyboard.press("ControlOrMeta+b");
+      await pressed(page.getByTestId("format-bold"));
+      await page.keyboard.type("fuerte");
+      await page.keyboard.press("ControlOrMeta+b");
+      await page.keyboard.type(" y ");
+      await page.getByTestId("format-italic").click();
+      await page.keyboard.type("cursiva");
+      await expect(body(page).locator("b")).toHaveText("fuerte");
+      await expect(body(page).locator("i")).toHaveText("cursiva");
+      await expect(body(page)).toHaveText("Normal fuerte y cursiva");
+    });
+    await scenario("every shortcut: ⌘B ⌘I ⌘U ⇧⌘X, ⇧⌘7 ⇧⌘8, ⌘] ⌘[, ⌘\\, ⌘Z ⇧⌘Z", async () => {
+      await freshNoDrafts(page, server);
+      await reply(page, "palabra");
+      await select(page, "palabra");
+      for (const [key, tag] of [["b", "b"], ["i", "i"], ["u", "u"], ["Shift+x", "s"]] as const) {
+        await page.keyboard.press(`ControlOrMeta+${key}`);
+        await expect(body(page).locator(tag)).toHaveText("palabra");
+      }
+      await page.keyboard.press("ControlOrMeta+\\");
+      await expect(body(page).locator("b, i, u, s")).toHaveCount(0);
+      await page.keyboard.press("ControlOrMeta+Shift+7");
+      await expect(body(page).locator("ol li")).toHaveText(["palabra"]);
+      await page.keyboard.press("ControlOrMeta+Shift+8");
+      await expect(body(page).locator("ul li")).toHaveText(["palabra"]);
+      await page.keyboard.press("ControlOrMeta+Shift+8");
+      await expect(body(page).locator("ul")).toHaveCount(0);
+      await page.keyboard.press("ControlOrMeta+]");
+      await expect(body(page).locator("p")).toHaveCSS("margin-left", "40px");
+      await page.keyboard.press("ControlOrMeta+[");
+      await expect(body(page).locator("p")).toHaveCSS("margin-left", "0px");
+      // undo walks back exactly, redo forward again
+      await page.keyboard.press("ControlOrMeta+z");
+      await expect(body(page).locator("p")).toHaveCSS("margin-left", "40px");
+      await page.keyboard.press("ControlOrMeta+Shift+z");
+      await expect(body(page).locator("p")).toHaveCSS("margin-left", "0px");
+      // the toolbar's undo is the same history
+      await page.getByTestId("format-undo").click();
+      await expect(body(page).locator("p")).toHaveCSS("margin-left", "40px");
+      await page.getByTestId("format-redo").click();
+      await expect(body(page).locator("p")).toHaveCSS("margin-left", "0px");
+    });
+    await scenario("typing - or 1. starts a list; a typed URL becomes a link; ⌘L is the link, ⌘K the palette", async () => {
+      await freshNoDrafts(page, server);
+      await reply(page, "- uno");
+      await expect(body(page).locator("ul li")).toHaveText(["uno"]);
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Enter");
+      await page.keyboard.type("1. primero");
+      await expect(body(page).locator("ol li")).toHaveText(["primero"]);
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Enter");
+      await page.keyboard.type("mira https://example.com/a ya");
+      await expect(body(page).locator("a")).toHaveAttribute("href", "https://example.com/a");
+      await expect(body(page).locator("a")).toHaveText("https://example.com/a");
+      await page.keyboard.press("ControlOrMeta+l");
+      await expect(page.getByTestId("link-popover")).toBeVisible();
+      await expect(page.getByRole("dialog", { name: "Commands" })).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("link-popover")).toHaveCount(0);
+      await expect(body(page)).toBeFocused();
+      // ⌘K in the text is the palette, Insert snippet… among the draft's commands
+      await page.keyboard.press("ControlOrMeta+k");
+      await expect(page.getByRole("dialog", { name: "Commands" })).toBeVisible();
+      await expect(page.getByTestId("palette-draft-snippet")).toBeVisible();
+      await expect(page.getByTestId("palette-draft-link")).toContainText(/⌘L|Ctrl\+L/);
+      await expect(page.getByTestId("link-popover")).toHaveCount(0);
+    });
   });
 
-  test("font, size, text color and highlight from their menus; the bar names the font at the caret", async ({ app: page }) => {
-    await reply(page);
-    await select(page, "propuesta");
-    await page.getByTestId("format-font").click();
-    await page.getByTestId("format-font-serif").click();
-    await expect(body(page).locator("[data-rt-font=serif]")).toHaveText("propuesta");
-    await expect(page.getByTestId("format-font")).toContainText("Serif");
-    // focus went back to the text, the selection kept
-    await expect(body(page)).toBeFocused();
-    await page.getByTestId("format-size").click();
-    await page.getByTestId("format-size-huge").click();
-    await expect(body(page).locator("[data-rt-size=huge]")).toHaveText("propuesta");
-    await page.getByTestId("format-color").click();
-    await page.getByTestId("swatch-text-red").click();
-    await page.getByTestId("swatch-highlight-yellow").click();
-    await page.keyboard.press("Escape");
-    await expect(body(page).locator("[data-rt-color=red]")).toHaveText("propuesta");
-    await expect(body(page).locator("[data-rt-highlight=yellow]")).toHaveText("propuesta");
-    await expect(body(page)).toHaveText("Hola Ana, gracias por la propuesta del viernes.");
-    // Default and None take them off again
-    await select(page, "propuesta");
-    await page.getByTestId("format-color").click();
-    await page.getByTestId("swatch-text-none").click();
-    await page.getByTestId("swatch-highlight-none").click();
-    await page.keyboard.press("Escape");
-    await expect(body(page).locator("[data-rt-color], [data-rt-highlight]")).toHaveCount(0);
-  });
-
-  test("alignment, lists, indent, quote and remove formatting act on the lines of the selection", async ({ app: page }) => {
-    await reply(page, "");
-    for (const [i, line] of ["uno", "dos", "tres"].entries()) {
-      if (i) await page.keyboard.press("Enter");
-      await page.keyboard.type(line);
-    }
-    await select(page, "dos");
-    await page.getByTestId("format-align").click();
-    await page.getByTestId("format-align-center").click();
-    await expect(body(page).locator("p", { hasText: "dos" })).toHaveCSS("text-align", "center");
-    await page.getByTestId("format-indent").click();
-    await expect(body(page).locator("p", { hasText: "dos" })).toHaveCSS("margin-left", "40px");
-    await page.getByTestId("format-outdent").click();
-    await expect(body(page).locator("p", { hasText: "dos" })).toHaveCSS("margin-left", "0px");
-    await page.getByTestId("format-clear").click();
-    await expect(body(page).locator("p", { hasText: "dos" })).toHaveCSS("text-align", "start");
-    await page.getByTestId("format-bulleted").click();
-    await expect(body(page).locator("ul li")).toHaveText(["dos"]);
-    await pressed(page.getByTestId("format-bulleted"));
-    // the other list kind switches the list; the same kind takes it off
-    await page.getByTestId("format-numbered").click();
-    await expect(body(page).locator("ol li")).toHaveText(["dos"]);
-    await page.getByTestId("format-numbered").click();
-    await expect(body(page).locator("ol, ul")).toHaveCount(0);
-    await page.getByTestId("format-quote").click();
-    await expect(body(page).locator("blockquote")).toHaveText("dos");
-    await pressed(page.getByTestId("format-quote"));
-    await page.getByTestId("format-quote").click();
-    await expect(body(page).locator("blockquote")).toHaveCount(0);
-    await expect(body(page).locator("p")).toHaveText(["uno", "dos", "tres"]);
-  });
-
-  test("with a caret, a style is for what is typed next; the bar shows it before anything is typed", async ({ app: page }) => {
-    await reply(page, "Normal ");
-    await page.keyboard.press("ControlOrMeta+b");
-    await pressed(page.getByTestId("format-bold"));
-    await page.keyboard.type("fuerte");
-    await page.keyboard.press("ControlOrMeta+b");
-    await page.keyboard.type(" y ");
-    await page.getByTestId("format-italic").click();
-    await page.keyboard.type("cursiva");
-    await expect(body(page).locator("b")).toHaveText("fuerte");
-    await expect(body(page).locator("i")).toHaveText("cursiva");
-    await expect(body(page)).toHaveText("Normal fuerte y cursiva");
-  });
-
-  test("every shortcut: ⌘B ⌘I ⌘U ⇧⌘X, ⇧⌘7 ⇧⌘8, ⌘] ⌘[, ⌘\\, ⌘Z ⇧⌘Z", async ({ app: page }) => {
-    await reply(page, "palabra");
-    await select(page, "palabra");
-    for (const [key, tag] of [["b", "b"], ["i", "i"], ["u", "u"], ["Shift+x", "s"]] as const) {
-      await page.keyboard.press(`ControlOrMeta+${key}`);
-      await expect(body(page).locator(tag)).toHaveText("palabra");
-    }
-    await page.keyboard.press("ControlOrMeta+\\");
-    await expect(body(page).locator("b, i, u, s")).toHaveCount(0);
-    await page.keyboard.press("ControlOrMeta+Shift+7");
-    await expect(body(page).locator("ol li")).toHaveText(["palabra"]);
-    await page.keyboard.press("ControlOrMeta+Shift+8");
-    await expect(body(page).locator("ul li")).toHaveText(["palabra"]);
-    await page.keyboard.press("ControlOrMeta+Shift+8");
-    await expect(body(page).locator("ul")).toHaveCount(0);
-    await page.keyboard.press("ControlOrMeta+]");
-    await expect(body(page).locator("p")).toHaveCSS("margin-left", "40px");
-    await page.keyboard.press("ControlOrMeta+[");
-    await expect(body(page).locator("p")).toHaveCSS("margin-left", "0px");
-    // undo walks back exactly, redo forward again
-    await page.keyboard.press("ControlOrMeta+z");
-    await expect(body(page).locator("p")).toHaveCSS("margin-left", "40px");
-    await page.keyboard.press("ControlOrMeta+Shift+z");
-    await expect(body(page).locator("p")).toHaveCSS("margin-left", "0px");
-    // the toolbar's undo is the same history
-    await page.getByTestId("format-undo").click();
-    await expect(body(page).locator("p")).toHaveCSS("margin-left", "40px");
-    await page.getByTestId("format-redo").click();
-    await expect(body(page).locator("p")).toHaveCSS("margin-left", "0px");
-  });
-
-  test("typing - or 1. starts a list; a typed URL becomes a link; ⌘L is the link, ⌘K the palette", async ({ app: page }) => {
-    await reply(page, "- uno");
-    await expect(body(page).locator("ul li")).toHaveText(["uno"]);
-    await page.keyboard.press("Enter");
-    await page.keyboard.press("Enter");
-    await page.keyboard.type("1. primero");
-    await expect(body(page).locator("ol li")).toHaveText(["primero"]);
-    await page.keyboard.press("Enter");
-    await page.keyboard.press("Enter");
-    await page.keyboard.type("mira https://example.com/a ya");
-    await expect(body(page).locator("a")).toHaveAttribute("href", "https://example.com/a");
-    await expect(body(page).locator("a")).toHaveText("https://example.com/a");
-    await page.keyboard.press("ControlOrMeta+l");
-    await expect(page.getByTestId("link-popover")).toBeVisible();
-    await expect(page.getByRole("dialog", { name: "Commands" })).toHaveCount(0);
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("link-popover")).toHaveCount(0);
-    await expect(body(page)).toBeFocused();
-    // ⌘K in the text is the palette, Insert snippet… among the draft's commands
-    await page.keyboard.press("ControlOrMeta+k");
-    await expect(page.getByRole("dialog", { name: "Commands" })).toBeVisible();
-    await expect(page.getByTestId("palette-draft-snippet")).toBeVisible();
-    await expect(page.getByTestId("palette-draft-link")).toContainText(/⌘L|Ctrl\+L/);
-    await expect(page.getByTestId("link-popover")).toHaveCount(0);
-  });
 });
 
 test.describe("links", () => {
-  test("⌘L links the selection; the bubble opens, edits and removes it; Enter and Esc in the popover never send or collapse", async ({ app: page }) => {
-    await reply(page);
-    await select(page, "propuesta");
-    await page.keyboard.press("ControlOrMeta+l");
-    const popover = page.getByTestId("link-popover");
-    await expect(popover).toBeVisible();
-    await expect(page.getByTestId("link-text")).toHaveValue("propuesta");
-    await expect(page.getByTestId("link-url")).toBeFocused();
-    // Esc closes the popover only: the draft stays open, focus back in the text
-    await page.keyboard.press("Escape");
-    await expect(popover).toHaveCount(0);
-    await expect(page.getByTestId("composer")).toBeVisible();
-    await expect(body(page)).toBeFocused();
-    await page.keyboard.press("ControlOrMeta+l");
-    await page.getByTestId("link-url").fill("javascript:alert(1)");
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId("link-error")).toBeVisible();
-    await expect(body(page).locator("a")).toHaveCount(0);
-    await page.getByTestId("link-url").fill("acme.example/propuesta");
-    await page.keyboard.press("Enter");
-    await expect(popover).toHaveCount(0);
-    await expect(page.getByTestId("composer")).toBeVisible();
-    await expect(body(page).locator("a")).toHaveAttribute("href", "https://acme.example/propuesta");
-    await expect(body(page).locator("a")).toHaveText("propuesta");
-    // the caret inside it shows the bubble
-    await body(page).locator("a").click();
-    const bubble = page.getByTestId("link-bubble");
-    await expect(bubble).toContainText("https://acme.example/propuesta");
-    await page.getByTestId("link-bubble-edit").click();
-    await page.getByTestId("link-text").fill("la propuesta");
-    await page.getByTestId("link-url").fill("ana@example.com");
-    await page.getByTestId("link-apply").click();
-    await expect(body(page).locator("a")).toHaveAttribute("href", "mailto:ana@example.com");
-    await expect(body(page).locator("a")).toHaveText("la propuesta");
-    await body(page).locator("a").click();
-    await page.getByTestId("link-bubble-remove").click();
-    await expect(body(page).locator("a")).toHaveCount(0);
-    await expect(body(page)).toContainText("la propuesta");
+  test("links: ⌘L, the button, a URL typed or pasted", async ({ app: page, server }) => {
+    await scenario("⌘L links the selection; the bubble opens, edits and removes it; Enter and Esc in the popover never send or collapse", async () => {
+      await reply(page);
+      await select(page, "propuesta");
+      await page.keyboard.press("ControlOrMeta+l");
+      const popover = page.getByTestId("link-popover");
+      await expect(popover).toBeVisible();
+      await expect(page.getByTestId("link-text")).toHaveValue("propuesta");
+      await expect(page.getByTestId("link-url")).toBeFocused();
+      // Esc closes the popover only: the draft stays open, focus back in the text
+      await page.keyboard.press("Escape");
+      await expect(popover).toHaveCount(0);
+      await expect(page.getByTestId("composer")).toBeVisible();
+      await expect(body(page)).toBeFocused();
+      await page.keyboard.press("ControlOrMeta+l");
+      await page.getByTestId("link-url").fill("javascript:alert(1)");
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("link-error")).toBeVisible();
+      await expect(body(page).locator("a")).toHaveCount(0);
+      await page.getByTestId("link-url").fill("acme.example/propuesta");
+      await page.keyboard.press("Enter");
+      await expect(popover).toHaveCount(0);
+      await expect(page.getByTestId("composer")).toBeVisible();
+      await expect(body(page).locator("a")).toHaveAttribute("href", "https://acme.example/propuesta");
+      await expect(body(page).locator("a")).toHaveText("propuesta");
+      // the caret inside it shows the bubble
+      await body(page).locator("a").click();
+      const bubble = page.getByTestId("link-bubble");
+      await expect(bubble).toContainText("https://acme.example/propuesta");
+      await page.getByTestId("link-bubble-edit").click();
+      await page.getByTestId("link-text").fill("la propuesta");
+      await page.getByTestId("link-url").fill("ana@example.com");
+      await page.getByTestId("link-apply").click();
+      await expect(body(page).locator("a")).toHaveAttribute("href", "mailto:ana@example.com");
+      await expect(body(page).locator("a")).toHaveText("la propuesta");
+      await body(page).locator("a").click();
+      await page.getByTestId("link-bubble-remove").click();
+      await expect(body(page).locator("a")).toHaveCount(0);
+      await expect(body(page)).toContainText("la propuesta");
+    });
+    await scenario("the Link button with nothing selected inserts the text as a link; a URL pasted over a selection links it", async () => {
+      await freshNoDrafts(page, server);
+      await reply(page, "Ver ");
+      await page.getByTestId("compose-link").click();
+      await page.getByTestId("link-text").fill("el plan");
+      await page.getByTestId("link-url").fill("https://plan.example");
+      await page.getByTestId("link-apply").click();
+      await expect(body(page).locator("a")).toHaveText("el plan");
+      await page.keyboard.type(" hoy");
+      await expect(body(page).locator("a")).toHaveText("el plan");
+      await select(page, "hoy");
+      await paste(page, { "text/plain": "https://hoy.example/x" });
+      await expect(body(page).locator("a", { hasText: "hoy" })).toHaveAttribute("href", "https://hoy.example/x");
+    });
+    await scenario("Enter right after a typed URL links it and starts the next line (no error thrown)", async () => {
+      await freshNoDrafts(page, server);
+      const errors: string[] = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      await reply(page, "https://example.com/x");
+      await page.keyboard.press("Enter");
+      await page.keyboard.type("siguiente");
+      await expect(body(page).locator("a")).toHaveAttribute("href", "https://example.com/x");
+      await expect(body(page).locator("p")).toHaveText(["https://example.com/x", "siguiente"]);
+      expect(errors).toEqual([]);
+    });
+    await scenario("a link with only its address, at a caret, goes in as the address", async () => {
+      await freshNoDrafts(page, server);
+      await reply(page, "Ver ");
+      await page.keyboard.press("ControlOrMeta+l");
+      await page.getByTestId("link-url").fill("plan.example");
+      await page.keyboard.press("Enter");
+      await expect(body(page).locator("a")).toHaveAttribute("href", "https://plan.example");
+      await expect(body(page).locator("a")).toHaveText("https://plan.example");
+    });
+    await scenario("⇧⌘V of a URL over a selection replaces it with the plain URL (no link)", async () => {
+      await freshNoDrafts(page, server);
+      await reply(page, "uno dos tres");
+      await select(page, "dos");
+      await page.keyboard.down("Shift");
+      await paste(page, { "text/plain": "https://plain.example" });
+      await page.keyboard.up("Shift");
+      await expect(body(page)).toHaveText("uno https://plain.example tres");
+      await expect(body(page).locator("a")).toHaveCount(0);
+    });
   });
 
-  test("the Link button with nothing selected inserts the text as a link; a URL pasted over a selection links it", async ({ app: page }) => {
-    await reply(page, "Ver ");
-    await page.getByTestId("compose-link").click();
-    await page.getByTestId("link-text").fill("el plan");
-    await page.getByTestId("link-url").fill("https://plan.example");
-    await page.getByTestId("link-apply").click();
-    await expect(body(page).locator("a")).toHaveText("el plan");
-    await page.keyboard.type(" hoy");
-    await expect(body(page).locator("a")).toHaveText("el plan");
-    await select(page, "hoy");
-    await paste(page, { "text/plain": "https://hoy.example/x" });
-    await expect(body(page).locator("a", { hasText: "hoy" })).toHaveAttribute("href", "https://hoy.example/x");
-  });
 });
 
 /** A paste event as the browser sends one (the editor reads its clipboardData). */
@@ -284,36 +320,6 @@ async function paste(page: Page, data: Record<string, string>) {
 }
 
 test.describe("Codex review (plan 16)", () => {
-  test("Enter right after a typed URL links it and starts the next line (no error thrown)", async ({ app: page }) => {
-    const errors: string[] = [];
-    page.on("pageerror", (e) => errors.push(e.message));
-    await reply(page, "https://example.com/x");
-    await page.keyboard.press("Enter");
-    await page.keyboard.type("siguiente");
-    await expect(body(page).locator("a")).toHaveAttribute("href", "https://example.com/x");
-    await expect(body(page).locator("p")).toHaveText(["https://example.com/x", "siguiente"]);
-    expect(errors).toEqual([]);
-  });
-
-  test("a link with only its address, at a caret, goes in as the address", async ({ app: page }) => {
-    await reply(page, "Ver ");
-    await page.keyboard.press("ControlOrMeta+l");
-    await page.getByTestId("link-url").fill("plan.example");
-    await page.keyboard.press("Enter");
-    await expect(body(page).locator("a")).toHaveAttribute("href", "https://plan.example");
-    await expect(body(page).locator("a")).toHaveText("https://plan.example");
-  });
-
-  test("⇧⌘V of a URL over a selection replaces it with the plain URL (no link)", async ({ app: page }) => {
-    await reply(page, "uno dos tres");
-    await select(page, "dos");
-    await page.keyboard.down("Shift");
-    await paste(page, { "text/plain": "https://plain.example" });
-    await page.keyboard.up("Shift");
-    await expect(body(page)).toHaveText("uno https://plain.example tres");
-    await expect(body(page).locator("a")).toHaveCount(0);
-  });
-
   test("while a send is in flight nothing edits the text: the bar is disabled, its shortcuts and undo do nothing", async ({ app: page }) => {
     await reply(page, "texto que se envía");
     await select(page, "texto");
@@ -462,81 +468,83 @@ test.describe("before the editor has loaded", () => {
 });
 
 test.describe("paste", () => {
-  test("rich paste keeps bold, italic, lists and links and drops styles, classes, scripts and images; ⇧⌘V pastes plain text", async ({ app: page }) => {
-    const requests: string[] = [];
-    page.on("request", (r) => {
-      if (r.url().includes("tracker.example")) requests.push(r.url());
+  test("the format bar and a rich paste", async ({ app: page, server }) => {
+    await scenario("rich paste keeps bold, italic, lists and links and drops styles, classes, scripts and images; ⇧⌘V pastes plain text", async () => {
+      const requests: string[] = [];
+      page.on("request", (r) => {
+        if (r.url().includes("tracker.example")) requests.push(r.url());
+      });
+      await reply(page, "");
+      await paste(page, {
+        "text/html": '<meta charset="utf-8"><style>p{color:red}</style><p class="x" style="color:#123456;font-size:30px"><b>Negrita</b> y <i>cursiva</i> <span style="font-family:Comic Sans MS">rara</span><img src="https://tracker.example/p.gif" onerror="window.__pwned=1"></p><ul><li>uno</li></ul><a href="https://ok.example">ok</a> <a href="javascript:window.__pwned=1">mal</a><script>window.__pwned=1</script>',
+        "text/plain": "Negrita y cursiva rara\nuno\nok mal",
+      });
+      await expect(body(page).locator("b")).toHaveText("Negrita");
+      await expect(body(page).locator("i")).toHaveText("cursiva");
+      await expect(body(page).locator("ul li")).toHaveText(["uno"]);
+      await expect(body(page).locator("a")).toHaveCount(1);
+      await expect(body(page).locator("a")).toHaveAttribute("href", "https://ok.example");
+      expect(await html(page)).not.toMatch(/style="[^"]*(30px|#123456|Comic)|<img|class="x"|script/);
+      expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBeUndefined();
+      expect(requests).toEqual([]);
+      // plain: the same clipboard, as text (the shift held, as ⇧⌘V does)
+      await page.keyboard.press("ControlOrMeta+a");
+      await page.keyboard.press("Backspace");
+      await page.keyboard.down("Shift");
+      await paste(page, { "text/html": "<b>Negrita</b>", "text/plain": "Negrita\n\nsegunda" });
+      await page.keyboard.up("Shift");
+      await expect(body(page).locator("b")).toHaveCount(0);
+      await expect(body(page).locator("p")).toHaveText(["Negrita", "", "segunda"]);
     });
-    await reply(page, "");
-    await paste(page, {
-      "text/html": '<meta charset="utf-8"><style>p{color:red}</style><p class="x" style="color:#123456;font-size:30px"><b>Negrita</b> y <i>cursiva</i> <span style="font-family:Comic Sans MS">rara</span><img src="https://tracker.example/p.gif" onerror="window.__pwned=1"></p><ul><li>uno</li></ul><a href="https://ok.example">ok</a> <a href="javascript:window.__pwned=1">mal</a><script>window.__pwned=1</script>',
-      "text/plain": "Negrita y cursiva rara\nuno\nok mal",
+    await scenario("Aa hides and shows it, remembered after a reload; shortcuts work either way", async () => {
+      await freshNoDrafts(page, server);
+      await reply(page, "texto");
+      await expect(page.getByTestId("format-bar")).toBeVisible();
+      const toggle = page.getByTestId("format-toggle");
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      await toggle.click();
+      await expect(page.getByTestId("format-bar")).toHaveCount(0);
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      await select(page, "texto");
+      await page.keyboard.press("ControlOrMeta+b");
+      await expect(body(page).locator("b")).toHaveText("texto");
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await openRow(page, 0);
+      await focusList(page);
+      await page.keyboard.press("r");
+      await expect(body(page).locator("b")).toHaveText("texto");
+      await expect(page.getByTestId("format-bar")).toHaveCount(0);
+      await page.getByTestId("format-toggle").click();
+      await expect(page.getByTestId("format-bar")).toBeVisible();
     });
-    await expect(body(page).locator("b")).toHaveText("Negrita");
-    await expect(body(page).locator("i")).toHaveText("cursiva");
-    await expect(body(page).locator("ul li")).toHaveText(["uno"]);
-    await expect(body(page).locator("a")).toHaveCount(1);
-    await expect(body(page).locator("a")).toHaveAttribute("href", "https://ok.example");
-    expect(await html(page)).not.toMatch(/style="[^"]*(30px|#123456|Comic)|<img|class="x"|script/);
-    expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBeUndefined();
-    expect(requests).toEqual([]);
-    // plain: the same clipboard, as text (the shift held, as ⇧⌘V does)
-    await page.keyboard.press("ControlOrMeta+a");
-    await page.keyboard.press("Backspace");
-    await page.keyboard.down("Shift");
-    await paste(page, { "text/html": "<b>Negrita</b>", "text/plain": "Negrita\n\nsegunda" });
-    await page.keyboard.up("Shift");
-    await expect(body(page).locator("b")).toHaveCount(0);
-    await expect(body(page).locator("p")).toHaveText(["Negrita", "", "segunda"]);
+    await scenario("one tab stop with arrows between controls; every control has a name; Enter toggles", async () => {
+      await freshNoDrafts(page, server);
+      await reply(page, "texto");
+      await select(page, "texto");
+      const bar = page.getByTestId("format-bar");
+      await expect(bar).toHaveAttribute("role", "toolbar");
+      await expect(bar).toHaveAttribute("aria-label", "Formatting");
+      // every control is named
+      for (const b of await bar.locator("button").all()) expect(await b.getAttribute("aria-label")).toBeTruthy();
+      await page.getByTestId("format-undo").focus();
+      await page.keyboard.press("ArrowRight");
+      await expect(page.getByTestId("format-redo")).toBeFocused();
+      await page.keyboard.press("ArrowRight");
+      await expect(page.getByTestId("format-font")).toBeFocused();
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowRight");
+      await expect(page.getByTestId("format-bold")).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(body(page).locator("b")).toHaveText("texto");
+      // Tab leaves the bar at once (one stop)
+      await page.keyboard.press("Tab");
+      await expect(bar.locator(":focus")).toHaveCount(0);
+    });
   });
 });
 
 test.describe("the format bar", () => {
-  test("Aa hides and shows it, remembered after a reload; shortcuts work either way", async ({ app: page }) => {
-    await reply(page, "texto");
-    await expect(page.getByTestId("format-bar")).toBeVisible();
-    const toggle = page.getByTestId("format-toggle");
-    await expect(toggle).toHaveAttribute("aria-expanded", "true");
-    await toggle.click();
-    await expect(page.getByTestId("format-bar")).toHaveCount(0);
-    await expect(toggle).toHaveAttribute("aria-expanded", "false");
-    await select(page, "texto");
-    await page.keyboard.press("ControlOrMeta+b");
-    await expect(body(page).locator("b")).toHaveText("texto");
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await openRow(page, 0);
-    await focusList(page);
-    await page.keyboard.press("r");
-    await expect(body(page).locator("b")).toHaveText("texto");
-    await expect(page.getByTestId("format-bar")).toHaveCount(0);
-    await page.getByTestId("format-toggle").click();
-    await expect(page.getByTestId("format-bar")).toBeVisible();
-  });
-
-  test("one tab stop with arrows between controls; every control has a name; Enter toggles", async ({ app: page }) => {
-    await reply(page, "texto");
-    await select(page, "texto");
-    const bar = page.getByTestId("format-bar");
-    await expect(bar).toHaveAttribute("role", "toolbar");
-    await expect(bar).toHaveAttribute("aria-label", "Formatting");
-    // every control is named
-    for (const b of await bar.locator("button").all()) expect(await b.getAttribute("aria-label")).toBeTruthy();
-    await page.getByTestId("format-undo").focus();
-    await page.keyboard.press("ArrowRight");
-    await expect(page.getByTestId("format-redo")).toBeFocused();
-    await page.keyboard.press("ArrowRight");
-    await expect(page.getByTestId("format-font")).toBeFocused();
-    await page.keyboard.press("ArrowRight");
-    await page.keyboard.press("ArrowRight");
-    await expect(page.getByTestId("format-bold")).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect(body(page).locator("b")).toHaveText("texto");
-    // Tab leaves the bar at once (one stop)
-    await page.keyboard.press("Tab");
-    await expect(bar.locator(":focus")).toHaveCount(0);
-  });
-
   test("at the narrowest window the bar fits: the least used groups fold under More, bold and lists stay", { tag: "@design" }, async ({ app: page }) => {
     await page.setViewportSize({ width: 980, height: 700 });
     await reply(page, "texto");
@@ -566,80 +574,83 @@ test.describe("the format bar", () => {
 });
 
 test.describe("drafts keep their formatting", () => {
-  test("autosaved as HTML beside its text, restored after a reload exactly; collapsing keeps undo", async ({ app: page, server }) => {
-    await reply(page);
-    await select(page, "propuesta");
-    await page.keyboard.press("ControlOrMeta+b");
-    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
-    const row = sqlDb(server.backend.store).get<{ body_text: string; body_html: string }>("SELECT body_text, body_html FROM drafts ORDER BY id DESC LIMIT 1")!;
-    expect(row.body_text).toBe("Hola Ana, gracias por la propuesta del viernes.");
-    expect(row.body_html).toBe("<div>Hola Ana, gracias por la <b>propuesta</b> del viernes.</div>");
-    // collapse and reopen: the same document, undo still there
-    await page.keyboard.press("Escape");
-    await page.getByTestId("draft-collapsed").click();
-    await expect(body(page).locator("b")).toHaveText("propuesta");
-    await page.getByTestId("format-undo").click();
-    await expect(body(page).locator("b")).toHaveCount(0);
-    await page.getByTestId("format-redo").click();
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await openRow(page, 0);
-    await focusList(page);
-    await page.keyboard.press("r");
-    await expect(body(page).locator("b")).toHaveText("propuesta");
-    await expect(body(page)).toHaveText("Hola Ana, gracias por la propuesta del viernes.");
-  });
-
-  test("a plain draft from before opens as its text, untouched until edited", async ({ app: page, server }) => {
-    const db = sqlDb(server.backend.store);
-    const m = db.get<{ id: number; thread_id: number; account_id: number }>("SELECT m.id, m.thread_id, m.account_id FROM messages m JOIN threads t ON t.id = m.thread_id WHERE t.in_inbox = 1 ORDER BY t.last_date DESC, m.date DESC LIMIT 1")!;
-    const text = "Línea uno\n\n> no es una cita\n  sangría y\ttab";
-    await server.backend.store.drafts.save({ accountId: m.account_id, threadId: m.thread_id, mode: "reply", to: [{ name: "", email: "ana@example.com" }], cc: [], subject: "Re: x", bodyText: text, inReplyToMessageId: m.id }, Date.now());
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await openRow(page, 0);
-    await focusList(page);
-    await page.keyboard.press("r");
-    await expect(body(page).locator("p")).toHaveText(["Línea uno", "", "> no es una cita", "  sangría y\ttab"]);
-    await page.waitForTimeout(1200);
-    expect(db.get<{ body_text: string; body_html: string }>("SELECT body_text, body_html FROM drafts ORDER BY id DESC LIMIT 1")).toEqual({ body_text: text, body_html: "" });
-  });
-
-  test("a stored body with hostile HTML (an import, an agent): nothing runs, nothing loads, its text shows", async ({ app: page, server }) => {
-    const requests: string[] = [];
-    page.on("request", (r) => {
-      if (r.url().includes("evil.example")) requests.push(r.url());
+  test("drafts keep their formatting", async ({ app: page, server }) => {
+    await scenario("autosaved as HTML beside its text, restored after a reload exactly; collapsing keeps undo", async () => {
+      await reply(page);
+      await select(page, "propuesta");
+      await page.keyboard.press("ControlOrMeta+b");
+      await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+      const row = sqlDb(server.backend.store).get<{ body_text: string; body_html: string }>("SELECT body_text, body_html FROM drafts ORDER BY id DESC LIMIT 1")!;
+      expect(row.body_text).toBe("Hola Ana, gracias por la propuesta del viernes.");
+      expect(row.body_html).toBe("<div>Hola Ana, gracias por la <b>propuesta</b> del viernes.</div>");
+      // collapse and reopen: the same document, undo still there
+      await page.keyboard.press("Escape");
+      await page.getByTestId("draft-collapsed").click();
+      await expect(body(page).locator("b")).toHaveText("propuesta");
+      await page.getByTestId("format-undo").click();
+      await expect(body(page).locator("b")).toHaveCount(0);
+      await page.getByTestId("format-redo").click();
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await openRow(page, 0);
+      await focusList(page);
+      await page.keyboard.press("r");
+      await expect(body(page).locator("b")).toHaveText("propuesta");
+      await expect(body(page)).toHaveText("Hola Ana, gracias por la propuesta del viernes.");
     });
-    const db = sqlDb(server.backend.store);
-    const m = db.get<{ id: number; thread_id: number; account_id: number }>("SELECT m.id, m.thread_id, m.account_id FROM messages m JOIN threads t ON t.id = m.thread_id WHERE t.in_inbox = 1 ORDER BY t.last_date DESC, m.date DESC LIMIT 1")!;
-    await server.backend.store.drafts.save(
-      { accountId: m.account_id, threadId: m.thread_id, mode: "reply", to: [], cc: [], subject: "Re: x", bodyText: "x", bodyHtml: '<div>Hola<img src="https://evil.example/p.gif" onerror="window.__pwned=1"><script>window.__pwned=1</script><a href="javascript:window.__pwned=1">mal</a><iframe src="https://evil.example/f"></iframe><svg onload="window.__pwned=1"></svg></div>', inReplyToMessageId: m.id },
-      Date.now(),
-    );
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await openRow(page, 0);
-    await focusList(page);
-    await page.keyboard.press("r");
-    await expect(body(page)).toHaveText("Holamal");
-    await expect(body(page).locator("a, img, iframe, svg, script")).toHaveCount(0);
-    await page.waitForTimeout(300);
-    expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBeUndefined();
-    expect(requests).toEqual([]);
+    await scenario("a plain draft from before opens as its text, untouched until edited", async () => {
+      await freshNoDrafts(page, server);
+      const db = sqlDb(server.backend.store);
+      const m = db.get<{ id: number; thread_id: number; account_id: number }>("SELECT m.id, m.thread_id, m.account_id FROM messages m JOIN threads t ON t.id = m.thread_id WHERE t.in_inbox = 1 ORDER BY t.last_date DESC, m.date DESC LIMIT 1")!;
+      const text = "Línea uno\n\n> no es una cita\n  sangría y\ttab";
+      await server.backend.store.drafts.save({ accountId: m.account_id, threadId: m.thread_id, mode: "reply", to: [{ name: "", email: "ana@example.com" }], cc: [], subject: "Re: x", bodyText: text, inReplyToMessageId: m.id }, Date.now());
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await openRow(page, 0);
+      await focusList(page);
+      await page.keyboard.press("r");
+      await expect(body(page).locator("p")).toHaveText(["Línea uno", "", "> no es una cita", "  sangría y\ttab"]);
+      await page.waitForTimeout(1200);
+      expect(db.get<{ body_text: string; body_html: string }>("SELECT body_text, body_html FROM drafts ORDER BY id DESC LIMIT 1")).toEqual({ body_text: text, body_html: "" });
+    });
+    await scenario("a stored body with hostile HTML (an import, an agent): nothing runs, nothing loads, its text shows", async () => {
+      await freshNoDrafts(page, server);
+      const requests: string[] = [];
+      page.on("request", (r) => {
+        if (r.url().includes("evil.example")) requests.push(r.url());
+      });
+      const db = sqlDb(server.backend.store);
+      const m = db.get<{ id: number; thread_id: number; account_id: number }>("SELECT m.id, m.thread_id, m.account_id FROM messages m JOIN threads t ON t.id = m.thread_id WHERE t.in_inbox = 1 ORDER BY t.last_date DESC, m.date DESC LIMIT 1")!;
+      await server.backend.store.drafts.save(
+        { accountId: m.account_id, threadId: m.thread_id, mode: "reply", to: [], cc: [], subject: "Re: x", bodyText: "x", bodyHtml: '<div>Hola<img src="https://evil.example/p.gif" onerror="window.__pwned=1"><script>window.__pwned=1</script><a href="javascript:window.__pwned=1">mal</a><iframe src="https://evil.example/f"></iframe><svg onload="window.__pwned=1"></svg></div>', inReplyToMessageId: m.id },
+        Date.now(),
+      );
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await openRow(page, 0);
+      await focusList(page);
+      await page.keyboard.press("r");
+      await expect(body(page)).toHaveText("Holamal");
+      await expect(body(page).locator("a, img, iframe, svg, script")).toHaveCount(0);
+      await page.waitForTimeout(300);
+      expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBeUndefined();
+      expect(requests).toEqual([]);
+    });
+    await scenario("a key pressed while focus is still moving to the draft goes to the draft (r then Esc, r then typing at once)", async () => {
+      await freshNoDrafts(page, server);
+      await openRow(page, 0);
+      await focusList(page);
+      await page.keyboard.press("r");
+      await page.keyboard.type("Rápido");
+      await expect(body(page)).toHaveText("Rápido");
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("r");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("draft-collapsed")).toBeVisible();
+      await expect(page.getByTestId("draft-collapsed")).toContainText("Rápido");
+    });
   });
 
-  test("a key pressed while focus is still moving to the draft goes to the draft (r then Esc, r then typing at once)", async ({ app: page }) => {
-    await openRow(page, 0);
-    await focusList(page);
-    await page.keyboard.press("r");
-    await page.keyboard.type("Rápido");
-    await expect(body(page)).toHaveText("Rápido");
-    await page.keyboard.press("Escape");
-    await page.keyboard.press("r");
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("draft-collapsed")).toBeVisible();
-    await expect(page.getByTestId("draft-collapsed")).toContainText("Rápido");
-  });
 });
 
 test.describe("the new message", () => {
@@ -652,16 +663,120 @@ test.describe("the new message", () => {
   const card = (page: Page) => page.getByTestId("composer-card");
   const box = async (l: Locator) => (await l.boundingBox())!;
 
-  test("its foot carries the bar and Aa; formatting there works the same", async ({ app: page }) => {
-    await compose(page);
-    await page.getByTestId("compose-to").fill("ana@example.com");
-    await body(page).click();
-    await page.keyboard.type("Nuevo ");
-    await page.getByTestId("format-underline").click();
-    await page.keyboard.type("subrayado");
-    await expect(body(page).locator("u")).toHaveText("subrayado");
-    await expect(page.getByTestId("format-toggle")).toBeVisible();
-    await expect(page.getByTestId("compose-link")).toBeVisible();
+  test("the new message's card", async ({ app: page, server }) => {
+    await scenario("its foot carries the bar and Aa; formatting there works the same", async () => {
+      await compose(page);
+      await page.getByTestId("compose-to").fill("ana@example.com");
+      await body(page).click();
+      await page.keyboard.type("Nuevo ");
+      await page.getByTestId("format-underline").click();
+      await page.keyboard.type("subrayado");
+      await expect(body(page).locator("u")).toHaveText("subrayado");
+      await expect(page.getByTestId("format-toggle")).toBeVisible();
+      await expect(page.getByTestId("compose-link")).toBeVisible();
+    });
+    await scenario("plan 130: a message longer than the pane scrolls inside the card; the bar and Send stay, the line being typed shows above them", async () => {
+      await freshNoDrafts(page, server);
+      await compose(page);
+      await body(page).click();
+      for (let i = 0; i < 50; i++) { await page.keyboard.type(`línea ${i}`); await page.keyboard.press("Enter"); }
+      await page.keyboard.type("la última");
+      const c = await box(card(page)), pane = await box(page.getByTestId("composer")), bar = await box(page.getByTestId("format-bar")), send = await box(page.getByTestId("compose-send"));
+      expect(c.y + c.height).toBeLessThanOrEqual(pane.y + pane.height);
+      expect(send.y + send.height).toBeLessThanOrEqual(c.y + c.height);
+      const scroller = card(page).locator("[data-draft-scroll]");
+      expect(await scroller.evaluate((el) => el.scrollHeight > el.clientHeight && el.scrollTop > 0)).toBe(true);
+      const caret = await page.evaluate(() => window.getSelection()!.getRangeAt(0).getBoundingClientRect().bottom);
+      expect(caret).toBeLessThanOrEqual(bar.y);
+      // the area around the card has nothing to scroll: one scrollbar, the card's
+      expect(await scroller.evaluate((el) => { const outer = el.closest("[data-testid=composer-card]")!.parentElement!.parentElement!; return outer.scrollHeight - outer.clientHeight; })).toBeLessThanOrEqual(0);
+    });
+    await scenario("plan 130: a link on the last visible line opens its bubble whole, above the link", async () => {
+      await freshNoDrafts(page, server);
+      await compose(page);
+      await body(page).click();
+      for (let i = 0; i < 50; i++) { await page.keyboard.type(`línea ${i}`); await page.keyboard.press("Enter"); }
+      await page.keyboard.type("el enlace");
+      await select(page, "enlace");
+      await page.keyboard.press("ControlOrMeta+l");
+      await page.getByTestId("link-url").fill("acme.example/propuesta");
+      await page.keyboard.press("Enter");
+      await expect(body(page).locator("a")).toHaveText("enlace");
+      await body(page).locator("a").click();
+      const bubble = page.getByTestId("link-bubble");
+      await expect(bubble).toBeVisible();
+      const b = await box(bubble), scroller = await box(card(page).locator("[data-draft-scroll]"));
+      expect(b.y).toBeGreaterThanOrEqual(scroller.y);
+      expect(b.y + b.height).toBeLessThanOrEqual(scroller.y + scroller.height);
+      const link = await box(body(page).locator("a"));
+      expect(b.y + b.height).toBeLessThanOrEqual(link.y);
+      // and it works from there
+      await page.getByTestId("link-bubble-remove").click();
+      await expect(body(page).locator("a")).toHaveCount(0);
+    });
+    await scenario("plan 130: an open link bubble changes sides as the card's text scrolls, and is never cut off", async () => {
+      await freshNoDrafts(page, server);
+      await compose(page);
+      await body(page).click();
+      for (let i = 0; i < 40; i++) { await page.keyboard.type(`línea ${i}`); await page.keyboard.press("Enter"); }
+      await page.keyboard.type("el enlace");
+      await select(page, "enlace");
+      await page.keyboard.press("ControlOrMeta+l");
+      await page.getByTestId("link-url").fill("acme.example/propuesta");
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("ControlOrMeta+End");
+      for (let i = 0; i < 40; i++) { await page.keyboard.press("Enter"); await page.keyboard.type(`más ${i}`); }
+      const link = body(page).locator("a"), bubble = page.getByTestId("link-bubble"), scroller = card(page).locator("[data-draft-scroll]");
+      /** Scrolls so the link's edge meets the scroller's. */
+      const scrollLinkTo = (edge: "top" | "bottom") => scroller.evaluate((el, edge) => {
+        const a = el.querySelector("[data-testid=compose-body] a")!.getBoundingClientRect(), s = el.getBoundingClientRect();
+        el.scrollTop += edge === "bottom" ? a.bottom - s.bottom + 4 : a.top - s.top - 4;
+      }, edge);
+      const inside = async () => {
+        const b = await box(bubble), s = await box(scroller);
+        return b.y >= s.y && b.y + b.height <= s.y + s.height;
+      };
+      await scrollLinkTo("bottom");
+      await link.click();
+      await expect(bubble).toBeVisible();
+      await expect.poll(async () => (await box(bubble)).y + (await box(bubble)).height <= (await box(link)).y).toBe(true);
+      expect(await inside()).toBe(true);
+      await scrollLinkTo("top");
+      await expect.poll(async () => (await box(bubble)).y >= (await box(link)).y + (await box(link)).height).toBe(true);
+      expect(await inside()).toBe(true);
+      await scrollLinkTo("bottom");
+      await expect.poll(async () => (await box(bubble)).y + (await box(bubble)).height <= (await box(link)).y).toBe(true);
+      expect(await inside()).toBe(true);
+    });
+    await scenario("plan 130: Collapse steps away: what's written is kept in the strip, with focus; an untouched one goes, and the list reads on", async () => {
+      await freshNoDrafts(page, server);
+      await compose(page);
+      await page.getByTestId("compose-collapse").click();
+      await expect(page.getByTestId("composer")).toHaveCount(0);
+      await expect(page.getByTestId("strip-item")).toHaveCount(0);
+      await page.keyboard.press("j");
+      await expect(page.locator("[data-testid=thread-row][data-cursor]")).toHaveCount(1);
+      await compose(page);
+      await page.getByTestId("compose-to").fill("ana@example.com");
+      await body(page).click();
+      await page.keyboard.type("Lo sigo luego");
+      const key = await page.getByTestId("composer").getAttribute("data-draft-key");
+      await page.getByTestId("compose-collapse").click();
+      await expect(page.getByTestId("composer")).toHaveCount(0);
+      await expect(page.locator(`[data-testid=strip-item][data-key="${key}"]`)).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(body(page)).toContainText("Lo sigo luego");
+    });
+    await scenario("plan 130: a very long subject is the title's two lines at most; the card keeps its foot in view", async () => {
+      await freshNoDrafts(page, server);
+      await page.setViewportSize({ width: 980, height: 600 });
+      await compose(page);
+      await page.getByTestId("compose-subject").fill("Una propuesta larguísima de colaboración ".repeat(12).trim());
+      const title = page.getByTestId("compose-title");
+      expect(await title.evaluate((el) => el.clientHeight < el.scrollHeight)).toBe(true);
+      await expect(page.getByTestId("compose-send")).toBeInViewport({ ratio: 1 });
+      await expect(page.getByTestId("compose-collapse")).toBeInViewport({ ratio: 1 });
+    });
   });
 
   test("plan 130: a card that hugs the text: the bar right under it, far from the pane's foot, every control inside", { tag: "@variant" }, async ({ app: page }) => {
@@ -678,107 +793,6 @@ test.describe("the new message", () => {
     await expect(page.getByTestId("composer").getByText("New message", { exact: true })).toHaveCount(1);
   });
 
-  test("plan 130: a message longer than the pane scrolls inside the card; the bar and Send stay, the line being typed shows above them", async ({ app: page }) => {
-    await compose(page);
-    await body(page).click();
-    for (let i = 0; i < 50; i++) { await page.keyboard.type(`línea ${i}`); await page.keyboard.press("Enter"); }
-    await page.keyboard.type("la última");
-    const c = await box(card(page)), pane = await box(page.getByTestId("composer")), bar = await box(page.getByTestId("format-bar")), send = await box(page.getByTestId("compose-send"));
-    expect(c.y + c.height).toBeLessThanOrEqual(pane.y + pane.height);
-    expect(send.y + send.height).toBeLessThanOrEqual(c.y + c.height);
-    const scroller = card(page).locator("[data-draft-scroll]");
-    expect(await scroller.evaluate((el) => el.scrollHeight > el.clientHeight && el.scrollTop > 0)).toBe(true);
-    const caret = await page.evaluate(() => window.getSelection()!.getRangeAt(0).getBoundingClientRect().bottom);
-    expect(caret).toBeLessThanOrEqual(bar.y);
-    // the area around the card has nothing to scroll: one scrollbar, the card's
-    expect(await scroller.evaluate((el) => { const outer = el.closest("[data-testid=composer-card]")!.parentElement!.parentElement!; return outer.scrollHeight - outer.clientHeight; })).toBeLessThanOrEqual(0);
-  });
-
-  test("plan 130: a link on the last visible line opens its bubble whole, above the link", async ({ app: page }) => {
-    await compose(page);
-    await body(page).click();
-    for (let i = 0; i < 50; i++) { await page.keyboard.type(`línea ${i}`); await page.keyboard.press("Enter"); }
-    await page.keyboard.type("el enlace");
-    await select(page, "enlace");
-    await page.keyboard.press("ControlOrMeta+l");
-    await page.getByTestId("link-url").fill("acme.example/propuesta");
-    await page.keyboard.press("Enter");
-    await expect(body(page).locator("a")).toHaveText("enlace");
-    await body(page).locator("a").click();
-    const bubble = page.getByTestId("link-bubble");
-    await expect(bubble).toBeVisible();
-    const b = await box(bubble), scroller = await box(card(page).locator("[data-draft-scroll]"));
-    expect(b.y).toBeGreaterThanOrEqual(scroller.y);
-    expect(b.y + b.height).toBeLessThanOrEqual(scroller.y + scroller.height);
-    const link = await box(body(page).locator("a"));
-    expect(b.y + b.height).toBeLessThanOrEqual(link.y);
-    // and it works from there
-    await page.getByTestId("link-bubble-remove").click();
-    await expect(body(page).locator("a")).toHaveCount(0);
-  });
-
-  test("plan 130: an open link bubble changes sides as the card's text scrolls, and is never cut off", async ({ app: page }) => {
-    await compose(page);
-    await body(page).click();
-    for (let i = 0; i < 40; i++) { await page.keyboard.type(`línea ${i}`); await page.keyboard.press("Enter"); }
-    await page.keyboard.type("el enlace");
-    await select(page, "enlace");
-    await page.keyboard.press("ControlOrMeta+l");
-    await page.getByTestId("link-url").fill("acme.example/propuesta");
-    await page.keyboard.press("Enter");
-    await page.keyboard.press("ControlOrMeta+End");
-    for (let i = 0; i < 40; i++) { await page.keyboard.press("Enter"); await page.keyboard.type(`más ${i}`); }
-    const link = body(page).locator("a"), bubble = page.getByTestId("link-bubble"), scroller = card(page).locator("[data-draft-scroll]");
-    /** Scrolls so the link's edge meets the scroller's. */
-    const scrollLinkTo = (edge: "top" | "bottom") => scroller.evaluate((el, edge) => {
-      const a = el.querySelector("[data-testid=compose-body] a")!.getBoundingClientRect(), s = el.getBoundingClientRect();
-      el.scrollTop += edge === "bottom" ? a.bottom - s.bottom + 4 : a.top - s.top - 4;
-    }, edge);
-    const inside = async () => {
-      const b = await box(bubble), s = await box(scroller);
-      return b.y >= s.y && b.y + b.height <= s.y + s.height;
-    };
-    await scrollLinkTo("bottom");
-    await link.click();
-    await expect(bubble).toBeVisible();
-    await expect.poll(async () => (await box(bubble)).y + (await box(bubble)).height <= (await box(link)).y).toBe(true);
-    expect(await inside()).toBe(true);
-    await scrollLinkTo("top");
-    await expect.poll(async () => (await box(bubble)).y >= (await box(link)).y + (await box(link)).height).toBe(true);
-    expect(await inside()).toBe(true);
-    await scrollLinkTo("bottom");
-    await expect.poll(async () => (await box(bubble)).y + (await box(bubble)).height <= (await box(link)).y).toBe(true);
-    expect(await inside()).toBe(true);
-  });
-
-  test("plan 130: Collapse steps away: what's written is kept in the strip, with focus; an untouched one goes, and the list reads on", async ({ app: page }) => {
-    await compose(page);
-    await page.getByTestId("compose-collapse").click();
-    await expect(page.getByTestId("composer")).toHaveCount(0);
-    await expect(page.getByTestId("strip-item")).toHaveCount(0);
-    await page.keyboard.press("j");
-    await expect(page.locator("[data-testid=thread-row][data-cursor]")).toHaveCount(1);
-    await compose(page);
-    await page.getByTestId("compose-to").fill("ana@example.com");
-    await body(page).click();
-    await page.keyboard.type("Lo sigo luego");
-    const key = await page.getByTestId("composer").getAttribute("data-draft-key");
-    await page.getByTestId("compose-collapse").click();
-    await expect(page.getByTestId("composer")).toHaveCount(0);
-    await expect(page.locator(`[data-testid=strip-item][data-key="${key}"]`)).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect(body(page)).toContainText("Lo sigo luego");
-  });
-
-  test("plan 130: a very long subject is the title's two lines at most; the card keeps its foot in view", async ({ app: page }) => {
-    await page.setViewportSize({ width: 980, height: 600 });
-    await compose(page);
-    await page.getByTestId("compose-subject").fill("Una propuesta larguísima de colaboración ".repeat(12).trim());
-    const title = page.getByTestId("compose-title");
-    expect(await title.evaluate((el) => el.clientHeight < el.scrollHeight)).toBe(true);
-    await expect(page.getByTestId("compose-send")).toBeInViewport({ ratio: 1 });
-    await expect(page.getByTestId("compose-collapse")).toBeInViewport({ ratio: 1 });
-  });
 });
 
 test("plan 130: at the narrowest window, in Spanish, with a long status, every control in a new message's foot stays reachable", async ({ app: page, server }) => {
@@ -818,54 +832,56 @@ test.describe("an install with nothing open", () => {
   });
 });
 
-test("the editor stays out of the startup bundle: the entry and what it imports statically carry no ProseMirror; it loads with a conversation", async ({ app: page }) => {
-  await openRow(page, 0);
-  await focusList(page);
-  await page.keyboard.press("r");
-  await expect(body(page)).toBeFocused();
-  const entry = await page.evaluate(async () => {
-    const src = document.querySelector<HTMLScriptElement>("script[type=module][src]")!.src;
-    const seen = new Set<string>();
-    const hits: string[] = [];
-    const walk = async (url: string) => {
-      if (seen.has(url)) return;
-      seen.add(url);
-      const code = await (await fetch(url)).text();
-      if (/ProseMirror|prosemirror|Invalid content for node/.test(code)) hits.push(url);
-      for (const m of code.matchAll(/(?:^|[;\n}])\s*import\s*(?:[^"'();]*?from\s*)?["'](\.\/[^"']+\.js)["']/g)) await walk(new URL(m[1]!, url).href);
-    };
-    await walk(src);
-    return { files: seen.size, hits };
+test("the startup bundle keeps the editor and React Aria out", async ({ app: page, server }) => {
+  await scenario("the editor stays out of the startup bundle: the entry and what it imports statically carry no ProseMirror; it loads with a conversation", async () => {
+    await openRow(page, 0);
+    await focusList(page);
+    await page.keyboard.press("r");
+    await expect(body(page)).toBeFocused();
+    const entry = await page.evaluate(async () => {
+      const src = document.querySelector<HTMLScriptElement>("script[type=module][src]")!.src;
+      const seen = new Set<string>();
+      const hits: string[] = [];
+      const walk = async (url: string) => {
+        if (seen.has(url)) return;
+        seen.add(url);
+        const code = await (await fetch(url)).text();
+        if (/ProseMirror|prosemirror|Invalid content for node/.test(code)) hits.push(url);
+        for (const m of code.matchAll(/(?:^|[;\n}])\s*import\s*(?:[^"'();]*?from\s*)?["'](\.\/[^"']+\.js)["']/g)) await walk(new URL(m[1]!, url).href);
+      };
+      await walk(src);
+      return { files: seen.size, hits };
+    });
+    expect(entry.files).toBeGreaterThan(3);
+    expect(entry.hits).toEqual([]);
   });
-  expect(entry.files).toBeGreaterThan(3);
-  expect(entry.hits).toEqual([]);
+  await scenario("React Aria stays out of the startup bundle: it loads with the date and time pickers", async () => {
+    await freshNoDrafts(page, server);
+    const entry = await page.evaluate(async () => {
+      const src = document.querySelector<HTMLScriptElement>("script[type=module][src]")!.src;
+      const seen = new Set<string>();
+      const hits: string[] = [];
+      const walk = async (url: string) => {
+        if (seen.has(url)) return;
+        seen.add(url);
+        const code = await (await fetch(url)).text();
+        if (/data-rac|react-aria|DateSegment/.test(code)) hits.push(url);
+        for (const m of code.matchAll(/(?:^|[;\n}])\s*import\s*(?:[^"'();]*?from\s*)?["'](\.\/[^"']+\.js)["']/g)) await walk(new URL(m[1]!, url).href);
+      };
+      await walk(src);
+      return { files: seen.size, hits };
+    });
+    expect(entry.files).toBeGreaterThan(3);
+    expect(entry.hits).toEqual([]);
+    // and it is what draws the time once the picker loads
+    await openRow(page, 1);
+    await page.getByTestId("action-remind").click();
+    await page.getByTestId("remind-pick").click();
+    await expect(page.getByTestId("remind-time")).toHaveAttribute("data-rac", "");
+  });
 });
 
 // plan 122: React Aria (the Time Field) is the pickers' alone: none of it in the entry or what it imports statically
-test("React Aria stays out of the startup bundle: it loads with the date and time pickers", async ({ app: page }) => {
-  const entry = await page.evaluate(async () => {
-    const src = document.querySelector<HTMLScriptElement>("script[type=module][src]")!.src;
-    const seen = new Set<string>();
-    const hits: string[] = [];
-    const walk = async (url: string) => {
-      if (seen.has(url)) return;
-      seen.add(url);
-      const code = await (await fetch(url)).text();
-      if (/data-rac|react-aria|DateSegment/.test(code)) hits.push(url);
-      for (const m of code.matchAll(/(?:^|[;\n}])\s*import\s*(?:[^"'();]*?from\s*)?["'](\.\/[^"']+\.js)["']/g)) await walk(new URL(m[1]!, url).href);
-    };
-    await walk(src);
-    return { files: seen.size, hits };
-  });
-  expect(entry.files).toBeGreaterThan(3);
-  expect(entry.hits).toEqual([]);
-  // and it is what draws the time once the picker loads
-  await openRow(page, 1);
-  await page.getByTestId("action-remind").click();
-  await page.getByTestId("remind-pick").click();
-  await expect(page.getByTestId("remind-time")).toHaveAttribute("data-rac", "");
-});
-
 test("a huge draft skips its lines off screen from the start: nothing reads style or layout while all of them would be styled", async ({ app: page, server }) => {
   // a read then styled every line before content-visibility applied, and every keystroke after cost twice as much
   // (a 2 MB draft: 21 ms to the transaction instead of 12, the frame at 60 ms; plan 16, "Huge drafts")
