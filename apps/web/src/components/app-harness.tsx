@@ -5,8 +5,13 @@ import { beforeAll, vi } from "vitest";
 import type { Account, ThreadDetail } from "@terno/core";
 type OwnedRpcOption = typeof import("./draft-presentation-owned-rpc")["presentationOwnedRpc"];
 const gate = vi.hoisted(() => ({ load: vi.fn(), call: vi.fn(), ownedCall: undefined as undefined | ((method: string, params: unknown) => unknown) }));
-// The unopted route remains the exact original gate.call mock object.
-vi.mock("~/rpc/connection", () => ({ client: { get call() { return gate.ownedCall ?? gate.call; } } }));
+// Every call still reaches gate.call. A slow machine reaches the real 800 ms autosave, and the mocks' default {} must not read as a draft with no identity.
+const answered = vi.hoisted(() => (method: string, params: unknown) => {
+  const result = gate.call(method, params) as unknown;
+  if (method !== "drafts.save") return result;
+  return Promise.resolve(result).then((saved) => saved && typeof saved === "object" && !Object.keys(saved).length ? { ...params as object, id: (params as { id?: number }).id ?? 81, generation: (params as { generation?: string }).generation ?? "stable", revision: (params as { baseRevision?: number }).baseRevision ?? 1, updatedAt: 0 } : saved);
+});
+vi.mock("~/rpc/connection", () => ({ client: { get call() { return gate.ownedCall ?? answered; } } }));
 vi.mock("~/state/threads", async (original) => ({ ...await original<typeof import("~/state/threads")>(), loadThread: gate.load }));
 vi.mock("./sidebar", () => ({ Sidebar: () => null }));
 vi.mock("./thread-list", async () => { const { DraftsStrip } = await import("./drafts-strip"); return { ThreadList: () => <DraftsStrip /> }; });

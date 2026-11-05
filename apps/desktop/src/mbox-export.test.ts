@@ -65,24 +65,21 @@ describe("mbox export in main (plan 107)", () => {
     await t.settled();
     expect(await t.call("terno:export-write", t.id, "b\n")).toBe(true);
     t.sender.emit("did-start-navigation", {}, "app://terno/", false, true);
-    await t.settled();
-    expect(t.temps()).toEqual([]);
+    await vi.waitFor(() => expect(t.temps()).toEqual([]));
     expect(await t.call("terno:export-write", t.id, "c\n")).toBe(false);
   });
 
   it("a renderer that crashes ends its export (Codex code review #10)", async () => {
     const t = await begun();
     t.sender.emit("render-process-gone", {}, { reason: "crashed" });
-    await t.settled();
-    expect(t.temps()).toEqual([]);
+    await vi.waitFor(() => expect(t.temps()).toEqual([]));
     expect(await t.call("terno:export-end", t.id)).toEqual({ status: "failed" });
   });
 
   it("the window going ends its export", async () => {
     const t = await begun();
     t.sender.emit("destroyed");
-    await t.settled();
-    expect(t.temps()).toEqual([]);
+    await vi.waitFor(() => expect(t.temps()).toEqual([]));
   });
 
   it("a page that ends while the file opens leaves no temp file (Codex code review round 5 #5)", async () => {
@@ -94,8 +91,7 @@ describe("mbox export in main (plan 107)", () => {
     // the reload lands while the temp file is being opened
     sender.emit("did-start-navigation", {}, "app://terno/", false, true);
     expect((await begin).status).toBe("failed");
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(readdirSync(dir)).toEqual([]);
+    await vi.waitFor(() => expect(readdirSync(dir)).toEqual([]));
   });
 
   it("a page that ends while the save panel is open begins nothing (Codex code review round 5 #5)", async () => {
