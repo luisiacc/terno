@@ -524,8 +524,13 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 980, height: 600 
         expect(sizes.bottom, tab).toBeLessThanOrEqual(box.y + box.height + 1);
         if (sizes.scroll <= sizes.client + 1) continue;
         await scroller.hover();
-        await page.mouse.wheel(0, sizes.scroll);
-        await expect.poll(() => scroller.evaluate((el) => el.scrollTop > 0 && Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight), { message: tab }).toBe(true);
+        // (a tab's rows can still be arriving, and the end move further down: wheel again until it's reached)
+        await expect
+          .poll(async () => {
+            await page.mouse.wheel(0, sizes.scroll);
+            return scroller.evaluate((el) => el.scrollTop > 0 && Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight);
+          }, { message: tab })
+          .toBe(true);
         scrolled.push(tab);
       }
       // Appearance (13 themes) always overflows: the wheel really had something to scroll
