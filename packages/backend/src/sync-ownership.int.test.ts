@@ -23,7 +23,7 @@ const gate = () => {
   return { promise, release };
 };
 
-async function fixture(kind: "SQL" | "IndexedDB", path?: string, enabled = false) {
+async function fixture(kind: "SQL" | "IndexedDB", path?: string, enabled = false, connectivity?: { delays: number[] }) {
   const dir = path ?? mkdtempSync(join(tmpdir(), "terno-sync-owner-"));
   const factory = new IDBFactory(), name = crypto.randomUUID();
   const routes: string[] = [];
@@ -75,7 +75,7 @@ async function fixture(kind: "SQL" | "IndexedDB", path?: string, enabled = false
   const open = async (autoSync: boolean) => {
     const b = new Backend({ dbPath: join(dir, "mail.db"), store: kind === "IndexedDB" ? await IdbMailStore.open({ name, factory, instantSearch: false,
       platform: { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((r) => setImmediate(r)) } }) : undefined,
-      providers, cipher: plaintextCipher, version: "test", autoSync, connectivity: { delays: [20] },
+      providers, cipher: plaintextCipher, version: "test", autoSync, connectivity,
  instantSearch: false, iconTransport: null, syncIntervalMs: 3_600_000 });
     await b.ready; return b;
   };
@@ -238,7 +238,8 @@ describe.each(["SQL", "IndexedDB"] as const)("%s local ownership", (kind) => {
   });
 
   sqlite("B14 timer observation distinguishes legitimate retryable backoff and automatic recovery", async () => {
-    const t = await fixture(kind, undefined, true); t.fail("503");
+    // the retry at once rather than after its real first delay
+    const t = await fixture(kind, undefined, true, { delays: [20] }); t.fail("503");
     const sync = vi.spyOn(t.backend, "syncAccount");
     await t.backend.syncAccount(t.account.id);
     expect(t.historyStarts()).toEqual(["100"]);
