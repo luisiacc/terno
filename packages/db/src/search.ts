@@ -1,4 +1,4 @@
-import { isFullEmail, normalizeText, parseSearch, resolveSearch, tokenize, type MessageTerm, type ResolvedSearch, type ScopeLookup, type SearchView, type ThreadFilter } from "@terno/core";
+import { isFullEmail, normalizeText, parseSearch, resolveSearch, searchTerms, tokenize, type MessageTerm, type ResolvedSearch, type ScopeLookup, type SearchView, type ThreadFilter } from "@terno/core";
 import { pageFrom, SUMMARY_COLUMNS, SEARCH_VIEW_WHERE, type Cursor, type Page, type SummaryRow } from "./queries";
 import { placeholders, type Db, type Param } from "./sqlite";
 
@@ -34,6 +34,13 @@ const FTS_COLUMN: Record<MessageTerm["field"], string | null> = {
 const ADDRESS_SQL = "instr(' ' || m.from_email || ' ' || m.recipients_norm || ' ', ?) > 0";
 const addressNeedle = (term: MessageTerm) => ` ${term.value}${term.prefix ? "" : " "}`;
 const isSenderEmail = (term: MessageTerm) => term.field === "from" && isFullEmail(term.value);
+
+/**
+ * Hits from which an address's search walks instead of materializing: the
+ * user's own address is on most of the mailbox, and its hits are all among the
+ * newest threads. Checking the words of 30,000 rows costs what the walk doesn't.
+ */
+const DENSE_ADDRESS_HITS = 4096;
 
 /** Quote a term as an FTS5 string (double quotes doubled), with optional prefix star. */
 function ftsPhrase(value: string, prefix: boolean): string | null {
@@ -230,9 +237,16 @@ export function runSearch<R>(
   extra: { where: string[]; params: Param[] } = { where: [], params: [] },
 ): { rows: R[]; strategy: SearchStrategy } {
   const q = resolved.query;
-  const segmented = !!db.get("SELECT 1 FROM body_heads LIMIT 1");
+  const terms = searchTerms(q);
+  // only free text can be in a captured body: headers are all in FTS5, whatever the mailbox holds
+  const segmented = terms.some((t) => t.field === "text") && !!db.get("SELECT 1 FROM body_heads LIMIT 1");
   const c = segmented ? compileSegmentedSearch(resolved) : compileSearch(resolved);
   if (c.impossible) return { rows: [], strategy: "empty" };
+  if (c.match && limit > 0 && terms.some((t) => t.field === "address") && db.get<{ c: number }>("SELECT count(*) AS c FROM (SELECT 1 FROM messages_fts WHERE messages_fts MATCH ? LIMIT ?)", c.match, DENSE_ADDRESS_HITS)!.c === DENSE_ADDRESS_HITS) {
+    c.messageWhere.unshift("m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)");
+    c.messageParams.unshift(c.match);
+    c.match = null;
+  }
   c.threadWhere.push(...extra.where);
   c.threadParams.push(...extra.params);
   const { where, params: tParams } = threadClause(c, cursor);
@@ -342,19 +356,25 @@ export function searchIsComplete(db: Db): boolean {
 /** One term as a predicate on alias m; `segmented`: a body may also be in captured parts. */
 function exactPredicate(term: MessageTerm, segmented: boolean): { sql: string; params: Param[] } {
   if (isSenderEmail(term)) return { sql: "m.from_email = ?", params: [normalizeText(term.value)] };
-  if (term.field === "address") return { sql: ADDRESS_SQL, params: [addressNeedle(term)] };
   const sql = "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)";
+  // the MATCH that narrows it is the statement's own unless this is the segmented form, which has none. CASE, because
+  // SQLite evaluates the side without a subquery first: an AND would build the words of every message a walk checks
+  if (term.field === "address") return segmented ? { sql: `CASE WHEN ${sql} THEN ${ADDRESS_SQL} ELSE 0 END`, params: [ftsTerm(term)!, addressNeedle(term)] } : { sql: ADDRESS_SQL, params: [addressNeedle(term)] };
   const params: Param[] = [ftsTerm(term)!];
   if (!segmented || term.field !== "text") return { sql, params };
-  return { sql: `(${sql} OR EXISTS (SELECT 1 FROM body_heads b WHERE b.message_id=m.id AND terno_part_match(b.capture_id,'contains',?,?)))`, params: [...params, term.value, term.prefix ? 1 : 0] };
+  // one set for the statement, not a lookup per message: a walk may check every message, once per alternative
+  return { sql: "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ? UNION ALL SELECT message_id FROM body_heads WHERE terno_part_match(capture_id,'contains',?,?))", params: [...params, term.value, term.prefix ? 1 : 0] };
 }
 
 function compileSegmentedSearch(resolved: ResolvedSearch): Compiled {
-  const terms = resolved.query.terms.filter((term) => !isSenderEmail(term));
-  const { anyOf } = resolved.query;
-  const c = compileSearch({ ...resolved, query: { ...resolved.query, anyOf: [], terms: resolved.query.terms.filter(isSenderEmail) } });
+  // headers are all in FTS5, so what asks only for them leads, as it does on any mailbox: a rare address never walks the threads
+  const leads = (term: MessageTerm) => isSenderEmail(term) || (!term.negate && term.field !== "text");
+  const q = resolved.query;
+  const terms = q.terms.filter((term) => !leads(term));
+  const anyOf = q.anyOf.filter((group) => group.some((term) => term.field === "text"));
+  const c = compileSearch({ ...resolved, query: { ...q, terms: q.terms.filter(leads), anyOf: q.anyOf.filter((group) => !anyOf.includes(group)) } });
   const positives = terms.filter((term) => !term.negate && ftsTerm(term) !== null);
-  const sameMessage = positives.length > 0 || anyOf.length > 0 || c.messageWhere.length > 0;
+  const sameMessage = positives.length > 0 || anyOf.length > 0 || c.match !== null || c.messageWhere.length > 0;
   const negatives: string[] = [], negativeParams: Param[] = [];
   for (const group of anyOf) {
     const exact = group.map((t) => exactPredicate(t, true));

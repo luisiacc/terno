@@ -122,3 +122,25 @@ Eight points. Taken or decided:
 6. **Addresses that coalesce.** Only bare addresses standing alone, or in a group of nothing but addresses, join the implicit "any of". `a@x.test,invoice b@y.test` is (a or invoice) and b.
 7. **The number exception looked at substrings.** It now looks at the whole whitespace-delimited token: `1,000`, `12,50`, `$1,200.50` and `1.200,50` are numbers; `build1,2` and `2024,2025` are lists.
 8. **Conformance didn't cover Bcc or changed headers.** The fixture projects Bcc, and the mutation sequences change a sender and a recipient, so stale address postings would fail.
+
+## What the measurements found
+
+At 57k threads and 100k messages (`search-everywhere.perf.test.ts`), the machine at a load of about 9 from other sessions. The own address sits on 31,930 messages.
+
+| Path | Budget | Worst p95 |
+|---|---|---|
+| Instant, any of and addresses | 1 ms | 0.18 ms (`factura,uber has:attachment`) |
+| Instant, two rarely-adjacent phrases, asking FTS5 | 5 ms | 2.97 ms |
+| Instant, every keystroke, cold | 5 ms | 2.10 ms |
+| Store, every keystroke (resolve, engine, rows) | 5 ms | 1.06 ms |
+| FTS path, ordinary mailbox | 35 ms | 21.7 ms (`pro,pre`) |
+| FTS path, with captured bodies | 35 ms | 30.9 ms (`zzqxjv,yyqxjv`) |
+| Instant with no FTS5 to ask (the web), two rarely-adjacent phrases | 60 ms | 25 ms |
+
+Index memory at 51k messages is 41 MiB against the 64 MiB gate, and a build is 1.6 s, its longest stall 7.8 ms.
+
+The gates changed the design in three places, all on the FTS path, which answers while the index catches up:
+
+1. **An address on nearly every message missed the budget** (38 to 57 ms): it materialized 32,000 hits and checked the words of each. An address's search now counts its hits first (`LIMIT 4096`, about a millisecond), and past that walks threads newest-first, stopping at the page: 13 to 18 ms.
+2. **The segmented form walked every thread for a rare address** (96 to 133 ms). The gate ran on a mailbox with no captured body, and every real mailbox has one, so a new gate holds that form. What asks only for headers now leads through FTS5 on any mailbox, since a captured body can't change its answer (rare address: 0.7 ms). A word's captured-body test is one set for the statement rather than a lookup per message, which also took plain rare words from 31 to 24 ms and `pro` from 23 to 10 ms.
+3. **`(m.id IN (…) AND instr(…))` built the words of every message.** SQLite evaluates the side without a subquery first, so it became a `CASE`.
