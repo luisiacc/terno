@@ -245,7 +245,38 @@ export interface FolderChange {
   partial?: ProviderError;
 }
 
+/** Plan 141: what a server search looks for, as Ask's plan validated it. */
+export interface ProviderQuery {
+  /** all of them */
+  terms: string[];
+  /** one of each group */
+  anyOf?: string[][];
+  from?: string;
+  to?: string;
+  subject?: string;
+  /** ms */
+  after?: number;
+  before?: number;
+  hasAttachment?: boolean;
+}
+
+/** One message a server found: only what it takes to fetch it and to put it in date order. */
+export interface ProviderHit {
+  id: string;
+  /** ms */
+  date: number;
+  /** IMAP: where it is */
+  place?: { mailbox: string; uidvalidity: number; uid: number };
+}
+
 export interface MailProvider {
+  /**
+   * Plan 141: asks the server, on a person's click, which older messages match. Reads no body and stores nothing.
+   * `partial`: part of the mailbox wasn't searched (a deadline, a folder that refused).
+   */
+  search?(input: { queries: readonly ProviderQuery[]; before: number; limit: number; signal: AbortSignal }): Promise<{ hits: ProviderHit[]; partial: boolean }>;
+  /** Plan 141: downloads these and ingests them as old mail (`live: false`). */
+  fetchHits?(hits: readonly ProviderHit[], sink: SyncSink): Promise<void>;
   /** This provider can supply fresh authoritative evidence for all user-controlled flags. */
   flagSnapshots?: true;
   /** Envelopes describe a single location and cannot confirm all-location state. */

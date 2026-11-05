@@ -12,7 +12,7 @@ import { IncomingProcessingError, INCOMING_GMAIL_WIRE_BYTES } from "./incoming-p
 import { failedBeforeRequest, isFetchNetworkFailure, ProviderCooldownError, RequestNotDispatchedError } from "./net-errors";
 import { createQuotaPacer, gmailUnits, type QuotaPacer } from "./gmail-quota";
 import { nameTaken, planLabelCreate, planLabelDelete, planLabelRename, refusedBy } from "./folder-changes";
-import { BACKFILL_CHUNK_MS, ProviderAuthError, ProviderError, type FlagUpdate, type HttpRequestContext, type HttpResponseEvidence, type RequestRun, type MailAdmission, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
+import { BACKFILL_CHUNK_MS, ProviderAuthError, ProviderError, type ProviderHit, type ProviderQuery, type FlagUpdate, type HttpRequestContext, type HttpResponseEvidence, type RequestRun, type MailAdmission, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
 export interface GmailEndpoints {
   auth: string;
@@ -579,6 +579,20 @@ function inlineCandidate(bytes: Uint8Array): boolean {
 }
 
 /** The Gmail REST client (sync, history, labels, send) over any token source: no Node APIs. */
+/** A search box query from validated values: a quote in a value can't end its phrase. */
+export function gmailQuery(query: ProviderQuery, before: number): string {
+  const quoted = (value: string) => `"${value.replace(/"/g, " ").trim()}"`;
+  const parts = query.terms.map(quoted);
+  for (const group of query.anyOf ?? []) parts.push(`{${group.map(quoted).join(" ")}}`);
+  if (query.from) parts.push(`from:${quoted(query.from)}`);
+  if (query.to) parts.push(`to:${quoted(query.to)}`);
+  if (query.subject) parts.push(`subject:${quoted(query.subject)}`);
+  if (query.hasAttachment) parts.push("has:attachment");
+  if (query.after !== undefined) parts.push(`after:${Math.floor(query.after / 1000)}`);
+  parts.push(`before:${Math.ceil(Math.min(before, query.before ?? before) / 1000)}`);
+  return parts.join(" ");
+}
+
 export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOptions): MailProvider {
   const ep = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
   const netFetch = ctx.fetch;
@@ -1380,6 +1394,36 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
 
   return {
     flagSnapshots: true,
+    /**
+     * Plan 141: Google documents `q` as the search box's own format and that `includeSpamTrash` defaults to false. The
+     * list isn't documented to have an order, so each new id's date is read from its metadata (no body).
+     */
+    async search({ queries, before, limit, signal }) {
+      ctx.google?.check({ endpoint: "gmail-api", purpose: "mail" });
+      const ids = new Set<string>();
+      for (const query of queries) {
+        signal.throwIfAborted();
+        const q = new URLSearchParams({ q: gmailQuery(query, before), maxResults: String(limit) });
+        const page = readList(await api<unknown>(`/messages?${q}`, { signal, preparationSignal: signal }));
+        for (const m of page.messages ?? []) if (!(await store.messageByProviderId(m.id))) ids.add(m.id);
+      }
+      const hits: ProviderHit[] = [];
+      for (const id of ids) {
+        signal.throwIfAborted();
+        const m = await api<{ internalDate?: unknown; payload?: { headers?: { name?: unknown; value?: unknown }[] } }>(`/messages/${encodeURIComponent(id)}?format=metadata&metadataHeaders=Date`, { signal, preparationSignal: signal });
+        const header = m.payload?.headers?.find((h) => typeof h.name === "string" && h.name.toLowerCase() === "date")?.value;
+        const date = Number(m.internalDate) || (typeof header === "string" ? Date.parse(header) : NaN);
+        hits.push({ id, date: Number.isFinite(date) ? date : 0 });
+      }
+      return { hits, partial: false };
+    },
+    async fetchHits(hits, sink) {
+      const pass: SyncPass = { ...sink, check: () => sink.signal.throwIfAborted() };
+      for (let i = 0; i < hits.length; i += 50) {
+        pass.check();
+        await fetchFull(hits.slice(i, i + 50).map((h) => h.id), pass);
+      }
+    },
     async readBody(target, signal) {
       const path = `/messages/${encodeURIComponent(target.providerMsgId)}?format=raw`;
       const release = await ctx.incoming?.acquire(accountId, signal, reads.signal, "reader");

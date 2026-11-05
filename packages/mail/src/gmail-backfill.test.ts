@@ -1,9 +1,9 @@
 import { IncomingPipeline } from "./incoming";
 import { createNodeIncomingProcessor } from "../../backend/src/incoming-worker";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IncomingMessage } from "@terno/store";
 import { createGmailApiProvider, toBase64url } from "./gmail-api";
-import type { ProviderContext, SyncSink } from "./types";
+import type { MailProvider, ProviderContext, SyncSink } from "./types";
 
 // Plan 101: a widened window downloads the older mail, a bounded chunk a pass, resumable.
 const DAY = 86_400_000;
@@ -20,6 +20,8 @@ function setup(o: { older: number; stored?: Set<string>; cursor?: unknown; pageS
   const raw = toBase64url(new TextEncoder().encode("From: sender@example.test\r\nSubject: Old\r\nContent-Type: text/plain\r\n\r\nolder mail"));
   let cursor: unknown = o.cursor ?? { historyId: "10" };
   const queries: string[] = [];
+  const lists: URLSearchParams[] = [];
+  const formats: string[] = [];
   const downloads: string[] = [];
   const ingested: { ids: string[]; live: boolean }[] = [];
   const done: unknown[] = [];
@@ -34,6 +36,7 @@ function setup(o: { older: number; stored?: Set<string>; cursor?: unknown; pageS
       if (url.pathname.endsWith("/history")) return Response.json({ historyId: "10" });
       if (url.pathname.endsWith("/messages")) {
         queries.push(url.searchParams.get("q") ?? "");
+        lists.push(url.searchParams);
         const size = o.pageSize ?? 500;
         const from = Number(url.searchParams.get("pageToken") ?? 0);
         const next = from + size < older.length ? String(from + size) : undefined;
@@ -41,6 +44,7 @@ function setup(o: { older: number; stored?: Set<string>; cursor?: unknown; pageS
       }
       const id = url.pathname.split("/").at(-1)!;
       downloads.push(id);
+      formats.push(url.searchParams.get("format") ?? "");
       return Response.json({ id, threadId: id, raw, internalDate: String(NOW - 200 * DAY) });
     },
   } as unknown as ProviderContext;
@@ -55,7 +59,7 @@ function setup(o: { older: number; stored?: Set<string>; cursor?: unknown; pageS
   };
   const p = createGmailApiProvider(ctx, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array() });
   closers.push(async () => { await p.close(); await processor.close(); incoming.close(); });
-  return { p, sink, abort, queries, downloads, ingested, done, stored, cursor: () => cursor, more: () => more };
+  return { p, sink, abort, queries, lists, formats, downloads, ingested, done, stored, cursor: () => cursor, more: () => more };
 }
 
 it("lists only the requested span and downloads what isn't stored, as old mail (no notices), then says it's done", async () => {
@@ -123,4 +127,32 @@ it("a listing at its page limit starts over instead of calling the span done (Co
   // the next pass lists from the start and finishes
   await t.p.sync(t.sink);
   expect(t.done).toEqual([request]);
+});
+
+// Plan 141: older mail, on a click. What's asked of Google is the search box's own query, with nothing stored re-read.
+describe("Ask's server search", () => {
+  it("asks for q with before: and 50 results, leaves Spam and Trash out, skips stored ids and reads no body", async () => {
+    const t = setup({ older: 3, stored: new Set(["old0001"]) });
+    const abort = new AbortController();
+    const inner = (t.p as unknown as { search: NonNullable<MailProvider["search"]> }).search;
+    const before = NOW - 180 * DAY;
+    const r = await inner({ queries: [{ terms: ['door "code'], anyOf: [["airbnb", "booking"]], from: "ana@x.test", hasAttachment: true }], before, limit: 50, signal: abort.signal });
+    expect(t.queries).toEqual([`"door  code" {"airbnb" "booking"} from:"ana@x.test" has:attachment before:${Math.ceil(before / 1000)}`]);
+    expect(t.lists.at(-1)?.get("maxResults")).toBe("50");
+    expect(t.lists.at(-1)?.has("includeSpamTrash")).toBe(false);
+    expect(r.hits.map((h) => h.id)).toEqual(["old0000", "old0002"]);
+    expect(t.formats).toEqual(["metadata", "metadata"]);
+  });
+
+  it("fetching hits ingests them as old mail, and a later pass keeps them", async () => {
+    const t = setup({ older: 2 });
+    await (t.p as unknown as { fetchHits: NonNullable<MailProvider["fetchHits"]> }).fetchHits([{ id: "old0000", date: 1 }, { id: "old0001", date: 2 }], t.sink);
+    expect(t.ingested.flatMap((b) => b.ids).sort()).toEqual(["old0000", "old0001"]);
+    expect(t.ingested.every((b) => !b.live)).toBe(true);
+    const removed: number[][] = [];
+    t.sink.removeMessages = async (ids) => void removed.push(ids);
+    t.sink.backfill = undefined;
+    await t.p.sync(t.sink);
+    expect(removed).toEqual([]);
+  });
 });

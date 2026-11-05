@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { sqlDb } from "@terno/db";
 import { createRegistry } from "@terno/mail";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { bounded } from "./test/imap-idle-fixture";
 import { flagsFixture } from "./test/imap-flags-fixture";
@@ -18,7 +18,7 @@ afterEach(async () => { for (const c of cleanups.splice(0).reverse()) await c();
 const raw = (subject: string, date: number) => [`From: Synthetic <sender@example.test>`, "To: Test <test@example.test>", `Subject: ${subject}`,
   `Message-ID: <${subject}@backfill.example.test>`, `Date: ${new Date(date).toUTCString()}`, "Content-Type: text/plain; charset=utf-8", "", `${subject} body`, ""].join("\r\n");
 
-async function setup(o: { firstWindow?: number; extra?: (add: (path: string, subject: string, age: number, flags?: string[]) => { uid: number }) => void; before?: (backend: Backend) => void } = {}) {
+async function setup(o: { firstWindow?: number; roles?: boolean; extra?: (add: (path: string, subject: string, age: number, flags?: string[]) => { uid: number }) => void; before?: (backend: Backend) => void } = {}) {
   const w = await flagsFixture(false);
   cleanups.push(() => w.stop());
   const ctl = w.server.control;
@@ -28,6 +28,10 @@ async function setup(o: { firstWindow?: number; extra?: (add: (path: string, sub
   for (let i = 0; i < 6; i++) add("INBOX", `older-${i}`, 60 + i * 30);
   add("Projects", "older-project", 100);
   add("INBOX", "ancient", 900);
+  if (o.roles) for (const [path, use] of [["Junk", "\\Junk"], ["Trash", "\\Trash"]] as const) {
+    ctl.createMailbox(path);
+    ctl.setSpecialUse(path, [use]);
+  }
   o.extra?.(add);
   const dir = mkdtempSync(join(tmpdir(), "terno-backfill-"));
   const notices: unknown[] = [];
@@ -144,4 +148,58 @@ it("plan 103: an IMAP first read says how many folders it has read", async () =>
   expect(writes[0]).toEqual({ done: 0, total: 2, unit: "folders" });
   // done: nothing left to show (absent or null: a state that never stored progress stays sparse, afd95dac)
   expect((await t.backend.store.accounts.get(t.account.id))?.syncState.progress ?? null).toBeNull();
+});
+
+// Plan 141: older mail, on a click, from a real IMAP server: every folder but Junk and Trash, old mail kept by later passes.
+describe("Ask's server search", () => {
+  const criteria = (terms: string[], extra: object = {}) => ({ queries: [{ terms, ...extra }], before: NOW - 30 * DAY, limit: 50, signal: new AbortController().signal });
+
+  it("finds a match in any selectable folder, never Junk or Trash, and reads no body", async () => {
+    const t = await setup({ roles: true, extra: (add) => {
+      add("Projects", "lease-in-a-folder", 400);
+      add("INBOX", "lease-in-the-inbox", 300);
+      add("Junk", "lease-in-junk", 300);
+      add("Trash", "lease-in-trash", 300);
+    } });
+    const provider = (await t.backend.provider(t.account.id))!;
+    const r = await provider.search!(criteria(["lease"]));
+    expect(r.partial).toBe(false);
+    expect(r.hits.map((h) => h.place!.mailbox)).toEqual(["INBOX", "Projects"]);
+    // a whole term, and nothing stored yet
+    expect(t.subjects()).toEqual(["recent", "recent-project"]);
+    // one that's outside the window but a word that isn't there
+    expect((await provider.search!(criteria(["nothing-like-this"]))).hits).toEqual([]);
+    // what's in the window is the local search's
+    expect((await provider.search!(criteria(["recent"]))).hits).toEqual([]);
+  });
+
+  it("each term must hold; a group needs one; a repeat of the same message under two folders collapses", async () => {
+    const t = await setup({ extra: (add) => {
+      add("INBOX", "alpha-beta", 300);
+      add("INBOX", "alpha-only", 300);
+      add("INBOX", "twice", 300);
+      add("Projects", "twice", 300);
+    } });
+    const provider = (await t.backend.provider(t.account.id))!;
+    expect((await provider.search!(criteria(["alpha", "beta"]))).hits).toHaveLength(1);
+    expect((await provider.search!(criteria([], { anyOf: [["beta", "only"]] }))).hits).toHaveLength(2);
+    expect((await provider.search!(criteria(["twice"]))).hits).toHaveLength(1);
+  });
+
+  it("fetching stores them as old mail with no notices; a later pass of the provider keeps them", async () => {
+    const t = await setup({ extra: (add) => void add("INBOX", "lease-old", 300) });
+    const noticesBefore = t.notices.length;
+    const provider = (await t.backend.provider(t.account.id))!;
+    const { hits } = await provider.search!(criteria(["lease"]));
+    const ids: number[] = [];
+    await t.backend.fetchHitsForAccount(t.account.id, hits, new AbortController().signal, (inserted) => ids.push(...inserted));
+    expect(ids).toHaveLength(1);
+    expect(t.subjects()).toContain("lease-old");
+    expect(t.notices.length).toBe(noticesBefore);
+    await bounded(t.backend.syncAccount(t.account.id), "second sync");
+    await bounded(t.backend.syncAccount(t.account.id), "third sync");
+    expect(t.subjects()).toContain("lease-old");
+    // found again, it's already here
+    expect((await provider.search!(criteria(["lease"]))).hits).toEqual([]);
+  });
 });

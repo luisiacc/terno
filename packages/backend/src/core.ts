@@ -17,6 +17,7 @@ import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
 import { AiAssist } from "./ai-assist";
+import { AskService } from "./ask";
 import { SummaryWorker } from "./summaries";
 import { WritingService } from "./writing";
 import { Attention, type AttentionHost } from "./attention";
@@ -264,6 +265,7 @@ export class BackendCore {
   readonly aiAssist: AiAssist;
   /** plan 132: summaries of new mail, and by hand; asleep on an empty queue */
   readonly summaries: SummaryWorker;
+  readonly ask: AskService;
   /** plan 133: drafting: what goes into a draft, and the learner, asleep until the feature is used */
   readonly writing: WritingService;
   /** plan 18: recipient and body suggestions, in memory, built on first use */
@@ -315,6 +317,7 @@ export class BackendCore {
       log: (level, message, extra) => this.log(level, message, extra),
     });
     this.writing = new WritingService(this);
+    this.ask = new AskService(this);
     this.facts = new FactsBackfill(this);
     this.reminders = new Reminders({
       store: this.store,
@@ -2112,7 +2115,65 @@ export class BackendCore {
    * running sync pass and op (and an earlier change); while it runs, a sync waits, the ops worker passes the account
    * by, and body reads and copy repairs wait. When it's done the worker is kicked.
    */
-  async changeFolders<T>(accountId: number, change: (provider: MailProvider, account: { write<W>(work: () => Promise<W>): Promise<W>; check(): void }) => Promise<T>): Promise<T> {
+  changeFolders<T>(accountId: number, change: (provider: MailProvider, account: { write<W>(work: () => Promise<W>): Promise<W>; check(): void }) => Promise<T>): Promise<T> {
+    return this.runForAccount(accountId, change);
+  }
+
+  /**
+   * Plan 141: older mail asked for by a person: what the server finds and what it fetches, stored as a first sync's is
+   * (no arrivals, no notices). In the account's own slot, so it holds sync and ops as a folder change does.
+   */
+  fetchHitsForAccount(accountId: number, hits: readonly import("@terno/mail").ProviderHit[], signal: AbortSignal, onInserted: (ids: number[]) => void): Promise<void> {
+    return this.runForAccount(accountId, async (provider) => {
+      const life = this.lifetime(accountId);
+      const check = () => {
+        this.assertCurrent(life);
+        signal.throwIfAborted();
+      };
+      const pass = this.evictions.pass();
+      const sink: SyncSink = {
+        signal: AbortSignal.any([life.abort.signal, signal]),
+        // nothing here is "too old": it was asked for
+        windowStart: 0,
+        ingest: async (messages) => {
+          check();
+          const { inserted } = await this.ingestSliced(messages, true, life, undefined, undefined, check, { accountId, pass }, false);
+          onInserted(inserted);
+        },
+        setBody: async (messageId, text, html, attachments, capture) => {
+          const checkBody = () => { check(); capture?.signal?.throwIfAborted(); };
+          checkBody();
+          const classifier = await this.classifier();
+          checkBody();
+          const r = await this.accountWrite(life, () => this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier, attachments, bodyParts: capture?.bodyParts, preparedBodyTokens: capture?.preparedBodyTokens, captureUnavailable: capture?.captureUnavailable, repair: capture?.repair, check: checkBody }));
+          this.categorizer.apply(r.deltas);
+          this.announceAuto(r.auto);
+          this.opsQueued(r.opIds);
+          this.reconcileFlags(r.flagReconcileAccounts);
+          this.notifyChanged(r.touched, false);
+          this.bodyArrived(messageId);
+        },
+        updateFlags: async (updates, o) => {
+          const touched = new Set<number>();
+          await this.runSliced(updates, 200, async (chunk) => {
+            check();
+            const result = await this.accountWrite(life, () => this.store.sync.updateFlags(accountId, chunk, o?.authoritative === false ? undefined : undefined, check));
+            for (const t of result.touched) touched.add(t);
+            this.reconcileFlags(result.flagReconcileAccounts);
+          });
+          this.notifyChanged(touched);
+        },
+        // only the regular pass, which sees the whole folder, may say a message has gone
+        removeMessages: async () => {},
+        pendingMessageIds: () => this.accountRead(life, () => this.store.sync.pendingMessageIds(accountId)),
+        setSyncState: async () => {},
+      };
+      await provider.fetchHits?.(hits, sink);
+      this.evictions.passDone(accountId, pass);
+    });
+  }
+
+  async runForAccount<T>(accountId: number, change: (provider: MailProvider, account: { write<W>(work: () => Promise<W>): Promise<W>; check(): void }) => Promise<T>): Promise<T> {
     await this.ready;
     const previous = this.folderChanges.get(accountId);
     let open!: () => void;

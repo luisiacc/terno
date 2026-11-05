@@ -12,7 +12,7 @@ import { IncomingProcessingError } from "./incoming-processing";
 import { ImapIdentityError, LEAVE_FOLDER, MOVE_TO_FOLDER, type LeaveFolderPayload, type MoveToFolderPayload } from "@terno/store";
 import { sendViaSmtp } from "./smtp";
 import { nameTaken, planImapCreate, ROLE_NAME_HINTS, planImapDelete, planImapRename, refusedBy, serverReason } from "./folder-changes";
-import { BACKFILL_CHUNK_MS, type FolderChange, type FolderMove, ProviderAuthError, ProviderIdentityError, ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
+import { BACKFILL_CHUNK_MS, type FolderChange, type FolderMove, ProviderAuthError, ProviderIdentityError, ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderHit, type ProviderOp, type ProviderQuery, type SendPayload, type SyncSink } from "./types";
 
 type Role = "inbox" | "sent" | "archive" | "all" | "junk" | "trash" | "drafts";
 
@@ -759,6 +759,31 @@ function refusalOf(c: ImapFlow): { why: "temporary" | "refused" | "unknown"; com
   const command = typeof err.executedCommand === "string" ? /^\S+\s+(?:UID\s+)?([A-Za-z]+)/.exec(err.executedCommand)?.[1]?.toUpperCase() : undefined;
   if (temporaryRefusal(err)) return { why: "temporary", command };
   return { why: err.responseStatus === "NO" || err.responseStatus === "BAD" ? "refused" : "unknown", command };
+}
+
+/** Plan 141: a server search of one account, every folder of it. */
+const SEARCH_DEADLINE_MS = 30_000;
+
+const withoutAccents = (value: string) => value.normalize("NFD").replace(/\p{M}/gu, "");
+
+/** One term: as typed, or without accents (a server may match only ASCII's case). */
+function imapTerm(field: "text" | "from" | "to" | "subject", value: string): object[] {
+  const plain = withoutAccents(value);
+  return plain === value ? [{ [field]: value }] : [{ [field]: value }, { [field]: plain }];
+}
+
+/** A query's clauses, every one of which a message must meet. A date bound on each: nothing wider than asked is read. */
+export function imapClauses(query: ProviderQuery, before: number): Record<string, unknown>[] {
+  const span = { before: new Date(Math.min(before, query.before ?? before)), ...(query.after !== undefined ? { since: new Date(query.after) } : {}) };
+  const alternatives: object[][] = [
+    ...query.terms.map((t) => imapTerm("text", t)),
+    ...(query.anyOf ?? []).map((group) => group.flatMap((t) => imapTerm("text", t))),
+    ...(query.from ? [imapTerm("from", query.from)] : []),
+    ...(query.to ? [imapTerm("to", query.to)] : []),
+    ...(query.subject ? [imapTerm("subject", query.subject)] : []),
+  ];
+  if (!alternatives.length) return [span];
+  return alternatives.map((or) => (or.length === 1 ? { ...span, ...or[0] } : { ...span, or }));
 }
 
 /** The server answered a change with a tagged refusal: it didn't happen, so it is never "unknown" (withConnection). */
@@ -2161,6 +2186,88 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     },
 
     repairSentCopy,
+
+    /**
+     * Plan 141: `SEARCH` a folder at a time, every selectable one except Junk, Trash and Drafts, the Inbox and Sent
+     * first (RFC 9051 §6.4.4: `TEXT` is a substring of the header or body, case-insensitive only for ASCII, so each
+     * term goes as typed and without accents). Only `UID`s come back, and an envelope for what may be new; duplicates
+     * collapse by Message-ID. 30 s for the whole account, then what was found so far, and `partial` says so.
+     */
+    async search({ queries, before, limit, signal }) {
+      return withConnection(async (c) => {
+        const deadline = AbortSignal.any([signal, AbortSignal.timeout(SEARCH_DEADLINE_MS)]);
+        const list = await c.list();
+        const found = await discoverRoles(c);
+        const left = new Set([found.junk, found.trash, found.drafts]);
+        const rank = (path: string) => (path === found.inbox ? 0 : path === found.sent ? 1 : 2);
+        const paths = list.filter(selectableMailbox).map((m) => m.path).filter((path) => !left.has(path)).sort((a, b) => rank(a) - rank(b));
+        const hits = new Map<string, ProviderHit>();
+        let partial = false;
+        for (const path of paths) {
+          if (deadline.aborted) { partial = true; break; }
+          try {
+            const lock = await c.getMailboxLock(path);
+            try {
+              const mb = c.mailbox;
+              if (!mb) continue;
+              const uidvalidity = Number(mb.uidValidity);
+              const uids = new Set<number>();
+              for (const query of queries) {
+                // keys of one search are an object's, and a term can repeat one: the server is asked for each clause
+                const clauses = imapClauses(query, before);
+                let matched: number[] = [];
+                for (const [i, clause] of clauses.entries()) {
+                  if (deadline.aborted) { partial = true; matched = []; break; }
+                  const round: number[] = (await c.search(clause, { uid: true })) || [];
+                  const held = new Set(matched);
+                  matched = i === 0 ? round : round.filter((uid) => held.has(uid));
+                  if (!matched.length) break;
+                }
+                for (const uid of matched) uids.add(uid);
+              }
+              const newest = [...uids].sort((a, b) => b - a).slice(0, limit);
+              if (!newest.length) continue;
+              for await (const msg of c.fetch(newest, { uid: true, envelope: true, internalDate: true }, { uid: true })) {
+                const m = msg as FetchMessageObject;
+                if (await locations.at(path, uidvalidity, m.uid) !== null) continue;
+                const key = messageKey(m.envelope?.messageId);
+                if (key && await store.messageByProviderId(key)) continue;
+                const date = new Date(m.envelope?.date ?? m.internalDate ?? 0).getTime();
+                const id = key ?? `${path}:${uidvalidity}:${m.uid}`;
+                const held = hits.get(id);
+                if (!held || held.date < date) hits.set(id, { id, date, place: { mailbox: path, uidvalidity, uid: m.uid } });
+              }
+            } finally { lock.release(); }
+          } catch (error) {
+            const e = toProviderError(error);
+            if (signal.aborted || e instanceof ProviderAuthError) throw e;
+            // a folder that refuses, or a deadline mid-command: what was found stands, and what wasn't searched is said
+            partial = true;
+            if (deadline.aborted) break;
+          }
+        }
+        return { hits: [...hits.values()].sort((a, b) => b.date - a.date).slice(0, limit), partial };
+      }, signal);
+    },
+
+    /** Plan 141: through the same identification as a first read, never live; then their text, as a pass's bodies are read. */
+    async fetchHits(hits, sink) {
+      await withConnection(async (c) => {
+        const cursor = (await ctx.loadCursor<Cursor>()) ?? ({ mailboxes: {} } as unknown as Cursor);
+        const check = () => sink.signal.throwIfAborted();
+        await discoverRoles(c);
+        const touched = new Set<number>();
+        const introduced = new Set<number>();
+        const byMailbox = new Map<string, number[]>();
+        for (const hit of hits) if (hit.place && cursor.mailboxes[hit.place.mailbox]?.uidvalidity === hit.place.uidvalidity) byMailbox.set(hit.place.mailbox, [...(byMailbox.get(hit.place.mailbox) ?? []), hit.place.uid]);
+        for (const [path, uids] of byMailbox) {
+          check();
+          await syncMailbox(c, path, cursor, sink, touched, { introduced, uids });
+        }
+        if (touched.size) await reconcile(touched, sink, true, c, false, check);
+        await syncBodies(c, sink);
+      }, sink.signal);
+    },
 
     // plan 107: each change is checked against a fresh LIST, and answered with the LIST after it
     async createFolder({ parent, name }): Promise<FolderChange & { key: string }> {

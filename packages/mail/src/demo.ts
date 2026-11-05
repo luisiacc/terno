@@ -1,6 +1,54 @@
 import { demoFolderChange } from "./folder-changes";
 import { isFolderOp, MOVE_TO_FOLDER, type LeaveFolderPayload, type MoveToFolderPayload, type ProviderFolder } from "@terno/store";
-import type { MailProvider, ProviderContext, ProviderRegistry, SyncSink } from "./types";
+import type { IncomingMessage } from "@terno/store";
+import type { MailProvider, ProviderContext, ProviderQuery, ProviderRegistry, SyncSink } from "./types";
+
+/** Plan 141: mail older than the demo's window, for "Search older mail" to find. */
+const OLDER_MAIL = [
+  { id: "demo-older-lease", date: Date.UTC(2023, 2, 1, 10), from: { name: "Greenway Rentals", email: "office@greenway.example.test" }, subject: "Your lease renewal", text: "Your lease renews on 1 March 2027, with 60 days' notice to leave." },
+  { id: "demo-older-warranty", date: Date.UTC(2022, 5, 14, 9), from: { name: "Northwind Appliances", email: "care@northwind.example.test" }, subject: "Warranty for your dishwasher", text: "Your dishwasher warranty runs for five years from the day it was delivered." },
+];
+
+function olderMatches(m: (typeof OLDER_MAIL)[number], q: ProviderQuery): boolean {
+  const text = `${m.subject} ${m.text} ${m.from.name}`.toLowerCase();
+  const has = (word: string) => text.includes(word.toLowerCase());
+  return q.terms.every(has) && (q.anyOf ?? []).every((group) => group.some(has)) && (q.terms.length > 0 || (q.anyOf?.length ?? 0) > 0);
+}
+
+function olderIncoming(account: { id: number; email: string; displayName?: string }, m: (typeof OLDER_MAIL)[number]): IncomingMessage {
+  return {
+    accountId: account.id,
+    providerMsgId: m.id,
+    providerThreadId: m.id,
+    rfcMessageId: `${m.id}@demo.example.test`,
+    inReplyTo: null,
+    references: [],
+    from: m.from,
+    to: [{ name: account.displayName ?? "", email: account.email }],
+    cc: [],
+    bcc: [],
+    replyTo: [],
+    subject: m.subject,
+    date: m.date,
+    snippet: m.text.slice(0, 120),
+    bodyText: m.text,
+    bodyHtml: null,
+    bodyState: "full",
+    listId: null,
+    bulk: false,
+    unsubscribe: null,
+    isRead: true,
+    isStarred: false,
+    inInbox: false,
+    isSent: false,
+    isDraft: false,
+    isTrash: false,
+    isSpam: false,
+    hasAttachments: false,
+    size: m.text.length,
+    locations: [],
+  } as unknown as IncomingMessage;
+}
 
 /**
  * Provider for demo/mock accounts: ops succeed after a short, realistic delay
@@ -94,6 +142,18 @@ export function createDemoProvider(ctx: ProviderContext, latencyMs = 40): MailPr
     await retire();
   };
   return {
+    // plan 141: what a server would find further back: a few fixed messages from before anything here, nothing stored
+    async search({ queries, before }) {
+      await wait();
+      const held = OLDER_MAIL.filter((m) => m.date < before && queries.some((q) => olderMatches(m, q)));
+      const stored = await Promise.all(held.map((m) => ctx.store.messageByProviderId(m.id)));
+      return { hits: held.filter((_, i) => !stored[i]).map((m) => ({ id: m.id, date: m.date })), partial: false };
+    },
+    async fetchHits(hits, sink) {
+      await wait();
+      const wanted = new Set(hits.map((h) => h.id));
+      await sink.ingest(OLDER_MAIL.filter((m) => wanted.has(m.id)).map((m) => olderIncoming(ctx.account, m)), { live: false });
+    },
     async verify() {},
     async sync(sink) {
       await settle(undefined, sink);
