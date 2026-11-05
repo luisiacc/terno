@@ -22,7 +22,7 @@ import {
   type PresetDescriptor,
   type ProviderDescriptor,
 } from "../ai";
-import { ASK_QUESTION_MAX, ASK_SOURCES_MAX, type AiAskEvent, type AiAskResult, type AskConversationSummary, type AskSourceView, type AskTurn } from "../ask";
+import { ASK_QUESTION_MAX, ASK_SOURCES_MAX, type AiAskEvent, type AiAskResult, type AskConversationSummary, type AskOlderOffer, type AskSourceView, type AskTurn } from "../ask";
 import { GENERATION_TEXT_MAX, WRITING_INSTRUCTIONS_MAX, WRITING_ONE_OFF_MAX, type AiComposeDelta, type AiComposeResult, type AiIntentResult, type AiStudyProgress, type WritingPrefs, type WritingProfileView, type WritingStatus, type WritingStudyResult } from "../writing/contract";
 import type { AlwaysScope, CategoryModelStats, Prediction, QuickActions } from "../categorize/bulk";
 import type { I18nRef } from "./envelope";
@@ -1129,15 +1129,15 @@ export const contract = {
   // plan 141. All renderer-only: none of these is in MCP_ALLOWED, since a question and its answers are mail content.
   /**
    * A question: the answer's text streams to this connection as `aiAsk` events, cancellable with `ai.cancel`.
-   * `conversationId`: a follow-up. `acknowledge`: the user has read where it goes.
+   * `conversationId`: a follow-up. `acknowledge`: the destination the user read: any other one asks again.
    */
-  "ai.ask": m<AiAskResult>()(z.object({ requestId, question: z.string().trim().min(1).max(ASK_QUESTION_MAX), conversationId: id.optional(), timezone: z.string().min(1).max(100), acknowledge: z.boolean().optional() }), { timeoutMs: 180_000 }),
+  "ai.ask": m<AiAskResult>()(z.object({ requestId, question: z.string().trim().min(1).max(ASK_QUESTION_MAX), conversationId: id.optional(), timezone: z.string().min(1).max(100), acknowledge: z.string().min(1).max(2000).optional() }), { timeoutMs: 180_000 }),
   /** The user's own servers look further back for this turn's question; one more answer comes of it. Only on a click. */
   "ai.askOlder": m<AiAskResult>()(z.object({ requestId, conversationId: id, turnId: id, timezone: z.string().min(1).max(100) }), { timeoutMs: 300_000 }),
   /** Previous AI questions: newest first, at most 100. */
   "ai.askHistory": m<AskConversationSummary[]>()(empty),
   /** A saved conversation, with no request. Null: it's gone. */
-  "ai.askConversation": m<{ turns: AskTurn[]; sources: Record<number, AskSourceView> } | null>()(z.object({ conversationId: id })),
+  "ai.askConversation": m<{ turns: AskTurn[]; sources: Record<number, AskSourceView>; older: AskOlderOffer } | null>()(z.object({ conversationId: id })),
   "ai.askSources": m<Record<number, AskSourceView>>()(z.object({ messageIds: z.array(id).max(ASK_SOURCES_MAX) })),
   "ai.askDelete": m<{ ok: true }>()(z.object({ conversationId: id })),
   "ai.askRestore": m<{ ok: true }>()(z.object({ conversationId: id })),
@@ -1319,6 +1319,8 @@ export interface Events {
   aiSummary: { threadId: number };
   /** plan 141: an answer as it comes, only to the connection that asked */
   aiAsk: AiAskEvent;
+  /** plan 141: these conversations went (all of them: null): no window keeps showing them */
+  aiAskGone: { conversationIds: number[] | null };
   /** plan 133: a stream's text so far, only to the connection that asked: append it */
   aiCompose: AiComposeDelta;
   /** plan 133: the style study's progress, only to the connection that asked */

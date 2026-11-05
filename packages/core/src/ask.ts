@@ -91,15 +91,15 @@ export interface AskDestination {
   label: string;
 }
 
-/** What a source is now. */
-export type AskSourceView = "ok" | "gone" | "spam" | "trash";
+/** What a source is now, and the thread it's in: a merge moves it. */
+export type AskSourceView = { state: "ok" | "spam" | "trash"; threadId: number } | { state: "gone" };
 
 /** Whether older mail can be asked for: `since`, how far back this Mac goes. */
 export type AskOlderOffer = { kind: "none" } | { kind: "downloading" } | { kind: "offline"; since: number } | { kind: "offer"; since: number };
 
 export type AiAskResult =
   /** the first text this would send to this destination: said once */
-  | { status: "consent"; provider: AiProviderId; endpoint: string | null }
+  | { status: "consent"; provider: AiProviderId; endpoint: string | null; destination: string }
   /** `turn` null: its conversation was deleted or cleared while it ran */
   | { status: "done"; turn: AskTurn | null; incomplete: boolean; older: AskOlderOffer; olderFound?: number; olderPartial?: boolean }
   | { status: "failed"; turn: AskTurn | null; error: { kind: import("./ai").AiErrorKind; message: string; i18n?: import("./rpc/envelope").I18nRef }; older: AskOlderOffer };

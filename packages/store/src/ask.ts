@@ -32,6 +32,8 @@ export interface AskPassageRequest {
   maxMessages: number;
   maxChars: number;
   signal?: { readonly aborted: boolean };
+  /** captured parts one query may scan; default ASK_MATCH_PARTS (tests) */
+  workParts?: number;
 }
 
 export interface AskSource extends AskSourceRef {
@@ -66,7 +68,7 @@ export interface AskHeader {
 /** What a store provides for `readPassages`. */
 export interface AskPassageIo {
   /** the messages in these threads the query's whole predicate holds for, newest first, never in Spam or Trash, nor drafts */
-  matching(query: ResolvedSearch, threadIds: readonly number[], signal?: { readonly aborted: boolean }): Promise<{ ids: { id: number; threadId: number }[]; incomplete: boolean }>;
+  matching(query: ResolvedSearch, threadIds: readonly number[], signal?: { readonly aborted: boolean }, workParts?: number): Promise<{ ids: { id: number; threadId: number }[]; incomplete: boolean }>;
   /** each thread's newest message that isn't in Spam or Trash, nor a draft */
   newest(threadIds: readonly number[]): Promise<Map<number, number>>;
   headers(ids: readonly number[]): Promise<Map<number, AskHeader>>;
@@ -148,7 +150,7 @@ export async function readPassages(req: AskPassageRequest, io: AskPassageIo): Pr
   if (threadIds.length) {
     for (const query of req.queries) {
       if (req.signal?.aborted) return { messages: [], incomplete: true };
-      const found = await io.matching(query, threadIds, req.signal);
+      const found = await io.matching(query, threadIds, req.signal, req.workParts ?? ASK_MATCH_PARTS);
       incomplete ||= found.incomplete;
       const words = askQueryWords(query);
       for (const { id, threadId } of found.ids) {
@@ -163,6 +165,9 @@ export async function readPassages(req: AskPassageRequest, io: AskPassageIo): Pr
     for (const list of byThread.values()) list.sort((a, b) => b - a);
   }
   const newest = threadIds.length ? await io.newest(threadIds) : new Map<number, number>();
+  // what older mail fetched may lie outside every page of the search: its words are the whole plan's
+  const allWords = req.queries.flatMap(askQueryWords);
+  for (const id of req.first ?? []) wordsOf.set(id, new Set(allWords));
   const chosen: number[] = [];
   const taken = new Set<number>();
   const take = (id: number | undefined) => {
@@ -297,7 +302,7 @@ export interface AskConversationCopy {
   rows: AskTurnRow[];
 }
 
-/** The history a store keeps. `add` refuses (null) a conversation deleted or cleared since the request began. */
+/** The history a store keeps. `add` refuses (null) a conversation deleted or cleared since the request began, or one drawing on an account that's gone. */
 export interface AskHistory {
   add(write: AskTurnWrite): Promise<{ conversationId: number; turnId: number } | null>;
   list(): Promise<AskConversationSummary[]>;
@@ -309,7 +314,8 @@ export interface AskHistory {
   /** what Undo needs, and it's gone */
   remove(conversationId: number): Promise<AskConversationCopy | null>;
   restore(copy: AskConversationCopy): Promise<void>;
-  removeForAccount(accountId: number): Promise<number>;
+  /** the conversations that went */
+  removeForAccount(accountId: number): Promise<number[]>;
   /** Settings → Storage → Clear AI data; refuses every `add` that started before it */
   clear(): Promise<void>;
   clearGeneration(): number;

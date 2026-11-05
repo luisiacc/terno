@@ -7,8 +7,8 @@ import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Clock, Mail, Plus, Search, Sparkles, Undo2 } from "@terno/ui/icons";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { aiReady, errorHelp, modelName, providerLabel } from "~/lib/ai";
-import { askQuestion, atTurnLimit, declineConsent, deleteConversation, loadAskHistory, newQuestion, openConversation, openSource, restoreConversation, returning, searchOlder, stopAsking, useAsk } from "~/lib/ask";
+import { askReady, errorHelp, modelName, providerLabel } from "~/lib/ai";
+import { askConfigChanged, askQuestion, atTurnLimit, declineConsent, deleteConversation, loadAskHistory, newQuestion, openConversation, openSource, restoreConversation, returning, searchOlder, stopAsking, useAsk } from "~/lib/ask";
 import { fullDate, listDate } from "~/lib/format";
 import { askFrom, paletteKeys, setPalettePage } from "~/lib/palette-open";
 import { isMac } from "~/lib/select";
@@ -22,13 +22,14 @@ const stopKeys = (e: KeyboardEvent) => {
 
 /** "…renews on 1 March. [1]": an inline [1] is a button to that source; everything else stays plain text, never a link. */
 function AnswerText({ text, sources }: { text: string; sources: readonly AskSourceRef[] }) {
+  const views = useAsk((s) => s.sources);
   const parts = text.split(/(\[\d+\])/);
   return (
     <p className="whitespace-pre-wrap break-words text-sm leading-relaxed" data-testid="ask-answer">
       {parts.map((part, i) => {
         const cited = /^\[(\d+)\]$/.exec(part);
         const source = cited ? sources[Number(cited[1]) - 1] : undefined;
-        if (!source) return <span key={i}>{part}</span>;
+        if (!source || views[source.messageId]?.state === "gone") return <span key={i}>{part}</span>;
         return (
           <button key={i} type="button" data-testid="ask-citation" onKeyDown={stopKeys} onClick={() => openSource(source)} className="mx-px rounded-sm px-0.5 text-xs text-muted-foreground tabular underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" aria-label={t("ask.citation", { n: cited![1]!, subject: source.subject })}>
             {part}
@@ -52,6 +53,14 @@ function Checks({ turn }: { turn: AskTurn }) {
   );
 }
 
+/** A source asked for once, now in Spam or Trash: said where the citation is, since a row may be further down, or absent. */
+function Armed({ sources }: { sources: readonly AskSourceRef[] }) {
+  const armed = useAsk((s) => s.armedSource);
+  const view = useAsk((s) => (s.armedSource === null ? undefined : s.sources[s.armedSource]));
+  if (armed === null || !sources.some((source) => source.messageId === armed)) return null;
+  return <p className="text-xs text-muted-foreground" data-testid="ask-source-armed">{t(view?.state === "spam" ? "ask.source.spam" : "ask.source.trash")}. {t("ask.source.pressAgain")}</p>;
+}
+
 /** One question and what came of it. */
 function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated: boolean }) {
   const running = useAsk((s) => s.running !== null);
@@ -69,6 +78,7 @@ function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated
       {/* the header already says it, as does the turn before it when older mail answered again */}
       <h3 className={repeated ? "sr-only" : "text-xs font-medium text-muted-foreground"} data-testid="ask-question">{turn.question}</h3>
       {turn.answer ? <AnswerText text={turn.answer} sources={turn.sources} /> : null}
+      <Armed sources={turn.sources} />
       {turn.status === "stopped" && <p className="text-xs text-muted-foreground" data-testid="ask-stopped">{t("ask.stopped")}</p>}
       <Checks turn={turn} />
       {turn.answer && (
@@ -97,6 +107,8 @@ function Older() {
   const last = useAsk((s) => s.turns.at(-1));
   const found = useAsk((s) => s.olderFound);
   const running = useAsk((s) => s.running !== null);
+  const enabled = useApp((s) => s.settings?.ask.enabled !== false);
+  if (!enabled) return null;
   if (found === 0) return <p className="text-sm text-muted-foreground" data-testid="ask-older-nothing">{t("ask.older.nothing")}</p>;
   if (running || !last) return null;
   const main = last.status === "not_found" || last.status === "partial";
@@ -148,11 +160,14 @@ function Consent() {
   const consent = useAsk((s) => s.consent);
   const ai = useApp((s) => s.settings?.ai);
   if (!consent) return null;
+  const label = providerLabel(consent.provider as Parameters<typeof providerLabel>[0], ai ?? undefined);
+  // `compatible` covers many servers: this one, by name
+  const origin = consent.provider === "compatible" && consent.endpoint && URL.canParse(consent.endpoint) ? new URL(consent.endpoint).host : null;
   return (
     <section className="space-y-2" data-testid="ask-consent">
-      <p className="text-sm">{t("ask.consent", { provider: providerLabel(consent.provider as Parameters<typeof providerLabel>[0], ai ?? undefined) })}</p>
+      <p className="text-sm">{t("ask.consent", { provider: origin ? `${label} (${origin})` : label })}</p>
       <div className="flex gap-2">
-        <Button size="sm" data-testid="ask-consent-continue" onKeyDown={stopKeys} onClick={() => askQuestion(consent.question, { acknowledge: true })}>{t("common.continue")}</Button>
+        <Button size="sm" data-testid="ask-consent-continue" onKeyDown={stopKeys} onClick={() => askQuestion(consent.question, { acknowledge: consent.destination })}>{t("common.continue")}</Button>
         <Button size="sm" variant="secondary" data-testid="ask-consent-settings" onKeyDown={stopKeys} onClick={() => { declineConsent(); setApp({ dialog: "settings", settingsTab: "ai" }); }}>{t("common.settings")}</Button>
       </div>
     </section>
@@ -174,18 +189,12 @@ function Failure() {
 }
 
 function SourceRow({ source, n }: { source: AskSourceRef; n: number }) {
-  const view = useAsk((s) => s.sources[source.messageId] ?? "ok");
-  const [armed, setArmed] = useState(false);
+  const view = useAsk((s) => s.sources[source.messageId]?.state ?? "ok");
+  const armed = useAsk((s) => s.armedSource === source.messageId);
   const gone = view === "gone";
   const moved = view === "spam" || view === "trash";
-  const select = () => {
-    if (gone) return;
-    // one now in Spam or Trash doesn't open with a click from here without a second one
-    if (moved && !armed) return setArmed(true);
-    openSource(source);
-  };
   return (
-    <CommandItem value={`source\u0000${source.messageId}\u0000${n}`} disabled={gone} data-testid="ask-source" data-state-view={view} onSelect={select}>
+    <CommandItem value={`source\u0000${source.messageId}\u0000${n}`} disabled={gone} data-testid="ask-source" data-state-view={view} onSelect={() => openSource(source)}>
       <span className="w-5 shrink-0 text-xs text-muted-foreground tabular">[{n}]</span>
       <span className="w-32 shrink-0 truncate">{source.fromName || source.fromEmail}</span>
       <span className="min-w-0 flex-1 truncate text-muted-foreground">{gone ? t("ask.source.gone") : moved ? t(armed ? "ask.source.pressAgain" : view === "spam" ? "ask.source.spam" : "ask.source.trash") : source.subject}</span>
@@ -240,6 +249,7 @@ function Conversation({ onBack }: { onBack: () => void }) {
   const running = useAsk((s) => s.running);
   const incomplete = useAsk((s) => s.incomplete);
   const atLimit = useAsk(atTurnLimit);
+  const enabled = useApp((s) => s.settings?.ask.enabled !== false);
   const title = turns[0]?.question ?? running?.question ?? "";
   const last = turns.at(-1);
   const area = useRef<HTMLDivElement>(null);
@@ -256,7 +266,7 @@ function Conversation({ onBack }: { onBack: () => void }) {
         <Chip data-testid="palette-page" onRemove={onBack} removeLabel={t("palette.back")} removeProps={{ "data-testid": "palette-back", onKeyDown: stopKeys }}>{t("palette.ask.page")}</Chip>
       </div>
       {/* tabbable: it scrolls, and a keyboard has to reach what it holds */}
-      <div ref={area} tabIndex={0} data-testid="ask-area" className="max-h-72 space-y-4 overflow-y-auto px-[18px] py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+      <div ref={area} tabIndex={0} data-testid="ask-area" className="max-h-72 space-y-4 overflow-y-auto px-[18px] py-3 outline-none">
         {turns.map((turn, i) => (
           <Turn key={turn.id} turn={turn} last={turn === last} repeated={turn.question === (i === 0 ? title : turns[i - 1]!.question)} />
         ))}
@@ -284,7 +294,7 @@ function Conversation({ onBack }: { onBack: () => void }) {
           </CommandItem>
         </CommandGroup>
       </CommandList>
-      <FollowUp disabled={atLimit} />
+      <FollowUp disabled={atLimit || !enabled} />
     </>
   );
 }
@@ -343,8 +353,11 @@ function NoProvider() {
 }
 
 function AskQuestionPage({ value, setValue, onBack }: { value: string; setValue: (v: string) => void; onBack: () => void }) {
-  const ready = useApp((s) => aiReady(s.settings?.ai));
+  const ready = useApp((s) => askReady(s.settings?.ai));
   const noProvider = useAsk((s) => s.noProvider);
+  // a key added, a provider chosen: what said it had nowhere to go asks again
+  const aiSettings = useApp((s) => s.settings?.ai);
+  useEffect(() => askConfigChanged(), [aiSettings]);
   const hasConversation = useAsk((s) => s.conversationId !== null || s.turns.length > 0);
   const running = useAsk((s) => s.running);
   const announced = useAsk((s) => s.ready);

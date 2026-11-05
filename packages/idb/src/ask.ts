@@ -50,6 +50,9 @@ export function addAskTurn(c: Ctx, w: AskTurnWrite): { conversationId: number; t
   const conversations = T(c, "ai_conversations");
   const turns = T(c, "ai_turns");
   const b = boundedTurn(w);
+  // an account that went while it answered takes the answer with it
+  const accounts = T(c, "accounts");
+  if (w.accountIds.some((id) => !accounts.get(id))) return null;
   let conversationId = w.conversationId;
   if (conversationId !== null) {
     const held = conversations.get(conversationId);
@@ -106,12 +109,12 @@ export function restoreAskConversation(c: Ctx, copy: AskConversationCopy): void 
   bound(c);
 }
 
-export function removeAskForAccount(c: Ctx, accountId: number): number {
+export function removeAskForAccount(c: Ctx, accountId: number): number[] {
   const conversations = T(c, "ai_conversations");
   const gone = new Set<number>();
   for (const r of T(c, "ai_turns").all()) if (accountsOfRow(r as unknown as AskTurnRow).includes(accountId)) gone.add(r.conversation_id);
   for (const id of gone) conversations.delete(id);
-  return gone.size;
+  return [...gone];
 }
 
 export function clearAsk(c: Ctx): void {

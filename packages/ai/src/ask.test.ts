@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerFilter, answerPrompt, askBudget, ASK_ANSWER_RULES, cleanAnswer, planAskPrompt } from "./ask";
+import { answerFilter, answerPrompt, askBudget, ASK_ANSWER_RULES, cleanAnswer, fitAskMaterial, planAskPrompt } from "./ask";
 import { createAi } from "./tasks";
 import { fakeTransport } from "./fake";
 import type { ProviderConfig } from "./types";
@@ -83,8 +83,20 @@ describe("the answer (plan 141)", () => {
     expect(await run("Nothing here.\n<status>not_found</status>")).toMatchObject({ status: "not_found", text: "Nothing here." });
   });
 
+  it("the whole prompt fits what's left, whatever the headers hold: the last messages go, then the one left is cut", () => {
+    const long = (i: number) => ({ ...material("text ".repeat(100), `m${i}`), from: "n".repeat(5000), subject: "s".repeat(5000) });
+    const input = { question: "q", today: "2026-11-05", material: [long(1), long(2), long(3), long(4)] };
+    const fitted = fitAskMaterial(input, 1800);
+    expect(answerPrompt({ ...input, material: fitted }).length).toBeLessThanOrEqual(1800);
+    expect(fitted.map((m) => m.label)).toEqual(["m1"]);
+    expect(fitted[0]!.from).toHaveLength(300);
+    expect(fitAskMaterial(input, Infinity)).toHaveLength(4);
+    const budget = askBudget(4000, 100);
+    expect(budget.promptChars).toBeLessThan(4000 * 4);
+  });
+
   it("the budget counts the rules and what's fixed, and never exceeds what the plan allows", () => {
-    expect(askBudget(null, 100)).toEqual({ outputTokens: 2000, passageChars: 96_000, maxMessages: 30 });
+    expect(askBudget(null, 100)).toEqual({ outputTokens: 2000, passageChars: 96_000, maxMessages: 30, promptChars: Infinity });
     const small = askBudget(4000, 2000);
     expect(small.passageChars).toBeLessThan((4000 - ASK_ANSWER_RULES.length / 4) * 4);
     expect(small.maxMessages).toBeLessThan(30);

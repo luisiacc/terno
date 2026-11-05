@@ -1312,14 +1312,14 @@ CREATE INDEX messages_sent_date ON messages(account_id, date DESC, id DESC) WHER
 ` },
   { version: 51, name: "ask your mail (plan 141)", sql: `
 CREATE TABLE ai_conversations (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX ai_conversations_recent ON ai_conversations(updated_at DESC, id DESC);
 CREATE TABLE ai_turns (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   conversation_id INTEGER NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
   kind TEXT NOT NULL CHECK (kind IN ('question','command')),
   question TEXT NOT NULL,

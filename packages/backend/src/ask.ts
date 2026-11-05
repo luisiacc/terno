@@ -1,4 +1,4 @@
-import { AiError, ASK_PROMPT_VERSION, askBudget, answerPrompt, ASK_MESSAGE_OVERHEAD_CHARS, type AiTasks, type AskMaterial } from "@terno/ai";
+import { AiError, ASK_PROMPT_VERSION, askBudget, answerPrompt, fitAskMaterial, type AiTasks, type AskMaterial } from "@terno/ai";
 import {
   ASK_QUESTION_MAX,
   ASK_TURNS_MAX,
@@ -146,12 +146,14 @@ export class AskService {
   }
 
   /** The local search: up to 40 threads a query, merged by reciprocal rank with a small lift for what's recent. */
-  private async search(searches: readonly ResolvedSearch[]): Promise<number[]> {
+  private async search(searches: readonly ResolvedSearch[], entry: Asking): Promise<number[]> {
     const score = new Map<number, number>();
     const now = this.b.now();
     for (const search of searches) {
       const page = await this.b.store.threads.search({ search, limit: THREADS_PER_QUERY });
       page.items.forEach((t, rank) => {
+        // from here on it depends on that account: before anything of its mail is read or sent
+        entry.accounts.add(t.accountId);
         const ageDays = Math.max(0, now - t.lastDate) / 86_400_000;
         score.set(t.id, (score.get(t.id) ?? 0) + 1 / (60 + rank) + 0.002 * Math.exp(-ageDays / 365));
       });
@@ -172,7 +174,8 @@ export class AskService {
       if (!settings.ask.enabled) throw new AiError(L("errors.ai.askOff"), "not_configured");
       const { ai, planner, destination } = await this.target();
       if (!ai.local && !settings.ask.acknowledged.includes(destination)) {
-        if (!p.acknowledge) return { status: "consent", provider: ai.providerId, endpoint: ai.endpoint };
+        // what they read is what they agreed to: Settings may have moved since
+        if (p.acknowledge !== destination) return { status: "consent", provider: ai.providerId, endpoint: ai.endpoint, destination };
         await acknowledgeAsk(store, destination);
       }
       let earlier: { question: string; answer: string }[] = [];
@@ -208,7 +211,7 @@ export class AskService {
           const turn = await write("failed", { answer: null, sources: [], checks: { unlinked: false, unsupported: [] } });
           return { status: "failed", turn, error: { kind: "invalid_output", message: L("errors.ai.askNoPlan").message, i18n: { key: "errors.ai.askNoPlan" } }, older: await this.offer(valid.map((v) => v.plan), now) };
         }
-        let threadIds = await this.search(valid.map((v) => v.search));
+        let threadIds = await this.search(valid.map((v) => v.search), entry);
         if (!threadIds.length) {
           // one more plan, told it found nothing: at most two before an answer
           await this.stillThere(destination, signal);
@@ -216,7 +219,7 @@ export class AskService {
           if (wider.length) {
             valid = wider;
             queries = wider.map((v) => v.plan);
-            threadIds = await this.search(valid.map((v) => v.search));
+            threadIds = await this.search(valid.map((v) => v.search), entry);
           }
         }
         if (!threadIds.length) {
@@ -279,7 +282,9 @@ export class AskService {
     const passages = await store.ask.passages({ threadIds: o.threadIds, queries: o.searches, first: o.first, maxMessages: Math.min(ASK_MESSAGES_MAX, budget.maxMessages), maxChars: Math.min(ASK_MAX_CHARS, budget.passageChars), signal });
     if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
     for (const m of passages.messages) o.entry.accounts.add(m.accountId);
-    const { material, labels } = materialOf(passages.messages, o.p.timezone);
+    const drafted = materialOf(passages.messages, o.p.timezone);
+    const material = fitAskMaterial({ question, today, material: drafted.material, earlier }, budget.promptChars);
+    const labels = new Map(material.map((m, i) => [m.label, i]));
     const conversationId = o.conversationIdOverride ?? o.p.conversationId ?? null;
     const empty = { unlinked: false, unsupported: [] };
     if (!material.length) {
@@ -364,16 +369,17 @@ export class AskService {
       const turn = turns.find((t) => t.id === p.turnId);
       if (!turn) throw new RpcError("NOT_FOUND", L("errors.ai.askGone"));
       if (turns.length >= ASK_TURNS_MAX) throw new RpcError("BAD_REQUEST", L("errors.ai.askTooLong"));
-      const { ai, destination } = await this.target();
       const settings = await readSettings(store);
-      if (!ai.local && !settings.ask.acknowledged.includes(destination)) return { status: "consent", provider: ai.providerId, endpoint: ai.endpoint };
+      if (!settings.ask.enabled) throw new AiError(L("errors.ai.askOff"), "not_configured");
+      const { ai, destination } = await this.target();
+      if (!ai.local && !settings.ask.acknowledged.includes(destination)) return { status: "consent", provider: ai.providerId, endpoint: ai.endpoint, destination };
       const now = this.b.now();
       const valid = validAskQueries(turn.queries, now);
       if (!valid.length) throw new AiError(L("errors.ai.askNoPlan"), "invalid_output");
       const progress = (done: number, total: number) => this.b.server.emitTo(clientId, "aiAsk", { requestId: p.requestId, older: { done, total } });
       const fetched = await this.fetchOlder(valid.map((v) => providerQueryOf(v.plan, v.search)), entry, signal, progress);
       if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
-      const threadIds = await this.search(valid.map((v) => v.search));
+      const threadIds = await this.search(valid.map((v) => v.search), entry);
       const earlier = turns.slice(-EARLIER_TURNS).filter((t) => t.id !== turn.id).map((t) => ({ question: t.question, answer: (t.answer ?? "").slice(0, EARLIER_ANSWER_CHARS) }));
       if (!threadIds.length && !fetched.ids.length) {
         const kept = await this.keep({ conversationId: p.conversationId, question: turn.question, status: "not_found", answer: null, sources: [], checks: { unlinked: false, unsupported: [] }, queries: turn.queries, ai, clearGeneration, entry });
@@ -453,17 +459,18 @@ export class AskService {
   }
 
   /** A saved conversation: no request. Each source is looked up as it's shown, since the mail may have gone or moved. */
-  async conversation(conversationId: number): Promise<{ turns: AskTurn[]; sources: Record<number, AskSourceView> } | null> {
+  async conversation(conversationId: number): Promise<{ turns: AskTurn[]; sources: Record<number, AskSourceView>; older: AskOlderOffer } | null> {
     const { store } = this.b;
     const count = await store.ask.history.turnCount(conversationId);
     if (count === null) return null;
     const turns = await store.ask.history.turns(conversationId);
-    return { turns, sources: await this.sourceViews(turns.flatMap((t) => t.sources.map((s) => s.messageId))) };
+    const last = turns.at(-1);
+    return { turns, sources: await this.sourceViews(turns.flatMap((t) => t.sources.map((s) => s.messageId))), older: last && last.queries.length ? await this.offer(last.queries, this.b.now()) : { kind: "none" } };
   }
 
   async sourceViews(ids: readonly number[]): Promise<Record<number, AskSourceView>> {
     const states = await this.b.store.ask.sourceStates(ids);
-    return Object.fromEntries(ids.map((id) => [id, states.get(id) ?? "gone"]));
+    return Object.fromEntries(ids.map((id) => [id, states.get(id) ?? { state: "gone" as const }]));
   }
 
   async remove(conversationId: number): Promise<void> {
@@ -476,6 +483,7 @@ export class AskService {
     if (!copy) return;
     this.undo.set(conversationId, copy);
     while (this.undo.size > UNDO_KEPT) this.undo.delete(this.undo.keys().next().value!);
+    this.gone([conversationId]);
   }
 
   async restore(conversationId: number): Promise<void> {
@@ -493,6 +501,7 @@ export class AskService {
     }
     this.undo.clear();
     await this.b.store.ask.history.clear();
+    this.gone(null);
   }
 
   /** Its answers quote that mail: what drew on it goes, and what's asking on it stops (revision 3). */
@@ -503,7 +512,12 @@ export class AskService {
       entry.controller.abort();
     }
     for (const [id, copy] of this.undo) if (copy.rows.some((r) => (JSON.parse(r.account_ids_json ?? "[]") as number[]).includes(accountId))) this.undo.delete(id);
-    await this.b.store.ask.history.removeForAccount(accountId);
+    this.gone(await this.b.store.ask.history.removeForAccount(accountId));
+  }
+
+  /** Every window, never MCP: nothing shown outlives what it quotes. */
+  private gone(conversationIds: number[] | null): void {
+    if (conversationIds === null || conversationIds.length) this.b.server.emit("aiAskGone", { conversationIds }, { origins: ["renderer", "dev"] });
   }
 
   /** It went off: what's running stops. */
@@ -513,4 +527,3 @@ export class AskService {
   }
 }
 
-export { ASK_MESSAGE_OVERHEAD_CHARS };

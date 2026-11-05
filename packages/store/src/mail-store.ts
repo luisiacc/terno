@@ -522,7 +522,7 @@ export interface MailStore {
   ask: {
     passages(request: import("./ask").AskPassageRequest): Promise<import("./ask").AskPassages>;
     /** where a source is now, for showing it; absent: it's gone */
-    sourceStates(messageIds: readonly number[]): Promise<Map<number, "ok" | "spam" | "trash">>;
+    sourceStates(messageIds: readonly number[]): Promise<Map<number, { state: "ok" | "spam" | "trash"; threadId: number }>>;
     history: import("./ask").AskHistory;
   };
   aiSummaries: {

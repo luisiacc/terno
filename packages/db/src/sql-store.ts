@@ -1086,12 +1086,12 @@ export class SqlMailStore implements MailStore {
 
   readonly ask: MailStore["ask"] = {
     passages: (req) => this.bodyCommand(() => readPassages(req, {
-      matching: (query, threadIds, signal) => askMatching(this.db, query, threadIds, this.yieldTo, signal),
+      matching: (query, threadIds, signal, workParts) => askMatching(this.db, query, threadIds, this.yieldTo, signal, workParts),
       newest: async (threadIds) => askNewest(this.db, threadIds),
       headers: async (ids) => askHeaders(this.db, ids),
       text: async (id) => askText(this.db, id, this.yieldTo),
     })),
-    sourceStates: async (ids) => new Map([...askHeaders(this.db, ids)].map(([id, m]) => [id, m.spam ? "spam" : m.trash ? "trash" : "ok"] as const)),
+    sourceStates: async (ids) => new Map([...askHeaders(this.db, ids)].map(([id, m]) => [id, { state: m.spam ? "spam" : m.trash ? "trash" : "ok", threadId: m.threadId }] as const)),
     history: {
       // the check and the write are one synchronous step, as is clear
       add: async (write) => (write.clearGeneration === this.askClears ? addAskTurn(this.db, write) : null),

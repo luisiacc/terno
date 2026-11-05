@@ -194,13 +194,17 @@ test.describe("ask your mail (plan 141)", () => {
     await expect(page.getByTestId("palette-ask-row")).toHaveCount(0);
   });
 
-  test("a cloud destination asks once, in the page, and Enter on its button stays with it", async ({ app: page, server }) => {
-    await settingUp(page, server, { ai: { provider: "compatible", preset: "custom", model: "m", baseURL: "http://127.0.0.1:9/v1" } });
+  test("a cloud destination says where it goes before anything leaves, naming the server; Enter on Settings stays with it", async ({ app: page, server }) => {
+    await settingUp(page, server, { ai: { provider: "compatible", preset: "custom", model: "m", baseURL: "https://ai.example.test/v1" } });
     await open(page);
     await question(page, "where does this go?");
     const consent = page.getByTestId("ask-consent");
-    // a server on this Mac doesn't ask: only a cloud one does, and a custom one at loopback is on this Mac
-    await expect(consent.or(page.getByTestId("ask-error")).first()).toBeVisible();
+    await expect(consent).toContainText("ai.example.test");
+    await expect(page.getByTestId("ask-consent-continue")).toBeVisible();
+    expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=ask-consent]").analyze()).violations).toEqual([]);
+    await page.getByTestId("ask-consent-settings").focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("ai-ask")).toBeVisible();
   });
 
   test("the page is axe-clean in both modes, in every design it can change, and in Spanish", { tag: "@design" }, async ({ app: page, server }) => {
@@ -209,6 +213,9 @@ test.describe("ask your mail (plan 141)", () => {
     await open(page);
     await question(page, `${word}?`);
     await expect(page.getByTestId("ask-answer")).toBeVisible();
+    // keyboard scrolling, and no ring around the whole pane (plan 52)
+    await expect(page.getByTestId("ask-area")).toHaveAttribute("tabindex", "0");
+    expect(await page.getByTestId("ask-area").getAttribute("class")).not.toMatch(/ring/);
     const axe = () => new AxeBuilder({ page }).setLegacyMode().include("[role=dialog]").analyze();
     expect((await axe()).violations).toEqual([]);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-light.png` });

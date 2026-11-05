@@ -118,6 +118,14 @@ export function askTarget(ai: AiSettings): { provider: AiProviderId; model: stri
   return { provider: ai.provider, model: ai.provider === "anthropic" ? ASK_CLAUDE_MODEL : ai.model };
 }
 
+/** Whether a question can go: Ask's own target if it has one, whatever the main provider is. */
+export function askReady(ai: AiSettings | null | undefined): boolean {
+  if (!ai) return false;
+  const chosen = ai.tasks.ask;
+  if (!chosen) return aiReady(ai);
+  return chosen.provider !== "none" && (LOCAL_PROVIDERS.includes(chosen.provider) || chosen.provider === "compatible" || ai.keys[chosen.provider]?.hasKey === true);
+}
+
 const LOCAL_PROVIDERS: readonly AiProviderId[] = ["ollama", "lmstudio", "fake"];
 
 /**

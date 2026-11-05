@@ -27,7 +27,7 @@ export interface AskState {
   sources: Record<number, AskSourceView>;
   running: AskRunning | null;
   /** Where the first question to a destination would go: said once, before anything leaves. */
-  consent: { question: string; provider: string; endpoint: string | null } | null;
+  consent: { question: string; provider: string; endpoint: string | null; destination: string } | null;
   error: { question: string; message: string; kind: AiErrorKind | undefined } | null;
   noProvider: boolean;
   older: AskOlderOffer;
@@ -37,16 +37,16 @@ export interface AskState {
   olderFound: number | null;
   /** a server's search may not have found everything */
   olderPartial: boolean;
+  /** a source now in Spam or Trash, asked for once: the next ask opens it */
+  armedSource: number | null;
   /** just finished: for screen readers */
   ready: number;
   usedAt: number;
 }
 
-const EMPTY: Omit<AskState, "usedAt" | "ready"> = { conversationId: null, turns: [], sources: {}, running: null, consent: null, error: null, noProvider: false, older: { kind: "none" }, incomplete: false, olderFound: null, olderPartial: false };
+const EMPTY: Omit<AskState, "usedAt" | "ready"> = { conversationId: null, turns: [], sources: {}, running: null, consent: null, error: null, noProvider: false, older: { kind: "none" }, incomplete: false, olderFound: null, olderPartial: false, armedSource: null };
 
 export const useAsk = create<AskState>(() => ({ ...EMPTY, ready: 0, usedAt: 0 }));
-
-const touch = () => useAsk.setState({ usedAt: Date.now() });
 
 const timezone = () => {
   try {
@@ -72,7 +72,7 @@ async function settle(call: Promise<AiAskResult>, requestId: string, question: s
   try {
     const r = await call;
     if (!mine()) return;
-    if (r.status === "consent") return useAsk.setState({ running: null, consent: { question, provider: r.provider, endpoint: r.endpoint } });
+    if (r.status === "consent") return useAsk.setState({ running: null, consent: { question, provider: r.provider, endpoint: r.endpoint, destination: r.destination } });
     const turn = r.turn;
     const sources = turn ? await viewsOf(turn.sources).catch(() => ({})) : {};
     if (!mine()) return;
@@ -101,13 +101,13 @@ async function settle(call: Promise<AiAskResult>, requestId: string, question: s
 const viewsOf = async (sources: readonly AskSourceRef[]): Promise<Record<number, AskSourceView>> => (sources.length ? client.call("ai.askSources", { messageIds: sources.map((s) => s.messageId) }) : {});
 
 /** A question, or a follow-up on the conversation showing. */
-export function askQuestion(question: string, o: { acknowledge?: boolean } = {}): void {
+export function askQuestion(question: string, o: { acknowledge?: string } = {}): void {
   const text = question.trim();
   const s = useAsk.getState();
   if (!text || s.running) return;
   const requestId = globalThis.crypto.randomUUID();
   useAsk.setState({ running: { requestId, question: text, text: "", older: null, searchingOlder: false }, consent: null, error: null, noProvider: false, olderFound: null, olderPartial: false, usedAt: Date.now() });
-  void settle(client.call("ai.ask", { requestId, question: text, ...(s.conversationId !== null ? { conversationId: s.conversationId } : {}), timezone: timezone(), ...(o.acknowledge ? { acknowledge: true } : {}) }), requestId, text);
+  void settle(client.call("ai.ask", { requestId, question: text, ...(s.conversationId !== null ? { conversationId: s.conversationId } : {}), timezone: timezone(), ...(o.acknowledge ? { acknowledge: o.acknowledge } : {}) }), requestId, text);
 }
 
 /** §3: only ever on this click. */
@@ -134,13 +134,33 @@ export function newQuestion(): void {
   useAsk.setState({ ...EMPTY, usedAt: Date.now() });
 }
 
-/** What ⌘⇧K comes back to: the last conversation for 30 minutes, then nothing (it's in the history). */
+/** What ⌘⇧K comes back to: the last conversation for 30 minutes, as it is now, then nothing (it's in the history). */
 export function returning(now = Date.now()): void {
   const s = useAsk.getState();
   if (s.running) return;
-  if (s.conversationId !== null && now - s.usedAt > ASK_RETURN_MS) newQuestion();
-  else touch();
+  if (s.conversationId !== null && now - s.usedAt > ASK_RETURN_MS) return newQuestion();
+  useAsk.setState({ usedAt: now, noProvider: false });
+  if (s.conversationId !== null) void reload(s.conversationId);
 }
+
+async function reload(conversationId: number): Promise<void> {
+  const saved = await client.call("ai.askConversation", { conversationId }).catch(() => undefined);
+  const s = useAsk.getState();
+  if (saved === undefined || s.conversationId !== conversationId || s.running) return;
+  if (saved === null) return useAsk.setState({ ...EMPTY, usedAt: Date.now() });
+  useAsk.setState({ turns: saved.turns, sources: saved.sources, older: saved.older });
+}
+
+/** Settings moved: what said Ask had nowhere to go asks again. */
+export function askConfigChanged(): void {
+  if (useAsk.getState().noProvider) useAsk.setState({ noProvider: false });
+}
+
+/** Another window deleted or cleared it, or its account went. */
+client.on("aiAskGone", ({ conversationIds }) => {
+  const { conversationId } = useAsk.getState();
+  if (conversationIds === null || (conversationId !== null && conversationIds.includes(conversationId))) useAsk.setState({ ...EMPTY, usedAt: 0 });
+});
 
 export const atTurnLimit = (s: Pick<AskState, "turns">): boolean => s.turns.length >= ASK_TURNS_MAX;
 
@@ -153,20 +173,22 @@ export async function openConversation(conversationId: number): Promise<boolean>
   const saved = await client.call("ai.askConversation", { conversationId });
   if (!saved) return false;
   stopAsking();
-  useAsk.setState({ ...EMPTY, conversationId, turns: saved.turns, sources: saved.sources, older: olderAfter(saved.turns), usedAt: Date.now() });
+  useAsk.setState({ ...EMPTY, conversationId, turns: saved.turns, sources: saved.sources, older: saved.older, usedAt: Date.now() });
   return true;
 }
 
-/** Reopened, nothing is asked: a question that wasn't answered may still go further back. */
-const olderAfter = (turns: readonly AskTurn[]): AskOlderOffer => {
-  const last = turns.at(-1);
-  return last && (last.status === "not_found" || last.status === "partial") ? { kind: "offer", since: 0 } : { kind: "none" };
-};
-
-/** Enter on a source: the palette closes and the thread opens at that message, expanded. */
+/**
+ * Enter on a source, or its inline number: the palette closes and the thread opens at that message, in the thread it's
+ * in now. One now in Spam or Trash needs asking twice; one that's gone doesn't open.
+ */
 export function openSource(source: AskSourceRef): void {
+  const s = useAsk.getState();
+  const view = s.sources[source.messageId];
+  if (view?.state === "gone") return;
+  if ((view?.state === "spam" || view?.state === "trash") && s.armedSource !== source.messageId) return useAsk.setState({ armedSource: source.messageId });
+  useAsk.setState({ armedSource: null });
   setApp({ dialog: null });
-  openThread(source.threadId);
+  openThread(view?.threadId ?? source.threadId);
   revealSummaryMessage(source.messageId);
 }
 

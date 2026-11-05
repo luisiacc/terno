@@ -1,4 +1,4 @@
-import { ASK_MATCH_MESSAGES, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
+import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
 import { addAskTurn, askAccountsOf, askCandidates, askHeaders, askNewest, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
 import { projectBodyTokens, messageBodiesReleased } from "@terno/store";
 import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
@@ -1927,15 +1927,16 @@ export class IdbMailStore implements MailStore {
    * Plan 141 revision 5: the query's whole predicate on each of these threads' messages, in slices: each its own unit
    * (commands run between them), at most a frame, and only as far as the work's limit.
    */
-  private async askMatching(query: ResolvedSearch, threadIds: readonly number[], signal?: { readonly aborted: boolean }): Promise<{ ids: { id: number; threadId: number }[]; incomplete: boolean }> {
+  private async askMatching(query: ResolvedSearch, threadIds: readonly number[], signal?: { readonly aborted: boolean }, workParts = ASK_MATCH_PARTS): Promise<{ ids: { id: number; threadId: number }[]; incomplete: boolean }> {
     const plan = await this.read(() => planScan(this.c, query));
     if (plan.impossible) return { ids: [], incomplete: false };
     const candidates = await this.read(() => askCandidates(this.c, threadIds).map((m) => m.id as number));
-    const incomplete = candidates.length > ASK_MATCH_MESSAGES;
+    let incomplete = candidates.length > ASK_MATCH_MESSAGES;
     const tests = searchTerms(query.query).filter((t) => t.field === "text").map((t) => ({ op: "contains" as const, value: t.value, prefix: t.prefix }));
     const messages = this.db.table<R>("messages");
     const ids: { id: number; threadId: number }[] = [];
     const walk = Math.min(candidates.length, ASK_MATCH_MESSAGES);
+    let partsLeft = workParts;
     for (let i = 0; i < walk; ) {
       if (signal?.aborted) return { ids, incomplete: true };
       await this.exclusive(async () => {
@@ -1943,8 +1944,17 @@ export class IdbMailStore implements MailStore {
         while (i < walk && performance.now() - started < SCAN_SLICE_MS) {
           const chunk = candidates.slice(i, i + SCAN_CHUNK);
           if (plan.needsBodies) await this.readBodies(chunk);
-          const prepared = plan.needsBodies ? await this.prepareBodyTests(tests, chunk) : new Map();
-          for (const id of chunk) {
+          // a captured body is a unit of its own, so what waits behind it, and a stop, wait for one body at most
+          const at = plan.needsBodies ? chunk.findIndex((id) => this.c.body(id)?.capture_id) : -1;
+          const unit = at < 0 ? chunk : chunk.slice(0, at + 1);
+          const capture = at < 0 ? null : (this.c.body(chunk[at]!)!.capture_id as string);
+          const parts = capture === null ? 0 : (T(this.c, "body_captures").get(capture)?.token_parts as number | undefined) ?? 0;
+          // past the work's limit a captured body isn't read, and the answer says so
+          const reading = capture !== null && parts <= partsLeft;
+          if (capture !== null && !reading) incomplete = true;
+          if (reading) partsLeft -= parts;
+          const prepared = reading ? await this.prepareBodyTests(tests, unit) : new Map();
+          for (const id of unit) {
             const m = messages.get(id);
             if (!m) continue;
             let cols: ReturnType<typeof columnsOf> | null = null;
@@ -1952,12 +1962,13 @@ export class IdbMailStore implements MailStore {
               if (cols) return cols;
               const body = plan.needsBodies ? this.c.body(id) : null;
               cols = columnsOf(m, body?.body_text ?? null);
-              if (body?.capture_id) cols.bodyTest = (value, prefix) => this.preparedBodyTest(prepared, body.capture_id!, "contains", value, prefix);
+              if (body?.capture_id) cols.bodyTest = reading ? (value, prefix) => this.preparedBodyTest(prepared, body.capture_id!, "contains", value, prefix) : () => false;
               return cols;
             };
             if (plan.messageOk(m, columns)) ids.push({ id, threadId: m.thread_id });
           }
-          i += chunk.length;
+          i += unit.length;
+          if (capture !== null) break;
         }
       });
       await this.o.platform.yield();
@@ -1967,7 +1978,7 @@ export class IdbMailStore implements MailStore {
 
   readonly ask: MailStore["ask"] = {
     passages: (req) => this.bodyCommand(() => readPassages(req, {
-      matching: (query, threadIds, signal) => this.askMatching(query, threadIds, signal),
+      matching: (query, threadIds, signal, workParts) => this.askMatching(query, threadIds, signal, workParts),
       newest: (threadIds) => this.read(() => askNewest(this.c, threadIds)),
       headers: (ids) => this.read(() => askHeaders(this.c, ids)),
       text: (id) => this.exclusive(async () => {
@@ -1978,7 +1989,7 @@ export class IdbMailStore implements MailStore {
         return T(this.c, "body_captures").get(body.capture_id)!.text_parts === null ? null : this.bodyPartSource(body.capture_id, 0);
       }),
     })),
-    sourceStates: (ids) => this.read(() => new Map([...askHeaders(this.c, ids)].map(([id, m]) => [id, m.spam ? "spam" : m.trash ? "trash" : "ok"] as const))),
+    sourceStates: (ids) => this.read(() => new Map([...askHeaders(this.c, ids)].map(([id, m]) => [id, { state: m.spam ? "spam" : m.trash ? "trash" : "ok", threadId: m.threadId }] as const))),
     history: {
       // inside the command: commands run one at a time, so a clear can't land between the check and the write
       add: (write) => this.command(() => (write.clearGeneration === this.askClears ? addAskTurn(this.c, write) : null)),

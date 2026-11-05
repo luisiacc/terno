@@ -14,7 +14,9 @@ export const ASK_ANSWER_MAX_TOKENS = 2000;
 const PLAN_MAX_TOKENS = 1500;
 const ASK_TIMING = { idleMs: 30_000, firstMs: 60_000 };
 /** What the fixed parts of an answer's prompt take: the rules, and each message's tag and header. */
-export const ASK_MESSAGE_OVERHEAD_CHARS = 120;
+export const ASK_MESSAGE_OVERHEAD_CHARS = 720;
+/** A message's sender and subject, each: headers have no length of their own. */
+const ASK_HEADER_CHARS = 300;
 const CHARS_PER_TOKEN = 4;
 /** Below this there's nothing left to answer from. */
 const MIN_PROMPT_TOKENS = 250;
@@ -168,13 +170,27 @@ export function answerPrompt(input: Pick<AnswerFromMailInput, "question" | "toda
  * How a context window divides up (revision 11): the answer's allowance, then the rules, then what's left for the whole
  * prompt: headers, question and framing as well as the passages. Unknown: the plan's 24k tokens.
  */
-export function askBudget(contextTokens: number | null, fixedChars: number): { outputTokens: number; passageChars: number; maxMessages: number } {
+export function askBudget(contextTokens: number | null, fixedChars: number): { outputTokens: number; passageChars: number; maxMessages: number; promptChars: number } {
   const full = 24_000 * CHARS_PER_TOKEN;
-  if (contextTokens === null) return { outputTokens: ASK_ANSWER_MAX_TOKENS, passageChars: full, maxMessages: 30 };
+  if (contextTokens === null) return { outputTokens: ASK_ANSWER_MAX_TOKENS, passageChars: full, maxMessages: 30, promptChars: Infinity };
   const outputTokens = Math.min(ASK_ANSWER_MAX_TOKENS, Math.ceil(contextTokens / 3));
   const room = Math.max(MIN_PROMPT_TOKENS, contextTokens - outputTokens - Math.ceil(ASK_ANSWER_RULES.length / CHARS_PER_TOKEN)) * CHARS_PER_TOKEN - fixedChars;
   const maxMessages = Math.max(1, Math.min(30, Math.floor(room / (ASK_MESSAGE_OVERHEAD_CHARS + 800))));
-  return { outputTokens, passageChars: Math.max(400, Math.min(full, room - maxMessages * ASK_MESSAGE_OVERHEAD_CHARS)), maxMessages };
+  return { outputTokens, passageChars: Math.max(400, Math.min(full, room - maxMessages * ASK_MESSAGE_OVERHEAD_CHARS)), maxMessages, promptChars: room + fixedChars };
+}
+
+/**
+ * The whole serialized prompt within what's left of the window, whatever the headers hold: the last messages go first,
+ * being the least relevant, and then the one left is cut. A label left out can't be cited, so nothing has a gap.
+ */
+export function fitAskMaterial(input: Pick<AnswerFromMailInput, "question" | "today" | "material" | "earlier">, promptChars: number): AskMaterial[] {
+  let material = input.material.map((m) => ({ ...m, from: m.from.slice(0, ASK_HEADER_CHARS), subject: m.subject.slice(0, ASK_HEADER_CHARS) }));
+  if (promptChars === Infinity) return material;
+  const size = () => answerPrompt({ ...input, material }).length;
+  while (size() > promptChars && material.length > 1) material = material.slice(0, -1);
+  const over = size() - promptChars;
+  if (over > 0 && material[0]) material = [{ ...material[0], text: material[0].text.slice(0, Math.max(0, material[0].text.length - over)) }];
+  return material;
 }
 
 const STATUS = /<status>\s*(answered|partial|not_found)\s*<\/status>/i;

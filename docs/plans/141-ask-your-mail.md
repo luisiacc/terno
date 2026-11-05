@@ -274,3 +274,21 @@ Codex (`gpt-6.1-sol`, high, read-only, `/tmp/terno-plans-141-145/141-ask-your-ma
 - **The usage line.** The plan says both "counted under `byHand`" and "under its own line". It's its own `ask` tally, which, like `byHand`, stays outside the background ceilings.
 - **A follow-up's consent line** names the question, account names and addresses, and earlier answers, as revision 1 asks.
 - **Not built:** the Try Pro button, which waits for plan 85.
+
+## What the code review changed
+
+Codex raised 15 points, all fixed, each with a test.
+
+- **Consent names what was read.** Continue sends the destination the page showed, and any other one asks again. A `compatible` server is named by its host.
+- **An account counts from the moment a search finds its mail,** before anything is read or sent, and a store's write refuses a turn drawing on an account that's gone.
+- **Ids aren't reused** (`AUTOINCREMENT`), so Undo can't take the place of what was asked meanwhile. Restoring doesn't replace rows any more.
+- **What's shown goes when what it quotes goes.** A new `aiAskGone` event reaches every window, and coming back reads the conversation again.
+- **IndexedDB has the same work limit as SQLite:** captured parts per query, one body per queue unit, a stop between them.
+- **IMAP's 30 s really ends a command.** The session closes at the deadline, and what was found stands as `partial`.
+- **Fetched mail is read around the plan's words,** not only its first 400 characters.
+- **A source opens where it is now,** after a merge. Rows and inline numbers share one path: Spam and Trash ask twice, a deleted source doesn't open.
+- **Readiness is Ask's own target,** and a key added clears "needs a provider" with no reopening.
+- **A reopened conversation gets a fresh older-mail offer,** which an answered question also gets, as §3 asks.
+- **Off means off for older mail too,** whatever a stale page still shows.
+- **The prompt is fitted whole:** headers bounded, the last messages dropped, then the one left cut.
+- **No ring around the answer pane** (plan 52). It stays reachable by Tab, to scroll.

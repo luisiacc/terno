@@ -18,7 +18,7 @@ afterEach(async () => { for (const c of cleanups.splice(0).reverse()) await c();
 const raw = (subject: string, date: number) => [`From: Synthetic <sender@example.test>`, "To: Test <test@example.test>", `Subject: ${subject}`,
   `Message-ID: <${subject}@backfill.example.test>`, `Date: ${new Date(date).toUTCString()}`, "Content-Type: text/plain; charset=utf-8", "", `${subject} body`, ""].join("\r\n");
 
-async function setup(o: { firstWindow?: number; roles?: boolean; extra?: (add: (path: string, subject: string, age: number, flags?: string[]) => { uid: number }) => void; before?: (backend: Backend) => void } = {}) {
+async function setup(o: { firstWindow?: number; searchMs?: number; roles?: boolean; extra?: (add: (path: string, subject: string, age: number, flags?: string[]) => { uid: number }) => void; before?: (backend: Backend) => void } = {}) {
   const w = await flagsFixture(false);
   cleanups.push(() => w.stop());
   const ctl = w.server.control;
@@ -36,7 +36,7 @@ async function setup(o: { firstWindow?: number; roles?: boolean; extra?: (add: (
   const dir = mkdtempSync(join(tmpdir(), "terno-backfill-"));
   const notices: unknown[] = [];
   const backend = new Backend({ dbPath: join(dir, "t.db"), version: "t", cipher: plaintextCipher, instantSearch: false, autoSync: false, now: () => NOW,
-    providers: createRegistry({ imap: { allowInsecure: true, timeouts: { connectMs: 2000, socketMs: 3000 } } }),
+    providers: createRegistry({ imap: { allowInsecure: true, timeouts: { connectMs: 2000, socketMs: 3000, ...(o.searchMs ? { searchMs: o.searchMs } : {}) } } }),
     attention: { badge() {}, notify: (n) => void notices.push(n) } });
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "backfill", origin: "renderer" });
@@ -184,6 +184,20 @@ describe("Ask's server search", () => {
     expect((await provider.search!(criteria(["alpha", "beta"]))).hits).toHaveLength(1);
     expect((await provider.search!(criteria([], { anyOf: [["beta", "only"]] }))).hits).toHaveLength(2);
     expect((await provider.search!(criteria(["twice"]))).hits).toHaveLength(1);
+  });
+
+  it("a server that stops answering holds the account only until the deadline, and what was found so far stands", async () => {
+    const t = await setup({ searchMs: 800, extra: (add) => { add("INBOX", "slowword-a", 300); add("Projects", "slowword-b", 300); } });
+    // the second folder's search never gets a tagged answer
+    t.w.server.script.add({ on: "command", command: "UID SEARCH", when: (ctx: { mailbox: string | null }) => ctx.mailbox === "Projects", send: "* OK still looking\r\n" } as never);
+    const provider = (await t.backend.provider(t.account.id))!;
+    const started = Date.now();
+    const r = await provider.search!(criteria(["slowword"]));
+    expect(Date.now() - started).toBeLessThan(2500);
+    expect(r.partial).toBe(true);
+    expect(r.hits).toHaveLength(1);
+    // the account's next pass works: the session that was closed isn't kept
+    await bounded(t.backend.syncAccount(t.account.id), "a pass after the deadline");
   });
 
   it("fetching stores them as old mail with no notices; a later pass of the provider keeps them", async () => {

@@ -651,6 +651,8 @@ export interface ImapTimeouts {
   connectMs: number;
   /** a command session quiet this long is dead (a stuck command fails; an idle session closes) */
   socketMs: number;
+  /** plan 141: a server search of one account, every folder of it */
+  searchMs: number;
   /** how long IDLE has to answer the heartbeat's NOOP */
   heartbeatMs: number;
   /** IDLE heard nothing this long: the next sync pings it */
@@ -665,6 +667,7 @@ export interface ImapTimeouts {
 export const IMAP_TIMEOUTS: ImapTimeouts = {
   connectMs: 20_000,
   socketMs: 60_000,
+  searchMs: 30_000,
   heartbeatMs: 15_000,
   quietMs: 60_000,
   reconnectMs: 1000,
@@ -760,9 +763,6 @@ function refusalOf(c: ImapFlow): { why: "temporary" | "refused" | "unknown"; com
   if (temporaryRefusal(err)) return { why: "temporary", command };
   return { why: err.responseStatus === "NO" || err.responseStatus === "BAD" ? "refused" : "unknown", command };
 }
-
-/** Plan 141: a server search of one account, every folder of it. */
-const SEARCH_DEADLINE_MS = 30_000;
 
 const withoutAccents = (value: string) => value.normalize("NFD").replace(/\p{M}/gu, "");
 
@@ -2195,14 +2195,32 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
      */
     async search({ queries, before, limit, signal }) {
       return withConnection(async (c) => {
-        const deadline = AbortSignal.any([signal, AbortSignal.timeout(SEARCH_DEADLINE_MS)]);
-        const list = await c.list();
-        const found = await discoverRoles(c);
+        const expired = new AbortController();
+        // nothing else ends a command under way: the session goes, and what was found so far stands
+        const timer = setTimeout(() => {
+          expired.abort();
+          if (client === c) client = null;
+          c.close();
+        }, timeouts.searchMs);
+        (timer as { unref?: () => void }).unref?.();
+        const onStop = () => {
+          if (client === c) client = null;
+          c.close();
+        };
+        signal.addEventListener("abort", onStop, { once: true });
+        const deadline = AbortSignal.any([signal, expired.signal]);
+        const hits = new Map<string, ProviderHit>();
+        let partial = false;
+        try {
+        const list = await c.list().catch((error: unknown) => {
+          if (expired.signal.aborted) return [];
+          throw error;
+        });
+        const found = list.length ? await discoverRoles(c) : ({} as Awaited<ReturnType<typeof discoverRoles>>);
         const left = new Set([found.junk, found.trash, found.drafts]);
         const rank = (path: string) => (path === found.inbox ? 0 : path === found.sent ? 1 : 2);
         const paths = list.filter(selectableMailbox).map((m) => m.path).filter((path) => !left.has(path)).sort((a, b) => rank(a) - rank(b));
-        const hits = new Map<string, ProviderHit>();
-        let partial = false;
+        if (expired.signal.aborted) partial = true;
         for (const path of paths) {
           if (deadline.aborted) { partial = true; break; }
           try {
@@ -2245,6 +2263,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             partial = true;
             if (deadline.aborted) break;
           }
+        }
+        } finally {
+          clearTimeout(timer);
+          signal.removeEventListener("abort", onStop);
         }
         // the RFC only promises ASCII's case, so a server may miss other case and accents: it's always said
         return { hits: [...hits.values()].sort((a, b) => b.date - a.date).slice(0, limit), partial: partial || queries.some((q) => [...q.terms, ...(q.anyOf ?? []).flat()].some((t) => /[\u0080-\uffff]/.test(t))) };

@@ -9,7 +9,7 @@ import type { Db } from "./sqlite";
 const LIVE = "m.is_spam = 0 AND m.is_trash = 0 AND m.is_draft = 0";
 const CAPTURE_SLICE = 16;
 
-export async function askMatching(db: Db, query: ResolvedSearch, threadIds: readonly number[], yieldTo: () => Promise<void>, signal?: { readonly aborted: boolean }): Promise<{ ids: { id: number; threadId: number }[]; incomplete: boolean }> {
+export async function askMatching(db: Db, query: ResolvedSearch, threadIds: readonly number[], yieldTo: () => Promise<void>, signal?: { readonly aborted: boolean }, workParts = ASK_MATCH_PARTS): Promise<{ ids: { id: number; threadId: number }[]; incomplete: boolean }> {
   const threads = JSON.stringify(threadIds);
   const tests = searchTerms(query.query).filter((t) => t.field === "text").map((t) => ({ op: "contains" as const, value: t.value, prefix: t.prefix }));
   const captured = new Map<string, number[]>();
@@ -25,8 +25,8 @@ export async function askMatching(db: Db, query: ResolvedSearch, threadIds: read
     let parts = 0;
     const reading = rows.filter((r) => {
       parts += r.token_parts;
-      if (parts > ASK_MATCH_PARTS) incomplete = true;
-      return parts <= ASK_MATCH_PARTS;
+      if (parts > workParts) incomplete = true;
+      return parts <= workParts;
     });
     for (let at = 0; at < reading.length; at += CAPTURE_SLICE) {
       if (signal?.aborted) return { ids: [], incomplete: true };
@@ -81,11 +81,14 @@ export function askText(db: Db, messageId: number, yieldTo: () => Promise<void>)
 export function addAskTurn(db: Db, w: AskTurnWrite): { conversationId: number; turnId: number } | null {
   return db.tx(() => {
     const b = boundedTurn(w);
+    // an account that went while it answered takes the answer with it
+    const held = new Set(db.all<{ id: number }>("SELECT id FROM accounts").map((r) => r.id));
+    if (w.accountIds.some((id) => !held.has(id))) return null;
     let conversationId = w.conversationId;
     if (conversationId !== null) {
-      const held = db.get<{ n: number }>("SELECT (SELECT COUNT(*) FROM ai_turns WHERE conversation_id = c.id) AS n FROM ai_conversations c WHERE c.id = ?", conversationId);
+      const turns = db.get<{ n: number }>("SELECT (SELECT COUNT(*) FROM ai_turns WHERE conversation_id = c.id) AS n FROM ai_conversations c WHERE c.id = ?", conversationId);
       // deleted while it answered: the answer doesn't bring it back
-      if (!held || held.n >= ASK_TURNS_MAX) return null;
+      if (!turns || turns.n >= ASK_TURNS_MAX) return null;
       db.run("UPDATE ai_conversations SET updated_at = ? WHERE id = ?", w.now, conversationId);
     } else {
       conversationId = Number(db.run("INSERT INTO ai_conversations (title, created_at, updated_at) VALUES (?, ?, ?)", b.title, w.now, w.now).lastInsertRowid);
@@ -129,10 +132,10 @@ export function removeAskConversation(db: Db, conversationId: number): AskConver
 export function restoreAskConversation(db: Db, copy: AskConversationCopy): void {
   db.tx(() => {
     const { summary: s, rows } = copy;
-    db.run("INSERT OR REPLACE INTO ai_conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)", s.id, s.title, s.createdAt, s.updatedAt);
+    db.run("INSERT INTO ai_conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)", s.id, s.title, s.createdAt, s.updatedAt);
     for (const r of rows) {
       db.run(
-        "INSERT OR REPLACE INTO ai_turns (id, conversation_id, kind, question, answer, status, sources_json, queries_json, checks_json, account_ids_json, model, provider, prompt_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO ai_turns (id, conversation_id, kind, question, answer, status, sources_json, queries_json, checks_json, account_ids_json, model, provider, prompt_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         r.id, r.conversation_id, r.kind, r.question, r.answer, r.status, r.sources_json, r.queries_json, r.checks_json ?? null, r.account_ids_json ?? "[]", r.model, r.provider, (r as { prompt_version?: number | null }).prompt_version ?? null, r.created_at,
       );
     }
@@ -140,8 +143,12 @@ export function restoreAskConversation(db: Db, copy: AskConversationCopy): void 
   });
 }
 
-export function removeAskForAccount(db: Db, accountId: number): number {
-  return Number(db.run("DELETE FROM ai_conversations WHERE id IN (SELECT t.conversation_id FROM ai_turns t, json_each(t.account_ids_json) j WHERE j.value = ?)", accountId).changes);
+export function removeAskForAccount(db: Db, accountId: number): number[] {
+  return db.tx(() => {
+    const ids = db.all<{ id: number }>("SELECT DISTINCT t.conversation_id AS id FROM ai_turns t, json_each(t.account_ids_json) j WHERE j.value = ?", accountId).map((r) => r.id);
+    if (ids.length) db.run("DELETE FROM ai_conversations WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify(ids));
+    return ids;
+  });
 }
 
 export function clearAsk(db: Db): void {

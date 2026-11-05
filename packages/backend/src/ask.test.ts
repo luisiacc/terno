@@ -71,7 +71,7 @@ async function setup(o: { cloud?: boolean; provider?: "fake" | "none" } = {}) {
     const { inserted } = await backend.ingestSliced([m], true);
     return inserted[0]!;
   };
-  const ask = (question = "When does my lease renew?", extra: { conversationId?: number; acknowledge?: boolean; requestId?: string } = {}) => client.call("ai.ask", { requestId: extra.requestId ?? crypto.randomUUID(), question, timezone: "UTC", ...extra });
+  const ask = (question = "When does my lease renew?", extra: { conversationId?: number; acknowledge?: string; requestId?: string } = {}) => client.call("ai.ask", { requestId: extra.requestId ?? crypto.randomUUID(), question, timezone: "UTC", ...extra });
   return { backend, client, connect, model, account, put, ask };
 }
 
@@ -174,7 +174,7 @@ describe("consent is for a destination (revision 2)", () => {
     const asked = await ask();
     expect(asked).toMatchObject({ status: "consent", provider: "anthropic" });
     expect(model.plans).toHaveLength(0);
-    expect(done(await ask("q lease", { acknowledge: true })).turn).not.toBeNull();
+    expect(done(await ask("q lease", { acknowledge: asked.status === "consent" ? asked.destination : "" })).turn).not.toBeNull();
     expect(done(await ask("q lease")).turn).not.toBeNull();
     const local = await setup();
     await local.put();
@@ -185,17 +185,31 @@ describe("consent is for a destination (revision 2)", () => {
     const { client, put, ask } = await setup();
     await put();
     await client.call("settings.update", { ai: { provider: "compatible", preset: "custom", model: "m", baseURL: "https://one.example.test/v1" } });
-    await ask("q", { acknowledge: true });
+    const first = await ask("q");
+    await ask("q", { acknowledge: first.status === "consent" ? first.destination : "" });
     await client.call("settings.update", { ai: { provider: "compatible", preset: "custom", model: "m", baseURL: "https://two.example.test/v1" } });
     expect((await ask("q")).status).toBe("consent");
     await client.call("settings.update", { ai: { provider: "compatible", preset: "custom", model: "m", baseURL: "https://one.example.test/v1" } });
     expect((await ask("q")).status).not.toBe("consent");
   });
 
+  it("Continue agrees to what was read: Settings having moved since asks again and sends nothing", async () => {
+    const { client, model, put, ask } = await setup();
+    await put();
+    await client.call("settings.update", { ai: { provider: "compatible", preset: "custom", model: "m", baseURL: "https://one.example.test/v1" } });
+    const shown = await ask("q lease");
+    await client.call("settings.update", { ai: { provider: "compatible", preset: "custom", model: "m", baseURL: "https://two.example.test/v1" } });
+    const again = await ask("q lease", { acknowledge: shown.status === "consent" ? shown.destination : "" });
+    expect(again.status).toBe("consent");
+    expect(again.status === "consent" && again.endpoint).toContain("two.example.test");
+    expect(model.plans).toHaveLength(0);
+  });
+
   it("the plan runs on a cheap model on the provider that answers, which is Sonnet on Claude", async () => {
     const { model, put, ask } = await setup({ cloud: true });
     await put();
-    await ask("q lease", { acknowledge: true });
+    const asked = await ask("q lease");
+    await ask("q lease", { acknowledge: asked.status === "consent" ? asked.destination : "" });
     const planned = model.configs.map((c) => [c.id, c.model]);
     expect(planned).toContainEqual(["anthropic", "claude-haiku-5-5"]);
     expect(planned).toContainEqual(["anthropic", "claude-sonnet-5-5"]);
@@ -260,12 +274,12 @@ describe("history", () => {
     const before = model.answers.length + model.plans.length;
     const saved = (await client.call("ai.askConversation", { conversationId: r.turn!.conversationId }))!;
     expect(saved.turns[0]!.answer).toBe(r.turn!.answer);
-    expect(saved.sources[id]).toBe("ok");
+    expect(saved.sources[id]).toMatchObject({ state: "ok" });
     expect(model.answers.length + model.plans.length).toBe(before);
     await backend.store.threads.act({ threadIds: [r.turn!.sources[0]!.threadId], action: "trash", signal: null, now: NOW });
-    expect((await client.call("ai.askConversation", { conversationId: r.turn!.conversationId }))!.sources[id]).toBe("trash");
+    expect((await client.call("ai.askConversation", { conversationId: r.turn!.conversationId }))!.sources[id]).toMatchObject({ state: "trash" });
     await backend.store.sync.remove([id]);
-    expect((await client.call("ai.askConversation", { conversationId: r.turn!.conversationId }))!.sources[id]).toBe("gone");
+    expect((await client.call("ai.askConversation", { conversationId: r.turn!.conversationId }))!.sources[id]).toEqual({ state: "gone" });
   });
 
   it("delete and Undo; a follow-up on what was deleted says so; a late answer can't bring it back", async () => {
@@ -323,6 +337,49 @@ describe("history", () => {
     expect(dump).not.toContain("QCANARY");
   });
 
+  it("an account going while its mail is being read stops the question before anything of it is sent", async () => {
+    const { backend, client, model, put, ask, account } = await setup();
+    await put();
+    const passages = backend.store.ask.passages.bind(backend.store.ask);
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let reading = false;
+    backend.store.ask.passages = async (req) => {
+      const out = await passages(req);
+      reading = true;
+      await held;
+      return out;
+    };
+    const running = ask("q lease").catch((e: RpcError) => e.code);
+    await expect.poll(() => reading).toBe(true);
+    await client.call("accounts.remove", { id: account.id });
+    release();
+    expect(await running).toBe("CANCELLED");
+    expect(model.answers).toHaveLength(0);
+    expect(await backend.store.ask.history.list()).toEqual([]);
+  });
+
+  it("tells every window what went, and never MCP", async () => {
+    const { client, connect, put, ask } = await setup();
+    await put();
+    const id = done(await ask()).turn!.conversationId;
+    const heard: unknown[] = [];
+    const other = connect("second", "renderer");
+    other.on("aiAskGone", (e) => void heard.push(e.conversationIds));
+    await client.call("ai.askDelete", { conversationId: id });
+    await client.call("ai.summaries.clear", {});
+    await expect.poll(() => heard).toEqual([[id], null]);
+  });
+
+  it("a reopened conversation says whether older mail can be asked for, as it is now", async () => {
+    const { backend, client, put, ask } = await setup();
+    await put();
+    const id = done(await ask()).turn!.conversationId;
+    expect((await client.call("ai.askConversation", { conversationId: id }))!.older.kind).toBe("offer");
+    await backend.store.accounts.update(1, { backfill: { merge: { since: 1, until: 2 } } });
+    expect((await client.call("ai.askConversation", { conversationId: id }))!.older.kind).toBe("downloading");
+  });
+
   it("what a person asks isn't on MCP, and none of its methods are", async () => {
     const { connect, put, ask } = await setup();
     await put();
@@ -358,6 +415,18 @@ describe("older mail, on a click (the demo's server)", () => {
     // kept as normal mail: a later question needs no second fetch
     expect(done(await ask("lease again")).turn!.sources[0]!.subject).toBe("Your lease renewal");
     expect(searches).toHaveLength(1);
+  });
+
+  it("off, a stale page's button asks no server", async () => {
+    const { backend, client, model, ask } = await setup();
+    model.plan = () => [query({ terms: ["lease"] })];
+    const first = done(await ask());
+    const provider = await backend.provider(1);
+    const searches: unknown[] = [];
+    provider!.search = async (i) => (searches.push(i), { hits: [], partial: false });
+    await client.call("settings.update", { ask: { enabled: false } });
+    await expect(client.call("ai.askOlder", { requestId: crypto.randomUUID(), conversationId: first.turn!.conversationId, turnId: first.turn!.id, timezone: "UTC" })).rejects.toMatchObject({ details: { aiErrorKind: "not_configured" } });
+    expect(searches).toEqual([]);
   });
 
   it("a server that finds nothing says so", async () => {
