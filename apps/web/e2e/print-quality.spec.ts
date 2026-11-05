@@ -13,7 +13,7 @@ import { dirname, extname, join } from "node:path";
 import type { Page } from "@playwright/test";
 import { PRINT_FIXTURE_KEYS, printFixtures } from "@terno/mock-data";
 import { footerTemplate } from "../../desktop/src/print-policy";
-import { expect, ingestPrintFixtures, selectThread, test } from "./fixtures";
+import { expect, ingestPrintFixtures, scenario, selectThread, test } from "./fixtures";
 import { pdfProblems, QUERY, readPdf } from "./print-pdf";
 
 const PDFJS = dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json"));
@@ -55,42 +55,52 @@ async function viewer(page: Page) {
 
 test.use({ deviceScaleFactor: 1 });
 
-for (const key of PRINT_FIXTURE_KEYS) {
-  test(`${key}: real PDFs read back and rendered, with headers and content only, on Letter and A4`, async ({ app: page, server, context }) => {
+// a test holds a few (a PDF viewer and two more pages each is what costs, and a failure still names its fixture and paper)
+const GROUPS = Array.from({ length: Math.ceil(PRINT_FIXTURE_KEYS.length / 3) }, (_, i) => PRINT_FIXTURE_KEYS.slice(i * 3, i * 3 + 3));
+
+for (const keys of GROUPS) {
+  test(`${keys.join(", ")}: real PDFs read back and rendered, with headers and content only, on Letter and A4`, async ({ app: page, server, context }) => {
     test.setTimeout(90_000);
-    const f = fixtures.get(key)!;
     const ids = await ingestPrintFixtures(server);
-    await selectThread(page, ids[key], QUERY[key]);
-    await page.keyboard.press("ControlOrMeta+p");
     const pdfPage = await context.newPage();
     const render = await context.newPage();
     await viewer(render);
-    for (const content of ["headers", "body"] as const) {
-      for (const paper of ["letter", "a4"] as const) {
-        await page.getByTestId(`print-content-${content}`).click();
-        await page.getByTestId(`print-paper-${paper}`).click();
-        await expect(page.getByTestId("print-preview")).toHaveAttribute("data-ready", "true");
-        // what the sheet would print: the fitted preview, serialized
-        const html = await page.getByTestId("print-preview").evaluate((frame: HTMLIFrameElement) => `<!doctype html>${frame.contentDocument!.documentElement.outerHTML}`);
-        await pdfPage.setContent(html, { waitUntil: "load" });
-        const headers = content === "headers";
-        const pdf = await pdfPage.pdf({
-          preferCSSPageSize: true,
-          printBackground: true,
-          margin: { top: "18mm", bottom: "18mm", left: "16mm", right: "16mm" },
-          displayHeaderFooter: headers,
-          headerTemplate: "<span></span>",
-          footerTemplate: headers ? footerTemplate(f.subject) : "<span></span>",
-        });
-        const pages = await readPdf(pdf);
-        expect(pdfProblems(pages, { key, headers, paper, subject: f.subject, sender: f.messages[0]!.from.email }), `${key} ${content} ${paper}`).toEqual([]);
+    for (const key of keys) {
+      await scenario(key, async () => {
+        const f = fixtures.get(key)!;
+        await page.bringToFront();
+        await selectThread(page, ids[key], QUERY[key]);
+        await page.keyboard.press("ControlOrMeta+p");
+        for (const content of ["headers", "body"] as const) {
+          for (const paper of ["letter", "a4"] as const) {
+            await page.getByTestId(`print-content-${content}`).click();
+            await page.getByTestId(`print-paper-${paper}`).click();
+            await expect(page.getByTestId("print-preview")).toHaveAttribute("data-ready", "true");
+            // what the sheet would print: the fitted preview, serialized
+            const html = await page.getByTestId("print-preview").evaluate((frame: HTMLIFrameElement) => `<!doctype html>${frame.contentDocument!.documentElement.outerHTML}`);
+            await pdfPage.setContent(html, { waitUntil: "load" });
+            const headers = content === "headers";
+            const pdf = await pdfPage.pdf({
+              preferCSSPageSize: true,
+              printBackground: true,
+              margin: { top: "18mm", bottom: "18mm", left: "16mm", right: "16mm" },
+              displayHeaderFooter: headers,
+              headerTemplate: "<span></span>",
+              footerTemplate: headers ? footerTemplate(f.subject) : "<span></span>",
+            });
+            const pages = await readPdf(pdf);
+            expect(pdfProblems(pages, { key, headers, paper, subject: f.subject, sender: f.messages[0]!.from.email }), `${key} ${content} ${paper}`).toEqual([]);
 
-        const count = await render.evaluate((b64) => (window as unknown as { renderPdf(b: string): Promise<number> }).renderPdf(b64), Buffer.from(pdf).toString("base64"));
-        expect(count).toBe(pages.length);
-        for (const n of new Set([1, count])) {
-          await expect(render.locator(`canvas[data-page="${n}"]`)).toHaveScreenshot(`${key}-${content}-${paper}-p${n}.png`, { maxDiffPixelRatio: 0.01 });
+            const count = await render.evaluate((b64) => (window as unknown as { renderPdf(b: string): Promise<number> }).renderPdf(b64), Buffer.from(pdf).toString("base64"));
+            expect(count).toBe(pages.length);
+            for (const n of new Set([1, count])) {
+              await expect(render.locator(`canvas[data-page="${n}"]`)).toHaveScreenshot(`${key}-${content}-${paper}-p${n}.png`, { maxDiffPixelRatio: 0.01 });
+            }
+          }
         }
-      }
+        await page.keyboard.press("Escape");
+        await expect(page.getByTestId("print-sheet")).toHaveCount(0);
+      });
     }
   });
 }
