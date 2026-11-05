@@ -358,8 +358,10 @@ test.describe("everything about X and Y", () => {
       await page.keyboard.press("1");
       const added = page.getByTestId("snack").filter({ hasText: /added to Facturas/ });
       await expect(added).toBeVisible();
-      // (its countdown starts once the keyboard's focus has left the bar it replaced)
-      await expect.poll(async () => (await page.clock.fastForward(15_000), added.count())).toBe(0);
+      // (its countdown starts once the keyboard's focus has left the bar it replaced: the ring runs with it)
+      await expect.poll(() => page.evaluate(() => document.getAnimations().find((a) => a.id === "snack-countdown")?.playState)).toBe("running");
+      await page.clock.fastForward(15_000);
+      await expect(added).toHaveCount(0);
     });
   });
 

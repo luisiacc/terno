@@ -43,6 +43,8 @@ export default defineConfig({
     // plan 139: a trace walks the whole DOM on every action, for every test, to serve the few that fail. E2E_TRACE=1 to see one
     trace: process.env.E2E_TRACE ? "retain-on-failure" : "off",
     screenshot: "only-on-failure",
+    // plan 139: a click that can't land fails its scenario, instead of using up the test and hiding the scenarios after it
+    actionTimeout: 15_000,
   },
   projects: [
     { name: "e2e", testIgnore: /perf\.spec\.ts/ },
@@ -57,7 +59,7 @@ export default defineConfig({
     })),
     // perf runs alone (no CPU contention from parallel workers)
     // (no trace: its snapshots walk the whole DOM on every action, on the page's main thread, inside the timings)
-    { name: "perf", testMatch: /perf\.spec\.ts/, dependencies: ["e2e"], fullyParallel: false, workers: 1, use: { deviceScaleFactor: 1, trace: "off" } },
+    { name: "perf", testMatch: /perf\.spec\.ts/, dependencies: ["e2e"], fullyParallel: false, workers: 1, use: { deviceScaleFactor: 1, trace: "off", actionTimeout: 0 } },
   ],
   webServer: {
     // a test build (render probe on) in its own directory, so it never ships

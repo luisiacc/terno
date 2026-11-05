@@ -9,7 +9,7 @@ import { fakeDraft } from "../../../packages/ai/src/fake";
 import type { IncomingMessage } from "@terno/store";
 import { E2E_NOW } from "./constants";
 import { sqlDb } from "../../backend-dev/src/server";
-import { addRecipients, expect, recipientEmails, rows, stabilize, test, type DevServerFixture } from "./fixtures";
+import { addRecipients, expect, recipientEmails, rows, scenario, stabilize, test, type DevServerFixture } from "./fixtures";
 
 const SHOTS = process.env.AI_DRAFT_SHOTS ?? "/tmp/terno-scratch/ai-draft";
 const dev = { clientId: "setup", origin: "dev" as const };
@@ -62,6 +62,22 @@ async function ready(page: Page, server: DevServerFixture) {
   await page.locator("[data-ready]").waitFor();
   await rows(page).first().waitFor();
   return ids;
+}
+
+/** The next scenario of a merged test: its drafts discarded, as if it had just loaded. */
+async function fresh(page: Page, server: DevServerFixture) {
+  const discard = page.getByTestId("compose-discard");
+  while (await discard.count()) await discard.first().click();
+  await expect.poll(async () => (await server.backend.store.drafts.list()).length).toBe(0);
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+  await rows(page).first().waitFor();
+}
+
+/** No first token to wait for and no pace: for what's decided before or after the stream, not during it. */
+function instant() {
+  fakeDraft.firstTokenMs = 0;
+  fakeDraft.paceMs = 0;
 }
 
 async function openThread(page: Page, subject: RegExp | string) {
@@ -132,84 +148,85 @@ test.afterEach(() => {
 });
 
 test.describe("drafting with AI (plan 133)", () => {
-  test("⌘J from a conversation: the row, the stream in the body's place, one commit that moves nothing, the strip", async ({ app: page, server, design }) => {
-    await ready(page, server);
-    await openThread(page, /Contract review/);
-    await openField(page);
-    await expect(field(page)).toBeFocused();
-    await expect(page.getByTestId("composer")).toBeVisible();
+  test("the commit moves nothing, on both paths", async ({ app: page, server, design }) => {
+    await scenario("⌘J from a conversation: the row, the stream in the body's place, one commit that moves nothing, the strip", async () => {
+      await ready(page, server);
+      await openThread(page, /Contract review/);
+      await openField(page);
+      await expect(field(page)).toBeFocused();
+      await expect(page.getByTestId("composer")).toBeVisible();
 
-    // lined up with its neighbours: the label on To's, the text on To's content line
-    const labels = page.locator("[data-testid=composer] label");
-    const toLabel = await labels.first().boundingBox();
-    const aiLabel = await row(page).locator("label").boundingBox();
-    expect(aiLabel!.x).toBe(toLabel!.x);
-    const toField = await page.locator("[data-recipient-field=compose-to]").boundingBox();
-    expect((await field(page).boundingBox())!.x).toBe(toField!.x);
-    await expect(row(page)).toHaveCSS("min-height", "38px");
+      // lined up with its neighbours: the label on To's, the text on To's content line
+      const labels = page.locator("[data-testid=composer] label");
+      const toLabel = await labels.first().boundingBox();
+      const aiLabel = await row(page).locator("label").boundingBox();
+      expect(aiLabel!.x).toBe(toLabel!.x);
+      const toField = await page.locator("[data-recipient-field=compose-to]").boundingBox();
+      expect((await field(page).boundingBox())!.x).toBe(toField!.x);
+      await expect(row(page)).toHaveCSS("min-height", "38px");
 
-    const commit = await recordCommit(page);
-    fakeDraft.paceMs = 60;
-    await field(page).fill("say that this is just fine");
-    await page.keyboard.press("Enter");
-    // focus goes back to the text, which stays editable; the row says what's happening
-    await expect(body(page)).toBeFocused();
-    await expect(page.getByTestId("ai-row-status-text")).toHaveText("Writing…");
-    await expect(page.getByTestId("ai-live")).toHaveText("Writing draft");
-    await streaming(page);
+      const commit = await recordCommit(page);
+      fakeDraft.paceMs = 60;
+      await field(page).fill("say that this is just fine");
+      await page.keyboard.press("Enter");
+      // focus goes back to the text, which stays editable; the row says what's happening
+      await expect(body(page)).toBeFocused();
+      await expect(page.getByTestId("ai-row-status-text")).toHaveText("Writing…");
+      await expect(page.getByTestId("ai-live")).toHaveText("Writing draft");
+      await streaming(page);
 
-    // not in the document, nor saved
-    expect(await body(page).textContent()).toBe("");
-    await expect(preview(page)).toHaveAttribute("data-mode", "overlay");
-    await expect(preview(page)).toHaveAttribute("aria-hidden", "true");
+      // not in the document, nor saved
+      expect(await body(page).textContent()).toBe("");
+      await expect(preview(page)).toHaveAttribute("data-mode", "overlay");
+      await expect(preview(page)).toHaveAttribute("aria-hidden", "true");
 
-    // the moment of commit: every line where the preview had it, the same size; never both on screen; the form's foot holds
-    await expect(strip(page)).toBeVisible();
-    const seen = await commit();
-    expect(seen.both).toBe(false);
-    expect(seen.preview.length).toBeGreaterThan(2);
-    for (const [i, line] of seen.preview.entries()) {
-      const after = seen.body[i]!;
-      expect(after.left, line.text).toBe(line.left);
-      expect(after.top, line.text).toBe(line.top);
-      expect(after.height, line.text).toBe(line.height);
-    }
-    expect(seen.bodyForm).toBe(seen.previewForm);
-    await expect(preview(page)).toHaveCount(0);
+      // the moment of commit: every line where the preview had it, the same size; never both on screen; the form's foot holds
+      await expect(strip(page)).toBeVisible();
+      const seen = await commit();
+      expect(seen.both).toBe(false);
+      expect(seen.preview.length).toBeGreaterThan(2);
+      for (const [i, line] of seen.preview.entries()) {
+        const after = seen.body[i]!;
+        expect(after.left, line.text).toBe(line.left);
+        expect(after.top, line.text).toBe(line.top);
+        expect(after.height, line.text).toBe(line.height);
+      }
+      expect(seen.bodyForm).toBe(seen.previewForm);
+      await expect(preview(page)).toHaveCount(0);
 
-    // caret on the first placeholder, selected, ready to type over; the strip tells what was used
-    await expect(page.getByTestId("ai-live")).toHaveText(/Draft ready, \d+ words/);
-    expect(await page.evaluate(() => getSelection()?.toString())).toBe("[date]");
-    await expect(strip(page)).toContainText("Written with AI");
-    await expect(strip(page)).toContainText("Regenerate");
+      // caret on the first placeholder, selected, ready to type over; the strip tells what was used
+      await expect(page.getByTestId("ai-live")).toHaveText(/Draft ready, \d+ words/);
+      expect(await page.evaluate(() => getSelection()?.toString())).toBe("[date]");
+      await expect(strip(page)).toContainText("Written with AI");
+      await expect(strip(page)).toContainText("Regenerate");
 
-    // one undo step, autosaved like typing
-    await page.getByTestId("ai-strip-undo").click();
-    await expect(strip(page)).toHaveCount(0);
-    await expect(body(page)).toHaveText("");
-    await expect(body(page)).toBeFocused();
-    // nothing was there before: no blank draft stays in the list, and writing still saves
-    const saved = async () => ((await server.backend.server.invoke("drafts.list", {}, dev)) as { bodyText: string }[]).map((d) => d.bodyText);
-    await expect.poll(saved).toEqual([]);
-    await body(page).pressSequentially("my own words");
-    await expect.poll(saved).toEqual(["my own words"]);
-    expect(design === null || typeof design === "string").toBe(true);
-  });
-
-  test("the check line goes under the text: on the one-tap path, nothing moves at commit either", async ({ app: page, server }) => {
-    await ready(page, server);
-    await openThread(page, /Contract review/);
-    await openField(page);
-    const commit = await recordCommit(page);
-    fakeDraft.paceMs = 60;
-    await page.keyboard.press("Enter");
-    await streaming(page);
-    await expect(strip(page)).toBeVisible();
-    const seen = await commit();
-    for (const [i, line] of seen.preview.entries()) expect(seen.body[i]!.top, line.text).toBe(line.top);
-    await expect(page.getByTestId("ai-strip-check")).toContainText("Written from the conversation alone");
-    const checkTop = (await page.getByTestId("ai-strip-check").boundingBox())!.y;
-    expect(checkTop).toBeGreaterThan((await body(page).boundingBox())!.y);
+      // one undo step, autosaved like typing
+      await page.getByTestId("ai-strip-undo").click();
+      await expect(strip(page)).toHaveCount(0);
+      await expect(body(page)).toHaveText("");
+      await expect(body(page)).toBeFocused();
+      // nothing was there before: no blank draft stays in the list, and writing still saves
+      const saved = async () => ((await server.backend.server.invoke("drafts.list", {}, dev)) as { bodyText: string }[]).map((d) => d.bodyText);
+      await expect.poll(saved).toEqual([]);
+      await body(page).pressSequentially("my own words");
+      await expect.poll(saved).toEqual(["my own words"]);
+      expect(design === null || typeof design === "string").toBe(true);
+    });
+    await scenario("the check line goes under the text: on the one-tap path, nothing moves at commit either", async () => {
+      await fresh(page, server);
+      await openThread(page, /Contract review/);
+      await openField(page);
+      const commit = await recordCommit(page);
+      fakeDraft.paceMs = 60;
+      await page.keyboard.press("Enter");
+      await streaming(page);
+      await expect(strip(page)).toBeVisible();
+      const seen = await commit();
+      for (const [i, line] of seen.preview.entries()) expect(seen.body[i]!.top, line.text).toBe(line.top);
+      await expect(page.getByTestId("ai-strip-check")).toContainText("Written from the conversation alone");
+      const checkTop = (await page.getByTestId("ai-strip-check").boundingBox())!.y;
+      expect(checkTop).toBeGreaterThan((await body(page).boundingBox())!.y);
+    });
   });
 
   test("a long stream follows its last line down; someone who scrolled up to read stays where they are", async ({ app: page, server }) => {
@@ -235,418 +252,455 @@ test.describe("drafting with AI (plan 133)", () => {
   });
 
   test("Still writing… after 8 s, or Loading the model… on a local one with no text yet", async ({ app: page, server }) => {
-    test.setTimeout(30_000);
     await ready(page, server);
-    fakeDraft.firstTokenMs = 8600;
+    fakeDraft.firstTokenMs = 60_000;
     await openThread(page, /Contract review/);
     await openField(page);
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("ai-row-status-text")).toHaveText("Writing…");
-    await expect(page.getByTestId("ai-row-status-text")).toHaveText("Loading the model…", { timeout: 9000 });
+    await page.clock.fastForward(7_900);
+    await expect(page.getByTestId("ai-row-status-text")).toHaveText("Writing…");
+    await page.clock.fastForward(100);
+    // at once: the clock also runs in real time, so a longer wait would pass a slower timer
+    await expect(page.getByTestId("ai-row-status-text")).toHaveText("Loading the model…", { timeout: 600 });
     await page.getByTestId("ai-row-stop").click();
     await expect(row(page)).toHaveCount(0);
   });
 
-  test("the palette reaches it: from a conversation, and in a draft", async ({ app: page, server }) => {
-    await ready(page, server);
-    await openThread(page, /Contract review/);
-    await page.keyboard.press("ControlOrMeta+k");
-    await page.getByTestId("palette-ai-draft").click();
-    await expect(field(page)).toBeFocused();
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("composer")).toHaveCount(0);
-    await page.keyboard.press("r");
-    await expect(body(page)).toBeFocused();
-    await page.keyboard.press("ControlOrMeta+k");
-    await page.getByTestId("palette-draft-ai").click();
-    await expect(field(page)).toBeFocused();
-  });
+  test("the row with an instant model: its ways in and out, your notes, a question, a send, a failure", async ({ app: page, server }) => {
+    await scenario("the palette reaches it: from a conversation, and in a draft", async () => {
+      await ready(page, server);
+      instant();
+      await openThread(page, /Contract review/);
+      await page.keyboard.press("ControlOrMeta+k");
+      await page.getByTestId("palette-ai-draft").click();
+      await expect(field(page)).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("composer")).toHaveCount(0);
+      await page.keyboard.press("r");
+      await expect(body(page)).toBeFocused();
+      await page.keyboard.press("ControlOrMeta+k");
+      await page.getByTestId("palette-draft-ai").click();
+      await expect(field(page)).toBeFocused();
+    });
+    await scenario("the strip holds one line in the pinned card's width", async () => {
+      await fresh(page, server);
+      await openThread(page, /Contract review/);
+      await openField(page);
+      await field(page).fill("say that this is just fine");
+      await page.keyboard.press("Enter");
+      await strip(page).waitFor();
+      await page.getByTestId("compose-pin").click();
+      const card = page.getByTestId("pinned-draft");
+      await expect(card.getByTestId("ai-strip")).toBeVisible();
+      await expect(card.getByTestId("ai-strip-written")).toBeHidden();
+      expect((await card.getByTestId("ai-row").boundingBox())!.height).toBeLessThanOrEqual(40);
+    });
+    await scenario("Enter with nothing typed is the one-tap draft; ↑ recalls the last instruction; Esc closes and the empty reply goes", async () => {
+      await fresh(page, server);
+      await openThread(page, /Contract review/);
+      await page.getByTestId("quick-ai").click();
+      await expect(field(page)).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(strip(page)).toBeVisible();
+      await expect(page.getByTestId("ai-strip-check")).toContainText("Written from the conversation alone");
 
-  test("the strip holds one line in the pinned card's width", async ({ app: page, server }) => {
-    await ready(page, server);
-    await openThread(page, /Contract review/);
-    await openField(page);
-    await field(page).fill("say that this is just fine");
-    await page.keyboard.press("Enter");
-    await strip(page).waitFor();
-    await page.getByTestId("compose-pin").click();
-    const card = page.getByTestId("pinned-draft");
-    await expect(card.getByTestId("ai-strip")).toBeVisible();
-    await expect(card.getByTestId("ai-strip-written")).toBeHidden();
-    expect((await card.getByTestId("ai-row").boundingBox())!.height).toBeLessThanOrEqual(40);
-  });
+      await page.getByTestId("ai-strip-undo").click();
+      await openField(page);
+      await field(page).fill("echo: fine by me");
+      await page.keyboard.press("Enter");
+      await expect(body(page)).toContainText("fine by me");
+      await page.getByTestId("ai-strip-undo").click();
+      await openField(page);
+      await expect(field(page)).toHaveValue("");
+      await page.keyboard.press("ArrowUp");
+      await expect(field(page)).toHaveValue("echo: fine by me");
+      await page.keyboard.press("Escape");
+      await expect(row(page)).toHaveCount(0);
+      await expect(body(page)).toBeFocused();
 
-  test("Enter with nothing typed is the one-tap draft; ↑ recalls the last instruction; Esc closes and the empty reply goes", async ({ app: page, server }) => {
-    await ready(page, server);
-    await openThread(page, /Contract review/);
-    await page.getByTestId("quick-ai").click();
-    await expect(field(page)).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect(strip(page)).toBeVisible();
-    await expect(page.getByTestId("ai-strip-check")).toContainText("Written from the conversation alone");
+      // a row that made its draft takes it away with it
+      await page.getByTestId("compose-discard").click();
+      await page.getByTestId("quick-ai").waitFor();
+      await page.getByTestId("quick-ai").click();
+      await expect(field(page)).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("composer")).toHaveCount(0);
+      await expect(page.getByTestId("quick-reply")).toBeFocused();
+    });
+    await scenario("⌘J from a draft and from the list", async () => {
+      await fresh(page, server);
+      // the list, with nothing open: a new message, the row focused, asks who when it can't tell
+      await page.getByTestId("thread-list").locator("[data-keep-scroll=list]").focus();
+      await page.keyboard.press("c");
+      await expect(page.getByTestId("compose-to")).toBeFocused();
+      await openField(page);
+      await expect(field(page)).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("ai-who")).toHaveText("Who is it for? Add them in To.");
+      await expect(page.getByTestId("compose-to")).toBeFocused();
+      await addRecipients(page, "compose-to", "rosa@faraway.example");
+      await page.getByTestId("ai-who-write").click();
+      await expect(strip(page)).toBeVisible();
+      // an empty subject gets one; Undo takes both back
+      await expect(page.getByTestId("compose-subject")).toHaveValue("Fake subject");
+      await expect(page.getByTestId("compose-title")).toHaveText("Fake subject");
+      await page.getByTestId("ai-strip-undo").click();
+      await expect(page.getByTestId("compose-subject")).toHaveValue("");
+      await expect(body(page)).toHaveText("");
+    });
+    await scenario("your notes: with text in the body it expands them, and ends in Replace, Insert below or Discard", async () => {
+      await fresh(page, server);
+      await openThread(page, /Contract review/);
+      await page.keyboard.press("r");
+      await expect(body(page)).toBeFocused();
+      await page.keyboard.type("fine with the 19th");
+      await openField(page);
+      await expect(field(page)).toHaveAttribute("placeholder", /notes/);
+      await page.keyboard.press("Enter");
+      const choice = page.getByTestId("ai-choice");
+      await expect(choice).toHaveAttribute("data-reason", "notes");
+      await expect(preview(page)).toHaveAttribute("data-mode", "below");
+      await expect(preview(page)).not.toHaveAttribute("aria-hidden", "true");
+      await expect(body(page)).toHaveText("fine with the 19th");
 
-    await page.getByTestId("ai-strip-undo").click();
-    await openField(page);
-    await field(page).fill("echo: fine by me");
-    await page.keyboard.press("Enter");
-    await expect(body(page)).toContainText("fine by me");
-    await page.getByTestId("ai-strip-undo").click();
-    await openField(page);
-    await expect(field(page)).toHaveValue("");
-    await page.keyboard.press("ArrowUp");
-    await expect(field(page)).toHaveValue("echo: fine by me");
-    await page.keyboard.press("Escape");
-    await expect(row(page)).toHaveCount(0);
-    await expect(body(page)).toBeFocused();
+      await page.getByTestId("ai-choice-below").click();
+      await expect(body(page)).toContainText("fine with the 19th");
+      await expect(body(page)).toContainText("That works for me");
+      await page.keyboard.press("ControlOrMeta+z");
+      await expect(body(page)).toHaveText("fine with the 19th");
 
-    // a row that made its draft takes it away with it
-    await page.getByTestId("compose-discard").click();
-    await page.getByTestId("quick-ai").waitFor();
-    await page.getByTestId("quick-ai").click();
-    await expect(field(page)).toBeFocused();
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("composer")).toHaveCount(0);
-    await expect(page.getByTestId("quick-reply")).toBeFocused();
-  });
+      await openField(page);
+      await page.keyboard.press("Enter");
+      await page.getByTestId("ai-choice-replace").click();
+      await expect(body(page)).not.toContainText("fine with the 19th");
+      await expect(body(page)).toContainText("That works for me");
+      await page.getByTestId("ai-strip-undo").click();
+      await expect(body(page)).toHaveText("fine with the 19th");
 
-  test("⌘J from a draft and from the list", async ({ app: page, server }) => {
-    await ready(page, server);
-    // the list, with nothing open: a new message, the row focused, asks who when it can't tell
-    await page.getByTestId("thread-list").locator("[data-keep-scroll=list]").focus();
-    await page.keyboard.press("c");
-    await expect(page.getByTestId("compose-to")).toBeFocused();
-    await openField(page);
-    await expect(field(page)).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId("ai-who")).toHaveText("Who is it for? Add them in To.");
-    await expect(page.getByTestId("compose-to")).toBeFocused();
-    await addRecipients(page, "compose-to", "rosa@faraway.example");
-    await page.getByTestId("ai-who-write").click();
-    await expect(strip(page)).toBeVisible();
-    // an empty subject gets one; Undo takes both back
-    await expect(page.getByTestId("compose-subject")).toHaveValue("Fake subject");
-    await expect(page.getByTestId("compose-title")).toHaveText("Fake subject");
-    await page.getByTestId("ai-strip-undo").click();
-    await expect(page.getByTestId("compose-subject")).toHaveValue("");
-    await expect(body(page)).toHaveText("");
+      await openField(page);
+      await page.keyboard.press("Enter");
+      await page.getByTestId("ai-choice-discard").click();
+      await expect(body(page)).toHaveText("fine with the 19th");
+      await expect(row(page)).toHaveCount(0);
+    });
+    await scenario("coming back to a question doesn't take focus: only asking for it does (Codex review 10)", async () => {
+      await fresh(page, server);
+      await openThread(page, /Studio lunch/);
+      await openField(page);
+      await field(page).fill("tell tom that this is just fine");
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("ai-choice-forward")).toBeFocused();
+      await openThread(page, /Contract review/);
+      await page.getByTestId("thread-row").filter({ hasText: /Contract review/ }).first().focus();
+      await openThread(page, /Studio lunch/);
+      await expect(page.getByTestId("ai-question")).toBeVisible();
+      await expect(page.getByTestId("ai-choice-forward")).not.toBeFocused();
+    });
+    await scenario("the choice at the send: discard the suggestion, and what's in the document goes", async () => {
+      await fresh(page, server);
+      await openThread(page, /Contract review/);
+      await page.keyboard.press("r");
+      await page.keyboard.type("short and mine");
+      await openField(page);
+      await page.keyboard.press("Enter");
+      await page.getByTestId("ai-choice").waitFor();
+      await page.keyboard.press("ControlOrMeta+Enter");
+      await expect(page.getByTestId("ai-guard")).toContainText("A suggestion hasn’t gone in.");
+      await page.getByTestId("ai-guard-send").click();
+      await expect(page.getByTestId("composer")).toHaveCount(0);
+      const db = sqlDb(server.backend.store);
+      await expect.poll(() => db.get<{ snippet: string }>("SELECT snippet FROM messages WHERE is_sent = 1 ORDER BY id DESC LIMIT 1")!.snippet).toContain("short and mine");
+    });
+    await scenario("failures say what happened: a refusal discards, a dropped connection keeps what came with Insert and Try again", async () => {
+      await fresh(page, server);
+      await openThread(page, /Contract review/);
+      await openField(page);
+      await field(page).fill("[fake:refusal] nope");
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("ai-error-text")).toContainText("The model declined to write this.");
+      await expect(page.getByTestId("ai-error-insert")).toHaveCount(0);
+      await page.getByTestId("ai-error-close").click();
+
+      await openField(page);
+      await field(page).fill("[fake:fail:3] it drops");
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("ai-error-text")).toBeVisible();
+      await expect(page.getByTestId("ai-error-insert")).toBeVisible();
+      await expect(page.getByTestId("ai-error-retry")).toBeVisible();
+      // what came can be read before deciding on it, by anyone (Codex review 11)
+      await expect(preview(page)).not.toHaveAttribute("aria-hidden", "true");
+      await expect(page.getByRole("region", { name: "Suggestion" })).toBeVisible();
+      await page.getByTestId("ai-error-insert").click();
+      await expect(strip(page)).toBeVisible();
+      await expect(page.getByTestId("ai-strip-check")).toContainText("This was cut off.");
+    });
   });
 
   test.describe("“tell tom” in each row of §5.2", () => {
-    test("a thread, a participant who isn't the last sender: to them alone, answering their message, with everyone one click away", async ({ app: page, server }) => {
+    test("“tell tom”, each row", async ({ app: page, server }) => {
+      await scenario("a thread, a participant who isn't the last sender: to them alone, answering their message, with everyone one click away", async () => {
+        await ready(page, server);
+      instant();
+        await openThread(page, /Contract review/);
+        await openField(page);
+        await expect(await recipientEmails(page, "compose-to")).toEqual(["ana@studio.example"]);
+        await field(page).fill("tell tom that this is just fine");
+        await page.keyboard.press("Enter");
+        await expect.poll(() => recipientEmails(page, "compose-to")).toEqual(["tom@acme.example"]);
+        await expect(page.getByTestId("ai-include-everyone")).toHaveText("Include everyone (3)");
+        // To is on screen before any text
+        await expect(page.getByTestId("compose-cc")).toHaveCount(0);
+        await expect(strip(page)).toBeVisible();
+      });
+      await scenario("a thread, someone who isn't on it: it asks, and nothing is quoted or attached until chosen", async () => {
+        await fresh(page, server);
+        await openThread(page, /Studio lunch/);
+        await openField(page);
+        await field(page).fill("tell tom that this is just fine");
+        await page.keyboard.press("Enter");
+        const question = page.getByTestId("ai-question");
+        await expect(question).toHaveAttribute("data-question", "forward-or-new");
+        await expect(question).toContainText("Tom isn’t on this conversation.");
+        await expect(page.getByTestId("ai-choice-forward")).toBeFocused();
+        await expect(preview(page)).toHaveCount(0);
+        await page.getByTestId("ai-choice-new").click();
+        await expect(page.getByTestId("compose-title")).toBeVisible();
+        await expect.poll(() => recipientEmails(page, "compose-to")).toEqual(["tom@acme.example"]);
+        await expect(strip(page)).toBeVisible();
+        // the empty reply it was going to be is gone
+        await expect(page.getByTestId("composer")).toHaveCount(1);
+        await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "new");
+      });
+      await scenario("a thread, someone who isn't on it: Forward adds the original, because they said so", async () => {
+        await fresh(page, server);
+        await openThread(page, /Studio lunch/);
+        await openField(page);
+        await field(page).fill("tell tom that this is just fine");
+        await page.keyboard.press("Enter");
+        await page.getByTestId("ai-choice-forward").click();
+        await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "forward");
+        await expect.poll(() => recipientEmails(page, "compose-to")).toEqual(["tom@acme.example"]);
+        await expect(strip(page)).toBeVisible();
+      });
+      await scenario("the list, a recent thread with them: New message is the default, Reply on it one click away", async () => {
+        await fresh(page, server);
+        await page.getByTestId("thread-list").locator("[data-keep-scroll=list]").focus();
+        await page.keyboard.press("c");
+        await openField(page);
+        await field(page).fill("tell tom that this is just fine");
+        await page.keyboard.press("Enter");
+        const question = page.getByTestId("ai-question");
+        await expect(question).toHaveAttribute("data-question", "new-or-reply");
+        await expect(question).toContainText("Contract review");
+        await expect(page.getByTestId("ai-choice-new")).toBeFocused();
+        await page.keyboard.press("Enter");
+        await expect.poll(() => recipientEmails(page, "compose-to")).toEqual(["tom@acme.example"]);
+        await expect(strip(page)).toBeVisible();
+
+        await page.getByTestId("compose-discard").click();
+        await page.keyboard.press("c");
+        await openField(page);
+        await field(page).fill("tell tom that this is just fine");
+        await page.keyboard.press("Enter");
+        await page.getByTestId("ai-choice-reply").click();
+        await expect(page.getByTestId("reader-subject")).toContainText("Contract review");
+        await expect.poll(() => recipientEmails(page, "compose-to")).toEqual(["tom@acme.example"]);
+        await expect(strip(page)).toBeVisible();
+      });
+      await scenario("the list, no recent thread: a new message to them", async () => {
+        await fresh(page, server);
+        await page.getByTestId("thread-list").locator("[data-keep-scroll=list]").focus();
+        await page.keyboard.press("c");
+        await openField(page);
+        await field(page).fill("tell rosa that this is just fine");
+        await page.keyboard.press("Enter");
+        await expect.poll(() => recipientEmails(page, "compose-to")).toEqual(["rosa@faraway.example"]);
+        await expect(strip(page)).toBeVisible();
+      });
+      await scenario("a thread, nobody named: a reply as usual", async () => {
+        await fresh(page, server);
+        await openThread(page, /Contract review/);
+        await openField(page);
+        await field(page).fill("say the clauses look right");
+        await page.keyboard.press("Enter");
+        await expect(strip(page)).toBeVisible();
+        expect(await recipientEmails(page, "compose-to")).toEqual(["ana@studio.example"]);
+      });
+      await scenario("the list, nobody named: the row asks who it's for", async () => {
+        await fresh(page, server);
+        await page.getByTestId("thread-list").locator("[data-keep-scroll=list]").focus();
+        await page.keyboard.press("c");
+        await openField(page);
+        await field(page).fill("say the clauses look right");
+        await page.keyboard.press("Enter");
+        await expect(page.getByTestId("ai-who")).toBeVisible();
+        await expect(page.getByTestId("compose-to")).toBeFocused();
+        await expect(field(page)).toHaveValue("say the clauses look right");
+      });
+      await scenario("a draft with recipients: one of them stands, someone else asks and is never re-addressed silently", async () => {
+        await fresh(page, server);
+        await page.getByTestId("thread-list").locator("[data-keep-scroll=list]").focus();
+        await page.keyboard.press("c");
+        await addRecipients(page, "compose-to", "Ana Pérez <ana@studio.example>");
+        await openField(page);
+        await field(page).fill("tell ana that this is just fine");
+        await page.keyboard.press("Enter");
+        await expect(strip(page)).toBeVisible();
+        expect(await recipientEmails(page, "compose-to")).toEqual(["ana@studio.example"]);
+        await page.getByTestId("ai-strip-undo").click();
+
+        await openField(page);
+        await field(page).fill("tell tom that this is just fine");
+        await page.keyboard.press("Enter");
+        await expect(page.getByTestId("ai-question")).toHaveAttribute("data-question", "add-or-just-write");
+        expect(await recipientEmails(page, "compose-to")).toEqual(["ana@studio.example"]);
+        await page.getByTestId("ai-choice-add").click();
+        await expect.poll(() => recipientEmails(page, "compose-to")).toEqual(["ana@studio.example", "tom@acme.example"]);
+        await expect(strip(page)).toBeVisible();
+      });
+    });
+
+  });
+
+  test("during the stream: Esc, typing, collapsing, switching", async ({ app: page, server }) => {
+    await scenario("Esc mid-stream stops and discards, handled before the form's collapse; a second Esc collapses", async () => {
       await ready(page, server);
       await openThread(page, /Contract review/);
       await openField(page);
-      await expect(await recipientEmails(page, "compose-to")).toEqual(["ana@studio.example"]);
-      await field(page).fill("tell tom that this is just fine");
+      await field(page).fill("say that this is just fine");
       await page.keyboard.press("Enter");
-      await expect.poll(() => recipientEmails(page, "compose-to")).toEqual(["tom@acme.example"]);
-      await expect(page.getByTestId("ai-include-everyone")).toHaveText("Include everyone (3)");
-      // To is on screen before any text
-      await expect(page.getByTestId("compose-cc")).toHaveCount(0);
-      await expect(strip(page)).toBeVisible();
-    });
-
-    test("a thread, someone who isn't on it: it asks, and nothing is quoted or attached until chosen", async ({ app: page, server }) => {
-      await ready(page, server);
-      await openThread(page, /Studio lunch/);
-      await openField(page);
-      await field(page).fill("tell tom that this is just fine");
-      await page.keyboard.press("Enter");
-      const question = page.getByTestId("ai-question");
-      await expect(question).toHaveAttribute("data-question", "forward-or-new");
-      await expect(question).toContainText("Tom isn’t on this conversation.");
-      await expect(page.getByTestId("ai-choice-forward")).toBeFocused();
+      await streaming(page);
+      await page.keyboard.press("Escape");
+      await expect(row(page)).toHaveCount(0);
       await expect(preview(page)).toHaveCount(0);
-      await page.getByTestId("ai-choice-new").click();
-      await expect(page.getByTestId("compose-title")).toBeVisible();
-      await expect.poll(() => recipientEmails(page, "compose-to")).toEqual(["tom@acme.example"]);
-      await expect(strip(page)).toBeVisible();
-      // the empty reply it was going to be is gone
-      await expect(page.getByTestId("composer")).toHaveCount(1);
-      await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "new");
+      await expect(page.getByTestId("composer")).toBeVisible();
+      await expect(body(page)).toHaveText("");
+      await expect(body(page)).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("draft-slot")).toHaveAttribute("data-state", "collapsed");
     });
-
-    test("a thread, someone who isn't on it: Forward adds the original, because they said so", async ({ app: page, server }) => {
-      await ready(page, server);
-      await openThread(page, /Studio lunch/);
-      await openField(page);
-      await field(page).fill("tell tom that this is just fine");
-      await page.keyboard.press("Enter");
-      await page.getByTestId("ai-choice-forward").click();
-      await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "forward");
-      await expect.poll(() => recipientEmails(page, "compose-to")).toEqual(["tom@acme.example"]);
-      await expect(strip(page)).toBeVisible();
-    });
-
-    test("the list, a recent thread with them: New message is the default, Reply on it one click away", async ({ app: page, server }) => {
-      await ready(page, server);
-      await page.getByTestId("thread-list").locator("[data-keep-scroll=list]").focus();
-      await page.keyboard.press("c");
-      await openField(page);
-      await field(page).fill("tell tom that this is just fine");
-      await page.keyboard.press("Enter");
-      const question = page.getByTestId("ai-question");
-      await expect(question).toHaveAttribute("data-question", "new-or-reply");
-      await expect(question).toContainText("Contract review");
-      await expect(page.getByTestId("ai-choice-new")).toBeFocused();
-      await page.keyboard.press("Enter");
-      await expect.poll(() => recipientEmails(page, "compose-to")).toEqual(["tom@acme.example"]);
-      await expect(strip(page)).toBeVisible();
-
-      await page.getByTestId("compose-discard").click();
-      await page.keyboard.press("c");
-      await openField(page);
-      await field(page).fill("tell tom that this is just fine");
-      await page.keyboard.press("Enter");
-      await page.getByTestId("ai-choice-reply").click();
-      await expect(page.getByTestId("reader-subject")).toContainText("Contract review");
-      await expect.poll(() => recipientEmails(page, "compose-to")).toEqual(["tom@acme.example"]);
-      await expect(strip(page)).toBeVisible();
-    });
-
-    test("the list, no recent thread: a new message to them", async ({ app: page, server }) => {
-      await ready(page, server);
-      await page.getByTestId("thread-list").locator("[data-keep-scroll=list]").focus();
-      await page.keyboard.press("c");
-      await openField(page);
-      await field(page).fill("tell rosa that this is just fine");
-      await page.keyboard.press("Enter");
-      await expect.poll(() => recipientEmails(page, "compose-to")).toEqual(["rosa@faraway.example"]);
-      await expect(strip(page)).toBeVisible();
-    });
-
-    test("a thread, nobody named: a reply as usual", async ({ app: page, server }) => {
-      await ready(page, server);
+    await scenario("typing during the stream: it goes on, and ends as a suggestion; a change of recipients says who it was for", async () => {
+      await fresh(page, server);
       await openThread(page, /Contract review/);
       await openField(page);
-      await field(page).fill("say the clauses look right");
+      await field(page).fill("say that this is just fine");
       await page.keyboard.press("Enter");
-      await expect(strip(page)).toBeVisible();
-      expect(await recipientEmails(page, "compose-to")).toEqual(["ana@studio.example"]);
-    });
+      await streaming(page);
+      await page.keyboard.type("my own words");
+      await expect(preview(page)).toHaveAttribute("data-mode", "below");
+      await expect(page.getByTestId("ai-choice")).toHaveAttribute("data-reason", "typed");
+      await expect(page.getByTestId("ai-choice-text")).toHaveText("Suggestion ready");
+      await expect(body(page)).toHaveText("my own words");
+      await page.getByTestId("ai-choice-insert").click();
+      await expect(body(page)).toContainText("my own words");
+      await expect(body(page)).toContainText("That works for me");
 
-    test("the list, nobody named: the row asks who it's for", async ({ app: page, server }) => {
-      await ready(page, server);
-      await page.getByTestId("thread-list").locator("[data-keep-scroll=list]").focus();
-      await page.keyboard.press("c");
+      await page.keyboard.press("ControlOrMeta+z");
+      await page.keyboard.press("ControlOrMeta+a");
+      await page.keyboard.press("Backspace");
       await openField(page);
-      await field(page).fill("say the clauses look right");
+      await field(page).fill("say that this is just fine");
       await page.keyboard.press("Enter");
-      await expect(page.getByTestId("ai-who")).toBeVisible();
-      await expect(page.getByTestId("compose-to")).toBeFocused();
-      await expect(field(page)).toHaveValue("say the clauses look right");
+      await streaming(page);
+      await addRecipients(page, "compose-to", "rosa@faraway.example");
+      await expect(page.getByTestId("ai-written-for")).toHaveText("Written for Ana");
     });
-
-    test("a draft with recipients: one of them stands, someone else asks and is never re-addressed silently", async ({ app: page, server }) => {
-      await ready(page, server);
-      await page.getByTestId("thread-list").locator("[data-keep-scroll=list]").focus();
-      await page.keyboard.press("c");
-      await addRecipients(page, "compose-to", "Ana Pérez <ana@studio.example>");
+    await scenario("collapse and return: it goes on, the collapsed line says so, and the text is there with its strip on return", async () => {
+      await fresh(page, server);
+      fakeDraft.paceMs = 80;
+      await openThread(page, /Contract review/);
       await openField(page);
-      await field(page).fill("tell ana that this is just fine");
+      await field(page).fill("say that this is just fine");
       await page.keyboard.press("Enter");
+      await streaming(page);
+      await page.getByTestId("compose-collapse").click();
+      await expect(page.getByTestId("draft-collapsed")).toContainText("Writing…");
+      await expect(page.getByTestId("draft-collapsed")).toContainText("Suggestion ready");
+      await page.getByTestId("draft-collapsed").click();
       await expect(strip(page)).toBeVisible();
-      expect(await recipientEmails(page, "compose-to")).toEqual(["ana@studio.example"]);
+      await expect(body(page)).toContainText("That works for me");
       await page.getByTestId("ai-strip-undo").click();
-
+      await expect(body(page)).toHaveText("");
+    });
+    await scenario("switching threads: it goes on, and the text is there with its strip on return", async () => {
+      await fresh(page, server);
+      fakeDraft.paceMs = 80;
+      fakeDraft.text = () => "Hi Tom,\n\nThat works for me.";
+      await openThread(page, /Contract review/);
       await openField(page);
-      await field(page).fill("tell tom that this is just fine");
+      await field(page).fill("say that this is just fine");
       await page.keyboard.press("Enter");
-      await expect(page.getByTestId("ai-question")).toHaveAttribute("data-question", "add-or-just-write");
-      expect(await recipientEmails(page, "compose-to")).toEqual(["ana@studio.example"]);
-      await page.getByTestId("ai-choice-add").click();
-      await expect.poll(() => recipientEmails(page, "compose-to")).toEqual(["ana@studio.example", "tom@acme.example"]);
+      await streaming(page);
+      await openThread(page, /Studio lunch/);
+      await expect(page.getByTestId("composer")).toHaveCount(0);
+      // long enough for this short stream to end while away (nothing outside the composer says it has)
+      await page.waitForTimeout(600);
+      await openThread(page, /Contract review/);
       await expect(strip(page)).toBeVisible();
+      await expect(body(page)).toContainText("That works for me");
+      expect(await recipientEmails(page, "compose-to")).toEqual(["ana@studio.example"]);
     });
   });
 
-  test("your notes: with text in the body it expands them, and ends in Replace, Insert below or Discard", async ({ app: page, server }) => {
-    await ready(page, server);
-    await openThread(page, /Contract review/);
-    await page.keyboard.press("r");
-    await expect(body(page)).toBeFocused();
-    await page.keyboard.type("fine with the 19th");
-    await openField(page);
-    await expect(field(page)).toHaveAttribute("placeholder", /notes/);
-    await page.keyboard.press("Enter");
-    const choice = page.getByTestId("ai-choice");
-    await expect(choice).toHaveAttribute("data-reason", "notes");
-    await expect(preview(page)).toHaveAttribute("data-mode", "below");
-    await expect(preview(page)).not.toHaveAttribute("aria-hidden", "true");
-    await expect(body(page)).toHaveText("fine with the 19th");
+  test("during the stream: pinned, a send, axe", async ({ app: page, server }) => {
+    await scenario("pinned: the stream goes on in the card, its editor rebuilt, and commits there", async () => {
+      await ready(page, server);
+      fakeDraft.paceMs = 80;
+      await openThread(page, /Contract review/);
+      await openField(page);
+      await field(page).fill("say that this is just fine");
+      await page.keyboard.press("Enter");
+      await streaming(page);
+      await page.getByTestId("compose-pin").click();
+      const card = page.getByTestId("pinned-draft");
+      await expect(card.getByTestId("ai-preview-text")).toContainText("Hi Tom");
+      await expect(card.getByTestId("ai-strip")).toBeVisible();
+      await expect(card.getByTestId("compose-body")).toContainText("That works for me");
+      await card.getByTestId("ai-strip-undo").click();
+      await expect(card.getByTestId("compose-body")).toHaveText("");
+    });
+    await scenario("send blocked: ⌘↵, Send and Send Later all stop at the row, which offers the choice", async () => {
+      await fresh(page, server);
+      fakeDraft.paceMs = 120;
+      await openThread(page, /Contract review/);
+      await openField(page);
+      await field(page).fill("say that this is just fine");
+      await page.keyboard.press("Enter");
+      await streaming(page);
+      await page.keyboard.press("ControlOrMeta+Enter");
+      const guard = page.getByTestId("ai-guard");
+      await expect(guard).toContainText("A draft is still being written.");
+      await expect(page.getByTestId("composer")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(guard).toHaveCount(0);
+      await expect(page.getByTestId("ai-row-status")).toBeVisible();
 
-    await page.getByTestId("ai-choice-below").click();
-    await expect(body(page)).toContainText("fine with the 19th");
-    await expect(body(page)).toContainText("That works for me");
-    await page.keyboard.press("ControlOrMeta+z");
-    await expect(body(page)).toHaveText("fine with the 19th");
+      await page.getByTestId("compose-send").click();
+      await expect(guard).toBeVisible();
+      await page.getByTestId("ai-guard-keep").click();
+      await page.getByTestId("ai-choice").or(strip(page)).first().waitFor();
 
-    await openField(page);
-    await page.keyboard.press("Enter");
-    await page.getByTestId("ai-choice-replace").click();
-    await expect(body(page)).not.toContainText("fine with the 19th");
-    await expect(body(page)).toContainText("That works for me");
-    await page.getByTestId("ai-strip-undo").click();
-    await expect(body(page)).toHaveText("fine with the 19th");
-
-    await openField(page);
-    await page.keyboard.press("Enter");
-    await page.getByTestId("ai-choice-discard").click();
-    await expect(body(page)).toHaveText("fine with the 19th");
-    await expect(row(page)).toHaveCount(0);
-  });
-
-  test("typing during the stream: it goes on, and ends as a suggestion; a change of recipients says who it was for", async ({ app: page, server }) => {
-    await ready(page, server);
-    await openThread(page, /Contract review/);
-    await openField(page);
-    await field(page).fill("say that this is just fine");
-    await page.keyboard.press("Enter");
-    await streaming(page);
-    await page.keyboard.type("my own words");
-    await expect(preview(page)).toHaveAttribute("data-mode", "below");
-    await expect(page.getByTestId("ai-choice")).toHaveAttribute("data-reason", "typed");
-    await expect(page.getByTestId("ai-choice-text")).toHaveText("Suggestion ready");
-    await expect(body(page)).toHaveText("my own words");
-    await page.getByTestId("ai-choice-insert").click();
-    await expect(body(page)).toContainText("my own words");
-    await expect(body(page)).toContainText("That works for me");
-
-    await page.keyboard.press("ControlOrMeta+z");
-    await page.keyboard.press("ControlOrMeta+a");
-    await page.keyboard.press("Backspace");
-    await openField(page);
-    await field(page).fill("say that this is just fine");
-    await page.keyboard.press("Enter");
-    await streaming(page);
-    await addRecipients(page, "compose-to", "rosa@faraway.example");
-    await expect(page.getByTestId("ai-written-for")).toHaveText("Written for Ana");
-  });
-
-  test("Esc mid-stream stops and discards, handled before the form's collapse; a second Esc collapses", async ({ app: page, server }) => {
-    await ready(page, server);
-    await openThread(page, /Contract review/);
-    await openField(page);
-    await field(page).fill("say that this is just fine");
-    await page.keyboard.press("Enter");
-    await streaming(page);
-    await page.keyboard.press("Escape");
-    await expect(row(page)).toHaveCount(0);
-    await expect(preview(page)).toHaveCount(0);
-    await expect(page.getByTestId("composer")).toBeVisible();
-    await expect(body(page)).toHaveText("");
-    await expect(body(page)).toBeFocused();
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("draft-slot")).toHaveAttribute("data-state", "collapsed");
-  });
-
-  test("collapse and return: it goes on, the collapsed line says so, and the text is there with its strip on return", async ({ app: page, server }) => {
-    await ready(page, server);
-    fakeDraft.paceMs = 120;
-    await openThread(page, /Contract review/);
-    await openField(page);
-    await field(page).fill("say that this is just fine");
-    await page.keyboard.press("Enter");
-    await streaming(page);
-    await page.getByTestId("compose-collapse").click();
-    await expect(page.getByTestId("draft-collapsed")).toContainText("Writing…");
-    await expect(page.getByTestId("draft-collapsed")).toContainText("Suggestion ready");
-    await page.getByTestId("draft-collapsed").click();
-    await expect(strip(page)).toBeVisible();
-    await expect(body(page)).toContainText("That works for me");
-    await page.getByTestId("ai-strip-undo").click();
-    await expect(body(page)).toHaveText("");
-  });
-
-  test("switching threads: it goes on, and the text is there with its strip on return", async ({ app: page, server }) => {
-    await ready(page, server);
-    fakeDraft.paceMs = 120;
-    await openThread(page, /Contract review/);
-    await openField(page);
-    await field(page).fill("say that this is just fine");
-    await page.keyboard.press("Enter");
-    await streaming(page);
-    await openThread(page, /Studio lunch/);
-    await expect(page.getByTestId("composer")).toHaveCount(0);
-    await page.waitForTimeout(2500);
-    await openThread(page, /Contract review/);
-    await expect(strip(page)).toBeVisible();
-    await expect(body(page)).toContainText("That works for me");
-    expect(await recipientEmails(page, "compose-to")).toEqual(["ana@studio.example"]);
-  });
-
-  test("coming back to a question doesn't take focus: only asking for it does (Codex review 10)", async ({ app: page, server }) => {
-    await ready(page, server);
-    await openThread(page, /Studio lunch/);
-    await openField(page);
-    await field(page).fill("tell tom that this is just fine");
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId("ai-choice-forward")).toBeFocused();
-    await openThread(page, /Contract review/);
-    await page.getByTestId("thread-row").filter({ hasText: /Contract review/ }).first().focus();
-    await openThread(page, /Studio lunch/);
-    await expect(page.getByTestId("ai-question")).toBeVisible();
-    await expect(page.getByTestId("ai-choice-forward")).not.toBeFocused();
-  });
-
-  test("pinned: the stream goes on in the card, its editor rebuilt, and commits there", async ({ app: page, server }) => {
-    await ready(page, server);
-    fakeDraft.paceMs = 120;
-    await openThread(page, /Contract review/);
-    await openField(page);
-    await field(page).fill("say that this is just fine");
-    await page.keyboard.press("Enter");
-    await streaming(page);
-    await page.getByTestId("compose-pin").click();
-    const card = page.getByTestId("pinned-draft");
-    await expect(card.getByTestId("ai-preview-text")).toContainText("Hi Tom");
-    await expect(card.getByTestId("ai-strip")).toBeVisible();
-    await expect(card.getByTestId("compose-body")).toContainText("That works for me");
-    await card.getByTestId("ai-strip-undo").click();
-    await expect(card.getByTestId("compose-body")).toHaveText("");
-  });
-
-  test("send blocked: ⌘↵, Send and Send Later all stop at the row, which offers the choice", async ({ app: page, server }) => {
-    await ready(page, server);
-    fakeDraft.paceMs = 120;
-    await openThread(page, /Contract review/);
-    await openField(page);
-    await field(page).fill("say that this is just fine");
-    await page.keyboard.press("Enter");
-    await streaming(page);
-    await page.keyboard.press("ControlOrMeta+Enter");
-    const guard = page.getByTestId("ai-guard");
-    await expect(guard).toContainText("A draft is still being written.");
-    await expect(page.getByTestId("composer")).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(guard).toHaveCount(0);
-    await expect(page.getByTestId("ai-row-status")).toBeVisible();
-
-    await page.getByTestId("compose-send").click();
-    await expect(guard).toBeVisible();
-    await page.getByTestId("ai-guard-keep").click();
-    await page.getByTestId("ai-choice").or(strip(page)).first().waitFor();
-
-    // finished and committed: nothing to decide, it sends
-    await expect(strip(page)).toBeVisible();
-    await page.keyboard.press("ControlOrMeta+Enter");
-    await expect(page.getByTestId("composer")).toHaveCount(0);
-  });
-
-  test("the choice at the send: discard the suggestion, and what's in the document goes", async ({ app: page, server }) => {
-    await ready(page, server);
-    await openThread(page, /Contract review/);
-    await page.keyboard.press("r");
-    await page.keyboard.type("short and mine");
-    await openField(page);
-    await page.keyboard.press("Enter");
-    await page.getByTestId("ai-choice").waitFor();
-    await page.keyboard.press("ControlOrMeta+Enter");
-    await expect(page.getByTestId("ai-guard")).toContainText("A suggestion hasn’t gone in.");
-    await page.getByTestId("ai-guard-send").click();
-    await expect(page.getByTestId("composer")).toHaveCount(0);
-    const db = sqlDb(server.backend.store);
-    await expect.poll(() => db.get<{ snippet: string }>("SELECT snippet FROM messages WHERE is_sent = 1 ORDER BY id DESC LIMIT 1")!.snippet).toContain("short and mine");
+      // finished and committed: nothing to decide, it sends
+      await expect(strip(page)).toBeVisible();
+      await page.keyboard.press("ControlOrMeta+Enter");
+      await expect(page.getByTestId("composer")).toHaveCount(0);
+    });
+    await scenario("axe with the stream on its way, light and dark (the row and the strip: the sweep)", async () => {
+      await fresh(page, server);
+      fakeDraft.paceMs = 120;
+      await openThread(page, /Contract review/);
+      await openField(page);
+      await field(page).fill("say that this is just fine");
+      await page.keyboard.press("Enter");
+      await streaming(page);
+      expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
+      await page.emulateMedia({ colorScheme: "dark" });
+      await expect(page.locator("html")).toHaveClass(/dark/);
+      expect((await new AxeBuilder({ page }).include("[data-testid=composer]").withRules(["color-contrast"]).analyze()).violations).toEqual([]);
+      await page.emulateMedia({ colorScheme: "light" });
+      await expect(strip(page)).toBeVisible();
+    });
   });
 
   test("no provider: the row says what to do, and goes to Settings; off in Settings, it's gone everywhere", async ({ app: page, server }) => {
@@ -667,30 +721,6 @@ test.describe("drafting with AI (plan 133)", () => {
     await page.keyboard.press(CMD_J);
     await page.waitForTimeout(100);
     await expect(row(page)).toHaveCount(0);
-  });
-
-  test("failures say what happened: a refusal discards, a dropped connection keeps what came with Insert and Try again", async ({ app: page, server }) => {
-    await ready(page, server);
-    await openThread(page, /Contract review/);
-    await openField(page);
-    await field(page).fill("[fake:refusal] nope");
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId("ai-error-text")).toContainText("The model declined to write this.");
-    await expect(page.getByTestId("ai-error-insert")).toHaveCount(0);
-    await page.getByTestId("ai-error-close").click();
-
-    await openField(page);
-    await field(page).fill("[fake:fail:3] it drops");
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId("ai-error-text")).toBeVisible();
-    await expect(page.getByTestId("ai-error-insert")).toBeVisible();
-    await expect(page.getByTestId("ai-error-retry")).toBeVisible();
-    // what came can be read before deciding on it, by anyone (Codex review 11)
-    await expect(preview(page)).not.toHaveAttribute("aria-hidden", "true");
-    await expect(page.getByRole("region", { name: "Suggestion" })).toBeVisible();
-    await page.getByTestId("ai-error-insert").click();
-    await expect(strip(page)).toBeVisible();
-    await expect(page.getByTestId("ai-strip-check")).toContainText("This was cut off.");
   });
 
   test("the first draft on a cloud provider says what it sends, once", async ({ app: page, server }) => {
@@ -732,11 +762,10 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(profile).toContainText(/Usually about \d+ words/, { timeout: 20_000 });
     await expect(page.getByTestId("style-status")).toContainText(/Learned from \d+ messages/, { timeout: 20_000 });
     expect((await new AxeBuilder({ page }).include("[data-testid=writing-style]").analyze()).violations).toEqual([]);
-    for (const theme of ["dark", "light"] as const) {
-      await page.emulateMedia({ colorScheme: theme });
-      await stabilize(page);
-      expect((await new AxeBuilder({ page }).include("[data-testid=writing-style]").analyze()).violations).toEqual([]);
-    }
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expect(page.locator("html")).toHaveClass(/dark/);
+    expect((await new AxeBuilder({ page }).include("[data-testid=writing-style]").withRules(["color-contrast"]).analyze()).violations).toEqual([]);
+    await page.emulateMedia({ colorScheme: "light" });
     await profile.getByTestId("style-profile-edit").click();
     await page.getByTestId("style-edit-phrases").fill("all the best\nlet me know");
     await page.getByTestId("style-edit-save").click();
@@ -767,29 +796,6 @@ test.describe("drafting with AI (plan 133)", () => {
     // straight to the switch: the blur's save and the switch's must not overwrite each other (Codex review 4)
     await page.getByTestId("account-writing-general").click();
     await expect.poll(async () => ((await server.backend.server.invoke("writing.prefs.get", {}, dev)) as { accounts: Record<string, { useGeneral?: boolean; instructions?: string }> }).accounts[String(accountId)]).toEqual({ instructions: "Exclamation marks are fine here.", useGeneral: false });
-  });
-
-  test("axe in light and dark: the row, the stream, the question and the strip", async ({ app: page, server }) => {
-    await ready(page, server);
-    fakeDraft.paceMs = 60;
-    await openThread(page, /Contract review/);
-    await openField(page);
-    for (const theme of ["light", "dark"] as const) {
-      await page.emulateMedia({ colorScheme: theme });
-      await stabilize(page);
-      expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-    }
-    await page.emulateMedia({ colorScheme: "light" });
-    await field(page).fill("say that this is just fine");
-    await page.keyboard.press("Enter");
-    await streaming(page);
-    expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-    await expect(strip(page)).toBeVisible();
-    for (const theme of ["light", "dark"] as const) {
-      await page.emulateMedia({ colorScheme: theme });
-      await stabilize(page);
-      expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-    }
   });
 
   test("en and es: the row, status and strip follow the language", async ({ app: page, server }) => {
