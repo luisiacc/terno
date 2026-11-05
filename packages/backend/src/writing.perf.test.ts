@@ -147,6 +147,10 @@ it("a draft's assembly, a refinement and an intent, at 50,000 threads", async ()
     const first = await timed(20, (i) => draft(`first-${i}`, `f${i}`));
     await draft("again", "again-0");
     const refine = await timed(20, (i) => draft("again", `again-${i + 1}`));
+    await backend.store.sync.ingest([msg({ accountId, from: { name: "Form", email: "form@perf.test" }, subject: "A suggestion", bodyText: "Name: Nobody\nEmail: nobody@nowhere.test\nA suggestion about the filters.", date: NOW - 1000 })], { applyFilters: false, now: NOW, classifier: null });
+    const named = await timed(20, (i) => client.call("ai.compose", { requestId: `n${i}`, session: `named-${i}`, accountId, kind: "new", to: [{ name: "", email: "nobody@nowhere.test" }], instruction: "thank them", timezone: "UTC" }));
+    process.stderr.write(`[50k first message naming someone] p95 ${named.toFixed(2)} ms\n`);
+    expect(named).toBeLessThanOrEqual(400 * MULT);
     const intent = await timed(20, (i) => client.call("ai.resolveIntent", { requestId: `i${i}`, instruction: "just write them a note about the budget", surface: { kind: "thread", threadId } }));
     process.stderr.write(`[50k draft] p95: first draft's assembly and script ${first.toFixed(2)} ms, a refinement ${refine.toFixed(2)} ms, an intent ${intent.toFixed(2)} ms\n`);
     expect(first).toBeLessThanOrEqual(120 * MULT);

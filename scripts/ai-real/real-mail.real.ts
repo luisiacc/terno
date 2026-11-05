@@ -138,6 +138,31 @@ describe.skipIf(!process.env.TERNO_REAL_MAIL)("a real mailbox", () => {
     await t.backend.stop();
   });
 
+  it.runIf(PHASE === "prompts")("each account's prompt changes that account's drafts and no other's", { timeout: 600_000 }, async () => {
+    const only = process.env.TERNO_RM_ONLY!.split(",");
+    const prompts = JSON.parse(readFileSync(join(DIR, "account-prompts.json"), "utf8")) as { label: string; set: unknown[] }[];
+    const cases = (JSON.parse(readFileSync(join(DIR, "cases.json"), "utf8")) as Case[]).filter((c) => only.includes(c.case));
+    const t = await open("heldout");
+    await t.backend.writing.learner.activate();
+    t.backend.writing.learner.wake({ force: true });
+    await t.backend.writing.learner.idle();
+    const out: unknown[] = [];
+    let n = 0;
+    for (const step of prompts) {
+      for (const change of step.set) await t.client.call("writing.prefs.set", change as never);
+      for (const c of cases) {
+        t.clock.now = c.at;
+        t.sent.length = 0;
+        const r = await t.client.call("ai.compose", { requestId: `p${++n}`, session: `p${n}`, accountId: c.accountId, kind: c.kind === "new" ? "new" : "reply", ...(c.threadId !== null ? { threadId: c.threadId } : {}), to: c.to, cc: c.cc, subject: c.kind === "new" ? "" : c.subject, needsSubject: c.kind === "new", instruction: c.instruction, timezone: "America/Costa_Rica" });
+        const asked = t.sent.map(promptOf).join("\n");
+        out.push({ step: step.label, case: c.case, account: c.accountId, instructionsSent: [...asked.matchAll(/<instructions>\n([\s\S]*?)\n<\/instructions>/g)].map((m) => m[1]), text: r.status === "done" ? r.text : r.status });
+      }
+    }
+    writeFileSync(join(OUT, "prompts-result.json"), JSON.stringify(out, null, 1));
+    console.log(spendReport());
+    await t.backend.stop();
+  });
+
   it.runIf(PHASE === "intent")("where a sentence's draft goes, and asking for changes", { timeout: 600_000 }, async () => {
     const cases = JSON.parse(readFileSync(join(DIR, "cases.json"), "utf8")) as Case[];
     const asks = JSON.parse(readFileSync(join(DIR, "intents.json"), "utf8")) as { instruction: string; surface: "list" | "thread"; case?: string }[];

@@ -138,6 +138,40 @@ describe("a real mailbox", () => {
       expect(textOf(last(t))).not.toContain("procurement observatories");
     });
 
+    it("an address that only ends with theirs is someone else", async () => {
+      const t = await setup();
+      await t.received({ from: form, subject: "Another person", bodyText: "New suggestion.\nName: Other\nEmail: x.liz@else.test\nPrivate details about somebody else." });
+      const r = await t.compose({ to: [LIZ], instruction: "thank her" });
+      expect(r.status === "done" && r.used.mentions).toBe(0);
+      expect(textOf(last(t))).not.toContain("Private details");
+    });
+
+    it("a refinement doesn't send on what's since gone to Spam", async () => {
+      const t = await setup();
+      const { thread } = await t.received({ from: form, subject: "New suggestion", bodyText: NOTICE });
+      await t.compose({ to: [LIZ], instruction: "thank her", session: "same" });
+      expect(textOf(last(t))).toContain("procurement observatories");
+      await t.backend.store.threads.act({ threadIds: [thread], action: "spam", signal: null, now: START });
+      const r = await t.compose({ to: [LIZ], instruction: "shorter", session: "same" });
+      expect(r.status === "done" && r.used).toMatchObject({ mentions: 0, reused: false });
+      expect(textOf(last(t))).not.toContain("procurement observatories");
+    });
+
+    it("a search that can't answer quickly doesn't hold the draft up, and one that fails doesn't stop it", async () => {
+      const t = await setup();
+      await t.received({ from: form, subject: "New suggestion", bodyText: NOTICE });
+      const real = t.backend.store.threads.searchText;
+      t.backend.store.threads.searchText = (() => new Promise(() => {})) as never;
+      const started = Date.now();
+      const slow = await t.compose({ to: [LIZ], instruction: "thank her", session: "slow" });
+      expect(slow.status === "done" && slow.used.mentions).toBe(0);
+      expect(Date.now() - started).toBeLessThan(2000);
+      t.backend.store.threads.searchText = (() => Promise.reject(new Error("no"))) as never;
+      const failed = await t.compose({ to: [LIZ], instruction: "thank her", session: "failed" });
+      expect(failed.status).toBe("done");
+      t.backend.store.threads.searchText = real;
+    });
+
     it("not for a reply, for someone with history, or when sent mail is off", async () => {
       const t = await setup();
       await t.received({ from: form, subject: "New suggestion", bodyText: NOTICE });
@@ -152,6 +186,31 @@ describe("a real mailbox", () => {
       const off = await t.compose({ session: "off", to: [other] });
       expect(off.status === "done" && off.used.mentions).toBe(0);
     });
+  });
+
+  it("each account's instructions shape its own drafts and no other's", async () => {
+    const t = await setup({ accounts: 2 });
+    const [work, personal] = t.accounts;
+    const instructionsOf = () => [...textOf(last(t)).matchAll(/<instructions>\n([\s\S]*?)\n<\/instructions>/g)].map((m) => m[1]);
+    const asks = async (accountId: number, session: string) => {
+      await t.compose({ accountId, session, to: [{ name: "New", email: "new@else.test" }], instruction: "say hello" });
+      return instructionsOf();
+    };
+    await t.client.call("writing.prefs.set", { global: { instructions: "GENERAL" }, account: { accountId: work!.id, prefs: { instructions: "WORK" } } });
+    await t.client.call("writing.prefs.set", { account: { accountId: personal!.id, prefs: { instructions: "PERSONAL" } } });
+    expect(await asks(work!.id, "w1")).toEqual(["GENERAL", "WORK"]);
+    expect(await asks(personal!.id, "p1")).toEqual(["GENERAL", "PERSONAL"]);
+    // one account leaves the general ones out, and the other keeps them
+    await t.client.call("writing.prefs.set", { account: { accountId: personal!.id, prefs: { useGeneral: false } } });
+    expect(await asks(personal!.id, "p2")).toEqual(["PERSONAL"]);
+    expect(await asks(work!.id, "w2")).toEqual(["GENERAL", "WORK"]);
+    // the same draft, with the instructions changed under it: what's next follows them
+    await t.client.call("writing.prefs.set", { account: { accountId: work!.id, prefs: { instructions: "WORK AGAIN" } } });
+    expect(await asks(work!.id, "w2")).toEqual(["GENERAL", "WORK AGAIN"]);
+    // forgetting one account's touches nothing of the other's
+    await t.client.call("writing.prefs.set", { account: { accountId: work!.id, prefs: null } });
+    expect(await asks(work!.id, "w3")).toEqual(["GENERAL"]);
+    expect(await asks(personal!.id, "p3")).toEqual(["PERSONAL"]);
   });
 
   it("clearing what's learned takes what it knew about templates too", async () => {

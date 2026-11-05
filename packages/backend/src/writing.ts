@@ -46,7 +46,7 @@ import {
 import { captureError } from "@terno/core/diag";
 import { RpcError, type ParsedParamsOf } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { GENERATIONS_MAX_ROWS, summaryBlocked, type MailStore, type SummarySourceMessage, type ThreadContextMessage, type WritingProfileRow } from "@terno/store";
+import { GENERATIONS_MAX_ROWS, SearchCancelledError, summaryBlocked, type MailStore, type SummarySourceMessage, type ThreadContextMessage, type WritingProfileRow } from "@terno/store";
 import type { BackendCore as Backend } from "./core";
 import { toRpcError } from "./ai-service";
 import { withoutQuotes } from "./summaries";
@@ -72,6 +72,19 @@ const PAST_CONVERSATIONS = 5;
 const MENTIONS = 2;
 const MENTION_CHARS = 3000;
 const MENTION_CANDIDATES = 6;
+/** Longer than this and the draft goes without. */
+const MENTION_WAIT_MS = 400;
+
+interface Mention {
+  threadId: number;
+  stamp: string;
+  date: string;
+  subject: string;
+  text: string;
+}
+
+/** This address and no longer one that ends with it: a search's phrase would also find x.tom@acme.test for tom@acme.test. */
+const namesAddress = (address: string): RegExp => new RegExp(`(?<![\\p{L}\\p{N}._%+-])${address.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}_%+-]|\\.[\\p{L}\\p{N}])`, "iu");
 /** Cloud models with no reported window: all of them hold this and more. */
 const CLOUD_ASSUMED_CAPACITY = 200_000;
 /** §6.1: a session's snapshot, in memory: released with the session, or the oldest past this. */
@@ -92,6 +105,8 @@ interface Snapshot {
   /** what a specific in the draft may come from */
   authorized: string[];
   maxTokens: number;
+  /** the mail naming the person: reused only while it's all still as it was */
+  mentionSources: readonly { threadId: number; stamp: string }[];
 }
 
 export async function readPrefs(store: Backend["store"]): Promise<WritingPrefs> {
@@ -454,7 +469,7 @@ export class WritingService {
     const voiceText = (v: RenderedVoice) => v.text;
     const general = voice.filter((v) => v.scope === "you" || v.scope === "account");
     const specific = voice.filter((v) => v.scope === "domain" || v.scope === "person");
-    const fixedText = [WRITING_RULES, account.senderName, account.signature, ...mentions.map((m) => m.text), ...instructions, p.instruction, p.draft ?? "", p.previousDraft ?? "", ...addressesOf(p.to), ...addressesOf(p.cc)].join("\n");
+    const fixedText = [WRITING_RULES, account.senderName, account.signature, ...instructions, p.instruction, p.draft ?? "", p.previousDraft ?? "", ...addressesOf(p.to), ...addressesOf(p.cc)].join("\n");
     const fitted = fitDraftBudget(
       {
         fixedTokens: estimateTokens(fixedText),
@@ -464,6 +479,7 @@ export class WritingService {
         thread: threadEntries,
         messagesToPerson: examples.map((e) => e.text),
         pastConversations: past.map((c) => `${c.subject} ${c.snippet}`),
+        mentions: mentions.map((m) => m.text),
       },
       { capacityTokens, outputTokens },
     );
@@ -477,7 +493,7 @@ export class WritingService {
       voice: [...general.slice(0, fitted.voiceGeneral.length), ...specific.slice(0, fitted.voiceSpecific.length)],
       messagesToPerson: examples.slice(0, fitted.messagesToPerson.length),
       pastConversations: past.slice(0, fitted.pastConversations.length),
-      mentions,
+      mentions: mentions.slice(0, fitted.mentions.length),
       thread,
       subject: context?.subject ?? (p.subject || null),
     };
@@ -489,7 +505,7 @@ export class WritingService {
       personFromOtherAccount: usedChain.some((v) => v.fromOtherAccount),
       examples: input.messagesToPerson.length,
       pastConversations: input.pastConversations.length,
-      mentions: mentions.length,
+      mentions: input.mentions?.length ?? 0,
       threadMessages: thread.length,
       history,
       learning: useMail && chain.length === 0 && (await this.learner.status()).state === "learning",
@@ -499,28 +515,49 @@ export class WritingService {
       provider: ai.providerId,
       model: ai.model,
     };
-    const authorized = [...thread.map((t) => t.text), ...input.messagesToPerson.map((m) => m.text), ...mentions.map((m) => m.text), ...instructions, account.signature, account.email, account.senderName, context?.subject ?? ""];
-    return { key, input, used, authorized, maxTokens: outputTokens };
+    const authorized = [...thread.map((t) => t.text), ...input.messagesToPerson.map((m) => m.text), ...(input.mentions ?? []).map((m) => m.text), ...instructions, account.signature, account.email, account.senderName, context?.subject ?? ""];
+    return { key, input, used, authorized, maxTokens: outputTokens, mentionSources: mentions.slice(0, fitted.mentions.length).map(({ threadId, stamp }) => ({ threadId, stamp })) };
   }
 
-  /** Mail in this account that really names this address, never from Spam or Trash. A failed search costs the draft nothing. */
-  private async mailNaming(address: string, accountId: number, zone: string): Promise<{ date: string; subject: string; text: string }[]> {
+  /**
+   * Mail in this account that names this exact address, never from Spam or Trash. Optional, so it never holds a draft up:
+   * a search that can't answer quickly (its index still catching up), or fails, costs the draft nothing.
+   */
+  private async mailNaming(address: string, accountId: number, zone: string): Promise<Mention[]> {
     const { store } = this.b;
-    const out: { date: string; subject: string; text: string }[] = [];
+    const out: Mention[] = [];
+    const named = namesAddress(address);
+    const stop = new AbortController();
+    const timer = setTimeout(() => stop.abort(), MENTION_WAIT_MS);
     try {
-      const found = await store.threads.searchText({ query: `"${address}"`, accountId, limit: MENTION_CANDIDATES, now: this.b.now() });
-      for (const { id } of found.items) {
-        if (out.length >= MENTIONS) break;
-        const sources = await store.aiSummaries.sources(id);
-        if (!sources || summaryBlocked(sources)) continue;
-        const context = await store.writing.threadContext(id, { maxBodies: MENTIONS, maxChars: MENTION_CHARS * MENTIONS });
-        const message = context?.messages.find((m) => !m.own && m.text?.toLowerCase().includes(address));
-        if (context && message?.text) out.push({ date: dayIn(message.date, zone), subject: context.subject, text: withoutQuotes(message.text).slice(0, MENTION_CHARS) });
-      }
+      const lookup = (async () => {
+        const found = await store.threads.searchText({ query: `"${address}"`, accountId, limit: MENTION_CANDIDATES, now: this.b.now(), signal: stop.signal });
+        for (const { id } of found.items) {
+          if (out.length >= MENTIONS || stop.signal.aborted) break;
+          const sources = await store.aiSummaries.sources(id);
+          if (!sources || summaryBlocked(sources)) continue;
+          const context = await store.writing.threadContext(id, { maxBodies: MENTIONS, maxChars: MENTION_CHARS * MENTIONS });
+          const message = context?.messages.find((m) => !m.own && m.text && named.test(m.text));
+          if (context && message?.text) out.push({ threadId: id, stamp: sources.stamp, date: dayIn(message.date, zone), subject: context.subject, text: withoutQuotes(message.text).slice(0, MENTION_CHARS) });
+        }
+      })();
+      await Promise.race([lookup, new Promise<void>((resolve) => stop.signal.addEventListener("abort", () => resolve(), { once: true }))]);
+      // whatever it was still doing, it's no longer waited for, and a late failure is nobody's
+      lookup.catch(() => {});
     } catch (error) {
-      if (!(error instanceof AiError)) captureError(scrubbed(error), { code: "ai.failed" });
+      if (!(error instanceof SearchCancelledError)) captureError(scrubbed(error), { code: "ai.failed" });
+    } finally {
+      clearTimeout(timer);
     }
-    return out;
+    return stop.signal.aborted ? [] : out;
+  }
+
+  private async mentionsHold(snapshot: Snapshot): Promise<boolean> {
+    for (const { threadId, stamp } of snapshot.mentionSources) {
+      const sources = await this.b.store.aiSummaries.sources(threadId);
+      if (!sources || summaryBlocked(sources) || sources.stamp !== stamp) return false;
+    }
+    return true;
   }
 
   /** One session's sources and settings: anything else re-assembles. Reads headers, no bodies. */
@@ -571,7 +608,7 @@ export class WritingService {
       let reused = false;
       // "in French" on a refinement is a new draft in French: its voice, examples and everything after it follow
       const asked = namedLanguage(p.instruction);
-      if (held?.key === key && (!asked || asked === held.used.language)) {
+      if (held?.key === key && (!asked || asked === held.used.language) && (await this.mentionsHold(held))) {
         snapshot = held;
         reused = true;
       } else {

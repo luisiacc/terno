@@ -604,3 +604,14 @@ describe("a signature block", () => {
     expect(renderVoices([level("account", { signatures: [], noSignature: 1 })])[0]?.text ?? "").not.toContain("signs with");
   });
 });
+
+describe("mail naming someone in the budget", () => {
+  it("is the first thing a small model goes without, and never stops a draft", () => {
+    const parts = { fixedTokens: 500, inbound: null, voiceGeneral: [], voiceSpecific: [], thread: [], messagesToPerson: [], pastConversations: [], mentions: ["x".repeat(6000), "y".repeat(6000)] };
+    const small = fitDraftBudget(parts, { capacityTokens: 4096, outputTokens: 1000 });
+    expect(small.mentions.length).toBeLessThan(2);
+    const large = fitDraftBudget(parts, { capacityTokens: 200_000, outputTokens: 8000 });
+    expect(large.mentions).toHaveLength(2);
+    expect(fitDraftBudget({ ...parts, mentions: ["z".repeat(100_000)] }, { capacityTokens: 4096, outputTokens: 1000 }).mentions).toEqual([]);
+  });
+});

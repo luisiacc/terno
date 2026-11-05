@@ -29,6 +29,8 @@ export interface DraftParts {
   messagesToPerson: readonly string[];
   /** priority 7, best first */
   pastConversations: readonly string[];
+  /** last: other mail naming someone with no history; a draft is possible without it */
+  mentions?: readonly string[];
 }
 
 export interface BudgetLimits {
@@ -46,6 +48,7 @@ export interface FittedDraft {
   thread: { from: string; date: string; own: boolean; text: string }[];
   messagesToPerson: string[];
   pastConversations: string[];
+  mentions: string[];
   /** room counted against, and what was spent */
   budget: number;
   used: number;
@@ -135,5 +138,6 @@ export function fitDraftBudget(parts: DraftParts, limits: BudgetLimits): FittedD
   }
 
   const pastConversations = whole(parts.pastConversations);
-  return { inbound, voiceGeneral, voiceSpecific, thread, messagesToPerson, pastConversations, budget, used: budget - left };
+  const mentions = whole(parts.mentions ?? []);
+  return { inbound, voiceGeneral, voiceSpecific, thread, messagesToPerson, pastConversations, mentions, budget, used: budget - left };
 }
