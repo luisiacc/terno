@@ -9,6 +9,7 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
+import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import { E2E_NOW } from "./constants";
 import { expect, focusList, ingestConversation, navTo, rows, selectedRow, stabilize, test } from "./fixtures";
 
@@ -311,7 +312,7 @@ test.describe("the List layout: what stays put", () => {
 });
 
 test.describe("category tabs", () => {
-  test("All, Unread and the categories: the same state as the sidebar and the unread toggle, with unread counts", { tag: "@variant" }, async ({ app: page, server }) => {
+  test("All, Unread and the categories: the same state as the sidebar and the unread toggle, with unread counts", { tag: "@variant" }, async ({ app: page, server, design }) => {
     const viajes = categoryId(server, "Viajes");
     const all = page.getByTestId("list-tab-all");
     const unread = page.getByTestId("list-tab-unread");
@@ -319,6 +320,11 @@ test.describe("category tabs", () => {
     await expect(all).toHaveAttribute("aria-selected", "true");
     await expect(all).toHaveAttribute("aria-controls", "list-tabpanel");
     await expect(page.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "list-tab-all");
+    // the design's look: a pill, or text over an indicator (the baselines' tolerance is wider than a tab)
+    const look = await all.evaluate((el) => ({ h: el.getBoundingClientRect().height, radius: parseFloat(getComputedStyle(el).borderRadius), under: getComputedStyle(el, "::after").height }));
+    const pill = DESIGNS.find((d) => d.id === design)!.variants.categoryTabs === "pill";
+    if (pill) expect(look.radius).toBeGreaterThanOrEqual(look.h / 2);
+    else expect(look.under).toBe("2px");
     await tab.click();
     await expect(tab).toHaveAttribute("aria-selected", "true");
     await expect(page.getByTestId(`nav-category-${viajes}`)).toHaveAttribute("data-active", "true");
