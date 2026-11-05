@@ -151,3 +151,15 @@ Round 1 found two parser bugs, both fixed with a test that fails without the fix
 
 1. **A quoted scope exclusion negated the next word.** `-category:"Work", invoice` excluded invoices: a comma carried the negation along from a key that isn't a list. It now does so only from a list key.
 2. **A trailing comma broke a number.** `1,000,` became 1 or 000, because the number test read the comma as part of the token. Trailing commas no longer count.
+
+Round 2 (`e55a60d8` and the parser and planner as they stand) had no findings, with its own 300 generated queries against the oracle on both FTS forms.
+
+## The full run
+
+`pnpm test:all` (1484 s) did **not** finish green; other sessions held the machine at a load average of 90 to 156.
+
+- **Failed only on the crowded first pass, passed alone:** db-wasm, e2e, smoke.
+- **unit:** failed; the runner didn't retry it. All six failing files then passed alone (175 of 175), none of them search.
+- **ui-perf:** failed twice in the run; the three remaining passed alone afterwards.
+- **perf:** failed twice in the run, and a set of unrelated gates (folder migration, sidebar counts, scope actions, exports) still misses at a load of 23 to 46, a different set each time. This has not had a clean full pass, and needs one on a quiet machine.
+- **`search-everywhere.perf.test.ts`:** passed 4 of 4 on the one quiet run. Later runs missed on load spikes, on queries this plan doesn't touch as well (`reunión`, 231 ms).
