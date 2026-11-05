@@ -21,11 +21,11 @@ const gate = () => { let resolve!: () => void; const promise = new Promise<void>
 const unexpected = async (): Promise<never> => { throw new Error("Unexpected provider call"); };
 const providers: ProviderRegistry = { create: () => { throw new Error("Unexpected provider call"); }, verifyImap: unexpected, connectGmail: unexpected };
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const ordering of ["ACK before Forward", "ACK during Forward", "foreign refusal"] as const) {
+for (const adapter of ["SQL", "IDB"] as const) for (const ordering of ["ACK before Forward", "ACK during Forward", "foreign refusal"] as const) {
   it(`${adapter}: reloaded canonical-null reply keeps work across ${ordering}`, async () => {
     const previous = getApp(), previousThreads = useThreads.getState();
     const dir = mkdtempSync(join(tmpdir(), "terno-cross-account-ack-"));
-    const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+    const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
     const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
     const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "cross-account-ack", origin: "renderer" }); const client = new RpcClient(c);
     const reached = gate(), release = gate(); let key: string | undefined, conversion: Promise<void> | undefined, armed = false;

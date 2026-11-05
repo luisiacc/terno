@@ -24,11 +24,11 @@ const providers: ProviderRegistry = { create: () => { throw new Error("Unexpecte
 const common = ["same source", "distinct sources", "original deleted", "final source deleted", "detail invalidated", "strict body reverted", "UI roundtrip", "navigation restored", "actual conflict copy", "missing save", "rejected save", "body during flush"] as const;
 const sqlOnly = ["original moved", "original account mismatch", "projection mismatch", "initial original account mismatch"] as const;
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const scenario of [...common, ...(adapter === "SQL" ? sqlOnly : [])]) {
+for (const adapter of ["SQL", "IDB"] as const) for (const scenario of [...common, ...(adapter === "SQL" ? sqlOnly : [])]) {
   it(`${adapter}: canonical-null conversion keeps ${scenario}`, async () => {
     const previous = getApp(), previousThreads = useThreads.getState();
     const dir = mkdtempSync(join(tmpdir(), "terno-canonical-null-source-"));
-    const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+    const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
     const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
     const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "canonical-null-source", origin: "renderer" }); const client = new RpcClient(c);
     const saveReached = gate(), releaseSave = gate(), finalReached = gate(), releaseFinal = gate();

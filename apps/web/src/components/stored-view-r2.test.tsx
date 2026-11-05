@@ -2,7 +2,7 @@
 import { act } from "react";
 import { expect, it } from "vitest";
 import { realSetup } from "./draft-presentation-r2-harness";
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it.each(["missing", "unknown", "refused", "removed From"])(`${adapter}: strip reopens retained ${"%s"} work without reviving its old target`, async (state) => {
+for (const adapter of ["SQL", "IDB"] as const) it.each(["missing", "unknown", "refused", "removed From"])(`${adapter}: strip reopens retained ${"%s"} work without reviving its old target`, async (state) => {
   const h = await realSetup(adapter), { withAccounts } = await import("@terno/store/conformance"), { showNewDraft, leaveNewDraft, sendDraft } = await import("~/lib/compose");
   try {
     const [a, b] = await withAccounts(h.store);

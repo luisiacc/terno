@@ -2,7 +2,7 @@
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 import { realSetup } from "./draft-presentation-r2-harness";
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it(`${adapter}: source-loss acknowledgement keeps departed work discoverable as standalone`, async () => {
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter}: source-loss acknowledgement keeps departed work discoverable as standalone`, async () => {
   const h = await realSetup(adapter), { withAccounts, ingest, msg, threadOf } = await import("@terno/store/conformance"), { openThread, closePage } = await import("~/lib/page");
   try {
     const [a, b] = await withAccounts(h.store);

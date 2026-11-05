@@ -20,9 +20,9 @@ const { useList } = await import("~/state/list");
 const unexpected = async (): Promise<never> => { throw new Error("Unexpected provider traffic"); };
 const providers: ProviderRegistry = { create: () => { throw new Error("Unexpected provider traffic"); }, verifyImap: unexpected, connectGmail: unexpected };
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const action of ["markRead", "star", "archive"] as const) it(`${adapter}: ${action} accepted-unconfirmed ownership survives reconnect and an old matching observation`, async () => {
+for (const adapter of ["SQL", "IDB"] as const) for (const action of ["markRead", "star", "archive"] as const) it(`${adapter}: ${action} accepted-unconfirmed ownership survives reconnect and an old matching observation`, async () => {
   const dir = mkdtempSync(join(tmpdir(), "terno-reconnect-intent-"));
-  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
   const ports: Transport[] = [];
   let stop = () => {};

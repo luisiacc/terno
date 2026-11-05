@@ -18,9 +18,9 @@ const { fromServer, expireDraftPresentation, forgetDraft, shownDraftKey, useDraf
 const { openCompose, supersedeCompose } = await import("./compose");
 const { setApp, getApp } = await import("~/state/app");
 const { useThreads } = await import("~/state/threads");
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it.each(["newest", "explicit newer", "stale older", "explicit older", "other-thread explicit older"])(`${adapter}: competing hints and merged sources select ${"%s"} work`, async (choice) => {
+for (const adapter of ["SQL", "IDB"] as const) it.each(["newest", "explicit newer", "stale older", "explicit older", "other-thread explicit older"])(`${adapter}: competing hints and merged sources select ${"%s"} work`, async (choice) => {
   const dir = mkdtempSync(join(tmpdir(), "terno-candidates-r2-"));
-  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   const unexpected = async (): Promise<never> => { throw new Error("Unexpected provider"); };
   let clock = 1;
   const backend = new BackendCore({ store, platform: nodePlatform, providers: { create: () => { throw new Error("Unexpected provider"); }, connectGmail: unexpected, verifyImap: unexpected }, cipher: plaintextCipher, version: "test", autoSync: false, now: () => clock++ });

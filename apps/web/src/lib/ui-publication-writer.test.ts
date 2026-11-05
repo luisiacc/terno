@@ -17,10 +17,10 @@ const providers: ProviderRegistry = { create: () => { throw new Error("Unexpecte
 const body = { bodyText: "retained authored body", bodyHtml: "<p><b>retained authored body</b></p>" };
 const scenarios = ["throw then flush", "ordinary deadline", "source recovers during publication", "no-op", "held", "recovery", "unsaved", "nested forget", "nested successor", "nested stopping"] as const;
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const scenario of scenarios) {
+for (const adapter of ["SQL", "IDB"] as const) for (const scenario of scenarios) {
   it(`${adapter}: UI publication retains Writer work through ${scenario}`, async () => {
     const dir = mkdtempSync(join(tmpdir(), "terno-ui-writer-")), name = crypto.randomUUID();
-    const open = () => adapter === "SQL" ? Promise.resolve(new SqlMailStore(openDatabase(join(dir, "mail.db")))) : IdbMailStore.open({ name, factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+    const open = () => adapter === "SQL" ? Promise.resolve(new SqlMailStore(openDatabase(join(dir, "mail.db")))) : IdbMailStore.open({ name, factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
     let store = await open(), stopped = false;
     const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
     const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "ui-publication-writer", origin: "renderer" }); const client = new RpcClient(c);

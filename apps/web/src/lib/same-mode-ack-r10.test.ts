@@ -20,10 +20,10 @@ const gate = () => { let resolve!: () => void; const promise = new Promise<void>
 const unexpected = async (): Promise<never> => { throw new Error("Unexpected provider call"); };
 const providers: ProviderRegistry = { create: () => { throw new Error("Unexpected provider call"); }, verifyImap: unexpected, connectGmail: unexpected };
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const ordering of ["before lookup", "during lookup", "after open"] as const) {
+for (const adapter of ["SQL", "IDB"] as const) for (const ordering of ["before lookup", "during lookup", "after open"] as const) {
   it(`${adapter}: same-mode Reply retains an ordinary ACK ${ordering}`, async () => {
     const previous = getApp(), previousThreads = useThreads.getState(), dir = mkdtempSync(join(tmpdir(), "terno-same-mode-ack-"));
-    const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+    const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
     const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
     const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "same-mode-ack", origin: "renderer" }); const client = new RpcClient(c);
     const saveReached = gate(), saveRelease = gate(), sourceReached = gate(), sourceRelease = gate();

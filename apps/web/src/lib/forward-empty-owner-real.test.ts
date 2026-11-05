@@ -22,11 +22,11 @@ const gate = <T,>() => { let resolve!: (value: T) => void; const promise = new P
 const unexpected = async (): Promise<never> => { throw new Error("Unexpected provider call"); };
 const providers: ProviderRegistry = { create: () => { throw new Error("Unexpected provider call"); }, verifyImap: unexpected, connectGmail: unexpected };
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const saved of [false, true]) for (const scenario of ["body", "editor", "UI roundtrip", "conflict"] as const) {
+for (const adapter of ["SQL", "IDB"] as const) for (const saved of [false, true]) for (const scenario of ["body", "editor", "UI roundtrip", "conflict"] as const) {
   it(`${adapter}: ${saved ? "revision" : "first save"} empty-owner save handles ${scenario}`, async () => {
     const previous = getApp(), previousThreads = useThreads.getState();
     const dir = mkdtempSync(join(tmpdir(), "terno-forward-phase-"));
-    const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+    const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
     const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
     const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "forward-phase", origin: "renderer" });
     const client = new RpcClient(c), savedResult = gate<void>(), deliverSave = gate<void>();

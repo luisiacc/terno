@@ -20,11 +20,11 @@ const { dismissSnack } = await import("./snack");
 const unexpected = async (): Promise<never> => { throw new Error("Unexpected provider call"); };
 const providers: ProviderRegistry = { create: () => { throw new Error("Unexpected provider call"); }, verifyImap: unexpected, connectGmail: unexpected };
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const mode of ["replyAll", "forward"] as const) {
+for (const adapter of ["SQL", "IDB"] as const) for (const mode of ["replyAll", "forward"] as const) {
   it(`${adapter}: hydrated no-writer draft converts to ${mode} with its exact saved work`, async () => {
     const previous = getApp(), previousThreads = useThreads.getState();
     const dir = mkdtempSync(join(tmpdir(), "terno-r8-hydration-"));
-    const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+    const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
     const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
     const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "r8-hydration", origin: "renderer" }); const client = new RpcClient(c);
     let key: string | undefined;

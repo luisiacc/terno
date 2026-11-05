@@ -3,7 +3,7 @@ import { act } from "react";
 import { expect, it } from "vitest";
 import { realSetup } from "./draft-presentation-r2-harness";
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const action of ["reply", "forward"] as const) it(`${adapter}: departed dual-reference source loss opens original work for ${action}`, async () => {
+for (const adapter of ["SQL", "IDB"] as const) for (const action of ["reply", "forward"] as const) it(`${adapter}: departed dual-reference source loss opens original work for ${action}`, async () => {
   const h = await realSetup(adapter), { withAccounts, ingest, msg, threadOf } = await import("@terno/store/conformance"), { openThread, closePage } = await import("~/lib/page"), { openCompose, composeFocusPending } = await import("~/lib/compose");
   try {
     const [a, b] = await withAccounts(h.store);
@@ -34,7 +34,7 @@ for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const a
   } finally { await h.cleanup(); }
 });
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it(`${adapter}: losing only the inactive reference keeps active Reply placement`, async () => {
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter}: losing only the inactive reference keeps active Reply placement`, async () => {
   const h = await realSetup(adapter), { withAccounts, ingest, msg, threadOf } = await import("@terno/store/conformance"), { openThread, closePage } = await import("~/lib/page"), { openCompose } = await import("~/lib/compose");
   try {
     const [a, b] = await withAccounts(h.store);

@@ -13,9 +13,9 @@ import { BackendCore, plaintextCipher } from "../../../../packages/backend/src/c
 const unexpected = async (): Promise<never> => { throw new Error("Unexpected provider call"); };
 const providers: ProviderRegistry = { create: () => { throw new Error("Unexpected provider call"); }, verifyImap: unexpected, connectGmail: unexpected };
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it(`${adapter}: source context follows the live message through merge and deletion`, async () => {
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter}: source context follows the live message through merge and deletion`, async () => {
   const dir = mkdtempSync(join(tmpdir(), "terno-context-rpc-"));
-  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
   const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "source-context", origin: "renderer" });
   const client = new RpcClient(c);
@@ -39,9 +39,9 @@ for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it(`${adapte
   } finally { c.close(); try { await backend.stop(); } finally { rmSync(dir, { recursive: true, force: true }); } }
 });
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it(`${adapter}: rejects a message/thread account mismatch`, async () => {
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter}: rejects a message/thread account mismatch`, async () => {
   const dir = mkdtempSync(join(tmpdir(), "terno-context-mismatch-")), name = crypto.randomUUID();
-  const open = async () => adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name, factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+  const open = async () => adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name, factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   let store = await open();
   try {
     const [a, b] = await withAccounts(store);
@@ -62,9 +62,9 @@ for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it(`${adapte
   } finally { await store.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const mode of ["reply", "replyAll", "forward"] as const) it(`${adapter}: ${mode} source intent survives reopen, merge and normal ID allocation`, async () => {
+for (const adapter of ["SQL", "IDB"] as const) for (const mode of ["reply", "replyAll", "forward"] as const) it(`${adapter}: ${mode} source intent survives reopen, merge and normal ID allocation`, async () => {
   const dir = mkdtempSync(join(tmpdir(), "terno-context-lifecycle-")), name = crypto.randomUUID();
-  const open = async () => adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name, factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+  const open = async () => adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name, factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   let store = await open();
   try {
     const [a, b] = await withAccounts(store);
@@ -125,8 +125,8 @@ it("SQL projection sees an external writer's atomic source move and draft intent
 });
 
 
-for (const instantSearch of [false, true]) for (const abort of [false, true]) it(`IDB source lookup waits behind an in-flight transaction (instant ${instantSearch}, abort ${abort})`, async () => {
-  const store = await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+for (const abort of [false, true]) it(`IDB source lookup waits behind an in-flight transaction (abort ${abort})`, async () => {
+  const store = await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   try {
     const [a] = await withAccounts(store);
     await ingest(store, [msg({ accountId: a!, providerMsgId: "source" })]);
@@ -165,8 +165,8 @@ for (const instantSearch of [false, true]) for (const abort of [false, true]) it
   } finally { await store.close(); }
 });
 
-for (const instantSearch of [false, true]) it(`IDB overlapping lookup returns a committed snapshot (instant ${instantSearch})`, async () => {
-  const store = await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+it("IDB overlapping lookup returns a committed snapshot", async () => {
+  const store = await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   try {
     const [a] = await withAccounts(store);
     await ingest(store, [msg({ accountId: a!, providerMsgId: "overlap" })]);

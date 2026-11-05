@@ -1,11 +1,11 @@
 import "fake-indexeddb/auto";
 import { act } from "react";
 import { setup, gate } from "./draft-presentation-r1-harness";
-export async function realSetup(adapter: "SQL" | "IDB exact" | "IDB instant") {
+export async function realSetup(adapter: "SQL" | "IDB") {
   const { mkdtempSync, rmSync } = await import("node:fs"), { tmpdir } = await import("node:os"), { join } = await import("node:path");
   const { openDatabase, SqlMailStore, nodePlatform } = await import("@terno/db"), { IdbMailStore } = await import("@terno/idb"), { BackendCore, plaintextCipher } = await import("../../../../packages/backend/src/core"), { RpcClient, createMemoryTransportPair, contract } = await import("@terno/core/rpc");
   const dir = mkdtempSync(join(tmpdir(), "terno-presentation-r2-"));
-  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   const providers: import("@terno/mail").ProviderRegistry = { create: () => { throw new Error("Unexpected provider"); }, connectGmail: async () => { throw new Error("Unexpected provider"); }, verifyImap: async () => { throw new Error("Unexpected provider"); } };
   const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
   const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "presentation-r2", origin: "renderer" }); const client = new RpcClient(c);

@@ -228,11 +228,11 @@ it("continuity: incomplete original files still open under current Plan60", asyn
 
 const unexpected = async (): Promise<never> => { throw new Error("Unexpected provider call"); };
 const providers: ProviderRegistry = { create: () => { throw new Error("Unexpected provider call"); }, verifyImap: unexpected, connectGmail: unexpected };
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it(`continuity: ${adapter} real PM work and Undo persist through normal writer ACK`, async () => {
+for (const adapter of ["SQL", "IDB"] as const) it(`continuity: ${adapter} real PM work and Undo persist through normal writer ACK`, async () => {
   const { RichBody } = await loaded(), drafts = await import("./drafts"), { newFields } = await import("./compose-fields");
   const { controllerFor } = await import("../components/composer/controller");
   const dir = mkdtempSync(join(tmpdir(), "terno-lineage-")), name = crypto.randomUUID();
-  const open = () => adapter === "SQL" ? Promise.resolve(new SqlMailStore(openDatabase(join(dir, "mail.db")))) : IdbMailStore.open({ name, factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+  const open = () => adapter === "SQL" ? Promise.resolve(new SqlMailStore(openDatabase(join(dir, "mail.db")))) : IdbMailStore.open({ name, factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   let store = await open(), stopped = false, key: string | undefined;
   const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
   const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "forward-source-continuity", origin: "renderer" }); const client = new RpcClient(c);

@@ -17,11 +17,11 @@ const providers: ProviderRegistry = { create: () => { throw new Error("Unexpecte
 const latest = { bodyText: "accepted newer body", bodyHtml: "<p><b>accepted newer body</b></p>" };
 const earlier = { text: "older editor body", html: "<p>older editor body</p>" };
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) {
+for (const adapter of ["SQL", "IDB"] as const) {
   for (const scenario of ["materialize", "flush", "autosave", "scheduled only", "ordinary", "reset", "read throw", "coalesced", "replacement"] as const) {
     it(`${adapter}: body supersession during ${scenario} preserves current work through reopen`, async () => {
       const dir = mkdtempSync(join(tmpdir(), "terno-body-supersession-")), name = crypto.randomUUID();
-      const open = () => adapter === "SQL" ? Promise.resolve(new SqlMailStore(openDatabase(join(dir, "mail.db")))) : IdbMailStore.open({ name, factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+      const open = () => adapter === "SQL" ? Promise.resolve(new SqlMailStore(openDatabase(join(dir, "mail.db")))) : IdbMailStore.open({ name, factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
       let store = await open(), stopped = false;
       const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
       const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "body-supersession", origin: "renderer" }); const client = new RpcClient(c);

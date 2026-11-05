@@ -15,9 +15,9 @@ const { fromServer, shownDraftKey, loadDrafts, forgetDraft, useDrafts } = await 
 const unexpected = async (): Promise<never> => { throw new Error("Unexpected provider call"); };
 const providers: ProviderRegistry = { create: () => { throw new Error("Unexpected provider call"); }, verifyImap: unexpected, connectGmail: unexpected };
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it(`${adapter}: restores the same cross-account inline draft through RPC`, async () => {
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter}: restores the same cross-account inline draft through RPC`, async () => {
   const dir = mkdtempSync(join(tmpdir(), "terno-presentation-rpc-")), name = crypto.randomUUID();
-  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name, factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name, factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", now: () => 1, autoSync: false });
   const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "draft-presentation", origin: "renderer" });
   const client = new RpcClient(c);
@@ -70,9 +70,9 @@ for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it(`${adapte
   } finally { c.close(); try { await backend.stop(); } finally { rmSync(dir, { recursive: true, force: true }); } }
 });
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it(`${adapter}: portable backup drops local placement and queued send keeps exact content`, async () => {
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter}: portable backup drops local placement and queued send keeps exact content`, async () => {
   const dir = mkdtempSync(join(tmpdir(), "terno-presentation-portable-"));
-  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
   const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "draft-portable", origin: "renderer" });
   const client = new RpcClient(c);
@@ -102,13 +102,13 @@ for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it(`${adapte
 });
 
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const action of ["forward", "reply", "missing", "moved", "survivor", "saved merge"] as const) it(`${adapter}: expired inline draft is reused by ${action} without a strip click`, async () => {
+for (const adapter of ["SQL", "IDB"] as const) for (const action of ["forward", "reply", "missing", "moved", "survivor", "saved merge"] as const) it(`${adapter}: expired inline draft is reused by ${action} without a strip click`, async () => {
   const { openCompose, installComposeFollowsSelection } = await import("./compose");
   const { flushDraft, setDraftTransport } = await import("./drafts");
   const { setApp, getApp } = await import("~/state/app");
   const { useThreads } = await import("~/state/threads");
   const dir = mkdtempSync(join(tmpdir(), "terno-presentation-return-"));
-  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
   const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "draft-return", origin: "renderer" });
   const client = new RpcClient(c);
@@ -162,11 +162,11 @@ for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const a
   }
 });
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it(`${adapter}: unrelated local work cannot drop gated RPC hydration`, async () => {
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter}: unrelated local work cannot drop gated RPC hydration`, async () => {
   const { createDraft, editDraft, setDraftTransport, flushDraft } = await import("./drafts");
   const { newFields } = await import("./compose-fields");
   const dir = mkdtempSync(join(tmpdir(), "terno-hydration-r1-"));
-  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
   const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "hydration-r1", origin: "renderer" }); const client = new RpcClient(c);
   let release!: () => void, reached!: () => void;

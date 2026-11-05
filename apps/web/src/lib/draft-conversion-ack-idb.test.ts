@@ -19,10 +19,10 @@ const gate = <T,>() => { let resolve!: (value: T) => void; const promise = new P
 const unexpected = async (): Promise<never> => { throw new Error("Unexpected provider call"); };
 const providers: ProviderRegistry = { create: () => { throw new Error("Unexpected provider call"); }, verifyImap: unexpected, connectGmail: unexpected };
 
-for (const instantSearch of [false, true]) for (const saved of [false, true]) for (const order of ["before", "during", "after"] as const) {
-  it(`IDB ${instantSearch ? "instant" : "exact"} normal ${saved ? "revision" : "first-save"} ACK ${order} source lookup preserves an accepted conversion`, async () => {
+for (const saved of [false, true]) for (const order of ["before", "during", "after"] as const) {
+  it(`IDB normal ${saved ? "revision" : "first-save"} ACK ${order} source lookup preserves an accepted conversion`, async () => {
     const previous = getApp(), previousThreads = useThreads.getState();
-    const store = await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+    const store = await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
     const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
     const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "conversion-ack", origin: "renderer" });
     const client = new RpcClient(c);

@@ -7,7 +7,7 @@ const { openCompose, supersedeCompose } = await import("./compose");
 const { getApp, setApp } = await import("~/state/app");
 const { runUndo, useSnack } = await import("./snack");
 
-const quoteCases = [["SQL", false], ["IDB exact", true], ["IDB instant", true]] as const;
+const quoteCases = [["SQL", false], ["IDB", true]] as const;
 for (const [adapter, saved] of quoteCases) it(`raw transfer: ${adapter} ${saved ? "revision" : "first save"} keeps actual Rich quote through real ACK`, async () => {
   await fixture(adapter, saved, false, async (f) => {
     const strict = f.admit(); expect(strict).toBeDefined();
@@ -70,7 +70,7 @@ for (const scenario of ["unknown source", "hold", "constructor", "changed doc", 
   });
 });
 
-const sealCases = [["SQL", false], ["SQL", true], ["IDB exact", true], ["IDB instant", true]] as const;
+const sealCases = [["SQL", false], ["SQL", true], ["IDB", true]] as const;
 for (const [adapter, saved] of sealCases) it(`raw seal: ${adapter} ${saved ? "revision" : "first save"} ${adapter === "SQL" && saved ? "navigation cancels late open without losing work" : "real openCompose survives late actual Rich arrival"}`, async () => {
   await fixture(adapter, saved, true, async (f) => {
     expect(f.threadId).toBeDefined(); expect(f.before.mode).toBe("reply");

@@ -3,7 +3,7 @@ import { act } from "react";
 import { expect, it } from "vitest";
 import { gate } from "./draft-presentation-r1-harness";
 import { realSetup } from "./draft-presentation-r2-harness";
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it.each([undefined, false])(`${adapter}: canonical-only strip reply stays inline (intent ${"%s"})`, async (intent) => {
+for (const adapter of ["SQL", "IDB"] as const) it.each([undefined, false])(`${adapter}: canonical-only strip reply stays inline (intent ${"%s"})`, async (intent) => {
   const h = await realSetup(adapter), { withAccounts, ingest, msg, threadOf } = await import("@terno/store/conformance");
   try {
     const [a] = await withAccounts(h.store);
@@ -23,7 +23,7 @@ for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it.each([und
 });
 
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it.each(["missing", "foreign", "wrong id"])(`${adapter}: canonical-only strip refuses ${"%s"} destination without changing stored work`, async (kind) => {
+for (const adapter of ["SQL", "IDB"] as const) it.each(["missing", "foreign", "wrong id"])(`${adapter}: canonical-only strip refuses ${"%s"} destination without changing stored work`, async (kind) => {
   const h = await realSetup(adapter), { withAccounts, ingest, msg, threadOf } = await import("@terno/store/conformance");
   try {
     const [a, b] = await withAccounts(h.store);

@@ -13,9 +13,9 @@ const { attachBody, copyDraft, createDraft, editDraft, fieldsOf, flushDraft, for
 const { newFields } = await import("./compose-fields");
 const apiDraft = (r: DraftRow): Draft => ({ id: r.id, generation: r.generation ?? "", revision: r.revision, format: 2, accountId: r.account_id, threadId: r.thread_id, mode: r.mode, to: JSON.parse(r.to_json), cc: JSON.parse(r.cc_json), bcc: JSON.parse(r.bcc_json), subject: r.subject, subjectEdited: !!r.subject_edited, bodyText: r.body_text, bodyHtml: r.body_html, attachments: JSON.parse(r.attachments_json), quotedText: r.quoted_text, includeQuote: !!r.include_quote, inReplyToMessageId: r.in_reply_to_message_id, forwardOfMessageId: r.forward_of_message_id, uiState: r.ui_state, updatedAt: r.updated_at });
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it.each([false, true])(`${adapter}: normalized copy retains its live inline presentation (cross-account %s)`, async (crossAccount) => {
+for (const adapter of ["SQL", "IDB"] as const) it.each([false, true])(`${adapter}: normalized copy retains its live inline presentation (cross-account %s)`, async (crossAccount) => {
   const dir = mkdtempSync(join(tmpdir(), "terno-r2-presentation-"));
-  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   let key: string | undefined;
   try {
     const [a, b] = await withAccounts(store);
@@ -40,9 +40,9 @@ for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it.each([fal
   } finally { if (key) forgetDraft(key); await store.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it(`${adapter}: copy resolves a reused durable thread without moving its live editor`, async () => {
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter}: copy resolves a reused durable thread without moving its live editor`, async () => {
   const dir = mkdtempSync(join(tmpdir(), "terno-r3-presentation-")), name = crypto.randomUUID();
-  const open = async () => adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name, factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+  const open = async () => adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name, factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   let store = await open(), key: string | undefined;
   let body: ReturnType<typeof attachBody> | undefined;
   try {

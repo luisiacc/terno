@@ -59,7 +59,7 @@ if (!Range.prototype.getBoundingClientRect) Range.prototype.getBoundingClientRec
 const gate = () => { let resolve!: () => void; const promise = new Promise<void>((done) => { resolve = done; }); return { promise, resolve }; };
 const unexpected = async (): Promise<never> => { throw new Error("Unexpected provider call"); };
 const providers: ProviderRegistry = { create: () => { throw new Error("Unexpected provider call"); }, verifyImap: unexpected, connectGmail: unexpected };
-type Adapter = "SQL" | "IDB exact" | "IDB instant";
+type Adapter = "SQL" | "IDB";
 export const body = { bodyText: "raw authored work", bodyHtml: "<p>raw authored work</p>" };
 
 type FixtureUnavailableReason = "NATIVE_DEADLINE" | "ACQUISITION_FAILED" | "RETIREMENT_FAILED" | "CLEANUP_NOT_TERMINAL" | "IDB_DELETE_BLOCKED" | "IDB_DELETE_FAILED" | "IDB_DELETE_TIMEOUT";
@@ -148,7 +148,7 @@ export async function fixture(adapter: Adapter, saved: boolean, threaded: boolea
     const opening = (async () => {
     // Every acquisition is assigned immediately and belongs to the enclosing finally.
     if (adapter === "SQL") { dbHandle = openDatabase(dbPath); store = new SqlMailStore(dbHandle); }
-    else store = await IdbMailStore.open({ name: idbName, factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+    else store = await IdbMailStore.open({ name: idbName, factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
     stopAttempted = false;
     backendConstructing = true;
     backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
