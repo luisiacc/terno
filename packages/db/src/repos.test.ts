@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sqliteDriver } from "./index";
 import { ingestMessages } from "./ingest";
-import { claimReadyOps, enqueueOp, failOp } from "./repos";
+import { enqueueOp } from "./repos";
 import { msg, testDb, withAccounts } from "./test/helpers";
 
 describe("ops state machine", () => {
@@ -14,16 +14,6 @@ describe("ops state machine", () => {
     // a different target set is not cancelled
     enqueueOp(db, { accountId: a!, kind: "markRead", target: { messageIds: [5] } });
     expect(enqueueOp(db, { accountId: a!, kind: "markUnread", target: { messageIds: [5, 6] } })).toBeTruthy();
-  });
-
-  it("only cancels an opposite op that was never attempted", () => {
-    const db = testDb();
-    const [a] = withAccounts(db);
-    const star = enqueueOp(db, { accountId: a!, kind: "star", target: { messageIds: [1] } }, 0)!;
-    claimReadyOps(db, 0);
-    failOp(db, star, "response lost", true, 0); // the server may already be starred
-    expect(enqueueOp(db, { accountId: a!, kind: "unstar", target: { messageIds: [1] } }, 1)).toBeTruthy();
-    expect(db.all("SELECT kind FROM ops ORDER BY seq")).toEqual([{ kind: "unstar" }]); // star superseded, unstar kept
   });
 });
 

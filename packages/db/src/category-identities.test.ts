@@ -109,7 +109,7 @@ it.each(["filter", "pending", "moveSource", "moveRow"] as const)("migrates retai
 });
 
 
-it.each(["id", "rowid", "_rowid_", "oid", "ROWID", '"_RoWiD_"', "`oid`", "[ROWID]"])("refuses %s rebinding of a retired filter target without changing the replacement lifetime", (alias) => {
+it("refuses rebinding a retired filter target through every alias of the id, without changing the replacement lifetime", () => {
   const file = path(); const db = open(file);
   const old = createCategory(db, "Old lifetime", "amber");
   const filter = saveFilter(db, { name: "Retained", enabled: true, source: "manual", rule: rule(old.id) });
@@ -119,13 +119,16 @@ it.each(["id", "rowid", "_rowid_", "oid", "ROWID", '"_RoWiD_"', "`oid`", "[ROWID
   const replacement = createCategory(db, "Replacement lifetime", "amber");
   expect(replacement.id).toBe(2);
   expect(db.get("SELECT id FROM categories WHERE id=1")).toBeUndefined();
-  expect(() => db.run(`UPDATE categories SET ${alias}=1 WHERE id=2`)).toThrow("Category identity cannot change");
-  expect(db.get("SELECT id,name FROM categories WHERE id=2")).toEqual({ id: 2, name: "Replacement lifetime" });
-  expect(db.get("SELECT id FROM categories WHERE id=1")).toBeUndefined();
-  expect(db.get("SELECT rule_json FROM filters WHERE id=?", filter.id)).toEqual(originalRule);
-  db.run(`UPDATE categories SET ${alias}=${alias},name='Renamed replacement',color='cyan',position=7 WHERE id=2`);
+  for (const [i, alias] of ["id", "rowid", "_rowid_", "oid", "ROWID", '"_RoWiD_"', "`oid`", "[ROWID]"].entries()) {
+    const name = i ? `Renamed ${i - 1}` : "Replacement lifetime";
+    expect(() => db.run(`UPDATE categories SET ${alias}=1 WHERE id=2`), alias).toThrow("Category identity cannot change");
+    expect(db.get("SELECT id,name FROM categories WHERE id=2"), alias).toEqual({ id: 2, name });
+    expect(db.get("SELECT id FROM categories WHERE id=1"), alias).toBeUndefined();
+    expect(db.get("SELECT rule_json FROM filters WHERE id=?", filter.id), alias).toEqual(originalRule);
+    db.run(`UPDATE categories SET ${alias}=${alias},name='Renamed ${i}',color='cyan',position=7 WHERE id=2`);
+  }
   close(db); const reopened = open(file);
-  expect(reopened.get("SELECT id,name,color,position FROM categories WHERE id=2")).toEqual({ id: 2, name: "Renamed replacement", color: "cyan", position: 7 });
+  expect(reopened.get("SELECT id,name,color,position FROM categories WHERE id=2")).toEqual({ id: 2, name: "Renamed 7", color: "cyan", position: 7 });
   expect(reopened.get("SELECT rule_json FROM filters WHERE id=?", filter.id)).toEqual(originalRule);
   expect(createCategory(reopened, "Next lifetime", "amber").id).toBe(3);
 });

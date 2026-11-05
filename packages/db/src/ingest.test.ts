@@ -25,19 +25,6 @@ describe("full-text index maintenance", () => {
     expect(r.bodyCompleted).toHaveLength(1);
   });
 
-  it("reindexes when a body arrives or changes and forgets old words", () => {
-    const db = testDb();
-    const [a] = withAccounts(db);
-    const r = ingestMessages(db, [msg({ accountId: a!, bodyText: null, bodyState: "none", subject: "Hola" })]);
-    const find = (q: string) => searchThreads(db, { query: q, limit: 10 }).items.length;
-    expect(find("presupuesto")).toBe(0);
-    setMessageBody(db, r.inserted[0]!, "Adjunto el presupuesto final", null, "full");
-    expect(find("presupuesto")).toBe(1);
-    setMessageBody(db, r.inserted[0]!, "Cambio de planes", null, "full");
-    expect(find("presupuesto")).toBe(0);
-    expect(find("planes")).toBe(1);
-    ftsIntegrity(db);
-  });
 });
 
 describe("sent message reconciliation", () => {

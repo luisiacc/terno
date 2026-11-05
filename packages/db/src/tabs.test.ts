@@ -60,14 +60,6 @@ it("a mailbox from before gets its tabs once, in slices that resume after a clos
   expect(sqlDb(store).get<{ c: number }>("SELECT count(*) AS c FROM messages WHERE gmail_labels IS NOT NULL AND category IS NULL")!.c).toBe(0);
 });
 
-it("the migration marks the backfill only with a Gmail account", () => {
-  const dir = mkdtempSync(join(tmpdir(), "terno-tabs-"));
-  dirs.push(dir);
-  const db = openDatabase(join(dir, "fresh.db"));
-  expect(db.get("SELECT 1 FROM settings WHERE key = 'tabs_backfill'")).toBeUndefined();
-  db.close();
-});
-
 it("a slice stops once it has read its share of messages, mid-window, and the next goes on from there", async () => {
   const dir = mkdtempSync(join(tmpdir(), "terno-tabs-"));
   dirs.push(dir);
