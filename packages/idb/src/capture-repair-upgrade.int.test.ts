@@ -30,7 +30,7 @@ it("SQL35 upgrades capture schema without changing cached mail, cursor or accoun
     // Remove the later committed v41-v43 schema before rebuilding the exact SQL35 fixture.
     legacy.exec("DROP TRIGGER threads_view_unread_ai; DROP TRIGGER threads_view_unread_ad; DROP TRIGGER threads_view_unread_au; DROP TABLE view_unread; DROP TABLE view_unread_backfill; DROP TABLE folder_aliases; ALTER TABLE folders DROP COLUMN except_json");
     // plan 133's v50, plan 134's v49
-    legacy.exec("DROP TABLE writing_generations; DROP TABLE writing_profiles; DROP INDEX messages_sent_date; DROP INDEX cls_examples_evidence");
+    legacy.exec("DROP TABLE ai_turns; DROP TABLE ai_conversations; DROP TABLE writing_generations; DROP TABLE writing_profiles; DROP INDEX messages_sent_date; DROP INDEX cls_examples_evidence");
     // plans 131 and 132's v48
     legacy.exec("DROP TABLE ai_summaries; DROP TABLE ai_new_mail");
     // plan 127's v47
