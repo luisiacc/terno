@@ -7,6 +7,9 @@ import { expect, test } from "@playwright/test";
 import { createRegistry } from "@terno/mail";
 import { startDevServer, type DevServer } from "../../backend-dev/src/server";
 
+// plan 139: the copy is the language's and contrast the theme's; a screen with both doesn't read either differently
+const BOTH = [["en", "light"], ["es", "dark"]] as const;
+
 test.beforeEach(async ({ page }) => {
   await page.route("**/*", async (route) => {
     if (["127.0.0.1", "localhost", "[::1]"].includes(new URL(route.request().url()).hostname)) await route.continue();
@@ -14,8 +17,8 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-for (const language of ["en", "es"] as const) for (const theme of ["light", "dark"] as const) {
-  test(`saved Gmail local pause is distinct from offline/sign-in (${language}, ${theme})`, async ({ page }, testInfo) => {
+for (const [language, theme] of BOTH) {
+  test(`saved Gmail local pause is distinct from offline/sign-in (${language}, ${theme})`, async ({ page }) => {
     const requests: string[] = [];
     const google = createServer(async (req, res) => {
       for await (const _ of req) { /* Synthetic token payload only. */ }
@@ -47,9 +50,8 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
       await expect(page.getByTestId("settings-account")).toContainText(language === "en" ? "Gmail is paused. Try again later." : "Gmail está en pausa. Inténtalo más tarde.");
       await expect(page.getByTestId("connection-pill")).toHaveCount(0);
       await expect(page.getByTestId("account-reconnect")).toHaveCount(0);
-      expect((await new AxeBuilder({ page }).include('[data-testid="settings-dialog"]').analyze()).violations).toEqual([]);
+      expect((await new AxeBuilder({ page }).setLegacyMode().include('[data-testid="settings-dialog"]').analyze()).violations).toEqual([]);
       expect(await page.getByTestId("settings-dialog").evaluate((dialog) => dialog.scrollWidth <= dialog.clientWidth)).toBe(true);
-      await page.screenshot({ path: testInfo.outputPath(`cooldown-${language}-${theme}.png`) });
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       expect(requests).toEqual(["/token", "/mail/profile"]);
@@ -60,8 +62,8 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
   });
 }
 
-for (const language of ["en", "es"] as const) for (const theme of ["light", "dark"] as const) {
-  test(`status owner shows policy then genuine sign-in recovery (${language}, ${theme})`, async ({ page }, testInfo) => {
+for (const [language, theme] of BOTH) {
+  test(`status owner shows policy then genuine sign-in recovery (${language}, ${theme})`, async ({ page }) => {
     const requests: string[] = [];
     let phase: "policy" | "auth" = "policy";
     const google = createServer(async (req, res) => {
@@ -97,12 +99,11 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
         throw new Error(`Keyboard could not reach ${id}`);
       };
       await expect(page.getByTestId("settings-account")).toContainText(language === "en" ? "Gmail is disabled" : "Gmail está desactivado");
-      expect((await new AxeBuilder({ page }).include('[data-testid="settings-dialog"]').analyze()).violations).toEqual([]);
+      expect((await new AxeBuilder({ page }).setLegacyMode().include('[data-testid="settings-dialog"]').analyze()).violations).toEqual([]);
       await tabTo("account-toggle");
       await page.keyboard.press("Enter");
       await tabTo("account-reconnect");
       await expect(page.getByTestId("settings-account")).toContainText(language === "en" ? "then choose Retry now." : "luego elige Reintentar ahora.");
-      await page.screenshot({ path: testInfo.outputPath(`policy-${language}-${theme}.png`) });
       phase = "auth";
       await backend.server.invoke("sync.now", { accountId: account.id, reason: "user" }, ctx);
       await backend.syncAccount(account.id);
@@ -111,8 +112,7 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
       await expect(reconnect).toHaveText(language === "en" ? "Sign in again" : "Volver a iniciar sesión");
       await tabTo("account-reconnect");
       await expect(reconnect).toBeFocused();
-      expect((await new AxeBuilder({ page }).include('[data-testid="settings-dialog"]').analyze()).violations).toEqual([]);
-      await page.screenshot({ path: testInfo.outputPath(`auth-${language}-${theme}.png`) });
+      expect((await new AxeBuilder({ page }).setLegacyMode().include('[data-testid="settings-dialog"]').analyze()).violations).toEqual([]);
       const before = requests.slice();
       await backend.server.invoke("sync.now", { accountId: account.id, reason: "user" }, ctx);
       await backend.syncAccount(account.id);

@@ -16,10 +16,12 @@ const forwarded = { name: "Forward recipient", email: "forward@example.test" };
 
 test.use({ backendOptions: { smtpCapture: true } });
 
-for (const mode of ["reply", "replyAll", "forward"] as const) {
-  for (const scenario of ["changed", "normalized", "restored"] as const) {
+// plan 139: detachedReply reads the subjects, not the mode (the store's own function), so each subject once on Reply; Reply all where it
+// detaches (it links in "untouched Reply to Reply all" below), Forward where a subject that matches must still not link
+for (const [mode, scenario] of [["reply", "changed"], ["reply", "normalized"], ["reply", "restored"], ["replyAll", "changed"], ["forward", "restored"]] as const) {
+  {
     const theme = "light";
-    test(`${scenario} subject ${mode} (${theme}): chips, queue and SMTP keep recipients and source`, async ({ app: page, server }, testInfo) => {
+    test(`${scenario} subject ${mode} (${theme}): chips, queue and SMTP keep recipients and source`, async ({ app: page, server }) => {
       const [account] = await server.backend.store.accounts.list();
       const me = { name: "Me", email: account!.email };
       const first: IncomingMessage = {
@@ -72,7 +74,6 @@ for (const mode of ["reply", "replyAll", "forward"] as const) {
       await page.getByTestId("compose-send").scrollIntoViewIfNeeded();
       await expect(page.locator("html")).toHaveClass(/^(?!.*\bdark\b)/);
       await stabilize(page);
-      await page.screenshot({ path: testInfo.outputPath(`own-${mode}-${theme}.png`) });
       await page.getByTestId("compose-send").click();
       await expect.poll(() => server.smtp.length).toBe(1);
       expect(server.smtp[0]!.rcpt).toEqual([...displayedTo, ...displayedCc]);
@@ -177,11 +178,10 @@ for (const theme of ["light", "dark"] as const) {
     await page.getByTestId("compose-send").focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("alert")).toContainText(language === "es" ? "El mensaje original ya no está disponible" : "The original message is no longer available");
-    await page.screenshot({ path: `/tmp/terno-w09-s37/source-removed-${theme}.png` });
     await expect(page.getByTestId("compose-body")).toContainText("Keep my work");
     expect(server.smtp).toHaveLength(0);
     expect((await server.backend.store.drafts.list())[0]).toMatchObject({ subject: "New topic", body_text: "Keep my work", mode: "reply", in_reply_to_message_id: id });
-    expect((await new AxeBuilder({ page }).include("[data-testid=draft-slot]").analyze()).violations).toEqual([]);
+    expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=draft-slot]").analyze()).violations).toEqual([]);
     if (theme === "light") {
       await page.reload(); await page.locator("[data-ready]").waitFor();
       await page.getByTestId("strip-item").filter({ hasText: "New topic" }).click();

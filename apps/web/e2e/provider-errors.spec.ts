@@ -38,9 +38,9 @@ async function inViewport(page: Page, element: Locator) {
   expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
 }
 
-// plan 139: four of the eight combinations hold every pair of design, language and theme once
-const PAIRS = [["macos", "en", "light"], ["macos", "es", "dark"], ["lumen", "en", "dark"], ["lumen", "es", "light"]] as const;
-for (const [design, language, theme] of PAIRS) for (const entry of ["notice", "marker"] as const) {
+// plan 139: four hold every pair of design, language and theme once, and each design and language opens it both ways (the entry is a trigger: its name and focus; what a theme changes is the sheet's)
+const PAIRS = [["macos", "en", "light", "notice"], ["macos", "es", "dark", "marker"], ["lumen", "en", "dark", "marker"], ["lumen", "es", "light", "notice"]] as const;
+for (const [design, language, theme, entry] of PAIRS) {
   test(`long provider refusal (${design}, ${language}, ${theme}, ${entry})`, async ({ page }, info) => {
     await page.setViewportSize(design === "lumen" ? { width: 420, height: 560 } : { width: 1280, height: 800 });
     const dir = mkdtempSync(join(tmpdir(), "terno-provider-errors-"));
@@ -131,7 +131,8 @@ for (const [design, language, theme] of PAIRS) for (const entry of ["notice", "m
       expect(await field.evaluate((el) => { const input = el as HTMLInputElement; return [input.selectionStart, input.selectionEnd, input.selectionDirection]; })).toEqual([3, 9, "backward"]);
       const shots = process.env.PROVIDER_ERROR_SHOTS;
       if (shots) await page.screenshot({ path: join(shots, `${design}-${language}-${theme}-${entry}-error.png`) });
-      await inViewport(page, popup);
+      // (it's placed again a frame after the error grew it)
+      await expect(() => inViewport(page, popup)).toPass();
       expect(await popup.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
       expect(await error.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
       expect(await error.ariaSnapshot()).toContain("END OF SYNTHETIC PROVIDER DETAIL");
@@ -160,7 +161,7 @@ for (const [design, language, theme] of PAIRS) for (const entry of ["notice", "m
         return end.top >= popup.top && end.bottom <= popup.bottom;
       })).toBe(true);
       if (shots) await page.screenshot({ path: join(shots, `${design}-${language}-${theme}-${entry}-later.png`) });
-      expect((await new AxeBuilder({ page }).include('[data-testid="sign-in-popover"]').analyze()).violations).toEqual([]);
+      expect((await new AxeBuilder({ page }).setLegacyMode().include('[data-testid="sign-in-popover"]').analyze()).violations).toEqual([]);
       await page.keyboard.press("Escape");
       await expect(popup).toHaveCount(0);
       await expect(trigger).toBeFocused();

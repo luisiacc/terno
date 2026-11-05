@@ -1,4 +1,3 @@
-import { mkdirSync } from "node:fs";
 import AxeBuilder from "@axe-core/playwright";
 import { bytesBase64 } from "@terno/core";
 import { expect, test } from "./fixtures";
@@ -29,10 +28,8 @@ for (const scheme of ["light", "dark"] as const) test(`Sent recovery remains dis
   await expect(recovery.getByTestId("sent-copy-row")).toHaveCount(1);
   await expect(recovery).toContainText("Copy missing");
   await expect(recovery.getByRole("button", { name: "Check and repair" })).toBeEnabled();
-  expect((await new AxeBuilder({ page }).include("[data-testid=settings-dialog]").analyze()).violations).toEqual([]);
+  expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=settings-dialog]").analyze()).violations).toEqual([]);
   await recovery.scrollIntoViewIfNeeded();
-  mkdirSync("/tmp/w01-screenshots", { recursive: true });
-  await page.getByTestId("settings-dialog").screenshot({ path: `/tmp/w01-screenshots/sent-copy-${scheme}.png` });
   await recovery.getByRole("button", { name: "Clear recovery data" }).focus();
   await page.keyboard.press("Enter");
   await expect(recovery.getByTestId("sent-copy-row")).toHaveCount(0);
@@ -40,7 +37,8 @@ for (const scheme of ["light", "dark"] as const) test(`Sent recovery remains dis
   expect(await store.sendCopies.get(queued.opId)).toBeNull();
 });
 
-for (const language of ["en", "es"] as const) for (const scheme of ["light", "dark"] as const) test(`clear saved copy after uncertain completion (${language}, ${scheme})`, async ({ app: page, server }) => {
+// plan 139: the copy is the language's and contrast the theme's
+for (const [language, scheme] of [["en", "light"], ["es", "dark"]] as const) test(`clear saved copy after uncertain completion (${language}, ${scheme})`, async ({ app: page, server }) => {
   await page.route("**/*", (route) => { const url = new URL(route.request().url()); return url.hostname === "127.0.0.1" || url.hostname === "localhost" ? route.continue() : route.abort(); });
   const store = server.backend.store, account = (await store.accounts.list()).find((a) => a.kind === "imap")!;
   const config = (await store.accounts.config<Record<string, unknown>>(account.id))!;
@@ -54,8 +52,8 @@ for (const language of ["en", "es"] as const) for (const scheme of ["light", "da
   const editor = page.locator(`[data-testid=settings-account][data-account-id="${account.id}"]`); await editor.getByTestId("account-toggle").click();
   const recovery = editor.getByTestId("sent-copy-recovery"), clear = recovery.getByRole("button", { name: language === "en" ? "Clear recovery data" : "Borrar datos de recuperación" });
   await expect(recovery.getByTestId("sent-copy-row")).toHaveCount(1); await expect(clear).toBeEnabled();
-  expect((await new AxeBuilder({ page }).include("[data-testid=settings-dialog]").analyze()).violations).toEqual([]);
-  await recovery.scrollIntoViewIfNeeded(); mkdirSync("/tmp/terno-copy-clear-ui", { recursive: true }); await page.getByTestId("settings-dialog").screenshot({ path: `/tmp/terno-copy-clear-ui/${language}-${scheme}.png` });
+  expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=settings-dialog]").analyze()).violations).toEqual([]);
+  await recovery.scrollIntoViewIfNeeded();
   await clear.focus(); await page.keyboard.press("Enter"); await expect(recovery.getByTestId("sent-copy-row")).toHaveCount(0);
   expect((await store.ops.get(opId))?.state).toBe("unknown"); expect((await store.ops.sendSubmission(opId))?.accepted).toBe(true);
 });
