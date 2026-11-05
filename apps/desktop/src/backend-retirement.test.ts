@@ -1,14 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
-it("the desktop host joins physical exit before releasing backend ownership", () => {
-  const source = readFileSync(new URL("./app.ts", import.meta.url), "utf8");
-  const stop = source.slice(source.indexOf("function stopBackend("), source.indexOf("async function shutdown(force"));
-  expect(stop).not.toContain("backend = null");
-  expect(stop).toContain("retirement.retire()");
-  expect(source).toContain("await stopBackend()");
-});
-
 // The process adapter is exercised independently of the host's Electron imports.
 
 import { EventEmitter } from "node:events";

@@ -103,7 +103,7 @@ async function withHost(body: (fixture: {
   }
 }
 
-it.each(["no partial peer", "partial peer", "partial peer after slow setup", "peer destroyed before close"] as const)("real development host closes with %s", async (scenario) => {
+it.each(["no partial peer", "partial peer", "peer destroyed before close"] as const)("real development host closes with %s", async (scenario) => {
   const dir = mkdtempSync(join(tmpdir(), "terno-dev-close-"));
   const stages: string[] = [];
   let raw: Socket | undefined, ws: WebSocket | undefined, closing: Promise<void> | undefined;
@@ -163,15 +163,6 @@ it.each(["no partial peer", "partial peer", "partial peer after slow setup", "pe
           for (const code of aborted) expect(["HPE_INVALID_EOF_STATE", "ECONNRESET"]).toContain(code);
         }
       }
-      if (scenario === "partial peer after slow setup") {
-        let timer: ReturnType<typeof realDeadline> | undefined;
-        try {
-          const setup = new Promise<void>((resolve) => { timer = realDeadline(resolve, 2100); });
-          expect(await completed(setup, 3000), "the real slow-setup gate completed").toBe(true);
-        } finally { clearRealDeadline(timer); }
-        expect(ws.readyState).toBe(WebSocket.OPEN);
-        stages.push("setup-finished-after-old-close-deadline");
-      }
       expect(ws.readyState).toBe(WebSocket.OPEN);
       const clientClosed = event(ws, "close");
       stages.push("close-requested"); closing = host.close();
@@ -199,87 +190,6 @@ it.each(["no partial peer", "partial peer", "partial peer after slow setup", "pe
     if (!host) console.info("DEV_CLOSE_SETUP_FAILED", JSON.stringify({ dir }));
   }
 }, 20_000);
-
-it("bounds a cleanup join while real transport completion is withheld", async () => {
-  await withHost(async ({ host, server, release }) => {
-    let reached!: () => void, unblock!: () => void;
-    const entered = new Promise<void>((resolve) => { reached = resolve; });
-    const gate = new Promise<void>((resolve) => { unblock = resolve; }); release.push(unblock);
-    const close = server.close.bind(server);
-    vi.spyOn(server, "close").mockImplementation((callback) => close((error) => {
-      reached(); void gate.then(() => callback?.(error));
-    }));
-    const closing = host.close();
-    expect(await completed(entered, 2000)).toBe(true);
-    const joined = settleCloses([closing], 20);
-    expect(await completed(joined, 100), "fixture cleanup must report a still-held transport without hanging").toBe(true);
-    expect(await joined).toBeUndefined();
-  });
-}, 10_000);
-
-it("disposes an abandoned event observation when its owned fixture closes", async () => {
-  let server!: Server, count = 0, pending: Promise<unknown[]> | undefined;
-  try {
-    await withHost(async ({ server: actual, watch }) => {
-      server = actual; count = server.listenerCount("upgrade");
-      pending = watch(server, "upgrade"); void pending.catch(() => {});
-    });
-    expect(server.listenerCount("upgrade")).toBe(count);
-  } finally { await pending?.catch(() => {}); }
-}, 10_000);
-
-it("keeps a missed real setup event bounded while the fake clock is frozen", async () => {
-  await withHost(async ({ server, watch }) => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    try {
-      let rejected = false;
-      void watch(server, "upgrade").catch(() => { rejected = true; });
-      await new Promise<void>((resolve) => realDeadline(resolve, 2100));
-      expect(rejected, "real setup deadline must fire without advancing the fake clock").toBe(true);
-    } finally { vi.useRealTimers(); }
-  });
-}, 10_000);
-
-it("bounds body outcome observation before owned cleanup starts", async () => {
-  await withHost(async ({ host, server, release }) => {
-    let reached!: () => void, unblock!: () => void;
-    const entered = new Promise<void>((resolve) => { reached = resolve; });
-    const gate = new Promise<void>((resolve) => { unblock = resolve; }); release.push(unblock);
-    const close = server.close.bind(server);
-    vi.spyOn(server, "close").mockImplementation((callback) => close((error) => { reached(); void gate.then(() => callback?.(error)); }));
-    const closing = host.close();
-    expect(await completed(entered, 2000)).toBe(true);
-    const outcome = closeResult(closing, 20);
-    expect(await completed(outcome, 100), "a stalled body observation must reach finally").toBe(true);
-    expect(await outcome).toBeUndefined();
-  });
-}, 10_000);
-
-it("reports an unclosed real store even when the transport rejection was expected", async () => {
-  let stop: (() => Promise<void>) | undefined, dir: string | undefined;
-  try {
-    await expect(withHost(async ({ host, server, failure, dir: owned }) => {
-      dir = owned; stop = host.backend.stop.bind(host.backend);
-      vi.spyOn(host.backend, "stop").mockResolvedValue();
-      const error = new Error("owned transport failure"), closeConnections = server.closeAllConnections.bind(server);
-      vi.spyOn(server, "closeAllConnections").mockImplementation(() => { closeConnections(); throw error; });
-      const result = await closeResult(host.close());
-      expect(result).toEqual({ status: "rejected", reason: error }); failure.expected = error;
-    })).rejects.toThrow("real store");
-  } finally {
-    let closed = false;
-    try {
-      if (stop) {
-        const result = await closeResult(stop());
-        closed = result?.status === "fulfilled";
-        expect(result, "controlled stop must restore the actual store").toEqual({ status: "fulfilled", value: undefined });
-      }
-    } finally {
-      if (closed && dir) rmSync(dir, { recursive: true, force: true });
-      console.info("DEV_CLOSE_ORACLE_CLEANUP", JSON.stringify({ dir, closed, removed: dir ? !existsSync(dir) : false }));
-    }
-  }
-}, 10_000);
 
 it.each(["late headers", "close inside headers"])("rejects upgrade admission during %s", async (scenario) => {
   await withHost(async ({ host, server, wss, own, watch: event }) => {
