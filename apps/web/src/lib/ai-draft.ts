@@ -10,7 +10,7 @@ import { aiDraftHooks, useAiDraftUi, type AiDraftBadge } from "./ai-draft-state"
 import { addressReply, composeLanding, leaveNewDraft, sendDraft } from "./compose";
 import { focusSoon } from "./compose-focus-move";
 import { draftCommands, draftKeyOf } from "./draft-commands";
-import { authored, draftPresentationThread, editDraft, editDraftRecipients, flushDraft, forgetDraft, materialize, NO_AUTO, shownDraftKey, useDrafts, validateDraftPresentation, validRecipients, type LocalDraft } from "./drafts";
+import { authored, draftPresentationThread, editDraft, editDraftRecipients, flushDraft, forgetDraft, materialize, NO_AUTO, shownDraftKey, unsaveDraft, useDrafts, validateDraftPresentation, validRecipients, type LocalDraft } from "./drafts";
 import { localized } from "./i18n";
 import { currentPage, listLayout, openThread } from "./page";
 import { snack } from "./snack";
@@ -923,6 +923,16 @@ export function undoCommit(key: string) {
   }
   remove(key);
   focusEditor(key);
+  // this draft was only ever what's just gone: no blank one stays in the list
+  const left = draftOf(key);
+  if (s.opened && left && !bodyNow(key).trim() && !left.attachments?.length) void forgetUndone(key);
+}
+
+/** After the save that recorded it, which would otherwise bring the row back; not if something else began meanwhile. */
+async function forgetUndone(key: string) {
+  await provenance.get(key)?.run;
+  provenance.delete(key);
+  if (!session(key) && !bodyNow(key).trim()) await unsaveDraft(key);
 }
 
 /** Any change of the text: typing during a stream makes the result a suggestion; the strip lasts until the next keystroke. */

@@ -1129,6 +1129,34 @@ export async function discardDraft(key: string): Promise<LocalDraft | undefined>
   return d;
 }
 
+/**
+ * The saved copy goes and the draft is as it was created, still open: a generation undone back to nothing shouldn't
+ * leave a blank draft in the list. Anything written meanwhile keeps it.
+ */
+export async function unsaveDraft(key: string): Promise<void> {
+  if (draftEditsHeld() || get(key)?.sending || writers.get(key)?.stopping) return;
+  const w = writer(key);
+  w.stopping = "discard";
+  let d: LocalDraft | undefined;
+  try {
+    d = await settle(key);
+  } finally {
+    w.stopping = null;
+    // what was typed while it waited has had no autosave to go to
+    resumeDraft(key);
+  }
+  if (!d || d.sending || d.id === null || d.bodyText.trim()) return;
+  // typed after the settle: it's a draft after all
+  if (get(key)?.localRev !== d.localRev) return;
+  const id = d.id;
+  const generation = d.generation ?? "";
+  useDrafts.setState(({ drafts }) => {
+    const now = drafts[key];
+    return now ? { drafts: { ...drafts, [key]: { ...now, id: null, generation: undefined, revision: 0, localRev: 0, savedRev: 0, status: "clean" } } } : { drafts };
+  });
+  await call("drafts.delete", { id, generation }).catch(() => {});
+}
+
 /** "Undo" a discard: the same content as a new draft (saved at once). */
 export function restoreDiscarded(d: LocalDraft): string {
   const key = createDraft({ ...fieldsOf(d), uiState: "open" });

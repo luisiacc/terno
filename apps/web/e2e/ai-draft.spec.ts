@@ -188,6 +188,11 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(strip(page)).toHaveCount(0);
     await expect(body(page)).toHaveText("");
     await expect(body(page)).toBeFocused();
+    // nothing was there before: no blank draft stays in the list, and writing still saves
+    const saved = async () => ((await server.backend.server.invoke("drafts.list", {}, dev)) as { bodyText: string }[]).map((d) => d.bodyText);
+    await expect.poll(saved).toEqual([]);
+    await body(page).pressSequentially("my own words");
+    await expect.poll(saved).toEqual(["my own words"]);
     expect(design === null || typeof design === "string").toBe(true);
   });
 
