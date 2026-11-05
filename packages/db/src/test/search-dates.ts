@@ -1,9 +1,9 @@
 import { parseSearch } from "@terno/core";
 import type { SearchPage } from "@terno/core/rpc";
 import { StaleCursorError, type IncomingMessage, type MailStore, type SearchCursor, type StoreSearchPage } from "@terno/store";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-export const DATE_ZONES = ["UTC", "America/Costa_Rica", "Asia/Kathmandu", "America/New_York", "Europe/Berlin", "Australia/Lord_Howe", "America/Sao_Paulo", "Pacific/Apia", "Atlantic/Azores"] as const;
+const DATE_ZONES = ["UTC", "America/Costa_Rica", "Asia/Kathmandu", "America/New_York", "Europe/Berlin", "Australia/Lord_Howe", "America/Sao_Paulo", "Pacific/Apia", "Atlantic/Azores"] as const;
 type DateZone = typeof DATE_ZONES[number];
 type Day = readonly [date: string, nextDate: string, start: string, end: string];
 
@@ -32,6 +32,54 @@ const DAYS: Record<DateZone, readonly Day[]> = {
   "Atlantic/Azores": [["1916-06-17", "1916-06-18", "1916-06-17T02:00:00Z", "1916-06-18T01:00:00Z"]],
 };
 
+/** Node re-reads TZ when it's assigned, in the fork a test file runs in: no process per zone. */
+function inZone(zone: DateZone): void {
+  let ambient: string | undefined;
+  beforeAll(() => {
+    ambient = process.env.TZ;
+    process.env.TZ = zone;
+  });
+  afterAll(() => {
+    if (ambient === undefined) delete process.env.TZ;
+    else process.env.TZ = ambient;
+  });
+}
+
+/** A zone decides in the parser alone (`parseDate` is the only local-time reading on this path): every zone and day, on no store. */
+export function defineDateParsing(): void {
+  for (const zone of DATE_ZONES) {
+    describe(`local date bounds in ${zone}`, () => {
+      inZone(zone);
+      it.each(DAYS[zone])("%s parses local midnight to the specified exact epoch bounds", (date, nextDate, startUtc, endUtc) => {
+        const start = Date.parse(startUtc);
+        const end = Date.parse(endUtc);
+        expect(Intl.DateTimeFormat().resolvedOptions().timeZone.replace("Katmandu", "Kathmandu")).toBe(zone);
+        expect.soft(parseSearch(`after:${date} before:${nextDate}`, end)).toMatchObject({ after: start, before: end, terms: [] });
+        expect.soft(parseSearch(`before:${date} after:${date}`, end)).toMatchObject({ after: start, before: start, terms: [] });
+        expect.soft(parseSearch(`-after:${date} -before:${date}`, end)).toMatchObject({ after: start, before: start, terms: [] });
+        expect.soft(parseSearch(`después:${date.replaceAll("-", "/")} antes:${nextDate}`, end)).toMatchObject({ after: start, before: end, terms: [] });
+        expect(parseSearch(`on:${date}`, end).terms[0]?.value).toBe(`on:${date}`);
+        expect(parseSearch("after:1d", end).after).toBe(end - 86_400_000);
+        if (zone === "Pacific/Apia") {
+          for (const operator of ["before", "after"] as const) {
+            const skipped = parseSearch(`${operator}:2011-12-30`, end);
+            expect(skipped[operator]).toBeUndefined();
+            expect(skipped.terms).toEqual([{ field: "text", value: `${operator}:2011-12-30`, phrase: false, negate: false, prefix: true }]);
+          }
+        }
+      });
+    });
+  }
+}
+
+/** What reaches a store is two epochs, so its zones are the kinds of day: 23 h and 25 h west of UTC, 23 h east, 24.5 h on a half-hour shift. */
+const STORE_DAYS: readonly [DateZone, Day][] = [
+  ["America/New_York", DAYS["America/New_York"][0]!],
+  ["America/New_York", DAYS["America/New_York"][1]!],
+  ["Europe/Berlin", DAYS["Europe/Berlin"][0]!],
+  ["Australia/Lord_Howe", DAYS["Australia/Lord_Howe"][0]!],
+];
+
 export interface DateSearchHarness {
   store: MailStore;
   search(query: string, cursor?: SearchCursor, limit?: number): Promise<StoreSearchPage | SearchPage>;
@@ -53,9 +101,9 @@ function message(accountId: number, label: string, date: number, serial: number,
 }
 
 export function defineDateSearch(name: string, open: (now: number) => Promise<DateSearchHarness>): void {
-  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone.replace("Katmandu", "Kathmandu") as DateZone;
-  describe.skipIf(!DAYS[zone])(`${name}: local date queries (${zone})`, () => {
-    for (const [date, nextDate, startUtc, endUtc] of DAYS[zone] ?? DAYS.UTC) {
+  for (const [zone, [date, nextDate, startUtc, endUtc]] of STORE_DAYS) {
+    describe(`${name}: local date queries (${zone})`, () => {
+      inZone(zone);
       describe(date, () => {
         const start = Date.parse(startUtc);
         const end = Date.parse(endUtc);
@@ -90,21 +138,6 @@ export function defineDateSearch(name: string, open: (now: number) => Promise<Da
           else if (sqlStrategy) expect(p.strategy).toBe(sqlStrategy);
           return p.items.map((t) => t.subject);
         };
-
-        it("parses local midnight to the specified exact epoch bounds", () => {
-          expect.soft(parseSearch(range, end)).toMatchObject({ after: start, before: end, terms: [] });
-          expect.soft(parseSearch(`before:${date} after:${date}`, end)).toMatchObject({ after: start, before: start, terms: [] });
-          expect.soft(parseSearch(`-after:${date} -before:${date}`, end)).toMatchObject({ after: start, before: start, terms: [] });
-          expect.soft(parseSearch(`después:${date.replaceAll("-", "/")} antes:${nextDate}`, end)).toMatchObject({ after: start, before: end, terms: [] });
-          expect(parseSearch(`on:${date}`, end).terms[0]?.value).toBe(`on:${date}`);
-          if (zone === "Pacific/Apia") {
-            for (const operator of ["before", "after"] as const) {
-              const skipped = parseSearch(`${operator}:2011-12-30`, end);
-              expect(skipped[operator]).toBeUndefined();
-              expect(skipped.terms).toEqual([{ field: "text", value: `${operator}:2011-12-30`, phrase: false, negate: false, prefix: true }]);
-            }
-          }
-        });
 
         it("searches invalid calendar operators as literal text instead of a rolled-over cutoff", async () => {
           const account = (await h.store.accounts.list()).find((a) => a.email === "reader@example.test")!;
@@ -148,13 +181,12 @@ export function defineDateSearch(name: string, open: (now: number) => Promise<Da
         });
 
         it("keeps relative days as elapsed 24-hour durations across clock changes", async () => {
-          expect(parseSearch("after:1d", end).after).toBe(end - 86_400_000);
           const newest = ["mixed", "after-end", "split", "at-end", "last"];
           const atMidnight = [...newest, "dedup", "start-tie", "at-start"];
           const relative = end - start > 86_400_000 ? newest : end - start === 86_400_000 ? atMidnight : [...atMidnight, "before-start"];
           expect(await subjects("after:1d")).toEqual(relative);
         });
       });
-    }
-  });
+    });
+  }
 }

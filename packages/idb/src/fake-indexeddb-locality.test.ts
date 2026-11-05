@@ -40,7 +40,7 @@ it("deleting a bounded public storage unit does not traverse the cached-provider
     platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   let db: IDBDatabase | undefined;
   try {
-    const seeded = await store.dev.seed(generateDataset({ threads: 5000, accounts: 4, seed: 69, now, bodyScale: 2 }), { now });
+    const seeded = await store.dev.seed(generateDataset({ threads: 1500, accounts: 4, seed: 69, now, bodyScale: 2 }), { now });
     for (const id of seeded.accountIds) await store.accounts.setSyncState(id, { lastSyncAt: now });
     const ids = (await store.storage.threads(0, 5000)).filter(r => !r.kept).slice(0, 20).map(r => r.id);
     db = await open(store.name);

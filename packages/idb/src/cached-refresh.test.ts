@@ -12,12 +12,13 @@ import { openDatabase } from "../../db/src/index";
 import { SqlMailStore } from "../../db/src/sql-store";
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0)) await close(); });
-it.each(["SQL", "IDB"])("%s seeks 50k cached keys without an account materialization", async (kind) => {
+// the size doesn't decide: any page reading past 50 keys, or any account-wide read, fails the counts here (idb.perf times the walk at 50k)
+it.each(["SQL", "IDB"])("%s seeks cached keys without an account materialization", async (kind) => {
   const dir = mkdtempSync(join(tmpdir(), "terno-cached-page-"));
   const store = kind === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(indexedDB), name: crypto.randomUUID(), factory: indexedDB, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} }, instantSearch: false });
   cleanup.push(async () => { await store.close(); rmSync(dir, { recursive: true, force: true }); });
   const now = Date.UTC(2026, 9, 22);
-  await store.dev.seed(generateDataset({ threads: 50_000, accounts: 1, seed: 4, now }), { now });
+  await store.dev.seed(generateDataset({ threads: 600, accounts: 1, seed: 4, now }), { now });
   const account = (await store.accounts.list())[0]!;
   const provider = store.providerStore(account.id);
   const legacy = vi.spyOn(provider, "syncedMessages").mockRejectedValue(new Error("unbounded"));
@@ -55,13 +56,13 @@ it.each(["SQL", "IDB"])("%s seeks 50k cached keys without an account materializa
     if (!page.next) break;
     expect(page.next > (after ?? "")).toBe(true); after = page.next;
   } while (calls < 4000);
-  expect(count).toBeGreaterThanOrEqual(50_000);
+  expect(count).toBeGreaterThanOrEqual(600);
   expect(calls).toBe(Math.ceil(count / 50) + 1);
   expect(legacy).not.toHaveBeenCalled();
   expect(scanCounts.every((n) => n <= 50)).toBe(true);
   if (kind === "IDB") expect(scanCounts.length).toBe(calls);
   if (kind === "SQL") expect(sqlCalls).toBe(calls + 1);
-}, 120_000);
+});
 
 it("IDB advances local-only pages and survives deletion, insertion and reopen", async () => {
   const name = crypto.randomUUID(), platform = { uuid: () => crypto.randomUUID(), yield: async () => {} };

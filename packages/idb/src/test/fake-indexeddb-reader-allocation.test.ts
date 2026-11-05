@@ -4,13 +4,14 @@ import { generateDataset } from "@terno/mock-data";
 import { IdbMailStore } from "../store";
 import { databaseName } from "../schema";
 
-it("50k cached refresh allocates bounded traversal iterators per real cursor request", async () => {
+// a ratio: a traversal that restarted per page is quadratic past a few pages, whatever the size (idb.perf times 50k)
+it("a cached refresh allocates bounded traversal iterators per real cursor request", async () => {
   const now = Date.UTC(2026, 9, 22, 15, 30);
   const store = await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false,
     platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
   let db: IDBDatabase | undefined;
   try {
-    const seeded = await store.dev.seed(generateDataset({ threads: 28_400, accounts: 8, seed: 42, now, bodyScale: 2 }), { now });
+    const seeded = await store.dev.seed(generateDataset({ threads: 1000, accounts: 2, seed: 42, now, bodyScale: 2 }), { now });
     db = await new Promise<IDBDatabase>((resolve, reject) => {
       const r = indexedDB.open(databaseName(store.name));
       r.onsuccess = () => resolve(r.result);
@@ -48,9 +49,8 @@ it("50k cached refresh allocates bounded traversal iterators per real cursor req
       }
     } finally { recordsSpy.mockRestore(); spy.mockRestore(); }
     expect(ids.size).toBe(seeded.messageCount);
-    expect(ids.size).toBeGreaterThanOrEqual(50_000);
-    console.log({ messages: ids.size, pages, iterators, visited });
+    expect(pages).toBeGreaterThan(20);
     expect(visited).toBeLessThanOrEqual(2 * (ids.size + pages));
     expect(iterators).toBeLessThanOrEqual(4 * (ids.size + pages));
   } finally { db?.close(); await store.close(); }
-}, 60_000);
+});
