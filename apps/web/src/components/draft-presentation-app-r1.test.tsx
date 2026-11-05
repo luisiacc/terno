@@ -3,7 +3,7 @@ import { presentationOwnedRpc } from "./draft-presentation-owned-rpc";
 import { act } from "react";
 import { expect, it } from "vitest";
 import type { ThreadDetail } from "@terno/core";
-import { setup, gate, deferred } from "./draft-presentation-r1-harness";
+import { setup, gate, deferred } from "./app-harness";
 it.each([false, true])("Strip coordinates the real Reader frame (later user control %s)", async (competing) => {
   const h = await setup("list"), load = deferred<ThreadDetail>(); gate.load.mockReturnValue(load.promise);
   try {

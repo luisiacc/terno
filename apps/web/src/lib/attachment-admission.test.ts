@@ -225,6 +225,21 @@ it.each(["fresh", "untouched", "authored"])("%s Forward checks the actual combin
   expect(useSnack.getState().current?.message).toBe("This message is too large. Remove an attachment or shorten the message.");
 });
 
+it("two individually supported 10-MiB files cannot become a 20-MiB Forward, and the draft stays savable", async () => {
+  expectedTrace = () => [infoCall];
+  setup();
+  const source = { ...ref, size: 10 * 1024 * 1024 }, detail = thread([source]);
+  useThreads.setState({ details: new Map([[7, detail]]) }); rpc.mockResolvedValue(source);
+  const key = createDraft({ ...replyFields("reply", detail, account), showSourceContext: false });
+  editDraft(key, { bodyText: "preserved", attachments: [{ ...source, assetId: "authored" }] });
+  const before = fieldsOf(useDrafts.getState().drafts[key]!);
+  await openCompose("forward", 7);
+  expect(fieldsOf(useDrafts.getState().drafts[key]!)).toEqual(before);
+  expect(useSnack.getState().current?.message).toBe("This message is too large. Remove an attachment or shorten the message.");
+  editDraft(key, { bodyText: "still savable" }); await flushDraft(key);
+  expect(useDrafts.getState().drafts[key]).toMatchObject({ bodyText: "still savable", status: "saved" });
+});
+
 it("upload preflight includes existing files, HTML, quote and signature before creating an asset", async () => {
   setup("x".repeat(10_000));
   const key = createDraft({ ...newFields(1), attachments: [{ ...ref, size: 18 * 1024 * 1024 }], bodyText: "a".repeat(265_000), bodyHtml: "<div>keep</div>", quotedText: "quote", includeQuote: true });

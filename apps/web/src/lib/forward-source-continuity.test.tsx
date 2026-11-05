@@ -15,7 +15,7 @@ import { withAccounts } from "@terno/store/conformance";
 import type { ProviderRegistry } from "@terno/mail";
 import { BackendCore, plaintextCipher } from "../../../../packages/backend/src/core";
 import type { DraftAckRead } from "./drafts";
-import { setup, gate, deferred } from "../components/draft-presentation-r1-harness";
+import { setup, gate, deferred } from "../components/app-harness";
 
 const construction = vi.hoisted(() => {
   let release!: () => void;

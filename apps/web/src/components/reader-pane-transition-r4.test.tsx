@@ -2,7 +2,7 @@
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 import type { ThreadDetail } from "@terno/core";
-import { setup, gate, deferred } from "./draft-presentation-r1-harness";
+import { setup, gate, deferred } from "./app-harness";
 
 const fault = vi.hoisted(() => ({ branch: "" }));
 vi.mock("./new-message", async (original) => {

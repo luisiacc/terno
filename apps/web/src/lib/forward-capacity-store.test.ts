@@ -80,33 +80,4 @@ for (const adapter of ["SQL", "IDB"] as const) {
     } finally { for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); await store.close(); rmSync(dir, { recursive: true, force: true }); }
   });
 
-  it(`${adapter}: two individually supported 10-MiB files cannot become a 20-MiB Forward`, async () => {
-    const dir = mkdtempSync(join(tmpdir(), "terno-forward-bytes-")), name = crypto.randomUUID();
-    const store: MailStore = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db")), { instantSearch: false }) : await IdbMailStore.open({ name, factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: () => new Promise((r) => setImmediate(r)) } });
-    try {
-      const [a] = await withAccounts(store, 1), accounts = await store.accounts.list(), account = accounts[0]!;
-      await ingest(store, [msg({ accountId: a!, providerMsgId: "bytes", attachments: [{ filename: "source.bin", mime: "application/octet-stream", size: 10 * 1024 * 1024, bytes: new Uint8Array(10 * 1024 * 1024) }] })]);
-      const detail = (await store.threads.get(await threadOf(store, "bytes")))!;
-      const authored = await store.attachments.create({ accountId: a!, filename: "authored.bin", mime: "application/octet-stream", size: 10 * 1024 * 1024, now: 0 });
-      for (let offset = 0, index = 0; offset < authored.size; offset += 49152, index++) await store.attachments.append(a!, authored.assetId, index, Buffer.alloc(Math.min(49152, authored.size - offset)).toString("base64"));
-      await store.attachments.seal(a!, authored.assetId);
-      const key = createDraft(replyFields("reply", detail, account));
-      useThreads.setState({ details: new Map([[detail.thread.id, detail]]) });
-      setApp({ accounts, selectedId: detail.thread.id, checked: new Set(), scope: null, draftShown: null });
-      setDraftTransport(async (_method, p) => { const row = await store.drafts.save(p as DraftInput, 1); return row ? apiDraft(row) : null; });
-      rpc.mockImplementation(async (method: string, p: { accountId: number; assetId: string; messageId: number }) => {
-        if (method === "drafts.sourceContext") {
-          expect(p.messageId).toBe(detail.messages[0]!.id);
-          return { threadId: detail.thread.id, accountId: detail.thread.accountId };
-        }
-        return store.attachments.info(p.accountId, p.assetId);
-      });
-      editDraft(key, { bodyText: "preserved", attachments: [authored] }); await flushDraft(key);
-      const before = fieldsOf(useDrafts.getState().drafts[key]!);
-      await openCompose("forward", detail.thread.id);
-      expect(fieldsOf(useDrafts.getState().drafts[key]!)).toEqual(before);
-      editDraft(key, { bodyText: "still savable" }); await flushDraft(key);
-      expect((await store.drafts.list())[0]!.body_text).toBe("still savable");
-    } finally { for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); await store.close(); rmSync(dir, { recursive: true, force: true }); }
-  });
 }

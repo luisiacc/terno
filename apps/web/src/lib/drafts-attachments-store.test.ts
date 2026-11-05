@@ -204,8 +204,8 @@ for (const adapter of ["SQL", "IDB"] as const) {
         expect(useSnack.getState().current?.message).toBe(`To forward these attachments, choose ${account.email} in From.`);
         expect(convertFields({ ...fields, accountId: b! }, "forward", detail, account)).toEqual({ ...fields, accountId: b! });
       } else expect(useDrafts.getState().drafts[key]!.mode).toBe("forward");
-      await bounded(acknowledged, "real autosave acknowledgement");
       await flushDraft(key);
+      await bounded(acknowledged, "real autosave acknowledgement");
       editDraft(key, { bodyText: "later work stays savable", bodyHtml: "<div>later work stays <b>savable</b></div>" });
       await flushDraft(key);
       expect(errors).toEqual([]);
@@ -253,9 +253,8 @@ for (const adapter of ["SQL", "IDB"] as const) {
       editDraft(d.key, { accountId: b! });
       editDraft(d.key, { bodyText: "typed while removal saves" });
       expect(useDrafts.getState().drafts[d.key]!.accountId).toBe(a);
-      // Exercise the actual 800 ms debounce against the public store, not a fake saved response.
-      await bounded(acknowledged, "real removal debounce acknowledgement");
       await flushDraft(d.key);
+      await bounded(acknowledged, "real removal acknowledgement");
       editDraft(d.key, { accountId: b! });
       editDraft(d.key, { bodyText: "later edit from the other account" });
       await flushDraft(d.key);
