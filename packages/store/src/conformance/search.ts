@@ -14,7 +14,12 @@ export interface SearchHarness {
 export interface SearchConformanceOptions {
   /** assert the planner's strategy per case (FTS5 only: other engines name theirs differently) */
   strategies?: boolean;
+  /** every case's page (37 otherwise); the queries in PAGED_QUERIES still walk at 37, one per kind of scan plan */
+  pageSize?: number;
 }
+
+/** A message predicate, a thread predicate, an exclusion and nothing but a date: the scan's plans. */
+const PAGED_QUERIES = ["factura", "is:unread", "-factura", "before:2025-06-01"];
 
 /** The oracle cases: [query, the FTS5 planner's strategy]. The fixture is generateDataset({ threads: 2500, accounts: 4, seed: 11 }). */
 export const SEARCH_CASES: readonly [string, string][] = [
@@ -76,7 +81,7 @@ export function defineSearchConformance(name: string, setup: () => Promise<Searc
       corpus = await h.corpus();
     });
 
-    async function searchAll(query: string, scope: UiScope = {}, pageSize = 37) {
+    async function searchAll(query: string, scope: UiScope = {}, pageSize = options.pageSize ?? 37) {
       const ids: number[] = [];
       const strategies = new Set<string>();
       let cursor: SearchCursor | undefined;
@@ -95,6 +100,10 @@ export function defineSearchConformance(name: string, setup: () => Promise<Searc
       const { ids, strategies } = await searchAll(query);
       if (options.strategies) expect([...strategies]).toEqual([strategy]);
       expect(ids).toEqual(oracle(query));
+    });
+
+    if (options.pageSize) it.each(PAGED_QUERIES)("%s, every page at 37", async (query) => {
+      expect((await searchAll(query, {}, 37)).ids).toEqual(oracle(query));
     });
 
     it("finds a meaningful number of results for common queries (fixture sanity)", () => {

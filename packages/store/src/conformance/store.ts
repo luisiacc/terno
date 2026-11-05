@@ -5,11 +5,11 @@ import type { MailStore, SnapshotMessage, StoreSnapshot } from "../mail-store";
 import type { Revision, SearchMessageDoc } from "../search";
 import type { Cursor } from "../types";
 import { DEFERRED_RETRY_MS } from "../types";
-import { StaleCursorError } from "../search";
 import { backfillFacts, ingest, msg, seedThroughCommands, threadOf, withAccounts } from "./fixtures";
 import { byRecency, VIEW_TEST, type SearchCorpus } from "./oracle";
 import { SearchReplica } from "./replica";
 import { defineSearchConformance } from "./search";
+import { defineSearchStateConformance } from "./search-state";
 import { defineDraftRecoveryConformance } from "./draft-recovery";
 import { defineAttachmentConformance } from "./attachments";
 import { defineFactsConformance } from "./facts";
@@ -40,6 +40,12 @@ export interface StoreHarness {
   upgraded?(): Promise<{ store: MailStore; before: StoreSnapshot }>;
   /** the FTS5 planner's strategies are part of the SQL adapters' contract */
   strategies?: boolean;
+  /** a scan has one paging path whatever the query, and each page scans the mailbox again: a bigger page, a few queries at the small one */
+  searchPageSize?: number;
+  /** a store that runs core's evaluator on each message has no compiler to disagree with it: every Nth generated rule */
+  ruleSample?: number;
+  /** false: an engine running the same SQL as one that holds the volumes; the limits are shared code, and small cases hold the bytes */
+  attachmentVolumes?: boolean;
 }
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
@@ -832,7 +838,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
             return { threadIds: page.items.map((t) => t.id), nextCursor: page.nextCursor, strategy: page.strategy };
           },
         }),
-        { strategies: harness.strategies },
+        { strategies: harness.strategies, pageSize: harness.searchPageSize },
       );
 
       it("a search narrowed to conversations with attachments (plan 15) keeps exactly those threads, page by page, the same in both stores", async () => {
@@ -920,7 +926,10 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const live = snap.messages.filter((m) => !m.isTrash);
         const range = (await store.filters.messageIdRange())!;
         let nonTrivial = 0;
-        for (const rule of generateRules(snap.messages)) {
+        const every = harness.ruleSample ?? 1;
+        const rules = generateRules(snap.messages).filter((_, i) => i % every === 0);
+        expect(new Set(rules.flatMap((rule) => rule.conditions.map((c) => c.field))).size).toBeGreaterThanOrEqual(10); // each field still reaches the store's mapping
+        for (const rule of rules) {
           const expected = live.filter((m) => evaluateRule(rule, toRule(m), NOW)).map((m) => m.id).sort((p, q) => p - q);
           const actual = (await store.filters.matchWindow(rule, NOW, { from: range.lo, to: range.hi })).sort((p, q) => p - q);
           expect(actual, JSON.stringify(rule)).toEqual(expected);
@@ -928,7 +937,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
           const preview = await store.filters.preview(rule, NOW, 5);
           expect(preview.count).toBe(new Set(live.filter((m) => expected.includes(m.id)).map((m) => m.threadId)).size);
         }
-        expect(nonTrivial).toBeGreaterThan(60);
+        expect(nonTrivial).toBeGreaterThan(60 / every);
         // 160+ rules, each a full scan (a text rule reads every complete body in IDB)
       }, 30_000);
     });
@@ -1599,48 +1608,10 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       });
     });
 
-    describe("search everywhere (plan 64)", () => {
-      it("a search finds mail in every place, Spam and Trash too, and each row says where it lives; in:all doesn't reach Spam or Trash", async () => {
-        const store = await fresh();
-        const [acct] = await withAccounts(store, 1);
-        const one = async (over: Partial<Parameters<typeof msg>[0]>) => {
-          const m = msg({ accountId: acct!, subject: "Pepinillo report", ...over });
-          await ingest(store, [m]);
-          return threadOf(store, m.providerMsgId!);
-        };
-        const inbox = await one({});
-        const archived = await one({ inInbox: false });
-        const spam = await one({ isSpam: true, inInbox: false });
-        const trash = await one({ isTrash: true, inInbox: false });
-        const found = async (query: string) => (await store.threads.searchText({ query, limit: 50, now: NOW })).items;
-        const all = await found("pepinillo");
-        expect(all.map((t) => t.id).sort((a, b) => a - b)).toEqual([inbox, archived, spam, trash].sort((a, b) => a - b));
-        const place = new Map(all.map((t) => [t.id, [t.inInbox, t.inSpam, t.inTrash]]));
-        expect(place.get(inbox)).toEqual([true, false, false]);
-        expect(place.get(archived)).toEqual([false, false, false]);
-        expect(place.get(spam)).toEqual([false, true, false]);
-        expect(place.get(trash)).toEqual([false, false, true]);
-        expect((await found("in:anywhere pepinillo")).length).toBe(4);
-        expect((await found("in:all pepinillo")).map((t) => t.id).sort((a, b) => a - b)).toEqual([inbox, archived].sort((a, b) => a - b));
-        expect((await found("in:spam pepinillo")).map((t) => t.id)).toEqual([spam]);
-        // the list's summaries carry it too (a view)
-        expect((await store.threads.list({ view: "inbox", limit: 10, now: NOW })).items.find((t) => t.id === inbox)).toMatchObject({ inInbox: true, inSpam: false, inTrash: false });
-        // trashed spam is in Trash and still spam mail (no sender icon, plan 22); spam on a trashed thread leaves it in Trash
-        await store.threads.act({ threadIds: [spam], action: "trash", signal: null, now: NOW });
-        await store.threads.act({ threadIds: [trash], action: "spam", signal: null, now: NOW });
-        const after = new Map((await found("pepinillo")).map((t) => [t.id, [t.inSpam, t.inTrash, t.hasSpam]]));
-        expect(after.get(spam)).toEqual([false, true, true]);
-        expect(after.get(trash)).toEqual([false, true, true]);
-        expect(after.get(inbox)).toEqual([false, false, false]);
-        await store.threads.act({ threadIds: [spam], action: "moveToInbox", signal: null, now: NOW });
-        expect((await found("pepinillo")).find((t) => t.id === spam)).toMatchObject({ inInbox: true, inSpam: false, inTrash: false, hasSpam: false });
-        await store.threads.act({ threadIds: [spam], action: "trash", signal: null, now: NOW });
-        await store.threads.act({ threadIds: [trash], action: "moveToInbox", signal: null, now: NOW });
-        await store.threads.act({ threadIds: [trash], action: "trash", signal: null, now: NOW });
-        // bulk categorization's query scope still leaves Spam and Trash out
-        const cat = (await store.categories.create("Pickles", "amber")).id;
-        expect((await store.categorize.resolveScope(cat, { kind: "query", query: "pepinillo" }, NOW)).sort((a, b) => a - b)).toEqual([inbox, archived].sort((a, b) => a - b));
-      });
+    defineSearchStateConformance(name, fresh, async (s) => {
+      const next = await harness.reopen(s);
+      open.push(next);
+      return next;
     });
 
     describe("search outbox", () => {
@@ -1823,29 +1794,6 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(await store.feed.head()).toEqual({ ...head, seq: head.seq + 1 });
         await box.replica.catchUp(store.feed);
         expect(box.replica.docs()).toEqual((await store.debug.snapshot()).search);
-      });
-
-      it("a write between pages makes the cursor stale: a thread bumped above it can't be skipped silently", async () => {
-        const { store, a } = await mailbox();
-        for (let i = 0; i < 4; i++) await ingest(store, [msg({ accountId: a, providerMsgId: `fp${i}`, rfcMessageId: `fp${i}@x`, subject: `Factura ${i}`, date: 1_000_000 + i * 1000 })]);
-        const first = await store.threads.searchText({ query: "factura", limit: 2, now: NOW });
-        expect(first.items.map((t) => t.subject)).toEqual(["Factura 3", "Factura 2"]);
-        // a reply bumps the oldest match above the cursor: page 2 at the old revision would omit it
-        await ingest(store, [msg({ accountId: a, providerMsgId: "bump", inReplyTo: "fp0@x", subject: "Re: Factura 0", date: 2_000_000 })]);
-        await expect(store.threads.searchText({ query: "factura", limit: 2, cursor: first.nextCursor!, now: NOW })).rejects.toBeInstanceOf(StaleCursorError);
-        const again = await store.threads.searchText({ query: "factura", limit: 10, now: NOW });
-        expect(again.items.map((t) => t.subject)).toEqual(["Factura 0", "Factura 3", "Factura 2", "Factura 1"]);
-        // a keyset-only cursor (an older renderer) still pages at the current revision
-        const legacy = await store.threads.searchText({ query: "factura", limit: 2, cursor: { lastDate: again.items[1]!.lastDate, id: again.items[1]!.id }, now: NOW });
-        expect(legacy.items.map((t) => t.subject)).toEqual(["Factura 2", "Factura 1"]);
-      });
-
-      it("searches report the revision they answered at", async () => {
-        const { store, a } = await mailbox();
-        await ingest(store, [msg({ accountId: a, subject: "Revisión" })]);
-        const page = await store.threads.searchText({ query: "revision", limit: 10, now: NOW });
-        expect(page.revision).toEqual(await store.feed.head());
-        expect(page.complete).toBe(true);
       });
     });
 

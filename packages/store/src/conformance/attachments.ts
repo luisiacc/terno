@@ -330,7 +330,7 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       expect(reordered[1]!.assetId).toBe(original.assetId);
       expect(await store.attachments.read(a!, reordered[1]!.assetId!, 0)).toBe("AP+A");
     });
-    it("retains colliding reordered nine-MiB parts at quota through reopen", async () => {
+    if (h.attachmentVolumes !== false) it("retains colliding reordered nine-MiB parts at quota through reopen", async () => {
       const [a] = await fresh();
       const part = (last: number) => {
         const bytes = new Uint8Array(9 * 1024 * 1024); bytes[bytes.length - 1] = last;
@@ -355,7 +355,7 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
         expect(await store.attachments.info(a!, parts[i + 1]!.assetId!)).toBeTruthy();
       }
     });
-    it("preserves the prior attachment revision when colliding verification cannot finish safely", async () => {
+    if (h.attachmentVolumes !== false) it("preserves the prior attachment revision when colliding verification cannot finish safely", async () => {
       const [a] = await fresh();
       const part = (marker: number) => {
         const bytes = new Uint8Array(8 * 1024 * 1024); bytes[bytes.length - ATTACHMENT_CHUNK - 1] = marker;

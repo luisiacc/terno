@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll } from "vitest";
 import { upgradeLegacyBodies, openDatabase, sqliteDriver } from "./index";
+import { copyMigrated } from "./test/helpers";
 import { writeLegacyCopy } from "./test/legacy";
 import { sqlDb, SqlMailStore } from "./sql-store";
 
@@ -21,7 +22,9 @@ const tempDir = () => {
 // node:sqlite here; SQLite-WASM in the db-wasm project
 defineStoreConformance(`SqlMailStore (${sqliteDriver().id})`, {
   strategies: true,
-  open: async () => new SqlMailStore(openDatabase(join(tempDir(), "s.db"))),
+  // the comparison budget and the capture limit are @terno/store's, over the same SQL
+  attachmentVolumes: sqliteDriver().id === "node-sqlite",
+  open: async () => new SqlMailStore(openDatabase(copyMigrated(join(tempDir(), "s.db")))),
   reopen: async (store) => {
     const path = sqlDb(store).path;
     await store.close();

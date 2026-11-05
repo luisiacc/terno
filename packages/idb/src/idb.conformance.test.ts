@@ -1,9 +1,10 @@
 import "fake-indexeddb/auto";
 import { nodeBodyPreparationFactory } from "../../db/src/node-driver";
 import { generateDataset } from "@terno/mock-data";
+import type { CategorizeScope } from "@terno/core";
 import type { MailStore, Platform } from "@terno/store";
-import { defineSearchConformance, defineStoreConformance, seedThroughCommands } from "@terno/store/conformance";
-import { afterAll, expect } from "vitest";
+import { defineSearchConformance, defineSearchStateConformance, defineStoreConformance, seedThroughCommands } from "@terno/store/conformance";
+import { afterAll, afterEach, expect, vi } from "vitest";
 import { IdbMailStore } from "./store";
 
 // Node has no browser Worker: large bodies tokenize on the Node worker the web platform's stands in for (w11)
@@ -16,17 +17,67 @@ const reopen = async (store: MailStore, instantSearch: boolean) => {
   return open(name, instantSearch);
 };
 
-// every search on the exact scan (the index never answers)
+// the whole contract, every search on the exact scan (the index never answers)
 defineStoreConformance("IdbMailStore (fake-indexeddb, exact scan)", {
+  searchPageSize: 500,
+  ruleSample: 5,
   open: () => open(`scan-${++n}`, false),
   reopen: (store) => reopen(store, false),
 });
 
-// the instant index in front (searches the index hasn't caught up with still scan)
-defineStoreConformance("IdbMailStore (fake-indexeddb, instant index)", {
-  open: () => open(`instant-${++n}`, true),
-  reopen: (store) => reopen(store, true),
-});
+/**
+ * The instant option changes three things (`store.ts`): `searchPage`, a query `resolveScope` (and the count on it)
+ * and a notification after each commit. So its mode runs what those answer, and each answer waits for the index and
+ * proves it answered: an instant store silently scans until caught up (Codex revision 9 of plan 139).
+ */
+const indexAnswers = (real: IdbMailStore): IdbMailStore => {
+  const scan = vi.spyOn(real as unknown as { scan: () => Promise<unknown> }, "scan");
+  const fromIndex = vi.spyOn(real as unknown as { queryIdsFromIndex: () => number[] }, "queryIdsFromIndex");
+  const answered = async <V,>(work: () => Promise<V>): Promise<V> => {
+    expect(await real.instant!.settled()).toBe(true);
+    scan.mockClear();
+    fromIndex.mockClear();
+    try {
+      return await work();
+    } finally {
+      expect(scan, "the exact scan answered").not.toHaveBeenCalled();
+    }
+  };
+  const threads: MailStore["threads"] = {
+    ...real.threads,
+    searchText: (p) => answered(async () => {
+      const page = await real.threads.searchText(p);
+      expect(page.strategy, p.query).toMatch(/^instant:/);
+      return page;
+    }),
+  };
+  const query = async <V,>(scope: CategorizeScope, work: () => Promise<V>): Promise<V> => {
+    const result = await answered(work);
+    if (scope.kind === "query") expect(fromIndex, scope.query).toHaveBeenCalled();
+    return result;
+  };
+  const categorize: MailStore["categorize"] = {
+    ...real.categorize,
+    resolveScope: (categoryId, scope, now, limit) => query(scope, () => real.categorize.resolveScope(categoryId, scope, now, limit)),
+    countScope: (categoryId, scope, now) => query(scope, () => real.categorize.countScope(categoryId, scope, now)),
+  };
+  return new Proxy(real, {
+    get(target, key) {
+      if (key === "threads") return threads;
+      if (key === "categorize") return categorize;
+      const value: unknown = Reflect.get(target, key, target);
+      return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+    },
+  });
+};
+const instantStores: MailStore[] = [];
+afterEach(async () => { for (const s of instantStores.splice(0)) if (s.isOpen) await s.close(); });
+const opened = (store: IdbMailStore) => { const answering = indexAnswers(store); instantStores.push(answering); return answering; };
+defineSearchStateConformance(
+  "IdbMailStore (instant index, caught up)",
+  async () => opened(await open(`instant-${++n}`, true)),
+  async (store) => opened(await reopen(store, true) as IdbMailStore),
+);
 
 // and every search case answered by the index itself, once it caught up with the seeded mailbox
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
