@@ -10,7 +10,7 @@ import type { Locator, Page } from "@playwright/test";
 import { normalizeText, subjectKey } from "@terno/core";
 import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, selectThread, test } from "./fixtures";
+import { expect, focusList, selectThread, test, fresh, scenario } from "./fixtures";
 
 test.use({ reducedMotion: "no-preference" });
 
@@ -61,77 +61,79 @@ function group(server: DevServer, categoryId: number) {
 const catId = (server: DevServer, name: string) => sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = ?", name)!.id;
 
 test.describe("plan 91: defaults and the same offers everywhere", () => {
-  test("a drag of bulk mail moves its sender + subject group and files their new mail; 0 keeps only the drag; z undoes the drag", async ({ app: page, server }) => {
-    const facturas = catId(server, "Facturas");
-    const g = group(server, facturas);
-    expect(g.ids.length).toBeGreaterThan(1);
-    const target = g.target;
-    const autoBefore = g.autoFilters();
-    // some may be filed there already (the mock's engine): those stay as they are
-    const before = g.inCategory();
-    await selectThread(page, target, `from:${g.email}`);
-    await drop(page, page.locator(`[data-testid=thread-row][data-thread-id="${target}"]`), page.getByTestId(`nav-category-${facturas}`));
+  test("defaults: a drag of bulk mail, Undo, a person's mail, spam, a filter that can't be saved, More…", async ({ app: page, server }) => {
+    await scenario("a drag of bulk mail moves its sender + subject group and files their new mail; 0 keeps only the drag; z undoes the drag", async () => {
+      const facturas = catId(server, "Facturas");
+      const g = group(server, facturas);
+      expect(g.ids.length).toBeGreaterThan(1);
+      const target = g.target;
+      const autoBefore = g.autoFilters();
+      // some may be filed there already (the mock's engine): those stay as they are
+      const before = g.inCategory();
+      await selectThread(page, target, `from:${g.email}`);
+      await drop(page, page.locator(`[data-testid=thread-row][data-thread-id="${target}"]`), page.getByTestId(`nav-category-${facturas}`));
 
-    const snack = page.getByTestId("category-snackbar");
-    await expect(snack).toHaveAttribute("data-default", "done");
-    await expect(snack.getByTestId("snackbar-title")).toHaveText(`Moved ${g.ids.length - before.length} emails with the same sender and subject to Facturas`);
-    await expect(snack.getByTestId("snackbar-note")).toHaveText("New mail like this goes there too.");
-    await expect.poll(g.inCategory).toEqual(g.ids);
-    // a filter of Terno's, its subject's numbers as any number
-    expect(g.autoFilters()).toBe(autoBefore + 1);
-    const made = g.db.get<{ rule_json: string }>("SELECT rule_json FROM filters WHERE auto = 1 ORDER BY id DESC LIMIT 1")!;
-    expect(JSON.parse(made.rule_json).conditions).toContainEqual(expect.objectContaining({ field: "subject", op: "matches" }));
-    // the default isn't offered again; everything from the sender is the first line
-    await expect(snack.getByTestId("snackbar-subject")).toHaveCount(0);
-    await expect(snack.getByTestId("snackbar-offers").locator("kbd").first()).toHaveText("1");
-    await expect(snack.getByTestId("snackbar-only")).toHaveText(/No, only move this email/);
-    // axe-clean in both schemes, the countdown held while it reads
-    for (const scheme of ["light", "dark"] as const) {
-      await page.emulateMedia({ colorScheme: scheme });
-      await snack.hover();
-      expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=snack-dock]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze()).violations, scheme).toEqual([]);
-    }
+      const snack = page.getByTestId("category-snackbar");
+      await expect(snack).toHaveAttribute("data-default", "done");
+      await expect(snack.getByTestId("snackbar-title")).toHaveText(`Moved ${g.ids.length - before.length} emails with the same sender and subject to Facturas`);
+      await expect(snack.getByTestId("snackbar-note")).toHaveText("New mail like this goes there too.");
+      await expect.poll(g.inCategory).toEqual(g.ids);
+      // a filter of Terno's, its subject's numbers as any number
+      expect(g.autoFilters()).toBe(autoBefore + 1);
+      const made = g.db.get<{ rule_json: string }>("SELECT rule_json FROM filters WHERE auto = 1 ORDER BY id DESC LIMIT 1")!;
+      expect(JSON.parse(made.rule_json).conditions).toContainEqual(expect.objectContaining({ field: "subject", op: "matches" }));
+      // the default isn't offered again; everything from the sender is the first line
+      await expect(snack.getByTestId("snackbar-subject")).toHaveCount(0);
+      await expect(snack.getByTestId("snackbar-offers").locator("kbd").first()).toHaveText("1");
+      await expect(snack.getByTestId("snackbar-only")).toHaveText(/No, only move this email/);
+      // axe-clean in both schemes, the countdown held while it reads
+      for (const scheme of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        await snack.hover();
+        expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=snack-dock]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze()).violations, scheme).toEqual([]);
+      }
 
-    await focusList(page);
-    await page.keyboard.press("0");
-    await expect(snack.getByTestId("snackbar-title")).toHaveText("Moved only this email to Facturas");
-    await expect.poll(g.inCategory).toEqual([...before, target].sort((a, b) => a - b));
-    await expect.poll(g.autoFilters).toBe(autoBefore);
-    // z now takes back the drag itself
-    await page.keyboard.press("z");
-    await expect.poll(g.inCategory).toEqual(before);
-  });
-
-  test("Undo after the default takes back everything: the group, the filter and the drag", async ({ app: page, server }) => {
-    const facturas = catId(server, "Facturas");
-    const g = group(server, facturas);
-    const autoBefore = g.autoFilters();
-    const before = g.inCategory();
-    await selectThread(page, g.target, `from:${g.email}`);
-    await drop(page, page.locator(`[data-testid=thread-row][data-thread-id="${g.target}"]`), page.getByTestId(`nav-category-${facturas}`));
-    const snack = page.getByTestId("category-snackbar");
-    await expect(snack).toHaveAttribute("data-default", "done");
-    await snack.getByTestId("snackbar-undo").click();
-    await expect.poll(g.inCategory).toEqual(before);
-    await expect.poll(g.autoFilters).toBe(autoBefore);
-  });
-
-  test("a person's mail moves alone, with the same sender and subject offered first", async ({ app: page, server }) => {
-    const facturas = catId(server, "Facturas");
-    const db = sqlDb(server.backend.store);
-    const person = db.get<{ id: number; email: string }>(
-      `SELECT t.id, t.last_from_email AS email FROM threads t WHERE t.in_inbox = 1 AND t.person = 1 AND t.in_trash = 0
-       AND NOT EXISTS (SELECT 1 FROM thread_categories c WHERE c.thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1`,
-    )!;
-    const filtersBefore = db.get<{ c: number }>("SELECT count(*) c FROM filters")!.c;
-    await selectThread(page, person.id, `from:${person.email}`);
-    await drop(page, page.locator(`[data-testid=thread-row][data-thread-id="${person.id}"]`), page.getByTestId(`nav-category-${facturas}`));
-    const snack = page.getByTestId("category-snackbar");
-    await expect(snack.getByTestId("snackbar-title")).toHaveText("Moved to Facturas");
-    await expect(snack).not.toHaveAttribute("data-default");
-    await expect(snack.getByTestId("snackbar-sender")).toBeVisible();
-    await expect(snack.getByTestId("snackbar-only")).toHaveCount(0);
-    expect(db.get<{ c: number }>("SELECT count(*) c FROM filters")!.c).toBe(filtersBefore);
+      await focusList(page);
+      await page.keyboard.press("0");
+      await expect(snack.getByTestId("snackbar-title")).toHaveText("Moved only this email to Facturas");
+      await expect.poll(g.inCategory).toEqual([...before, target].sort((a, b) => a - b));
+      await expect.poll(g.autoFilters).toBe(autoBefore);
+      // z now takes back the drag itself
+      await page.keyboard.press("z");
+      await expect.poll(g.inCategory).toEqual(before);
+    });
+    await scenario("Undo after the default takes back everything: the group, the filter and the drag", async () => {
+      await fresh(page);
+      const facturas = catId(server, "Facturas");
+      const g = group(server, facturas);
+      const autoBefore = g.autoFilters();
+      const before = g.inCategory();
+      await selectThread(page, g.target, `from:${g.email}`);
+      await drop(page, page.locator(`[data-testid=thread-row][data-thread-id="${g.target}"]`), page.getByTestId(`nav-category-${facturas}`));
+      const snack = page.getByTestId("category-snackbar");
+      await expect(snack).toHaveAttribute("data-default", "done");
+      await snack.getByTestId("snackbar-undo").click();
+      await expect.poll(g.inCategory).toEqual(before);
+      await expect.poll(g.autoFilters).toBe(autoBefore);
+    });
+    await scenario("a person's mail moves alone, with the same sender and subject offered first", async () => {
+      await fresh(page);
+      const facturas = catId(server, "Facturas");
+      const db = sqlDb(server.backend.store);
+      const person = db.get<{ id: number; email: string }>(
+        `SELECT t.id, t.last_from_email AS email FROM threads t WHERE t.in_inbox = 1 AND t.person = 1 AND t.in_trash = 0
+         AND NOT EXISTS (SELECT 1 FROM thread_categories c WHERE c.thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1`,
+      )!;
+      const filtersBefore = db.get<{ c: number }>("SELECT count(*) c FROM filters")!.c;
+      await selectThread(page, person.id, `from:${person.email}`);
+      await drop(page, page.locator(`[data-testid=thread-row][data-thread-id="${person.id}"]`), page.getByTestId(`nav-category-${facturas}`));
+      const snack = page.getByTestId("category-snackbar");
+      await expect(snack.getByTestId("snackbar-title")).toHaveText("Moved to Facturas");
+      await expect(snack).not.toHaveAttribute("data-default");
+      await expect(snack.getByTestId("snackbar-sender")).toBeVisible();
+      await expect(snack.getByTestId("snackbar-only")).toHaveCount(0);
+      expect(db.get<{ c: number }>("SELECT count(*) c FROM filters")!.c).toBe(filtersBefore);
+    });
   });
 
   test("spam marks everything from the sender with a filter; 0 marks only this one; the menu lists the same lines in the same order", async ({ app: page, server }) => {
