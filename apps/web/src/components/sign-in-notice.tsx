@@ -76,7 +76,7 @@ function Notice({ accounts }: { accounts: Account[] }) {
     putOff(accounts.map((a) => a.id));
   };
   return (
-    <div className="flex shrink-0 px-2 pt-1" data-testid="sign-in-notice" data-count={accounts.length} data-sign-in-ui>
+    <div className="flex shrink-0 px-(--sidebar-pad) pt-1" data-testid="sign-in-notice" data-count={accounts.length} data-sign-in-ui>
       {/* said once, when it changes (the backend's account events leave it as it is) */}
       <p role="status" className="sr-only">
         {title}

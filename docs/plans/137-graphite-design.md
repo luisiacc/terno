@@ -136,3 +136,26 @@ Follow-up request, verbatim:
 At five styles the two-column grid ran three rows and pushed everything else down the tab. It's now a row of compact cards (a 72 px mock and the name), wrapping to a second row only when the window is too narrow for 5.5 rem each. The chosen style's description sits on one line below, as first run has it, and describes the group for screen readers. The mock's section label is gone (it couldn't fit), and "Inbox" goes from 13 px to 10 px. Light and dark colors keep their larger cards: colors need the room, and they weren't asked about.
 
 The Codex review found two narrow-window problems, both fixed with a test that fails without the fix: at 550 px the grid reached three rows (a column now gives way before three stop fitting), and a description that wrapped on some styles but not others moved everything below it when switching (all of them now share one cell, so it's always as tall as the longest).
+
+## The sidebar, measured against the reference
+
+Follow-up request, verbatim:
+
+> look at the picture, i feel we got the spacing a bit wrong for the sidebars, also the image looks more crisp for the fonts than ours, is there a font setting for it to look smoother ?
+
+The reference is a 2x capture (its traffic lights sit 40 px apart). Its strings, measured against real SF at -0.15px, put the rows at 13 px and the section labels at 12 px, inside the blueprint's scale; Graphite had them at 14 and 13.
+
+| | Reference | Before | Now |
+| --- | --- | --- | --- |
+| Sidebar width | 215 | 224 | 216 |
+| Side inset of a row's fill | 12 | 8 | 12 |
+| Row text / section label | 13 / 12 | 14 / 13 | 13 / 12 |
+| New message to the next row | 28 | 36 | 28 |
+| Row above to section label, centers | 47 | 40 | 47 |
+| Section label to its first row, centers | 28.5 | 26 | 29 |
+
+Three layout values carry this (`sidebarPad`, `navSectionGap`, `navSectionHeight`); the other designs keep today's. The footer keeps its 8 px on the left, where a ghost button's own padding puts Filters' icon on the rows' icon line. The message list keeps its sizes: it wasn't asked about.
+
+**No font setting was missing.** `-webkit-font-smoothing: antialiased` and `text-rendering: optimizeLegibility` were already on. Rendered side by side at 2x, `geometricPrecision` changes nothing visible, and smoothing `auto` only thickens the strokes. The difference was the size.
+
+The reference's section labels are `#7C7C7C` (4.17:1 on white), below AA, so they stay `#5D5D5D`.

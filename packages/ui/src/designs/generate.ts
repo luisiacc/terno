@@ -51,6 +51,9 @@ export function designVars(d: DesignDefinition): [string, string][] {
     ["--row-radius", d.layout.rowRadius],
     ["--nav-radius", d.layout.navRadius],
     ["--nav-h", d.layout.navHeight],
+    ["--sidebar-pad", d.layout.sidebarPad],
+    ["--nav-section-gap", d.layout.navSectionGap],
+    ["--nav-section-h", d.layout.navSectionHeight],
     ["--card-radius", d.layout.cardRadius],
     ["--command-radius", d.layout.commandRadius],
     // plan 137: the floor under a worded button's corners: max(floor, its radius), so "control" draws what it always did

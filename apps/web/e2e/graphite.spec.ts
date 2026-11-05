@@ -67,6 +67,34 @@ test.describe("Graphite (plan 137)", () => {
     expect(Math.abs((await left(page.getByTestId("compose-button").locator("svg"))) - label)).toBeLessThan(0.51);
   });
 
+  test("the sidebar keeps the blueprint's rhythm: 12 px insets, one 28 px pitch from New message on, 13 px rows under 12 px labels", async ({ app: page }) => {
+    const sidebar = page.getByTestId("sidebar");
+    const row = (name: RegExp) => sidebar.getByRole("button", { name });
+    const label = sidebar.getByText("Categories", { exact: true });
+    const box = async (l: ReturnType<Page["locator"]>) => (await l.boundingBox())!;
+    const middle = async (l: ReturnType<Page["locator"]>) => {
+      const b = await box(l);
+      return b.y + b.height / 2;
+    };
+    const aside = await box(sidebar);
+    expect(aside.width).toBe(216);
+    const inbox = await box(row(/^Inbox/));
+    expect(inbox.x - aside.x).toBe(12);
+    expect(aside.x + aside.width - (inbox.x + inbox.width)).toBe(12);
+    const y = await Promise.all([page.getByTestId("compose-button"), row(/^Inbox/), row(/^Starred/), page.getByTestId("nav-more")].map(middle));
+    expect(y.slice(1).map((v, i) => v - y[i]!)).toEqual([28, 28, 28]);
+    // a section: 47 px from the row above to its label, 29 px from the label to its first row
+    const first = page.locator('[data-testid^="nav-category-"]').first();
+    expect((await middle(label)) - y[3]!).toBeCloseTo(47, 0);
+    expect((await middle(first)) - (await middle(label))).toBeCloseTo(29, 0);
+    await expect(row(/^Starred/)).toHaveCSS("font-size", "13px");
+    await expect(page.getByTestId("compose-button")).toHaveCSS("font-size", "13px");
+    await expect(label).toHaveCSS("font-size", "12px");
+    // Filters sits on the rows' icon line, though its fill starts wider
+    const filters = await box(page.getByTestId("open-filters").locator("svg"));
+    expect(Math.abs(filters.x - (await box(row(/^Inbox/).locator("svg").first())).x)).toBeLessThan(2.01);
+  });
+
   test("a button with words is a pill and a toolbar's is not; nav rows are 8 px", async ({ app: page }) => {
     await expect(page.getByTestId("sidebar").getByRole("button", { name: /^Inbox/ })).toHaveCSS("border-radius", "8px");
     await openRow(page, 1);

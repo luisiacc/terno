@@ -78,7 +78,7 @@ export function FirstSyncPill() {
   // every account still syncing, first syncs and backfills both
   const rows = accounts.filter((a) => firstSyncing(a) || backfilling(a));
   return (
-    <div className="flex shrink-0 px-2 pt-1" data-testid="first-sync-pill">
+    <div className="flex shrink-0 px-(--sidebar-pad) pt-1" data-testid="first-sync-pill">
       <div className="group min-w-0 flex-1 rounded-lg border border-sidebar-border text-xs">
         <button
           type="button"

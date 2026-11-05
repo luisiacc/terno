@@ -222,7 +222,7 @@ function NavItem({
 
 function SectionTitle({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="group/section mt-4 mb-0.5 flex min-h-5 items-center justify-between px-2">
+    <div className="group/section mt-(--nav-section-gap) mb-0.5 flex min-h-(--nav-section-h) items-center justify-between px-2">
       <span className="type-section-label text-muted-foreground">{children}</span>
       {action}
     </div>
@@ -270,14 +270,14 @@ function categoryHelp(unread: number, suggested: number): string | null {
   return u && s ? t("sidebar.categoryHelp.both", { unread: u, suggested: s }) : u ?? s;
 }
 
-/** Graphite: "New message" as a plain row above the mailboxes, on their line; the calls to action are the only pills. */
+/** Graphite: "New message" as the first row of the mailboxes, on their line and pitch; the calls to action are the only pills. */
 function ComposeRow() {
   return (
-    <div className="shrink-0 px-2 pb-2">
+    <div className="shrink-0 px-(--sidebar-pad)">
       <Tooltip>
         <TooltipTrigger
           render={
-            <button type="button" data-testid="compose-button" onPointerEnter={preloadComposer} onFocus={preloadComposer} onClick={() => openCompose("new")} className="type-compose flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-hover hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring">
+            <button type="button" data-testid="compose-button" onPointerEnter={preloadComposer} onFocus={preloadComposer} onClick={() => openCompose("new")} className={cn("type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-hover hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring", ROW_SEAM)}>
               <span className="flex size-(--icon-nav) items-center justify-center text-sidebar-glyph">
                 <SquarePen className="size-(--icon-nav)" />
               </span>
@@ -1432,7 +1432,7 @@ export function Sidebar() {
     <aside id="app-sidebar" data-testid="sidebar" className="flex h-full min-h-0 w-full flex-col bg-sidebar text-sidebar-foreground">
       <div className="drag-region h-[52px] shrink-0" />
       {variant(design.variants.compose, { "list-header": null, "sidebar-outline": <ComposeOutline />, "sidebar-pill": <ComposePill />, "sidebar-row": <ComposeRow /> })}
-      <nav ref={navRef} data-drop-scroll aria-label={soloAccount ? t("sidebar.solo.nav", { account: soloAccount.displayName }) : undefined} className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      <nav ref={navRef} data-drop-scroll aria-label={soloAccount ? t("sidebar.solo.nav", { account: soloAccount.displayName }) : undefined} className="min-h-0 flex-1 overflow-y-auto px-(--sidebar-pad) pb-3">
         {/* keyed: another account focused is another sidebar (Codex code review #1: never the last one's rows) */}
         {soloAccount ? <SoloSidebar key={soloAccount.id} account={soloAccount} countTone={design.surfaces.inboxCount} /> : all}
       </nav>
@@ -1443,7 +1443,8 @@ export function Sidebar() {
         <FirstSyncPill />
         <UpdatePill />
       </div>
-      <div className="hairline-t hairline-strong flex shrink-0 items-center gap-1 px-2 py-2">
+      {/* the left stays put: a ghost button's own padding puts Filters' icon on the rows' icon line in the wider inset */}
+      <div className="hairline-t hairline-strong flex shrink-0 items-center gap-1 py-2 pr-(--sidebar-pad) pl-2">
         <Button data-testid="open-filters" variant="ghost" size="sm" className="flex-1 justify-start gap-2 text-sidebar-foreground" onClick={() => setApp({ dialog: "filters" })}>
           <Sparkles className="text-sidebar-glyph" /> {t("sidebar.filters")}
         </Button>

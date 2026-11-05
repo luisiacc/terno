@@ -64,6 +64,11 @@ export interface DesignDefinition {
     navRadius: string;
     /** a sidebar item's height */
     navHeight: string;
+    /** the sidebar's side inset: its rows' fill stops this far from the edge */
+    sidebarPad: string;
+    /** a sidebar section: the space above its label, and the label's own line */
+    navSectionGap: string;
+    navSectionHeight: string;
     /** the corners of a group of rows on a card (Settings' groups, the snippet editor) */
     cardRadius: string;
     /** a command list's rows (the palette, the category picker): its panel is these plus their 8 px inset */

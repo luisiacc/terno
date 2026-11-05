@@ -130,6 +130,9 @@
   --row-radius: 1rem;
   --nav-radius: 0.75rem;
   --nav-h: 2.125rem;
+  --sidebar-pad: 0.5rem;
+  --nav-section-gap: 1rem;
+  --nav-section-h: 1.25rem;
   --card-radius: calc(var(--ds-radius-lg) + 2px);
   --command-radius: var(--ds-radius-xl);
   --cta-floor: 0px;
@@ -281,6 +284,9 @@
   --row-radius: 0.75rem;
   --nav-radius: 0.625rem;
   --nav-h: 2rem;
+  --sidebar-pad: 0.5rem;
+  --nav-section-gap: 1rem;
+  --nav-section-h: 1.25rem;
   --card-radius: calc(var(--ds-radius-lg) + 2px);
   --command-radius: var(--ds-radius-xl);
   --cta-floor: 0px;
@@ -432,6 +438,9 @@
   --row-radius: 0.375rem;
   --nav-radius: 0.375rem;
   --nav-h: 1.75rem;
+  --sidebar-pad: 0.5rem;
+  --nav-section-gap: 1rem;
+  --nav-section-h: 1.25rem;
   --card-radius: calc(var(--ds-radius-lg) + 2px);
   --command-radius: var(--ds-radius-xl);
   --cta-floor: 0px;
@@ -583,6 +592,9 @@
   --row-radius: 0.625rem;
   --nav-radius: 0.5rem;
   --nav-h: 2rem;
+  --sidebar-pad: 0.5rem;
+  --nav-section-gap: 1rem;
+  --nav-section-h: 1.25rem;
   --card-radius: calc(var(--ds-radius-lg) + 2px);
   --command-radius: var(--ds-radius-xl);
   --cta-floor: 0px;
@@ -660,14 +672,14 @@
   --type-list-subtitle-tracking: -0.15px;
   --type-list-subtitle-style: normal;
   --type-section-label-family: -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif;
-  --type-section-label-size: 0.8125rem;
-  --type-section-label-leading: 1.125rem;
+  --type-section-label-size: 0.75rem;
+  --type-section-label-leading: 1rem;
   --type-section-label-weight: 400;
   --type-section-label-strong: 400;
   --type-section-label-tracking: -0.15px;
   --type-section-label-style: normal;
   --type-nav-family: -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif;
-  --type-nav-size: 0.875rem;
+  --type-nav-size: 0.8125rem;
   --type-nav-leading: 1.25rem;
   --type-nav-weight: 400;
   --type-nav-strong: 500;
@@ -725,7 +737,7 @@
   --icon-stroke: 1.5;
   --icon-stroke-toolbar: 1.5;
   --icon-nav: 14px;
-  --sidebar-w: 224px;
+  --sidebar-w: 216px;
   --list-min: 340px;
   --list-max: 400px;
   --reader-min: 348px;
@@ -734,6 +746,9 @@
   --row-radius: 0.5rem;
   --nav-radius: 0.5rem;
   --nav-h: 1.75rem;
+  --sidebar-pad: 0.75rem;
+  --nav-section-gap: 1.25rem;
+  --nav-section-h: 1.625rem;
   --card-radius: 1rem;
   --command-radius: 0.5rem;
   --cta-floor: 9999px;
