@@ -159,3 +159,5 @@ Three layout values carry this (`sidebarPad`, `navSectionGap`, `navSectionHeight
 **No font setting was missing.** `-webkit-font-smoothing: antialiased` and `text-rendering: optimizeLegibility` were already on. Rendered side by side at 2x, `geometricPrecision` changes nothing visible, and smoothing `auto` only thickens the strokes. The difference was the size.
 
 The reference's section labels are `#7C7C7C` (4.17:1 on white), below AA, so they stay `#5D5D5D`.
+
+The Codex review found one problem, fixed with a test that fails without the fix: first run's preview draws its own copy of the sidebar, and still had the old insets, section spacing and New message row.

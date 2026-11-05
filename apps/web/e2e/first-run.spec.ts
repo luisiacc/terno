@@ -26,6 +26,21 @@ test.describe("first-run setup", () => {
   // a new install: its own defaults (Lumen in the GitHub palettes), not a project's design
   test.use({ backendOptions: { empty: true, ownerClaims: true }, design: null });
 
+  test("the preview's sidebar is spaced as Graphite's real one (plan 137)", async ({ app: page, server }) => {
+    await open(page, server);
+    await page.getByTestId("first-run-continue").click();
+    await page.getByTestId("first-run-design-graphite").click();
+    await expect(preview(page)).toHaveAttribute("data-design", "graphite");
+    const nav = preview(page).locator("aside nav");
+    await expect(nav).toHaveCSS("padding-left", "12px");
+    await expect(preview(page).getByText("New message", { exact: true }).locator("xpath=../..")).toHaveCSS("padding-bottom", "0px");
+    await expect(preview(page).getByText("New message", { exact: true })).toHaveCSS("font-size", "13px");
+    const section = nav.getByText("Categories", { exact: true });
+    await expect(section).toHaveCSS("font-size", "12px");
+    await expect(section.locator("..")).toHaveCSS("margin-top", "20px");
+    await expect(section.locator("..")).toHaveCSS("min-height", "26px");
+  });
+
   test("layout, then style and colors, each live in the app and the preview; Back keeps the picks", async ({ app: page, server }) => {
     await open(page, server);
     await expect(step(page)).toHaveAttribute("data-step", "layout");

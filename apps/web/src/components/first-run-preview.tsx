@@ -108,8 +108,8 @@ function Sidebar({ design, sample }: { design: DesignDefinition; sample: SampleM
           </div>
         ),
         "sidebar-row": (
-          <div className="shrink-0 px-2 pb-2">
-            <div className="type-compose flex h-(--nav-h) w-full items-center gap-2.5 px-2 text-sidebar-foreground">
+          <div className="shrink-0 px-(--sidebar-pad)">
+            <div className="type-nav flex h-(--nav-h) w-full items-center gap-2.5 px-2 text-sidebar-foreground">
               <span className="flex size-(--icon-nav) items-center justify-center text-sidebar-glyph">
                 <SquarePen className="size-(--icon-nav)" />
               </span>
@@ -126,11 +126,11 @@ function Sidebar({ design, sample }: { design: DesignDefinition; sample: SampleM
           </div>
         ),
       })}
-      <nav className="min-h-0 flex-1 px-2 pb-3">
+      <nav className="min-h-0 flex-1 px-(--sidebar-pad) pb-3">
         {item(<Inbox className="size-(--icon-nav)" />, viewLabel("inbox"), true, unread)}
         {item(<Star className="size-(--icon-nav)" />, viewLabel("starred"))}
         {item(<Send className="size-(--icon-nav)" />, viewLabel("sent"))}
-        <div className="mt-4 mb-0.5 flex min-h-5 items-center px-2">
+        <div className="mt-(--nav-section-gap) mb-0.5 flex min-h-(--nav-section-h) items-center px-2">
           <span className="type-section-label text-muted-foreground">{t("sidebar.categories")}</span>
         </div>
         {sample.categories.map((c) => item(<CategoryDot color={c.color} />, c.name))}
