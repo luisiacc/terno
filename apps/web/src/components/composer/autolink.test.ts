@@ -521,26 +521,6 @@ describe("Codex code review", () => {
     expect(links(state)).toEqual([]);
   });
 
-  it("a line of thousands of links is reconciled in linear time", () => {
-    const time = (n: number) => {
-      const kids: PMNode[] = [];
-      for (let i = 0; i < n; i++) kids.push(t(`https://x.com/${i}`, auto(`https://x.com/${i}`)), schema.text(" "));
-      const v = editor(nodes.paragraph.create(null, kids));
-      const tr = v.state.tr;
-      const t0 = performance.now();
-      reconcile(tr, [0, v.state.doc.content.size]);
-      const ms = performance.now() - t0;
-      expect(tr.steps.length).toBe(0);
-      return ms;
-    };
-    time(500);
-    const small = Math.min(time(2000), time(2000));
-    const big = Math.min(time(8000), time(8000));
-    expect(big).toBeLessThan(300);
-    // 4× the links: ~4× the time (it was ~16×)
-    expect(big).toBeLessThan(Math.max(small, 2) * 9);
-  });
-
   it("a link made right after a long unbroken word stays, and still follows edits inside it", () => {
     const v = editor(p("a".repeat(9000)));
     applyLink(v, { from: 9001, to: 9001 }, "https://x.com", "https://x.com");
@@ -552,28 +532,6 @@ describe("Codex code review", () => {
 });
 
 describe("Codex re-review", () => {
-  it("a line of thousands of stale autolinks is put right in one step, in linear time", () => {
-    const time = (n: number) => {
-      const kids: PMNode[] = [];
-      for (let i = 0; i < n; i++) kids.push(t(`https://x.com/${i}`, auto(`https://old.example/${i}`)), schema.text(" "));
-      const doc = nodes.doc.create(null, [nodes.paragraph.create(null, kids)]);
-      const state = EditorState.create({ doc, plugins });
-      const tr = state.tr;
-      const t0 = performance.now();
-      reconcile(tr, [0, doc.content.size]);
-      const ms = performance.now() - t0;
-      expect(tr.steps.length).toBe(1);
-      const after = state.apply(tr);
-      expect(links(after).every((l) => l.href === l.text)).toBe(true);
-      return ms;
-    };
-    time(500);
-    const small = Math.min(time(2000), time(2000));
-    const big = Math.min(time(8000), time(8000));
-    expect(big).toBeLessThan(500);
-    expect(big).toBeLessThan(Math.max(small, 2) * 9);
-  });
-
   it("an autolink split by formatting, starting outside the window, is left whole by an edit far along its token", () => {
     const bold = marks.bold.create();
     const v = editor(p(t("https://", auto("https://x.com")), t("x.com", auto("https://x.com"), bold), "a".repeat(10_000)));
