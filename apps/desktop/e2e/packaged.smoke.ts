@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import { copyTree } from "./packaged-fixture";
+import { copyTree, closePackaged } from "./packaged-fixture";
 import { parseRaw } from "@terno/mail";
 import { SMTPServer } from "smtp-server";
 
@@ -50,7 +50,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await app?.close();
+  await closePackaged(app);
   await new Promise<void>((r) => (smtp ? smtp.close(() => r()) : r()));
   if (workdir) rmSync(workdir, { recursive: true, force: true });
 });
@@ -231,7 +231,7 @@ test("plan 21: More's state and the panes' widths survive a real restart on app:
   await expect(handle).toHaveAttribute("aria-valuenow", "360");
   await page.getByTestId("nav-more").click();
   await expect(page.getByTestId("nav-trash")).toBeVisible();
-  await app.close();
+  await closePackaged(app);
   const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: userData };
   delete env.ELECTRON_RUN_AS_NODE;
   app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env });

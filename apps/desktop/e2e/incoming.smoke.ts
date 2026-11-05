@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication } from "@playwright/test";
-import { copyTree } from "./packaged-fixture";
+import { copyTree, closePackaged } from "./packaged-fixture";
 
 const sourceApp = fileURLToPath(new URL("../release/mac-arm64/Terno.app", import.meta.url));
 
@@ -75,7 +75,7 @@ test("the signed copied app executes its shipped incoming worker inside a utilit
     console.log("Packaged incoming loader pin:", JSON.stringify({ version: summary.version, workerSha256: summary.workerSha256, reapedHelperPid: summary.helperPid }));
     expect(summary.value).toEqual({ ok: true, subject: "packaged incoming", detached: true, size: 16384 * 57, exact: true });
   } finally {
-    await application?.close();
+    await closePackaged(application);
     rmSync(work, { recursive: true, force: true });
   }
 });

@@ -9,7 +9,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import { copyTree, seededProfile } from "./packaged-fixture";
+import { copyTree, seededProfile, closePackaged } from "./packaged-fixture";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const DEV = process.env.TERNO_I18N_SMOKE_DEV === "1";
@@ -62,7 +62,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await app?.close();
+  await closePackaged(app);
   if (workdir) rmSync(workdir, { recursive: true, force: true });
 });
 
@@ -89,7 +89,7 @@ test("Español in Settings: the window and the menu bar switch at once, without 
 });
 
 test("the next start is Spanish from the first menu", async () => {
-  await app.close();
+  await closePackaged(app);
   await launch();
   expect((await menuLabels()).top).toEqual(["Terno", "Archivo", "Edición", "Ver", "Ventana", "Ayuda"]);
   await expect(page.locator("html")).toHaveAttribute("lang", "es-MX");

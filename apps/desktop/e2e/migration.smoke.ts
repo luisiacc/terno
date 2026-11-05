@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import { copyTree } from "./packaged-fixture";
+import { copyTree, closePackaged } from "./packaged-fixture";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SOURCE_APP = join(here, "../release/mac-arm64/Terno.app");
@@ -86,7 +86,7 @@ async function buildLegacyProfile(appData: string): Promise<{ appData: string; p
     localStorage.setItem("unica:first-run", "done");
     localStorage.setItem("unica:appearance", JSON.stringify({ mode: "dark", light: "unica-light", dark: "unica-dark", motion: 50 }));
   });
-  await app.close();
+  await closePackaged(app);
   const dbFile = join(profile, "terno.db");
   const db = sqlite(dbFile);
   for (const [key, blob] of Object.entries(sealed)) db.prepare("INSERT OR REPLACE INTO secrets (name, blob) VALUES (?, ?)").run(key, Uint8Array.from(blob));
@@ -110,7 +110,7 @@ test.beforeAll(() => {
 });
 
 test.afterAll(async () => {
-  for (const a of running) await a.close().catch(() => {});
+  for (const a of running) await closePackaged(a).catch(() => {});
   // the throwaway keychain items this run created
   for (const name of [LEGACY, NEW, MISSING]) {
     try {
@@ -150,7 +150,7 @@ test("a legacy profile is renamed, its secrets sealed again under the new keycha
   expect(page.url()).toBe("app://terno/");
   expect(await page.evaluate(() => [localStorage.getItem("terno:first-run"), localStorage.getItem("unica:first-run")])).toEqual(["done", null]);
   expect(existsSync(join(profile, "legacy-storage-pending"))).toBe(false);
-  await app.close();
+  await closePackaged(app);
 });
 
 test("without the old keychain item nothing is lost: the blobs stay, the app runs, Settings asks for the key again", async () => {
@@ -170,7 +170,7 @@ test("without the old keychain item nothing is lost: the blobs stay, the app run
   await page.keyboard.press("Meta+Comma");
   await page.getByTestId("tab-ai").click();
   await expect(page.getByTestId("ai-key-unreadable")).toContainText("Terno couldn’t open the API key that Única saved");
-  await app.close();
+  await closePackaged(app);
 });
 
 test("an explicit TERNO_USER_DATA is the profile itself: a Unica… sibling stays where it is", async () => {
@@ -182,6 +182,6 @@ test("an explicit TERNO_USER_DATA is the profile itself: a Unica… sibling stay
   await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 60_000 });
   expect(existsSync(join(appData, "Unica", "unica.db"))).toBe(true);
   expect(existsSync(join(explicit, "terno.db"))).toBe(true);
-  await app.close();
+  await closePackaged(app);
 });
 

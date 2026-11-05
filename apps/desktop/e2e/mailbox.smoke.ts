@@ -117,7 +117,8 @@ const backupMade = (userData: string): { method?: string; durationMs: number } |
 
 const gate = (page: Page) => page.getByTestId("mailbox-gate");
 
-test("an older mailbox: backed up, migrated, and the window opens as usual, never covered (plan 112)", async () => {
+// @alone: test:startup, by itself: it holds a clone's 400 ms, and on a busy machine the backup falls back to a copy
+test("an older mailbox: backed up, migrated, and the window opens as usual, never covered (plan 112)", { tag: "@alone" }, async () => {
   const userData = profile("older");
   const db = join(userData, "terno.db");
   // ~200 MB: a full copy takes seconds, past the cover's 400 ms; a clone doesn't

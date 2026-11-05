@@ -1,6 +1,7 @@
 /**
  * How long the PACKAGED app takes to show mail: a time, so it runs alone (`pnpm --filter @terno/desktop test:startup`,
- * in the perf stage of test:all), never beside the other smoke files or e2e, where another process's work is what it would measure.
+ * in the perf stage of test:all, with every other test tagged @alone), never beside the other smoke files or e2e, where
+ * another process's work is what it would measure.
  */
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -17,7 +18,7 @@ test.afterAll(async () => {
   if (workdir) rmSync(workdir, { recursive: true, force: true });
 });
 
-test("warm start: relaunching with an existing mailbox shows mail fast", async () => {
+test("warm start: relaunching with an existing mailbox shows mail fast", { tag: "@alone" }, async () => {
   test.skip(!existsSync(SOURCE_APP), "run `pnpm dist:mac` first");
   workdir = mkdtempSync(join("/tmp", "terno-startup-"));
   const appPath = join(workdir, "Terno.app");

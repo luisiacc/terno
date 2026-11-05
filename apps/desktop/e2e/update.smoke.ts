@@ -13,7 +13,7 @@
  *   before and after (a stale cached download would be reused).
  */
 import { execFile, execFileSync, spawnSync } from "node:child_process";
-import { constants, createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, copyFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { homedir } from "node:os";
@@ -22,7 +22,7 @@ import { DatabaseSync } from "node:sqlite";
 import { SMTPServer } from "smtp-server";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import { copyTree, seededProfile } from "./packaged-fixture";
+import { copyTree, seededProfile, closePackaged } from "./packaged-fixture";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktop = join(here, "..");
@@ -96,7 +96,7 @@ async function buildTwo() {
 async function holdShutdownRequest() {
   await app!.evaluate(async ({ utilityProcess }, script) => {
     const probe = utilityProcess.fork(script);
-    await new Promise((spawned) => probe.once("spawn", spawned));
+    await new Promise<void>((spawned) => probe.once("spawn", () => spawned()));
     const proto = Object.getPrototypeOf(probe) as { postMessage(message: unknown, transfer?: unknown): void };
     probe.kill();
     const post = proto.postMessage;
@@ -114,12 +114,7 @@ const releaseShutdown = () => expect.poll(() => app!.evaluate(() => {
   return Boolean(release);
 })).toBe(true);
 
-/** A fresh 0.1.0 in a temp "Applications", a fresh profile, and the 0.1.1 feed (its zip tampered with when asked). */
-function stage(o: { tamper: boolean; minimum?: string }) {
-  // first: the last test's quit may have handed a staged update to ShipIt, which swaps the bundle at this path once
-  // that app is gone; stopped after the copy below, it had already put 0.1.1 where the fresh 0.1.0 went
-  cleanSquirrel();
-  // and the copy it relaunched, which would hold this profile's single-instance lock: exactly this run's bundle
+function stopBundle() {
   for (const pid of pidsOfBundle()) {
     try {
       process.kill(pid, "SIGKILL");
@@ -128,6 +123,17 @@ function stage(o: { tamper: boolean; minimum?: string }) {
     }
   }
   for (const until = Date.now() + 5_000; pidsOfBundle().length && Date.now() < until; ) spawnSync("sleep", ["0.05"]);
+}
+
+/** A fresh 0.1.0 in a temp "Applications", a fresh profile, and the 0.1.1 feed (its zip tampered with when asked). */
+function stage(o: { tamper: boolean; minimum?: string }) {
+  // first: the last test's quit may have handed a staged update to ShipIt, which swaps the bundle at this path once
+  // that app is gone; stopped after the copy below, it had already put 0.1.1 where the fresh 0.1.0 went
+  // the app first, which starts ShipIt as it goes; then whatever ShipIt relaunched, which would hold this profile's
+  // single-instance lock: exactly this run's bundle
+  stopBundle();
+  cleanSquirrel();
+  stopBundle();
   rmSync(root(), { recursive: true, force: true });
   rmSync(join(work, "Applications"), { recursive: true, force: true });
   rmSync(join(work, "feed"), { recursive: true, force: true });
@@ -141,7 +147,7 @@ function stage(o: { tamper: boolean; minimum?: string }) {
   writeFileSync(join(profile(), "updates/prefs.json"), JSON.stringify({ mode: "manual", channel: "stable", checkedAt: null }));
   copyTree(join(work, "release-0.1.0/mac-arm64/Terno.app"), bundle());
   const zip = "Terno-0.1.1-arm64-mac.zip";
-  for (const f of ["latest-mac.yml", zip, `${zip}.blockmap`]) copyFileSync(join(work, "release-0.1.1", f), join(work, "feed", f), constants.COPYFILE_FICLONE);
+  for (const f of ["latest-mac.yml", zip, `${zip}.blockmap`]) copyTree(join(work, "release-0.1.1", f), join(work, "feed", f));
   if (o.tamper) {
     // one byte in the middle: same size, a different sha512 than latest-mac.yml says
     const file = join(work, "feed", zip);
@@ -218,22 +224,16 @@ test.beforeAll(async () => {
 });
 
 test.afterEach(async () => {
-  await app?.close().catch(() => {});
+  await closePackaged(app ?? undefined).catch(() => {});
   app = null;
 });
 
 test.afterAll(async () => {
   server?.close();
-  // ShipIt first: it may still be about to relaunch the bundle
+  // the relaunched app is ours (this test updated it): stop exactly that one, ShipIt, and what it may still have relaunched
+  if (work) stopBundle();
   if (identity) cleanSquirrel();
-  // the relaunched app is ours (this test updated it): stop exactly that one
-  for (const pid of work ? pidsOfBundle() : []) {
-    try {
-      process.kill(pid, "SIGKILL");
-    } catch {
-      /* gone */
-    }
-  }
+  if (work) stopBundle();
   // the killed app may still be closing files in its profile here
   if (work && !process.env.TERNO_KEEP_UPDATE_E2E) rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });

@@ -8,7 +8,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import { copyTree, seededProfile } from "./packaged-fixture";
+import { copyTree, seededProfile, closePackaged } from "./packaged-fixture";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const DEV = process.env.TERNO_UNREAD_SMOKE_DEV === "1";
@@ -46,7 +46,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await app?.close();
+  await closePackaged(app);
   if (workdir) rmSync(workdir, { recursive: true, force: true });
 });
 

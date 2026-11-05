@@ -14,7 +14,7 @@ import type { AddressInfo } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import { copyTree } from "./packaged-fixture";
+import { copyTree, closePackaged } from "./packaged-fixture";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "../../..");
@@ -108,7 +108,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await app?.close().catch(() => {});
+  await closePackaged(app).catch(() => {});
   sink?.close();
   if (workdir) rmSync(workdir, { recursive: true, force: true });
 });
@@ -221,7 +221,7 @@ test("a renderer crash: a record, a native dump kept locally, the window back, a
   await expect.poll(() => dumps(native).length, { timeout: 20_000 }).toBeGreaterThan(0);
   await inWindow("document.querySelector('[data-testid=report-close]').click()");
   // a fresh launch for the rest (a clean quit: no unclean-exit record)
-  await app.close();
+  await closePackaged(app);
   await launch();
 });
 

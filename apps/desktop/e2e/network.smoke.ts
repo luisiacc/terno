@@ -8,7 +8,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication } from "@playwright/test";
-import { copyTree } from "./packaged-fixture";
+import { copyTree, closePackaged } from "./packaged-fixture";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const DEV = process.env.TERNO_NETWORK_SMOKE_DEV === "1";
@@ -48,7 +48,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await app?.close().catch(() => {});
+  await closePackaged(app ?? undefined).catch(() => {});
   if (workdir) rmSync(workdir, { recursive: true, force: true });
 });
 
@@ -81,7 +81,7 @@ test("a wake reaches the backend: it reconnects (net.changed in its log, no addr
 test("after quit, no watcher is left behind", async () => {
   const [pid] = watchers();
   expect(pid).toBeGreaterThan(0);
-  await app!.close();
+  await closePackaged(app!);
   app = null;
   await expect.poll(() => alive(pid!), { timeout: 5000 }).toBe(false);
 });

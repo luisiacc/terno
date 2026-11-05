@@ -33,9 +33,9 @@ function alive(owned: OwnedProcess): boolean {
   }
 }
 
-async function joinOwned(child: ChildProcess, owned: OwnedProcess[]): Promise<void> {
+async function joinOwned(child: ChildProcess, owned: OwnedProcess[], signals: readonly NodeJS.Signals[] = ["SIGTERM", "SIGKILL"]): Promise<void> {
   const exit = child.exitCode === null && child.signalCode === null ? once(child, "exit").then(() => {}) : Promise.resolve();
-  for (const signal of ["SIGTERM", "SIGKILL"] as const) {
+  for (const signal of signals) {
     for (const ownedProcess of owned) {
       if (!alive(ownedProcess)) continue;
       try { nativeLifecycle("cleanup-signal", { ...ownedProcess, signal }); process.kill(ownedProcess.pid, signal); } catch (error) {
@@ -50,16 +50,34 @@ async function joinOwned(child: ChildProcess, owned: OwnedProcess[]): Promise<vo
   if (owned.some(alive)) throw new Error("Owned Electron helpers remain alive");
 }
 
-/** What main itself allows a quit (DRAFTS_DEADLINE_MS + SEND_DEADLINE_MS + BACKEND_GRACE_MS): less fails a healthy app on a busy machine. */
+/** What main itself allows a quit (DRAFTS_DEADLINE_MS + SEND_DEADLINE_MS + BACKEND_GRACE_MS). */
 const QUIT_MS = 40_000;
+const QUIT_MARK = "terno-smoke-quit-event";
 
+/**
+ * A quit as the user makes it, up to Terno's own last act: its "quit" event, with drafts flushed and the backend closed.
+ * What's left is Chromium's native teardown. Three apps side by side, on a machine at a load of 100, took up to 110 s
+ * there while their "quit" came at 0.1 s; nothing of Terno's runs in it and no window is left, so it's cut short.
+ */
 export async function closePackaged(app: ElectronApplication | undefined): Promise<void> {
   if (!app) return;
   const child = app.process();
+  if (child.exitCode !== null || child.signalCode !== null) return;
   const owned = child.pid ? descendants(child.pid) : [];
   nativeLifecycle("closePackaged-entry", { pid: child.pid, owned, code: child.exitCode, signal: child.signalCode });
-  try { nativeLifecycle("app.close-call", { pid: child.pid }); await within(app.close(), QUIT_MS, "Electron close"); nativeLifecycle("app.close-resolved", { pid: child.pid }); }
-  finally { await joinOwned(child, owned); }
+  try {
+    const quit = new Promise<void>((resolve) => {
+      child.stderr?.on("data", (data: Buffer) => { if (data.toString().includes(QUIT_MARK)) resolve(); });
+      child.once("exit", () => resolve());
+    });
+    await app.evaluate(({ app: a }, mark) => { a.once("quit", () => process.stderr.write(`${mark}\n`)); }, QUIT_MARK);
+    nativeLifecycle("app.close-call", { pid: child.pid });
+    const closing = app.close();
+    await within(quit, QUIT_MS, "Electron quit");
+    nativeLifecycle("app.close-resolved", { pid: child.pid });
+    await joinOwned(child, owned, ["SIGKILL"]);
+    await within(closing, 10_000, "Electron close");
+  } finally { await joinOwned(child, owned); }
 }
 
 /** All resource joins run even when an earlier cleanup fails. */
