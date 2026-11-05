@@ -81,6 +81,8 @@ class FakeGoogle {
     return this;
   }
   stop() {
+    // a connection still kept alive by a client would hold this up for seconds
+    this.server.closeAllConnections();
     return new Promise<void>((r) => this.server.close(() => r()));
   }
   endpoints() {

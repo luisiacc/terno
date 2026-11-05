@@ -11,7 +11,6 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createAccount, sqlDb, type IncomingMessage } from "@terno/db";
 import type { ProviderRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it } from "vitest";
-import { GATHER_MS } from "./attention";
 import { Backend, plaintextCipher } from "./backend";
 
 const cleanups: (() => Promise<void> | void)[] = [];
@@ -68,6 +67,7 @@ async function setup(passes: Parameters<typeof scripted>[0], dir = mkdtempSync(j
     autoSync: false,
     attention: { badge: (c) => badges.push(c), notify: (x) => notices.push(x) },
   });
+  noGather(backend);
   await backend.store.ready;
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });
@@ -81,7 +81,16 @@ async function setup(passes: Parameters<typeof scripted>[0], dir = mkdtempSync(j
   return { backend, client, badges, notices, pageNotices, dir };
 }
 
-const settle = () => new Promise((r) => setTimeout(r, GATHER_MS + 300));
+type Looking = { timers: unknown; screening: Promise<void>; timer: unknown; flushing: Promise<void> | null };
+/** attention.test proves how long the gather is; here it's over at once, and a test waits for the look itself */
+function noGather(backend: Backend) {
+  (backend.attention as unknown as Looking).timers = { setTimeout: (fn: () => void) => setTimeout(fn, 0), clearTimeout, now: Date.now };
+}
+const settle = async (backend: Backend) => {
+  const attention = backend.attention as unknown as Looking;
+  await attention.screening;
+  await expect.poll(() => attention.timer === null && attention.flushing === null, { interval: 5 }).toBe(true);
+};
 
 describe("notifications through the backend (plan 41)", () => {
   it("the first pass notifies nothing (even live mail); the next pass's important mail notifies once; what isn't important or isn't news stays quiet", async () => {
@@ -104,11 +113,11 @@ describe("notifications through the backend (plan 41)", () => {
     await t.backend.store.filters.save({ name: "receipts", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "subject", op: "contains", value: "receipt" }], actions: [{ type: "archive" }] } }, Date.now());
     await t.backend.start();
     await t.backend.syncAccount(accountId);
-    await settle();
+    await settle(t.backend);
     expect(t.notices).toEqual([]);
 
     await t.backend.syncAccount(accountId);
-    await settle();
+    await settle(t.backend);
     expect(t.notices).toHaveLength(1);
     expect(t.notices[0]).toMatchObject({ count: 1, senders: ["Carlos Ruiz"], subject: "Presupuesto", snippet: "Te mando el presupuesto." });
     // desktop: the host shows it; nothing goes to the page
@@ -124,7 +133,7 @@ describe("notifications through the backend (plan 41)", () => {
     await t.backend.start();
     await t.backend.syncAccount(accountId);
     await t.backend.syncAccount(accountId);
-    await settle();
+    await settle(t.backend);
     expect(t.notices).toEqual([]);
   });
 
@@ -142,7 +151,7 @@ describe("notifications through the backend (plan 41)", () => {
     await second.backend.start();
     await expect.poll(() => second.badges[0]).toBe(2);
     await second.backend.syncAccount(accountId);
-    await settle();
+    await settle(second.backend);
     expect(second.notices).toEqual([]);
     await expect.poll(() => second.badges.at(-1)).toBe(3);
   });
@@ -171,6 +180,7 @@ describe("notifications through the backend (plan 41)", () => {
       { messages: (a: number) => [mail(a, { subject: "Secreto" })], live: true },
     ];
     const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "test", cipher: plaintextCipher, providers: scripted(passes), autoSync: false });
+    noGather(backend);
     const [c, s] = createMemoryTransportPair();
     backend.connect(s, { clientId: "renderer", origin: "renderer" });
     const client = new RpcClient(c);
@@ -185,7 +195,7 @@ describe("notifications through the backend (plan 41)", () => {
     await backend.start();
     await backend.syncAccount(accountId);
     await backend.syncAccount(accountId);
-    await settle();
+    await settle(backend);
     expect(pageNotices).toHaveLength(1);
     expect(pageNotices[0]).toMatchObject({ count: 1, senders: [], subject: "", snippet: "" });
     expect(JSON.stringify(pageNotices[0])).not.toMatch(/Carlos|Secreto/);
@@ -204,7 +214,7 @@ describe("notifications through the backend (plan 41)", () => {
     t.backend.store.sync.arrivals = async (ids) => (reads++, arrivals(ids));
     await t.backend.syncAccount(accountId);
     await t.backend.syncAccount(accountId);
-    await settle();
+    await settle(t.backend);
     expect(reads).toBe(0);
     expect(t.notices).toEqual([]);
   });

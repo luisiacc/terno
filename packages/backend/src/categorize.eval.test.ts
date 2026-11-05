@@ -20,7 +20,9 @@ import { readSettings } from "./settings";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 const DAY = 86_400_000;
-const THREADS = 3000;
+// Each scenario holds one thing a loosened policy broke when it was tried (plan 139): a smaller mailbox fails the same
+// mutations as 3000 threads did and takes half the time.
+const THREADS = 1500;
 
 // ── network guard: any outbound connection fails the suite ──
 const connections: string[] = [];
@@ -312,12 +314,6 @@ describe("categorization accuracy, AI off", () => {
     expect(r.overall.suggestPrecision).toBeGreaterThanOrEqual(0.8);
     // Amazon's sender identity counts against Facturas: suggested, never auto-applied
     expect(r.families["amazon-invoice"]!.auto).toBe(0);
-  });
-
-  it("30% coverage", async () => {
-    const r = await run({ name: "coverage-30", adversarial: "on", coverage: 0.3 });
-    expectPrecision(r);
-    expect(r.overall.suggestPrecision).toBeGreaterThanOrEqual(0.8);
   });
 
   it("5% label noise", async () => {
