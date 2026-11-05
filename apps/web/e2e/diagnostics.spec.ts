@@ -5,7 +5,7 @@
  * mailbox (no fixture subject or address, checked on the decoded files).
  */
 import type { Page } from "@playwright/test";
-import { expect, openRow, rows, test } from "./fixtures";
+import { expect, openRow, rows, test, scenario, freshStart } from "./fixtures";
 
 /** The subjects and senders on screen, the strings that must never leave. */
 async function fixtureStrings(page: Page): Promise<string[]> {
@@ -22,30 +22,65 @@ async function fixtureStrings(page: Page): Promise<string[]> {
 const throwIn = (page: Page, area: "app" | "reader" | "settings") => page.evaluate((a) => (window as unknown as { __terno: { throwIn(a: string): void } }).__terno.throwIn(a), area);
 
 test.describe("diagnostics", () => {
-  test("a reader that throws is that pane only; another thread brings it back", async ({ app: page }) => {
-    await openRow(page, 0);
-    await throwIn(page, "reader");
-    await expect(page.getByTestId("reader-boundary")).toBeVisible();
-    await expect(page.getByTestId("reader-boundary")).toContainText("This conversation couldn’t be shown");
-    // the list still works
-    await expect(rows(page).first()).toBeVisible();
-    await page.getByTestId("reader-boundary-retry").click();
-    await expect(page.getByTestId("reader-subject")).toBeVisible();
-  });
+  test("what throws stays where it is; Diagnostics in Settings", async ({ app: page }) => {
+    await scenario("a reader that throws is that pane only; another thread brings it back", async () => {
+      await openRow(page, 0);
+      await throwIn(page, "reader");
+      await expect(page.getByTestId("reader-boundary")).toBeVisible();
+      await expect(page.getByTestId("reader-boundary")).toContainText("This conversation couldn’t be shown");
+      // the list still works
+      await expect(rows(page).first()).toBeVisible();
+      await page.getByTestId("reader-boundary-retry").click();
+      await expect(page.getByTestId("reader-subject")).toBeVisible();
+    });
+    await scenario("a settings section that throws keeps the sheet; the whole window gets a calm reload screen", async () => {
+      await freshStart(page);
+      await page.getByTestId("open-settings").click();
+      await throwIn(page, "settings");
+      await expect(page.getByTestId("settings-boundary")).toBeVisible();
+      await expect(page.getByTestId("tab-appearance")).toBeVisible();
+      await page.getByTestId("tab-appearance").click();
+      await expect(page.getByTestId("settings-boundary")).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await throwIn(page, "app");
+      await expect(page.getByTestId("app-boundary")).toBeVisible();
+      await expect(page.getByTestId("app-boundary")).toContainText("Something went wrong");
+      await expect(page.getByTestId("app-boundary-reload")).toBeVisible();
+      await expect(page.getByTestId("app-boundary-export")).toBeVisible();
+    });
+    await scenario("Settings → Diagnostics: locked in a build without a DSN, a sample report and an export, none with mail in them", async () => {
+      await freshStart(page);
+      // leave a trail and a record: open threads, archive one, break the reader
+      for (let i = 0; i < 3; i++) await openRow(page, i);
+      const never = await fixtureStrings(page);
+      await throwIn(page, "reader");
+      await expect(page.getByTestId("reader-boundary")).toBeVisible();
 
-  test("a settings section that throws keeps the sheet; the whole window gets a calm reload screen", async ({ app: page }) => {
-    await page.getByTestId("open-settings").click();
-    await throwIn(page, "settings");
-    await expect(page.getByTestId("settings-boundary")).toBeVisible();
-    await expect(page.getByTestId("tab-appearance")).toBeVisible();
-    await page.getByTestId("tab-appearance").click();
-    await expect(page.getByTestId("settings-boundary")).toHaveCount(0);
-    await page.keyboard.press("Escape");
-    await throwIn(page, "app");
-    await expect(page.getByTestId("app-boundary")).toBeVisible();
-    await expect(page.getByTestId("app-boundary")).toContainText("Something went wrong");
-    await expect(page.getByTestId("app-boundary-reload")).toBeVisible();
-    await expect(page.getByTestId("app-boundary-export")).toBeVisible();
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-general").click();
+      const section = page.getByTestId("diagnostics-section");
+      await section.scrollIntoViewIfNeeded();
+      await expect(page.getByTestId("error-reports-select")).toBeDisabled();
+      await expect(page.getByTestId("error-reports-row")).toContainText("doesn’t send reports");
+      await expect(page.getByTestId("build-line")).toContainText(/Terno \d+\.\d+\.\d+ · /);
+
+      await page.getByTestId("report-sample").click();
+      const sample = (await page.getByTestId("report-preview-json").textContent()) ?? "";
+      expect(JSON.parse(sample).breadcrumbs.some((b: { message: string }) => b.message === "nav.thread")).toBe(true);
+      for (const s of never) expect(sample).not.toContain(s);
+      await page.getByTestId("report-preview-close").click();
+
+      const download = page.waitForEvent("download");
+      await page.getByTestId("export-diagnostics").click();
+      const file = await download;
+      expect(file.suggestedFilename()).toMatch(/^Terno-diagnostics-\d{4}-\d{2}-\d{2}\.json$/);
+      const text = await new Response(await file.createReadStream() as unknown as ReadableStream).text();
+      const exported = JSON.parse(text);
+      expect(exported.records.some((r: { code: string }) => r.code === "ui.boundary")).toBe(true);
+      expect(exported.entries.length).toBeGreaterThan(0);
+      for (const s of never) expect(text).not.toContain(s);
+      expect(text).not.toMatch(/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z]{2,}/);
+    });
   });
 
   test("an unclean exit shows the row on the next start; its report carries no mail", async ({ app: page }) => {
@@ -81,36 +116,4 @@ test.describe("diagnostics", () => {
     await expect(page.getByTestId("report-row")).toHaveCount(0);
   });
 
-  test("Settings → Diagnostics: locked in a build without a DSN, a sample report and an export, none with mail in them", async ({ app: page }) => {
-    // leave a trail and a record: open threads, archive one, break the reader
-    for (let i = 0; i < 3; i++) await openRow(page, i);
-    const never = await fixtureStrings(page);
-    await throwIn(page, "reader");
-    await expect(page.getByTestId("reader-boundary")).toBeVisible();
-
-    await page.getByTestId("open-settings").click();
-    await page.getByTestId("tab-general").click();
-    const section = page.getByTestId("diagnostics-section");
-    await section.scrollIntoViewIfNeeded();
-    await expect(page.getByTestId("error-reports-select")).toBeDisabled();
-    await expect(page.getByTestId("error-reports-row")).toContainText("doesn’t send reports");
-    await expect(page.getByTestId("build-line")).toContainText(/Terno \d+\.\d+\.\d+ · /);
-
-    await page.getByTestId("report-sample").click();
-    const sample = (await page.getByTestId("report-preview-json").textContent()) ?? "";
-    expect(JSON.parse(sample).breadcrumbs.some((b: { message: string }) => b.message === "nav.thread")).toBe(true);
-    for (const s of never) expect(sample).not.toContain(s);
-    await page.getByTestId("report-preview-close").click();
-
-    const download = page.waitForEvent("download");
-    await page.getByTestId("export-diagnostics").click();
-    const file = await download;
-    expect(file.suggestedFilename()).toMatch(/^Terno-diagnostics-\d{4}-\d{2}-\d{2}\.json$/);
-    const text = await new Response(await file.createReadStream() as unknown as ReadableStream).text();
-    const exported = JSON.parse(text);
-    expect(exported.records.some((r: { code: string }) => r.code === "ui.boundary")).toBe(true);
-    expect(exported.entries.length).toBeGreaterThan(0);
-    for (const s of never) expect(text).not.toContain(s);
-    expect(text).not.toMatch(/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z]{2,}/);
-  });
 });

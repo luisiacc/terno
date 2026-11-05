@@ -4,7 +4,7 @@
  */
 import type { Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, rows, test } from "./fixtures";
+import { expect, rows, test, scenario, freshStart } from "./fixtures";
 
 type Handlers = Record<string, (...a: unknown[]) => Promise<unknown>>;
 
@@ -57,171 +57,203 @@ test.describe("the account menu", () => {
     });
   });
 
-  test("Rename: the field sits where the name was; Enter saves, Esc cancels, leaving saves, empty keeps the name", async ({ app: page, server }) => {
-    const [a] = await accountIds(page);
-    const before = (await server.backend.store.accounts.get(a!))!.displayName;
-    const label = row(page, a!).locator("span.truncate").first();
-    const labelBox = (await label.boundingBox())!;
-    const rowBox = (await row(page, a!).boundingBox())!;
+  test("Rename in place, a refusal, and how the menu closes", async ({ app: page, server }) => {
+    await scenario("Rename: the field sits where the name was; Enter saves, Esc cancels, leaving saves, empty keeps the name", async () => {
+      const [a] = await accountIds(page);
+      const before = (await server.backend.store.accounts.get(a!))!.displayName;
+      const label = row(page, a!).locator("span.truncate").first();
+      const labelBox = (await label.boundingBox())!;
+      const rowBox = (await row(page, a!).boundingBox())!;
 
-    await openMenu(page, a!);
-    await page.getByTestId("account-menu-rename").click();
-    const input = page.getByTestId(`account-rename-input-${a}`);
-    await expect(input).toBeFocused();
-    await expect(input).toHaveValue(before);
-    // the whole name is selected, ready to type over
-    expect(await input.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])).toEqual([0, before.length]);
-    // the text starts where the name did, and the row keeps its height
-    const textLeft = await input.evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
-    expect(Math.abs(textLeft - labelBox.x)).toBeLessThanOrEqual(1);
-    expect((await page.getByTestId(`account-rename-${a}`).boundingBox())!.height).toBeCloseTo(rowBox.height, 0);
+      await openMenu(page, a!);
+      await page.getByTestId("account-menu-rename").click();
+      const input = page.getByTestId(`account-rename-input-${a}`);
+      await expect(input).toBeFocused();
+      await expect(input).toHaveValue(before);
+      // the whole name is selected, ready to type over
+      expect(await input.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])).toEqual([0, before.length]);
+      // the text starts where the name did, and the row keeps its height
+      const textLeft = await input.evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
+      expect(Math.abs(textLeft - labelBox.x)).toBeLessThanOrEqual(1);
+      expect((await page.getByTestId(`account-rename-${a}`).boundingBox())!.height).toBeCloseTo(rowBox.height, 0);
 
-    // Esc: nothing changes, the row has focus again
-    await input.fill("Not this");
-    await input.press("Escape");
-    await expect(row(page, a!)).toBeFocused();
-    await expect(row(page, a!)).toContainText(before);
+      // Esc: nothing changes, the row has focus again
+      await input.fill("Not this");
+      await input.press("Escape");
+      await expect(row(page, a!)).toBeFocused();
+      await expect(row(page, a!)).toContainText(before);
 
-    // Enter: saved once, the row has focus again
-    const handlers = (server.backend.server as unknown as { handlers: Handlers }).handlers;
-    const update = handlers["accounts.update"]!;
-    let updates = 0;
-    handlers["accounts.update"] = async (...args) => (updates++, update(...args));
-    await openMenu(page, a!);
-    await page.getByTestId("account-menu-rename").click();
-    await input.fill("  Work mail  ");
-    await input.press("Enter");
-    await expect(row(page, a!)).toBeFocused();
-    await expect(row(page, a!)).toContainText("Work mail");
-    await expect.poll(async () => (await server.backend.store.accounts.get(a!))!.displayName).toBe("Work mail");
-    expect(updates).toBe(1);
+      // Enter: saved once, the row has focus again
+      const handlers = (server.backend.server as unknown as { handlers: Handlers }).handlers;
+      const update = handlers["accounts.update"]!;
+      let updates = 0;
+      handlers["accounts.update"] = async (...args) => (updates++, update(...args));
+      await openMenu(page, a!);
+      await page.getByTestId("account-menu-rename").click();
+      await input.fill("  Work mail  ");
+      await input.press("Enter");
+      await expect(row(page, a!)).toBeFocused();
+      await expect(row(page, a!)).toContainText("Work mail");
+      await expect.poll(async () => (await server.backend.store.accounts.get(a!))!.displayName).toBe("Work mail");
+      expect(updates).toBe(1);
 
-    // empty: the name stays, nothing is sent
-    await openMenu(page, a!);
-    await page.getByTestId("account-menu-rename").click();
-    await input.fill("   ");
-    await input.press("Enter");
-    await expect(row(page, a!)).toContainText("Work mail");
-    expect(updates).toBe(1);
+      // empty: the name stays, nothing is sent
+      await openMenu(page, a!);
+      await page.getByTestId("account-menu-rename").click();
+      await input.fill("   ");
+      await input.press("Enter");
+      await expect(row(page, a!)).toContainText("Work mail");
+      expect(updates).toBe(1);
 
-    // leaving the field saves it, and focus stays where the click went
-    await openMenu(page, a!);
-    await page.getByTestId("account-menu-rename").click();
-    await input.fill("Personal again");
-    await page.getByTestId("nav-inbox").click();
-    await expect(page.getByTestId("nav-inbox")).toBeFocused();
-    await expect.poll(async () => (await server.backend.store.accounts.get(a!))!.displayName).toBe("Personal again");
-    await expect(row(page, a!)).toContainText("Personal again");
-    expect(updates).toBe(2);
+      // leaving the field saves it, and focus stays where the click went
+      await openMenu(page, a!);
+      await page.getByTestId("account-menu-rename").click();
+      await input.fill("Personal again");
+      await page.getByTestId("nav-inbox").click();
+      await expect(page.getByTestId("nav-inbox")).toBeFocused();
+      await expect.poll(async () => (await server.backend.store.accounts.get(a!))!.displayName).toBe("Personal again");
+      await expect(row(page, a!)).toContainText("Personal again");
+      expect(updates).toBe(2);
+    });
+    await scenario("Rename: a refused save puts the name back and says why", async () => {
+      await freshStart(page);
+      const [a] = await accountIds(page);
+      const before = (await server.backend.store.accounts.get(a!))!.displayName;
+      const handlers = (server.backend.server as unknown as { handlers: Handlers }).handlers;
+      handlers["accounts.update"] = async () => {
+        await new Promise((r) => setTimeout(r, 200));
+        throw new Error("disk full");
+      };
+      await openMenu(page, a!);
+      await page.getByTestId("account-menu-rename").click();
+      await page.getByTestId(`account-rename-input-${a}`).fill("Doomed");
+      await page.getByTestId(`account-rename-input-${a}`).press("Enter");
+      // shown at once, then put back
+      await expect(row(page, a!)).toContainText("Doomed");
+      await expect(page.getByTestId("snack").filter({ hasText: "Couldn’t rename the account: disk full" })).toBeVisible();
+      await expect(row(page, a!)).toContainText(before);
+    });
+    await scenario("a click elsewhere closes the menu (it's modal); the next click's focus stays where it went", async () => {
+      await freshStart(page);
+      const [a] = await accountIds(page);
+      await openMenu(page, a!);
+      // the sidebar's Inbox: in every design (Lumen's search hides behind a button)
+      const target = page.getByTestId("nav-inbox");
+      const box = (await target.boundingBox())!;
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await expect(menu(page, a!)).toHaveCount(0);
+      await target.click();
+      await expect(target).toBeFocused();
+      // past the menu's close: nothing takes it back
+      await page.waitForTimeout(300);
+      await expect(target).toBeFocused();
+    });
+    await scenario("Shift+F10 and the menu key open the focused row's own menu: an account's, a category's, never the thread menu", async () => {
+      await freshStart(page);
+      const [a] = await accountIds(page);
+      await rows(page).first().click();
+      await row(page, a!).focus();
+      await page.keyboard.press("Shift+F10");
+      await expect(menu(page, a!)).toBeVisible();
+      await expect(page.getByTestId("thread-menu")).toHaveCount(0);
+      // the arrows walk it, Enter picks
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Escape");
+      await expect(menu(page, a!)).toHaveCount(0);
+      await expect(row(page, a!)).toBeFocused();
+
+      await page.keyboard.press("ContextMenu");
+      await expect(menu(page, a!)).toBeVisible();
+      await page.keyboard.press("Escape");
+      // the closing menu hands focus back to the row as it goes
+      await expect(menu(page, a!)).toHaveCount(0);
+      await expect(row(page, a!)).toBeFocused();
+
+      const cat = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories ORDER BY id LIMIT 1")!.id;
+      await page.getByTestId(`nav-category-${cat}`).focus();
+      await expect(page.getByTestId(`nav-category-${cat}`)).toBeFocused();
+      await page.keyboard.press("Shift+F10");
+      await expect(page.getByTestId(`category-menu-${cat}`)).toBeVisible();
+      await expect(page.getByTestId("thread-menu")).toHaveCount(0);
+    });
   });
 
-  test("Rename: a refused save puts the name back and says why", async ({ app: page, server }) => {
-    const [a] = await accountIds(page);
-    const before = (await server.backend.store.accounts.get(a!))!.displayName;
-    const handlers = (server.backend.server as unknown as { handlers: Handlers }).handlers;
-    handlers["accounts.update"] = async () => {
-      await new Promise((r) => setTimeout(r, 200));
-      throw new Error("disk full");
-    };
-    await openMenu(page, a!);
-    await page.getByTestId("account-menu-rename").click();
-    await page.getByTestId(`account-rename-input-${a}`).fill("Doomed");
-    await page.getByTestId(`account-rename-input-${a}`).press("Enter");
-    // shown at once, then put back
-    await expect(row(page, a!)).toContainText("Doomed");
-    await expect(page.getByTestId("snack").filter({ hasText: "Couldn’t rename the account: disk full" })).toBeVisible();
-    await expect(row(page, a!)).toContainText(before);
-  });
+  test("the menu's actions: color, new message, new mail, mark as read, settings", async ({ app: page, server }) => {
+    await scenario("Color: the dot and the account change", async () => {
+      const [a] = await accountIds(page);
+      const current = (await server.backend.store.accounts.get(a!))!.color;
+      const next = current === "rose" ? "emerald" : "rose";
+      await openMenu(page, a!);
+      await page.getByTestId("account-menu-color").hover();
+      await expect(page.getByTestId(`account-menu-color-${current}`)).toHaveAttribute("aria-checked", "true");
+      await page.getByTestId(`account-menu-color-${next}`).click();
+      await expect(menu(page, a!)).toHaveCount(0);
+      await expect.poll(async () => (await server.backend.store.accounts.get(a!))!.color).toBe(next);
+      await expect(row(page, a!).locator(`[data-slot=category-dot].bg-cat-${next}`)).toHaveCount(1);
+    });
+    await scenario("New message: from that account, wherever you are", async () => {
+      await freshStart(page);
+      const [a, b] = await accountIds(page);
+      // in another account's Inbox
+      await row(page, a!).click();
+      await openMenu(page, b!);
+      await page.getByTestId("account-menu-compose").click();
+      await expect(page.getByTestId("compose-to")).toBeFocused();
+      await page.getByTestId("compose-subject").fill("From the menu");
+      await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.account_id).toBe(b);
+    });
+    await scenario("Check for new mail: syncs that account", async () => {
+      await freshStart(page);
+      const [a] = await accountIds(page);
+      const handlers = (server.backend.server as unknown as { handlers: Handlers }).handlers;
+      const sync = handlers["sync.now"]!;
+      const asked: unknown[] = [];
+      handlers["sync.now"] = async (...args) => (asked.push(args[0]), sync(...args));
+      await openMenu(page, a!);
+      await page.getByTestId("account-menu-sync").click();
+      await expect.poll(() => asked).toContainEqual({ accountId: a, reason: "user" });
+      await expect(page.getByTestId("snack").filter({ hasText: "for new mail" })).toBeVisible();
+      await expect(row(page, a!)).toBeFocused();
+    });
+    await scenario("Mark all as read: that account's Inbox only, undone exactly; off when nothing's unread", async () => {
+      await freshStart(page);
+      const db = sqlDb(server.backend.store);
+      const ids = await accountIds(page);
+      const [a] = ids.filter((id) => inboxUnread(db, id) > 0);
+      expect(a).toBeDefined();
+      const others = Object.fromEntries(ids.filter((id) => id !== a).map((id) => [id, inboxUnread(db, id)]));
+      const unread = inboxUnread(db, a!);
+      // the unified Inbox shows its rows read at once
+      await page.getByTestId("nav-inbox").click();
+      await rows(page).first().waitFor();
+      await openMenu(page, a!);
+      await page.getByTestId("account-menu-read-all").click();
+      await expect(page.getByTestId("snack").filter({ hasText: /Marked as read/ })).toBeVisible();
+      await expect.poll(() => inboxUnread(db, a!)).toBe(0);
+      for (const [id, n] of Object.entries(others)) expect(inboxUnread(db, Number(id))).toBe(n);
+      await expect(row(page, a!).locator("[data-slot=nav-count]")).toHaveCount(0);
 
-  test("a click elsewhere closes the menu (it's modal); the next click's focus stays where it went", async ({ app: page }) => {
-    const [a] = await accountIds(page);
-    await openMenu(page, a!);
-    // the sidebar's Inbox: in every design (Lumen's search hides behind a button)
-    const target = page.getByTestId("nav-inbox");
-    const box = (await target.boundingBox())!;
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-    await expect(menu(page, a!)).toHaveCount(0);
-    await target.click();
-    await expect(target).toBeFocused();
-    // past the menu's close: nothing takes it back
-    await page.waitForTimeout(300);
-    await expect(target).toBeFocused();
-  });
+      await openMenu(page, a!);
+      await expect(page.getByTestId("account-menu-read-all")).toHaveAttribute("aria-disabled", "true");
+      await page.keyboard.press("Escape");
 
-  test("Color: the dot and the account change", async ({ app: page, server }) => {
-    const [a] = await accountIds(page);
-    const current = (await server.backend.store.accounts.get(a!))!.color;
-    const next = current === "rose" ? "emerald" : "rose";
-    await openMenu(page, a!);
-    await page.getByTestId("account-menu-color").hover();
-    await expect(page.getByTestId(`account-menu-color-${current}`)).toHaveAttribute("aria-checked", "true");
-    await page.getByTestId(`account-menu-color-${next}`).click();
-    await expect(menu(page, a!)).toHaveCount(0);
-    await expect.poll(async () => (await server.backend.store.accounts.get(a!))!.color).toBe(next);
-    await expect(row(page, a!).locator(`[data-slot=category-dot].bg-cat-${next}`)).toHaveCount(1);
-  });
-
-  test("New message: from that account, wherever you are", async ({ app: page, server }) => {
-    const [a, b] = await accountIds(page);
-    // in another account's Inbox
-    await row(page, a!).click();
-    await openMenu(page, b!);
-    await page.getByTestId("account-menu-compose").click();
-    await expect(page.getByTestId("compose-to")).toBeFocused();
-    await page.getByTestId("compose-subject").fill("From the menu");
-    await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.account_id).toBe(b);
-  });
-
-  test("Check for new mail: syncs that account", async ({ app: page, server }) => {
-    const [a] = await accountIds(page);
-    const handlers = (server.backend.server as unknown as { handlers: Handlers }).handlers;
-    const sync = handlers["sync.now"]!;
-    const asked: unknown[] = [];
-    handlers["sync.now"] = async (...args) => (asked.push(args[0]), sync(...args));
-    await openMenu(page, a!);
-    await page.getByTestId("account-menu-sync").click();
-    await expect.poll(() => asked).toContainEqual({ accountId: a, reason: "user" });
-    await expect(page.getByTestId("snack").filter({ hasText: "for new mail" })).toBeVisible();
-    await expect(row(page, a!)).toBeFocused();
-  });
-
-  test("Mark all as read: that account's Inbox only, undone exactly; off when nothing's unread", async ({ app: page, server }) => {
-    const db = sqlDb(server.backend.store);
-    const ids = await accountIds(page);
-    const [a] = ids.filter((id) => inboxUnread(db, id) > 0);
-    expect(a).toBeDefined();
-    const others = Object.fromEntries(ids.filter((id) => id !== a).map((id) => [id, inboxUnread(db, id)]));
-    const unread = inboxUnread(db, a!);
-    // the unified Inbox shows its rows read at once
-    await page.getByTestId("nav-inbox").click();
-    await rows(page).first().waitFor();
-    await openMenu(page, a!);
-    await page.getByTestId("account-menu-read-all").click();
-    await expect(page.getByTestId("snack").filter({ hasText: /Marked as read/ })).toBeVisible();
-    await expect.poll(() => inboxUnread(db, a!)).toBe(0);
-    for (const [id, n] of Object.entries(others)) expect(inboxUnread(db, Number(id))).toBe(n);
-    await expect(row(page, a!).locator("[data-slot=nav-count]")).toHaveCount(0);
-
-    await openMenu(page, a!);
-    await expect(page.getByTestId("account-menu-read-all")).toHaveAttribute("aria-disabled", "true");
-    await page.keyboard.press("Escape");
-
-    await page.keyboard.press("z");
-    await expect.poll(() => inboxUnread(db, a!)).toBe(unread);
-  });
-
-  test("Account settings…: Settings opens on that account, open and focused", async ({ app: page }) => {
-    const [, b] = await accountIds(page);
-    await openMenu(page, b!);
-    await page.getByTestId("account-menu-settings").click();
-    const item = page.locator(`[data-testid=settings-account][data-account-id="${b}"]`);
-    await expect(item.getByTestId("account-toggle")).toBeFocused();
-    await expect(item.getByTestId("account-toggle")).toHaveAttribute("aria-expanded", "true");
-    await expect(item.getByTestId("account-editor")).toBeVisible();
-    // once: going to another tab and back opens nothing by itself
-    await page.getByTestId("tab-general").click();
-    await page.getByTestId("tab-accounts").click();
-    await expect(page.locator("[data-testid=account-editor]")).toHaveCount(0);
+      await page.keyboard.press("z");
+      await expect.poll(() => inboxUnread(db, a!)).toBe(unread);
+    });
+    await scenario("Account settings…: Settings opens on that account, open and focused", async () => {
+      await freshStart(page);
+      const [, b] = await accountIds(page);
+      await openMenu(page, b!);
+      await page.getByTestId("account-menu-settings").click();
+      const item = page.locator(`[data-testid=settings-account][data-account-id="${b}"]`);
+      await expect(item.getByTestId("account-toggle")).toBeFocused();
+      await expect(item.getByTestId("account-toggle")).toHaveAttribute("aria-expanded", "true");
+      await expect(item.getByTestId("account-editor")).toBeVisible();
+      // once: going to another tab and back opens nothing by itself
+      await page.getByTestId("tab-general").click();
+      await page.getByTestId("tab-accounts").click();
+      await expect(page.locator("[data-testid=account-editor]")).toHaveCount(0);
+    });
   });
 
   test("Remove account…: Cancel keeps it; Remove removes it and the next row takes the focus", async ({ app: page, server }) => {
@@ -285,31 +317,4 @@ test.describe("the account menu", () => {
     await expect(row(page, gmail.id)).toHaveCount(0);
   });
 
-  test("Shift+F10 and the menu key open the focused row's own menu: an account's, a category's, never the thread menu", async ({ app: page, server }) => {
-    const [a] = await accountIds(page);
-    await rows(page).first().click();
-    await row(page, a!).focus();
-    await page.keyboard.press("Shift+F10");
-    await expect(menu(page, a!)).toBeVisible();
-    await expect(page.getByTestId("thread-menu")).toHaveCount(0);
-    // the arrows walk it, Enter picks
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("Escape");
-    await expect(menu(page, a!)).toHaveCount(0);
-    await expect(row(page, a!)).toBeFocused();
-
-    await page.keyboard.press("ContextMenu");
-    await expect(menu(page, a!)).toBeVisible();
-    await page.keyboard.press("Escape");
-    // the closing menu hands focus back to the row as it goes
-    await expect(menu(page, a!)).toHaveCount(0);
-    await expect(row(page, a!)).toBeFocused();
-
-    const cat = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories ORDER BY id LIMIT 1")!.id;
-    await page.getByTestId(`nav-category-${cat}`).focus();
-    await expect(page.getByTestId(`nav-category-${cat}`)).toBeFocused();
-    await page.keyboard.press("Shift+F10");
-    await expect(page.getByTestId(`category-menu-${cat}`)).toBeVisible();
-    await expect(page.getByTestId("thread-menu")).toHaveCount(0);
-  });
 });

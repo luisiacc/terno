@@ -230,6 +230,15 @@ export async function fresh(page: Page): Promise<void> {
   await rows(page).first().waitFor();
 }
 
+/** Also without what this window remembers (the account left open, the scope): as a test starts, on the same backend. */
+export async function freshStart(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+  await fresh(page);
+}
+
 /**
  * Axe on what's on screen, or these parts of it (mail frames aside: legacy mode, which doesn't open a page per call). Names,
  * roles and structure can't change between light and dark, so dark reads contrast alone. The app must be following the OS.

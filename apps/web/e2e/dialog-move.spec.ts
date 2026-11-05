@@ -4,7 +4,7 @@
  */
 import type { Locator, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, test } from "./fixtures";
+import { expect, focusList, test, scenario, freshStart } from "./fixtures";
 
 const settings = (page: Page) => page.getByTestId("settings-dialog");
 /** The popup's own entrance is over (a tab may hold a spinner that never ends: not its subtree). */
@@ -36,98 +36,118 @@ async function drag(page: Page, handle: Locator, dx: number, dy: number, { relea
 }
 
 test.describe("config dialogs move (plan 129)", () => {
-  test("Settings drags by its title row and its sidebar, a pixel for a pixel", async ({ app: page }) => {
-    const start = await openSettings(page);
-    await drag(page, page.getByTestId("settings-header"), -150, 40);
-    const moved = await box(settings(page));
-    expect(moved.x - start.x).toBeCloseTo(-150, 0);
-    expect(moved.y - start.y).toBeCloseTo(40, 0);
-    // the sidebar's heading, above the tabs
-    await drag(page, settings(page).locator("nav h2"), 60, -10);
-    const again = await box(settings(page));
-    expect(again.x - moved.x).toBeCloseTo(60, 0);
-    expect(again.y - moved.y).toBeCloseTo(-10, 0);
+  test("Settings moves: its handles and what isn't one", async ({ app: page }) => {
+    await scenario("Settings drags by its title row and its sidebar, a pixel for a pixel", async () => {
+      const start = await openSettings(page);
+      await drag(page, page.getByTestId("settings-header"), -150, 40);
+      const moved = await box(settings(page));
+      expect(moved.x - start.x).toBeCloseTo(-150, 0);
+      expect(moved.y - start.y).toBeCloseTo(40, 0);
+      // the sidebar's heading, above the tabs
+      await drag(page, settings(page).locator("nav h2"), 60, -10);
+      const again = await box(settings(page));
+      expect(again.x - moved.x).toBeCloseTo(60, 0);
+      expect(again.y - moved.y).toBeCloseTo(-10, 0);
+    });
+    await scenario("controls in a handle keep their press", async () => {
+      await freshStart(page);
+      const start = await openSettings(page);
+      // a tab selects, whatever the pointer does on the way
+      await drag(page, page.getByTestId("tab-appearance"), 0, 2);
+      await expect(page.getByTestId("tab-appearance")).toHaveAttribute("aria-selected", "true");
+      await drag(page, page.getByTestId("tab-general"), 200, 0);
+      expect((await box(settings(page))).x).toBeCloseTo(start.x, 0);
+      await settings(page).locator("[data-slot=dialog-close]").click();
+      await expect(settings(page)).toHaveCount(0);
+    });
+    await scenario("the content below the handles doesn't drag", async () => {
+      await freshStart(page);
+      const start = await openSettings(page);
+      await drag(page, page.getByTestId("language-row"), 100, 50);
+      expect((await box(settings(page))).x).toBeCloseTo(start.x, 0);
+    });
+    await scenario("a release over the backdrop doesn't close it, and a click there still does", async () => {
+      await freshStart(page);
+      const start = await openSettings(page);
+      // the pointer leaves the sheet entirely: it stops at the bound, the pointer goes on
+      await drag(page, page.getByTestId("settings-header"), -start.x - 400, 200);
+      await expect(settings(page)).toBeVisible();
+      await settled(settings(page));
+      const after = await box(settings(page));
+      await page.mouse.click(after.x + after.width + 30, 200);
+      await expect(settings(page)).toHaveCount(0);
+    });
+    await scenario("a press that doesn't travel is a click, not a move", async () => {
+      await freshStart(page);
+      await openSettings(page);
+      const color = await backdrop(page).evaluate((el) => getComputedStyle(el).backgroundColor);
+      const b = await box(page.getByTestId("settings-header"));
+      await page.mouse.move(b.x + 20, b.y + b.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(b.x + 21, b.y + b.height / 2);
+      await page.mouse.up();
+      await expect(settings(page)).not.toHaveAttribute("style", /translate/);
+      expect(await backdrop(page).evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(color);
+    });
+    await scenario("the dim clears while moved, and a double-click on the handle puts it back", async () => {
+      await freshStart(page);
+      const start = await openSettings(page);
+      const dim = await backdrop(page).evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(dim).not.toMatch(/, 0\)$|^transparent$/);
+      // already while dragging, button still down
+      await drag(page, page.getByTestId("settings-header"), 120, 0, { release: false });
+      await expect(backdrop(page)).toHaveAttribute("data-moved");
+      await page.mouse.up();
+      await expect.poll(() => backdrop(page).evaluate((el) => getComputedStyle(el).backgroundColor)).toMatch(/, 0\)$|^transparent$/);
+      await page.getByTestId("settings-header").dblclick({ position: { x: 20, y: 10 } });
+      await expect(backdrop(page)).not.toHaveAttribute("data-moved");
+      expect((await box(settings(page))).x).toBeCloseTo(start.x, 0);
+      expect(await backdrop(page).evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(dim);
+    });
   });
 
-  test("controls in a handle keep their press", async ({ app: page }) => {
-    const start = await openSettings(page);
-    // a tab selects, whatever the pointer does on the way
-    await drag(page, page.getByTestId("tab-appearance"), 0, 2);
-    await expect(page.getByTestId("tab-appearance")).toHaveAttribute("aria-selected", "true");
-    await drag(page, page.getByTestId("tab-general"), 200, 0);
-    expect((await box(settings(page))).x).toBeCloseTo(start.x, 0);
-    await settings(page).locator("[data-slot=dialog-close]").click();
-    await expect(settings(page)).toHaveCount(0);
-  });
-
-  test("the content below the handles doesn't drag", async ({ app: page }) => {
-    const start = await openSettings(page);
-    await drag(page, page.getByTestId("language-row"), 100, 50);
-    expect((await box(settings(page))).x).toBeCloseTo(start.x, 0);
-  });
-
-  test("a release over the backdrop doesn't close it, and a click there still does", async ({ app: page }) => {
-    const start = await openSettings(page);
-    // the pointer leaves the sheet entirely: it stops at the bound, the pointer goes on
-    await drag(page, page.getByTestId("settings-header"), -start.x - 400, 200);
-    await expect(settings(page)).toBeVisible();
-    await settled(settings(page));
-    const after = await box(settings(page));
-    await page.mouse.click(after.x + after.width + 30, 200);
-    await expect(settings(page)).toHaveCount(0);
-  });
-
-  test("a press that doesn't travel is a click, not a move", async ({ app: page }) => {
-    await openSettings(page);
-    const color = await backdrop(page).evaluate((el) => getComputedStyle(el).backgroundColor);
-    const b = await box(page.getByTestId("settings-header"));
-    await page.mouse.move(b.x + 20, b.y + b.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(b.x + 21, b.y + b.height / 2);
-    await page.mouse.up();
-    await expect(settings(page)).not.toHaveAttribute("style", /translate/);
-    expect(await backdrop(page).evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(color);
-  });
-
-  test("the dim clears while moved, and a double-click on the handle puts it back", async ({ app: page }) => {
-    const start = await openSettings(page);
-    const dim = await backdrop(page).evaluate((el) => getComputedStyle(el).backgroundColor);
-    expect(dim).not.toMatch(/, 0\)$|^transparent$/);
-    // already while dragging, button still down
-    await drag(page, page.getByTestId("settings-header"), 120, 0, { release: false });
-    await expect(backdrop(page)).toHaveAttribute("data-moved");
-    await page.mouse.up();
-    await expect.poll(() => backdrop(page).evaluate((el) => getComputedStyle(el).backgroundColor)).toMatch(/, 0\)$|^transparent$/);
-    await page.getByTestId("settings-header").dblclick({ position: { x: 20, y: 10 } });
-    await expect(backdrop(page)).not.toHaveAttribute("data-moved");
-    expect((await box(settings(page))).x).toBeCloseTo(start.x, 0);
-    expect(await backdrop(page).evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(dim);
-  });
-
-  test("it holds through a theme change, a tab change and reopening", async ({ app: page }) => {
-    await openSettings(page);
-    await drag(page, page.getByTestId("settings-header"), -200, 30);
-    const spot = await box(settings(page));
-    await page.getByTestId("tab-appearance").click();
-    await page.getByTestId("theme-card-nord").click();
-    expect((await box(settings(page))).x).toBeCloseTo(spot.x, 0);
-    await page.keyboard.press("Escape");
-    await expect(settings(page)).toHaveCount(0);
-    await page.getByTestId("open-settings").click();
-    expect((await box(settings(page))).x).toBeCloseTo(spot.x, 0);
-    expect((await box(settings(page))).y).toBeCloseTo(spot.y, 0);
-    await expect(backdrop(page)).toHaveAttribute("data-moved");
-  });
-
-  test("it holds through the language switch's remount", async ({ app: page }) => {
-    await openSettings(page);
-    await drag(page, page.getByTestId("settings-header"), -180, 20);
-    const spot = await box(settings(page));
-    await page.getByTestId("language-select").click();
-    await page.getByTestId("language-es").click();
-    await expect(page.locator("html")).toHaveAttribute("lang", /^es/);
-    await expect(settings(page)).toBeVisible();
-    expect((await box(settings(page))).x).toBeCloseTo(spot.x, 0);
+  test("a moved dialog holds: a theme, a tab, reopening, the language, a focused field", async ({ app: page }) => {
+    await scenario("it holds through a theme change, a tab change and reopening", async () => {
+      await openSettings(page);
+      await drag(page, page.getByTestId("settings-header"), -200, 30);
+      const spot = await box(settings(page));
+      await page.getByTestId("tab-appearance").click();
+      await page.getByTestId("theme-card-nord").click();
+      expect((await box(settings(page))).x).toBeCloseTo(spot.x, 0);
+      await page.keyboard.press("Escape");
+      await expect(settings(page)).toHaveCount(0);
+      await page.getByTestId("open-settings").click();
+      expect((await box(settings(page))).x).toBeCloseTo(spot.x, 0);
+      expect((await box(settings(page))).y).toBeCloseTo(spot.y, 0);
+      await expect(backdrop(page)).toHaveAttribute("data-moved");
+    });
+    await scenario("a focused field keeps its focus through a drag", async () => {
+      await freshStart(page);
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-accounts").click();
+      await page.getByTestId("settings-add-account").click();
+      const dialog = page.getByTestId("add-account-dialog");
+      await expect(dialog).toBeVisible();
+      const field = page.getByTestId("imap-email");
+      await field.fill("a@b.test");
+      await field.focus();
+      const start = await box(dialog);
+      await drag(page, dialog.locator("[data-slot=dialog-header]"), 100, 40);
+      await expect(field).toBeFocused();
+      await expect(field).toHaveValue("a@b.test");
+      expect((await box(dialog)).x - start.x).toBeCloseTo(100, 0);
+    });
+    await scenario("it holds through the language switch's remount", async () => {
+      await freshStart(page);
+      await openSettings(page);
+      await drag(page, page.getByTestId("settings-header"), -180, 20);
+      const spot = await box(settings(page));
+      await page.getByTestId("language-select").click();
+      await page.getByTestId("language-es").click();
+      await expect(page.locator("html")).toHaveAttribute("lang", /^es/);
+      await expect(settings(page)).toBeVisible();
+      expect((await box(settings(page))).x).toBeCloseTo(spot.x, 0);
+    });
   });
 
   test("it can't leave the window, and a smaller window pulls it back", async ({ app: page }) => {
@@ -180,35 +200,31 @@ test.describe("config dialogs move (plan 129)", () => {
     await expect.poll(async () => (await page.getByTestId("tab-general").boundingBox())!.x).toBeGreaterThanOrEqual(0);
   });
 
-  test("a focused field keeps its focus through a drag", async ({ app: page }) => {
-    await page.getByTestId("open-settings").click();
-    await page.getByTestId("tab-accounts").click();
-    await page.getByTestId("settings-add-account").click();
-    const dialog = page.getByTestId("add-account-dialog");
-    await expect(dialog).toBeVisible();
-    const field = page.getByTestId("imap-email");
-    await field.fill("a@b.test");
-    await field.focus();
-    const start = await box(dialog);
-    await drag(page, dialog.locator("[data-slot=dialog-header]"), 100, 40);
-    await expect(field).toBeFocused();
-    await expect(field).toHaveValue("a@b.test");
-    expect((await box(dialog)).x - start.x).toBeCloseTo(100, 0);
-  });
-
-  test("Add account drags by its margin", async ({ app: page }) => {
-    await page.getByTestId("open-settings").click();
-    await page.getByTestId("tab-accounts").click();
-    await page.getByTestId("settings-add-account").click();
-    const dialog = page.getByTestId("add-account-dialog");
-    const start = await box(dialog);
-    await page.mouse.move(start.x + 40, start.y + 8);
-    await page.mouse.down();
-    await page.mouse.move(start.x + 90, start.y + 38);
-    await page.mouse.up();
-    const moved = await box(dialog);
-    expect(moved.x - start.x).toBeCloseTo(50, 0);
-    expect(moved.y - start.y).toBeCloseTo(30, 0);
+  test("Add account and Filters move; a dialog not opted in stays", async ({ app: page }) => {
+    await scenario("Add account drags by its margin", async () => {
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-accounts").click();
+      await page.getByTestId("settings-add-account").click();
+      const dialog = page.getByTestId("add-account-dialog");
+      const start = await box(dialog);
+      await page.mouse.move(start.x + 40, start.y + 8);
+      await page.mouse.down();
+      await page.mouse.move(start.x + 90, start.y + 38);
+      await page.mouse.up();
+      const moved = await box(dialog);
+      expect(moved.x - start.x).toBeCloseTo(50, 0);
+      expect(moved.y - start.y).toBeCloseTo(30, 0);
+    });
+    await scenario("a dialog not opted in stays put", async () => {
+      await freshStart(page);
+      await focusList(page);
+      await page.keyboard.press("?");
+      const dialog = page.getByTestId("shortcuts-dialog");
+      const start = await box(dialog);
+      await drag(page, dialog.locator("[data-slot=dialog-header]"), 100, 40);
+      expect((await box(dialog)).x).toBeCloseTo(start.x, 0);
+      await expect(dialog).not.toHaveAttribute("data-movable");
+    });
   });
 
   test("Filters drags by the strip above its form and its sidebar's title", async ({ app: page }) => {
@@ -223,15 +239,6 @@ test.describe("config dialogs move (plan 129)", () => {
     expect((await box(dialog)).x - moved.x).toBeCloseTo(30, 0);
   });
 
-  test("a dialog not opted in stays put", async ({ app: page }) => {
-    await focusList(page);
-    await page.keyboard.press("?");
-    const dialog = page.getByTestId("shortcuts-dialog");
-    const start = await box(dialog);
-    await drag(page, dialog.locator("[data-slot=dialog-header]"), 100, 40);
-    expect((await box(dialog)).x).toBeCloseTo(start.x, 0);
-    await expect(dialog).not.toHaveAttribute("data-movable");
-  });
 });
 
 test.describe("closing a moved dialog", () => {

@@ -5,7 +5,7 @@
  */
 import type { Page } from "@playwright/test";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
-import { expect, test } from "./fixtures";
+import { expect, test, scenario, freshStart } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 const accountOf = (server: DevServer, name: string) => sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM accounts WHERE display_name = ?", name)!.id;
@@ -16,154 +16,175 @@ const listFor = (page: Page) => page.getByTestId("thread-list").getAttribute("da
 const rowIds = (page: Page) => page.locator("[data-testid=thread-row]").evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-thread-id"))));
 
 test.describe("an account's own folders", () => {
-  test("an open account lists its own folders under its standard ones, nested, with unread counts; one lists its threads", async ({ app: page, server }) => {
-    const acme = accountOf(server, "Acme Studio");
-    await page.getByTestId(`nav-account-${acme}`).click();
-    const group = page.locator(`#account-folders-${acme}`);
-    // standard ones, a hairline, then its own, by name (Equipo, Proyectos › Rediseño web)
-    const order = await group.locator("[data-testid^=nav-folder-], [role=separator], [data-testid^=nav-own-]").evaluateAll((els) => els.map((el) => el.getAttribute("data-testid") ?? "separator"));
-    expect(order).toEqual([...["inbox", "sent", "archive", "spam", "trash"].map((v) => `nav-folder-${acme}-${v}`), "separator", `nav-own-${acme}-Label_23`, `nav-own-${acme}-Label_21`, `nav-own-${acme}-Label_22`]);
-    // nested: Rediseño web sits one step further in than Proyectos
-    const indent = async (key: string) => own(page, acme, key).evaluate((el) => parseFloat(getComputedStyle(el).paddingLeft));
-    expect(await indent("Label_22")).toBeGreaterThan(await indent("Label_21"));
-    const unread = sqlDb(server.backend.store).get<{ c: number }>("SELECT count(*) AS c FROM thread_folders WHERE account_id = ? AND folder = 'Label_21' AND unread = 1", acme)!.c;
-    expect(unread).toBeGreaterThan(0);
-    await expect(own(page, acme, "Label_21").locator("[data-slot=nav-count]")).toHaveText(String(unread));
+  test("an account's own folders: listed, counted, reached by keyboard", async ({ app: page, server }) => {
+    await scenario("an open account lists its own folders under its standard ones, nested, with unread counts; one lists its threads", async () => {
+      const acme = accountOf(server, "Acme Studio");
+      await page.getByTestId(`nav-account-${acme}`).click();
+      const group = page.locator(`#account-folders-${acme}`);
+      // standard ones, a hairline, then its own, by name (Equipo, Proyectos › Rediseño web)
+      const order = await group.locator("[data-testid^=nav-folder-], [role=separator], [data-testid^=nav-own-]").evaluateAll((els) => els.map((el) => el.getAttribute("data-testid") ?? "separator"));
+      expect(order).toEqual([...["inbox", "sent", "archive", "spam", "trash"].map((v) => `nav-folder-${acme}-${v}`), "separator", `nav-own-${acme}-Label_23`, `nav-own-${acme}-Label_21`, `nav-own-${acme}-Label_22`]);
+      // nested: Rediseño web sits one step further in than Proyectos
+      const indent = async (key: string) => own(page, acme, key).evaluate((el) => parseFloat(getComputedStyle(el).paddingLeft));
+      expect(await indent("Label_22")).toBeGreaterThan(await indent("Label_21"));
+      const unread = sqlDb(server.backend.store).get<{ c: number }>("SELECT count(*) AS c FROM thread_folders WHERE account_id = ? AND folder = 'Label_21' AND unread = 1", acme)!.c;
+      expect(unread).toBeGreaterThan(0);
+      await expect(own(page, acme, "Label_21").locator("[data-slot=nav-count]")).toHaveText(String(unread));
 
-    await own(page, acme, "Label_21").click();
-    await expect.poll(() => listFor(page)).toEqual(["all", acme, null, null, null, "Label_21", ""]);
-    await expect(own(page, acme, "Label_21")).toHaveAttribute("aria-current", "page");
-    await expect(page.locator("#app-sidebar [aria-current=page]")).toHaveCount(1);
-    await expect(page.getByTestId("thread-list")).toContainText("Proyectos");
-    // the rows on screen (the list is virtualized) are all the folder's
-    const members = new Set(membersOf(server, acme, "Label_21"));
-    await expect.poll(async () => (await rowIds(page)).length).toBeGreaterThan(5);
-    expect((await rowIds(page)).every((id) => members.has(id))).toBe(true);
+      await own(page, acme, "Label_21").click();
+      await expect.poll(() => listFor(page)).toEqual(["all", acme, null, null, null, "Label_21", ""]);
+      await expect(own(page, acme, "Label_21")).toHaveAttribute("aria-current", "page");
+      await expect(page.locator("#app-sidebar [aria-current=page]")).toHaveCount(1);
+      await expect(page.getByTestId("thread-list")).toContainText("Proyectos");
+      // the rows on screen (the list is virtualized) are all the folder's
+      const members = new Set(membersOf(server, acme, "Label_21"));
+      await expect.poll(async () => (await rowIds(page)).length).toBeGreaterThan(5);
+      expect((await rowIds(page)).every((id) => members.has(id))).toBe(true);
+    });
+    await scenario("reading a thread in a folder drops its count; select all is the folder's threads", async () => {
+      await freshStart(page);
+      const acme = accountOf(server, "Acme Studio");
+      await page.getByTestId(`nav-account-${acme}`).click();
+      await own(page, acme, "Label_21").click();
+      const count = own(page, acme, "Label_21").locator("[data-slot=nav-count]");
+      const before = Number(await count.textContent());
+      await page.locator("[data-testid=thread-row][data-unread]").first().click();
+      await expect.poll(async () => Number((await count.textContent().catch(() => "0")) || 0)).toBe(before - 1);
+      await page.getByRole("listbox").focus();
+      await page.keyboard.press("ControlOrMeta+a");
+      // every thread of the folder (one page of it), never more
+      await expect(page.getByTestId("selection-count")).toHaveText(String(membersOf(server, acme, "Label_21").length));
+    });
+    await scenario("a parent that only groups (IMAP \\Noselect) isn't a place to go; its child is", async () => {
+      await freshStart(page);
+      const freelance = accountOf(server, "Freelance");
+      await page.getByTestId(`nav-account-${freelance}`).click();
+      const group = page.locator(`#account-folders-${freelance}`).getByTestId("nav-own-group");
+      await expect(group).toHaveText("Facturación");
+      expect(await group.evaluate((el) => el.tagName)).toBe("DIV");
+      await own(page, freelance, "Facturación/2026").click();
+      await expect.poll(() => listFor(page)).toEqual(["all", freelance, null, null, null, "Facturación/2026", ""]);
+    });
+    await scenario("keyboard: Tab reaches its folders, Enter goes to one", async () => {
+      await freshStart(page);
+      const acme = accountOf(server, "Acme Studio");
+      await page.getByTestId(`nav-account-${acme}`).click();
+      await page.getByTestId(`nav-folder-${acme}-trash`).focus();
+      // plan 86: its Gmail tabs come first
+      await page.keyboard.press("Tab");
+      await expect(page.getByTestId(`nav-tab-${acme}-promotions`)).toBeFocused();
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Tab");
+      await expect(own(page, acme, "Label_23")).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect.poll(() => listFor(page)).toEqual(["all", acme, null, null, null, "Label_23", ""]);
+    });
   });
 
-  test("reading a thread in a folder drops its count; select all is the folder's threads", async ({ app: page, server }) => {
-    const acme = accountOf(server, "Acme Studio");
-    await page.getByTestId(`nav-account-${acme}`).click();
-    await own(page, acme, "Label_21").click();
-    const count = own(page, acme, "Label_21").locator("[data-slot=nav-count]");
-    const before = Number(await count.textContent());
-    await page.locator("[data-testid=thread-row][data-unread]").first().click();
-    await expect.poll(async () => Number((await count.textContent().catch(() => "0")) || 0)).toBe(before - 1);
-    await page.getByRole("listbox").focus();
-    await page.keyboard.press("ControlOrMeta+a");
-    // every thread of the folder (one page of it), never more
-    await expect(page.getByTestId("selection-count")).toHaveText(String(membersOf(server, acme, "Label_21").length));
-  });
-
-  test("a parent that only groups (IMAP \\Noselect) isn't a place to go; its child is", async ({ app: page, server }) => {
-    const freelance = accountOf(server, "Freelance");
-    await page.getByTestId(`nav-account-${freelance}`).click();
-    const group = page.locator(`#account-folders-${freelance}`).getByTestId("nav-own-group");
-    await expect(group).toHaveText("Facturación");
-    expect(await group.evaluate((el) => el.tagName)).toBe("DIV");
-    await own(page, freelance, "Facturación/2026").click();
-    await expect.poll(() => listFor(page)).toEqual(["all", freelance, null, null, null, "Facturación/2026", ""]);
-  });
-
-  test("a folder that's gone (deleted on the server) sends you to its account's Inbox", async ({ app: page, server }) => {
-    const acme = accountOf(server, "Acme Studio");
-    await page.getByTestId(`nav-account-${acme}`).click();
-    await own(page, acme, "Label_23").click();
-    await expect.poll(() => listFor(page)).toEqual(["all", acme, null, null, null, "Label_23", ""]);
-    const left = (await server.backend.store.folders.list()).filter((f) => f.accountId === acme && f.key !== "Label_23").map(({ key, path, selectable }) => ({ key, path, selectable }));
-    await server.backend.store.folders.replace(acme, left);
-    server.backend.server.emit("folders", await server.backend.store.folders.list());
-    await expect.poll(() => listFor(page)).toEqual(["inbox", acme, null, null, null, ""]);
-    await expect(own(page, acme, "Label_23")).toHaveCount(0);
-  });
-
-  test("Codex R22: the focused folder taken away on the server hands focus to the one in its place, the last to the account", async ({ app: page, server }) => {
-    const acme = accountOf(server, "Acme Studio");
-    await page.getByTestId(`nav-account-${acme}`).click();
-    const mine = (await server.backend.store.folders.list()).filter((f) => f.accountId === acme && f.selectable);
-    const rows = page.locator(`[data-testid^="nav-own-${acme}-"]`);
-    const order = await rows.evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.testid!));
-    expect(order.length).toBeGreaterThan(1);
-    const keyAt = (i: number) => order[i]!.slice(`nav-own-${acme}-`.length);
-    // keyboard focus on the first of its folders; the server removes it
-    await page.getByTestId(order[0]!).focus();
-    await expect(page.getByTestId(order[0]!)).toBeFocused();
-    const without = async (keys: string[]) => {
-      await server.backend.store.folders.replace(acme, mine.filter((f) => !keys.includes(f.key)).map(({ key, path, selectable }) => ({ key, path, selectable })));
+  test("folders taken away on the server", async ({ app: page, server }) => {
+    await scenario("a folder that's gone (deleted on the server) sends you to its account's Inbox", async () => {
+      const acme = accountOf(server, "Acme Studio");
+      await page.getByTestId(`nav-account-${acme}`).click();
+      await own(page, acme, "Label_23").click();
+      await expect.poll(() => listFor(page)).toEqual(["all", acme, null, null, null, "Label_23", ""]);
+      const left = (await server.backend.store.folders.list()).filter((f) => f.accountId === acme && f.key !== "Label_23").map(({ key, path, selectable }) => ({ key, path, selectable }));
+      await server.backend.store.folders.replace(acme, left);
       server.backend.server.emit("folders", await server.backend.store.folders.list());
-    };
-    await without([keyAt(0)]);
-    await expect(page.getByTestId(order[0]!)).toHaveCount(0);
-    await expect(page.getByTestId(order[1]!)).toBeFocused();
-    // all of them gone: the account's row
-    await without(order.map((_, i) => keyAt(i)));
-    await expect(rows).toHaveCount(0);
-    await expect(page.getByTestId(`nav-account-${acme}`)).toBeFocused();
+      await expect.poll(() => listFor(page)).toEqual(["inbox", acme, null, null, null, ""]);
+      await expect(own(page, acme, "Label_23")).toHaveCount(0);
+    });
+    await scenario("Codex R22: the focused folder taken away on the server hands focus to the one in its place, the last to the account", async () => {
+      await freshStart(page);
+      const acme = accountOf(server, "Acme Studio");
+      await page.getByTestId(`nav-account-${acme}`).click();
+      const mine = (await server.backend.store.folders.list()).filter((f) => f.accountId === acme && f.selectable);
+      const rows = page.locator(`[data-testid^="nav-own-${acme}-"]`);
+      const order = await rows.evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.testid!));
+      expect(order.length).toBeGreaterThan(1);
+      const keyAt = (i: number) => order[i]!.slice(`nav-own-${acme}-`.length);
+      // keyboard focus on the first of its folders; the server removes it
+      await page.getByTestId(order[0]!).focus();
+      await expect(page.getByTestId(order[0]!)).toBeFocused();
+      const without = async (keys: string[]) => {
+        await server.backend.store.folders.replace(acme, mine.filter((f) => !keys.includes(f.key)).map(({ key, path, selectable }) => ({ key, path, selectable })));
+        server.backend.server.emit("folders", await server.backend.store.folders.list());
+      };
+      await without([keyAt(0)]);
+      await expect(page.getByTestId(order[0]!)).toHaveCount(0);
+      await expect(page.getByTestId(order[1]!)).toBeFocused();
+      // all of them gone: the account's row
+      await without(order.map((_, i) => keyAt(i)));
+      await expect(rows).toHaveCount(0);
+      await expect(page.getByTestId(`nav-account-${acme}`)).toBeFocused();
+    });
   });
 
-  test("keyboard: Tab reaches its folders, Enter goes to one", async ({ app: page, server }) => {
+});
+
+test("2,000 folders: mounting, focus, renames past what's shown", async ({ app: page, server }) => {
+  await scenario("Codex R1: an account with 2,000 folders mounts 250 of them; more come 250 at a time", async () => {
     const acme = accountOf(server, "Acme Studio");
+    const many = Array.from({ length: 2000 }, (_, i) => ({ key: `Label_m${i}`, path: [`Folder ${String(i).padStart(4, "0")}`], selectable: true }));
+    await server.backend.store.folders.replace(acme, many);
+    server.backend.server.emit("folders", await server.backend.store.folders.list());
     await page.getByTestId(`nav-account-${acme}`).click();
-    await page.getByTestId(`nav-folder-${acme}-trash`).focus();
-    // plan 86: its Gmail tabs come first
-    await page.keyboard.press("Tab");
-    await expect(page.getByTestId(`nav-tab-${acme}-promotions`)).toBeFocused();
-    await page.keyboard.press("Tab");
-    await page.keyboard.press("Tab");
-    await expect(own(page, acme, "Label_23")).toBeFocused();
+    const rows = page.locator(`#account-folders-${acme} [data-testid^="nav-own-${acme}-"]`);
+    await expect(rows).toHaveCount(250);
+    const more = page.getByTestId(`nav-own-more-${acme}`);
+    await expect(more).toHaveText("1,750 more folders");
+    await more.click();
+    await expect(rows).toHaveCount(500);
+    await expect(more).toHaveText("1,500 more folders");
+    // Codex R11: by keyboard, the focus goes to the first folder revealed
+    await more.focus();
     await page.keyboard.press("Enter");
-    await expect.poll(() => listFor(page)).toEqual(["all", acme, null, null, null, "Label_23", ""]);
+    await expect(rows).toHaveCount(750);
+    await expect(own(page, acme, "Label_m500")).toBeFocused();
   });
-});
-
-test("Codex R1: an account with 2,000 folders mounts 250 of them; more come 250 at a time", async ({ app: page, server }) => {
-  const acme = accountOf(server, "Acme Studio");
-  const many = Array.from({ length: 2000 }, (_, i) => ({ key: `Label_m${i}`, path: [`Folder ${String(i).padStart(4, "0")}`], selectable: true }));
-  await server.backend.store.folders.replace(acme, many);
-  server.backend.server.emit("folders", await server.backend.store.folders.list());
-  await page.getByTestId(`nav-account-${acme}`).click();
-  const rows = page.locator(`#account-folders-${acme} [data-testid^="nav-own-${acme}-"]`);
-  await expect(rows).toHaveCount(250);
-  const more = page.getByTestId(`nav-own-more-${acme}`);
-  await expect(more).toHaveText("1,750 more folders");
-  await more.click();
-  await expect(rows).toHaveCount(500);
-  await expect(more).toHaveText("1,500 more folders");
-  // Codex R11: by keyboard, the focus goes to the first folder revealed
-  await more.focus();
-  await page.keyboard.press("Enter");
-  await expect(rows).toHaveCount(750);
-  await expect(own(page, acme, "Label_m500")).toBeFocused();
-});
-
-test("Codex R54: \"N more folders\" focused, then taken away by a smaller catalog, hands focus to the last folder shown", async ({ app: page, server }) => {
-  const acme = accountOf(server, "Acme Studio");
-  const many = (n: number) => Array.from({ length: n }, (_, i) => ({ key: `Label_m${i}`, path: [`Folder ${String(i).padStart(4, "0")}`], selectable: true }));
-  await server.backend.store.folders.replace(acme, many(300));
-  server.backend.server.emit("folders", await server.backend.store.folders.list());
-  await page.getByTestId(`nav-account-${acme}`).click();
-  const more = page.getByTestId(`nav-own-more-${acme}`);
-  await expect(more).toHaveText("50 more folders");
-  await more.focus();
-  await expect(more).toBeFocused();
-  await server.backend.store.folders.replace(acme, many(250));
-  server.backend.server.emit("folders", await server.backend.store.folders.list());
-  await expect(more).toHaveCount(0);
-  await expect(own(page, acme, "Label_m249")).toBeFocused();
-});
-
-test("Codex R7: the folder you're in, renamed to sort last among 2,000, is drawn alone after the rows shown, never with every row before it", async ({ app: page, server }) => {
-  const acme = accountOf(server, "Acme Studio");
-  const many = Array.from({ length: 2000 }, (_, i) => ({ key: `Label_m${i}`, path: [`Folder ${String(i).padStart(4, "0")}`], selectable: true }));
-  await server.backend.store.folders.replace(acme, many);
-  server.backend.server.emit("folders", await server.backend.store.folders.list());
-  await page.getByTestId(`nav-account-${acme}`).click();
-  await own(page, acme, "Label_m3").click();
-  await server.backend.store.folders.replace(acme, many.map((f) => (f.key === "Label_m3" ? { ...f, path: ["Zzz renamed"] } : f)));
-  server.backend.server.emit("folders", await server.backend.store.folders.list());
-  await expect(own(page, acme, "Label_m3")).toHaveText("Zzz renamed");
-  await expect(own(page, acme, "Label_m3")).toHaveAttribute("aria-current", "page");
-  await expect(page.locator(`#account-folders-${acme} [data-testid^="nav-own-${acme}-"]`)).toHaveCount(251);
+  await scenario("Codex R54: \"N more folders\" focused, then taken away by a smaller catalog, hands focus to the last folder shown", async () => {
+    await freshStart(page);
+    const acme = accountOf(server, "Acme Studio");
+    const many = (n: number) => Array.from({ length: n }, (_, i) => ({ key: `Label_m${i}`, path: [`Folder ${String(i).padStart(4, "0")}`], selectable: true }));
+    await server.backend.store.folders.replace(acme, many(300));
+    server.backend.server.emit("folders", await server.backend.store.folders.list());
+    await page.getByTestId(`nav-account-${acme}`).click();
+    const more = page.getByTestId(`nav-own-more-${acme}`);
+    await expect(more).toHaveText("50 more folders");
+    await more.focus();
+    await expect(more).toBeFocused();
+    await server.backend.store.folders.replace(acme, many(250));
+    server.backend.server.emit("folders", await server.backend.store.folders.list());
+    await expect(more).toHaveCount(0);
+    await expect(own(page, acme, "Label_m249")).toBeFocused();
+  });
+  await scenario("Codex R7: the folder you're in, renamed to sort last among 2,000, is drawn alone after the rows shown, never with every row before it", async () => {
+    await freshStart(page);
+    const acme = accountOf(server, "Acme Studio");
+    const many = Array.from({ length: 2000 }, (_, i) => ({ key: `Label_m${i}`, path: [`Folder ${String(i).padStart(4, "0")}`], selectable: true }));
+    await server.backend.store.folders.replace(acme, many);
+    server.backend.server.emit("folders", await server.backend.store.folders.list());
+    await page.getByTestId(`nav-account-${acme}`).click();
+    await own(page, acme, "Label_m3").click();
+    await server.backend.store.folders.replace(acme, many.map((f) => (f.key === "Label_m3" ? { ...f, path: ["Zzz renamed"] } : f)));
+    server.backend.server.emit("folders", await server.backend.store.folders.list());
+    await expect(own(page, acme, "Label_m3")).toHaveText("Zzz renamed");
+    await expect(own(page, acme, "Label_m3")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator(`#account-folders-${acme} [data-testid^="nav-own-${acme}-"]`)).toHaveCount(251);
+  });
+  await scenario("Codex R10: a focused folder renamed to sort past the 250 shown keeps the focus", async () => {
+    await freshStart(page);
+    const acme = accountOf(server, "Acme Studio");
+    const many = Array.from({ length: 300 }, (_, i) => ({ key: `Label_f${i}`, path: [`Folder ${String(i).padStart(3, "0")}`], selectable: true }));
+    await server.backend.store.folders.replace(acme, many);
+    server.backend.server.emit("folders", await server.backend.store.folders.list());
+    await page.getByTestId(`nav-account-${acme}`).click();
+    await own(page, acme, "Label_f4").focus();
+    await server.backend.store.folders.replace(acme, many.map((f) => (f.key === "Label_f4" ? { ...f, path: ["Zzz renamed"] } : f)));
+    server.backend.server.emit("folders", await server.backend.store.folders.list());
+    await expect(own(page, acme, "Label_f4")).toHaveText("Zzz renamed");
+    await expect(own(page, acme, "Label_f4")).toBeFocused();
+    await expect(page.locator(`#account-folders-${acme} [data-testid^="nav-own-${acme}-"]`)).toHaveCount(251);
+  });
 });
 
 test("Codex R9: a focused label renamed on Gmail keeps the focus (the same row, by its label)", async ({ app: page, server }) => {
@@ -175,20 +196,6 @@ test("Codex R9: a focused label renamed on Gmail keeps the focus (the same row, 
   server.backend.server.emit("folders", await server.backend.store.folders.list());
   await expect(own(page, acme, "Label_23")).toHaveText("Equipo de diseño");
   await expect(own(page, acme, "Label_23")).toBeFocused();
-});
-
-test("Codex R10: a focused folder renamed to sort past the 250 shown keeps the focus", async ({ app: page, server }) => {
-  const acme = accountOf(server, "Acme Studio");
-  const many = Array.from({ length: 300 }, (_, i) => ({ key: `Label_f${i}`, path: [`Folder ${String(i).padStart(3, "0")}`], selectable: true }));
-  await server.backend.store.folders.replace(acme, many);
-  server.backend.server.emit("folders", await server.backend.store.folders.list());
-  await page.getByTestId(`nav-account-${acme}`).click();
-  await own(page, acme, "Label_f4").focus();
-  await server.backend.store.folders.replace(acme, many.map((f) => (f.key === "Label_f4" ? { ...f, path: ["Zzz renamed"] } : f)));
-  server.backend.server.emit("folders", await server.backend.store.folders.list());
-  await expect(own(page, acme, "Label_f4")).toHaveText("Zzz renamed");
-  await expect(own(page, acme, "Label_f4")).toBeFocused();
-  await expect(page.locator(`#account-folders-${acme} [data-testid^="nav-own-${acme}-"]`)).toHaveCount(251);
 });
 
 test("Codex R23: with one account, its last own folder taken away while focused hands focus to the account's row; its standard folders stay", async ({ app: page, server }) => {

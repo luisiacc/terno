@@ -5,7 +5,7 @@
 import type { Page } from "@playwright/test";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
-import { expect, rows, search, test } from "./fixtures";
+import { expect, rows, search, test, scenario, freshStart, freshStart } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 const labels = (page: Page) => page.getByTestId("account-label");
@@ -104,70 +104,75 @@ test.describe("the receiving account on rows", () => {
     await expect(labels(page)).toHaveCount(0);
   });
 
-  test("a name shared by two accounts falls back to their addresses, which keep their domain; a long name truncates inside the row", async ({ app: page, server }) => {
-    const [personal, acme, freelance] = await server.backend.store.accounts.list();
-    await server.backend.server.invoke("accounts.update", { id: personal!.id, displayName: "Luis Cordero" }, ctx);
-    await server.backend.server.invoke("accounts.update", { id: acme!.id, displayName: "luis cordero" }, ctx);
-    await server.backend.server.invoke("accounts.update", { id: freelance!.id, displayName: "Freelance work for the studio downtown and its clients" }, ctx);
-    const dup = new Set([personal!.id, acme!.id]);
-    const ids = new Map((await server.backend.store.accounts.list()).map((a) => [a.email, a.id]));
-    for (const density of ["comfortable", "compact"] as const) {
-      if (density === "compact") await setDensity(page, server, "compact");
-      await expect(page.getByTestId("account-label").filter({ hasText: "@gmail.com" }).first()).toBeVisible();
-      await expectLabelsMatch(page, server, (a) => (dup.has(ids.get(a.email)!) ? a.email : a.display_name));
-      await expectContained(page);
-      // the domain is never what gets cut (the long name is)
-      const domains = page.locator("[data-testid=account-label] > span:last-child", { hasText: /^@/ });
-      expect(await domains.count()).toBeGreaterThan(0);
-      expect(await domains.evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth).map((e) => e.textContent))).toEqual([]);
-      const long = page.locator("[data-testid=account-label] > span:last-child", { hasText: /^Freelance/ }).first();
-      expect(await long.evaluate((e) => e.scrollWidth > e.clientWidth)).toBe(true);
-    }
-    await setDensity(page, server, "comfortable");
+  test("names shared and long, across search and categories, and re-renders", async ({ app: page, server }) => {
+    await scenario("a name shared by two accounts falls back to their addresses, which keep their domain; a long name truncates inside the row", async () => {
+      const [personal, acme, freelance] = await server.backend.store.accounts.list();
+      await server.backend.server.invoke("accounts.update", { id: personal!.id, displayName: "Luis Cordero" }, ctx);
+      await server.backend.server.invoke("accounts.update", { id: acme!.id, displayName: "luis cordero" }, ctx);
+      await server.backend.server.invoke("accounts.update", { id: freelance!.id, displayName: "Freelance work for the studio downtown and its clients" }, ctx);
+      const dup = new Set([personal!.id, acme!.id]);
+      const ids = new Map((await server.backend.store.accounts.list()).map((a) => [a.email, a.id]));
+      for (const density of ["comfortable", "compact"] as const) {
+        if (density === "compact") await setDensity(page, server, "compact");
+        await expect(page.getByTestId("account-label").filter({ hasText: "@gmail.com" }).first()).toBeVisible();
+        await expectLabelsMatch(page, server, (a) => (dup.has(ids.get(a.email)!) ? a.email : a.display_name));
+        await expectContained(page);
+        // the domain is never what gets cut (the long name is)
+        const domains = page.locator("[data-testid=account-label] > span:last-child", { hasText: /^@/ });
+        expect(await domains.count()).toBeGreaterThan(0);
+        expect(await domains.evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth).map((e) => e.textContent))).toEqual([]);
+        const long = page.locator("[data-testid=account-label] > span:last-child", { hasText: /^Freelance/ }).first();
+        expect(await long.evaluate((e) => e.scrollWidth > e.clientWidth)).toBe(true);
+      }
+      await setDensity(page, server, "comfortable");
+    });
+    await scenario("an address whose domain alone is wider than the label truncates inside it, in both densities (Codex review)", async () => {
+      await freshStart(page);
+      const [personal, acme] = await server.backend.store.accounts.list();
+      sqlDb(server.backend.store).run("UPDATE accounts SET email = ? WHERE id = ?", "ana@this-is-a-very-long-corporate-domain.example.com", acme!.id);
+      await server.backend.server.invoke("accounts.update", { id: personal!.id, displayName: "Shared" }, ctx);
+      await server.backend.server.invoke("accounts.update", { id: acme!.id, displayName: "Shared" }, ctx);
+      for (const density of ["comfortable", "compact"] as const) {
+        await setDensity(page, server, density);
+        const long = page.locator("[data-testid=account-label]", { hasText: "corporate-domain" }).first();
+        await expect(long).toBeVisible();
+        await expectContained(page);
+        // the label itself holds its parts (the domain ends in an ellipsis, it doesn't spill)
+        expect(await long.evaluate((el) => [...el.children].every((c) => c.getBoundingClientRect().right <= el.getBoundingClientRect().right + 0.5))).toBe(true);
+      }
+      await setDensity(page, server, "comfortable");
+    });
   });
 
-  test("an address whose domain alone is wider than the label truncates inside it, in both densities (Codex review)", async ({ app: page, server }) => {
-    const [personal, acme] = await server.backend.store.accounts.list();
-    sqlDb(server.backend.store).run("UPDATE accounts SET email = ? WHERE id = ?", "ana@this-is-a-very-long-corporate-domain.example.com", acme!.id);
-    await server.backend.server.invoke("accounts.update", { id: personal!.id, displayName: "Shared" }, ctx);
-    await server.backend.server.invoke("accounts.update", { id: acme!.id, displayName: "Shared" }, ctx);
-    for (const density of ["comfortable", "compact"] as const) {
-      await setDensity(page, server, density);
-      const long = page.locator("[data-testid=account-label]", { hasText: "corporate-domain" }).first();
-      await expect(long).toBeVisible();
-      await expectContained(page);
-      // the label itself holds its parts (the domain ends in an ellipsis, it doesn't spill)
-      expect(await long.evaluate((el) => [...el.children].every((c) => c.getBoundingClientRect().right <= el.getBoundingClientRect().right + 0.5))).toBe(true);
-    }
-    await setDensity(page, server, "comfortable");
+  test("across search and categories, and what a label's update re-renders", async ({ app: page, server }) => {
+    await scenario("search results and a category across accounts name each row's account too", async () => {
+      await search(page, "in:all factura");
+      await expectLabelsMatch(page, server);
+      await page.getByTestId("sidebar").getByText("Lecturas", { exact: true }).click();
+      await expect(page.getByTestId("list-title")).toHaveText("Lecturas");
+      await expectLabelsMatch(page, server);
+    });
+    await scenario("account updates that don't change a label re-render no row; a rename re-renders only that account's rows", async () => {
+      await freshStart(page);
+      await expect(labels(page).first()).toBeVisible();
+      const renders = () => page.evaluate(() => (window as unknown as { __renders: Record<string, number> }).__renders.ThreadRow ?? 0);
+      const before = await renders();
+      expect(before).toBeGreaterThan(0);
+      // sync-state churn: the accounts event with the same names and colors
+      const accounts = await server.backend.store.accounts.list();
+      for (let i = 0; i < 5; i++) {
+        await server.backend.store.accounts.setSyncState(accounts[0]!.id, { status: i % 2 ? "idle" : "syncing" });
+        await server.backend.emitAccounts();
+      }
+      await page.waitForTimeout(300);
+      expect(await renders()).toBe(before);
+      const renamed = accounts[1]!;
+      const shown = await rows(page).evaluateAll((els) => els.map((e) => e.querySelector("[data-testid=account-label]")?.textContent));
+      const theirs = shown.filter((t) => t === renamed.displayName).length;
+      await server.backend.server.invoke("accounts.update", { id: renamed.id, displayName: "Estudio" }, ctx);
+      await expect(labels(page).filter({ hasText: "Estudio" }).first()).toBeVisible();
+      expect(await renders()).toBe(before + theirs);
+    });
   });
 
-  test("search results and a category across accounts name each row's account too", async ({ app: page, server }) => {
-    await search(page, "in:all factura");
-    await expectLabelsMatch(page, server);
-    await page.getByTestId("sidebar").getByText("Lecturas", { exact: true }).click();
-    await expect(page.getByTestId("list-title")).toHaveText("Lecturas");
-    await expectLabelsMatch(page, server);
-  });
-
-  test("account updates that don't change a label re-render no row; a rename re-renders only that account's rows", async ({ app: page, server }) => {
-    await expect(labels(page).first()).toBeVisible();
-    const renders = () => page.evaluate(() => (window as unknown as { __renders: Record<string, number> }).__renders.ThreadRow ?? 0);
-    const before = await renders();
-    expect(before).toBeGreaterThan(0);
-    // sync-state churn: the accounts event with the same names and colors
-    const accounts = await server.backend.store.accounts.list();
-    for (let i = 0; i < 5; i++) {
-      await server.backend.store.accounts.setSyncState(accounts[0]!.id, { status: i % 2 ? "idle" : "syncing" });
-      await server.backend.emitAccounts();
-    }
-    await page.waitForTimeout(300);
-    expect(await renders()).toBe(before);
-    const renamed = accounts[1]!;
-    const shown = await rows(page).evaluateAll((els) => els.map((e) => e.querySelector("[data-testid=account-label]")?.textContent));
-    const theirs = shown.filter((t) => t === renamed.displayName).length;
-    await server.backend.server.invoke("accounts.update", { id: renamed.id, displayName: "Estudio" }, ctx);
-    await expect(labels(page).filter({ hasText: "Estudio" }).first()).toBeVisible();
-    expect(await renders()).toBe(before + theirs);
-  });
 });

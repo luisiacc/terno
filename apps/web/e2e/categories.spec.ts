@@ -1,57 +1,60 @@
-import { expect, rows, test } from "./fixtures";
+import { expect, rows, test, scenario, freshStart } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 test.describe("categories", () => {
-  test("creates a new category from the picker by typing its name; new categories keep their mail out of the Inbox", async ({ app: page, server }) => {
-    const first = rows(page).first();
-    const id = await first.getAttribute("data-thread-id");
-    await first.dispatchEvent("mousedown");
-    await page.keyboard.press("l");
-    await expect(page.getByTestId("category-picker").getByRole("combobox")).toBeFocused();
-    await page.keyboard.type("Proyecto Terno");
-    await page.getByTestId("create-category").click();
-    const cat = sqlDb(server.backend.store).get<{ id: number; show_in_inbox: number }>("SELECT id, show_in_inbox FROM categories WHERE name = 'Proyecto Terno'")!;
-    expect(cat.show_in_inbox).toBe(0);
-    await expect(page.getByTestId(`nav-category-${cat.id}`)).toContainText("Proyecto Terno");
-    await expect(page.getByTestId(`nav-category-hidden-${cat.id}`)).toBeVisible();
-    // filed there, it left the Inbox for the category's list
-    await expect(page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`)).toHaveCount(0);
-    await page.getByTestId(`nav-category-${cat.id}`).click();
-    await expect(page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`)).toBeVisible();
+  test("a new category, a view across accounts, ⌘K Add to", async ({ app: page, server }) => {
+    await scenario("creates a new category from the picker by typing its name; new categories keep their mail out of the Inbox", async () => {
+      const first = rows(page).first();
+      const id = await first.getAttribute("data-thread-id");
+      await first.dispatchEvent("mousedown");
+      await page.keyboard.press("l");
+      await expect(page.getByTestId("category-picker").getByRole("combobox")).toBeFocused();
+      await page.keyboard.type("Proyecto Terno");
+      await page.getByTestId("create-category").click();
+      const cat = sqlDb(server.backend.store).get<{ id: number; show_in_inbox: number }>("SELECT id, show_in_inbox FROM categories WHERE name = 'Proyecto Terno'")!;
+      expect(cat.show_in_inbox).toBe(0);
+      await expect(page.getByTestId(`nav-category-${cat.id}`)).toContainText("Proyecto Terno");
+      await expect(page.getByTestId(`nav-category-hidden-${cat.id}`)).toBeVisible();
+      // filed there, it left the Inbox for the category's list
+      await expect(page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`)).toHaveCount(0);
+      await page.getByTestId(`nav-category-${cat.id}`).click();
+      await expect(page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`)).toBeVisible();
+    });
+    await scenario("a category view gathers mail from several accounts", async () => {
+      await freshStart(page);
+      await page.getByTestId("sidebar").getByText("Lecturas", { exact: true }).click();
+      await expect(page.getByTestId("list-title")).toHaveText("Lecturas");
+      await expect(rows(page).first()).toBeVisible();
+      const accounts = await page.getByTestId("account-mark").evaluateAll((els) => new Set(els.map((e) => e.className)).size);
+      expect(accounts).toBeGreaterThan(1);
+      // the account is a small ring beside the time (not a rail-like bar), told apart from filled category dots
+      const box = (await page.getByTestId("account-mark").first().boundingBox())!;
+      expect(box.width).toBe(box.height);
+      expect(box.width).toBeLessThanOrEqual(7);
+      expect(await page.getByTestId("account-mark").first().evaluate((el) => getComputedStyle(el).backgroundColor)).toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+    });
+    await scenario("⌘K “Add to” files the selection with the same snackbar and undo", async () => {
+      await freshStart(page);
+      const viajes = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
+      const row = page.locator(`[data-testid=thread-row]:not(:has([data-slot=category-dot]))`).first();
+      const id = (await row.getAttribute("data-thread-id"))!;
+      await row.dispatchEvent("mousedown");
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      const before = Number((await page.getByTestId(`nav-category-${viajes}`).locator("[data-slot=nav-count]").textContent()) || 0);
+      await page.keyboard.press("Meta+k");
+      await page.getByTestId("palette-input").fill("add to viajes");
+      await expect(page.getByRole("option", { selected: true })).toContainText("Add to “Viajes”");
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("snackbar-title")).toHaveText("Added to Viajes");
+      const target = page.locator(`[data-thread-id="${id}"]`);
+      await expect(target.locator("[data-slot=category-dot]")).toHaveCount(1);
+      const unread = (await target.getAttribute("data-unread")) !== null;
+      if (unread) await expect(page.getByTestId(`nav-category-${viajes}`).locator("[data-slot=nav-count]")).toHaveText(String(before + 1));
+      await page.getByTestId("snackbar-undo").click();
+      await expect(target.locator("[data-slot=category-dot]")).toHaveCount(0);
+    });
   });
 
-  test("a category view gathers mail from several accounts", async ({ app: page }) => {
-    await page.getByTestId("sidebar").getByText("Lecturas", { exact: true }).click();
-    await expect(page.getByTestId("list-title")).toHaveText("Lecturas");
-    await expect(rows(page).first()).toBeVisible();
-    const accounts = await page.getByTestId("account-mark").evaluateAll((els) => new Set(els.map((e) => e.className)).size);
-    expect(accounts).toBeGreaterThan(1);
-    // the account is a small ring beside the time (not a rail-like bar), told apart from filled category dots
-    const box = (await page.getByTestId("account-mark").first().boundingBox())!;
-    expect(box.width).toBe(box.height);
-    expect(box.width).toBeLessThanOrEqual(7);
-    expect(await page.getByTestId("account-mark").first().evaluate((el) => getComputedStyle(el).backgroundColor)).toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
-  });
-
-  test("⌘K “Add to” files the selection with the same snackbar and undo", async ({ app: page, server }) => {
-    const viajes = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
-    const row = page.locator(`[data-testid=thread-row]:not(:has([data-slot=category-dot]))`).first();
-    const id = (await row.getAttribute("data-thread-id"))!;
-    await row.dispatchEvent("mousedown");
-    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-    const before = Number((await page.getByTestId(`nav-category-${viajes}`).locator("[data-slot=nav-count]").textContent()) || 0);
-    await page.keyboard.press("Meta+k");
-    await page.getByTestId("palette-input").fill("add to viajes");
-    await expect(page.getByRole("option", { selected: true })).toContainText("Add to “Viajes”");
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId("snackbar-title")).toHaveText("Added to Viajes");
-    const target = page.locator(`[data-thread-id="${id}"]`);
-    await expect(target.locator("[data-slot=category-dot]")).toHaveCount(1);
-    const unread = (await target.getAttribute("data-unread")) !== null;
-    if (unread) await expect(page.getByTestId(`nav-category-${viajes}`).locator("[data-slot=nav-count]")).toHaveText(String(before + 1));
-    await page.getByTestId("snackbar-undo").click();
-    await expect(target.locator("[data-slot=category-dot]")).toHaveCount(0);
-  });
 });
 
 test.describe("a category hidden from the Inbox (plan 83)", () => {
@@ -95,38 +98,40 @@ test.describe("a category hidden from the Inbox (plan 83)", () => {
     expect(db.get("SELECT show_in_inbox FROM categories WHERE id = ?", cat)).toEqual({ show_in_inbox: 1 });
   });
 
-  test("right-click → Delete…: Cancel keeps it; Delete removes it, keeps its mail, and its open list goes back to the Inbox", async ({ app: page, server }) => {
-    const db = sqlDb(server.backend.store);
-    const { id: cat, name } = db.get<{ id: number; name: string }>("SELECT id, name FROM categories WHERE name = 'Facturas'")!;
-    const threads = () => db.get<{ c: number }>("SELECT count(*) AS c FROM threads")!.c;
-    const before = threads();
-    const nav = page.getByTestId(`nav-category-${cat}`);
-    await nav.click();
-    await expect(page.getByTestId("list-title")).toHaveText(name);
+  test("Show in Inbox and Delete…", async ({ app: page, server }) => {
+    await scenario("right-click → Delete…: Cancel keeps it; Delete removes it, keeps its mail, and its open list goes back to the Inbox", async () => {
+      const db = sqlDb(server.backend.store);
+      const { id: cat, name } = db.get<{ id: number; name: string }>("SELECT id, name FROM categories WHERE name = 'Facturas'")!;
+      const threads = () => db.get<{ c: number }>("SELECT count(*) AS c FROM threads")!.c;
+      const before = threads();
+      const nav = page.getByTestId(`nav-category-${cat}`);
+      await nav.click();
+      await expect(page.getByTestId("list-title")).toHaveText(name);
 
-    await nav.click({ button: "right" });
-    await page.getByTestId("category-menu-delete").click();
-    const dialog = page.getByTestId("category-delete-dialog");
-    await expect(dialog).toContainText(`Delete “${name}”?`);
-    await dialog.getByRole("button", { name: "Cancel" }).click();
-    await expect(dialog).toHaveCount(0);
-    await expect(nav).toBeVisible();
+      await nav.click({ button: "right" });
+      await page.getByTestId("category-menu-delete").click();
+      const dialog = page.getByTestId("category-delete-dialog");
+      await expect(dialog).toContainText(`Delete “${name}”?`);
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(nav).toBeVisible();
 
-    // the row has focus, and the delete answers after the dialog has handed it back
-    await nav.focus();
-    const handlers = (server.backend.server as unknown as { handlers: Record<string, (...a: unknown[]) => Promise<unknown>> }).handlers;
-    const remove = handlers["categories.delete"]!;
-    handlers["categories.delete"] = async (...a) => (await new Promise((r) => setTimeout(r, 300)), remove(...a));
-    await nav.click({ button: "right" });
-    await page.getByTestId("category-menu-delete").click();
-    await page.getByTestId("category-delete-dialog-confirm").click();
-    await expect(page.getByTestId("snack").filter({ hasText: `“${name}” deleted` })).toBeVisible();
-    await expect(nav).toHaveCount(0);
-    await expect(page.getByTestId("nav-inbox")).toBeFocused();
-    // the Inbox (whose title is a greeting in some designs)
-    expect(await page.evaluate(() => (window as unknown as { __terno: { getApp(): { categoryId: number | null; view: string } } }).__terno.getApp())).toMatchObject({ categoryId: null, view: "inbox" });
-    expect(db.get("SELECT id FROM categories WHERE id = ?", cat)).toBeUndefined();
-    expect(threads()).toBe(before);
+      // the row has focus, and the delete answers after the dialog has handed it back
+      await nav.focus();
+      const handlers = (server.backend.server as unknown as { handlers: Record<string, (...a: unknown[]) => Promise<unknown>> }).handlers;
+      const remove = handlers["categories.delete"]!;
+      handlers["categories.delete"] = async (...a) => (await new Promise((r) => setTimeout(r, 300)), remove(...a));
+      await nav.click({ button: "right" });
+      await page.getByTestId("category-menu-delete").click();
+      await page.getByTestId("category-delete-dialog-confirm").click();
+      await expect(page.getByTestId("snack").filter({ hasText: `“${name}” deleted` })).toBeVisible();
+      await expect(nav).toHaveCount(0);
+      await expect(page.getByTestId("nav-inbox")).toBeFocused();
+      // the Inbox (whose title is a greeting in some designs)
+      expect(await page.evaluate(() => (window as unknown as { __terno: { getApp(): { categoryId: number | null; view: string } } }).__terno.getApp())).toMatchObject({ categoryId: null, view: "inbox" });
+      expect(db.get("SELECT id FROM categories WHERE id = ?", cat)).toBeUndefined();
+      expect(threads()).toBe(before);
+    });
   });
 
   test("Settings → Categories: the Show in Inbox switch hides it, and says so in the row", async ({ app: page, server }) => {
@@ -145,4 +150,5 @@ test.describe("a category hidden from the Inbox (plan 83)", () => {
     await toggle.click();
     await expect.poll(() => db.get("SELECT show_in_inbox FROM categories WHERE id = ?", facturas)).toEqual({ show_in_inbox: 1 });
   });
+
 });

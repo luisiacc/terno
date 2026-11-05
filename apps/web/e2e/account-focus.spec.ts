@@ -4,7 +4,7 @@
  */
 import type { Page } from "@playwright/test";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
-import { expect, focusList, search, test } from "./fixtures";
+import { expect, focusList, search, test, scenario, freshStart } from "./fixtures";
 
 const accountOf = (server: DevServer, name: string) => sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM accounts WHERE display_name = ?", name)!.id;
 async function accountIds(page: Page): Promise<number[]> {
@@ -59,27 +59,107 @@ test.describe("focus on one account", () => {
     await expect(page.getByTestId("solo-back")).toHaveCount(0);
   });
 
-  test("its own folders sit flush under a Folders title, nested; a new one starts there", async ({ app: page, server }) => {
-    const acme = accountOf(server, "Acme Studio");
-    await focusFromMenu(page, acme);
-    const pad = (id: string) => page.getByTestId(id).evaluate((el) => parseFloat(getComputedStyle(el).paddingLeft));
-    await expect(page.getByTestId("solo-folders")).toBeVisible();
-    // Proyectos lines up with Inbox; Rediseño web, under it, one step in
-    expect(await pad(`nav-own-${acme}-Label_21`)).toBe(await pad(`nav-folder-${acme}-inbox`));
-    expect(await pad(`nav-own-${acme}-Label_22`)).toBeGreaterThan(await pad(`nav-own-${acme}-Label_21`));
-    await page.getByTestId(`nav-own-${acme}-Label_21`).click();
-    await expect.poll(() => listFor(page)).toEqual(["all", acme, null, null, null, "Label_21", ""]);
+  test("focused: its folders, leaving, the palette and a search", async ({ app: page, server }) => {
+    await scenario("its own folders sit flush under a Folders title, nested; a new one starts there", async () => {
+      const acme = accountOf(server, "Acme Studio");
+      await focusFromMenu(page, acme);
+      const pad = (id: string) => page.getByTestId(id).evaluate((el) => parseFloat(getComputedStyle(el).paddingLeft));
+      await expect(page.getByTestId("solo-folders")).toBeVisible();
+      // Proyectos lines up with Inbox; Rediseño web, under it, one step in
+      expect(await pad(`nav-own-${acme}-Label_21`)).toBe(await pad(`nav-folder-${acme}-inbox`));
+      expect(await pad(`nav-own-${acme}-Label_22`)).toBeGreaterThan(await pad(`nav-own-${acme}-Label_21`));
+      await page.getByTestId(`nav-own-${acme}-Label_21`).click();
+      await expect.poll(() => listFor(page)).toEqual(["all", acme, null, null, null, "Label_21", ""]);
 
-    await page.getByTestId("solo-folders").hover();
-    await page.getByTestId("solo-add-folder").click();
-    const field = page.getByTestId(`folder-new-${acme}`);
-    await expect(field).toBeFocused();
-    // the field's name starts where a top folder's does
-    expect(await page.getByTestId(`folder-new-${acme}-row`).locator("> div").evaluate((el) => parseFloat(getComputedStyle(el).paddingLeft))).toBe(await pad(`nav-own-${acme}-Label_21`));
-    // Esc: the keyboard goes back up to the way back (the account's row isn't here)
-    await page.keyboard.press("Escape");
-    await expect(field).toHaveCount(0);
-    await expect(page.getByTestId("solo-back")).toBeFocused();
+      await page.getByTestId("solo-folders").hover();
+      await page.getByTestId("solo-add-folder").click();
+      const field = page.getByTestId(`folder-new-${acme}`);
+      await expect(field).toBeFocused();
+      // the field's name starts where a top folder's does
+      expect(await page.getByTestId(`folder-new-${acme}-row`).locator("> div").evaluate((el) => parseFloat(getComputedStyle(el).paddingLeft))).toBe(await pad(`nav-own-${acme}-Label_21`));
+      // Esc: the keyboard goes back up to the way back (the account's row isn't here)
+      await page.keyboard.press("Escape");
+      await expect(field).toHaveCount(0);
+      await expect(page.getByTestId("solo-back")).toBeFocused();
+    });
+    await scenario("remembered on reload; the palette focuses and All accounts leaves", async () => {
+      await freshStart(page);
+      const [a, b] = await accountIds(page);
+      await focusFromMenu(page, a!);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await expect(page.getByTestId("solo-back")).toBeVisible();
+      await expect.poll(() => listFor(page)).toEqual(["inbox", a, null, null, null, ""]);
+
+      // another account from the palette: it focuses that one
+      await focusList(page);
+      await page.keyboard.press("ControlOrMeta+k");
+      await page.getByTestId(`palette-focus-${b}`).click();
+      await expect.poll(() => listFor(page)).toEqual(["inbox", b, null, null, null, ""]);
+      await expect(page.getByTestId(`nav-folder-${b}-inbox`)).toBeVisible();
+      await expect(page.getByTestId(`nav-folder-${a}-inbox`)).toHaveCount(0);
+
+      // Reminders is every account's: it leaves focus, and a reload remembers that
+      await focusList(page);
+      await page.keyboard.press("g");
+      await page.keyboard.press("r");
+      await expect(page.getByTestId("solo-back")).toHaveCount(0);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await expect(page.getByTestId("nav-inbox")).toBeVisible();
+      await expect(page.getByTestId("solo-back")).toHaveCount(0);
+    });
+    await scenario("the header's menu has Show all accounts; Shift+F10 on the back row opens it", async () => {
+      await freshStart(page);
+      const [a] = await accountIds(page);
+      await focusFromMenu(page, a!);
+      await expect(page.getByTestId("solo-back")).toBeFocused();
+      await page.keyboard.press("Shift+F10");
+      await expect(page.getByTestId(`account-menu-${a}`)).toBeVisible();
+      await expect(page.getByTestId("account-menu-focus")).toHaveCount(0);
+      await page.getByTestId("account-menu-unfocus").click();
+      await expect.poll(() => listFor(page)).toEqual(["inbox", null, null, null, null, ""]);
+      await expect(page.getByTestId(`nav-account-${a}`)).toBeFocused();
+      // the menu went with the header: shortcuts work again
+      await focusList(page);
+      await page.keyboard.press("g");
+      await page.keyboard.press("t");
+      await expect.poll(() => listFor(page)).toEqual(["sent", null, null, null, null, ""]);
+    });
+    await scenario("Codex code review #1: focusing another account shows its own folders, never the last one's", async () => {
+      await freshStart(page);
+      const acme = accountOf(server, "Acme Studio");
+      const other = (await accountIds(page)).find((id) => id !== acme)!;
+      await focusFromMenu(page, acme);
+      await expect(page.getByTestId(`nav-own-${acme}-Label_21`)).toBeVisible();
+      await focusList(page);
+      await page.keyboard.press("ControlOrMeta+k");
+      await page.getByTestId(`palette-focus-${other}`).click();
+      await expect(page.getByTestId(`nav-folder-${other}-inbox`)).toBeVisible();
+      const keys = new Set(sqlDb(server.backend.store).all<{ key: string }>("SELECT key FROM folders WHERE account_id = ?", other).map((f) => f.key));
+      const prefix = `nav-own-${other}-`;
+      const shown = await page.locator(`[data-testid^="${prefix}"]`).evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")!));
+      // only its own (the last account's Proyectos under this title would be a click on the wrong folder)
+      expect(shown.filter((id) => !id.startsWith(`nav-own-more-`)).every((id) => keys.has(id.slice(prefix.length)))).toBe(true);
+      if (!keys.has("Label_21")) await expect(page.getByTestId(`${prefix}Label_21`)).toHaveCount(0);
+    });
+    await scenario("Codex code review #4, #5: focused, the palette's search says whose mail; Search all accounts keeps the keyboard in the search", async () => {
+      await freshStart(page);
+      const [a] = await accountIds(page);
+      const name = (await server.backend.store.accounts.get(a!))!.displayName;
+      await focusFromMenu(page, a!);
+      await focusList(page);
+      await page.keyboard.press("ControlOrMeta+k");
+      await expect(page.getByRole("dialog").getByRole("combobox")).toBeFocused();
+      await page.keyboard.type("zzqx");
+      await expect(page.getByRole("dialog")).toContainText(`Search for “zzqx” in ${name}`);
+      await page.keyboard.press("Escape");
+      await search(page, "design");
+      await page.getByTestId("solo-search-all").focus();
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("solo-search-all")).toHaveCount(0);
+      await expect(page.getByTestId("search-input")).toBeFocused();
+    });
   });
 
   test("a search looks only in the focused account; Search all accounts widens it and shows every account again", { tag: "@variant" }, async ({ app: page, server }) => {
@@ -105,106 +185,30 @@ test.describe("focus on one account", () => {
     await expect(page.getByTestId("search-input")).toHaveAttribute("placeholder", "Search all your accounts");
   });
 
-  test("remembered on reload; the palette focuses and All accounts leaves", async ({ app: page }) => {
-    const [a, b] = await accountIds(page);
-    await focusFromMenu(page, a!);
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await expect(page.getByTestId("solo-back")).toBeVisible();
-    await expect.poll(() => listFor(page)).toEqual(["inbox", a, null, null, null, ""]);
-
-    // another account from the palette: it focuses that one
-    await focusList(page);
-    await page.keyboard.press("ControlOrMeta+k");
-    await page.getByTestId(`palette-focus-${b}`).click();
-    await expect.poll(() => listFor(page)).toEqual(["inbox", b, null, null, null, ""]);
-    await expect(page.getByTestId(`nav-folder-${b}-inbox`)).toBeVisible();
-    await expect(page.getByTestId(`nav-folder-${a}-inbox`)).toHaveCount(0);
-
-    // Reminders is every account's: it leaves focus, and a reload remembers that
-    await focusList(page);
-    await page.keyboard.press("g");
-    await page.keyboard.press("r");
-    await expect(page.getByTestId("solo-back")).toHaveCount(0);
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await expect(page.getByTestId("nav-inbox")).toBeVisible();
-    await expect(page.getByTestId("solo-back")).toHaveCount(0);
-  });
-
-  test("the header's menu has Show all accounts; Shift+F10 on the back row opens it", async ({ app: page }) => {
-    const [a] = await accountIds(page);
-    await focusFromMenu(page, a!);
-    await expect(page.getByTestId("solo-back")).toBeFocused();
-    await page.keyboard.press("Shift+F10");
-    await expect(page.getByTestId(`account-menu-${a}`)).toBeVisible();
-    await expect(page.getByTestId("account-menu-focus")).toHaveCount(0);
-    await page.getByTestId("account-menu-unfocus").click();
-    await expect.poll(() => listFor(page)).toEqual(["inbox", null, null, null, null, ""]);
-    await expect(page.getByTestId(`nav-account-${a}`)).toBeFocused();
-    // the menu went with the header: shortcuts work again
-    await focusList(page);
-    await page.keyboard.press("g");
-    await page.keyboard.press("t");
-    await expect.poll(() => listFor(page)).toEqual(["sent", null, null, null, null, ""]);
-  });
-
-  test("Codex code review #1: focusing another account shows its own folders, never the last one's", async ({ app: page, server }) => {
-    const acme = accountOf(server, "Acme Studio");
-    const other = (await accountIds(page)).find((id) => id !== acme)!;
-    await focusFromMenu(page, acme);
-    await expect(page.getByTestId(`nav-own-${acme}-Label_21`)).toBeVisible();
-    await focusList(page);
-    await page.keyboard.press("ControlOrMeta+k");
-    await page.getByTestId(`palette-focus-${other}`).click();
-    await expect(page.getByTestId(`nav-folder-${other}-inbox`)).toBeVisible();
-    const keys = new Set(sqlDb(server.backend.store).all<{ key: string }>("SELECT key FROM folders WHERE account_id = ?", other).map((f) => f.key));
-    const prefix = `nav-own-${other}-`;
-    const shown = await page.locator(`[data-testid^="${prefix}"]`).evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")!));
-    // only its own (the last account's Proyectos under this title would be a click on the wrong folder)
-    expect(shown.filter((id) => !id.startsWith(`nav-own-more-`)).every((id) => keys.has(id.slice(prefix.length)))).toBe(true);
-    if (!keys.has("Label_21")) await expect(page.getByTestId(`${prefix}Label_21`)).toHaveCount(0);
-  });
-
-  test("Codex code review #2: a notification while a folder's menu is open leaves focus, and shortcuts work after", async ({ app: page, server }) => {
-    const acme = accountOf(server, "Acme Studio");
-    await focusFromMenu(page, acme);
-    await page.getByTestId(`nav-own-${acme}-Label_21`).click({ button: "right" });
-    await expect(page.locator(`[data-testid="folder-menu-${acme}-Label_21"]`)).toBeVisible();
-    await page.evaluate(() => (window as unknown as { __terno: { openFromNotice(id: number | null): void } }).__terno.openFromNotice(null));
-    await expect(page.getByTestId("solo-back")).toHaveCount(0);
-    await expect.poll(() => page.evaluate(() => (window as unknown as { __terno: { getApp(): { menuOpen: boolean } } }).__terno.getApp().menuOpen)).toBe(false);
-  });
-
-  test("Codex code review #4, #5: focused, the palette's search says whose mail; Search all accounts keeps the keyboard in the search", async ({ app: page, server }) => {
-    const [a] = await accountIds(page);
-    const name = (await server.backend.store.accounts.get(a!))!.displayName;
-    await focusFromMenu(page, a!);
-    await focusList(page);
-    await page.keyboard.press("ControlOrMeta+k");
-    await expect(page.getByRole("dialog").getByRole("combobox")).toBeFocused();
-    await page.keyboard.type("zzqx");
-    await expect(page.getByRole("dialog")).toContainText(`Search for “zzqx” in ${name}`);
-    await page.keyboard.press("Escape");
-    await search(page, "design");
-    await page.getByTestId("solo-search-all").focus();
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId("solo-search-all")).toHaveCount(0);
-    await expect(page.getByTestId("search-input")).toBeFocused();
-  });
-
-  test("Codex code review #6: a folder field while focused leaves the normal sidebar's open account as it was", async ({ app: page, server }) => {
-    const acme = accountOf(server, "Acme Studio");
-    const other = (await accountIds(page)).find((id) => id !== acme)!;
-    await page.getByTestId(`nav-account-${other}`).click();
-    await expect(page.getByTestId(`nav-account-${other}`)).toHaveAttribute("aria-expanded", "true");
-    await focusFromMenu(page, acme);
-    await page.getByTestId("solo-folders").hover();
-    await page.getByTestId("solo-add-folder").click();
-    await page.keyboard.press("Escape");
-    await page.getByTestId("solo-back").click();
-    await expect(page.getByTestId(`nav-account-${other}`)).toHaveAttribute("aria-expanded", "true");
-    await expect(page.getByTestId(`nav-account-${acme}`)).toHaveAttribute("aria-expanded", "false");
+  test("focused: what it leaves alone", async ({ app: page, server }) => {
+    await scenario("Codex code review #2: a notification while a folder's menu is open leaves focus, and shortcuts work after", async () => {
+      const acme = accountOf(server, "Acme Studio");
+      await focusFromMenu(page, acme);
+      await page.getByTestId(`nav-own-${acme}-Label_21`).click({ button: "right" });
+      await expect(page.locator(`[data-testid="folder-menu-${acme}-Label_21"]`)).toBeVisible();
+      await page.evaluate(() => (window as unknown as { __terno: { openFromNotice(id: number | null): void } }).__terno.openFromNotice(null));
+      await expect(page.getByTestId("solo-back")).toHaveCount(0);
+      await expect.poll(() => page.evaluate(() => (window as unknown as { __terno: { getApp(): { menuOpen: boolean } } }).__terno.getApp().menuOpen)).toBe(false);
+    });
+    await scenario("Codex code review #6: a folder field while focused leaves the normal sidebar's open account as it was", async () => {
+      await freshStart(page);
+      const acme = accountOf(server, "Acme Studio");
+      const other = (await accountIds(page)).find((id) => id !== acme)!;
+      await page.getByTestId(`nav-account-${other}`).click();
+      await expect(page.getByTestId(`nav-account-${other}`)).toHaveAttribute("aria-expanded", "true");
+      await focusFromMenu(page, acme);
+      await page.getByTestId("solo-folders").hover();
+      await page.getByTestId("solo-add-folder").click();
+      await page.keyboard.press("Escape");
+      await page.getByTestId("solo-back").click();
+      await expect(page.getByTestId(`nav-account-${other}`)).toHaveAttribute("aria-expanded", "true");
+      await expect(page.getByTestId(`nav-account-${acme}`)).toHaveAttribute("aria-expanded", "false");
+    });
   });
 
   test("Codex code review round 2 #2: a scrolled sidebar: focused starts at its top; back is where you'd scrolled, the account's row in view", async ({ app: page }) => {

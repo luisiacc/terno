@@ -8,7 +8,7 @@
 import type { Page } from "@playwright/test";
 import type { IncomingMessage } from "@terno/store";
 import { E2E_NOW } from "./constants";
-import { chipsOf, expect, rows, test } from "./fixtures";
+import { chipsOf, expect, rows, test, scenario, freshStart } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 test.use({ backendOptions: { network: true } });
@@ -77,63 +77,66 @@ test.describe("forwarding what lands in a category (plan 116)", () => {
     expect(db.all("SELECT state FROM forwards ORDER BY id")).toEqual([{ state: "cancelled" }, { state: "cancelled" }]);
   });
 
-  test("set up with the keyboard alone; Stop forwarding forgets the addresses", async ({ app: page, server }) => {
-    const { db, cat, dialog } = await setUp(page, server);
-    await expect(dialog.getByTestId("category-forward-to")).toBeFocused();
-    await page.keyboard.type("luis@books.test, ");
-    await page.keyboard.press("Tab");
-    await page.keyboard.press("Tab");
-    await expect(dialog.getByTestId("category-forward-save")).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId(`nav-category-forward-${cat}`)).toBeVisible();
+  test("forwarding: with the keyboard, and from a filter", async ({ app: page, server }) => {
+    await scenario("set up with the keyboard alone; Stop forwarding forgets the addresses", async () => {
+      const { db, cat, dialog } = await setUp(page, server);
+      await expect(dialog.getByTestId("category-forward-to")).toBeFocused();
+      await page.keyboard.type("luis@books.test, ");
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Tab");
+      await expect(dialog.getByTestId("category-forward-save")).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId(`nav-category-forward-${cat}`)).toBeVisible();
 
-    await page.getByTestId(`nav-category-${cat}`).click({ button: "right" });
-    await page.getByTestId("category-menu-forward").click();
-    await expect(chipsOf(dialog as unknown as Page, "category-forward-to")).toHaveCount(1);
-    await dialog.getByTestId("category-forward-stop").click();
-    await expect(page.getByTestId(`nav-category-forward-${cat}`)).toHaveCount(0);
-    expect(db.get("SELECT forward_json FROM categories WHERE id = ?", cat)).toEqual({ forward_json: null });
+      await page.getByTestId(`nav-category-${cat}`).click({ button: "right" });
+      await page.getByTestId("category-menu-forward").click();
+      await expect(chipsOf(dialog as unknown as Page, "category-forward-to")).toHaveCount(1);
+      await dialog.getByTestId("category-forward-stop").click();
+      await expect(page.getByTestId(`nav-category-forward-${cat}`)).toHaveCount(0);
+      expect(db.get("SELECT forward_json FROM categories WHERE id = ?", cat)).toEqual({ forward_json: null });
+    });
+    await scenario("the filter builder's Forward to saves a forward action; incomplete until it has an address", async () => {
+      await freshStart(page);
+      const db = sqlDb(server.backend.store);
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-filters").click();
+      await page.getByTestId("settings-filter-new").click();
+      await page.getByTestId("condition-value").fill("facturas@shop.test");
+      await expect(page.getByTestId("filter-invalid")).toHaveCount(0);
+      await page.getByTestId("action-toggle-archive").click();
+      await page.getByTestId("action-toggle-forward").click();
+      await expect(page.getByTestId("action-toggle-forward")).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByTestId("filter-forward")).toContainText("Applying the filter to existing mail never forwards.");
+      await expect(page.getByTestId("filter-invalid")).toBeVisible();
+      await page.getByTestId("filter-forward-to").pressSequentially("ana@books.test, bob@");
+      // Codex code review #11: a wrong address is never dropped quietly: it's named, and Save waits for it
+      await page.getByTestId("filter-forward-to").press("Tab");
+      await expect(page.getByTestId("filter-forward").getByRole("alert")).toHaveText("Check the addresses: bob@ isn't valid.");
+      await expect(page.getByTestId("filter-save")).toBeDisabled();
+      await page.getByTestId("filter-forward-to").click();
+      // the chip before is selected, then removed (the selection holds focus)
+      await page.keyboard.press("Backspace");
+      await page.keyboard.press("Backspace");
+      await expect(page.getByTestId("filter-forward").getByRole("alert")).toHaveCount(0);
+      await expect(page.getByTestId("filter-invalid")).toHaveCount(0);
+      await page.getByTestId("filter-name").fill("Facturas a Ana");
+      await page.getByTestId("filter-save").click();
+      await expect.poll(() => db.get<{ rule_json: string }>("SELECT rule_json FROM filters WHERE name = 'Facturas a Ana'")?.rule_json).toContain('"type":"forward"');
+      expect(JSON.parse(db.get<{ forward_json: string }>("SELECT forward_json FROM filters WHERE name = 'Facturas a Ana'")!.forward_json)).toMatchObject({ enabled: true, rev: 1 });
+    });
+    await scenario("Codex code review round 2 #5: reselecting a filter brings back its saved addresses, never the ones typed meanwhile", async () => {
+      await freshStart(page);
+      await server.backend.server.invoke("filters.save", { name: "Recibos a Ana", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "subject", op: "contains", value: "Recibo" }], actions: [{ type: "forward", to: [{ name: "Ana", email: "ana@books.test" }] }] } }, SETUP);
+      await page.getByTestId("open-filters").click();
+      const item = page.getByTestId("filter-item").filter({ hasText: "Recibos a Ana" }).getByRole("button").first();
+      await item.click();
+      await expect(chipsOf(page, "filter-forward-to")).toHaveCount(1);
+      await page.getByTestId("filter-forward-to").pressSequentially("luis@books.test, ");
+      await expect(chipsOf(page, "filter-forward-to")).toHaveCount(2);
+      await item.click();
+      await expect(chipsOf(page, "filter-forward-to")).toHaveCount(1);
+      await expect(chipsOf(page, "filter-forward-to")).toHaveAttribute("data-email", "ana@books.test");
+    });
   });
 
-  test("the filter builder's Forward to saves a forward action; incomplete until it has an address", async ({ app: page, server }) => {
-    const db = sqlDb(server.backend.store);
-    await page.getByTestId("open-settings").click();
-    await page.getByTestId("tab-filters").click();
-    await page.getByTestId("settings-filter-new").click();
-    await page.getByTestId("condition-value").fill("facturas@shop.test");
-    await expect(page.getByTestId("filter-invalid")).toHaveCount(0);
-    await page.getByTestId("action-toggle-archive").click();
-    await page.getByTestId("action-toggle-forward").click();
-    await expect(page.getByTestId("action-toggle-forward")).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("filter-forward")).toContainText("Applying the filter to existing mail never forwards.");
-    await expect(page.getByTestId("filter-invalid")).toBeVisible();
-    await page.getByTestId("filter-forward-to").pressSequentially("ana@books.test, bob@");
-    // Codex code review #11: a wrong address is never dropped quietly: it's named, and Save waits for it
-    await page.getByTestId("filter-forward-to").press("Tab");
-    await expect(page.getByTestId("filter-forward").getByRole("alert")).toHaveText("Check the addresses: bob@ isn't valid.");
-    await expect(page.getByTestId("filter-save")).toBeDisabled();
-    await page.getByTestId("filter-forward-to").click();
-    // the chip before is selected, then removed (the selection holds focus)
-    await page.keyboard.press("Backspace");
-    await page.keyboard.press("Backspace");
-    await expect(page.getByTestId("filter-forward").getByRole("alert")).toHaveCount(0);
-    await expect(page.getByTestId("filter-invalid")).toHaveCount(0);
-    await page.getByTestId("filter-name").fill("Facturas a Ana");
-    await page.getByTestId("filter-save").click();
-    await expect.poll(() => db.get<{ rule_json: string }>("SELECT rule_json FROM filters WHERE name = 'Facturas a Ana'")?.rule_json).toContain('"type":"forward"');
-    expect(JSON.parse(db.get<{ forward_json: string }>("SELECT forward_json FROM filters WHERE name = 'Facturas a Ana'")!.forward_json)).toMatchObject({ enabled: true, rev: 1 });
-  });
-
-  test("Codex code review round 2 #5: reselecting a filter brings back its saved addresses, never the ones typed meanwhile", async ({ app: page, server }) => {
-    await server.backend.server.invoke("filters.save", { name: "Recibos a Ana", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "subject", op: "contains", value: "Recibo" }], actions: [{ type: "forward", to: [{ name: "Ana", email: "ana@books.test" }] }] } }, SETUP);
-    await page.getByTestId("open-filters").click();
-    const item = page.getByTestId("filter-item").filter({ hasText: "Recibos a Ana" }).getByRole("button").first();
-    await item.click();
-    await expect(chipsOf(page, "filter-forward-to")).toHaveCount(1);
-    await page.getByTestId("filter-forward-to").pressSequentially("luis@books.test, ");
-    await expect(chipsOf(page, "filter-forward-to")).toHaveCount(2);
-    await item.click();
-    await expect(chipsOf(page, "filter-forward-to")).toHaveCount(1);
-    await expect(chipsOf(page, "filter-forward-to")).toHaveAttribute("data-email", "ana@books.test");
-  });
 });
