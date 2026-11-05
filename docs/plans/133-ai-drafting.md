@@ -1,6 +1,6 @@
 # Plan 133: AI drafting
 
-- **Status:** third version, after two Codex rounds. The pure core is built (`packages/core/src/writing/`, `packages/ai/src/writing.ts`), the thin experiment has run on synthetic mail, the backend is built (steps 2, 3, 5, 6 and the data side of 9), and so are the composer and Settings (steps 5, 7, 8): read "What the experiment found" and "What building it changed" before the sections they change. No real-model proof of this path yet. Your blind read (§11) is still the release gate, and it hasn't happened.
+- **Status:** built and on `main`, code-reviewed, and run on real mail, including the owner's read of 27 pairs (§11). One pair fell short, which led to the first-message lookup; the rest "look kind of good". Read "What the experiment found", "What building it changed" and "What a real mailbox changed" before the sections they change.
 - **Builds on:** plan 131 (base), plan 85 §6, decisions 9 and 10, revisions 4, 5, 7, 9, 11, plans 16, 44, 60, 93, 115, 130 (the composer), plan 18 (recipients and sent-mail reading).
 
 ## The requests

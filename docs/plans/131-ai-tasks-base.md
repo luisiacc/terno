@@ -1,6 +1,6 @@
 # Plan 131: the AI tasks base
 
-- **Status:** proposed. Nothing is built.
+- **Status:** built and on `main`, and code-reviewed. "Revisions after the Codex review" and "What the code review changed" override the sections before them. Hosted AI isn't built.
 - **Builds on:** `b4cf8d1c` (main), plan 05 §A, plan 85 decisions 9 and 10.
 - **Used by:** plan 132 (summaries), plan 133 (drafting), plan 134 (smart categorization). This goes first; those three can then proceed in any order.
 

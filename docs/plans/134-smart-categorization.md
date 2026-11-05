@@ -1,6 +1,6 @@
 # Plan 134: smart categorization
 
-- **Status:** built, parts A and B (see "What building it changed"). The Codex code review and the real-model eval haven't run.
+- **Status:** parts A and B built and on `main`, code-reviewed, and run on real mail (see "What building it changed", "What the code review changed" and "What a real mailbox changed"). The relay and Pro gating aren't built, so nothing is gated. The scripted eval (`scripts/ai-real/categorize.real.ts`) is written, and this plan records no run of it.
 - **Builds on:** plan 131 (base), plan 02 (the engine), plan 05's W10 follow-ups (`AiAssist`'s lifecycle), plan 85 decisions 8, 9 and 10, plan 83 (hidden categories), plan 116 (forwarding).
 
 ## The requests

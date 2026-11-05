@@ -1,6 +1,6 @@
 # Plan 132: AI summaries of new mail
 
-- **Status:** built (see "What building it changed"). The Codex code review and the real-model eval haven't run.
+- **Status:** built and on `main`, code-reviewed, and run on real mail (see "What building it changed", "What the code review changed" and "What a real mailbox changed"). The scripted eval (`scripts/ai-real/summaries.real.ts`) is written, and this plan records no run of it.
 - **Builds on:** plan 131 (base), plan 85 §6 and revision 9 (changes noted below), plan 116 (what "new mail" means), plan 36 (visible text), plan 112 (migrations).
 
 ## The request
