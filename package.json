@@ -22,6 +22,7 @@
     "test:e2e": "pnpm --filter @terno/web test:e2e",
     "test:smoke": "pnpm --filter @terno/desktop test:smoke",
     "dev:desktop:demo": "pnpm --filter @terno/desktop dev:demo",
+    "dev:demo-luis": "TERNO_USER_DATA=\"$HOME/.terno-demo-luis\" pnpm --filter @terno/desktop dev",
     "dev:desktop:seeded": "pnpm --filter @terno/desktop dev:seeded",
     "dev:web": "pnpm --filter @terno/web dev:web",
     "build:web": "pnpm --filter @terno/web build:web",

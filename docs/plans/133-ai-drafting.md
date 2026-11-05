@@ -797,3 +797,24 @@ Profiles were already kept per language at every level. What was too simple was 
 5. A level with a real share of another language keeps only its manner.
 6. Examples known to match come first, then ones whose language can't be told, then others.
 7. The AI switch's one-time reset rechecks inside its transaction, so a switch turned on meanwhile stays on (plan 134).
+
+
+## What a real mailbox changed
+
+The own-mail gate, run on a copy of a real profile (three accounts, about 6,000 threads, 340 sent, mostly Spanish, with its tokens removed and no mail provider behind it). 38 real replies were deleted from the copy, with whatever came after them in their threads, and drafted again: 24 from a rough instruction, 9 with one tap, 5 as new messages. `scripts/ai-real/real-mail.real.ts` runs it; the mail and the results stay outside the repo.
+
+What invented personas could never have shown:
+
+1. **Templates outnumber a person.** 176 of 253 sent messages in the main account were a sales sequence, so the voice said "usually 255 words", "Estimado" and marketing phrases, for someone whose real mail is a median of 60 words and "Hola". `TemplateFinder` sets aside mail where a third of what comes before the signature also went to three other people. It held across every threshold tried, and only 5 of 57 real replies looked like one. Set aside means out of habits, phrases, examples, the model's sample and a person's language.
+2. **A signature block lives in the mail.** Another client typed it, so `account.signature` was empty, the voice said "closes with nothing 99%", and the model improvised titles it had seen. The block is now learned from the trailers (`signs with:`), per account and never across accounts. A signature set in the app stays what's added below the text.
+3. **Small accounts have a voice.** 15 messages was too many: a personal account with a handful of mail got the work account's "Estimados señores". The bar is now 5, and a forward with nothing typed above it isn't counted. Below 5 it still inherits; a very thin account stays too formal.
+4. **Footers are longer than mail.** An English legal footer under a Spanish message chose English. The language is read from what comes before they sign.
+5. **One tap promises things.** "I'll check and get back to you" is what a model reaches for. The rule is firmer and placeholders replaced most of it; a few small promises remain, so one tap is a starting point (the strip already says what it had to go on).
+
+Also found, in the app: summaries came out in English under a Spanish UI, because the backend's locale doesn't know the system's (plan 132), and Undo left a blank saved draft in the list.
+
+Before and after on those 38: the right language 36 → 38, ended with their exact signature 7 → 21 of the 22 they signed, a wrong signature 11 → 2, the same greeting word 14 → 18 of 34. First word about 0.9 s (median), finished about 1.7 s, about $0.007 a draft. The same in the browser, with no layout jump at commit and an exact undo.
+
+Known and left: usted and tú aren't counted, and one draft in 38 said "te" to someone always addressed as "usted". Examples usually carry it. Worth counting if it shows up in real use.
+
+**What the code review of this part changed** (Codex, 8 findings, all fixed with regression tests): a long signature or legal footer no longer makes personal mail look templated, since only what comes before they sign counts; classification runs in steps under the slicer's budget; typing while an undo waits on a save still autosaves; a provenance save in flight can't bring the blank draft back; a short "Gracias por avisar." keeps its language evidence; known templates don't decide a person's language; a person they never sign to says so against an account that does; an account that goes takes its template list with it.

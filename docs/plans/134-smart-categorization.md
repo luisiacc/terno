@@ -160,3 +160,8 @@ Codex (`gpt-6.1-sol`, high, read-only, against `f787771c`) raised 5 points on th
 ## What the code review changed
 
 - **A JEV request has one deadline.** It had none, so a stalled response could hold AiAssist's only drain forever. `config.timeoutMs` now covers the whole request through the last byte of the body, mapped to `timeout`, and a body read that doesn't notice the abort still gives up. A caller's cancel stays a cancel, and a body that isn't JSON says so rather than claiming it couldn't connect.
+
+
+## What a real mailbox changed
+
+JEV in the app, through the live ingest path, on 33 real messages and four invented categories with up to 8 real examples each: 3 filed, all right; 7 suggested, all reasonable; 1 filed by the local engine, before anything was sent. Nothing was filed wrongly. Small, and the categories were made up for the test, so it says the wiring works and the bar looks right, not what the accuracy is. About 150 to 450 ms a call.

@@ -200,3 +200,10 @@ Codex (`gpt-6.1-sol`, high, read-only, against `f787771c`) raised 5 points on th
 - **Two requests on a thread pay once.** The in-flight lookup and insert happen in `single()`, with nothing awaited between, so the callers' own awaits can't let a second through.
 - **Clear AI data stops what's in flight.** It goes through the worker and aborts everything, requests by hand included. `finish` refuses a write that started before the clear (`clearGeneration`, checked inside the transaction in both stores, in memory because nothing in flight outlives the process), so a model that ignored the abort still brings nothing back. To the person who asked, that's a cancel.
 - **A small window holds the whole prompt plus the answer.** It reserved 1,500 tokens while asking for 3,000 and sized only the bodies. `summaryBudget` gives the answer the full allowance or half the window, whichever is less, takes off the system prompt and what a server with no `json_schema` also gets, and the complete serialized prompt has to fit what's left: the oldest headers go first, then the oldest of the others, and only then the newest message's words. Labels are given last, so what's cited has no gaps. Below 250 tokens of room nothing further can be cut.
+
+
+## What a real mailbox changed
+
+33 real messages re-dated as just arrived, through the live ingest path, on GPT Luna: 23 summaries, and the 10 others were spam, under 60 words or not in the inbox, as designed. Turning it on over 6,000 threads read nothing old and spent nothing. A summary costs about $0.0002 to $0.001 and takes 3 to 6 s on Luna (about 2 s on Haiku).
+
+It found one bug: the language came from the backend's `getLocale()`, which is English while the setting follows the system, since a backend can't see the system's. So a Spanish window got English summaries on desktop and web. It now reads the setting, then what the window reported (`app.locale`), as forwards do.
