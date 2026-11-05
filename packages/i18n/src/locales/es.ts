@@ -478,7 +478,7 @@ const es = {
   "settings.file.tooLarge": "El archivo es demasiado grande (máx. {max}).",
   "settings.appearance.mode": "Modo",
   "settings.appearance.style": "Estilo",
-  "settings.appearance.style.hint": "Tipografía, formas y distribución. Los colores siguen al estilo salvo que elijas otros abajo.",
+  "settings.appearance.style.hint": "Tipografía, formas y distribución. Cada estilo recuerda los colores que elijas para él abajo.",
   "settings.appearance.styleColors": "Colores del estilo",
   "settings.appearance.previous": "Tu tema anterior",
   "settings.appearance.mode.hint": "«Sistema» sigue al de tu equipo y usa los colores claros u oscuros de abajo.",

@@ -277,6 +277,34 @@ describe("app.import: designs (plan 15)", () => {
   });
 });
 
+describe("app.import: each style's palettes (plan 138)", () => {
+  const kept = { graphite: { light: "solarized-light", dark: "nord" } };
+
+  it("a backup brings them back", async () => {
+    const from = setup();
+    await from.client.call("settings.update", { designPalettes: kept });
+    const to = setup();
+    await to.client.call("app.import", { data: await from.client.call("app.export", {}) });
+    expect((await to.client.call("app.bootstrap", {})).settings.designPalettes).toEqual(kept);
+  });
+
+  it("the style a file replaces keeps its colors, also from a file older than this; what the file doesn't name stays", async () => {
+    const from = setup();
+    await from.client.call("settings.update", { design: "atelier", lightTheme: "github-light", darkTheme: "design" });
+    const { designPalettes: _none, ...older } = (await from.client.call("app.export", {})).settings;
+    const dump = await from.client.call("app.export", {});
+    const to = setup();
+    await to.client.call("settings.update", { design: "lumen", lightTheme: "apple-light", darkTheme: "dracula", designPalettes: kept });
+    await to.client.call("app.import", { data: { ...dump, settings: older as never } });
+    expect((await to.client.call("app.bootstrap", {})).settings).toMatchObject({
+      design: "atelier",
+      lightTheme: "github-light",
+      darkTheme: "design",
+      designPalettes: { ...kept, lumen: { light: "apple-light", dark: "dracula" } },
+    });
+  });
+});
+
 describe("AI keys are bound to the endpoint they were saved for", () => {
   const exportWith = (ai: object) => ({ format: "terno-export" as const, version: 1 as const, exportedAt: NOW, app: "t", accounts: [], categories: [], filters: [], drafts: [], ops: [], settings: { ai } });
 

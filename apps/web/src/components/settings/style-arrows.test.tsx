@@ -40,6 +40,7 @@ const SETTINGS = {
   darkTheme: "design",
   previousLightTheme: null,
   previousDarkTheme: null,
+  designPalettes: {},
   customThemes: [],
   motionMs: 75,
   htmlMailAppearance: "auto",

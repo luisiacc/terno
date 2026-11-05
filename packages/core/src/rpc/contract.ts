@@ -26,7 +26,7 @@ import { REMOVABLE_BUCKETS, STORAGE_AGES, type StorageReport } from "../storage"
 import { filterRuleSchema, type Filter, type FilterRule } from "../rules/schema";
 import { LIST_FILTERS, type ListFilter } from "../list-filter";
 import { snippetFieldsSchema, snippetIdSchema, type Snippet } from "../snippets";
-import { customThemesSchema, DESIGN_IDS, type CustomTheme, type DesignId, type MotionMs } from "../themes";
+import { customThemesSchema, DESIGN_IDS, type CustomTheme, type DesignId, type DesignPalettes, type MotionMs } from "../themes";
 import {
   CATEGORY_COLORS,
   FOLDER_NAME_MAX,
@@ -120,6 +120,8 @@ export interface AppSettings {
   /** the palette chosen before designs, offered first under Colors (plan 15); null when there was none */
   previousLightTheme: string | null;
   previousDarkTheme: string | null;
+  /** plan 138: what each style was left with, taken back on returning to it (switchDesign) */
+  designPalettes: DesignPalettes;
   /** every animation's base duration; 0 turns animation off */
   motionMs: MotionMs;
   /** auto: uncolored mail takes the theme's colors, designed mail sits on a light paper card; paper: always the card */
@@ -403,6 +405,7 @@ const settingsPatch = z.object({
   motionMs: z.union([z.literal(0), z.literal(50), z.literal(75), z.literal(100)]).optional(),
   previousLightTheme: z.string().trim().min(1).max(60).nullable().optional(),
   previousDarkTheme: z.string().trim().min(1).max(60).nullable().optional(),
+  designPalettes: z.partialRecord(z.enum(DESIGN_IDS), z.object({ light: z.string().trim().min(1).max(60), dark: z.string().trim().min(1).max(60) }).strict()).optional(),
   htmlMailAppearance: z.enum(["auto", "paper"]).optional(),
   customThemes: customThemesSchema.optional(),
   density: z.enum(["comfortable", "compact"]).optional(),

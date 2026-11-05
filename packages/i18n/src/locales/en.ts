@@ -485,7 +485,7 @@ const en = {
   "settings.file.tooLarge": "The file is too large (max. {max}).",
   "settings.appearance.mode": "Mode",
   "settings.appearance.style": "Style",
-  "settings.appearance.style.hint": "Type, shapes and layout. The colors follow the style unless you choose your own below.",
+  "settings.appearance.style.hint": "Type, shapes and layout. Each style remembers the colors you choose for it below.",
   "settings.appearance.styleColors": "Style colors",
   "settings.appearance.previous": "Your previous theme",
   "settings.appearance.mode.hint": "“System” follows your computer and uses the light or dark colors below.",

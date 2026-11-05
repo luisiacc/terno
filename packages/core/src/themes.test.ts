@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_THEMES, canonicalThemeId, customThemeSchema, customThemesSchema, MAX_CUSTOM_THEMES, THEME_COLOR_RE, THEME_TOKENS } from "./themes";
+import { BUILTIN_THEMES, canonicalThemeId, customThemeSchema, customThemesSchema, MAX_CUSTOM_THEMES, switchDesign, THEME_COLOR_RE, THEME_TOKENS, type CustomTheme } from "./themes";
 
 const valid = { id: "mi-tema", name: "Mi tema", mode: "dark", extends: "dracula", tokens: { primary: "#ff79c6", background: "oklch(0.25 0.02 280)" } };
 
@@ -68,5 +68,35 @@ describe("custom theme schema", () => {
     expect(BUILTIN_THEMES.filter((t) => t.mode === "dark")).toHaveLength(12);
     expect(new Set(BUILTIN_THEMES.map((t) => t.id)).size).toBe(22);
     expect(new Set(THEME_TOKENS).size).toBe(THEME_TOKENS.length);
+  });
+});
+
+const mine: CustomTheme = { id: "mine", name: "Mine", mode: "dark", extends: "terno-dark", tokens: { primary: "#112233" } };
+const lumen = { design: "lumen" as const, lightTheme: "github-light", darkTheme: "github-dark", designPalettes: {}, customThemes: [] };
+
+describe("switchDesign (plan 138)", () => {
+  it("the palettes in use stay with the style left; a style with nothing kept has its own colors", () => {
+    expect(switchDesign(lumen, "graphite")).toEqual({
+      design: "graphite",
+      lightTheme: "design",
+      darkTheme: "design",
+      designPalettes: { lumen: { light: "github-light", dark: "github-dark" } },
+    });
+  });
+
+  it("a style takes back what it was left with, and its keeps are updated when it is left again", () => {
+    const graphite = { ...lumen, design: "graphite" as const, lightTheme: "design", darkTheme: "nord", designPalettes: { lumen: { light: "github-light", dark: "dracula" } } };
+    expect(switchDesign(graphite, "lumen")).toEqual({
+      design: "lumen",
+      lightTheme: "github-light",
+      darkTheme: "dracula",
+      designPalettes: { lumen: { light: "github-light", dark: "dracula" }, graphite: { light: "design", dark: "nord" } },
+    });
+  });
+
+  it("a custom palette kept is taken back while it exists; deleted since, or a palette of the other mode, is the style's own", () => {
+    const designPalettes = { graphite: { light: "dracula", dark: "custom:mine" } };
+    expect(switchDesign({ ...lumen, designPalettes, customThemes: [mine] }, "graphite")).toMatchObject({ lightTheme: "design", darkTheme: "custom:mine" });
+    expect(switchDesign({ ...lumen, designPalettes }, "graphite")).toMatchObject({ lightTheme: "design", darkTheme: "design" });
   });
 });

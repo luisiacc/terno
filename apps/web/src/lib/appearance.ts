@@ -1,4 +1,4 @@
-import { CUSTOM_PREFIX, DEFAULT_DESIGN, DEFAULT_THEME, DESIGN_PALETTE, isDesignId, type DesignId, type ThemeMode } from "@terno/core";
+import { CUSTOM_PREFIX, DEFAULT_DESIGN, DEFAULT_THEME, DESIGN_PALETTE, isDesignId, switchDesign, type DesignId, type ThemeMode } from "@terno/core";
 import type { AppSettings, SettingsPatch } from "@terno/core/rpc";
 import { applyCustomTheme, clampMotion, motionOff, motionVars, opaqueBackground } from "@terno/ui/themes/apply";
 import { toHex } from "@terno/ui/themes/color";
@@ -200,8 +200,8 @@ export function installAppearanceListeners(): () => void {
   };
 }
 
-type AppearancePatch = Pick<SettingsPatch, "theme" | "design" | "lightTheme" | "darkTheme" | "motionMs" | "customThemes" | "htmlMailAppearance" | "layout">;
-const APPEARANCE_FIELDS = ["theme", "design", "lightTheme", "darkTheme", "motionMs", "customThemes", "htmlMailAppearance", "layout"] as const;
+type AppearancePatch = Pick<SettingsPatch, "theme" | "design" | "lightTheme" | "darkTheme" | "designPalettes" | "motionMs" | "customThemes" | "htmlMailAppearance" | "layout">;
+const APPEARANCE_FIELDS = ["theme", "design", "lightTheme", "darkTheme", "designPalettes", "motionMs", "customThemes", "htmlMailAppearance", "layout"] as const;
 
 /** Appearance changes not yet acknowledged, oldest first (each one is sent after the previous answered). */
 const pending: { patch: AppearancePatch }[] = [];
@@ -249,9 +249,12 @@ export async function updateAppearance(patch: AppearancePatch): Promise<AppSetti
   return commitAppearance(patch);
 }
 
-function commitAppearance(patch: AppearancePatch): Promise<AppSettings | null> {
+function commitAppearance(asked: AppearancePatch): Promise<AppSettings | null> {
   const current = getApp().settings;
   if (!current) return Promise.resolve(null);
+  // plan 138: here, after the font wait, so a palette picked during it stays with the style it was picked in. The whole
+  // change is what's pending: an older answer can't paint the old palette over the new style. A palette named in the patch wins.
+  const patch: AppearancePatch = asked.design !== undefined && asked.design !== current.design ? { ...switchDesign(current, asked.design), ...asked } : asked;
   const entry = { patch };
   pending.push(entry);
   show({ ...current, ...patch } as AppSettings);

@@ -7,7 +7,7 @@ import {
   type Capabilities,
   type CompatiblePreset,
 } from "@terno/ai";
-import { AI_PROVIDER_IDS, builtinMode, canonicalThemeId, COMPATIBLE_PRESETS, CUSTOM_PREFIX, DEFAULT_DESIGN, DESIGN_PALETTE, isDesignId, textRef, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
+import { AI_PROVIDER_IDS, canonicalThemeId, COMPATIBLE_PRESETS, DEFAULT_DESIGN, DESIGN_IDS, DESIGN_PALETTE, fitsMode, isDesignId, textRef, themeMode, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
 import { FAVORITES_MAX, type FavoriteFolder } from "@terno/core";
 import { isLanguageSetting, L, type Localized } from "@terno/i18n";
@@ -131,6 +131,7 @@ export const DEFAULT_SETTINGS: General = {
   darkTheme: "github-dark",
   previousLightTheme: null,
   previousDarkTheme: null,
+  designPalettes: {},
   motionMs: 75,
   htmlMailAppearance: "auto",
   customThemes: [],
@@ -385,21 +386,11 @@ function languageOf(s: StoredSettings): AppSettings["language"] {
   return isLanguageSetting(s.language) ? s.language : DEFAULT_SETTINGS.language;
 }
 
-/** The mode a theme id belongs to, or null when it names nothing (unknown or deleted custom theme). */
-function themeMode(id: string, custom: readonly CustomTheme[]): ThemeMode | null {
-  if (id.startsWith(CUSTOM_PREFIX)) return custom.find((t) => t.id === id.slice(CUSTOM_PREFIX.length))?.mode ?? null;
-  return builtinMode(id);
-}
-
-/** May `id` fill the `mode` slot: "Style colors" fits both, a palette only its own mode. */
-function fitsMode(id: string, mode: ThemeMode, custom: readonly CustomTheme[]): boolean {
-  return id === DESIGN_PALETTE || themeMode(id, custom) === mode;
-}
-
 /**
  * Theme ids saved under their Única names read as their successors; a stored
  * id that no longer resolves (or is of the other mode) falls back to "Style
  * colors"; a remembered previous palette that no longer resolves is forgotten.
+ * A style's kept palettes read like the slots, and a style that's gone goes.
  */
 function resolveThemes(g: General): General {
   const customThemes = g.customThemes.map((t) => ({ ...t, extends: canonicalThemeId(t.extends) as CustomTheme["extends"] }));
@@ -413,6 +404,12 @@ function resolveThemes(g: General): General {
     darkTheme: pick(g.darkTheme, "dark"),
     previousLightTheme: previous(g.previousLightTheme, "light"),
     previousDarkTheme: previous(g.previousDarkTheme, "dark"),
+    designPalettes: Object.fromEntries(
+      DESIGN_IDS.flatMap((d) => {
+        const kept = g.designPalettes[d];
+        return kept ? [[d, { light: pick(kept.light, "light"), dark: pick(kept.dark, "dark") }]] : [];
+      }),
+    ),
   };
 }
 

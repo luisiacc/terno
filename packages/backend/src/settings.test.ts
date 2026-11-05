@@ -188,6 +188,19 @@ describe("designs (plan 15)", () => {
     expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "github-light", darkTheme: "github-dark" });
   });
 
+  it("plan 138: a style's kept palettes persist and read like the slots: legacy names, and anything that no longer fits is its own colors", async () => {
+    const { backend, client } = await setup();
+    expect((await client.call("app.bootstrap", {})).settings.designPalettes).toEqual({});
+    const kept = { lumen: { light: "github-light", dark: "dracula" }, graphite: { light: "design", dark: "custom:mi-nord" } };
+    expect(await client.call("settings.update", { customThemes: [nord], designPalettes: kept })).toMatchObject({ designPalettes: kept });
+    expect((await client.call("app.bootstrap", {})).settings.designPalettes).toEqual(kept);
+    // a memory, not a slot: a custom palette deleted since is no reason to refuse anything
+    expect((await client.call("settings.update", { customThemes: [] })).designPalettes.graphite).toEqual({ light: "design", dark: "design" });
+    setSetting(sqlDb(backend.store), "app", { appearanceVersion: 3, designPalettes: { lumen: { light: "unica-light", dark: "github-light" }, retired: { light: "design", dark: "design" } } });
+    expect((await client.call("app.bootstrap", {})).settings.designPalettes).toEqual({ lumen: { light: "terno-light", dark: "design" } });
+    expect(await errorOf(client.call("settings.update", { designPalettes: { brutalist: { light: "design", dark: "design" } } as never }))).toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   it("a remembered palette of the wrong mode is forgotten", async () => {
     const { client } = await setup();
     expect(await client.call("settings.update", { previousLightTheme: "dracula", previousDarkTheme: "nord" })).toMatchObject({ previousLightTheme: null, previousDarkTheme: "nord" });

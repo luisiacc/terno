@@ -1,7 +1,7 @@
 import { attachmentFingerprint, portableAttachmentFingerprint, exportAttachment, importAttachments, validateExportedAttachments } from "./attachments";
 import { RpcError, type ExportedAttachment } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { attachmentFilename, attachmentMime, attachmentCid, decodeText, MAX_RECIPIENTS, snippetSchema, type Snippet, type Condition, type FilterAction, type FilterRule } from "@terno/core";
+import { attachmentFilename, attachmentMime, attachmentCid, decodeText, MAX_RECIPIENTS, snippetSchema, switchDesign, type DesignId, type DesignPalettes, type Snippet, type Condition, type FilterAction, type FilterRule } from "@terno/core";
 import { draftAddressSchema, exportCategorySchema, exportDraftSchema, exportFilterSchema, settingsPatchSchema, type ExportCategory, type ExportDraftItem, type ExportFilter, type DraftAddress, type ExportedDraft, type ExportFile, type ImportResult, type MailboxExport, type SettingsPatch } from "@terno/core/rpc";
 import type { DraftInput, DraftRow } from "@terno/store";
 import { GAP, textToHtmlChunks } from "@terno/richtext/quote";
@@ -16,6 +16,7 @@ const GENERAL_KEYS = [
   "darkTheme",
   "previousLightTheme",
   "previousDarkTheme",
+  "designPalettes",
   "motionMs",
   "htmlMailAppearance",
   "customThemes",
@@ -33,7 +34,7 @@ const GENERAL_KEYS = [
 const addresses = draftAddressSchema.array().max(MAX_RECIPIENTS);
 
 /** The settings an export carries, as a patch: each field only if valid on its own; secrets never travel. */
-function settingsFrom(raw: Record<string, unknown>, current: { localMode: boolean; allowAgentSend: boolean; errorReports: string; senderIcons: boolean; remoteImages: string; notifications: boolean; notificationPreview: boolean }): { general: SettingsPatch; ai: SettingsPatch["ai"] } {
+function settingsFrom(raw: Record<string, unknown>, current: Parameters<typeof switchDesign>[0] & { localMode: boolean; allowAgentSend: boolean; errorReports: string; senderIcons: boolean; remoteImages: string; notifications: boolean; notificationPreview: boolean }): { general: SettingsPatch; ai: SettingsPatch["ai"] } {
   const general: Record<string, unknown> = {};
   for (const key of GENERAL_KEYS) {
     if (raw[key] === undefined) continue;
@@ -46,6 +47,12 @@ function settingsFrom(raw: Record<string, unknown>, current: { localMode: boolea
       if (general[from] !== undefined) general[to] = general[from] === "design" ? null : general[from];
       delete general[from];
     }
+  }
+  // plan 138 (Codex critique #2): what this install remembers stays unless the file says otherwise, and the style the file replaces keeps its colors
+  if (general.design !== undefined || general.designPalettes !== undefined) {
+    const design = general.design as DesignId | undefined;
+    const kept = design !== undefined && design !== current.design ? switchDesign(current, design).designPalettes : current.designPalettes;
+    general.designPalettes = { ...kept, ...(general.designPalettes as DesignPalettes | undefined) };
   }
   // a file never makes this install less private: local mode can come on, agent sending can go off
   if (raw.localMode === true && !current.localMode) general.localMode = true;

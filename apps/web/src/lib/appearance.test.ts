@@ -54,6 +54,7 @@ const SERVER: AppSettings = {
   darkTheme: "terno-dark",
   previousLightTheme: null,
   previousDarkTheme: null,
+  designPalettes: {},
   motionMs: 75,
   htmlMailAppearance: "auto",
   customThemes: [],
@@ -116,8 +117,95 @@ describe("designs (plan 15)", () => {
     expect(fake.html.dataset.design).toBe("atelier");
     expect(painted()).toBe("atelier-dark");
     expect(useAppearance.getState().design).toBe("atelier");
-    expect(JSON.parse(fake.stored.get(APPEARANCE_KEY)!)).toMatchObject({ v: 2, design: "atelier", dark: "atelier-dark", light: "terno-light", vibrancy: { light: false, dark: false } });
+    expect(JSON.parse(fake.stored.get(APPEARANCE_KEY)!)).toMatchObject({ v: 2, design: "atelier", dark: "atelier-dark", light: "atelier-light", vibrancy: { light: false, dark: false } });
     await answer();
+  });
+
+  describe("plan 138: each style keeps its palettes", () => {
+    const palettes = () => {
+      const s = getApp().settings!;
+      return [s.design, s.lightTheme, s.darkTheme];
+    };
+
+    it("a style never used comes in its own colors, and the one left gets its palettes back on return", async () => {
+      void updateAppearance({ design: "graphite" });
+      await tick();
+      expect(palettes()).toEqual(["graphite", "design", "design"]);
+      // both change with the style, in the frame it paints
+      expect(painted()).toBe("graphite-dark");
+      expect(getApp().settings!.designPalettes).toEqual({ macos: { light: "terno-light", dark: "terno-dark" } });
+      await answer();
+      void updateAppearance({ darkTheme: "dracula" });
+      await answer();
+      void updateAppearance({ design: "macos" });
+      await tick();
+      expect(palettes()).toEqual(["macos", "terno-light", "terno-dark"]);
+      expect(painted()).toBe("terno-dark");
+      await answer();
+      void updateAppearance({ design: "graphite" });
+      await answer();
+      expect(palettes()).toEqual(["graphite", "design", "dracula"]);
+      expect(painted()).toBe("dracula");
+      expect(server).toMatchObject({ design: "graphite", lightTheme: "design", darkTheme: "dracula", designPalettes: { macos: { light: "terno-light", dark: "terno-dark" }, graphite: { light: "design", dark: "dracula" } } });
+    });
+
+    it("every style keeps its own", async () => {
+      const chosen = { macos: "nord", atelier: "dracula", lumen: "monokai", luma: "tokyo-night", graphite: "github-dark" } as const;
+      for (const [design, darkTheme] of Object.entries(chosen)) {
+        void updateAppearance({ design: design as keyof typeof chosen });
+        await answer();
+        void updateAppearance({ darkTheme });
+        await answer();
+      }
+      for (const [design, darkTheme] of Object.entries(chosen)) {
+        void updateAppearance({ design: design as keyof typeof chosen });
+        await answer();
+        expect(palettes()[2]).toBe(darkTheme);
+      }
+    });
+
+    it("a palette named with the style wins; the style chosen again changes nothing", async () => {
+      void updateAppearance({ design: "atelier", darkTheme: "nord" });
+      await answer();
+      expect(palettes()).toEqual(["atelier", "design", "nord"]);
+      const before = getApp().settings!.designPalettes;
+      fake.calls.length = 0;
+      void updateAppearance({ design: "atelier" });
+      await tick();
+      expect(fake.calls[0]!.patch).toEqual({ design: "atelier" });
+      expect(palettes()).toEqual(["atelier", "design", "nord"]);
+      expect(getApp().settings!.designPalettes).toBe(before);
+      await answer();
+    });
+
+    it("a palette picked before the switch commits stays with the style it was picked in", async () => {
+      const faces = vi.spyOn(await import("~/lib/design"), "loadDesignFaces");
+      let release!: () => void;
+      faces.mockImplementationOnce(() => new Promise<void>((r) => (release = r)));
+      void updateAppearance({ design: "atelier" });
+      await tick();
+      void updateAppearance({ darkTheme: "nord" });
+      await answer();
+      release();
+      await tick();
+      expect(palettes()).toEqual(["atelier", "design", "design"]);
+      expect(getApp().settings!.designPalettes.macos).toEqual({ light: "terno-light", dark: "nord" });
+      await answer();
+      faces.mockRestore();
+    });
+
+    it("an older answer doesn't paint the old palette over a switch on its way; a refused switch puts all of it back", async () => {
+      void updateAppearance({ motionMs: 50 });
+      await tick();
+      void updateAppearance({ design: "graphite" });
+      await answer(); // motion's answer knows nothing of the switch
+      expect(palettes()).toEqual(["graphite", "design", "design"]);
+      expect(painted()).toBe("graphite-dark");
+      await answer(false);
+      expect(palettes()).toEqual(["macos", "terno-light", "terno-dark"]);
+      expect(getApp().settings!.designPalettes).toEqual({});
+      expect(painted()).toBe("terno-dark");
+    });
   });
 
   it("plan 24: the layout is painted on <html> and cached for theme.js, so a List user's first frame is List", async () => {
@@ -137,7 +225,7 @@ describe("designs (plan 15)", () => {
     void updateAppearance({ design: "atelier" });
     void updateAppearance({ design: "lumen" });
     await tick();
-    expect(fake.calls.map((c) => c.patch)).toEqual([{ design: "lumen" }]);
+    expect(fake.calls.map((c) => c.patch.design)).toEqual(["lumen"]);
     expect(fake.html.dataset.design).toBe("lumen");
     await answer();
     expect(server.design).toBe("lumen");

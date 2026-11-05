@@ -363,6 +363,65 @@ test.describe("a new install", () => {
   });
 });
 
+test.describe("each style keeps its palettes (plan 138)", () => {
+  test.use({ design: null });
+  test("Lumen in GitHub goes to Graphite in its own colors, and every style comes back as it was left, in both modes and after a reload", async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { theme: "light", design: "lumen", lightTheme: "github-light", darkTheme: "github-dark" }, ctx);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    const html = page.locator("html");
+    const card = (id: string) => page.getByTestId(`theme-card-${id}`);
+    const chooseStyle = async (id: string) => {
+      await page.getByTestId(`design-card-${id}`).click();
+      await expect(html).toHaveAttribute("data-design", id);
+    };
+    const chooseMode = async (mode: "light" | "dark") => {
+      await page.getByTestId(`mode-${mode}`).click();
+      await expect(html).toHaveClass(mode === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
+    };
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-appearance").click();
+    await expect(html).toHaveAttribute("data-theme", "github-light");
+
+    // the request's example: Graphite, never used, has its own colors in both modes
+    await chooseStyle("graphite");
+    await expect(html).toHaveAttribute("data-theme", "graphite-light");
+    await expect(card("design-light")).toHaveAttribute("aria-checked", "true");
+    await expect(card("design-dark")).toHaveAttribute("aria-checked", "true");
+
+    // what's picked in Graphite stays Graphite's
+    await card("solarized-light").click();
+    await expect(html).toHaveAttribute("data-theme", "solarized-light");
+    await card("dracula").click();
+
+    // Lumen is back as it was left, in both modes
+    await chooseStyle("lumen");
+    await expect(html).toHaveAttribute("data-theme", "github-light");
+    await expect(card("github-light")).toHaveAttribute("aria-checked", "true");
+    await expect(card("github-dark")).toHaveAttribute("aria-checked", "true");
+    await chooseMode("dark");
+    await expect(html).toHaveAttribute("data-theme", "github-dark");
+
+    // another style is independent of both
+    await chooseStyle("luma");
+    await expect(html).toHaveAttribute("data-theme", "luma-dark");
+
+    await chooseStyle("graphite");
+    await expect(html).toHaveAttribute("data-theme", "dracula");
+    await expect(card("solarized-light")).toHaveAttribute("aria-checked", "true");
+
+    // all of it survives a reload
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await expect(html).toHaveAttribute("data-design", "graphite");
+    await expect(html).toHaveAttribute("data-theme", "dracula");
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-appearance").click();
+    await chooseStyle("lumen");
+    await expect(html).toHaveAttribute("data-theme", "github-dark");
+  });
+});
+
 test.describe("an install from before designs", () => {
   test.use({ design: null });
   test("moves to Lumen; the theme it had is first under Colors, one click away, not applied", async ({ app: page, server }) => {

@@ -200,5 +200,34 @@ export function isDesignId(v: unknown): v is DesignId {
   return typeof v === "string" && (DESIGN_IDS as readonly string[]).includes(v);
 }
 
+/** The mode a theme id belongs to, or null when it names nothing (unknown or deleted custom theme). */
+export function themeMode(id: string, custom: readonly CustomTheme[]): ThemeMode | null {
+  if (id.startsWith(CUSTOM_PREFIX)) return custom.find((t) => t.id === id.slice(CUSTOM_PREFIX.length))?.mode ?? null;
+  return builtinMode(id);
+}
+
+/** May `id` fill the `mode` slot: "Style colors" fits both, a palette only its own mode. */
+export function fitsMode(id: string, mode: ThemeMode, custom: readonly CustomTheme[]): boolean {
+  return id === DESIGN_PALETTE || themeMode(id, custom) === mode;
+}
+
+/** Plan 138: the palettes each style was left with (the style in use reads the lightTheme/darkTheme slots). */
+export type DesignPalettes = Partial<Record<DesignId, Record<ThemeMode, string>>>;
+
+/**
+ * A style switch as a settings change (plan 138): the palettes in use stay with
+ * the style being left, and the new one takes back what it was left with. A
+ * style with nothing kept, or whose custom palette was deleted since, has its
+ * own colors.
+ */
+export function switchDesign(s: { design: DesignId; lightTheme: string; darkTheme: string; designPalettes: DesignPalettes; customThemes: readonly CustomTheme[] }, design: DesignId) {
+  const kept = s.designPalettes[design];
+  const back = (mode: ThemeMode) => {
+    const id = kept?.[mode];
+    return id && fitsMode(id, mode, s.customThemes) ? id : DESIGN_PALETTE;
+  };
+  return { design, lightTheme: back("light"), darkTheme: back("dark"), designPalettes: { ...s.designPalettes, [s.design]: { light: s.lightTheme, dark: s.darkTheme } } };
+}
+
 export const MOTION_STEPS = [0, 50, 75, 100] as const;
 export type MotionMs = (typeof MOTION_STEPS)[number];

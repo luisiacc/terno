@@ -109,14 +109,15 @@ test.describe("first-run setup", () => {
     await expect(page.getByTestId("first-run-look-system")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("first-run-palettes-light")).toBeVisible();
     await expect(page.getByTestId("first-run-palettes-dark")).toBeVisible();
-    await expect(page.getByTestId("theme-card-github-dark")).toHaveAttribute("aria-checked", "true");
+    // plan 138: a style not used yet comes in its own colors
+    await expect(page.getByTestId("theme-card-design-dark")).toHaveAttribute("aria-checked", "true");
     await page.getByTestId("theme-card-dracula").click();
     await expect(preview(page)).toHaveAttribute("data-mode", "dark");
     await expect(preview(page)).toHaveClass(/\bdark\b/);
     await expect(preview(page)).toHaveAttribute("data-theme", "dracula");
     await expect(page.locator("html")).not.toHaveClass(/\bdark\b/);
     await expect.poll(async () => (await settings(server)).darkTheme).toBe("dracula");
-    expect((await settings(server)).lightTheme).toBe("github-light");
+    expect((await settings(server)).lightTheme).toBe("design");
 
     // Light and Dark are the appearance itself: the app switches, and only that mode's colors are offered
     await page.getByTestId("first-run-look-dark").click();
@@ -207,6 +208,22 @@ test.describe("first-run setup", () => {
     await expect(page.locator("html")).toHaveAttribute("data-design", "macos");
     await expect(preview(page)).toHaveAttribute("data-design", "macos");
     await expect.poll(async () => (await settings(server)).design).toBe("macos");
+  });
+
+  test("a style brings its own palettes back, in view, wherever the list was scrolled (plan 138)", async ({ app: page, server }) => {
+    await open(page, server);
+    await page.getByTestId("first-run-continue").click();
+    await expect(page.getByTestId("theme-card-github-light")).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByTestId("theme-card-github-light")).toBeInViewport();
+    await page.getByTestId("first-run-design-atelier").click();
+    await expect(page.getByTestId("theme-card-design-light")).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByTestId("theme-card-design-light")).toBeInViewport({ ratio: 1 });
+    await page.getByTestId("first-run-palettes").evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    await page.getByTestId("first-run-design-lumen").click();
+    await expect(page.getByTestId("theme-card-github-light")).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByTestId("theme-card-github-light")).toBeInViewport({ ratio: 1 });
+    await expect(page.locator("html")).toHaveAttribute("data-theme", /^github-/);
+    await expect.poll(async () => (await settings(server)).designPalettes).toMatchObject({ atelier: { light: "design", dark: "design" } });
   });
 
   test("motion off: a new step comes in without animating", async ({ app: page, server }) => {

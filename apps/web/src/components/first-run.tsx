@@ -117,10 +117,10 @@ export function FirstRun() {
     if (moved.current) heading.current?.focus({ preventScroll: true });
   }, [step]);
 
-  // the palette in use is in view (the default, GitHub, sits partway down the list)
+  // the palette in use is in view (the default, GitHub, sits partway down the list; a style brings back its own, plan 138)
   useEffect(() => {
     if (step === "look") document.querySelector("[data-testid=first-run-palettes] [aria-checked=true]")?.scrollIntoView({ block: "nearest" });
-  }, [step, settings?.theme]);
+  }, [step, settings?.theme, settings?.design]);
 
   if (!settings) return null;
 
