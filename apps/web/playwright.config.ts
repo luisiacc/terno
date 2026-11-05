@@ -19,7 +19,8 @@ export default defineConfig({
   testDir: "e2e",
   globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
-  workers: process.env.CI ? 2 : 8,
+  // plan 139: 8 flaked and ran no faster here (a machine shared with the rest of stage 2 is oversubscribed); 6 held
+  workers: process.env.CI ? 2 : 6,
   retries: 0,
   timeout: 45_000,
   expect: {
