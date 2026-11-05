@@ -138,7 +138,9 @@ test.describe("summaries (plan 132)", () => {
   });
 
   test("by hand on an old conversation: appears at once, can be stopped, and its arrow goes to the message", async ({ app: page, server, design }) => {
-    const stub = await startOllamaStub({ chatDelayMs: 4000 });
+    // the model answers when the steps that need it thinking are done, however long they take here
+    let answer!: () => void;
+    const stub = await startOllamaStub({ chatHeld: new Promise((r) => (answer = r)) });
     try {
       await settingUp(page, server, { ai: { provider: "ollama", baseURL: `${stub.url}/v1`, model: "qwen3:8b" } });
       // not live mail: old as far as summaries go, whatever its date
@@ -170,6 +172,7 @@ test.describe("summaries (plan 132)", () => {
       await expect(block).toHaveAttribute("data-state", "running");
       await openRow(page, 1);
       await expect(block).toHaveCount(0);
+      answer();
       await expect.poll(async () => (await server.backend.store.aiSummaries.get(threadId))?.state).toBe("ready");
       await page.locator(select).dispatchEvent("mousedown");
       await expect(block).toHaveAttribute("data-state", "ready");

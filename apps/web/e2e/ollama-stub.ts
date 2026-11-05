@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
 /** A stand-in for Ollama on 127.0.0.1: model list, model details and an OpenAI-compatible chat endpoint. */
-export async function startOllamaStub(options: { chatDelayMs?: number; summaryFails?: () => number | null } = {}): Promise<{ url: string; requests: string[]; summaries: string[]; close: () => Promise<void> }> {
+export async function startOllamaStub(options: { chatDelayMs?: number; chatHeld?: Promise<void>; summaryFails?: () => number | null } = {}): Promise<{ url: string; requests: string[]; summaries: string[]; close: () => Promise<void> }> {
   const requests: string[] = [];
   /** what each thread_summary request carried */
   const summaries: string[] = [];
@@ -16,6 +16,7 @@ export async function startOllamaStub(options: { chatDelayMs?: number; summaryFa
       if (req.url === "/api/ps") return json({ models: [{ name: "qwen3:8b" }] });
       if (req.url === "/api/show") return json({ model_info: { "qwen3.context_length": 40960 } });
       if (req.url === "/v1/chat/completions") {
+        if (options.chatHeld) return void options.chatHeld.then(() => answerChat());
         if (options.chatDelayMs) return void setTimeout(() => answerChat(), options.chatDelayMs);
         return answerChat();
       }
