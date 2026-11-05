@@ -6,6 +6,7 @@
  */
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
+import { contrast } from "../../../packages/ui/src/themes/color";
 import { THEMES } from "../../../packages/ui/src/themes/registry";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 import { expect, rows, test } from "./fixtures";
@@ -464,9 +465,17 @@ for (const scheme of ["light", "dark"] as const) {
   });
 }
 
-test("contrast: axe's color-contrast rule passes on every tab in every built-in theme", async ({ app: page, server }) => {
-  test.setTimeout(240_000);
-  for (const theme of THEMES) {
+// plan 139: the contrast suite proves every listed pair in every palette (themes/contrast.test.ts). What only a page shows is a
+// pair Settings draws that isn't listed, the same pair in every palette: it fails first where its text is nearest its surface.
+// So, per mode, the palette with the least contrast for Settings' quiet text on its groups, and for an accent on them (unlisted).
+function nearestTheLimit() {
+  const least = (mode: "light" | "dark", fg: "muted-foreground" | "primary") => THEMES.filter((t) => t.mode === mode).sort((a, b) => contrast(a.tokens[fg], a.tokens.tint, a.tokens.background) - contrast(b.tokens[fg], b.tokens.tint, b.tokens.background))[0]!;
+  return [...new Set((["light", "dark"] as const).flatMap((mode) => [least(mode, "muted-foreground"), least(mode, "primary")]))];
+}
+
+test("contrast: axe's color-contrast rule passes on every tab in the palettes nearest the limit", async ({ app: page, server }) => {
+  test.setTimeout(120_000);
+  for (const theme of nearestTheLimit()) {
     await setMode(server, page, theme.mode === "light" ? { theme: "light", lightTheme: theme.id } : { theme: "dark", darkTheme: theme.id });
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme.id);
     await page.getByTestId("open-settings").click();

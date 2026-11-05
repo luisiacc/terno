@@ -1,10 +1,9 @@
 /**
  * Themes: every built-in applies (attribute + painted token), theme.js paints
  * before React on reload, system mode follows the OS, HTML mail follows the
- * auto/paper rules, custom themes import (or are refused), and a visual
- * baseline per theme.
+ * auto/paper rules, custom themes import (or are refused). A palette is only its tokens (themes.generated.css has no other
+ * rule per theme), so every token of every palette is read off the page; baselines keep a few palettes with HTML mail.
  */
-import { BUILTIN_THEMES } from "@terno/core";
 import { formatOklch, parseColor, toHex } from "../../../packages/ui/src/themes/color";
 import { builtinTheme, THEMES } from "../../../packages/ui/src/themes/registry";
 import type { Page } from "@playwright/test";
@@ -18,8 +17,6 @@ async function openAppearance(page: Page) {
   await page.getByTestId("tab-appearance").click();
   await expect(page.getByTestId("appearance-tab")).toBeVisible();
 }
-
-const cssVar = (page: Page, name: string) => page.evaluate((n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(), name);
 
 test.describe("the Appearance choices", () => {
   // fixed-width cards in a wrapping row left a hole beside the last column
@@ -109,8 +106,9 @@ test.describe("themes", () => {
         await expect(page.locator("html")).toHaveAttribute("data-theme", t.id);
         await expect(page.getByTestId(`theme-card-${t.id}`)).toHaveAttribute("aria-checked", "true");
         // the build minifies values (oklch(99% .002 85)): compare the colors, not the spelling
-        expect(toHex(await cssVar(page, "--background")), t.id).toBe(toHex(t.tokens.background));
-        expect(toHex(await cssVar(page, "--primary")), t.id).toBe(toHex(t.tokens.primary));
+        const names = Object.keys(t.tokens);
+        const painted = await page.evaluate((names) => names.map((n) => getComputedStyle(document.documentElement).getPropertyValue(`--${n}`).trim()), names);
+        for (const [i, name] of names.entries()) expect.soft(toHex(painted[i]!), `${t.id} --${name}`).toBe(toHex(t.tokens[name as keyof typeof t.tokens]));
         expect(await page.evaluate(() => document.documentElement.style.colorScheme)).toBe(mode);
       }
     }
@@ -258,21 +256,8 @@ test.describe("themes", () => {
   });
 });
 
-test.describe("visual: every theme", () => {
+test.describe("visual: a palette from each family, the Appearance tab", () => {
   test.use({ deviceScaleFactor: 1 });
-
-  for (const { id, mode } of BUILTIN_THEMES) {
-    test(`inbox in ${id}`, async ({ app: page, server }) => {
-      await server.backend.server.invoke("settings.update", mode === "light" ? { theme: "light", lightTheme: id } : { theme: "dark", darkTheme: id }, ctx);
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      await expect(page.locator("html")).toHaveAttribute("data-theme", id);
-      await expect(page.getByTestId("message").first()).toBeVisible();
-      await page.evaluate(() => document.fonts.ready);
-      await stabilize(page);
-      await expect(page).toHaveScreenshot(`inbox-${id}.png`);
-    });
-  }
 
   for (const id of ["solarized-light", "dracula", "nord"] as const) {
     test(`HTML reader in ${id}`, async ({ app: page, server }) => {
