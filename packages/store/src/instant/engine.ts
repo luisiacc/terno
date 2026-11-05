@@ -38,8 +38,8 @@ import { copySliced, packSnapshot, readSnapshot, sealSnapshot, type Section } fr
  *   candidates, a dedup of the candidates' threads into a top-k buffer.
  */
 
-const FIELDS = 4; // subject, from, to, body: bit i = 1 << i
-const FIELD_BITS: Record<MessageTerm["field"], number> = { text: 15, subject: 1, from: 2, to: 4 };
+const FIELDS = 5; // subject, from, to, body, addresses: bit i = 1 << i
+const FIELD_BITS: Record<MessageTerm["field"], number> = { text: 15, subject: 1, from: 2, to: 4, address: 16 };
 
 const T_EXISTS = 1;
 const T_INBOX = 2;
@@ -67,7 +67,7 @@ const VIEW_FLAGS: Record<SearchView, [number, number]> = {
 /** Bumped whenever tokenize() changes what it emits: snapshots of another tokenizer are discarded. */
 export const TOKENIZER_VERSION = 1;
 /** Bumped whenever the snapshot's sections change meaning. */
-export const INDEX_FORMAT = 2;
+export const INDEX_FORMAT = 3;
 
 /**
  * The exact phrase doclist of another engine (FTS5): ids of messages where
@@ -132,6 +132,13 @@ interface Phrase {
   bits: number;
 }
 
+/** An "any of" group (plan 140): a doc in `decided` holds it, or else it must hold one of the phrases. */
+interface OrGroup {
+  decided: Uint32Array;
+  /** `candidates`: the docs with every token of the phrase, a superset to verify */
+  phrases: { candidates: Uint32Array; phrase: Phrase }[];
+}
+
 /** A single token checked per doc from the forward index instead of materializing its (dense) doc set. */
 interface TokenCheck {
   token: string;
@@ -156,6 +163,8 @@ interface Plan {
   set: Uint32Array;
   attr: Attr | null;
   phrases: Phrase[];
+  /** groups with a phrase left to verify: the others are already all of `set` */
+  groups: OrGroup[];
   /** dense positive tokens, checked per doc while walking */
   lazy: TokenCheck[];
   /** an attribute-only query over every message */
@@ -173,6 +182,26 @@ function grown<T extends Float64Array | Int32Array | Uint32Array | Uint8Array>(a
   b.set(a.length > length ? (a.subarray(0, length) as T) : a);
   if (fill !== undefined) b.fill(fill, a.length);
   return b;
+}
+
+/** Plan 140: an address as an index term. `@` first, which no token holds: a text prefix never reaches it, and a typed address is a prefix range of its own. */
+const addressTerm = (address: string) => `@${address}`;
+
+/** The tokens a term looks up in the dictionary. */
+const termTokens = (term: MessageTerm): string[] => (term.field === "address" ? [addressTerm(term.value)] : tokenize(term.value));
+
+/** The sender and every space-bounded word of the recipients with an @ (the words the stores' exact test sees), a huge header in slices. */
+async function addressTerms(doc: { fromEmail: string; recipients: string }, clock: SliceClock): Promise<string[]> {
+  const out = doc.fromEmail ? [addressTerm(doc.fromEmail)] : [];
+  const text = doc.recipients;
+  for (let start = 0, words = 0; start < text.length; words++) {
+    let end = text.indexOf(" ", start);
+    if (end < 0) end = text.length;
+    if (end > start) for (const word of normalizeText(text.slice(start, end)).split(" ")) if (word.includes("@")) out.push(addressTerm(word));
+    start = end + 1;
+    if ((words & 4095) === 4095) await clock.tick();
+  }
+  return out;
 }
 
 /** Characters per tokenize() call while slicing a large field. */
@@ -599,12 +628,13 @@ export class InstantSearchEngine implements CachedSearchEngine {
     this.tCap = cap;
   }
 
-  /** The doc's tokens per field (subject, from, to, body), large fields in slices. */
+  /** The doc's tokens per field (subject, from, to, body, addresses), large fields in slices. */
   private async fields(doc: SearchMessageDoc, clock: SliceClock): Promise<string[][]> {
     const headers = [await tokenizeSliced(doc.subject, clock), await tokenizeSliced(doc.fromText, clock), await tokenizeSliced(doc.recipients, clock)];
+    const addresses = await addressTerms(doc, clock);
     if (!doc.bodyTokenParts) {
       if (doc.body === null) throw new IndexPreparationError();
-      return [...headers, await tokenizeSliced(doc.body, clock)];
+      return [...headers, await tokenizeSliced(doc.body, clock), addresses];
     }
     const tokens: string[] = [];
     let carry = "", first = true, characters = 0;
@@ -626,7 +656,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
       await clock.tick();
     }
     if (first || carry) throw new IndexPreparationError();
-    return [...headers, tokens];
+    return [...headers, tokens, addresses];
   }
 
   private intern(tok: string): number {
@@ -884,7 +914,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
       const next = new InstantSearchEngine(peakBytes === undefined ? this.o : { ...this.o, peakBytes });
       next.beginBuild(this.rev);
       const clock = this.clock();
-      const fields: string[][] = [[], [], [], []];
+      const fields: string[][] = [[], [], [], [], []];
       // room for what is alive, so the copy doesn't grow (and copy) its buffers on the way
       next.reserve((this.n - this.dead) * 41 + this.fwdLen, "compacted copy");
       next.ensureDocs(this.n - this.dead);
@@ -974,7 +1004,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
     } else {
       const walk = plan.mode !== "messages" || plan.everyDoc || plan.lazy.length > 0 || popcount(plan.set) >= (this.o.walkThreshold ?? 2000);
       strategy = walk ? "instant:walk" : "instant:docs";
-      const canFallBack = plan.phrases.length > 0 && this.o.phrases !== undefined;
+      const canFallBack = (plan.phrases.length > 0 || plan.groups.length > 0) && this.o.phrases !== undefined;
       let r = walk ? this.walk(plan, c, k, canFallBack) : this.sparse(plan, c, k, canFallBack);
       if (r === OVER_WALK) {
         // the candidates sit in old or filtered-out threads: dedup them instead of passing every newer thread
@@ -986,6 +1016,12 @@ export class InstantSearchEngine implements CachedSearchEngine {
         // frequent words that are rarely adjacent: ask the exact phrase doclist instead of verifying candidates
         for (const ph of plan.phrases) andInto(plan.set, this.sourceSet(ph.term, plan.set));
         plan.phrases = [];
+        for (const g of plan.groups) {
+          const either = copyWords(g.decided);
+          for (const p of g.phrases) orInto(either, this.sourceSet(p.phrase.term, andInto(copyWords(p.candidates), plan.set)));
+          andInto(plan.set, either);
+        }
+        plan.groups = [];
         this.materialize(plan);
         const rewalk = popcount(plan.set) >= (this.o.walkThreshold ?? 2000);
         strategy = `${rewalk ? "instant:walk" : "instant:docs"}+phrases`;
@@ -1087,13 +1123,13 @@ export class InstantSearchEngine implements CachedSearchEngine {
       if (tokenize(term.value).length === 0) continue;
       (term.negate ? negative : positive).push(term);
     }
-    const hasMessagePredicate = positive.length > 0 || hasEmailTerm || q.hasAttachment !== undefined || q.before !== undefined || q.after !== undefined;
+    const hasMessagePredicate = positive.length > 0 || q.anyOf.length > 0 || hasEmailTerm || q.hasAttachment !== undefined || q.before !== undefined || q.after !== undefined;
     if (!hasMessagePredicate) {
-      if (negative.length === 0) return { mode: "threads", filter, set: this.alive, attr: null, phrases: [], lazy: [], everyDoc: false };
+      if (negative.length === 0) return { mode: "threads", filter, set: this.alive, attr: null, phrases: [], groups: [], lazy: [], everyDoc: false };
       // purely negative: whole threads with a matching message are excluded
       const set = new Uint32Array(this.alive.length);
       for (const term of negative) orInto(set, this.exactSet(term));
-      return { mode: "exclude", filter, set, attr: null, phrases: [], lazy: [], everyDoc: false };
+      return { mode: "exclude", filter, set, attr: null, phrases: [], groups: [], lazy: [], everyDoc: false };
     }
     const senderId = sender === null ? -1 : (this.senderIds.get(sender) ?? -2);
     if (senderId === -2) return null;
@@ -1114,6 +1150,15 @@ export class InstantSearchEngine implements CachedSearchEngine {
       set = set ? andInto(set, e.set) : e.set;
       if (e.phrase) phrases.push(e.phrase);
     }
+    const groups: OrGroup[] = [];
+    for (const terms of q.anyOf) {
+      const group = this.orGroup(terms);
+      const either = copyWords(group.decided);
+      for (const p of group.phrases) orInto(either, p.candidates);
+      set = set ? andInto(set, either) : either;
+      // only what's left to verify: without a phrase the candidates are the answer
+      if (group.phrases.length > 0) groups.push(group);
+    }
     if (!set && lazy.length) set = copyWords(this.alive);
     let everyDoc = false;
     if (set) andInto(set, this.alive);
@@ -1124,7 +1169,40 @@ export class InstantSearchEngine implements CachedSearchEngine {
       everyDoc = true;
     }
     for (const term of negative) andNotInto(set, this.exactSet(term));
-    return { mode: "messages", filter, set, attr, phrases, lazy, everyDoc };
+    return { mode: "messages", filter, set, attr, phrases, groups, lazy, everyDoc };
+  }
+
+  /** "Any of" (plan 140): what the postings decide at once, and the phrases left to verify doc by doc. */
+  private orGroup(terms: readonly MessageTerm[]): OrGroup {
+    const decided = new Uint32Array(this.alive.length);
+    const phrases: OrGroup["phrases"] = [];
+    for (const term of terms) {
+      if (term.field === "from" && isFullEmail(term.value)) {
+        const sender = this.senderIds.get(normalizeText(term.value));
+        if (sender !== undefined) orInto(decided, this.senderSet(sender));
+        continue;
+      }
+      const e = this.termSet(term);
+      if (e.phrase) phrases.push({ candidates: e.set, phrase: e.phrase });
+      else orInto(decided, e.set);
+    }
+    return { decided, phrases };
+  }
+
+  /** Doc d is decided, or holds one of the phrases, in every group. */
+  private groupsAt(d: number, groups: readonly OrGroup[]): boolean {
+    for (const g of groups) {
+      if (has(g.decided, d)) continue;
+      let ok = false;
+      for (const p of g.phrases) {
+        if (has(p.candidates, d) && this.phraseAt(d, p.phrase)) {
+          ok = true;
+          break;
+        }
+      }
+      if (!ok) return false;
+    }
+    return true;
   }
 
   /**
@@ -1134,7 +1212,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
    * thousands of postings). Longer tokens build their (cached) sets.
    */
   private denseCheck(term: MessageTerm): TokenCheck | null {
-    const toks = tokenize(term.value);
+    const toks = termTokens(term);
     if (toks.length !== 1 || !term.prefix || toks[0]!.length > 2) return null;
     const tok = toks[0]!;
     const bits = FIELD_BITS[term.field];
@@ -1214,7 +1292,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
 
   /** Docs holding every token of the term in its field (a superset for phrases, which come with their verifier). */
   private termSet(term: MessageTerm): { set: Uint32Array; phrase: Phrase | null } {
-    const toks = tokenize(term.value);
+    const toks = termTokens(term);
     const bits = FIELD_BITS[term.field];
     let set: Uint32Array | null = null;
     for (let i = 0; i < toks.length; i++) {
@@ -1402,7 +1480,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
 
   /** Threads newest-first from the cursor; stops after k matches. */
   private walk(plan: Plan, cursor: SearchCursor | undefined, k: number, budgeted: boolean): number[] | typeof OVER_BUDGET | typeof OVER_WALK {
-    const { filter, set, attr, phrases, mode } = plan;
+    const { filter, set, attr, phrases, groups, mode } = plan;
     const order = this.order;
     const head = this.thrHead;
     const next = this.docNext;
@@ -1445,6 +1523,10 @@ export class InstantSearchEngine implements CachedSearchEngine {
             break;
           }
         }
+        if (ok && groups.length && !this.groupsAt(d, groups)) {
+          ok = false;
+          if (budgeted && ++fails > budget) return OVER_BUDGET;
+        }
         if (ok) {
           out.push(t);
           break;
@@ -1456,7 +1538,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
 
   /** Few candidates: dedup their threads into the k newest after the cursor. */
   private sparse(plan: Plan, cursor: SearchCursor | undefined, k: number, budgeted: boolean): number[] | typeof OVER_BUDGET {
-    const { filter, set, attr, phrases } = plan;
+    const { filter, set, attr, phrases, groups } = plan;
     if (++this.gen === 0xffffffff) {
       this.seen.fill(0);
       this.gen = 1;
@@ -1490,6 +1572,13 @@ export class InstantSearchEngine implements CachedSearchEngine {
           }
           return;
         }
+      }
+      if (groups.length && !this.groupsAt(d, groups)) {
+        if (budgeted && ++fails > budget) {
+          over = true;
+          return true;
+        }
+        return;
       }
       seen[t] = gen;
       let lo = 0;

@@ -29,7 +29,7 @@ import { mergeBefore, sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObse
 import { bindIdbPromotedFlags, idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
-import { categoryOf, COUNT_CAP, filterState, LIST_FILTERS, sameFilterState, parseSearch, resolvable, resolveSearch, senderVetoed, type Address, type FilterAction, type FilterRule, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
+import { categoryOf, COUNT_CAP, filterState, LIST_FILTERS, sameFilterState, parseSearch, searchTerms, resolvable, resolveSearch, senderVetoed, type Address, type FilterAction, type FilterRule, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -964,7 +964,7 @@ export class IdbMailStore implements MailStore {
           while (i < ids.length && performance.now() - sliceStarted < SCAN_SLICE_MS) {
             const chunk = ids.slice(i, i + SCAN_CHUNK);
             if (plan.needsBodies) await this.readBodies(chunk);
-            const prepared = plan.needsBodies ? await this.prepareBodyTests(req.search.query.terms.filter((t) => t.field === "text").map((t) => ({ op: "contains" as const, value: t.value, prefix: t.prefix })), chunk) : new Map();
+            const prepared = plan.needsBodies ? await this.prepareBodyTests(searchTerms(req.search.query).filter((t) => t.field === "text").map((t) => ({ op: "contains" as const, value: t.value, prefix: t.prefix })), chunk) : new Map();
             for (const id of chunk) {
               const m = messages.get(id);
               if (!m) continue;

@@ -40,6 +40,7 @@ function phraseIn(tokens: readonly string[], term: MessageTerm): boolean {
 
 /** One message term on one message, by brute force (also a reference phrase doclist for engines' fallbacks). */
 export function termMatches(m: SearchMessageDoc, term: MessageTerm): boolean {
+  if (term.field === "address") return [m.fromEmail, ...normalizeText(m.recipients).split(" ")].some((word) => (term.prefix ? word.startsWith(term.value) : word === term.value));
   const columns = columnsOf(m);
   if (term.field === "text") return Object.values(columns).some((c) => phraseIn(c, term));
   return phraseIn(columns[term.field], term);
@@ -69,10 +70,12 @@ export function oracleSearch(corpus: SearchCorpus, query: string, now: number, s
   const positive = textTerms.filter((t) => !t.negate);
   const negative = textTerms.filter((t) => t.negate);
   const hasMessagePredicate =
-    positive.length > 0 || emailTerms.length > 0 || q.hasAttachment !== undefined || q.before !== undefined || q.after !== undefined;
+    positive.length > 0 || q.anyOf.length > 0 || emailTerms.length > 0 || q.hasAttachment !== undefined || q.before !== undefined || q.after !== undefined;
 
+  const alternative = (m: SearchMessageDoc, t: MessageTerm) => (t.field === "from" && isFullEmail(t.value) ? normalizeText(t.value) === m.fromEmail : termMatches(m, t));
   const messageOk = (m: SearchMessageDoc) =>
     positive.every((t) => termMatches(m, t)) &&
+    q.anyOf.every((group) => group.some((t) => alternative(m, t))) &&
     // negatives are message-level whenever any message predicate exists
     (!hasMessagePredicate || negative.every((t) => !termMatches(m, t))) &&
     emailTerms.every((t) => (normalizeText(t.value) === m.fromEmail) !== t.negate) &&

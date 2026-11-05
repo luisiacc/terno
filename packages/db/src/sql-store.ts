@@ -1,7 +1,7 @@
 import { bodyPrefix, bodyTestKey, bodyPartRange, CORPUS_TEXTS_MAX, finishBodyClose, readThreadContext } from "@terno/store";
 import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
 import { publishBody } from "@terno/store";
-import { resolvable, parseSearch } from "@terno/core";
+import { resolvable, parseSearch, searchTerms } from "@terno/core";
 import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, BODY_READY_APPLICATION_ID } from "./body-upgrade";
 import { unsubscribeBodyParts, decodeBodyPart } from "@terno/store";
 import { retainBody, observeBodyRetirement, bodyReadReference, sqlBodyParts, cleanupBodies, finishBodyStage, withBodySelection, hydrateBodyReference, stageBody, prepareBodyMatches, withBodyMatches } from "./body-parts";
@@ -398,7 +398,7 @@ export class SqlMailStore implements MailStore {
         phrases.set(bodyTestKey("contains", error.term.value, error.term.prefix), [...new Set(ids)]);
       }
     }
-    const bodyTests = req.search.query.terms.filter((t) => t.field === "text").map((t) => ({ op: "contains" as const, value: t.value, prefix: t.prefix }));
+    const bodyTests = searchTerms(req.search.query).filter((t) => t.field === "text").map((t) => ({ op: "contains" as const, value: t.value, prefix: t.prefix }));
     const matches = await prepareBodyMatches(this.db, bodyTests, this.yieldTo);
     return withBodyMatches(this.db, matches, () => this.searchPreparedPage(req));
   }
@@ -1336,7 +1336,7 @@ export class SqlMailStore implements MailStore {
   private async preparedScope<V>(scope: import("@terno/core").CategorizeScope, work: () => V): Promise<V> {
     return this.bodyCommand(async () => {
     const resolved = resolvable(scope);
-    const tests = resolved.kind === "query" ? parseSearch(resolved.query).terms.filter((t) => t.field === "text").map((t) => ({ op: "contains" as const, value: t.value, prefix: t.prefix })) : [];
+    const tests = resolved.kind === "query" ? searchTerms(parseSearch(resolved.query)).filter((t) => t.field === "text").map((t) => ({ op: "contains" as const, value: t.value, prefix: t.prefix })) : [];
     const matches = await prepareBodyMatches(this.db, tests, this.yieldTo);
     return withBodyMatches(this.db, matches, work);
     });

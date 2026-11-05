@@ -136,30 +136,42 @@ function phraseAt(tokens: readonly string[], needle: readonly string[], prefix: 
 }
 
 function termIn(cols: Columns, term: MessageTerm, needle: readonly string[]): boolean {
+  if (term.field === "address") return false; // decided on the row: see addressOn
   if (term.field === "text") return phraseAt(cols.subject, needle, term.prefix) || phraseAt(cols.from, needle, term.prefix) || phraseAt(cols.to, needle, term.prefix) || (cols.bodyTest ? cols.bodyTest(term.value, term.prefix) : phraseAt(cols.body, needle, term.prefix));
   return phraseAt(cols[term.field], needle, term.prefix);
 }
 
+/** Plan 140: a whole space-bounded word of the sender and the recipients, from the row alone (no tokens, no body). */
+const addressOn = (m: R, term: MessageTerm) => ` ${m.from_email} ${m.recipients_norm} `.includes(` ${term.value}${term.prefix ? "" : " "}`);
+const isSenderEmail = (t: MessageTerm) => t.field === "from" && isFullEmail(t.value);
+
 export function planScan(c: Ctx, r: ResolvedSearch): ScanPlan {
   const q = r.query;
   const memberships = T(c, "thread_categories");
-  const emails = q.terms.filter((t) => t.field === "from" && isFullEmail(t.value)).map((t) => ({ email: normalizeText(t.value), negate: t.negate }));
-  const text = q.terms.filter((t) => !(t.field === "from" && isFullEmail(t.value))).map((t) => ({ term: t, needle: tokenize(t.value) })).filter((t) => t.needle.length > 0);
+  const emails = q.terms.filter(isSenderEmail).map((t) => ({ email: normalizeText(t.value), negate: t.negate }));
+  const addresses = q.terms.filter((t) => t.field === "address");
+  const text = q.terms.filter((t) => !isSenderEmail(t) && t.field !== "address").map((t) => ({ term: t, needle: tokenize(t.value) })).filter((t) => t.needle.length > 0);
+  const anyOf = q.anyOf.map((group) => group.map((term) => ({ term, needle: tokenize(term.value), sender: isSenderEmail(term) ? normalizeText(term.value) : null })));
   const positive = text.filter((t) => !t.term.negate);
   const negative = text.filter((t) => t.term.negate);
-  const messageLevel = positive.length > 0 || emails.length > 0 || q.hasAttachment !== undefined || q.before !== undefined || q.after !== undefined;
+  const messageLevel = positive.length > 0 || addresses.length > 0 || anyOf.length > 0 || emails.length > 0 || q.hasAttachment !== undefined || q.before !== undefined || q.after !== undefined;
   const accounts = r.accountIds ? new Set(r.accountIds) : null;
   const excludedAccounts = new Set(r.excludeAccountIds);
   const view = SEARCH_VIEW_TEST[r.view];
   return {
     impossible: r.impossible,
     messageLevel,
-    needsBodies: text.some((t) => t.term.field === "text"),
+    needsBodies: text.some((t) => t.term.field === "text") || q.anyOf.some((group) => group.some((t) => t.field === "text")),
     messageOk(m, columns) {
       if (q.hasAttachment !== undefined && (m.has_attachments === 1) !== q.hasAttachment) return false;
       if (q.before !== undefined && !(m.date < q.before)) return false;
       if (q.after !== undefined && !(m.date >= q.after)) return false;
       for (const e of emails) if ((m.from_email === e.email) === e.negate) return false;
+      for (const t of addresses) if (!addressOn(m, t)) return false;
+      for (const group of anyOf) {
+        const holds = group.some((t) => (t.term.field === "address" ? addressOn(m, t.term) : t.sender !== null ? m.from_email === t.sender : termIn(columns(), t.term, t.needle)));
+        if (!holds) return false;
+      }
       if (positive.length === 0 && negative.length === 0) return true;
       const cols = columns();
       for (const t of positive) if (!termIn(cols, t.term, t.needle)) return false;

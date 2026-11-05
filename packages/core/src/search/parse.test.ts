@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isFullEmail, parseDate, parseSearch, withUnreadOnly } from "./parse";
+import { isEmptyQuery, isFullEmail, parseDate, parseSearch, searchTerms, withUnreadOnly, type MessageTerm } from "./parse";
 import { resolveSearch } from "./resolve";
 
 const NOW = new Date(2026, 9, 22, 12).getTime();
@@ -161,5 +161,129 @@ describe("plan 64: a search looks everywhere", () => {
     for (const q of ["in:anywhere", "in:everywhere", "en:todas", "en:cualquiera"]) expect(parseSearch(`${q} x`, NOW).view, q).toBe("anywhere");
     // todo keeps meaning All Mail (es)
     expect(parseSearch("en:todo x", NOW).view).toBe("all");
+  });
+});
+
+describe("a comma means any of (plan 140)", () => {
+  /** The query as words: `field:value`, * for a prefix, - for an exclusion. */
+  const said = (t: MessageTerm) => `${t.negate ? "-" : ""}${t.field}:${t.value}${t.prefix ? "*" : ""}`;
+  const parsed = (input: string) => {
+    const q = parseSearch(input, NOW);
+    return { terms: q.terms.map(said), anyOf: q.anyOf.map((g) => g.map(said)) };
+  };
+
+  it.each([
+    ["acme.test,acme.studio", [], [["text:acme.test", "text:acme.studio*"]]],
+    ["acme.test, acme.studio ", [], [["text:acme.test", "text:acme.studio"]]],
+    ["acme.test ,acme.studio ", [], [["text:acme.test", "text:acme.studio"]]],
+    ["a,b,c ", [], [["text:a", "text:b", "text:c"]]],
+    ["factura acme.test,acme.studio ", ["text:factura"], [["text:acme.test", "text:acme.studio"]]],
+    ["acme.test,acme.studio factura", ["text:factura*"], [["text:acme.test", "text:acme.studio"]]],
+    ["a,b c,d ", [], [["text:a", "text:b"], ["text:c", "text:d"]]],
+    ["from:ana,bob ", [], [["from:ana", "from:bob"]]],
+    ["from:ana, bob ", [], [["from:ana", "from:bob"]]],
+    ["from:ana,subject:hola ", [], [["from:ana", "subject:hola"]]],
+    ["to:ana,bob@globex.test ", [], [["to:ana", "to:bob@globex.test"]]],
+    ['"a, b",c ', [], [["text:a, b", "text:c"]]],
+    ['subject:"uno dos","tres cuatro" ', [], [["subject:uno dos", "subject:tres cuatro"]]],
+    ["-a,b ", ["-text:a", "-text:b"], []],
+    ["-from:a,b ", ["-from:a", "-from:b"], []],
+    ["a,-b ", ["text:a", "-text:b"], []],
+  ])("%s", (input, terms, anyOf) => {
+    expect(parsed(input)).toEqual({ terms, anyOf });
+  });
+
+  it("a comma at the edges, or several, says nothing, and ends the prefix like a space does", () => {
+    expect(parsed("acme.test,")).toEqual({ terms: ["text:acme.test"], anyOf: [] });
+    expect(parsed(",acme.test ")).toEqual({ terms: ["text:acme.test"], anyOf: [] });
+    expect(parsed("a,,,b ")).toEqual({ terms: [], anyOf: [["text:a", "text:b"]] });
+    expect(isEmptyQuery(parseSearch(" , ,, ", NOW))).toBe(true);
+    expect(parseSearch("a,b", NOW).anyOf[0]![1]!.prefix).toBe(true);
+  });
+
+  it("an alternative with nothing to search goes", () => {
+    expect(parsed("foo,!!! ")).toEqual({ terms: ["text:foo"], anyOf: [] });
+    expect(parsed("!!!,foo,bar ")).toEqual({ terms: [], anyOf: [["text:foo", "text:bar"]] });
+  });
+
+  it.each([["1,000"], ["12,50"], ["$1,200.50"], ["1.200,50"], ["1,000,000"], ["1,5%"]])("%s is a number, not a list", (input) => {
+    expect(parsed(`${input} `)).toEqual({ terms: [`text:${input}`], anyOf: [] });
+  });
+
+  it.each([["2024,2025", "2024", "2025"], ["build1,2", "build1", "2"], ["a1,000", "a1", "000"]])("%s is a list", (input, a, b) => {
+    expect(parsed(`${input} `)).toEqual({ terms: [], anyOf: [[`text:${a}`, `text:${b}`]] });
+  });
+
+  it("a number can be an alternative only as its own token", () => {
+    expect(parsed("foo, 1,000 ")).toEqual({ terms: [], anyOf: [["text:foo", "text:1,000"]] });
+  });
+
+  it("other operators keep their comma, and lose a trailing one", () => {
+    expect(parseSearch("category:a,b ", NOW).categories).toEqual(["a,b"]);
+    expect(parseSearch("account:a,b ", NOW).accounts).toEqual(["a,b"]);
+    const q = parseSearch("is:unread, foo ", NOW);
+    expect(q.unread).toBe(true);
+    expect(q.terms.map(said)).toEqual(["text:foo"]);
+    expect(parsed('category:"a",b ')).toEqual({ terms: ["text:b"], anyOf: [] });
+  });
+
+  it("an operator between terms ends the run", () => {
+    const q = parseSearch("a, is:unread, b ", NOW);
+    expect(q.unread).toBe(true);
+    expect(q.anyOf).toEqual([]);
+    expect(q.terms.map(said)).toEqual(["text:a", "text:b"]);
+  });
+
+  it("searchTerms sees every term, wherever it stands", () => {
+    expect(searchTerms(parseSearch("x -y a,b ", NOW)).map(said)).toEqual(["text:x", "-text:y", "text:a", "text:b"]);
+  });
+});
+
+describe("a typed address means that address (plan 140)", () => {
+  const said = (t: MessageTerm) => `${t.negate ? "-" : ""}${t.field}:${t.value}${t.prefix ? "*" : ""}`;
+  const parsed = (input: string) => {
+    const q = parseSearch(input, NOW);
+    return { terms: q.terms.map(said), anyOf: q.anyOf.map((g) => g.map(said)) };
+  };
+  const A = "address:ana@acme.test";
+  const B = "address:bob@globex.test";
+
+  it.each([
+    ["ana@acme.test ", [A], []],
+    ["ANA@Acme.Test ", [A], []],
+    ["<ana@acme.test> ", [A], []],
+    ["<ana@acme.test>", [A], []],
+    ["ana@acme.test,bob@globex.test ", [], [[A, B]]],
+    ["ana@acme.test, bob@globex.test ", [], [[A, B]]],
+    ["ana@acme.test bob@globex.test ", [], [[A, B]]],
+    ["ana@acme.test bob@globex.test,cleo@acme.test ", [], [[A, B, "address:cleo@acme.test"]]],
+    ["ana@acme.test bob@globex.test factura ", ["text:factura"], [[A, B]]],
+    ["factura ana@acme.test ", ["text:factura", A], []],
+    ["ana@acme.test,factura ", [], [[A, "text:factura"]]],
+    ["ana@acme.test,invoice bob@globex.test ", [B], [[A, "text:invoice"]]],
+    ["is:unread ana@acme.test ", [A], []],
+  ])("%s", (input, terms, anyOf) => {
+    expect(parsed(input)).toEqual({ terms, anyOf });
+  });
+
+  it("quotes ask for the text, an exclusion stays text, an operator keeps its meaning", () => {
+    expect(parsed('"ana@acme.test" ')).toEqual({ terms: ["text:ana@acme.test"], anyOf: [] });
+    expect(parsed("-ana@acme.test ")).toEqual({ terms: ["-text:ana@acme.test"], anyOf: [] });
+    expect(parsed("from:ana@acme.test ")).toEqual({ terms: ["from:ana@acme.test"], anyOf: [] });
+    expect(parsed("to:ana@acme.test ")).toEqual({ terms: ["to:ana@acme.test"], anyOf: [] });
+  });
+
+  it("the address still being typed is a prefix of an address, and a space or a comma ends that", () => {
+    expect(parsed("ana@")).toEqual({ terms: ["address:ana@*"], anyOf: [] });
+    expect(parsed("ana@acme")).toEqual({ terms: ["address:ana@acme*"], anyOf: [] });
+    expect(parsed("ana@acme.te")).toEqual({ terms: ["address:ana@acme.te*"], anyOf: [] });
+    expect(parsed("ana@acme.test,bob@glo")).toEqual({ terms: [], anyOf: [[A, "address:bob@glo*"]] });
+    expect(parsed("ana@acme.test")).toEqual({ terms: [`${A}*`], anyOf: [] });
+    expect(parsed("ana@acme.test ")).toEqual({ terms: [A], anyOf: [] });
+    expect(parsed("ana@acme.test,")).toEqual({ terms: [A], anyOf: [] });
+    // not an address once it's finished, and not while it could only be text
+    expect(parsed("ana@acme ")).toEqual({ terms: ["text:ana@acme"], anyOf: [] });
+    expect(parsed("@acme.test")).toEqual({ terms: ["text:@acme.test*"], anyOf: [] });
+    expect(parsed("___@")).toEqual({ terms: ["text:___@*"], anyOf: [] });
   });
 });

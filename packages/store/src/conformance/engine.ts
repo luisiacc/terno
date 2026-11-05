@@ -40,7 +40,7 @@ export function corpusFromDataset(data: MockDataset, rate = 0.7): SearchCorpus {
       subject: m.subject,
       fromText: `${m.from.name} ${m.from.email}`,
       fromEmail: normalizeText(m.from.email),
-      recipients: [...m.to, ...m.cc].map((a) => `${a.name} ${a.email}`).join(", "),
+      recipients: [...m.to, ...m.cc, ...m.bcc].map((a) => (a.name ? `${a.name} ${a.email}` : a.email)).join(" "),
       body: m.bodyText,
       hasAttachments: m.hasAttachments,
       bodyState: "full",
@@ -128,12 +128,34 @@ export function generateQueries(corpus: SearchCorpus, count: number, seed: numbe
     if (r < 0.85) return `${rand() < 0.5 ? "before" : "after"}:${date()}`;
     return `${rand() < 0.5 ? "-before" : "-after"}:${date()}`;
   };
+  // plan 140: comma lists of any kind of term, and addresses typed bare (whole, cut short, alone, by the dozen)
+  const addressPart = (): string => {
+    const m = pick(sample);
+    const address = pick([m.fromEmail, ...normalizeText(m.recipients).split(" ").filter((w) => w.includes("@")), m.fromEmail]);
+    return rand() < 0.3 ? address.slice(0, address.indexOf("@") + 1 + Math.floor(rand() * 8)) : address;
+  };
+  const listPart = (): string => {
+    const part = () => {
+      const r = rand();
+      if (r < 0.35) return pick(words);
+      if (r < 0.5) return addressPart();
+      if (r < 0.6) return `from:${pick(senders)}`;
+      if (r < 0.7) return `to:${pick(senders)}`;
+      if (r < 0.8) return `subject:${pick(words)}`;
+      if (r < 0.9) return (run(materializedBody(pick(sample)), 2) ?? [pick(words), pick(words)]).join(".");
+      return `"${pick(words)} ${pick(words)}"`;
+    };
+    return Array.from({ length: 2 + Math.floor(rand() * 3) }, part).join(rand() < 0.8 ? "," : ", ");
+  };
   const out: string[] = [];
   while (out.length < count) {
     const parts: string[] = [];
     const r = rand();
     const n = r < 0.45 ? 1 : r < 0.8 ? 2 : 3;
-    for (let i = 0; i < n; i++) parts.push(rand() < 0.7 ? textPart() : opPart());
+    for (let i = 0; i < n; i++) {
+      const kind = rand();
+      parts.push(kind < 0.15 ? listPart() : kind < 0.25 ? addressPart() : rand() < 0.7 ? textPart() : opPart());
+    }
     out.push(parts.join(" "));
   }
   return out;
@@ -208,7 +230,10 @@ function mutate(model: Model, rand: () => number, step: number): IndexBatch {
       });
       push({ kind: "upsertThread", doc: t });
     } else if (r < 0.45) {
-      push({ kind: "upsertMessage", doc: { ...pick(msgs), body: rand() < 0.2 ? "" : materializedBody(pick(msgs)).slice(0, 300), bodyState: "full" } });
+      const m = pick(msgs);
+      // a header changes too, so an address the message no longer has must stop finding it
+      const headers = rand() < 0.3 ? { fromEmail: pick(msgs).fromEmail, fromText: pick(msgs).fromText, recipients: pick(msgs).recipients } : {};
+      push({ kind: "upsertMessage", doc: { ...m, ...headers, body: rand() < 0.2 ? "" : materializedBody(pick(msgs)).slice(0, 300), bodyState: "full" } });
     } else if (r < 0.55) {
       push({ kind: "removeMessage", messageId: pick(msgs).messageId });
     } else if (r < 0.75) {

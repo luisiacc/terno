@@ -26,7 +26,14 @@ const FTS_COLUMN: Record<MessageTerm["field"], string | null> = {
   from: "from_text",
   to: "recipients",
   subject: "subject",
+  // only narrows: "maria.ana@acme.test" holds the phrase too, ADDRESS_SQL decides
+  address: "{from_text recipients}",
 };
+
+/** Plan 140: the address is a whole space-bounded word of the sender and the recipients (recipients_text joins them with plain spaces). */
+const ADDRESS_SQL = "instr(' ' || m.from_email || ' ' || m.recipients_norm || ' ', ?) > 0";
+const addressNeedle = (term: MessageTerm) => ` ${term.value}${term.prefix ? "" : " "}`;
+const isSenderEmail = (term: MessageTerm) => term.field === "from" && isFullEmail(term.value);
 
 /** Quote a term as an FTS5 string (double quotes doubled), with optional prefix star. */
 function ftsPhrase(value: string, prefix: boolean): string | null {
@@ -98,6 +105,18 @@ export function compileSearch(r: ResolvedSearch): Compiled {
     const expr = ftsTerm(term);
     if (!expr) continue;
     (term.negate ? negative : positive).push(expr);
+    if (term.field === "address") {
+      c.messageWhere.push(ADDRESS_SQL);
+      c.messageParams.push(addressNeedle(term));
+    }
+  }
+  for (const group of q.anyOf) {
+    // the MATCH finds what any of them may hold; a sender or an address then says exactly which do
+    positive.push(`(${group.map(ftsTerm).filter((x) => x !== null).join(" OR ")})`);
+    if (!group.some((t) => isSenderEmail(t) || t.field === "address")) continue;
+    const exact = group.map((t) => exactPredicate(t, false));
+    c.messageWhere.push(`(${exact.map((e) => e.sql).join(" OR ")})`);
+    c.messageParams.push(...exact.flatMap((e) => e.params));
   }
   if (positive.length > 0) {
     c.match = [positive.join(" AND "), ...negative].join(" NOT ");
@@ -320,21 +339,31 @@ export function searchIsComplete(db: Db): boolean {
   return db.get("SELECT 1 FROM messages WHERE body_state != 'full' LIMIT 1") === undefined;
 }
 
+/** One term as a predicate on alias m; `segmented`: a body may also be in captured parts. */
+function exactPredicate(term: MessageTerm, segmented: boolean): { sql: string; params: Param[] } {
+  if (isSenderEmail(term)) return { sql: "m.from_email = ?", params: [normalizeText(term.value)] };
+  if (term.field === "address") return { sql: ADDRESS_SQL, params: [addressNeedle(term)] };
+  const sql = "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)";
+  const params: Param[] = [ftsTerm(term)!];
+  if (!segmented || term.field !== "text") return { sql, params };
+  return { sql: `(${sql} OR EXISTS (SELECT 1 FROM body_heads b WHERE b.message_id=m.id AND terno_part_match(b.capture_id,'contains',?,?)))`, params: [...params, term.value, term.prefix ? 1 : 0] };
+}
+
 function compileSegmentedSearch(resolved: ResolvedSearch): Compiled {
-  const terms = resolved.query.terms.filter((term) => !(term.field === "from" && isFullEmail(term.value)));
-  const c = compileSearch({ ...resolved, query: { ...resolved.query, terms: resolved.query.terms.filter((term) => term.field === "from" && isFullEmail(term.value)) } });
+  const terms = resolved.query.terms.filter((term) => !isSenderEmail(term));
+  const { anyOf } = resolved.query;
+  const c = compileSearch({ ...resolved, query: { ...resolved.query, anyOf: [], terms: resolved.query.terms.filter(isSenderEmail) } });
   const positives = terms.filter((term) => !term.negate && ftsTerm(term) !== null);
-  const sameMessage = positives.length > 0 || c.messageWhere.length > 0;
+  const sameMessage = positives.length > 0 || anyOf.length > 0 || c.messageWhere.length > 0;
   const negatives: string[] = [], negativeParams: Param[] = [];
+  for (const group of anyOf) {
+    const exact = group.map((t) => exactPredicate(t, true));
+    c.messageWhere.push(`(${exact.map((e) => e.sql).join(" OR ")})`);
+    c.messageParams.push(...exact.flatMap((e) => e.params));
+  }
   for (const term of terms) {
-    const expression = ftsTerm(term);
-    if (!expression) continue;
-    let sql = "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)";
-    const params: Param[] = [expression];
-    if (term.field === "text") {
-      sql = `(${sql} OR EXISTS (SELECT 1 FROM body_heads b WHERE b.message_id=m.id AND terno_part_match(b.capture_id,'contains',?,?)))`;
-      params.push(term.value, term.prefix ? 1 : 0);
-    }
+    if (!ftsTerm(term)) continue;
+    const { sql, params } = exactPredicate(term, true);
     if (term.negate && !sameMessage) { negatives.push(sql); negativeParams.push(...params); }
     else { c.messageWhere.push(term.negate ? `NOT (${sql})` : `(${sql})`); c.messageParams.push(...params); }
   }

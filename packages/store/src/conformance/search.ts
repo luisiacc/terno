@@ -65,6 +65,34 @@ export const SEARCH_CASES: readonly [string, string][] = [
   ["-before:2025-06-01 has:attachment", "walk"],
   ["zzzqqqxx", "fts"],
   ["!!!", "walk"],
+  // plan 140: a comma means any of
+  ["factura,uber", "fts"],
+  ["factura, uber ", "fts"],
+  ["darse.de.baja,factura", "fts"],
+  ["reunión presupuesto,factura", "fts"],
+  ["from:lucia,crew@morningbrew.com", "fts"],
+  ["from:crew@morningbrew.com,hola@platzi.com", "fts"],
+  ["from:crew@morningbrew.com,subject:factura", "fts"],
+  ["from:crew@morningbrew.com,factura is:unread", "fts"],
+  ["factura,uber -hola", "fts"],
+  ["-factura,uber", "fts-exclude"],
+  ["zzzqqqxx,yyyqqqzz", "fts"],
+  ["factura,", "fts"],
+  // a typed address is that address, in the sender or the recipients
+  ["crew@morningbrew.com ", "fts"],
+  ["crew@morningbrew.com", "fts"],
+  ["crew@morning", "fts"],
+  ["crew@", "fts"],
+  ["CREW@morningbrew.com ", "fts"],
+  ["<crew@morningbrew.com> ", "fts"],
+  ['"crew@morningbrew.com"', "fts"],
+  ["-crew@morningbrew.com", "fts-exclude"],
+  ["crew@morningbrew.com hola@platzi.com ", "fts"],
+  ["crew@morningbrew.com,hola@platzi.com ", "fts"],
+  ["crew@morningbrew.com,factura ", "fts"],
+  ["crew@morningbrew.com markets ", "fts"],
+  ["crew@morningbrew.com hola@platzi.com is:unread ", "fts"],
+  ["nobody@nowhere.example ", "fts"],
 ];
 
 /**
@@ -150,6 +178,16 @@ export function defineSearchConformance(name: string, setup: () => Promise<Searc
       const firstOfBody = tokenize(materializedBody(m))[0]!;
       const spanning = `"${lastOfSubject} ${firstOfBody}"`;
       expect((await searchAll(spanning)).ids).toEqual(oracle(spanning));
+    });
+
+    it("an address finds its own mail and only that (plan 140: fixture sanity, the oracle's own semantics)", () => {
+      const m = corpus.messages.find((x) => normalizeText(x.recipients).split(" ").some((w) => w.includes("@") && w !== x.fromEmail))!;
+      const recipient = normalizeText(m.recipients).split(" ").find((w) => w.includes("@") && w !== m.fromEmail)!;
+      expect(oracle(`${recipient} `)).toContain(m.threadId);
+      expect(oracle(`${m.fromEmail} `)).toContain(m.threadId);
+      expect(oracle(`x.${recipient} `)).not.toContain(m.threadId);
+      expect(oracle(`${recipient}.evil.example `)).not.toContain(m.threadId);
+      expect(oracle(`${recipient}.evil.example,${m.fromEmail} `)).toContain(m.threadId);
     });
 
     it("cursors carry the query key and revision; a cursor of another query is refused", async () => {

@@ -1,7 +1,7 @@
 import { parseSearch, resolveSearch } from "@terno/core";
 import { generateDataset } from "@terno/mock-data";
 import { describe, expect, it } from "vitest";
-import { corpusFromDataset, defineEngineConformance, termMatches, type SearchCorpus } from "../conformance";
+import { corpusFromDataset, defineEngineConformance, oracleSearch, termMatches, type SearchCorpus } from "../conformance";
 import type { SearchMessageDoc, SearchThreadDoc } from "../search";
 import { tokenize } from "@terno/core";
 import { InstantSearchEngine, tokenizeSliced, type InstantEngineOptions } from "./engine";
@@ -84,6 +84,22 @@ describe("InstantSearchEngine", () => {
     const strategies = ['"hola equipo"', '"baja darse"', '"de equipo"', '"la factura de"'].map((q) => search(e, q).strategy);
     expect(strategies.some((s) => s.endsWith("+phrases"))).toBe(true);
     expect(asked).toBeGreaterThan(0);
+  });
+
+  it("any of (plan 140): a group's rarely-adjacent phrases ask the doclist, and answer as the oracle does", async () => {
+    let asked = 0;
+    const e = await build(data, {
+      phrases: (term) => {
+        asked++;
+        return data.messages.filter((m) => termMatches(m, term)).map((m) => m.messageId);
+      },
+      phraseBudget: 4,
+    });
+    for (const query of ['"hola equipo","baja darse"', '"baja darse",zzqxjv', '"hola equipo",factura', 'factura "baja darse","de equipo"']) {
+      expect(search(e, query, 100_000).threadIds, query).toEqual(oracleSearch(data, query, NOW));
+    }
+    expect(asked).toBeGreaterThan(0);
+    expect(search(e, "factura,uber").strategy).not.toContain("+phrases");
   });
 
   it("a batch that fails part-way discards the index instead of leaving it half-applied", async () => {
