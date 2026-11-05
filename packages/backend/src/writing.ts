@@ -8,6 +8,7 @@ import {
   DEFAULT_WRITING_PREFS,
   chooseLanguage,
   detectWritingLanguage,
+  leadOfMail,
   DraftTooLargeError,
   estimateTokens,
   findPlaceholders,
@@ -377,6 +378,7 @@ export class WritingService {
     const inboundText = answering ? withoutQuotes(answering.text ?? "") : "";
     const snippetOnly = answering !== null && !inboundText;
     const inbound = answering ? headAndTail(inboundText || answering.snippet, INBOUND_MAX_TOKENS) : null;
+    const templated = await this.learner.templatedIn(account.id);
 
     let history: WritingUsed["history"] = "none";
     let examples: { date: string; subject: string; text: string }[] = [];
@@ -389,7 +391,7 @@ export class WritingService {
       if (history === "none" && (await store.writing.sentTo({ addresses: [address], limit: 1 })).state !== "none") history = "unavailable";
       if (sent.refs.length) {
         sentRefs = new Map(sent.refs.map((r) => [r.id, r]));
-        const texts = await store.writing.corpus.texts(sent.refs.map((r) => r.id));
+        const texts = await store.writing.corpus.texts(sent.refs.filter((r) => !templated.has(r.id)).map((r) => r.id));
         mails = readCorpus(
           texts.flatMap((t) => {
             const r = sentRefs.get(t.id);
@@ -410,7 +412,7 @@ export class WritingService {
         (context?.messages ?? []).filter((m) => m.own && m.text).sort((a, b) => b.date - a.date).map((m) => ({ id: m.id, to: [], cc: [], at: m.date, isReply: true, body: m.text ?? "" })),
         { signature: account.signature, selfNames: [account.senderName, account.displayName].filter(Boolean) },
       ).sort((a, b) => b.at - a.at).map((m) => m.language),
-      inbound: inboundText ? detectWritingLanguage(inboundText) : "",
+      inbound: inboundText ? detectWritingLanguage(leadOfMail(inboundText)) : "",
       toPerson: [...mails].sort((a, b) => b.at - a.at).map((m) => m.language),
       otherAccount: level("person", true),
       domain: level("domain"),

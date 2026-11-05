@@ -36,6 +36,8 @@ export interface WrittenMail {
   greeting: string | null;
   /** as typed: `Best,\nTom`, `-m`, `thanks` */
   signOff: string | null;
+  /** the lines that keep ending this account's mail, as typed, when this message has them */
+  signature?: string | null;
   language: WritingLanguage;
 }
 
@@ -55,6 +57,9 @@ export interface Habits {
   noGreeting: number;
   signOffs: Share[];
   noSignOff: number;
+  /** a block typed or added by another client, learned because it's on most of their mail: never merged across accounts */
+  signatures?: Share[];
+  noSignature?: number;
   /** shares of messages */
   exclamation: number;
   emoji: number;
@@ -101,7 +106,7 @@ export const scopeKeys = {
 };
 
 /** The fewest messages a scope needs (§1). */
-export const MIN_SAMPLES: Readonly<Record<VoiceScope, number>> = { you: 20, account: 15, domain: 8, person: 5 };
+export const MIN_SAMPLES: Readonly<Record<VoiceScope, number>> = { you: 5, account: 5, domain: 8, person: 5 };
 
 /** The caller's token estimate. Chars over four is good enough with §6.3's margin on top. */
 export const estimateTokens = (text: string): number => Math.ceil(text.length / 4);

@@ -5,6 +5,7 @@ import {
   chooseSample,
   CONSUMER_DOMAINS,
   habitsSteps,
+  isOwnName,
   mailFeatures,
   mergeHabits,
   mergePhrases,
@@ -13,6 +14,8 @@ import {
   reduceMail,
   SAMPLE_LIMITS,
   scopeKeys,
+  TemplateFinder,
+  trailerBlock,
   TrailerCounter,
   withoutTrailers,
   writtenText,
@@ -47,6 +50,8 @@ import { SliceClock } from "@terno/store/autocomplete";
 export const LEARNER_KEY = "writing:learner";
 export const STUDY_KEY = "writing:study";
 export const windowKey = (accountId: number): string => `writing:window:${accountId}`;
+/** Mail a template wrote, kept apart so it's no example of how they write either. */
+export const templatedKey = (accountId: number): string => `writing:templated:${accountId}`;
 
 const HEADER_PAGE = 64;
 const BODY_PAGE = 16;
@@ -289,7 +294,7 @@ export class VoiceLearner {
     await this.running?.catch(() => {});
     const cp = await this.checkpoint();
     const ids = new Set([...(cp?.merged ?? []), ...(await this.host.store.accounts.list()).map((a) => a.id)]);
-    await this.host.store.writing.profiles.clear([LEARNER_KEY, STUDY_KEY, ...[...ids].map(windowKey)]);
+    await this.host.store.writing.profiles.clear([LEARNER_KEY, STUDY_KEY, ...[...ids].flatMap((id) => [windowKey(id), templatedKey(id)])]);
     this.windows.clear();
     this.pendingForced.clear();
   }
@@ -442,11 +447,21 @@ export class VoiceLearner {
     return out;
   }
 
-  /** What the user wrote in these messages, in slices: trailers measured over all of them first. */
-  private async read(account: Account, headers: readonly CorpusHeader[], live: () => boolean): Promise<CountedMail[] | null> {
+  /** Which of this account's mail a template wrote, as of its last pass. */
+  async templatedIn(accountId: number): Promise<ReadonlySet<number>> {
+    return new Set(await this.host.store.settings.get<number[]>(templatedKey(accountId), []));
+  }
+
+  /**
+   * What the user wrote in these messages, in slices: templated mail set aside first (or known already, when these are
+   * only part of the account's mail), then trailers measured over the rest, since a campaign's signature isn't theirs.
+   */
+  private async read(account: Account, headers: readonly CorpusHeader[], live: () => boolean, known?: ReadonlySet<number>): Promise<{ mails: CountedMail[]; templated: ReadonlySet<number> } | null> {
     const names = new Map<string, string>();
     const bases = new Map<number, string>();
     const counter = new TrailerCounter();
+    const finder = new TemplateFinder();
+    const toOf = new Map(headers.map((h) => [h.id, h.to]));
     for (const h of headers) for (const [address, name] of Object.entries(h.names)) names.set(address, name);
     for (let i = 0; i < headers.length; i += BODY_PAGE) {
       if (!live()) return null;
@@ -456,28 +471,44 @@ export class VoiceLearner {
       for (const t of texts) {
         const base = writtenText(t.text, { signature: account.signature }).slice(0, WRITTEN_CHARS);
         bases.set(t.id, base);
-        counter.add(base);
+        finder.add(t.id, toOf.get(t.id) ?? [], base);
         await this.clock.tick();
       }
+    }
+    let templated = known;
+    if (!templated) {
+      const steps = finder.steps();
+      for (let step = steps.next(); ; step = steps.next()) {
+        if (step.done) {
+          templated = step.value;
+          break;
+        }
+        await this.clock.tick();
+      }
+    }
+    for (const [id, base] of bases) {
+      if (!templated.has(id)) counter.add(base);
+      await this.clock.tick();
     }
     const trailers = counter.trailers();
     const context = contextOf(account, names);
     const out: CountedMail[] = [];
     for (const h of headers) {
       const base = bases.get(h.id);
-      // no text came for it: nothing to count
-      if (base === undefined) continue;
-      const mail = reduceMail({ id: h.id, to: h.to, cc: h.cc, at: h.date, isReply: h.isReply, bulk: h.bulk }, withoutTrailers(base, trailers), context);
-      out.push({ mail, features: mailFeatures(mail) });
+      // no text came for it, or it isn't theirs: nothing to count
+      if (base === undefined || templated.has(h.id)) continue;
+      const mail = reduceMail({ id: h.id, to: h.to, cc: h.cc, at: h.date, isReply: h.isReply, bulk: h.bulk }, withoutTrailers(base, trailers), context, trailerBlock(base, trailers));
+      // a forward with nothing typed above it says nothing about how they write
+      if (mail.words > 0) out.push({ mail, features: mailFeatures(mail) });
       await this.clock.tick();
     }
-    return out;
+    return { mails: out, templated };
   }
 
   /** `before`: what the window held at the last pass; null when there wasn't one, so nothing is new against it. */
-  private async countScope(scope: VoiceScope, scopeKey: string, accountId: number | null, mails: readonly CountedMail[], out: { upserts: ProfileUpsert[]; incorporated: Incorporated[]; before: ReadonlySet<number | string> | null }, live: () => boolean): Promise<boolean> {
+  private async countScope(scope: VoiceScope, scopeKey: string, accountId: number | null, mails: readonly CountedMail[], out: { upserts: ProfileUpsert[]; incorporated: Incorporated[]; before: ReadonlySet<number | string> | null; selfNames: readonly string[] }, live: () => boolean): Promise<boolean> {
     if (mails.length < MIN_SAMPLES[scope]) return true;
-    const { upserts, incorporated, before } = out;
+    const { upserts, incorporated, before, selfNames } = out;
     const write = async (language: string, subset: readonly CountedMail[]): Promise<boolean> => {
       const counting = habitsSteps(subset.map((m) => m.features));
       let counted = counting.next();
@@ -493,7 +524,7 @@ export class VoiceLearner {
       for (;;) {
         const step = steps.next();
         if (step.done) {
-          upserts.push({ scope, scopeKey, language, accountId, habitsJson: JSON.stringify(habits), phrasesJson: JSON.stringify(step.value), samples: subset.length });
+          upserts.push({ scope, scopeKey, language, accountId, habitsJson: JSON.stringify(habits), phrasesJson: JSON.stringify(step.value.filter((phrase) => !isOwnName(phrase, selfNames))), samples: subset.length });
           const count = before ? subset.reduce((n, m) => (before.has(m.mail.id) ? n : n + 1), 0) : 0;
           if (count > 0) incorporated.push({ scopeKey, language, count });
           return true;
@@ -533,8 +564,9 @@ export class VoiceLearner {
     await this.host.platform.yield();
     const headers = await this.walk(account.id, live);
     if (!live()) return null;
-    const mails = await this.read(account, headers, live);
-    if (!mails || !live()) return null;
+    const read = await this.read(account, headers, live);
+    if (!read || !live()) return null;
+    const { mails, templated } = read;
 
     const own = new Set((await store.accounts.list()).map((a) => a.email.toLowerCase()));
     const people = new Map<string, CountedMail[]>();
@@ -556,7 +588,7 @@ export class VoiceLearner {
     }
     await this.clock.tick();
 
-    const counting = { upserts: [] as ProfileUpsert[], incorporated: [] as Incorporated[], before };
+    const counting = { upserts: [] as ProfileUpsert[], incorporated: [] as Incorporated[], before, selfNames: [account.senderName, account.displayName].filter(Boolean) };
     const { upserts, incorporated } = counting;
     if (!(await this.countScope("account", scopeKeys.account(account.id), account.id, mails, counting, live))) return null;
     const topPeople = [...people].filter(([, list]) => list.length >= MIN_SAMPLES.person).sort((a, b) => b[1].length - a[1].length || (a[0] < b[0] ? -1 : 1)).slice(0, PERSONS_MAX);
@@ -581,7 +613,7 @@ export class VoiceLearner {
     for (const i of incorporated) if (i.scopeKey === accountKey) youNew[i.language] = (youNew[i.language] ?? 0) + i.count;
     const next: LearnerCheckpoint = { ...cp, dirty, forced: cp.forced.filter((id) => id !== account.id), youStale: true, youNew, updatedAt: this.host.now() };
     const ids = headers.map((h) => h.id);
-    await store.writing.profiles.commit({ upserts: [], keep: upserts.filter(profileFits).map(({ scopeKey, language }) => ({ scopeKey, language })), replaceAccount: account.id, incorporated, state: { [LEARNER_KEY]: next, [windowKey(account.id)]: ids }, now: this.host.now() });
+    await store.writing.profiles.commit({ upserts: [], keep: upserts.filter(profileFits).map(({ scopeKey, language }) => ({ scopeKey, language })), replaceAccount: account.id, incorporated, state: { [LEARNER_KEY]: next, [windowKey(account.id)]: ids, [templatedKey(account.id)]: [...templated] }, now: this.host.now() });
     this.windows.set(account.id, new Set(ids));
     this.host.log("info", "voice learner: account pass", { messages: mails.length, rows: upserts.length });
     return next;
@@ -625,7 +657,7 @@ export class VoiceLearner {
     const gone = cp.merged.filter((id) => !known.has(id));
     for (const id of gone) this.windows.delete(id);
     await this.host.platform.yield();
-    await store.writing.profiles.commit({ upserts, incorporated, replaceYou: true, state: { [LEARNER_KEY]: next, ...Object.fromEntries(gone.map((id) => [windowKey(id), null])) }, now: this.host.now() });
+    await store.writing.profiles.commit({ upserts, incorporated, replaceYou: true, state: { [LEARNER_KEY]: next, ...Object.fromEntries(gone.flatMap((id) => [[windowKey(id), null], [templatedKey(id), null]])) }, now: this.host.now() });
     return next;
   }
 
@@ -643,9 +675,9 @@ export class VoiceLearner {
         const key = row.scopeKey.slice(row.scopeKey.indexOf(":", row.scopeKey.indexOf(":") + 1) + 1);
         return row.scope === "person" ? h.to.includes(key) : h.to.some((a) => a.endsWith(`@${key}`));
       });
-      const mails = await this.read(account, wanted.slice(0, SAMPLE_HEADERS), live);
-      if (!mails) return [];
-      out.push(...mails.map((m) => m.mail));
+      const read = await this.read(account, wanted.slice(0, SAMPLE_HEADERS), live, await this.templatedIn(account.id));
+      if (!read) return [];
+      out.push(...read.mails.map((m) => m.mail));
     }
     return row.language ? out.filter((m) => m.language === row.language) : out;
   }

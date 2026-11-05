@@ -28,7 +28,8 @@ const NOT_A_NAME = /^(yes|no|ok|okay|sure|yep|nope|thanks|hmm|right|great|perfec
 const flatten = (line: string) => line.trim().replace(/\s+/g, " ");
 
 function firstPass(body: string): string[] {
-  const lines = body.slice(0, MAX_BODY).replace(/\r\n?/g, "\n").split("\n");
+  // an attachment's placeholder and a byte-order mark aren't anything anyone wrote, and would hide the line they're on
+  const lines = body.slice(0, MAX_BODY).replace(/\r\n?/g, "\n").replace(/[\uFFFC\uFEFF]/g, "").split("\n");
   const out: string[] = [];
   let inSignature = false;
   for (let i = 0; i < lines.length; i++) {
@@ -133,6 +134,107 @@ export function writtenText(body: string, context: ExtractContext = {}): string 
 /** `writtenText`'s last step, for text already through the rest of it. */
 export const withoutTrailers = (text: string, trailers: ReadonlySet<string>): string => takeTrailers(text.split("\n"), trailers).join("\n").trim();
 
+/** The lines that step takes off, as typed: their signature when no signature is set in the app. */
+export function trailerBlock(text: string, trailers: ReadonlySet<string>): string | null {
+  const kept = takeTrailers(text.split("\n"), trailers);
+  const block = text.split("\n").slice(kept.length).map(flatten).filter(Boolean);
+  return block.length ? block.join("\n") : null;
+}
+
+const SHORT_LINE_WORDS = 8;
+
+/** Up to the first closing; with none, without the short lines at the end, which is what a signature is. */
+function beforeSigning(lines: readonly string[]): readonly string[] {
+  const closing = lines.findIndex((line, i) => i > 0 && CLOSING.test(flatten(line)));
+  if (closing > 0) return lines.slice(0, closing);
+  let end = lines.length;
+  while (end > 1 && flatten(lines[end - 1]!).split(" ").length <= SHORT_LINE_WORDS) end--;
+  return lines.slice(0, end);
+}
+
+const TEMPLATE_RUN = 6;
+const TEMPLATE_MIN_WORDS = 20;
+/** Runs read per message, and one run in four kept: enough to see a template, in memory that stays small over a whole window. */
+const TEMPLATE_READ = 400;
+const TEMPLATE_SAMPLE = 4;
+const TEMPLATE_OTHERS = 3;
+const TEMPLATE_SHARE = 0.3;
+const TEMPLATE_MIN_RUNS = 3;
+const PEOPLE_ROOM = 8;
+
+function hashOf(text: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return h >>> 0;
+}
+
+/**
+ * Mail merge and sales sequences: a third of the words also went to three other people, so a tool or a template wrote
+ * it, and it says nothing about how this person writes. One sales campaign can outnumber a person's real mail many
+ * times over. Only what comes before they sign counts, since a signature or a legal footer repeats on mail that's
+ * otherwise theirs, however long it is.
+ */
+export class TemplateFinder {
+  private readonly people = new Map<number, string[]>();
+  private readonly mails: { id: number; to: readonly string[]; runs: number[] }[] = [];
+
+  add(id: number, to: readonly string[], written: string): void {
+    const words = normalizeText(beforeSigning(written.split("\n").filter((l) => l.trim())).join(" ")).match(/[\p{L}\p{N}'’-]+/gu) ?? [];
+    if (words.length < TEMPLATE_MIN_WORDS) return;
+    const runs = new Set<number>();
+    for (let i = 0; i + TEMPLATE_RUN <= Math.min(words.length, TEMPLATE_READ); i++) {
+      const hash = hashOf(words.slice(i, i + TEMPLATE_RUN).join(" "));
+      if (hash % TEMPLATE_SAMPLE === 0) runs.add(hash);
+    }
+    for (const run of runs) {
+      let held = this.people.get(run);
+      if (!held) this.people.set(run, (held = []));
+      // a few more than the bar, so this mail's own recipients can't use up the room
+      for (const address of to) if (held.length < TEMPLATE_OTHERS + PEOPLE_ROOM && !held.includes(address)) held.push(address);
+    }
+    this.mails.push({ id, to, runs: [...runs] });
+  }
+
+  /** One mail a step, so a whole window never holds the event loop. Its value is the mail a template wrote. */
+  *steps(): Generator<void, Set<number>, void> {
+    const out = new Set<number>();
+    for (const { id, to, runs } of this.mails) {
+      if (runs.length < TEMPLATE_MIN_RUNS) continue;
+      let shared = 0;
+      for (const run of runs) {
+        let others = 0;
+        for (const address of this.people.get(run) ?? []) if (!to.includes(address)) others++;
+        if (others >= TEMPLATE_OTHERS) shared++;
+      }
+      if (shared / runs.length >= TEMPLATE_SHARE) out.add(id);
+      yield;
+    }
+    return out;
+  }
+
+  found(): Set<number> {
+    const steps = this.steps();
+    for (;;) {
+      const step = steps.next();
+      if (step.done) return step.value;
+    }
+  }
+}
+
+const LEAD_WORDS = 60;
+
+/**
+ * The part of a message that says what language it's in: what comes before they sign. A legal footer is usually longer
+ * than the mail, and often in another language.
+ */
+export function leadOfMail(text: string): string {
+  const lines = text.split("\n");
+  const closing = lines.findIndex((line, i) => i > 0 && CLOSING.test(flatten(line)));
+  // the closing itself stays: in "Hola Ana,\n\nGracias por avisar." it's all there is
+  const lead = closing > 0 ? lines.slice(0, closing + 1).join("\n") : text;
+  return lead.split(/\s+/).slice(0, LEAD_WORDS).join(" ");
+}
+
 /** `Hi Tom,` → `Hi {name},`. Titles stay: `Estimado Sr. García:` says something `Estimado {name}:` wouldn't. */
 export function normalizeGreeting(text: string, toNames: readonly string[] = []): string | null {
   const first = text.split("\n").find((l) => l.trim())?.trim();
@@ -197,6 +299,12 @@ export function normalizeSignOff(text: string, selfNames: readonly string[] = []
   return CLOSING.test(last) ? last : null;
 }
 
+/** Their own name, in whole or in part, is on every message and isn't a turn of phrase. */
+export function isOwnName(phrase: string, selfNames: readonly string[]): boolean {
+  const self = new Set(selfNames.flatMap((n) => normalizeText(n).split(/\s+/)));
+  return normalizeText(phrase).split(/\s+/).every((w) => self.has(w));
+}
+
 export const countWords = (text: string): number => text.match(/\p{L}[\p{L}\p{M}\p{N}'’-]*|\p{N}+(?:[.,:]\p{N}+)*/gu)?.length ?? 0;
 
 export interface CorpusContext {
@@ -208,7 +316,7 @@ export interface CorpusContext {
 }
 
 /** A message and the text the user wrote in it, as the rest of the pipeline reads it. */
-export function reduceMail(m: Omit<SentMail, "body">, text: string, context: CorpusContext = {}): WrittenMail {
+export function reduceMail(m: Omit<SentMail, "body">, text: string, context: CorpusContext = {}, signature: string | null = null): WrittenMail {
   const toNames = context.namesOf ? m.to.flatMap((a) => context.namesOf!(a)) : [];
   return {
     id: m.id,
@@ -222,6 +330,7 @@ export function reduceMail(m: Omit<SentMail, "body">, text: string, context: Cor
     words: countWords(text),
     greeting: normalizeGreeting(text, toNames),
     signOff: normalizeSignOff(text, context.selfNames),
+    signature,
     language: detectWritingLanguage(text),
   };
 }

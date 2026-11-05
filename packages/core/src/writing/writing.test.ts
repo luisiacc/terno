@@ -577,3 +577,30 @@ describe("the note screen", () => {
     expect(rejected).toEqual([{ note: "has 1 digit", reason: "digits" }]);
   });
 });
+
+describe("a signature block", () => {
+  const level = (scope: VoiceProfile["scope"], over: Partial<Habits> = {}, fromOtherAccount = false): VoiceProfile => ({ scope, key: scope, language: "", samples: 20, phrases: [], judgment: null, fromOtherAccount, habits: habits({ signatures: [{ text: "Ana Ejemplo\nFounder", share: 0.8 }], noSignature: 0.2, ...over }) });
+
+  it("an account says it, as typed", () => {
+    const [you, account] = renderVoices([level("you"), level("account")]);
+    expect(you?.text ?? "").not.toContain("signs with");
+    expect(account!.text).toContain('signs with: "Ana Ejemplo / Founder" 80%');
+  });
+
+  it("another account's never comes along, and a person only says it when it differs", () => {
+    expect(renderVoices([level("person", {}, true)])[0]?.text ?? "").not.toContain("signs with");
+    const same = renderVoices([level("account"), level("person")]);
+    expect(same.filter((v) => v.text.includes("signs with")).map((v) => v.scope)).toEqual(["account"]);
+    const differs = renderVoices([level("account"), level("person", { signatures: [{ text: "Ana", share: 0.9 }], noSignature: 0.1 })]);
+    expect(differs.find((v) => v.scope === "person")!.text).toContain('signs with: "Ana" 90%');
+  });
+
+  it("a person they never sign to says so, against an account that does", () => {
+    const voices = renderVoices([level("account"), level("person", { signatures: [], noSignature: 1 })]);
+    expect(voices.find((v) => v.scope === "person")!.text).toContain("signs with: nothing 100%");
+  });
+
+  it("an account that doesn't sign says nothing about it", () => {
+    expect(renderVoices([level("account", { signatures: [], noSignature: 1 })])[0]?.text ?? "").not.toContain("signs with");
+  });
+});

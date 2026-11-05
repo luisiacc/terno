@@ -49,6 +49,7 @@ export interface MailFeatures {
   sentenceLengths: number[];
   greeting: string | null;
   signOff: string | null;
+  signature: string | null;
   exclamation: boolean;
   emoji: boolean;
   bullets: boolean;
@@ -64,6 +65,7 @@ export function mailFeatures(m: WrittenMail): MailFeatures {
     sentenceLengths: bodySentences(m).map(countWords),
     greeting: m.greeting,
     signOff: m.signOff,
+    signature: m.signature ?? null,
     exclamation: m.text.includes("!") || m.text.includes("¡"),
     emoji: EMOJI.test(m.text),
     bullets: BULLET.test(m.text),
@@ -91,6 +93,8 @@ export function* habitsSteps(features: readonly MailFeatures[]): Generator<void,
   yield;
   const signOffs = tally(features.map((m) => m.signOff), total);
   const noSignOff = ratio(total - count((m) => !!m.signOff), total);
+  const signatures = tally(features.map((m) => m.signature), total);
+  const noSignature = ratio(total - count((m) => !!m.signature), total);
   yield;
   const exclamation = ratio(count((m) => m.exclamation), total);
   const emoji = ratio(count((m) => m.emoji), total);
@@ -107,6 +111,8 @@ export function* habitsSteps(features: readonly MailFeatures[]): Generator<void,
     noGreeting,
     signOffs,
     noSignOff,
+    signatures,
+    noSignature,
     exclamation,
     emoji,
     bullets,

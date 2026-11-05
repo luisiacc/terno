@@ -35,7 +35,9 @@ async function seed(store: MailStore): Promise<number> {
     const batch = Array.from({ length: 100 }, (_, i) => {
       const n = slice * 100 + i;
       const to = n % 3 === 0 ? TOM : { name: `Person ${n % 400}`, email: `p${n % 400}@company${n % 40}.test` };
-      const body = `Hi ${to.name.split(" ")[0]},\n\n${LINES[n % 5]} ${LINES[(n + 2) % 5]}\n\n${LINES[(n + 4) % 5]}\n\nOn Friday someone wrote:\n> ${"quoted line ".repeat(20)}\n\nBest,\nMe\n\n-- \nMe\nFounder at Perf Inc`;
+      // a word of its own every few: the phrases still repeat, but no run is long enough to read as a template
+      const own = (line: string) => line.split(" ").map((w, i) => (i % 4 === 3 ? `${w} n${n}` : w)).join(" ");
+      const body = `Hi ${to.name.split(" ")[0]},\n\n${own(LINES[n % 5]!)} ${own(LINES[(n + 2) % 5]!)}\n\n${own(LINES[(n + 4) % 5]!)}\n\nOn Friday someone wrote:\n> ${"quoted line ".repeat(20)}\n\nBest,\nMe\n\n-- \nMe\nFounder at Perf Inc`;
       return msg({ accountId, from: me, to: [to], isSent: true, isRead: true, inInbox: false, bodyText: body, date: NOW - n * 60_000 });
     });
     await store.sync.ingest(batch, { applyFilters: false, now: NOW, classifier: null });

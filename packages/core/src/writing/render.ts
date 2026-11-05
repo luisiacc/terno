@@ -89,10 +89,22 @@ function renderTraits(t: VoiceJudgment["traits"], parent: VoiceJudgment["traits"
   return shown.length ? [`manner: ${shown.join(", ")}`] : [];
 }
 
+/** One account's, so "you" and another account's never say it: a work signature doesn't belong on a personal account. */
+function renderSignature(profile: VoiceProfile, parent: VoiceProfile | null): string[] {
+  if (profile.scope === "you" || profile.fromOtherAccount || !profile.habits.signatures) return [];
+  const h = profile.habits;
+  const above = parent && parent.scope !== "you" ? parent.habits : null;
+  if (above && !usageChanged(h.signatures ?? [], h.noSignature ?? 1, above.signatures ?? [], above.noSignature ?? 1)) return [];
+  const text = usage(h.signatures ?? [], h.noSignature ?? 1);
+  // nothing to say on its own, but against a level that signs, not signing is the difference
+  return text && (above || (h.signatures ?? []).some((s) => s.share >= 0.1)) ? [`signs with: ${text}`] : [];
+}
+
 /** One level as text, or "" when it adds nothing to its parent. */
 export function renderLevel(profile: VoiceProfile, parent: VoiceProfile | null, parts: RenderParts = LOCAL_PARTS): string {
   const lines: string[] = [];
   if (parts.habits) lines.push(...renderHabits(profile.habits, parent?.habits ?? null));
+  if (parts.habits) lines.push(...renderSignature(profile, parent));
   if (parts.phrases) {
     const known = new Set((parent?.phrases ?? []).map((p) => p.toLowerCase()));
     const fresh = profile.phrases.filter((p) => !known.has(p.toLowerCase()));

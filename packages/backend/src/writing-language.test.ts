@@ -43,7 +43,7 @@ describe("the language of a draft", () => {
 
   it("a new message to someone new follows how this account writes, not the instruction's language", async () => {
     const t = await setup();
-    await t.sentMany(20, (i) => ({ to: [{ name: "Ana", email: `p${i % 4}@else.test` }], bodyText: `${EN} ${i}` }));
+    await t.sentMany(20, (i) => ({ to: [{ name: "Ana", email: `p${i % 3}@else.test` }], bodyText: `${EN} ${i}` }));
     await t.learned();
     const r = await done(t.compose({ to: [{ name: "New", email: "new@consumer.test" }], instruction: "dile que el martes no puedo ir a la reunión" }));
     expect(r.used.language).toBe("en");
