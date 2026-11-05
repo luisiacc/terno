@@ -5,7 +5,6 @@
  * count on the app icon. The browser's Notification, its permission, the tab's
  * visibility and setAppBadge are stubbed; the mail comes through a real sync pass.
  */
-import { mkdirSync } from "node:fs";
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { IncomingMessage } from "@terno/store";
@@ -13,8 +12,6 @@ import type { DesignId } from "@terno/core";
 import { E2E_NOW } from "./constants";
 import type { AppSettings } from "@terno/core/rpc";
 import { expect, readerSubject, test, type DevServerFixture } from "./fixtures";
-
-const SHOTS = "/tmp/terno-scratch/notify";
 
 test.use({ backendOptions: { network: true } });
 
@@ -89,14 +86,12 @@ function important(accountId: number, subject: string): IncomingMessage {
 test.describe("notifications and the unread count (plan 41)", () => {
   test("Settings → General → Notifications: the switches save, the preview follows the main switch, axe-clean; screenshots", async ({ page, server, design }) => {
     await load(page, server, design);
-    const group = await openNotifications(page);
+    await openNotifications(page);
     await expect(page.getByTestId("notify-switch")).toHaveAttribute("aria-checked", "true");
     await expect(page.getByTestId("notify-preview-switch")).toHaveAttribute("aria-checked", "true");
     await expect(page.getByTestId("badge-switch")).toHaveAttribute("aria-checked", "true");
     await expect(page.getByTestId("badge-row")).toContainText("Show unread count on the app icon");
-    expect((await new AxeBuilder({ page }).include("[data-testid=notifications-group]").analyze()).violations).toEqual([]);
-    mkdirSync(SHOTS, { recursive: true });
-    await group.screenshot({ path: `${SHOTS}/settings-${design ?? "macos"}-light.png` });
+    expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=notifications-group]").analyze()).violations).toEqual([]);
 
     await page.getByTestId("notify-preview-switch").click();
     await page.getByTestId("badge-switch").click();
@@ -115,8 +110,7 @@ test.describe("notifications and the unread count (plan 41)", () => {
     await expect(page.locator("html")).toHaveClass(/dark/);
     await page.getByTestId("tab-general").click();
     await page.getByTestId("notifications-group").scrollIntoViewIfNeeded();
-    expect((await new AxeBuilder({ page }).include("[data-testid=notifications-group]").analyze()).violations).toEqual([]);
-    await page.getByTestId("notifications-group").screenshot({ path: `${SHOTS}/settings-${design ?? "macos"}-dark.png` });
+    expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=notifications-group]").analyze()).violations).toEqual([]);
   });
 
   test("the browser's permission: saved on but not allowed reads off (and is saved off); turning it on asks, a refusal says how to allow it", async ({ page, server, design }) => {
@@ -136,6 +130,9 @@ test.describe("notifications and the unread count (plan 41)", () => {
   });
 
   test("important mail arriving while the tab is hidden: one notification, its click opens the conversation; a visible tab gets none", async ({ page, server, design }) => {
+    // what the backend says to this page, frame by frame
+    const heard: string[] = [];
+    page.on("websocket", (ws) => ws.on("framereceived", (f) => void heard.push(String(f.payload))));
     await load(page, server, design);
     const accountId = server.backend.store ? (await server.backend.store.accounts.list())[0]!.id : 1;
     // the accounts synced once at start: the next pass is news
@@ -153,11 +150,13 @@ test.describe("notifications and the unread count (plan 41)", () => {
     await page.evaluate(() => (window as unknown as { __notify: { shown: { click(): void }[] } }).__notify.shown[0]!.click());
     expect(await readerSubject(page)).toBe("Reunión del jueves");
 
-    // visible: the page shows the mail, no notification (after the gap the backend would send one)
+    // visible: the page shows the mail, no notification, though the backend sends one (the 15 s between notices is its own: over)
+    (server.backend.attention as unknown as { lastNoticeAt: number }).lastNoticeAt = -Infinity;
     await page.evaluate(() => ((window as unknown as { __notify: { hidden: boolean } }).__notify.hidden = false));
     server.net.incoming.push(important(accountId, "Otra cosa"));
     await server.backend.syncAccount(accountId);
-    await page.waitForTimeout(17_000);
+    await expect.poll(() => heard.filter((f) => f.includes('"e":"notify"') && f.includes("Otra cosa")).length, { timeout: 10_000 }).toBe(1);
+    await page.evaluate(() => new Promise((r) => setTimeout(r)));
     expect((await state(page)).shown).toHaveLength(1);
   });
 
