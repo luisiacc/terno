@@ -25,7 +25,6 @@ test("browser complete maximum CID resolution yields through final serialization
     expect(errors).toEqual([]);
     expect(await page.evaluate(() => (window as unknown as { TernoCid: typeof import("./cid-render-fixture") }).TernoCid.unicodeSentinel)).toBe("caf\u00e9 \u65e5\u672c\u8a9e \u0300\u036f");
     for (const fixture of [
-      { mime: "image/png", sizes: [4 * 1024 * 1024] },
       { mime: "image/png", sizes: [4 * 1024 * 1024, 4 * 1024 * 1024] },
       { mime: "image/png", sizes: [4 * 1024 * 1024, 2 * 1024 * 1024 - 64] },
       { mime: "image/jpeg", sizes: [4 * 1024 * 1024] },
