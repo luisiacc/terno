@@ -1,8 +1,9 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { axeBothModes } from "./fixtures";
+import { TEMPLATE_ENV } from "./constants";
 import { L, loadLocale, t } from "@terno/i18n";
 import { createDemoProvider, demoRegistry, ProviderAuthError } from "@terno/mail";
 import { startDevServer, type DevServer } from "../../backend-dev/src/server";
@@ -19,6 +20,15 @@ const copy = {
   en: { add: "Add account", title: "Add account", close: "Close", cancel: "Cancel", verify: "Verify and save", connect: "Connect account", password: "Password for", summary: "That password didn’t work. Check it, or create a new app password." },
   es: { add: "Añadir cuenta", title: "Añadir cuenta", close: "Cerrar", cancel: "Cancelar", verify: "Verificar y guardar", connect: "Conectar cuenta", password: "Contraseña de", summary: "Esa contraseña no funcionó. Revísala o crea una contraseña de aplicación nueva." },
 };
+
+/** The run's mailbox (four accounts, plenty to scroll), copied rather than seeded again. */
+function seeded(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const template = process.env[TEMPLATE_ENV]!;
+  copyFileSync(template, join(dir, "terno.db"));
+  if (existsSync(`${template}.search`)) copyFileSync(`${template}.search`, join(dir, "terno.db.search"));
+  return dir;
+}
 
 async function tabTo(page: Page, target: Locator, key = "Tab") {
   for (let i = 0; i < 30; i++) {
@@ -62,12 +72,12 @@ async function inViewport(page: Page, element: Locator) {
   expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
 }
 
-// plan 139: four of the eight combinations hold every pair of design, language and theme once
-const PAIRS = [["macos", "en", "light"], ["macos", "es", "dark"], ["lumen", "en", "dark"], ["lumen", "es", "light"]] as const;
-for (const [design, language, theme] of PAIRS) for (const surface of ["settings", "add"] as const) {
-  test(`long account refusal (${design}, ${language}, ${theme}, ${surface})`, async ({ page }, info) => {
+// plan 139: every pair of design, language, surface and the key that closes it once; every run reads both modes (axeBothModes)
+const RUNS = [["macos", "en", "settings", "Escape"], ["macos", "es", "add", "Enter"], ["lumen", "en", "add", "Escape"], ["lumen", "es", "settings", "Enter"]] as const;
+for (const [design, language, surface, closeKey] of RUNS) {
+  test(`long account refusal (${design}, ${language}, ${surface})`, async ({ page }, info) => {
     await page.setViewportSize(surface === "add" ? { width: 420, height: 560 } : design === "lumen" ? { width: 800, height: 650 } : { width: 1280, height: 800 });
-    const dir = mkdtempSync(join(tmpdir(), "terno-account-errors-"));
+    const dir = seeded("terno-account-errors-");
     let server: DevServer | undefined;
     const calls: string[] = [];
     const external: string[] = [];
@@ -81,7 +91,7 @@ for (const [design, language, theme] of PAIRS) for (const surface of ["settings"
     });
     try {
       server = await startDevServer({
-        port: 0, dataDir: dir, token: "synthetic", threads: 400, accounts: 4, autoSync: false, iconTransport: null, openExternal: async (url) => { external.push(url); },
+        port: 0, dataDir: dir, token: "synthetic", autoSync: false, iconTransport: null, openExternal: async (url) => { external.push(url); },
         providers: {
           ...demoRegistry,
           create(context) {
@@ -100,13 +110,12 @@ for (const [design, language, theme] of PAIRS) for (const surface of ["settings"
       const accounts = await backend.store.accounts.list();
       const account = accounts.find((a) => a.kind === "imap")!;
       await backend.store.accounts.setSyncState(account.id, { status: "error", authRequired: true });
-      await backend.server.invoke("settings.update", { design, layout: "list", language, theme, senderIcons: false }, ctx);
+      await backend.server.invoke("settings.update", { design, layout: "list", language, theme: "system", senderIcons: false }, ctx);
       await page.addInitScript((language) => localStorage.setItem("terno:language", language), language);
       await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=synthetic`);
       await page.locator("[data-ready]").waitFor();
       await expect(page.locator("html")).toHaveAttribute("data-design", design);
       await expect(page.locator("html")).toHaveAttribute("lang", new RegExp(`^${language}(?:-|$)`));
-      await expect(page.locator("html")).toHaveClass(theme === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
       await page.getByTestId("thread-row").first().waitFor();
       const list = page.locator('[data-keep-scroll="list"]');
       const listNode = await list.elementHandle();
@@ -175,7 +184,7 @@ for (const [design, language, theme] of PAIRS) for (const surface of ["settings"
       expect(await field.evaluate((el, saved) => el === saved, fieldNode)).toBe(true);
       expect(await field.evaluate((el) => { const input = el as HTMLInputElement; return [input.selectionStart, input.selectionEnd, input.selectionDirection]; })).toEqual([3, 9, "backward"]);
       const shots = process.env.ACCOUNT_ERROR_SHOTS;
-      if (shots) await page.screenshot({ path: join(shots, `${design}-${language}-${theme}-${surface}-error.png`) });
+      if (shots) await page.screenshot({ path: join(shots, `${design}-${language}-${surface}-error.png`) });
       await inViewport(page, dialog);
       expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
       expect(await error.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
@@ -203,7 +212,7 @@ for (const [design, language, theme] of PAIRS) for (const surface of ["settings"
       await expect.poll(endVisible).toBe(true);
       expect(await scrollport.evaluate((el) => el.scrollTop)).toBeGreaterThan(before);
       expect(await list.evaluate((el) => el.scrollTop)).toBe(scroll);
-      if (shots) await page.screenshot({ path: join(shots, `${design}-${language}-${theme}-${surface}-detail.png`) });
+      if (shots) await page.screenshot({ path: join(shots, `${design}-${language}-${surface}-detail.png`) });
       await field.focus();
       await tabTo(page, submit);
       await inViewport(page, submit);
@@ -216,9 +225,9 @@ for (const [design, language, theme] of PAIRS) for (const surface of ["settings"
       const close = dialog.getByRole("button", { name: copy[language].close, exact: true });
       await tabTo(page, close);
       await inViewport(page, close);
-      expect((await new AxeBuilder({ page }).include(`[data-testid="${surface === "settings" ? "settings-dialog" : "add-account-dialog"}"]`).analyze()).violations).toEqual([]);
-      if (shots) await page.screenshot({ path: join(shots, `${design}-${language}-${theme}-${surface}-close.png`) });
-      await page.keyboard.press(theme === "light" ? "Escape" : "Enter");
+      await axeBothModes(page, `[data-testid="${surface === "settings" ? "settings-dialog" : "add-account-dialog"}"]`);
+      if (shots) await page.screenshot({ path: join(shots, `${design}-${language}-${surface}-close.png`) });
+      await page.keyboard.press(closeKey);
       await expect(dialog).toHaveCount(0);
       await expect(trigger).toBeFocused();
       expect(await body.innerHTML()).toBe(bodyHtml);
@@ -238,9 +247,9 @@ for (const [design, language, theme] of PAIRS) for (const surface of ["settings"
   });
 }
 
-for (const [language, theme] of [["en", "light"], ["es", "dark"]] as const) {
-  test(`account recovery controls (${language}, ${theme})`, async ({ page }) => {
-    const dir = mkdtempSync(join(tmpdir(), "terno-account-controls-"));
+for (const language of ["en", "es"] as const) {
+  test(`account recovery controls (${language})`, async ({ page }) => {
+    const dir = seeded("terno-account-controls-");
     const external: string[] = [];
     const googleCalls: (string | undefined)[] = [];
     const verified: string[] = [];
@@ -257,7 +266,7 @@ for (const [language, theme] of [["en", "light"], ["es", "dark"]] as const) {
     });
     try {
       server = await startDevServer({
-        port: 0, dataDir: dir, token: "synthetic", threads: 40, accounts: 4, autoSync: false, iconTransport: null, openExternal: async (url) => { external.push(url); },
+        port: 0, dataDir: dir, token: "synthetic", autoSync: false, iconTransport: null, openExternal: async (url) => { external.push(url); },
         googleClients: { preferred: "synthetic.apps.googleusercontent.com", clients: [{ clientId: "synthetic.apps.googleusercontent.com", clientSecret: "" }] },
         providers: {
           ...demoRegistry,
@@ -277,7 +286,7 @@ for (const [language, theme] of [["en", "light"], ["es", "dark"]] as const) {
       const imap = accounts.find((a) => a.kind === "imap")!;
       const gmail = accounts.find((a) => a.kind === "gmail")!;
       await backend.store.accounts.setSyncState(imap.id, { status: "error", authRequired: false, lastError: detail });
-      await backend.server.invoke("settings.update", { language, theme, senderIcons: false }, ctx);
+      await backend.server.invoke("settings.update", { language, theme: "system", senderIcons: false }, ctx);
       await page.addInitScript((language) => localStorage.setItem("terno:language", language), language);
       await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=synthetic`);
       await page.getByTestId("thread-row").first().waitFor();
@@ -288,12 +297,12 @@ for (const [language, theme] of [["en", "light"], ["es", "dark"]] as const) {
       const item = page.locator(`[data-testid="settings-account"][data-account-id="${imap.id}"]`);
       await item.getByTestId("account-toggle").click();
       const shots = process.env.ACCOUNT_ERROR_SHOTS;
-      if (shots) await page.screenshot({ path: join(shots, `controls-${language}-${theme}-status-error.png`) });
+      if (shots) await page.screenshot({ path: join(shots, `controls-${language}-status-error.png`) });
       expect(await settings.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
       const status = item.getByText(t("account.status.error", { error: detail }), { exact: true });
       await expect(status).toHaveCount(1);
       expect(await status.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-      if (shots) await page.screenshot({ path: join(shots, `controls-${language}-${theme}-status-error.png`) });
+      if (shots) await page.screenshot({ path: join(shots, `controls-${language}-status-error.png`) });
       await item.getByTestId("account-reconnect").click();
       const field = item.getByTestId("account-reconnect-password");
       await field.fill(password);
@@ -322,7 +331,7 @@ for (const [language, theme] of [["en", "light"], ["es", "dark"]] as const) {
       releaseGoogle!();
       await expect(googleItem.getByTestId("account-reconnect-error")).toHaveText(t("errors.google.invalidResponse"));
       expect(googleCalls).toEqual([gmail.email]);
-      expect((await new AxeBuilder({ page }).include('[data-testid="settings-dialog"]').analyze()).violations).toEqual([]);
+      await axeBothModes(page, '[data-testid="settings-dialog"]');
       await settings.getByRole("button", { name: copy[language].close, exact: true }).click();
       const trigger = page.getByTestId("sidebar").getByRole("button", { name: copy[language].add, exact: true });
       await trigger.click();
@@ -346,8 +355,8 @@ for (const [language, theme] of [["en", "light"], ["es", "dark"]] as const) {
       await expect(dialog.locator("#acc-name")).toHaveValue("Synthetic author");
       await expect(page.getByTestId("imap-password")).toHaveValue(password);
       expect(await dialog.locator("#acc-name").evaluate((el, saved) => el === saved, nameNode)).toBe(true);
-      expect((await new AxeBuilder({ page }).include('[data-testid="add-account-dialog"]').analyze()).violations).toEqual([]);
-      if (shots) await page.screenshot({ path: join(shots, `controls-${language}-${theme}-google-error.png`) });
+      await axeBothModes(page, '[data-testid="add-account-dialog"]');
+      if (shots) await page.screenshot({ path: join(shots, `controls-${language}-google-error.png`) });
       await page.keyboard.press("Escape");
       await expect(dialog).toHaveCount(0);
       await trigger.click();

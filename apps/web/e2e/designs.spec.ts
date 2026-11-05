@@ -19,130 +19,134 @@ import es from "@terno/i18n/locales/es";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import type { DesignDefinition } from "../../../packages/ui/src/designs/types";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, openRow, rows, selectedRow, stabilize, test } from "./fixtures";
-
-// baselines are at twice the pixels; everything else draws at one (plan 139)
-test.use({ deviceScaleFactor: 2 });
+import { expect, focusList, openRow, rows, scenario, selectedRow, stabilize, test } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
+const reload = async (page: Page) => {
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+};
 const designOf = async (page: Page): Promise<DesignDefinition> => {
   const id = await page.locator("html").getAttribute("data-design");
   return DESIGNS.find((d) => d.id === id)!;
 };
 
 test.describe("in every design", { tag: "@design" }, () => {
-  test("rows are the design's height in both densities, and j/k keep the open thread in view down the list", async ({ app: page, server }) => {
-    const d = await designOf(page);
-    await expect(rows(page).first()).toHaveCSS("height", `${d.rows.comfortable}px`);
-    await expect(rows(page).first()).toHaveAttribute("data-layout", d.variants.row);
-    await focusList(page);
-    for (let i = 0; i < 25; i++) await page.keyboard.press("j");
-    await expect(selectedRow(page)).toBeInViewport();
-    await server.backend.server.invoke("settings.update", { density: "compact" }, ctx);
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await expect(rows(page).first()).toHaveCSS("height", `${d.rows.compact}px`);
-    await server.backend.server.invoke("settings.update", { density: "comfortable" }, ctx);
+  test("in every design: Settings' styles", async ({ app: page, server }) => {
+    await scenario("Settings' styles sit on one row, every name in full, with the chosen one's description on a line below", async () => {
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-appearance").click();
+      const cards = page.getByTestId("design-grid").getByRole("radio");
+      await expect(cards).toHaveCount(DESIGNS.length);
+      const tops = await cards.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
+      expect(new Set(tops).size).toBe(1);
+      // a truncated name is wider than its box
+      expect(await cards.evaluateAll((els) => els.filter((el) => { const n = el.querySelector(":scope > span"); return n && n.scrollWidth > n.clientWidth; }).length)).toBe(0);
+      const description = page.getByTestId("design-description");
+      await expect(description).toBeVisible();
+      await expect(page.getByTestId("design-grid")).toHaveAccessibleDescription(new RegExp((await description.textContent())!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      // every style's description takes one line at this width, in both languages
+      for (const d of DESIGNS) for (const locale of [en, es]) {
+        const height = await description.evaluate((el, text) => {
+          el.textContent = text;
+          return el.getBoundingClientRect().height;
+        }, locale[`design.${d.id}.description`]);
+        expect(height, d.id).toBeLessThan(20);
+      }
+    });
+    await scenario("Settings' styles never take more than two rows, and a description that wraps moves nothing below it", async () => {
+      await server.backend.server.invoke("settings.update", { language: "es" }, ctx);
+      await page.setViewportSize({ width: 550, height: 800 });
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-appearance").click();
+      const cards = page.getByTestId("design-grid").getByRole("radio");
+      await expect(cards).toHaveCount(DESIGNS.length);
+      const tops = await cards.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
+      expect(new Set(tops).size).toBeLessThanOrEqual(2);
+      // the cell is as tall as its tallest description, whichever is showing
+      const cell = await page.getByTestId("design-descriptions").evaluate((el) => ({ height: el.getBoundingClientRect().height, tallest: Math.max(...[...el.children].map((c) => c.getBoundingClientRect().height)), count: el.children.length }));
+      expect(cell.count).toBe(DESIGNS.length);
+      expect(cell.height).toBe(cell.tallest);
+    });
   });
 
-  test("Settings' styles sit on one row, every name in full, with the chosen one's description on a line below", async ({ app: page }) => {
-    await page.getByTestId("open-settings").click();
-    await page.getByTestId("tab-appearance").click();
-    const cards = page.getByTestId("design-grid").getByRole("radio");
-    await expect(cards).toHaveCount(DESIGNS.length);
-    const tops = await cards.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
-    expect(new Set(tops).size).toBe(1);
-    // a truncated name is wider than its box
-    expect(await cards.evaluateAll((els) => els.filter((el) => { const n = el.querySelector(":scope > span"); return n && n.scrollWidth > n.clientWidth; }).length)).toBe(0);
-    const description = page.getByTestId("design-description");
-    await expect(description).toBeVisible();
-    await expect(page.getByTestId("design-grid")).toHaveAccessibleDescription(new RegExp((await description.textContent())!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-    // every style's description takes one line at this width, in both languages
-    for (const d of DESIGNS) for (const locale of [en, es]) {
-      const height = await description.evaluate((el, text) => {
-        el.textContent = text;
-        return el.getBoundingClientRect().height;
-      }, locale[`design.${d.id}.description`]);
-      expect(height, d.id).toBeLessThan(20);
-    }
-  });
-
-  test("Settings' styles never take more than two rows, and a description that wraps moves nothing below it", async ({ app: page, server }) => {
-    await server.backend.server.invoke("settings.update", { language: "es" }, ctx);
-    await page.setViewportSize({ width: 550, height: 800 });
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await page.getByTestId("open-settings").click();
-    await page.getByTestId("tab-appearance").click();
-    const cards = page.getByTestId("design-grid").getByRole("radio");
-    await expect(cards).toHaveCount(DESIGNS.length);
-    const tops = await cards.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
-    expect(new Set(tops).size).toBeLessThanOrEqual(2);
-    // the cell is as tall as its tallest description, whichever is showing
-    const cell = await page.getByTestId("design-descriptions").evaluate((el) => ({ height: el.getBoundingClientRect().height, tallest: Math.max(...[...el.children].map((c) => c.getBoundingClientRect().height)), count: el.children.length }));
-    expect(cell.count).toBe(DESIGNS.length);
-    expect(cell.height).toBe(cell.tallest);
-  });
-
-  test("the parts every variant keeps: one compose control, rows as options with their parts, the subject, the chips, the reply controls", async ({ app: page }) => {
-    await expect(page.getByTestId("compose-button")).toHaveCount(1);
-    await expect(page.getByTestId("compose-button")).toBeVisible();
-    const first = rows(page).first();
-    await expect(first).toHaveAttribute("role", "option");
-    await expect(first.getByTestId("row-from")).toBeVisible();
-    await expect(first.getByTestId("row-subject")).toBeVisible();
-    await openRow(page, 2);
-    await expect(page.getByTestId("reader-subject")).toBeVisible();
-    await expect(page.getByTestId("thread-chips")).toBeVisible();
-    for (const id of ["action-reply", "action-reply-all", "action-forward", "action-archive", "action-print"]) await expect(page.getByTestId(id)).toBeVisible();
-    await expect(page.getByRole("button", { name: "Reply", exact: true })).toHaveCount(1);
-    // plan 21: More (a disclosure) and the two pane edges (separators), named alike everywhere
-    await expect(page.getByRole("button", { name: "More", exact: true })).toHaveAttribute("aria-expanded", "false");
-    await expect(page.getByRole("separator", { name: "Resize sidebar" })).toHaveCount(1);
-    await expect(page.getByRole("separator", { name: "Resize message list" })).toHaveCount(1);
-    // c composes from anywhere, whatever the control looks like
-    await focusList(page);
-    await page.keyboard.press("c");
-    await expect(page.getByTestId("compose-title")).toBeVisible();
-  });
-
-  test("a category's suggestions are reachable from the sidebar in every design (a sub-row or a badge, the same name)", async ({ app: page, server }) => {
-    const db = sqlDb(server.backend.store);
-    const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
-    const t = db.get<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1")!.id;
-    db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.8, '[]', ?)", t, facturas, Date.now());
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    const review = page.getByTestId(`nav-review-${facturas}`);
-    await expect(review).toBeVisible();
-    await review.click();
-    await expect(page.getByTestId("list-title")).toContainText("Facturas");
-    await expect(review).toHaveAttribute("data-active");
-  });
-
-  test("at the minimum window (980×600) nothing overflows: panes, the toolbar, the header, the sidebar", async ({ app: page }) => {
-    await page.setViewportSize({ width: 980, height: 600 });
-    await openRow(page, 2);
-    const overflow = await page.evaluate(() =>
-      ["sidebar", "thread-list", "reader"].map((id) => {
-        const el = document.querySelector<HTMLElement>(`[data-testid=${id}]`)!;
-        return [id, el.scrollWidth - el.clientWidth] as const;
-      }),
-    );
-    for (const [id, extra] of overflow) expect(extra, id).toBeLessThanOrEqual(0);
-    const reader = (await page.getByTestId("reader").boundingBox())!;
-    for (const id of ["action-archive", "action-trash", "action-star", "action-reply", "action-reply-all", "action-forward", "action-print"]) {
-      const b = (await page.getByTestId(id).boundingBox())!;
-      expect(b.x, id).toBeGreaterThanOrEqual(reader.x);
-      expect(b.x + b.width, id).toBeLessThanOrEqual(reader.x + reader.width + 0.5);
-    }
-    // the title is one line (truncated if it must), the compose control and the last account reachable
-    const title = (await page.getByTestId("list-title").boundingBox())!;
-    const lh = await page.getByTestId("list-title").evaluate((el) => parseFloat(getComputedStyle(el).lineHeight) || el.getBoundingClientRect().height);
-    expect(title.height).toBeLessThanOrEqual(lh * 1.5);
-    await expect(page.getByTestId("compose-button")).toBeInViewport();
-    await page.getByText("Add account").scrollIntoViewIfNeeded();
-    await expect(page.getByText("Add account")).toBeInViewport();
+  test("in every design: the list and the reader", async ({ app: page, server }) => {
+    await scenario("at the minimum window (980×600) nothing overflows: panes, the toolbar, the header, the sidebar", async () => {
+      await page.setViewportSize({ width: 980, height: 600 });
+      await openRow(page, 2);
+      const overflow = await page.evaluate(() =>
+        ["sidebar", "thread-list", "reader"].map((id) => {
+          const el = document.querySelector<HTMLElement>(`[data-testid=${id}]`)!;
+          return [id, el.scrollWidth - el.clientWidth] as const;
+        }),
+      );
+      for (const [id, extra] of overflow) expect(extra, id).toBeLessThanOrEqual(0);
+      const reader = (await page.getByTestId("reader").boundingBox())!;
+      for (const id of ["action-archive", "action-trash", "action-star", "action-reply", "action-reply-all", "action-forward", "action-print"]) {
+        const b = (await page.getByTestId(id).boundingBox())!;
+        expect(b.x, id).toBeGreaterThanOrEqual(reader.x);
+        expect(b.x + b.width, id).toBeLessThanOrEqual(reader.x + reader.width + 0.5);
+      }
+      // the title is one line (truncated if it must), the compose control and the last account reachable
+      const title = (await page.getByTestId("list-title").boundingBox())!;
+      const lh = await page.getByTestId("list-title").evaluate((el) => parseFloat(getComputedStyle(el).lineHeight) || el.getBoundingClientRect().height);
+      expect(title.height).toBeLessThanOrEqual(lh * 1.5);
+      await expect(page.getByTestId("compose-button")).toBeInViewport();
+      await page.getByText("Add account").scrollIntoViewIfNeeded();
+      await expect(page.getByText("Add account")).toBeInViewport();
+      await page.setViewportSize({ width: 1440, height: 900 });
+    });
+    await scenario("the parts every variant keeps: one compose control, rows as options with their parts, the subject, the chips, the reply controls", async () => {
+      await reload(page);
+      await expect(page.getByTestId("compose-button")).toHaveCount(1);
+      await expect(page.getByTestId("compose-button")).toBeVisible();
+      const first = rows(page).first();
+      await expect(first).toHaveAttribute("role", "option");
+      await expect(first.getByTestId("row-from")).toBeVisible();
+      await expect(first.getByTestId("row-subject")).toBeVisible();
+      await openRow(page, 2);
+      await expect(page.getByTestId("reader-subject")).toBeVisible();
+      await expect(page.getByTestId("thread-chips")).toBeVisible();
+      for (const id of ["action-reply", "action-reply-all", "action-forward", "action-archive", "action-print"]) await expect(page.getByTestId(id)).toBeVisible();
+      await expect(page.getByRole("button", { name: "Reply", exact: true })).toHaveCount(1);
+      // plan 21: More (a disclosure) and the two pane edges (separators), named alike everywhere
+      await expect(page.getByRole("button", { name: "More", exact: true })).toHaveAttribute("aria-expanded", "false");
+      await expect(page.getByRole("separator", { name: "Resize sidebar" })).toHaveCount(1);
+      await expect(page.getByRole("separator", { name: "Resize message list" })).toHaveCount(1);
+      // c composes from anywhere, whatever the control looks like
+      await focusList(page);
+      await page.keyboard.press("c");
+      await expect(page.getByTestId("compose-title")).toBeVisible();
+    });
+    await scenario("rows are the design's height in both densities, and j/k keep the open thread in view down the list", async () => {
+      await reload(page);
+      const d = await designOf(page);
+      await expect(rows(page).first()).toHaveCSS("height", `${d.rows.comfortable}px`);
+      await expect(rows(page).first()).toHaveAttribute("data-layout", d.variants.row);
+      await focusList(page);
+      for (let i = 0; i < 25; i++) await page.keyboard.press("j");
+      await expect(selectedRow(page)).toBeInViewport();
+      await server.backend.server.invoke("settings.update", { density: "compact" }, ctx);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await expect(rows(page).first()).toHaveCSS("height", `${d.rows.compact}px`);
+      await server.backend.server.invoke("settings.update", { density: "comfortable" }, ctx);
+    });
+    await scenario("a category's suggestions are reachable from the sidebar in every design (a sub-row or a badge, the same name)", async () => {
+      const db = sqlDb(server.backend.store);
+      const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+      const t = db.get<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1")!.id;
+      db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.8, '[]', ?)", t, facturas, Date.now());
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      const review = page.getByTestId(`nav-review-${facturas}`);
+      await expect(review).toBeVisible();
+      await review.click();
+      await expect(page.getByTestId("list-title")).toContainText("Facturas");
+      await expect(review).toHaveAttribute("data-active");
+    });
   });
 
   test.describe("baselines", () => {
@@ -153,34 +157,44 @@ test.describe("in every design", { tag: "@design" }, () => {
       await page.evaluate(() => document.fonts.ready);
       await stabilize(page);
     };
-    for (const mode of ["light", "dark"] as const) {
-      test(`inbox with the reader, ${mode}`, async ({ app: page, server }) => {
-        await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
-        await page.reload();
-        await page.locator("[data-ready]").waitFor();
+    test("the baselines of every key screen", async ({ app: page, server }) => {
+      await scenario("inbox with the reader, light", async () => {
+        await server.backend.server.invoke("settings.update", { theme: "light" }, ctx);
+        await reload(page);
         await ready(page);
-        await expect(page).toHaveScreenshot(`design-inbox-${mode}.png`);
+        await expect(page).toHaveScreenshot("design-inbox-light.png");
       });
-    }
-    test("inline reply", async ({ app: page }) => {
-      await ready(page);
-      await page.getByTestId("quick-reply").click();
-      await expect(page.getByTestId("compose-body")).toBeFocused();
-      await page.keyboard.type("Thanks, I’ll take a look this afternoon.");
-      await stabilize(page);
-      await expect(page).toHaveScreenshot("design-reply.png");
-    });
-    test("Settings → Appearance", async ({ app: page }) => {
-      await page.getByTestId("open-settings").click();
-      await page.getByTestId("tab-appearance").click();
-      await page.evaluate(() => document.fonts.ready);
-      await stabilize(page);
-      await expect(page.getByTestId("settings-dialog")).toHaveScreenshot("design-settings-appearance.png");
-    });
-    test("the minimum window", async ({ app: page }) => {
-      await page.setViewportSize({ width: 980, height: 600 });
-      await ready(page);
-      await expect(page).toHaveScreenshot("design-980.png");
+      await scenario("inbox with the reader, dark", async () => {
+        await server.backend.server.invoke("settings.update", { theme: "dark" }, ctx);
+        await reload(page);
+        await ready(page);
+        await expect(page).toHaveScreenshot("design-inbox-dark.png");
+      });
+      await scenario("the minimum window", async () => {
+        await server.backend.server.invoke("settings.update", { theme: "light" }, ctx);
+        await page.setViewportSize({ width: 980, height: 600 });
+        await reload(page);
+        await ready(page);
+        await expect(page).toHaveScreenshot("design-980.png");
+        await page.setViewportSize({ width: 1440, height: 900 });
+      });
+      await scenario("Settings → Appearance", async () => {
+        await reload(page);
+        await page.getByTestId("open-settings").click();
+        await page.getByTestId("tab-appearance").click();
+        await page.evaluate(() => document.fonts.ready);
+        await stabilize(page);
+        await expect(page.getByTestId("settings-dialog")).toHaveScreenshot("design-settings-appearance.png");
+      });
+      await scenario("inline reply", async () => {
+        await reload(page);
+        await ready(page);
+        await page.getByTestId("quick-reply").click();
+        await expect(page.getByTestId("compose-body")).toBeFocused();
+        await page.keyboard.type("Thanks, I’ll take a look this afternoon.");
+        await stabilize(page);
+        await expect(page).toHaveScreenshot("design-reply.png");
+      });
     });
   });
 });
@@ -247,66 +261,68 @@ test.describe("switching designs", () => {
     }
   });
 
-  test("the palette switches design too", async ({ app: page }) => {
-    await page.keyboard.press("ControlOrMeta+k");
-    await page.getByTestId("palette-design-atelier").click();
-    await expect(page.locator("html")).toHaveAttribute("data-design", "atelier");
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "atelier-light");
-  });
-
-  test("after a reload the design is painted before React mounts", async ({ app: page, server }) => {
-    await server.backend.server.invoke("settings.update", { design: "atelier" }, ctx);
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    // the next load: what theme.js sets, before any script of the app runs
-    await page.addInitScript(() => {
-      document.addEventListener("DOMContentLoaded", () => ((window as unknown as { __early: string | null }).__early = document.documentElement.getAttribute("data-design")), { once: true });
+  test("the faces, and the design a load paints", async ({ app: page, server }) => {
+    await scenario("every face the app declares is a file of its own build: none from a font service", async () => {
+      const faces = await page.evaluate(() =>
+        [...document.styleSheets]
+          .flatMap((s) => [...s.cssRules])
+          .filter((r): r is CSSFontFaceRule => r instanceof CSSFontFaceRule)
+          .map((r) => ({ family: r.style.getPropertyValue("font-family"), src: r.style.getPropertyValue("src") })),
+      );
+      for (const family of ["Figtree Variable", "Instrument Sans Variable", "Geist Variable"]) expect(faces.some((f) => f.family.includes(family)), family).toBe(true);
+      const origin = new URL(page.url()).origin;
+      for (const f of faces) {
+        for (const [, url] of f.src.matchAll(/url\("?([^")]+)"?\)/g)) expect(new URL(url!, page.url()).origin, `${f.family}: ${url}`).toBe(origin);
+        expect(f.src).not.toMatch(/googleapis|gstatic/);
+      }
     });
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    expect(await page.evaluate(() => (window as unknown as { __early: string | null }).__early)).toBe("atelier");
-  });
-
-  test("every face the app declares is a file of its own build: none from a font service", async ({ app: page }) => {
-    const faces = await page.evaluate(() =>
-      [...document.styleSheets]
-        .flatMap((s) => [...s.cssRules])
-        .filter((r): r is CSSFontFaceRule => r instanceof CSSFontFaceRule)
-        .map((r) => ({ family: r.style.getPropertyValue("font-family"), src: r.style.getPropertyValue("src") })),
-    );
-    for (const family of ["Figtree Variable", "Instrument Sans Variable", "Geist Variable"]) expect(faces.some((f) => f.family.includes(family)), family).toBe(true);
-    const origin = new URL(page.url()).origin;
-    for (const f of faces) {
-      for (const [, url] of f.src.matchAll(/url\("?([^")]+)"?\)/g)) expect(new URL(url!, page.url()).origin, `${f.family}: ${url}`).toBe(origin);
-      expect(f.src).not.toMatch(/googleapis|gstatic/);
-    }
-  });
-
-  test("only the design in use loads its faces; a slow face never holds a switch", async ({ app: page }) => {
-    // a load that starts in macOS (this window cached it): nothing of Lumen's or Atelier's
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    const loaded = (family: string) => page.evaluate((f) => [...document.fonts].filter((x) => x.family.replace(/"/g, "") === f).some((x) => x.status === "loaded"), family);
-    expect(await loaded("Figtree Variable")).toBe(false);
-    expect(await loaded("Instrument Sans Variable")).toBe(false);
-    // the face doesn't come until the switch has happened: a switch that waited for it never would (plan 139: no clock to flake)
-    let arrive!: () => void;
-    const held = new Promise<void>((r) => (arrive = r));
-    await page.route(/instrument-sans.*\.woff2$/, async (route) => {
-      await held;
-      await route.continue();
+    await scenario("only the design in use loads its faces; a slow face never holds a switch", async () => {
+      // a load that starts in macOS (this window cached it): nothing of Lumen's or Atelier's
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      const loaded = (family: string) => page.evaluate((f) => [...document.fonts].filter((x) => x.family.replace(/"/g, "") === f).some((x) => x.status === "loaded"), family);
+      expect(await loaded("Figtree Variable")).toBe(false);
+      expect(await loaded("Instrument Sans Variable")).toBe(false);
+      // the face doesn't come until the switch has happened: a switch that waited for it never would (plan 139: no clock to flake)
+      let arrive!: () => void;
+      const held = new Promise<void>((r) => (arrive = r));
+      await page.route(/instrument-sans.*\.woff2$/, async (route) => {
+        await held;
+        await route.continue();
+      });
+      await page.keyboard.press("ControlOrMeta+k");
+      await page.getByTestId("palette-design-atelier").click();
+      await expect(page.locator("html")).toHaveAttribute("data-design", "atelier");
+      // text shows in a fallback meanwhile (swap), then the face arrives
+      await expect(page.getByTestId("list-title")).toBeVisible();
+      expect(await loaded("Instrument Sans Variable")).toBe(false);
+      arrive();
+      // Atelier is Instrument Sans throughout (649d46cd)
+      await expect.poll(() => loaded("Instrument Sans Variable"), { timeout: 8000 }).toBe(true);
+      expect(await loaded("Figtree Variable")).toBe(false);
     });
-    await page.keyboard.press("ControlOrMeta+k");
-    await page.getByTestId("palette-design-atelier").click();
-    await expect(page.locator("html")).toHaveAttribute("data-design", "atelier");
-    // text shows in a fallback meanwhile (swap), then the face arrives
-    await expect(page.getByTestId("list-title")).toBeVisible();
-    expect(await loaded("Instrument Sans Variable")).toBe(false);
-    arrive();
-    // Atelier is Instrument Sans throughout (649d46cd)
-    await expect.poll(() => loaded("Instrument Sans Variable"), { timeout: 8000 }).toBe(true);
-    expect(await loaded("Figtree Variable")).toBe(false);
+    await scenario("the palette switches design too", async () => {
+      await server.backend.server.invoke("settings.update", { design: "macos" }, ctx);
+      await reload(page);
+      await page.keyboard.press("ControlOrMeta+k");
+      await page.getByTestId("palette-design-atelier").click();
+      await expect(page.locator("html")).toHaveAttribute("data-design", "atelier");
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "atelier-light");
+    });
+    await scenario("after a reload the design is painted before React mounts", async () => {
+      await server.backend.server.invoke("settings.update", { design: "atelier" }, ctx);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      // the next load: what theme.js sets, before any script of the app runs
+      await page.addInitScript(() => {
+        document.addEventListener("DOMContentLoaded", () => ((window as unknown as { __early: string | null }).__early = document.documentElement.getAttribute("data-design")), { once: true });
+      });
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      expect(await page.evaluate(() => (window as unknown as { __early: string | null }).__early)).toBe("atelier");
+    });
   });
+
 });
 
 test.describe("Lumen: search behind a button", () => {
@@ -346,89 +362,84 @@ test.describe("Lumen: search behind a button", () => {
 
 test.describe("a new install", () => {
   test.use({ design: null });
-  test("opens in Lumen, in the GitHub palettes (plan 98)", async ({ app: page }) => {
-    await expect(page.locator("html")).toHaveAttribute("data-design", "lumen");
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "github-light");
-    await expect(page.getByTestId("quick-filters")).toBeVisible();
+  test("a new install, and an install from before designs", async ({ app: page, server }) => {
+    await scenario("opens in Lumen, in the GitHub palettes (plan 98)", async () => {
+      await expect(page.locator("html")).toHaveAttribute("data-design", "lumen");
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "github-light");
+      await expect(page.getByTestId("quick-filters")).toBeVisible();
+    });
+    await scenario("Lumen in GitHub goes to Graphite in its own colors, and every style comes back as it was left, in both modes and after a reload", async () => {
+      await server.backend.server.invoke("settings.update", { theme: "light", design: "lumen", lightTheme: "github-light", darkTheme: "github-dark" }, ctx);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      const html = page.locator("html");
+      const card = (id: string) => page.getByTestId(`theme-card-${id}`);
+      const chooseStyle = async (id: string) => {
+        await page.getByTestId(`design-card-${id}`).click();
+        await expect(html).toHaveAttribute("data-design", id);
+      };
+      const chooseMode = async (mode: "light" | "dark") => {
+        await page.getByTestId(`mode-${mode}`).click();
+        await expect(html).toHaveClass(mode === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
+      };
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-appearance").click();
+      await expect(html).toHaveAttribute("data-theme", "github-light");
+
+      // the request's example: Graphite, never used, has its own colors in both modes
+      await chooseStyle("graphite");
+      await expect(html).toHaveAttribute("data-theme", "graphite-light");
+      await expect(card("design-light")).toHaveAttribute("aria-checked", "true");
+      await expect(card("design-dark")).toHaveAttribute("aria-checked", "true");
+
+      // what's picked in Graphite stays Graphite's
+      await card("solarized-light").click();
+      await expect(html).toHaveAttribute("data-theme", "solarized-light");
+      await card("dracula").click();
+
+      // Lumen is back as it was left, in both modes
+      await chooseStyle("lumen");
+      await expect(html).toHaveAttribute("data-theme", "github-light");
+      await expect(card("github-light")).toHaveAttribute("aria-checked", "true");
+      await expect(card("github-dark")).toHaveAttribute("aria-checked", "true");
+      await chooseMode("dark");
+      await expect(html).toHaveAttribute("data-theme", "github-dark");
+
+      // another style is independent of both
+      await chooseStyle("luma");
+      await expect(html).toHaveAttribute("data-theme", "luma-dark");
+
+      await chooseStyle("graphite");
+      await expect(html).toHaveAttribute("data-theme", "dracula");
+      await expect(card("solarized-light")).toHaveAttribute("aria-checked", "true");
+
+      // all of it survives a reload
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await expect(html).toHaveAttribute("data-design", "graphite");
+      await expect(html).toHaveAttribute("data-theme", "dracula");
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-appearance").click();
+      await chooseStyle("lumen");
+      await expect(html).toHaveAttribute("data-theme", "github-dark");
+    });
+    await scenario("moves to Lumen; the theme it had is first under Colors, one click away, not applied", async () => {
+      sqlDb(server.backend.store).run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ theme: "light", lightTheme: "github-light", darkTheme: "dracula" }));
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await expect(page.locator("html")).toHaveAttribute("data-design", "lumen");
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "lumen-light");
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-appearance").click();
+      await expect(page.getByTestId("theme-card-design-light")).toHaveAttribute("aria-checked", "true");
+      const previous = page.getByTestId("theme-card-previous-light");
+      await expect(previous).toContainText("GitHub Light");
+      await expect(previous).toContainText("Your previous theme");
+      await expect(page.getByTestId("theme-card-previous-dark")).toContainText("Dracula");
+      await previous.click();
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "github-light");
+      await expect(page.locator("html")).toHaveAttribute("data-design", "lumen");
+    });
   });
 });
 
-test.describe("each style keeps its palettes (plan 138)", () => {
-  test.use({ design: null });
-  test("Lumen in GitHub goes to Graphite in its own colors, and every style comes back as it was left, in both modes and after a reload", async ({ app: page, server }) => {
-    await server.backend.server.invoke("settings.update", { theme: "light", design: "lumen", lightTheme: "github-light", darkTheme: "github-dark" }, ctx);
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    const html = page.locator("html");
-    const card = (id: string) => page.getByTestId(`theme-card-${id}`);
-    const chooseStyle = async (id: string) => {
-      await page.getByTestId(`design-card-${id}`).click();
-      await expect(html).toHaveAttribute("data-design", id);
-    };
-    const chooseMode = async (mode: "light" | "dark") => {
-      await page.getByTestId(`mode-${mode}`).click();
-      await expect(html).toHaveClass(mode === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
-    };
-    await page.getByTestId("open-settings").click();
-    await page.getByTestId("tab-appearance").click();
-    await expect(html).toHaveAttribute("data-theme", "github-light");
-
-    // the request's example: Graphite, never used, has its own colors in both modes
-    await chooseStyle("graphite");
-    await expect(html).toHaveAttribute("data-theme", "graphite-light");
-    await expect(card("design-light")).toHaveAttribute("aria-checked", "true");
-    await expect(card("design-dark")).toHaveAttribute("aria-checked", "true");
-
-    // what's picked in Graphite stays Graphite's
-    await card("solarized-light").click();
-    await expect(html).toHaveAttribute("data-theme", "solarized-light");
-    await card("dracula").click();
-
-    // Lumen is back as it was left, in both modes
-    await chooseStyle("lumen");
-    await expect(html).toHaveAttribute("data-theme", "github-light");
-    await expect(card("github-light")).toHaveAttribute("aria-checked", "true");
-    await expect(card("github-dark")).toHaveAttribute("aria-checked", "true");
-    await chooseMode("dark");
-    await expect(html).toHaveAttribute("data-theme", "github-dark");
-
-    // another style is independent of both
-    await chooseStyle("luma");
-    await expect(html).toHaveAttribute("data-theme", "luma-dark");
-
-    await chooseStyle("graphite");
-    await expect(html).toHaveAttribute("data-theme", "dracula");
-    await expect(card("solarized-light")).toHaveAttribute("aria-checked", "true");
-
-    // all of it survives a reload
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await expect(html).toHaveAttribute("data-design", "graphite");
-    await expect(html).toHaveAttribute("data-theme", "dracula");
-    await page.getByTestId("open-settings").click();
-    await page.getByTestId("tab-appearance").click();
-    await chooseStyle("lumen");
-    await expect(html).toHaveAttribute("data-theme", "github-dark");
-  });
-});
-
-test.describe("an install from before designs", () => {
-  test.use({ design: null });
-  test("moves to Lumen; the theme it had is first under Colors, one click away, not applied", async ({ app: page, server }) => {
-    sqlDb(server.backend.store).run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ theme: "light", lightTheme: "github-light", darkTheme: "dracula" }));
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await expect(page.locator("html")).toHaveAttribute("data-design", "lumen");
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "lumen-light");
-    await page.getByTestId("open-settings").click();
-    await page.getByTestId("tab-appearance").click();
-    await expect(page.getByTestId("theme-card-design-light")).toHaveAttribute("aria-checked", "true");
-    const previous = page.getByTestId("theme-card-previous-light");
-    await expect(previous).toContainText("GitHub Light");
-    await expect(previous).toContainText("Your previous theme");
-    await expect(page.getByTestId("theme-card-previous-dark")).toContainText("Dracula");
-    await previous.click();
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "github-light");
-    await expect(page.locator("html")).toHaveAttribute("data-design", "lumen");
-  });
-});
