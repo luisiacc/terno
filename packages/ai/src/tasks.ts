@@ -6,6 +6,7 @@ import { jevModels, jevTasks } from "./jev";
 import { runStructured, type StructuredTask } from "./ladder";
 import { openaiChatTransport } from "./openai-chat";
 import { describeProvider, isLocalProvider, resolveBaseURL } from "./providers";
+import { planAskTask, runAnswerFromMail } from "./ask";
 import { summarizeTask } from "./summarize";
 import { AiError, type AiTasks, type Capabilities, type ClassifyInput, type ModelInfo, type ModelTransport, type OutputMode, type ProviderConfig } from "./types";
 import { convertWireFilter, EXAMPLE_WIRE_FILTER, systemPrompt, wireFilterSchema } from "./wire";
@@ -106,6 +107,14 @@ export function createAi(config: ProviderConfig, options: AiOptions = {}): AiTas
 
     parseIntent(input, signal) {
       return run(parseIntentTask(input), signal);
+    },
+
+    planAsk(input, signal) {
+      return run(planAskTask(input), signal);
+    },
+
+    answerFromMail(input, answerOptions) {
+      return runAnswerFromMail(transport, input, answerOptions);
     },
 
     generateFilter(prompt, ctx, signal) {

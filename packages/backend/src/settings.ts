@@ -150,6 +150,7 @@ export const DEFAULT_SETTINGS: General = {
   aiCategorize: false,
   aiCategorizeWidened: false,
   summaries: { enabled: false, enabledAt: null, acknowledged: [] },
+  ask: { enabled: true, acknowledged: [] },
   errorReports: "ask",
   // new installs follow the system: English unless it's a language Terno ships
   language: "system",
@@ -522,8 +523,17 @@ export async function acknowledgeSummaryProvider(store: SettingsStore, provider:
   });
 }
 
+/** Plan 141 revision 2: consent is for a destination (`destinationOf`), and `compatible` covers many servers. */
+export async function acknowledgeAsk(store: SettingsStore, destination: string): Promise<void> {
+  await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
+    const s = migrate(raw);
+    const current = s.ask ?? DEFAULT_SETTINGS.ask;
+    return { value: current.acknowledged.includes(destination) ? s : { ...s, ask: { ...current, acknowledged: [...current.acknowledged, destination] } }, result: undefined };
+  });
+}
+
 function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: boolean, now: number): StoredSettings {
-  const { ai: aiPatch, summaries: summariesPatch, ...rest } = patch;
+  const { ai: aiPatch, summaries: summariesPatch, ask: askPatch, ...rest } = patch;
   const general: Partial<General> = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
   if (summariesPatch) {
     // the moment it went on: mail from before it is never sent (off and on again starts over)
@@ -531,6 +541,7 @@ function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: 
     const enabledAt = !summariesPatch.enabled ? null : was.enabled ? was.enabledAt : now;
     general.summaries = { ...was, enabled: summariesPatch.enabled, enabledAt };
   }
+  if (askPatch) general.ask = { ...(s.ask ?? DEFAULT_SETTINGS.ask), enabled: askPatch.enabled };
   const state = aiState(s, hasLegacyKey);
   let { provider } = state;
   const profiles = { ...state.profiles };

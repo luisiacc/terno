@@ -22,6 +22,7 @@ import {
   type PresetDescriptor,
   type ProviderDescriptor,
 } from "../ai";
+import { ASK_QUESTION_MAX, ASK_SOURCES_MAX, type AiAskEvent, type AiAskResult, type AskConversationSummary, type AskSourceView, type AskTurn } from "../ask";
 import { GENERATION_TEXT_MAX, WRITING_INSTRUCTIONS_MAX, WRITING_ONE_OFF_MAX, type AiComposeDelta, type AiComposeResult, type AiIntentResult, type AiStudyProgress, type WritingPrefs, type WritingProfileView, type WritingStatus, type WritingStudyResult } from "../writing/contract";
 import type { AlwaysScope, CategoryModelStats, Prediction, QuickActions } from "../categorize/bulk";
 import type { I18nRef } from "./envelope";
@@ -120,6 +121,13 @@ export interface AiSettings {
   monthlyLimitUsd: number;
 }
 
+/** Plan 141: Ask your mail. On by default, since nothing runs until someone asks, and the first question asks for consent. */
+export interface AskSetting {
+  enabled: boolean;
+  /** where the user agreed questions and mail go: provider, preset and origin, as `destinationOf` says (revision 2) */
+  acknowledged: string[];
+}
+
 export interface AiSummariesSetting {
   enabled: boolean;
   enabledAt: number | null;
@@ -132,6 +140,8 @@ export interface AiUsageReport {
   today: { requests: number; usd: number };
   month: { requests: number; usd: number };
   monthBackgroundUsd: number;
+  /** plan 141: questions this month, a person's own requests: counted, and outside the ceilings */
+  monthAsk: { requests: number; usd: number };
   /** some of the month's figure is an estimate, counted high: a price nobody told us, or usage a provider didn't report */
   estimated: boolean;
 }
@@ -171,6 +181,7 @@ export interface AppSettings {
   aiCategorizeWidened: boolean;
   /** plan 132: summarize new mail as it arrives (off unless the user turns it on: it sends mail with no click); mail from before `enabledAt` never */
   summaries: AiSummariesSetting;
+  ask: AskSetting;
   /** anonymous error reports (builds with a DSN, outside local mode): ask each time, send, or never */
   errorReports: "ask" | "always" | "never";
   /** the UI language: follow the system, or a locale Terno ships (@terno/i18n LOCALES) */
@@ -468,6 +479,7 @@ const settingsPatch = z.object({
   aiCategorizeWidened: z.boolean().optional(),
   /** `enabledAt` is the backend's: the moment it went on */
   summaries: z.object({ enabled: z.boolean() }).strict().optional(),
+  ask: z.object({ enabled: z.boolean() }).strict().optional(),
   errorReports: z.enum(["ask", "always", "never"]).optional(),
   language: z.enum(LANGUAGE_SETTINGS).optional(),
   composeSuggestions: z.boolean().optional(),
@@ -1114,6 +1126,22 @@ export const contract = {
   /** Settings → Storage → Clear AI data. */
   "ai.summaries.clear": m<{ ok: true }>()(empty),
 
+  // plan 141. All renderer-only: none of these is in MCP_ALLOWED, since a question and its answers are mail content.
+  /**
+   * A question: the answer's text streams to this connection as `aiAsk` events, cancellable with `ai.cancel`.
+   * `conversationId`: a follow-up. `acknowledge`: the user has read where it goes.
+   */
+  "ai.ask": m<AiAskResult>()(z.object({ requestId, question: z.string().trim().min(1).max(ASK_QUESTION_MAX), conversationId: id.optional(), timezone: z.string().min(1).max(100), acknowledge: z.boolean().optional() }), { timeoutMs: 180_000 }),
+  /** The user's own servers look further back for this turn's question; one more answer comes of it. Only on a click. */
+  "ai.askOlder": m<AiAskResult>()(z.object({ requestId, conversationId: id, turnId: id, timezone: z.string().min(1).max(100) }), { timeoutMs: 300_000 }),
+  /** Previous AI questions: newest first, at most 100. */
+  "ai.askHistory": m<AskConversationSummary[]>()(empty),
+  /** A saved conversation, with no request. Null: it's gone. */
+  "ai.askConversation": m<{ turns: AskTurn[]; sources: Record<number, AskSourceView> } | null>()(z.object({ conversationId: id })),
+  "ai.askSources": m<Record<number, AskSourceView>>()(z.object({ messageIds: z.array(id).max(ASK_SOURCES_MAX) })),
+  "ai.askDelete": m<{ ok: true }>()(z.object({ conversationId: id })),
+  "ai.askRestore": m<{ ok: true }>()(z.object({ conversationId: id })),
+
   // plan 133. All renderer-only: none of these is in MCP_ALLOWED. The contract's described in the plan's last section.
   /**
    * A draft, streamed to this connection as `aiCompose` events; cancellable with `ai.cancel`. `session`: one draft's
@@ -1289,6 +1317,8 @@ export interface Events {
   syncProgress: { accountId: number; progress: import("../types").SyncProgress | null };
   /** plan 132: a thread's summary is ready, for an open reader (only to the renderer and dev: never MCP) */
   aiSummary: { threadId: number };
+  /** plan 141: an answer as it comes, only to the connection that asked */
+  aiAsk: AiAskEvent;
   /** plan 133: a stream's text so far, only to the connection that asked: append it */
   aiCompose: AiComposeDelta;
   /** plan 133: the style study's progress, only to the connection that asked */

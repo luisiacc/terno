@@ -1,5 +1,6 @@
 import { normalizeText } from "@terno/core";
 import { keyRef } from "@terno/i18n";
+import { fakeAnswer, fakeAskPlan, isAnswerRequest } from "./ask";
 import { fakeSummary } from "./summarize";
 import { AiError, promptText, type CompletionRequest, type ModelTransport, type StreamEvent } from "./types";
 import type { WireFilter } from "./wire";
@@ -103,8 +104,10 @@ export function fakeTransport(options: { failFirstAttempt?: boolean } = {}): Mod
       }
       if (schema?.name === "probe") return { text: '{"ok":true}', stop: "end" };
       if (schema?.name === "thread_summary") return { text: JSON.stringify(fakeSummary(promptText(system), prompt)), stop: "end" };
+      if (schema?.name === "ask_plan") return { text: JSON.stringify(fakeAskPlan(prompt)), stop: "end" };
       if (schema?.name === "voice_judgment") return { text: JSON.stringify(fakeJudgment(prompt)), stop: "end" };
       if (schema?.name === "parse_intent") return { text: JSON.stringify(fakeIntent(prompt)), stop: "end" };
+      if (isAnswerRequest(promptText(system))) return fakeAnswer(prompt);
       if (isComposeRequest(promptText(system))) {
         const script = fakeComposeScript(promptText(system), prompt);
         return { text: script.stop === "refusal" ? "" : script.text, stop: script.stop };
@@ -116,6 +119,19 @@ export function fakeTransport(options: { failFirstAttempt?: boolean } = {}): Mod
     },
     async *stream(req: CompletionRequest): AsyncGenerator<StreamEvent> {
       calls++;
+      if (isAnswerRequest(promptText(req.system))) {
+        const answer = fakeAnswer(promptText(req.messages[0]?.content ?? ""));
+        if (fakeDraft.firstTokenMs) await pause(fakeDraft.firstTokenMs, req.signal);
+        const pieces = answer.text.match(/.{1,16}/gs) ?? [];
+        let n = 0;
+        for (const piece of pieces) {
+          if (fakeDraft.paceMs && n) await pause(fakeDraft.paceMs, req.signal);
+          yield { type: "delta", text: piece };
+          n++;
+        }
+        yield { type: "done", stop: answer.stop, usage: { inputTokens: 1, outputTokens: n } };
+        return;
+      }
       // scripted by a marker in the instruction, so a flow test reaches each failure through the real path
       const script = fakeComposeScript(promptText(req.system), promptText(req.messages[0]?.content ?? ""), fakeDraft.text);
       if (script.slowMs) await new Promise((resolve) => setTimeout(resolve, script.slowMs));

@@ -304,6 +304,8 @@ export function createHandlers(b: Backend): Handlers {
       await store.accounts.remove(id);
     });
     b.accountRemoved(id);
+    // plan 141: what questions drew on it goes, and what's asking on it stops
+    await b.ask.accountRemoved(id);
     forgetSignInVersion(b, id);
     // nobody from a removed account lingers in suggestions
     await b.autocomplete.reset();
@@ -1230,6 +1232,7 @@ export function createHandlers(b: Backend): Handlers {
           if (patch.ai && (patch.ai.provider !== undefined || patch.ai.model !== undefined || patch.ai.baseURL !== undefined || patch.ai.preset !== undefined || patch.ai.tasks)) b.aiService.configChanged();
           // plan 132: turned off, nothing further goes; a change may unblock what was paused
           if (patch.ai || patch.summaries) b.summaries.settingsChanged(next);
+          if (patch.ask) b.ask.settingsChanged(next.ask.enabled);
           if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
           if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
           // plan 22: website icons turned off: nothing in flight lands, windows forget them
@@ -1256,6 +1259,7 @@ export function createHandlers(b: Backend): Handlers {
     "ai.setKey": async ({ provider, preset, value }) => {
       const next = await b.aiService.setKey(provider, preset, value);
       b.summaries.settingsChanged(next);
+      b.ask.settingsChanged(next.ask.enabled);
       // plan 134: a JEV key chooses where categorization runs
       b.aiAssist.targetChanged();
       return next;
@@ -1275,6 +1279,21 @@ export function createHandlers(b: Backend): Handlers {
     "ai.summaries.status": () => b.summaries.status(),
     "ai.summaries.clear": async () => {
       await b.summaries.clear();
+      await b.ask.clear();
+      return { ok: true };
+    },
+    // plan 141: renderer only; none of these is in MCP_ALLOWED
+    "ai.ask": (p, ctx) => b.ask.ask(p, ctx.clientId),
+    "ai.askOlder": (p, ctx) => b.ask.older(p, ctx.clientId),
+    "ai.askHistory": () => b.ask.history(),
+    "ai.askConversation": ({ conversationId }) => b.ask.conversation(conversationId),
+    "ai.askSources": ({ messageIds }) => b.ask.sourceViews(messageIds),
+    "ai.askDelete": async ({ conversationId }) => {
+      await b.ask.remove(conversationId);
+      return { ok: true };
+    },
+    "ai.askRestore": async ({ conversationId }) => {
+      await b.ask.restore(conversationId);
       return { ok: true };
     },
 

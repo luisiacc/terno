@@ -364,8 +364,12 @@ export class AiLimiter {
     const book = await this.load();
     const today = dayOf(this.host.now());
     const month = today.slice(0, 7);
-    const report: AiUsageReport = { today: { requests: 0, usd: 0 }, month: { requests: 0, usd: 0 }, monthBackgroundUsd: this.monthBackgroundUsd(book), estimated: false };
+    const report: AiUsageReport = { today: { requests: 0, usd: 0 }, month: { requests: 0, usd: 0 }, monthBackgroundUsd: this.monthBackgroundUsd(book), monthAsk: { requests: 0, usd: 0 }, estimated: false };
     for (const [day, tasks] of Object.entries(book)) {
+      if (day.startsWith(month) && tasks.ask) {
+        report.monthAsk.requests += tasks.ask.requests;
+        report.monthAsk.usd += tasks.ask.usd;
+      }
       for (const tally of Object.values(tasks)) {
         if (day === today) {
           report.today.requests += tally.requests;

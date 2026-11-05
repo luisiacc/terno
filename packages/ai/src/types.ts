@@ -1,6 +1,7 @@
 import { textRef, type AiErrorKind, type AiProviderId, type Capabilities, type CompatiblePreset, type FilterRule, type ModelInfo, type OutputMode, type TextRef } from "@terno/core";
 import type { Localized } from "@terno/i18n";
 import type { z } from "zod";
+import type { AnswerFromMailInput, AnswerFromMailOptions, AnswerFromMailResult, AskPlanResult, PlanAskInput } from "./ask";
 import type { SummarizeInput, ThreadSummaryResult } from "./summarize";
 import type { ComposeInput, ComposeOptions, ComposeResult, JudgeVoiceInput, JudgeVoiceResult, ParseIntentInput, ParseIntentResult } from "./writing";
 
@@ -136,6 +137,10 @@ export interface AiTasks {
   judgeVoice(input: JudgeVoiceInput, signal?: AbortSignal): Promise<JudgeVoiceResult>;
   /** plan 133: who an instruction is for, from the names it matched. Carries no mail. */
   parseIntent(input: ParseIntentInput, signal?: AbortSignal): Promise<ParseIntentResult>;
+  /** plan 141: what to look for. Sees no mail, except what an earlier answer quotes, as material. */
+  planAsk(input: PlanAskInput, signal?: AbortSignal): Promise<AskPlanResult>;
+  /** plan 141: an answer from the given mail, streamed; a refusal throws */
+  answerFromMail(input: AnswerFromMailInput, options: AnswerFromMailOptions): Promise<AnswerFromMailResult>;
   /** One result per input, in input order; malformed responses are repaired or rejected as a whole. */
   classify<L extends string>(input: ClassifyInput<L>, signal?: AbortSignal): Promise<{ id: string; label: L | null; confidence: number }[]>;
   /** declared only; built with the categorization agent */
