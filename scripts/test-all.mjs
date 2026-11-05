@@ -28,14 +28,15 @@ const vitest = (project, flags = "") => {
   return {
     commands: [`pnpm exec vitest run --project ${project} ${flags} --reporter=default --reporter=json --outputFile.json=${report}`],
     again() {
-      if (!existsSync(report)) return null;
+      // no report: it died. An unhandled error isn't in the report, and a retry of the files that are wouldn't see it again
+      if (!existsSync(report) || readFileSync(join(logs, `${project}.log`), "utf8").includes("Unhandled Error")) return null;
       const failed = JSON.parse(readFileSync(report, "utf8")).testResults.filter((file) => file.status === "failed").map((file) => relative(root, file.name));
       return failed.length ? `pnpm exec vitest run --project ${project} --maxWorkers=1 ${failed.join(" ")}` : null;
     },
   };
 };
-/** Playwright remembers what failed in its output directory, so this runs before another suite shares that directory */
-const playwright = (command) => ({ commands: [command], again: () => `${command} --last-failed` });
+/** Playwright remembers what failed in its output directory, so this runs before another suite shares that directory; a run that died has no such record, and `--last-failed` then runs everything */
+const playwright = (command, results) => ({ commands: [command], results, again: () => `${command} --last-failed` });
 
 const SUITES = {
   typecheck: { commands: ["pnpm typecheck"] },
@@ -44,13 +45,13 @@ const SUITES = {
   unit: vitest("unit"),
   // beside unit, which takes the machine: more workers than this only trade places
   "db-wasm": vitest("db-wasm", "--maxWorkers=4"),
-  web: playwright("pnpm test:web"),
-  e2e: playwright("pnpm test:e2e"),
+  web: playwright("pnpm test:web", "e2e-web"),
+  e2e: playwright("pnpm test:e2e", "e2e"),
   // no DMG: smoke runs the .app, and a release checks its DMG as it makes it. Niced: it ends well before e2e does, so what
   // it gives up it can spare, and nothing in it is timed (what is runs in `startup`)
-  smoke: { commands: ["TERNO_PACKAGE_DMG=0 nice -n 10 pnpm dist:mac", "nice -n 10 pnpm test:smoke"], again: () => "pnpm test:smoke --last-failed" },
+  smoke: { commands: ["TERNO_PACKAGE_DMG=0 nice -n 10 pnpm dist:mac", "nice -n 10 pnpm test:smoke"], results: "desktop-smoke", again: () => "pnpm test:smoke --last-failed" },
   perf: vitest("perf"),
-  "ui-perf": playwright("pnpm test:ui-perf"),
+  "ui-perf": playwright("pnpm test:ui-perf", "e2e"),
   // a packaged app's start, with nothing else running (it needs the build smoke made)
   startup: { commands: ["pnpm --filter @terno/desktop test:startup"] },
 };
@@ -71,21 +72,29 @@ const results = new Map();
 async function suite(name) {
   const started = Date.now();
   rmSync(join(logs, `${name}.json`), { force: true });
+  // no record left from an earlier run for `again` to take for this one's
+  if (SUITES[name].results) rmSync(join(root, "test-results", SUITES[name].results, ".last-run.json"), { force: true });
   const log = createWriteStream(join(logs, `${name}.log`));
+  const { commands } = SUITES[name];
   let code = 0;
-  for (const command of SUITES[name].commands) {
+  let last = true;
+  for (const [i, command] of commands.entries()) {
     code = await run(command, log);
-    if (code !== 0) break;
+    if (code !== 0) {
+      // only the last command is the tests: a build that failed isn't what a retry of them would answer
+      last = i === commands.length - 1;
+      break;
+    }
   }
-  log.end();
-  results.set(name, { code, flaky: false });
+  await new Promise((resolve) => log.end(resolve));
+  results.set(name, { code, flaky: false, retry: last });
   console.log(`${code === 0 ? "ok  " : "FAIL"} ${name.padEnd(10)} ${String(Math.round((Date.now() - started) / 1000)).padStart(4)} s`);
 }
 
 /** what failed in `names`, once more, one suite at a time */
 async function again(names) {
   for (const name of names) {
-    if (results.get(name).code === 0) continue;
+    if (results.get(name).code === 0 || !results.get(name).retry) continue;
     const command = SUITES[name].again?.();
     if (!command) continue;
     const log = createWriteStream(join(logs, `${name}.again.log`));

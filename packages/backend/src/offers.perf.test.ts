@@ -93,10 +93,10 @@ async function interactive(name: string, budgetMs: number, fn: () => Promise<unk
 
 const p95 = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.max(0, Math.ceil(xs.length * 0.95) - 1)] ?? 0;
 
-/** Heap in use less the young generation's garbage. */
-function heapHeld(): number {
-  const young = v8.getHeapSpaceStatistics().find((s) => s.space_name === "new_space")!.space_used_size;
-  return process.memoryUsage().heapUsed - young;
+/** Heap in use after a scavenge: garbage from the young generation is gone, and what's live in it still counts. */
+function heapLive(): number {
+  (gc as unknown as (o: { type: "minor" }) => void)({ type: "minor" });
+  return process.memoryUsage().heapUsed;
 }
 
 /** Runs background work while a renderer keeps listing; the loop's longest stall, the list's p95 and the heap it held and kept. */
@@ -107,13 +107,18 @@ async function background(name: string, fn: () => Promise<unknown>) {
   gc();
   const heapBefore = process.memoryUsage().heapUsed;
   let heapPeak = heapBefore;
+  let sampled = 0;
   const loop = watchLoop(50 * BUDGET_MULTIPLIER);
   const list: Sample[] = [];
   let done = false;
   const probe = (async () => {
     while (!done) {
       list.push(await sampleAsync(() => lister.call("threads.list", { view: "inbox" })));
-      heapPeak = Math.max(heapPeak, heapHeld());
+      // now and then: a scavenge is work on this thread, and the stall is measured here too
+      if (performance.now() - sampled >= 50) {
+        heapPeak = Math.max(heapPeak, heapLive());
+        sampled = performance.now();
+      }
       await new Promise((r) => setTimeout(r, 2));
     }
   })();

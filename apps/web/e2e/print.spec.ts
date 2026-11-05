@@ -396,14 +396,15 @@ test.describe("print sheet", () => {
       await page.locator("[data-ready]").waitFor();
       await open(page, server, "newsletter", 'subject:"Boletín Acme"');
       await page.getByTestId("remote-load").click();
+      // the reader asked already; from here it's the print frame asking
+      stalled.length = 0;
       await page.keyboard.press("ControlOrMeta+p");
-      // the deadline, on the page's clock (a little at a time: the frame and its images get there first)
-      await expect(async () => {
-        await page.clock.fastForward(4000);
-        await expect(page.getByTestId("print-preview")).toHaveAttribute("data-ready", "true", { timeout: 200 });
-      }).toPass();
+      await expect.poll(() => stalled.some((u) => u.includes("images.acme.test"))).toBe(true);
+      // the deadline, once, on the page's clock: a longer one wouldn't be done by this
+      await expect(page.getByTestId("print-preview")).not.toHaveAttribute("data-ready", "true");
+      await page.clock.fastForward(4000);
+      await expect(page.getByTestId("print-preview")).toHaveAttribute("data-ready", "true", { timeout: 2_000 });
       await expect(page.getByTestId("print-submit")).toBeEnabled();
-      expect(stalled.some((u) => u.includes("images.acme.test"))).toBe(true);
       // what it couldn't load prints as its description, not as an endless request
       await expect(preview(page).locator('img[src*="acme.test"]')).toHaveCount(0);
       await expect(preview(page).locator(".img-alt")).toContainText(["Promoción de temporada"]);

@@ -12,7 +12,6 @@ import v8 from "node:v8";
 import vm from "node:vm";
 import { CategorizerModel, encodeFeatures, extractFeatures, FEATURES_V, type TrainExample } from "@terno/core";
 import { addToCategory, countScope, createAccount, createCategory, ingestMessages, openDatabase, ownAddresses, quickActions, rootMessages, type IncomingMessage, sqlDb, type SqlMailStore } from "@terno/db";
-import { resolveScope } from "../../db/src/categorize-bulk";
 import { demoRegistry } from "@terno/mail";
 import { generateDataset } from "@terno/mock-data";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
@@ -305,8 +304,6 @@ async function underLoad(fn: () => Promise<unknown>, on: Backend = backend): Pro
   return { stall: watched.stall, cpu: watched.longest.cpu, rpc: settle(rpc).ms, descheduled: watched.descheduled.length };
 }
 
-const backendResolve = () => resolveScope(sqlDb(backend.store), 1, { kind: "query", query: "in:all" }, NOW);
-
 it("large UI adds, removals and undo are sliced: no long stall, interactive RPCs keep flowing", async () => {
   if (!backend.categorizer.ready) await backend.categorizer.rebuildNow();
   const [c, srv] = createMemoryTransportPair();
@@ -326,11 +323,17 @@ it("large UI adds, removals and undo are sliced: no long stall, interactive RPCs
   }
   // leave the shared mailbox as the other budgets expect it
   await client.call("categories.delete", { id: cat });
-  // A query's scope is one read of the whole mailbox ahead of the slices (resolveScope: 25 ms here, whatever it matches), and
-  // the first slice follows it in the same turn: 33 ms at 20,000 threads, 41 to 59 ms at this size, over the 50 this file's
-  // gates hold (found by plan 139). So that read is reported, and the bulk apply's slices are gated where it's small.
-  const read = sampleSync(() => backendResolve());
-  stats.push({ name: "one read of in:all, reported", budgetMs: 0, p50: read.wall, p95: read.wall, max: read.wall, iterations: 1 });
+  // A query's scope is one read of the whole mailbox ahead of the slices, whatever it matches: at full size, with a scope that
+  // files few so only the read is big, then the rest of the bulk apply's slices where filing everything is quick.
+  const sender = sqlDb(backend.store).get<{ email: string; c: number }>("SELECT last_from_email AS email, count(*) AS c FROM threads WHERE in_trash = 0 AND in_spam = 0 GROUP BY 1 HAVING c BETWEEN 50 AND 400 ORDER BY c LIMIT 1")!;
+  const few = (await client.call("categories.create", { name: "Pocas", color: "rose" })).id;
+  let filed: { batchId: number | null; added: number } = { batchId: null, added: 0 };
+  const full = await underLoad(async () => (filed = await client.call("categorize.apply", { categoryId: few, scope: { kind: "query", query: `from:${sender.email}` } })));
+  stats.push({ name: `bulk-apply by query at full size: max event-loop stall ${full.stall.toFixed(1)} ms (cpu ${full.cpu.toFixed(1)})`, budgetMs: 50, p50: full.stall, p95: full.stall, max: full.stall, iterations: full.rpc.length });
+  expect(filed.added).toBeGreaterThan(0);
+  expect(full.stall, `bulk-apply by query at full size (cpu ${full.cpu.toFixed(1)} ms of it)`).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
+  await client.call("categorize.undo", { batchId: filed.batchId! });
+  await client.call("categories.delete", { id: few });
   copyMailbox(SLICE_MAILBOX, join(dir, "slices.db"));
   const small = open(join(dir, "slices.db"), false);
   try {

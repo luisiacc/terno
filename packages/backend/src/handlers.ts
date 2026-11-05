@@ -667,6 +667,8 @@ export function createHandlers(b: Backend): Handlers {
         // the set is fixed here, once: filing changes the scope's own "not yet in the category" predicate
         // never what's already in the category (plan 91, review): a thread deliberately in it and another keeps both
         const ids = await store.categorize.resolveScope(categoryId, scope, b.now());
+        // that read can be a whole mailbox's: the first slice gets a turn of its own, so the two aren't one stall (plan 139)
+        await b.platform.yield();
         if (move) {
           // plan 91: an exclusive move of the whole set, like a drag (other categories left, every row journaled)
           if (ids.length === 0) return { batchId: null, added: 0, filter, filterFailed };
