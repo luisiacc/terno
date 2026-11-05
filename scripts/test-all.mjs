@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 /**
- * Plan 139: every gate, in at most ten minutes. Over budget is a failure too: that's how the time doesn't grow back
- * unnoticed. What doesn't time anything runs first: the quick suites and the packaged smoke together, then e2e, once unit
- * has left it the machine (beside unit it finishes no sooner and flakes). The gates that time something wait for all of
- * that, and have the machine to themselves.
+ * Plan 139: every gate, and how long it took, so the time doesn't grow back unnoticed. What doesn't time anything runs
+ * first: the quick suites and the packaged smoke together, then e2e, once unit has left it the machine (beside unit it
+ * finishes no sooner and flakes). The gates that time something wait for all of that, and have the machine to themselves.
  *
  * A machine this full can fail a test that's fine, so what fails runs again alone. A regression fails both times, which
  * fails the run; a test that only failed the first time passes it, and is named as flaky here, to be looked at.
@@ -13,7 +12,6 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync } from "
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const BUDGET_S = 600;
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const logs = join(root, "test-results", "all");
 mkdirSync(logs, { recursive: true });
@@ -119,8 +117,7 @@ const total = Math.round((Date.now() - started) / 1000);
 const failed = [...results].filter(([, r]) => r.code !== 0).map(([name]) => name);
 const flaky = [...results].filter(([, r]) => r.flaky).map(([name]) => name);
 
-console.log(`\n${total} s of a ${BUDGET_S} s budget; logs in test-results/all/`);
+console.log(`\n${total} s; logs in test-results/all/`);
 if (flaky.length) console.log(`flaky, failed only the first time: ${flaky.join(", ")}`);
 if (failed.length) console.log(`failed: ${failed.join(", ")}`);
-if (total > BUDGET_S) console.log(`over budget by ${total - BUDGET_S} s: find what grew before adding more (plan 139)`);
-process.exit(failed.length || total > BUDGET_S ? 1 : 0);
+process.exit(failed.length ? 1 : 0);

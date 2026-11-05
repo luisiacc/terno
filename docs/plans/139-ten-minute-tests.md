@@ -199,7 +199,6 @@ Flaky on the first pass in these runs, none of them twice: one to three e2e test
 - `strip-scheduled` fails axe's `label-content-name-mismatch`; the sweep scopes around it, so nothing gates it.
 - The first category's tip sometimes doesn't appear, under heavy load only.
 - A group move by subject stalls 51 to 52 ms at a third of the mailbox; `runSliced`'s first ingest slice of 50 messages takes 35 to 50 ms against its 8 ms target.
-- `recipients 200 chips` measures frame phase, not chips (it misses as often with 0 chips): "no frame dropped" would be the honest gate.
 
 ## What the code review changed
 
@@ -211,3 +210,11 @@ Codex, 5 findings, all fixed, each shown by mutation:
 5. The print deadline test advanced the clock until it passed, so 60 s passed too. It advances once.
 
 The runner's failure paths were run on fake suites, through the script itself. The final comparison also caught a cut that had broken a gate: `expunge` beside writes on a copied mailbox failed 4 runs in 4 where the original passed 4 in 4, so it seeds its own again.
+
+## After landing
+
+**Ten minutes was this pass's target, not a lasting rule.** The owner accepted the 11 to 12 minutes it reached. `pnpm test:all` now reports its time and fails only for a test; the budget, and what this plan says about failing over it, no longer apply.
+
+**`recipients 200 chips` is now "no frame dropped".** It measured frame phase, missing as often with 0 chips. It now counts frames more than 25 ms apart while typing, by the clock in each callback: `requestAnimationFrame`'s argument read 16.8 ms even with the main thread blocked, so a first version couldn't fail. 20 ms of work on each key fails it, dropping 10 to 13 frames in every round. Under 12 busy processes it passed 10 runs in 10, one of them on its second round.
+
+Codex reviewed this: a stall on the first key only started the clock. Typing now waits for the first frame, and the result is read two frames on, so one on the last edit counts too. 100 ms on the first key alone fails it.

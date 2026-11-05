@@ -8,9 +8,10 @@
  * 2 ms in the slowest quarter (each the median of the rounds' ratios); a
  * suggestion appears within its budget after typing stops; positions that may
  * ask actually ask (counted), others don't; the editor's DOM changes only by
- * the ghost; a long session doesn't grow the heap; the recipient list paints
- * within a frame of a keystroke. An injected 6 ms of work per keystroke, and
- * 10 ms on one key in four, must fail the paired gate.
+ * the ghost; a long session doesn't grow the heap; typing beside 200 recipient
+ * chips drops no frame; the recipient list paints within a frame of a keystroke.
+ * An injected 6 ms of work per keystroke, and 10 ms on one key in four, must
+ * fail the paired gate.
  */
 import type { CDPSession, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
@@ -345,7 +346,7 @@ test(`${HEAP_CYCLES} suggestions accepted, dismissed and undone, after ${HEAP_WA
   expect(after - before, `heap growth over ${HEAP_CYCLES} cycles`).toBeLessThanOrEqual(5 * 1024 * HEAP_CYCLES);
 });
 
-test("recipients (plan 34): with 200 chips in the field, a keystroke is painted within a frame (p95, best of 3) and renders no chip", async ({ app: page }) => {
+test("recipients (plan 34): with 200 chips in the field, typing drops no frame (best of 3) and renders no chip", async ({ app: page }) => {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press("c");
   const to = page.getByTestId("compose-to");
@@ -356,23 +357,28 @@ test("recipients (plan 34): with 200 chips in the field, a keystroke is painted 
     el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
   });
   await expect(page.getByTestId("recipient-chip")).toHaveCount(200);
-  await page.evaluate(() => {
-    const w = window as unknown as { __kp: number[] };
-    w.__kp = [];
-    document.addEventListener(
-      "keydown",
-      (e) => {
-        if (e.key.length !== 1) return;
-        const t0 = performance.now();
-        requestAnimationFrame(() => setTimeout(() => w.__kp.push(performance.now() - t0), 0));
-      },
-      { capture: true },
-    );
-  });
   const chipRenders = () => page.evaluate(() => (window as unknown as { __renders?: Record<string, number> }).__renders?.RecipientChip ?? 0);
   let best = Infinity;
   for (let round = 0; round < 3; round++) {
-    await page.evaluate(() => ((window as unknown as { __kp: number[] }).__kp = []));
+    // typing starts once the first frame has set the clock, or a stall on the first key would only set it
+    await page.evaluate(
+      () =>
+        new Promise<void>((started) => {
+          const w = window as unknown as { __gaps: number[] };
+          const gaps: number[] = (w.__gaps = []);
+          let last: number | null = null;
+          // the clock, not the callback's argument: that's the frame's scheduled time, which reads 16.8 ms while the main thread is blocked
+          const tick = () => {
+            if (w.__gaps !== gaps) return; // the next round's
+            const now = performance.now();
+            if (last !== null) gaps.push(now - last);
+            else started();
+            last = now;
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        }),
+    );
     const before = await chipRenders();
     // words nobody in the mailbox matches (no list): the field's own cost, not the suggestions'
     for (const word of ["qzx", "wvq", "xjq", "zqv"]) {
@@ -380,13 +386,16 @@ test("recipients (plan 34): with 200 chips in the field, a keystroke is painted 
       await to.fill("");
     }
     expect(await chipRenders(), "chip renders while typing").toBe(before);
-    const s = stats(await page.evaluate(() => (window as unknown as { __kp: number[] }).__kp));
-    console.log(`200 chips, round ${round + 1}: keystroke → painted p50 ${s.p50.toFixed(1)} ms, p95 ${s.p95.toFixed(1)} ms (${s.n})`);
-    expect(s.n).toBeGreaterThanOrEqual(10);
-    best = Math.min(best, s.p95);
-    if (best <= 16.7 * MULT) break;
+    // read two frames on, so a stall on the last edit has been counted
+    const gaps = await page.evaluate(() => new Promise<number[]>((read) => requestAnimationFrame(() => requestAnimationFrame(() => read((window as unknown as { __gaps: number[] }).__gaps)))));
+    // a frame that came a whole frame late would show about 33 ms: half a frame's slack, for a callback's own jitter
+    const dropped = gaps.filter((gap) => gap > 25 * MULT).length;
+    console.log(`200 chips, round ${round + 1}: ${dropped} frames dropped of ${gaps.length}, longest ${Math.max(...gaps).toFixed(1)} ms`);
+    expect(gaps.length).toBeGreaterThanOrEqual(30);
+    best = Math.min(best, dropped);
+    if (best === 0) break;
   }
-  expect(best, "keystroke → painted p95 with 200 chips").toBeLessThanOrEqual(16.7 * MULT);
+  expect(best, "frames dropped while typing with 200 chips").toBe(0);
 });
 
 test("recipients: a keystroke to its suggestions painted within a frame (p95, best of 3)", async ({ app: page }) => {
