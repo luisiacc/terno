@@ -52,7 +52,7 @@ function sources(dir: string): string[] {
 }
 
 let cachedDir: string | null = null;
-/** this tree's snapshot directory; other trees' (older than a day: another checkout may be using theirs) are removed so the disk stays bounded */
+/** this tree's snapshot directory (a few GB); of the others only the latest stays, another checkout's perhaps, so the disk stays bounded */
 function snapshots(): string {
   if (cachedDir) return cachedDir;
   const hash = createHash("sha256");
@@ -62,11 +62,11 @@ function snapshots(): string {
   const root = join(tmpdir(), "terno-perf-mailboxes");
   mkdirSync(root, { recursive: true });
   const dir = join(root, hash.digest("hex").slice(0, 16));
-  for (const other of readdirSync(root)) {
-    const p = join(root, other);
-    if (p !== dir && Date.now() - statSync(p).mtimeMs > 86_400_000) rmSync(p, { recursive: true, force: true });
+  if (!existsSync(dir)) {
+    const others = readdirSync(root).map((name) => join(root, name)).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+    for (const old of others.slice(1)) rmSync(old, { recursive: true, force: true });
+    mkdirSync(dir);
   }
-  mkdirSync(dir, { recursive: true });
   return (cachedDir = dir);
 }
 
