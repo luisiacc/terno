@@ -93,24 +93,26 @@ test.describe("Settings → Storage", () => {
     });
   });
 
-  for (const mode of ["light", "dark"] as const) {
-    test(`axe, ${mode}`, async ({ app: page, server }) => {
-      await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      await seedOldSpam(server);
-      await openStorage(page);
-      await expect(page.getByTestId("storage-pick-spam")).toContainText("conversations");
-      const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=settings-dialog]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
-      expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
-      // the lower half (what to remove) and the confirmation, looked at and checked too
-      await page.getByTestId("storage-remove").scrollIntoViewIfNeeded();
-      await page.getByTestId("storage-remove").click();
-      await expect(page.getByTestId("storage-confirm")).toBeVisible();
-      // every rule but one: the shared destructive Button draws text-destructive on its own 10% tint (3.9:1, an
-      // undeclared pair that predates plan 69 and every ConfirmDialog shares); its fix is a palette change of its own
-      const dialog = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=storage-confirm]").exclude("[data-testid=storage-confirm-confirm]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
-      expect(dialog.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
-    });
-  }
+  test("axe, in light and dark", async ({ app: page, server }) => {
+    for (const mode of ["light", "dark"] as const) {
+      await scenario(mode, async () => {
+        await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
+        await page.reload();
+        await page.locator("[data-ready]").waitFor();
+        await seedOldSpam(server);
+        await openStorage(page);
+        await expect(page.getByTestId("storage-pick-spam")).toContainText("conversations");
+        const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=settings-dialog]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+        expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
+        // the lower half (what to remove) and the confirmation, looked at and checked too
+        await page.getByTestId("storage-remove").scrollIntoViewIfNeeded();
+        await page.getByTestId("storage-remove").click();
+        await expect(page.getByTestId("storage-confirm")).toBeVisible();
+        // every rule but one: the shared destructive Button draws text-destructive on its own 10% tint (3.9:1, an
+        // undeclared pair that predates plan 69 and every ConfirmDialog shares); its fix is a palette change of its own
+        const dialog = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=storage-confirm]").exclude("[data-testid=storage-confirm-confirm]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+        expect(dialog.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
+      });
+    }
+  });
 });

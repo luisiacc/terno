@@ -205,28 +205,30 @@ test.describe("recipient chips", () => {
     });
   });
 
-  for (const theme of ["light", "dark"] as const) {
-    test(`axe: a few chips, an invalid one, a selected one, a collapsed list (${theme})`, async ({ app: page, server }) => {
-      await server.backend.server.invoke("settings.update", { theme }, ctx);
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      await newMessage(page);
-      await addRecipients(page, "compose-to", "Björn Peña <bjorn.pena@acme.studio>, Ana Torres <ana@torres.mx>, no-reply@shop.com, bjorn@acme");
-      await page.keyboard.press("ArrowLeft");
-      await page.keyboard.press("ArrowLeft");
-      await expect(chips(page).nth(2)).toBeFocused();
-      await axeClean(page);
-      await page.mouse.move(0, 0);
-      // a long list, unfocused
-      await to(page).focus();
-      await addRecipients(page, "compose-to", Array.from({ length: 12 }, (_, i) => `Persona ${i} <p${i}@example.com>`).join(", "));
-      await page.getByTestId("compose-subject").focus();
-      await expect(page.getByTestId("recipient-more")).toBeVisible();
-      await axeClean(page);
-      // and focused: every chip, wrapping, the label on the first line
-      await page.getByTestId("recipient-more").click();
-    });
-  }
+  test("axe, in light and dark: a few chips, an invalid one, a selected one, a collapsed list", async ({ app: page, server }) => {
+    for (const theme of ["light", "dark"] as const) {
+      await scenario(theme, async () => {
+        await server.backend.server.invoke("settings.update", { theme }, ctx);
+        await page.reload();
+        await page.locator("[data-ready]").waitFor();
+        await newMessage(page);
+        await addRecipients(page, "compose-to", "Björn Peña <bjorn.pena@acme.studio>, Ana Torres <ana@torres.mx>, no-reply@shop.com, bjorn@acme");
+        await page.keyboard.press("ArrowLeft");
+        await page.keyboard.press("ArrowLeft");
+        await expect(chips(page).nth(2)).toBeFocused();
+        await axeClean(page);
+        await page.mouse.move(0, 0);
+        // a long list, unfocused
+        await to(page).focus();
+        await addRecipients(page, "compose-to", Array.from({ length: 12 }, (_, i) => `Persona ${i} <p${i}@example.com>`).join(", "));
+        await page.getByTestId("compose-subject").focus();
+        await expect(page.getByTestId("recipient-more")).toBeVisible();
+        await axeClean(page);
+        // and focused: every chip, wrapping, the label on the first line
+        await page.getByTestId("recipient-more").click();
+      });
+    }
+  });
 });
 
 /** The user's report: what a broken client wrote in Cc. */

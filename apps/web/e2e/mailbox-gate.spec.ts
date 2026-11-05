@@ -174,32 +174,35 @@ test.describe("required update (plan 95)", () => {
 });
 
 test.describe("plan 95 screens: light and dark, axe", () => {
-  for (const scheme of ["light", "dark"] as const) {
-    test(`every screen passes axe in ${scheme}`, async ({ app: page }) => {
-      await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
-      await fakeMain(page);
-      await stabilize(page);
-      const screens: [string, MailboxGate][] = [
-        ["upgrading", { kind: "upgrading", phase: "backup", from: 37, to: 38 }],
-        ["no-room", { kind: "no-room", stage: "backup", needBytes: 3 * 2 ** 30, freeBytes: 2 * 2 ** 30, canSkipBackup: true }],
-        ["migration", failed("migration")],
-        ["corrupt", failed("corrupt", { backup: BACKUP, restoreFailed: "failed" })],
-        ["unwritable", failed("unwritable")],
-        ["backup", failed("backup")],
-        ["newer", { kind: "newer", schema: 40, supported: 38 }],
-        ["restoring", { kind: "restoring" }],
-      ];
-      for (const [name, g] of screens) {
-        await gate(page, g);
-        await expect(cover(page)).toHaveAttribute("data-kind", name);
-        const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=mailbox-gate]").analyze();
-        expect(r.violations.map((v) => `${name}: ${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
-      }
-      await gate(page, { kind: "open", restoredFrom: null });
-      await upd(page, { required: "0.2.0", status: "available", available: release });
-      await expect(page.getByTestId("required-update")).toBeVisible();
-      const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=required-update]").analyze();
-      expect(r.violations.map((v) => `required: ${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
-    });
-  }
+  test("every screen passes axe, in light and dark", async ({ app: page }) => {
+    for (const scheme of ["light", "dark"] as const) {
+      await scenario(scheme, async () => {
+        await fresh(page);
+        await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
+        await fakeMain(page);
+        await stabilize(page);
+        const screens: [string, MailboxGate][] = [
+          ["upgrading", { kind: "upgrading", phase: "backup", from: 37, to: 38 }],
+          ["no-room", { kind: "no-room", stage: "backup", needBytes: 3 * 2 ** 30, freeBytes: 2 * 2 ** 30, canSkipBackup: true }],
+          ["migration", failed("migration")],
+          ["corrupt", failed("corrupt", { backup: BACKUP, restoreFailed: "failed" })],
+          ["unwritable", failed("unwritable")],
+          ["backup", failed("backup")],
+          ["newer", { kind: "newer", schema: 40, supported: 38 }],
+          ["restoring", { kind: "restoring" }],
+        ];
+        for (const [name, g] of screens) {
+          await gate(page, g);
+          await expect(cover(page)).toHaveAttribute("data-kind", name);
+          const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=mailbox-gate]").analyze();
+          expect(r.violations.map((v) => `${name}: ${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
+        }
+        await gate(page, { kind: "open", restoredFrom: null });
+        await upd(page, { required: "0.2.0", status: "available", available: release });
+        await expect(page.getByTestId("required-update")).toBeVisible();
+        const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=required-update]").analyze();
+        expect(r.violations.map((v) => `required: ${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
+      });
+    }
+  });
 });

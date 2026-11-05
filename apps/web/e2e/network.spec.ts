@@ -4,7 +4,7 @@
  * runs; "Retry now"; gone once it works. Settings says the same.
  */
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "./fixtures";
+import { expect, test, scenario } from "./fixtures";
 
 test.use({ backendOptions: { network: true } });
 
@@ -64,26 +64,28 @@ test.describe("connection pill", () => {
     await expect(pill).toHaveCount(0, { timeout: 8000 });
   });
 
-  for (const theme of ["light", "dark"] as const) {
-    test(`axe: the pill offline and reconnecting (${theme})`, async ({ app: page, server }) => {
-      await server.backend.server.invoke("settings.update", { theme }, ctx);
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      server.net.down = true;
-      server.backend.networkChanged(false, "offline");
-      const pill = page.getByTestId("connection-pill");
-      await expect(pill).toBeVisible();
-      const wcag = () => new AxeBuilder({ page }).setLegacyMode().withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).include("[data-testid=connection-pill]");
-      expect((await wcag().analyze()).violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 140)).join(", ")}`)).toEqual([]);
-      let release!: () => void;
-      server.net.hold = new Promise((r) => (release = r));
-      await page.getByTestId("connection-retry").click();
-      await expect(pill).toHaveAttribute("data-state", "reconnecting");
-      expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
-      server.net.hold = null;
-      release();
-    });
-  }
+  test("axe: the pill offline and reconnecting, in light and dark", async ({ app: page, server }) => {
+    for (const theme of ["light", "dark"] as const) {
+      await scenario(theme, async () => {
+        await server.backend.server.invoke("settings.update", { theme }, ctx);
+        await page.reload();
+        await page.locator("[data-ready]").waitFor();
+        server.net.down = true;
+        server.backend.networkChanged(false, "offline");
+        const pill = page.getByTestId("connection-pill");
+        await expect(pill).toBeVisible();
+        const wcag = () => new AxeBuilder({ page }).setLegacyMode().withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).include("[data-testid=connection-pill]");
+        expect((await wcag().analyze()).violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 140)).join(", ")}`)).toEqual([]);
+        let release!: () => void;
+        server.net.hold = new Promise((r) => (release = r));
+        await page.getByTestId("connection-retry").click();
+        await expect(pill).toHaveAttribute("data-state", "reconnecting");
+        expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
+        server.net.hold = null;
+        release();
+      });
+    }
+  });
 });
 
 test("Spanish: the pill and Settings speak it", async ({ app: page, server }) => {

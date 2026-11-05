@@ -136,33 +136,36 @@ test.describe("updates: the sidebar pill", () => {
     });
   });
 
-  for (const scheme of ["light", "dark"] as const) {
-    test(`every state looks right and passes axe in ${scheme}`, async ({ app: page }) => {
-      await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
-      await fakeMain(page, base);
-      await stabilize(page);
-      const states: [string, Partial<UpdateState>][] = [
-        ["available", { status: "available", available: release, mode: "manual" }],
-        ["downloading", { status: "downloading", available: release, percent: 64 }],
-        ["verifying", { status: "verifying", available: release, percent: 100 }],
-        ["ready", { status: "ready", available: release, ready: release, percent: 100 }],
-        ["deferred", { status: "ready", available: release, ready: release, percent: 100, deferred: "sending" }],
-        ["error", { status: "available", available: release, error: { stage: "download", kind: "offline", canRetry: true } }],
-      ];
-      for (const [name, s] of states) {
-        await push(page, s);
-        await expect(pill(page)).toHaveAttribute("data-state", name === "deferred" ? "ready" : name);
-        const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=update-pill]").analyze();
-        expect(r.violations.map((v) => `${name}: ${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
-      }
-      // the popover, open on the ready state
-      await push(page, { status: "ready", available: release, ready: release, percent: 100 });
-      await pill(page).click();
-      await expect(page.getByTestId("update-popover")).toBeVisible();
-      const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=update-popover]").analyze();
-      expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
-    });
-  }
+  test("every state looks right and passes axe, in light and dark", async ({ app: page }) => {
+    for (const scheme of ["light", "dark"] as const) {
+      await scenario(scheme, async () => {
+        await fresh(page);
+        await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
+        await fakeMain(page, base);
+        await stabilize(page);
+        const states: [string, Partial<UpdateState>][] = [
+          ["available", { status: "available", available: release, mode: "manual" }],
+          ["downloading", { status: "downloading", available: release, percent: 64 }],
+          ["verifying", { status: "verifying", available: release, percent: 100 }],
+          ["ready", { status: "ready", available: release, ready: release, percent: 100 }],
+          ["deferred", { status: "ready", available: release, ready: release, percent: 100, deferred: "sending" }],
+          ["error", { status: "available", available: release, error: { stage: "download", kind: "offline", canRetry: true } }],
+        ];
+        for (const [name, s] of states) {
+          await push(page, s);
+          await expect(pill(page)).toHaveAttribute("data-state", name === "deferred" ? "ready" : name);
+          const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=update-pill]").analyze();
+          expect(r.violations.map((v) => `${name}: ${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
+        }
+        // the popover, open on the ready state
+        await push(page, { status: "ready", available: release, ready: release, percent: 100 });
+        await pill(page).click();
+        await expect(page.getByTestId("update-popover")).toBeVisible();
+        const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=update-popover]").analyze();
+        expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
+      });
+    }
+  });
 });
 
 test.describe("updates: Settings and ⌘K", () => {

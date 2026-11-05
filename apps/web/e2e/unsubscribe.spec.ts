@@ -35,27 +35,28 @@ async function recordOpens(page: Page): Promise<() => Promise<string[]>> {
 
 const ONE_CLICK = { oneClick: "https://weekly.example/u/1", url: "https://weekly.example/u/1" };
 
-for (const theme of ["light", "dark"] as const) {
-  test(`one-click: the menu offers it and it's done in one click (${theme})`, async ({ app: page, server }) => {
-    const id = await ingest(server, { id: `weekly-${theme}`, subject: `Weekly issue ${theme}`, unsubscribe: ONE_CLICK });
-    await server.backend.server.invoke("settings.update", { theme }, ctx);
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await search(page, `"Weekly issue ${theme}"`);
-    await rowOf(page, id).click({ button: "right" });
-    const item = page.getByTestId("menu-unsubscribe");
-    await expect(item).toHaveText("Unsubscribe weekly.example");
-    await expect(item).toHaveAttribute("role", "menuitem");
-    await stabilize(page);
+test("one-click: the menu offers it, axe-clean in light and dark, and it's done in one click", async ({ app: page, server }) => {
+  const id = await ingest(server, { id: "weekly", subject: "Weekly issue", unsubscribe: ONE_CLICK });
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+  await search(page, '"Weekly issue"');
+  await rowOf(page, id).click({ button: "right" });
+  const item = page.getByTestId("menu-unsubscribe");
+  await expect(item).toHaveText("Unsubscribe weekly.example");
+  await expect(item).toHaveAttribute("role", "menuitem");
+  await stabilize(page);
+  for (const theme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await expect(page.locator("html")).toHaveClass(theme === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
     const axe = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=thread-menu]").withTags(AXE_TAGS).analyze();
-    expect(axe.violations.map((v) => v.id)).toEqual([]);
-    // nothing went out just because the menu opened
-    expect(server.unsubscribes.posted).toEqual([]);
-    await item.click();
-    await expect(page.getByTestId("snack-message")).toHaveText("Unsubscribed from The Weekly.");
-    expect(server.unsubscribes.posted).toEqual(["https://weekly.example/u/1"]);
-  });
-}
+    expect(axe.violations.map((v) => v.id), theme).toEqual([]);
+  }
+  // nothing went out just because the menu opened
+  expect(server.unsubscribes.posted).toEqual([]);
+  await item.click();
+  await expect(page.getByTestId("snack-message")).toHaveText("Unsubscribed from The Weekly.");
+  expect(server.unsubscribes.posted).toEqual(["https://weekly.example/u/1"]);
+});
 
 test("a refused one-click offers the sender's page instead", async ({ app: page, server }) => {
   server.unsubscribes.status = 500;

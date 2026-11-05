@@ -3,7 +3,7 @@
  * open while the pointer rests on another. Checked in every design, in light and dark.
  */
 import type { Locator, Page } from "@playwright/test";
-import { expect, test } from "./fixtures";
+import { expect, test, scenario } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 
@@ -40,26 +40,27 @@ async function expectSofterHover(page: Page, surface: Locator, plain: Locator, s
   await page.mouse.move(0, 0);
 }
 
-for (const mode of ["light", "dark"] as const) {
-  test(`a hovered sidebar row is lighter than the selected one, ${mode}`, { tag: "@design" }, async ({ app: page, server }) => {
-    await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
+test("a hovered sidebar row is lighter than the selected one, in light and dark", { tag: "@design" }, async ({ app: page, server }) => {
+  for (const mode of ["light", "dark"] as const) {
+    await scenario(mode, async () => {
+      await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
 
-    const sidebar = page.locator("#app-sidebar");
-    await expect(page.getByTestId("nav-inbox")).toHaveAttribute("data-active", "true");
-    await expectSofterHover(page, sidebar, page.getByTestId("nav-starred"), page.getByTestId("nav-inbox"));
+      const sidebar = page.locator("#app-sidebar");
+      await expect(page.getByTestId("nav-inbox")).toHaveAttribute("data-active", "true");
+      await expectSofterHover(page, sidebar, page.getByTestId("nav-starred"), page.getByTestId("nav-inbox"));
 
-    // dragging is pointer-driven, so the drop target is hovered too: its drop fill must still win
-    const starred = page.getByTestId("nav-starred");
-    await starred.hover();
-    await starred.evaluate((el) => el.setAttribute("data-drop-state", "over"));
-    const dropFill = await sidebar.evaluate((el) => {
-      const probe = el.appendChild(document.createElement("div"));
-      probe.className = "bg-drop-target";
-      const c = getComputedStyle(probe).backgroundColor;
-      probe.remove();
-      return c;
+      // dragging is pointer-driven, so the drop target is hovered too: its drop fill must still win
+      const starred = page.getByTestId("nav-starred");
+      await starred.hover();
+      await starred.evaluate((el) => el.setAttribute("data-drop-state", "over"));
+      const dropFill = await sidebar.evaluate((el) => {
+        const probe = el.appendChild(document.createElement("div"));
+        probe.className = "bg-drop-target";
+        const c = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return c;
     });
     await expect.poll(() => starred.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(dropFill);
     await starred.evaluate((el) => el.removeAttribute("data-drop-state"));
@@ -70,5 +71,6 @@ for (const mode of ["light", "dark"] as const) {
     await page.getByTestId("tab-appearance").click();
     const nav = page.getByTestId("settings-dialog").locator("nav");
     await expectSofterHover(page, nav, page.getByTestId("tab-general"), page.getByTestId("tab-appearance"));
-  });
-}
+    });
+  }
+});

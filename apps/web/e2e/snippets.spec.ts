@@ -6,7 +6,7 @@
  */
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { chipsOf, expect, focusList, openRow, test, type DevServerFixture } from "./fixtures";
+import { chipsOf, expect, focusList, openRow, test, type DevServerFixture, scenario, fresh } from "./fixtures";
 
 const input = (page: Page) => page.getByTestId("palette-input");
 const selected = (page: Page) => page.getByRole("option", { selected: true });
@@ -193,23 +193,26 @@ test.describe("snippets", () => {
     await expect(page.getByTestId("palette-page")).toContainText("Plantillas");
   });
 
-  for (const mode of ["light", "dark"] as const) {
-    test(`the tab, the editor and the palette page are axe-clean, ${mode}`, async ({ app: page, server }) => {
-      await seed(server, { ...intro, to: "ana@example.test" });
-      await page.emulateMedia({ colorScheme: mode });
-      const wcag = () => new AxeBuilder({ page }).setLegacyMode().include("[role=dialog]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
-      await page.keyboard.press("ControlOrMeta+Comma");
-      await page.getByTestId("tab-snippets").click();
-      await expect(page.getByTestId("settings-snippet")).toHaveCount(1);
-      expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
-      await page.getByTestId("settings-snippet-edit").click();
-      await expect(page.getByTestId("snippet-body")).toContainText("Let’s talk");
-      expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
-      await page.keyboard.press("Escape");
-      await reply(page);
-      await page.keyboard.press("ControlOrMeta+;");
-      await expect(page.getByTestId(`palette-snippet-${intro.id}`)).toBeVisible();
-      expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
-    });
-  }
+  test("the tab, the editor and the palette page are axe-clean, in light and dark", async ({ app: page, server }) => {
+    for (const mode of ["light", "dark"] as const) {
+      await scenario(mode, async () => {
+        await fresh(page);
+        if (mode === "light") await seed(server, { ...intro, to: "ana@example.test" });
+        await page.emulateMedia({ colorScheme: mode });
+        const wcag = () => new AxeBuilder({ page }).setLegacyMode().include("[role=dialog]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
+        await page.keyboard.press("ControlOrMeta+Comma");
+        await page.getByTestId("tab-snippets").click();
+        await expect(page.getByTestId("settings-snippet")).toHaveCount(1);
+        expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
+        await page.getByTestId("settings-snippet-edit").click();
+        await expect(page.getByTestId("snippet-body")).toContainText("Let’s talk");
+        expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
+        await page.keyboard.press("Escape");
+        await reply(page);
+        await page.keyboard.press("ControlOrMeta+;");
+        await expect(page.getByTestId(`palette-snippet-${intro.id}`)).toBeVisible();
+        expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
+      });
+    }
+  });
 });

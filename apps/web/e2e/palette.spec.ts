@@ -270,23 +270,26 @@ test.describe("palette", () => {
     });
   });
 
-  for (const mode of ["light", "dark"] as const) {
-    test(`a page and the draft group are axe-clean, ${mode}`, async ({ app: page }) => {
-      await page.emulateMedia({ colorScheme: mode });
-      await openRow(page, 0);
-      await focusList(page);
-      await palette(page, "remind");
-      await page.getByTestId("palette-remind").click();
-      const wcag = () => new AxeBuilder({ page }).setLegacyMode().include("[role=dialog]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
-      expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
-      await page.keyboard.press("Escape");
-      await page.keyboard.press("Escape");
-      await page.keyboard.press("r");
-      await expect(page.getByTestId("compose-body")).toBeFocused();
-      await page.getByTestId("compose-to").focus();
-      await palette(page);
-      await expect(group(page, "draft")).toBeVisible();
-      expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
-    });
-  }
+  test("a page and the draft group are axe-clean, in light and dark", async ({ app: page }) => {
+    for (const mode of ["light", "dark"] as const) {
+      await scenario(mode, async () => {
+        await fresh(page);
+        await page.emulateMedia({ colorScheme: mode });
+        await openRow(page, 0);
+        await focusList(page);
+        await palette(page, "remind");
+        await page.getByTestId("palette-remind").click();
+        const wcag = () => new AxeBuilder({ page }).setLegacyMode().include("[role=dialog]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
+        expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
+        await page.keyboard.press("Escape");
+        await page.keyboard.press("Escape");
+        await page.keyboard.press("r");
+        await expect(page.getByTestId("compose-body")).toBeFocused();
+        await page.getByTestId("compose-to").focus();
+        await palette(page);
+        await expect(group(page, "draft")).toBeVisible();
+        expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
+      });
+    }
+  });
 });

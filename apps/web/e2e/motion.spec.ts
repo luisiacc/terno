@@ -7,7 +7,7 @@
  */
 import type { Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
-import { expect, focusList, rows, test } from "./fixtures";
+import { expect, focusList, fresh, rows, scenario, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
@@ -132,16 +132,55 @@ async function exerciseLoading(page: Page, server: DevServer) {
 test.describe("motion", () => {
   test.use({ reducedMotion: "no-preference" });
 
-  test("at the default 75 ms nothing runs longer than 100 ms; loading loops run", { tag: "@design" }, async ({ app: page, server }) => {
-    await expect(page.locator("html")).toHaveAttribute("data-motion", "on");
-    await startSampler(page);
-    await exercise(page);
-    await exerciseLoading(page, server);
-    const r = await sampled(page);
-    expect(r.finite).toBeGreaterThan(0); // things did animate
-    expect(r.loops, r.names.join(",")).toBeGreaterThanOrEqual(2); // the spinner and the skeleton pulse were exercised
-    expect(r.max, r.names.join(",")).toBeLessThanOrEqual(100);
-    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--motion-slow").trim())).toBe("100ms");
+  test("in a design: nothing runs longer than 100 ms at the default; 0, or the OS asking, turns everything off", { tag: "@design" }, async ({ app: page, server }) => {
+    await scenario("at the default 75 ms nothing runs longer than 100 ms; loading loops run", async () => {
+      await expect(page.locator("html")).toHaveAttribute("data-motion", "on");
+      await startSampler(page);
+      await exercise(page);
+      await exerciseLoading(page, server);
+      const r = await sampled(page);
+      expect(r.finite).toBeGreaterThan(0); // things did animate
+      expect(r.loops, r.names.join(",")).toBeGreaterThanOrEqual(2); // the spinner and the skeleton pulse were exercised
+      expect(r.max, r.names.join(",")).toBeLessThanOrEqual(100);
+      expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--motion-slow").trim())).toBe("100ms");
+    });
+    await scenario("0 turns every animation, transition and loop off", async () => {
+      await fresh(page);
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-appearance").click();
+      await page.getByTestId("motion-0").click();
+      await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
+      await startSampler(page);
+      await exercise(page);
+      await exerciseLoading(page, server);
+      const r = await sampled(page);
+      expect({ finite: r.finite, loops: r.loops }, r.names.join(",")).toEqual({ finite: 0, loops: 0 });
+      expect(await page.getByTestId("compose-button").evaluate((b) => getComputedStyle(b).transitionDuration)).toBe("0s");
+      expect(await page.evaluate(() => document.getAnimations().filter((a) => a.id !== "snack-countdown").length)).toBe(0);
+      // the snack's lifetime still shows, stepping instead of flowing
+      await rows(page).first().dispatchEvent("mousedown");
+      await focusList(page);
+      await page.keyboard.press("e");
+      await expect(page.getByTestId("snack-ring")).toBeVisible();
+      const easing = await page.evaluate(() => document.getAnimations().find((a) => a.id === "snack-countdown")?.effect?.getTiming().easing);
+      expect(easing).toMatch(/^steps\(/);
+    });
+    await scenario("the OS's reduced motion overrides the setting: nothing animates", async () => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await server.backend.server.invoke("settings.update", { motionMs: 100 }, ctx);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
+      await startSampler(page);
+      await exercise(page);
+      await exerciseLoading(page, server);
+      const r = await sampled(page);
+      expect({ finite: r.finite, loops: r.loops }, r.names.join(",")).toEqual({ finite: 0, loops: 0 });
+      expect(await page.getByTestId("compose-button").evaluate((b) => getComputedStyle(b).transitionDuration)).toBe("0s");
+      expect(await page.evaluate(() => document.getAnimations().filter((a) => a.id !== "snack-countdown").length)).toBe(0);
+    });
   });
 
   test("at 100 ms the slowest is still 100 ms; at 50 everything is quicker", async ({ app: page, server }) => {
@@ -160,29 +199,6 @@ test.describe("motion", () => {
     }
   });
 
-  test("0 turns every animation, transition and loop off", { tag: "@design" }, async ({ app: page, server }) => {
-    await page.getByTestId("open-settings").click();
-    await page.getByTestId("tab-appearance").click();
-    await page.getByTestId("motion-0").click();
-    await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
-    await startSampler(page);
-    await exercise(page);
-    await exerciseLoading(page, server);
-    const r = await sampled(page);
-    expect({ finite: r.finite, loops: r.loops }, r.names.join(",")).toEqual({ finite: 0, loops: 0 });
-    expect(await page.getByTestId("compose-button").evaluate((b) => getComputedStyle(b).transitionDuration)).toBe("0s");
-    expect(await page.evaluate(() => document.getAnimations().filter((a) => a.id !== "snack-countdown").length)).toBe(0);
-    // the snack's lifetime still shows, stepping instead of flowing
-    await rows(page).first().dispatchEvent("mousedown");
-    await focusList(page);
-    await page.keyboard.press("e");
-    await expect(page.getByTestId("snack-ring")).toBeVisible();
-    const easing = await page.evaluate(() => document.getAnimations().find((a) => a.id === "snack-countdown")?.effect?.getTiming().easing);
-    expect(easing).toMatch(/^steps\(/);
-  });
-
   test("holding j never animates", async ({ app: page }) => {
     await focusList(page);
     const first = await rows(page).first().getAttribute("data-thread-id");
@@ -197,20 +213,6 @@ test.describe("motion", () => {
 
 test.describe("motion under the OS reduced-motion preference", () => {
   test.use({ reducedMotion: "reduce" });
-
-  test("overrides the setting: nothing animates", { tag: "@design" }, async ({ app: page, server }) => {
-    await server.backend.server.invoke("settings.update", { motionMs: 100 }, ctx);
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
-    await startSampler(page);
-    await exercise(page);
-    await exerciseLoading(page, server);
-    const r = await sampled(page);
-    expect({ finite: r.finite, loops: r.loops }, r.names.join(",")).toEqual({ finite: 0, loops: 0 });
-    expect(await page.getByTestId("compose-button").evaluate((b) => getComputedStyle(b).transitionDuration)).toBe("0s");
-    expect(await page.evaluate(() => document.getAnimations().filter((a) => a.id !== "snack-countdown").length)).toBe(0);
-  });
 
   test("turning reduced motion off at runtime brings animations back", async ({ app: page }) => {
     await page.emulateMedia({ reducedMotion: "no-preference" });

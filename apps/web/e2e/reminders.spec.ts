@@ -149,19 +149,22 @@ test.describe("remind me", () => {
     });
   });
 
-  for (const mode of ["light", "dark"] as const) {
-    test(`the picker and the menu are axe-clean, ${mode}`, async ({ app: page }) => {
-      await page.emulateMedia({ colorScheme: mode });
-      await openRow(page, 0);
-      await page.getByTestId("action-remind").click();
-      await expect(page.getByTestId("remind-popover")).toBeVisible();
-      await page.getByTestId("remind-pick").click();
-      expect((await wcag(page, "[data-testid=remind-popover]").analyze()).violations).toEqual([]);
-      await page.keyboard.press("Escape");
-      await selectedRow(page).click({ button: "right" });
-      await page.getByTestId("menu-remind-always").hover();
-      await expect(page.getByTestId("menu-remind-always-list")).toBeVisible();
-      expect((await wcag(page, "[data-testid=menu-remind-always-list]").analyze()).violations).toEqual([]);
-    });
-  }
+  test("the picker and the menu are axe-clean, in light and dark", async ({ app: page }) => {
+    for (const mode of ["light", "dark"] as const) {
+      await scenario(mode, async () => {
+        await fresh(page);
+        await page.emulateMedia({ colorScheme: mode });
+        await openRow(page, 0);
+        await page.getByTestId("action-remind").click();
+        await expect(page.getByTestId("remind-popover")).toBeVisible();
+        await page.getByTestId("remind-pick").click();
+        expect((await wcag(page, "[data-testid=remind-popover]").analyze()).violations).toEqual([]);
+        await page.keyboard.press("Escape");
+        await selectedRow(page).click({ button: "right" });
+        await page.getByTestId("menu-remind-always").hover();
+        await expect(page.getByTestId("menu-remind-always-list")).toBeVisible();
+        expect((await wcag(page, "[data-testid=menu-remind-always-list]").analyze()).violations).toEqual([]);
+      });
+    }
+  });
 });

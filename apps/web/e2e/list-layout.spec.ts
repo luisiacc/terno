@@ -201,7 +201,22 @@ test.describe("the List layout: what stays put", () => {
       await page.locator("[data-ready]").waitFor();
       await rows(page).first().waitFor();
     };
+    await scenario("⇧U and ⇧A filter the list on the list, and do nothing on a conversation's page", async () => {
+      const read = page.locator("[data-testid=thread-row]:not([data-unread=true])");
+      const unfiltered = await read.count();
+      expect(unfiltered).toBeGreaterThan(1);
+      await openRow(page, read.first());
+      await page.keyboard.press("Shift+U");
+      await page.keyboard.press("Escape");
+      await expect(listPage(page)).toHaveCount(0);
+      await expect.poll(() => read.count()).toBe(unfiltered);
+      await page.keyboard.press("Shift+U");
+      await expect.poll(() => read.count()).toBeLessThanOrEqual(1);
+      await page.keyboard.press("Shift+A");
+      await expect.poll(() => read.count()).toBe(unfiltered);
+    });
     await scenario("Enter with checked rows opens only the cursor's thread, and e archives just it (R2)", async () => {
+      await fresh();
       const ids = await rows(page).evaluateAll((els) => els.slice(0, 3).map((e) => e.getAttribute("data-thread-id")!));
       await rows(page).first().click();
       await page.keyboard.press("Escape");
@@ -215,21 +230,6 @@ test.describe("the List layout: what stays put", () => {
       await page.keyboard.press("e");
       await expect(page.locator(`[data-thread-id="${open}"]`)).toHaveCount(0);
       for (const id of ids.filter((x) => x !== open)) await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(1);
-    });
-    await scenario("⇧U and ⇧A filter the list on the list, and do nothing on a conversation's page", async () => {
-      await fresh();
-      const read = page.locator("[data-testid=thread-row]:not([data-unread=true])");
-      const unfiltered = await read.count();
-      expect(unfiltered).toBeGreaterThan(1);
-      await openRow(page, read.first());
-      await page.keyboard.press("Shift+U");
-      await page.keyboard.press("Escape");
-      await expect(listPage(page)).toHaveCount(0);
-      await expect.poll(() => read.count()).toBe(unfiltered);
-      await page.keyboard.press("Shift+U");
-      await expect.poll(() => read.count()).toBeLessThanOrEqual(1);
-      await page.keyboard.press("Shift+A");
-      await expect.poll(() => read.count()).toBe(unfiltered);
     });
     await scenario("on the list, j and k move the cursor without opening or fetching a conversation (R12)", async () => {
       await fresh();
@@ -454,7 +454,8 @@ test.describe("List layout: accessibility and look", { tag: "@design" }, () => {
     test(`axe-clean and on baseline (${mode}): the list with tabs, a conversation, a new message`, async ({ app: page }) => {
       await page.emulateMedia({ colorScheme: mode });
       await stabilize(page);
-      const wcag = () => new AxeBuilder({ page }).setLegacyMode().withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).exclude("iframe");
+      // names, roles and structure don't change with the mode: dark reads contrast alone
+      const wcag = () => (mode === "light" ? new AxeBuilder({ page }).setLegacyMode().withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]) : new AxeBuilder({ page }).setLegacyMode().withRules(["color-contrast"])).exclude("iframe");
       const check = async () => expect((await wcag().analyze()).violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
       await check();
       await expect(page).toHaveScreenshot(`list-${mode}.png`);

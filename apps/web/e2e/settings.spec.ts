@@ -36,7 +36,8 @@ test.describe("accounts, settings and command palette", () => {
     });
     await scenario("every settings tab opens from the palette; ⌘, opens settings, also from the search field", async () => {
       await fresh(page);
-      for (const [tab, label] of [["general", "General"], ["appearance", "Appearance"], ["accounts", "Accounts"], ["categories", "Categories"], ["filters", "Filters"], ["ai", "AI"], ["agents", "Agents"], ["data", "Data"], ["storage", "Storage"]] as const) {
+      // (the others: settings-pass.spec.ts, "every tab is reachable")
+      for (const [tab, label] of [["storage", "Storage"]] as const) {
         await page.keyboard.press("Meta+k");
         await page.getByTestId("palette-input").fill(`settings ${label}`);
         await expect(page.getByRole("option", { selected: true })).toHaveAttribute("data-testid", `palette-settings-${tab}`);

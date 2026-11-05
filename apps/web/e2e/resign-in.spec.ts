@@ -8,7 +8,7 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { Account } from "@terno/core";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, openRow, rows, SIGN_IN_PASSWORD, stabilize, test, type DevServerFixture } from "./fixtures";
+import { expect, openRow, rows, SIGN_IN_PASSWORD, stabilize, test, type DevServerFixture, scenario } from "./fixtures";
 
 // baselines are at twice the pixels; everything else draws at one (plan 139)
 test.use({ deviceScaleFactor: 2 });
@@ -206,42 +206,45 @@ test.describe("signing in again", () => {
     await expect(marker(page, freelance)).toBeFocused();
   });
 
-  for (const theme of ["light", "dark"] as const) {
-    test(`axe and a look: the line, the key and the open panel (${theme})`, { tag: "@design" }, async ({ app: page, server }, testInfo) => {
-      await server.backend.server.invoke("settings.update", { theme }, ctx);
-      await page.reload();
-      await page.locator("[data-ready]").waitFor();
-      await rows(page).first().waitFor();
-      const { personal, freelance } = await accounts(server);
-      await refuse(server, freelance);
-      await expect(notice(page)).toBeVisible();
-      const wcag = (selector: string) => new AxeBuilder({ page }).setLegacyMode().withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).include(selector);
-      const violations = async (selector: string) => (await wcag(selector).analyze()).violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 140)).join(", ")}`);
-      expect(await violations("[data-testid=sign-in-notice]")).toEqual([]);
-      expect(await violations(`[data-testid=sign-in-marker-${freelance.id}]`)).toEqual([]);
-      await stabilize(page);
-      const sidebar = page.getByTestId("sidebar");
-      await expect(sidebar).toHaveScreenshot(`sidebar-one-${theme}.png`);
-      const shots = process.env.SIGN_IN_SHOTS;
-      const design = (await page.locator("html").getAttribute("data-design")) ?? testInfo.project.name;
-      if (shots) await page.screenshot({ path: join(shots, `${design}-${theme}-one.png`) });
-      await page.getByTestId("sign-in-open").click();
-      await expect(popover(page).getByLabel(`Password for ${freelance.email}`)).toBeFocused();
-      expect(await violations("[data-testid=sign-in-popover]")).toEqual([]);
-      if (shots) await page.screenshot({ path: join(shots, `${design}-${theme}-one-open.png`) });
-      await page.keyboard.press("Escape");
-      // two: the line counts them, the panel lists them
-      await refuse(server, personal);
-      await expect(page.getByTestId("sign-in-title")).toHaveText("2 accounts need a sign-in");
-      await page.mouse.move(0, 0);
-      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-      await expect(sidebar).toHaveScreenshot(`sidebar-two-${theme}.png`);
-      await page.getByTestId("sign-in-open").click();
-      await expect(popover(page).getByTestId("sign-in-section")).toHaveCount(2);
-      expect(await violations("[data-testid=sign-in-popover]")).toEqual([]);
-      if (shots) await page.screenshot({ path: join(shots, `${design}-${theme}-two-open.png`) });
-    });
-  }
+  test("axe and a look, in light and dark: the line, the key and the open panel", { tag: "@design" }, async ({ app: page, server }, testInfo) => {
+    for (const theme of ["light", "dark"] as const) {
+      await scenario(theme, async () => {
+        for (const a of await server.backend.store.accounts.list()) await signedInElsewhere(server, a);
+        await server.backend.server.invoke("settings.update", { theme }, ctx);
+        await page.reload();
+        await page.locator("[data-ready]").waitFor();
+        await rows(page).first().waitFor();
+        const { personal, freelance } = await accounts(server);
+        await refuse(server, freelance);
+        await expect(notice(page)).toBeVisible();
+        const wcag = (selector: string) => new AxeBuilder({ page }).setLegacyMode().withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).include(selector);
+        const violations = async (selector: string) => (await wcag(selector).analyze()).violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 140)).join(", ")}`);
+        expect(await violations("[data-testid=sign-in-notice]")).toEqual([]);
+        expect(await violations(`[data-testid=sign-in-marker-${freelance.id}]`)).toEqual([]);
+        await stabilize(page);
+        const sidebar = page.getByTestId("sidebar");
+        await expect(sidebar).toHaveScreenshot(`sidebar-one-${theme}.png`);
+        const shots = process.env.SIGN_IN_SHOTS;
+        const design = (await page.locator("html").getAttribute("data-design")) ?? testInfo.project.name;
+        if (shots) await page.screenshot({ path: join(shots, `${design}-${theme}-one.png`) });
+        await page.getByTestId("sign-in-open").click();
+        await expect(popover(page).getByLabel(`Password for ${freelance.email}`)).toBeFocused();
+        expect(await violations("[data-testid=sign-in-popover]")).toEqual([]);
+        if (shots) await page.screenshot({ path: join(shots, `${design}-${theme}-one-open.png`) });
+        await page.keyboard.press("Escape");
+        // two: the line counts them, the panel lists them
+        await refuse(server, personal);
+        await expect(page.getByTestId("sign-in-title")).toHaveText("2 accounts need a sign-in");
+        await page.mouse.move(0, 0);
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await expect(sidebar).toHaveScreenshot(`sidebar-two-${theme}.png`);
+        await page.getByTestId("sign-in-open").click();
+        await expect(popover(page).getByTestId("sign-in-section")).toHaveCount(2);
+        expect(await violations("[data-testid=sign-in-popover]")).toEqual([]);
+        if (shots) await page.screenshot({ path: join(shots, `${design}-${theme}-two-open.png`) });
+      });
+    }
+  });
 });
 
 test("Settings says it calmly (not in the error ink) and signs in from there; a healthy account's wrong password shows its error", async ({ app: page, server }) => {
