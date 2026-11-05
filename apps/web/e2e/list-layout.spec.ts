@@ -13,6 +13,9 @@ import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import { E2E_NOW } from "./constants";
 import { expect, focusList, ingestConversation, navTo, rows, selectedRow, stabilize, test } from "./fixtures";
 
+// baselines are at twice the pixels; everything else draws at one (plan 139)
+test.use({ deviceScaleFactor: 2 });
+
 test.use({ layout: "list" });
 
 const ctx = { clientId: "setup", origin: "dev" as const };

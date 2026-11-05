@@ -10,6 +10,9 @@ import type { Account } from "@terno/core";
 import { sqlDb } from "../../backend-dev/src/server";
 import { expect, openRow, rows, SIGN_IN_PASSWORD, stabilize, test, type DevServerFixture } from "./fixtures";
 
+// baselines are at twice the pixels; everything else draws at one (plan 139)
+test.use({ deviceScaleFactor: 2 });
+
 test.use({ backendOptions: { network: true } });
 
 const ctx = { clientId: "setup", origin: "dev" as const };

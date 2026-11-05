@@ -10,6 +10,9 @@ import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
 import { expect, focusList, selectedRow, stabilize, test } from "./fixtures";
 
+// baselines are at twice the pixels; everything else draws at one (plan 139)
+test.use({ deviceScaleFactor: 2 });
+
 const ctx = { clientId: "setup", origin: "dev" as const };
 const button = (page: Page) => page.getByTestId("unread-filter");
 const status = (page: Page) => page.getByTestId("unread-filter-status");

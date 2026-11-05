@@ -34,12 +34,15 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${PORT}`,
     ...devices["Desktop Chrome"],
     viewport: { width: 1440, height: 900 },
-    deviceScaleFactor: 2,
+    // plan 139: a spec with baselines asks for 2; drawing every test at twice the pixels costs them all
+    deviceScaleFactor: 1,
     locale: "en-US",
     timezoneId: "America/Mexico_City",
     colorScheme: "light",
     reducedMotion: "reduce",
-    trace: "retain-on-failure",
+    // plan 139: a trace walks the whole DOM on every action, for every test, to serve the few that fail. E2E_TRACE=1 to see one
+    trace: process.env.E2E_TRACE ? "retain-on-failure" : "off",
+    screenshot: "only-on-failure",
   },
   projects: [
     { name: "e2e", testIgnore: /perf\.spec\.ts/ },

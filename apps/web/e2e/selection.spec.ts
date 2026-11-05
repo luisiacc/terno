@@ -8,6 +8,9 @@ import type { DevServer } from "../../backend-dev/src/server";
 import { expect, navTo, focusList, rows, selectedRow, selectRows, stabilize, test, searchBox } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
+// baselines are at twice the pixels; everything else draws at one (plan 139)
+test.use({ deviceScaleFactor: 2 });
+
 const ctx = { clientId: "setup", origin: "dev" as const };
 const menu = (page: Page) => page.getByTestId("thread-menu");
 const item = (page: Page, id: string) => menu(page).getByTestId(id);

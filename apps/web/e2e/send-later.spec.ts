@@ -9,6 +9,9 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { addRecipients, expect, focusList, openRow, test, typeTime } from "./fixtures";
 
+// baselines are at twice the pixels; everything else draws at one (plan 139)
+test.use({ deviceScaleFactor: 2 });
+
 const snackWith = (page: Page, text: string | RegExp) => page.locator("[data-testid=snack]").filter({ hasText: text });
 const body = (page: Page) => page.getByTestId("compose-body");
 const scheduled = (page: Page) => page.getByTestId("strip-scheduled");

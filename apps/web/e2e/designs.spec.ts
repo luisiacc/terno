@@ -21,6 +21,9 @@ import type { DesignDefinition } from "../../../packages/ui/src/designs/types";
 import { sqlDb } from "../../backend-dev/src/server";
 import { expect, focusList, openRow, rows, selectedRow, stabilize, test } from "./fixtures";
 
+// baselines are at twice the pixels; everything else draws at one (plan 139)
+test.use({ deviceScaleFactor: 2 });
+
 const ctx = { clientId: "setup", origin: "dev" as const };
 const designOf = async (page: Page): Promise<DesignDefinition> => {
   const id = await page.locator("html").getAttribute("data-design");

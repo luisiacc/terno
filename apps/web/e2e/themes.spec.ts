@@ -10,6 +10,9 @@ import type { Page } from "@playwright/test";
 import { expect, openRow, stabilize, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
+// baselines are at twice the pixels; everything else draws at one (plan 139)
+test.use({ deviceScaleFactor: 2 });
+
 const ctx = { clientId: "setup", origin: "dev" as const };
 
 async function openAppearance(page: Page) {

@@ -11,6 +11,9 @@ import { parseRaw } from "@terno/mail";
 import type { Page } from "@playwright/test";
 import { expect, navTo, focusList, openRow, test, type CapturedMail } from "./fixtures";
 
+// baselines are at twice the pixels; everything else draws at one (plan 139)
+test.use({ deviceScaleFactor: 2 });
+
 test.use({ backendOptions: { smtpCapture: true } });
 
 const body = (page: Page) => page.getByTestId("compose-body");
