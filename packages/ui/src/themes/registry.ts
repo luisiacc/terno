@@ -930,6 +930,8 @@ const BY_ID = new Map(THEMES.map((t) => [t.id, t]));
 export function themeName(theme: Pick<Theme, "id" | "name">): string {
   if (theme.id === "terno-light") return t("ui.theme.ternoLight");
   if (theme.id === "terno-dark") return t("ui.theme.ternoDark");
+  // the style it belongs to has a Spanish name; its colors go by the same one
+  if (theme.id === "graphite-light" || theme.id === "graphite-dark") return t("design.graphite");
   return theme.name;
 }
 
