@@ -121,7 +121,12 @@ function traffic(t: Awaited<ReturnType<typeof setup>>, start: number, max = 60) 
 }
 
 describe("W06 A26/S14: supported host signals reconcile cached old flags automatically", () => {
-  it.each([true, false].flatMap((condstore) => [true, false].flatMap((idle) => ["INBOX", "Projects"].map((path) => ({ condstore, idle, path })))))
+  // What a wake sweeps depends on the folder and MODSEQ, never on IDLE: each row has one of IDLE's two, Inbox with the
+  // listener it has on a server that offers it (imap-idle-foreground has the listener itself)
+  it.each([
+    { condstore: true, idle: true, path: "INBOX" }, { condstore: false, idle: false, path: "INBOX" },
+    { condstore: true, idle: false, path: "Projects" }, { condstore: false, idle: true, path: "Projects" },
+  ])
   ("wake: $path MODSEQ=$condstore IDLE=$idle", async ({ condstore, idle, path }) => {
     const t = await setup(condstore, idle, path);
     t.age(); t.change();

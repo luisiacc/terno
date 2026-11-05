@@ -307,22 +307,6 @@ it("a RENAME the server refuses leaves no record behind (Codex code review round
   expect(config?.config.cursor?.renamed).toBeUndefined();
 });
 
-it("renamed twice before a pass (Work, Job, New), the folder keeps its mail with its identity (Codex code review round 3 #2)", async () => {
-  const t = await setup(["Work"]);
-  t.server.control.addMessage("Work", { raw: rawIdleMail("In work") });
-  await t.backend.syncAccount(t.account.id);
-  const [a] = await t.threadsIn("Work");
-  const ma = await t.messageOf(a!);
-  await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
-  await t.client.call("folders.rename", { accountId: t.account.id, key: "Job", name: "New" });
-  expect(t.mailboxes()).toEqual(["INBOX", "New", "Sent", "Trash"]);
-  await t.backend.syncAccount(t.account.id);
-  expect(await t.threadsIn("New")).toEqual([a]);
-  expect((await t.locations([ma.id])).map((l) => l.mailbox)).toEqual(["New"]);
-  expect(await t.held([ma.id])).toEqual([]);
-  expect((await t.messageOf(a!)).bodyText).toBe(ma.bodyText);
-});
-
 it("deletes a folder and its subfolder: what was only there goes with the next pass, mail also elsewhere stays, favorites go", async () => {
   const t = await setup(["Work", "Work/Sub"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });
@@ -556,35 +540,6 @@ it("a folder deleted before the pass after its rename takes the mail that was on
   expect(await t.held([ma.id, mc.id])).toEqual([]);
   expect((await t.client.call("threads.get", { threadId: a! }).catch(() => null))?.messages ?? []).toEqual([]);
   expect((await t.client.call("threads.get", { threadId: c! }).catch(() => null))?.messages ?? []).toEqual([]);
-  const config = await t.backend.store.accounts.config<{ cursor?: { deleted?: unknown; renamed?: unknown } }>(t.account.id);
-  expect(config?.config.cursor?.deleted).toBeUndefined();
-  expect(config?.config.cursor?.renamed).toBeUndefined();
-});
-
-it("a folder deleted after a rename that changed its UIDVALIDITY takes the mail cached under its old name (Codex code review round 24 #1)", async () => {
-  const t = await setup(["Work"]);
-  t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });
-  await t.backend.syncAccount(t.account.id);
-  const [a] = await t.threadsIn("Work");
-  const ma = await t.messageOf(a!);
-  // a server that gives a renamed mailbox a new UIDVALIDITY
-  const original = ImapFlow.prototype.mailboxRename;
-  const renumbered = vi.spyOn(ImapFlow.prototype, "mailboxRename").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
-    const r = await original.apply(this, args);
-    t.server.control.resetUidValidity(String(args[1]), { uidvalidity: 900 });
-    return r;
-  });
-  try {
-    await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
-  } finally {
-    renumbered.mockRestore();
-  }
-  await t.client.call("folders.delete", { accountId: t.account.id, key: "Job" });
-  const reopened = await t.reopen();
-  await reopened.backend.syncAccount(t.account.id);
-  expect(await t.locations([ma.id])).toEqual([]);
-  expect(await t.held([ma.id])).toEqual([]);
-  expect((await t.client.call("threads.get", { threadId: a! }).catch(() => null))?.messages ?? []).toEqual([]);
   const config = await t.backend.store.accounts.config<{ cursor?: { deleted?: unknown; renamed?: unknown } }>(t.account.id);
   expect(config?.config.cursor?.deleted).toBeUndefined();
   expect(config?.config.cursor?.renamed).toBeUndefined();

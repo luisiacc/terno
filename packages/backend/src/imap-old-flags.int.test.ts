@@ -133,7 +133,11 @@ async function pass(t: Session, source: Awaited<ReturnType<typeof setup>>) {
 }
 
 describe("W06 A26/S14: cached flags beyond the download window", () => {
-  it.each([true, false].flatMap((condstore) => ["INBOX", "Projects"].flatMap((path) => [false, true].map((read) => ({ condstore, path, read })))))
+  // the folder and CONDSTORE choose the sweep; a flag set or cleared is one comparison, so each direction is in two rows
+  it.each([
+    { condstore: true, path: "INBOX", read: false }, { condstore: true, path: "Projects", read: true },
+    { condstore: false, path: "INBOX", read: true }, { condstore: false, path: "Projects", read: false },
+  ])
   ("catches up after reopen: $path CONDSTORE=$condstore initially seen/flagged=$read", async ({ condstore, path, read }) => {
     const initial = read ? FLAGS : [];
     const next = read ? [] : FLAGS;
@@ -187,7 +191,8 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     await witness(t, t, FLAGS);
   });
 
-  it.each(["INBOX", "Projects"].flatMap((path) => ["NO", "BAD"].map((status) => ({ path, status }))))
+  // NO and BAD reach the provider as the same failed command
+  it.each([{ path: "INBOX", status: "NO" }, { path: "Projects", status: "BAD" }])
   ("preserves cached old bytes when $path UID SEARCH ALL returns $status", async ({ path, status }) => {
     const t = await setup(true, path);
     await t.stop();

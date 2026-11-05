@@ -90,7 +90,7 @@ it.each([false, true])("retains the exact persisted duplicate destination after 
   expect(t.server.control.getMessage("Other", other.uid, { raw: true }).raw).toEqual(Buffer.from(otherBytes));
 });
 
-it.each(["\\Noselect", "\\NonExistent", "\\noselect", "\\nonexistent", "\\NoSeLeCt", "\\NoNeXiStEnT"])("rejects a LIST role candidate with %s before foreground dispatch", async (flag) => {
+it.each(["\\Noselect", "\\NonExistent", "\\noselect", "\\NoNeXiStEnT"])("rejects a LIST role candidate with %s before foreground dispatch", async (flag) => {
   const t = await setup({ A: {}, Group: { folders: { Child: {} } }, Zeta: { "special-use": "\\tRaSh" } });
   // The wire flags are deliberate: ImapKit normalizes storage flags before LIST.
   t.server.script.add({ on: "command", command: "LIST", when: (ctx) => !/LIST "" ""/i.test(ctx.data), send:

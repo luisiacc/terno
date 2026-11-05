@@ -301,12 +301,12 @@ it("imports distinct first-sync UIDs in different folders without merging equal 
 });
 
 
-it.each(["markRead", "markUnread", "star", "unstar", "archive", "trash", "spam", "notSpam", "moveToInbox"] as const)("admits every requested target before %s, without mutating its located sibling", async (action) => {
+// admission runs before the operation's kind matters; one of each pair of mirrors, whose mailbox and flags are set the same way
+it.each(["markRead", "star", "archive", "trash", "spam", "moveToInbox"] as const)("admits every requested target before %s, without mutating its located sibling", async (action) => {
   const t = await setup({ Trash: { "special-use": "\\Trash" }, Archive: { "special-use": "\\Archive" }, Junk: { "special-use": "\\Junk" } });
   const bytes = [rawIdleMail("Located", "located bytes"), rawIdleMail("Unlocated", "unlocated bytes")];
-  const mailbox = action === "notSpam" ? "Junk" : action === "moveToInbox" ? "Archive" : "INBOX";
-  const flags = action === "markUnread" ? ["\\Seen"] : action === "unstar" ? ["\\Flagged"] : [];
-  const remote = bytes.map((raw) => t.server.control.addMessage(mailbox, { raw, flags }));
+  const mailbox = action === "moveToInbox" ? "Archive" : "INBOX";
+  const remote = bytes.map((raw) => t.server.control.addMessage(mailbox, { raw, flags: [] }));
   await t.backend.syncAccount(t.account.id);
   const threads = sqlDb(t.backend.store).all<{ id: number }>("SELECT id FROM threads");
   const locations = t.backend.store.providerStore(t.account.id).locations;
@@ -319,7 +319,7 @@ it.each(["markRead", "markUnread", "star", "unstar", "archive", "trash", "spam",
   await t.backend.runWorker();
   expect(t.commands.slice(start).filter((command) => /^(?:UID )?(?:STORE|MOVE|COPY|EXPUNGE)$/.test(command))).toEqual([]);
   expect(await t.backend.store.ops.get(op.id)).toMatchObject({ state: "queued", attempts: 0, next_attempt_at: AWAITING_IDENTITY, target_json: target });
-  for (const [i, message] of remote.entries()) expect(t.server.control.getMessage(mailbox, message.uid, { raw: true })).toMatchObject({ raw: Buffer.from(bytes[i]!), flags });
+  for (const [i, message] of remote.entries()) expect(t.server.control.getMessage(mailbox, message.uid, { raw: true })).toMatchObject({ raw: Buffer.from(bytes[i]!), flags: [] });
 });
 
 it("keeps a partially issued multi-mailbox MOVE unknown after a later identity refusal", async () => {
