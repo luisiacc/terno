@@ -239,7 +239,7 @@ for (const adapter of ["sql", "idb"] as const) {
 it.each(["sql", "idb"] as const)("%s: a message whose encoding doesn't fit is refused before the draft goes", async (adapter) => {
   const t = await setup(adapter), draft = await save(t, []);
   const attachments = [{ assetId: "not-staged", filename: "large.bin", mime: "application/octet-stream", size: MAX_ATTACHMENT_BYTES }];
-  await expect(t.backend.store.compose.queueSend({ accountId: t.accountId, to, subject: draft.subject, bodyText: "x".repeat(1024 * 1024), attachments, draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision, now: 1000 }))
+  await expect(t.backend.store.compose.queueSend({ accountId: t.accountId, to, cc: [], bcc: [], recordReply: false, subject: draft.subject, bodyText: "x".repeat(1024 * 1024), attachments, draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision, now: 1000 }))
     .rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("too large") });
   expect(await t.client.call("drafts.list", {})).toEqual([draft]);
   expect(await t.client.call("ops.list", {})).toEqual([]);
