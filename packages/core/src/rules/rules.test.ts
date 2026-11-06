@@ -2,7 +2,7 @@ import { setLocale, t } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { describe, expect, it } from "vitest";
-import { bodyMatches, evaluateRule, type RuleMessage } from "./evaluate";
+import { bodyMatches, evaluateRule, ruleAwaitsBody, ruleReadsBody, type RuleMessage } from "./evaluate";
 import { folderRule } from "../categorize/bulk";
 import { sameRule } from "../similar";
 import { filterIssueKey, filterRuleSchema, type FilterRule } from "./schema";
@@ -197,5 +197,25 @@ describe("a filter's folder (plan 128)", () => {
     expect(filterRuleSchema.safeParse(made).success).toBe(true);
     expect(sameRule(made, folderRule({ kind: "domain", domain: "shop.com" }, 3, "Recibos"))).toBe(true);
     expect(sameRule(made, folderRule({ kind: "domain", domain: "shop.com" }, 3, "Otra"))).toBe(false);
+  });
+});
+
+describe("a message's first lines (plan 153)", () => {
+  const message = (subject: string, snippet: string): RuleMessage => ({ accountId: 1, fromName: "", fromEmail: "a@b.test", recipients: "", subject, snippet, bodyText: null, listId: null, hasAttachments: false, date: 0 });
+  const rule = (value: string) => ({ match: "all" as const, conditions: [{ field: "opening" as const, op: "matches" as const, value }], actions: [{ type: "archive" as const }] });
+  it("matches the subject or the first lines, folded as any pattern is", () => {
+    expect(evaluateRule(rule("inicio de sesion"), message("Aviso de tu cuenta", "Nuevo inicio de sesión desde Chrome"), 0)).toBe(true);
+    expect(evaluateRule(rule("login"), message("New login", ""), 0)).toBe(true);
+    expect(evaluateRule(rule("login"), message("Aviso", "Tu factura"), 0)).toBe(false);
+  });
+  it("is a pattern and never negated: first lines can arrive late, so it only turns true", () => {
+    const base = rule("login");
+    expect(filterRuleSchema.safeParse(base).success).toBe(true);
+    expect(filterRuleSchema.safeParse({ ...base, conditions: [{ ...base.conditions[0], negate: true }] }).success).toBe(false);
+    expect(filterRuleSchema.safeParse({ ...base, conditions: [{ ...base.conditions[0], op: "contains" }] }).success).toBe(false);
+  });
+  it("reads no body, but runs again once one is here", () => {
+    expect(ruleReadsBody(rule("x"))).toBe(false);
+    expect(ruleAwaitsBody(rule("x"))).toBe(true);
   });
 });

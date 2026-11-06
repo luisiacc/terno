@@ -1645,10 +1645,10 @@ export function claimFilterApplications(c: Ctx, filterId: number, messageIds: re
 
 /** core's evaluator per message (the SQL compiler is held to it by the parity suite; here it is the implementation). */
 export function ruleMessage(m: R, bodyText: string | null): RuleMessage {
-  return { accountId: m.account_id, fromName: m.from_name, fromEmail: m.from_email, recipients: m.recipients_text, subject: m.subject, bodyText, bodyComplete: m.body_state === "full", listId: m.list_id, hasAttachments: m.has_attachments === 1, date: m.date };
+  return { accountId: m.account_id, fromName: m.from_name, fromEmail: m.from_email, recipients: m.recipients_text, subject: m.subject, snippet: m.snippet, bodyText, bodyComplete: m.body_state === "full", listId: m.list_id, hasAttachments: m.has_attachments === 1, date: m.date };
 }
 
-export { ruleNeedsBody, ruleReadsBody } from "@terno/core";
+export { ruleAwaitsBody, ruleNeedsBody, ruleReadsBody } from "@terno/core";
 
 /** Messages (not in trash) matching a rule among the given ones (their bodies read ahead when the rule needs them). */
 export function findRuleMatches(c: Ctx, rule: FilterRule, now: number, messageIds: readonly number[]): { messageIds: number[]; threadIds: number[] } {

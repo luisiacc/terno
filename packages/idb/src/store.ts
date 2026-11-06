@@ -158,6 +158,7 @@ import {
   resumeNetworkOps,
   nextOpAttemptAt,
   ruleNeedsBody,
+  ruleAwaitsBody,
   ruleReadsBody,
   saveDraft,
   saveFilter,
@@ -1154,7 +1155,7 @@ export class IdbMailStore implements MailStore {
   private applyFiltersTo(messageIds: readonly number[], onlyBodyFilters: boolean, now: number, opIds: string[], folderMoves: FolderFilterMove[]): Set<number> {
     const touched = new Set<number>();
     if (messageIds.length === 0) return touched;
-    const filters = listFilters(this.c).filter((f) => f.enabled && (!onlyBodyFilters || ruleReadsBody(f.rule)));
+    const filters = listFilters(this.c).filter((f) => f.enabled && (!onlyBodyFilters || ruleAwaitsBody(f.rule)));
     // plan 128: what reached the Inbox, read before any filter acts: an archive (or another folder's) doesn't change who else moves
     const messages = T(this.c, "messages");
     const inbox = filters.some((f) => movesToFolder(f.rule)) ? new Set(messageIds.filter((id) => messages.get(id)?.in_inbox === 1)) : null;

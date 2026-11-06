@@ -10,7 +10,7 @@
  * notice at most every NOTICE_GAP_MS. Nothing is collected, read or timed
  * while they're off.
  */
-import { importance, ruleReadsBody, redact, stillNew, summarize, type Counts, type MailNotice } from "@terno/core";
+import { importance, ruleAwaitsBody, redact, stillNew, summarize, type Counts, type MailNotice } from "@terno/core";
 import { captureError, log } from "@terno/core/diag";
 import type { MailStore } from "@terno/store";
 import { readAttention } from "./settings";
@@ -173,7 +173,7 @@ export class Attention {
 
   /** Whether an enabled filter reads bodies (it may still archive or read mail whose body hasn't come). */
   private async bodyFilters(): Promise<boolean> {
-    return (await this.o.store.filters.list()).some((f) => f.enabled && ruleReadsBody(f.rule));
+    return (await this.o.store.filters.list()).some((f) => f.enabled && ruleAwaitsBody(f.rule));
   }
 
   /** Keeps it waiting for its body (one more pass), or lets it go quietly after BODY_WAITS. */

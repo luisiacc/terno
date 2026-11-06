@@ -7,6 +7,7 @@ const FIELD = {
   subject: "filters.field.subject",
   body: "filters.field.body",
   text: "filters.field.text",
+  opening: "filters.field.opening",
   recipients: "filters.field.recipients",
   listId: "filters.field.listIdShort",
   hasAttachment: "filters.field.hasAttachment",

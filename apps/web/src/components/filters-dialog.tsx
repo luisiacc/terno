@@ -32,6 +32,7 @@ const fields = (): { value: Field; label: string }[] => [
   { value: "subject", label: t("filters.field.subject") },
   { value: "body", label: t("filters.field.body") },
   { value: "text", label: t("filters.field.text") },
+  { value: "opening", label: t("filters.field.opening") },
   { value: "recipients", label: t("filters.field.recipients") },
   { value: "listId", label: t("filters.field.listId") },
   { value: "hasAttachment", label: t("filters.field.hasAttachment") },
@@ -43,6 +44,8 @@ const fields = (): { value: Field; label: string }[] => [
 const textOps = (field: Field) =>
   field === "text"
     ? [{ value: "contains", label: t("filters.op.mentions") }]
+    : field === "opening"
+    ? [{ value: "matches", label: t("filters.op.matches") }]
     : [
         { value: "contains", label: t("filters.op.contains") },
         { value: "equals", label: t("filters.op.equals") },
@@ -150,6 +153,8 @@ function defaultCondition(field: Field, accountId: number): Condition {
       return { field, op: "is", value: accountId };
     case "ageDays":
       return { field, op: "gt", value: 30 };
+    case "opening":
+      return { field, op: "matches", value: "" };
     default:
       return { field, op: "contains", value: "" };
   }
@@ -182,7 +187,7 @@ function ConditionRow({ c, onChange, onRemove }: { c: Condition; onChange: (c: C
       {/* a word field only ever turns true (plan 89): it has no "not" */}
       <button
         type="button"
-        hidden={c.field === "text"}
+        hidden={c.field === "text" || c.field === "opening"}
         onClick={() => onChange({ ...c, negate: !c.negate || undefined } as Condition)}
         className={cn("h-7 rounded-md border px-2 text-xs transition-colors", c.negate ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-transparent text-muted-foreground hover:bg-muted")}
         title={t("filters.negate")}

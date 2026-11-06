@@ -5,12 +5,12 @@ import { isValidEmail } from "../address";
 import { FORWARD_ADDRESSES_MAX_CHARS } from "../forwarding";
 import { checkPattern, type PatternIssue } from "./pattern";
 
-/** plan 89: `text` is the subject or the body, by words (it only "mentions") */
-export const TEXT_FIELDS = ["from", "fromDomain", "recipients", "subject", "body", "listId", "text"] as const;
+/** plan 89: `text` is the subject or the body, by words (it only "mentions"). Plan 153: `opening` is the subject and a message's first lines, by pattern. */
+export const TEXT_FIELDS = ["from", "fromDomain", "recipients", "subject", "body", "listId", "text", "opening"] as const;
 /** plan 89: `matches` is a regular expression over the field's normalized text */
 export const TEXT_OPS = ["contains", "equals", "startsWith", "endsWith", "matches"] as const;
 /** The fields a pattern may run on: not bodies (large, and FTS-backed). */
-export const PATTERN_FIELDS = ["from", "fromDomain", "recipients", "subject", "listId"] as const;
+export const PATTERN_FIELDS = ["from", "fromDomain", "recipients", "subject", "listId", "opening"] as const;
 /** plan 128: one place a rule sends mail: a folder is a place too */
 export const LOCATION_ACTIONS = ["archive", "trash", "spam", "moveToFolder"] as const;
 
@@ -79,6 +79,8 @@ export const filterRuleSchema = z
     if (locations.length > 1) ctx.addIssue(ruleIssue("filters.invalid.oneLocation", ["actions"]));
     rule.conditions.forEach((c, i) => {
       if (c.field === "text" && (c.op !== "contains" || c.negate)) ctx.addIssue(ruleIssue("filters.invalid.text", ["conditions", i]));
+      // first lines can arrive after the message: it only ever turns true, so it's never wrong to decide before them
+      if (c.field === "opening" && (c.op !== "matches" || c.negate)) ctx.addIssue(ruleIssue("filters.invalid.opening", ["conditions", i]));
       if (c.field === "hasAttachment" || c.field === "account" || c.field === "ageDays" || c.op !== "matches") return;
       if (!(PATTERN_FIELDS as readonly string[]).includes(c.field)) ctx.addIssue(ruleIssue("filters.invalid.patternField", ["conditions", i]));
       else {
@@ -106,6 +108,7 @@ const RULE_ISSUES = [
   "filters.invalid.oneLocation",
   "filters.invalid.duplicate",
   "filters.invalid.text",
+  "filters.invalid.opening",
   "filters.invalid.patternField",
   "filters.invalid.forwardTooMany",
   ...Object.values(PATTERN_ISSUE),

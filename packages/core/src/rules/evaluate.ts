@@ -16,6 +16,8 @@ export interface RuleMessage {
   fromEmail: string;
   recipients: string;
   subject: string;
+  /** a message's first lines, as stored */
+  snippet?: string;
   bodyText: string | null;
   testBody?: (op: TextOp, value: string) => boolean;
   /** Omitted when the caller supplies a complete body. */
@@ -175,6 +177,9 @@ export function bodyMatches(op: TextOp, body: string | null, value: string): boo
   }
 }
 
+/** What `opening` matches: the subject and the stored first lines, normalized as a rule's text is. */
+export const openingText = (subject: string, snippet: string): string => normalizeText(`${subject} ${snippet}`);
+
 function evaluateCondition(c: Condition, msg: RuleMessage, now: number): boolean {
   switch (c.field) {
     case "hasAttachment":
@@ -210,6 +215,8 @@ function evaluateCondition(c: Condition, msg: RuleMessage, now: number): boolean
       return textOp(c.op, normalizeText(msg.recipients), ruleValue(c.op, c.value));
     case "subject":
       return textOp(c.op, normalizeText(msg.subject), ruleValue(c.op, c.value));
+    case "opening":
+      return textOp(c.op, openingText(msg.subject, msg.snippet ?? ""), ruleValue(c.op, c.value));
     case "listId":
       return textOp(c.op, normalizeText(msg.listId), ruleValue(c.op, c.value));
   }
@@ -219,6 +226,8 @@ function evaluateCondition(c: Condition, msg: RuleMessage, now: number): boolean
 export const ruleNeedsBody = (rule: FilterRule): boolean => rule.conditions.some((c) => c.field === "body");
 /** The rule looks at bodies (body or text): it runs again when a body completes, and its evaluator needs the body read. */
 export const ruleReadsBody = (rule: FilterRule): boolean => rule.conditions.some((c) => c.field === "body" || c.field === "text");
+/** Runs again when a body completes: what it reads may only be here then. An opening reads no body, but its first lines can be filled in from it. */
+export const ruleAwaitsBody = (rule: FilterRule): boolean => ruleReadsBody(rule) || rule.conditions.some((c) => c.field === "opening");
 
 export function evaluateRule(rule: FilterRule, msg: RuleMessage, now: number): boolean {
   if (msg.bodyComplete === false && rule.conditions.some((c) => c.field === "body")) return false;

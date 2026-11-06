@@ -29,7 +29,7 @@ import { mergeBefore, sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObse
 import { bindSqlPromotedFlags, sqlFlags } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { sqlAssets, replaceAttachments } from "./attachments";
-import { categoryOf, ruleReadsBody, senderVetoed, type MessageTerm, type Address, type FilterAction, type FilterRule, type ThreadAction, type ThreadSummary } from "@terno/core";
+import { categoryOf, ruleAwaitsBody, ruleReadsBody, senderVetoed, type MessageTerm, type Address, type FilterAction, type FilterRule, type ThreadAction, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -526,7 +526,7 @@ export class SqlMailStore implements MailStore {
   private applyFiltersTo(messageIds: readonly number[], onlyBodyFilters: boolean, now: number, opIds: string[], folderMoves: FolderFilterMove[]): Set<number> {
     const touched = new Set<number>();
     if (messageIds.length === 0) return touched;
-    const filters = listFilters(this.db).filter((f) => f.enabled && (!onlyBodyFilters || ruleReadsBody(f.rule)));
+    const filters = listFilters(this.db).filter((f) => f.enabled && (!onlyBodyFilters || ruleAwaitsBody(f.rule)));
     // plan 128: what reached the Inbox, read before any filter acts: an archive (or another folder's) doesn't change who else moves
     const inbox = filters.some((f) => movesToFolder(f.rule)) ? new Set(this.db.all<{ id: number }>("SELECT id FROM messages WHERE in_inbox = 1 AND id IN (SELECT value FROM json_each(?))", JSON.stringify(messageIds)).map((m) => m.id)) : null;
     for (const filter of filters) {

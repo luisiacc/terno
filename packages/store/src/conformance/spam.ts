@@ -34,6 +34,14 @@ export function defineSpamConformance(fresh: () => Promise<MailStore>): void {
       expect(await store.filters.matchMessages(rule, NOW, [kept.id, junk.id])).toEqual([kept.id]);
     });
 
+    it("a rule reads a message's first lines, the same in both stores", async () => {
+      const { store, put } = await setup();
+      const said = await put({ subject: "Aviso de tu cuenta", snippet: "Nuevo inicio de sesión desde Chrome" });
+      const other = await put({ subject: "Aviso de tu cuenta", snippet: "Tu factura de octubre" });
+      const opening = { match: "all" as const, conditions: [{ field: "opening" as const, op: "matches" as const, value: "inicio de sesion" }], actions: [{ type: "markRead" as const }] };
+      expect(await store.filters.matchMessages(opening, NOW, [said.id, other.id])).toEqual([said.id]);
+    });
+
     it("a spam message doesn't raise a conversation's unread; the Spam folder still reads unread", async () => {
       const { store, put } = await setup();
       const first = await put({ isRead: true, providerThreadId: "mixed" });

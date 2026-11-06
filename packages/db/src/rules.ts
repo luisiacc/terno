@@ -1,4 +1,4 @@
-import { BODY_TAIL_TOKENS, bodyMatches, fromIsAddress, patternMatches, ruleValue, subjectKey, tokenize, type Condition, type FilterRule, type TextOp } from "@terno/core";
+import { BODY_TAIL_TOKENS, bodyMatches, fromIsAddress, openingText, patternMatches, ruleValue, subjectKey, tokenize, type Condition, type FilterRule, type TextOp } from "@terno/core";
 import type { Db, Param } from "./sqlite";
 
 const DAY_MS = 86_400_000;
@@ -77,6 +77,9 @@ function conditionOrdinarySql(c: Condition, now: number, params: Param[], range?
       return textSql(c.op, "m.subject_norm", ruleValue(c.op, c.value), params);
     case "listId":
       return textSql(c.op, "coalesce(m.list_id, '')", ruleValue(c.op, c.value), params);
+    case "opening":
+      params.push(c.op === "matches" ? c.value : "");
+      return "terno_opening(?, m.subject, m.snippet) = 1";
     case "text": {
       // plan 89: a search word's columns: subject, sender and recipients now, the body once it's complete (token semantics, like body)
       const phrase = c.value.replaceAll('"', '""');
@@ -142,6 +145,7 @@ export function registerFunctions(db: Db): void {
     bodyMatches(op as TextOp, (body as string | null) ?? null, String(value)) ? 1 : 0,
   );
   db.function("terno_matches", { deterministic: true }, (pattern, text) => (patternMatches(String(pattern), String(text ?? "")) ? 1 : 0));
+  db.function("terno_opening", { deterministic: true }, (pattern, subject, snippet) => (patternMatches(String(pattern), openingText(String(subject ?? ""), String(snippet ?? ""))) ? 1 : 0));
   db.function("terno_subject_key", { deterministic: true }, (subject) => subjectKey(String(subject ?? "")));
 }
 
