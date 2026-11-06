@@ -92,3 +92,14 @@ export interface AiActionApplied {
 
 /** Address literals never go in a check's groups, whichever field they're in (revision 8). */
 export const redactAddresses = (text: string): string => text.replace(/(?:"[^"\n]*"|[\p{L}\p{N}.!#$%&'*+/=?^_`{|}~-]+)@(?:\[[^\]\n]*\]|[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*)/gu, "…");
+
+/** Only mail to come and nothing ticked: Apply's one job is to save the rule, so it's the rule that must be savable. */
+export const savesRuleOnly = (p: Pick<ActionPreviewInfo, "plan" | "count" | "keep">): boolean => p.plan.futureOnly === true && p.count === 0 && p.keep.kind === "ok";
+
+/** A rule that wasn't saved says so; but when Apply did something else first (a category it made), Undo stays on offer. */
+export function ruleOutcome(plan: Pick<ActionPlan, "futureOnly">, r: { done: number; filterSaved: boolean; undoToken: string | null }): "saved" | "failed" | "acted" {
+  if (!plan.futureOnly || r.done > 0) return "acted";
+  if (r.filterSaved) return "saved";
+  return r.undoToken === null ? "failed" : "acted";
+}
+

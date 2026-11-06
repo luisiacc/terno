@@ -1,3 +1,4 @@
+import { savesRuleOnly } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Checkbox } from "@terno/ui/components/checkbox";
@@ -72,7 +73,7 @@ export default function ActionPreviewHeader() {
         ) : (
           <Button size="sm" variant="secondary" className="no-drag" data-testid="action-cancel" onClick={leavePreview}>{t("common.cancel")}</Button>
         )}
-        <Button size="sm" className="no-drag" data-testid="action-apply" disabled={waiting || applying || (count === 0 && !(onlyAhead && future))} onClick={() => void applyPreview()}>{onlyAhead ? t("action.button.futureOnly") : t(`action.button.${verb}`)}</Button>
+        <Button size="sm" className="no-drag" data-testid="action-apply" disabled={waiting || applying || (count === 0 && !savesRuleOnly(preview))} onClick={() => void applyPreview()}>{onlyAhead ? t("action.button.futureOnly") : t(`action.button.${verb}`)}</Button>
       </div>
       <Line testId="action-conditions">
         <span>{t(plan.lookIn === "inbox" || plan.action.type === "archive" ? "action.in.inbox" : "action.in.everywhere")}</span>

@@ -1,4 +1,4 @@
-import { type ActionPreviewInfo, type AiActionApplied, type AiActionEvent, type AiActionStart } from "@terno/core";
+import { ruleOutcome, savesRuleOnly, type ActionPreviewInfo, type AiActionApplied, type AiActionEvent, type AiActionStart } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { enterPreview, leavePreview, rowsToggled, useActionRows } from "~/state/action-preview";
@@ -113,7 +113,7 @@ const notes = (r: AiActionApplied): string | undefined => {
 export async function applyPreview(): Promise<void> {
   const s = useActionPreview.getState();
   const { preview } = s;
-  if (!preview || s.applying || preview.scanning || preview.check === "needed" || (preview.count === 0 && !(preview.plan.futureOnly && s.future))) return;
+  if (!preview || s.applying || preview.scanning || preview.check === "needed" || (preview.count === 0 && !savesRuleOnly(preview))) return;
   useActionPreview.setState({ applying: true });
   const verb = preview.plan.action.type === "createCategory" ? "moveToCategory" : preview.plan.action.type;
   const job = trackJob(t("action.job"));
@@ -127,14 +127,15 @@ export async function applyPreview(): Promise<void> {
     void reloadList({ keepSelection: true });
   });
   try {
-    const r = await client.call("ai.actionApply", { previewId: preview.previewId, jobId: job.jobId, future: s.future });
+    const r = await client.call("ai.actionApply", { previewId: preview.previewId, jobId: job.jobId, future: s.future || savesRuleOnly(preview) });
     undoToken.resolve(r.undoToken);
     leavePreview();
-    if (preview.plan.futureOnly && r.done === 0 && !r.filterSaved) {
+    const outcome = ruleOutcome(preview.plan, r);
+    if (outcome === "failed") {
       snack.error(t("action.futureOnlyFailed"), { id: job.snackId });
       return;
     }
-    const message = preview.plan.futureOnly && r.done === 0 ? t("action.outcome.futureOnly") : t(`action.outcome.${verb}`, { count: r.done, category: preview.categoryName ?? "" });
+    const message = outcome === "saved" ? t("action.outcome.futureOnly") : t(`action.outcome.${verb}`, { count: r.done, category: preview.categoryName ?? "" });
     snack.success(r.stopped ? t("action.outcome.stopped", { outcome: message }) : message, { id: job.snackId, duration: 8000, description: notes(r), action: r.undoToken !== null ? undoAction(undo, t("action.undoName", { outcome: message })) : undefined });
   } catch (error) {
     undoToken.resolve(null);

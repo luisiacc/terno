@@ -215,7 +215,8 @@ export async function readPassages(req: AskPassageRequest, io: AskPassageIo): Pr
     chars += body.length;
     messages.push({ messageId: m.id, threadId: m.threadId, accountId: m.accountId, fromName: m.fromName, fromEmail: m.fromEmail, subject: m.subject, date: m.date, own: m.own, text: body });
   }
-  const omitted = incomplete || [...byThread.values()].some((list) => list.some((id) => !taken.has(id)));
+  const shown = new Set(messages.map((m) => m.messageId));
+  const omitted = incomplete || [...byThread.values()].some((list) => list.some((id) => !shown.has(id)));
   return { messages, incomplete, omitted };
 }
 

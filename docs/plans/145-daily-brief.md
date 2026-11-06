@@ -283,3 +283,4 @@ Real models, on a copy of one real mailbox (5,939 threads, three accounts, Spani
 - **A real bug the eval found:** 80 output tokens per item let hidden reasoning cut off whole batches: three of four failed in one run. It's 200.
 - **Limit:** a few newsletters still file as "other", so they stay out of Archive all, which is the safe side.
 - **The code review:** the first form of the rule grouped a whole window in SQL and walked it twice in IndexedDB on every count, and missed a tagged address (`ana+work@`) because it only lowercased it. Hence the one function and the bound.
+- **Left as they are, too rare to build for (the review's second pass):** past 2,000 waiting threads in 30 days, a sender whose second thread falls outside the walk reads as having one, and a window of mostly archived threads still walks the index. Neither happens at a person's volume.
