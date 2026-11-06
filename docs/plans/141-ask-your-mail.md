@@ -298,3 +298,12 @@ A second round, on the fixes, raised 6, all fixed: a read under way when somethi
 ## What the full run showed
 
 `pnpm test:all` passed in 1,174 s on a machine shared with other work. Each failure on the crowded first pass passed alone, and none touched Ask: attachment conformance, W02's chunked actions, `upgrade.volumes`, the categorization eval, ghost text, and the timing of `attachment-accounting`, the instant index, migrations and search-everywhere.
+
+## What the eval and the panel changed
+
+Real models, on a copy of one real mailbox (5,939 threads, three accounts, Spanish and English) with its keys and queued work removed, read by five reviewers with different concerns: a fact auditor, a busy owner, a safety hawk, a bilingual editor and a recall PM. Four rounds, each reviewer blind to the others. No mail is recorded here. The owner's read is still theirs.
+
+- Round 1 had nine answers that four or five reviewers called wrong; the last panel read had two. Prompt version 5 came after it: its change for two totals and the language rule were checked on the real mail by script and by hand, not read again by the panel.
+- **What changed:** a status word is never a required term, and a question gets a query of the sender alone and one without the name (a bank writes under its initials); a meaning is one `anyOf` list; "this week" is 7 days. The answer is told how many it was shown and whether more match (`moreMatch`), says "at least", never shows its working or corrects itself in the text, gives one total at most, and leaves out a one-time code it wasn't asked for. A not-found answer keeps no `[n]`: with no sources it pointed at nothing.
+- **Overruled, with the data:** reviewers read "PR not found" as a retrieval miss. Those messages are in Spam, which Ask deliberately doesn't search.
+- **Limit:** sums and counts are still the model's, over what it was shown, so it says "at least" or "roughly". Doing them in code is a feature, not a prompt, and isn't here. One panel complaint stays: a time zone stated for a guest can be read as the time's own.

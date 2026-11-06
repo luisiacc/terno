@@ -285,7 +285,9 @@ export class AskService {
     if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
     for (const m of passages.messages) o.entry.accounts.add(m.accountId);
     const drafted = materialOf(passages.messages, o.p.timezone);
-    const fitted = fitAskPrompt({ question, today, material: drafted.material, earlier }, budget.promptChars);
+    // the threads found hold more than the messages read: an answer about "how many" has to know
+    const moreMatch = passages.messages.length >= Math.min(ASK_MESSAGES_MAX, budget.maxMessages) || o.threadIds.length > new Set(passages.messages.map((m) => m.threadId)).size;
+    const fitted = fitAskPrompt({ question, today, material: drafted.material, earlier, moreMatch }, budget.promptChars);
     if (!fitted) throw new AiError(L("errors.ai.askTooSmall"), "unsupported");
     const { material } = fitted;
     const labels = new Map(material.map((m, i) => [m.label, i]));
@@ -300,7 +302,7 @@ export class AskService {
     let raw = "";
     let sent = "";
     const result = await ai.answerFromMail(
-      { question, today, material, ...(fitted.earlier.length ? { earlier: fitted.earlier } : {}) },
+      { question, today, material, moreMatch, ...(fitted.earlier.length ? { earlier: fitted.earlier } : {}) },
       {
         signal,
         maxTokens: budget.outputTokens,
@@ -325,7 +327,9 @@ export class AskService {
     const answered = result.status === "not_found" ? "not_found" : result.status === "partial" || result.stop === "length" ? "partial" : "answered";
     const checks: AskCheck = { unlinked: answered !== "not_found" && (resolved.dropped > 0 || hasUnlinkedSentence(resolved.text)), unsupported: answered === "not_found" ? [] : askSpecifics(resolved.text, authorized(material)) };
     const sources = answered === "not_found" ? [] : resolved.cited.map((i) => refOf(passages.messages[i]!));
-    const turn = await this.keep({ conversationId, question, status: answered, answer: resolved.text, sources, checks, queries: o.queries, ai, clearGeneration: o.clearGeneration, entry: o.entry });
+    // with no sources, a citation left in the words points at nothing
+    const words = answered === "not_found" ? resolved.text.replace(/\s*\[\d+\]/g, "") : resolved.text;
+    const turn = await this.keep({ conversationId, question, status: answered, answer: words, sources, checks, queries: o.queries, ai, clearGeneration: o.clearGeneration, entry: o.entry });
     return { status: "done", turn, incomplete: passages.incomplete, older: await o.older() };
   }
 

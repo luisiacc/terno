@@ -115,3 +115,17 @@ describe("the answer (plan 141)", () => {
     expect(small.outputTokens).toBeLessThanOrEqual(1334);
   });
 });
+
+describe("what the real-mail panel found (plan 141)", () => {
+  it("the language rule isn't left to the mail's language, and a code stays out unless asked", () => {
+    expect(ASK_ANSWER_RULES).toMatch(/English question gets English/);
+    expect(ASK_ANSWER_RULES).toMatch(/one-time code/);
+    expect(ASK_ANSWER_RULES).toMatch(/never correct yourself/);
+  });
+  it("the answer's prompt says whether what it read is everything", () => {
+    const base = { question: "how many?", today: "2026-11-06", material: [material("t")] };
+    expect(answerPrompt({ ...base, moreMatch: true })).toContain("More match than these.");
+    expect(answerPrompt({ ...base, moreMatch: false })).toContain("These are all that matched.");
+  });
+});
+

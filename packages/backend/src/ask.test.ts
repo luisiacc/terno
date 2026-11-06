@@ -148,6 +148,14 @@ describe("from a question to an answer", () => {
     expect(r.turn!.checks.unsupported).toEqual(["4921", "https://evil.test/x"]);
   });
 
+  it("not found keeps no citation: with no sources it would point at nothing", async () => {
+    const { model, put, ask } = await setup();
+    await put();
+    model.answer = () => ({ text: "That isn't here [m1].\n<status>not_found</status>", stop: "end" });
+    const r = await ask();
+    expect(r).toMatchObject({ turn: { status: "not_found", answer: "That isn't here.", sources: [] } });
+  });
+
   it("the model's not_found is kept with no sources", async () => {
     const { model, put, ask } = await setup();
     await put();
