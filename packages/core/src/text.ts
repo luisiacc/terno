@@ -30,26 +30,33 @@ export function baseSubject(subject: string): string {
 export const ATTRIBUTION = /^(on\b.{0,300}\bwrote:?|el\b.{0,300}\bescribi[oó]:?|le\b.{0,300}\ba [ée]crit\s?:?|am\b.{0,300}\bschrieb.{0,100}:)$/i;
 /** everything after one of these is someone else's mail, quoted without `>` */
 export const QUOTED_BLOCK = /^(-{2,}\s*(original message|mensaje original|forwarded message|mensaje reenviado|message d'origine)\s*-{2,}|_{8,})$/i;
+const ORIGINAL_MESSAGE = /^-{2,}\s*(original message|mensaje original)\s*-{2,}$/i;
 export const OUTLOOK_FROM = /^(from|de|von|da):\s.*(@|\[mailto).*$/i;
 export const OUTLOOK_NEXT = /^(sent|enviado|date|fecha|to|para|subject|asunto):\s/i;
 
 /**
  * The reader's own words: what they quote from earlier is in those earlier messages. An answer written between quoted
- * lines is theirs (plan 151): an attribution ends the mail only when no `>` follows it, as in an unmarked quote.
+ * lines is theirs (plan 151): an attribution ends the mail only when no `>` follows it, as in an unmarked quote. A
+ * forward stays: what it carries is in no other message here, and Ask searches it.
  */
 export function withoutQuotes(text: string): string {
   const lines = text.split(/\r?\n/);
   const kept: string[] = [];
+  let quoted = false;
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i]!.trim();
-    if (l.startsWith(">")) continue;
+    if (l.startsWith(">")) {
+      quoted = true;
+      continue;
+    }
     if (ATTRIBUTION.test(l)) {
       let next = i + 1;
       while (next < lines.length && lines[next]!.trim() === "") next++;
       if (next >= lines.length || !lines[next]!.trim().startsWith(">")) break;
       continue;
     }
-    if (QUOTED_BLOCK.test(l) || (OUTLOOK_FROM.test(l) && OUTLOOK_NEXT.test(lines[i + 1]?.trim() ?? ""))) break;
+    // below a quote, this header is an older mail quoted without `>`, not a forward of the reader's
+    if (ORIGINAL_MESSAGE.test(l) || (quoted && OUTLOOK_FROM.test(l) && OUTLOOK_NEXT.test(lines[i + 1]?.trim() ?? ""))) break;
     kept.push(lines[i]!);
   }
   return kept.join("\n").trim();

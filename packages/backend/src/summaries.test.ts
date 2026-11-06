@@ -282,6 +282,22 @@ describe("what's sent", () => {
     expect(prompt).not.toContain("Person 8");
   });
 
+  it("plan 151: on a small window, long recipient lists go before the message's words", async () => {
+    const { client, backend, model, arrive, row } = await setup({ enabled: false });
+    await backend.store.settings.update("app", {}, (s: Record<string, unknown>) => {
+      const ai = (s.ai ?? {}) as Record<string, unknown>;
+      return { value: { ...s, ai: { ...ai, capabilities: { "fake|||demo": { output: "json_schema", contextTokens: 2000, embeddings: false, probedAt: 1 } } } }, result: undefined };
+    });
+    await client.call("settings.update", { summaries: { enabled: true } });
+    const crowd = (at: string) => Array.from({ length: 8 }, (_, i) => ({ name: `${at} ${i} ${"n".repeat(70)}`, email: `${at}${i}@x.test` }));
+    const m = await arrive({ to: crowd("t"), cc: crowd("c") });
+    await until(async () => expect((await row(m.thread))?.state).toBe("ready"));
+    const prompt = promptText(model.requests[0]!.messages[0]!.content);
+    expect(prompt).toContain("The contract needs");
+    expect(prompt).not.toContain("nnnnnnnn");
+    expect(prompt).toContain('reader-on="none"');
+  });
+
   it("sizes down for a small context window, and keeps the newest message's words", async () => {
     const { client, backend, model, arrive, row } = await setup({ enabled: false });
     const tokens = 2000;
@@ -325,6 +341,9 @@ describe("what's sent", () => {
     expect(withoutQuotes("El lun, 3 mar, Ana escribió:\n> ¿Lo enviaste?\nYa lo envié.")).toBe("Ya lo envié.");
     expect(withoutQuotes("Fine.\nOn Mon, 3 Mar, Ana wrote:\nunmarked old text")).toBe("Fine.");
     expect(withoutQuotes("On Mon, Ana wrote:\n> intro\nFrom: Bob <bob@x.test>\nSent: Monday\nPlease approve")).toBe("");
+    // a forward stays: what it carries is nowhere else, and Ask searches it
+    expect(withoutQuotes("FYI\n----- Forwarded message -----\nThe door code is 4932")).toContain("4932");
+    expect(withoutQuotes("FYI\nFrom: Bob <bob@x.test>\nSent: Monday\nThe door code is 4932")).toContain("4932");
     expect(withoutQuotes("Sí.\nEl lun, 3 mar, Ana escribió:\nviejo")).toBe("Sí.");
     expect(withoutQuotes("Hello\n----- Original Message -----\nold")).toBe("Hello");
   });

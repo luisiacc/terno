@@ -93,6 +93,9 @@ export function defineAiSummariesConformance(fresh: () => Promise<MailStore>, re
         const sources = (await store.aiSummaries.sources(m.thread))!;
         expect(sources.messages[0]).toMatchObject({ to: [{ name: "Tom", email: "tom@x.test" }], cc: [{ name: "Me", email: "me@x.test" }], list: true });
         expect(sources.ownEmails).toContain(sources.accountEmail);
+        // what's stored from before the address repair reads as everywhere else does
+        const old = await arrive({ providerMsgId: "old", rfcMessageId: "old@x.test", subject: "Old", to: [{ name: "Ana", email: "mailto:ana@x.test" }] });
+        expect((await store.aiSummaries.sources(old.thread))!.messages[0]!.to).toEqual([{ name: "Ana", email: "ana@x.test" }]);
         expect(sources.accountEmail).toMatch(/@/);
         const plain = await arrive({ providerMsgId: "another", rfcMessageId: "another@x.test", subject: "Another", listId: null });
         expect((await store.aiSummaries.sources(plain.thread))!.messages[0]!.list).toBe(false);

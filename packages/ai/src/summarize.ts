@@ -128,7 +128,7 @@ const listed = (name: string, list: readonly string[] | undefined) => (list?.len
 
 export function summaryPrompt(input: Pick<SummarizeInput, "subject" | "thread" | "reader">): string {
   const blocks = input.thread.map((m) => {
-    const delivery = `${listed("to", m.to)}${listed("cc", m.cc)}${!m.own && m.readerOn ? ` reader-on="${m.readerOn}"` : ""}${m.list ? ' list="yes"' : ""}`;
+    const delivery = `${listed("to", m.to)}${listed("cc", m.cc)}${m.readerOn && (!m.own || m.readerOn !== "none") ? ` reader-on="${m.readerOn}"` : ""}${m.list ? ' list="yes"' : ""}`;
     return `<message id="${m.label}" from="${attribute(m.from)}"${delivery} date="${m.date}"${m.own ? ' author="the reader"' : ""}>\n${dataText(m.text)}\n</message>`;
   });
   const reader = input.reader ? `<reader name="${attribute(input.reader.name.slice(0, RECIPIENT_CHARS))}" email="${attribute(input.reader.email.slice(0, RECIPIENT_CHARS))}" />\n\n` : "";
@@ -164,7 +164,8 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
   // i18n-ignore: a caller's bug (the backend always passes messages)
   if (input.thread.length === 0) throw new AiError("summarize needs a message", "invalid_output");
   const labels = new Set(input.thread.map((m) => m.label));
-  const own = new Set(input.thread.filter((m) => m.own).map((m) => m.label));
+  // to themselves is a reminder, and its question is theirs
+  const askedOthers = new Set(input.thread.filter((m) => m.own && m.readerOn !== "to" && m.readerOn !== "cc").map((m) => m.label));
   return {
     system: SYSTEM(input.language, input.today),
     prompt: summaryPrompt(input),
@@ -177,9 +178,9 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
       if (!summary) return { ok: false, error: "summary must not be empty" };
       const said = words(summary);
       // one citing a message that isn't there is dropped: never shown unlinked. One the summary already says adds nothing.
-      // A question from the reader's own message isn't waiting for their answer (an action there can be their promise)
+      // A question the reader put to someone else isn't waiting for their answer (an action there can be their promise)
       const items = w.items
-        .filter((i) => labels.has(i.message) && !repeats(said, i.text) && !(i.kind === "question" && own.has(i.message)))
+        .filter((i) => labels.has(i.message) && !repeats(said, i.text) && !(i.kind === "question" && askedOthers.has(i.message)))
         .map((i) => ({ kind: i.kind, text: clean(i.text, ITEM_MAX_CHARS), message: i.message }))
         .filter((i) => i.text)
         .slice(0, SUMMARY_MAX_ITEMS);

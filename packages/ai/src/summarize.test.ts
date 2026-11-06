@@ -157,6 +157,12 @@ describe("what comes back", () => {
     expect((await createAi(config(), { transport: t }).summarize(input("x", { thread }))).items.map((i) => i.text)).toEqual(["Send the quote Friday", "Which bank"]);
   });
 
+  it("plan 151: a question in mail to themselves is theirs", async () => {
+    const thread = [{ label: "m1", from: "Me", readerOn: "to" as const, date: "2026-11-01", own: true, text: "Which health plan by Friday?" }];
+    const t = scripted(() => wire({ items: [{ kind: "question", text: "Which health plan", message: "m1" }] }));
+    expect((await createAi(config(), { transport: t }).summarize(input("x", { thread }))).items.map((i) => i.text)).toEqual(["Which health plan"]);
+  });
+
   it("plan 151: only formatting tags go, and a clipped row ends on a word", async () => {
     const long = `Check ${"longword ".repeat(40)}`;
     const t = scripted(() => wire({ summary: "The <Location> block in <b>httpd</b> changed.", items: [{ kind: "action", text: long, message: "m1" }] }));

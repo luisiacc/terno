@@ -64,6 +64,11 @@ function fit(subject: string, thread: ThreadText[], newestAt: number, room: numb
     const at = kept[0] === newest ? 1 : 0;
     kept = kept.filter((_, i) => i !== at);
   }
+  // the names go before the words: where the reader was on it stays (`readerOn`), and a card about nothing helps nobody
+  if (size() > room) {
+    newest = { ...newest, to: undefined, cc: undefined };
+    kept = [newest];
+  }
   const over = size() - room;
   if (over > 0) {
     newest = { ...newest, text: newest.text.slice(0, Math.max(0, newest.text.length - over)) };

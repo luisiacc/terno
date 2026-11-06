@@ -126,3 +126,14 @@ The shipped wording trades a little wrong owner and noise for nearly no repeats.
 - `~/.terno-evals/real-mail/`: the real set, with a `manifest.json` of sources and hashes. It isn't in the repo because the repo is public. `fetch-real.py` rebuilds the same selection.
 - `~/.terno-evals/runs/`, `review*/`, `judged*/`: each run, what the judges saw and what they said. These are local, since they hold real mail. Round 2's and round 3's answer keys for the labels were in `/tmp` and won't outlive a restart, and aren't needed again.
 
+## What the code review changed
+
+Codex raised 5 points on `94740e51`. Four are fixed, each with a regression test.
+
+- **A forward stays.** Sharing `extract.ts`'s rules made `withoutQuotes` stop at "Forwarded message", so Ask lost what a forward carried, and a summary lost it from older messages. What a forward carries is in no other message. It stops only at "Original message", as it always did, and at an Outlook header below a quote.
+- **Names go before words.** In a 2,000-token window, two lists of long names could take the whole budget and leave the model nothing to summarize. `fit` now drops the names of the one message left before any of its text. `reader-on` stays.
+- **Old addresses are repaired,** as every other read does, so `mailto:ana@x.com` counts as Ana's.
+- **A question in mail to yourself is yours.** The check now only drops a question the reader put to someone else.
+
+Left alone: removing a connected account changes who counts as the reader on a thread, and a summary already stored doesn't notice until something else changes it. It's rare, and the card still says what it said about that mail.
+

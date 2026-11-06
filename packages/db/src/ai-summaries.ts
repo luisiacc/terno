@@ -1,3 +1,4 @@
+import { repairAddresses } from "@terno/core";
 import { addressesOf, NEW_MAIL_MS, sourceStamp, summaryBlocked, type AiSummaryRow, type AiSummaryState, type NewMailMark, type NewMailWant, type NewMailWants, type SummarySources, type SummaryWrite, type SummaryWriteOutcome } from "@terno/store";
 import type { Db } from "./sqlite";
 
@@ -164,8 +165,8 @@ export function summarySources(db: Db, threadId: number): SummarySources | null 
       snippet: r.snippet,
       subject: r.subject,
       own: r.is_sent === 1 || own.has(r.from_email.toLowerCase()),
-      to: addressesOf(r.to_json),
-      cc: addressesOf(r.cc_json),
+      to: repairAddresses(addressesOf(r.to_json)),
+      cc: repairAddresses(addressesOf(r.cc_json)),
       list: r.list_id !== null,
       trash: r.is_trash === 1,
       spam: r.is_spam === 1,
