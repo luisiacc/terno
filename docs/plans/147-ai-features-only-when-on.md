@@ -100,3 +100,10 @@ Not taken:
 Codex (read-only, on the fix) raised 1 point, fixed with a test that fails without it:
 
 1. **A strip already up could still run.** Regenerate, Shorter, Warmer, Try again and an answered question go to `startRun` without passing `submit`, so turning the switch off left them running on a saved provider. The check now sits in `startRun`, and the strip stays with its Undo.
+
+A second round, only on what plans 144 and 145 added, raised 4, all fixed:
+
+2. **The brief's notification still appeared.** A gate in `notify.ts`' `show()` would be wrong: it's the page's path, and a desktop's notice goes through main. `TodayService.notify` is the one exception to "the backend doesn't change": on a local build with the switch off it says nothing, and the day's notice isn't used up.
+3. **"Back to digest" outlived Today,** since cleanup ran only inside Today, and reopened the digest page. `fromDigest` goes with availability.
+4. **A preview's Cancel could restore Today,** which watching only the available-to-unavailable change missed. Today now leaves whenever it's on and unavailable, once settings are read.
+5. **Undo then `r` could use a hidden prepared reply.** `replyReady` reads `on()`, so those keys go back to an ordinary reply.

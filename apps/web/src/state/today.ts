@@ -34,8 +34,10 @@ client.on("todayDigest", () => {
 
 // no provider any more: no row, no list. The digest's data stays until Clear AI data.
 useApp.subscribe((s, prev) => {
+  // plan 147: a way back to the digest goes with it, and whatever brings Today back (a preview's Cancel) leaves again
+  if (useToday.getState().fromDigest && s.settings && !todayAvailable(s)) useToday.setState({ fromDigest: false });
   if (!s.today) return;
-  if (todayAvailable(prev) && !todayAvailable(s)) navigate({ view: "inbox" });
+  if (s.settings && !todayAvailable(s)) navigate({ view: "inbox" });
   if (s.selectedId !== prev.selectedId && s.selectedId !== DIGEST_ROW_ID && useToday.getState().fromDigest && prev.selectedId !== DIGEST_ROW_ID) useToday.setState({ fromDigest: false });
 });
 

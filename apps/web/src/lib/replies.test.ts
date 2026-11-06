@@ -15,7 +15,7 @@ const useThreads = create<{ details: Map<number, typeof detail> }>(() => ({ deta
 vi.mock("~/state/threads", () => ({ loadThread: async () => detail, useThreads, invalidateThreads: vi.fn() }));
 vi.mock("~/lib/page", async (real) => ({ ...(await real<object>()), readerShown: () => true }));
 
-const { useReplies } = await import("./replies");
+const { replyReady, useReplies } = await import("./replies");
 const { noteExplicitOpen } = await import("./open-dwell");
 const { setApp } = await import("~/state/app");
 
@@ -30,6 +30,15 @@ describe("what a window shows of a prepared reply (plan 144)", () => {
     call.mockClear();
     frames.length = 0;
     useReplies.setState({ shown: null });
+  });
+
+  it("Plan 147: what Undo brought back isn't there for r and a with Dev mode's switch off", () => {
+    useReplies.setState({ shown: { threadId: 7, phase: "ready", text: "Hola", row: {} as never } });
+    setApp({ devAi: null, settings: { replies: { enabled: true } } as never });
+    expect(replyReady(7)).toBe(true);
+    setApp({ devAi: { anthropic: true, openai: false, jev: false }, settings: { replies: { enabled: true }, devAi: false } as never });
+    expect(replyReady(7)).toBe(false);
+    setApp({ devAi: null });
   });
 
   it("new mail during the stream ends it: the next word doesn't bring back what's out of date", async () => {

@@ -25,7 +25,7 @@ import type { DigestStored } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import type { BackendCore as Backend } from "./core";
 import { progressReporter } from "./scope";
-import { readSettings } from "./settings";
+import { activeDevAi, readSettings } from "./settings";
 import { withoutQuotes } from "./summaries";
 
 /**
@@ -522,6 +522,8 @@ export class TodayService {
 
   private async notify(day: string, prepareAt: string): Promise<void> {
     const { store } = this.b;
+    // plan 147: Dev mode's switch off, there's no Today to say it of; the day's notice isn't used up
+    if (this.b.options.devAi && !(await activeDevAi(store))) return;
     const now = this.b.now();
     if (now - prepareTimeToday(prepareAt, now) > NOTIFY_WITHIN_MS) return;
     if ((await store.settings.get<string>(NOTIFIED_KEY, "")) === day) return;

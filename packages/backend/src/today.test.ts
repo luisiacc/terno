@@ -20,7 +20,7 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-async function setup(o: { provider?: "fake" | "none" } = {}) {
+async function setup(o: { provider?: "fake" | "none"; devAi?: { anthropic: string } } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "terno-today-"));
   const model = {
     reqs: [] as CompletionRequest[],
@@ -44,7 +44,7 @@ async function setup(o: { provider?: "fake" | "none" } = {}) {
       },
     });
   const clock = { now: NOW };
-  const backend = new Backend({ dbPath: join(dir, "a.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, demoAi: true, aiFactory: factory, now: () => clock.now });
+  const backend = new Backend({ dbPath: join(dir, "a.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, demoAi: true, aiFactory: factory, now: () => clock.now, ...(o.devAi ? { devAi: o.devAi } : {}) });
   await backend.store.ready;
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "r", origin: "renderer" });
@@ -359,6 +359,18 @@ describe("the digest", () => {
     const row = (await t.client.call("today.digest", {}))!;
     expect(row.items[0]).toMatchObject({ line: null, from: "Acme Store" });
     expect(t.model.reqs).toEqual([]);
+  });
+
+  it("plan 147: a local build with Dev mode's switch off gives no notice, whatever is saved, and doesn't use up the day's", async () => {
+    const t = await setup({ devAi: { anthropic: "env-anthropic" } });
+    await t.put();
+    const remind = vi.spyOn(t.backend.attention, "remind");
+    await t.client.call("settings.update", { today: { notify: true, prepareAt: "08:30" } });
+    await t.backend.today.tick();
+    expect(remind).not.toHaveBeenCalled();
+    await t.client.call("settings.update", { devAi: true });
+    await t.backend.today.tick();
+    await vi.waitFor(() => expect(remind).toHaveBeenCalledTimes(1));
   });
 
   it("the notice: off by default, once a day, never who or what, and never hours late", async () => {

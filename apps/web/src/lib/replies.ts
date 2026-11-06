@@ -152,7 +152,7 @@ composeHooks.composing = (threadId) => {
 
 export const replyReady = (threadId: number): boolean => {
   const { shown } = useReplies.getState();
-  return shown?.threadId === threadId && shown.phase === "ready" && shown.row !== null;
+  return on() && shown?.threadId === threadId && shown.phase === "ready" && shown.row !== null;
 };
 
 /** Use, `r` and `a`: the words go in, one undo step, and no request is made. Nothing can send but the composer's Send. */
