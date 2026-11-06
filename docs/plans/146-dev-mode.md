@@ -102,3 +102,8 @@ Codex (read-only, on the three commits after `82e4116e`) raised 3 points, all fi
 1. **A task resolving its target during a toggle could reach the old setup.** Revoking leases doesn't cover a `forTask` that hasn't taken one yet. It now captures an epoch before its first await and starts over if the switch moved.
 2. **`listModels` and `test` ran on after a toggle,** on the environment's key, since they only followed shutdown. They now stop with the same epoch.
 3. **The "no key in the renderer" check read only what was displayed.** The backend test now checks the whole bootstrap and settings payloads, and the e2e no longer claims it.
+
+## What the full run changed
+
+- **`cli-log.test.ts` asserts `main.ts`'s exact options, and `main.ts` read the repo's real `.env`.** The failure's diff wrote the real keys into `test-results/all` (local and git-ignored; scrubbed). The test now mocks `withDotEnv`, and a new one holds that only Dev mode's variables are handed over.
+- **A build without `devAi` does no extra store read** in `config()` or `setKey()`.

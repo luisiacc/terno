@@ -150,7 +150,8 @@ export class AiService {
 
   /** Resolves a target to a ready config, failing fast (before any SDK retry) when it can't run. */
   async config(asked: Target): Promise<ProviderConfig> {
-    const dev = isDevAiProvider(asked.provider) ? await activeDevAi(this.b.store) : null;
+    // not a read more, on anything but a local build
+    const dev = this.b.options.devAi && isDevAiProvider(asked.provider) ? await activeDevAi(this.b.store) : null;
     // plan 146: the environment's keys go only to their provider's own endpoint
     const target: Target = dev ? { provider: asked.provider, model: asked.model } : asked;
     const { provider, preset } = target;
@@ -383,7 +384,7 @@ export class AiService {
 
   async setKey(provider: AiProviderId, preset: CompatiblePreset | undefined, value: string): Promise<AppSettings> {
     // plan 146: it would change nothing now, and a saved key would be overwritten for later
-    if (isDevAiProvider(provider) && (await activeDevAi(this.b.store))) throw new RpcError("BAD_REQUEST", L("errors.ai.devKeyFromEnv"));
+    if (this.b.options.devAi && isDevAiProvider(provider) && (await activeDevAi(this.b.store))) throw new RpcError("BAD_REQUEST", L("errors.ai.devKeyFromEnv"));
     const name = keySecretName(provider, preset);
     if (value) {
       await this.b.setSecret(name, value);

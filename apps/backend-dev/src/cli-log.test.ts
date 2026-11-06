@@ -9,6 +9,8 @@ const server = vi.hoisted(() => ({
   start: vi.fn(async (_options: unknown) => ({ url: "ws://127.0.0.1:12345", close: async () => {} })),
 }));
 vi.mock("./server", () => ({ startDevServer: server.start }));
+// never the repo's real .env: its keys would land in this test's diff, and in the logs
+vi.mock("../../../scripts/release-env.mjs", () => ({ withDotEnv: (env: NodeJS.ProcessEnv) => env }));
 
 const secret = "S51CliSecret";
 const address = "s51-cli@example.invalid";
@@ -52,13 +54,22 @@ it.each([false, true])("startup status hides tokens, paths and legacy names with
   };
   const on = vi.spyOn(process, "on").mockReturnValue(process);
   await import("./main");
-  expect(server.start).toHaveBeenCalledExactlyOnceWith({ port: 0, dataDir: dir, token: secret, fresh: true, threads: 2, accounts: 1 });
+  expect(server.start).toHaveBeenCalledExactlyOnceWith({ port: 0, dataDir: dir, token: secret, fresh: true, threads: 2, accounts: 1, devAi: {} });
   expect(process.env[currentKey]).toBe(current ? "synthetic-current" : secret);
   expect(process.env[legacyKey]).toBeUndefined();
   expectPrivate();
   expect(console.log).toHaveBeenCalledExactlyOnceWith("[backend-dev] listening on localhost");
   expect(console.warn).toHaveBeenCalledExactlyOnceWith("[backend-dev] legacy environment variable detected; use TERNO_* names");
   expect(on.mock.calls.map(([signal]) => signal)).toEqual(["SIGINT", "SIGTERM"]);
+});
+
+it("hands Dev mode only its own variables (plan 146)", async () => {
+  process.env = { TERNO_DEV_PORT: "0", TERNO_DATA_DIR: dir, ANTHROPIC_API_KEY: secret, OTHER_API_KEY: "other" };
+  vi.spyOn(process, "on").mockReturnValue(process);
+  await import("./main");
+  expect(server.start.mock.calls[0]![0]).toMatchObject({ devAi: { anthropic: secret } });
+  expect((server.start.mock.calls[0]![0] as { devAi: object }).devAi).toEqual({ anthropic: secret });
+  expectPrivate();
 });
 
 it.each([false, true])("seed status hides the output path while creating the requested database (print=%s)", async (print) => {
