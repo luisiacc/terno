@@ -6,7 +6,7 @@ import type { StructuredTask } from "./ladder";
  * is frozen and versioned. Only `ownText` is the sender's own: everything else is material, and a closure must quote their
  * words (revision 1), so an instruction in what they answered can't close what they owe.
  */
-export const FOLLOWUP_PROMPT_VERSION = 6;
+export const FOLLOWUP_PROMPT_VERSION = 7;
 export const FOLLOWUP_MAX_TOKENS = 2500;
 export const FOLLOWUP_RECIPIENTS_MAX = 20;
 export const FOLLOWUP_FILES_MAX = 10;
@@ -70,7 +70,7 @@ Return:
   - "quote": their exact words that say it, copied from <own_text>.
   - "to": the label of who it's for, or null.
   - "due": YYYY-MM-DD if they named a day ("Friday", "el viernes", "end of the month"), counted from when it was sent; else null. Never guess one.
-- "expectsReply": true when their message asks a person something or needs them to do something: that includes accepting an offer whose next step is theirs, sending what someone needed in order to act, and "quedo atento" or "quedo a la espera" after any of these. Examples of true: "Queremos proceder con el plan anual" (they accepted: the seller's move next); "le comparto los datos solicitados para continuar con el registro" (they sent what was asked, and the result is still to come). False when it only answers what they asked, for "thanks!", an FYI, an open offer ("join if you like"), or a message to a list.
+- "expectsReply": true when their message asks a person something or needs them to do something: that includes accepting an offer whose next step is theirs, sending what someone needed in order to act, and "quedo atento" or "quedo a la espera" after any of these. Examples of true: "Queremos proceder con el plan anual" (they accepted: the seller's move next); "le comparto los datos solicitados para continuar con el registro" (they sent what was asked, and the result is still to come). False when it only answers what they asked and asks nothing back ("no tenemos esa opción por ahora"), when it only tells them where to join if they want to ("puede entrar al enlace si desea"), for "thanks!", an FYI, an open offer ("join if you like"), or a message to a list.
 - "awaiting": the labels of who should answer, when expectsReply.
 - "kept": open promises this message keeps, each { "label", "evidence" }, where evidence is their exact words from <own_text> that keep it: sending what was promised, or saying it's done. "Sorry, need one more day" keeps nothing. If in doubt, leave it out.
 
