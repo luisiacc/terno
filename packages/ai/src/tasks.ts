@@ -7,6 +7,7 @@ import { runStructured, type StructuredTask } from "./ladder";
 import { openaiChatTransport } from "./openai-chat";
 import { describeProvider, isLocalProvider, resolveBaseURL } from "./providers";
 import { planAskTask, runAnswerFromMail } from "./ask";
+import { checkCandidatesTask, countedTransport, planActionTask } from "./actions";
 import { readSentMailTask } from "./followups";
 import { summarizeTask } from "./summarize";
 import { AiError, type AiTasks, type Capabilities, type ClassifyInput, type ModelInfo, type ModelTransport, type OutputMode, type ProviderConfig } from "./types";
@@ -108,6 +109,23 @@ export function createAi(config: ProviderConfig, options: AiOptions = {}): AiTas
 
     parseIntent(input, signal) {
       return run(parseIntentTask(input), signal);
+    },
+
+    planAction(input, signal) {
+      return run(planActionTask(input), signal);
+    },
+
+    checkCandidates(input, o) {
+      return withDeadline(o.signal, options.deadlineMs ?? GENERATE_DEADLINE_MS, (s) =>
+        runStructured(countedTransport(transport, o.budget), checkCandidatesTask(input, o.outputTokens), {
+          output: capabilities.output,
+          signal: s,
+          onDowngrade: (output: OutputMode) => {
+            capabilities = { ...capabilities, output };
+            options.onCapabilities?.(capabilities);
+          },
+        }),
+      );
     },
 
     readSentMail(input, signal) {

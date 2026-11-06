@@ -98,6 +98,8 @@ export type AskSourceView = { state: "ok" | "spam" | "trash"; threadId: number }
 export type AskOlderOffer = { kind: "none" } | { kind: "downloading" } | { kind: "offline"; since: number } | { kind: "offer"; since: number };
 
 export type AiAskResult =
+  /** plan 143: it's something to do, not a question: nothing ran, and the preview comes next */
+  | { status: "command" }
   /** the first text this would send to this destination: said once */
   | { status: "consent"; provider: AiProviderId; endpoint: string | null; destination: string }
   /** `turn` null: its conversation was deleted or cleared while it ran */

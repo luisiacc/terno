@@ -3,6 +3,8 @@ import type { Localized } from "@terno/i18n";
 import type { z } from "zod";
 import type { AnswerFromMailInput, AnswerFromMailOptions, AnswerFromMailResult, AskPlanResult, PlanAskInput } from "./ask";
 import type { SentMailInput, SentMailResult } from "./followups";
+import type { ActionPlan } from "@terno/core";
+import type { CheckCandidatesInput, PlanActionInput } from "./actions";
 import type { SummarizeInput, ThreadSummaryResult } from "./summarize";
 import type { ComposeInput, ComposeOptions, ComposeResult, JudgeVoiceInput, JudgeVoiceResult, ParseIntentInput, ParseIntentResult } from "./writing";
 
@@ -140,6 +142,10 @@ export interface AiTasks {
   parseIntent(input: ParseIntentInput, signal?: AbortSignal): Promise<ParseIntentResult>;
   /** plan 142: what a message you sent promises, who it waits on, what it keeps */
   readSentMail(input: SentMailInput, signal?: AbortSignal): Promise<SentMailResult>;
+  /** plan 143: a sentence into a rule and an action; null: it can't be done from a sentence. Sees no mail. */
+  planAction(input: PlanActionInput, signal?: AbortSignal): Promise<ActionPlan | null>;
+  /** plan 143: which groups of senders and subjects don't fit: it can only remove. `budget`: the operation's requests left, repairs included. */
+  checkCandidates(input: CheckCandidatesInput, o: { outputTokens: number; budget: { left: number }; signal?: AbortSignal }): Promise<string[]>;
   /** plan 141: what to look for. Sees no mail, except what an earlier answer quotes, as material. */
   planAsk(input: PlanAskInput, signal?: AbortSignal): Promise<AskPlanResult>;
   /** plan 141: an answer from the given mail, streamed; a refusal throws */

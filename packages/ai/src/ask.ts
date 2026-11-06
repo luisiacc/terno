@@ -289,7 +289,7 @@ export function fakeAskPlan(prompt: string): PlanWire {
   const words = wordsOf(question.replace(/\[\[[a-z0-9-]+\]\]/g, "")).slice(0, 6);
   const broadening = /These searches found nothing/.test(prompt);
   if (broadening) return { kind: "question", queries: /\[\[broaden\]\]/.test(question) ? [{ ...empty, terms: [words.at(-1) ?? "mail"] }] : [] };
-  const kind = /^\s*(archive|delete|trash|mark|archiva|borra)\b/i.test(question) ? "command" : "question";
+  const kind = /^\s*(archive|delete|trash|mark|star|send|move|forward|archiva|borra|manda|mueve)\b/i.test(question) ? "command" : "question";
   if (!words.length) return { kind, queries: earlier ? [{ ...empty, terms: wordsOf(earlier).slice(0, 1) }] : [] };
   return { kind, queries: [{ ...empty, ...(words.length === 1 ? { terms: words } : { anyOf: [words] }) }] };
 }

@@ -24,6 +24,7 @@ import {
   type DevAiProvider,
 } from "../ai";
 import type { FollowupRow, FollowupsSetting, FollowupsSnapshot } from "../followups";
+import type { ActionPreviewInfo, AiActionApplied, AiActionCheck, AiActionEvent, AiActionStart } from "../actions";
 import { ASK_QUESTION_MAX, ASK_SOURCES_MAX, type AiAskEvent, type AiAskResult, type AskConversationSummary, type AskOlderOffer, type AskSourceView, type AskTurn } from "../ask";
 import { GENERATION_TEXT_MAX, WRITING_INSTRUCTIONS_MAX, WRITING_ONE_OFF_MAX, type AiComposeDelta, type AiComposeResult, type AiIntentResult, type AiStudyProgress, type WritingPrefs, type WritingProfileView, type WritingStatus, type WritingStudyResult } from "../writing/contract";
 import type { AlwaysScope, CategoryModelStats, Prediction, QuickActions } from "../categorize/bulk";
@@ -130,6 +131,8 @@ export interface AskSetting {
   enabled: boolean;
   /** where the user agreed questions and mail go: provider, preset and origin, as `destinationOf` says (revision 2) */
   acknowledged: string[];
+  /** plan 143: where the senders and subjects a command's check sends may go */
+  checkAcknowledged?: string[];
 }
 
 export interface AiSummariesSetting {
@@ -1162,6 +1165,18 @@ export const contract = {
   "ai.ask": m<AiAskResult>()(z.object({ requestId, question: z.string().trim().min(1).max(ASK_QUESTION_MAX), conversationId: id.optional(), timezone: z.string().min(1).max(100), acknowledge: z.string().min(1).max(2000).optional() }), { timeoutMs: 180_000 }),
   /** The user's own servers look further back for this turn's question; one more answer comes of it. Only on a click. */
   "ai.askOlder": m<AiAskResult>()(z.object({ requestId, conversationId: id, turnId: id, timezone: z.string().min(1).max(100) }), { timeoutMs: 300_000 }),
+  /** Plan 143: a sentence into a preview. It only reads: nothing changes until `ai.actionApply`, from the connection that saw it. */
+  "ai.actionStart": m<AiActionStart>()(z.object({ requestId, sentence: z.string().trim().min(1).max(ASK_QUESTION_MAX), conversationId: id.optional(), timezone: z.string().min(1).max(100) }), { timeoutMs: 300_000 }),
+  "ai.actionPage": m<{ items: ThreadSummary[]; total: number; unticked: number[] }>()(z.object({ previewId: z.string().min(1).max(64), offset: z.number().int().min(0), limit: z.number().int().min(1).max(500), leftOut: z.boolean() })),
+  "ai.actionToggle": m<ActionPreviewInfo>()(z.object({ previewId: z.string().min(1).max(64), threadId: id, included: z.boolean() })),
+  "ai.actionIncludeSkipped": m<ActionPreviewInfo>()(z.object({ previewId: z.string().min(1).max(64), included: z.boolean() })),
+  /** Senders and subjects, never a body, to see which rows don't fit: it can only remove. Consent is by destination. */
+  "ai.actionCheck": m<AiActionCheck>()(z.object({ previewId: z.string().min(1).max(64), requestId, acknowledge: z.string().max(500).optional(), skip: z.boolean().optional() }), { timeoutMs: 300_000 }),
+  "ai.actionApply": m<AiActionApplied>()(z.object({ previewId: z.string().min(1).max(64), jobId: z.string().min(1).max(64).optional(), future: z.boolean() }), { timeoutMs: 600_000 }),
+  /** Between slices: what committed stays, with its Undo. */
+  "ai.actionStop": m<{ ok: true }>()(z.object({ previewId: z.string().min(1).max(64) })),
+  "ai.actionCancel": m<{ ok: true }>()(z.object({ previewId: z.string().min(1).max(64) })),
+  "ai.actionUndo": m<{ restored: number }>()(z.object({ token: z.string().min(1).max(32), jobId: z.string().min(1).max(64).optional() }), { timeoutMs: 600_000 }),
   /** Previous AI questions: newest first, at most 100. */
   "ai.askHistory": m<AskConversationSummary[]>()(empty),
   /** A saved conversation, with no request. Null: it's gone. */
@@ -1349,6 +1364,8 @@ export interface Events {
   followups: FollowupsSnapshot;
   /** plan 142: it stopped reading, or it's going again */
   followupsStatus: { blockedBy: { kind: AiErrorKind; message: string } | null };
+  /** plan 143: a preview's count as it grows, or why it ended; only to the connection that asked */
+  aiAction: AiActionEvent;
   /** plan 141: an answer as it comes, only to the connection that asked */
   aiAsk: AiAskEvent;
   /** plan 141: these conversations went (all of them: null): no window keeps showing them */
