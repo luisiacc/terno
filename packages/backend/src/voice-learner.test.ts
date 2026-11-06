@@ -82,6 +82,29 @@ describe("waking", () => {
     await expect(t.backend.writing.learner.status()).resolves.toMatchObject({ state: "ready" });
   });
 
+  it("plan 157: AI going stops a pass in flight, and it commits nothing", async () => {
+    const t = await setup();
+    await t.sentMany(30);
+    const { corpus } = t.backend.store.writing;
+    const texts = corpus.texts.bind(corpus);
+    let reached = () => {};
+    const reading = new Promise<void>((resolve) => { reached = resolve; });
+    let release = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(corpus, "texts").mockImplementationOnce(async (ids) => {
+      reached();
+      await held;
+      return texts(ids);
+    });
+    const learning = t.learned();
+    await reading;
+    await t.backend.store.settings.update("app", {}, (s: Record<string, unknown>) => ({ value: { ...s, ai: { provider: "none" } }, result: undefined }));
+    await t.backend.writing.learner.aiChanged();
+    release();
+    await learning;
+    expect(await rows(t)).toEqual([]);
+  });
+
   it("plan 157: an imported provider is AI coming: it learns", async () => {
     const t = await setup({ provider: "none" });
     await t.sentMany(30);

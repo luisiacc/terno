@@ -207,3 +207,7 @@ Codex (`gpt-6.1-sol`, high, read-only, against `f787771c`) raised 5 points on th
 33 real messages re-dated as just arrived, through the live ingest path, on GPT Luna: 23 summaries, and the 10 others were spam, under 60 words or not in the inbox, as designed. Turning it on over 6,000 threads read nothing old and spent nothing. A summary costs about $0.0002 to $0.001 and takes 3 to 6 s on Luna (about 2 s on Haiku).
 
 It found one bug: the language came from the backend's `getLocale()`, which is English while the setting follows the system, since a backend can't see the system's. So a Spanish window got English summaries on desktop and web. It now reads the setting, then what the window reported (`app.locale`), as forwards do.
+
+## Later
+
+Plan 157 changes this: "Summarize new mail" is on by default wherever AI can run, and shows only there.

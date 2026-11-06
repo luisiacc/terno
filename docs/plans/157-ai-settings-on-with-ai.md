@@ -1,6 +1,6 @@
 # Plan 157: Summaries and learning come on with AI
 
-- **Status:** in progress.
+- **Status:** built and on `main`. "Revisions after the Codex review" and "What the code review changed" override the sections before them.
 - **Builds on:** plan 132 (summaries), plan 133 (the learner), plans 147 and 150 (one gate for AI), plan 85 (Pro).
 
 ## The request
@@ -54,7 +54,8 @@
 - **Unit, `summaries.test.ts`:** default on; with no provider, with only a cloud provider, and on a local build with the switch off, `isActive` is false and new mail queues nothing; turning AI on starts it with no backfill; going off drops the queue; a user's off survives AI coming and going.
 - **Unit, `voice-learner.test.ts`:** starts by itself at boot with AI; no pass and no checkpoint without; AI coming on starts it; going off stops a pass in flight and keeps what's learned; off in prefs stays off.
 - **Unit, `core`:** `summaryCanRun`'s table.
-- **e2e, `dev-mode.spec.ts`:** both rows are absent with the switch off and with a saved key, and present and on with it on. No-provider install: neither row.
+- **e2e, `dev-mode.spec.ts`:** both rows are absent with the switch off and with a saved key, and present and on with it on.
+- **e2e, `summaries.spec.ts`:** no-provider install: neither row. With a provider, both on with no click.
 
 ## Perf and resources
 
@@ -81,3 +82,15 @@ Not taken:
 - **Mail staging while AI goes off could still queue a row.** Rare, the same as the switch has always had, and that row was mail that arrived while AI was on.
 - **Wake-ups dropped within 30 s can delay a first pass until the next change.** Any later change wakes it, and plan 133 §"no timer" holds that nothing depends on sooner. "At most every 30 s" is what's true, and this plan's wording is corrected. The first draft waits as it would have.
 - **A key confirmed for another origin on a non-main provider.** Plan 147 didn't take this either. It runs, fails `auth`, and the note says what's wrong, which is the better failure.
+
+## What the code review changed
+
+Codex (read-only, on the commit) raised 3 points, all fixed:
+
+1. **A local provider with no model chosen counted as AI.** Selecting Ollama leaves the model empty, so summaries queued while their switch was hidden. `summaryCanRun` now asks `aiReady` for that case, with a test that fails without it.
+2. **The learner's perf gates threw before measuring.** Their host had no `available`, and that file is outside the type check. It has one now, and the gates pass at SQLite 50k and on IndexedDB.
+3. **The test for AI going off didn't catch a pass in flight.** A new test holds a pass mid-read, takes AI away, and checks nothing commits. Removing `withdraw()` fails it.
+
+## What the runs showed
+
+Each new behaviour's test was checked to fail with its fix removed. All 642 unit files pass (11,577 tests, 2 skipped). Lint and the type check pass. Nine e2e specs that use an AI provider ran: 51 of 56 flows passed first, 2 failed for assuming summaries start off and 3 were skipped; `summaries` and `dev-mode` then passed in full. The Settings tab was looked at with and without AI, in light and dark. `pnpm test:all` wasn't run.

@@ -59,6 +59,8 @@ describe("what runs with no one asking (plan 157)", () => {
     expect(summaryCanRun(set({}))).toBe(false);
     expect(summaryCanRun(set({ provider: "anthropic", hasKey: true }))).toBe(false);
     expect(summaryCanRun(set({ provider: "ollama", local: true }))).toBe(true);
+    // chosen, with no model picked yet: nothing to run on
+    expect(summaryCanRun(set({ provider: "ollama", local: true, model: "" }))).toBe(false);
     expect(summaryCanRun(set({ keys: { openai: { hasKey: true, keyHint: null } } }))).toBe(true);
     expect(summaryCanRun(set({ tasks: { summary: { provider: "anthropic", model: "m" } }, keys: { anthropic: { hasKey: true, keyHint: null } } }))).toBe(true);
     // its key went: an OpenAI key isn't where the user said this goes

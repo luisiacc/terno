@@ -68,7 +68,7 @@ export function writingCanRun(ai: AiFields): boolean {
 export function summaryCanRun(ai: AiFields): boolean {
   const chosen = ai.tasks.summary;
   if (chosen) return chosenTargetReady(ai, chosen);
-  return ai.keys.openai?.hasKey === true || (ai.provider !== "none" && ai.local);
+  return ai.keys.openai?.hasKey === true || (ai.local && aiReady(ai));
 }
 
 export interface TodayWhy {

@@ -828,3 +828,7 @@ So a new message to someone with no history now reads up to two other messages i
 **Per-account instructions, proved on real drafts.** Each account's prompt (Settings → Accounts, an account's writing instructions, with a switch for the general ones) is the direct answer to a draft that's too flat for that account: it goes in as a later `<instructions>`, and the snapshot key holds it, so a change applies from the next request. Four real drafts across two accounts under six settings: each account's prompt reached that account's requests and no other's, its effect showed in the text (warm and specific on the work account, lowercase and unsigned on the personal one), the general ones were left out only where the switch said, and removing one put that account back. A warm prompt also brings a small risk: it adds a judgment like "nos parece muy valiosa" that nobody stated, which is the author's to keep or cut.
 
 **What the code review of the first-message lookup changed** (Codex, 4 findings, all fixed with regression tests): an address that only ends with theirs (`x.tom@` for `tom@`) is someone else; a refinement doesn't send on mail that has since gone to Spam or Trash or changed; this mail is budgeted last, so a small model goes without it rather than failing; and a search that can't answer in 400 ms costs the draft nothing.
+
+## Later
+
+Plan 157 changes this: the learner starts by itself once AI is here, rather than at the first draft, and does nothing without AI.

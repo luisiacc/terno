@@ -65,6 +65,7 @@ async function runLearner(store: MailStore, accountId: number, label: string, ga
     platform: { yield: () => new Promise<void>((resolve) => setImmediate(resolve)) },
     now: () => NOW,
     prefs: async () => DEFAULT_WRITING_PREFS,
+    available: async () => true,
     forVoice: () => Promise.reject(new Error("no model here")),
     begin: () => ({ signal: new AbortController().signal, release: () => {} }),
     studyProgress: () => {},
