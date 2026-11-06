@@ -21,6 +21,7 @@ import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
 import { installComposeFollowsSelection } from "~/lib/compose";
 import { installNetworkEvents } from "~/lib/network";
 import { Reader } from "./components/reader";
+import { RemindDialog } from "./components/remind-dialog";
 import { SelectionBar } from "./components/selection-bar";
 import { SnackDock } from "./components/snack-dock";
 import { Sidebar } from "./components/sidebar";
@@ -40,7 +41,6 @@ const RecoveryWorkspace = lazy(() => import("./components/diag/recovery-workspac
 const FiltersDialog = lazy(() => import("./components/filters-dialog").then((m) => ({ default: m.FiltersDialog })));
 const SettingsDialog = lazy(() => import("./components/settings-dialog").then((m) => ({ default: m.SettingsDialog })));
 const AddAccountDialog = lazy(() => import("./components/add-account-dialog").then((m) => ({ default: m.AddAccountDialog })));
-const RemindDialog = lazy(() => import("./components/remind-dialog").then((m) => ({ default: m.RemindDialog })));
 const ShortcutsDialog = lazy(() => import("./components/shortcuts-dialog").then((m) => ({ default: m.ShortcutsDialog })));
 const FirstRun = lazy(() => import("./components/first-run").then((m) => ({ default: m.FirstRun })));
 // printing loads its sheet and the document builder when it opens

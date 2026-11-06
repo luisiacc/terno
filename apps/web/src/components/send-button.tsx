@@ -5,11 +5,9 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Clock, Send } from "@terno/ui/icons";
-import { lazy, Suspense } from "react";
 import { create } from "zustand";
 import type { LocalDraft } from "~/lib/drafts";
-
-const SendLaterPicker = lazy(() => import("./send-later-picker").then((m) => ({ default: m.SendLaterPicker })));
+import { SendLaterPicker } from "./send-later-picker";
 
 /** Plan 94: which composer's Send later is open (⌘⇧↩ opens it from the keyboard). */
 export const useSendLater = create<{ open: string | null }>(() => ({ open: null }));
@@ -63,9 +61,7 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
           </TooltipContent>
         </Tooltip>
         <PopoverContent side="top" align="end" sideOffset={6} className="w-72 gap-2 rounded-menu p-1.5" data-testid="send-later-popover" aria-label={t("sendLater.title")}>
-          <Suspense fallback={<div className="h-32" />}>
-            <SendLaterPicker sendKeys="mod+enter" done={() => setOpen(false)} onPick={(at) => onSend(at === "now" ? undefined : at)} />
-          </Suspense>
+          <SendLaterPicker sendKeys="mod+enter" done={() => setOpen(false)} onPick={(at) => onSend(at === "now" ? undefined : at)} />
         </PopoverContent>
       </Popover>
     </div>

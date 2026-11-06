@@ -4,9 +4,9 @@ import { getLocale, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { CalendarClock, PenLine, Send, Sunrise } from "@terno/ui/icons";
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { reminderWhen } from "~/lib/when";
-import { dayText, useWhen, WhenFields } from "./when-fields";
+import { dayText, useWhen, WhenFields } from "./when-lazy";
 
 const timeOf = (ms: number) => new Intl.DateTimeFormat(getLocale() === "en" ? "en-US" : getLocale(), getLocale() === "en" ? { hour: "numeric", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit" }).format(ms);
 
@@ -26,8 +26,6 @@ export function SendLaterPicker({ current, onPick, onEdit, sendKeys, done }: { c
   const pastId = useId();
   // the moment can pass while the picker stays open: Schedule looks at the clock again (and shows why it refused)
   const [, recheck] = useState(0);
-  // loaded after its popover opened (and focused itself): the keyboard starts on the first choice
-  useEffect(() => listRef.current?.querySelector<HTMLElement>("[data-send-later-choice]")?.focus(), []);
 
   const pick = (at: number | "now") => {
     done();

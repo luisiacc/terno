@@ -7,7 +7,7 @@
  */
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { addRecipients, expect, focusList, openRow, test, typeTime, fresh, scenario } from "./fixtures";
+import { addRecipients, expect, focusList, openRow, test, typeTime, fresh, scenario, watchWhole } from "./fixtures";
 
 // baselines are at twice the pixels; everything else draws at one (plan 139)
 test.use({ deviceScaleFactor: 2 });
@@ -30,7 +30,10 @@ test.describe("send later", () => {
   test("send later: the clock, ⌘⇧↵ and Custom, a time that has passed", async ({ app: page }) => {
     await scenario("the clock: Tomorrow at 8:00 schedules it, the strip shows it at its time, Undo brings the draft back", async () => {
       await newMessage(page, "Standup notes");
+      // its first open too: the choices come with the popover, no empty box first
+      const whole = await watchWhole(page, "send-later-popover", "send-later-picker");
       await page.getByTestId("compose-send-later").click();
+      expect(await whole()).toBe(true);
       const popover = page.getByTestId("send-later-popover");
       await expect(popover).toBeVisible();
       await expect(popover.getByTestId("send-later-now")).toContainText("Send now");

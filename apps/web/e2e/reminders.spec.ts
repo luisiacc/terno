@@ -8,7 +8,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { E2E_NOW } from "./constants";
-import { expect, focusList, openRow, rows, selectedRow, test, timeText, typeTime, fresh, scenario } from "./fixtures";
+import { expect, focusList, openRow, rows, selectedRow, test, timeText, typeTime, fresh, scenario, watchWhole } from "./fixtures";
 
 const snackWith = (page: Page, text: string | RegExp) => page.locator("[data-testid=snack]").filter({ hasText: text });
 const rowOf = (page: Page, id: string | number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
@@ -56,12 +56,20 @@ test.describe("remind me", () => {
   test("reminders: the bell's own time, a due one on top, archiving it, the menu's picker", async ({ app: page, server }) => {
     await scenario("from the reader's bell: If no reply on a date and time of your own; a past one is refused", async () => {
       await openRow(page, 1);
+      // its first open too: the choices come with the popover, no empty box first
+      const whole = await watchWhole(page, "remind-popover", "remind-picker");
+      const fields = page.waitForResponse(/when-fields-/);
       await page.getByTestId("action-remind").click();
+      expect(await whole()).toBe(true);
       const popover = page.getByTestId("remind-popover");
       await expect(popover).toBeVisible();
       await popover.getByTestId("remind-kind-noReply").click();
       await expect(popover.getByTestId("remind-preset-in3d")).toContainText("Sun 10:00 AM");
+      // opening asked for the calendar and the time, so with them in, Custom's first click shows them at once too
+      await page.evaluate((url) => import(url), (await fields).url());
+      const custom = await watchWhole(page, "remind-custom", "remind-time");
       await popover.getByTestId("remind-pick").click();
+      expect(await custom()).toBe(true);
       // the calendar (tomorrow chosen) offers no day before today
       await expect(popover.getByTestId("remind-date")).toHaveText("Fri, Oct 23");
       await popover.getByTestId("remind-date").click();

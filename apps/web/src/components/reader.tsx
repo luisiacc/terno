@@ -50,8 +50,8 @@ import { useList } from "~/state/list";
 import { useSnack } from "~/lib/snack";
 import { aiAllowed, repliesOffered, summariesOffered } from "~/lib/ai";
 import { summarizable, summarize, useSummaries } from "~/lib/summaries";
+import { RemindPicker } from "./remind-picker";
 
-const RemindPicker = lazy(() => import("./remind-picker").then((m) => ({ default: m.RemindPicker })));
 // plan 132: nothing of it until a thread opens
 const ThreadSummary = lazy(() => import("./thread-summary"));
 const ThreadFollowups = lazy(() => import("./thread-followups"));
@@ -105,9 +105,7 @@ function RemindButton({ threadId }: { threadId: number }) {
         </TooltipContent>
       </Tooltip>
       <PopoverContent side="bottom" align="start" sideOffset={6} className="w-72 gap-2 rounded-menu p-1.5" data-testid="remind-popover" aria-label={t("remind.title")}>
-        <Suspense fallback={<div className="h-48" />}>
-          <RemindPicker threadIds={[threadId]} done={close} />
-        </Suspense>
+        <RemindPicker threadIds={[threadId]} done={close} />
       </PopoverContent>
     </Popover>
   );

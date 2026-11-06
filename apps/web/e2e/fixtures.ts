@@ -355,6 +355,28 @@ export async function focusOn(page: Page, testId: string, timeout: number): Prom
 }
 
 /** Puts focus on the document body so single-key shortcuts apply. */
+/**
+ * Watches for the next `holder` to appear; the returned read says whether `part` was already in it. A holder that comes
+ * empty and fills later is a Suspense fallback, which React keeps up for 300 ms however soon the code is in.
+ */
+export async function watchWhole(page: Page, holder: string, part: string): Promise<() => Promise<boolean>> {
+  await page.evaluate(
+    ([holder, part]) => {
+      (window as unknown as { __whole: Promise<boolean> }).__whole = new Promise((resolve) => {
+        const seen = new MutationObserver(() => {
+          const at = document.querySelector(`[data-testid="${holder}"]`);
+          if (!at) return;
+          seen.disconnect();
+          resolve(at.querySelector(`[data-testid="${part}"]`) !== null);
+        });
+        seen.observe(document.body, { childList: true, subtree: true });
+      });
+    },
+    [holder, part],
+  );
+  return () => page.evaluate(() => (window as unknown as { __whole: Promise<boolean> }).__whole);
+}
+
 export async function focusList(page: Page): Promise<void> {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 }
