@@ -208,6 +208,35 @@ describe("quoted text", () => {
     for (const s of ["¿Presupuesto?", "$40,000.", "¿Fecha?", "El 3 de noviembre.", "Gracias"]) expect(text).toContain(s);
   });
 
+  it("a bare forward stays whole: its history is all it has", () => {
+    const gmail = `<div class="gmail_quote"><div>---------- Forwarded message ---------<br>From: Ana</div><div>The signed contract</div></div>`;
+    const apple = `<div>Begin forwarded message:</div><blockquote type="cite"><div>The signed contract</div></blockquote>`;
+    const attributed = `<div>On Monday, Ana wrote:</div><blockquote type="cite"><div>The signed contract</div></blockquote>`;
+    const outlook = `<div id="appendonsend"></div><hr><div id="divRplyFwdMsg"><b>From:</b> Ana</div><div>The signed contract</div>`;
+    for (const bodyHtml of [gmail, apple, attributed, outlook]) expect(hidden({ bodyHtml }).textContent, bodyHtml).toContain("The signed contract");
+  });
+
+  it("an attribution with a linked address goes whole, and with no reply above it the quote stays", () => {
+    const line = `<div>On Monday, Ana &lt;<a href="mailto:ana@x.test">ana@x.test</a>&gt; wrote:</div><blockquote type="cite">The signed contract</blockquote>`;
+    expect(hidden({ bodyHtml: line }).textContent).toContain("The signed contract");
+    const reply = hidden({ bodyHtml: `<div>Thanks!</div>${line}` }).textContent!;
+    expect(reply).toContain("Thanks!");
+    expect(reply).not.toMatch(/On Monday|ana@x\.test|wrote|The signed contract/);
+  });
+
+  it("the attribution's line goes, never the reply sharing its block", () => {
+    const shown = hidden({ bodyHtml: `<div>Thanks!<br>On Monday, <a href="mailto:ana@x.test">Ana</a> wrote:</div><blockquote type="cite">The signed contract</blockquote>` }).textContent!;
+    expect(shown).toContain("Thanks!");
+    expect(shown).not.toMatch(/On Monday|Ana|wrote|The signed contract/);
+  });
+
+  it("a forward with a note loses the forward and the line that introduces it, as it does a reply's history", () => {
+    const bodyHtml = `<div>FYI</div><div>Begin forwarded message:</div><blockquote type="cite"><div>The signed contract</div></blockquote>`;
+    expect(hidden({ bodyHtml }).textContent).toContain("FYI");
+    expect(hidden({ bodyHtml }).textContent).not.toContain("Begin forwarded");
+    expect(hidden({ bodyHtml }).textContent).not.toContain("The signed contract");
+  });
+
   it("Outlook: #divRplyFwdMsg (with its rule) or #appendonsend, and everything after", () => {
     const rply = `<div>Recibido.</div><hr style="display:inline-block;width:98%"><div id="divRplyFwdMsg"><b>De:</b> Ana</div><div>Texto anterior</div><p>más historia</p>`;
     const a = hidden({ bodyHtml: rply });
