@@ -9,7 +9,7 @@ const io = (ids: number[]): AskPassageIo =>
     text: async () => "lease ".repeat(2000),
   }) as unknown as AskPassageIo;
 
-const request = (maxChars: number) => ({ threadIds: [1], queries: [{ words: ["lease"] }] as never, maxMessages: 40, maxChars });
+const request = (maxChars: number) => ({ threadIds: [1], queries: [{ query: { terms: [{ field: "text", value: "lease" }], anyOf: [] } }] as never, maxMessages: 40, maxChars });
 
 describe("what a page of passages left out (plan 141)", () => {
   it("is nothing when it read them all", async () => {

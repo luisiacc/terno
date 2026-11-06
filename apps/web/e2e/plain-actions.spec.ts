@@ -45,7 +45,8 @@ const rows = (page: Page) => page.getByTestId("thread-row");
 test.describe("actions in plain English (plan 143)", () => {
   test("only about mail to come: nothing here is touched, and Apply saves the rule", async ({ app: page, server }) => {
     await withMail(page, server);
-    await say(page, "From now on archive shipping notices");
+    // every row holds one of its words, so the offline check takes none out and the rule can be saved
+    await say(page, "From now on archive shipping delivery tracking");
     await expect(page.getByTestId("action-future-only")).toBeVisible();
     if (SHOTS) {
       await page.screenshot({ path: `${SHOTS}/future-only-light.png` });
