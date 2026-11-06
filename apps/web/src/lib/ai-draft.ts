@@ -325,6 +325,11 @@ export async function openRow(o: { key?: string; threadId?: number } = {}): Prom
   await composeLanding("new", null, 0, undefined, undefined, { target: "ai", onLanded });
 }
 
+/** The draft answering this thread, as it stands, for what opens one and goes on (plan 142's Nudge). */
+export function rowKeyOf(threadId: number): string | null {
+  return shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) ?? null;
+}
+
 export function setInstruction(key: string, instruction: string) {
   update(key, { instruction: instruction.slice(0, WRITING_ONE_OFF_MAX), who: false });
 }

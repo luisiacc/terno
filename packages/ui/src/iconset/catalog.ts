@@ -69,6 +69,7 @@ export const ICONS = {
   LaptopMinimalCheck: "LaptopMinimalCheckIcon",
   Layers: "Layers01Icon",
   LifeBuoy: "LifebuoyIcon",
+  ListChecks: "TaskDone01Icon",
   Link: "Link01Icon",
   Link2: "Link02Icon",
   List: "LeftToRightListBulletIcon",

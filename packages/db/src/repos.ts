@@ -120,7 +120,7 @@ export function updateAccount(db: Db, id: number, patch: AccountPatch): Account 
     if (!row) return null;
     if (patch.displayName !== undefined) db.run("UPDATE accounts SET display_name = ? WHERE id = ?", patch.displayName, id);
     if (patch.color !== undefined) db.run("UPDATE accounts SET color = ? WHERE id = ?", patch.color, id);
-    if (patch.senderName !== undefined || patch.signature !== undefined || patch.syncWindowDays !== undefined || patch.separateTabs !== undefined || patch.backfill !== undefined) {
+    if (patch.senderName !== undefined || patch.signature !== undefined || patch.syncWindowDays !== undefined || patch.separateTabs !== undefined || patch.followups !== undefined || patch.backfill !== undefined) {
       db.run("UPDATE accounts SET provider_config = ? WHERE id = ?", JSON.stringify(withAccountPrefs(JSON.parse(row.provider_config) as AccountPrefs, patch)), id);
     }
     return getAccount(db, id);

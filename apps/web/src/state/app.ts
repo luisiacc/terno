@@ -54,6 +54,8 @@ export interface AppState {
   reviewCategoryId: number | null;
   /** plan 87: the Reminders list (view "all", no account, category, folder or review) */
   reminders: boolean;
+  /** plan 142: the Follow-ups list, likewise */
+  followups: boolean;
   /** plan 108: the account the sidebar is focused on ("solo", never keyboard focus); while set, accountId is it */
   soloAccountId: number | null;
   query: string;
@@ -118,6 +120,7 @@ export const useApp = create<AppState>(() => ({
   gmailTab: null,
   reviewCategoryId: null,
   reminders: false,
+  followups: false,
   soloAccountId: null,
   query: "",
   listFilters: loadListFilters(),
@@ -171,11 +174,11 @@ export function setApp(partial: AppState | Partial<AppState> | ((state: AppState
  * scope across accounts, a tab back to the Inbox) leaves the folder too, so a list is never asked for an invalid one.
  */
 function keepFolderValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
-  next = keepSoloValid(state, keepRemindersValid(state, next));
+  next = keepSoloValid(state, keepFollowupsValid(state, keepRemindersValid(state, next)));
   const m = { ...state, ...next };
-  const out = m.folder !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.view !== "all") ? { ...next, folder: null } : next;
+  const out = m.folder !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.followups || m.view !== "all") ? { ...next, folder: null } : next;
   // plan 86: a Gmail tab is its account's Inbox, alone, likewise
-  return m.gmailTab !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.folder !== null || m.view !== "inbox") ? { ...out, gmailTab: null } : out;
+  return m.gmailTab !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.followups || m.folder !== null || m.view !== "inbox") ? { ...out, gmailTab: null } : out;
 }
 
 /**
@@ -195,25 +198,37 @@ function keepRemindersValid(state: AppState, next: AppState | Partial<AppState>)
   return other ? { ...next, reminders: false } : next;
 }
 
+/** Plan 142: likewise for Follow-ups. */
+function keepFollowupsValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
+  if (!state.followups || Object.hasOwn(next, "followups")) return next;
+  const m = { ...state, ...next };
+  const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.reminders || m.query.trim() !== "";
+  return other ? { ...next, followups: false } : next;
+}
+
 /** First-page selection is passive; nested explicit writes still use setApp. */
 export function setListAutoSelection(selectedId: number | null): void {
   useApp.setState({ selectedId });
 }
 export const getApp = useApp.getState;
 
-export function navigate(to: { view?: View; accountId?: number | null; categoryId?: number | null; reviewCategoryId?: number | null; folder?: string | null; reminders?: boolean; gmailTab?: Tab | null }): void {
+export function navigate(to: { view?: View; accountId?: number | null; categoryId?: number | null; reviewCategoryId?: number | null; folder?: string | null; reminders?: boolean; followups?: boolean; gmailTab?: Tab | null }): void {
   // plan 68: a folder is its account's, alone (no category, no review), its view "all"; anywhere else leaves it
   const folder = to.folder ?? null;
   // plan 87: Reminders is a list of its own, of every account
   const reminders = !folder && to.reminders === true;
+  // plan 142: Follow-ups, the same way
+  const followups = !folder && !reminders && to.followups === true;
+  const ownList = reminders || followups;
   // plan 86: a Gmail tab likewise, its view "inbox"
-  const gmailTab = folder || reminders ? null : (to.gmailTab ?? null);
+  const gmailTab = folder || ownList ? null : (to.gmailTab ?? null);
   setApp((s) => ({
-    reviewCategoryId: folder || reminders || gmailTab ? null : (to.reviewCategoryId ?? null),
+    reviewCategoryId: folder || ownList || gmailTab ? null : (to.reviewCategoryId ?? null),
     reminders,
-    view: folder || reminders ? "all" : gmailTab ? "inbox" : (to.view ?? (to.categoryId ? "all" : s.view)),
-    accountId: reminders ? null : to.accountId === undefined ? s.accountId : to.accountId,
-    categoryId: folder || reminders || gmailTab || to.categoryId === undefined ? null : to.categoryId,
+    followups,
+    view: folder || ownList ? "all" : gmailTab ? "inbox" : (to.view ?? (to.categoryId ? "all" : s.view)),
+    accountId: ownList ? null : to.accountId === undefined ? s.accountId : to.accountId,
+    categoryId: folder || ownList || gmailTab || to.categoryId === undefined ? null : to.categoryId,
     folder,
     gmailTab,
     query: "",

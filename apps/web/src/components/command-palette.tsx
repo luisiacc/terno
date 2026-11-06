@@ -4,7 +4,7 @@ import { t, type TextKey } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Chip } from "@terno/ui/components/chip";
 import { Command, CommandDescription, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, AtSign, Bell, BellOff, BookmarkPlus, CalendarClock, CheckCheck, Clock, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
+import { Archive, AtSign, Bell, BellOff, ListChecks, BookmarkPlus, CalendarClock, CheckCheck, Clock, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory } from "~/lib/categorize";
@@ -108,11 +108,12 @@ export function CommandPalette() {
   const reminder = useReminders((s) => (single !== null ? s.byThread.get(single) : undefined));
   // the unread filter applies to a mailbox (not "Review")
   // the unread toggle's state: Unread on or not (another filter on: it switches to Unread)
-  const filter = useApp((s) => (open && s.reviewCategoryId === null && !s.reminders ? (isUnreadOnly(s) ? "on" : "off") : null));
+  const filter = useApp((s) => (open && s.reviewCategoryId === null && !s.reminders && !s.followups ? (isUnreadOnly(s) ? "on" : "off") : null));
   const active = useApp((s) => (open ? activeFilter(s) : undefined));
   const supported = useApp((s) => s.supportedFilters);
   const design = useApp((s) => (open ? (s.settings?.design ?? null) : null));
   const canAi = useApp((s) => open && aiReady(s.settings?.ai));
+  const followupsOn = useApp((s) => open && s.settings?.followups.enabled === true);
   const canAsk = useApp((s) => open && s.settings?.ask.enabled === true);
   const drafting = useAiDraftUi((s) => s.enabled);
   const updatesAvailable = useHasUpdates();
@@ -218,6 +219,7 @@ export function CommandPalette() {
     folder("go.spam", "view.spam", <OctagonAlert />, () => goToFolder("spam"), undefined, "palette-go-spam");
     folder("go.trash", "view.trash", <Trash2 />, () => goToFolder("trash"));
     folder("go.all", "view.all", <Mails />, () => goToFolder("all"), undefined, "palette-go-all");
+    if (followupsOn) add({ id: "go.followups", group: "goTo", label: t("palette.goFollowups"), icon: <ListChecks />, testId: "palette-go-followups", keywords: english("palette.goFollowups"), run: () => navigate({ followups: true }) });
     add({ id: "go.reminders", group: "goTo", label: t("palette.goReminders"), icon: <Bell />, shortcut: "G R", testId: "palette-go-reminders", keywords: english("palette.goReminders"), run: () => navigate({ reminders: true }) });
     for (const c of categories) {
       add({ id: `category:${c.id}`, group: "goTo", label: c.name, search: `${t("palette.search.category")} ${c.name}`, icon: <CategoryDot color={c.color as CategoryColor} />, keywords: english("palette.search.category"), run: () => navigate({ categoryId: c.id, accountId: null }) });

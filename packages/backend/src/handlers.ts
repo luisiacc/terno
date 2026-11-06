@@ -1,7 +1,7 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
 import { capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction, type AccountPrefs, type Reminder, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
 import { L } from "@terno/i18n";
-import { movedNothing, SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type FolderMoved, type MessageState } from "@terno/store";
+import { movedNothing, SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type FolderMoved, type FollowupSnapshot, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
 import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
@@ -93,6 +93,7 @@ export function createHandlers(b: Backend): Handlers {
   const filedReminders = new Map<number, Reminder[]>();
   const endDueIfHidden = async (categoryId: number, threadIds: readonly number[], batchId: number | null) => {
     if (batchId === null || !(await store.categories.list()).some((c) => c.id === categoryId && !c.showInInbox)) return;
+    await b.followups.endTop(threadIds);
     const ended = await b.reminders.endDue(threadIds);
     if (ended.length === 0) return;
     filedReminders.set(batchId, ended);
@@ -144,6 +145,7 @@ export function createHandlers(b: Backend): Handlers {
     const before: MessageState[] = [];
     // plan 87: a due reminder ends when its conversation is put away (else the Inbox's top brings it back); Undo restores it
     const ended: Reminder[] = [];
+    const tops: FollowupSnapshot[] = [];
     let done = 0;
     const run = async (slice: number[]) => {
       // a sweep re-reads what it may still touch, in the same turn as the act (plan 63: a star added meanwhile wins)
@@ -154,7 +156,11 @@ export function createHandlers(b: Backend): Handlers {
       b.opsQueued(r.opIds);
       b.reconcileFlags(r.flagReconcileAccounts);
       b.notifyChanged(r.threadIds);
-      if (ENDS_REMINDER.has(action)) for (const x of await b.reminders.endDue(chunk)) ended.push(x);
+      if (ENDS_REMINDER.has(action)) {
+        for (const x of await b.reminders.endDue(chunk)) ended.push(x);
+        // plan 142: a follow-up leaves the Inbox's top the same way; the list keeps it
+        for (const x of await b.followups.endTop(chunk)) tops.push(x);
+      }
       progress?.((done += slice.length));
     };
     try {
@@ -163,19 +169,22 @@ export function createHandlers(b: Backend): Handlers {
       else await b.runBudgeted([...threadIds], run);
     } catch (error) {
       // the slices that committed stay undoable: the error carries their undo
-      if (!o.partialUndo || (before.length === 0 && ended.length === 0)) throw error;
-      const undoId = remember(before, ended);
+      if (!o.partialUndo || (before.length === 0 && ended.length === 0 && tops.length === 0)) throw error;
+      const undoId = remember(before, ended, tops);
       if (error instanceof RpcError) throw new RpcError(error.code, error.message, { undoId }, { expected: error.expected, diag: error.diag, i18n: error.i18n, cause: error });
       throw new RpcError("INTERNAL", error instanceof Error ? error.message : String(error), { undoId }, { expected: false, cause: error });
     }
     // what an undo puts back: these messages, exactly as they were
-    return { threads: [...changed], undoId: before.length || ended.length ? remember(before, ended) : null };
+    return { threads: [...changed], undoId: before.length || ended.length || tops.length ? remember(before, ended, tops) : null };
   };
   const undoJournal = new UndoJournal();
   /** plan 87: the reminders an action ended, by its undo id (as many as the journal keeps) */
   const endedReminders = new Map<number, Reminder[]>();
-  const remember = (before: MessageState[], ended: Reminder[]) => {
+  const endedTops = new Map<number, FollowupSnapshot[]>();
+  const remember = (before: MessageState[], ended: Reminder[], tops: FollowupSnapshot[] = []) => {
     const id = undoJournal.remember(before);
+    if (tops.length) endedTops.set(id, tops);
+    for (const key of endedTops.keys()) if (endedTops.size > 16) endedTops.delete(key);
     if (ended.length) endedReminders.set(id, ended);
     for (const key of endedReminders.keys()) if (endedReminders.size > 16) endedReminders.delete(key);
     return id;
@@ -240,6 +249,7 @@ export function createHandlers(b: Backend): Handlers {
         b.notifyChanged(r.threadIds);
         // a due reminder ends when its conversation is put away, as an archive's does
         if (r.leftInbox.length) for (const x of await b.reminders.endDue(r.leftInbox)) ended.push(x);
+        if (r.leftInbox.length) await b.followups.endTop(r.leftInbox);
         progress?.((done += chunk.length));
       });
     } catch (error) {
@@ -270,6 +280,8 @@ export function createHandlers(b: Backend): Handlers {
       folderMoves.delete(undoId);
       const restored = before.length ? await restore(before, jobId) : new Set<number>();
       endedReminders.delete(undoId);
+      await b.followups.putBack(endedTops.get(undoId) ?? []);
+      endedTops.delete(undoId);
       return new Set([...left, ...restored]).size;
     } catch (error) {
       // restoring is idempotent: a retry repeats all of it
@@ -1233,6 +1245,7 @@ export function createHandlers(b: Backend): Handlers {
           // plan 132: turned off, nothing further goes; a change may unblock what was paused
           if (patch.ai || patch.summaries) b.summaries.settingsChanged(next);
           if (patch.ask) b.ask.settingsChanged(next.ask.enabled);
+          if (patch.ai || patch.followups) b.followups.settingsChanged(next);
           if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
           if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
           // plan 22: website icons turned off: nothing in flight lands, windows forget them
@@ -1259,6 +1272,7 @@ export function createHandlers(b: Backend): Handlers {
     "ai.setKey": async ({ provider, preset, value }) => {
       const next = await b.aiService.setKey(provider, preset, value);
       b.summaries.settingsChanged(next);
+      b.followups.settingsChanged(next);
       b.ask.settingsChanged(next.ask.enabled);
       // plan 134: a JEV key chooses where categorization runs
       b.aiAssist.targetChanged();
@@ -1272,6 +1286,7 @@ export function createHandlers(b: Backend): Handlers {
     "ai.confirmKey": async ({ provider, preset }) => {
       const next = await b.aiService.confirmKey(provider, preset);
       b.summaries.settingsChanged(next);
+      b.followups.settingsChanged(next);
       return next;
     },
     "ai.summarize": ({ threadId, requestId, acknowledge }, ctx) => b.summaries.request(threadId, requestId, ctx.clientId, acknowledge),
@@ -1280,8 +1295,23 @@ export function createHandlers(b: Backend): Handlers {
     "ai.summaries.clear": async () => {
       await b.summaries.clear();
       await b.ask.clear();
+      await b.followups.clear();
       return { ok: true };
     },
+    // plan 142: renderer only; none of these is in MCP_ALLOWED
+    "followups.list": () => b.followups.look(),
+    "followups.threads": async ({ onTop, accountId }) => ({ items: await b.followups.threads(onTop, accountId) }),
+    "followups.act": ({ id, revision, action, dueAt }) => b.followups.act(id, revision, action, dueAt),
+    "followups.undo": async ({ undoId }) => {
+      await b.followups.undoAct(undoId);
+      return { ok: true };
+    },
+    "followups.seen": async ({ threadId }) => {
+      await b.followups.endTop([threadId]);
+      return { ok: true };
+    },
+    "followups.scanOffer": () => b.followups.scanOffer(),
+    "followups.scan": async () => ({ queued: await b.followups.scan() }),
     // plan 141: renderer only; none of these is in MCP_ALLOWED
     "ai.ask": (p, ctx) => b.ask.ask(p, ctx.clientId),
     "ai.askOlder": (p, ctx) => b.ask.older(p, ctx.clientId),

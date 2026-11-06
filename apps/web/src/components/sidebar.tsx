@@ -6,7 +6,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, ArrowLeft, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Tag, Trash2, Users } from "@terno/ui/icons";
+import { Archive, ArrowLeft, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Tag, Trash2, Users, ListChecks } from "@terno/ui/icons";
 import { Kbd } from "@terno/ui/components/kbd";
 import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
@@ -14,6 +14,7 @@ import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { getApp, navigate, setApp, useApp, type AppState } from "~/state/app";
 import { useReminders } from "~/lib/reminders";
+import { useFollowups } from "~/state/followups";
 import { createCategory as createNamedCategory } from "~/lib/tabs";
 import { usePendingTip } from "~/lib/tips";
 import { ACCOUNT_VIEWS, SOLO_VIEWS, listedByAccount, useFolderRows, toggleAccount, useOpenAccount, type FolderRow } from "~/lib/account-folders";
@@ -322,7 +323,7 @@ function ReviewBadge({ id, name, n, active }: { id: number; name: string; n: num
  * in the accessibility tree.
  */
 /** A row behind More: one of the views, or Reminders (plan 87) */
-type MoreSlot = View | "reminders";
+type MoreSlot = View | "reminders" | "followups";
 
 /**
  * Plan 107: favorite folders, right below Starred: an account's own folder or one of its standard rows, each a way
@@ -335,7 +336,7 @@ function FavoriteRows() {
   const folders = useApp((s) => s.folders);
   const counts = useApp((s) => s.counts);
   // where you are, as primitives (an object would re-render this on every change of the store)
-  const plain = useApp((s) => s.accountId !== null && s.reviewCategoryId === null && s.categoryId === null && s.gmailTab === null && !s.reminders);
+  const plain = useApp((s) => s.accountId !== null && s.reviewCategoryId === null && s.categoryId === null && s.gmailTab === null && !s.reminders && !s.followups && !s.followups);
   const hereAccount = useApp((s) => s.accountId);
   const hereFolder = useApp((s) => s.folder);
   const hereView = useApp((s) => s.view);
@@ -413,14 +414,17 @@ function FavoriteRows() {
 /** The More row you're in (none inside an account, a category or its suggestions) */
 function moreSlotOf(s: AppState): MoreSlot | null {
   if (s.reminders) return "reminders";
+  if (s.followups) return "followups";
   return s.accountId === null && s.categoryId === null && s.reviewCategoryId === null && MORE_VIEWS.includes(s.view) ? s.view : null;
 }
 
-function MoreFolders({ view, folder, reminders }: { view: View | null; folder: (f: (typeof VIEWS)[number]) => React.ReactNode; reminders: React.ReactNode }) {
+function MoreFolders({ view, folder, reminders, followups }: { view: View | null; folder: (f: (typeof VIEWS)[number]) => React.ReactNode; reminders: React.ReactNode; followups: React.ReactNode }) {
   const open = useSidebarMore((s) => s.open);
   const inReminders = useApp((s) => s.reminders);
   // a due reminder shows its row even with More closed: its count is never behind a fold
   const due = useReminders((s) => s.due > 0);
+  const inFollowups = useApp((s) => s.followups);
+  const followupsDue = useFollowups((s) => s.due > 0);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const groupRef = useRef<HTMLDivElement>(null);
   // folders shown only because you were in them, kept after a click in the sidebar took you elsewhere
@@ -515,6 +519,20 @@ function MoreFolders({ view, folder, reminders }: { view: View | null; folder: (
               className="invisible grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity,visibility] duration-base ease-motion data-shown:visible data-shown:grid-rows-[1fr] data-shown:opacity-100 data-shown:duration-slow data-shown:[transition-timing-function:var(--ease-drawer),linear,var(--ease-drawer)]"
             >
               <div className="min-h-0 overflow-clip [overflow-clip-margin:3px]">{reminders}</div>
+            </div>
+          );
+        })()}
+        {followups && (() => {
+          const shown = open || inFollowups || followupsDue || held.includes("followups");
+          return (
+            <div
+              data-more-slot="followups"
+              data-active-slot={inFollowups || undefined}
+              data-shown={shown || undefined}
+              inert={!shown}
+              className="invisible grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity,visibility] duration-base ease-motion data-shown:visible data-shown:grid-rows-[1fr] data-shown:opacity-100"
+            >
+              <div className="min-h-0 overflow-clip [overflow-clip-margin:3px]">{followups}</div>
             </div>
           );
         })()}
@@ -1188,6 +1206,9 @@ export function Sidebar() {
   const reviewCategoryId = useApp((s) => s.reviewCategoryId);
   const inReminders = useApp((s) => s.reminders);
   const dueReminders = useReminders((s) => s.due);
+  const inFollowups = useApp((s) => s.followups);
+  const dueFollowups = useFollowups((s) => s.due);
+  const followupsOn = useApp((s) => s.settings?.followups.enabled === true);
   const accounts = useApp((s) => s.accounts);
   // plan 108: focused on one account, the sidebar is its alone
   const soloAccount = useApp((s) => (s.soloAccountId === null ? undefined : s.accounts.find((a) => a.id === s.soloAccountId)));
@@ -1300,6 +1321,19 @@ export function Sidebar() {
             countTone={design.surfaces.inboxCount}
             shortcut="g r"
           />
+        }
+        followups={
+          followupsOn ? (
+            <NavItem
+              testId="nav-followups"
+              active={inFollowups}
+              onClick={() => navigate({ followups: true })}
+              icon={<ListChecks className="size-(--icon-nav)" />}
+              label={t("followups.title")}
+              count={dueFollowups}
+              countTone={design.surfaces.inboxCount}
+            />
+          ) : null
         }
       />
 

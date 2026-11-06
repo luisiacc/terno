@@ -1,4 +1,4 @@
-import { ASK_CLAUDE_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type AiErrorKind, type AiProviderId, type CompatiblePreset, type OutputMode } from "@terno/core";
+import { ASK_CLAUDE_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type AiErrorKind, type AiProviderId, type CompatiblePreset, type OutputMode } from "@terno/core";
 import type { AiSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 
@@ -116,6 +116,13 @@ export function askTarget(ai: AiSettings): { provider: AiProviderId; model: stri
   const chosen = ai.tasks.ask;
   if (chosen) return chosen;
   return { provider: ai.provider, model: ai.provider === "anthropic" ? ASK_CLAUDE_MODEL : ai.model };
+}
+
+/** Plan 142: by the backend's rule: its own choice, the summaries' row, else a small model on the configured provider. */
+export function followupTarget(ai: AiSettings): { provider: AiProviderId; model: string } {
+  const chosen = ai.tasks.followup ?? ai.tasks.summary;
+  if (chosen) return chosen;
+  return { provider: ai.provider, model: ai.provider === "anthropic" ? FOLLOWUP_CLAUDE_MODEL : ai.provider === "openai" ? FOLLOWUP_OPENAI_MODEL : ai.model };
 }
 
 /** Whether a question can go: Ask's own target if it has one, whatever the main provider is. */

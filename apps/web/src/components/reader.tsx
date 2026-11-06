@@ -50,6 +50,7 @@ import { summarizable, summarize, useSummaries } from "~/lib/summaries";
 const RemindPicker = lazy(() => import("./remind-picker").then((m) => ({ default: m.RemindPicker })));
 // plan 132: nothing of it until a thread opens
 const ThreadSummary = lazy(() => import("./thread-summary"));
+const ThreadFollowups = lazy(() => import("./thread-followups"));
 
 /** Plan 132 §7: a summary by hand. Never in spam or trash, nor with one spam message in the thread. Open already: the block shows it. */
 function SummarizeButton({ threadId }: { threadId: number }) {
@@ -710,6 +711,7 @@ function ReaderContent() {
                   {/* inside the menu: Lumen's card can stand for the message (plan 59) */}
                   <ReaderHeader detail={detail} account={account} cats={cats} />
                   <Suspense fallback={null}>
+                    <ThreadFollowups key={`f${detail.thread.id}`} detail={detail} />
                     <ThreadSummary key={detail.thread.id} detail={detail} />
                   </Suspense>
                   <Conversation key={detail.thread.id} messages={detail.messages} icons={iconsFor(detail.thread)} headless={cardHeader} knownEmail={cardHeader ? senderOf(detail).email : null} />

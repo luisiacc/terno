@@ -28,10 +28,11 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 27 adds the AI new-mail marks and summaries (SQL v48, plans 131 and 132).
  * Version 28 adds writing profiles and generations (SQL v50, plan 133); SQL v49 is an index with no persisted shape here.
  * Version 29 adds Ask your mail's conversations and turns (SQL v51, plan 141).
+ * Version 30 adds sent-mail marks and follow-ups (SQL v52, plan 142).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 51;
+export const LOGICAL_SCHEMA = 52;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -103,6 +104,9 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   // plan 141: the last 100 questions
   { name: "ai_conversations", key: ["id"], autoId: true },
   { name: "ai_turns", key: ["id"], autoId: true, indexes: fk("conversation_id") },
+  // plan 142: `identity` is the logical unique key, as a memory index isn't one
+  { name: "ai_sent_mail", key: ["message_id"], indexes: { ...fk("message_id"), thread: ["thread_id"] } },
+  { name: "followups", early: true, key: ["id"], autoId: true, indexes: { ...fk("thread_id"), identity: ["message_id", "item"], state: ["state"], top: ["inbox_state"] } },
   { name: "send_copies", early: true, key: ["opId"], indexes: fk("accountId") },
   { name: "send_copy_bytes", key: ["id"], lazy: true },
   { name: "recipient_receipts", early: true, key: ["opId"], indexes: fk("accountId") },
@@ -179,6 +183,8 @@ export const FOREIGN_KEYS: readonly ForeignKey[] = [
   c("ai_new_mail", "message_id", "messages"),
   c("ai_summaries", "thread_id", "threads"),
   c("ai_turns", "conversation_id", "ai_conversations"),
+  c("ai_sent_mail", "message_id", "messages"),
+  c("followups", "thread_id", "threads"),
   c("writing_profiles", "account_id", "accounts"),
   c("writing_generations", "account_id", "accounts"),
   c("writing_generations", "draft_id", "drafts"),
@@ -366,6 +372,8 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       // plan 133 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 28) for (const name of ["writing_profiles", "writing_generations"]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
       // plan 141 (likewise)
+      // plan 142 (likewise)
+      if (event.oldVersion >= 1 && event.oldVersion < 30) for (const name of ["ai_sent_mail", "followups"]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
       if (event.oldVersion >= 1 && event.oldVersion < 29) for (const name of ["ai_conversations", "ai_turns"]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
       if (event.oldVersion < 20) {
         const counter = event.oldVersion === 0 ? tx.objectStore("category_counter") : db.createObjectStore("category_counter");

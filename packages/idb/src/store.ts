@@ -1,4 +1,5 @@
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
+import { activeFollowups, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { addAskTurn, askAccountsOf, askCandidates, askHeaders, askNewest, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
 import { projectBodyTokens, messageBodiesReleased } from "@terno/store";
 import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
@@ -1248,7 +1249,7 @@ export class IdbMailStore implements MailStore {
         return { accountId, protocolId: current.protocol_id, epoch: flagTick(repo, accountId) };
       });
     },
-    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible, newMail }) => this.bodyCommand(async () => {
+    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible, newMail, liveSent }) => this.bodyCommand(async () => {
       const callerCheck = check; check = () => { if (this.bodyClosing) throw new Error("The store is closing"); callerCheck?.(); };
       await this.bodyCleanup;
       const staged: IncomingMessage[] = [];
@@ -1271,6 +1272,8 @@ export class IdbMailStore implements MailStore {
           if (forwardEligible) markEligible(this.c, result.inserted, now);
           // plan 131 revision 5: the same for the AI features, whether or not its text is here or a classifier is ready
           if (newMail) markNewMail(this.c, result.inserted, now, newMail);
+        // plan 142: mail you sent from elsewhere ends the waits before it, and is read if the feature is on
+        if (liveSent) followupLiveSent(this.c, result.inserted, now, liveSent.wanted);
           const touched = new Set(result.touchedThreads);
           const opIds: string[] = [];
           const folderMoves: FolderFilterMove[] = [];
@@ -1407,7 +1410,7 @@ export class IdbMailStore implements MailStore {
       const op = getOp(this.c, id);
       return op?.kind === "send" ? { state: op.state, accepted: submissionAccepted(op) } : null;
     }),
-    complete: (id, result, now) =>
+    complete: (id, result, now, o) =>
       this.preparedFlagOutcome(id, () => {
         const op = getOp(this.c, id);
         if (op?.kind === "send" && op.state !== "running") return { touched: [], deltas: [] };
@@ -1425,6 +1428,8 @@ export class IdbMailStore implements MailStore {
         if (result?.warning) ops.update(ops.get(id)!, { last_error: result.warning });
         let refreshNeeded = false;
         const localId = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0];
+        // plan 142 revision 3: only a confirmed send closes a wait, in the commit that records it
+        if (op.kind === "send" && localId) followupSendConfirmed(this.c, localId, now, o?.followup === true);
         if (op.kind === "send" && result && localId) {
           const messages = T(this.c, "messages");
           const local = messages.get(localId);
@@ -1920,6 +1925,41 @@ export class IdbMailStore implements MailStore {
   };
 
   private summaryClears = 0;
+
+  private followupClears = 0;
+
+  readonly followups: MailStore["followups"] = {
+    marks: {
+      page: (after, limit) => this.read(() => sentMarkPage(this.c, after, limit)),
+      count: () => this.read(() => sentMarkCount(this.c)),
+      queueScan: (ids, now) => this.command(() => queueScan(this.c, ids, now)),
+      consume: (id) => this.command(() => void T(this.c, "ai_sent_mail").delete(id)),
+      clear: () => this.command(() => {
+        const marks = T(this.c, "ai_sent_mail");
+        for (const r of marks.all()) marks.deleteRow(r);
+      }),
+      prune: (now) => this.command(() => pruneSentMarks(this.c, now)),
+    },
+    scanCandidates: (since, limit) => this.read(() => followupScanCandidates(this.c, since, limit)),
+    source: (id) => this.read(() => followupSource(this.c, id)),
+    finish: (w) => this.command(() => (w.clearGeneration === this.followupClears ? finishFollowups(this.c, w) : "gone")),
+    active: () => this.early(() => activeFollowups(this.c)),
+    ofThread: (id) => this.early(() => threadFollowups(this.c, id)),
+    get: (id) => this.early(() => getFollowup(this.c, id)),
+    nextDue: () => this.early(() => nextFollowupDue(this.c)),
+    makeDue: (now) => this.command(() => makeFollowupsDue(this.c, now)),
+    claimNotice: (ids, now) => this.command(() => claimFollowupNotice(this.c, ids, now)),
+    closeAnswered: (ids, now) => this.command(() => closeAnsweredFollowups(this.c, ids, now)),
+    endTop: (ids) => this.command(() => endFollowupTop(this.c, ids)),
+    update: (id, revision, patch) => this.command(() => updateFollowup(this.c, id, revision, patch)),
+    restore: (rows) => this.command(() => restoreFollowups(this.c, rows)),
+    prune: (now) => this.command(() => pruneFollowups(this.c, now)),
+    clear: () => this.command(() => {
+      this.followupClears++;
+      clearFollowups(this.c);
+    }),
+    clearGeneration: () => this.followupClears,
+  };
 
   private askClears = 0;
 

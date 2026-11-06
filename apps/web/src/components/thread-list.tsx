@@ -3,7 +3,7 @@ import { SearchField } from "@terno/ui/components/search-field";
 import { Kbd } from "@terno/ui/components/kbd";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Bell, ChevronDown, Inbox, ListFilter, Search, SquarePen } from "@terno/ui/icons";
+import { Bell, ChevronDown, Inbox, ListFilter, Search, SquarePen, ListChecks } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
@@ -202,7 +202,7 @@ function QuickChips({ filter }: { filter: QuickFilter | undefined }) {
  */
 const useSearchOpen = create<{ open: boolean }>(() => ({ open: false }));
 useApp.subscribe((s, prev) => {
-  if (useSearchOpen.getState().open && !s.query && (s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders)) useSearchOpen.setState({ open: false });
+  if (useSearchOpen.getState().open && !s.query && (s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.followups !== prev.followups)) useSearchOpen.setState({ open: false });
 });
 
 /** "/" and ⌘F: the search field, opened first where the design keeps it behind a button. */
@@ -382,7 +382,8 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const folder = useApp(folderName);
   const review = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
   // plan 87: Reminders is a list of its own, unfiltered (no quick filters)
-  const reminders = useApp((s) => s.reminders);
+  const reminders = useApp((s) => s.reminders || s.followups);
+  const followups = useApp((s) => s.followups);
   const account = useApp((s) => s.accounts.find((a) => a.id === s.accountId));
   const query = useApp((s) => s.query);
   const searchMs = useList((s) => s.searchMs);
@@ -395,7 +396,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const count = useList((s) => (filter ? s.items.reduce((n, t) => n + (matchesFilter(filter, t) ? 1 : 0), 0) : s.items.length));
   // plan 64: a search looks everywhere, so the list is the search's, not the sidebar mailbox's
   const searching = query.trim() !== "" && !review;
-  const title = searching ? t("list.search.title") : review ? t("list.reviewTitle", { category: review.name }) : reminders ? t("view.reminders") : (folder ?? category?.name ?? viewLabel(view));
+  const title = searching ? t("list.search.title") : review ? t("list.reviewTitle", { category: review.name }) : followups ? t("followups.title") : reminders ? t("view.reminders") : (folder ?? category?.name ?? viewLabel(view));
   // the greeting is the inbox's title (any account; not a Gmail tab of it, plan 86); everywhere else a design that greets shows its display title
   const kind = design.variants.listHeader === "greeting" && view === "inbox" && !folder && !category && !review && !searching ? "greeting" : design.variants.listHeader === "title" ? "title" : "display";
   const behindButton = design.variants.search === "button";
@@ -612,6 +613,15 @@ function EmptyState() {
   const query = useApp((s) => s.query);
   const view = useApp((s) => s.view);
   const reminders = useApp((s) => s.reminders);
+  const followups = useApp((s) => s.followups);
+  if (followups)
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
+        <ListChecks className="mb-2 size-7 text-muted-foreground" aria-hidden />
+        <p className="text-lg font-semibold tracking-tight">{t("followups.empty")}</p>
+        <p className="text-xs text-muted-foreground">{t("followups.emptyHint")}</p>
+      </div>
+    );
   if (reminders)
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">

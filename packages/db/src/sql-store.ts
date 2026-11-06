@@ -4,6 +4,7 @@ import { publishBody } from "@terno/store";
 import { resolvable, parseSearch, searchTerms } from "@terno/core";
 import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, BODY_READY_APPLICATION_ID } from "./body-upgrade";
 import { unsubscribeBodyParts, decodeBodyPart } from "@terno/store";
+import { activeFollowups, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { addAskTurn, askAccountsOf, askHeaders, askMatching, askNewest, askText, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
 import { retainBody, observeBodyRetirement, bodyReadReference, sqlBodyParts, cleanupBodies, finishBodyStage, withBodySelection, hydrateBodyReference, stageBody, prepareBodyMatches, withBodyMatches } from "./body-parts";
 import { sqlCaptureRepairs, sqlCaptureStorage } from "./capture-repair";
@@ -615,7 +616,7 @@ export class SqlMailStore implements MailStore {
     // Messages, filter claims, filter actions and their ops, and the categorizer's decisions
     // commit together: a crash can't record a filter as applied without its effects, nor an
     // auto-categorization without its message.
-    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible, newMail }) => this.bodyCommand(async () => {
+    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible, newMail, liveSent }) => this.bodyCommand(async () => {
       const callerCheck = check; check = () => { if (this.bodyClosing) throw new Error("The store is closing"); callerCheck?.(); };
       await this.bodyCleanup;
       const staged: IncomingMessage[] = [];
@@ -637,6 +638,8 @@ export class SqlMailStore implements MailStore {
         if (forwardEligible) markEligible(this.db, result.inserted, now);
         // plan 131 revision 5: the same for the AI features, whether or not its text is here or a classifier is ready
         if (newMail) markNewMail(this.db, result.inserted, now, newMail);
+        // plan 142: mail you sent from elsewhere ends the waits before it, and is read if the feature is on
+        if (liveSent) followupLiveSent(this.db, result.inserted, now, liveSent.wanted);
         const touched = new Set(result.touchedThreads);
         const opIds: string[] = [];
         const folderMoves: FolderFilterMove[] = [];
@@ -756,7 +759,7 @@ export class SqlMailStore implements MailStore {
       const op = this.db.get<Pick<import("@terno/store").OpRow, "kind" | "state" | "target_json">>("SELECT kind,state,target_json FROM ops WHERE id=?", id);
       return op?.kind === "send" ? { state: op.state, accepted: submissionAccepted(op) } : null;
     },
-    complete: async (id, result, now) =>
+    complete: async (id, result, now, o) =>
       this.preparedFlagOutcome(id, () => this.db.tx(() => {
         const op = getOp(this.db, id);
         if (op?.kind === "send" && op.state !== "running") return { touched: [], deltas: [] };
@@ -773,6 +776,8 @@ export class SqlMailStore implements MailStore {
         if (result?.warning) this.db.run("UPDATE ops SET last_error = ? WHERE id = ?", result.warning, id);
         let refreshNeeded = false;
         const localId = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0];
+        // plan 142 revision 3: only a confirmed send closes a wait, in the commit that records it
+        if (op.kind === "send" && localId) followupSendConfirmed(this.db, localId, now, o?.followup === true);
         if (op.kind === "send" && result && localId) {
           if (result.providerMsgId) {
             const changed = this.db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ? AND provider_msg_id LIKE 'local:%'", result.providerMsgId, localId);
@@ -1081,6 +1086,38 @@ export class SqlMailStore implements MailStore {
   };
 
   private summaryClears = 0;
+
+  private followupClears = 0;
+
+  readonly followups: MailStore["followups"] = {
+    marks: {
+      page: async (after, limit) => sentMarkPage(this.db, after, limit),
+      count: async () => sentMarkCount(this.db),
+      queueScan: async (ids, now) => queueScan(this.db, ids, now),
+      consume: async (id) => void this.db.run("DELETE FROM ai_sent_mail WHERE message_id = ?", id),
+      clear: async () => void this.db.run("DELETE FROM ai_sent_mail"),
+      prune: async (now) => pruneSentMarks(this.db, now),
+    },
+    scanCandidates: async (since, limit) => followupScanCandidates(this.db, since, limit),
+    source: async (id) => followupSource(this.db, id),
+    finish: async (w) => (w.clearGeneration === this.followupClears ? finishFollowups(this.db, w) : "gone"),
+    active: async () => activeFollowups(this.db),
+    ofThread: async (id) => threadFollowups(this.db, id),
+    get: async (id) => getFollowup(this.db, id),
+    nextDue: async () => nextFollowupDue(this.db),
+    makeDue: async (now) => makeFollowupsDue(this.db, now),
+    claimNotice: async (ids, now) => claimFollowupNotice(this.db, ids, now),
+    closeAnswered: async (ids, now) => closeAnsweredFollowups(this.db, ids, now),
+    endTop: async (ids) => endFollowupTop(this.db, ids),
+    update: async (id, revision, patch) => updateFollowup(this.db, id, revision, patch),
+    restore: async (rows) => restoreFollowups(this.db, rows),
+    prune: async (now) => pruneFollowups(this.db, now),
+    clear: async () => {
+      this.followupClears++;
+      clearFollowups(this.db);
+    },
+    clearGeneration: () => this.followupClears,
+  };
 
   private askClears = 0;
 

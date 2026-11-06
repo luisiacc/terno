@@ -1336,6 +1336,46 @@ CREATE TABLE ai_turns (
 );
 CREATE INDEX ai_turns_conversation ON ai_turns(conversation_id, id);
 ` },
+  { version: 52, name: "follow-ups (plan 142)", sql: `
+CREATE TABLE ai_sent_mail (
+  message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+  thread_id INTEGER NOT NULL,
+  sent_at INTEGER NOT NULL,
+  queued_at INTEGER NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('live','scan'))
+) WITHOUT ROWID;
+CREATE INDEX ai_sent_mail_order ON ai_sent_mail(sent_at, message_id);
+CREATE TABLE followups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  message_id INTEGER NOT NULL,
+  rfc_message_id TEXT,
+  item INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('promise','awaiting')),
+  text TEXT NOT NULL,
+  quote TEXT,
+  person_name TEXT,
+  person_email TEXT,
+  sent_at INTEGER NOT NULL,
+  due_at INTEGER NOT NULL,
+  dated INTEGER NOT NULL DEFAULT 0,
+  state TEXT NOT NULL CHECK (state IN ('open','due','done','dismissed')),
+  inbox_state TEXT NOT NULL DEFAULT 'none' CHECK (inbox_state IN ('none','onTop','seen')),
+  closed_reason TEXT,
+  closed_at INTEGER,
+  notified_at INTEGER,
+  from_scan INTEGER NOT NULL DEFAULT 0,
+  revision INTEGER NOT NULL DEFAULT 0,
+  model TEXT,
+  provider TEXT,
+  prompt_version INTEGER,
+  created_at INTEGER NOT NULL,
+  UNIQUE (message_id, item)
+);
+CREATE INDEX followups_active ON followups(due_at, id) WHERE state IN ('open','due');
+CREATE INDEX followups_thread ON followups(thread_id, state);
+CREATE INDEX followups_top ON followups(thread_id) WHERE inbox_state = 'onTop';
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

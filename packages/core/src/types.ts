@@ -25,6 +25,8 @@ export interface Account {
   backfillSince?: number | null;
   /** plan 86 (Gmail): Promotions and Social live under the account, out of the Inbox; on unless turned off (absent: on) */
   separateTabs?: boolean;
+  /** plan 142: absent: on */
+  followups?: boolean;
   syncState: AccountSyncState;
 }
 
@@ -36,6 +38,8 @@ export interface AccountPatch {
   signature?: string;
   syncWindowDays?: number | null;
   separateTabs?: boolean;
+  /** plan 142: absent: on */
+  followups?: boolean;
   /**
    * plan 101: backend only (never in the RPC schema), applied inside the store's update transaction so concurrent
    * changes never lose one another: `merge` a widening into the pending span (their union), `clearIf` it's done
@@ -57,13 +61,15 @@ export interface AccountPrefs {
   syncWindowDays?: number | null;
   /** plan 86: absent: on */
   separateTabs?: boolean;
+  /** plan 142: false: this account's mail isn't read for follow-ups; absent: on */
+  followups?: boolean;
   /** plan 101: older mail still to download */
   backfill?: BackfillRequest;
 }
 
 /** An account's preferences as the renderer sees them, from its stored config. */
-export function accountPrefs(config: AccountPrefs, displayName: string): Pick<Account, "senderName" | "signature" | "syncWindowDays" | "separateTabs" | "backfillSince"> {
-  return { senderName: config.senderName || displayName, signature: config.signature ?? "", syncWindowDays: config.syncWindowDays ?? null, separateTabs: config.separateTabs !== false, backfillSince: config.backfill?.since ?? null };
+export function accountPrefs(config: AccountPrefs, displayName: string): Pick<Account, "senderName" | "signature" | "syncWindowDays" | "separateTabs" | "followups" | "backfillSince"> {
+  return { senderName: config.senderName || displayName, signature: config.signature ?? "", syncWindowDays: config.syncWindowDays ?? null, separateTabs: config.separateTabs !== false, followups: config.followups !== false, backfillSince: config.backfill?.since ?? null };
 }
 
 /** The config with a patch's preferences applied (the rest of the patch lives in columns). */
@@ -74,6 +80,10 @@ export function withAccountPrefs<T extends AccountPrefs>(config: T, patch: Accou
   if (patch.syncWindowDays !== undefined) {
     if (patch.syncWindowDays === null) delete next.syncWindowDays;
     else next.syncWindowDays = patch.syncWindowDays;
+  }
+  if (patch.followups !== undefined) {
+    if (patch.followups) delete next.followups;
+    else next.followups = false;
   }
   if (patch.separateTabs !== undefined) {
     if (patch.separateTabs) delete next.separateTabs;

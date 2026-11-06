@@ -1,6 +1,7 @@
 import { normalizeText } from "@terno/core";
 import { keyRef } from "@terno/i18n";
 import { fakeAnswer, fakeAskPlan, isAnswerRequest } from "./ask";
+import { fakeSentMail } from "./followups";
 import { fakeSummary } from "./summarize";
 import { AiError, promptText, type CompletionRequest, type ModelTransport, type StreamEvent } from "./types";
 import type { WireFilter } from "./wire";
@@ -104,6 +105,7 @@ export function fakeTransport(options: { failFirstAttempt?: boolean } = {}): Mod
       }
       if (schema?.name === "probe") return { text: '{"ok":true}', stop: "end" };
       if (schema?.name === "thread_summary") return { text: JSON.stringify(fakeSummary(promptText(system), prompt)), stop: "end" };
+      if (schema?.name === "sent_mail") return { text: JSON.stringify(fakeSentMail(prompt)), stop: "end" };
       if (schema?.name === "ask_plan") return { text: JSON.stringify(fakeAskPlan(prompt)), stop: "end" };
       if (schema?.name === "voice_judgment") return { text: JSON.stringify(fakeJudgment(prompt)), stop: "end" };
       if (schema?.name === "parse_intent") return { text: JSON.stringify(fakeIntent(prompt)), stop: "end" };

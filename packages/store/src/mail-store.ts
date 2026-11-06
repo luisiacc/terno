@@ -403,7 +403,7 @@ export interface MailStore {
     /** threading, aggregates, filters (claims, actions, ops) and classification of one slice */
     /** `forwardEligible` (plan 116): live mail it inserts may be forwarded (forward_eligible), in the same commit */
     /** `newMail` (plan 131 revision 5): live mail it inserts is new mail the named features want (ai_new_mail), in the same commit */
-    ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null; observation?: FlagObservation; check?: () => void; forwardEligible?: boolean; newMail?: import("./ai-summaries").NewMailWants }): Promise<IngestOutcome>;
+    ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null; observation?: FlagObservation; check?: () => void; forwardEligible?: boolean; newMail?: import("./ai-summaries").NewMailWants; liveSent?: { wanted: boolean } }): Promise<IngestOutcome>;
     setBody(messageId: number, text: string | null, html: string | null, o: { bodyParts?: import("@terno/core").ExactBodyParts; preparedBodyTokens?: Uint16Array[]; now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[]; captureUnavailable?: "size"; repair?: import("@terno/core").CaptureTicket; check?: () => void; expected?: { accountId: number; threadId: number; providerMsgId: string } }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] } & FlagReconciliation>;
     /** provider state for existing messages; preserves fields affected by queued/running ops inside the same unit */
     updateFlags(accountId: number, updates: readonly FlagUpdate[], observation?: FlagObservation, check?: () => void): Promise<{ touched: number[] } & FlagReconciliation>;
@@ -419,7 +419,7 @@ export interface MailStore {
     /** Point-read only send control/target metadata, without materializing the immutable wire payload. */
     sendSubmission(id: string): Promise<{ state: OpState; accepted: boolean } | null>;
     /** success, including adopting the provider's ids for a sent message */
-    complete(id: string, result: { providerMsgId?: string; providerThreadId?: string; warning?: string; sendAccepted?: import("./recipient-receipts").AcceptedRecipientEvidence } | void, now: number): Promise<{ touched: number[]; deltas: ModelDelta[] } & FlagReconciliation>;
+    complete(id: string, result: { providerMsgId?: string; providerThreadId?: string; warning?: string; sendAccepted?: import("./recipient-receipts").AcceptedRecipientEvidence } | void, now: number, o?: { followup?: boolean }): Promise<{ touched: number[]; deltas: ModelDelta[] } & FlagReconciliation>;
     /** with `park` (plan 20): the server couldn't be reached, so it waits for resumeNetwork (an outage gives the attempt back) */
     fail(id: string, error: string, retryable: boolean, now: number, park?: OpPark): Promise<OpState>;
     markUnknown(id: string, error: string, now: number, sendAccepted?: import("./recipient-receipts").AcceptedRecipientEvidence): Promise<void>;
@@ -518,6 +518,8 @@ export interface MailStore {
    * Plan 132: a thread's summary and the queue of those still to make. Queueing happens in `sync.ingest`; a delete
    * cascades from the thread; a merge invalidates. Not exported, not synced, not searched.
    */
+  /** Plan 142: Follow-ups. */
+  followups: import("./followups").FollowupStore;
   /** Plan 141: a question's passages and the history of questions (the last 100 conversations). */
   ask: {
     passages(request: import("./ask").AskPassageRequest): Promise<import("./ask").AskPassages>;

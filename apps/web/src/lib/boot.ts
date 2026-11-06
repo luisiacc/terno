@@ -25,6 +25,7 @@ import { withPendingEdits } from "~/lib/accounts";
 import { acceptNextFavorites, applyFavoriteFolders, applyFolderRenames } from "~/lib/folders";
 import { installNativeReload } from "~/lib/native-reload";
 import { openFromNotice, startAttention } from "~/lib/notify";
+import { applyFollowups, loadFollowups } from "~/lib/followups";
 import { applyReminders, loadReminders } from "~/lib/reminders";
 import { snippetsSaved } from "~/lib/snippets";
 import { applyForwards, loadForwards, shareLocale } from "~/lib/forwards";
@@ -115,6 +116,9 @@ export async function boot(): Promise<void> {
     client.on("favoriteFolders", applyFavoriteFolders);
     // plan 87: the reminders (bells, the sidebar's count, the Inbox's top); a failure leaves the Inbox as it is
     client.on("reminders", applyReminders);
+    // plan 142: follow-ups: the Inbox's top, its row and each conversation's lines
+    client.on("followups", applyFollowups);
+    const followups = loadFollowups().catch((error) => console.warn("[followups] could not load", error));
     // before the first list, so the Inbox opens with its due ones on top (one local call)
     const reminders = loadReminders().catch((error) => console.warn("[reminders] could not load", error));
     // plan 94: scheduled sends (the strip, the reader's line; drafts scheduled elsewhere leave the composers)
@@ -153,7 +157,7 @@ export async function boot(): Promise<void> {
     // plan 24: history and pages; a reload on a conversation (List) reopens it before the list's first answer can pick row 0
     installPage();
     const reopened = bootPage();
-    await reminders;
+    await Promise.all([reminders, followups]);
     await reloadList({ keepSelection: reopened !== null });
     // plan 41: the badge and notifications; a click main held for this window opens now, after the first list
     startAttention();

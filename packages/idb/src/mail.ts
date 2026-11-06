@@ -78,6 +78,7 @@ import type { MemDb, Row, Table } from "./mem";
 import { hiddenCategories, tabHiddenTest } from "./inbox-hidden";
 import { answeredThreads, factsReady, noteSentMail, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn, type FactsQueue } from "./facts";
 import { mergeReminder } from "./reminders";
+import { mergeFollowups } from "./followups";
 import { mergeSummaries } from "./ai-summaries";
 
 /**
@@ -755,6 +756,7 @@ export function mergeThreads(c: Ctx, into: number, from: number, result: IngestR
   for (const d of decisions.by("fk_thread_id", from)) if (!decisions.has(into, d.category_id)) decisions.update(d, { thread_id: into });
   mergeReminder(c, into, from);
   mergeSummaries(c, into, from);
+  mergeFollowups(c, into, from);
   T(c, "threads").delete(from);
   result.touchedThreads.delete(from);
   result.touchedThreads.add(into);
@@ -1534,7 +1536,7 @@ export function updateAccount(c: Ctx, id: number, patch: AccountPatch): Account 
   const accounts = T(c, "accounts");
   const r = accounts.get(id);
   if (!r) return null;
-  const prefs = patch.senderName !== undefined || patch.signature !== undefined || patch.syncWindowDays !== undefined || patch.separateTabs !== undefined || patch.backfill !== undefined;
+  const prefs = patch.senderName !== undefined || patch.signature !== undefined || patch.syncWindowDays !== undefined || patch.separateTabs !== undefined || patch.followups !== undefined || patch.backfill !== undefined;
   accounts.update(r, {
     ...(patch.displayName !== undefined ? { display_name: patch.displayName } : {}),
     ...(patch.color !== undefined ? { color: patch.color } : {}),

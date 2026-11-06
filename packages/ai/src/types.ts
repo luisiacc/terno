@@ -2,6 +2,7 @@ import { textRef, type AiErrorKind, type AiProviderId, type Capabilities, type C
 import type { Localized } from "@terno/i18n";
 import type { z } from "zod";
 import type { AnswerFromMailInput, AnswerFromMailOptions, AnswerFromMailResult, AskPlanResult, PlanAskInput } from "./ask";
+import type { SentMailInput, SentMailResult } from "./followups";
 import type { SummarizeInput, ThreadSummaryResult } from "./summarize";
 import type { ComposeInput, ComposeOptions, ComposeResult, JudgeVoiceInput, JudgeVoiceResult, ParseIntentInput, ParseIntentResult } from "./writing";
 
@@ -137,6 +138,8 @@ export interface AiTasks {
   judgeVoice(input: JudgeVoiceInput, signal?: AbortSignal): Promise<JudgeVoiceResult>;
   /** plan 133: who an instruction is for, from the names it matched. Carries no mail. */
   parseIntent(input: ParseIntentInput, signal?: AbortSignal): Promise<ParseIntentResult>;
+  /** plan 142: what a message you sent promises, who it waits on, what it keeps */
+  readSentMail(input: SentMailInput, signal?: AbortSignal): Promise<SentMailResult>;
   /** plan 141: what to look for. Sees no mail, except what an earlier answer quotes, as material. */
   planAsk(input: PlanAskInput, signal?: AbortSignal): Promise<AskPlanResult>;
   /** plan 141: an answer from the given mail, streamed; a refusal throws */

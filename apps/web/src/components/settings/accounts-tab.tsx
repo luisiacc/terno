@@ -14,6 +14,7 @@ import { t } from "@terno/i18n";
 import { lazy, Suspense, useEffect, useId, useState } from "react";
 import { snack } from "~/lib/snack";
 import { setSeparateTabs } from "~/lib/gmail-tabs";
+import { client } from "~/rpc/connection";
 import { canStart, clearAttemptError, needsSignIn, prepareGoogle, signInAgain, useSignIn } from "~/lib/sign-in";
 import { retryIn } from "../connection-pill";
 import { getApp, setApp, useApp } from "~/state/app";
@@ -193,6 +194,10 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
           {(a) => <Switch {...a} data-testid="account-separate-tabs" checked={separatesTabs(account)} onCheckedChange={(on) => void setSeparateTabs(account.id, on)} />}
         </SettingsRow>
       )}
+      {/* plan 142 */}
+      <SettingsRow label={t("account.followups")} hint={t("account.followups.hint")}>
+        {(a) => <Switch {...a} data-testid="account-followups" checked={account.followups !== false} onCheckedChange={(on) => void client.call("accounts.update", { id: account.id, followups: on })} />}
+      </SettingsRow>
       <SettingsRow stacked label={t("account.connection")} hint={<span className="whitespace-pre-wrap [overflow-wrap:anywhere]">{status(account)}</span>}>
         {() => <Reconnect account={account} />}
       </SettingsRow>

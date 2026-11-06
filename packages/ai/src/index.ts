@@ -3,6 +3,7 @@ export * from "./providers";
 export * from "./wire";
 export { SUMMARY_PROMPT_VERSION, summaryBudget, summaryPrompt, summarizeTask, type SummarizeInput, type ThreadSummaryResult, type ThreadText } from "./summarize";
 export * from "./writing";
+export { FOLLOWUP_PROMPT_VERSION, fitSentMail, followupBudget, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_FILES_MAX, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_RECIPIENTS_MAX, sentMailPrompt, type SentMailInput, type SentMailResult } from "./followups";
 export { ASK_ANSWER_MAX_TOKENS, ASK_ANSWER_RULES, ASK_MESSAGE_OVERHEAD_CHARS, ASK_PROMPT_VERSION, answerFilter, answerPrompt, askBudget, cleanAnswer, fitAskPrompt, fitPlanEarlier, planAskPrompt, planAskTask, type AnswerFromMailInput, type AnswerFromMailOptions, type AnswerFromMailResult, type AskMaterial, type AskPlanResult, type AskStatusWord, type PlanAskInput } from "./ask";
 export * from "./json";
 export * from "./ladder";

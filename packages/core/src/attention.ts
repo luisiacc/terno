@@ -88,8 +88,8 @@ export interface MailNotice {
   subject: string;
   /** only for a single message */
   snippet: string;
-  /** plan 87: what it says: reminders that came due (absent: new mail) */
-  kind?: "reminder";
+  /** plan 87: what it says: reminders that came due, plan 142: promises that came due (absent: new mail) */
+  kind?: "reminder" | "followup";
 }
 
 export const NOTICE_SENDERS = 3;
@@ -120,6 +120,17 @@ export function reminderNotice(rows: readonly { threadId: number; dueAt: number;
     if (senders.length < NOTICE_SENDERS) senders.push(senderOf(r));
   }
   return { id, kind: "reminder", count: sorted.length, threadId: sorted.length === 1 ? sorted[0]!.threadId : null, senders, senderCount: Math.max(1, seen.size), subject: clip(sorted[0]!.subject, MAX_FIELD), snippet: "" };
+}
+
+/**
+ * Plan 142 revision 7: promises that came due: one says who and what ("You told Tom you'd send the contract"), carried in
+ * `snippet`, which redaction empties. Several together count rows, not threads: two on one thread are two.
+ */
+export function followupNotice(rows: readonly { threadId: number; text: string; personName: string | null; subject: string }[], id: string): MailNotice | null {
+  const first = rows[0];
+  if (!first) return null;
+  const threads = new Set(rows.map((r) => r.threadId));
+  return { id, kind: "followup", count: rows.length, threadId: threads.size === 1 ? first.threadId : null, senders: first.personName ? [clip(first.personName, MAX_FIELD)] : [], senderCount: 1, subject: clip(first.subject, MAX_FIELD), snippet: rows.length === 1 ? clip(first.text, NOTICE_SNIPPET) : "" };
 }
 
 /** One notice for a burst of important messages (any order in, newest first out); null for none. */
@@ -160,6 +171,12 @@ export function noticeText(n: MailNotice): { title: string; subtitle: string; bo
     const [a = "", b = ""] = n.senders;
     const from = n.senderCount <= 1 ? a : n.senderCount === 2 ? t("notify.from.two", { a, b }) : t("notify.from.many", { a, b, count: n.senderCount - 2 });
     return { title, subtitle: "", body: from };
+  }
+  // plan 142: a promise that came due; with "Show sender and subject" off, that one is
+  if (n.kind === "followup") {
+    if (n.count > 1) return { title: t("notify.followups", { count: n.count }), subtitle: "", body: "" };
+    if (!n.subject && !n.snippet) return { title: t("notify.followup"), subtitle: "", body: "" };
+    return { title: n.senders[0] ? t("followup.promise", { name: n.senders[0], text: n.snippet }) : t("followup.promiseNoName", { text: n.snippet }), subtitle: n.subject, body: "" };
   }
   // redacted: only how many
   if (n.senders.length === 0) return { title: n.count <= 1 ? t("notify.new") : t("notify.count", { count: n.count }), subtitle: "", body: "" };

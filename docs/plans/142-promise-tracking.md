@@ -1,6 +1,6 @@
 # Plan 142: Promise tracking (Follow-ups)
 
-- **Status:** proposed and Codex-critiqued. Nothing is built. "Revisions after the Codex review" overrides the sections before it.
+- **Status:** built (see "What building it changed"). The real-model eval (`scripts/ai-real/followups.real.ts`) is written and not run, and the owner's read on a copy of a real profile hasn't happened: both wait for the owner's go-ahead. "Revisions after the Codex review" overrides the sections before it.
 - **Builds on:** plan 131 (AI base), plan 17 (who is a person, your addresses), plan 87 (reminders, the Inbox's top, the due notification), plan 133 (the writing extractor, templates, one-tap drafts), plan 132 (the worker's shape), plan 113 (tips).
 - **Used by:** plan 145 (the brief's "needs you").
 
@@ -253,3 +253,13 @@ Codex (`gpt-6.1-sol`, high, read-only, `/tmp/terno-plans-141-145/142-promise-tra
 10. **One row per thread.** The list keys on `ThreadSummary.id` (`list.ts:57`, `thread-list.tsx:675`), so lists show a thread once, with its most urgent obligation and "+1". The thread's line lists each with its own Done, Dismiss and Later. Tests cover keyboard and actions with several on one conversation.
 11. **Identity is the source, not the words.** The same sentence on two messages is two promises. A row is unique on `(message_id, item)`, with one `awaiting` per source message. Results, closures and consuming the marker commit together, including when nothing was found, so a crash can't redo or lose it. A merge dedupes on that identity.
 12. **Every input has a limit.** At most 20 recipients and 10 file names at 120 characters, 10 open promises (newest first), and a subject of 200. The output's reservation and the ladder's schema and repair text fit the session's capacity (`summaryBudget`). Tests on a small window through fallback and repair.
+
+## What building it changed
+
+- **The row's text is a verb phrase, not a noun phrase.** §9 asked for a noun phrase, but "You told Tom you'd {text}" and "Le dijiste a Tom que ibas a {text}" both need the base form of the verb, so the prompt asks for "send the contract" / "enviar el contrato". The line's own words are still each language's.
+- **`followups` is an early table on IndexedDB,** because the Inbox's top reads it before messages load, as reminders do.
+- **A confirmed send closes waits with `closed_reason: superseded`,** so a list of closures can tell it from a reply.
+- **Later is a small menu of the reminder presets,** not plan 87's dialog, which only knows reminders.
+- **The monthly ceiling sums `DAILY_REQUESTS`' keys** (revision 8), so plans 144 and 145 get it by adding a line.
+- **The shared dwell** (`lib/open-dwell.ts`) landed here for plan 144 revision 9, and reminders moved onto it.
+- **Not built:** Nudge's To is the ordinary reply's, not narrowed to who it's waiting on when the thread has several.

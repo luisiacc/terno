@@ -61,6 +61,7 @@ export { LifeBuoy } from "./iconset/generated/LifeBuoy";
 export { Link } from "./iconset/generated/Link";
 export { Link2 } from "./iconset/generated/Link2";
 export { List } from "./iconset/generated/List";
+export { ListChecks } from "./iconset/generated/ListChecks";
 export { ListFilter } from "./iconset/generated/ListFilter";
 export { ListOrdered } from "./iconset/generated/ListOrdered";
 export { Loader2 } from "./iconset/generated/Loader2";

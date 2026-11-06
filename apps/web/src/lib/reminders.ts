@@ -2,9 +2,11 @@ import type { Reminder, ReminderKind, RemindPresetId } from "@terno/core";
 import { t } from "@terno/i18n";
 import type { ReminderInfo, RemindersSnapshot } from "@terno/core/rpc";
 import { create } from "zustand";
+import { useFollowups } from "~/state/followups";
 import { useReminders } from "~/state/reminders";
 import { client } from "~/rpc/connection";
 import { registerUndo, snack } from "~/lib/snack";
+import { noteExplicitOpen, onExplicitOpen } from "~/lib/open-dwell";
 import { readerShown } from "~/lib/page";
 import { getApp, inPlainInbox, setApp, useApp } from "~/state/app";
 import { currentTargets } from "~/lib/select";
@@ -93,35 +95,35 @@ export async function clearReminder(threadIds: readonly number[]): Promise<void>
 
 // ───────────────────────────── opening ends a due one ─────────────────────────────
 
-/** what an open waits on before it counts (the mark-read dwell) */
-export const OPEN_DWELL_MS = 450;
-const opening: { timer: ReturnType<typeof setTimeout> | null } = { timer: null };
+export { OPEN_DWELL_MS } from "~/lib/open-dwell";
 
 /**
- * The user opened this conversation (a click, Enter, j/k, a notification):
- * if its reminder is due, it ends once the conversation stayed on screen for
- * the dwell. A reload's first-row pick and the move to the next row after an
- * archive never call this: those aren't the user looking at it.
+ * The user opened this conversation (a click, Enter, j/k, a notification): if its reminder is due, it ends once the
+ * conversation stayed on screen for the dwell. A reload's first-row pick and the move to the next row after an archive
+ * never call this: those aren't the user looking at it.
  */
-export function noteOpen(id: number): void {
-  if (opening.timer) clearTimeout(opening.timer);
-  opening.timer = null;
-  const seen = useReminders.getState().byThread.get(id);
-  if (!seen?.due) return;
-  opening.timer = setTimeout(() => {
-    opening.timer = null;
+export const noteOpen = noteExplicitOpen;
+
+onExplicitOpen({
+  opened: (id) => {
+    const seen = useReminders.getState().byThread.get(id);
+    return seen?.due ? seen : null;
+  },
+  settled: (id, snapshot) => {
+    const seen = snapshot as NonNullable<ReturnType<typeof useReminders.getState>["byThread"] extends ReadonlyMap<number, infer V> ? V : never>;
     const now = useReminders.getState().byThread.get(id);
-    if (getApp().selectedId !== id || !readerShown() || now?.dueAt !== seen.dueAt || now.setAt !== seen.setAt || now.kind !== seen.kind) return;
+    if (now?.dueAt !== seen.dueAt || now.setAt !== seen.setAt || now.kind !== seen.kind) return;
     // the one it saw, exactly: one set meanwhile (another window) stays
     const { threadId, dueAt, kind, setAt } = seen;
     void client.call("reminders.clear", { threadIds: [id], dueOnly: true, exact: [{ threadId, dueAt, kind, setAt }] }).catch(() => {});
-  }, OPEN_DWELL_MS);
-}
+  },
+});
 
 /** The selection left a conversation the Inbox's top held only because it was open (its reminder ended): it goes to its place. */
 useApp.subscribe((s, prev) => {
   if (prev.selectedId === null || s.selectedId === prev.selectedId || !inboxTop.ids.includes(prev.selectedId)) return;
   if (useReminders.getState().byThread.get(prev.selectedId)?.due) return;
+  if (useFollowups.getState().byThread.get(prev.selectedId)?.some((r) => r.inboxState === "onTop")) return;
   if (inPlainInbox(s)) void reloadList({ keepSelection: true });
 });
 

@@ -22,7 +22,7 @@ import {
   type ProviderConfig,
   type StreamEvent,
 } from "@terno/ai";
-import { ASK_CLAUDE_MODEL, ASK_PLAN_CLAUDE_MODEL, ASK_PLAN_OPENAI_MODEL, INTENT_CLAUDE_MODEL, JEV_DEFAULT_MODEL, messageOf, SUMMARY_DEFAULT_MODEL, textRef, WRITING_CLAUDE_MODEL, type AiTaskName } from "@terno/core";
+import { FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, ASK_CLAUDE_MODEL, ASK_PLAN_CLAUDE_MODEL, ASK_PLAN_OPENAI_MODEL, INTENT_CLAUDE_MODEL, JEV_DEFAULT_MODEL, messageOf, SUMMARY_DEFAULT_MODEL, textRef, WRITING_CLAUDE_MODEL, type AiTaskName } from "@terno/core";
 import { RpcError, type AiTestResult, type AppSettings } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { BackendCore as Backend } from "./core";
@@ -212,6 +212,14 @@ export class AiService {
     if (chosen) return profiled(chosen.provider, chosen.model);
     if (name === "writing" && configured.provider === "anthropic") return { ...configured, model: WRITING_CLAUDE_MODEL };
     if (name === "ask" && configured.provider === "anthropic") return { ...configured, model: ASK_CLAUDE_MODEL };
+    // plan 142: the summaries' row if one is set; a default never moves mail to a provider the user didn't set up
+    if (name === "followup") {
+      const summary = settings.ai.tasks.summary;
+      if (summary) return profiled(summary.provider, summary.model);
+      if (configured.provider === "anthropic") return { ...configured, model: FOLLOWUP_CLAUDE_MODEL };
+      if (configured.provider === "openai") return { ...configured, model: FOLLOWUP_OPENAI_MODEL };
+      return configured;
+    }
     if (name === "categorize" && settings.ai.keys.jev?.hasKey) return profiled("jev", JEV_DEFAULT_MODEL);
     if (name === "summary") {
       if (settings.ai.keys.openai?.hasKey) return profiled("openai", SUMMARY_DEFAULT_MODEL);

@@ -13,4 +13,5 @@ export * from "./forwards-perf";
 export * from "./ai-summaries-perf";
 export * from "./writing-perf";
 export * from "./ask-perf";
+export * from "./followups-perf";
 export * from "./smart-categorization-perf";

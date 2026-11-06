@@ -7,6 +7,8 @@ import { create } from "zustand";
 export const TIPS = [
   // a new category is hidden from the Inbox: right-click → Show in Inbox brings it back
   "category-inbox",
+  // plan 142: the first follow-up on an open conversation: what the line is, and how it ends
+  "followups-first",
 ] as const;
 export type TipId = (typeof TIPS)[number];
 

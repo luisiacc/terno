@@ -7,13 +7,13 @@ import type { MailStore } from "@terno/store";
 /** A background task's share of the provider, across all of them. */
 const BACKGROUND_PER_MINUTE = 20;
 /** What one day may spend by itself, per task: nobody asked for each of these requests. */
-export const DAILY_REQUESTS: Readonly<Record<BackgroundTask, number>> = { summary: 300, categorize: 200, voice: 60 };
+export const DAILY_REQUESTS: Readonly<Record<BackgroundTask, number>> = { summary: 300, categorize: 200, voice: 60, followup: 200 };
 /** A second ceiling, in input tokens, because a request's size varies. */
-export const DAILY_INPUT_TOKENS: Readonly<Record<BackgroundTask, number>> = { summary: 1_500_000, categorize: 400_000, voice: 400_000 };
+export const DAILY_INPUT_TOKENS: Readonly<Record<BackgroundTask, number>> = { summary: 1_500_000, categorize: 400_000, voice: 400_000, followup: 400_000 };
 /** How much background work may wait for a permit, so a burst can't pile up in memory. */
 const MAX_WAITING = 64;
 
-export type BackgroundTask = "summary" | "categorize" | "voice";
+export type BackgroundTask = "summary" | "categorize" | "voice" | "followup";
 export type LimiterTask = AiTaskName | "filter" | "voice" | "intent";
 
 interface Tally {
@@ -355,7 +355,8 @@ export class AiLimiter {
     let usd = 0;
     for (const [day, tasks] of Object.entries(book)) {
       if (!day.startsWith(month)) continue;
-      for (const task of ["summary", "categorize", "voice"] as const) usd += tasks[task]?.usd ?? 0;
+      // whatever runs by itself: the registry above, so a new background task can't spend past the ceiling unseen
+      for (const task of Object.keys(DAILY_REQUESTS) as BackgroundTask[]) usd += tasks[task]?.usd ?? 0;
     }
     return usd;
   }

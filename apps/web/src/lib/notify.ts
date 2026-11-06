@@ -64,7 +64,7 @@ function show(notice: MailNotice): void {
   const s = getApp().settings;
   if (!s?.notifications || !pageNotificationsSupported() || Notification.permission !== "granted") return;
   // a visible tab already shows the mail (a reminder is asked for: it shows anyway)
-  if (document.visibilityState !== "hidden" && notice.kind !== "reminder") return;
+  if (document.visibilityState !== "hidden" && notice.kind !== "reminder" && notice.kind !== "followup") return;
   const { title, subtitle, body } = noticeText(notice);
   let n: Notification;
   try {

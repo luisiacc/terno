@@ -18,6 +18,7 @@ import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
 import { AiAssist } from "./ai-assist";
 import { AskService } from "./ask";
+import { FollowupWorker } from "./followups";
 import { SummaryWorker } from "./summaries";
 import { WritingService } from "./writing";
 import { Attention, type AttentionHost } from "./attention";
@@ -266,6 +267,7 @@ export class BackendCore {
   /** plan 132: summaries of new mail, and by hand; asleep on an empty queue */
   readonly summaries: SummaryWorker;
   readonly ask: AskService;
+  readonly followups: FollowupWorker;
   /** plan 133: drafting: what goes into a draft, and the learner, asleep until the feature is used */
   readonly writing: WritingService;
   /** plan 18: recipient and body suggestions, in memory, built on first use */
@@ -318,6 +320,20 @@ export class BackendCore {
     });
     this.writing = new WritingService(this);
     this.ask = new AskService(this);
+    this.followups = new FollowupWorker({
+      store: this.store,
+      now: () => this.now(),
+      settings: () => readSettings(this.store),
+      forTask: () => this.aiService.forTask("followup", { foreground: false }),
+      accountWanted: async (accountId) => (await this.store.accounts.config<AccountPrefs>(accountId))?.config.followups !== false,
+      signature: async (accountId) => (await this.store.accounts.get(accountId))?.signature ?? "",
+      templated: (accountId) => this.writing.learner.templatedIn(accountId),
+      emit: (snapshot) => this.server.emit("followups", snapshot, { origins: ["renderer", "dev"] }),
+      notify: (notice) => this.attention.remind(notice),
+      summaries: (ids) => this.store.threads.summaries(ids),
+      runBudgeted: (items, work) => this.runBudgeted(items, work),
+      log: (level, message, extra) => this.log(level, message, extra),
+    });
     this.facts = new FactsBackfill(this);
     this.reminders = new Reminders({
       store: this.store,
@@ -580,6 +596,9 @@ export class BackendCore {
       this.log("warn", "forwards couldn't start", error instanceof Error ? error.message : error);
     });
     // plan 132: summaries a quit left queued; awaited (one settings read): no sync may start before ingest knows it's on
+    await this.followups.start().catch((error: unknown) => {
+      captureError(error, { code: "ai.failed" });
+    });
     await this.summaries.start().catch((error: unknown) => {
       captureError(error, { code: "ai.failed" });
       this.log("warn", "summaries couldn't start", error instanceof Error ? error.message : error);
@@ -650,6 +669,7 @@ export class BackendCore {
     // plan 132: what waited for the provider to be reachable
     if (online) {
       this.summaries.wake({ network: true });
+      this.followups.wake({ network: true });
       this.aiAssist.wake({ network: true });
     }
     if (this.options.autoSync === false) return;
@@ -826,6 +846,7 @@ export class BackendCore {
     void this.ready.catch(() => {});
     this.aiAssist.stop();
     this.summaries.stop();
+    this.followups.stop();
     this.incoming.close();
     const retirement = (async () => {
       let failed: { error: unknown } | undefined;
@@ -994,6 +1015,7 @@ export class BackendCore {
       this.pendingViews = false;
       this.server.emit("changed", { threadIds, views });
       this.reminders.touched();
+      this.followups.touched();
       this.scheduled.touched();
       this.emitCounts();
       this.autocomplete.notify();
@@ -1219,7 +1241,9 @@ export class BackendCore {
       // plan 131 revision 5: and it's new mail the AI features may want, with the message or never (off: this one boolean)
       const wants = live ? { summary: this.summaries.isActive, category: await this.aiAssist.wanted() } : null;
       const newMail = wants && (wants.summary || wants.category) ? wants : undefined;
-      const ingest = async (batch: IncomingMessage[]) => (batch.length ? this.store.sync.ingest(batch, { applyFilters, now: this.now(), classifier, observation, check: checkCurrent, forwardEligible, newMail }) : null);
+      // plan 142: mail you sent from elsewhere, only while live; the account's own switch is the worker's to read
+      const liveSent = live ? { wanted: this.followups.isActive } : undefined;
+      const ingest = async (batch: IncomingMessage[]) => (batch.length ? this.store.sync.ingest(batch, { applyFilters, now: this.now(), classifier, observation, check: checkCurrent, forwardEligible, newMail, liveSent }) : null);
       // plan 69: a sync pass's slice never overlaps a storage removal unit, and leaves out what one removed
       const write = () => (pass ? this.evictions.ingest(pass.accountId, pass.pass, chunk, ingest) : ingest(chunk));
       const r = await (life ? this.accountWrite(life, write) : write());
@@ -1241,6 +1265,7 @@ export class BackendCore {
       }
       // plan 132: what it queued, and any body it completed for what waits
       this.summaries.wake();
+      if (live) this.followups.wake();
       // plan 134: after commit, outside the slice
       this.aiAssist.wake();
     });
@@ -2546,7 +2571,8 @@ export class BackendCore {
       if (op.kind === "send") log.info("send.done", { durationMs: performance.now() - started });
       if (this.stopped && !this.store.isOpen) return;
       // a warning in Terno's words stays a catalog message (see opInfo)
-      const done = await this.store.ops.complete(op.id, { ...result, ...(sendAccepted && { sendAccepted }), ...(warning !== undefined && { warning: encodeText(warning) }) }, this.now());
+      const done = await this.store.ops.complete(op.id, { ...result, ...(sendAccepted && { sendAccepted }), ...(warning !== undefined && { warning: encodeText(warning) }) }, this.now(), { followup: this.followups.isActive });
+      if (sending) this.followups.wake();
       if (sending && receipt) {
         try {
           const stored = await this.store.sendCopies.get(op.id);
@@ -2643,6 +2669,7 @@ export class BackendCore {
   private bodyArrived(messageId: number): void {
     // plan 132: a summary may have waited for it (both ways a body arrives come here); plan 134: so may the AI's look
     this.summaries.wake();
+    this.followups.wake();
     this.aiAssist.wake();
     if (!this.forwards.isActive) return;
     this.planForwards({ messageIds: [messageId] });

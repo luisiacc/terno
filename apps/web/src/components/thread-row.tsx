@@ -17,6 +17,8 @@ import { CodeChip } from "./code-chip";
 import { ReviewControls } from "./review-actions";
 import { useThreadCode } from "~/lib/codes";
 import { reminderShort, useReminders } from "~/lib/reminders";
+import { rowLine } from "~/lib/followups";
+import { useFollowups } from "~/state/followups";
 import { onlyOnTop } from "~/state/list";
 
 /** The account, in all-accounts views: a small ring in its color (category dots are filled) before its name (plan 23). */
@@ -128,6 +130,21 @@ type ViewProps = Omit<Props, "showAccount" | "wide" | "review" | "reminderTop" |
  * renders it through ThreadRow (its selectors), plan 98's first-run preview
  * with sample mail.
  */
+/**
+ * The row's second line. Plan 142: on the Inbox's top and in its own list, what's owed takes its place, in the attention
+ * ink. One Map read: a row with nothing owed never re-renders for follow-ups.
+ */
+function RowSnippet({ thread, reminderTop }: { thread: ThreadSummary; reminderTop?: boolean }) {
+  const followupsList = useApp((s) => s.followups);
+  const owed = useFollowups((s) => s.byThread.get(thread.id));
+  const line = followupsList || (reminderTop && owed?.some((r) => r.inboxState === "onTop")) ? rowLine(owed) : null;
+  return (
+    <span data-testid="row-snippet" data-followup={line ? true : undefined} className={cn("type-row-snippet min-w-0 truncate", line ? "text-primary" : "text-muted-foreground")}>
+      {line ?? thread.snippet}
+    </span>
+  );
+}
+
 export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, reminderTop, reminderEnd, selected, checked, inSelection, account, categories, hasDraft, code, reminder, remindersList, interactive }: ViewProps) {
   const cats = thread.categoryIds.length ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
@@ -210,11 +227,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       {thread.subject || t("common.noSubject")}
     </span>
   );
-  const snippet = (
-    <span data-testid="row-snippet" className="type-row-snippet min-w-0 truncate text-muted-foreground">
-      {thread.snippet}
-    </span>
-  );
+  const snippet = <RowSnippet thread={thread} reminderTop={reminderTop} />;
   const chip = code && <CodeChip threadId={thread.id} code={code} />;
   const reviewed = review !== null ? categories.find((c) => c.id === review) : undefined;
   const answer = reviewed && <ReviewControls threadId={thread.id} categoryId={reviewed.id} category={reviewed.name} />;

@@ -1,4 +1,4 @@
-import { ASK_CLAUDE_MODEL, SUMMARY_CLAUDE_MODEL, SUMMARY_DEFAULT_MODEL, type AiProviderId, type AiSummariesStatus, type AiTaskName, type ModelInfo } from "@terno/core";
+import { ASK_CLAUDE_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, NUDGE_DAYS, SUMMARY_CLAUDE_MODEL, SUMMARY_DEFAULT_MODEL, type AiProviderId, type AiSummariesStatus, type AiTaskName, type ModelInfo } from "@terno/core";
 import type { AiSettings, AiUsageReport, AppSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
@@ -7,7 +7,7 @@ import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
 import { useEffect, useState } from "react";
-import { askTarget, errorHelp, modelName, providerLabel, summaryTarget } from "~/lib/ai";
+import { askTarget, errorHelp, followupTarget, modelName, providerLabel, summaryTarget } from "~/lib/ai";
 import { reconcileSettings } from "~/lib/appearance";
 import { localized } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
@@ -148,6 +148,69 @@ export function TaskTargetRow({ ai, update, task, provider, model, choices, mode
         </div>
       )}
     </SettingsRow>
+  );
+}
+
+const NUDGE_CHOICES = NUDGE_DAYS.map((d) => String(d));
+
+/**
+ * Plan 142 §8: off by default. Turning it on offers the last 30 days once, with the count and the cost, and sends nothing
+ * old without a yes.
+ */
+export function FollowupsGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
+  const { ai, followups } = settings;
+  const target = followupTarget(ai);
+  const ready = target.provider !== "none";
+  const [offer, setOffer] = useState<{ count: number; usd: number | null } | null>(null);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const offering = followups.enabled && !followups.scanAnswered;
+  useEffect(() => {
+    if (!offering) return setOffer(null);
+    let current = true;
+    void client.call("followups.scanOffer", {}).then((o) => current && setOffer(o), () => {});
+    return () => { current = false; };
+  }, [offering]);
+  useEffect(() => {
+    setModels([]);
+    if (!ready || !followups.enabled) return;
+    let current = true;
+    void client.call("ai.listModels", { provider: target.provider }).then((r) => current && setModels(r.models), () => {});
+    return () => { current = false; };
+  }, [target.provider, ready, followups.enabled]);
+  const answer = async (check: boolean) => {
+    if (check) await client.call("followups.scan", {}).catch(() => {});
+    await update({ followups: { scanAnswered: true } }, { quiet: true });
+  };
+  return (
+    <SettingsGroup title={t("followups.title")} testId="ai-followups">
+      <SettingsRow label={t("ai.followups.switch")} hint={ready ? t("ai.followups.hint", { provider: providerLabel(target.provider, ai) }) : t("ai.followups.hintNoProvider")}>
+        {(a) => <Switch {...a} checked={followups.enabled} disabled={!ready && !followups.enabled} data-testid="ai-followups-switch" onCheckedChange={(enabled) => void update({ followups: { enabled } })} />}
+      </SettingsRow>
+      {offering && offer && offer.count > 0 && (
+        <SettingsNote testId="ai-followups-offer">
+          <span>{offer.usd !== null ? t("ai.followups.offerCost", { count: offer.count, usd: usd(offer.usd) }) : t("ai.followups.offer", { count: offer.count })}</span>{" "}
+          <Button variant="link" size="xs" data-testid="ai-followups-check" onClick={() => void answer(true)}>{t("ai.followups.check")}</Button>{" "}
+          <Button variant="link-secondary" size="xs" data-testid="ai-followups-notnow" onClick={() => void answer(false)}>{t("ai.followups.notNow")}</Button>
+        </SettingsNote>
+      )}
+      {followups.enabled && ready && <TaskTargetRow ai={ai} update={update} task="followup" provider={target.provider} model={target.model} choices={[...new Set([...providerChoices(ai), target.provider])]} modelFor={(next) => (next === "anthropic" ? FOLLOWUP_CLAUDE_MODEL : next === "openai" ? FOLLOWUP_OPENAI_MODEL : modelFor(ai, next) || target.model)} models={models} prefix="ai-followups" labels={{ row: t("ai.followups.target"), hint: t("ai.followups.targetHint"), provider: t("ai.followups.targetProvider"), model: t("ai.followups.targetModel") }} />}
+      {followups.enabled && (
+        <SettingsRow label={t("ai.followups.nudge")} hint={t("ai.followups.nudgeHint")}>
+          {({ id: _id, "aria-describedby": described }) => (
+            <Select value={String(followups.nudgeAfterDays)} onValueChange={(v) => void update({ followups: { nudgeAfterDays: Number(v) as 3 | 5 | 7 | 14 } })} items={NUDGE_CHOICES.map((d) => ({ value: d, label: t("ai.followups.nudgeDays", { count: Number(d) }) }))}>
+              <SelectTrigger aria-label={t("ai.followups.nudge")} aria-describedby={described} size="sm" className="w-28" data-testid="ai-followups-nudge">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {NUDGE_CHOICES.map((d) => (
+                  <SelectItem key={d} value={d}>{t("ai.followups.nudgeDays", { count: Number(d) })}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </SettingsRow>
+      )}
+    </SettingsGroup>
   );
 }
 

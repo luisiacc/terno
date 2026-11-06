@@ -22,6 +22,7 @@ import {
   type PresetDescriptor,
   type ProviderDescriptor,
 } from "../ai";
+import type { FollowupRow, FollowupsSetting, FollowupsSnapshot } from "../followups";
 import { ASK_QUESTION_MAX, ASK_SOURCES_MAX, type AiAskEvent, type AiAskResult, type AskConversationSummary, type AskOlderOffer, type AskSourceView, type AskTurn } from "../ask";
 import { GENERATION_TEXT_MAX, WRITING_INSTRUCTIONS_MAX, WRITING_ONE_OFF_MAX, type AiComposeDelta, type AiComposeResult, type AiIntentResult, type AiStudyProgress, type WritingPrefs, type WritingProfileView, type WritingStatus, type WritingStudyResult } from "../writing/contract";
 import type { AlwaysScope, CategoryModelStats, Prediction, QuickActions } from "../categorize/bulk";
@@ -182,6 +183,8 @@ export interface AppSettings {
   /** plan 132: summarize new mail as it arrives (off unless the user turns it on: it sends mail with no click); mail from before `enabledAt` never */
   summaries: AiSummariesSetting;
   ask: AskSetting;
+  /** plan 142 */
+  followups: FollowupsSetting;
   /** anonymous error reports (builds with a DSN, outside local mode): ask each time, send, or never */
   errorReports: "ask" | "always" | "never";
   /** the UI language: follow the system, or a locale Terno ships (@terno/i18n LOCALES) */
@@ -480,6 +483,8 @@ const settingsPatch = z.object({
   /** `enabledAt` is the backend's: the moment it went on */
   summaries: z.object({ enabled: z.boolean() }).strict().optional(),
   ask: z.object({ enabled: z.boolean() }).strict().optional(),
+  /** `enabledAt` is the backend's */
+  followups: z.object({ enabled: z.boolean().optional(), nudgeAfterDays: z.union([z.literal(3), z.literal(5), z.literal(7), z.literal(14)]).optional(), scanAnswered: z.boolean().optional() }).strict().optional(),
   errorReports: z.enum(["ask", "always", "never"]).optional(),
   language: z.enum(LANGUAGE_SETTINGS).optional(),
   composeSuggestions: z.boolean().optional(),
@@ -1032,6 +1037,7 @@ export const contract = {
       syncWindowDays: syncWindow.nullable().optional(),
       /** plan 86 (Gmail): Promotions and Social apart from the Inbox */
       separateTabs: z.boolean().optional(),
+      followups: z.boolean().optional(),
     }),
   ),
   /**
@@ -1125,6 +1131,18 @@ export const contract = {
   "ai.summaries.status": m<AiSummariesStatus>()(empty),
   /** Settings → Storage → Clear AI data. */
   "ai.summaries.clear": m<{ ok: true }>()(empty),
+
+  // plan 142. All renderer-only: none of these is in MCP_ALLOWED.
+  "followups.list": m<FollowupsSnapshot>()(empty),
+  /** the threads of these rows, for the list and the Inbox's top: one a thread (revision 10) */
+  "followups.threads": m<{ items: ThreadSummary[] }>()(z.object({ onTop: z.boolean(), accountId: id.optional() })),
+  "followups.act": m<{ undoId: string | null; row: FollowupRow | null }>()(z.object({ id, revision: z.number().int().min(0), action: z.enum(["done", "dismiss", "later"]), dueAt: z.number().int().optional() })),
+  "followups.undo": m<{ ok: true }>()(z.object({ undoId: z.string().min(1).max(64) })),
+  /** the Inbox's top ends for this thread: it was opened and stayed on screen */
+  "followups.seen": m<{ ok: true }>()(z.object({ threadId: id })),
+  /** the one-time check: how much, and what it would cost when the price is known */
+  "followups.scanOffer": m<{ count: number; usd: number | null }>()(empty),
+  "followups.scan": m<{ queued: number }>()(empty),
 
   // plan 141. All renderer-only: none of these is in MCP_ALLOWED, since a question and its answers are mail content.
   /**
@@ -1317,6 +1335,8 @@ export interface Events {
   syncProgress: { accountId: number; progress: import("../types").SyncProgress | null };
   /** plan 132: a thread's summary is ready, for an open reader (only to the renderer and dev: never MCP) */
   aiSummary: { threadId: number };
+  /** plan 142: what's active, for the windows; never MCP */
+  followups: FollowupsSnapshot;
   /** plan 141: an answer as it comes, only to the connection that asked */
   aiAsk: AiAskEvent;
   /** plan 141: these conversations went (all of them: null): no window keeps showing them */

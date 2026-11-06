@@ -10,6 +10,7 @@ export * from "./address";
 export { decodeEncodedWords } from "./encoded-words";
 export * from "./ai";
 export * from "./ask";
+export * from "./followups";
 export * from "./themes";
 export * from "./list-filter";
 export * from "./people";
