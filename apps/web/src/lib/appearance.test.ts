@@ -46,6 +46,7 @@ const SERVER: AppSettings = {
   summaries: { enabled: false, enabledAt: null, acknowledged: [] },
       ask: { enabled: true, acknowledged: [] },
       replies: { enabled: false },
+      today: { show: true, prepareAt: "08:00", notify: false, digest: false },
   followups: { enabled: false, enabledAt: null, nudgeAfterDays: 5, scanAnswered: false },
   composeSuggestions: true,
   senderIcons: false,

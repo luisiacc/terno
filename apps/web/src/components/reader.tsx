@@ -1,3 +1,5 @@
+import { DIGEST_ROW_ID } from "@terno/core";
+import { useToday } from "~/state/today";
 import "~/lib/replies";
 import { folderName } from "~/lib/account-folders";
 import { ReaderAttachments } from "./attachments";
@@ -53,6 +55,7 @@ const RemindPicker = lazy(() => import("./remind-picker").then((m) => ({ default
 const ThreadSummary = lazy(() => import("./thread-summary"));
 const ThreadFollowups = lazy(() => import("./thread-followups"));
 const ReplyReady = lazy(() => import("./reply-ready"));
+const DigestPage = lazy(() => import("./digest-page"));
 
 /** Plan 132 §7: a summary by hand. Never in spam or trash, nor with one spam message in the thread. Open already: the block shows it. */
 function SummarizeButton({ threadId }: { threadId: number }) {
@@ -524,6 +527,12 @@ const iconsFor = (t: { inSpam: boolean; hasSpam?: boolean }) => !t.inSpam && !t.
 export function Reader() {
   const selectedId = useApp((s) => s.selectedId);
   const focusRequest = useApp((s) => s.draftFocus?.seq ?? null);
+  // plan 145: the digest's row reads here, and isn't a thread
+  if (selectedId === DIGEST_ROW_ID) return (
+    <Suspense fallback={null}>
+      <DigestPage />
+    </Suspense>
+  );
   return <MailReaderView identity={selectedId} focusRequest={focusRequest}><ReaderContent /></MailReaderView>;
 }
 
@@ -594,6 +603,7 @@ function ReaderContent() {
   const draftShown = useApp((s) => s.draftShown);
   const draftKey = useDrafts((s) => (selectedId === null ? null : shownDraftKey(s.drafts, selectedId, draftShown)));
   const repliesOn = useApp((s) => s.settings?.replies?.enabled === true);
+  const fromDigest = useToday((s) => s.fromDigest);
 
   useEffect(() => {
     if (draftShown?.threadId === selectedId && draftShown.key !== draftKey) setApp({ draftShown: null });
@@ -709,6 +719,7 @@ function ReaderContent() {
             </div>
           ) : (
             <>
+              {fromDigest && <Button variant="link-secondary" size="xs" className="mb-2" data-testid="back-to-digest" onClick={() => { useToday.setState({ fromDigest: false }); setApp({ selectedId: DIGEST_ROW_ID }); }}>{t("today.digest.back")}</Button>}
               <MessageMenu threadId={detail.thread.id}>
                 <div>
                   {/* inside the menu: Lumen's card can stand for the message (plan 59) */}

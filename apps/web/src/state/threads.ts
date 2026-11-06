@@ -95,6 +95,8 @@ export async function hydrateSelectedThread(id: number, selected: () => boolean,
 }
 
 export function loadThread(id: number, force = false): Promise<ThreadDetail | null> {
+  // plan 145: the digest's row isn't a thread
+  if (id === 0) return Promise.resolve(null);
   if (connection !== client.connectionVersion) invalidateThreadConnection();
   const atConnection = client.connectionVersion;
   if (!force) {

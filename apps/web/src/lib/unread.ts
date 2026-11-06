@@ -12,7 +12,7 @@ import { patchRows, useList } from "~/state/list";
 
 /** The toggle applies: the app is up, nothing modal is open, and the list is a mailbox ("Revisar" and Reminders aren't). */
 export function canToggleUnread(s = getApp()): boolean {
-  return s.ready && s.dialog === null && !s.menuOpen && s.reviewCategoryId === null && !s.reminders && !s.followups && !document.getElementById("root")?.inert;
+  return s.ready && s.dialog === null && !s.menuOpen && s.reviewCategoryId === null && !s.reminders && !s.followups && !s.today && !document.getElementById("root")?.inert;
 }
 
 /** The current mailbox's quick filter (none: everything); remembered across launches. */

@@ -1,3 +1,4 @@
+import { aiFeaturesAvailable } from "@terno/core";
 import { Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 import { COUNTED_VIEWS, FOLDER_VIEWS, folderRef, separatesTabs, tabRef, TABS, viewRef, type Account, type CategoryColor, type CountedView, type Folder, type FolderView, type Tab, type View } from "@terno/core";
@@ -6,7 +7,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, ArrowLeft, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Tag, Trash2, Users, ListChecks } from "@terno/ui/icons";
+import { Sun, Archive, ArrowLeft, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Tag, Trash2, Users, ListChecks } from "@terno/ui/icons";
 import { Kbd } from "@terno/ui/components/kbd";
 import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
@@ -16,7 +17,7 @@ import { getApp, navigate, setApp, useApp, type AppState } from "~/state/app";
 import { useReminders } from "~/lib/reminders";
 import { useFollowups } from "~/state/followups";
 import { createCategory as createNamedCategory } from "~/lib/tabs";
-import { usePendingTip } from "~/lib/tips";
+import { offerTip, usePendingTip } from "~/lib/tips";
 import { ACCOUNT_VIEWS, SOLO_VIEWS, listedByAccount, useFolderRows, toggleAccount, useOpenAccount, type FolderRow } from "~/lib/account-folders";
 import { renderProbe } from "~/lib/render-probe";
 import type { DropId } from "~/lib/drag";
@@ -35,6 +36,7 @@ import { accountLabels } from "~/lib/account-labels";
 import { patchAccount } from "~/lib/accounts";
 import { snack } from "~/lib/snack";
 
+const TodayTip = lazy(() => import("./today-tip"));
 const VIEWS: { view: View; icon: typeof Inbox; keys?: string }[] = [
   { view: "inbox", icon: Inbox, keys: "g i" },
   { view: "starred", icon: Star, keys: "g s" },
@@ -336,7 +338,7 @@ function FavoriteRows() {
   const folders = useApp((s) => s.folders);
   const counts = useApp((s) => s.counts);
   // where you are, as primitives (an object would re-render this on every change of the store)
-  const plain = useApp((s) => s.accountId !== null && s.reviewCategoryId === null && s.categoryId === null && s.gmailTab === null && !s.reminders && !s.followups && !s.followups);
+  const plain = useApp((s) => s.accountId !== null && s.reviewCategoryId === null && s.categoryId === null && s.gmailTab === null && !s.reminders && !s.followups && !s.today && !s.followups);
   const hereAccount = useApp((s) => s.accountId);
   const hereFolder = useApp((s) => s.folder);
   const hereView = useApp((s) => s.view);
@@ -415,6 +417,7 @@ function FavoriteRows() {
 function moreSlotOf(s: AppState): MoreSlot | null {
   if (s.reminders) return "reminders";
   if (s.followups) return "followups";
+  if (s.today) return null;
   return s.accountId === null && s.categoryId === null && s.reviewCategoryId === null && MORE_VIEWS.includes(s.view) ? s.view : null;
 }
 
@@ -1207,6 +1210,13 @@ export function Sidebar() {
   const inReminders = useApp((s) => s.reminders);
   const dueReminders = useReminders((s) => s.due);
   const inFollowups = useApp((s) => s.followups);
+  const inToday = useApp((s) => s.today);
+  // plan 145: no provider, no row, no list and no work; and never for an app that's still reading its settings
+  const todayShown = useApp((s) => aiFeaturesAvailable(s.settings) && s.settings?.today?.show !== false);
+  const todayTip = usePendingTip("today-first") !== null;
+  useEffect(() => {
+    if (todayShown) offerTip("today-first", 0);
+  }, [todayShown]);
   const dueFollowups = useFollowups((s) => s.due);
   const followupsOn = useApp((s) => s.settings?.followups?.enabled === true);
   const accounts = useApp((s) => s.accounts);
@@ -1269,7 +1279,7 @@ export function Sidebar() {
   };
 
   // the folder you're in at the top: none in a category or its suggestions (both are "all" underneath), none inside an account (plan 67)
-  const folderView = accountId === null && categoryId === null && reviewCategoryId === null && !inReminders ? view : null;
+  const folderView = accountId === null && categoryId === null && reviewCategoryId === null && !inReminders && !inToday ? view : null;
   const folder = ({ view: v, icon: Icon, keys }: (typeof VIEWS)[number]) => (
     <NavItem
       key={v}
@@ -1305,6 +1315,18 @@ export function Sidebar() {
   }, [soloId]);
   const all = (
     <>
+      {todayShown && (
+        <NavItem
+          testId="nav-today"
+          active={inToday}
+          onClick={() => navigate({ today: true })}
+          icon={<Sun className="size-(--icon-nav)" />}
+          label={t("today.title")}
+          count={counts.today || undefined}
+          countTone={design.surfaces.inboxCount}
+        />
+      )}
+      {todayTip && <Suspense fallback={null}><TodayTip /></Suspense>}
       {VIEWS.slice(0, PINNED).map(folder)}
       <FavoriteRows />
       <MoreFolders

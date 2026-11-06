@@ -9,6 +9,7 @@ import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, getSelectionWriteRevision, inPlainInbox, setApp, setListAutoSelection, useApp } from "./app";
 import { noteRows, useActionRows } from "./action-preview";
+import { flattenToday } from "./today";
 import { useFollowups } from "./followups";
 import { anyDue } from "./reminders";
 
@@ -67,7 +68,7 @@ export function listKey(): string {
   // plan 87: Reminders, only when it's that list (every other list's key is as it was)
   // plan 86: a Gmail tab likewise ("~promotions": never a folder's key)
   // plan 108: a search focused on an account looks only in it, so it's another list than the same search everywhere
-  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.gmailTab ? [`~${s.gmailTab}`] : []), ...(s.reminders ? ["reminders"] : []), ...(s.followups ? ["followups"] : []), ...(s.actionPreview ? [`action:${s.actionPreview}`] : []), ...(soloSearch(s) ? ["~solo"] : []), s.query.trim()]);
+  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.gmailTab ? [`~${s.gmailTab}`] : []), ...(s.reminders ? ["reminders"] : []), ...(s.followups ? ["followups"] : []), ...(s.actionPreview ? [`action:${s.actionPreview}`] : []), ...(s.today ? ["today"] : []), ...(soloSearch(s) ? ["~solo"] : []), s.query.trim()]);
 }
 
 /** plan 108: a search while focused on an account: only that account's mail */
@@ -152,6 +153,13 @@ async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE
     noteRows(r.items.map((t) => t.id), r.unticked);
     return { items: r.items, nextCursor: offset + page < r.total ? { lastDate: 0, id: offset + page } : null };
   }
+  if (s.today) {
+    if (cursor) return { items: [], nextCursor: null };
+    // the digest's row is the cursor's, not a thread's: nothing to keep, and no id the backend takes
+    const held = new Set([...s.checked, ...(s.selectedId !== null && s.selectedId !== 0 ? [s.selectedId] : [])]);
+    const list = await client.call("today.list", { heldIds: [...held].slice(0, 500) });
+    return { items: flattenToday(list, useList.getState().items), nextCursor: null };
+  }
   if (s.followups) {
     if (cursor) return { items: [], nextCursor: null };
     const { items } = await client.call("followups.threads", { onTop: false });
@@ -198,7 +206,7 @@ function keepSearchRows<P extends { items: ThreadSummary[]; nextCursor: { lastDa
 export function currentScope(): ThreadScope | null {
   const s = getApp();
   // Revisar, Reminders: lists of their own, no "select all N"
-  if (s.reviewCategoryId !== null || s.reminders || s.followups || s.actionPreview) return null;
+  if (s.reviewCategoryId !== null || s.reminders || s.followups || s.today || s.actionPreview) return null;
   const filter = activeFilter(s);
   const q = s.query.trim();
   // plan 64: a search looks everywhere (every account, category and place, Spam and Trash too); in:, account:, category: narrow it
@@ -453,7 +461,7 @@ useApp.subscribe((s, prev) => {
     pendingMore = null;
     useList.setState((l) => ({ key, itemsKey: l.itemsKey === l.key ? key : l.itemsKey, loadingMore: false, loading: false }));
     if (s.scope) setApp({ scope: null });
-  } else if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.followups !== prev.followups || s.actionPreview !== prev.actionPreview || s.query !== prev.query || soloSearch(s) !== soloSearch(prev)) {
+  } else if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.followups !== prev.followups || s.today !== prev.today || s.actionPreview !== prev.actionPreview || s.query !== prev.query || soloSearch(s) !== soloSearch(prev)) {
     // "all N of that list" means nothing in another one
     if (s.scope) setApp({ scope: null });
     void reloadList();

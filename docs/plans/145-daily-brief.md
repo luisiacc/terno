@@ -221,3 +221,13 @@ Codex (`gpt-6.1-sol`, high, read-only, `/tmp/terno-plans-141-145/145-daily-brief
 10. **The digest row can enter a bulk selection.** Select All and ranges take every loaded row (`select.ts:102`, `:115`), and a bulk action with `0` fails RPC validation. Cursor navigation is separate from actionable selection, and the row can't be checked. Tests: Select All, ranges, mixed.
 11. **The read needs a strategy per store.** `threads_waiting_inbox` isn't in date order; `threads_waiting` is (`migrations.ts:839`). Newest-first waiting walks that, and IndexedDB's waiting order. Newsletters walk by arrival within the 3-day bound, so an empty result can't scan the mailbox, and any index is designed for both stores. Gated with sparse and empty results among 50k recent automated threads.
 12. **The sidebar's count isn't a sum.** One waiting thread with two due promises would count three. It's the distinct union under Today's own eligibility, `null` during plan 17's backfill. Tested on that case.
+
+## What building it changed
+
+- **Show all N waiting** sits in the list's header rather than among the rows: a listbox holds only its options, and a button between them fails axe.
+- **Section headings** are `aria-hidden`, drawn in the space a row leaves, as the Inbox's top is; a screen reader hears each row's own words. A row's second line is what it's there for ("You said: …"); Nudge is on the open conversation's line, not on the row, as it is elsewhere.
+- **The digest's row** is a list item with id 0 that takes the cursor. `targetsOf`, `pick`, `addRange`, `toggleCurrent`, `pressRow`, `loadThread` and `scheduleMarkRead` all refuse it, so an action, a range or Select All can't reach it, and `today.list`'s `heldIds` leaves it out.
+- **What's automated with the digest off** is kept fresh behind the list, at most every 30 s, since a walk among a lot of recent mail can take longer than the list's 10 ms. The row arrives by `todayDigest`.
+- **The walk by arrival** is the same `messageWalk` plan 143 made: newest first, stopping at the 3-day bound or the watermark.
+- **A notice's click** has `threadId` -1 (`BRIEF_NOTICE_THREAD`): both the web's and the desktop's notices pass one number through, and no thread has that id.
+- **The gate** is `measureToday` in `workloads.perf.test.ts` on both stores, beside its neighbours, rather than a `today.perf.test.ts` of its own.

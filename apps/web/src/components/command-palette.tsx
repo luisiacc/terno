@@ -1,3 +1,4 @@
+import { aiFeaturesAvailable } from "@terno/core";
 import { focusAccount, goToAccount, goToFolder } from "~/lib/account-folders";
 import { normalizeText, remindPresets, separatesTabs, snippetPreview, TABS, type CategoryColor, type ReminderKind, type Snippet } from "@terno/core";
 import { t, type TextKey } from "@terno/i18n";
@@ -108,13 +109,14 @@ export function CommandPalette() {
   const reminder = useReminders((s) => (single !== null ? s.byThread.get(single) : undefined));
   // the unread filter applies to a mailbox (not "Review")
   // the unread toggle's state: Unread on or not (another filter on: it switches to Unread)
-  const filter = useApp((s) => (open && s.reviewCategoryId === null && !s.reminders && !s.followups ? (isUnreadOnly(s) ? "on" : "off") : null));
+  const filter = useApp((s) => (open && s.reviewCategoryId === null && !s.reminders && !s.followups && !s.today ? (isUnreadOnly(s) ? "on" : "off") : null));
   const active = useApp((s) => (open ? activeFilter(s) : undefined));
   const supported = useApp((s) => s.supportedFilters);
   const design = useApp((s) => (open ? (s.settings?.design ?? null) : null));
   const canAi = useApp((s) => open && aiReady(s.settings?.ai));
   const hasDevMode = useApp((s) => s.devAi !== null);
   const followupsOn = useApp((s) => open && s.settings?.followups?.enabled === true);
+  const todayOn = useApp((s) => open && aiFeaturesAvailable(s.settings) && s.settings?.today?.show !== false);
   const canAsk = useApp((s) => open && s.settings?.ask?.enabled === true);
   const drafting = useAiDraftUi((s) => s.enabled);
   const updatesAvailable = useHasUpdates();
@@ -220,6 +222,7 @@ export function CommandPalette() {
     folder("go.spam", "view.spam", <OctagonAlert />, () => goToFolder("spam"), undefined, "palette-go-spam");
     folder("go.trash", "view.trash", <Trash2 />, () => goToFolder("trash"));
     folder("go.all", "view.all", <Mails />, () => goToFolder("all"), undefined, "palette-go-all");
+    if (todayOn) add({ id: "go.today", group: "goTo", label: t("palette.goToday"), icon: <Sun />, testId: "palette-go-today", keywords: english("palette.goToday"), run: () => navigate({ today: true }) });
     if (followupsOn) add({ id: "go.followups", group: "goTo", label: t("palette.goFollowups"), icon: <ListChecks />, testId: "palette-go-followups", keywords: english("palette.goFollowups"), run: () => navigate({ followups: true }) });
     add({ id: "go.reminders", group: "goTo", label: t("palette.goReminders"), icon: <Bell />, shortcut: "G R", testId: "palette-go-reminders", keywords: english("palette.goReminders"), run: () => navigate({ reminders: true }) });
     for (const c of categories) {

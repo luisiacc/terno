@@ -124,6 +124,7 @@ export const ICONS = {
   Star: "StarIcon",
   StarOff: "StarOffIcon",
   Strikethrough: "TextStrikethroughIcon",
+  Newspaper: "News01Icon",
   Sun: "Sun01Icon",
   Sunrise: "SunriseIcon",
   Tag: "Tag01Icon",

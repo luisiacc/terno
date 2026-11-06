@@ -35,7 +35,7 @@ export function range(order: Order, a: number, b: number): number[] {
 /** ⇧-click: the range from the anchor to the row joins what is already checked. */
 export function addRange(checked: ReadonlySet<number>, order: Order, anchor: number | null, to: number): Set<number> {
   const next = new Set(checked);
-  for (const id of range(order, anchor ?? to, to)) next.add(id);
+  for (const id of range(order, anchor ?? to, to)) if (id !== 0) next.add(id);
   return next;
 }
 
@@ -67,14 +67,15 @@ export function prune(checked: ReadonlySet<number>, index: ReadonlyMap<number, n
 /** `* a` / `* r` / `* u` / `* s`: the loaded rows matching a predicate. */
 export function pick<T extends { id: number }>(items: readonly T[], keep: (t: T) => boolean = () => true): Set<number> {
   const out = new Set<number>();
-  for (const t of items) if (keep(t)) out.add(t.id);
+  for (const t of items) if (t.id !== 0 && keep(t)) out.add(t.id);
   return out;
 }
 
 /** What an action applies to: the checked rows when there are any, else the open thread. */
 export function targetsOf(checked: ReadonlySet<number>, selectedId: number | null, order?: Order): number[] {
   if (checked.size) return order ? [...checked].sort((a, b) => (order.index.get(a) ?? Infinity) - (order.index.get(b) ?? Infinity)) : [...checked];
-  return selectedId === null ? [] : [selectedId];
+  // plan 145: the digest takes the cursor; it's nothing a thread action can act on (revision 10)
+  return selectedId === null || selectedId === 0 ? [] : [selectedId];
 }
 
 /** The context menu's target: the selection when the clicked row is part of it, else that row alone. */

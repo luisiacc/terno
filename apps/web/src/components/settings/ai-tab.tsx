@@ -1,7 +1,8 @@
 import { localized } from "~/lib/i18n";
 import type { CompatiblePreset, ModelInfo, PresetDescriptor, ProviderDescriptor } from "@terno/core";
 import type { AiTestResult, AppSettings } from "@terno/core/rpc";
-import { AiUseGroup, AskGroup, FollowupsGroup, SummariesGroup } from "./ai-summaries";
+import { aiFeaturesAvailable } from "@terno/core";
+import { AiUseGroup, AskGroup, DigestGroup, FollowupsGroup, SummariesGroup } from "./ai-summaries";
 import { DraftingGroup } from "./ai-drafting";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { SettingsGroup, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
@@ -182,6 +183,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
       <SummariesGroup settings={settings} update={update} />
       <AskGroup settings={settings} update={update} />
       <FollowupsGroup settings={settings} update={update} />
+      {aiFeaturesAvailable(settings) && <DigestGroup settings={settings} update={update} />}
       <AiUseGroup settings={settings} update={update} />
     </>
   );

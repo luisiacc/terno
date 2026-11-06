@@ -58,6 +58,8 @@ export interface AppState {
   reminders: boolean;
   /** plan 142: the Follow-ups list, likewise */
   followups: boolean;
+  /** plan 145: Today, a list of its own */
+  today: boolean;
   /** plan 143: a sentence's preview is the list: its id with the backend */
   actionPreview: string | null;
   /** plan 108: the account the sidebar is focused on ("solo", never keyboard focus); while set, accountId is it */
@@ -126,6 +128,7 @@ export const useApp = create<AppState>(() => ({
   reviewCategoryId: null,
   reminders: false,
   followups: false,
+  today: false,
   actionPreview: null,
   soloAccountId: null,
   query: "",
@@ -180,11 +183,11 @@ export function setApp(partial: AppState | Partial<AppState> | ((state: AppState
  * scope across accounts, a tab back to the Inbox) leaves the folder too, so a list is never asked for an invalid one.
  */
 function keepFolderValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
-  next = keepSoloValid(state, keepActionPreviewValid(state, keepFollowupsValid(state, keepRemindersValid(state, next))));
+  next = keepSoloValid(state, keepTodayValid(state, keepActionPreviewValid(state, keepFollowupsValid(state, keepRemindersValid(state, next)))));
   const m = { ...state, ...next };
-  const out = m.folder !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.followups || m.view !== "all") ? { ...next, folder: null } : next;
+  const out = m.folder !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.followups || m.today || m.view !== "all") ? { ...next, folder: null } : next;
   // plan 86: a Gmail tab is its account's Inbox, alone, likewise
-  return m.gmailTab !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.followups || m.folder !== null || m.view !== "inbox") ? { ...out, gmailTab: null } : out;
+  return m.gmailTab !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.followups || m.today || m.folder !== null || m.view !== "inbox") ? { ...out, gmailTab: null } : out;
 }
 
 /**
@@ -212,11 +215,19 @@ function keepFollowupsValid(state: AppState, next: AppState | Partial<AppState>)
   return other ? { ...next, followups: false } : next;
 }
 
+/** Plan 145: likewise for Today. */
+function keepTodayValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
+  if (!state.today || Object.hasOwn(next, "today")) return next;
+  const m = { ...state, ...next };
+  const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.reminders || m.followups || m.actionPreview !== null || m.query.trim() !== "";
+  return other ? { ...next, today: false } : next;
+}
+
 /** Plan 143: any other list ends a preview too (and the backend lets go of it). */
 function keepActionPreviewValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
   if (!state.actionPreview || Object.hasOwn(next, "actionPreview")) return next;
   const m = { ...state, ...next };
-  const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.gmailTab !== null || m.reminders || m.followups || m.query.trim() !== "";
+  const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.gmailTab !== null || m.reminders || m.followups || m.today || m.query.trim() !== "";
   return other ? { ...next, actionPreview: null } : next;
 }
 
@@ -226,20 +237,22 @@ export function setListAutoSelection(selectedId: number | null): void {
 }
 export const getApp = useApp.getState;
 
-export function navigate(to: { view?: View; accountId?: number | null; categoryId?: number | null; reviewCategoryId?: number | null; folder?: string | null; reminders?: boolean; followups?: boolean; gmailTab?: Tab | null }): void {
+export function navigate(to: { view?: View; accountId?: number | null; categoryId?: number | null; reviewCategoryId?: number | null; folder?: string | null; reminders?: boolean; followups?: boolean; today?: boolean; gmailTab?: Tab | null }): void {
   // plan 68: a folder is its account's, alone (no category, no review), its view "all"; anywhere else leaves it
   const folder = to.folder ?? null;
   // plan 87: Reminders is a list of its own, of every account
   const reminders = !folder && to.reminders === true;
   // plan 142: Follow-ups, the same way
   const followups = !folder && !reminders && to.followups === true;
-  const ownList = reminders || followups;
+  const today = !folder && !reminders && !followups && to.today === true;
+  const ownList = reminders || followups || today;
   // plan 86: a Gmail tab likewise, its view "inbox"
   const gmailTab = folder || ownList ? null : (to.gmailTab ?? null);
   setApp((s) => ({
     reviewCategoryId: folder || ownList || gmailTab ? null : (to.reviewCategoryId ?? null),
     reminders,
     followups,
+    today,
     actionPreview: null,
     view: folder || ownList ? "all" : gmailTab ? "inbox" : (to.view ?? (to.categoryId ? "all" : s.view)),
     accountId: ownList ? null : to.accountId === undefined ? s.accountId : to.accountId,

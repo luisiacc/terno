@@ -7,7 +7,7 @@ import { reloadList, useList } from "./list";
  * Plan 143: a sentence's preview, a list of its own. What's here is small enough for the entry chunk: which rows are
  * unticked, and the way back to where you were. The rest of it comes with its header.
  */
-type From = Pick<AppState, "view" | "accountId" | "categoryId" | "reviewCategoryId" | "folder" | "gmailTab" | "reminders" | "followups" | "query" | "selectedId" | "readerOpen"> & {
+type From = Pick<AppState, "view" | "accountId" | "categoryId" | "reviewCategoryId" | "folder" | "gmailTab" | "reminders" | "followups" | "today" | "query" | "selectedId" | "readerOpen"> & {
   scrollTop: number;
   /** the rows you were among, however deep: scroll can't come back to a place the list doesn't hold yet */
   rows: Pick<ReturnType<typeof useList.getState>, "key" | "itemsKey" | "items" | "index" | "nextCursor">;
@@ -40,9 +40,9 @@ export function enterPreview(previewId: string): void {
   useActionRows.setState({
     unticked: new Set(),
     showLeftOut: false,
-    from: { view: s.view, accountId: s.accountId, categoryId: s.categoryId, reviewCategoryId: s.reviewCategoryId, folder: s.folder, gmailTab: s.gmailTab, reminders: s.reminders, followups: s.followups, query: s.query, selectedId: s.selectedId, readerOpen: s.readerOpen, scrollTop: listEl()?.scrollTop ?? 0, rows: { key, itemsKey, items, index, nextCursor } },
+    from: { view: s.view, accountId: s.accountId, categoryId: s.categoryId, reviewCategoryId: s.reviewCategoryId, folder: s.folder, gmailTab: s.gmailTab, reminders: s.reminders, followups: s.followups, today: s.today, query: s.query, selectedId: s.selectedId, readerOpen: s.readerOpen, scrollTop: listEl()?.scrollTop ?? 0, rows: { key, itemsKey, items, index, nextCursor } },
   });
-  setApp({ actionPreview: previewId, view: "all", accountId: null, categoryId: null, reviewCategoryId: null, folder: null, gmailTab: null, reminders: false, followups: false, query: "", selectedId: null, checked: new Set(), anchorId: null, scope: null, readerOpen: false });
+  setApp({ actionPreview: previewId, view: "all", accountId: null, categoryId: null, reviewCategoryId: null, folder: null, gmailTab: null, reminders: false, followups: false, today: false, query: "", selectedId: null, checked: new Set(), anchorId: null, scope: null, readerOpen: false });
   // from the top: a place deep in the last list means nothing in this one
   const el = listEl();
   if (el) el.scrollTop = 0;

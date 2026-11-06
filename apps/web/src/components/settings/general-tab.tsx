@@ -1,3 +1,4 @@
+import { aiFeaturesAvailable } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
 import { NumberField } from "@terno/ui/components/number-field";
@@ -6,7 +7,7 @@ import { Switch } from "@terno/ui/components/switch";
 import { Columns2, Keyboard, Rows3 } from "@terno/ui/icons";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { updateAppearance } from "~/lib/appearance";
-import { Suspense, useEffect, useReducer, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useReducer, useRef, useState } from "react";
 import { isLanguageSetting, LOCALE_IDS, LOCALES, resolveLocale, t, type LanguageSetting } from "@terno/i18n";
 import { setApp } from "~/state/app";
 import { commitLanguage } from "~/lib/i18n";
@@ -18,6 +19,8 @@ import { useHasUpdates } from "~/lib/updates";
 import { UpdatesSection } from "./updates-section";
 import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 import { badgeSupported, pageNotificationsSupported } from "~/lib/notify";
+
+const TodaySettings = lazy(() => import("./today-settings"));
 
 
 /**
@@ -235,6 +238,11 @@ export function GeneralTab({ settings, update }: { settings: AppSettings; update
         <LanguageRow settings={settings} update={update} />
       </SettingsGroup>
 
+      {aiFeaturesAvailable(settings) && (
+        <Suspense fallback={null}>
+          <TodaySettings settings={settings} update={update} />
+        </Suspense>
+      )}
       <SettingsGroup title={t("settings.general.list")}>
         {/* plan 24: the conversation beside the list, or in its place (applied at once, like the style) */}
         <SettingsRow label={t("settings.general.layout")} hint={t("settings.general.layout.hint")} testId="layout-row">

@@ -1,4 +1,4 @@
-import { ASK_CLAUDE_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type AiErrorKind, type AiProviderId, type CompatiblePreset, type OutputMode } from "@terno/core";
+import { ASK_CLAUDE_MODEL, DIGEST_CLAUDE_MODEL, DIGEST_OPENAI_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type AiErrorKind, type AiProviderId, type CompatiblePreset, type OutputMode } from "@terno/core";
 import type { AiSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 
@@ -123,6 +123,13 @@ export function followupTarget(ai: AiSettings): { provider: AiProviderId; model:
   const chosen = ai.tasks.followup ?? ai.tasks.summary;
   if (chosen) return chosen;
   return { provider: ai.provider, model: ai.provider === "anthropic" ? FOLLOWUP_CLAUDE_MODEL : ai.provider === "openai" ? FOLLOWUP_OPENAI_MODEL : ai.model };
+}
+
+/** Plan 145: the digest's own row, else the summaries', else the small model on what's set up. */
+export function digestTarget(ai: AiSettings): { provider: AiProviderId; model: string } {
+  const chosen = ai.tasks.digest ?? ai.tasks.summary;
+  if (chosen) return chosen;
+  return { provider: ai.provider, model: ai.provider === "anthropic" ? DIGEST_CLAUDE_MODEL : ai.provider === "openai" ? DIGEST_OPENAI_MODEL : ai.model };
 }
 
 /** Whether a question can go: Ask's own target if it has one, whatever the main provider is. */

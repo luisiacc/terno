@@ -3,7 +3,7 @@ import { SearchField } from "@terno/ui/components/search-field";
 import { Kbd } from "@terno/ui/components/kbd";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Bell, ChevronDown, Inbox, ListFilter, Search, SquarePen, ListChecks } from "@terno/ui/icons";
+import { Bell, ChevronDown, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun, ListChecks } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
@@ -20,9 +20,12 @@ import { flushSync } from "react-dom";
 import { create } from "zustand";
 import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
-import { getApp, setApp, useApp } from "~/state/app";
+import { navigate, getApp, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
 import { currentScope, inboxTop, listKey, loadMore, useList } from "~/state/list";
+import { useToday, type TodayGroup } from "~/state/today";
+import { pressRow, releaseRow } from "~/lib/select";
+import { DIGEST_ROW_ID, type ThreadSummary } from "@terno/core";
 import { clearSelection, selectScope } from "~/lib/select";
 import { scopeLabel } from "~/lib/selection";
 import { client } from "~/rpc/connection";
@@ -53,6 +56,37 @@ const ActionPreviewHeader = lazy(() => import("./action-preview-header"));
 const listInset = (): number => bottomInset(useSnack.getState().inset, useAppearance.getState().layout === "list" ? usePinned.getState().inset : 0);
 
 const TOP_LABEL = 28;
+const EMPTY_GROUPS: readonly TodayGroup[] = [];
+
+/** Plan 145: what the rows under it are, drawn in space the row above leaves. Not a stop for arrow keys: a listbox holds only its options. */
+function TodayHeading({ kind, top }: { kind: TodayGroup["kind"]; top: number }) {
+  return (
+    <div aria-hidden data-testid="today-heading" data-kind={kind} className="absolute inset-x-0 flex items-end px-5 pb-1 text-xs font-medium text-muted-foreground" style={{ top, height: TOP_LABEL }}>
+      {t(kind === "needsYou" ? "today.needsYou" : kind === "reminders" ? "today.reminders" : "today.newsletters")}
+    </div>
+  );
+}
+
+/** The digest in the list: it takes the cursor as a row does, and nothing else a thread can. */
+function DigestListRow({ thread, top, height }: { thread: ThreadSummary; top: number; height: number }) {
+  const selected = useApp((s) => s.selectedId === DIGEST_ROW_ID);
+  return (
+    <div
+      role="option"
+      id="thread-digest"
+      aria-selected={selected}
+      data-cursor={selected || undefined}
+      data-testid="digest-row"
+      onMouseDown={(e) => e.button === 0 && pressRow(DIGEST_ROW_ID, { meta: false, ctrl: false, shift: false })}
+      onClick={() => releaseRow(DIGEST_ROW_ID)}
+      className={cn("group/row absolute left-0 flex w-full cursor-default items-center gap-2.5 px-5 select-none before:absolute before:inset-x-2 before:inset-y-px before:rounded-(--row-radius)", selected ? "text-row-selected-foreground before:bg-row-selected" : "hover:before:bg-row-hover")}
+      style={{ transform: `translateY(${top}px)`, height }}
+    >
+      <Newspaper className={cn("relative size-4 shrink-0", selected ? "" : "text-muted-foreground")} />
+      <span className="type-row-subject relative min-w-0 flex-1 truncate">{thread.subject}</span>
+    </div>
+  );
+}
 const TOP_GAP = 9;
 
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
@@ -204,7 +238,7 @@ function QuickChips({ filter }: { filter: QuickFilter | undefined }) {
  */
 const useSearchOpen = create<{ open: boolean }>(() => ({ open: false }));
 useApp.subscribe((s, prev) => {
-  if (useSearchOpen.getState().open && !s.query && (s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.followups !== prev.followups)) useSearchOpen.setState({ open: false });
+  if (useSearchOpen.getState().open && !s.query && (s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.followups !== prev.followups || s.today !== prev.today)) useSearchOpen.setState({ open: false });
 });
 
 /** "/" and ⌘F: the search field, opened first where the design keeps it behind a button. */
@@ -384,7 +418,9 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const folder = useApp(folderName);
   const review = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
   // plan 87: Reminders is a list of its own, unfiltered (no quick filters)
-  const reminders = useApp((s) => s.reminders || s.followups);
+  const reminders = useApp((s) => s.reminders || s.followups || s.today);
+  const today = useApp((s) => s.today);
+  const todayMore = useToday((s) => (today ? s.more : 0));
   const followups = useApp((s) => s.followups);
   const account = useApp((s) => s.accounts.find((a) => a.id === s.accountId));
   const query = useApp((s) => s.query);
@@ -398,7 +434,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const count = useList((s) => (filter ? s.items.reduce((n, t) => n + (matchesFilter(filter, t) ? 1 : 0), 0) : s.items.length));
   // plan 64: a search looks everywhere, so the list is the search's, not the sidebar mailbox's
   const searching = query.trim() !== "" && !review;
-  const title = searching ? t("list.search.title") : review ? t("list.reviewTitle", { category: review.name }) : followups ? t("followups.title") : reminders ? t("view.reminders") : (folder ?? category?.name ?? viewLabel(view));
+  const title = searching ? t("list.search.title") : review ? t("list.reviewTitle", { category: review.name }) : today ? t("today.title") : followups ? t("followups.title") : reminders ? t("view.reminders") : (folder ?? category?.name ?? viewLabel(view));
   // the greeting is the inbox's title (any account; not a Gmail tab of it, plan 86); everywhere else a design that greets shows its display title
   const kind = design.variants.listHeader === "greeting" && view === "inbox" && !folder && !category && !review && !searching ? "greeting" : design.variants.listHeader === "title" ? "title" : "display";
   const behindButton = design.variants.search === "button";
@@ -416,6 +452,12 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   );
   const actions = (
     <>
+      {todayMore > 0 && (
+        <Button variant="link-secondary" size="xs" className="no-drag shrink-0" data-testid="today-more" onClick={() => {
+          navigate({ view: "inbox" });
+          setListFilter("waiting");
+        }}>{t("today.showAll", { count: todayMore })}</Button>
+      )}
       {!review && !reminders && quick === "menu" && <UnreadFilterButton filter={filter} />}
       {behindButton && (
         <Tooltip>
@@ -616,6 +658,14 @@ function EmptyState() {
   const view = useApp((s) => s.view);
   const reminders = useApp((s) => s.reminders);
   const followups = useApp((s) => s.followups);
+  const today = useApp((s) => s.today);
+  if (today)
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
+        <Sun className="mb-2 size-7 text-muted-foreground" aria-hidden />
+        <p className="text-lg font-semibold tracking-tight">{t("today.empty")}</p>
+      </div>
+    );
   if (followups)
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
@@ -693,11 +743,14 @@ export function ThreadList() {
     return n;
   }, [items]);
   const topGap = top > 0 && top < items.length ? TOP_GAP : 0;
+  const inToday = useApp((s) => s.today);
+  const todayGroups = useToday((s) => (inToday ? s.groups : EMPTY_GROUPS));
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: (i) => height + (i === top - 1 ? topGap : 0),
-    paddingStart: top > 0 ? TOP_LABEL : 0,
+    // plan 145: a section's heading is space under the row before it, or above the first
+    estimateSize: (i) => height + (i === top - 1 ? topGap : 0) + (todayGroups.some((g) => g.at === i + 1) ? TOP_LABEL : 0),
+    paddingStart: top > 0 || todayGroups.length ? TOP_LABEL : 0,
     overscan: 10,
     getItemKey,
     paddingEnd: dock,
@@ -707,7 +760,7 @@ export function ThreadList() {
   // the top came or went (or grew): positions recomputed before paint
   useLayoutEffect(() => {
     virtualizer.measure();
-  }, [top, topGap]);
+  }, [top, topGap, todayGroups]);
 
   // a new row height (design or density): every position is recomputed before paint
   const measuredHeight = useRef(height);
@@ -882,7 +935,11 @@ export function ThreadList() {
               </div>
             )}
             {topGap > 0 && <div aria-hidden data-testid="inbox-reminders-end" className="absolute inset-x-5 h-(--hairline-w) bg-hairline" style={{ top: TOP_LABEL + top * height + topGap / 2 }} />}
+            {todayGroups.map((g, i) => (
+              <TodayHeading key={g.kind} kind={g.kind} top={i * TOP_LABEL + g.at * height} />
+            ))}
             {virtualItems.map((v) => (
+              items[v.index]!.id === DIGEST_ROW_ID ? <DigestListRow key={v.key} thread={items[v.index]!} top={v.start} height={height} /> :
               <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} reminderTop={v.index < top} reminderEnd={topGap > 0 && v.index === top - 1} />
             ))}
           </div>

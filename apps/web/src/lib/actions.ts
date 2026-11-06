@@ -336,7 +336,7 @@ export async function markAccountRead(accountId: number, count: number): Promise
   const connection = client.connectionVersion;
   const s = getApp();
   // the rows shown are the Inbox's, not a previous view's still showing while it loads (Codex code review round 2 #3)
-  const listed = inPlainInbox(s) && !s.reminders && !s.followups && (s.accountId === null || s.accountId === accountId) && useList.getState().itemsKey === listKey();
+  const listed = inPlainInbox(s) && !s.reminders && !s.followups && !s.today && (s.accountId === null || s.accountId === accountId) && useList.getState().itemsKey === listKey();
   // a row there only for its reminder, or in a Gmail tab the account keeps apart, isn't in its Inbox (Codex code review #4)
   const loaded = listed ? useList.getState().items.filter((t) => t.accountId === accountId && t.unread && !onlyOnTop(t) && !inSeparateTab(t, s.accounts)).map((t) => t.id) : [];
   // under the list's Unread filter they go; the open and the checked ones are read in place, as the filter keeps
@@ -419,6 +419,7 @@ export function cancelMarkRead(): void {
 
 /** Opening a thread marks it read after a short dwell, so holding j doesn't mark everything read. */
 export function scheduleMarkRead(id: number): void {
+  if (id === 0) return;
   if (readTimer) clearTimeout(readTimer);
   readTimer = setTimeout(() => {
     const st = useList.getState();

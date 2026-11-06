@@ -5,6 +5,7 @@
  * installed app's icon where the browser has setAppBadge, and a notification
  * for the backend's `notify` event while this tab is hidden.
  */
+import { BRIEF_NOTICE_THREAD } from "@terno/core";
 import { noticeText, type MailNotice } from "@terno/core";
 import { client } from "~/rpc/connection";
 import { reconcileSettings } from "~/lib/appearance";
@@ -32,6 +33,11 @@ export const pageNotificationsSupported = (): boolean => !desktop() && typeof No
  */
 export function openFromNotice(threadId: number | null): void {
   const s = getApp();
+  // plan 145: the brief's notice opens Today
+  if (threadId === BRIEF_NOTICE_THREAD) {
+    if (s.dialog) setApp({ dialog: null });
+    return navigate({ today: true });
+  }
   if (s.dialog) setApp({ dialog: null });
   if (s.view !== "inbox" || s.accountId !== null || s.categoryId !== null || s.reviewCategoryId !== null || s.query !== "") navigate({ view: "inbox", accountId: null, categoryId: null, reviewCategoryId: null });
   // a selection (Split shows its bar in the reader) ends: the conversation is what was asked for (Codex code review #7)
@@ -64,7 +70,7 @@ function show(notice: MailNotice): void {
   const s = getApp().settings;
   if (!s?.notifications || !pageNotificationsSupported() || Notification.permission !== "granted") return;
   // a visible tab already shows the mail (a reminder is asked for: it shows anyway)
-  if (document.visibilityState !== "hidden" && notice.kind !== "reminder" && notice.kind !== "followup") return;
+  if (document.visibilityState !== "hidden" && notice.kind !== "reminder" && notice.kind !== "followup" && notice.kind !== "brief") return;
   const { title, subtitle, body } = noticeText(notice);
   let n: Notification;
   try {

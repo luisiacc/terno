@@ -46,9 +46,9 @@ export function supportedFilters(said: readonly unknown[] | undefined): readonly
  * Reminders are never filtered, and a remembered filter the backend doesn't
  * know reads as none (it would be refused).
  */
-export function activeFilter(m: Mailbox & { listFilters: ListFilters; supportedFilters?: readonly ListFilter[]; actionPreview?: string | null }): ListFilter | undefined {
+export function activeFilter(m: Mailbox & { listFilters: ListFilters; supportedFilters?: readonly ListFilter[]; actionPreview?: string | null; today?: boolean }): ListFilter | undefined {
   // plan 143: a preview shows every row Apply acts on, whatever All Mail's filter is
-  const f = m.reviewCategoryId === null && !m.reminders && !m.followups && !m.actionPreview ? m.listFilters.get(mailboxKey(m)) : undefined;
+  const f = m.reviewCategoryId === null && !m.reminders && !m.followups && !m.today && !m.actionPreview ? m.listFilters.get(mailboxKey(m)) : undefined;
   return f && (m.supportedFilters ?? LIST_FILTERS).includes(f) ? f : undefined;
 }
 

@@ -48,7 +48,7 @@ let collapseOnClick: number | null = null;
 export function pressRow(id: number, m: PressModifiers): void {
   const s = getApp();
   // plan 143: a preview's rows have their own check; multi-select is off there (revision 3)
-  if (s.actionPreview) m = { meta: false, ctrl: false, shift: false };
+  if (s.actionPreview || id === 0) m = { meta: false, ctrl: false, shift: false };
   const toggleKey = isMac ? m.meta : m.ctrl;
   collapseOnClick = null;
   // the open thread counts as selected when a multi-selection starts from it
@@ -97,7 +97,7 @@ export function releaseRow(id: number): void {
 export function toggleCurrent(): void {
   const s = getApp();
   // a page covers the list (List): a selection made there would be invisible, and the reader's actions would act on it
-  if (s.selectedId === null || listCovered()) return;
+  if (s.selectedId === null || s.selectedId === 0 || listCovered()) return;
   if (s.actionPreview) return toggleRow(s.selectedId);
   setApp({ checked: toggle(s.checked, s.selectedId), anchorId: s.selectedId, scope: null });
 }

@@ -1,4 +1,4 @@
-import { ASK_CLAUDE_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, NUDGE_DAYS, SUMMARY_CLAUDE_MODEL, SUMMARY_DEFAULT_MODEL, type AiErrorKind, type AiProviderId, type AiSummariesStatus, type AiTaskName, type ModelInfo } from "@terno/core";
+import { ASK_CLAUDE_MODEL, DIGEST_CLAUDE_MODEL, DIGEST_OPENAI_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, NUDGE_DAYS, SUMMARY_CLAUDE_MODEL, SUMMARY_DEFAULT_MODEL, type AiErrorKind, type AiProviderId, type AiSummariesStatus, type AiTaskName, type ModelInfo } from "@terno/core";
 import type { AiSettings, AiUsageReport, AppSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
@@ -7,7 +7,7 @@ import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
 import { useEffect, useState } from "react";
-import { askTarget, errorHelp, followupTarget, modelName, providerLabel, summaryTarget } from "~/lib/ai";
+import { digestTarget, askTarget, errorHelp, followupTarget, modelName, providerLabel, summaryTarget } from "~/lib/ai";
 import { reconcileSettings } from "~/lib/appearance";
 import { localized } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
@@ -250,6 +250,29 @@ export function AskGroup({ settings, update }: { settings: AppSettings; update: 
         {(a) => <Switch {...a} checked={ask.enabled} data-testid="ai-ask-switch" onCheckedChange={(enabled) => void update({ ask: { enabled } })} />}
       </SettingsRow>
       {target.provider !== "none" && <TaskTargetRow ai={ai} update={update} task="ask" provider={target.provider} model={target.model} choices={[...new Set([...providerChoices(ai), target.provider])]} modelFor={(next) => (next === "anthropic" ? ASK_CLAUDE_MODEL : modelFor(ai, next) || target.model)} models={models} prefix="ai-ask" labels={{ row: t("ai.ask.target"), hint: t("ai.ask.targetHint"), provider: t("ai.ask.targetProvider"), model: t("ai.ask.targetModel") }} />}
+    </SettingsGroup>
+  );
+}
+
+/** Plan 145 §4: its own opt-in, since it sends mail with no click. Only for someone who has Today. */
+export function DigestGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
+  const { ai, today } = settings;
+  const target = digestTarget(ai);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const on = today?.digest === true;
+  useEffect(() => {
+    setModels([]);
+    if (!on) return;
+    let current = true;
+    void client.call("ai.listModels", { provider: target.provider }).then((r) => current && setModels(r.models), () => {});
+    return () => { current = false; };
+  }, [on, target.provider]);
+  return (
+    <SettingsGroup title={t("today.digest.settingsTitle")} testId="ai-digest">
+      <SettingsRow label={t("today.digest.settingsSwitch")} hint={t("today.digest.settingsHint", { provider: providerLabel(target.provider, ai) })}>
+        {(a) => <Switch {...a} checked={on} data-testid="ai-digest-switch" onCheckedChange={(digest) => void update({ today: { digest } })} />}
+      </SettingsRow>
+      {on && <TaskTargetRow ai={ai} update={update} task="digest" provider={target.provider} model={target.model} choices={[...new Set([...providerChoices(ai), target.provider])]} modelFor={(next) => (next === "anthropic" ? DIGEST_CLAUDE_MODEL : next === "openai" ? DIGEST_OPENAI_MODEL : modelFor(ai, next) || target.model)} models={models} prefix="ai-digest" labels={{ row: t("today.digest.target"), hint: t("today.digest.targetHint"), provider: t("ai.followups.targetProvider"), model: t("ai.followups.targetModel") }} />}
     </SettingsGroup>
   );
 }
