@@ -1,5 +1,4 @@
 import { getApp } from "~/state/app";
-import { readerShown } from "~/lib/page";
 
 /**
  * Plan 144 revision 9: a conversation the user opened and stayed on, once, for everyone who waits on that: a click,
@@ -8,6 +7,9 @@ import { readerShown } from "~/lib/page";
  * with what it finds at `settled`.
  */
 export const OPEN_DWELL_MS = 450;
+
+/** Told by the page module: importing it from here would tie this to the whole list, whose rows listen here. */
+export const dwellOn: { shown: () => boolean } = { shown: () => true };
 
 export interface OpenListener {
   /** at the open: what to remember, or null to sit this one out */
@@ -34,7 +36,7 @@ export function noteExplicitOpen(id: number): void {
   if (!seen.length) return;
   opening.timer = setTimeout(() => {
     opening.timer = null;
-    if (getApp().selectedId !== id || !readerShown()) return;
+    if (getApp().selectedId !== id || !dwellOn.shown()) return;
     for (const { listener, snapshot } of seen) listener.settled(id, snapshot);
   }, OPEN_DWELL_MS);
 }

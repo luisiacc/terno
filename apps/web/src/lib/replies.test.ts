@@ -15,8 +15,8 @@ const useThreads = create<{ details: Map<number, typeof detail> }>(() => ({ deta
 vi.mock("~/state/threads", () => ({ loadThread: async () => detail, useThreads, invalidateThreads: vi.fn() }));
 vi.mock("~/lib/page", async (real) => ({ ...(await real<object>()), readerShown: () => true }));
 
-const { noteExplicitOpen } = await import("./open-dwell");
 const { useReplies } = await import("./replies");
+const { noteExplicitOpen } = await import("./open-dwell");
 const { setApp } = await import("~/state/app");
 
 const opened = async () => {

@@ -4,6 +4,7 @@
  * never has pages: everything here is a no-op there, and Split's behavior is
  * exactly what it was.
  */
+import { dwellOn } from "~/lib/open-dwell";
 import { returnFromMailReaderView } from "~/components/mail-reader-back";
 import { flushSync } from "react-dom";
 import { useAppearance } from "~/lib/appearance";
@@ -35,6 +36,7 @@ export function usePage(): Page {
 export const listCovered = (): boolean => currentPage() !== "list";
 /** The conversation is on screen: always in Split, on its page in List. */
 export const readerShown = (): boolean => !listLayout() || currentPage() === "thread";
+dwellOn.shown = readerShown;
 
 /**
  * Opens a conversation. In List it becomes the page, and a multi-selection
