@@ -10,7 +10,7 @@ import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
 import { expect, fresh, ingestConversation, test, type DevServerFixture } from "./fixtures";
 
-test.use({ backendOptions: { network: true } });
+test.use({ backendOptions: { network: true }, today: true });
 
 const dev = { clientId: "setup", origin: "dev" as const };
 const SHOTS = process.env.TODAY_SHOTS;

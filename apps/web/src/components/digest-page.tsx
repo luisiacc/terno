@@ -110,10 +110,10 @@ export default function DigestPage() {
       )}
       <ul className="border-t border-hairline">
         {items.map((i) => (
-          <li key={i.threadId} data-testid="digest-item" data-live={live(i)} className={`flex items-baseline gap-3 border-b border-hairline py-2 ${live(i) ? "" : "opacity-50"}`}>
+          <li key={i.threadId} data-testid="digest-item" data-live={live(i)} className="flex items-baseline gap-3 border-b border-hairline py-2">
             <Checkbox data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={live(i) && ticked(i)} disabled={!live(i)} className="translate-y-0.5" onCheckedChange={() => toggle(i.threadId)} />
             <button type="button" className="flex min-w-0 flex-1 items-baseline gap-3 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" data-testid="digest-open" onClick={() => open(i.threadId)}>
-              <span className="w-36 shrink-0 truncate text-sm font-medium">{i.from}</span>
+              <span className={`w-36 shrink-0 truncate text-sm font-medium ${live(i) ? "" : "text-muted-foreground"}`}>{i.from}</span>
               <span className="min-w-0 flex-1 text-sm text-muted-foreground">{i.line ?? i.subject}</span>
             </button>
           </li>

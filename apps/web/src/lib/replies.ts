@@ -91,64 +91,67 @@ async function ask(threadId: number): Promise<void> {
   }
 }
 
-onExplicitOpen({
-  opened: () => {
-    composedOn = null;
-    return on() ? true : null;
-  },
-  settled: (id) => void ask(id),
-});
+/** At boot, once there's a connection to listen on. */
+export function installReplies(): void {
+  onExplicitOpen({
+    opened: () => {
+      composedOn = null;
+      return on() ? true : null;
+    },
+    settled: (id) => void ask(id),
+  });
 
-// a frame at most: the text comes faster than anything can be read
-client.on("aiReply", (event) => {
-  if (event.phase === "cleared") {
-    // nothing stays on screen, and anything still on its way is nobody's
-    reading = null;
-    stopWaitingBody();
+  // a frame at most: the text comes faster than anything can be read
+  client.on("aiReply", (event) => {
+    if (event.phase === "cleared") {
+      // nothing stays on screen, and anything still on its way is nobody's
+      reading = null;
+      stopWaitingBody();
+      useReplies.setState({ shown: null });
+      return;
+    }
+    if (event.threadId !== reading) return;
+    if (event.phase === "writing") {
+      pending = event.text;
+      frame ??= requestAnimationFrame(() => {
+        frame = null;
+        if (reading === event.threadId && pending !== null) useReplies.setState({ shown: { threadId: event.threadId, phase: "writing", text: pending, row: null } });
+      });
+      return;
+    }
+    if (frame !== null) cancelAnimationFrame(frame);
+    frame = null;
+    pending = null;
+    useReplies.setState({ shown: event.phase === "ready" ? { threadId: event.threadId, phase: "ready", text: event.row.body ?? "", row: event.row } : null });
+  });
+
+  useApp.subscribe((s, prev) => {
+    if (s.selectedId !== prev.selectedId) composedOn = null;
+    if (s.selectedId !== prev.selectedId && reading !== null && s.selectedId !== reading) leave();
+    // List's Back or Esc: the conversation isn't on screen any more, though it's still the one selected
+    if (reading !== null && s.readerOpen !== prev.readerOpen && !readerShown()) leave();
+    // the switch went off: every window stops showing it
+    if (repliesOffered(prev) && !repliesOffered(s)) leave();
+  });
+
+  // another message came in: what's shown answered the last one. It goes, and it doesn't start another by itself.
+  useThreads.subscribe((state) => {
+    const { shown } = useReplies.getState();
+    if (!shown || newestShown === null) return;
+    const newest = state.details.get(shown.threadId)?.messages.at(-1)?.id;
+    // the stream too: its next word would bring back what's out of date
+    if (newest !== undefined && newest !== newestShown) leave();
+  });
+
+  // ⌘J, `r` with nothing ready, a click on the reply pill: they asked for something else
+  composeHooks.composing = (threadId) => {
+    const { shown } = useReplies.getState();
+    composedOn = threadId;
+    if (reading !== threadId || shown?.phase === "ready") return;
     useReplies.setState({ shown: null });
-    return;
-  }
-  if (event.threadId !== reading) return;
-  if (event.phase === "writing") {
-    pending = event.text;
-    frame ??= requestAnimationFrame(() => {
-      frame = null;
-      if (reading === event.threadId && pending !== null) useReplies.setState({ shown: { threadId: event.threadId, phase: "writing", text: pending, row: null } });
-    });
-    return;
-  }
-  if (frame !== null) cancelAnimationFrame(frame);
-  frame = null;
-  pending = null;
-  useReplies.setState({ shown: event.phase === "ready" ? { threadId: event.threadId, phase: "ready", text: event.row.body ?? "", row: event.row } : null });
-});
-
-useApp.subscribe((s, prev) => {
-  if (s.selectedId !== prev.selectedId) composedOn = null;
-  if (s.selectedId !== prev.selectedId && reading !== null && s.selectedId !== reading) leave();
-  // List's Back or Esc: the conversation isn't on screen any more, though it's still the one selected
-  if (reading !== null && s.readerOpen !== prev.readerOpen && !readerShown()) leave();
-  // the switch went off: every window stops showing it
-  if (repliesOffered(prev) && !repliesOffered(s)) leave();
-});
-
-// another message came in: what's shown answered the last one. It goes, and it doesn't start another by itself.
-useThreads.subscribe((state) => {
-  const { shown } = useReplies.getState();
-  if (!shown || newestShown === null) return;
-  const newest = state.details.get(shown.threadId)?.messages.at(-1)?.id;
-  // the stream too: its next word would bring back what's out of date
-  if (newest !== undefined && newest !== newestShown) leave();
-});
-
-// ⌘J, `r` with nothing ready, a click on the reply pill: they asked for something else
-composeHooks.composing = (threadId) => {
-  const { shown } = useReplies.getState();
-  composedOn = threadId;
-  if (reading !== threadId || shown?.phase === "ready") return;
-  useReplies.setState({ shown: null });
-  void client.call("ai.replyStop", { threadId, dismiss: false }).catch(() => {});
-};
+    void client.call("ai.replyStop", { threadId, dismiss: false }).catch(() => {});
+  };
+}
 
 export const replyReady = (threadId: number): boolean => {
   const { shown } = useReplies.getState();

@@ -1,3 +1,5 @@
+import { installReplies } from "~/lib/replies";
+import { installToday } from "~/state/today";
 import { installSendWarnings } from "./send-warning";
 import { reconcileAccounts, rememberFocus, restoredFocus } from "~/lib/account-folders";
 import { setSyncProgress } from "~/state/sync-progress";
@@ -118,6 +120,8 @@ export async function boot(): Promise<void> {
     client.on("reminders", applyReminders);
     // plan 142: follow-ups: the Inbox's top, its row and each conversation's lines
     client.on("followups", applyFollowups);
+    installToday();
+    installReplies();
     const followups = loadFollowups().catch((error) => console.warn("[followups] could not load", error));
     // before the first list, so the Inbox opens with its due ones on top (one local call)
     const reminders = loadReminders().catch((error) => console.warn("[reminders] could not load", error));

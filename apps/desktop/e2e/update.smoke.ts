@@ -301,6 +301,8 @@ test("saved renderer ACK holds editing throughout a real active-send drain, then
     await holdShutdownRequest();
     await updates("check"); await updates("download");
     await expect.poll(async () => (await state()).status, { timeout: 180_000 }).toBe("ready");
+    // plan 145: the demo has AI, so Today's tip is up beside the sidebar, over the list's first rows: Esc closes it
+    await page.getByTestId("tip-today-first").waitFor({ timeout: 10_000 }).then(() => page.keyboard.press("Escape"), () => {});
     await page.getByTestId("thread-row").first().click(); await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("r");
     const body = page.getByTestId("compose-body"); await body.fill("synthetic active send"); await body.press("Meta+Enter");
     await expect.poll(() => received, { timeout: 20_000 }).toBe(true);

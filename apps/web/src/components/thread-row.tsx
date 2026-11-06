@@ -305,7 +305,8 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
         reminderEnd && "after:hidden",
         // the check takes the gutter, and the content line moves over as one
         included !== undefined && "pl-10",
-        included === false && "[&>*:not([data-slot=checkbox])]:opacity-50",
+        // left out: quiet, without going under the contrast a row's text must hold
+        included === false && "[&>*:not([data-slot=checkbox])_*]:text-muted-foreground",
       )}
       style={{ transform: `translateY(${top}px)`, height }}
     >

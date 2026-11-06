@@ -259,3 +259,9 @@ Round two, on those fixes (6 points, all fixed):
 18. Repairs could still overflow a small window: the budget holds three answers and what the repairs ask.
 19. A kept notification could open a Today that's gone: its click reads whether there is one, else the Inbox.
 20. The desktop's brief had no test: it does.
+
+## What the full run showed
+
+- **The listeners moved to boot.** `client.on` at the load of `state/today.ts` and `lib/replies.ts` broke 41 web test files, whose mocks have no connection yet; `installToday` and `installReplies` run where the other listeners do. Plan 144 had landed with the second of these.
+- **e2e keeps Today's row off unless a test opts in** (`test.use({ today: true })`, as `tips` does). The demo has an AI provider, so every baseline and every sidebar measure would otherwise hold it. `today.spec` holds the row in all five designs. Settings → General's group does show, so `settings-general` and its Spanish copy were updated, after being looked at.
+- **Today's tip can sit over the list's first rows** on a first launch with AI. Two packaged smokes clicked there, and they now close it with Esc, as a person would. A click on the tip's own area doesn't reach the row under it, which is how every tip behaves (plan 113).

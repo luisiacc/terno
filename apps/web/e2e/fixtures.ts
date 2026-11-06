@@ -158,6 +158,8 @@ interface Fixtures {
   siteIcons: boolean;
   /** plan 113: education tips, all seen already unless a test opts in (one would sit over the list) */
   tips: boolean;
+  /** plan 145: Today's row, hidden unless a test opts in: the demo has an AI provider, and every screen would show it (today.spec holds it in every design) */
+  today: boolean;
   server: DevServer & { smtp: CapturedMail[]; net: TestNetwork; icons: IconStub; unsubscribes: UnsubscribeRecorder };
   /** the app, loaded, connected and showing the inbox */
   app: Page;
@@ -170,7 +172,8 @@ export const test = base.extend<Fixtures>({
   layout: [null, { option: true }],
   siteIcons: [false, { option: true }],
   tips: [false, { option: true }],
-  server: async ({ backendOptions, siteIcons }, use) => {
+  today: [false, { option: true }],
+  server: async ({ backendOptions, siteIcons, today }, use) => {
     const template = process.env[TEMPLATE_ENV];
     if (!template) throw new Error("global setup did not seed a template database");
     const dir = mkdtempSync(join(tmpdir(), "terno-e2e-"));
@@ -190,6 +193,7 @@ export const test = base.extend<Fixtures>({
     const unsubscribes: UnsubscribeRecorder = { posted: [], status: 200, post: async (url) => (unsubscribes.posted.push(url.href), { status: unsubscribes.status }) };
     const server = await startDevServer({ ...(backendOptions.devAi ? { devAi: backendOptions.devAi, lookup: async () => { throw new Error("no network in e2e"); } } : {}), port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers, connectivity, iconTransport: icons, unsubscribeTransport: unsubscribes, openExternal: backendOptions.network ? async () => {} : undefined, googleClients: backendOptions.noGoogle ? null : E2E_GOOGLE });
     if (!siteIcons) await server.backend.server.invoke("settings.update", { senderIcons: false }, { clientId: "setup", origin: "dev" as const });
+    if (!today) await server.backend.server.invoke("settings.update", { today: { show: false } }, { clientId: "setup", origin: "dev" as const });
     await use(Object.assign(server, { smtp: capture?.received ?? [], net, icons, unsubscribes }));
     // Backend.stop() doesn't wait for an in-flight ops batch; let it settle first.
     const b = server.backend as unknown as { workerRunning: boolean };

@@ -27,19 +27,22 @@ interface TodayState {
 
 export const useToday = create<TodayState>(() => ({ groups: [], more: 0, digest: null, fromDigest: false }));
 
-// the digest moved on, or what's automated did: only Today shows it
-client.on("todayDigest", () => {
-  if (getApp().today) void reloadList({ keepSelection: true });
-});
+/** At boot, once there's a connection to listen on. */
+export function installToday(): void {
+  // the digest moved on, or what's automated did: only Today shows it
+  client.on("todayDigest", () => {
+    if (getApp().today) void reloadList({ keepSelection: true });
+  });
 
-// no provider any more: no row, no list. The digest's data stays until Clear AI data.
-useApp.subscribe((s, prev) => {
-  // plan 147: a way back to the digest goes with it, and whatever brings Today back (a preview's Cancel) leaves again
-  if (useToday.getState().fromDigest && s.settings && !todayAvailable(s)) useToday.setState({ fromDigest: false });
-  if (!s.today) return;
-  if (s.settings && !todayAvailable(s)) navigate({ view: "inbox" });
-  if (s.selectedId !== prev.selectedId && s.selectedId !== DIGEST_ROW_ID && useToday.getState().fromDigest && prev.selectedId !== DIGEST_ROW_ID) useToday.setState({ fromDigest: false });
-});
+  // no provider any more: no row, no list. The digest's data stays until Clear AI data.
+  useApp.subscribe((s, prev) => {
+    // plan 147: a way back to the digest goes with it, and whatever brings Today back (a preview's Cancel) leaves again
+    if (useToday.getState().fromDigest && s.settings && !todayAvailable(s)) useToday.setState({ fromDigest: false });
+    if (!s.today) return;
+    if (s.settings && !todayAvailable(s)) navigate({ view: "inbox" });
+    if (s.selectedId !== prev.selectedId && s.selectedId !== DIGEST_ROW_ID && useToday.getState().fromDigest && prev.selectedId !== DIGEST_ROW_ID) useToday.setState({ fromDigest: false });
+  });
+}
 
 /** the digest as a row of the list; no thread has this id (revision 10: it can't be checked or acted on) */
 function digestThread(digest: DigestRow): ThreadSummary {
