@@ -824,13 +824,33 @@ describe("what the real-mail panel changed", () => {
   it("only about mail to come: every row unticked, nothing checked, and Apply saves the rule and moves nothing", async () => {
     const { client, backend, put, preview, model } = await setup();
     const id = await put();
-    const p = await preview({ future: true, futureOnly: true, meaning: true });
+    const p = await preview({ future: true, futureOnly: true });
     expect(p).toMatchObject({ count: 0, found: 1, check: "none", keep: { kind: "ok" } });
     expect(model.checks).toEqual([]);
     const r = await client.call("ai.actionApply", { previewId: p.previewId, future: true });
     expect(r).toMatchObject({ done: 0, filterSaved: true });
     expect((await backend.store.filters.list())).toHaveLength(1);
     expect((await backend.store.threads.summaries([id]))[0]!.inInbox).toBe(true);
+  });
+
+  it("a rule for mail to come keeps its check: what it doubts becomes the rule's exception, or no rule is saved", async () => {
+    const dropBank = (req: CompletionRequest) => JSON.stringify({ drop: [...promptText(req.messages[0]!.content).matchAll(/<group id="(g\d+)"[^>]*>Bank/g)].map((m) => m[1]) });
+    const plan = { actionType: "trash", lookIn: "everywhere", future: true, futureOnly: true, meaning: true };
+    {
+      const { put, preview, check, model } = await setup();
+      await put();
+      await put({ from: { name: "Bank", email: "alerts@bank.test" }, subject: "Invoice 13" });
+      model.check = dropBank;
+      const p = await preview(plan);
+      expect(p.check).toBe("needed");
+      expect(await check(p)).toMatchObject({ preview: { count: 0, leftOut: 1, keep: { kind: "ok" }, keepConditions: expect.arrayContaining([{ field: "fromDomain", op: "equals", value: "bank.test", negate: true }]) } });
+    }
+    // the same domain kept and dropped can't be said in a rule
+    const { put, preview, check, model } = await setup();
+    await put({ from: { name: "Ana", email: "ana@bank.test" } });
+    await put({ from: { name: "Bank", email: "alerts@bank.test" }, subject: "Invoice 13" });
+    model.check = dropBank;
+    expect(await check(await preview(plan))).toMatchObject({ preview: { keep: { kind: "disabled", reason: "exceptions" } } });
   });
 
   it("only about mail to come with nothing to show still opens, and says how many it found", async () => {

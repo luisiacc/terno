@@ -418,10 +418,9 @@ export class ActionsService {
       return;
     }
     this.order(p);
-    // only about mail to come: the rows are what the rule would have caught, and none of them is touched
+    // only about mail to come: the rows are what the rule would catch, none is touched. The check still reads them: what it takes out goes in the rule as an exception, or no rule is saved
     if (p.plan.futureOnly) {
       for (const id of p.ids) p.unticked.add(id);
-      if (p.check === "needed") p.check = "none";
     }
     p.scanning = false;
     if (!told) opened("open");

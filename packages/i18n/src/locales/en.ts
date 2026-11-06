@@ -2251,6 +2251,7 @@ It contains none of your mail, contacts, settings or keys.
   "action.button.futureOnly": "Save the rule",
   "action.futureOnly": "Only new mail. Nothing already here changes; tick a row below to include it.",
   "action.futureOnlyNothing": "Only new mail. Nothing here matches this yet, so check the wording: it may never apply.",
+  "action.futureOnlyFailed": "The rule wasn't saved, and nothing changed. Try the sentence again, or add it in Settings → Filters.",
   "action.outcome.futureOnly": "Saved. New mail will follow this rule.",
   "errors.ai.checkFailed": "The check couldn't finish. Try again, or skip it.",
   "errors.ai.actionGone": "That preview has ended. Ask again to see a new one.",

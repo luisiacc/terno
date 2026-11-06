@@ -130,6 +130,10 @@ export async function applyPreview(): Promise<void> {
     const r = await client.call("ai.actionApply", { previewId: preview.previewId, jobId: job.jobId, future: s.future });
     undoToken.resolve(r.undoToken);
     leavePreview();
+    if (preview.plan.futureOnly && r.done === 0 && !r.filterSaved) {
+      snack.error(t("action.futureOnlyFailed"), { id: job.snackId });
+      return;
+    }
     const message = preview.plan.futureOnly && r.done === 0 ? t("action.outcome.futureOnly") : t(`action.outcome.${verb}`, { count: r.done, category: preview.categoryName ?? "" });
     snack.success(r.stopped ? t("action.outcome.stopped", { outcome: message }) : message, { id: job.snackId, duration: 8000, description: notes(r), action: r.undoToken !== null ? undoAction(undo, t("action.undoName", { outcome: message })) : undefined });
   } catch (error) {

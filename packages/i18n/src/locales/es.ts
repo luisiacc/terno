@@ -2236,6 +2236,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "action.button.futureOnly": "Guardar la regla",
   "action.futureOnly": "Solo el correo nuevo. Nada de lo que ya está aquí cambia; marca una fila abajo para incluirla.",
   "action.futureOnlyNothing": "Solo el correo nuevo. Todavía nada coincide con esto, así que revisa la frase: podría no aplicarse nunca.",
+  "action.futureOnlyFailed": "La regla no se guardó y no cambió nada. Vuelve a escribir la frase, o agrégala en Ajustes → Filtros.",
   "action.outcome.futureOnly": "Guardada. El correo nuevo seguirá esta regla.",
   "errors.ai.checkFailed": "La revisión no pudo terminar. Inténtalo de nuevo u omítela.",
   "errors.ai.actionGone": "Esa vista previa terminó. Vuelve a pedirlo para ver una nueva.",
