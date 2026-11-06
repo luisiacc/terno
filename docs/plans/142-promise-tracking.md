@@ -262,4 +262,3 @@ Codex (`gpt-6.1-sol`, high, read-only, `/tmp/terno-plans-141-145/142-promise-tra
 - **Later is a small menu of the reminder presets,** not plan 87's dialog, which only knows reminders.
 - **The monthly ceiling sums `DAILY_REQUESTS`' keys** (revision 8), so plans 144 and 145 get it by adding a line.
 - **The shared dwell** (`lib/open-dwell.ts`) landed here for plan 144 revision 9, and reminders moved onto it.
-- **Not built:** Nudge's To is the ordinary reply's, not narrowed to who it's waiting on when the thread has several.

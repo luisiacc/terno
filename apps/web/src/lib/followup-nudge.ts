@@ -8,9 +8,12 @@ export const NUDGE_INSTRUCTION = "a short, friendly nudge about my last message"
 export async function nudge(row: FollowupRow): Promise<void> {
   try {
     const { openRow, setInstruction, submit, rowKeyOf } = await import("~/lib/ai-draft");
+    const { editDraftRecipients } = await import("~/lib/drafts");
     await openRow({ threadId: row.threadId });
     const key = rowKeyOf(row.threadId);
     if (!key) return;
+    // To is who it's waiting on, whoever else the thread holds
+    if (row.personEmail) editDraftRecipients(key, "to", row.personName ? `${row.personName} <${row.personEmail}>` : row.personEmail, []);
     setInstruction(key, NUDGE_INSTRUCTION);
     await submit(key);
   } catch (error) {

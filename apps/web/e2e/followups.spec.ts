@@ -28,7 +28,7 @@ async function tracked(server: DevServerFixture, subject: string, kind: "promise
   const message = thread!.messages.at(-1)!;
   await store.followups.marks.queueScan([message.id], E2E_NOW);
   // a live one, as far as the top goes: not from a check
-  await store.followups.finish({ messageId: message.id, threadId, fromScan: false, rows: [{ kind, item: kind === "promise" ? 0 : 100, text: "send the contract", quote: kind === "promise" ? "I'll send the contract" : null, personName: "Tom Reed", personEmail: "tom@acme.test", dueAt: due ? E2E_NOW - 1000 : E2E_NOW + 86_400_000, dated: false }], kept: [], now: E2E_NOW, model: "demo", provider: "fake", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
+  await store.followups.finish({ messageId: message.id, threadId, fromScan: false, rows: [{ kind, item: kind === "promise" ? 0 : 100, text: "send the contract", quote: kind === "promise" ? "I'll send the contract" : null, personName: "Tom Reed", personEmail: "tom.reed@example.com", dueAt: due ? E2E_NOW - 1000 : E2E_NOW + 86_400_000, dated: false }], kept: [], now: E2E_NOW, model: "demo", provider: "fake", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
   await server.backend.followups.look();
   return threadId;
 }
@@ -89,7 +89,7 @@ test.describe("follow-ups (plan 142)", () => {
     const sends = (await server.backend.store.debug.snapshot()).messages.filter((m) => m.isSent).length;
     await page.getByTestId("followup-nudge").click();
     await expect(page.getByTestId("composer")).toBeVisible();
-    await expect(page.getByTestId("composer")).not.toHaveText("");
+    await expect(page.getByTestId("composer")).toContainText("Tom Reed");
     expect((await server.backend.store.debug.snapshot()).messages.filter((m) => m.isSent).length).toBe(sends);
   });
 

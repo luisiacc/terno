@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ARRIVAL_WINDOW_MS, badgeText, importance, noticeText, redact, reminderNotice, stillNew, summarize, type ArrivalRow } from "./attention";
+import { followupNotice } from "./attention";
 
 const NOW = Date.UTC(2026, 9, 26, 12);
 
@@ -144,5 +145,21 @@ describe("reminder notices (plan 87)", () => {
     expect(noticeText(n)).toEqual({ title: "3 reminders", subtitle: "", body: "From Bo, Cy and 1 other" });
     expect(noticeText(redact(n))).toEqual({ title: "3 reminders", subtitle: "", body: "" });
     expect(reminderNotice([], "r3")).toBeNull();
+  });
+});
+
+describe("follow-ups (plan 142)", () => {
+  const rows = [{ threadId: 1, text: "send the contract", personName: "Tom", subject: "The contract" }];
+  it("one says who and what; redacted, only that one is due; several count rows, two on one thread each counted", () => {
+    const one = followupNotice(rows, "x")!;
+    expect(one).toMatchObject({ kind: "followup", count: 1, threadId: 1 });
+    expect(noticeText(one).title).toBe("You told Tom you’d send the contract");
+    expect(noticeText(one).subtitle).toBe("The contract");
+    expect(noticeText(redact(one)).title).toBe("A promise is due");
+    const two = followupNotice([rows[0]!, { ...rows[0]!, text: "call" }], "y")!;
+    expect(two.count).toBe(2);
+    expect(two.threadId).toBe(1);
+    expect(noticeText(two).title).toBe("2 promises are due");
+    expect(followupNotice([], "z")).toBeNull();
   });
 });

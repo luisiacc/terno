@@ -185,6 +185,54 @@ describe("the worker", () => {
   });
 });
 
+describe("a send (revision 3)", () => {
+  async function waiting(t: Awaited<ReturnType<typeof setup>>) {
+    const { backend, model, send, drained } = t;
+    model.answer = () => reply({ expectsReply: true, awaiting: ["r1"] });
+    const first = await send({ providerMsgId: "w", rfcMessageId: "w@x" });
+    backend.followups.wake();
+    await drained();
+    expect((await backend.store.followups.active()).map((r) => r.kind)).toEqual(["awaiting"]);
+    model.answer = () => reply();
+    return first.id;
+  }
+
+  it("written and queued closes nothing; failing closes nothing; only confirmed does, and it's read then", async () => {
+    const t = await setup();
+    const { backend, client, account, clock } = t;
+    const replyingTo = await waiting(t);
+    clock.now += 60_000;
+    const provider = await backend.provider(account.id);
+    const execute = provider!.execute.bind(provider);
+    provider!.execute = async () => { throw new Error("the server said no"); };
+    const failed = await client.call("compose.send", { accountId: account.id, to: [tom], subject: "Re", bodyText: "Any news?", inReplyToMessageId: replyingTo });
+    expect((await backend.store.followups.active()).map((r) => r.kind)).toEqual(["awaiting"]);
+    expect(await backend.store.followups.marks.count()).toBe(0);
+    await backend.runWorker();
+    expect((await backend.store.followups.active()).map((r) => r.kind)).toEqual(["awaiting"]);
+    expect(await backend.store.followups.marks.count()).toBe(0);
+    expect(failed.opId).toBeTruthy();
+    provider!.execute = execute;
+    await client.call("compose.send", { accountId: account.id, to: [tom], subject: "Re", bodyText: "Any news at all?", inReplyToMessageId: replyingTo });
+    await backend.runWorker();
+    expect(await backend.store.followups.active()).toEqual([]);
+  });
+
+  it("the setting off still lets a confirmed send end a wait, and reads nothing", async () => {
+    const t = await setup();
+    const { backend, client, account, model, clock } = t;
+    const replyingTo = await waiting(t);
+    await client.call("settings.update", { followups: { enabled: false } });
+    clock.now += 60_000;
+    const n = model.requests.length;
+    await client.call("compose.send", { accountId: account.id, to: [tom], subject: "Re", bodyText: "Any news?", inReplyToMessageId: replyingTo });
+    await backend.runWorker();
+    expect(await backend.store.followups.marks.count()).toBe(0);
+    expect(model.requests.length).toBe(n);
+    expect(await backend.store.followups.active()).toEqual([]);
+  });
+});
+
 describe("when they come due", () => {
   it("one timer; due, on top, and said once; a nudge says nothing", async () => {
     const { backend, model, send, drained, clock, notices } = await setup();
