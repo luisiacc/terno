@@ -1,6 +1,6 @@
 # Plan 149: Copy conversation as text
 
-- **Status:** building.
+- **Status:** built.
 - **Builds on:** plan 06 (context menus), plan 09 (printing, its quote stripping and the message menu).
 
 ## The request
@@ -110,3 +110,26 @@ The design above stands except where this says otherwise.
 10. **Whitespace modes:** `pre`, `pre-wrap` and `break-spaces` keep everything, blank runs included; `pre-line` keeps line breaks and collapses spaces; only normal text gets the blank-line cleanup.
 11. **The digest row isn't a conversation:** the palette's item and the copy command leave it out (`loadThread(0)` is null).
 12. **Rejected:** yielding inside one message and rewriting the stripper's quote search. One parse can't be split, the stripper already runs on every print preview, and this runs once per click. **Rejected:** dropping the `MsoNormal` rule because the reader removes the stylesheet that defines it. The rule isn't about how the reader draws it but what the sender wrote: Outlook lines with an explicit `&nbsp;` paragraph between them. Treated as paragraphs, a signature becomes double-spaced.
+
+## What the code review changed
+
+First round, each with a regression test:
+
+- Hidden elements and `<style>` are removed before anything reads the mail. Unseen content after a quote used to read as a reply below it and hold the history back. This also covers a hidden `<tbody>`, which `table.rows` walks past.
+- A row inherits from its section as well (`visibility:hidden` on a `<tbody>`).
+- `pre-line` keeps its blank runs, like `pre`.
+- The no-loading test copies a real message holding a pixel, a frame, a stylesheet and an object, instead of parsing them apart from the action.
+
+Second round: nothing.
+
+**What the tests found along the way:** the reader's own mail frame asks for a remote image as it opens, and its CSP refuses (`blockedReason: csp`): nothing leaves. Copying asks for nothing. The spec starts counting after the frame is up.
+
+## Test scope
+
+By the user's choice (the request above), this ran its own tests and what shares its code, not `pnpm test:all`: `thread-text.test.ts`, `copy-thread.test.ts`, `print.test.ts`, `quote.test.ts`, `palette-commands.test.ts`, the i18n package, `e2e/copy-thread.spec.ts` (ten times over, in parallel), and `print`, `reader` and `sender-header` in macOS and Lumen, plus typecheck and lint. The menu was looked at in light and dark. The converter is its own chunk, not in the entry.
+
+## Known limits
+
+- Answers typed below Outlook's reply header go with the history (revision 4).
+- Link addresses aren't copied, by request ("text only"): "click here" reads as "click here".
+- `stripTrailingQuote` empties a bare forward when **printing** with quotes hidden. Copying guards against it; print is unchanged here.

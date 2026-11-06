@@ -12,8 +12,9 @@ const clipboard = (page: Page) => page.evaluate(() => navigator.clipboard.readTe
 const blank = (page: Page) => page.evaluate(() => navigator.clipboard.writeText(""));
 const menu = (page: Page) => page.getByTestId("message-menu");
 
-/** Escape, and shortcuts wait until the menu has really gone. */
+/** Once the menu holds focus (a key before that goes to where the click was: a mail's frame), Escape; shortcuts wait until it has really gone. */
 async function close(page: Page): Promise<void> {
+  await expect.poll(() => page.evaluate(() => document.activeElement?.closest("[role=menu]") != null)).toBe(true);
   await page.keyboard.press("Escape");
   await expect(menu(page)).toHaveCount(0);
 }
