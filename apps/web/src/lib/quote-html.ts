@@ -14,7 +14,8 @@ const says = (n: Node) => (n.nodeType === 3 ? Boolean(n.nodeValue!.trim()) : (n 
  * is a link. Back to its block's start or a `<br>`, and never so far that it must be the reply talking (an attribution is short).
  */
 function lineStart(leaves: { node: Node }[], end: number): number {
-  const block = leaves[end]!.node.parentElement?.closest("div, p, li, td, blockquote, body");
+  const blockOf = (n: Node) => n.parentElement?.closest("div, p, li, td, blockquote, body");
+  const block = blockOf(leaves[end]!.node);
   if (!block) return end;
   const breaks = [...block.querySelectorAll("br")];
   let start = end;
@@ -23,7 +24,8 @@ function lineStart(leaves: { node: Node }[], end: number): number {
     const before = leaves[start - 1]!.node;
     const after = leaves[start]!.node;
     length += before.textContent!.length;
-    if (!block.contains(before) || length > 200) break;
+    // its own block only: a block inside this one is a line of its own
+    if (blockOf(before) !== block || length > 200) break;
     if (breaks.some((br) => before.compareDocumentPosition(br) & Node.DOCUMENT_POSITION_FOLLOWING && after.compareDocumentPosition(br) & Node.DOCUMENT_POSITION_PRECEDING)) break;
     start--;
   }

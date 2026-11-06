@@ -230,6 +230,17 @@ describe("quoted text", () => {
     expect(shown).not.toMatch(/On Monday|Ana|wrote|The signed contract/);
   });
 
+  it("a line in a nested block isn't the attribution's, and the quote still goes", () => {
+    const shown = hidden({ bodyHtml: `<div>Hi team.</div><div><div>Approved.</div>On Monday, Ana wrote:</div><blockquote type="cite">Old history</blockquote>` }).textContent!;
+    expect(shown).toContain("Hi team.");
+    expect(shown).toContain("Approved.");
+    expect(shown).not.toMatch(/On Monday|Old history/);
+    // with nothing above it, it is still a reply, not a bare forward
+    const only = hidden({ bodyHtml: `<div><div>Approved.</div>On Monday, Ana wrote:</div><blockquote type="cite">Old history</blockquote>` }).textContent!;
+    expect(only).toContain("Approved.");
+    expect(only).not.toMatch(/On Monday|Old history/);
+  });
+
   it("a forward with a note loses the forward and the line that introduces it, as it does a reply's history", () => {
     const bodyHtml = `<div>FYI</div><div>Begin forwarded message:</div><blockquote type="cite"><div>The signed contract</div></blockquote>`;
     expect(hidden({ bodyHtml }).textContent).toContain("FYI");

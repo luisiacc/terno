@@ -155,6 +155,7 @@ This replaces "links are their text" in §3.
 **What the code review of this round changed,** each with a regression test:
 
 - An attribution with a linked address ("On Monday, Ana <ana@x> wrote:") is several text nodes. Only the last was removed, leaving a fragment, and the fragment read as a reply, defeating the bare-forward guard. The whole line goes now (back to its block's start or a `<br>`, at most 200 characters). This was in print before this plan too.
+- That line stays inside its own block: a nested block above it is the reply's line, and with nothing else above it the mail is still a reply, not a bare forward.
 - A URL's balanced parentheses stay in its link (`Thread_(computing)`); a sentence's don't.
 
 **Tests:** `thread-text.test.ts`, `copy-thread.test.ts`, `print.test.ts`, `quote.test.ts`, and `e2e/copy-thread.spec.ts`, which reads both forms back from the clipboard, with `print` and `reader` in macOS and Lumen. As in round one, by the user's choice, not `pnpm test:all`. Not pasted into Word itself: the e2e checks what Chromium gives a reader of the clipboard.
