@@ -122,7 +122,7 @@ const attribute = (text: string) => dataText(text).replace(/["\r\n]/g, " ");
 /**
  * How a context window divides up: the answer's allowance, then the system prompt, and what's left for the whole
  * serialized `summaryPrompt`. A window too small for the full allowance gives the answer 30%, which holds the longest
- * answer `validate` keeps (800 characters and six rows of 200). Unknown: nothing to fit.
+ * answer `validate` keeps (800 characters and six rows of 200) in rough tokens; a window this small has no hidden reasoning. Unknown: nothing to fit.
  */
 export function summaryBudget(contextTokens: number | null): { outputTokens: number; promptChars: number } {
   if (contextTokens === null) return { outputTokens: SUMMARY_MAX_TOKENS, promptChars: Infinity };
@@ -173,32 +173,39 @@ const WEEKDAYS_ES = "lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|doming
  * Words that stop being true the day after: a card is read on later days. "por la mañana" is only a time of day, and a
  * weekday with its date beside it ("this Friday, 6 March") says when.
  */
+const MONTHS_EN = "jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec";
+/** a date right after a weekday, and not an hour: "Friday, 6 March" and "Friday March 6", but not "Monday 9am" */
+const DATE_NEXT = `(?![,\\s]+(?:the\\s+|el\\s+)?\\d{1,2}(?!\\s*(?:am|pm|a\\.m|p\\.m|h\\b|:|\\d)))(?![,\\s]+(?:${MONTHS_EN})[a-z]*\\.?\\s+\\d)`;
 const FADES = new RegExp(
-  `(?<![\\p{L}])(today|tomorrow|tonight|yesterday|this (?:morning|afternoon|evening|week|weekend|month)|(?:next|last) (?:week|weekend|month)|(?:this|next|last) (?:${WEEKDAYS_EN})(?![,\\s]+(?:\\d|the \\d))|hoy|ayer|esta (?:mañana|tarde|noche|semana)|este (?:fin de semana|mes)|(?:este|próximo|el próximo) (?:${WEEKDAYS_ES})(?![,\\s]+\\d)|(?<!la\\s)mañana|(?:la|esta) (?:semana|mes) (?:que viene|pasada|pasado)|la próxima semana|el próximo mes|el mes que viene)(?![\\p{L}])`,
+  `(?<![\\p{L}])(today|tomorrow|tonight|yesterday|this (?:morning|afternoon|evening|week|weekend|month)|(?:next|last) (?:week|weekend|month)|(?:this|next|last) (?:${WEEKDAYS_EN})${DATE_NEXT}|hoy|ayer|esta (?:mañana|tarde|noche|semana)|este (?:fin de semana|mes)|(?:este|próximo|el próximo) (?:${WEEKDAYS_ES})${DATE_NEXT}|(?<!la\\s)mañana|la semana (?:que viene|pasada|próxima)|el mes (?:que viene|pasado|próximo)|la próxima semana|el próximo mes)(?![\\p{L}])`,
   "iu",
 );
 const CURRENCY: readonly [RegExp, RegExp][] = [
-  [/\$/, /\$|dollar|d[oó]lar|usd|peso/i],
-  [/€/, /€|euro|eur\b/i],
-  [/£/, /£|pound|gbp|libra/i],
+  [/\$|(?<![\p{L}])USD(?![\p{L}])/u, /\$|(?<![\p{L}])(?:dollars?|d[oó]lar(?:es)?|usd|pesos?)(?![\p{L}])/iu],
+  [/€|(?<![\p{L}])EUR(?![\p{L}])/u, /€|(?<![\p{L}])(?:euros?|eur)(?![\p{L}])/iu],
+  [/£|(?<![\p{L}])GBP(?![\p{L}])/u, /£|(?<![\p{L}])(?:pounds?|gbp|libras?)(?![\p{L}])/iu],
 ];
-const digits = (text: string) => text.replace(/[,.\s]/g, "");
+const NUMBER = /\d[\d.,]*\d|\d/g;
+/** Separators and whole cents aside, so "1,250", "1.250" and "1,250.00" are one amount, and 250 isn't part of it. */
+const amount = (text: string) => text.replace(/[.,]00?$/, "").replace(/[,.]/g, "");
+const amountsIn = (text: string) => new Set((text.match(NUMBER) ?? []).map(amount));
 /** A weekday with no date beside it reads as the coming one. It can be right ("Monday to Friday"), so it's only asked about. */
-const FLOATING = new RegExp(`(?<![\\p{L}])(?<!every |each |cada |los )(${WEEKDAYS_EN}|${WEEKDAYS_ES})(?![\\p{L}])(?![,\\s]+(?:the\\s+|el\\s+)?\\d)(?![,\\s]+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?\\s+\\d)`, "iu");
+const FLOATING = new RegExp(`(?<![\\p{L}])(?<!every |each |cada |los )(${WEEKDAYS_EN}|${WEEKDAYS_ES})(?![\\p{L}])${DATE_NEXT}`, "iu");
 
 /**
  * What a card says that the mail can be shown not to: an amount or a currency it never gives, or a word that fades.
  * Only what code can hold: meaning is the prompt's. Three digits or a currency mark, since a day of the month can be
  * worked out from "next Friday". A year in the card is taken as read.
  */
-function unsupported(text: string, source: string, sourceDigits: string): string | null {
+function unsupported(text: string, source: string, amounts: ReadonlySet<string>): string | null {
   const fading = FADES.exec(text);
   if (fading) return `"${fading[0]}" won't be true when this is read: write the day and the month`;
   for (const [mark, words] of CURRENCY) if (mark.test(text) && !words.test(source)) return `the mail gives no currency like "${mark.source.replace("\\", "")}": write the amount as the mail does`;
-  for (const m of text.matchAll(/(?:[$€£]\s?)?\d[\d.,]*\d|[$€£]\s?\d/g)) {
-    const number = digits(m[0].replace(/[$€£]/g, ""));
-    if (/^(19|20)\d\d$/.test(number) || (number.length < 3 && !/[$€£]/.test(m[0]))) continue;
-    if (!sourceDigits.includes(number)) return `"${m[0]}" isn't in the mail: copy the amount as written`;
+  for (const m of text.matchAll(/[$€£]?\s?(?:\d[\d.,]*\d|\d)/g)) {
+    const marked = /[$€£]/.test(m[0]);
+    const number = amount(m[0].replace(/[$€£\s]/g, ""));
+    if (/^(19|20)\d\d$/.test(number) || (number.length < 3 && !marked)) continue;
+    if (!amounts.has(number)) return `"${m[0].trim()}" isn't in the mail: copy the amount as written`;
   }
   return null;
 }
@@ -208,7 +215,7 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
   if (input.thread.length === 0) throw new AiError("summarize needs a message", "invalid_output");
   const labels = new Set(input.thread.map((m) => m.label));
   const source = `${input.subject} ${input.thread.map((m) => m.text).join(" ")}`;
-  const sourceDigits = digits(source);
+  const amounts = amountsIn(source);
   // told once what's wrong; after that a row goes rather than the whole card, and the summary stands
   let told = false;
   // to themselves is a reminder, and its question is theirs
@@ -220,25 +227,26 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
     example: { summary: "Ana can't make the 12th and proposes the 19th.", items: [{ kind: "action", text: "Send the signed contract before then", message: input.thread[0]!.label }] },
     maxTokens: input.outputTokens ?? SUMMARY_MAX_TOKENS,
     effort: "low",
-    validate: (w) => {
+    validate: (w, attempt) => {
       const summary = clean(w.summary, SUMMARY_MAX_CHARS);
       if (!summary) return { ok: false, error: "summary must not be empty" };
-      const said0 = [summary, ...w.items.map((i) => i.text)].map((t) => clean(t, Infinity));
-      const floating = said0.map((t) => FLOATING.exec(t)?.[0]).find(Boolean);
-      const problem = said0.map((t) => unsupported(t, source, sourceDigits)).find(Boolean) ?? (floating ? `"${floating}" has no date beside it: write the day and the month, or how the mail puts it if it doesn't say` : null);
-      if (problem && !told) {
-        told = true;
-        return { ok: false, error: problem };
-      }
       const said = words(summary);
       // one citing a message that isn't there is dropped: never shown unlinked. One the summary already says adds nothing.
       // A question the reader put to someone else isn't waiting for their answer (an action there can be their promise)
       const items = w.items
         .filter((i) => labels.has(i.message) && !repeats(said, i.text) && !(i.kind === "question" && askedOthers.has(i.message)))
         .map((i) => ({ kind: i.kind, text: clean(i.text, ITEM_MAX_CHARS), message: i.message }))
-        .filter((i) => i.text && !unsupported(i.text, source, sourceDigits))
+        .filter((i) => i.text)
         .slice(0, SUMMARY_MAX_ITEMS);
-      return { ok: true, value: { summary, items } };
+      // only what will show: a row that's going anyway is nothing to send back
+      const shown = [summary, ...items.map((i) => i.text)];
+      const floating = shown.map((t) => FLOATING.exec(t)?.[0]).find(Boolean);
+      const problem = shown.map((t) => unsupported(t, source, amounts)).find(Boolean) ?? (floating ? `"${floating}" has no date beside it: write the day and the month, or how the mail puts it if it doesn't say` : null);
+      if (problem && !told && !attempt?.last) {
+        told = true;
+        return { ok: false, error: problem };
+      }
+      return { ok: true, value: { summary, items: items.filter((i) => !unsupported(i.text, source, amounts)) } };
     },
   };
 }

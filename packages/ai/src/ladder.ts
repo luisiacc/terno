@@ -10,7 +10,7 @@ export interface StructuredTask<W, T> {
   prompt: string;
   schema: { name: string; zod: z.ZodType<W> };
   /** domain checks after the shape parses; the error text is fed back in the repair turn */
-  validate: (wire: W) => Validation<T>;
+  validate: (wire: W, attempt?: { last: boolean }) => Validation<T>;
   /** one valid instance, shown to models without native structured output */
   example: W;
   maxTokens: number;
@@ -40,12 +40,12 @@ function systemFor<W>(task: StructuredTask<W, unknown>, output: OutputMode): str
   ].join("\n");
 }
 
-function check<W, T>(task: StructuredTask<W, T>, text: string): Validation<T> {
+function check<W, T>(task: StructuredTask<W, T>, text: string, last: boolean): Validation<T> {
   const json = parseModelJson(text);
   if (!json.ok) return json;
   const shape = task.schema.zod.safeParse(json.value);
   if (!shape.success) return { ok: false, error: shape.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ") };
-  return task.validate(shape.data);
+  return task.validate(shape.data, { last });
 }
 
 /**
@@ -83,7 +83,7 @@ export async function runStructured<W, T>(transport: ModelTransport, task: Struc
     }
     if (completion.stop === "refusal") throw new AiError(L("errors.ai.refused"), "refused");
     if (completion.stop === "length") throw new AiError(L("errors.ai.truncated"), "invalid_output");
-    const result = check(task, completion.text);
+    const result = check(task, completion.text, repairsLeft <= 0);
     if (result.ok) return result.value;
     if (repairsLeft-- <= 0) throw new AiError(L("errors.ai.invalidOutput", { detail: result.error }), "invalid_output");
     messages.push(

@@ -291,6 +291,11 @@ describe("what's sent", () => {
     const prompt = promptText(model.requests.at(-1)!.messages[0]!.content);
     expect(prompt).toContain("The documentation went out on Friday.");
     expect(prompt).not.toContain("older quote");
+    // what the reader wrote comes first, whatever the size of what they quote
+    const huge = await arrive({ providerThreadId: "huge", date: START - 30_000, isSent: true, from: { name: "Me", email: "me@terno.test" }, bodyText: `${"> quoted line\n".repeat(600)}Already signed it.` });
+    await arrive({ providerThreadId: "huge", date: START - 40_000, bodyText: WORDS });
+    await until(async () => expect((await row(huge.thread))?.state).toBe("ready"));
+    expect(promptText(model.requests.at(-1)!.messages[0]!.content)).toContain("Already signed it.");
   });
 
   it("plan 151: on a small window, long recipient lists go before the message's words", async () => {

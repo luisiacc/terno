@@ -73,7 +73,7 @@ function thread(c: Conversation): ThreadText[] {
       ...deliveryOf({ to: (m.to ?? []).map(parsed), cc: (m.cc ?? []).map(parsed), list: m.list === true }, own),
       date: m.date,
       own: m.own,
-      text: m === newest ? m.text.slice(0, 16_000) : m === last ? m.text.slice(0, 6_000) : others.includes(m) ? withoutQuotes(m.text).slice(0, 1_600) || m.text.slice(0, 100) : withoutQuotes(m.text).replace(/\s+/g, " ").slice(0, 120),
+      text: m === newest ? m.text.slice(0, 16_000) : m === last && withoutQuotes(m.text) !== m.text ? `${withoutQuotes(m.text).slice(0, 1_600)}\n\n${m.text.slice(0, 6_000)}` : others.includes(m) ? withoutQuotes(m.text).slice(0, 1_600) || m.text.slice(0, 100) : withoutQuotes(m.text).replace(/\s+/g, " ").slice(0, 120),
     }));
 }
 

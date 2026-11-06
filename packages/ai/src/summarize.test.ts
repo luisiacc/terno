@@ -188,6 +188,10 @@ describe("what comes back", () => {
       ["a bare weekday", "The memo comes Monday morning."],
       ["a currency the mail doesn't give", "The total is $1,250."],
       ["an amount the mail doesn't give", "Together that's 1,550."],
+      ["part of an amount", "The total is €250."],
+      ["a currency by its code", "The total is USD 1,250."],
+      ["a weekday and an hour", "They pay next Monday 9am."],
+      ["a month passed", "Se pagó el mes pasado."],
     ])("%s goes back to the model once, with what's wrong", async (_why, summary) => {
       const { run, t } = ask([wire({ summary, items: [] }), wire({ summary: "The total is 1,250, due 6 March.", items: [] })]);
       expect((await run).summary).toBe("The total is 1,250, due 6 March.");
@@ -202,6 +206,9 @@ describe("what comes back", () => {
       ["the currency the mail gives", "The second invoice is €300."],
       ["a year", "The invoice is from 2026."],
       ["a day of the month worked out", "It's due Friday 13 March."],
+      ["the same amount written differently", "The total is 1.250, or 1,250.00."],
+      ["a weekday before the month", "It's due this Friday, March 6."],
+      ["a spanish weekday and date", "Vence este viernes, el 6 de marzo."],
       ["today's a word inside another", "Todayville invoiced 1,250."],
     ])("%s passes first time", async (_why, summary) => {
       const { run, t } = ask([wire({ summary, items: [] })]);
@@ -214,6 +221,26 @@ describe("what comes back", () => {
       const r = await run;
       expect(t.requests).toHaveLength(2);
       expect(r.items.map((i) => i.text)).toEqual(["Closed Saturday"]);
+    });
+
+    it("a word in another word is no currency", async () => {
+      const { run, t } = ask([wire({ summary: "The neurology bill is €300.", items: [] }), wire({ summary: "The neurology bill is 300.", items: [] })], "The neurology bill is 300.");
+      expect((await run).summary).toBe("The neurology bill is 300.");
+      expect(t.requests).toHaveLength(2);
+    });
+
+    it("a row that was going anyway isn't sent back", async () => {
+      const { run, t } = ask([wire({ summary: "The total is 1,250.", items: [{ kind: "action", text: "Pay today", message: "m9" }] })]);
+      expect((await run).items).toEqual([]);
+      expect(t.requests).toHaveLength(1);
+    });
+
+    it("with no repair left a check drops the row and never the card", async () => {
+      const bad = wire({ summary: "The total is 1,250.", items: [{ kind: "action", text: "Pay today", message: "m1" }] });
+      const t = scripted((n) => (n < 2 ? "not json" : bad));
+      const r = await createAi(config({ capabilities: { output: "json_object", contextTokens: null, embeddings: false, probedAt: 1 } }), { transport: t }).summarize(input(mail));
+      expect(t.requests).toHaveLength(3);
+      expect(r).toEqual({ summary: "The total is 1,250.", items: [] });
     });
 
     it("told once: a row that still fails goes and the rest stands, so a card is never lost to a check", async () => {

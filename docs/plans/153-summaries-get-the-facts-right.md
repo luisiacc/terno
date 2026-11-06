@@ -37,7 +37,7 @@ The grading question was also too loose: "wrong fact" counted things that were o
 
 **In `validate`, where the mail can prove it:** a card goes back to the model once, with what's wrong, when it has a word that fades ("today", "this weekend", "mañana"), a currency the mail doesn't give, or an amount that isn't in the mail. Still wrong after that, the row goes and the summary stands, so a check never loses a whole card. A weekday with no date beside it is asked about once and then left, since "Monday to Friday" can be right.
 
-**In `assemble`:** the last message keeps what it quotes, up to 1,500 tokens.
+**In `assemble`:** the last message keeps what it quotes, up to 1,500 tokens, after its own words. A window under 8,000 tokens sends only its own words.
 
 **`summaryBudget`:** a small window gives the answer 30%, not 40%, since the prompt is longer. That still holds the longest answer `validate` keeps.
 
@@ -96,3 +96,16 @@ Off a hot path. A rejected card costs one more request. Time and cost stay withi
 ## Out of scope
 
 Failing tests from other work, as the owner asked. A stronger model, which costs more and is the owner's call: Claude Sonnet 5.5 is about 20 times the price and untested. Corpus note: `fetch-real.py` now keeps one of each id, so it holds 502 conversations (8 Apache threads had shared one). Plan 151's "510" counted those twice.
+
+## What the code review changed
+
+Codex raised 8 points on `1b75ed4b`. Six are fixed, each with a regression test.
+
+- **The reader's words come first.** Keeping a quote could push out the answer it came with, in a small window or past the cut. A message's own words are now sent first, then what it quotes in the room left.
+- **Amounts are compared whole.** "€250" passed against "1,250 euros", since it was matched inside the longer number. "1,250", "1.250" and "1,250.00" count as one amount. Two written with different conventions, like 1.250,50 and 125,050, still look alike: rare, and the prompt says to copy them.
+- **A check can't lose a card.** Two malformed replies could leave no repair for a failed check. The ladder now tells `validate` when it's the last attempt, and the row goes then.
+- **Currency is matched as a word,** so "neurology" holds no euro, and "USD 300" is checked like "$300".
+- **Dates:** "this Friday, March 6" passes, and "next Monday 9am", "el mes pasado" and "la semana próxima" don't.
+- **Only what will show is checked,** so a row that was going anyway costs no request.
+
+Left alone: a repaired reply that brings a new problem just loses that row, which is safe. "USA Today" is sent back once as a word that fades. 30% of a 2,000-token window fits the longest answer in rough tokens, with little to spare, but a window that small has no hidden reasoning to take from it.
