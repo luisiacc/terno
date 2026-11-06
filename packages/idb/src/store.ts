@@ -1793,6 +1793,34 @@ export class IdbMailStore implements MailStore {
         return lo === null || hi === null ? null : { lo, hi };
       }),
     matchWindow: async (rule, now, window) => this.bodyCommand(async () => (await this.matchAll(rule, now, window)).messageIds),
+    messageWalk: () => {
+      // the ids once, sorted once: a walk's windows don't each enumerate the mailbox, and what arrives after it began isn't in it
+      let ids: Float64Array | null = null;
+      let at = 0;
+      return {
+        next: async (limit) => {
+          ids ??= await this.read(() => Float64Array.from(T(this.c, "messages").rows.keys(), Number).sort().reverse());
+          const page = [...ids.subarray(at, at + limit)];
+          at += page.length;
+          return page;
+        },
+      };
+    },
+    threadsOf: (ids) =>
+      this.read(() => {
+        const messages = T(this.c, "messages");
+        return [...new Set(ids.flatMap((id) => messages.get(id)?.thread_id ?? []))] as number[];
+      }),
+    actionFacts: (ids, categoryId) =>
+      this.read(() => {
+        const threads = T(this.c, "threads");
+        const memberships = T(this.c, "thread_categories");
+        return [...new Set(ids)].flatMap((id) => {
+          const t = threads.get(id);
+          if (!t) return [];
+          return [{ id, accountId: t.account_id, subject: t.subject, lastDate: t.last_date, lastFromName: t.last_from_name, lastFromEmail: t.last_from_email, messageCount: t.message_count, unread: t.unread_count > 0, starred: !!t.is_starred, replied: !!t.has_sent, inInbox: !!t.in_inbox, inTrash: !!t.in_trash, inSpam: !!t.in_spam, inCategory: categoryId !== undefined && memberships.has(id, categoryId) }];
+        });
+      }),
     matchMessages: async (rule, now, messageIds) => this.bodyCommand(async () => {
       await this.settled();
       return this.exclusive(async () => {
@@ -2189,6 +2217,7 @@ export class IdbMailStore implements MailStore {
   readonly categories: MailStore["categories"] = {
     list: () => this.early(() => listCategories(this.c)),
     exists: (id) => this.early(() => T(this.c, "categories").has(id)),
+    hasThreads: (id) => this.early(() => T(this.c, "thread_categories").by("fk_category_id", id).length > 0),
     create: (name, color, options) => this.command(() => createCategory(this.c, name, color, options)),
     update: (id, patch) => this.command(() => updateCategory(this.c, id, patch)),
     reorder: (ids) => this.command(() => reorderCategories(this.c, ids)),

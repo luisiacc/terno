@@ -19,6 +19,7 @@ import { defineForwardsConformance } from "./forwards";
 import { defineAiSummariesConformance } from "./ai-summaries";
 import { defineSmartCategorizationConformance } from "./smart-categorization";
 import { defineAskConformance } from "./ask";
+import { defineActionsConformance } from "./actions";
 import { defineFollowupsConformance } from "./followups";
 import { defineWritingConformance } from "./writing";
 import { defineUnsubscribeConformance } from "./unsubscribe";
@@ -126,6 +127,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       return next;
     });
     defineSmartCategorizationConformance(fresh);
+    defineActionsConformance(fresh);
     defineFollowupsConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);

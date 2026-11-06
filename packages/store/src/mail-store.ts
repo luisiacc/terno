@@ -341,6 +341,24 @@ export interface OwnerDecision {
  * work; there is no generic cross-call transaction. Returned model deltas and
  * touched ids describe what already committed.
  */
+/** Plan 143: what a preview needs of a thread. The name is as stored: never fallen back on the address (revision 8). */
+export interface ActionThreadFacts {
+  id: number;
+  accountId: number;
+  subject: string;
+  lastDate: number;
+  lastFromName: string;
+  lastFromEmail: string;
+  messageCount: number;
+  unread: boolean;
+  starred: boolean;
+  replied: boolean;
+  inInbox: boolean;
+  inTrash: boolean;
+  inSpam: boolean;
+  inCategory: boolean;
+}
+
 export interface MailStore {
   /** Ordinary commands wait until exclusive durable upgrades have retired. */
   readonly ready?: Promise<void>;
@@ -495,6 +513,12 @@ export interface MailStore {
     matchWindow(rule: FilterRule, now: number, window: { from: number; to: number }): Promise<number[]>;
     /** plan 90: which of these messages (a few hundred at most) the rule matches */
     matchMessages(rule: FilterRule, now: number, messageIds: readonly number[]): Promise<number[]>;
+    /** Plan 143 revision 11: one walk over the messages, newest first: each `next` goes on from the last, without enumerating every key again. */
+    messageWalk(): { next(limit: number): Promise<number[]> };
+    /** Plan 143: these threads as a preview judges them, cheaply. `categoryId`: whether each is already there. */
+    actionFacts(threadIds: readonly number[], categoryId?: number): Promise<ActionThreadFacts[]>;
+    /** each message's thread, once */
+    threadsOf(messageIds: readonly number[]): Promise<number[]>;
     /** claims + actions + ops for one chunk; refuses (CANCELLED) if the filter changed since `ruleJson` */
     applyChunk(id: number, ruleJson: string, messageIds: readonly number[], now: number): Promise<{ applied: number; touched: number[]; opIds: string[] } & FlagReconciliation>;
   };
@@ -720,6 +744,8 @@ export interface MailStore {
   categories: {
     list(): Promise<Category[]>;
     exists(id: number): Promise<boolean>;
+    /** plan 143: anything filed there, Trash and Spam too */
+    hasThreads(id: number): Promise<boolean>;
     /** shown in the Inbox unless `showInInbox: false` (seeds and imports keep their data's; the RPC hides new ones) */
     create(name: string, color: CategoryColor, options?: { showInInbox?: boolean }): Promise<Category>;
     update(id: number, patch: { name?: string; color?: CategoryColor; position?: number; autoApply?: boolean; showInInbox?: boolean }): Promise<Category | null>;

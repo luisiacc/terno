@@ -1267,6 +1267,27 @@ export class SqlMailStore implements MailStore {
       const prepared = await prepareBodyMatches(this.db, rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : []), this.yieldTo);
       return withBodyMatches(this.db, prepared, () => findRuleMatches(this.db, rule, now, undefined, window).messageIds);
     }),
+    messageWalk: () => {
+      let before = Number.MAX_SAFE_INTEGER;
+      return {
+        next: async (limit) => {
+          const ids = this.db.all<{ id: number }>("SELECT id FROM messages WHERE id < ? ORDER BY id DESC LIMIT ?", before, limit).map((r) => r.id);
+          if (ids.length) before = ids[ids.length - 1]!;
+          return ids;
+        },
+      };
+    },
+    threadsOf: async (ids) => this.db.all<{ thread_id: number }>("SELECT DISTINCT thread_id FROM messages WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify(ids)).map((r) => r.thread_id),
+    actionFacts: async (ids, categoryId) =>
+      this.db
+        .all<{ id: number; account_id: number; subject: string; last_date: number; last_from_name: string; last_from_email: string; message_count: number; unread_count: number; is_starred: number; has_sent: number; in_inbox: number; in_trash: number; in_spam: number; in_category: number }>(
+          `SELECT t.id, t.account_id, t.subject, t.last_date, t.last_from_name, t.last_from_email, t.message_count, t.unread_count, t.is_starred, t.has_sent, t.in_inbox, t.in_trash, t.in_spam,
+             EXISTS (SELECT 1 FROM thread_categories c WHERE c.thread_id = t.id AND c.category_id = ?) AS in_category
+           FROM threads t WHERE t.id IN (SELECT value FROM json_each(?))`,
+          categoryId ?? -1,
+          JSON.stringify(ids),
+        )
+        .map((t) => ({ id: t.id, accountId: t.account_id, subject: t.subject, lastDate: t.last_date, lastFromName: t.last_from_name, lastFromEmail: t.last_from_email, messageCount: t.message_count, unread: t.unread_count > 0, starred: !!t.is_starred, replied: !!t.has_sent, inInbox: !!t.in_inbox, inTrash: !!t.in_trash, inSpam: !!t.in_spam, inCategory: !!t.in_category })),
     matchMessages: async (rule, now, messageIds) => this.bodyCommand(async () => {
       const prepared = await prepareBodyMatches(this.db, rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : []), this.yieldTo);
       return withBodyMatches(this.db, prepared, () => findRuleMatches(this.db, rule, now, messageIds).messageIds);
@@ -1318,6 +1339,7 @@ export class SqlMailStore implements MailStore {
   readonly categories: MailStore["categories"] = {
     list: async () => listCategories(this.db),
     exists: async (id) => this.db.get("SELECT 1 FROM categories WHERE id = ?", id) !== undefined,
+    hasThreads: async (id) => this.db.get("SELECT 1 FROM thread_categories WHERE category_id = ? LIMIT 1", id) !== undefined,
     create: async (name, color, options) => createCategory(this.db, name, color, options),
     update: async (id, patch) => updateCategory(this.db, id, patch),
     reorder: async (ids) => reorderCategories(this.db, ids),
