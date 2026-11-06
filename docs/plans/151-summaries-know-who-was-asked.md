@@ -1,6 +1,6 @@
 # Plan 151: Summaries know who was asked
 
-- **Status:** built and on `main`. See "What the corpus showed" for the numbers, and the sections after it for what the reviews changed.
+- **Status:** built and on `main`, code-reviewed, and run on the corpus. `pnpm test:all` doesn't pass, for reasons outside this plan: see "The full run".
 - **Builds on:** plan 132 (summaries), plan 148 (the card, rows that add to it).
 
 ## The request
@@ -136,4 +136,17 @@ Codex raised 5 points on `94740e51`. Four are fixed, each with a regression test
 - **A question in mail to yourself is yours.** The check now only drops a question the reader put to someone else.
 
 Left alone: removing a connected account changes who counts as the reader on a thread, and a summary already stored doesn't notice until something else changes it. It's rare, and the card still says what it said about that mail.
+
+## The full run
+
+`pnpm test:all` on `c71a05ee` took 1042 s, with nothing else landing during it, and failed. `unit` and `perf` failed only on the crowded first pass, and `ui-perf`, `web`, `db-wasm`, `startup`, `lint` and `typecheck` passed. What failed twice:
+
+- **`reminders.spec.ts` in three designs and `selection.spec.ts`'s two menu baselines:** plan 149's Copy conversation (`e52bf055`) put an item after Print. The test expects Remind right after Print, and the baselines hold the old menu. They aren't about summaries, and plan 149 needs to update them.
+- **`native-reload.smoke.ts:287`:** a focus predicate timing out in the packaged app. This plan doesn't touch it, and it wasn't looked into further.
+
+`compose.spec.ts:153` failed once and passed alone. The run after the last code change, `final-v4`, had no errors over 510 conversations, with 11 rows largely repeating the summary against 34 in the plan 148 trial. `summaries.spec.ts` and `design-axe.spec.ts` pass in all five designs: 25 of 25, run on `94740e51`, before the review's fixes, which `test:all`'s e2e then covered. The unit suite passes whole: 643 files, 11,503 tests.
+
+**Dates.** Asking for real dates means the model now works out "next Friday" itself, so new numbers it writes went from 20 to 33. Of those 33, 30 are dates or times. Of 178 weekday-and-date claims checked against the calendar, 4 were wrong, and all 4 copy a wrong weekday from the mail itself.
+
+**Cost.** The harness's ledger stands at $3.54 of its $5 ceiling, which holds across runs. A run over the corpus is about $0.17.
 
