@@ -107,3 +107,10 @@ Codex (read-only, on the three commits after `82e4116e`) raised 3 points, all fi
 
 - **`cli-log.test.ts` asserts `main.ts`'s exact options, and `main.ts` read the repo's real `.env`.** The failure's diff wrote the real keys into `test-results/all` (local and git-ignored; scrubbed). The test now mocks `withDotEnv`, and a new one holds that only Dev mode's variables are handed over.
 - **A build without `devAi` does no extra store read** in `config()` or `setKey()`.
+
+`pnpm test:all` ran on a machine shared with another checkout's tests (load 45 to 140), in 2148 s:
+
+- `unit` failed only on `cli-log.test.ts` (fixed above). The final code passes all 11,209, run again alone.
+- Flaky on the crowded pass, passing alone: `e2e` (`ai-draft.spec.ts` twice, `compose.spec.ts`), `ui-perf` (the long conversation).
+- `writing.test.ts`'s "a foreground draft waits" gives `compose` a fixed 10 ms and fails under load on the base commit too (6 of 6 there).
+- **`perf` didn't pass, and needs a run on a quiet machine.** The failures are stalls and budgets, nearly all in `packages/db`, which this plan doesn't touch. The backend tests it could reach, `writing.perf` and `import.perf`, ran paired with the base commit under the same load: the learner failed 2 of 8 on the base and 0 of 8 here.
