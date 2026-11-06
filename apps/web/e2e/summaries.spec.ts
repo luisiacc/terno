@@ -90,9 +90,7 @@ test.describe("summaries (plan 132)", () => {
     await expect(page.getByTestId("summary-item").first()).toContainText("Action");
     await expect(page.getByTestId("summary-item").first()).toContainText("Please send the signed contract by Friday");
 
-    // it stands above the conversation, in its column, its text on the subject's line
-    const left = async (testId: string) => (await page.getByTestId(testId).first().boundingBox())!.x;
-    expect(await left("summary-text")).toBe(await left("reader-subject"));
+    // it stands above the conversation
     const blockBox = (await block.boundingBox())!;
     const messageBox = (await page.getByTestId("message").first().boundingBox())!;
     expect(blockBox.y + blockBox.height).toBeLessThanOrEqual(messageBox.y + 1);
@@ -121,6 +119,54 @@ test.describe("summaries (plan 132)", () => {
     await expect(page.getByTestId("summary-text")).toBeVisible();
   });
 
+  test("plan 148: a card in every design, its edges on the column and its text inset; nothing spills out of it", { tag: "@design" }, async ({ app: page, server }, info) => {
+    const accountId = await firstAccount(server);
+    await settingUp(page, server, { ai: { provider: "fake" } });
+    const unbroken = `https://example.test/${"alongpath".repeat(40)}`;
+    await deliver(page, server, incoming(accountId, "A card", { bodyText: `Please read ${unbroken} today. Can you confirm ${unbroken} works for you?` }));
+    await openSubject(page, "A card");
+    await page.getByTestId("action-summarize").click();
+    const block = page.getByTestId("summary-block");
+    await expect(block).toHaveAttribute("data-state", "ready");
+    await expect(page.getByTestId("summary-text")).toContainText("alongpath");
+
+    // tinted, or in Graphite outlined on its surface: never just more of the mail's own page
+    const surface = await block.evaluate((el) => { const s = getComputedStyle(el); return { fill: s.backgroundColor, ring: s.boxShadow }; });
+    const NONE = "rgba(0, 0, 0, 0)";
+    if (info.project.name === "e2e-graphite") {
+      expect(surface.fill).toBe(NONE);
+      expect(surface.ring).not.toBe("none");
+      expect(surface.ring).not.toContain(NONE);
+    } else {
+      expect(surface.fill).not.toBe(NONE);
+    }
+
+    // on the column: the subject's line and the conversation's ends. The label's icon and the text share the inset
+    const box = (await block.boundingBox())!;
+    const message = (await page.getByTestId("message").first().boundingBox())!;
+    expect(box.x).toBe((await page.getByTestId("reader-subject").boundingBox())!.x);
+    expect(box.x).toBe(message.x);
+    expect(box.width).toBe(message.width);
+    const inset = (await page.getByTestId("summary-text").boundingBox())!.x - box.x;
+    expect(inset).toBeGreaterThanOrEqual(12);
+    expect((await page.getByTestId("summary-toggle").locator("svg").first().boundingBox())!.x - box.x).toBe(inset);
+
+    // the narrowest reader: a long link wraps, inside the card
+    await page.setViewportSize({ width: 1000, height: 700 });
+    for (const text of [page.getByTestId("summary-text"), page.getByTestId("summary-item").first().locator("span").nth(1)]) {
+      const fits = await text.evaluate((el) => el.scrollWidth <= el.clientWidth);
+      expect(fits).toBe(true);
+      const right = (await text.boundingBox())!;
+      const card = (await block.boundingBox())!;
+      expect(right.x + right.width).toBeLessThanOrEqual(card.x + card.width);
+    }
+
+    // closed, the card is its one row
+    await page.getByTestId("summary-toggle").click();
+    await expect(page.getByTestId("summary-text")).toHaveCount(0);
+    expect((await block.boundingBox())!.height).toBe((await page.getByTestId("summary-toggle").boundingBox())!.height);
+  });
+
   test("by hand on an old conversation: appears at once, can be stopped, and its arrow goes to the message", async ({ app: page, server }) => {
     // the model answers when the steps that need it thinking are done, however long they take here
     let answer!: () => void;
@@ -147,12 +193,15 @@ test.describe("summaries (plan 132)", () => {
       await page.getByTestId("summary-stop").click();
       await expect(block).toHaveCount(0);
       expect(await server.backend.store.aiSummaries.get(threadId)).toBeNull();
+      // Stop took the whole block with it: focus goes to the button that started it, never the page
+      await expect(summarize).toBeFocused();
 
       // from the palette, then leaving the thread doesn't lose it
       await page.keyboard.press("Meta+k");
       await page.getByRole("combobox").fill("summarize");
       await page.getByTestId("palette-summarize").click();
       await expect(block).toHaveAttribute("data-state", "running");
+      const running = (await block.boundingBox())!;
       await openRow(page, 1);
       await expect(block).toHaveCount(0);
       answer();
@@ -160,6 +209,10 @@ test.describe("summaries (plan 132)", () => {
       await page.locator(select).dispatchEvent("mousedown");
       await expect(block).toHaveAttribute("data-state", "ready");
       await expect(page.getByTestId("summary-text")).toHaveText("The stub read the conversation and wrote this.");
+      // plan 148: the answer takes the running card's place: same box, same header line
+      const ready = (await block.boundingBox())!;
+      expect({ x: ready.x, y: ready.y, width: ready.width }).toEqual({ x: running.x, y: running.y, width: running.width });
+      expect((await page.getByTestId("summary-toggle").boundingBox())!.height).toBe(running.height);
 
       // the arrow unfolds and goes to the message it names, and the toolbar's button stays where it is
       await page.getByTestId("summary-item").click();

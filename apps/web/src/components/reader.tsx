@@ -60,7 +60,7 @@ function SummarizeButton({ threadId }: { threadId: number }) {
   const updates = useApp((s) => kind === "stale" && !s.settings?.summaries.enabled);
   return (
     // a narrow reader (the minimum window) gives its place to the bell, as Mark as unread does; the palette keeps it
-    <IconButton className={cn(tool, "@max-[420px]:hidden")} label={updates ? t("actions.updateSummary") : t("actions.summarize")} onClick={() => void summarize(threadId)} data-testid="action-summarize" aria-busy={kind === "running" || undefined}>
+    <IconButton className={cn(tool, "@max-[420px]:hidden")} label={updates ? t("actions.updateSummary") : t("actions.summarize")} onClick={() => void summarize(threadId)} data-summarize data-testid="action-summarize" aria-busy={kind === "running" || undefined}>
       <Sparkles />
     </IconButton>
   );

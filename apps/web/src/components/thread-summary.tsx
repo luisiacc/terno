@@ -4,7 +4,8 @@ import { Button } from "@terno/ui/components/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { ArrowRight } from "@terno/ui/icons";
+import { ArrowRight, Sparkles } from "@terno/ui/icons";
+import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { errorHelp, modelName, providerLabel } from "~/lib/ai";
 import { fullDate } from "~/lib/format";
@@ -21,10 +22,10 @@ function Item({ item }: { item: AiSummaryItem }) {
         data-kind={item.kind}
         data-message-id={item.messageId}
         onClick={() => revealSummaryMessage(item.messageId)}
-        className="group/item -mx-2 flex min-h-7 w-[calc(100%+1rem)] items-baseline gap-3 rounded-lg px-2 py-1 text-left text-sm transition-colors hover:bg-tint focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        className="group/item -mx-2 flex min-h-7 w-[calc(100%+1rem)] items-baseline gap-3 rounded-lg px-2 py-1 text-left text-sm transition-colors hover:bg-field focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
         <span className="w-[4.5rem] shrink-0 text-xs text-muted-foreground">{t(`summary.kind.${item.kind}`)}</span>
-        <span className="min-w-0 flex-1">{item.text}</span>
+        <span className="min-w-0 flex-1 wrap-anywhere">{item.text}</span>
         <span className="sr-only">{t("summary.goTo")}</span>
         {/* on the first line, however many the text takes */}
         <span aria-hidden className="flex h-[1lh] shrink-0 items-center self-start">
@@ -35,15 +36,20 @@ function Item({ item }: { item: AiSummaryItem }) {
   );
 }
 
+/** A model's words, not the sender's: the design's card, its edges on the conversation's column and its text inset. */
+const CARD = "card-group mb-4";
+const GLYPH = "size-[1.15em] shrink-0 text-muted-foreground";
+
 function Ready({ summary }: { summary: AiSummary }) {
   const open = useSummaries((s) => s.open);
   const provenance = t("summary.provenance", { model: modelName(summary.model), date: fullDate(summary.generatedAt) });
   return (
-    <Collapsible open={open} onOpenChange={setSummaryOpen} data-testid="summary-block" data-state="ready" className="pb-4">
+    <Collapsible open={open} onOpenChange={setSummaryOpen} data-testid="summary-block" data-state="ready" className={CARD}>
       <Tooltip>
         <TooltipTrigger
           render={
-            <CollapsibleTrigger data-testid="summary-toggle" className="-mx-2 h-7 w-[calc(100%+1rem)] rounded-lg px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+            <CollapsibleTrigger data-testid="summary-toggle" className="h-10 gap-1.5 rounded-[inherit] px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+              <Sparkles aria-hidden className={GLYPH} />
               {t("summary.label")}
             </CollapsibleTrigger>
           }
@@ -52,22 +58,31 @@ function Ready({ summary }: { summary: AiSummary }) {
           {provenance}
         </TooltipContent>
       </Tooltip>
-      <CollapsiblePanel>
-        {/* plain text, never HTML: a model's markup has no way in */}
-        <p data-testid="summary-text" className="text-sm whitespace-pre-line text-pretty">
-          {summary.summary}
-        </p>
-        {summary.items.length > 0 && <ul className="mt-1.5" data-testid="summary-items">{summary.items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} />)}</ul>}
+      <CollapsiblePanel className="mx-0 px-0">
+        {/* the padding inside the panel: a padded panel can't ease down to 0 */}
+        <div className="px-3.5 pb-3">
+          {/* plain text, never HTML: a model's markup has no way in */}
+          <p data-testid="summary-text" className="text-sm wrap-anywhere whitespace-pre-line text-pretty">
+            {summary.summary}
+          </p>
+          {summary.items.length > 0 && <ul className="mt-1.5" data-testid="summary-items">{summary.items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} />)}</ul>}
+        </div>
       </CollapsiblePanel>
     </Collapsible>
   );
 }
 
-/** One quiet line where the summary will be: what's happening, and what the user can do about it. */
-function Line({ state, status, children }: { state: string; status?: boolean; children: React.ReactNode }) {
+/** The card's other states, its header's size: what's happening, and what the user can do about it. */
+function Line({ state, status, icon, actions, children }: { state: string; status?: boolean; icon?: React.ReactNode; actions?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div data-testid="summary-block" data-state={state} role={status ? "status" : undefined} className="flex min-h-7 flex-wrap items-center gap-x-2 pb-4 text-sm text-muted-foreground">
-      {children}
+    <div data-testid="summary-block" data-state={state} role={status ? "status" : undefined} className={cn(CARD, "flex items-start gap-1.5 px-3.5 py-2.5 text-sm text-muted-foreground")}>
+      {/* on the first line, however many the text takes */}
+      <span className="flex h-[1lh] shrink-0 items-center">{icon ?? <Sparkles aria-hidden className={GLYPH} />}</span>
+      <div className="flex min-w-0 flex-1 flex-wrap gap-x-3 gap-y-1">
+        <span className="min-w-0 flex-[1_1_16rem] wrap-anywhere">{children}</span>
+        {/* the 24 px buttons reach 2 px past the 20 px line, as the header's height holds them */}
+        {actions && <span className="-my-0.5 ms-auto flex shrink-0 items-center gap-1.5">{actions}</span>}
+      </div>
     </div>
   );
 }
@@ -75,9 +90,9 @@ function Line({ state, status, children }: { state: string; status?: boolean; ch
 const openSettings = () => setApp({ dialog: "settings", settingsTab: "ai" });
 
 /**
- * Plan 132 §6: a thread's summary, between the header and the conversation, in the conversation's column. No card or
- * color: type and the hairline the conversation starts with. It appears only when there's something to say; nothing
- * for pending or failed (Settings says why), and nothing in spam or trash.
+ * Plan 132 §6 and plan 148: a thread's summary, on a card between the header and the conversation, so it never reads
+ * as part of the mail. It appears only when there's something to say; nothing for pending or failed (Settings says
+ * why), and nothing in spam or trash.
  */
 export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
   const threadId = detail.thread.id;
@@ -89,13 +104,15 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
     void loadSummary(threadId);
     bodyArrivedForSummary(threadId);
   }, [threadId, sources]);
-  // Stop goes away with the state it's in: focus stays with the block (its next control), never on the page
+  // Stop goes away with the state it's in: focus stays with the block (its next control), or when that went too, the
+  // toolbar's button that started it; never on the page
   const block = useRef<HTMLDivElement>(null);
   const hadFocus = useRef(false);
   useLayoutEffect(() => {
     if (!hadFocus.current || document.activeElement !== document.body) return;
     hadFocus.current = false;
-    block.current?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+    const next = block.current?.querySelector<HTMLElement>("button") ?? document.querySelector<HTMLElement>("[data-summarize]");
+    next?.focus({ preventScroll: true });
   }, [ui?.kind]);
   if (!summarizable(detail.thread)) return null;
   const onFocusCapture = () => { hadFocus.current = true; };
@@ -106,52 +123,71 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
         return <Ready summary={ui.summary} />;
       case "running":
         return (
-          <Line state="running" status>
-            <Spinner aria-hidden className="size-[1.15em] text-muted-foreground" />
-            <span>{t("summary.running")}</span>
-            <Button size="xs" variant="ghost" data-testid="summary-stop" onClick={() => stopSummary(threadId)}>
-              {t("summary.stop")}
-            </Button>
+          <Line
+            state="running"
+            status
+            icon={<Spinner aria-hidden className={GLYPH} />}
+            actions={
+              <Button size="xs" variant="ghost" data-testid="summary-stop" onClick={() => stopSummary(threadId)}>
+                {t("summary.stop")}
+              </Button>
+            }
+          >
+            {t("summary.running")}
           </Line>
         );
       case "waitingBody":
         return (
           <Line state="waiting" status>
-            <span>{t("summary.downloading")}</span>
+            {t("summary.downloading")}
           </Line>
         );
       case "consent":
         return (
-          <Line state="consent">
+          <Line
+            state="consent"
+            actions={
+              <>
+                <Button size="xs" variant="ghost" data-testid="summary-settings" onClick={openSettings}>
+                  {t("common.settings")}
+                </Button>
+                <Button size="xs" variant="outline" data-testid="summary-continue" onClick={() => { dismissSummary(threadId); void summarize(threadId, { acknowledge: true }); }}>
+                  {t("common.continue")}
+                </Button>
+              </>
+            }
+          >
             <span data-testid="summary-consent">{t("summary.consent", { provider: providerLabel(ui.provider, ai) })}</span>
-            <Button size="xs" variant="outline" data-testid="summary-continue" onClick={() => { dismissSummary(threadId); void summarize(threadId, { acknowledge: true }); }}>
-              {t("common.continue")}
-            </Button>
-            <Button size="xs" variant="ghost" data-testid="summary-settings" onClick={openSettings}>
-              {t("common.settings")}
-            </Button>
           </Line>
         );
       case "noProvider":
         return (
-          <Line state="no-provider">
-            <span>{t("summary.noProvider")}</span>
-            <Button size="xs" variant="outline" data-testid="summary-settings" onClick={() => { dismissSummary(threadId); openSettings(); }}>
-              {t("common.settings")}
-            </Button>
+          <Line
+            state="no-provider"
+            actions={
+              <Button size="xs" variant="outline" data-testid="summary-settings" onClick={() => { dismissSummary(threadId); openSettings(); }}>
+                {t("common.settings")}
+              </Button>
+            }
+          >
+            {t("summary.noProvider")}
           </Line>
         );
       case "error": {
         const help = ai ? errorHelp(ui.errorKind, ai) : null;
         return (
-          <Line state="error">
+          <Line
+            state="error"
+            actions={
+              <Button size="xs" variant="ghost" data-testid="summary-retry" onClick={() => { dismissSummary(threadId); void summarize(threadId); }}>
+                {t("summary.tryAgain")}
+              </Button>
+            }
+          >
             <span role="alert" data-testid="summary-error">
               <span className="text-foreground">{ui.message}</span>
               {help ? ` ${help}` : ""}
             </span>
-            <Button size="xs" variant="ghost" data-testid="summary-retry" onClick={() => { dismissSummary(threadId); void summarize(threadId); }}>
-              {t("summary.tryAgain")}
-            </Button>
           </Line>
         );
       }
