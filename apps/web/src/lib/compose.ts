@@ -443,6 +443,8 @@ export async function openStoredDraft(key: string): Promise<void> {
 type OpenOutcome = "stale" | "failed" | undefined;
 
 /** Plan 133: where an open landed: the draft it made, the one it resumed or converted, the pinned one, or nowhere. */
+export const composeHooks: { composing: ((threadId: number) => void) | null } = { composing: null };
+
 export type ComposeLanding = { kind: "created" | "resumed" | "converted" | "pinned"; key: string } | { kind: "none" };
 const NOWHERE: ComposeLanding = { kind: "none" };
 
@@ -474,6 +476,8 @@ export async function composeLanding(mode: DraftMode = "new", threadId: number |
   const finish = beginDraftWork();
   if (!finish) return NOWHERE;
   markSelectionIntent();
+  // plan 144: the person asked for something else, which proceeds as it always did
+  if (threadId !== null) composeHooks.composing?.(threadId);
   const mine = ++intent;
   const state = getApp();
   const cell: LandingCell = { landing: NOWHERE, options };

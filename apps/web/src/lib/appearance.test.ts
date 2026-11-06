@@ -45,6 +45,7 @@ const SERVER: AppSettings = {
   localMode: true,
   summaries: { enabled: false, enabledAt: null, acknowledged: [] },
       ask: { enabled: true, acknowledged: [] },
+      replies: { enabled: false },
   followups: { enabled: false, enabledAt: null, nudgeAfterDays: 5, scanAnswered: false },
   composeSuggestions: true,
   senderIcons: false,

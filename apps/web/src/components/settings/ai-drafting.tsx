@@ -9,7 +9,7 @@ import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { isMac } from "~/lib/select";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
-import { CommitInput, SettingsGroup, SettingsNote, SettingsRow } from "./parts";
+import { CommitInput, SettingsGroup, SettingsNote, SettingsRow, type SettingsUpdate } from "./parts";
 
 /** Plan 133 §7: what the renderer reads through `writing.prefs.*`, never `AppSettings`: nothing here reaches MCP. */
 function usePrefs(): [WritingPrefs | null, (patch: Parameters<typeof client.call<"writing.prefs.set">>[1]) => Promise<void>] {
@@ -35,8 +35,9 @@ function writingModel(ai: AppSettings["ai"]): string {
 }
 
 /** Settings → AI → Drafting. It starts nothing: the local learner runs from the first draft or the Writing style page, not from looking at the AI tab. */
-export function DraftingGroup({ settings }: { settings: AppSettings }) {
+export function DraftingGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const { ai } = settings;
+  const repliesOn = settings.replies?.enabled === true;
   const [prefs, save] = usePrefs();
   const target = writingTarget(ai);
   return (
@@ -51,6 +52,9 @@ export function DraftingGroup({ settings }: { settings: AppSettings }) {
           </SettingsRow>
           <SettingsRow label={t("aiDraft.settings.sentMail")} hint={t("aiDraft.settings.sentMailHint")}>
             {(a) => <Switch {...a} checked={prefs?.global.useSentMail ?? true} data-testid="ai-drafting-sent-mail" onCheckedChange={(useSentMail) => void save({ global: { useSentMail } }).catch(failed)} />}
+          </SettingsRow>
+          <SettingsRow label={t("replies.settings.switch")} hint={target.provider === "none" ? t("replies.settings.noProvider") : t("replies.settings.hint", { provider: providerLabel(target.provider, ai) })} testId="replies-setting">
+            {(a) => <Switch {...a} checked={repliesOn} disabled={target.provider === "none"} data-testid="replies-switch" onCheckedChange={(enabled) => void update({ replies: { enabled } })} />}
           </SettingsRow>
           <SettingsRow label={t("aiDraft.style.title")} hint={t("aiDraft.settings.styleHint")} testId="ai-drafting-style">
             {({ id: _id, "aria-labelledby": _l, "aria-describedby": described }) => (
@@ -81,6 +85,9 @@ export function AccountWriting({ accountId }: { accountId: number }) {
     <>
       <SettingsRow stacked labelFor label={t("aiDraft.account.instructions")} hint={t("aiDraft.account.instructionsHint")}>
         {(a) => <CommitInput multiline a11y={a} data-testid="account-writing-instructions" value={own?.instructions ?? ""} placeholder={t("aiDraft.account.instructionsPlaceholder")} maxLength={WRITING_INSTRUCTIONS_MAX} onCommit={(instructions) => save({ account: { accountId, prefs: { instructions } } })} />}
+      </SettingsRow>
+      <SettingsRow label={t("replies.account")} hint={t("replies.accountHint")}>
+        {(a) => <Switch {...a} checked={own?.prepareReplies ?? true} data-testid="account-prepare-replies" onCheckedChange={(prepareReplies) => void save({ account: { accountId, prefs: { prepareReplies } } }).catch(failed)} />}
       </SettingsRow>
       <SettingsRow label={t("aiDraft.account.useGeneral")} hint={t("aiDraft.account.useGeneralHint")}>
         {(a) => <Switch {...a} checked={own?.useGeneral ?? true} data-testid="account-writing-general" onCheckedChange={(useGeneral) => void save({ account: { accountId, prefs: { useGeneral } } }).catch(failed)} />}

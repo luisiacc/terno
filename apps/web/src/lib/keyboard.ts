@@ -1,3 +1,4 @@
+import { replyReady, useReply } from "~/lib/replies";
 import { leavePreview } from "~/state/action-preview";
 import { goToFolder } from "~/lib/account-folders";
 import { resolveKey, type Command } from "@terno/core";
@@ -89,6 +90,8 @@ function openCurrent() {
 export function reply(mode: DraftMode) {
   const id = getApp().selectedId;
   if (listLayout() && currentPage() === "list" && id !== null) openThread(id);
+  // plan 144: a reply ready here is what reply means
+  if (id !== null && mode !== "forward" && replyReady(id)) return void useReply(id, mode);
   void openCompose(mode);
 }
 

@@ -163,3 +163,11 @@ Codex (`gpt-6.1-sol`, high, read-only, `/tmp/terno-plans-141-145/144-replies-rea
 9. **There's no general dwell.** `noteOpen` returns unless that thread's reminder is due (`lib/reminders.ts:106`). A new shared `onExplicitOpen(id)` runs the dwell for everyone, with the selected-thread and `readerShown()` checks, and reminders move onto it. On List's list page j/k only moves the cursor, which isn't an open.
 10. **`compose` starts the learner.** It calls `learner.activate()` unconditionally (`writing.ts:595`), which would start corpus work and model refreshes that §3 says never start. Generation is extracted with an explicit policy, and preparation only reads the voice that exists.
 11. **The performance claim was wrong.** `writing.perf.test.ts` runs assembly on SQLite only, allowing 120 ms, and its IndexedDB fixture has 5k threads. And a source stamp walks a thread's headers, more than one key read. `replies-ready.perf.test.ts` gates the whole path at 50k+ in both stores, long conversations included, measuring the longest stall as well as latency.
+
+## What building it changed
+
+- **The check and the draft are charged as `reply`,** a background task with its own daily limits that counts in the month, but `ahead`: it doesn't wait for the minute's queue or behind other work for a local model, since someone is reading (revision 1).
+- **`WritingService.generate`** is the drafting core without the learner's start: ⌘J activates and charges foreground around it, a preparation does neither (revision 10).
+- **The switch is `settings.replies`,** read in memory, and the account's opt-out is in its writing prefs beside its instructions. The stored row's `generation_key` is the session's `snapshotKey` with no answered message: the stamp already holds the newest inbound.
+- **Show all** is a link button over `line-clamp-6`, not a `Collapsible`: the text is one paragraph, and clamping is what shows six lines of it.
+- **The gate** is `measureReplies` in `workloads.perf.test.ts` on both stores, beside its neighbours, rather than a `replies-ready.perf.test.ts` of its own.

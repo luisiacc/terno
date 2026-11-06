@@ -178,7 +178,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
 
   const features = (
     <>
-      <DraftingGroup settings={settings} />
+      <DraftingGroup settings={settings} update={update} />
       <SummariesGroup settings={settings} update={update} />
       <AskGroup settings={settings} update={update} />
       <FollowupsGroup settings={settings} update={update} />

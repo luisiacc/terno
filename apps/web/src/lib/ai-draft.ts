@@ -1,4 +1,4 @@
-import { formatAddressList, parseAddressList, WRITING_ONE_OFF_MAX, type AiComposeResult, type AiErrorKind, type AiIntentResult, type IntentPerson, type IntentQuestion } from "@terno/core";
+import { formatAddressList, parseAddressList, WRITING_ONE_OFF_MAX, type AiComposeResult, type AiErrorKind, type PreparedReply, type AiIntentResult, type IntentPerson, type IntentQuestion } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { controllerFor, focusBody } from "~/components/composer/controller";
@@ -10,7 +10,7 @@ import { aiDraftHooks, useAiDraftUi, type AiDraftBadge } from "./ai-draft-state"
 import { addressReply, composeLanding, leaveNewDraft, sendDraft } from "./compose";
 import { focusSoon } from "./compose-focus-move";
 import { draftCommands, draftKeyOf } from "./draft-commands";
-import { authored, draftPresentationThread, editDraft, editDraftRecipients, flushDraft, forgetDraft, materialize, NO_AUTO, shownDraftKey, unsaveDraft, useDrafts, validateDraftPresentation, validRecipients, type LocalDraft } from "./drafts";
+import { discardDraft, authored, draftPresentationThread, editDraft, editDraftRecipients, flushDraft, forgetDraft, materialize, NO_AUTO, shownDraftKey, unsaveDraft, useDrafts, validateDraftPresentation, validRecipients, type LocalDraft } from "./drafts";
 import { localized } from "./i18n";
 import { currentPage, listLayout, openThread } from "./page";
 import { snack } from "./snack";
@@ -64,6 +64,8 @@ type RunKind = "draft" | "notes" | "refine";
 
 /** What a run was asked, so Try again asks the same. */
 export interface RunSpec {
+  /** plan 144: these words came from a prepared reply */
+  prepared?: { threadId: number; revision: number };
   kind: RunKind;
   instruction: string;
   previous?: string;
@@ -107,6 +109,8 @@ export interface AiStrip {
   instruction: string;
   notes?: string;
   stack: AiCommit[];
+  /** plan 144 revision 6: this came from a prepared reply: an Undo back to nothing gives the row back */
+  prepared?: { threadId: number; revision: number };
 }
 
 export interface AiChoice {
@@ -804,7 +808,7 @@ function commit(key: string, how: "replace" | "below", result: Extract<AiCompose
   // what the draft holds now, as a send will compare it: a replace is all of the text, an insert only what it wrote
   recordProvenance(key, how === "replace" ? c.snapshot().text : result.text);
   clearStream(key);
-  const strip: AiStrip = { used: result.used, checks: result.checks, cutOff: result.stop === "length", oneTap: !spec.instruction && spec.kind === "draft", instruction: spec.instruction, ...(spec.notes !== undefined ? { notes: spec.notes } : {}), stack };
+  const strip: AiStrip = { used: result.used, checks: result.checks, cutOff: result.stop === "length", oneTap: !spec.instruction && spec.kind === "draft", instruction: spec.instruction, ...(spec.prepared ? { prepared: spec.prepared } : {}), ...(spec.notes !== undefined ? { notes: spec.notes } : {}), stack };
   update(key, { phase: "strip", strip, run: null, choice: null, held: null, error: null, guard: null, instruction: "", live: t("aiDraft.live.ready", { count: wordCount(result.text) }) });
   return true;
 }
@@ -838,6 +842,7 @@ export function discard(key: string) {
   const s = session(key);
   if (!s) return;
   clearStream(key);
+  if (s.phase === "choice") giveBack(s.lastSpec?.prepared);
   const prior = s.run?.prior;
   const c = controllerFor(key);
   if (prior && (!c || c.docToken() === prior.stack[prior.stack.length - 1]?.doc)) {
@@ -927,10 +932,41 @@ export function undoCommit(key: string) {
     return focusEditor(key);
   }
   remove(key);
+  // a draft that was only ever these words goes, and the block is back in its place
+  if (s.strip.prepared && s.opened && !bodyNow(key).trim() && !draftOf(key)?.attachments?.length) {
+    void discardDraft(key).then(() => giveBack(s.strip?.prepared));
+    return;
+  }
   focusEditor(key);
+  giveBack(s.strip.prepared);
   // this draft was only ever what's just gone: no blank one stays in the list
   const left = draftOf(key);
   if (s.opened && left && !bodyNow(key).trim() && !left.attachments?.length) void forgetUndone(key);
+}
+
+const giveBack = (prepared: AiStrip["prepared"]): void => {
+  if (prepared) preparedHooks.back?.(prepared);
+};
+export const preparedHooks: { back: ((prepared: NonNullable<AiStrip["prepared"]>) => void) | null } = { back: null };
+
+/**
+ * Plan 144: Use. The words go in as a one-tap draft would, one undo step, with no request. On a draft with work in it
+ * they're only offered: the same choice as text arriving under someone's typing (revision 2).
+ */
+export function commitPrepared(key: string, row: PreparedReply, opened: boolean): boolean {
+  const c = controllerFor(key);
+  const result: Extract<AiComposeResult, { status: "done" }> = { status: "done", text: row.body ?? "", subject: null, stop: "end", used: row.used ?? emptyUsed(), checks: row.checks ?? { specifics: [], placeholders: [] } };
+  const spec: RunSpec = { kind: "draft", instruction: "", prepared: { threadId: row.threadId, revision: row.revision } };
+  if (!session(key)) useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: newSession(key, { opened, phase: "strip" }) } }));
+  update(key, { lastSpec: spec });
+  if (!(c ? c.empty() : bodyNow(key) === "")) {
+    update(key, { phase: "choice", choice: { reason: "typed", writtenFor: null, result }, live: t("aiDraft.live.ready", { count: wordCount(result.text) }) });
+    focusEditor(key);
+    return false;
+  }
+  const done = commit(key, "replace", result, spec, undefined, false);
+  focusEditor(key);
+  return done;
 }
 
 /** After the save that recorded it, which would otherwise bring the row back; not if something else began meanwhile. */
@@ -954,6 +990,8 @@ export function noteBody(key: string) {
   }
   const top = s.strip?.stack[s.strip.stack.length - 1];
   if (s.strip && top && c.docToken() !== top.doc) {
+    // an editor undo back to the empty draft discards it too
+    if (c.empty()) giveBack(s.strip.prepared);
     if (s.phase === "strip") remove(key);
     else update(key, { strip: null });
   }

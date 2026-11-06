@@ -1,3 +1,4 @@
+import "~/lib/replies";
 import { folderName } from "~/lib/account-folders";
 import { ReaderAttachments } from "./attachments";
 import type { Account, Category, CategoryColor, MessageDetail, Reason, ThreadDetail } from "@terno/core";
@@ -51,6 +52,7 @@ const RemindPicker = lazy(() => import("./remind-picker").then((m) => ({ default
 // plan 132: nothing of it until a thread opens
 const ThreadSummary = lazy(() => import("./thread-summary"));
 const ThreadFollowups = lazy(() => import("./thread-followups"));
+const ReplyReady = lazy(() => import("./reply-ready"));
 
 /** Plan 132 §7: a summary by hand. Never in spam or trash, nor with one spam message in the thread. Open already: the block shows it. */
 function SummarizeButton({ threadId }: { threadId: number }) {
@@ -591,6 +593,7 @@ function ReaderContent() {
   );
   const draftShown = useApp((s) => s.draftShown);
   const draftKey = useDrafts((s) => (selectedId === null ? null : shownDraftKey(s.drafts, selectedId, draftShown)));
+  const repliesOn = useApp((s) => s.settings?.replies?.enabled === true);
 
   useEffect(() => {
     if (draftShown?.threadId === selectedId && draftShown.key !== draftKey) setApp({ draftShown: null });
@@ -717,6 +720,12 @@ function ReaderContent() {
                   <Conversation key={detail.thread.id} messages={detail.messages} icons={iconsFor(detail.thread)} headless={cardHeader} knownEmail={cardHeader ? senderOf(detail).email : null} />
                 </div>
               </MessageMenu>
+              {/* plan 144: off, it never loads; a draft here means it's out of the way */}
+              {repliesOn && !draftKey && (
+                <Suspense fallback={null}>
+                  <ReplyReady key={`r${detail.thread.id}`} threadId={detail.thread.id} />
+                </Suspense>
+              )}
               <ScheduledReplyLine threadId={detail.thread.id} />
               <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyName(detail, accounts.map((a) => a.email))} account={account} icons={iconsFor(detail.thread)} />
             </>
