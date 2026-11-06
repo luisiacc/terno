@@ -1,6 +1,6 @@
 # Plan 141: Ask your mail
 
-- **Status:** built (see "What building it changed"). The real-model eval (`scripts/ai-real/ask.real.ts`) is written and not run, and the owner's read on a copy of a real profile hasn't happened: both wait for the owner's go-ahead. "Revisions after the Codex review" overrides the sections before it.
+- **Status:** built and on `main`, code-reviewed in two rounds (see "What building it changed" and "What the code review changed"). The real-model eval (`scripts/ai-real/ask.real.ts`) is written and not run, and the owner's read on a copy of a real profile hasn't happened: both wait for the owner's go-ahead. "Revisions after the Codex review" overrides the sections before it.
 - **Builds on:** plan 131 (AI base), plan 85 §6 and revision 10 (Ask Your Inbox's contract, changes noted below), plan 88 (palette), plan 64 (search), plan 101 (older mail, `live: false`), plan 133 §6.7 (invented specifics), plan 140 (`anyOf` in search, proposed: Ask uses it once it lands).
 - **Used by:** plan 143 (actions share Ask's box and its history).
 
@@ -294,3 +294,7 @@ Codex raised 15 points, all fixed, each with a test.
 - **No ring around the answer pane** (plan 52). It stays reachable by Tab, to scroll.
 
 A second round, on the fixes, raised 6, all fixed: a read under way when something goes can't bring it back; an open history empties and drops its Undo when another window clears; a source's state is asked at the moment it's opened; once a captured body is past the work's limit no older one is read, the same in both stores; a follow-up's context goes first on a small window, and a question that still can't fit is refused rather than sent; and a cold IMAP search uses one LIST, so a second can't hang past the deadline.
+
+## What the full run showed
+
+`pnpm test:all` passed in 1,174 s on a machine shared with other work. Each failure on the crowded first pass passed alone, and none touched Ask: attachment conformance, W02's chunked actions, `upgrade.volumes`, the categorization eval, ghost text, and the timing of `attachment-accounting`, the instant index, migrations and search-everywhere.
