@@ -844,6 +844,25 @@ describe("what the real-mail panel changed", () => {
     expect((inSpam as { done?: number }).done ?? 0).toBe(0);
   });
 
+  it("\"from now on\" with nothing here saves the rule alone, and a rule that can't be saved still says nothing matched", async () => {
+    const { backend, put, preview, apply, start, client } = await setup();
+    const p = await preview({ future: true, meaning: true });
+    expect(p).toMatchObject({ count: 0, found: 0, check: "none", scanning: false, keep: { kind: "ok" } });
+    const saved = await apply(p, true);
+    expect(saved).toMatchObject({ done: 0, filterSaved: true });
+    expect(await backend.store.filters.list()).toHaveLength(1);
+    const later = await put();
+    await client.call("ai.actionUndo", { token: saved.undoToken! });
+    expect(await backend.store.filters.list()).toHaveLength(0);
+    // an age can't be a rule for mail to come
+    await backend.store.threads.act({ threadIds: [later], action: "archive", signal: null, now: NOW });
+    expect(await start({ future: true, conditions: [subjectHas("nothing has this"), { field: "ageDays", op: "gt", value: "30", negate: false }] })).toMatchObject({ status: "noMatch" });
+    // a one-time sentence still does
+    expect(await start({ conditions: [subjectHas("nothing has this")] })).toMatchObject({ status: "noMatch" });
+    // everything it finds already done: the rule is still what was asked for
+    expect(await start({ future: true })).toMatchObject({ status: "preview", preview: { found: 0 } });
+  });
+
   it("a delete's check tells the model to keep out what it's unsure of", async () => {
     const { put, preview, client, model } = await setup();
     await put();

@@ -50,6 +50,22 @@ test.describe("actions in plain English (plan 143)", () => {
     await page.getByTestId("action-apply").click();
     await expect.poll(() => sqlDb(server.backend.store).get<{ n: number }>("SELECT count(*) AS n FROM filters")?.n).toBeGreaterThan(0);
     await expect.poll(() => sqlDb(server.backend.store).get<{ in_inbox: number }>("SELECT in_inbox FROM threads WHERE subject = ?", "Your shipping notice 4411")?.in_inbox).toBe(0);
+    await expect(page.getByTestId("action-preview")).toBeHidden();
+    const before = sqlDb(server.backend.store).get<{ n: number }>("SELECT count(*) AS n FROM filters")!.n;
+    // nothing here yet: what it can do is keep the rule for what arrives
+    await say(page, "From now on archive zebras");
+    await expect(page.getByTestId("action-title")).toHaveText(/zebras/i);
+    await expect(page.getByTestId("action-future")).toBeHidden();
+    await expect(page.getByTestId("list-empty")).toContainText("New mail that matches will follow this rule.");
+    if (SHOTS) {
+      await page.screenshot({ path: `${SHOTS}/rule-only-light.png` });
+      await page.emulateMedia({ colorScheme: "dark" });
+      await page.screenshot({ path: `${SHOTS}/rule-only-dark.png` });
+      await page.emulateMedia({ colorScheme: "light" });
+    }
+    await page.getByTestId("action-apply").click();
+    await expect(page.getByTestId("action-preview")).toBeHidden();
+    await expect.poll(() => sqlDb(server.backend.store).get<{ n: number }>("SELECT count(*) AS n FROM filters")?.n).toBe(before + 1);
   });
 
   test("a sentence, its preview, one row out, Apply, Undo; Cancel leaves no trace", async ({ app: page, server }) => {

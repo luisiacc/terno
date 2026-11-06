@@ -12,7 +12,8 @@ import { fileLedger as ledgerAt } from "@terno/ai/file-ledger";
  * across runs, so a second run can't start the count again.
  */
 export const HARD_CAP_USD = Number(process.env.TERNO_AI_CAP_USD ?? 5);
-if (!(HARD_CAP_USD > 0 && HARD_CAP_USD <= 5)) throw new Error("TERNO_AI_CAP_USD must be above 0 and at most 5");
+// $5 unless asked, and past it only by the owner's say: they raised one ledger by $50 for a panel read (plan 154)
+if (!(HARD_CAP_USD > 0 && HARD_CAP_USD <= 55)) throw new Error("TERNO_AI_CAP_USD must be above 0 and at most 55");
 
 export const LEDGER_PATH = process.env.TERNO_AI_LEDGER ?? "/tmp/terno-ai/spend.jsonl";
 

@@ -23,6 +23,8 @@
 5. **A list of promises survives.** The cap goes from 3 to 10 per message, which is what the prompt can already be shown as open.
 6. **Unchanged:** first contact stays out of Needs you, since a cold pitch looks the same; a mailbox with many waiting threads keeps today's list.
 
+7. **"From now on" with nothing here saves the rule alone** (the owner's answer after the first read). The preview opens with no rows and **Save the rule**. It applies also when all it found is already done. A rule that can't be saved (an age, a forwarding category) still says nothing matched.
+
 ## Design
 
 - **Spam.** `findRuleMatches` (`db/rules.ts`, `idb/mail.ts`) adds `is_spam = 0`: that's filters on arrival, catch-up, apply-to-existing and the action scan. `noteSentMail` and `own` learning skip spam at ingest and in both facts backfills. `answered` and the follow-up `later` skip spam. A thread's `unread_count` ignores spam messages when it has any others; a whole-spam thread keeps its count, so the Spam folder still reads unread. `unsubscribeSource` skips spam. `remoteAllowed` with "always" doesn't apply to a Spam message; a click still does. The categorizer skips a spam root.

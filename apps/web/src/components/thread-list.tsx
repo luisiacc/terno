@@ -657,6 +657,14 @@ function EmptyState() {
   const reminders = useApp((s) => s.reminders);
   const followups = useApp((s) => s.followups);
   const today = useApp((s) => s.today);
+  const previewing = useApp((s) => s.actionPreview !== null);
+  if (previewing)
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
+        <p className="text-lg font-semibold tracking-tight">{t("action.rule.emptyTitle")}</p>
+        <p className="text-xs text-muted-foreground">{t("action.rule.emptyBody")}</p>
+      </div>
+    );
   if (today)
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">

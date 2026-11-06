@@ -18,6 +18,7 @@ import {
   type Condition,
   type FilterRule,
   type ThreadSummary,
+  savesRuleOnly,
 } from "@terno/core";
 import { RpcError, type ParsedParamsOf } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -263,6 +264,7 @@ export class ActionsService {
       previewId: p.id,
       plan: p.plan,
       count: this.count(p),
+      found: p.ids.length + p.skipped.length,
       skipped: p.skipped.length,
       skippedIncluded: p.includeSkipped,
       leftOut: p.leftOut.size,
@@ -412,9 +414,13 @@ export class ActionsService {
       await this.b.yieldTurn();
     }
     if (!p.ids.length && !p.skipped.length) {
-      this.drop(p);
-      opened("none");
-      return;
+      // it asked for mail to come, and that needs no mail here: the preview offers the rule alone
+      if (!savesRuleOnly(this.info(p))) {
+        this.drop(p);
+        opened("none");
+        return;
+      }
+      p.check = "none";
     }
     this.order(p);
     p.scanning = false;
@@ -576,6 +582,7 @@ export class ActionsService {
     const ops = this.ops!;
     const p = this.held(params.previewId, clientId);
     if (p.scanning || p.check === "needed" || p.applying) throw new RpcError("BAD_REQUEST", L("errors.ai.actionNotReady"));
+    const ruleOnly = savesRuleOnly(this.info(p));
     p.applying = true;
     const { plan } = p;
     const targets = this.rows(p).filter((id) => this.ticked(p, id));
@@ -679,16 +686,16 @@ export class ActionsService {
     // nothing committed: the failure as it is
     if (failed !== null && !committed) throw failed;
     if (failed !== null) this.b.log("warn", "action stopped partway", failed instanceof Error ? failed.name : "unknown");
-    const conversationId = await this.remembered(p, done, stopped);
+    const conversationId = await this.remembered(p, done, stopped, ruleOnly ? (filterSaved ? "saved" : "failed") : null);
     return { undoToken: this.remember(steps), done, changed, spared, stopped, filterFailed, filterSaved, failed: failed !== null, conversationId };
   }
 
   /** A command in the history: the sentence, what it meant, what came of it. Never its rows. */
-  private async remembered(p: Preview, done: number, stopped: boolean): Promise<number | null> {
+  private async remembered(p: Preview, done: number, stopped: boolean, ruleOnly: "saved" | "failed" | null): Promise<number | null> {
     const { store } = this.b;
     try {
       const { ai } = await this.b.ask.target();
-      const outcome = L(`action.outcome.${p.plan.action.type === "createCategory" ? "moveToCategory" : p.plan.action.type}`, { count: done, category: p.categoryName ?? "" }).message;
+      const outcome = ruleOnly ? L(ruleOnly === "saved" ? "action.rule.saved" : "action.rule.failed").message : L(`action.outcome.${p.plan.action.type === "createCategory" ? "moveToCategory" : p.plan.action.type}`, { count: done, category: p.categoryName ?? "" }).message;
       const written = await store.ask.history.add({
         conversationId: p.conversationId,
         kind: "command",

@@ -151,7 +151,7 @@ ${recent.map((m) => `${m.sent ? "(sent) " : ""}${m.s} | ${m.f} <${m.e.replace(/^
           }
           const page: any = await t.client.call("ai.actionPage", { previewId: id, offset: 0, limit: 60, leftOut: true });
           const off = new Set(page.unticked);
-          Object.assign(rec, { plan: info.plan, count: info.count, skipped: info.skipped, leftOut: info.leftOut, unchecked: info.unchecked, check: info.check, keep: info.keep, keepConditions: info.keepConditions, total: page.total, rows: page.items.map((x: any) => ({ from: x.fromName, subject: x.subject, in: !off.has(x.id) })) });
+          Object.assign(rec, { plan: info.plan, count: info.count, found: info.found, skipped: info.skipped, leftOut: info.leftOut, unchecked: info.unchecked, check: info.check, keep: info.keep, keepConditions: info.keepConditions, total: page.total, rows: page.items.map((x: any) => ({ from: x.fromName, subject: x.subject, in: !off.has(x.id) })) });
           await t.client.call("ai.actionCancel", { previewId: id });
         }
         } catch (e) {

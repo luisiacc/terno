@@ -1,4 +1,4 @@
-import { type ActionPreviewInfo, type AiActionApplied, type AiActionEvent, type AiActionStart } from "@terno/core";
+import { savesRuleOnly, type ActionPreviewInfo, type AiActionApplied, type AiActionEvent, type AiActionStart } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { enterPreview, leavePreview, rowsToggled, useActionRows } from "~/state/action-preview";
@@ -115,25 +115,31 @@ const notes = (r: AiActionApplied): string | undefined => {
 export async function applyPreview(): Promise<void> {
   const s = useActionPreview.getState();
   const { preview } = s;
-  if (!preview || s.applying || preview.scanning || preview.check === "needed" || preview.count === 0) return;
+  if (!preview || s.applying || preview.scanning || preview.check === "needed" || (preview.count === 0 && !savesRuleOnly(preview))) return;
   useActionPreview.setState({ applying: true });
   const verb = preview.plan.action.type === "createCategory" ? "moveToCategory" : preview.plan.action.type;
   const job = trackJob(t("action.job"));
   snack.progress(job.snackId, t("actions.job", { title: t("action.job") }));
+  const ruleOnly = savesRuleOnly(preview);
   const undoToken = deferred<string | null>();
   const undo = registerUndo(async () => {
     const token = await undoToken.promise;
     if (token === null) return;
     const r = await client.call("ai.actionUndo", { token });
-    snack.success(t("action.undone", { count: r.restored }));
+    snack.success(ruleOnly ? t("action.rule.undone") : t("action.undone", { count: r.restored }));
     void reloadList({ keepSelection: true });
   });
   try {
     const r = await client.call("ai.actionApply", { previewId: preview.previewId, jobId: job.jobId, future: s.future });
     undoToken.resolve(r.undoToken);
     leavePreview();
-    const message = t(`action.outcome.${verb}`, { count: r.done, category: preview.categoryName ?? "" });
-    snack.success(r.stopped ? t("action.outcome.stopped", { outcome: message }) : message, { id: job.snackId, duration: 8000, description: notes(r), action: r.undoToken !== null ? undoAction(undo, t("action.undoName", { outcome: message })) : undefined });
+    if (ruleOnly && !r.filterSaved) {
+      // a category it made first is still Undo's to take back
+      snack.error(t("action.rule.failed"), { id: job.snackId, action: r.undoToken !== null ? undoAction(undo, t("action.rule.failed")) : undefined });
+      return;
+    }
+    const message = ruleOnly ? t("action.rule.saved") : t(`action.outcome.${verb}`, { count: r.done, category: preview.categoryName ?? "" });
+    snack.success(r.stopped ? t("action.outcome.stopped", { outcome: message }) : message, { id: job.snackId, duration: 8000, description: ruleOnly ? undefined : notes(r), action: r.undoToken !== null ? undoAction(undo, t("action.undoName", { outcome: message })) : undefined });
   } catch (error) {
     undoToken.resolve(null);
     useActionPreview.setState({ applying: false });

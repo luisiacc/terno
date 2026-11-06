@@ -33,6 +33,8 @@ export interface ActionPreviewInfo {
   plan: ActionPlan;
   /** what Apply would act on now */
   count: number;
+  /** what the rule caught, ticked or not */
+  found: number;
   /** starred or replied in: spared unless they're included */
   skipped: number;
   skippedIncluded: boolean;
@@ -88,3 +90,6 @@ export interface AiActionApplied {
 
 /** Address literals never go in a check's groups, whichever field they're in (revision 8). */
 export const redactAddresses = (text: string): string => text.replace(/(?:"[^"\n]*"|[\p{L}\p{N}.!#$%&'*+/=?^_`{|}~-]+)@(?:\[[^\]\n]*\]|[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*)/gu, "…");
+
+/** "From now on…" with nothing here to act on: Apply's one job is to save the rule (plan 154). */
+export const savesRuleOnly = (p: Pick<ActionPreviewInfo, "plan" | "found" | "keep">): boolean => p.plan.future && p.found === 0 && p.keep.kind === "ok";
