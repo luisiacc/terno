@@ -2171,6 +2171,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.ai.notConfigured": "Connect an AI in Settings → AI to create filters with AI.",
   "errors.ai.off": "AI is turned off.",
   "errors.ai.serverUrlMissing": "Enter the server URL in Settings → AI.",
+  "errors.ai.devSwitchOff": "Dev mode's Pro AI is off. Turn it on in Settings → Dev mode.",
   "errors.ai.devKeyFromEnv": "Dev mode's Pro AI is using the environment's keys. Turn it off to save a key here.",
   "errors.ai.keyMissing": "Save your {provider} API key in Settings → AI.",
   "errors.ai.keyBoundElsewhere": "Your API key was saved for {bound}. To use it with {origin}, confirm it or save another one in Settings → AI.",

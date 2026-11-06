@@ -60,6 +60,68 @@ async function start(devAi?: DevAiKeys) {
 
 const aiOf = (s: AppSettings) => s.ai;
 
+const JOBS = ["summary", "followup", "digest", "categorize", "voice", "reply", "replyCheck", "writing", "ask", "askPlan", "intent"] as const;
+const LOCAL_MODEL = { ai: { provider: "ollama", baseURL: "http://127.0.0.1:9/v1", model: "qwen" } } as const;
+
+describe("what runs follows what shows (plan 150)", () => {
+  it("a local build with the switch off runs nothing, whatever is saved; a click's filter still can", async () => {
+    const { backend, built, client } = await start(ALL);
+    await client.call("settings.update", LOCAL_MODEL);
+    for (const task of JOBS) await expect(backend.aiService.forTask(task), task).rejects.toMatchObject({ kind: "not_configured", message: expect.stringContaining("Dev mode") });
+    expect(built).toEqual([]);
+    await backend.aiService.forTask("filter");
+    expect(built).toHaveLength(1);
+  });
+
+  it("the switch on, they run, with no restart", async () => {
+    const { backend, built, client, on } = await start(ALL);
+    await client.call("settings.update", LOCAL_MODEL);
+    await on();
+    for (const task of JOBS) await backend.aiService.forTask(task);
+    expect(built.length).toBeGreaterThan(0);
+  });
+
+  it("any other build: its own provider runs them, and with none nothing does", async () => {
+    const own = await start();
+    await own.client.call("settings.update", LOCAL_MODEL);
+    for (const task of JOBS) await own.backend.aiService.forTask(task);
+    expect(own.built.length).toBeGreaterThan(0);
+    const none = await start();
+    for (const task of JOBS) await expect(none.backend.aiService.forTask(task), task).rejects.toMatchObject({ kind: "not_configured" });
+    expect(none.built).toEqual([]);
+  });
+
+  it("a toggle reaches every job, those added after plan 146 too", async () => {
+    const { backend, on } = await start(ALL);
+    const replies = vi.spyOn(backend.replies, "settingsChanged");
+    const today = vi.spyOn(backend.today, "settingsChanged");
+    const learner = vi.spyOn(backend.writing.learner, "wake");
+    await on();
+    expect(replies).toHaveBeenCalled();
+    expect(today).toHaveBeenCalled();
+    expect(learner).toHaveBeenCalledWith({ force: true });
+  });
+
+  it("a no read just before the switch came on doesn't arrive after it", async () => {
+    const { backend, built, client } = await start(ALL);
+    const settings = backend.store.settings as unknown as { get: (...a: unknown[]) => Promise<unknown> };
+    const get = settings.get.bind(settings);
+    let release = () => {};
+    const held = new Promise<void>((r) => (release = r));
+    const spy = vi.spyOn(settings, "get").mockImplementationOnce(async (...a) => {
+      const value = await get(...a);
+      await held;
+      return value;
+    });
+    const pending = backend.aiService.forTask("writing");
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    await client.call("settings.update", { devAi: true });
+    release();
+    await pending;
+    expect(built.at(-1)).toMatchObject({ id: "anthropic", apiKey: "env-anthropic" });
+  });
+});
+
 describe("Dev mode's keys", () => {
   it("reads only what's set, and only those names", () => {
     expect(devAiKeys({ ANTHROPIC_API_KEY: " a ", OPENAI_API_KEY: "", JEV_API_KEY: undefined, OTHER: "x" })).toEqual({ anthropic: "a" });
@@ -200,7 +262,7 @@ describe("on a local build", () => {
       await held;
       return target;
     });
-    const pending = backend.aiService.forTask("writing");
+    const pending = backend.aiService.forTask("filter");
     await vi.waitFor(() => expect(spy).toHaveBeenCalled());
     await client.call("settings.update", { devAi: true });
     release();

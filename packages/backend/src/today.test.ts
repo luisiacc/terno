@@ -44,7 +44,7 @@ async function setup(o: { provider?: "fake" | "none"; devAi?: { anthropic: strin
       },
     });
   const clock = { now: NOW };
-  const backend = new Backend({ dbPath: join(dir, "a.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, demoAi: true, aiFactory: factory, now: () => clock.now, ...(o.devAi ? { devAi: o.devAi } : {}) });
+  const backend = new Backend({ dbPath: join(dir, "a.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, demoAi: true, aiFactory: factory, now: () => clock.now, ...(o.devAi ? { devAi: o.devAi, lookup: async () => [{ address: "93.184.216.34", family: 4 as const }] } : {}) });
   await backend.store.ready;
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "r", origin: "renderer" });
@@ -368,9 +368,26 @@ describe("the digest", () => {
     await t.client.call("settings.update", { today: { notify: true, prepareAt: "08:30" } });
     await t.backend.today.tick();
     expect(remind).not.toHaveBeenCalled();
+    // it hears of the switch by itself
     await t.client.call("settings.update", { devAi: true });
-    await t.backend.today.tick();
     await vi.waitFor(() => expect(remind).toHaveBeenCalledTimes(1));
+  });
+
+  it("plan 150: the switch off, no timer waits, no digest is prepared and the list is empty; on, all of it, with no restart", async () => {
+    const t = await setup({ devAi: { anthropic: "env-anthropic" } });
+    await t.put();
+    await t.letter("Stratechery");
+    await t.client.call("settings.update", { today: { digest: true, prepareAt: "08:30" } });
+    await t.backend.today.tick();
+    expect(t.backend.today.nextAt).toBeNull();
+    expect(await t.backend.store.today.digest.get(todayKey(t.clock.now))).toBeNull();
+    expect(t.model.reqs).toEqual([]);
+    expect((await t.client.call("today.list", { heldIds: [] })).sections).toEqual([]);
+    await t.client.call("settings.update", { devAi: true });
+    await vi.waitFor(() => expect(t.backend.today.nextAt).not.toBeNull());
+    await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(todayKey(t.clock.now)))?.state).toBe("ready"));
+    expect(t.model.reqs.length).toBeGreaterThan(0);
+    expect((await t.client.call("today.list", { heldIds: [] })).sections.length).toBeGreaterThan(0);
   });
 
   it("the notice: off by default, once a day, never who or what, and never hours late", async () => {

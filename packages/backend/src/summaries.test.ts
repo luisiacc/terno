@@ -32,7 +32,7 @@ afterEach(async () => {
 
 const replying = (body: unknown = ANSWER): Completion => ({ text: JSON.stringify(body), stop: "end" });
 
-async function setup(o: { enabled?: boolean; provider?: "fake" | "none"; dir?: string; keep?: boolean; at?: number } = {}) {
+async function setup(o: { enabled?: boolean; provider?: "fake" | "none"; dir?: string; keep?: boolean; at?: number; devAi?: { openai: string } } = {}) {
   const dir = o.dir ?? mkdtempSync(join(tmpdir(), "terno-summaries-"));
   const model: Model = { requests: [], configs: [], answer: () => replying() };
   const clock = { now: o.at ?? START };
@@ -50,7 +50,7 @@ async function setup(o: { enabled?: boolean; provider?: "fake" | "none"; dir?: s
     });
   };
   const logs: string[] = [];
-  const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, demoAi: true, aiFactory: factory, now: () => clock.now, log: (_level, message, extra) => void logs.push(`${message} ${JSON.stringify(extra ?? null)}`) });
+  const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, demoAi: true, aiFactory: factory, ...(o.devAi ? { devAi: o.devAi, lookup: async () => [{ address: "93.184.216.34", family: 4 as const }] } : {}), now: () => clock.now, log: (_level, message, extra) => void logs.push(`${message} ${JSON.stringify(extra ?? null)}`) });
   await backend.store.ready;
   const connect = (clientId: string, origin: "renderer" | "mcp") => {
     const [c, s] = createMemoryTransportPair();
@@ -357,6 +357,18 @@ describe("the queue's states", () => {
     const b = await arrive();
     await until(async () => expect((await row(b.thread))?.state).toBe("ready"));
     expect(await row(a.thread)).toMatchObject({ state: "failed", errorKind: kind });
+  });
+
+  it("plan 150: Dev mode's switch off: new mail waits and nothing is asked, whatever is saved; on, it goes, with no restart", async () => {
+    const { arrive, backend, client, model, read } = await setup({ devAi: { openai: "env-openai" } });
+    const { thread } = await arrive();
+    await settle();
+    expect(model.requests).toHaveLength(0);
+    await expect(backend.summaries.status()).resolves.toMatchObject({ pending: 1, blockedBy: { kind: "not_configured", message: expect.stringContaining("Dev mode") } });
+    await client.call("settings.update", { devAi: true });
+    await vi.waitFor(async () => expect((await read(thread)).state).toBe("ready"));
+    expect(model.requests).toHaveLength(1);
+    expect(model.configs.at(-1)).toMatchObject({ id: "openai", apiKey: "env-openai" });
   });
 
   it.each([["auth"], ["not_configured"], ["blocked"]] as const)("%s: paused with no attempt spent; a change in settings resumes it", async (kind) => {

@@ -29,7 +29,7 @@ import type { BackendCore as Backend } from "./core";
 import { SecretUnreadableError } from "./keychain";
 import { NetworkPolicyError } from "./net-policy";
 import { AiLimiter, type LimiterTask } from "./ai-limiter";
-import { activeDevAi, bindKeyOrigin, capabilitiesFor, endpointOrigin, keyOrigins, readSettings, readStoredSettings, saveCapabilities, setKeyHint } from "./settings";
+import { activeDevAi, aiAllowed, bindKeyOrigin, capabilitiesFor, endpointOrigin, keyOrigins, readSettings, readStoredSettings, saveCapabilities, setKeyHint } from "./settings";
 
 export type AiFactory = (config: ProviderConfig, options: AiOptions) => AiTasks;
 export const defaultAiFactory: AiFactory = (config, options) => createAi(config, options);
@@ -272,6 +272,12 @@ export class AiService {
    */
   async forTask(task: AiTaskName | "filter" | "voice" | "intent" | "askPlan" | "reply" | "replyCheck", o: { foreground?: boolean } = {}): Promise<AiTasks> {
     const epoch = this.devAiEpoch.signal;
+    // plan 150: what's offered is what runs. Filters are Free and asked for by a click (plan 85)
+    if (task !== "filter" && !(await aiAllowed(this.b.store))) {
+      // a toggle while this read: a late no mustn't pause what the toggle just woke
+      if (epoch.aborted) return this.forTask(task, o);
+      throw new AiError(L("errors.ai.devSwitchOff"), "not_configured");
+    }
     const settings = await readSettings(this.b.store);
     const target = await this.targetFor(task, settings);
     const lease = this.keyLease(keySecretName(target.provider, target.preset));

@@ -25,7 +25,7 @@ import type { DigestStored } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import type { BackendCore as Backend } from "./core";
 import { progressReporter } from "./scope";
-import { activeDevAi, readSettings } from "./settings";
+import { aiAllowed, readSettings } from "./settings";
 import { withoutQuotes } from "./summaries";
 
 /**
@@ -80,10 +80,15 @@ export class TodayService {
     return this.armedAt;
   }
 
+  /** Plan 150: Today's rule, with Dev mode's switch: off, no timer, no digest, no notice, no list. */
+  private async available(settings: Parameters<typeof aiFeaturesAvailable>[0]): Promise<boolean> {
+    return aiFeaturesAvailable(settings) && (await aiAllowed(this.b.store));
+  }
+
   private async setting(): Promise<{ available: boolean; show: boolean; prepareAt: string; notify: boolean; digest: boolean }> {
     const s = await readSettings(this.b.store);
     const today = { ...DEFAULT_TODAY, ...s.today };
-    return { ...today, available: aiFeaturesAvailable(s) };
+    return { ...today, available: await this.available(s) };
   }
 
   /** at start, on wake, on a settings change, when it fires */
@@ -373,7 +378,7 @@ export class TodayService {
     const { store } = this.b;
     const now = this.b.now();
     const settings = await readSettings(store);
-    if (!aiFeaturesAvailable(settings)) return { sections: [], digest: null, now, held: [] };
+    if (!(await this.available(settings))) return { sections: [], digest: null, now, held: [] };
     const taken = new Set<number>();
     const needs: TodayItem[] = [];
     const followups = settings.followups?.enabled ? this.dueFollowups(await store.followups.active(), now) : [];
@@ -522,8 +527,6 @@ export class TodayService {
 
   private async notify(day: string, prepareAt: string): Promise<void> {
     const { store } = this.b;
-    // plan 147: Dev mode's switch off, there's no Today to say it of; the day's notice isn't used up
-    if (this.b.options.devAi && !(await activeDevAi(store))) return;
     const now = this.b.now();
     if (now - prepareTimeToday(prepareAt, now) > NOTIFY_WITHIN_MS) return;
     if ((await store.settings.get<string>(NOTIFIED_KEY, "")) === day) return;

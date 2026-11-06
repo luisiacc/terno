@@ -473,6 +473,11 @@ export function provideDevAi(store: SettingsStore, keys: DevAiKeys): void {
   devAiByStore.set(store, keys);
 }
 
+/** Plan 150: the renderer's `aiAllowed`: a local build's AI runs only with Dev mode's switch on. No read off a local build. */
+export async function aiAllowed(store: SettingsStore): Promise<boolean> {
+  return !devAiByStore.has(store) || (await stored(store)).devAi === true;
+}
+
 /** The environment's keys while Dev mode's switch is on; null for everyone else, whatever is stored. */
 export async function activeDevAi(store: SettingsStore): Promise<DevAiKeys | null> {
   const keys = devAiByStore.get(store);

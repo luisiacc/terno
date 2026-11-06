@@ -2156,6 +2156,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.ai.notConfigured": "Conecta una IA en Ajustes → IA para crear filtros con IA.",
   "errors.ai.off": "La IA está desactivada.",
   "errors.ai.serverUrlMissing": "Indica la URL del servidor en Ajustes → IA.",
+  "errors.ai.devSwitchOff": "La IA de Pro del modo desarrollador está desactivada. Actívala en Ajustes → Modo desarrollador.",
   "errors.ai.devKeyFromEnv": "La IA de Pro del modo desarrollador usa las claves del entorno. Desactívala para guardar una clave aquí.",
   "errors.ai.keyMissing": "Guarda tu API key de {provider} en Ajustes → IA.",
   "errors.ai.keyBoundElsewhere": "Tu API key se guardó para {bound}. Para usarla con {origin}, confírmala o guarda otra en Ajustes → IA.",

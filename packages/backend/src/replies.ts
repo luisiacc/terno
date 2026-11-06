@@ -200,7 +200,8 @@ export class ReplyService {
       // past a limit: no block and no row, so tomorrow it can run, and ⌘J still works
       const limited = error instanceof DailyLimitError || error instanceof MonthlyLimitError;
       if (entry.dismissed) await write("dismissed", null).catch(() => null);
-      else if (!entry.dropped && !limited && !(error instanceof AiError && error.kind === "cancelled")) {
+      // plan 150: nothing set up isn't a verdict on this thread: no row, so it can run once something is
+      else if (!entry.dropped && !limited && !(error instanceof AiError && (error.kind === "cancelled" || error.kind === "not_configured"))) {
         // "no retry" survives a restart, until the thread changes (revision 8)
         await write("failed", null).catch(() => null);
       }

@@ -5,7 +5,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAi, promptText, type AiOptions, type Completion, type CompletionRequest, type ProviderConfig } from "@terno/ai";
+import { AiError, createAi, promptText, type AiOptions, type Completion, type CompletionRequest, type ProviderConfig } from "@terno/ai";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import type { IncomingMessage } from "@terno/store";
@@ -141,7 +141,7 @@ describe("what an open spends", () => {
   });
 
   it("a no is kept and sends no draft; a failure is kept too, and no retry", async () => {
-    const { model, put, prepare, settled } = await setup();
+    const { backend, model, put, prepare, row, settled } = await setup();
     model.wanted = false;
     const no = await put();
     await prepare(no);
@@ -149,6 +149,12 @@ describe("what an open spends", () => {
     expect(model.drafts).toEqual([]);
     expect(await prepare(no)).toEqual({ status: "none" });
     expect(model.checks).toHaveLength(1);
+    // plan 150: nothing set up isn't this thread's verdict: no row, and it can run once something is
+    model.wanted = new AiError("nothing set up", "not_configured");
+    const unset = await put({ subject: "Not set up" });
+    await prepare(unset);
+    await vi.waitFor(() => expect(backend.replies.status().blockedBy?.kind).toBe("not_configured"));
+    expect(await row(unset)).toBeNull();
     model.wanted = new Error("boom");
     const bad = await put({ subject: "Broken" });
     await prepare(bad);
