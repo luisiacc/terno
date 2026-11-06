@@ -62,7 +62,7 @@ A small read on the same scrubbed mailbox copy, in the ledger the panel used ($0
 
 ## The panel's read (rounds 6 to 8)
 
-The owner raised the budget by $50 (the harness's limit went to $55; $5 stays the default). Same five reviewers, same mailbox copy, 98 then 94 records, with 16 new sentences and questions for sums, counts, first lines and rules with nothing to act on. Round 6 had 8 "wrong, high" verdicts; round 7 had none.
+The owner raised the budget by $50 (the harness's limit went to $55; $5 stays the default). Same five reviewers, same mailbox copy, 98 then 94 records, with 16 new sentences and questions for sums, counts, first lines and rules with nothing to act on. Round 6 had 6 "wrong, high" verdicts; round 7 had none.
 
 Checked against the mail before fixing, then fixed:
 - **Counts:** a stray lone number, or two numbers in one answer. The tag now belongs in the first place the number is said, and a count alone on its line after an answer doesn't show. What it counted still counts.
