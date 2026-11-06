@@ -244,7 +244,7 @@ const es = {
   "settings.dev.proAi.on": "Cada función mantiene su propio interruptor en Ajustes → IA. Las solicitudes se cobran a tus claves, y el límite mensual de allí solo cubre el trabajo en segundo plano.",
   "settings.dev.env": "Variables de entorno",
   "settings.dev.env.footer": "Añádelas al .env del repositorio o a tu shell y reinicia la versión de desarrollo. Terno las lee al abrirse y nunca las guarda.",
-  "settings.dev.env.anthropic": "Redacción, Preguntar, seguimientos y filtros con IA.",
+  "settings.dev.env.anthropic": "Redacción, Preguntar, seguimientos y creación de filtros.",
   "settings.dev.env.openai": "Resúmenes. También ejecuta lo demás si no hay clave de Anthropic.",
   "settings.dev.env.jev": "Categorización inteligente.",
   "settings.dev.env.set": "Definida",

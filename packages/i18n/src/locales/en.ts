@@ -252,7 +252,7 @@ const en = {
   "settings.dev.proAi.on": "Each feature keeps its own switch in Settings → AI. Requests bill your own keys, and the monthly limit there covers only background work.",
   "settings.dev.env": "Environment variables",
   "settings.dev.env.footer": "Add them to the repo's .env or your shell, then restart the dev build. Terno reads them at launch and never saves them.",
-  "settings.dev.env.anthropic": "Drafting, Ask, follow-ups and AI filters.",
+  "settings.dev.env.anthropic": "Drafting, Ask, follow-ups and creating filters.",
   "settings.dev.env.openai": "Summaries. Also runs the others when there's no Anthropic key.",
   "settings.dev.env.jev": "Smart categorization.",
   "settings.dev.env.set": "Set",

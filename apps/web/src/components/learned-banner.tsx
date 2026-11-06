@@ -1,7 +1,7 @@
 import { capFilterName, LEARNED_FILTER_NAME, type LearnedProposal } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { Announcement } from "@terno/ui/components/announcement";
-import { Sparkles } from "@terno/ui/icons";
+import { ListFilter } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useEffect, useState } from "react";
 import { richT } from "~/lib/i18n";
@@ -34,7 +34,7 @@ export function LearnedBanner() {
   return (
     <Announcement
       data-testid="learned-banner"
-      icon={<Sparkles />}
+      icon={<ListFilter />}
       // a sentence with its sender in medium, not a heading
       title={richT(SENTENCE[proposal.action], { who, count: proposal.support, b: (text) => <span className="font-medium">{text}</span> })}
       titleProps={{ className: "font-normal" }}
