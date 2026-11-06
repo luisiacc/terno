@@ -19,6 +19,7 @@ import { Connectivity, type ConnectivityOptions, type NetReason } from "./connec
 import { AiAssist } from "./ai-assist";
 import { ActionsService } from "./actions";
 import { ReplyService } from "./replies";
+import { TodayService } from "./today";
 import { AskService } from "./ask";
 import { FollowupWorker } from "./followups";
 import { SummaryWorker } from "./summaries";
@@ -273,6 +274,7 @@ export class BackendCore {
   readonly ask: AskService;
   readonly actions: ActionsService;
   readonly replies: ReplyService;
+  readonly today: TodayService;
   readonly followups: FollowupWorker;
   /** plan 133: drafting: what goes into a draft, and the learner, asleep until the feature is used */
   readonly writing: WritingService;
@@ -329,6 +331,7 @@ export class BackendCore {
     this.ask = new AskService(this);
     this.actions = new ActionsService(this);
     this.replies = new ReplyService(this);
+    this.today = new TodayService(this);
     this.followups = new FollowupWorker({
       store: this.store,
       now: () => this.now(),
@@ -597,6 +600,8 @@ export class BackendCore {
     if (this.stopped) return;
     // plan 17: old mail's facts, and threads requeued before a quit, in slices
     this.facts.wake();
+    // the digest's timer, and anything a quit left pending
+    void this.today.start().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
     // plan 87: reminders come due whether or not mail syncs (what came due while it was closed shows at once)
     this.refreshReminders();
     // plan 86: the Gmail tabs of mail stored before them, once (and again whenever what's yours changes)
@@ -676,6 +681,7 @@ export class BackendCore {
     // plan 87: a timer runs late across sleep: a wake looks at once (sync or not)
     if (reason === "wake") {
       this.refreshReminders();
+      this.today.wake();
       this.scheduled.poke();
       this.forwards.poke();
     }
@@ -1060,7 +1066,7 @@ export class BackendCore {
   }
 
   private async sendCounts(): Promise<void> {
-    const counts = await this.store.threads.counts(this.now());
+    const counts = await this.today.withCount(await this.store.threads.counts(this.now()));
     if (this.stopped) return;
     this.server.emit("counts", counts);
     // plan 41: the Dock shows the sidebar's Inbox number (no query of its own)

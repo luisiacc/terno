@@ -22,7 +22,7 @@ import {
   type ProviderConfig,
   type StreamEvent,
 } from "@terno/ai";
-import { isDevAiProvider, REPLY_CHECK_CLAUDE_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, ASK_CLAUDE_MODEL, ASK_PLAN_CLAUDE_MODEL, ASK_PLAN_OPENAI_MODEL, INTENT_CLAUDE_MODEL, JEV_DEFAULT_MODEL, messageOf, SUMMARY_DEFAULT_MODEL, textRef, WRITING_CLAUDE_MODEL, type AiTaskName } from "@terno/core";
+import { isDevAiProvider, DIGEST_CLAUDE_MODEL, DIGEST_OPENAI_MODEL, REPLY_CHECK_CLAUDE_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, ASK_CLAUDE_MODEL, ASK_PLAN_CLAUDE_MODEL, ASK_PLAN_OPENAI_MODEL, INTENT_CLAUDE_MODEL, JEV_DEFAULT_MODEL, messageOf, SUMMARY_DEFAULT_MODEL, textRef, WRITING_CLAUDE_MODEL, type AiTaskName } from "@terno/core";
 import { RpcError, type AiTestResult, type AppSettings } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { BackendCore as Backend } from "./core";
@@ -244,6 +244,14 @@ export class AiService {
       if (summary) return profiled(summary.provider, summary.model);
       if (configured.provider === "anthropic") return { ...configured, model: FOLLOWUP_CLAUDE_MODEL };
       if (configured.provider === "openai") return { ...configured, model: FOLLOWUP_OPENAI_MODEL };
+      return configured;
+    }
+    // plan 145: the summaries' row if one is set; a default never moves mail to a provider the user didn't set up
+    if (name === "digest") {
+      const summary = settings.ai.tasks.summary;
+      if (summary) return profiled(summary.provider, summary.model);
+      if (configured.provider === "anthropic") return { ...configured, model: DIGEST_CLAUDE_MODEL };
+      if (configured.provider === "openai") return { ...configured, model: DIGEST_OPENAI_MODEL };
       return configured;
     }
     if (name === "categorize" && settings.ai.keys.jev?.hasKey) return profiled("jev", JEV_DEFAULT_MODEL);

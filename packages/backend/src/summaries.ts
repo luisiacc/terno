@@ -468,7 +468,7 @@ export class SummaryWorker {
   }
 
   /** The setting, or while that follows the system, what the window said: the backend can't see the system's. */
-  private async readerLanguage(): Promise<LocaleId> {
+  async readerLanguage(): Promise<LocaleId> {
     const { language } = await this.host.settings();
     if (isLocaleId(language)) return language;
     const ui = await this.host.store.settings.get<string | null>(UI_LOCALE_KEY, null);

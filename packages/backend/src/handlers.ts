@@ -312,6 +312,13 @@ export function createHandlers(b: Backend): Handlers {
     return { removed: tally.removed.size, restored: tally.restored.size };
   };
   const similarFilters = new SimilarFilters(store, () => b.now());
+  // plan 145: the same journal as any archive, read again right before each change
+  b.today.bind({
+    archive: async (ids, narrow, progress) => {
+      const r = await actOn(ids, "archive", null, progress, true, { narrow, partialUndo: true });
+      return { undoId: r.undoId };
+    },
+  });
   // plan 143: its steps go through these same journals; nothing about a sentence gets its own way of moving mail
   b.actions.bind({
     act: async (ids, action, narrow, progress) => {
@@ -412,7 +419,7 @@ export function createHandlers(b: Backend): Handlers {
         store.accounts.list(),
         store.categories.list(),
         store.folders.list(),
-        store.threads.counts(b.now()),
+        store.threads.counts(b.now()).then((c) => b.today.withCount(c)),
         readSettings(store),
         // agents get the mailboxes, not the person's identity
         ctx.origin === "mcp" ? null : store.owner.get(),
@@ -871,7 +878,7 @@ export function createHandlers(b: Backend): Handlers {
       return { removed };
     },
 
-    "counts.get": () => store.threads.counts(b.now()),
+    "counts.get": async () => b.today.withCount(await store.threads.counts(b.now())),
 
     "snippets.list": () => listSnippets(store),
     "snippets.save": (p) => saveSnippet(store, p, b.now()),
@@ -1326,6 +1333,7 @@ export function createHandlers(b: Backend): Handlers {
           if (patch.ai || patch.summaries) b.summaries.settingsChanged(next);
           if (patch.ask) b.ask.settingsChanged(next.ask.enabled);
           if (patch.ai || patch.replies) b.replies.settingsChanged();
+          if (patch.ai || patch.today) b.today.settingsChanged();
           if (patch.ai || patch.followups) b.followups.settingsChanged(next);
           if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
           if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
@@ -1353,6 +1361,7 @@ export function createHandlers(b: Backend): Handlers {
     "ai.setKey": async ({ provider, preset, value }) => {
       b.replies.credentialsChanged();
       const next = await b.aiService.setKey(provider, preset, value);
+      b.today.settingsChanged();
       b.summaries.settingsChanged(next);
       b.followups.settingsChanged(next);
       b.ask.settingsChanged(next.ask.enabled);
@@ -1368,6 +1377,7 @@ export function createHandlers(b: Backend): Handlers {
     "ai.confirmKey": async ({ provider, preset }) => {
       b.replies.credentialsChanged();
       const next = await b.aiService.confirmKey(provider, preset);
+      b.today.settingsChanged();
       b.summaries.settingsChanged(next);
       b.followups.settingsChanged(next);
       return next;
@@ -1381,6 +1391,7 @@ export function createHandlers(b: Backend): Handlers {
       b.actions.invalidate(null);
       await b.followups.clear();
       await b.replies.clear();
+      await b.today.clear();
       return { ok: true };
     },
     // plan 142: renderer only; none of these is in MCP_ALLOWED
@@ -1400,6 +1411,13 @@ export function createHandlers(b: Backend): Handlers {
     "followups.scan": async () => ({ queued: await b.followups.scan() }),
     // plan 141: renderer only; none of these is in MCP_ALLOWED
     "ai.ask": (p, ctx) => b.ask.ask(p, ctx.clientId),
+    "today.list": ({ heldIds }) => b.today.list(heldIds),
+    "today.digest": () => b.today.digestRow(),
+    "today.digestRetry": async () => {
+      await b.today.retry();
+      return { ok: true as const };
+    },
+    "today.digestArchive": (p) => b.today.archive(p),
     "ai.prepareReply": (p, ctx) => b.replies.prepare(p, ctx.clientId),
     "ai.replyLeave": async (p, ctx) => {
       b.replies.leave(p.threadId, ctx.clientId);

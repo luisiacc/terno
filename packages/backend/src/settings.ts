@@ -9,7 +9,7 @@ import {
 } from "@terno/ai";
 import { AI_PROVIDER_IDS, canonicalThemeId, COMPATIBLE_PRESETS, DEFAULT_DESIGN, DESIGN_IDS, DESIGN_PALETTE, DEV_AI_PROVIDERS, fitsMode, isDesignId, isDevAiProvider, JEV_DEFAULT_MODEL, SUMMARY_DEFAULT_MODEL, textRef, type DevAiKeys, themeMode, type AiTaskName, type AiTaskTarget, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
-import { FAVORITES_MAX, NUDGE_DEFAULT, type FavoriteFolder } from "@terno/core";
+import { DEFAULT_TODAY, FAVORITES_MAX, NUDGE_DEFAULT, type FavoriteFolder } from "@terno/core";
 import { isLanguageSetting, L, type Localized } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
 import { unreadableSecrets } from "./keychain";
@@ -153,6 +153,7 @@ export const DEFAULT_SETTINGS: General = {
   summaries: { enabled: false, enabledAt: null, acknowledged: [] },
   ask: { enabled: true, acknowledged: [] },
   replies: { enabled: false },
+  today: DEFAULT_TODAY,
   followups: { enabled: false, enabledAt: null, nudgeAfterDays: NUDGE_DEFAULT, scanAnswered: false },
   errorReports: "ask",
   // new installs follow the system: English unless it's a language Terno ships
@@ -599,7 +600,7 @@ export async function acknowledgeActionCheck(store: SettingsStore, destination: 
 }
 
 function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: boolean, now: number): StoredSettings {
-  const { ai: aiPatch, summaries: summariesPatch, ask: askPatch, followups: followupsPatch, replies: repliesPatch, ...rest } = patch;
+  const { ai: aiPatch, summaries: summariesPatch, ask: askPatch, followups: followupsPatch, replies: repliesPatch, today: todayPatch, ...rest } = patch;
   const general: Partial<General> = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
   if (summariesPatch) {
     // the moment it went on: mail from before it is never sent (off and on again starts over)
@@ -613,6 +614,7 @@ function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: 
     // the moment it went on: what was sent before it is read only with a yes
     general.followups = { ...was, ...followupsPatch, enabled, enabledAt: !enabled ? null : was.enabled ? was.enabledAt : now };
   }
+  if (todayPatch) general.today = { ...DEFAULT_TODAY, ...s.today, ...todayPatch };
   if (repliesPatch) general.replies = { enabled: repliesPatch.enabled };
   if (askPatch) general.ask = { ...(s.ask ?? DEFAULT_SETTINGS.ask), enabled: askPatch.enabled };
   const state = aiState(s, hasLegacyKey);
