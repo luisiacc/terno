@@ -7,7 +7,7 @@
  * A reopened mailbox ("closed"): these read and write from a fresh connection; what's written (6,000 look-alikes, slices
  * of live mail) goes through the store as before.
  */
-import { measureReplies, measureActionWalk, measureFollowups, measureAsk, measureAiSummaries, measureCategoryEvidence, measureForwards, measureWriting, type WorkloadMailbox } from "@terno/store/conformance";
+import { measureToday, measureReplies, measureActionWalk, measureFollowups, measureAsk, measureAiSummaries, measureCategoryEvidence, measureForwards, measureWriting, type WorkloadMailbox } from "@terno/store/conformance";
 import { REMINDERS_MAX, REMOVABLE_BUCKETS, storageCutoff } from "@terno/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openDatabase } from "./index";
@@ -53,6 +53,7 @@ describe("sharing a large mailbox", () => {
   });
   it("plan 132: summaries: marking a live slice and the worker's and reader's reads hold", () => measureAiSummaries(mailbox));
   it("plan 142: follow-ups' reads hold at the cap", () => measureFollowups(mailbox));
+  it("plan 145: Today's waiting walk and the digest's walk hold", () => measureToday(mailbox, { waitingMs: 10, pageMs: 100 }), 600_000);
   it("plan 144: what an open reads before anything leaves holds, short and long", () => measureReplies(mailbox, { p95Ms: 120, waitMs: 400 }), 600_000);
   it("plan 143: a sentence's walk holds, sparse and dense, with a pattern and without", () => measureActionWalk(mailbox, { stepMs: 400, totalMs: 15_000 }), 600_000);
   it("plan 141: a question's search and passages hold, wherever the word is", () => measureAsk(mailbox, { totalMs: 250, passagesMs: 100, stallMs: null }));

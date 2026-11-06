@@ -21,6 +21,7 @@ import { defineSmartCategorizationConformance } from "./smart-categorization";
 import { defineAskConformance } from "./ask";
 import { defineActionsConformance } from "./actions";
 import { defineRepliesConformance } from "./replies";
+import { defineTodayConformance } from "./today";
 import { defineFollowupsConformance } from "./followups";
 import { defineWritingConformance } from "./writing";
 import { defineUnsubscribeConformance } from "./unsubscribe";
@@ -130,6 +131,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
     defineSmartCategorizationConformance(fresh);
     defineActionsConformance(fresh);
     defineRepliesConformance(fresh);
+    defineTodayConformance(fresh);
     defineFollowupsConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);

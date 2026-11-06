@@ -446,7 +446,7 @@ export function viewUnreadCounts(db: Db): Record<string, number> {
 }
 
 /** The Inbox counts' extra tests (plans 83, 86): none while nothing is hidden. */
-function shownSql(hiding: InboxHiding): { where: string; params: Param[] } {
+export function shownSql(hiding: InboxHiding): { where: string; params: Param[] } {
   const h = hidingSql("threads", hiding);
   return { where: h.where.map((w) => ` AND ${w}`).join(""), params: h.params };
 }

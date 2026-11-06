@@ -4,6 +4,7 @@ import { publishBody } from "@terno/store";
 import { resolvable, parseSearch, searchTerms } from "@terno/core";
 import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, BODY_READY_APPLICATION_ID } from "./body-upgrade";
 import { unsubscribeBodyParts, decodeBodyPart } from "@terno/store";
+import { beginDigest, clearDigests, digestFacts, digestLive, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { activeFollowups, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { addAskTurn, askAccountsOf, askHeaders, askMatching, askNewest, askText, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
@@ -1091,6 +1092,30 @@ export class SqlMailStore implements MailStore {
 
   private followupClears = 0;
 
+  private digestClears = 0;
+  readonly today: MailStore["today"] = {
+    waitingPage: async (o) => waitingPage(this.db, o),
+    waitingAmong: async (ids, now) => waitingAmong(this.db, ids, now),
+    digestFacts: async (ids) => digestFacts(this.db, ids),
+    digestLive: async (ids) => digestLive(this.db, ids),
+    digest: {
+      get: async (day) => getDigest(this.db, day),
+      latest: async (day) => latestDigest(this.db, day),
+      begin: async (day, watermark, pending, generation) => generation === this.digestClears && beginDigest(this.db, day, watermark, pending),
+      write: async (row, generation) => {
+        if (generation !== this.digestClears) return false;
+        writeDigest(this.db, row);
+        return true;
+      },
+      pendingDays: async () => pendingDigestDays(this.db),
+      prune: async (keepFrom) => pruneDigests(this.db, keepFrom),
+      clear: async () => {
+        this.digestClears++;
+        clearDigests(this.db);
+      },
+      clearGeneration: () => this.digestClears,
+    },
+  };
   private replyClears = 0;
   readonly replies: MailStore["replies"] = {
     get: async (threadId) => getReply(this.db, threadId),

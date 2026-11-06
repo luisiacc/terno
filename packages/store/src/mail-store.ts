@@ -545,6 +545,7 @@ export interface MailStore {
   /** Plan 142: Follow-ups. */
   followups: import("./followups").FollowupStore;
   replies: import("./replies").ReplyStore;
+  today: import("./today").TodayStore;
   /** Plan 141: a question's passages and the history of questions (the last 100 conversations). */
   ask: {
     passages(request: import("./ask").AskPassageRequest): Promise<import("./ask").AskPassages>;

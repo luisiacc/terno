@@ -18,7 +18,7 @@ import "fake-indexeddb/auto";
 import { REMOVABLE_BUCKETS, storageCutoff } from "@terno/core";
 import { generateDataset } from "@terno/mock-data";
 import type { Platform } from "@terno/store";
-import { measureReplies, measureActionWalk, measureFollowups, measureAsk, measureAiSummaries, measureCategoryEvidence, measureForwards, measureWriting, type WorkloadMailbox } from "@terno/store/conformance";
+import { measureToday, measureReplies, measureActionWalk, measureFollowups, measureAsk, measureAiSummaries, measureCategoryEvidence, measureForwards, measureWriting, type WorkloadMailbox } from "@terno/store/conformance";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { machineBusy, sampleAsync, settle, watchLoop } from "../../db/src/test/timing";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -158,6 +158,7 @@ describe("the workloads the stores share", () => {
   }, 600_000);
   it("plan 132: summaries: marking a live slice and the worker's and reader's reads hold", () => measureAiSummaries(mailbox()), 600_000);
   it("plan 142: follow-ups' reads hold at the cap", () => measureFollowups(mailbox()), 600_000);
+  it("plan 145: Today's waiting walk and the digest's walk hold", () => measureToday(mailbox(), { waitingMs: 25, pageMs: 400 }), 600_000);
   it("plan 144: what an open reads before anything leaves holds, short and long", () => measureReplies(mailbox(), { p95Ms: 120, waitMs: 400 }), 600_000);
   it("plan 143: a sentence's walk holds, sparse and dense, with a pattern and without", () => measureActionWalk(mailbox(), { stepMs: 1000, totalMs: 15_000 }), 600_000);
   it("plan 141: a question's search and passages hold, wherever the word is", () => measureAsk(mailbox(), { totalMs: 3 * scanBudget("factura"), passagesMs: 500, stallMs: 32 }), 600_000);

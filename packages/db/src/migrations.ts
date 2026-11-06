@@ -1396,6 +1396,21 @@ CREATE TABLE ai_prepared_replies (
   revision INTEGER NOT NULL DEFAULT 0
 ) WITHOUT ROWID;
 ` },
+  { version: 54, name: "the daily digest (plan 145)", sql: `
+CREATE TABLE ai_digests (
+  day TEXT PRIMARY KEY,
+  state TEXT NOT NULL CHECK (state IN ('pending','ready','failed')),
+  body_json TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  error_kind TEXT,
+  watermark_at INTEGER NOT NULL DEFAULT 0,
+  watermark_id INTEGER NOT NULL DEFAULT 0,
+  model TEXT,
+  provider TEXT,
+  prompt_version INTEGER,
+  generated_at INTEGER
+) WITHOUT ROWID;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

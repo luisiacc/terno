@@ -1,4 +1,5 @@
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
+import { beginDigest, clearDigests, digestFacts, digestLive, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { activeFollowups, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { addAskTurn, askAccountsOf, askCandidates, askHeaders, askNewest, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
@@ -1958,6 +1959,31 @@ export class IdbMailStore implements MailStore {
 
   private followupClears = 0;
 
+  private digestClears = 0;
+  readonly today: MailStore["today"] = {
+    waitingPage: (o) => this.read(() => waitingPage(this.c, o)),
+    waitingAmong: (ids, now) => this.read(() => waitingAmong(this.c, ids, now)),
+    digestFacts: (ids) => this.read(() => digestFacts(this.c, ids)),
+    digestLive: (ids) => this.read(() => digestLive(this.c, ids)),
+    digest: {
+      get: (day) => this.read(() => getDigest(this.c, day)),
+      latest: (day) => this.read(() => latestDigest(this.c, day)),
+      begin: (day, watermark, pending, generation) => this.command(() => generation === this.digestClears && beginDigest(this.c, day, watermark, pending)),
+      write: (row, generation) =>
+        this.command(() => {
+          if (generation !== this.digestClears) return false;
+          writeDigest(this.c, row);
+          return true;
+        }),
+      pendingDays: () => this.read(() => pendingDigestDays(this.c)),
+      prune: (keepFrom) => this.command(() => pruneDigests(this.c, keepFrom)),
+      clear: () => {
+        this.digestClears++;
+        return this.command(() => clearDigests(this.c));
+      },
+      clearGeneration: () => this.digestClears,
+    },
+  };
   private replyClears = 0;
   readonly replies: MailStore["replies"] = {
     get: (threadId) => this.read(() => getReply(this.c, threadId)),

@@ -32,7 +32,7 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 53;
+export const LOGICAL_SCHEMA = 54;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -106,6 +106,7 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "ai_turns", key: ["id"], autoId: true, indexes: fk("conversation_id") },
   // plan 142: `identity` is the logical unique key, as a memory index isn't one
   { name: "ai_sent_mail", key: ["message_id"], indexes: { ...fk("message_id"), thread: ["thread_id"] } },
+  { name: "ai_digests", early: true, key: ["day"], indexes: {} },
   { name: "ai_prepared_replies", early: true, key: ["thread_id"], indexes: {} },
   { name: "followups", early: true, key: ["id"], autoId: true, indexes: { ...fk("thread_id"), identity: ["message_id", "item"], state: ["state"], top: ["inbox_state"] } },
   { name: "send_copies", early: true, key: ["opId"], indexes: fk("accountId") },
@@ -374,6 +375,8 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       // plan 133 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 28) for (const name of ["writing_profiles", "writing_generations"]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
       // plan 141 (likewise)
+      // plan 145 (likewise)
+      if (event.oldVersion >= 1 && event.oldVersion < 32 && !db.objectStoreNames.contains("ai_digests")) db.createObjectStore("ai_digests");
       // plan 144 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 31 && !db.objectStoreNames.contains("ai_prepared_replies")) db.createObjectStore("ai_prepared_replies");
       // plan 142 (likewise)
