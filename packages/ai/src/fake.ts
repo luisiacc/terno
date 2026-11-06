@@ -3,6 +3,7 @@ import { keyRef } from "@terno/i18n";
 import { fakeAnswer, fakeAskPlan, isAnswerRequest } from "./ask";
 import { fakeActionPlan, fakeCheck } from "./actions";
 import { fakeSentMail } from "./followups";
+import { fakeNeedsReply } from "./replies";
 import { fakeSummary } from "./summarize";
 import { AiError, promptText, type CompletionRequest, type ModelTransport, type StreamEvent } from "./types";
 import type { WireFilter } from "./wire";
@@ -106,6 +107,7 @@ export function fakeTransport(options: { failFirstAttempt?: boolean } = {}): Mod
       }
       if (schema?.name === "probe") return { text: '{"ok":true}', stop: "end" };
       if (schema?.name === "thread_summary") return { text: JSON.stringify(fakeSummary(promptText(system), prompt)), stop: "end" };
+      if (schema?.name === "needs_reply") return { text: JSON.stringify(fakeNeedsReply(prompt)), stop: "end" };
       if (schema?.name === "action_plan") return { text: JSON.stringify(fakeActionPlan(prompt, promptText(system))), stop: "end" };
       if (schema?.name === "action_check") return { text: JSON.stringify(fakeCheck(prompt)), stop: "end" };
       if (schema?.name === "sent_mail") return { text: JSON.stringify(fakeSentMail(prompt)), stop: "end" };

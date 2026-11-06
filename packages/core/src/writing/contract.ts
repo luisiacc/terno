@@ -26,6 +26,8 @@ export interface WritingAccountPrefs {
   useGeneral?: boolean;
   /** overrides the general setting, for this account */
   useSentMail?: boolean;
+  /** plan 144: false: this account's mail is never prepared */
+  prepareReplies?: boolean;
 }
 
 export interface WritingPrefs {

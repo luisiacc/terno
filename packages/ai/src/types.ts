@@ -5,6 +5,7 @@ import type { AnswerFromMailInput, AnswerFromMailOptions, AnswerFromMailResult, 
 import type { SentMailInput, SentMailResult } from "./followups";
 import type { ActionPlan } from "@terno/core";
 import type { CheckCandidatesInput, PlanActionInput } from "./actions";
+import type { NeedsReplyInput } from "./replies";
 import type { SummarizeInput, ThreadSummaryResult } from "./summarize";
 import type { ComposeInput, ComposeOptions, ComposeResult, JudgeVoiceInput, JudgeVoiceResult, ParseIntentInput, ParseIntentResult } from "./writing";
 
@@ -142,6 +143,8 @@ export interface AiTasks {
   parseIntent(input: ParseIntentInput, signal?: AbortSignal): Promise<ParseIntentResult>;
   /** plan 142: what a message you sent promises, who it waits on, what it keeps */
   readSentMail(input: SentMailInput, signal?: AbortSignal): Promise<SentMailResult>;
+  /** plan 144: does this mail want an answer? */
+  needsReply(input: NeedsReplyInput, signal?: AbortSignal): Promise<boolean>;
   /** plan 143: a sentence into a rule and an action; null: it can't be done from a sentence. Sees no mail. */
   planAction(input: PlanActionInput, signal?: AbortSignal): Promise<ActionPlan | null>;
   /** plan 143: which groups of senders and subjects don't fit: it can only remove. `budget`: the operation's requests left, repairs included. */

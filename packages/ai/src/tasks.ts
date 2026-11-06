@@ -9,6 +9,7 @@ import { describeProvider, isLocalProvider, resolveBaseURL } from "./providers";
 import { planAskTask, runAnswerFromMail } from "./ask";
 import { checkCandidatesTask, countedTransport, planActionTask } from "./actions";
 import { readSentMailTask } from "./followups";
+import { needsReplyTask } from "./replies";
 import { summarizeTask } from "./summarize";
 import { AiError, type AiTasks, type Capabilities, type ClassifyInput, type ModelInfo, type ModelTransport, type OutputMode, type ProviderConfig } from "./types";
 import { convertWireFilter, EXAMPLE_WIRE_FILTER, systemPrompt, wireFilterSchema } from "./wire";
@@ -109,6 +110,10 @@ export function createAi(config: ProviderConfig, options: AiOptions = {}): AiTas
 
     parseIntent(input, signal) {
       return run(parseIntentTask(input), signal);
+    },
+
+    needsReply(input, signal) {
+      return run(needsReplyTask(input), signal);
     },
 
     planAction(input, signal) {

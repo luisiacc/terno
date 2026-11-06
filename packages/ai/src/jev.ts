@@ -113,6 +113,10 @@ export function jevTasks(config: ProviderConfig, options: AiOptions = {}): AiTas
       // i18n-ignore: a caller's bug: the settings row never offers JEV for drafting
       throw new AiError("JEV writes no text", "unsupported");
     },
+    needsReply() {
+      // i18n-ignore: a caller's bug: JEV only picks among choices
+      throw new AiError("JEV writes no text", "unsupported");
+    },
     planAction() {
       // i18n-ignore: a caller's bug: JEV only picks among choices
       throw new AiError("JEV writes no text", "unsupported");

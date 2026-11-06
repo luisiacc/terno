@@ -24,6 +24,7 @@ import {
   type DevAiProvider,
 } from "../ai";
 import type { FollowupRow, FollowupsSetting, FollowupsSnapshot } from "../followups";
+import type { AiPrepareReply, AiReplyEvent, PreparedReply, RepliesSetting } from "../replies";
 import type { ActionPreviewInfo, AiActionApplied, AiActionCheck, AiActionEvent, AiActionStart } from "../actions";
 import { ASK_QUESTION_MAX, ASK_SOURCES_MAX, type AiAskEvent, type AiAskResult, type AskConversationSummary, type AskOlderOffer, type AskSourceView, type AskTurn } from "../ask";
 import { GENERATION_TEXT_MAX, WRITING_INSTRUCTIONS_MAX, WRITING_ONE_OFF_MAX, type AiComposeDelta, type AiComposeResult, type AiIntentResult, type AiStudyProgress, type WritingPrefs, type WritingProfileView, type WritingStatus, type WritingStudyResult } from "../writing/contract";
@@ -193,6 +194,8 @@ export interface AppSettings {
   ask: AskSetting;
   /** plan 142 */
   followups: FollowupsSetting;
+  /** plan 144: off by default; the switch is the consent */
+  replies: RepliesSetting;
   /** anonymous error reports (builds with a DSN, outside local mode): ask each time, send, or never */
   errorReports: "ask" | "always" | "never";
   /** the UI language: follow the system, or a locale Terno ships (@terno/i18n LOCALES) */
@@ -495,6 +498,7 @@ const settingsPatch = z.object({
   summaries: z.object({ enabled: z.boolean() }).strict().optional(),
   ask: z.object({ enabled: z.boolean() }).strict().optional(),
   /** `enabledAt` is the backend's */
+  replies: z.object({ enabled: z.boolean() }).strict().optional(),
   followups: z.object({ enabled: z.boolean().optional(), nudgeAfterDays: z.union([z.literal(3), z.literal(5), z.literal(7), z.literal(14)]).optional(), scanAnswered: z.boolean().optional() }).strict().optional(),
   errorReports: z.enum(["ask", "always", "never"]).optional(),
   language: z.enum(LANGUAGE_SETTINGS).optional(),
@@ -1165,6 +1169,18 @@ export const contract = {
   "ai.ask": m<AiAskResult>()(z.object({ requestId, question: z.string().trim().min(1).max(ASK_QUESTION_MAX), conversationId: id.optional(), timezone: z.string().min(1).max(100), acknowledge: z.string().min(1).max(2000).optional() }), { timeoutMs: 180_000 }),
   /** The user's own servers look further back for this turn's question; one more answer comes of it. Only on a click. */
   "ai.askOlder": m<AiAskResult>()(z.object({ requestId, conversationId: id, turnId: id, timezone: z.string().min(1).max(100) }), { timeoutMs: 300_000 }),
+  /**
+   * Plan 144: a conversation that waits for an answer stayed open. It reads the switch, the thread and what's stored
+   * again, whatever the window thought, and goes on in `aiReply`. Never MCP. Nothing is ever sent from here.
+   */
+  "ai.prepareReply": m<AiPrepareReply>()(z.object({ threadId: id, accountId: id, to: z.array(address).max(MAX_RECIPIENTS), cc: z.array(address).max(MAX_RECIPIENTS).default([]), answeringMessageId: id.optional(), timezone: z.string().min(1).max(100) })),
+  /** the window went elsewhere: before the first word it stops, after it it finishes and is kept */
+  "ai.replyLeave": m<{ ok: true }>()(z.object({ threadId: id })),
+  /** Stop, or the person asked for something else */
+  "ai.replyStop": m<{ ok: true }>()(z.object({ threadId: id, dismiss: z.boolean() })),
+  /** Conditional on the row as it was seen. Null: refused, and the row isn't what it was. `to` and `cc`: who a reply goes to now. */
+  "ai.replyAct": m<PreparedReply | null>()(z.object({ threadId: id, revision: z.number().int().min(0), action: z.enum(["use", "restore", "dismiss", "undismiss"]), to: z.array(address).max(MAX_RECIPIENTS).default([]), cc: z.array(address).max(MAX_RECIPIENTS).default([]), timezone: z.string().min(1).max(100).default("UTC") })),
+  "ai.replyStatus": m<{ blockedBy: { kind: AiErrorKind } | null }>()(empty),
   /** Plan 143: a sentence into a preview. It only reads: nothing changes until `ai.actionApply`, from the connection that saw it. */
   "ai.actionStart": m<AiActionStart>()(z.object({ requestId, sentence: z.string().trim().min(1).max(ASK_QUESTION_MAX), conversationId: id.optional(), timezone: z.string().min(1).max(100) }), { timeoutMs: 300_000 }),
   "ai.actionPage": m<{ items: ThreadSummary[]; total: number; unticked: number[] }>()(z.object({ previewId: z.string().min(1).max(64), offset: z.number().int().min(0), limit: z.number().int().min(1).max(500), leftOut: z.boolean() })),
@@ -1238,7 +1254,7 @@ export const contract = {
   "writing.prefs.set": m<WritingPrefs>()(
     z.object({
       global: z.object({ enabled: z.boolean().optional(), instructions: writingInstructions.optional(), useSentMail: z.boolean().optional() }).optional(),
-      account: z.object({ accountId: id, prefs: z.object({ instructions: writingInstructions.optional(), useGeneral: z.boolean().optional(), useSentMail: z.boolean().optional() }).nullable() }).optional(),
+      account: z.object({ accountId: id, prefs: z.object({ prepareReplies: z.boolean().optional(), instructions: writingInstructions.optional(), useGeneral: z.boolean().optional(), useSentMail: z.boolean().optional() }).nullable() }).optional(),
     }),
   ),
   "writing.profiles.list": m<{ items: WritingProfileView[]; next: { scopeKey: string; language: string } | null; status: WritingStatus }>()(
@@ -1364,6 +1380,8 @@ export interface Events {
   followups: FollowupsSnapshot;
   /** plan 142: it stopped reading, or it's going again */
   followupsStatus: { blockedBy: { kind: AiErrorKind; message: string } | null };
+  /** plan 144: a prepared reply as it comes, only to the windows reading that conversation; never MCP */
+  aiReply: AiReplyEvent;
   /** plan 143: a preview's count as it grows, or why it ended; only to the connection that asked */
   aiAction: AiActionEvent;
   /** plan 141: an answer as it comes, only to the connection that asked */

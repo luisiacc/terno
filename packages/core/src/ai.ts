@@ -38,6 +38,7 @@ export function devAiKeys(env: Record<string, string | undefined>): DevAiKeys {
 }
 /** Plan 142: a small model reads each message you send. */
 export const FOLLOWUP_CLAUDE_MODEL = "claude-haiku-5-5";
+export const REPLY_CHECK_CLAUDE_MODEL = "claude-haiku-5-5";
 export const FOLLOWUP_OPENAI_MODEL = "gpt-6-luna";
 /** Plan 141 §6: a cheap model writes the searches, Sonnet 5.5 answers. Planning never leaves the answer's provider. */
 export const ASK_CLAUDE_MODEL = "claude-sonnet-5-5";
