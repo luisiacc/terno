@@ -1,3 +1,4 @@
+import { parse } from "@babel/parser";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -109,21 +110,61 @@ describe("architecture: every outbound connection goes through the network polic
 
 // A browser reads a script served without a charset as Windows-1252: a literal "Â-ô" range in a
 // regex then turns into an out-of-order one and the whole bundle fails to load (gmail-wire.spec).
+/** The little of Babel's tree this reads. */
+type AstNode = { type: string; start: number; end: number; callee?: AstNode; arguments?: AstNode[]; name?: string | AstNode; property?: AstNode };
+
+/** What loads code at run time, from the parser's tree: a type's `import("x")` is no call, and `typeof import("x")` in a value is. */
+function runtimeLoads(code: string, rel: string): string[] {
+  const found: string[] = [];
+  const named = (node: AstNode | undefined, kind: string, name: string) => node?.type === kind && node.name === name;
+  const visit = (node: AstNode): void => {
+    if (node.type === "CallExpression") {
+      const arg = node.arguments?.[0], text = arg ? code.slice(arg.start, arg.end) : "";
+      if (node.callee?.type === "Import") found.push(`import(${text})`);
+      else if ((named(node.callee, "Identifier", "require") || named(node.callee?.property, "Identifier", "require")) && !/^["'](node:|electron["'])/.test(text)) found.push(`require(${text})`);
+      else if (named(node.callee, "Identifier", "lazy")) found.push("lazy()");
+    }
+    if (node.type === "JSXOpeningElement" && named(node.name as AstNode, "JSXIdentifier", "Suspense")) found.push("<Suspense>");
+    for (const value of Object.values(node) as unknown[]) {
+      for (const child of Array.isArray(value) ? value : [value]) if (typeof (child as AstNode | null)?.type === "string") visit(child as AstNode);
+    }
+  };
+  visit(parse(code, { sourceType: "module", errorRecovery: true, plugins: rel.endsWith(".tsx") ? ["typescript", "jsx"] : ["typescript"] }).program as unknown as AstNode);
+  return found;
+}
+
 /**
- * A load on demand: `lazy(`, `<Suspense`, a dynamic `import(` or a `require(` of app code. Not one: a type's
- * `import("x").Name` or `typeof import("x")`, a builtin, or the web host's `import("~/web/…")`, behind VITE_TARGET and
- * never in the desktop build. `require("./app")` in main.ts is order, not laziness: the profile is prepared first.
+ * file → what it may load. The web host's code stays out of the desktop build: each of these sits behind
+ * VITE_TARGET === "web", and `desktopGuard` (apps/web/vite.config.ts) fails a desktop build that holds any of it.
+ * `require("./app")` is order, not laziness: the profile is prepared first.
  */
-const LOADS_ON_DEMAND = /\blazy\s*\(|<Suspense\b|(?<!typeof )\bimport\s*\(\s*(?!"[^"]+"\s*\)\s*\.[A-Z]|"~\/web\/)|\brequire\s*\(\s*(?!["'](?:node:|electron["'])|"\.\/app"\))/;
+const MAY_LOAD: Record<string, string[]> = {
+  "apps/desktop/src/main.ts": ['require("./app")'],
+  "apps/web/src/components/add-account-dialog.tsx": ['import("~/web/google")'],
+  "apps/web/src/components/settings/sender-pictures.tsx": ['import("~/web/google")'],
+  "apps/web/src/lib/notify.ts": ['import("~/web/lifecycle")'],
+  "apps/web/src/lib/sign-in.ts": ['import("~/web/google")'],
+  "apps/web/src/rpc/connection.ts": ['import("~/web/connect")'],
+};
 /** The web host's own files, dev tools and test helpers. */
 const NOT_THE_APP = /^apps\/web\/src\/web\/|^apps\/backend-dev\/|^packages\/store\/src\/conformance\/|harness\.tsx$|-owned-rpc\.ts$|\.fixture\.ts$/;
 
 it("no lazy loading: a desktop app's code is on disk, and everything is a plain import", () => {
-  for (const load of ['lazy(() => import("./x"))', '<Suspense fallback={null}>', 'const load = () => import("./x");', 'import ("./x")', "import(url)", 'require("./scheduled")', 'require(join(__dirname, "reporter.cjs"))']) expect(load).toMatch(LOADS_ON_DEMAND);
-  for (const fine of ['type A = typeof import("./x");', 'let a: import("./x").Name;', 'import("~/web/google")', 'require("node:fs")', 'require("./app")']) expect(fine).not.toMatch(LOADS_ON_DEMAND);
-  const files = SOURCE_DIRS.flatMap(sources).map((f) => ({ rel: relative(ROOT, f), code: stripComments(readFileSync(f, "utf8")) }));
+  const loads = (code: string) => runtimeLoads(code, "x.tsx");
+  for (const load of ['const A = lazy(() => import("./x"));', 'const a = <Suspense fallback={null}><B /></Suspense>;', 'const load = () => import("./x");', 'import ("./x");', "import(url);", 'require("./scheduled");', 'require(join(__dirname, "reporter.cjs"));', 'const a = typeof import("./x");', 'const a = () => require("./app");', 'void import("~/web/google");', 'const a = () => module.require("./x");', 'const a = () => import /* chunk */ ("./x");']) expect(loads(load), load).not.toEqual([]);
+  for (const fine of ['type A = typeof import("./x");', 'let a: import("./x").Name;', 'const a = b as typeof import("./x");', 'require("node:fs");', 'require("electron");', "// lazy(() => import(\"./x\"))", 'const a = "lazy(";']) expect(loads(fine), fine).toEqual([]);
+  const files = SOURCE_DIRS.flatMap(sources).map((f) => ({ rel: relative(ROOT, f), code: readFileSync(f, "utf8") }));
   expect(files.some((f) => f.rel === "apps/web/src/app.tsx")).toBe(true);
-  expect(files.filter((f) => !NOT_THE_APP.test(f.rel) && LOADS_ON_DEMAND.test(f.code)).map((f) => f.rel)).toEqual([]);
+  const found = new Map<string, string[]>();
+  for (const { rel, code } of files) {
+    if (NOT_THE_APP.test(rel)) continue;
+    const here = runtimeLoads(code, rel);
+    if (here.length) found.set(rel, here);
+  }
+  const allowed = new Map(Object.entries(MAY_LOAD));
+  expect([...found].flatMap(([rel, here]) => here.filter((l) => !allowed.get(rel)?.includes(l)).map((l) => `${rel}: ${l}`))).toEqual([]);
+  // no stale exemptions: a file that stopped loading it gives the exemption up
+  for (const [rel, here] of allowed) expect(found.get(rel), rel).toEqual(expect.arrayContaining(here));
 });
 
 it("the address code is ASCII outside comments, so it parses however its bundle is decoded", () => {

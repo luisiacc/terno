@@ -26,6 +26,7 @@
     "ws": "^8.22.0"
   },
   "devDependencies": {
+    "@babel/parser": "7.29.9",
     "@terno/idb": "workspace:*",
     "@types/node": "catalog:",
     "@types/smtp-server": "^3.5.13",

@@ -540,6 +540,9 @@ importers:
         specifier: ^8.22.0
         version: 8.22.0
     devDependencies:
+      '@babel/parser':
+        specifier: 7.29.9
+        version: 7.29.9
       '@terno/idb':
         specifier: workspace:*
         version: link:../idb
