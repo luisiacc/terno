@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { beforeAll, expect, it, vi } from "vitest";
 import type { EditorView } from "prosemirror-view";
 import { TextSelection } from "prosemirror-state";
 import { undo, redo } from "prosemirror-history";
@@ -18,6 +18,8 @@ const { RichBody } = await import("./rich");
 const { createDraft, forgetDraft, setDraftTransport, useDrafts } = await import("~/lib/drafts");
 const { newFields } = await import("~/lib/compose-fields");
 
+// transforms once, outside any test's timeout
+beforeAll(async () => { await import("./rich"); }, 120_000);
 it("ghost-only updates do not repeat huge-draft toolbar scans or dirty the body", async () => {
   let view: EditorView | undefined;
   const create = editor.createEditor;

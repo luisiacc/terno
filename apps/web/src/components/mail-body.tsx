@@ -1,8 +1,10 @@
 import type { AttachmentInfo } from "@terno/core";
 import DOMPurify from "dompurify";
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FullMessageBoundary, MailReaderStatus, useMailReaderView } from "./mail-reader-view";
+import FullMessage from "./full-message";
+import { FullMessageBoundary, useMailReaderView } from "./mail-reader-view";
+import { resolveCidHtml } from "~/lib/cid";
 import { ImageOff } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { mailColors, useAppearance } from "~/lib/appearance";
@@ -69,7 +71,6 @@ export function HtmlBody({ html, messageId, remoteImages, spam = false, appearan
   const closeView = view?.close;
   const [opening, setOpening] = useState(0);
   const lease = useMemo(() => ({}), [html, messageId, accountId, attachments.map((a) => `${a.assetId}:${a.contentId}`).join("|")]);
-  const FullMessage = useMemo(() => lazy(() => import("./full-message")), [lease, opening]);
   const [clipping, setClipping] = useState({ source: "", clipped: false });
   const [copiedText, setCopiedText] = useState<string | null>(null);
   useEffect(() => { if (view?.active !== lease) setCopiedText(null); }, [view?.active, lease]);
@@ -91,7 +92,7 @@ export function HtmlBody({ html, messageId, remoteImages, spam = false, appearan
   useEffect(() => {
     if (!cidAllowed || accountId === undefined) return;
     let active = true;
-    void import("~/lib/cid").then(({ resolveCidHtml }) => active ? resolveCidHtml(clean, accountId, attachments, () => active) : clean).then((html) => { if (active) setCidResult({ key: cidKey, html }); });
+    void resolveCidHtml(clean, accountId, attachments, () => active).then((html) => { if (active) setCidResult({ key: cidKey, html }); });
     return () => { active = false; };
   }, [cidAllowed, accountId, cidKey, clean]);
   const visibleHtml = cidAllowed && cidResult?.key === cidKey ? cidResult.html : clean;
@@ -284,9 +285,7 @@ export function HtmlBody({ html, messageId, remoteImages, spam = false, appearan
       }}>{t("reader.full.show")}</button>}
       {view?.active === lease && view.target && createPortal(
         <FullMessageBoundary onClose={() => view.close(lease)} key={opening}>
-          <Suspense fallback={<MailReaderStatus onClose={() => view.close(lease)} />}>
-            <FullMessage source={source} html={visibleHtml} messageId={messageId} accountId={accountId} attachments={attachments} remoteImages={remoteImages} appearance={paper ? "paper" : appearance} onClose={() => view.close(lease)} controls={<>{inlineControl}{remoteControl}</>} copyText={() => { if (copiedText === null) throw new Error("Message selection is not ready"); return copiedText; }} />
-          </Suspense>
+          <FullMessage source={source} html={visibleHtml} messageId={messageId} accountId={accountId} attachments={attachments} remoteImages={remoteImages} appearance={paper ? "paper" : appearance} onClose={() => view.close(lease)} controls={<>{inlineControl}{remoteControl}</>} copyText={() => { if (copiedText === null) throw new Error("Message selection is not ready"); return copiedText; }} />
         </FullMessageBoundary>, view.target)}
     </div>
   );

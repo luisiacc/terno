@@ -6,13 +6,31 @@ import { Time, TimeField } from "@terno/ui/components/time-field";
 import { cn } from "@terno/ui/lib/utils";
 import { CalendarDays } from "@terno/ui/icons";
 import { useState } from "react";
-import { dayText, midnight, whenTag, type useWhen } from "./when-lazy";
+
+export const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+export const at = (day: Date, minutes: number) => new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(minutes / 60), minutes % 60).getTime();
+const tag = () => (getLocale() === "en" ? "en-US" : getLocale());
+export const dayText = (d: Date | number) => new Intl.DateTimeFormat(tag(), { weekday: "short", month: "short", day: "numeric" }).format(d).replace(/\./g, "");
 
 /**
  * BoardUI's date-picker trigger (plan 121): the secondary button's chrome (card, a 1 px border, a contact shadow)
  * around an icon and the day; corners and icon on the rows' line above it
  */
 const TRIGGER = "h-8 gap-2 rounded-md px-2 text-sm font-normal text-foreground [&_svg]:text-muted-foreground";
+
+/**
+ * A day and a time of day (local), starting at `start`; `chosen` is the moment they make. The time is null while a
+ * segment of it is cleared (plan 122): not `ready`, so nothing can be set until it is whole again.
+ */
+export function useWhen(start: number) {
+  const s = new Date(start);
+  const [day, setDay] = useState(midnight(s));
+  const [minutes, setMinutes] = useState<number | null>(s.getHours() * 60 + s.getMinutes());
+  const [complete, setComplete] = useState(true);
+  const ready = minutes !== null && complete;
+  const chosen = ready ? at(day, minutes) : Number.NaN;
+  return { day, setDay, minutes, setMinutes, setComplete, chosen, ready, past: ready && chosen <= Date.now() };
+}
 
 /**
  * Plan 87's date and time, shared with plan 94's Send later: a themed
@@ -63,7 +81,7 @@ export function WhenFields({ when, testPrefix, describedBy, onEnter }: { when: R
       <TimeField
         data-testid={`${testPrefix}-time`}
         aria-label={t("remind.time")}
-        locale={whenTag()}
+        locale={tag()}
         // the app's language decides, as the list did: 12-hour in English, 24-hour in Spanish (whatever es-MX's default)
         hourCycle={getLocale() === "en" ? 12 : 24}
         value={minutes === null ? null : new Time(Math.floor(minutes / 60), minutes % 60)}

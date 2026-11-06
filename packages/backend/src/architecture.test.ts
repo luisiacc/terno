@@ -109,6 +109,17 @@ describe("architecture: every outbound connection goes through the network polic
 
 // A browser reads a script served without a charset as Windows-1252: a literal "Â-ô" range in a
 // regex then turns into an out-of-order one and the whole bundle fails to load (gmail-wire.spec).
+/** Web-only code the desktop build never holds (each behind VITE_TARGET === "web"), dev tools and test helpers. */
+const LOADS_ON_DEMAND = /^apps\/web\/src\/web\/|^apps\/web\/src\/rpc\/connection\.ts$|^apps\/web\/src\/lib\/(sign-in|notify)\.ts$|^apps\/web\/src\/components\/add-account-dialog\.tsx$|^apps\/web\/src\/components\/settings\/sender-pictures\.tsx$|^apps\/backend-dev\/|^packages\/store\/src\/conformance\/|harness\.tsx$|-owned-rpc\.ts$|\.fixture\.ts$/;
+
+it("no lazy loading: a desktop app's code is on disk, and everything is a plain import", () => {
+  const files = SOURCE_DIRS.flatMap(sources).map((f) => ({ rel: relative(ROOT, f), code: stripComments(readFileSync(f, "utf8")) }));
+  expect(files.some((f) => f.rel === "apps/web/src/app.tsx")).toBe(true);
+  // (a type's `import("x").Name` is no load)
+  const found = files.filter((f) => !LOADS_ON_DEMAND.test(f.rel)).filter((f) => /\blazy\(|<Suspense\b|(?<!typeof )\bimport\((?!"[^"]+"\)\.[A-Z])/.test(f.code)).map((f) => f.rel);
+  expect(found).toEqual([]);
+});
+
 it("the address code is ASCII outside comments, so it parses however its bundle is decoded", () => {
   for (const file of ["packages/core/src/address.ts", "packages/core/src/encoded-words.ts"]) {
     const code = readFileSync(join(ROOT, file), "utf8").split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*\*)/.test(l));

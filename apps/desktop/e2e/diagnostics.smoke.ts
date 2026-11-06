@@ -119,7 +119,7 @@ test("the packaged app ships no source map, and its maps are archived for its bu
   expect(asar.includes(Buffer.from(".map\""))).toBe(false);
   const build = await hooks((h) => h.view().build.id);
   const archive = join(repo, "apps/desktop/.maps", build.replace("+", "-"));
-  for (const f of ["dist/main.cjs.map", "dist/backend.cjs.map", "dist/preload.cjs.map", "dist/reporter.cjs.map", "dist/mcp/terno-mcp.cjs.map"]) expect(existsSync(join(archive, f)), f).toBe(true);
+  for (const f of ["dist/main.cjs.map", "dist/backend.cjs.map", "dist/preload.cjs.map", "dist/mcp/terno-mcp.cjs.map"]) expect(existsSync(join(archive, f)), f).toBe(true);
   expect(readdirSync(join(archive, "dist/renderer/assets")).some((f) => f.endsWith(".js.map"))).toBe(true);
 });
 

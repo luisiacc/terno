@@ -6,7 +6,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { CalendarClock, PenLine, Send, Sunrise } from "@terno/ui/icons";
 import { useId, useRef, useState } from "react";
 import { reminderWhen } from "~/lib/when";
-import { dayText, useWhen, WhenFields } from "./when-lazy";
+import { dayText, useWhen, WhenFields } from "./when-fields";
 
 const timeOf = (ms: number) => new Intl.DateTimeFormat(getLocale() === "en" ? "en-US" : getLocale(), getLocale() === "en" ? { hour: "numeric", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit" }).format(ms);
 

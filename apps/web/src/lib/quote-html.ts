@@ -1,7 +1,6 @@
 /**
  * Quoted history in HTML mail, for what leaves it out: printing and copying a
- * conversation as text. Both are lazy chunks; the startup bundle never loads
- * this (`quote.ts`, the plain-text half, the reader uses).
+ * conversation as text (`quote.ts`, the plain-text half, the reader uses).
  */
 import { ATTRIBUTION } from "~/lib/quote";
 

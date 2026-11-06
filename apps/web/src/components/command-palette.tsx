@@ -6,7 +6,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Chip } from "@terno/ui/components/chip";
 import { Command, CommandDescription, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
 import { Archive, AtSign, Bell, BellOff, ListChecks, BookmarkPlus, CalendarClock, CheckCheck, Clock, Copy, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory } from "~/lib/categorize";
 import { currentTargets, isMac, selectAll } from "~/lib/select";
@@ -18,7 +18,8 @@ import { activeFilter, isUnreadOnly } from "~/lib/unread-filter";
 import { DESIGNS } from "@terno/ui/designs/index";
 import { designName } from "~/lib/design";
 import { aiReady, askOffered, followupsOffered, summariesOffered, todayOffered } from "~/lib/ai";
-import { openAiDraft, useCanDraft } from "~/lib/ai-draft-state";
+import { useCanDraft } from "~/lib/ai-draft-state";
+import { openAiDraft } from "~/lib/ai-draft";
 import { checkForUpdates, installUpdate, useHasUpdates, useUpdates } from "~/lib/updates";
 import { englishWords as english } from "~/lib/palette-words";
 import { getApp, navigate, setApp, useApp } from "~/state/app";
@@ -36,9 +37,7 @@ import { useThread } from "~/state/threads";
 import { createCategory } from "./category-picker";
 import { snack } from "~/lib/snack";
 import { DEV_TAB, SETTINGS_TABS } from "./settings/tabs";
-
-/** Plan 141: the question, its answer and the history are a chunk of their own. */
-const AskPages = lazy(() => import("./ask-page"));
+import AskPages from "./ask-page";
 
 const NONE: readonly never[] = [];
 const NO_USAGE: Usage = new Map();
@@ -445,9 +444,7 @@ export function CommandPalette() {
         }}
       >
         {page === "ask" || page === "askHistory" ? (
-          <Suspense fallback={null}>
-            <AskPages page={page} value={value} setValue={setValue} onBack={back} />
-          </Suspense>
+          <AskPages page={page} value={value} setValue={setValue} onBack={back} />
         ) : (
         <>
         <CommandInput

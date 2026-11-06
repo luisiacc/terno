@@ -41,24 +41,26 @@ rowsToggled.current = (preview) => {
 let lastRows = 0;
 /** what the backend said before its own answer got here: a short walk can be over by then */
 let early: AiActionEvent | null = null;
-client.on("aiAction", (event) => {
-  if (getApp().actionPreview !== event.previewId) {
-    early = event;
-    return;
-  }
-  if ("ended" in event) {
-    leavePreview();
-    snack.error(t(event.ended === "tooMany" ? "action.tooMany" : "action.failed"));
-    return;
-  }
-  const wasScanning = useActionPreview.getState().preview?.scanning;
-  took(event.preview);
-  // the list follows the count: at most a few times a second, as the backend sends it, and once at the end
-  if (wasScanning && (!event.preview.scanning || Date.now() - lastRows > 500)) {
-    lastRows = Date.now();
-    void reloadList({ keepSelection: true, window: true });
-  }
-});
+export function installActionPreview(): void {
+  client.on("aiAction", (event) => {
+    if (getApp().actionPreview !== event.previewId) {
+      early = event;
+      return;
+    }
+    if ("ended" in event) {
+      leavePreview();
+      snack.error(t(event.ended === "tooMany" ? "action.tooMany" : "action.failed"));
+      return;
+    }
+    const wasScanning = useActionPreview.getState().preview?.scanning;
+    took(event.preview);
+    // the list follows the count: at most a few times a second, as the backend sends it, and once at the end
+    if (wasScanning && (!event.preview.scanning || Date.now() - lastRows > 500)) {
+      lastRows = Date.now();
+      void reloadList({ keepSelection: true, window: true });
+    }
+  });
+}
 
 /** The page's part: what came of a sentence. The preview opens with its first rows; anything else stays on the page. */
 export function opened(r: Extract<AiActionStart, { status: "preview" }>): void {

@@ -19,6 +19,8 @@ import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead,
 import { focusPinned, pinnedKey, usePinned } from "./pinned-draft-state";
 import { prepareEarlyComposeInput, prepareInlineFocusMove, type ComposeFocusTarget, type EarlyComposeInput } from "./compose-focus-move";
 import { aiDraftHooks } from "./ai-draft-state";
+import { parseHtml, toEmailHtml, toPlainText } from "@terno/richtext";
+import { scheduledSnack } from "./scheduled";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -915,9 +917,8 @@ export function installComposeFollowsSelection(): () => void {
 export async function bodyParts(d: Pick<LocalDraft, "bodyText" | "bodyHtml" | "canonical">): Promise<{ text: string; html: string | null }> {
   if (!d.bodyHtml) return { text: d.bodyText, html: null };
   if (d.canonical) return { text: d.bodyText, html: d.bodyHtml };
-  const rt = await import("@terno/richtext");
-  const doc = rt.parseHtml(d.bodyHtml);
-  return { text: rt.toPlainText(doc), html: rt.toEmailHtml(doc) };
+  const doc = parseHtml(d.bodyHtml);
+  return { text: toPlainText(doc), html: toEmailHtml(doc) };
 }
 
 /** Sends in flight, per draft: a second send of the same draft (a remounted pane, a double ⌘↩) gets the first one's outcome. */
@@ -1013,8 +1014,7 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
       await client.call("compose.schedule", { ...params, draftId: d.id!, draftGeneration: d.generation!, draftRevision: d.revision, sendAt });
       forgetDraft(key);
       if (getApp().compose?.key === key) setApp({ compose: null });
-      // lazily: its snack and Undo pull the reminders' formatting, which the send path doesn't need
-      void import("./scheduled").then((m) => m.scheduledSnack(d.id!, sendAt));
+      scheduledSnack(d.id!, sendAt);
       return true;
     }
     const res = await client.call("compose.send", params);

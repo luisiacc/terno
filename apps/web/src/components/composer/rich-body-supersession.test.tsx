@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { beforeAll, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,6 +18,8 @@ const { controllerFor } = await import("./controller");
 const { createDraft, editDraft, flushDraft, forgetDraft, materialize, setDraftTransport, useDrafts } = await import("~/lib/drafts");
 const { newFields } = await import("~/lib/compose-fields");
 
+// transforms once, outside any test's timeout
+beforeAll(async () => { await import("./rich"); }, 120_000);
 it("real RichBody preserves accepted body before synchronization and later edited persistence", async () => {
   const dir = mkdtempSync(join(tmpdir(), "terno-rich-supersession-"));
   const store = new SqlMailStore(openDatabase(join(dir, "mail.db")));

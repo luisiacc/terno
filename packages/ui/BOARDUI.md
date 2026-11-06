@@ -8,7 +8,7 @@ Terno's shared controls (`src/components/`) are BoardUI's free **Base** componen
 2. Its structure, parts, variants, size proportions, spacing, weights, states (rest, hover, pressed, open, selected, disabled, invalid) and indicators are the spec.
 3. Translate it, keeping what is Terno's:
    - **Colours:** our tokens, never BoardUI's palette. Its neutral steps become `foreground`, `muted-foreground`, `muted`, `field`, `card`, `popover` and `border`; its accent becomes `primary`; its error becomes `destructive`. Text goes only on pairs in `CONTRAST_PAIRS` (add the pair when it's a new fill).
-   - **Primitive:** Base UI's when it has one. React Aria only for a part Base UI lacks, in a lazy chunk (the Time Field).
+   - **Primitive:** Base UI's when it has one. React Aria only for a part Base UI lacks (the Time Field).
    - **Heights:** Terno's control heights (32 px default), not BoardUI's 36 px.
    - **Corners:** the radius ladder, with corners concentric with what they hold (plan 119).
    - **Icons:** Hugeicons from `@terno/ui/icons`, at one line weight; tune it with `--icon-line`.
@@ -54,7 +54,7 @@ Terno's shared controls (`src/components/`) are BoardUI's free **Base** componen
 | Number Field | `number-field.tsx` | |
 | Pagination | `pagination.tsx` | the simple Previous / range / Next form |
 | Popover | `popover.tsx` | |
-| Progress | `progress.tsx` | plain markup (it is in the entry chunk) |
+| Progress | `progress.tsx` | plain markup |
 | Radio | `radio-group.tsx` | with `RadioCard` |
 | Search Field | `search-field.tsx` | |
 | Segmented Control | `toggle-group.tsx` `variant="segmented"` | |
@@ -68,7 +68,7 @@ Terno's shared controls (`src/components/`) are BoardUI's free **Base** componen
 | Tabs | `tabs.tsx` | default = the segmented track; `line` = BoardUI's tabs |
 | Tag Group | port on first use | the quick filters are a ToggleGroup |
 | Textarea | `textarea.tsx` | |
-| Time Field | `time-field.tsx` | React Aria, lazy (plan 122) |
+| Time Field | `time-field.tsx` | React Aria (plan 122) |
 | Toast | `snack-dock.tsx` (apps/web) | the snack's store and behaviour are the app's; the surface is BoardUI's |
 | Tooltip | `tooltip.tsx` | |
 | Tree View | port on first use | the sidebar's folders are the app's |
@@ -91,5 +91,5 @@ Each item says what differs from BoardUI and why.
 - **Command palette:** stays 640 px wide at 18 % from the top, because long subjects need the room.
 - **Skeleton and spinner:** the skeleton pulses without BoardUI's sheen, and the spinner has no glow layers. Both effects would repaint continuously.
 - **Radio card:** BoardUI's radio has no card variant, so Terno's is the radio drawn as a bordered card.
-- **Progress:** plain markup rather than Base UI's, because it is in the entry chunk.
+- **Progress:** plain markup rather than Base UI's.
 - **Search clear:** out of the tab order, as BoardUI's.

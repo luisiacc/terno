@@ -12,12 +12,13 @@ import { discardDraft, restoreDiscarded, useDrafts } from "~/lib/drafts";
 import { setApp, useApp } from "~/state/app";
 import { DRAFT_SURFACE, DraftFieldsForm, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
 import { popupOpen } from "./composer/controller";
-import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
+import { ComposerFormatBar, FormatToggle, LinkButton } from "./composer/controls";
+import { RichBody } from "./composer/rich";
 import { warmAutocomplete } from "~/lib/autocomplete";
 import { DraftCommandsHost } from "~/lib/draft-commands";
 import { pinDraft } from "~/lib/pinned-draft";
 import { AiDraftButton } from "./composer/ai-slot";
-import { aiDraftHooks, preloadAiDraft } from "~/lib/ai-draft-state";
+import { aiDraftHooks } from "~/lib/ai-draft-state";
 import { focusSelector } from "~/lib/compose-focus-move";
 
 /** Esc, Collapse and sending leave the new message; focus goes to its strip item (kept) or back to the list. */
@@ -42,11 +43,9 @@ export function NewMessage() {
   const formatId = useId();
   const focusGeneration = useRef(0);
 
-  useEffect(preloadComposer, []);
   useEffect(() => () => { for (const stop of sendWatches.current) stop(); }, []);
   // a new message: suggestions get ready (once per session)
   useEffect(warmAutocomplete, []);
-  useEffect(preloadAiDraft, []);
   useEffect(() => {
     if (!compose) return;
     const generation = ++focusGeneration.current;
@@ -137,7 +136,7 @@ export function NewMessage() {
                   </IconButton>
                 }
               />
-              <ComposerBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="block min-h-[220px] w-full px-3.5 pt-3 pb-1 text-base" />
+              <RichBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="block min-h-[220px] w-full px-3.5 pt-3 pb-1 text-base" />
               <DraftAttachments d={d} />
               <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
               <Quote d={d} />

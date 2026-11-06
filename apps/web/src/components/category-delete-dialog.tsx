@@ -3,7 +3,7 @@ import { t } from "@terno/i18n";
 import { deleteCategory } from "~/lib/categorize";
 import { ConfirmDialog } from "./settings/parts";
 
-/** The sidebar menu's Delete… confirmation, the same as Settings → Categories'. Lazy: out of the entry chunk. */
+/** The sidebar menu's Delete… confirmation, the same as Settings → Categories'. */
 export function CategoryDeleteDialog({ category, open, onOpenChange }: { category: Category; open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
     <ConfirmDialog

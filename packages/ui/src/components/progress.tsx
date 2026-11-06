@@ -4,8 +4,7 @@ import { cn } from "cn"
 /**
  * BoardUI's progress bar (plan 125): a 4 px track on the field wash with the fill in the primary, rounded at both ends,
  * moved by a transform (the compositor's) within --motion; an optional label row above it, its value at the end.
- * Plain markup with `role="progressbar"` rather than Base UI's Progress: the first-sync pill that uses it is in the
- * entry chunk. `value` is 0 to 100; null is an amount not yet known (a third drawn, the bar just says it is working).
+ * Plain markup with `role="progressbar"` rather than Base UI's Progress. `value` is 0 to 100; null is an amount not yet known (a third drawn, the bar just says it is working).
  * Children draw over the track (the sync's sheen).
  */
 function Progress({

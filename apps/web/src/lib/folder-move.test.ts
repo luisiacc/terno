@@ -1,7 +1,11 @@
+// @vitest-environment jsdom
 import { RpcError } from "@terno/core/rpc";
 import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.hoisted(() => {
+  (globalThis as Record<string, unknown>).matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+});
 
 const calls: { method: string; params: unknown }[] = [];
 let handlers: Record<string, (p: unknown) => Promise<unknown>> = {};

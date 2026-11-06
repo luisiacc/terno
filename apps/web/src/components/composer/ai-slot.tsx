@@ -1,35 +1,25 @@
 import { t } from "@terno/i18n";
 import { IconButton } from "@terno/ui/components/icon-button";
 import { Sparkles } from "@terno/ui/icons";
-import { lazy, Suspense } from "react";
-import { openAiDraft, useAiDraftUi, useCanDraft } from "~/lib/ai-draft-state";
+import { useAiDraftUi, useCanDraft } from "~/lib/ai-draft-state";
+import { openAiDraft } from "~/lib/ai-draft";
+import { AiPreview, AiRow } from "./ai-draft";
 
 /**
- * Plan 133: the entry chunk's doors to the lazy AI row and preview: each renders nothing, and loads nothing, until the
- * draft has the row up. The Sparkles button is the only one always there.
+ * Plan 133: the doors to the AI row and preview: each renders nothing until the draft has the row up. The Sparkles
+ * button is the only one always there.
  */
-
-const Row = lazy(() => import("./ai-draft").then((m) => ({ default: m.AiRow })));
-const Preview = lazy(() => import("./ai-draft").then((m) => ({ default: m.AiPreview })));
 
 export function AiRowSlot({ draftKey }: { draftKey: string }) {
   const up = useAiDraftUi((s) => s.rows[draftKey] !== undefined);
   if (!up) return null;
-  return (
-    <Suspense fallback={null}>
-      <Row draftKey={draftKey} />
-    </Suspense>
-  );
+  return <AiRow draftKey={draftKey} />;
 }
 
 export function AiPreviewSlot({ draftKey, className }: { draftKey: string; className?: string }) {
   const up = useAiDraftUi((s) => s.rows[draftKey] !== undefined);
   if (!up) return null;
-  return (
-    <Suspense fallback={null}>
-      <Preview draftKey={draftKey} className={className} />
-    </Suspense>
-  );
+  return <AiPreview draftKey={draftKey} className={className} />;
 }
 
 // a click here mustn't take the caret away from the text the row will come back to

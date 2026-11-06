@@ -5,7 +5,7 @@ import type { Node as PMNode } from "prosemirror-model";
 import { isEmpty } from "./editor";
 
 /**
- * Plan 133 §10.1: model text into the document, as the composer chunk's part of committing a draft: one transaction,
+ * Plan 133 §10.1: model text into the document, as the composer's part of committing a draft: one transaction,
  * one undo step of its own. Plain text only: a line is a paragraph, as a person's typing makes it, and it never goes
  * through a snippet's `fillText`, so a literal `{first_name}` stays literal.
  */

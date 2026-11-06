@@ -206,22 +206,6 @@ test.describe("signing in again", () => {
     await expect(marker(page, freelance)).toBeFocused();
   });
 
-  test("the panel's code arrives after it opened: focus still lands in the password field", async ({ app: page, server }) => {
-    const { freelance } = await accounts(server);
-    await refuse(server, freelance);
-    await page.route("**/assets/sign-in-panel-*.js", async (route) => {
-      await new Promise((r) => setTimeout(r, 800));
-      await route.continue();
-    });
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await page.getByTestId(`nav-account-${freelance.id}`).focus();
-    await page.keyboard.press("Tab");
-    await expect(marker(page, freelance)).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect(popover(page).getByLabel(`Password for ${freelance.email}`)).toBeFocused();
-  });
-
   test("axe and a look, in light and dark: the line, the key and the open panel", { tag: "@design" }, async ({ app: page, server }, testInfo) => {
     for (const theme of ["light", "dark"] as const) {
       await scenario(theme, async () => {

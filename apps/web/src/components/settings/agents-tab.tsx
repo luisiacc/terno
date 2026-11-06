@@ -3,7 +3,7 @@ import { Button } from "@terno/ui/components/button";
 import { Switch } from "@terno/ui/components/switch";
 import { Check, Copy, KeyRound } from "@terno/ui/icons";
 import { localeTag, t } from "@terno/i18n";
-import { Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
@@ -84,9 +84,7 @@ export function AgentsTab({ settings, update }: { settings: AppSettings; update:
   }, []);
   if (!agentsHere && DesktopOnly) {
     return (
-      <Suspense>
-        <DesktopOnly feature="agents" />
-      </Suspense>
+      <DesktopOnly feature="agents" />
     );
   }
   const mcp = agent?.mcpCommand ?? "/Applications/Terno.app/Contents/Resources/bin/terno-mcp";

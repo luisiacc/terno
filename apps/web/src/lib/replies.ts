@@ -2,6 +2,8 @@ import { WAITING_WINDOW_MS, type PreparedReply, type ThreadDetail } from "@terno
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { repliesOffered } from "~/lib/ai";
+import { undoAction } from "~/lib/actions";
+import { commitPrepared, preparedHooks } from "~/lib/ai-draft";
 import { autoRecipients } from "~/lib/compose-fields";
 import { composeHooks, composeLanding } from "~/lib/compose";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
@@ -171,7 +173,6 @@ export async function useReply(threadId: number, mode: Exclude<Parameters<typeof
   const used = await client.call("ai.replyAct", { threadId, rowId: row.rowId, revision: row.revision, action: "use", to, cc, timezone: timezone() }).catch(() => null);
   useReplies.setState({ shown: null });
   if (!used) return void snack.error(t("replies.stale"));
-  const { commitPrepared, preparedHooks } = await import("./ai-draft");
   preparedHooks.back = (prepared) => void giveBack(prepared);
   commitPrepared(landing.key, used, landing.kind === "created");
 }
@@ -196,7 +197,6 @@ export async function dismissReply(threadId: number): Promise<void> {
     const back = await client.call("ai.replyAct", { threadId, rowId: dismissed.rowId, revision: dismissed.revision, action: "undismiss" });
     if (back && getApp().selectedId === threadId) useReplies.setState({ shown: { threadId, phase: "ready", text: back.body ?? "", row: back } });
   });
-  const { undoAction } = await import("./actions");
   snack.success(t("replies.dismissed"), { action: undoAction(undo, t("replies.dismissUndo")) });
 }
 

@@ -1,7 +1,7 @@
 import { fillText, nameParts, parseAddressList, SNIPPET_HTML_MAX, SNIPPET_TEXT_MAX, snippetPreview, type Account, type Snippet, type SnippetValues } from "@terno/core";
 import { t } from "@terno/i18n";
 import { controllerFor } from "~/components/composer/controller";
-import { loadComposer } from "~/components/composer/lazy";
+import { filledBody } from "~/components/composer/rich";
 import { getApp, setApp } from "~/state/app";
 import { openCompose } from "./compose";
 import { editDraft, editDraftRecipients, useDrafts, type LocalDraft } from "./drafts";
@@ -12,7 +12,7 @@ import { openSnippetEditor } from "./snippet-editor-state";
 /**
  * Plan 93: a snippet into a draft (its fields only where the draft's are
  * empty, its text at the caret), a new message from one, and a draft saved
- * as one. Entry chunk; the editor's part goes through the composer controller.
+ * as one. The editor's part goes through the composer controller.
  */
 
 type Field = "to" | "cc" | "bcc";
@@ -78,10 +78,9 @@ export function insertSnippetInto(key: string, snippet: Snippet): boolean {
 
 /** A new message with the snippet in it (its fields and filled text in the step that creates it). */
 export async function newMessageFromSnippet(snippet: Snippet): Promise<void> {
-  const rich = await loadComposer();
   await openCompose("new", null, 0, (accountId) => {
     const values = snippetValues(snippet.to, accountOf(accountId));
-    const body = rich.filledBody(snippet.bodyHtml, snippet.bodyText, values);
+    const body = filledBody(snippet.bodyHtml, snippet.bodyText, values);
     const subject = fillText(snippet.subject, values).trim();
     return {
       toText: snippet.to.trim(),

@@ -4,7 +4,7 @@ import { Button } from "@terno/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { ArrowRight } from "@terno/ui/icons";
-import { lazy, Suspense, useEffect } from "react";
+import { useEffect } from "react";
 import { followupsOffered } from "~/lib/ai";
 import { useCanDraft } from "~/lib/ai-draft-state";
 import { actOnFollowup, followupLine } from "~/lib/followups";
@@ -14,8 +14,7 @@ import { nudge } from "~/lib/followup-nudge";
 import { offerTip, usePendingTip } from "~/lib/tips";
 import { useApp } from "~/state/app";
 import { useFollowups } from "~/state/followups";
-
-const FollowupsTip = lazy(() => import("./followups-tip"));
+import FollowupsTip from "./followups-tip";
 
 function Line({ row }: { row: FollowupRow }) {
   const line = followupLine(row);
@@ -95,9 +94,7 @@ export default function ThreadFollowups({ detail }: { detail: ThreadDetail }) {
         <Line key={row.id} row={row} />
       ))}
       {tipFor === detail.thread.id && (
-        <Suspense fallback={null}>
-          <FollowupsTip />
-        </Suspense>
+        <FollowupsTip />
       )}
     </section>
   );

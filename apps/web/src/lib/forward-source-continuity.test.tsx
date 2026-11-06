@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import { presentationOwnedRpc } from "../components/draft-presentation-owned-rpc";
 import "fake-indexeddb/auto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,13 +17,7 @@ import type { DraftAckRead } from "./drafts";
 import { setup, gate, deferred } from "../components/app-harness";
 
 const construction = vi.hoisted(() => {
-  let release!: () => void;
-  const loaded = new Promise<void>((resolve) => { release = resolve; });
-  return { loaded, release, parseFault: null as Error | null, viewFault: null as (() => never) | null, parses: 0, views: 0 };
-});
-vi.mock("../components/composer/rich", async (original) => {
-  await construction.loaded;
-  return original<typeof import("../components/composer/rich")>();
+  return { parseFault: null as Error | null, viewFault: null as (() => never) | null, parses: 0, views: 0 };
 });
 vi.mock("../components/composer/editor", async (original) => {
   const actual = await original<typeof import("../components/composer/editor")>();
@@ -43,7 +36,6 @@ vi.mock("../components/composer/editor", async (original) => {
 });
 
 type Harness = Awaited<ReturnType<typeof setup>>;
-async function loaded() { construction.release(); return (await import("../components/composer/lazy")).loadComposer(); }
 async function frames(h: Harness) { for (let i = 0; i < 5; i++) await h.flush(); }
 async function stop(h: Harness) {
   const { supersedeCompose } = await import("./compose"), { resetForwardFiles } = await import("./forward-files");
@@ -51,41 +43,8 @@ async function stop(h: Harness) {
 }
 
 // The held real module import creates a fresh lazy arrival; no fake body source or proof is installed.
-it("continuity: fresh PM arrival after first Forward admission preserves work and focus", async () => {
-  const h = await setup("split", true, { rpc: presentationOwnedRpc }), waiting = deferred<ThreadDetail>();
-  const { openCompose, composeFocusPending } = await import("./compose");
-  const { controllerFor } = await import("../components/composer/controller");
-  let first: Promise<void> | undefined, second: Promise<void> | undefined, operation: Promise<void> | undefined, off = () => {};
-  try {
-    expect(h.host.querySelector('[data-testid="compose-body-loading"]')).not.toBeNull();
-    expect(controllerFor(h.key)).toBeNull();
-    await act(async () => h.drafts.editDraft(h.key, { threadId: 7, showSourceContext: false, uiState: "collapsed" }));
-    const before = h.drafts.useDrafts.getState().drafts[h.key]!;
-    h.other.focus(); gate.load.mockClear(); gate.load.mockReturnValue(waiting.promise);
-    let entered = false;
-    await act(async () => {
-      first = openCompose("reply", 7); expect(h.app.getApp().draftFocus).not.toBeNull();
-      off = h.app.useApp.subscribe((state, previous) => {
-        if (!entered && previous.draftFocus && !state.draftFocus) { entered = true; off(); operation = openCompose("forward", 7); }
-      });
-      second = openCompose("reply", 7); off(); await Promise.all([first, second]);
-    });
-    expect(entered).toBe(true);
-    expect(gate.load).toHaveBeenCalledWith(7); expect(operation).toBeDefined(); expect(composeFocusPending(7)).toBe(true);
-    expect(h.drafts.useDrafts.getState().drafts[h.key]?.mode).toBe("reply");
-    // The earlier Reply's real publication committed while this exact Forward was waiting.
-    expect(h.host.querySelector('[data-testid="compose-body-loading"]')).not.toBeNull();
-    await act(async () => { await loaded(); });
-    expect(controllerFor(h.key)?.dom.textContent).toBe(before.bodyText);
-    await act(async () => { gate.load.mockResolvedValue(h.detail); waiting.resolve(h.detail); await operation; });
-    await frames(h);
-    expect(h.drafts.materialize(h.key)).toMatchObject({ key: h.key, id: before.id, generation: before.generation, mode: "forward", bodyText: before.bodyText });
-    const to = h.host.querySelector('[data-testid="compose-to"]'); expect(to).not.toBeNull(); expect(document.activeElement).toBe(to); expect(composeFocusPending(7)).toBe(false);
-  } finally { off(); construction.release(); waiting.resolve(h.detail); await Promise.allSettled([first, second, operation].filter((p): p is Promise<void> => !!p)); await stop(h); }
-});
-
 it("continuity: kept PM remount after first Forward admission preserves work and focus", async () => {
-  await loaded(); const h = await setup("split", true), waiting = deferred<ThreadDetail>();
+  const h = await setup("split", true), waiting = deferred<ThreadDetail>();
   const { controllerFor } = await import("../components/composer/controller"), { keptState } = await import("../components/composer/editor");
   const { openCompose, composeFocusPending } = await import("./compose");
   let first: Promise<void> | undefined, second: Promise<void> | undefined, operation: Promise<void> | undefined, off = () => {};
@@ -111,7 +70,7 @@ it("continuity: kept PM remount after first Forward admission preserves work and
 });
 
 it("continuity: owned collapse departure preserves newer Forward while save response waits", async () => {
-  await loaded(); const h = await setup("split", true), waiting = deferred<ThreadDetail>(), saved = deferred<void>();
+  const h = await setup("split", true), waiting = deferred<ThreadDetail>(), saved = deferred<void>();
   const { controllerFor } = await import("../components/composer/controller"), { openCompose, composeFocusPending } = await import("./compose");
   let operation: Promise<void> | undefined, off = () => {}, entered = false, saves = 0;
   try {
@@ -137,7 +96,7 @@ it("continuity: owned collapse departure preserves newer Forward while save resp
 });
 
 for (const phase of ["parse", "view"] as const) it(phase === "parse" ? "continuity: fresh parse failure preserves authored work and closes old focus" : "continuity: view-construction failure preserves a reentrant successor", async () => {
-  await loaded(); const h = await setup("split", true), { forgetState } = await import("../components/composer/editor");
+  const h = await setup("split", true), { forgetState } = await import("../components/composer/editor");
   let successor: string | undefined, token: DraftAckRead | undefined, attempts = 0, duringConstruction: string | undefined;
   const fault = new Error(`expected ${phase} construction failure`);
   try {
@@ -167,7 +126,7 @@ for (const phase of ["parse", "view"] as const) it(phase === "parse" ? "continui
 });
 
 for (const successor of [false, true]) it(successor ? "continuity: throwing materialize publication cannot retire a newer read" : "continuity: throwing materialize publication preserves assigned body", async () => {
-  await loaded(); const h = await setup("split", true), { controllerFor } = await import("../components/composer/controller");
+  const h = await setup("split", true), { controllerFor } = await import("../components/composer/controller");
   const fault = new Error("expected materialize observer failure"); let off = () => {}, entered = false, newerKey: string | undefined, token: DraftAckRead | undefined;
   try {
     const controller = controllerFor(h.key); expect(controller).not.toBeNull();
@@ -198,7 +157,7 @@ for (const successor of [false, true]) it(successor ? "continuity: throwing mate
 });
 
 it("continuity: later control choice cancels a waiting source handoff", async () => {
-  await loaded(); const h = await setup("split", true), waiting = deferred<ThreadDetail>(), { openCompose } = await import("./compose");
+  const h = await setup("split", true), waiting = deferred<ThreadDetail>(), { openCompose } = await import("./compose");
   let operation: Promise<void> | undefined;
   try {
     await act(async () => h.drafts.editDraft(h.key, { threadId: 7, showSourceContext: false, uiState: "collapsed" }));
@@ -213,7 +172,7 @@ it("continuity: later control choice cancels a waiting source handoff", async ()
 });
 
 it("continuity: incomplete original files still open under current Plan60", async () => {
-  await loaded(); const h = await setup("split", true), { openCompose } = await import("./compose");
+  const h = await setup("split", true), { openCompose } = await import("./compose");
   const { useForwardFiles } = await import("./forward-files");
   try {
     const detail = { ...h.detail, messages: h.detail.messages.map((m) => ({ ...m, attachmentState: "pending" as const, attachments: [] })) };
@@ -229,7 +188,7 @@ it("continuity: incomplete original files still open under current Plan60", asyn
 const unexpected = async (): Promise<never> => { throw new Error("Unexpected provider call"); };
 const providers: ProviderRegistry = { create: () => { throw new Error("Unexpected provider call"); }, verifyImap: unexpected, connectGmail: unexpected };
 for (const adapter of ["SQL", "IDB"] as const) it(`continuity: ${adapter} real PM work and Undo persist through normal writer ACK`, async () => {
-  const { RichBody } = await loaded(), drafts = await import("./drafts"), { newFields } = await import("./compose-fields");
+  const { RichBody } = await import("../components/composer/rich"), drafts = await import("./drafts"), { newFields } = await import("./compose-fields");
   const { controllerFor } = await import("../components/composer/controller");
   const dir = mkdtempSync(join(tmpdir(), "terno-lineage-")), name = crypto.randomUUID();
   const open = () => adapter === "SQL" ? Promise.resolve(new SqlMailStore(openDatabase(join(dir, "mail.db")))) : IdbMailStore.open({ name, factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });

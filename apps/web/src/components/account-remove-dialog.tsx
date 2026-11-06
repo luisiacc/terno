@@ -17,8 +17,8 @@ function description(account: Account, isOwner: boolean): string {
 }
 
 /**
- * Remove Account…'s confirmation, the same from the sidebar's menu (plan 106) and Settings → Accounts. Lazy:
- * out of the entry chunk. From the sidebar, the removed row's focus goes to the row now in its place (or Add
+ * Remove Account…'s confirmation, the same from the sidebar's menu (plan 106) and Settings → Accounts.
+ * From the sidebar, the removed row's focus goes to the row now in its place (or Add
  * account), but only when nothing else took it meanwhile (Codex R9).
  */
 export function AccountRemoveDialog({ account, open, onOpenChange, from }: { account: Account; open: boolean; onOpenChange: (open: boolean) => void; from: "sidebar" | "settings" }) {

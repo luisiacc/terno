@@ -2,12 +2,12 @@ import type { Category } from "@terno/core";
 import { ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@terno/ui/components/context-menu";
 import { t } from "@terno/i18n";
 import { Forward, Inbox, Trash2 } from "@terno/ui/icons";
-import { lazy, Suspense, useState, type ReactElement } from "react";
+import { useState, type ReactElement } from "react";
 import { setShowInInbox } from "~/lib/categorize";
 import { setApp } from "~/state/app";
+import { CategoryDeleteDialog } from "./category-delete-dialog";
+import { CategoryForwardDialog } from "./category-forward-dialog";
 
-const CategoryDeleteDialog = lazy(() => import("./category-delete-dialog").then((m) => ({ default: m.CategoryDeleteDialog })));
-const CategoryForwardDialog = lazy(() => import("./category-forward-dialog").then((m) => ({ default: m.CategoryForwardDialog })));
 
 /** A category's right-click menu (plan 83): whether its mail shows in the Inbox, where its new mail is forwarded (plan 116), and Delete…. */
 export function CategoryMenu({ category, children }: { category: Category; children: ReactElement }) {
@@ -44,14 +44,10 @@ export function CategoryMenu({ category, children }: { category: Category; child
         </ContextMenuContent>
       </ContextMenu>
       {deleting !== null && (
-        <Suspense fallback={null}>
-          <CategoryDeleteDialog category={category} open={deleting} onOpenChange={setDeleting} />
-        </Suspense>
+        <CategoryDeleteDialog category={category} open={deleting} onOpenChange={setDeleting} />
       )}
       {forwarding !== null && (
-        <Suspense fallback={null}>
-          <CategoryForwardDialog key={opened} category={category} open={forwarding} onOpenChange={setForwarding} />
-        </Suspense>
+        <CategoryForwardDialog key={opened} category={category} open={forwarding} onOpenChange={setForwarding} />
       )}
     </>
   );

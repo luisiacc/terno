@@ -15,7 +15,7 @@ import { ConfirmDialog } from "./settings/parts";
  * Plan 95: what covers the desktop window while the mailbox can't be used
  * (the gate main pushes), or while this version is below the one the
  * update feed requires. Calm and plain: what happened, what to do, one
- * primary action. Lazy: most windows never load it.
+ * primary action.
  */
 export default function MailboxCover({ required }: { required: boolean }) {
   const gate = useMailbox((s) => s.gate);

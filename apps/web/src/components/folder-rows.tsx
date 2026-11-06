@@ -4,12 +4,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { cn } from "@terno/ui/lib/utils";
 import { Download, Folder as FolderIcon, FolderPlus, PenLine, Plus, Star, Trash2 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
-import { lazy, Suspense, useEffect, useId, useLayoutEffect, useRef, useState, type ReactElement } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactElement } from "react";
 import { isFavorite, setFieldDraft, useFieldDrafts, nameProblem, setFavorite, startCreate, startRename, type FolderTarget } from "~/lib/folders";
 import { snack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
+import { FolderDeleteDialog } from "./folder-delete-dialog";
+import { exportFolder } from "~/lib/export-folder";
 
-const FolderDeleteDialog = lazy(() => import("./folder-delete-dialog").then((m) => ({ default: m.FolderDeleteDialog })));
 
 /**
  * Plan 107: the "+" at a row's far right, shown on hover (an open account's row, an own folder's). Not a tab stop:
@@ -244,7 +245,7 @@ export function FolderMenu({ target, name, account, favoriteRow, children }: { t
             <Star />
             <span className="flex-1">{favorite ? t("folder.menu.unfavorite") : t("folder.menu.favorite")}</span>
           </ContextMenuItem>
-          <ContextMenuItem data-testid="folder-menu-export" onClick={() => void import("~/lib/export-folder").then((m) => m.exportFolder(target, name))}>
+          <ContextMenuItem data-testid="folder-menu-export" onClick={() => void exportFolder(target, name)}>
             <Download />
             <span className="flex-1">{t("folder.menu.export")}</span>
           </ContextMenuItem>
@@ -261,9 +262,7 @@ export function FolderMenu({ target, name, account, favoriteRow, children }: { t
         </ContextMenuContent>
       </ContextMenu>
       {own && deleting !== null && (
-        <Suspense fallback={null}>
-          <FolderDeleteDialog account={account} folderKey={target.folder!} name={name} open={deleting} onOpenChange={setDeleting} />
-        </Suspense>
+        <FolderDeleteDialog account={account} folderKey={target.folder!} name={name} open={deleting} onOpenChange={setDeleting} />
       )}
     </>
   );

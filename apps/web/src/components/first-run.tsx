@@ -10,7 +10,7 @@ import { builtinTheme, themesFor } from "@terno/ui/themes/registry";
 import { cn } from "@terno/ui/lib/utils";
 import { Columns2, Laptop, Moon, Rows3, Sun } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
@@ -238,9 +238,7 @@ export function FirstRun() {
       <div className="grid gap-4">
         <AddAccountForm draft={draft} onDraft={setDraft} onBusy={setBusy} onDone={done} />
         {OnboardingNudge && (
-          <Suspense>
-            <OnboardingNudge />
-          </Suspense>
+          <OnboardingNudge />
         )}
       </div>
     ),

@@ -28,7 +28,7 @@ export function RecoveryWorkspace() {
     focusOwner.current?.cancel();
     let disposed = false;
     const cancel = focusBody(key, "keep", (cancelPending) => {
-      const ownBody = (node: EventTarget | null) => node instanceof Element && Boolean(rootRef.current?.contains(node)) && Boolean(node.closest('[data-testid="compose-body"], [data-testid="compose-body-loading"]'));
+      const ownBody = (node: EventTarget | null) => node instanceof Element && Boolean(rootRef.current?.contains(node)) && Boolean(node.closest('[data-testid="compose-body"]'));
       const moved = (event: FocusEvent) => {
         if (event.target !== document.body && !ownBody(event.target)) cancelPending();
       };

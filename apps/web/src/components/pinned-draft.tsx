@@ -17,10 +17,11 @@ import { setApp, useApp } from "~/state/app";
 import { DraftFieldsForm, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
 import { isSendLaterKey, openSendLater, SendButton } from "./send-button";
 import { popupOpen } from "./composer/controller";
-import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
+import { ComposerFormatBar, FormatToggle, LinkButton } from "./composer/controls";
+import { RichBody } from "./composer/rich";
 import { focusSelector, type InlineFocusMove } from "~/lib/compose-focus-move";
 import { AiDraftButton } from "./composer/ai-slot";
-import { aiDraftHooks, preloadAiDraft } from "~/lib/ai-draft-state";
+import { aiDraftHooks } from "~/lib/ai-draft-state";
 
 /** The card's distance from the pane's edges (px; right-3 bottom-3). */
 const GAP = 12;
@@ -51,9 +52,7 @@ export function PinnedDraft({ list }: { list: boolean }) {
   const titleId = useId();
   const [narrow, setNarrow] = useState(false);
 
-  useEffect(preloadComposer, []);
   useEffect(warmAutocomplete, []);
-  useEffect(preloadAiDraft, []);
   useEffect(() => () => move.current?.cancel(), []);
 
   // List: the snack dock is at the bottom left; where the pane is too narrow for both, the card stands on it
@@ -166,7 +165,7 @@ export function PinnedDraft({ list }: { list: boolean }) {
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto" data-draft-scroll>
           <DraftFieldsForm d={d} accounts={accounts} showSubject={d.mode === "forward" || d.mode === "new"} />
-          <ComposerBody draftKey={key} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="block min-h-[132px] w-full px-3.5 pt-3 pb-1 text-base" />
+          <RichBody draftKey={key} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="block min-h-[132px] w-full px-3.5 pt-3 pb-1 text-base" />
           <DraftAttachments d={d} />
           <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
           <Quote d={d} />

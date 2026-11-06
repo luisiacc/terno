@@ -2,8 +2,8 @@
  * Main's report pipe (plan 78): Electron's net.fetch (system proxy) in a
  * session of its own that can reach the DSN's envelope URL and nothing else,
  * without cookies or redirects. The default session's local-mode backstop
- * stays as it is, so the renderer still can't reach the ingest.
- * Imported lazily: only once a report is about to go, in a build with a DSN.
+ * stays as it is, so the renderer still can't reach the ingest. The session is
+ * made only once a report is about to go, in a build with a DSN.
  */
 import { session } from "electron";
 import { createReporter, parseDsn, type Reporter, type ReporterOptions } from "@terno/core/diag/envelope";

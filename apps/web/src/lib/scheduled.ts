@@ -6,6 +6,7 @@ import { forgetScheduledDrafts, loadDrafts, scheduledDrafts, useDrafts } from "~
 import { reminderWhen } from "~/lib/when";
 import { registerUndo, snack } from "~/lib/snack";
 import { getApp, setApp } from "~/state/app";
+import { openStoredDraft } from "~/lib/compose";
 
 /**
  * Plan 94: the scheduled sends as the windows see them (the backend's
@@ -60,7 +61,6 @@ async function openDraftById(draftId: number): Promise<void> {
   await loadDrafts();
   const d = Object.values(useDrafts.getState().drafts).find((x) => x.id === draftId);
   if (!d) return;
-  const { openStoredDraft } = await import("~/lib/compose");
   await openStoredDraft(d.key);
 }
 

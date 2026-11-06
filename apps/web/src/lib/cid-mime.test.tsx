@@ -2,13 +2,18 @@
 import { Blob as NodeBlob } from "node:buffer";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { beforeAll, afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ATTACHMENT_CHUNK, type AttachmentInfo, type AttachmentRef } from "@terno/core";
 import { parseRaw } from "@terno/mail/portable";
 
 const { call } = vi.hoisted(() => ({ call: vi.fn() }));
 vi.mock("~/rpc/connection", () => ({ client: { call } }));
 const { resolveCidHtml } = await import("./cid");
+// transforms once, outside any test's timeout
+beforeAll(async () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  await import("../components/mail-body");
+}, 120_000);
 const { attachmentBlob, downloadAttachment } = await import("./attachments");
 
 const gifA = [71,73,70,56,57,97,1,0,1,0,128,0,0,0,0,0,255,255,255,44,0,0,0,0,1,0,1,0,0,2,1,76,0,59];

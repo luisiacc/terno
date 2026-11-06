@@ -14,7 +14,7 @@ it.each([false, true])("Strip coordinates the real Reader frame (later user cont
     await act(async () => { h.useThreads.setState({ details: new Map([[7, h.detail]]) }); gate.load.mockResolvedValue(h.detail); load.resolve(h.detail); });
     for (let i = 0; i < 5; i++) await h.flush();
     if (competing) expect(document.activeElement).toBe(h.other);
-    else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+    else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
   } finally { load.resolve(h.detail); await h.cleanup(); }
 });
 it("an older strip lookup cannot override a newer actual keyboard Reply", async () => {
@@ -32,7 +32,7 @@ it("an older strip lookup cannot override a newer actual keyboard Reply", async 
     await act(async () => older.resolve({ threadId: 8, accountId: 1 }));
     expect(h.app.getApp().selectedId).toBe(7); expect(h.app.getApp().draftShown?.key).not.toBe(oldKey);
     await act(async () => newer.resolve({ threadId: 7, accountId: 1 })); for (let i = 0; i < 5; i++) await h.flush();
-    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
   } finally { older.resolve({ threadId: 8, accountId: 1 }); newer.resolve({ threadId: 7, accountId: 1 }); await h.cleanup(); }
 });
 

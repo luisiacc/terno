@@ -41,6 +41,7 @@ import type { Reporter } from "@terno/core/diag/envelope";
 import { t } from "@terno/i18n";
 import { BUILD, pendingSink } from "./diag";
 import { ENTRIES_MAX, mergeRecords, openDiagDb, readEntries, readRecords, writeBatch } from "./diag-store";
+import { createWebReporter } from "./diag-report";
 
 const DSN: string = import.meta.env.VITE_SENTRY_DSN ?? "";
 const RECORDS_MAX = 20;
@@ -77,7 +78,7 @@ export class LocalDiag implements DiagSink {
   private approved = new Set<string>();
   /** reports whose send was tried this run and didn't go */
   private failed = new Set<string>();
-  private reporter: Promise<Reporter> | null = null;
+  private reporter: Reporter | null = null;
   private readonly tabId = crypto.randomUUID();
   private crumbs: Crumb[] = [];
   private listeners = new Set<() => void>();
@@ -232,23 +233,20 @@ export class LocalDiag implements DiagSink {
   }
 
   private async send(r: ErrorRecord): Promise<boolean> {
-    // a constant: builds without a DSN contain no report code at all
     if (!DSN) return false;
     if (this.state.sent.includes(r.id)) return true;
-    this.reporter ??= import("./diag-report").then((m) =>
-      m.createWebReporter({
-        dsn: DSN,
-        client: `terno/${BUILD.version}`,
-        allow: (eventId) => {
-          const ok = mayReport(this.policy, this.approved.has(eventId));
-          this.approved.delete(eventId);
-          if (ok) this.counters.allowed++;
-          else this.counters.refused++;
-          return ok;
-        },
-      }),
-    );
-    const result = await (await this.reporter).send(this.reportFor(r));
+    this.reporter ??= createWebReporter({
+      dsn: DSN,
+      client: `terno/${BUILD.version}`,
+      allow: (eventId) => {
+        const ok = mayReport(this.policy, this.approved.has(eventId));
+        this.approved.delete(eventId);
+        if (ok) this.counters.allowed++;
+        else this.counters.refused++;
+        return ok;
+      },
+    });
+    const result = await this.reporter.send(this.reportFor(r));
     if (!result.sent) {
       if (result.reason !== "policy") this.failed.add(r.id);
       this.changed();

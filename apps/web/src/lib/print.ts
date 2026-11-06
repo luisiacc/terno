@@ -3,7 +3,7 @@
  * conversation and the print sheet's options. It is always paper (near-black
  * on white, whatever the app's theme) and the same document everywhere: the
  * sheet previews it, fits wide mail to the page, and prints or exports
- * exactly what it previewed. Only the print sheet (a lazy chunk) imports it.
+ * exactly what it previewed. Only the print sheet imports it.
  */
 import type { Address } from "@terno/core";
 import { localeTag, t } from "@terno/i18n";

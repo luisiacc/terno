@@ -1,8 +1,9 @@
+// @vitest-environment jsdom
 /**
  * Plan 24: drop targets are measured clipped to their own scrolling
  * container. Before, every target was clipped to the sidebar's nav, so a
  * List tab (above the nav, in the list's header) measured as nothing and
- * couldn't take a drop. Node with a fake document.
+ * couldn't take a drop. The targets are faked.
  */
 import { describe, expect, it, vi } from "vitest";
 
@@ -15,10 +16,8 @@ interface Box {
 const fake = vi.hoisted(() => {
   const g = globalThis as Record<string, unknown>;
   const state = { targets: [] as unknown[] };
-  g.document = { documentElement: { dataset: {}, classList: { contains: () => false }, setAttribute() {}, removeAttribute() {} }, querySelector: () => null, querySelectorAll: (sel: string) => (sel.includes("[data-drop-target]") ? state.targets : []) };
-  g.window = globalThis;
+  document.querySelectorAll = (() => state.targets) as never;
   g.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
-  g.localStorage = { setItem() {}, getItem: () => null };
   g.requestAnimationFrame = () => 0;
   return state;
 });

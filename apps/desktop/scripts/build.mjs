@@ -76,10 +76,6 @@ const entries = [
   { in: join(root, "src/backend-entry.ts"), out: "backend" },
   { in: join(repo, "packages/backend/src/incoming.worker.ts"), out: "incoming.worker" },
   { in: join(root, "src/preload.ts"), out: "preload" },
-  // the report pipe, required by main only when a report is about to go
-  { in: join(root, "src/diag/reporter.ts"), out: "reporter" },
-  // electron-updater, required by main only once the updater has work to do
-  { in: join(root, "src/updates/engine.ts"), out: "updater" },
   { in: join(repo, "packages/mcp/src/bin.ts"), out: "mcp/terno-mcp" },
 ];
 

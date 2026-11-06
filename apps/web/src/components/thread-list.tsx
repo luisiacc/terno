@@ -15,7 +15,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { openCompose } from "~/lib/actions";
 import { installScrollHairline } from "~/lib/scroll-hairline";
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { create } from "zustand";
 import { formatNumber, t } from "@terno/i18n";
@@ -40,19 +40,17 @@ import { LearnedBanner } from "./learned-banner";
 import { ForwardQuestion } from "./forward-question";
 import { ReportRow } from "./diag/report-row";
 import { DesktopBanner } from "~/lib/web-parts";
-import { preloadComposer } from "./composer/lazy";
 import { iconsAllowed, iconsAllowedForList } from "~/lib/sender-icons";
 import { useAppearance } from "~/lib/appearance";
 import { selectedTab, tabsShown } from "~/lib/tabs";
 import { listAnchor } from "~/state/list";
 import { ListTabs, TAB_PANEL_ID } from "./list-tabs";
 import { SelectionBar } from "./selection-bar";
+import ActionPreviewHeader from "./action-preview-header";
 import { renderProbe } from "~/lib/render-probe";
 
 /** plan 87: the Inbox top's label and the gap after it (px; a row's height comes from the design) */
 /** What covers the list's last rows now: the snack dock, or List's pinned draft. */
-// plan 143: only a sentence's preview needs it
-const ActionPreviewHeader = lazy(() => import("./action-preview-header"));
 const listInset = (): number => bottomInset(useSnack.getState().inset, useAppearance.getState().layout === "list" ? usePinned.getState().inset : 0);
 
 const TOP_LABEL = 28;
@@ -477,7 +475,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
         <Tooltip>
           <TooltipTrigger
             render={
-              <Button data-testid="compose-button" onPointerEnter={preloadComposer} onFocus={preloadComposer} variant="ghost" size="icon-sm" aria-label={t("list.compose")} className="no-drag shrink-0 text-muted-foreground hover:text-foreground" onClick={() => openCompose("new")}>
+              <Button data-testid="compose-button" variant="ghost" size="icon-sm" aria-label={t("list.compose")} className="no-drag shrink-0 text-muted-foreground hover:text-foreground" onClick={() => openCompose("new")}>
                 <SquarePen />
               </Button>
             }
@@ -889,20 +887,14 @@ export function ThreadList() {
   return (
     <section className="flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list" data-results-for={itemsKey} data-composing={composing || undefined}>
       {previewing ? (
-        <Suspense fallback={<div className="h-[52px] shrink-0" />}>
-          <ActionPreviewHeader />
-        </Suspense>
+        <ActionPreviewHeader />
       ) : (
         <>
           <Header hairlineRef={headerRef} />
           <ReportRow />
           <ForwardQuestion />
           <LearnedBanner />
-          {DesktopBanner && (
-            <Suspense>
-              <DesktopBanner />
-            </Suspense>
-          )}
+          {DesktopBanner && <DesktopBanner />}
         </>
       )}
       {/* List has no reader pane for a multi-selection: its actions are a toolbar over the rows (plan 24) */}

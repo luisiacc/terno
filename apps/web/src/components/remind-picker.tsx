@@ -6,7 +6,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { BellOff, CalendarClock } from "@terno/ui/icons";
 import { useId, useRef, useState } from "react";
 import { clearReminder, presetLabel, reminderShort, reminderWhen, setReminder, useReminders } from "~/lib/reminders";
-import { useWhen, WhenFields } from "./when-lazy";
+import { useWhen, WhenFields } from "./when-fields";
 
 /**
  * Plan 87's picker: Remind me or If no reply, its presets with their

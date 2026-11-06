@@ -1,11 +1,12 @@
 import type { AiErrorKind, AiProviderId, AiSummary, ThreadSummary } from "@terno/core";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
+import { forgetAsk } from "~/lib/ask";
 import { localized } from "~/lib/i18n";
 
 /**
  * Plan 132: what the reader knows of each thread's summary. In a small store outside the reader, so a request survives
- * leaving the thread (the result is there on return) and the toolbar, the palette and the lazy block agree.
+ * leaving the thread (the result is there on return) and the toolbar, the palette and the block agree.
  */
 export type SummaryUi =
   | { kind: "none" }
@@ -153,8 +154,8 @@ export function revealSummaryMessage(messageId: number): void {
 export async function clearSummaries(): Promise<void> {
   await client.call("ai.summaries.clear", {});
   useSummaries.setState({ byThread: new Map() });
-  // plan 141: what the palette shows, only if it was ever loaded
-  void import("~/lib/ask").then((m) => m.forgetAsk()).catch(() => {});
+  // plan 141: what the palette shows
+  forgetAsk();
 }
 
 /** Never offered in spam or trash, nor with one spam message in the thread (plan 132 revision 1). */

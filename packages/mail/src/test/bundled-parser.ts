@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { compileFunction, constants } from "node:vm";
 import type { parseRaw } from "../mime";
 
-/** Measure shipped ESM execution, including the first lazy helper load, without Vitest transforming dependency sources. */
+/** Measure shipped ESM execution, without Vitest transforming dependency sources. */
 export async function bundledParser(): Promise<{ parseRaw: typeof parseRaw; close(): void }> {
   const dir = mkdtempSync(join(tmpdir(), "terno-visible-parser-"));
   const root = resolve(import.meta.dirname, "../../../..");

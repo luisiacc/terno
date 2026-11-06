@@ -14,7 +14,6 @@ import { useDrafts } from "~/lib/drafts";
 import { setApp, useApp } from "~/state/app";
 import { useController } from "./controller";
 
-export { openRow } from "~/lib/ai-draft";
 
 /**
  * Plan 133 §10: the row, the strip and the preview. One row in the draft's form, shaped like To and Subject and on their

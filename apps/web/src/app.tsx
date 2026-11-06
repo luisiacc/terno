@@ -1,7 +1,7 @@
 import { t } from "@terno/i18n";
 import { TooltipProvider } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { lazy, Suspense, useEffect } from "react";
+import { useEffect } from "react";
 import { reviewDrafts, useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { useAppearance } from "~/lib/appearance";
 import { usePage } from "~/lib/page";
@@ -34,27 +34,24 @@ import { startUpdates } from "./lib/updates";
 import { useRequiredCover } from "./lib/required-cover";
 import { PaneBoundary, RecoveryBoundary } from "./components/diag/error-boundary";
 import { ReportPreview } from "./components/diag/report-preview";
+import { RecoveryWorkspace } from "./components/diag/recovery-workspace";
+import { FiltersDialog } from "./components/filters-dialog";
+import { SettingsDialog } from "./components/settings-dialog";
+import { AddAccountDialog } from "./components/add-account-dialog";
+import { ShortcutsDialog } from "./components/shortcuts-dialog";
+import { FirstRun } from "./components/first-run";
+import { PrintSheet } from "./components/print-sheet";
+import MailboxCover from "./components/mailbox-cover";
+import { WebGate } from "~/lib/web-parts";
 
-const RecoveryWorkspace = lazy(() => import("./components/diag/recovery-workspace").then((m) => ({ default: m.RecoveryWorkspace })));
 
-// rarely used, heavier surfaces stay out of the startup bundle
-const FiltersDialog = lazy(() => import("./components/filters-dialog").then((m) => ({ default: m.FiltersDialog })));
-const SettingsDialog = lazy(() => import("./components/settings-dialog").then((m) => ({ default: m.SettingsDialog })));
-const AddAccountDialog = lazy(() => import("./components/add-account-dialog").then((m) => ({ default: m.AddAccountDialog })));
-const ShortcutsDialog = lazy(() => import("./components/shortcuts-dialog").then((m) => ({ default: m.ShortcutsDialog })));
-const FirstRun = lazy(() => import("./components/first-run").then((m) => ({ default: m.FirstRun })));
-// printing loads its sheet and the document builder when it opens
-const PrintSheet = lazy(() => import("./components/print-sheet").then((m) => ({ default: m.PrintSheet })));
-// web build only (a compile-time constant): which tab owns the mailbox, open errors, updates
-const WebGate = import.meta.env.VITE_TARGET === "web" ? lazy(() => import("./web/gate").then((m) => ({ default: m.WebGate }))) : null;
 
 /** Fresh install: no mailboxes, no owner, not a demo, and the first-run steps not finished. */
 function needsFirstRun(): boolean {
   return localStorage.getItem("terno:first-run") !== "done";
 }
 
-// plan 95 (desktop): what covers the window while the mailbox can't be used, or an update is required; lazy, rarely loaded
-const MailboxCover = lazy(() => import("./components/mailbox-cover"));
+// plan 95 (desktop): what covers the window while the mailbox can't be used, or an update is required
 
 function Covers() {
   const blocks = useGateBlocks();
@@ -72,9 +69,7 @@ function Covers() {
   }, [blocks, gate]);
   if (!blocks && !required) return null;
   return (
-    <Suspense>
-      <MailboxCover required={required} />
-    </Suspense>
+    <MailboxCover required={required} />
   );
 }
 
@@ -141,13 +136,9 @@ export function App() {
   );
 
   const recovering = useDraftRecovery((s) => s.open);
-  if (recovering) return <RecoveryBoundary><Suspense><RecoveryWorkspace /></Suspense></RecoveryBoundary>;
+  if (recovering) return <RecoveryBoundary><RecoveryWorkspace /></RecoveryBoundary>;
 
-  const gate = WebGate && (
-    <Suspense>
-      <WebGate />
-    </Suspense>
-  );
+  const gate = WebGate && <WebGate />;
   if (fatal)
     return (
       gate ?? (
@@ -197,15 +188,13 @@ export function App() {
       </div>
       <CommandPalette />
       <CategoryPicker />
-      <Suspense>
-        {dialog === "filters" && <FiltersDialog />}
-        {dialog === "settings" && <SettingsDialog />}
-        {dialog === "addAccount" && <AddAccountDialog />}
-        {dialog === "shortcuts" && <ShortcutsDialog />}
-        {dialog === "print" && <PrintSheet />}
-        {dialog === "remind" && <RemindDialog />}
-        {fresh && dialog === null && needsFirstRun() && <FirstRun />}
-      </Suspense>
+      {dialog === "filters" && <FiltersDialog />}
+      {dialog === "settings" && <SettingsDialog />}
+      {dialog === "addAccount" && <AddAccountDialog />}
+      {dialog === "shortcuts" && <ShortcutsDialog />}
+      {dialog === "print" && <PrintSheet />}
+      {dialog === "remind" && <RemindDialog />}
+      {fresh && dialog === null && needsFirstRun() && <FirstRun />}
       {/* inside the settings sheet it opens over the sheet (a nested dialog) */}
       {dialog !== "settings" && <ReportPreview />}
       <EngineStopped />

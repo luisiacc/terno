@@ -21,12 +21,13 @@ import { Expand } from "./expand";
 import { isSendLaterKey, openSendLater, SendButton } from "./send-button";
 import { controllerFor, popupOpen } from "./composer/controller";
 import { DraftCommandsHost } from "~/lib/draft-commands";
-import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
+import { ComposerFormatBar, FormatToggle, LinkButton } from "./composer/controls";
+import { RichBody } from "./composer/rich";
 import { focusPinned, usePinned } from "~/lib/pinned-draft-state";
 import { pinDraft, unpinDraft } from "~/lib/pinned-draft";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { AiDraftButton, AiRowSlot } from "./composer/ai-slot";
-import { aiDraftHooks, preloadAiDraft, useAiDraftUi } from "~/lib/ai-draft-state";
+import { aiDraftHooks, useAiDraftUi } from "~/lib/ai-draft-state";
 
 export { focusSoon } from "~/lib/compose-focus-move";
 import { focusSelector, focusSoon, focusMoveGeneration, type InlineFocusMove } from "~/lib/compose-focus-move";
@@ -184,9 +185,7 @@ export function SaveState({ d }: { d: LocalDraft }) {
   const action = useRef<HTMLButtonElement | null>(null);
   const actionRef = useCallback((node: HTMLButtonElement | null) => {
     if (!node && action.current === document.activeElement) {
-      const controller = controllerFor(d.key);
-      if (controller) controller.focus("keep");
-      else action.current?.closest("form")?.querySelector<HTMLElement>("[data-testid=compose-body-loading]")?.focus();
+      controllerFor(d.key)?.focus("keep");
     }
     action.current = node;
   }, [d.key]);
@@ -311,9 +310,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
   const state: "bar" | "open" | "collapsed" | "pinned" = pinned ? "pinned" : !d ? "bar" : d.uiState;
 
   // a conversation is open: its reply may come next, so the editor starts loading (once)
-  useEffect(preloadComposer, []);
   // and ⌘J may too, on someone who has AI set up: the row answers in the frame of the key
-  useEffect(preloadAiDraft, []);
   // a draft is open: suggestions get ready (once per session)
   useEffect(() => {
     if (state === "open") warmAutocomplete();
@@ -479,7 +476,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
                 </IconButton>
               )}
             />
-            <ComposerBody draftKey={d.key} checkpoint={checkpoint} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="block min-h-[132px] w-full px-3.5 pt-3 pb-1 text-base" />
+            <RichBody draftKey={d.key} checkpoint={checkpoint} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="block min-h-[132px] w-full px-3.5 pt-3 pb-1 text-base" />
             <DraftAttachments d={d} />
             <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
             <Quote d={d} />

@@ -1,11 +1,12 @@
 /**
  * Plan 149: "Copy conversation as text". Every way in (the reader's menu, the
- * list's, the palette) ends here; the converter is a lazy chunk.
+ * list's, the palette) ends here.
  */
 import { DIGEST_ROW_ID, type ThreadDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { printableThread } from "~/lib/print-open";
 import { dismissSnack, snack } from "~/lib/snack";
+import { threadText } from "~/lib/thread-text";
 import { client } from "~/rpc/connection";
 import { loadThread } from "~/state/threads";
 
@@ -26,7 +27,6 @@ async function downloaded(threadId: number): Promise<ThreadDetail | null> {
 }
 
 async function build(threadId: number) {
-  const { threadText } = await import("~/lib/thread-text");
   const detail = await downloaded(threadId);
   if (!detail) throw new Error("The conversation could not be read");
   return threadText(detail);

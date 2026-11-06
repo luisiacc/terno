@@ -1,7 +1,8 @@
+// @vitest-environment jsdom
 /**
  * What the triage snacks say: one sentence per count (plural rules of the
  * active language), with the undo's accessible name in the same language.
- * Node, with the RPC client mocked and a minimal fake <html>.
+ * With the RPC client mocked.
  */
 import type { ThreadSummary } from "@terno/core";
 import { setLocale } from "@terno/i18n";
@@ -10,12 +11,8 @@ import es from "@terno/i18n/locales/es";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => {
-  const html = { classList: { contains: () => false, toggle() {} }, dataset: {}, setAttribute() {}, removeAttribute() {}, style: { setProperty() {}, removeProperty() {} } };
   const g = globalThis as Record<string, unknown>;
-  g.document = { documentElement: html, querySelector: () => null, querySelectorAll: () => [], head: { appendChild() {} }, createElement: () => ({}) };
-  g.window = globalThis;
   g.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
-  g.localStorage = { setItem() {}, getItem: () => null };
   g.requestAnimationFrame = () => 0;
   return { handlers: {} as Record<string, (params: unknown) => Promise<unknown>> };
 });

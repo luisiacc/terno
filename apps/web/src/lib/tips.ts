@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 /**
  * Plan 113: education tips, each shown once per install beside the thing it teaches (components/tip.tsx draws them).
- * A new tip is an id here, an `offerTip` where the moment happens, and a lazy component built on `Tip`.
+ * A new tip is an id here, an `offerTip` where the moment happens, and a component built on `Tip`.
  */
 export const TIPS = [
   // a new category is hidden from the Inbox: right-click → Show in Inbox brings it back

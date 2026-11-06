@@ -23,8 +23,9 @@ vi.mock("~/rpc/connection", () => ({
 const opened = vi.hoisted(() => ({ threads: [] as number[] }));
 vi.mock("~/lib/page", () => ({ openThread: (id: number) => opened.threads.push(id), readerShown: () => true, listLayout: () => false }));
 
-const { askConfigChanged, askQuestion, openConversation, openSource, returning, useAsk } = await import("./ask");
+const { askConfigChanged, askQuestion, installAsk, openConversation, openSource, returning, useAsk } = await import("./ask");
 const { askReady } = await import("./ai");
+installAsk();
 
 const source: AskSourceRef = { messageId: 5, threadId: 2, accountId: 1, fromName: "Ana", fromEmail: "a@x.test", subject: "S", date: 1 };
 const turn = { id: 1, conversationId: 7, question: "q", answer: "a [1]", status: "answered", sources: [source], queries: [], kind: "question", model: "m", provider: "p", createdAt: 1, checks: { unlinked: false, unsupported: [] } } as AskTurn;

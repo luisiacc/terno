@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { beforeAll, expect, it, vi } from "vitest";
 import type { Account } from "@terno/core";
 const rpc = vi.hoisted(() => ({ call: vi.fn() }));
 vi.mock("~/rpc/connection", () => ({ client: { call: rpc.call, on: () => () => {} } }));
@@ -20,6 +20,8 @@ vi.stubGlobal("matchMedia", (media: string) => ({ media, matches: false, addEven
 HTMLElement.prototype.scrollIntoView = () => {};
 if (!Range.prototype.getClientRects) Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
 if (!Range.prototype.getBoundingClientRect) Range.prototype.getBoundingClientRect = () => new DOMRect();
+// transforms once, outside any test's timeout
+beforeAll(async () => { await import("~/app"); }, 120_000);
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (error: Error) => void; const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; }
 
 for (const layout of ["split", "list"] as const) it.each(["authored successor", "untouched successor", "outside focus", "outside roundtrip", "same-key strip", "rejected", "ordinary"] as const)(`${layout}: an earlier Send respects %s`, async (scenario) => {

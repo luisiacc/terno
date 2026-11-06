@@ -54,6 +54,7 @@ import { collectExport, zip } from "./export";
 import { effectiveDsn } from "./report-fence";
 import { diagPaths, ensureDirs, nodeRotatingFs, RecordStore, Rings, runMarker, StateFile, type DiagPaths } from "./store";
 import { IPC_ENTRIES_PER_SECOND, IPC_MAX_BATCH_BYTES, RateLimit } from "./supervisor";
+import { createMainReporter } from "./reporter";
 
 export type EngineState = DiagView["engine"];
 
@@ -98,7 +99,7 @@ class MainDiag implements DiagSink {
   private approved = new Set<string>();
   /** reports whose send was tried this run and didn't go */
   private failed = new Set<string>();
-  private reporter: Promise<Reporter> | null = null;
+  private reporter: Reporter | null = null;
   private engine: EngineState = "running";
   private limits = new Map<number, RateLimit>();
   private reloads = new Map<number, number[]>();
@@ -305,26 +306,23 @@ class MainDiag implements DiagSink {
   private async send(record: ErrorRecord): Promise<SendResult> {
     if (!this.dsn) return { sent: false, reason: "policy" };
     if (this.state?.get().sent.includes(record.id)) return { sent: true, status: 200 };
-    // its own bundle (dist/reporter.cjs): main.cjs stays small and never loads it without a DSN
-    this.reporter ??= Promise.resolve((require(join(__dirname, "reporter.cjs")) as typeof import("./reporter")).createMainReporter).then((createMainReporter) =>
-      createMainReporter({
-        dsn: this.dsn,
-        client: `terno/${BUILD_VERSION}`,
-        // the consent boundary: asked for every report, at send time
-        allow: (eventId) => {
-          const ok = mayReport(this.policy, this.approved.has(eventId));
-          this.approved.delete(eventId);
-          if (ok) this.counters.allowed++;
-          else this.counters.refused++;
-          return ok;
-        },
-        onResult: (_id, r) => {
-          if (r.sent) this.counters.sent++;
-          else if (r.reason === "error" || r.reason === "timeout") this.counters.failed++;
-        },
-      }),
-    );
-    const result = await (await this.reporter).send(this.reportFor(record));
+    this.reporter ??= createMainReporter({
+      dsn: this.dsn,
+      client: `terno/${BUILD_VERSION}`,
+      // the consent boundary: asked for every report, at send time
+      allow: (eventId) => {
+        const ok = mayReport(this.policy, this.approved.has(eventId));
+        this.approved.delete(eventId);
+        if (ok) this.counters.allowed++;
+        else this.counters.refused++;
+        return ok;
+      },
+      onResult: (_id, r) => {
+        if (r.sent) this.counters.sent++;
+        else if (r.reason === "error" || r.reason === "timeout") this.counters.failed++;
+      },
+    });
+    const result = await this.reporter.send(this.reportFor(record));
     if (result.sent) this.failed.delete(record.id);
     else if (result.reason !== "policy") this.failed.add(record.id);
     if (result.sent) {

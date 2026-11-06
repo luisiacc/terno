@@ -4,7 +4,7 @@ import { L } from "@terno/i18n";
 import { LEAVE_FOLDER, MOVE_TO_FOLDER, type IncomingMessage, type LeaveFolderPayload, type MoveToFolderPayload, type ProviderFolder } from "@terno/store";
 import { CATEGORY_ACTIONS, CATEGORY_LABELS, FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX, isValidEmail } from "@terno/core";
 import { collectGooglePhotos, PEOPLE_API, type GoogleFailureReason } from "./google-photos";
-import type { ParsedMessage } from "./mime";
+import { parseRaw, type ParsedMessage } from "./mime";
 import { cancelResponse, readResponseText, ResponseBodyLimitError, untilAborted } from "./http-body";
 import { readIncomingBody, type IncomingBody } from "./incoming-body";
 import { captureHttpResponseEvidence } from "./http-response-evidence";
@@ -605,7 +605,6 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
 
   /** reads in flight listen here: reset() aborts them all at once (a send never does) */
   let reads = new AbortController();
-  let parser: Promise<typeof import("./mime")> | undefined;
   let envelopeDecoder: InstanceType<typeof TextDecoder> | undefined;
 
   async function incomingResponse(response: Response, expectedId: string, deadline: RequestDeadline, preparation?: AbortSignal, admission?: MailAdmission): Promise<IncomingResource> {
@@ -628,12 +627,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         await validateRaw(m.raw!);
         const bytes = fromBase64url(m.raw!);
         if (inlineCandidate(bytes)) {
-          const mime = await (parser ??= import("./mime").then(async (loaded) => {
-            await new Promise<void>((resolve) => setTimeout(resolve, 0));
-            return loaded;
-          }));
           deadline.signal.throwIfAborted();
-          const parsed = await mime.parseRaw(bytes);
+          const parsed = await parseRaw(bytes);
           return { metadata: m, parsed, promoted: false, release: body.release };
         }
       }

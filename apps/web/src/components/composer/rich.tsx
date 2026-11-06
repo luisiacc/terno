@@ -50,7 +50,6 @@ import { exposeForTests } from "~/lib/render-probe";
 import { openLink } from "../mail-body";
 import { togglePalette } from "~/lib/palette-open";
 import { isMac } from "~/lib/select";
-import { takeEarly, takeStandInFocus } from "./lazy";
 import { EMPTY_FORMAT, registerController, useController, useFormatState, type Align, type ComposerController, type FormatCommand, type FormatState } from "./controller";
 import { addPlaceholders, dropPlaceholders, dropPos, inlineFile, placeImages, type ImageHooks } from "./images";
 import { attachFilesInTurn } from "~/lib/attachments";
@@ -60,10 +59,10 @@ import { insertSnippetTr, snippetDoc, withoutImages } from "./snippets";
 import { generatedTr } from "./generated";
 import { AiPreviewSlot } from "./ai-slot";
 import { aiDraftHooks } from "~/lib/ai-draft-state";
-import { appendTyped, applyLink, COMMANDS, createEditor, docOf, formatState, isEmpty, keepState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
+import { applyLink, COMMANDS, createEditor, docOf, formatState, isEmpty, keepState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
 
 /**
- * The rich composer (plan 16), lazy: the editable body of a draft, its format
+ * The rich composer (plan 16): the editable body of a draft, its format
  * bar, the link popover and the link bubble. The draft module owns saving;
  * this owns the document while it is on screen.
  */
@@ -152,7 +151,7 @@ export interface LinkDraft {
   editing: boolean;
 }
 
-export function RichBody({ draftKey, placeholder, className, checkpoint, focusOwner }: { draftKey: string; placeholder: string; className?: string; checkpoint?: BodyCheckpoint; focusOwner?: object }) {
+export function RichBody({ draftKey, placeholder, className, checkpoint }: { draftKey: string; placeholder: string; className?: string; checkpoint?: BodyCheckpoint }) {
   const constructionOwner = useRef({}).current;
   const mountRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -185,15 +184,13 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
     let constructed = false;
     try {
       versionRef.current = d.bodyVersion;
-      // keys typed into the stand-in while this chunk loaded: the document is what the draft had then, plus them
       const replay = checkpoint && adoptedRef.current?.original === checkpoint ? adoptedRef.current.replay : undefined;
       const lease = replay ?? checkpoint;
       if (checkpoint && (!lease || lease.key !== draftKey || !validBodyCheckpoint(lease) || (useDraftRecovery.getState().checkpoint !== checkpoint && (!replay || useDraftRecovery.getState().checkpoint !== undefined)) || !useDraftRecovery.getState().open)) throw new Error("Draft checkpoint is no longer available");
-      const early = checkpoint ? null : takeEarly(draftKey, focusOwner);
-      const retained = lease || early ? undefined : retainedBodyState<EditorState>(draftKey, d.bodyVersion);
-      const kept = lease || early || retained ? undefined : keptEditorBody(draftKey, d.bodyVersion);
-      const state = lease ? lease.retained.state as EditorState : early ? newState(appendTyped(docOf(early.base.html, early.base.text), early.text)) : (retained ?? kept?.state as EditorState | undefined) ?? newState(docOf(d.bodyHtml, d.bodyText));
-      construction.supplyState(lease || early || retained ? "other" : kept ? "kept" : "raw", state, state.doc, kept);
+      const retained = lease ? undefined : retainedBodyState<EditorState>(draftKey, d.bodyVersion);
+      const kept = lease || retained ? undefined : keptEditorBody(draftKey, d.bodyVersion);
+      const state = lease ? lease.retained.state as EditorState : (retained ?? kept?.state as EditorState | undefined) ?? newState(docOf(d.bodyHtml, d.bodyText));
+      construction.supplyState(lease || retained ? "other" : kept ? "kept" : "raw", state, state.doc, kept);
       let format: FormatState = EMPTY_FORMAT;
       const listeners = new Set<() => void>();
       const docListeners = new Set<() => void>();
@@ -342,12 +339,9 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
         }
         format = formatState(view.state, !sendingRef.current && !draftEditsHeld());
         refreshRef.current = schedule;
-        // the stand-in had focus (typed into or not): the editor that replaces it takes it
-        const standInFocused = takeStandInFocus(draftKey, focusOwner);
         const replayFocus = replayFocusRef.current === draftKey && document.activeElement === document.body;
         replayFocusRef.current = null;
         if (replayFocus) focus("keep");
-        else if (!checkpoint && (early?.focused || standInFocused) && (document.activeElement === document.body || mount.contains(document.activeElement))) focus("end");
         unregister = registerController(draftKey, controller);
         if (checkpoint && ((useDraftRecovery.getState().checkpoint !== checkpoint && (!replay || useDraftRecovery.getState().checkpoint !== undefined)) || !useDraftRecovery.getState().open)) throw new Error("Draft checkpoint is no longer available");
         bodyRef.current = attachBody(draftKey, () => {
@@ -357,7 +351,6 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
           if (import.meta.env.VITE_RENDER_PROBE) probe("serialize", performance.now() - t0);
           return { ...out, editor: { state, doc: state.doc } };
         }, { checkpoint: lease, editor: construction });
-        if (early?.text) bodyRef.current.changed();
         if (checkpoint) useDraftRecovery.setState({ checkpoint: undefined });
         constructed = true;
         return () => {

@@ -77,21 +77,6 @@ One finding, fixed: a cleared segment with focus kept its placeholder's `muted-f
 
 Asked: "remove the gray color since we don't do that, lets keep the style according to the themes we have". The Time Field is drawn as the theme's secondary control, the same as the date button beside it (`bg-card`, a 1 px `border`, `shadow-xs`, `rounded-md`), instead of Input's grey `bg-field` wash; its clock sits where the date's calendar does. `controls.spec` checks it has the card, the date's own fill, a border and a shadow.
 
-## The pickers open at once
+## Later
 
-Asked: "When I click either of those buttons for the first time, there is a very slight hiccup … it should just show instantly." (the reader's bell, the composer's Send later)
-
-The first open took 306 ms every time, whatever the machine, and later opens 3 ms. The popover itself came in 7 ms, empty, and the choices followed 300 ms later: React holds a Suspense reveal until `FALLBACK_THROTTLE_MS` (300) after its fallback committed, however soon the code is in. So preloading alone couldn't fix it: anything behind `lazy` shows its fallback once.
-
-- **The pickers aren't lazy any more.** They only needed to be because they imported this plan's calendar and Time Field. `when-lazy.tsx` holds what they use up front (`useWhen`, `dayText`) and the fields' loader; the 235 KB stays in `when-fields`, and the entry grows by 1.2 KB gzipped (the pickers) plus `toggle-group`'s 8 KB chunk, now preloaded.
-- **The fields aren't `lazy` either,** or the 300 ms would only move to the click on Custom. A picker opening asks for the chunk (nothing before that), and `WhenFields` renders it in the same commit through `useSyncExternalStore`, as `composer/lazy.tsx` does. A click faster than the chunk gets a line of their height, swapped as soon as it's in.
-- **`RemindDialog` is static too** (`h` on the list, the menu's Pick date & time…): the same picker, with the same wait through `app.tsx`'s Suspense.
-- **Measured** on the e2e build, three runs of each: bell 306 → 8 ms, Send later 306 → 8 ms, both now in the popover's first frame; Custom with its time in the first frame. No long task.
-- `watchWhole` (`e2e/fixtures.ts`) checks the first open holds the picker from its first mutation, with no clock in it; it fails without this change.
-
-What the Codex review changed:
-
-1. **Custom before its fields:** Set and Schedule were enabled beside the blank line, and would have used a moment nobody saw. `useWhen`'s `ready` now needs the fields in.
-2. **A chunk that fails to load** left Custom silently empty. It now says "The date and time didn't load." with Retry, in the fields' place; the presets keep working (`when-lazy.test.tsx`).
-
-Left as they are: the other lazy dialogs (Settings, Filters, Shortcuts, Add account and others) wait the same 300 ms on their first open.
+Everything about chunks above is history: plan 155 removed lazy loading from the app, and the pickers with it.

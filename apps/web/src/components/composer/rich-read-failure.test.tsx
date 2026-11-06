@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, Component, StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
+import { beforeAll, afterEach, expect, it, vi } from "vitest";
 import { TextSelection } from "prosemirror-state";
 import { schema } from "@terno/richtext";
 import { closeHistory, redo, redoDepth, undo, undoDepth } from "prosemirror-history";
@@ -36,6 +36,8 @@ const { controllerFor } = await import("./controller");
 
 afterEach(() => { injection.fail = false; injection.failCreate = false; injection.reads = 0; injection.views.length = 0; for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); });
 
+// transforms once, outside any test's timeout
+beforeAll(async () => { await import("./rich"); }, 120_000);
 it.each(["persistent", "transient"] as const)("preserves real rich state after failed disposal and eviction (%s)", async (failure) => {
   setDraftTransport(async (_method, params) => ({ ...(params as object), id: 1, generation: "test", revision: 1 }));
   const host = document.createElement("div"); document.body.append(host);
@@ -150,13 +152,10 @@ function FatalSwitch({ fatal, draftKey }: { fatal: boolean; draftKey: string }) 
 
 it("fatal Review hands the unread real editor checkpoint into the recovery workspace", async () => {
   const { AppBoundary } = await import("~/components/diag/error-boundary");
-  const { loadComposer } = await import("./lazy");
   const { useDraftRecovery } = await import("~/lib/draft-recovery-ui");
   const { sendDraft } = await import("~/lib/compose");
   const { whenDraftsSaved } = await import("~/web/reload");
   const { client } = await import("~/rpc/connection");
-  await loadComposer();
-  await import("~/components/diag/recovery-workspace");
   const rootEl = document.createElement("div"), evictEl = document.createElement("div");
   rootEl.id = "root"; document.body.append(rootEl, evictEl);
   const root = createRoot(rootEl), evictRoot = createRoot(evictEl), keys: string[] = [];
@@ -210,10 +209,8 @@ it("fatal Review hands the unread real editor checkpoint into the recovery works
 
 it("fatal Review returns to the error screen if checkpoint editor construction fails", async () => {
   const { AppBoundary } = await import("~/components/diag/error-boundary");
-  const { loadComposer } = await import("./lazy");
   const { useDraftRecovery } = await import("~/lib/draft-recovery-ui");
   const { bodyCheckpoint } = await import("~/lib/drafts");
-  await loadComposer(); await import("~/components/diag/recovery-workspace");
   const host = document.createElement("div"); host.id = "root"; document.body.append(host); const root = createRoot(host);
   const error = vi.spyOn(console, "error").mockImplementation(() => {}); const key = createDraft(newFields(1));
   try {

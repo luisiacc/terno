@@ -8,7 +8,7 @@ import { useApp } from "~/state/app";
 
 /**
  * Plan 113: an education tip, shown once beside what it teaches: a picture of the gesture (tip-picture.tsx), a title, a
- * line or two, and Got it. Rendered lazily by its host while `usePendingTip(id)` has a target.
+ * line or two, and Got it. Rendered by its host while `usePendingTip(id)` has a target.
  *
  * It waits for a clear stage (no dialog, menu or modal) and for its anchor to be in the page, scrolls it into view and
  * only then counts as shown. It never takes focus, on open or close, so it interrupts nothing; a polite live region reads

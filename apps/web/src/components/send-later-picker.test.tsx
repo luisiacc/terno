@@ -16,9 +16,6 @@ it("a custom moment that passed while the picker stayed open isn't scheduled (it
   const root = createRoot(host);
   const onPick = vi.fn();
   await act(async () => root.render(<SendLaterPicker onPick={onPick} done={() => {}} />));
-  await act(async () => {
-    await import("./when-fields");
-  });
   await act(async () => host.querySelector<HTMLButtonElement>("[data-testid=send-later-custom]")!.click());
   // tomorrow 8:00 by default; the clock jumps past it with the picker still open
   vi.setSystemTime(new Date(2026, 9, 23, 8, 1));

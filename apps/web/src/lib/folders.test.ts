@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Plan 107: what the folder name field says before asking the server, the folders a name sits beside, and a
  * rename's mapping applied before the new catalog (the list you're in, favorites and the field follow it).
@@ -10,12 +11,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.hoisted(() => {
   // the page module reads the appearance at import (a document, a window and its media queries)
-  const html = { classList: { contains: () => false, toggle() {} }, dataset: {}, setAttribute() {}, removeAttribute() {}, style: { setProperty() {}, removeProperty() {} } };
   const g = globalThis as Record<string, unknown>;
-  g.document = { documentElement: html, querySelector: () => null, querySelectorAll: () => [], getElementById: () => null, head: { appendChild() {} }, createElement: () => ({}) };
-  g.window = globalThis;
   g.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
-  g.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
   g.requestAnimationFrame = () => 0;
 });
 const rpc = vi.hoisted(() => ({ call: (..._args: unknown[]): Promise<unknown> => new Promise(() => {}) }));
@@ -110,7 +107,7 @@ describe("the backend's favorites (Codex code review round 11 #2)", () => {
     }
   });
   it("boot listens for it", () => {
-    const boot = readFileSync(new URL("./boot.ts", import.meta.url), "utf8");
+    const boot = readFileSync(`${import.meta.dirname}/boot.ts`, "utf8");
     expect(boot).toContain('client.on("favoriteFolders", applyFavoriteFolders)');
   });
 });

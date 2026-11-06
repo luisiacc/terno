@@ -193,7 +193,7 @@ test("first run in the browser: the setup's account step offers the Mac app once
   await expect(page.getByTestId("mac-onboarding").getByTestId("mac-download")).toHaveAttribute("href", /^https:/);
 });
 
-test("Español chosen in Settings → General switches live, and after a reload the very first frame is Spanish (cached setting, lazy chunk through the service worker)", async ({ page }) => {
+test("Español chosen in Settings → General switches live, and after a reload the very first frame is Spanish (cached setting)", async ({ page }) => {
   // html[lang] at the moment #root first gets children: what the first frame is painted in
   await page.addInitScript(() => {
     const w = window as Window & { __firstLang?: string };

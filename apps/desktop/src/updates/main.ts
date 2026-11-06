@@ -1,7 +1,6 @@
 /**
  * The updater's Electron side: the controller's deps (files under
- * userData/updates/, the location probe, the lazily required engine
- * bundle), its IPC (trusted like printing and diagnostics) and the state
+ * userData/updates/, the location probe, the engine), its IPC (trusted like printing and diagnostics) and the state
  * pushed to every window.
  */
 import { execFile } from "node:child_process";
@@ -15,7 +14,7 @@ import { captureError, log } from "@terno/core/diag";
 import type { UnsupportedReason, UpdateState } from "@terno/core/updates";
 import { TEST_BUILD } from "../test-build";
 import { STARTUP_CHECK_DELAY_MS, UpdateController, type InstallShutdown } from "./controller";
-import type { createEngine } from "./engine";
+import { createEngine } from "./engine";
 import { bundleOf, parsePending, parsePrefs, resolveFeed, signedFromCodesign, unsupportedReason, type UpdatePrefs } from "./policy";
 
 export interface UpdatesMainDeps {
@@ -78,8 +77,7 @@ export function startUpdates(deps: UpdatesMainDeps): UpdateController {
       feed: resolveFeed(TEST_BUILD),
       testFeed: TEST_BUILD?.feed ?? null,
       checkDelayMs: TEST_BUILD?.checkDelayMs ?? STARTUP_CHECK_DELAY_MS,
-      // its own bundle (dist/updater.cjs, electron-updater inside): main.cjs stays small and never loads it before the first check
-      loadEngine: (o) => (require(join(__dirname, "updater.cjs")) as { createEngine: typeof createEngine }).createEngine(o),
+      loadEngine: createEngine,
       probe,
       prefs: { read: () => parsePrefs(readJson(prefsFile)), write: writePrefs },
       pending: {

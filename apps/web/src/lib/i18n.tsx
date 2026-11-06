@@ -39,8 +39,8 @@ function publish(id: LocaleId): void {
 
 /**
  * Before the first render: the last setting this window saw, resolved
- * against today's system languages. English needs nothing; another locale
- * loads its chunk. A failure leaves English (the app renders either way).
+ * against today's system languages. A failure leaves English (the app renders
+ * either way).
  */
 export async function initLocale(): Promise<void> {
   setting = cachedSetting();

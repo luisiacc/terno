@@ -4,7 +4,7 @@ import { Switch } from "@terno/ui/components/switch";
 import { Time, TimeField } from "@terno/ui/components/time-field";
 import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
-/** Plan 145 §5: Settings → General → Today, with its Time Field kept out of the settings chunk. */
+/** Plan 145 §5: Settings → General → Today. */
 export default function TodaySettings({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const today = settings.today;
   const [h = 8, m = 0] = (today?.prepareAt ?? "08:00").split(":").map(Number);

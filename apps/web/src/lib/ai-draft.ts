@@ -6,7 +6,7 @@ import { client } from "~/rpc/connection";
 import { getApp, useApp } from "~/state/app";
 import { loadThread, useThreads } from "~/state/threads";
 import { draftingOffered, errorHelp, writingTarget } from "./ai";
-import { aiDraftHooks, useAiDraftUi, type AiDraftBadge } from "./ai-draft-state";
+import { aiDraftHooks, canDraft, useAiDraftUi, type AiDraftBadge } from "./ai-draft-state";
 import { addressReply, composeLanding, leaveNewDraft, sendDraft } from "./compose";
 import { focusSoon } from "./compose-focus-move";
 import { draftCommands, draftKeyOf } from "./draft-commands";
@@ -17,8 +17,7 @@ import { snack } from "./snack";
 
 /**
  * Plan 133 §10: a draft being written with AI, kept by draft key and outside any component, because pinning, collapsing
- * and switching threads all destroy the form while the stream goes on. Lazy: the entry chunk knows only
- * `lib/ai-draft-state.ts`. The stream's text stays out of the store (a preview takes it once per frame, with no render),
+ * and switching threads all destroy the form while the stream goes on. The stream's text stays out of the store (a preview takes it once per frame, with no render),
  * out of the document, its history and its autosave, until the one transaction that commits it.
  */
 
@@ -318,6 +317,14 @@ function showRow(key: string, opened: boolean) {
 }
 
 /** ⌘J, the buttons and the palette: the row on the draft named, or the one in front of the user, or the draft §5.2 opens. */
+/** ⌘J, the Sparkles buttons and the palette: the row, on `key` if named, else on what's in front of the user (§5.3). */
+export function openAiDraft(o: { key?: string; threadId?: number } = {}): void {
+  if (!canDraft()) return;
+  const app = getApp();
+  if (app.dialog !== null || app.menuOpen) return;
+  void openRow(o);
+}
+
 export async function openRow(o: { key?: string; threadId?: number } = {}): Promise<void> {
   listen();
   const app = getApp();

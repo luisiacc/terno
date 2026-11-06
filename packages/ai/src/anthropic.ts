@@ -1,10 +1,9 @@
-import type Anthropic from "@anthropic-ai/sdk";
+import Anthropic from "@anthropic-ai/sdk";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { L } from "@terno/i18n";
 import { resolveBaseURL } from "./providers";
 import { mapSdkError } from "./sdk-errors";
 import { AiError, type CompletionRequest, type ModelInfo, type ModelTransport, type PromptText, type ProviderConfig, type StreamEvent, type Usage } from "./types";
-
-type Sdk = typeof import("@anthropic-ai/sdk");
 
 /** cache_control on the blocks that end a cacheable prefix */
 function blocks(content: PromptText) {
@@ -18,26 +17,23 @@ function usageOf(u: { input_tokens: number; output_tokens: number; cache_read_in
 
 const stopOf = (reason: string | null | undefined) => (reason === "refusal" ? "refusal" : reason === "max_tokens" ? "length" : "end");
 
-/** Anthropic Messages API. The SDK is imported on first use so backend boot never pays for it. */
+/** Anthropic Messages API. */
 export function anthropicTransport(config: ProviderConfig): ModelTransport {
   const baseURL = resolveBaseURL(config)!;
   const info = { label: "Anthropic", local: false, host: new URL(baseURL).host, provider: config.id, browserOrigin: config.browserOrigin };
-  let loaded: Promise<{ sdk: Sdk; client: Anthropic }> | null = null;
-  const load = () =>
-    (loaded ??= import("@anthropic-ai/sdk").then((sdk) => {
-      if (!config.apiKey) throw new AiError(L("errors.ai.keyMissing", { provider: "Anthropic" }), "not_configured");
-      // Every option explicit: ambient ANTHROPIC_* env vars must never redirect or re-key requests.
-      // In the web build's worker: the opt-in sends anthropic-dangerous-direct-browser-access, without which the API refuses CORS.
-      const { default: Anthropic } = sdk;
-      const client = new Anthropic({ apiKey: config.apiKey, authToken: null, baseURL, maxRetries: config.maxRetries, timeout: config.timeoutMs, fetch: config.fetch, dangerouslyAllowBrowser: config.browserOrigin !== undefined });
-      return { sdk, client };
-    }));
+  let made: Anthropic | null = null;
+  const load = (): Anthropic => {
+    if (made) return made;
+    if (!config.apiKey) throw new AiError(L("errors.ai.keyMissing", { provider: "Anthropic" }), "not_configured");
+    // Every option explicit: ambient ANTHROPIC_* env vars must never redirect or re-key requests.
+    // In the web build's worker: the opt-in sends anthropic-dangerous-direct-browser-access, without which the API refuses CORS.
+    return (made = new Anthropic({ apiKey: config.apiKey, authToken: null, baseURL, maxRetries: config.maxRetries, timeout: config.timeoutMs, fetch: config.fetch, dangerouslyAllowBrowser: config.browserOrigin !== undefined }));
+  };
 
   // Haiku declines have no server-side fallback, and Haiku 4.5 rejects effort outright
   const haiku = /haiku/.test(config.model);
   const takesEffort = !/haiku-4/.test(config.model);
   const params = async (req: CompletionRequest) => {
-    const { zodOutputFormat } = await import("@anthropic-ai/sdk/helpers/zod");
     const format = req.output === "json_schema" && req.schema ? { format: zodOutputFormat(req.schema.zod) } : {};
     const effort = takesEffort ? { effort: req.effort ?? "low" } : {};
     const output_config = { ...effort, ...format };
@@ -53,18 +49,18 @@ export function anthropicTransport(config: ProviderConfig): ModelTransport {
 
   return {
     async complete(req) {
-      const { sdk, client } = await load();
+      const client = load();
       try {
         const response = await client.beta.messages.create(await params(req) as never, { signal: req.signal }) as unknown as { content: { type: string; text?: string }[]; stop_reason: string | null; usage: Parameters<typeof usageOf>[0] };
         const text = response.content.flatMap((b) => (b.type === "text" ? [b.text ?? ""] : [])).join("");
         return { text, stop: stopOf(response.stop_reason), usage: usageOf(response.usage) };
       } catch (error) {
-        throw mapSdkError(error, sdk.default, info);
+        throw mapSdkError(error, Anthropic, info);
       }
     },
 
     async *stream(req): AsyncGenerator<StreamEvent> {
-      const { sdk, client } = await load();
+      const client = load();
       try {
         const stream = client.beta.messages.stream(await params(req) as never, { signal: req.signal });
         for await (const event of stream as AsyncIterable<{ type: string; delta?: { type?: string; text?: string } }>) {
@@ -73,12 +69,12 @@ export function anthropicTransport(config: ProviderConfig): ModelTransport {
         const final = await stream.finalMessage() as unknown as { stop_reason: string | null; usage: Parameters<typeof usageOf>[0] };
         yield { type: "done", stop: stopOf(final.stop_reason), usage: usageOf(final.usage) };
       } catch (error) {
-        throw mapSdkError(error, sdk.default, info);
+        throw mapSdkError(error, Anthropic, info);
       }
     },
 
     async listModels(signal) {
-      const { sdk, client } = await load();
+      const client = load();
       try {
         const models: ModelInfo[] = [];
         for await (const m of client.models.list({ limit: 100 }, { signal })) {
@@ -86,7 +82,7 @@ export function anthropicTransport(config: ProviderConfig): ModelTransport {
         }
         return models;
       } catch (error) {
-        throw mapSdkError(error, sdk.default, info);
+        throw mapSdkError(error, Anthropic, info);
       }
     },
   };

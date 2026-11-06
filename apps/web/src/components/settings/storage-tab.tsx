@@ -6,7 +6,7 @@ import { Checkbox } from "@terno/ui/components/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { cn } from "@terno/ui/lib/utils";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { formatBytes, viewLabel } from "~/lib/format";
 import { snack } from "~/lib/snack";
 import { useStorageJob } from "~/lib/storage-job";
@@ -202,9 +202,7 @@ export function StorageTab() {
       )}
 
       {StorageSection && (
-        <Suspense>
-          <StorageSection />
-        </Suspense>
+        <StorageSection />
       )}
 
       <ConfirmDialog

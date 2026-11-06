@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { icoBytes, pngBytes } from "../test/icons-fixtures";
 import { TEST_TLS_CA, TEST_TLS_CERT, TEST_TLS_KEY } from "../test/icons-tls";
-import { loadSuffixList, registrableDomain } from "./domain";
+import { registrableDomain } from "./domain";
 import { fetchSiteIcon } from "./fetcher";
 import { nodeIconTransport } from "./node-transport";
 import { IconNetworkError } from "./transport";
@@ -34,7 +34,6 @@ const bytes = (b: Uint8Array, type = "image/png"): Handler => (_q, r) => r.write
 const redirect = (to: string, status = 301): Handler => (_q, r) => r.writeHead(status, { location: to }).end();
 
 beforeAll(async () => {
-  await loadSuffixList();
   server = createServer({ key: TEST_TLS_KEY, cert: TEST_TLS_CERT }, (req, res) => {
     const host = (req.headers.host ?? "").replace(/:\d+$/, "");
     seen.push({ host, path: req.url ?? "", headers: req.headers });

@@ -94,7 +94,6 @@ const es = {
   "remind.time": "Hora",
   "remind.set": "Poner recordatorio",
   "remind.past": "Elige un momento futuro.",
-  "remind.fieldsFailed": "No se cargaron la fecha y la hora.",
   "remind.current": "Te lo recuerda {when}",
   "remind.currentNoReply": "Te lo recuerda {when} si no responden",
   "remind.clear": "Quitar recordatorio",

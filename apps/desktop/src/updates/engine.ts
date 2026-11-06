@@ -1,8 +1,6 @@
 /**
- * electron-updater and Squirrel.Mac, behind a small surface. Its own bundle
- * (dist/updater.cjs, ~250 KB): main requires it only once the updater has
- * work to do, never on the startup path. (electron-updater pulls in
- * graceful-fs, which patches fs.close process-wide; harmless.)
+ * electron-updater and Squirrel.Mac, behind a small surface. (electron-updater
+ * pulls in graceful-fs, which patches fs.close process-wide; harmless.)
  *
  * - Every request goes through an isolated session (persist:terno-updater):
  *   no cookies or credentials go out or come back, the renderer's session

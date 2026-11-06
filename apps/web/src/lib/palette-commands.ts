@@ -48,7 +48,7 @@ export const PAGE_GROUPS: Record<PalettePage, readonly PaletteGroup[]> = {
   remind: ["remindAlways", "remindNoReply", "remindClear"],
   // plan 93: the snippets, then New snippet…
   snippets: ["snippets", "snippetsManage"],
-  // plan 141: its own chunk draws its rows
+  // plan 141: `ask-page` draws its rows
   ask: [],
   askHistory: [],
 };

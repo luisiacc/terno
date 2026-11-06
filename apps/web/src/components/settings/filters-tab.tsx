@@ -3,14 +3,14 @@ import { Button } from "@terno/ui/components/button";
 import { Switch } from "@terno/ui/components/switch";
 import { Pencil, Plus, Trash2 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { conditionText } from "~/lib/rule-text";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { ConfirmDialog, SettingsGroup } from "./parts";
+import { CategoryForwardDialog } from "../category-forward-dialog";
 
-const CategoryForwardDialog = lazy(() => import("../category-forward-dialog").then((m) => ({ default: m.CategoryForwardDialog })));
 
 // keys, read at render (in the current language)
 const SOURCE = { manual: "filters.source.manual", ai: "filters.source.ai", learned: "filters.source.learned" } as const;
@@ -108,9 +108,7 @@ function CategoryForwardItem({ category }: { category: Category }) {
         <Pencil />
       </Button>
       {editing !== null && (
-        <Suspense fallback={null}>
-          <CategoryForwardDialog key={editing} category={category} open onOpenChange={(open) => !open && setEditing(null)} />
-        </Suspense>
+        <CategoryForwardDialog key={editing} category={category} open onOpenChange={(open) => !open && setEditing(null)} />
       )}
     </div>
   );

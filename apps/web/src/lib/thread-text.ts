@@ -1,8 +1,7 @@
 /**
  * Plan 149: a conversation to paste, in two forms from one reading of the mail:
  * plain text for an AI's composer ("the report (https://…)"), and simple HTML
- * for a document (real links, bold, italics). Only the click on "Copy
- * conversation as text" loads this chunk. The mail parses into a document with
+ * for a document (real links, bold, italics). The mail parses into a document with
  * no browsing context (nothing loads or runs); the HTML is written here from
  * its words, never the mail's own, so a paste can't fetch its pixels either.
  */

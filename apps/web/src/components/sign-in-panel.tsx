@@ -12,7 +12,7 @@ import { canStart, clearAttemptError, prepareGoogle, sendOnly, signInAgain, useS
 const WEB = import.meta.env.VITE_TARGET === "web";
 
 /**
- * Plan 25: the sign-in panel (lazy: only an account that needs it loads it). One account: its
+ * Plan 25: the sign-in panel. One account: its
  * name, a line saying nothing is lost, and its one action. Several: one hairline section each.
  * Errors are inline, under the account they belong to; "Later" closes it.
  */

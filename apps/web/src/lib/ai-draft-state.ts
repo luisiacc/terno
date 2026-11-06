@@ -4,9 +4,8 @@ import { draftingOffered } from "./ai";
 import { getApp, useApp } from "~/state/app";
 
 /**
- * Plan 133: all of AI drafting the entry chunk holds. Whether it's on, which drafts have its row up (so a form mounts
- * the lazy row only then), and the hooks the send path and the forms call, which do nothing until the lazy module
- * (`lib/ai-draft.ts`, in the `ai-draft` chunk) has loaded: until then no draft can have anything in progress.
+ * Plan 133: AI drafting's state, which the send path can import without depending on `lib/ai-draft.ts` (that imports
+ * the send path): whether it's on, which drafts have its row up, and the hooks `lib/ai-draft.ts` fills in.
  */
 
 /** `open`: the row or strip is up; `writing`: a draft is on its way; `ready`: one waits for the draft to be opened again */
@@ -30,28 +29,12 @@ export const aiDraftHooks: {
   busy: () => false,
 };
 
-export type AiDraftModule = typeof import("~/components/composer/ai-draft");
-export const loadAiDraft = (): Promise<AiDraftModule> => import("~/components/composer/ai-draft");
-
 /** Plan 147: the feature's own switch, and whether it can run at all. */
-const canDraft = (): boolean => useAiDraftUi.getState().enabled && draftingOffered(getApp());
+export const canDraft = (): boolean => useAiDraftUi.getState().enabled && draftingOffered(getApp());
 
 export function useCanDraft(): boolean {
   const enabled = useAiDraftUi((s) => s.enabled);
   return useApp(draftingOffered) && enabled;
-}
-
-/** A draft opened with AI set up: ⌘J answers in the same frame. Nothing loads for someone who has none. */
-export function preloadAiDraft(): void {
-  if (canDraft()) void loadAiDraft();
-}
-
-/** ⌘J, the Sparkles buttons and the palette: the row, on `key` if named, else on what's in front of the user (§5.3). */
-export function openAiDraft(o: { key?: string; threadId?: number } = {}): void {
-  if (!canDraft()) return;
-  const app = getApp();
-  if (app.dialog !== null || app.menuOpen) return;
-  void loadAiDraft().then((m) => m.openRow(o));
 }
 
 /** Whether the feature shows, read once at boot; Settings keeps it current. No side effects, as the contract promises. */

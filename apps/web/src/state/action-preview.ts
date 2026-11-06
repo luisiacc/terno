@@ -4,8 +4,8 @@ import { getApp, setApp, useApp, type AppState } from "./app";
 import { reloadList, useList } from "./list";
 
 /**
- * Plan 143: a sentence's preview, a list of its own. What's here is small enough for the entry chunk: which rows are
- * unticked, and the way back to where you were. The rest of it comes with its header.
+ * Plan 143: a sentence's preview, a list of its own. What's here: which rows are unticked, and the way back to where you
+ * were. The rest of it is in `lib/action-preview.ts`.
  */
 type From = Pick<AppState, "view" | "accountId" | "categoryId" | "reviewCategoryId" | "folder" | "gmailTab" | "reminders" | "followups" | "today" | "query" | "selectedId" | "readerOpen"> & {
   scrollTop: number;

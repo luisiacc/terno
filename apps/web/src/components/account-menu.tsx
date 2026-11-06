@@ -14,7 +14,7 @@ import {
 } from "@terno/ui/components/context-menu";
 import { t } from "@terno/i18n";
 import { ArrowLeft, Focus, FolderPlus, KeyRound, MailOpen, PenLine, RefreshCw, Settings2, SquarePen, Trash2 } from "@terno/ui/icons";
-import { lazy, Suspense, useEffect, useRef, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { focusAccount, leaveFocus } from "~/lib/account-folders";
 import { patchAccount } from "~/lib/accounts";
 import { startCreate } from "~/lib/folders";
@@ -25,8 +25,8 @@ import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { openSignInMarker } from "./sign-in-notice";
+import { AccountRemoveDialog } from "./account-remove-dialog";
 
-const AccountRemoveDialog = lazy(() => import("./account-remove-dialog").then((m) => ({ default: m.AccountRemoveDialog })));
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -136,9 +136,7 @@ export function AccountMenu({ account, unread, onRename, solo = false, children 
         </ContextMenuContent>
       </ContextMenu>
       {removing !== null && (
-        <Suspense fallback={null}>
-          <AccountRemoveDialog account={account} open={removing} onOpenChange={setRemoving} from="sidebar" />
-        </Suspense>
+        <AccountRemoveDialog account={account} open={removing} onOpenChange={setRemoving} from="sidebar" />
       )}
     </>
   );

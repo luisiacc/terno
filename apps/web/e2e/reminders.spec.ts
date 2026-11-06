@@ -58,15 +58,13 @@ test.describe("remind me", () => {
       await openRow(page, 1);
       // its first open too: the choices come with the popover, no empty box first
       const whole = await watchWhole(page, "remind-popover", "remind-picker");
-      const fields = page.waitForResponse(/when-fields-/);
       await page.getByTestId("action-remind").click();
       expect(await whole()).toBe(true);
       const popover = page.getByTestId("remind-popover");
       await expect(popover).toBeVisible();
       await popover.getByTestId("remind-kind-noReply").click();
       await expect(popover.getByTestId("remind-preset-in3d")).toContainText("Sun 10:00 AM");
-      // opening asked for the calendar and the time, so with them in, Custom's first click shows them at once too
-      await page.evaluate((url) => import(url), (await fields).url());
+      // Custom's first click shows the calendar and the time at once too
       const custom = await watchWhole(page, "remind-custom", "remind-time");
       await popover.getByTestId("remind-pick").click();
       expect(await custom()).toBe(true);

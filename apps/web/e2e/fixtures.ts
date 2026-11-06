@@ -356,8 +356,7 @@ export async function focusOn(page: Page, testId: string, timeout: number): Prom
 
 /** Puts focus on the document body so single-key shortcuts apply. */
 /**
- * Watches for the next `holder` to appear; the returned read says whether `part` was already in it. A holder that comes
- * empty and fills later is a Suspense fallback, which React keeps up for 300 ms however soon the code is in.
+ * Watches for the next `holder` to appear; the returned read says whether `part` was already in it (no empty box first).
  */
 export async function watchWhole(page: Page, holder: string, part: string): Promise<() => Promise<boolean>> {
   await page.evaluate(

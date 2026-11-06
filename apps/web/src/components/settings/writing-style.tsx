@@ -15,7 +15,7 @@ import { useApp } from "~/state/app";
 import { ConfirmDialog, SettingsGroup, SettingsNote, SettingsRow } from "./parts";
 
 /**
- * Plan 133 §7: Settings → AI → Writing style, a lazy page. What Terno has worked out, in plain words: nothing here is a
+ * Plan 133 §7: Settings → AI → Writing style. What Terno has worked out, in plain words: nothing here is a
  * prompt to read, and everything can be edited, reset or rebuilt. Editing pins a profile; a later pass offers "Update".
  */
 

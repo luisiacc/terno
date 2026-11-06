@@ -1,4 +1,4 @@
-import { Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 import { COUNTED_VIEWS, FOLDER_VIEWS, folderRef, separatesTabs, tabRef, TABS, viewRef, type Account, type CategoryColor, type CountedView, type Folder, type FolderView, type Tab, type View } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
@@ -27,7 +27,6 @@ import { FirstSyncPill } from "./first-sync-pill";
 import { ConnectionPill } from "./connection-pill";
 import { SignInMarker, SignInNotice } from "./sign-in-notice";
 import { UpdatePill } from "./update-pill";
-import { preloadComposer } from "./composer/lazy";
 import { CategoryMenu } from "./category-menu";
 import { AccountMenu, leaveSoloKeepingFocus } from "./account-menu";
 import { AddFolderButton, FolderMenu, FolderNameRow } from "./folder-rows";
@@ -35,8 +34,9 @@ import { createFolder, renameFolder, siblingsAt, siblingsOf, startCreate, stopEd
 import { accountLabels } from "~/lib/account-labels";
 import { patchAccount } from "~/lib/accounts";
 import { snack } from "~/lib/snack";
+import CategoryInboxTip from "./category-inbox-tip";
+import TodayTip from "./today-tip";
 
-const TodayTip = lazy(() => import("./today-tip"));
 const VIEWS: { view: View; icon: typeof Inbox; keys?: string }[] = [
   { view: "inbox", icon: Inbox, keys: "g i" },
   { view: "starred", icon: Star, keys: "g s" },
@@ -65,17 +65,14 @@ function readMore(): boolean {
  * stops half a pixel short at the top and bottom (a transparent border it isn't painted under),
  * leaving a hairline between neighbors while the rows keep their height and pitch.
  */
-const CategoryInboxTip = lazy(() => import("./category-inbox-tip"));
 
-/** Plan 113: the first new category's tip (components/tip), beside its row once the row is there; its code loads only then. */
+/** Plan 113: the first new category's tip (components/tip), beside its row once the row is there. */
 function CategoryTip() {
   const id = usePendingTip("category-inbox");
   const category = useApp((s) => (id === null ? undefined : s.categories.find((c) => c.id === id)));
   if (!category) return null;
   return (
-    <Suspense fallback={null}>
-      <CategoryInboxTip key={category.id} category={category} />
-    </Suspense>
+    <CategoryInboxTip key={category.id} category={category} />
   );
 }
 
@@ -236,7 +233,7 @@ function SectionTitle({ children, action }: { children: React.ReactNode; action?
 function ComposeOutline() {
   return (
     <div className="shrink-0 px-2 pb-3">
-      <button type="button" data-testid="compose-button" onPointerEnter={preloadComposer} onFocus={preloadComposer} onClick={() => openCompose("new")} className="type-compose flex h-9 w-full items-center gap-2.5 rounded-lg bg-card px-3 text-left text-foreground shadow-raised transition-[background-color,box-shadow] hover:bg-muted">
+      <button type="button" data-testid="compose-button" onClick={() => openCompose("new")} className="type-compose flex h-9 w-full items-center gap-2.5 rounded-lg bg-card px-3 text-left text-foreground shadow-raised transition-[background-color,box-shadow] hover:bg-muted">
         <SquarePen className="size-4 text-primary" />
         <span className="min-w-0 flex-1 truncate">{t("compose.newMessage")}</span>
         <Kbd>C</Kbd>
@@ -252,7 +249,7 @@ function ComposePill() {
       <Tooltip>
         <TooltipTrigger
           render={
-            <button type="button" data-testid="compose-button" onPointerEnter={preloadComposer} onFocus={preloadComposer} onClick={() => openCompose("new")} className="type-compose flex h-10 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-primary-foreground shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] transition-colors hover:bg-[color-mix(in_oklab,var(--primary)_88%,var(--background))]">
+            <button type="button" data-testid="compose-button" onClick={() => openCompose("new")} className="type-compose flex h-10 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-primary-foreground shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] transition-colors hover:bg-[color-mix(in_oklab,var(--primary)_88%,var(--background))]">
               <SquarePen className="size-4" />
               {t("list.compose")}
             </button>
@@ -280,7 +277,7 @@ function ComposeRow() {
       <Tooltip>
         <TooltipTrigger
           render={
-            <button type="button" data-testid="compose-button" onPointerEnter={preloadComposer} onFocus={preloadComposer} onClick={() => openCompose("new")} className={cn("type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-hover hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring", ROW_SEAM)}>
+            <button type="button" data-testid="compose-button" onClick={() => openCompose("new")} className={cn("type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-hover hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring", ROW_SEAM)}>
               <span className="flex size-(--icon-nav) items-center justify-center text-sidebar-glyph">
                 <SquarePen className="size-(--icon-nav)" />
               </span>
@@ -1326,7 +1323,7 @@ export function Sidebar() {
           countTone={design.surfaces.inboxCount}
         />
       )}
-      {todayTip && <Suspense fallback={null}><TodayTip /></Suspense>}
+      {todayTip && <TodayTip />}
       {VIEWS.slice(0, PINNED).map(folder)}
       <FavoriteRows />
       <MoreFolders

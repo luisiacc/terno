@@ -5,6 +5,7 @@ import { client } from "~/rpc/connection";
 import { localized } from "~/lib/i18n";
 import { openThread } from "~/lib/page";
 import { revealSummaryMessage } from "~/lib/summaries";
+import { opened } from "./action-preview";
 import { getApp, setApp } from "~/state/app";
 
 /**
@@ -61,12 +62,6 @@ const timezone = () => {
   }
 };
 
-client.on("aiAsk", ({ requestId, text, older }) => {
-  const { running } = useAsk.getState();
-  if (running?.requestId !== requestId) return;
-  useAsk.setState({ running: { ...running, ...(text ? { text: running.text + text } : {}), ...(older ? { older } : {}) } });
-});
-
 const errorOf = (error: unknown) => {
   const e = error as { code?: string; message?: string; details?: { aiErrorKind?: AiErrorKind }; i18n?: { key: string; params?: Readonly<Record<string, string | number>> } };
   return { code: e.code, kind: e.details?.aiErrorKind, message: localized(e.message ?? "", e.i18n) };
@@ -109,8 +104,6 @@ const COMMAND_NOTICE = { refused: "action.refused", noCondition: "action.noCondi
 
 async function settleCommand(requestId: string, question: string): Promise<void> {
   const mine = () => useAsk.getState().running?.requestId === requestId;
-  // before it can say anything: a short walk is over before its answer arrives
-  const { opened } = await import("./action-preview");
   const r = await client.call("ai.actionStart", { requestId, sentence: question, ...(useAsk.getState().conversationId !== null ? { conversationId: useAsk.getState().conversationId! } : {}), timezone: timezone() });
   if (!mine()) {
     // the page moved on while it looked: nothing keeps it
@@ -183,12 +176,20 @@ export function askConfigChanged(): void {
   if (useAsk.getState().noProvider) useAsk.setState({ noProvider: false });
 }
 
-/** Another window deleted or cleared it, or its account went. */
-client.on("aiAskGone", ({ conversationIds }) => {
-  const { conversationId } = useAsk.getState();
-  useAsk.setState((s) => ({ gone: s.gone + 1 }));
-  if (conversationIds === null || (conversationId !== null && conversationIds.includes(conversationId))) useAsk.setState({ ...EMPTY, usedAt: 0 });
-});
+export function installAsk(): void {
+  client.on("aiAsk", ({ requestId, text, older }) => {
+    const { running } = useAsk.getState();
+    if (running?.requestId !== requestId) return;
+    useAsk.setState({ running: { ...running, ...(text ? { text: running.text + text } : {}), ...(older ? { older } : {}) } });
+  });
+
+  // another window deleted or cleared it, or its account went
+  client.on("aiAskGone", ({ conversationIds }) => {
+    const { conversationId } = useAsk.getState();
+    useAsk.setState((s) => ({ gone: s.gone + 1 }));
+    if (conversationIds === null || (conversationId !== null && conversationIds.includes(conversationId))) useAsk.setState({ ...EMPTY, usedAt: 0 });
+  });
+}
 
 export const atTurnLimit = (s: Pick<AskState, "turns">): boolean => s.turns.length >= ASK_TURNS_MAX;
 

@@ -1,11 +1,10 @@
-import type OpenAI from "openai";
+import OpenAI, { AzureOpenAI } from "openai";
+import { zodResponseFormat } from "openai/helpers/zod";
 import type { ChatCompletionChunk, ChatCompletionCreateParamsNonStreaming } from "openai/resources/chat/completions";
 import { L } from "@terno/i18n";
 import { describeProvider, isLocalProvider, needsKey, PRESETS, resolveBaseURL } from "./providers";
 import { mapNetworkError, mapSdkError, type ErrorInfo } from "./sdk-errors";
 import { AiError, promptText, type CompletionRequest, type ModelInfo, type ModelTransport, type ProviderConfig, type StreamEvent, type Usage } from "./types";
-
-type Sdk = typeof import("openai");
 
 /** GA version with structured outputs (json_schema) on chat completions. */
 export const AZURE_API_VERSION = "2024-10-21";
@@ -36,19 +35,18 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
   const apiKey = config.apiKey ?? (needsKey(config) ? null : "local");
   const origin = baseURL.replace(/\/v1\/?$/, "");
 
-  let loaded: Promise<{ sdk: Sdk; client: OpenAI }> | null = null;
-  const load = () =>
-    (loaded ??= import("openai").then((sdk) => {
-      if (!apiKey) throw new AiError(L("errors.ai.keyMissing", { provider: info.label }), "not_configured");
-      const { default: OpenAI, AzureOpenAI } = sdk;
-      // Every value explicit: the SDK otherwise falls back to OPENAI_BASE_URL / _API_KEY / _ORG_ID / _PROJECT_ID.
-      // In the web build's worker the SDK must be told it may run there (the user's own key, on their device).
-      const dangerouslyAllowBrowser = config.browserOrigin !== undefined;
-      const client = azure
-        ? new AzureOpenAI({ apiKey, baseURL: `${baseURL.replace(/\/+$/, "")}/openai`, apiVersion: AZURE_API_VERSION, deployment: config.model, organization: null, project: null, webhookSecret: null, fetch: config.fetch, timeout: config.timeoutMs, maxRetries: config.maxRetries, dangerouslyAllowBrowser })
-        : new OpenAI({ apiKey, adminAPIKey: null, baseURL, organization: null, project: null, webhookSecret: null, defaultHeaders: config.preset === "openrouter" ? OPENROUTER_HEADERS : undefined, fetch: config.fetch, timeout: config.timeoutMs, maxRetries: config.maxRetries, dangerouslyAllowBrowser });
-      return { sdk, client };
-    }));
+  let made: OpenAI | null = null;
+  const load = (): OpenAI => {
+    if (made) return made;
+    if (!apiKey) throw new AiError(L("errors.ai.keyMissing", { provider: info.label }), "not_configured");
+    // Every value explicit: the SDK otherwise falls back to OPENAI_BASE_URL / _API_KEY / _ORG_ID / _PROJECT_ID.
+    // In the web build's worker the SDK must be told it may run there (the user's own key, on their device).
+    const dangerouslyAllowBrowser = config.browserOrigin !== undefined;
+    made = azure
+      ? new AzureOpenAI({ apiKey, baseURL: `${baseURL.replace(/\/+$/, "")}/openai`, apiVersion: AZURE_API_VERSION, deployment: config.model, organization: null, project: null, webhookSecret: null, fetch: config.fetch, timeout: config.timeoutMs, maxRetries: config.maxRetries, dangerouslyAllowBrowser })
+      : new OpenAI({ apiKey, adminAPIKey: null, baseURL, organization: null, project: null, webhookSecret: null, defaultHeaders: config.preset === "openrouter" ? OPENROUTER_HEADERS : undefined, fetch: config.fetch, timeout: config.timeoutMs, maxRetries: config.maxRetries, dangerouslyAllowBrowser });
+    return made;
+  };
 
   /** Native discovery endpoints (Ollama, LM Studio) go through the same policy fetch. */
   async function getJson<T>(path: string, signal: AbortSignal, init: RequestInit = {}): Promise<{ status: number; body: T | null }> {
@@ -63,7 +61,7 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
   }
 
   async function sdkModels(signal: AbortSignal): Promise<ModelInfo[]> {
-    const { sdk, client } = await load();
+    const client = load();
     try {
       const models: ModelInfo[] = [];
       for await (const m of client.models.list({ signal })) {
@@ -73,7 +71,7 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
       }
       return models;
     } catch (error) {
-      throw mapSdkError(error, sdk.default, info);
+      throw mapSdkError(error, OpenAI, info);
     }
   }
 
@@ -106,7 +104,6 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
   }
 
   const request = async (req: CompletionRequest): Promise<ChatCompletionCreateParamsNonStreaming> => {
-      const { zodResponseFormat } = await import("openai/helpers/zod");
       const tokenLimit = config.id === "openai" || azure ? { max_completion_tokens: req.maxTokens } : { max_tokens: req.maxTokens };
       return {
         model: config.model,
@@ -122,7 +119,7 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
 
   return {
     async complete(req) {
-      const { sdk, client } = await load();
+      const client = load();
       const body = await request(req);
       try {
         const completion = await client.chat.completions.create(body, { signal: req.signal });
@@ -131,12 +128,12 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
         if (choice.message.refusal) return { text: "", stop: "refusal" };
         return { text: choice.message.content ?? "", stop: choice.finish_reason === "length" ? "length" : "end", usage: usageOf(completion.usage) };
       } catch (error) {
-        throw mapSdkError(error, sdk.default, info);
+        throw mapSdkError(error, OpenAI, info);
       }
     },
 
     async *stream(req): AsyncGenerator<StreamEvent> {
-      const { sdk, client } = await load();
+      const client = load();
       const body = await request(req);
       try {
         // only OpenAI promises this option; a local server might refuse an unknown one
@@ -154,7 +151,7 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
         }
         yield { type: "done", stop, usage };
       } catch (error) {
-        throw mapSdkError(error, sdk.default, info);
+        throw mapSdkError(error, OpenAI, info);
       }
     },
 

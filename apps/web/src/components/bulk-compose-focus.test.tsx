@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { beforeAll, expect, it, vi } from "vitest";
 import type { Account, ThreadDetail, ThreadSummary } from "@terno/core";
 
 const gate = vi.hoisted(() => ({ load: vi.fn(), call: vi.fn() }));
@@ -24,6 +24,8 @@ HTMLElement.prototype.scrollIntoView = () => {};
 if (!Range.prototype.getClientRects) Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
 if (!Range.prototype.getBoundingClientRect) Range.prototype.getBoundingClientRect = () => new DOMRect();
 
+// transforms once, outside any test's timeout
+beforeAll(async () => { await import("~/app"); }, 120_000);
 it.each([
   { target: 7, selection: "all", rows: 2, earlyClear: false },
   { target: 7, selection: "all", rows: 2, earlyClear: true },
@@ -63,7 +65,7 @@ it.each([
     if (selection === "single") {
       expect(host.querySelector('[data-testid="reader"]')).not.toBeNull();
       await act(async () => { useThreads.setState({ details: new Map([[target, detail]]) }); gate.load.mockResolvedValue(detail); resolve(detail); await opening; }); await flush();
-      expect(document.activeElement).toBe(host.querySelector('[data-testid="compose-body"]') ?? host.querySelector('[data-testid="compose-body-loading"]'));
+      expect(document.activeElement).toBe(host.querySelector('[data-testid="compose-body"]'));
       return;
     }
     expect(host.querySelector('[data-testid="selection-bar"]')).not.toBeNull(); expect(host.querySelector('[data-testid="reader"]')).toBeNull();
@@ -75,7 +77,7 @@ it.each([
     expect(Object.keys(useDrafts.getState().drafts)).toHaveLength(0);
     if (target === 7) {
       await act(async () => { await openCompose("reply", 7); }); await flush();
-      expect(document.activeElement).toBe(host.querySelector('[data-testid="compose-body"]') ?? host.querySelector('[data-testid="compose-body-loading"]'));
+      expect(document.activeElement).toBe(host.querySelector('[data-testid="compose-body"]'));
     }
   } finally {
     resolve(detail); if (opening) await opening; await act(async () => root.unmount());

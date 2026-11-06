@@ -4,53 +4,16 @@ import { CloseButton } from "@terno/ui/components/close-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { KeyRound } from "@terno/ui/icons";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { clearAttemptError, noticeAccounts, prepareGoogle, putOff, sendOnly, useSignIn } from "~/lib/sign-in";
 import { useApp } from "~/state/app";
+import SignInPanel from "./sign-in-panel";
 
 const WEB = import.meta.env.VITE_TARGET === "web";
-type PanelProps = Parameters<typeof import("./sign-in-panel").default>[0];
-/** the panel once its chunk is in: rendered at once, so the popover's first focus lands in it (lazy suspends a first time even preloaded) */
-let Loaded: ((props: PanelProps) => React.ReactNode) | null = null;
-const loadPanel = () =>
-  import("./sign-in-panel").then((m) => {
-    Loaded = m.default;
-    return m;
-  });
-const Lazy = lazy(loadPanel);
-
-/**
- * The chunk came after the popover opened, when it had nothing to focus but itself: what its first focus would have found
- * takes over. Only then: a popover holding focus later has its reasons (an account's section went), and wherever the
- * person has gone since, focus stays.
- */
-function FirstFocusOnArrival() {
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      const active = document.activeElement;
-      if (active?.matches('[role="dialog"][data-sign-in-ui]')) active.querySelector<HTMLElement>("[data-sign-in-action]")?.focus();
-    });
-    return () => cancelAnimationFrame(frame);
-  }, []);
-  return null;
-}
-
-function SignInPanel(props: PanelProps) {
-  return Loaded ? (
-    <Loaded {...props} />
-  ) : (
-    <Suspense fallback={null}>
-      <Lazy {...props} />
-      <FirstFocusOnArrival />
-    </Suspense>
-  );
-}
-
-/** the panel's chunk (and, on the web, Google's script) before the click: an account needs it now */
+/** on the web, Google's script before the click: an account needs it now */
 function usePrepare(accounts: readonly Account[]): void {
   const gmail = accounts.some((a) => a.kind === "gmail");
   useEffect(() => {
-    void loadPanel().catch(() => {});
     if (WEB && gmail) prepareGoogle();
   }, [gmail]);
 }
@@ -140,27 +103,11 @@ function Notice({ accounts }: { accounts: Account[] }) {
 /** the markers shown now, by account: how the account menu opens one */
 const markers = new Map<number, () => void>();
 
-/**
- * Plan 106: Sign In Again… from the account's menu: its key's panel beside its row, prepared as a hover or
- * focus on the key would (the panel's chunk, so its first focus lands in it; Google's script on the web).
- */
-export async function openSignInMarker(account: Account): Promise<void> {
-  const mine = ++opening.seq;
-  // where focus was when asked: the menu's item, still there while the menu closes (Codex code review round 4)
-  const from = document.activeElement;
-  const menu = from?.closest("[role=menu]") ?? null;
+/** Plan 106: Sign In Again… from the account's menu: its key's panel beside its row, prepared as a focus on the key would (Google's script on the web). */
+export function openSignInMarker(account: Account): void {
   if (WEB && account.kind === "gmail") prepareGoogle();
-  await loadPanel().catch(() => {});
-  // the user moved on while the panel loaded (a field, the list, another request): it doesn't open over that
-  // (Codex code review round 3 #2); the closing menu it was asked from (not another one, round 5 #2), nowhere or
-  // the account's row isn't moving on
-  const at = document.activeElement;
-  const row = document.querySelector(`[data-testid="nav-account-${account.id}"]`);
-  const stayed = !at || at === document.body || at === row || at === from || !at.isConnected || (menu !== null && menu.contains(at));
-  if (mine !== opening.seq || !stayed) return;
   markers.get(account.id)?.();
 }
-const opening = { seq: 0 };
 
 /**
  * Plan 25: the key at the end of an account's sidebar row while it needs a sign-in. Quiet (the muted
@@ -189,9 +136,7 @@ export function SignInMarker({ account }: { account: Account }) {
         <TooltipTrigger
           render={
             <PopoverTrigger
-              onPointerEnter={() => void loadPanel().catch(() => {})}
               onFocus={() => {
-                void loadPanel().catch(() => {});
                 if (WEB && account.kind === "gmail") prepareGoogle();
               }}
               render={

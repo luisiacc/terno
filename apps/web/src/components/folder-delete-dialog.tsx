@@ -10,8 +10,8 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
  * Plan 107: Delete folder…'s confirmation. IMAP deletes the folder and its mail on the server (how much is said,
- * from this computer's copy); Gmail takes the label away and the mail stays. Subfolders go too. Lazy: out of the
- * entry chunk. Focus comes back to the folder's row, or (once it's gone) the row now in its place.
+ * from this computer's copy); Gmail takes the label away and the mail stays. Subfolders go too.
+ * Focus comes back to the folder's row, or (once it's gone) the row now in its place.
  */
 export function FolderDeleteDialog({ account, folderKey, name, open, onOpenChange }: { account: Account; folderKey: string; name: string; open: boolean; onOpenChange: (open: boolean) => void }) {
   const [count, setCount] = useState<{ messages: number; folders: number } | null>(null);

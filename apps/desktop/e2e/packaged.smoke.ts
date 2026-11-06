@@ -196,7 +196,6 @@ test("a release carries no test build's world: no baked feed or profile, GitHub'
   const header = JSON.parse(asar.subarray(16, 16 + headerSize).toString("utf8")) as { files: Record<string, { files?: Record<string, { offset: string; size: number }> }> };
   const dist = header.files.dist!.files!;
   expect(Object.keys(dist)).not.toContain("test-build.json");
-  expect(Object.keys(dist)).toContain("updater.cjs");
   const base = 8 + asar.readUInt32LE(4);
   const main = dist["main.cjs"]!;
   const code = asar.subarray(base + Number(main.offset), base + Number(main.offset) + main.size).toString("utf8");

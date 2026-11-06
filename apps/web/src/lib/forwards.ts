@@ -3,6 +3,7 @@ import { getLocale, onLocaleChange, t, translate } from "@terno/i18n";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { snack, withdrawSnack } from "~/lib/snack";
+import { openThread } from "~/lib/page";
 
 /**
  * Plan 116: the forwards as the windows see them (the backend's snapshot, at
@@ -52,7 +53,7 @@ function failures(failed: readonly ForwardInfo[]): void {
   }
   const f = fresh[fresh.length - 1];
   if (!f) return;
-  const open = { label: t("common.view"), name: t("forward.viewFailed"), onClick: () => void import("~/lib/page").then((m) => m.openThread(f.threadId)) };
+  const open = { label: t("common.view"), name: t("forward.viewFailed"), onClick: () => void openThread(f.threadId) };
   snack.error(t("forward.failedNotice", { rule: f.ruleName, to: who(f.to) }), {
     id: `forward-failed-${f.id}`,
     duration: 12_000,

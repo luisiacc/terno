@@ -288,4 +288,4 @@ This changes the original request, which said no notification. When reminders co
 - **Settings:** the Notifications and "Show sender and subject" settings apply as for mail. It has no gather or gap, since its time is the moment.
 - **Once each:** the moment it last announced up to is a setting (`reminders:notifiedUpTo`), so a restart or a wake doesn't repeat it. One that came due while Terno was closed is announced at the next start, if that is within a day.
 
-**Later:** the picker is no longer lazy-loaded, only its calendar and time are, so its first open is instant (plan 122, "The pickers open at once"). Plan 94's Send later picker is the same.
+**Later:** nothing here is lazy-loaded any more, and the picker's first open is instant (plan 155). Plan 94's Send later picker is the same.

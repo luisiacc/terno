@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { beforeAll, expect, it, vi } from "vitest";
 vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn().mockResolvedValue([]) } }));
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 vi.stubGlobal("matchMedia", (media: string) => ({ media, matches: false, addEventListener() {}, removeEventListener() {} }));
@@ -11,6 +11,8 @@ const { RecipientInput } = await import("./recipient-input");
 const { createDraft, forgetDraft, useDrafts } = await import("~/lib/drafts");
 const { newFields } = await import("~/lib/compose-fields");
 
+// transforms once, outside any test's timeout
+beforeAll(async () => { await import("./inline-draft"); }, 120_000);
 it("keeps chip deletion, undo, re-entry and unfinished text while deriving recipient ownership", async () => {
   const key = createDraft({ ...newFields(1), toText: "auto@example.test", auto: { to: ["auto@example.test"], cc: [], bcc: [] } });
   const host = document.createElement("div"); document.body.append(host);

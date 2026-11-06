@@ -142,7 +142,7 @@ describe("dual-reference source loss", () => {
       expect(h.app.getApp().compose).toBeNull();
       expect(h.drafts.shownDraftKey(h.drafts.useDrafts.getState().drafts, threadId, h.app.getApp().draftShown)).toBe(h.key);
       expect(h.drafts.materialize(h.key)).toMatchObject({ id: saved.id, generation: saved.generation, revision: ack.revision, inReplyToMessageId: active.id, forwardOfMessageId: null, bodyText: ack.bodyText, bodyHtml: ack.bodyHtml, toText: ack.toText });
-      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { await h.cleanup(); }
   });
 });

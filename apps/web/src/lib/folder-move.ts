@@ -17,6 +17,7 @@ import { invalidateThreads } from "~/state/threads";
 
 export type { FolderDrop } from "~/lib/folder-rules";
 import type { FolderDrop } from "~/lib/folder-rules";
+import { showFolderSnackbar } from "~/components/folder-snackbar";
 
 export async function moveToFolder(to: FolderDrop, threadIds: readonly number[]): Promise<void> {
   const ids = [...new Set(threadIds)];
@@ -51,8 +52,8 @@ export async function moveToFolder(to: FolderDrop, threadIds: readonly number[])
     const id = snack(t("folder.move.done", { count: ids.length, folder: to.name }), { description: note, action: list.length ? undoAction(undo, undoName) : undefined });
     // the same snack offers the rest from this sender, subject, domain or list
     if (ids.length <= 200) {
-      void Promise.all([import("~/components/folder-snackbar"), client.call("offers.forAction", { threadIds: ids, action: { accountId: to.accountId, folder: to.key } })]).then(
-        ([{ showFolderSnackbar }, offers]) => showFolderSnackbar(id, { to, from, targets: ids, offers, undo, undoName, note }),
+      void client.call("offers.forAction", { threadIds: ids, action: { accountId: to.accountId, folder: to.key } }).then(
+        (offers) => showFolderSnackbar(id, { to, from, targets: ids, offers, undo, undoName, note }),
         () => undefined,
       );
     }

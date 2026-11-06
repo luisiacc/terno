@@ -1,6 +1,6 @@
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { Component, lazy, Suspense, useLayoutEffect, useRef, type ReactNode } from "react";
+import { Component, useLayoutEffect, useRef, type ReactNode } from "react";
 import { create } from "zustand";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { RecoveryReload } from "./recovery-reload";
@@ -8,6 +8,7 @@ import { captureUi } from "~/lib/diag";
 import { exposeForTests } from "~/lib/render-probe";
 import { exportDiagnostics } from "~/state/diag";
 import { registerReaderPaneFailure } from "~/lib/compose";
+import { RecoveryWorkspace } from "./recovery-workspace";
 
 type Area = "app" | "reader" | "settings";
 
@@ -62,7 +63,6 @@ export function TestThrow({ area }: { area: Area }) {
 
 const shortId = (id: string) => id.slice(0, 8);
 
-const RecoveryWorkspace = lazy(() => import("./recovery-workspace").then((m) => ({ default: m.RecoveryWorkspace })));
 export function RecoveryBoundary({ children }: { children: ReactNode }) {
   return <Boundary area="app" fallback={() => <main className="flex h-screen flex-col items-center justify-center gap-3" data-testid="recovery-unavailable">
     <p role="alert">{t("recovery.reload.unsaved")}</p>
@@ -71,7 +71,7 @@ export function RecoveryBoundary({ children }: { children: ReactNode }) {
 }
 function AppFallback({ id }: { id: string | null }) {
   const recovering = useDraftRecovery((s) => s.open);
-  if (recovering) return <RecoveryBoundary><Suspense><RecoveryWorkspace /></Suspense></RecoveryBoundary>;
+  if (recovering) return <RecoveryBoundary><RecoveryWorkspace /></RecoveryBoundary>;
   return (
     <main className="flex h-screen items-center justify-center bg-background p-10 text-center" data-testid="app-boundary">
       <div role="alert" className="max-w-sm">

@@ -14,7 +14,7 @@ const INPUT = "h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholde
 
 /**
  * Plan 116: where a category's new mail is forwarded. Opened from its
- * right-click menu; lazy (out of the entry chunk). Saving turns it on (again,
+ * right-click menu. Saving turns it on (again,
  * after a Stop at the cap); "Stop forwarding" forgets the addresses.
  */
 export function CategoryForwardDialog({ category, open, onOpenChange }: { category: Category; open: boolean; onOpenChange: (open: boolean) => void }) {

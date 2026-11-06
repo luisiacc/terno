@@ -12,6 +12,7 @@ import { listKey, onlyOnTop, patchRows, reloadList, useList } from "~/state/list
 import { invalidateThreads, useThreads } from "~/state/threads";
 import { closePage, currentPage, listLayout } from "~/lib/page";
 import { placeActions } from "~/lib/places";
+import { showSimilarSnackbar } from "~/components/similar-snackbar";
 
 /** Does a thread still belong in the current list after an action? */
 function staysInView(s: Pick<AppState, "view" | "gmailTab" | "categoryId" | "reviewCategoryId" | "folder" | "query">, action: ThreadAction): boolean {
@@ -224,10 +225,10 @@ export const tabbedTest = () => {
   return (r: Partial<Pick<ThreadSummary, "accountId" | "tab">>) => inSeparateTab(r, accounts);
 };
 
-/** The similar snackbar loads with its offers (its own chunk): the plain snack grows into it, or stays as it is. */
+/** The similar snackbar comes with its offers: the plain snack grows into it, or stays as it is. */
 async function offerSimilar(snackId: string, action: SimilarAction, targets: readonly number[], undo: Undo, automation?: "none"): Promise<void> {
   try {
-    const [{ showSimilarSnackbar }, offers] = await Promise.all([import("~/components/similar-snackbar"), client.call("offers.forAction", { threadIds: [...targets], action })]);
+    const offers = await client.call("offers.forAction", { threadIds: [...targets], action });
     showSimilarSnackbar(snackId, { action, undoName: t(UNDO_NAME[action]), targets, offers, undo, automation });
   } catch {
     // the plain snack already says what happened

@@ -6,7 +6,7 @@ import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Mail } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
-import { Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
@@ -159,9 +159,7 @@ export function AddAccountForm({ draft, onDraft, onDone, onBusy }: FormProps) {
       </Button>
       {error?.kind === "gmail" && failure}
       {!imapHere && DesktopOnly ? (
-        <Suspense>
-          <DesktopOnly feature="imap" />
-        </Suspense>
+        <DesktopOnly feature="imap" />
       ) : (
         <>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">

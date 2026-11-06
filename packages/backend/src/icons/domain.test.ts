@@ -1,8 +1,7 @@
-import { beforeAll, describe, expect, it } from "vitest";
-import { iconSubject, loadSuffixList, registrableDomain, senderHost } from "./domain";
+import { describe, expect, it } from "vitest";
+import { iconSubject, registrableDomain, senderHost } from "./domain";
 import { isFreemail } from "./freemail";
 
-beforeAll(() => loadSuffixList());
 
 describe("sender domains (plan 22)", () => {
   it("a sender's registrable domain: eTLD+1 from the suffix list, never the address", () => {

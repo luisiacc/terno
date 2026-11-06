@@ -129,10 +129,12 @@ export default defineConfig(({ mode }) => {
       "import.meta.env.VITE_TERNO_GOOGLE_CLIENT_ID": JSON.stringify(target === "web" ? buildWebGoogleClientId() : ""),
     },
     resolve: {
-      alias: {
-        "~": resolve(import.meta.dirname, "src"),
-        "@terno/ui": resolve(import.meta.dirname, "../../packages/ui/src"),
-      },
+      alias: [
+        // the desktop has no web host: its `web-parts` is all null
+        ...(target === "web" ? [{ find: /^~\/lib\/web-parts$/, replacement: resolve(import.meta.dirname, "src/lib/web-parts.web.tsx") }] : []),
+        { find: "~", replacement: resolve(import.meta.dirname, "src") },
+        { find: "@terno/ui", replacement: resolve(import.meta.dirname, "../../packages/ui/src") },
+      ],
     },
     server: { port: 5173, strictPort: true },
     // SQLite-WASM finds sqlite3.wasm next to its own module
@@ -145,14 +147,8 @@ export default defineConfig(({ mode }) => {
       sourcemap: "hidden" as const,
       modulePreload: { polyfill: false },
       rollupOptions: {
-        // plan 92: the icon barrel and its per-icon modules have no side effects, so each icon lands in the chunk that
-        // uses it (a composer-only icon in the lazy composer) instead of riding the barrel into the entry
+        // plan 92: the icon barrel and its per-icon modules have no side effects, so only the icons in use are bundled
         treeshake: { moduleSideEffects: (id: string) => (/packages\/ui\/src\/(icons\.ts|iconset\/)/.test(id) ? false : undefined) },
-        output: {
-          // React itself, not every package whose name starts with "react" (react-aria-components and react-day-picker
-          // belong to the lazy pickers that import them, plan 122)
-          manualChunks: (id: string) => (/[\\/]node_modules[\\/](?:react|react-dom|scheduler)[\\/]/.test(id) ? "react" : undefined),
-        },
       },
     },
   };

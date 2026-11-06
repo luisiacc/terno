@@ -157,7 +157,7 @@ export function openMenuForSelection(): void {
 const handOff = { pending: false };
 
 /**
- * Whether a reply from the menu opened (and so takes focus itself, maybe a frame later: the editor loads lazily):
+ * Whether a reply from the menu opened (and so takes focus itself, maybe a frame later):
  * inline in its conversation, or, for a stored draft whose source moved, in the reader pane. Read from state, not
  * the DOM.
  */
@@ -530,7 +530,7 @@ function MenuItems() {
     handOff.pending = true;
     openThread(single.id);
     // a reply that didn't open (refused, failed) leaves focus nowhere: it goes back to the list. One that opened
-    // takes focus itself, maybe a frame later (the editor loads lazily), so that is read from the drafts, not the DOM
+    // takes focus itself, maybe a frame later, so that is read from the drafts, not the DOM
     const id = single.id;
     const pane = getApp().compose;
     void openCompose(mode, id).then(() => {

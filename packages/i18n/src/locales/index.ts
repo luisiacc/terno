@@ -1,16 +1,16 @@
 import type { Messages } from "../types";
 import en from "./en";
+import es from "./es";
 
 /**
  * The languages Terno ships. Adding one: write `xx.ts` (copy `es.ts`; the
  * type check lists what is missing) and add its line here. `name` is the
  * language's own name (never translated); `tag` is the BCP 47 locale for
- * numbers, lists and plural rules. Only English is bundled: the others load
- * when chosen.
+ * numbers, lists and plural rules.
  */
 export const LOCALES = {
   en: { name: "English", tag: "en-US", load: async (): Promise<Messages> => en },
-  es: { name: "Español", tag: "es-MX", load: async (): Promise<Messages> => (await import("./es")).default },
+  es: { name: "Español", tag: "es-MX", load: async (): Promise<Messages> => es },
 } as const;
 
 export type LocaleId = keyof typeof LOCALES;

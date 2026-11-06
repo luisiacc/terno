@@ -82,7 +82,7 @@ it.each(["compose", "selection"] as const)("focuses Reply after a healthy %s bra
     expect(h.host.querySelector('[data-testid="reader"]')).not.toBeNull();
     h.other.focus(); await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "r", bubbles: true })));
     for (let i = 0; i < 4; i++) await h.flush();
-    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     expect(composeFocusPending(7)).toBe(false);
   } finally { fault.branch = ""; await h.cleanup(); }
 });

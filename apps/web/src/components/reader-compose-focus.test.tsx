@@ -2,7 +2,7 @@
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
-import { expect, it, vi } from "vitest";
+import { beforeAll, expect, it, vi } from "vitest";
 import type { Account, ThreadDetail } from "@terno/core";
 
 const gate = vi.hoisted(() => ({ load: vi.fn(), call: vi.fn().mockResolvedValue({}), budget: null as null | (() => Promise<void>) }));
@@ -24,6 +24,8 @@ vi.stubGlobal("matchMedia", (media: string) => ({ media, matches: false, addEven
 if (!Range.prototype.getClientRects) Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
 if (!Range.prototype.getBoundingClientRect) Range.prototype.getBoundingClientRect = () => new DOMRect();
 
+// transforms once, outside any test's timeout
+beforeAll(async () => { await import("./reader"); }, 120_000);
 function ReaderFailure({ fail }: { fail: boolean }) {
   if (fail) throw new Error("synthetic reader failure");
   return null;
@@ -84,7 +86,7 @@ it.each([true, false])("honors reply focus with the Reader frame %s loading", as
     const readerFocus = vi.spyOn(h.host.querySelector<HTMLElement>('[data-testid="reader"]')!, "focus");
     await h.flushFrame();
     expect(readerFocus).not.toHaveBeenCalled();
-    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     readerFocus.mockRestore();
   } finally { load.resolve(h.detail); await h.cleanup(); }
 });
@@ -114,7 +116,7 @@ it("does not focus the previous conversation after navigation", async () => {
   try {
     let opening!: Promise<void>; await act(async () => { opening = h.openCompose("reply", 7); }); await h.flushFrame();
     await act(async () => { h.setApp({ selectedId: 8 }); h.publish(); load.resolve(h.detail); await opening; }); await h.flushFrame();
-    expect(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]')).toBeNull();
+    expect(h.host.querySelector('[data-testid="compose-body"]')).toBeNull();
     expect(document.activeElement).not.toBe(h.host.querySelector('[data-testid="reader"]'));
   } finally { load.resolve(h.detail); await h.cleanup(); }
 });
@@ -137,7 +139,7 @@ it("drops ownership when the compose intent is superseded", async () => {
     let opening!: Promise<void>; await act(async () => { opening = h.openCompose("reply", 7); }); await h.flushFrame();
     h.supersedeCompose(); await act(async () => { h.publish(); load.resolve(h.detail); await opening; }); await h.flushFrame();
     expect(document.activeElement).toBe(document.body);
-    expect(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]')).toBeNull();
+    expect(h.host.querySelector('[data-testid="compose-body"]')).toBeNull();
   } finally { load.resolve(h.detail); await h.cleanup(); }
 });
 
@@ -202,7 +204,7 @@ it.each([false, true])("a pending reply focus %s a newer gated forward", async (
   try {
     await act(async () => { h.publish(); }); await h.flushFrame();
     await act(async () => { await h.openCompose("reply", 7); }); await h.flushFrame();
-    const body = h.host.querySelector<HTMLElement>('[data-testid="compose-body"]') ?? h.host.querySelector<HTMLElement>('[data-testid="compose-body-loading"]');
+    const body = h.host.querySelector<HTMLElement>('[data-testid="compose-body"]');
     const toolbar = h.host.querySelector<HTMLButtonElement>('[data-testid="action-reply"]');
     expect(body).not.toBeNull(); expect(toolbar).not.toBeNull();
     toolbar!.focus(); expect(document.activeElement).toBe(toolbar);
@@ -214,7 +216,7 @@ it.each([false, true])("a pending reply focus %s a newer gated forward", async (
     }
     await h.flushFrame();
     // the real editor may have replaced the stand-in meanwhile, when its chunk arrives under load
-    expect(document.activeElement).toBe(forward ? toolbar : h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+    expect(document.activeElement).toBe(forward ? toolbar : h.host.querySelector('[data-testid="compose-body"]'));
     if (forward) {
       await act(async () => { waiting.resolve(); await opening; });
       await h.flushFrame();
@@ -255,7 +257,7 @@ it("keeps a newer same-draft move when the older move completes, then releases a
     expect(newer.key).toBe(older.key); expect(newer.seq).toBeGreaterThan(older.seq);
     expect(composeFocusPending(7, newer.key, newer.seq)).toBe(true);
     await h.flushFrame();
-    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     toolbar.focus(); gate.load.mockResolvedValue(null);
     await act(async () => { await h.openCompose("forward", 7); });
     expect(composeFocusPending(7)).toBe(false); expect(document.activeElement).toBe(toolbar);
@@ -283,7 +285,7 @@ it("an old bulk-canceled lookup cannot cancel a newer deliberate open", async ()
     await act(async () => { h.setApp({ checked: new Set([7, 8]) }); h.setApp({ checked: new Set() }); });
     await act(async () => { h.publish(); await h.openCompose("reply", 7); });
     await act(async () => { old.resolve(h.detail); await opening; }); await h.flushFrame();
-    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     expect(Object.values(h.useDrafts.getState().drafts)).toHaveLength(1);
   } finally { old.resolve(h.detail); await h.cleanup(); }
 });
@@ -328,7 +330,7 @@ it.each(["list", "split"] as const)("retires a pending reply when the %s Reader 
     await act(async () => (h.host.querySelector('[data-testid="reader-boundary-retry"]') as HTMLButtonElement).click());
     await h.flushFrame();
     expect(h.host.querySelector('[data-testid="reader"]')).not.toBeNull();
-    expect(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]')).toBeNull();
+    expect(h.host.querySelector('[data-testid="compose-body"]')).toBeNull();
     expect(useApp.getState().draftFocus).toBeNull();
   } finally { load.resolve(h.detail); if (opening) await opening; await h.cleanup(); error.mockRestore(); }
 });
@@ -340,7 +342,7 @@ it("preserves a pending reply through StrictMode Reader setup after the request 
     h.anchor.focus(); await act(async () => { opening = h.openCompose("reply", 7); });
     await h.render(); await h.flushFrame();
     await act(async () => { h.publish(); load.resolve(h.detail); await opening; }); await h.flushFrame();
-    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
   } finally { load.resolve(h.detail); if (opening) await opening; await h.cleanup(); }
 });
 
@@ -351,7 +353,7 @@ it("does not let old Reader cleanup cancel a replacement Reader's pending reply"
     h.anchor.focus(); await act(async () => { opening = h.openCompose("reply", 7); }); await h.flushFrame();
     await h.render(false, "replacement"); await h.flushFrame();
     await act(async () => { h.publish(); load.resolve(h.detail); await opening; }); await h.flushFrame();
-    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
   } finally { load.resolve(h.detail); if (opening) await opening; await h.cleanup(); }
 });
 
@@ -364,7 +366,7 @@ it("does not let retired Reader cleanup cancel a newer request during replacemen
     await h.replaceReader(() => { newer = h.openCompose("reply", 7); });
     await act(async () => { first.resolve(h.detail); await older; });
     await act(async () => { h.publish(); second.resolve(h.detail); await newer; }); await h.flushFrame();
-    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
   } finally { first.resolve(h.detail); second.resolve(h.detail); if (older) await older; if (newer) await newer; await h.cleanup(); }
 });
 
@@ -408,7 +410,7 @@ it("keeps a synchronous existing-draft open begun during a same-thread Reader re
     h.anchor.focus();
     await h.replaceReader(() => { opening = h.openCompose("reply", 7); });
     await act(async () => { await opening; }); await h.flushFrame();
-    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
   } finally { if (opening) await opening; await h.cleanup(); }
 });
 
@@ -443,7 +445,7 @@ it.each(["ordinary", "control", "successor", "hold", "inert"] as const)("Reader 
     await h.flushFrame();
     await act(async () => { h.publish(); load.resolve(h.detail); await opening; });
     const reader = h.host.querySelector<HTMLElement>('[data-testid="reader"]')!;
-    const editor = h.host.querySelector<HTMLElement>('[data-testid="compose-body"]') ?? h.host.querySelector<HTMLElement>('[data-testid="compose-body-loading"]');
+    const editor = h.host.querySelector<HTMLElement>('[data-testid="compose-body"]');
     expect(editor).not.toBeNull();
     if (scenario === "inert") editor!.setAttribute("inert", "");
     off = subscribeComposeFocus(() => {

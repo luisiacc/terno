@@ -2,15 +2,14 @@ import { snippetPreview, type Snippet } from "@terno/core";
 import { formatList, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Pencil, Plus, Trash2 } from "@terno/ui/icons";
-import { lazy, Suspense, useEffect } from "react";
+import { useEffect } from "react";
 import { isMac } from "~/lib/select";
 import { deleteSnippet, loadSnippets, newSnippetId, useSnippets, useUnsaved } from "~/lib/snippets";
 import { openSnippetEditor, setDeletedSnippet, useSnippetEditor } from "~/lib/snippet-editor-state";
 import { undoNow } from "~/lib/snack";
 import { SettingsGroup } from "./parts";
+import SnippetEditor from "../composer/snippet-editor";
 
-// the composer's editor: its chunk loads when a snippet is opened, not with Settings
-const SnippetEditor = lazy(() => import("../composer/snippet-editor"));
 
 export const snippetKeys = () => (isMac ? "⌘;" : "Ctrl+;");
 const paletteKeys = () => (isMac ? "⌘K" : "Ctrl+K");
@@ -58,9 +57,7 @@ export function SnippetsTab() {
   useEffect(loadSnippets, []);
   if (editor.editing) {
     return (
-      <Suspense fallback={<div className="h-64" aria-hidden />}>
-        <SnippetEditor key={editor.editing} id={editor.editing} fresh={editor.fresh} selectName={editor.selectName} />
-      </Suspense>
+      <SnippetEditor key={editor.editing} id={editor.editing} fresh={editor.fresh} selectName={editor.selectName} />
     );
   }
   return (

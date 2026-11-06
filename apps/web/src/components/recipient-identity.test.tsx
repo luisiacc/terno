@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { beforeAll, expect, it, vi } from "vitest";
 const rpc = vi.hoisted(() => ({ call: vi.fn().mockResolvedValue([]) }));
 vi.mock("~/rpc/connection", () => ({ client: { call: rpc.call, on: () => () => {} } }));
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -14,6 +14,8 @@ const app = await import("~/state/app");
 const { sendDraft } = await import("~/lib/compose");
 const address = "auto@example.test";
 const keydown = (element: Element, key: string, options: KeyboardEventInit = {}) => element.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...options }));
+// transforms once, outside any test's timeout
+beforeAll(async () => { await import("./inline-draft"); }, 120_000);
 function deferred<T>() { let resolve!: (v: T) => void, reject!: (e: Error) => void; const promise = new Promise<T>((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; }
 
 it("Undo restores chip text while the edited address stays authored for Forward", async () => {

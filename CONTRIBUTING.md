@@ -56,7 +56,7 @@ These come from [AGENTS.md](AGENTS.md), and every change needs to keep them:
   except to the user's own mail and AI providers. No analytics, telemetry or new third-party
   services. In local mode the only traffic is to the mail servers.
 - **Performance.** No regressions against the perf gates, lists stay virtualized, queries hold at
-  50k+ threads in both stores, and new heavy UI is lazy-loaded.
+  50k+ threads in both stores, and there is no lazy loading: everything is a plain `import`.
 - **Idle means idle.** No polling where an event exists, no timers spinning, no work until a feature
   is opened.
 - **Strings.** Every user-visible string goes through the i18n catalog, in English and Spanish

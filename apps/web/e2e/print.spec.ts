@@ -2,18 +2,13 @@
  * Printing (plan 09): every way into the print sheet opens it on the right
  * target, the options change the real print document in the preview, the
  * browser prints the preview's own document (stubbed here) under the subject's
- * title, and the sheet is accessible in light and dark. The print code stays
- * out of the startup bundle.
+ * title, and the sheet is accessible in light and dark.
  */
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import type { FrameLocator, Page } from "@playwright/test";
 import { expect, focusList, ingestPrintFixtures, selectThread, test, fresh, scenario } from "./fixtures";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 
-const here = dirname(fileURLToPath(import.meta.url));
 const sheet = (page: Page) => page.getByTestId("print-sheet");
 const preview = (page: Page): FrameLocator => page.frameLocator("[data-testid=print-preview]");
 const ready = (page: Page) => expect(page.getByTestId("print-preview")).toHaveAttribute("data-ready", "true");
@@ -466,20 +461,4 @@ test.describe("print sheet", () => {
       expect(r.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`), scheme).toEqual([]);
     }
   });
-});
-
-test("the print sheet and document builder stay out of the startup bundle", () => {
-  // the build the suite serves (E2E_PORT gives a worktree its own)
-  const dist = join(here, process.env.E2E_PORT ? `../dist-e2e-${process.env.E2E_PORT}` : "../dist-e2e");
-  const entry = /<script type="module"[^>]*src="\.\/(assets\/[^"]+\.js)"/.exec(readFileSync(join(dist, "index.html"), "utf8"))![1]!;
-  const code = (f: string) => readFileSync(join(dist, f), "utf8");
-  // markers the minifier keeps (copy lives in the catalog, in the entry): the document's root attribute and the
-  // sheet's own test ids as string literals in any quotes, so a chunk's file name in the entry's imports doesn't count
-  const markers = [/data-print-doc/, /["'`]print-preview["'`]/, /["'`]print-submit["'`]/];
-  const chunks = readdirSync(join(dist, "assets")).filter((f) => f.endsWith(".js"));
-  for (const m of markers) {
-    expect(code(entry)).not.toMatch(m);
-    // and they are in the build at all, so their absence from the entry means something
-    expect(chunks.some((f) => m.test(code(`assets/${f}`))), String(m)).toBe(true);
-  }
 });

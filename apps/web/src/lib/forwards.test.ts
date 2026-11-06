@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Plan 116 in the window: one notice (with Cancel) for what waits, and
  * (Codex code review #12) a failure said wherever you are, with Retry only
@@ -6,6 +7,9 @@
  */
 import type { ForwardInfo, ForwardSnapshot } from "@terno/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.hoisted(() => {
+  (globalThis as Record<string, unknown>).matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+});
 
 const calls: { method: string; params: unknown }[] = [];
 vi.mock("~/rpc/connection", () => ({

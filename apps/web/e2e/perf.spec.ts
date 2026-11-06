@@ -1046,7 +1046,7 @@ test("selection: toggling one row renders one row; ⌘A over 500 loaded rows com
 });
 
 test("printing: the print document for a 100-message conversation builds in under 30 ms", async ({ app: page }) => {
-  // the sheet loads the builder (a lazy chunk); then build straight from it, with realistic bodies
+  // build straight from the sheet's builder, with realistic bodies
   await page.keyboard.press("ControlOrMeta+p");
   await expect(page.getByTestId("print-preview")).toHaveAttribute("data-ready", "true");
   await page.keyboard.press("Escape");

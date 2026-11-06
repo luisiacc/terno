@@ -243,7 +243,7 @@ describe("stored navigation", () => {
           expect(composeFocusPending(7)).toBe(false);
         } else {
           for (let i = 0; i < 5; i++) await h.flush();
-          expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+          expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
         }
         expect(h.drafts.materialize(h.key)?.bodyText).toBe("exact authored work");
       } finally { off(); }
@@ -429,7 +429,7 @@ describe("list destination intent", () => {
         if (scenario === "reply") {
           await act(async () => { source.resolve({ threadId: 7, accountId: 1 }); await opening; });
           for (let i = 0; i < 5; i++) await h.flush();
-          expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+          expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
         }
       } finally { waiting.resolve({ items: [next], nextCursor: null }); source.resolve({ threadId: 7, accountId: 1 }); await page; if (opening) await opening; }
     } finally { await h.cleanup(); }
@@ -667,7 +667,7 @@ describe("same-mode open", () => {
       expect(after.localRev).toBe(before.localRev + (scenario !== "open" && before.id !== null ? 1 : 0));
       if (scenario === "saving") expect(after.status).toBe("saving");
       for (let i = 0; i < 5; i++) await h.flush();
-      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { await h.cleanup(); }
   });
 });
@@ -691,7 +691,7 @@ describe("conversion publication", () => {
         if (scenario.endsWith("replace")) {
           expect(h.drafts.materialize(h.key)).toMatchObject({ id: 81, generation: "stable", inReplyToMessageId: 4, bodyText: "newer body", bodyHtml: "<p>newer body</p>", toText: "newer@example.test" });
           expect(h.app.getApp().draftFocus).toBeNull(); expect(composeFocusPending(7)).toBe(false);
-        } else { for (let i = 0; i < 5; i++) await h.flush(); expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]')); }
+        } else { for (let i = 0; i < 5; i++) await h.flush(); expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]')); }
       } finally { off(); }
     } finally { await h.cleanup(); }
   });
@@ -733,7 +733,7 @@ describe("conversion publication", () => {
         await act(async () => { await openCompose("replyAll", 7); });
         expect(triggered).toBe(true);
         if (scenario === "target round trip") { expect(h.app.getApp().draftFocus).toBeNull(); expect(composeFocusPending(7)).toBe(false); }
-        else { for (let i = 0; i < 5; i++) await h.flush(); expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]')); }
+        else { for (let i = 0; i < 5; i++) await h.flush(); expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]')); }
       } finally { off(); }
     } finally { await h.cleanup(); }
   });
@@ -844,8 +844,6 @@ describe("Forward's notification frontier", () => {
   };
 
   for (const schedule of schedules) it(names[schedule], async () => {
-    const { loadComposer } = await import("./composer/lazy");
-    await loadComposer();
     const h = await setup("split", true), waiting = deferred<ThreadDetail>();
     const { openCompose, supersedeCompose } = await import("../lib/compose");
     const { resetForwardFiles } = await import("../lib/forward-files");
@@ -923,7 +921,6 @@ describe("Forward's notification frontier", () => {
   });
 
   for (const later of ["hold", "source change"] as const) it(`frontier: later ${later} retires a consumed ancestor receipt`, async () => {
-    const { loadComposer } = await import("./composer/lazy"); await loadComposer();
     const h = await setup("split", true), { controllerFor } = await import("./composer/controller");
     let entered = false, token: DraftAckRead | undefined, offFirst = () => {}, offLater = () => {}; const hold: { release: (() => void) | null } = { release: null };
     let child: DraftState | undefined, beforeOuter: DraftState | undefined;

@@ -15,7 +15,7 @@ describe("collapse and a transient hold", () => {
       await act(async () => h.drafts.editDraft(h.key, { threadId: 7, showSourceContext: false, uiState: "open" }));
       let observedHold = false;
       off = h.drafts.useDrafts.subscribe((state, previous) => { if (scenario === "hold during collapse" && !observedHold && previous.drafts[h.key]?.uiState === "open" && state.drafts[h.key]?.uiState === "collapsed") { observedHold = true; const done = h.drafts.acquireDraftHold(); expect(done).not.toBeNull(); done!(); } });
-      const body = h.host.querySelector<HTMLElement>('[data-testid="compose-body"]') ?? h.host.querySelector<HTMLElement>('[data-testid="compose-body-loading"]'); expect(body).not.toBeNull(); body!.focus();
+      const body = h.host.querySelector<HTMLElement>('[data-testid="compose-body"]'); expect(body).not.toBeNull(); body!.focus();
       await act(async () => body!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
       if (scenario === "hold round trip") { await act(async () => { release = h.drafts.acquireDraftHold(); expect(release).not.toBeNull(); expect(h.drafts.draftEditsHeld()).toBe(true); (release as () => void)(); release = null; }); }
       off();
@@ -59,7 +59,7 @@ describe("reopening a collapsed draft", () => {
           expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-to"]'));
           expect(h.drafts.materialize(h.key)).toMatchObject({ id: 81, generation: "stable", mode: "forward" });
         } else if (scenario === "later control") expect(document.activeElement).toBe(later);
-        else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+        else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
         expect(h.drafts.materialize(h.key)?.bodyText).toContain("exact authored work");
       } finally { off(); }
     } finally { waiting.resolve(h.detail); if (newer) await newer; later.remove(); await h.cleanup(); }
@@ -163,7 +163,7 @@ describe("focus publication", () => {
       if (kind === "saved") { expect(published).toBe(h.key); expect(h.drafts.useDrafts.getState().drafts[h.key]!.bodyText).toBe("exact authored work"); }
       for (let i = 0; i < 4; i++) await h.flush();
       if (key) expect(document.activeElement).toBe(button);
-      else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { await act(async () => { useList.setState(list, true); }); await h.cleanup(); }
   });
 
@@ -183,7 +183,7 @@ describe("focus publication", () => {
         expect(hit).toBe(true); expect(h.app.getSelectionWriteRevision()).toBe(revision + 1);
       }
       for (let i = 0; i < 4; i++) await h.flush();
-      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { await h.cleanup(); }
   });
 
@@ -203,7 +203,7 @@ describe("focus publication", () => {
       const firstFocus = document.activeElement;
       await act(async () => { button.focus(); button.click(); await Promise.resolve(); });
       for (let i = 0; i < 4; i++) await h.flush();
-      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
       expect(firstFocus).toBe(button);
     } finally { await act(async () => { useList.setState(list, true); }); await h.cleanup(); }
   });
@@ -302,7 +302,7 @@ describe("a fresh Reply", () => {
         await act(async () => { await openCompose("reply", 7); });
         expect(triggered).toBe(true); expect(created).not.toBe("");
         if (scenario === "replace") { expect(h.drafts.materialize(created)).toMatchObject({ inReplyToMessageId: 4, bodyText: "later work", bodyHtml: "<p>later work</p>", toText: "later@example.test" }); expect(h.app.getApp().draftFocus).toBeNull(); expect(composeFocusPending(7)).toBe(false); }
-        else { for (let i = 0; i < 5; i++) await h.flush(); expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]')); }
+        else { for (let i = 0; i < 5; i++) await h.flush(); expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]')); }
       } finally { off(); }
     } finally { await h.cleanup(); }
   });
@@ -562,7 +562,7 @@ describe("reentrant compose focus", () => {
       await act(async () => { h.drafts.editDraft(h.key, { threadId: 7, showSourceContext: false, uiState: "open" }); });
       h.other.focus(); await act(async () => focusDraft(h.key, "body"));
       for (let i = 0; i < 3; i++) await h.flush();
-      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { await h.cleanup(); }
   });
 
@@ -613,7 +613,7 @@ describe("a later control during Reply", () => {
           expect(h.app.getApp().draftFocus).toBeNull();
           expect(composeFocusPending(7)).toBe(false);
         } else {
-          expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+          expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
         }
       } finally { unsubscribe(); }
     } finally { later.remove(); await h.cleanup(); }
@@ -666,7 +666,7 @@ describe("a queued Reply and selection", () => {
         await act(async () => { await openCompose("reply", 7); });
         for (let i = 0; i < 4; i++) await h.flush();
       }
-      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { await act(async () => { useList.setState(previous, true); }); await h.cleanup(); }
   });
 });
@@ -728,7 +728,7 @@ describe("a retired Reader", () => {
       expect(h.app.getApp().draftFocus).toBeNull();
       h.other.focus(); await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "r", bubbles: true })));
       for (let i = 0; i < 3; i++) await h.flush();
-      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { waiting.resolve(h.detail); await h.cleanup(); error.mockRestore(); }
   });
 
@@ -771,7 +771,7 @@ describe("a retired Reader", () => {
       await act(async () => { h.useThreads.setState({ details: new Map([[8, next]]) }); gate.load.mockResolvedValue(next); waiting.resolve(next); await opening; });
       for (let i = 0; i < 3; i++) await h.flush();
       expect(h.host.querySelector('[data-testid="reader"]')).not.toBeNull();
-      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { waiting.resolve(next); if (opening) await opening; await h.cleanup(); error.mockRestore(); }
   });
 
@@ -793,7 +793,7 @@ describe("a retired Reader", () => {
       overlapping();
       await act(async () => { await openCompose("reply", 7); });
       for (let i = 0; i < 3; i++) await h.flush();
-      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { old(); current(); overlapping(); await h.cleanup(); }
   });
 
@@ -831,7 +831,7 @@ describe("a retired Reader", () => {
       await act(async () => h.drafts.forgetDraft(h.key)); h.other.focus();
       await act(async () => { await openCompose("reply", 7); });
       for (let i = 0; i < 3; i++) await h.flush();
-      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { await act(async () => root.unmount()); host.remove(); await h.cleanup(); error.mockRestore(); }
   });
 });
@@ -908,7 +908,7 @@ describe("renderer integration", () => {
           expect(composeFocusPending(7)).toBe(false);
         } else {
           for (let i = 0; i < 5; i++) await h.flush();
-          expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+          expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
         }
       } finally { off(); }
     } finally { await h.cleanup(); }
@@ -957,7 +957,7 @@ describe("collapse exit", () => {
         if (!triggered && previous.drafts[h.key]?.uiState === "open" && state.drafts[h.key]?.uiState === "collapsed") { triggered = true; if (scenario === "successor") newer = openCompose("forward", 7); }
       });
       try {
-        const body = h.host.querySelector<HTMLElement>('[data-testid="compose-body"]') ?? h.host.querySelector<HTMLElement>('[data-testid="compose-body-loading"]'); expect(body).not.toBeNull(); body!.focus();
+        const body = h.host.querySelector<HTMLElement>('[data-testid="compose-body"]'); expect(body).not.toBeNull(); body!.focus();
         await act(async () => body!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
         expect(triggered).toBe(true);
         if (scenario === "successor") { expect(newer).toBeDefined(); expect(composeFocusPending(7)).toBe(true); }
@@ -976,7 +976,7 @@ describe("collapse exit", () => {
 
 describe("the rich controller at Send", () => {
   it.each([true, false])("the rich controller refuses commands at the synchronous Send lock (reenter=%s)", async (reenter) => {
-    const drafts = await import("~/lib/drafts"), { controllerFor } = await import("./composer/controller"), { loadComposer } = await import("./composer/lazy");
+    const drafts = await import("~/lib/drafts"), { controllerFor } = await import("./composer/controller");
     let key: string | undefined, calls = 0; const entered = deferred<void>();
     let reject!: (error: Error) => void; const send = new Promise<{ threadId: number }>((_, fail) => { reject = fail; }); void send.catch(() => {});
     const off = drafts.useDrafts.subscribe((state, previous) => {
@@ -992,7 +992,7 @@ describe("the rich controller at Send", () => {
     let revision = 4;
     drafts.setDraftTransport(async (_method, params) => ({ ...params as object, id: 81, generation: "stable", revision: ++revision, updatedAt: 0 }));
     try {
-      await act(async () => { await loadComposer(); await openCompose("reply", 7); });
+      await act(async () => { await openCompose("reply", 7); });
       for (let i = 0; i < 4; i++) await h.flush();
       const controller = controllerFor(key)!; expect(controller).not.toBeNull();
       await act(async () => { drafts.editDraft(key!, { toText: "person@example.test" }); await drafts.flushDraft(key!); });
@@ -1022,11 +1022,11 @@ describe("the rich controller at Send", () => {
   });
 
   it("a rich quote command before Send is materialized and saved", async () => {
-    const h = await setup("split", true), { controllerFor } = await import("./composer/controller"), { loadComposer } = await import("./composer/lazy"), { openCompose } = await import("~/lib/compose");
+    const h = await setup("split", true), { controllerFor } = await import("./composer/controller"), { openCompose } = await import("~/lib/compose");
     let saved: Record<string, unknown> | undefined;
     h.drafts.setDraftTransport(async (_method, params) => { saved = params as Record<string, unknown>; return { ...saved, id: 81, generation: "stable", revision: 5, updatedAt: 0 }; });
     try {
-      await act(async () => { await loadComposer(); await openCompose("reply", 7); });
+      await act(async () => { await openCompose("reply", 7); });
       for (let i = 0; i < 4; i++) await h.flush();
       const controller = controllerFor(h.key)!; expect(controller).not.toBeNull();
       await act(async () => { controller.run("quote"); });
@@ -1039,7 +1039,7 @@ describe("the rich controller at Send", () => {
   });
 
   it("Send materializes already accepted dirty rich work", async () => {
-    const h = await setup("split", true), { controllerFor } = await import("./composer/controller"), { loadComposer } = await import("./composer/lazy"), { openCompose, sendDraft } = await import("~/lib/compose");
+    const h = await setup("split", true), { controllerFor } = await import("./composer/controller"), { openCompose, sendDraft } = await import("~/lib/compose");
     const wait = deferred<{ threadId: number }>(), entered = deferred<void>(); let request: Record<string, unknown> | undefined, pending: Promise<boolean> | undefined;
     gate.call.mockImplementation(async (method: string, params: Record<string, unknown>) => {
       if (method === "drafts.sourceContext") return { threadId: 7, accountId: 1 };
@@ -1049,7 +1049,7 @@ describe("the rich controller at Send", () => {
     let revision = 4;
     h.drafts.setDraftTransport(async (_method, params) => ({ ...params as object, id: 81, generation: "stable", revision: ++revision, updatedAt: 0 }));
     try {
-      await act(async () => { await loadComposer(); await openCompose("reply", 7); });
+      await act(async () => { await openCompose("reply", 7); });
       for (let i = 0; i < 4; i++) await h.flush();
       const controller = controllerFor(h.key)!; expect(controller).not.toBeNull();
       await act(async () => { h.drafts.editDraft(h.key, { toText: "person@example.test" }); controller.run("quote"); });

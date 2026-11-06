@@ -16,8 +16,7 @@ import { imageView, knownImagesOnly, placeholderPlugin, type ImageHooks } from "
 
 /**
  * The composer's ProseMirror editor (plan 16): plugins, commands, shortcuts,
- * paste and the toolbar's state. Lazy (the composer chunk); nothing here
- * runs before a draft opens.
+ * paste and the toolbar's state. Nothing here runs before a draft opens.
  */
 
 const { marks, nodes } = schema;
@@ -28,14 +27,6 @@ const { marks, nodes } = schema;
 export function docOf(html: string, text: string): PMNode {
   if (html) return parseHtml(html);
   return text ? fromPlainText(text) : emptyDoc();
-}
-
-/** Lines typed before the editor loaded, after a document (in place of an empty one), one paragraph per line. */
-export function appendTyped(doc: PMNode, typed: string): PMNode {
-  const lines = typed.replace(/\u00a0/g, " ").replace(/\r\n?/g, "\n");
-  if (!lines) return doc;
-  const added = lines.split("\n").map((l) => nodes.paragraph.create(null, l ? schema.text(l) : null));
-  return isEmpty(doc) ? nodes.doc.create(null, added) : doc.copy(doc.content.append(Fragment.from(added)));
 }
 
 /** An empty body: one empty line (nothing to send as HTML). */

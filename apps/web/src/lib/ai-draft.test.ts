@@ -946,7 +946,7 @@ describe("the row", () => {
 
   it("off in Settings: ⌘J does nothing", async () => {
     useAiDraftUi.setState({ enabled: false });
-    const { openAiDraft } = await import("./ai-draft-state");
+    const { openAiDraft } = await import("./ai-draft");
     const key = createDraft({ ...newFields(1), toText: "ana@example.test" });
     openAiDraft({ key });
     await tick();

@@ -13,7 +13,7 @@ import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { Archive, Bell, ChevronDown, ChevronLeft, ChevronUp, Forward, Inbox, Layers, MailOpen, OctagonAlert, Printer, Reply, ReplyAll, Sparkles, Star, Tag, Trash2 } from "@terno/ui/icons";
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
 import { installScrollHairline } from "~/lib/scroll-hairline";
@@ -51,12 +51,11 @@ import { useSnack } from "~/lib/snack";
 import { aiAllowed, repliesOffered, summariesOffered } from "~/lib/ai";
 import { summarizable, summarize, useSummaries } from "~/lib/summaries";
 import { RemindPicker } from "./remind-picker";
+import DigestPage from "./digest-page";
+import ReplyReady from "./reply-ready";
+import ThreadFollowups from "./thread-followups";
+import ThreadSummary from "./thread-summary";
 
-// plan 132: nothing of it until a thread opens
-const ThreadSummary = lazy(() => import("./thread-summary"));
-const ThreadFollowups = lazy(() => import("./thread-followups"));
-const ReplyReady = lazy(() => import("./reply-ready"));
-const DigestPage = lazy(() => import("./digest-page"));
 
 /** Plan 132 §7: a summary by hand. Never in spam or trash, nor with one spam message in the thread. Open already: the block shows it. */
 function SummarizeButton({ threadId }: { threadId: number }) {
@@ -529,11 +528,7 @@ export function Reader() {
   const selectedId = useApp((s) => s.selectedId);
   const focusRequest = useApp((s) => s.draftFocus?.seq ?? null);
   // plan 145: the digest's row reads here, and isn't a thread
-  if (selectedId === DIGEST_ROW_ID) return (
-    <Suspense fallback={null}>
-      <DigestPage />
-    </Suspense>
-  );
+  if (selectedId === DIGEST_ROW_ID) return <DigestPage />;
   return <MailReaderView identity={selectedId} focusRequest={focusRequest}><ReaderContent /></MailReaderView>;
 }
 
@@ -727,19 +722,13 @@ function ReaderContent() {
                 <div data-conversation-menu>
                   {/* inside the menu: Lumen's card can stand for the message (plan 59) */}
                   <ReaderHeader detail={detail} account={account} cats={cats} />
-                  <Suspense fallback={null}>
-                    <ThreadFollowups key={`f${detail.thread.id}`} detail={detail} />
-                    {summaryShown && <ThreadSummary key={detail.thread.id} detail={detail} />}
-                  </Suspense>
+                  <ThreadFollowups key={`f${detail.thread.id}`} detail={detail} />
+                  {summaryShown && <ThreadSummary key={`s${detail.thread.id}`} detail={detail} />}
                   <Conversation key={detail.thread.id} messages={detail.messages} icons={iconsFor(detail.thread)} headless={cardHeader} knownEmail={cardHeader ? senderOf(detail).email : null} />
                 </div>
               </MessageMenu>
-              {/* plan 144: off, it never loads; a draft here means it's out of the way */}
-              {repliesOn && !draftKey && (
-                <Suspense fallback={null}>
-                  <ReplyReady key={`r${detail.thread.id}`} threadId={detail.thread.id} />
-                </Suspense>
-              )}
+              {/* plan 144: off, it never shows; a draft here means it's out of the way */}
+              {repliesOn && !draftKey && <ReplyReady key={`r${detail.thread.id}`} threadId={detail.thread.id} />}
               <ScheduledReplyLine threadId={detail.thread.id} />
               <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyName(detail, accounts.map((a) => a.email))} account={account} icons={iconsFor(detail.thread)} />
             </>

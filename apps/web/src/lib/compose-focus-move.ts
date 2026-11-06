@@ -49,7 +49,7 @@ export function prepareEarlyComposeInput(valid: () => boolean, cancel: () => voi
     // Keep the browser's native insertion, including Unicode, but not page shortcuts.
     e.stopImmediatePropagation();
   };
-  const session = { owns, wait: (next: () => void) => { if (!composing) return false; resume = next; return true; }, armed: (el: HTMLElement) => !!destination && valid() && el.closest("[data-draft-key]")?.getAttribute("data-draft-key") === destination.key && el.dataset.testid === (destination.target === "to" ? "compose-to" : destination.target === "ai" && el.dataset.testid === "ai-row-input" ? "ai-row-input" : el.dataset.testid === "compose-body-loading" ? "compose-body-loading" : "compose-body"), take: () => { const value: EarlyText = { text: receiver?.value ?? "", start: receiver?.selectionStart ?? 0, end: receiver?.selectionEnd ?? 0, direction: receiver?.selectionDirection ?? "none" }; stop(); return value; } };
+  const session = { owns, wait: (next: () => void) => { if (!composing) return false; resume = next; return true; }, armed: (el: HTMLElement) => !!destination && valid() && el.closest("[data-draft-key]")?.getAttribute("data-draft-key") === destination.key && el.dataset.testid === (destination.target === "to" ? "compose-to" : destination.target === "ai" && el.dataset.testid === "ai-row-input" ? "ai-row-input" : "compose-body"), take: () => { const value: EarlyText = { text: receiver?.value ?? "", start: receiver?.selectionStart ?? 0, end: receiver?.selectionEnd ?? 0, direction: receiver?.selectionDirection ?? "none" }; stop(); return value; } };
   earlyInput = session;
   document.addEventListener("keydown", key, true);
   document.addEventListener("visibilitychange", hidden, true);
@@ -69,9 +69,7 @@ export interface InlineFocusMove {
   active(): boolean;
 }
 
-const target = (selector: string, root: HTMLElement | null) =>
-  // while the editor's chunk loads, its stand-in takes the keys (and hands them over)
-  (root ?? document).querySelector<HTMLElement>(selector) ?? (selector.includes("compose-body") ? (root ?? document).querySelector<HTMLElement>("[data-testid=compose-body-loading]") : null);
+const target = (selector: string, root: HTMLElement | null) => (root ?? document).querySelector<HTMLElement>(selector);
 const focusable = (el: HTMLElement | null): el is HTMLElement => el !== null && el.isConnected && !el.closest("[inert]");
 
 function place(el: HTMLElement, input: EarlyText | undefined = undefined, current: () => boolean = () => true) {

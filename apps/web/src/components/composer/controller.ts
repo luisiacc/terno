@@ -3,8 +3,8 @@ import { useSyncExternalStore } from "react";
 import { create } from "zustand";
 
 /**
- * The rich composer's seam (plan 16), in the entry chunk and free of
- * ProseMirror: the editor (lazy) registers a controller per draft; the
+ * The rich composer's seam (plan 16), free of ProseMirror: the editor
+ * registers a controller per draft; the
  * action row's Link button, the format bar and focus requests reach it here.
  */
 
@@ -126,7 +126,7 @@ export function registerController(key: string, c: ComposerController): () => vo
   let consumed = false;
   try {
     notify();
-    // a focus asked for before the editor existed (the chunk was still loading)
+    // a focus asked for before the editor existed
     if (pending && pendingFocus.get(key) === pending) {
       pendingFocus.delete(key);
       pending.stop();

@@ -10,7 +10,7 @@ import { log } from "@terno/core/diag";
 import { MAX_PHOTO_CONTACTS, type MailProvider } from "@terno/mail/portable";
 import type { PlatformFiles } from "@terno/store";
 import { IconCache, fnv1a, type CacheEntry } from "./cache";
-import { iconSubject, loadSuffixList, normalizeEmail, registrableDomain } from "./domain";
+import { iconSubject, normalizeEmail, registrableDomain } from "./domain";
 import { fetchSiteIcon } from "./fetcher";
 import { readIcon } from "./image";
 import { IconNetworkError, type IconTransport } from "./transport";
@@ -109,7 +109,7 @@ export class IconService {
   }
 
   private load(): Promise<void> {
-    this.ready ??= Promise.all([this.cache.load(), loadSuffixList(), this.loadPeople()]).then(() => {});
+    this.ready ??= Promise.all([this.cache.load(), this.loadPeople()]).then(() => {});
     return this.ready;
   }
 

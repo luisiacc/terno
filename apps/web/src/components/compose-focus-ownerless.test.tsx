@@ -29,7 +29,7 @@ describe("hold admission", () => {
       for (let i = 0; i < 4; i++) await h.flush();
       if (scenario === "before-effect" || scenario === "held") expect(document.activeElement).toBe(h.other);
       else if (scenario === "successor") expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-to"]'));
-      else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { if (release) (release as () => void)(); if (work) (work as () => void)(); await h.cleanup(); }
   });
 
@@ -47,7 +47,7 @@ describe("hold admission", () => {
       }
       for (let i = 0; i < 4; i++) await h.flush();
       if (hold) expect(document.activeElement).toBe(h.other);
-      else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { if (release) (release as () => void)(); await h.cleanup(); }
   });
 
@@ -91,7 +91,7 @@ describe("hold admission", () => {
       for (let i = 0; i < 4; i++) await h.flush();
       if (scenario === "before" || scenario === "after") expect(document.activeElement).toBe(later);
       else if (scenario === "successor") expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-to"]'));
-      else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { later.remove(); await h.cleanup(); }
   });
 
@@ -108,7 +108,7 @@ describe("hold admission", () => {
       expect(hit).toBe(true); if (move) expect(document.activeElement).toBe(later);
       for (let i = 0; i < 4; i++) await h.flush();
       if (move) expect(document.activeElement).toBe(later);
-      else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { later.remove(); await h.cleanup(); }
   });
 
@@ -150,7 +150,7 @@ describe("moves and publication", () => {
       expect(document.activeElement).toBe(h.other);
       await act(async () => { focusDraft(h.key, 'body'); });
       for (let i = 0; i < 4; i++) await h.flush();
-      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { await h.cleanup(); }
   });
 
@@ -190,7 +190,7 @@ describe("moves and publication", () => {
       expect(document.activeElement).toBe(h.other);
       await act(async () => { focusDraft(h.key, 'body'); });
       for (let i = 0; i < 4; i++) await h.flush();
-      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { await h.cleanup(); }
   });
 
@@ -221,7 +221,7 @@ describe("moves and publication", () => {
       expect(h.drafts.useDrafts.getState().drafts[h.key]!.bodyText).toBe(initial.bodyText);
       expect(h.drafts.useDrafts.getState().drafts[h.key]!.toText).toBe(initial.toText);
       for (let i = 0; i < 4; i++) await h.flush();
-      if (scenario === 'ordinary') expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      if (scenario === 'ordinary') expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
       else expect(document.activeElement).toBe(later);
     } finally { later.remove(); await h.cleanup(); }
   });
@@ -256,7 +256,7 @@ describe("selection intent", () => {
       for (let i = 0; i < 4; i++) await h.flush();
       if (scenario === 'key' || scenario === 'after-effect') expect(document.activeElement).toBe(button);
       else if (scenario === 'successor') expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-to"]'));
-      else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+      else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]'));
     } finally { await act(async () => { useList.setState(list, true); }); await h.cleanup(); }
   });
 });
