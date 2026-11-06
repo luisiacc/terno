@@ -2300,7 +2300,7 @@ It contains none of your mail, contacts, settings or keys.
   "action.row.include": "Include {subject}",
   "action.region": "Preview of {summary}",
   "action.running": "Reading your sentence…",
-  "action.refused": "Terno can't do that from a sentence. It can archive, delete, mark as spam, mark as read, star or move mail.",
+  "action.refused": "Terno can't do that from a sentence. It can archive, delete, mark as spam, mark as read, star or move mail, one of these per sentence.",
   "action.noCondition": "Which mail do you mean?",
   "action.noMatch": "No mail matches that. Try different words.",
   "action.rule.save": "Save the rule",

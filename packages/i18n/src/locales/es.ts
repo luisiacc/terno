@@ -2285,7 +2285,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "action.row.include": "Incluir {subject}",
   "action.region": "Vista previa de {summary}",
   "action.running": "Leyendo tu frase…",
-  "action.refused": "Terno no puede hacer eso desde una frase. Puede archivar, borrar, marcar como spam, marcar como leído, destacar o mover correo.",
+  "action.refused": "Terno no puede hacer eso desde una frase. Puede archivar, borrar, marcar como spam, marcar como leído, destacar o mover correo, una de estas por frase.",
   "action.noCondition": "¿A qué correo te refieres?",
   "action.noMatch": "Ningún correo coincide. Prueba con otras palabras.",
   "action.rule.save": "Guardar la regla",

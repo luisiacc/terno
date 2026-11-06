@@ -153,6 +153,11 @@ describe("the machine counts and adds (plan 154)", () => {
   it("words it can't add stay words, with no total; a tag cut off by the limit shows nothing", () => {
     expect(run(["about <sum>many + few</sum>"])).toEqual({ shown: "about many + few", calculations: [] });
     expect(run(["The total is <sum>120 +"]).shown).toBe("The total is ");
+    // alone on its line after an answer: no stray number, however it arrives, and what it counted still counts
+    expect(run(["One notice [m1].\n\n<count>m1</count>"])).toMatchObject({ shown: "One notice [m1].\n\n", calculations: [{ labels: ["m1"] }] });
+    expect(run(["One notice.\n", "\n<cou", "nt>m1</count>", "\n", "And more."]).shown).toBe("One notice.\n\n\nAnd more.");
+    expect(run(["Paid:\n<sum>1 + 2</sum>"]).shown).toBe("Paid:\n3");
+    expect(run(["Notices:\n<count>m1</count>"]).shown).toBe("Notices:\n1");
     expect(run(["a < b"]).shown).toBe("a < b");
   });
   it("tells the model how many the search found, and that it stopped there", () => {

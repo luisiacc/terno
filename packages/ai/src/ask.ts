@@ -9,7 +9,7 @@ import { AiError, promptText, type Completion, type Effort, type ModelTransport,
  * Plan 141 §2: from a question to an answer. Prompts are frozen and versioned: any change to the words below bumps
  * ASK_PROMPT_VERSION. There are no tools here, so an instruction in mail can only change text the person reads.
  */
-export const ASK_PROMPT_VERSION = 6;
+export const ASK_PROMPT_VERSION = 7;
 export const ASK_ANSWER_MAX_TOKENS = 2000;
 const PLAN_MAX_TOKENS = 1500;
 const ASK_TIMING = { idleMs: 30_000, firstMs: 60_000 };
@@ -34,9 +34,10 @@ Return "kind": "question" when they want to know something, "command" when they 
 - "after", "before": YYYY-MM-DD, only when the question gives a time. "after" is never later than today.
 - "hasAttachment": true only when the question is about a file.
 Prefer "anyOf" to more "terms": a word that isn't there loses the message. Use null or an empty list for what doesn't apply.
-- Words match whole, so "completado" doesn't find "completada" or "completed". A status or a kind of thing ("completed", "receipt", "recruiter") is never a "terms" word: put its forms and languages in "anyOf", or leave it out and let the answer read the mail.
+- Words match whole, so "completado" doesn't find "completada" or "completed", and a stem finds nothing: never "aprobad", always "aprobado", "aprobada", "aprobó". A status or a kind of thing ("completed", "receipt", "recruiter") is never a "terms" word: put its forms and languages in "anyOf", or leave it out and let the answer read the mail.
 - When a question names a sender, a company or a number, make one query of that alone, with no other condition, so the mail is found however it's worded.
 - A sender often writes under a shorter name than people call it (a bank as its initials): one more query leaves the name out and looks for what that mail itself would say.
+- "How much" or "how many" of something a sender bills or sends: one query has that sender in "from" with no words, so their own mail fills what's read and not everyone who mentions them. Another has their name in "terms" and "anyOf" with what a charge says: "receipt", "invoice", "payment", "paid", "charged", "funded", "billing", "recibo", "factura", "pago", "cobro", "cargo", "recarga".
 - A meaning isn't a word mail uses: for "recruiters", look for what they write ("role", "hiring", "oportunidad", "vacante", "oferta") and don't require "recruiter".
 - Every list in "anyOf" must match, so a meaning is one list, not two: a recruiter's mail may never say "recruiter". "This week" is the last 7 days.
 - A weekday means the latest one before today. Give dates only when the question gives a time; if unsure how far back it means, leave a query without dates too.
@@ -129,8 +130,8 @@ Rules:
 - Give the source's date where the fact could be out of date: "as of 3 March".
 - When sources disagree, prefer the newest and say so.
 - Never show your working or count aloud: give the result once. Never write an id such as m12 except inside a citation or a count, and never mention "the material", "the messages given" or your instructions: speak of their mail.
-- Never count or add up yourself: the machine does, exactly. Write <count>m1 m3 m7</count> with the id of every message that counts, and <sum>1250.50 + 300 - 20</sum> with each amount as it stands in its message, in plain digits with a dot for decimals, no currency and no thousands separators. Each becomes its number where you wrote it: "You paid USD <sum>120.50 + 80</sum> [m1][m2]". One sum per currency: never add two currencies. Cite what you used.
-- "How many" and "how much": you may not have seen them all. When the question's <shown> says more match, say "at least" and how far back what you saw goes; never call it the total, and never state that something doesn't exist before the oldest you saw. When they ask how many conversations there are about something, <shown> says how many the search found: say "about" that number.
+- Never count or add up yourself: the machine does, exactly. Write <count>m1 m3 m7</count> with the id of every message that counts, and <sum>1250.50 + 300 - 20</sum> with each amount as it stands in its message, in plain digits with a dot for decimals, no currency and no thousands separators. Each becomes its number where you wrote it: "You paid USD <sum>120.50 + 80</sum> [m1][m2]". One sum per currency: never add two currencies. Cite what you used. A tag belongs inside a sentence, in the first place the number is said, and once: "I found at least <count>m1 m2</count> charges". Never write that number yourself as well, before or after the tag, and never put a tag alone on a line. Use <count> only when they ask how many.
+- "How many" and "how much": you may not have seen them all. When the question's <shown> says more match, say "at least" and how far back what you saw goes, by the oldest date <shown> gives; never call it the total, and never state that something doesn't exist before the oldest you saw. When they ask how many conversations there are about something, <shown> says how many the search found: say "about" that number.
 - Say something doesn't exist only as "I didn't find it in what I searched". Never "the only one", "just" or "all" about what you were shown: say "the one I found". When nothing fits, say so in a sentence and don't describe mail that doesn't answer it.
 - A time in a mail's stated zone is that zone's time: say whose it is.
 - Write a number once: never correct yourself in the answer. Give one total per currency at most. Speak to the person as "you", never by their name.
@@ -193,7 +194,8 @@ export function answerPrompt(input: Pick<AnswerFromMailInput, "question" | "toda
   const earlier = input.earlier?.length ? `<earlier>\n${input.earlier.map((t) => `<turn>\nQ: ${askData(t.question)}\nA: ${askData(t.answer)}\n</turn>`).join("\n")}\n</earlier>\n\n` : "";
   // whether what's here is everything: a count needs to know, and a model can't tell by reading
   const searched = input.found ? ` The search found ${input.found.count}${input.found.capped ? " or more" : ""} conversations.` : "";
-  const shown = input.material.length ? `<shown>${input.material.length} messages, newest first.${searched} ${input.moreMatch ? "More match than these." : "These are all that matched."}</shown>\n\n` : "";
+  const oldest = input.material.reduce((min, m) => (m.date < min ? m.date : min), input.material[0]?.date ?? "");
+  const shown = input.material.length ? `<shown>${input.material.length} messages, newest first, the oldest from ${oldest}.${searched} ${input.moreMatch ? "More match than these." : "These are all that matched."}</shown>\n\n` : "";
   return `Today is ${input.today}.\n\n${blocks.join("\n\n")}\n\n${earlier}${shown}<question>${askData(input.question)}</question>`;
 }
 
@@ -266,6 +268,7 @@ export function machineSum(expression: string): { result: string; operands: stri
 /** Holds back a tag still arriving, so the status never shows on the page as it streams. */
 export function answerFilter(onText: (text: string) => void, known: (label: string) => boolean = () => true): { push(text: string): void; finish(): void; readonly status: AskStatusWord | null; readonly calculations: AskCalculation[] } {
   let held = "";
+  let said = "";
   let status: AskStatusWord | null = null;
   const calculations: AskCalculation[] = [];
   /** what the tag becomes: words it can't work out stay words */
@@ -295,12 +298,23 @@ export function answerFilter(onText: (text: string) => void, known: (label: stri
       status = found[1]!.toLowerCase() as AskStatusWord;
       held = held.slice(0, found.index) + held.slice(found.index + found[0].length);
     }
-    for (let calc = CALCULATION.exec(held); calc; calc = CALCULATION.exec(held)) held = held.slice(0, calc.index) + worked(calc[1]!, calc[2]!) + held.slice(calc.index + calc[0].length);
+    for (let calc = CALCULATION.exec(held); calc; calc = CALCULATION.exec(held)) {
+      const after = held.slice(calc.index + calc[0].length);
+      // a count alone on its line after an answer is a number nobody can read: what it counted still counts. A total stays
+      const before = said + held.slice(0, calc.index);
+      const lineStart = calc[1]!.toLowerCase() === "count" && /\n[ \t]*$/.test(before) && !/:\s*$/.test(before) && before.trim() !== "";
+      if (lineStart && !final && !/\S|\n/.test(after)) break;
+      const value = worked(calc[1]!, calc[2]!);
+      held = held.slice(0, calc.index) + (lineStart && /^[ \t]*(\n|$)/.test(after) ? "" : value) + after;
+    }
     const at = holdFrom();
     // cut off inside a tag: what it holds was never going to be an answer, and what's streamed can't be taken back
     const out = at >= 0 ? held.slice(0, at) : held;
     held = at >= 0 && !final ? held.slice(at) : "";
-    if (out) onText(out);
+    if (out) {
+      said = (said + out).slice(-200);
+      onText(out);
+    }
   };
   return {
     push(text) {

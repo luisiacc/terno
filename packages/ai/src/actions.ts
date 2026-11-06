@@ -11,7 +11,7 @@ import { AiError } from "./types";
  * a sender's name and domain and a subject's shape, never a body or an address, and it can only remove rows. Frozen and
  * versioned: any change to the words bumps this.
  */
-export const ACTION_PROMPT_VERSION = 5;
+export const ACTION_PROMPT_VERSION = 6;
 const PLAN_MAX_TOKENS = 2000;
 export const CHECK_GROUPS_MAX = 200;
 // a delete may drop every group: 200 labels and the JSON around them
@@ -55,7 +55,7 @@ Return:
 - "conditions": every one must hold, so alternatives go in one regular expression: { field: "subject", op: "matches", value: "shipping|delivery|tracking" }. Fields: from, fromDomain, recipients, subject, opening (the subject and the message's first lines), body (whole words), listId, hasAttachment, account, ageDays. Text ops: contains, equals, startsWith, endsWith, matches; body and text can't use matches; opening only uses matches and has no negate. ageDays uses gt (older than N days) or lt. Use negate for exceptions: "except Amazon" is { field: "fromDomain", op: "contains", value: "amazon", negate: true }.
   - A pattern ignores case and matches inside words, so short words need \\b: "\\bPR\\b" doesn't catch "Pro". Prefer what only that mail says: "pull request" and "\\bPR #?\\d+".
   - Alternatives in English and Spanish, and every form: "sign-?in|inicio de sesi|password|contrase". Mail in this mailbox may be in either.
-  - Every sender the sentence names goes in the conditions, all in one pattern; nothing it names is dropped. When it names senders and also a kind of mail ("Tilopay's receipts"), the senders are the condition and "meaning" is true, so each one is then checked: don't narrow them by subject words they may not use.
+  - Every sender the sentence names goes in the conditions, all in one pattern; nothing it names is dropped. When it names senders and also a kind of mail ("Tilopay's receipts"), the senders are the condition and "meaning" is true, so each one is then checked: don't narrow them by subject words they may not use, or by listId, which plenty of newsletters don't have.
   - For a kind of mail, match on opening rather than subject: "login alerts" or "job alerts" often say what they are only in their first lines. Subject is for what the sentence says is in the subject.
   - A publication's or a report's name ("Boletín Judicial") is usually in the subject, not the sender.
   - Each condition you add loses mail, so use the fewest that catch it: one for a kind of mail, never subject and sender together for the same thing. Named senders need no list condition.
@@ -137,7 +137,7 @@ const CHECK_SYSTEM = (destructive: boolean) => `Someone asked for something to b
 
 "drop" is what the action must NOT touch: never the ones to act on. Return the group ids, like "g2". For "delete the promotions", a promotion stays on the list and a server error is dropped.
 
-${destructive ? `This would delete mail or mark it as spam, and people skim. Drop every group you aren't sure fits. An error or alert from a service, anything from a bank, a payment or invoice, a security or account notice, a person, a client or a legal matter is dropped unless the sentence plainly names it.` : `Drop the groups that clearly don't fit. Leave in what fits or might.`} You can only take groups off, and they see what's left.
+${destructive ? `This would delete mail or mark it as spam, and people skim. Drop every group you aren't sure fits. An error or alert from a service, anything from a bank, a payment or invoice, a security or account notice, a person, a client or a legal matter is dropped unless the sentence plainly names it.` : `Drop only the groups that clearly don't fit. Leave in what fits or might, in any wording or language: "a new device signed in" is a new sign-in. One conversation counts as much as fifty.`} You can only take groups off, and they see what's left.
 `;
 
 const groupData = (text: string) => text.replace(/<(\s*\/?\s*)(groups|sentence|group)\b/giu, "‹$1$2").replace(/[\r\n]+/g, " ");
