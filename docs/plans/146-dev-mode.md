@@ -94,3 +94,11 @@ Codex (read-only, against `82e4116e`) raised 6 points; all are accepted. Each re
 4. **The monthly limit is background only** (`ai-limiter.ts`: foreground requests are exempt). §1's sentence is wrong and goes; no new ceiling is added. The section says so, since these are the developer's own keys and their own bill.
 5. **JEV alone sets `provider: "none"`.** Keeping the stored provider while marking it ready would pass `aiReady` with no permitted key, and misstate a local provider as cloud. With no writing key the overlay is `none`, with `keys.jev` on, so only categorizing runs.
 6. **The e2e fakes discovery too.** `ai.listModels` bypasses `aiFactory`. `DevServerOptions` gets the existing test network's stub for model lists, and the spec asserts nothing reaches the outside.
+
+## What the code review changed
+
+Codex (read-only, on the three commits after `82e4116e`) raised 3 points, all fixed, each with a test that fails without the fix. It found no key leak, no way for a packaged or web build to get the section, and no missing string.
+
+1. **A task resolving its target during a toggle could reach the old setup.** Revoking leases doesn't cover a `forTask` that hasn't taken one yet. It now captures an epoch before its first await and starts over if the switch moved.
+2. **`listModels` and `test` ran on after a toggle,** on the environment's key, since they only followed shutdown. They now stop with the same epoch.
+3. **The "no key in the renderer" check read only what was displayed.** The backend test now checks the whole bootstrap and settings payloads, and the e2e no longer claims it.

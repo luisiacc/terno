@@ -87,6 +87,8 @@ export class AiService {
   private readonly requests = new Map<string, { clientId: string; controller: AbortController }>();
   /** by secret name: aborted when that key is replaced or removed, and what was built under it dies with it */
   private readonly keyLeases = new Map<string, AbortController>();
+  /** plan 146: replaced when Dev mode's switch moves: what began before that is stopped, or starts over */
+  private devAiEpoch = new AbortController();
   readonly limiter: AiLimiter;
 
   constructor(
@@ -132,6 +134,8 @@ export class AiService {
 
   /** Plan 146: every key changed at once: also what filters run, and the transports workers already hold. */
   devAiChanged(): void {
+    this.devAiEpoch.abort();
+    this.devAiEpoch = new AbortController();
     this.configChanged();
     for (const controller of this.generating.values()) controller.abort();
     for (const lease of this.keyLeases.values()) lease.abort();
@@ -251,6 +255,7 @@ export class AiService {
    * caller others, and aborts what's in flight (configChanged).
    */
   async forTask(task: AiTaskName | "filter" | "voice" | "intent" | "askPlan", o: { foreground?: boolean } = {}): Promise<AiTasks> {
+    const epoch = this.devAiEpoch.signal;
     const settings = await readSettings(this.b.store);
     const target = await this.targetFor(task, settings);
     const lease = this.keyLease(keySecretName(target.provider, target.preset));
@@ -262,7 +267,7 @@ export class AiService {
     const foreground = o.foreground ?? (task === "filter" || task === "writing");
     const key = await sha256Hex(JSON.stringify({ ...hashed, task, foreground }));
     // the key changed while this was reading it: what it holds may be the one taken back
-    if (lease.signal.aborted) return this.forTask(task, o);
+    if (lease.signal.aborted || epoch.aborted) return this.forTask(task, o);
     let ai = this.clients.get(key);
     if (!ai) {
       if (this.clients.size > 16) this.clients.clear();
@@ -325,6 +330,7 @@ export class AiService {
 
   async listModels(target: Omit<Target, "model">): Promise<{ models: ModelInfo[]; tookMs: number }> {
     const started = performance.now();
+    const signal = AbortSignal.any([this.b.abort.signal, this.devAiEpoch.signal]);
     const settings = await readSettings(this.b.store);
     // the saved profile fills the gaps: its endpoint, and its model (so Ollama can report the context window)
     const profile = settings.ai.profiles[target.provider];
@@ -337,7 +343,7 @@ export class AiService {
       const hit = this.models.get(cacheKey);
       if (hit && Date.now() - hit.at < MODELS_TTL_MS) return { models: hit.models, tookMs: performance.now() - started };
       const local = isLocalProvider({ id: target.provider, baseURL: config.baseURL, preset: target.preset });
-      const models = await discoverModels({ ...config, timeoutMs: local ? 3_000 : 8_000 }, this.b.abort.signal);
+      const models = await discoverModels({ ...config, timeoutMs: local ? 3_000 : 8_000 }, signal);
       this.models.set(cacheKey, { at: Date.now(), models });
       return { models, tookMs: performance.now() - started };
     } catch (error) {
@@ -347,9 +353,10 @@ export class AiService {
 
   async test(target: Target): Promise<AiTestResult> {
     const started = performance.now();
+    const signal = AbortSignal.any([this.b.abort.signal, this.devAiEpoch.signal]);
     try {
       const config = await this.config(target);
-      const result = await probe(config, this.b.abort.signal);
+      const result = await probe(config, signal);
       await saveCapabilities(this.b.store, target.provider, { model: target.model, baseURL: target.baseURL, preset: target.preset }, result.capabilities);
       return { ok: true, latencyMs: result.latencyMs, capabilities: result.capabilities, ...(result.warning ? { warning: result.warning.message, warningI18n: textRef(result.warning) } : {}) };
     } catch (error) {

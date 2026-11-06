@@ -6,9 +6,15 @@ import { AiError, createAi, DEFAULT_ANTHROPIC_MODEL, type CompletionRequest, typ
 import { devAiKeys, JEV_DEFAULT_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type DevAiKeys } from "@terno/core";
 import { createMemoryTransportPair, RpcClient, type AppSettings } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { exportMailbox } from "./import";
+
+// a model list or a connection test that runs until it's told to stop, with nothing sent
+vi.mock("@terno/ai", async (original) => {
+  const untilStopped = (_config: unknown, signal: AbortSignal) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(new Error("stopped"))));
+  return { ...(await original<typeof import("@terno/ai")>()), discoverModels: untilStopped, probe: untilStopped };
+});
 
 const ALL: DevAiKeys = { anthropic: "env-anthropic", openai: "env-openai", jev: "env-jev" };
 const cleanups: (() => Promise<void>)[] = [];
@@ -80,7 +86,9 @@ describe("on a local build", () => {
     const boot = await client.call("app.bootstrap", {});
     expect(boot.devAi).toEqual({ anthropic: true, openai: false, jev: false });
     expect(boot.settings.devAi).toBe(false);
+    expect(JSON.stringify(boot)).not.toContain("env-anthropic");
     expect(JSON.stringify(await client.call("settings.update", { devAi: true }))).not.toContain("env-anthropic");
+    expect(JSON.stringify(await client.call("app.bootstrap", {}))).not.toContain("env-anthropic");
   });
 
   it("changes nothing until it's on", async () => {
@@ -178,6 +186,37 @@ describe("on a local build", () => {
     expect(settings.ai).toMatchObject({ provider: "ollama", model: "qwen" });
     expect(settings).not.toHaveProperty("devAi");
     expect(JSON.stringify(settings)).not.toContain("env-");
+  });
+
+  it("a task still working out its target when it's toggled starts over, and never reaches the old setup", async () => {
+    const { backend, built, client } = await start(ALL);
+    await client.call("settings.update", { ai: { provider: "ollama", baseURL: "http://127.0.0.1:9/v1", model: "qwen" } });
+    const service = backend.aiService as unknown as { targetFor: (...a: unknown[]) => Promise<unknown> };
+    const targetFor = service.targetFor.bind(service);
+    let release = () => {};
+    const held = new Promise<void>((r) => (release = r));
+    const spy = vi.spyOn(service, "targetFor").mockImplementationOnce(async (...a) => {
+      const target = await targetFor(...a);
+      await held;
+      return target;
+    });
+    const pending = backend.aiService.forTask("writing");
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    await client.call("settings.update", { devAi: true });
+    release();
+    await pending;
+    expect(built.at(-1)).toMatchObject({ id: "anthropic", apiKey: "env-anthropic" });
+  });
+
+  it("toggling stops a model list and a connection test using the environment's key", async () => {
+    const { backend, client, on } = await start(ALL);
+    await on();
+    const listing = backend.aiService.listModels({ provider: "anthropic" }).then(() => null, (e: unknown) => e);
+    const testing = backend.aiService.test({ provider: "anthropic", model: "m" });
+    await new Promise((r) => setTimeout(r, 20));
+    await client.call("settings.update", { devAi: false });
+    expect(await listing).toBeInstanceOf(Error);
+    expect((await testing).ok).toBe(false);
   });
 
   it("toggling stops what's in flight, filters included, and revokes what a worker holds", async () => {

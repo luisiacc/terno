@@ -22,8 +22,6 @@ test("names its variables, and Pro AI turns the AI features on and gives the sav
   await page.getByTestId("tab-dev").click();
   await page.getByTestId("dev-ai-switch").click();
   await expect(page.getByTestId("dev-ai-on")).toBeVisible();
-  // the key values stay in the backend
-  await expect(page.getByTestId("dev-tab")).not.toContainText("invented");
 
   // what would write settings the overlay hides says so; the features below stay
   await page.getByTestId("tab-ai").click();
