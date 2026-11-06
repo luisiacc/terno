@@ -1,7 +1,7 @@
 /** Plan 146: Settings → Dev mode, on a local build, with invented keys (the rules behind it: dev-ai.test.ts). */
 import { expect, test } from "./fixtures";
 
-test.use({ backendOptions: { devAi: { anthropic: "invented-anthropic-key", jev: "invented-jev-key" } } });
+test.use({ today: true, backendOptions: { devAi: { anthropic: "invented-anthropic-key", jev: "invented-jev-key" } } });
 
 test("names its variables, and Pro AI turns the AI features on and gives the saved setup back", async ({ app: page }) => {
   await page.keyboard.press("Meta+k");

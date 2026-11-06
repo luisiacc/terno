@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
 vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(async () => ({})), on: () => () => {}, connectionVersion: 1 } }));
 
-const { useToday } = await import("./today");
+const { installToday, useToday } = await import("./today");
+installToday();
 const { getApp, setApp } = await import("./app");
 
 const keys = { anthropic: true, openai: false, jev: false };
