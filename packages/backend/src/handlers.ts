@@ -322,24 +322,31 @@ export function createHandlers(b: Backend): Handlers {
       const r = await moveToFolder(accountId, folder, null, ids, progress, narrow);
       return { undoId: r.undoId };
     },
-    toCategory: async (categoryId, threadIds, record) => {
+    toCategory: async (categoryId, slice, narrow, record) => {
       await requireCategory(categoryId);
       // `bulk`, and nothing planned: a sentence never forwards (revision 1)
-      const { batchId } = await store.categories.beginMove({ to: categoryId, threadIds, addedBy: "bulk", now: b.now(), source: "sentence" });
-      // known before anything can fail: what committed always has its Undo (revision 5)
-      const step = { batchId, ended: [] as unknown[], tops: [] as unknown[] };
-      record(step);
+      const { batchId } = await store.categories.beginMove({ to: categoryId, threadIds: slice, addedBy: "bulk", now: b.now(), source: "sentence" });
+      // read after the batch is written, and committed in that same turn (revision 10): nothing can arrive or Stop between them, in either store
+      const threadIds = await narrow(slice);
       try {
-        await b.finishMove(batchId);
-      } catch (error) {
-        // nothing left for the next start to finish behind the user's back
+        if (threadIds.length) {
+          const r = await store.categories.applyMoveSlice(batchId, threadIds, b.now());
+          b.categorizer.apply(r.deltas);
+          b.notifyChanged(r.touched);
+        }
+      } finally {
+        // what it didn't reach stays out of it: nothing's left for the next start. One slice is one transaction, so a failed one did nothing.
         await store.categories.abandonMove(batchId);
-        throw error;
       }
+      if (!threadIds.length) return;
+      const step = { batchId, ended: [] as unknown[], tops: [] as unknown[] };
       if ((await store.categories.list()).some((c) => c.id === categoryId && !c.showInInbox)) {
         step.ended = await b.reminders.endDue(threadIds);
         step.tops = await b.followups.endTop(threadIds);
       }
+      // committed: it counts and has its Undo, whatever training does next (revision 5). A failed training resumes at the next start.
+      record(step);
+      await b.finishMove(batchId);
     },
     undoActs,
     undoMove: async ({ batchId, ended, tops }) => {

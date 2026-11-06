@@ -452,6 +452,52 @@ onBoth(() => describe("one Undo", () => {
     expect(r.done).toBe(59);
   });
 
+  it("a slice commits in the turn it was read: nothing can arrive or stop it between", async () => {
+    const { client, backend, put, preview, apply } = await setup();
+    await put();
+    const to = await client.call("categories.create", { name: "To", color: "lime" });
+    const p = await preview({ actionType: "moveToCategory", categoryId: to.id, lookIn: "everywhere" });
+    const facts = backend.store.filters.actionFacts.bind(backend.store.filters);
+    let turned = false;
+    const read = vi.spyOn(backend.store.filters, "actionFacts").mockImplementation(async (...a) => {
+      const r = await facts(...a);
+      turned = false;
+      setImmediate(() => (turned = true));
+      return r;
+    });
+    const slice = backend.store.categories.applyMoveSlice.bind(backend.store.categories);
+    let at: boolean | null = null;
+    const write = vi.spyOn(backend.store.categories, "applyMoveSlice").mockImplementation(async (...a) => {
+      at = turned;
+      return slice(...a);
+    });
+    await apply(p);
+    read.mockRestore();
+    write.mockRestore();
+    expect(at).toBe(false);
+  });
+
+  it("training that fails after the mail moved: what moved counts, and its Undo and reminders are in order", async () => {
+    const { client, backend, put, preview, apply } = await setup();
+    const ids: number[] = [];
+    for (let i = 0; i < 3; i++) ids.push(await put());
+    const r0 = await apply(await preview({ actionType: "createCategory", categoryName: "Hidden", lookIn: "everywhere" }));
+    await client.call("ai.actionUndo", { token: r0.undoToken! });
+    const to = await client.call("categories.create", { name: "To", color: "lime" });
+    const p = await preview({ actionType: "moveToCategory", categoryId: to.id, lookIn: "everywhere" });
+    const ended = vi.spyOn(backend.reminders, "endDue");
+    const train = vi.spyOn(backend.store.categories, "trainMoveSlice").mockRejectedValueOnce(new Error("disk full"));
+    const r = await apply(p);
+    const moved = (await backend.store.filters.actionFacts(ids, to.id)).filter((f) => f.inCategory).length;
+    expect(moved).toBeGreaterThan(0);
+    expect(r).toMatchObject({ failed: true, done: moved });
+    expect(ended.mock.calls.flatMap((c) => c[0])).toEqual(expect.arrayContaining((await backend.store.filters.actionFacts(ids, to.id)).filter((f) => f.inCategory).map((f) => f.id)));
+    train.mockRestore();
+    ended.mockRestore();
+    await client.call("ai.actionUndo", { token: r.undoToken! });
+    expect((await backend.store.filters.actionFacts(ids, to.id)).filter((f) => f.inCategory)).toEqual([]);
+  });
+
   it("a move's slice that fails keeps its Undo, and nothing's left for the next start", async () => {
     const { client, backend, put, preview, apply } = await setup();
     const ids: number[] = [];
@@ -509,9 +555,9 @@ describe("the check", () => {
 
   it("unusual addresses go too: an accent, a quoted name", async () => {
     const { model, put, preview, check } = await setup();
-    await put({ subject: 'Invoice from josé@example.com and "anna smith"@example.com', from: { name: "josé@example.com", email: "a@acme.test" } });
+    await put({ subject: 'Invoice from josé@example.com, admin@[192.168.1.10], root@[IPv6:2001:db8::1] and "anna smith"@example.com', from: { name: "josé@example.com", email: "a@acme.test" } });
     await check(await preview(meaning));
-    expect(model.checks.map((q) => promptText(q.messages[0]!.content)).join()).not.toMatch(/@|anna smith|josé/i);
+    expect(model.checks.map((q) => promptText(q.messages[0]!.content)).join()).not.toMatch(/@|anna smith|josé|192\.168|2001:db8/i);
   });
 
   it("Skip after a check that failed leaves the rule's matches in", async () => {
@@ -541,6 +587,20 @@ describe("the check", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(model.checks).toHaveLength(1);
     await expect(client.call("ai.actionPage", { previewId: p.previewId, offset: 0, limit: 1, leftOut: false })).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("cleared while its groups are being built: nothing goes, and it holds nothing", async () => {
+    const { model, backend, put, preview, check } = await setup();
+    await put();
+    const p = await preview(meaning);
+    const facts = backend.store.filters.actionFacts.bind(backend.store.filters);
+    const spy = vi.spyOn(backend.store.filters, "actionFacts").mockImplementation(async (...a) => {
+      backend.actions.invalidate(null);
+      return facts(...a);
+    });
+    await expect(check(p)).rejects.toBeTruthy();
+    spy.mockRestore();
+    expect(model.checks).toEqual([]);
   });
 
   it("only drop removes; an unknown label is ignored; left-out rows come last, unticked, and can be ticked back", async () => {

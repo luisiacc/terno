@@ -216,3 +216,11 @@ Codex (read-only, `git diff main..HEAD`) raised 13 points, all fixed with a test
 11. The stores checked different groups first: groups follow the preview's order, not a store's answer. Tested on both.
 12. Body conditions reread the whole SQLite mailbox per window: `matchMessages` prepares only that window's captures, and windows with a body test hold 400 messages, so one stays inside the budget (a gate holds it).
 13. Apply and Undo ran only on SQLite: what changed, Undo and the check's order now run on both stores.
+
+Round two, on those fixes (5 points, all fixed):
+
+14. A category move could still commit what changed during `finishMove`'s yield: the batch is written first, then the read, then the slice in the same turn, in both stores. `abandonMove` takes out what the read left out.
+15. `admin@[192.168.1.10]` and `root@[IPv6:…]` passed the redaction: bracketed domains too.
+16. Clear AI data during a group build left it running and holding what it read: it checks between slices, and a dropped preview lets go of its groups, rows and timer.
+17. Leaving a preview by the sidebar kept the rows it meant to come back to: any way out lets go of them.
+18. Training that failed after a move committed lost the count and left its due reminders pinned: pins end and the step is recorded as soon as the slice commits; training resumes at the next start.

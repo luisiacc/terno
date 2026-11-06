@@ -90,5 +90,8 @@ export const rowsToggled: { current: ((preview: import("@terno/core").ActionPrev
 
 // whatever took the list elsewhere, the backend lets go of the preview too
 useApp.subscribe((s, prev) => {
-  if (prev.actionPreview && s.actionPreview !== prev.actionPreview) void client.call("ai.actionCancel", { previewId: prev.actionPreview }).catch(() => {});
+  if (!prev.actionPreview || s.actionPreview === prev.actionPreview) return;
+  void client.call("ai.actionCancel", { previewId: prev.actionPreview }).catch(() => {});
+  // the rows it kept to come back to hold mail: nothing keeps them once it's over, however it ended
+  if (!s.actionPreview) useActionRows.setState({ from: null, unticked: new Set() });
 });

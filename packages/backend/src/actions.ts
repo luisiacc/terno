@@ -52,7 +52,7 @@ export interface ActionOps {
   act(ids: number[], action: "archive" | "trash" | "spam" | "markRead" | "star", narrow: Narrow, progress: (done: number) => void): Promise<{ undoId: number | null }>;
   toFolder(accountId: number, folder: string, ids: number[], narrow: Narrow, progress: (done: number) => void): Promise<{ undoId: number | null }>;
   /** one slice's move, finished: stopping never leaves one for startup to resume */
-  toCategory(categoryId: number, ids: number[], record: (step: MoveStep) => void): Promise<void>;
+  toCategory(categoryId: number, ids: number[], narrow: Narrow, record: (step: MoveStep) => void): Promise<void>;
   undoActs(undoId: number, jobId: string | undefined): Promise<number>;
   undoMove(step: MoveStep): Promise<number>;
   ensureFilter(rule: FilterRule, name: string): Promise<{ filterUndo: number | null }>;
@@ -157,6 +157,13 @@ export class ActionsService {
   private drop(p: Preview): void {
     p.dead = true;
     p.controller.abort();
+    // what it held of the mail goes with it
+    p.groups = null;
+    p.keptGroups = [];
+    p.droppedGroups = [];
+    p.ids = [];
+    p.skipped = [];
+    p.stamps.clear();
     if (p.timer) clearTimeout(p.timer);
     this.previews.delete(p.id);
   }
@@ -177,6 +184,7 @@ export class ActionsService {
     p.usedAt = this.b.now();
     if (p.timer) clearTimeout(p.timer);
     // one shot, to let go of the ids: nothing spins while it waits
+    if (p.dead) return;
     p.timer = setTimeout(() => {
       if (!p.applying) this.drop(p);
     }, PREVIEW_MS);
@@ -455,6 +463,7 @@ export class ActionsService {
   /** Every row, as a group of a sender and a subject, newest first: never a body, never a whole address. */
   private async buildGroups(p: Preview): Promise<void> {
     if (p.groups) return;
+    const gone = () => new AiError(L("errors.ai.cancelled"), "cancelled");
     const byKey = new Map<string, Group>();
     const ids = p.ids;
     for (let i = 0; i < ids.length; i += 1000) {
@@ -474,6 +483,7 @@ export class ActionsService {
         g.ids.push(f.id);
       }
       await this.b.yieldTurn();
+      if (p.dead) throw gone();
     }
     p.groups = [...byKey.values()];
     // not reached yet: left out until it is
@@ -527,6 +537,7 @@ export class ActionsService {
         // a later request failed: what was checked stands, the rest stays left out and said
         if (sent === 0 || (error instanceof AiError && error.kind === "cancelled")) throw error;
       }
+      if (p.dead) throw new AiError(L("errors.ai.cancelled"), "cancelled");
       p.check = "done";
       this.touch(p);
       return { status: "done", preview: this.info(p) };
@@ -613,8 +624,11 @@ export class ActionsService {
         let reached = 0;
         // a move for each slice, read again just before it (revision 10), and Stop falls between them (revision 12)
         await this.b.runBudgeted(targets, async (slice) => {
-          const chunk = await narrow(slice);
-          if (chunk.length) await ops.toCategory(categoryId!, chunk, (step) => moves.push(step));
+          await ops.toCategory(categoryId!, slice, narrow, (step) => {
+            moves.push(step);
+            done += pending;
+            pending = 0;
+          });
           progress((reached += slice.length));
         });
       } else {
