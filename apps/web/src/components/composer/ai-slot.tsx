@@ -2,7 +2,7 @@ import { t } from "@terno/i18n";
 import { IconButton } from "@terno/ui/components/icon-button";
 import { Sparkles } from "@terno/ui/icons";
 import { lazy, Suspense } from "react";
-import { openAiDraft, useAiDraftUi } from "~/lib/ai-draft-state";
+import { openAiDraft, useAiDraftUi, useCanDraft } from "~/lib/ai-draft-state";
 
 /**
  * Plan 133: the entry chunk's doors to the lazy AI row and preview: each renders nothing, and loads nothing, until the
@@ -37,8 +37,8 @@ const keepSelection = (e: React.MouseEvent) => e.preventDefault();
 
 /** The quiet Sparkles in a draft's footer and on the reply bar. */
 export function AiDraftButton({ draftKey, threadId, disabled, testId }: { draftKey?: string; threadId?: number; disabled?: boolean; testId: string }) {
-  const enabled = useAiDraftUi((s) => s.enabled);
-  if (!enabled) return null;
+  const offered = useCanDraft();
+  if (!offered) return null;
   return (
     <IconButton label={t("aiDraft.button")} shortcut="mod+j" disabled={disabled} onMouseDown={keepSelection} onClick={() => openAiDraft({ ...(draftKey ? { key: draftKey } : {}), ...(threadId !== undefined ? { threadId } : {}) })} data-testid={testId} className="[&_svg]:[--icon-line:var(--icon-line-toolbar)]">
       <Sparkles />

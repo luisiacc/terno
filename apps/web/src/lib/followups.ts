@@ -1,6 +1,7 @@
 import { followupDaysSince, mostUrgent, type FollowupRow } from "@terno/core";
 import type { FollowupsSnapshot } from "@terno/core";
 import { t } from "@terno/i18n";
+import { followupsOffered } from "~/lib/ai";
 import { onExplicitOpen } from "~/lib/open-dwell";
 import { registerUndo, snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
@@ -31,7 +32,7 @@ export async function loadFollowups(): Promise<void> {
   applyFollowups(await client.call("followups.list", {}));
 }
 
-const on = () => getApp().settings?.followups?.enabled === true;
+const on = () => followupsOffered(getApp());
 
 export const anyFollowupOnTop = (): boolean => on() && useFollowups.getState().onTop > 0;
 
@@ -61,17 +62,17 @@ export async function actOnFollowup(row: FollowupRow, action: "done" | "dismiss"
   }
 }
 
-/** Opening ends the Inbox row, not the follow-up, once it stayed on screen. */
+/** Opening ends the Inbox row, not the follow-up, once it stayed on screen. What's hidden (plan 147) isn't seen: it stays for when it shows again. */
 onExplicitOpen({
-  opened: (id) => (useFollowups.getState().byThread.get(id)?.some((r) => r.inboxState === "onTop") ? true : null),
+  opened: (id) => (on() && useFollowups.getState().byThread.get(id)?.some((r) => r.inboxState === "onTop") ? true : null),
   settled: (id) => void client.call("followups.seen", { threadId: id }).catch(() => {}),
 });
 
 /** Plan 142 §8: off hides the row, the list and the lines at once, here and in every window; on brings them back. */
 useApp.subscribe((s, prev) => {
-  const was = prev.settings?.followups?.enabled;
-  const now = s.settings?.followups?.enabled;
-  if (was === undefined || was === now) return;
+  if (!prev.settings) return;
+  const now = followupsOffered(s);
+  if (followupsOffered(prev) === now) return;
   if (!now && s.followups) navigate({ view: "inbox" });
   else if (inPlainInbox(s)) void reloadList({ keepSelection: true });
 });

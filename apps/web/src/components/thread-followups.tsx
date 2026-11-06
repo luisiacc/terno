@@ -5,6 +5,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { ArrowRight } from "@terno/ui/icons";
 import { lazy, Suspense, useEffect } from "react";
+import { followupsOffered } from "~/lib/ai";
+import { useCanDraft } from "~/lib/ai-draft-state";
 import { actOnFollowup, followupLine } from "~/lib/followups";
 import { presetLabel, reminderShort } from "~/lib/reminders";
 import { revealSummaryMessage } from "~/lib/summaries";
@@ -17,6 +19,8 @@ const FollowupsTip = lazy(() => import("./followups-tip"));
 
 function Line({ row }: { row: FollowupRow }) {
   const line = followupLine(row);
+  // plan 147: a follow-up stays readable when its key goes; a nudge is a draft, and can't be written
+  const canNudge = useCanDraft();
   const later = remindPresets(new Date(), "always");
   return (
     <div className="space-y-1" data-testid="followup-line" data-kind={row.kind} data-state={row.state}>
@@ -45,8 +49,12 @@ function Line({ row }: { row: FollowupRow }) {
         <span aria-hidden>·</span>
         {row.kind === "awaiting" ? (
           <>
-            <Button variant="link-secondary" size="xs" data-testid="followup-nudge" onClick={() => void nudge(row)}>{t("followup.nudge")}</Button>
-            <span aria-hidden>·</span>
+            {canNudge && (
+              <>
+                <Button variant="link-secondary" size="xs" data-testid="followup-nudge" onClick={() => void nudge(row)}>{t("followup.nudge")}</Button>
+                <span aria-hidden>·</span>
+              </>
+            )}
             <Button variant="link-secondary" size="xs" data-testid="followup-dismiss" onClick={() => void actOnFollowup(row, "dismiss")}>{t("followup.dismiss")}</Button>
           </>
         ) : (
@@ -72,7 +80,7 @@ function Line({ row }: { row: FollowupRow }) {
 
 /** Plan 142 §7: a quiet line for each thing this conversation holds, in the conversation's text column, above its summary. */
 export default function ThreadFollowups({ detail }: { detail: ThreadDetail }) {
-  const enabled = useApp((s) => s.settings?.followups?.enabled === true);
+  const enabled = useApp(followupsOffered);
   const rows = useFollowups((s) => s.byThread.get(detail.thread.id));
   const shown = enabled && !detail.thread.inTrash && !detail.thread.inSpam ? rows : undefined;
   const tipFor = usePendingTip("followups-first");

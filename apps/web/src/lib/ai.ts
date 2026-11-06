@@ -1,5 +1,5 @@
-import { ASK_CLAUDE_MODEL, DIGEST_CLAUDE_MODEL, DIGEST_OPENAI_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type AiErrorKind, type AiProviderId, type CompatiblePreset, type OutputMode } from "@terno/core";
-import type { AiSettings } from "@terno/core/rpc";
+import { aiFeaturesAvailable, ASK_CLAUDE_MODEL, DIGEST_CLAUDE_MODEL, DIGEST_OPENAI_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type AiErrorKind, type AiProviderId, type CompatiblePreset, type OutputMode } from "@terno/core";
+import type { AiSettings, AppSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 
 /** What the AI tab's selector shows: compatible appears twice (a server on this Mac, or a cloud API). */
@@ -132,12 +132,21 @@ export function digestTarget(ai: AiSettings): { provider: AiProviderId; model: s
   return { provider: ai.provider, model: ai.provider === "anthropic" ? DIGEST_CLAUDE_MODEL : ai.provider === "openai" ? DIGEST_OPENAI_MODEL : ai.model };
 }
 
+/** A task's own choice can go: the backend never falls back from one to anything else. */
+const chosenReady = (ai: AiSettings, chosen: { provider: AiProviderId }): boolean => chosen.provider !== "none" && (LOCAL_PROVIDERS.includes(chosen.provider) || chosen.provider === "compatible" || ai.keys[chosen.provider]?.hasKey === true);
+
 /** Whether a question can go: Ask's own target if it has one, whatever the main provider is. */
 export function askReady(ai: AiSettings | null | undefined): boolean {
   if (!ai) return false;
   const chosen = ai.tasks.ask;
-  if (!chosen) return aiReady(ai);
-  return chosen.provider !== "none" && (LOCAL_PROVIDERS.includes(chosen.provider) || chosen.provider === "compatible" || ai.keys[chosen.provider]?.hasKey === true);
+  return chosen ? chosenReady(ai, chosen) : aiReady(ai);
+}
+
+/** Whether a summary has somewhere to go, or a provider to ask about (`summaryTarget`'s "ask": the block then says where). */
+export function summaryReady(ai: AiSettings | null | undefined): boolean {
+  if (!ai) return false;
+  const chosen = ai.tasks.summary;
+  return chosen ? chosenReady(ai, chosen) : ai.keys.openai?.hasKey === true || aiReady(ai);
 }
 
 const LOCAL_PROVIDERS: readonly AiProviderId[] = ["ollama", "lmstudio", "fake"];
@@ -153,6 +162,26 @@ export function writingTarget(ai: AiSettings | null | undefined): { ready: boole
   const local = LOCAL_PROVIDERS.includes(chosen.provider) || (chosen.provider === ai.provider && ai.local);
   return { ready: local || chosen.provider === "compatible" || ai.keys[chosen.provider]?.hasKey === true, provider: chosen.provider, local };
 }
+
+/** What the AI features' gates read of the app: its state, as `useApp` and `getApp` both give it. */
+interface AiOffer {
+  devAi: unknown;
+  settings: AppSettings | null;
+}
+
+/** Plan 147: on a local build Dev mode's switch decides, whatever the profile has saved. Elsewhere there's nothing to ask yet (plan 85: no entitlement). */
+export const aiAllowed = (s: AiOffer): boolean => s.devAi === null || s.settings?.devAi === true;
+
+/** Plan 147: an AI feature shows only where it can run: a free install with nothing set up sees none, and Settings → AI is the way in. */
+export const summariesOffered = (s: AiOffer): boolean => aiAllowed(s) && summaryReady(s.settings?.ai);
+export const draftingOffered = (s: AiOffer): boolean => aiAllowed(s) && writingTarget(s.settings?.ai).ready;
+export const askOffered = (s: AiOffer): boolean => aiAllowed(s) && s.settings?.ask?.enabled === true && askReady(s.settings?.ai);
+/** Today's own rule (plan 145), with the switch. `todayOffered` adds its row's setting. */
+export const todayAvailable = (s: AiOffer): boolean => aiAllowed(s) && aiFeaturesAvailable(s.settings);
+export const todayOffered = (s: AiOffer): boolean => todayAvailable(s) && s.settings?.today?.show !== false;
+/** These two need a provider to turn on, and what they found stays readable when a key goes. */
+export const followupsOffered = (s: AiOffer): boolean => aiAllowed(s) && s.settings?.followups?.enabled === true;
+export const repliesOffered = (s: AiOffer): boolean => aiAllowed(s) && s.settings?.replies?.enabled === true;
 
 /** A provider by name, wherever it's named outside its own settings. */
 export function providerLabel(provider: AiProviderId, ai?: Pick<AiSettings, "provider" | "preset" | "local">): string {

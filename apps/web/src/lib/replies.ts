@@ -1,6 +1,7 @@
 import { WAITING_WINDOW_MS, type PreparedReply, type ThreadDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
+import { repliesOffered } from "~/lib/ai";
 import { autoRecipients } from "~/lib/compose-fields";
 import { composeHooks, composeLanding } from "~/lib/compose";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
@@ -43,7 +44,7 @@ const timezone = () => {
 };
 
 const mine = (): string[] => getApp().accounts.map((a) => a.email);
-const on = (): boolean => getApp().settings?.replies?.enabled === true;
+const on = (): boolean => repliesOffered(getApp());
 
 function stopWaitingBody(): void {
   waitingBody?.();
@@ -128,7 +129,7 @@ useApp.subscribe((s, prev) => {
   // List's Back or Esc: the conversation isn't on screen any more, though it's still the one selected
   if (reading !== null && s.readerOpen !== prev.readerOpen && !readerShown()) leave();
   // the switch went off: every window stops showing it
-  if (prev.settings?.replies?.enabled && !s.settings?.replies?.enabled) leave();
+  if (repliesOffered(prev) && !repliesOffered(s)) leave();
 });
 
 // another message came in: what's shown answered the last one. It goes, and it doesn't start another by itself.

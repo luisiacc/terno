@@ -1,13 +1,19 @@
-import { shortcutsFor } from "@terno/core";
+import { shortcutsFor, type Command } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@terno/ui/components/dialog";
 import { Shortcut } from "@terno/ui/components/shortcut";
+import { askOffered } from "~/lib/ai";
+import { useCanDraft } from "~/lib/ai-draft-state";
 import { isMac } from "~/lib/select";
 import { FORMATTING, SECTIONS } from "~/lib/shortcut-sections";
 import { setApp, useApp } from "~/state/app";
 
 export function ShortcutsDialog() {
   const open = useApp((s) => s.dialog === "shortcuts");
+  // plan 147: no row with nothing behind it
+  const canDraft = useCanDraft();
+  const canAsk = useApp(askOffered);
+  const hidden = (command: Command) => (command === "compose.ai" && !canDraft) || (command === "ask.open" && !canAsk);
   return (
     <Dialog open={open} onOpenChange={(o) => !o && setApp({ dialog: null })}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl" data-testid="shortcuts-dialog">
@@ -19,7 +25,7 @@ export function ShortcutsDialog() {
             <section key={section.title}>
               <h3 className="mb-1.5 text-2xs font-medium tracking-wide text-muted-foreground uppercase">{t(section.title)}</h3>
               <div className="space-y-1.5">
-                {section.rows.map(([command, label]) => (
+                {section.rows.filter(([command]) => !hidden(command)).map(([command, label]) => (
                   <div key={command} className="flex items-center justify-between gap-3 text-sm" data-testid={`shortcut-${command}`}>
                     <span className="text-muted-foreground">{t(label)}</span>
                     <span className="flex flex-wrap items-center justify-end gap-1">

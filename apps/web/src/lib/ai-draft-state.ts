@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
-import { aiReady } from "./ai";
-import { getApp } from "~/state/app";
+import { draftingOffered } from "./ai";
+import { getApp, useApp } from "~/state/app";
 
 /**
  * Plan 133: all of AI drafting the entry chunk holds. Whether it's on, which drafts have its row up (so a form mounts
@@ -33,14 +33,22 @@ export const aiDraftHooks: {
 export type AiDraftModule = typeof import("~/components/composer/ai-draft");
 export const loadAiDraft = (): Promise<AiDraftModule> => import("~/components/composer/ai-draft");
 
+/** Plan 147: the feature's own switch, and whether it can run at all. */
+const canDraft = (): boolean => useAiDraftUi.getState().enabled && draftingOffered(getApp());
+
+export function useCanDraft(): boolean {
+  const enabled = useAiDraftUi((s) => s.enabled);
+  return useApp(draftingOffered) && enabled;
+}
+
 /** A draft opened with AI set up: ⌘J answers in the same frame. Nothing loads for someone who has none. */
 export function preloadAiDraft(): void {
-  if (useAiDraftUi.getState().enabled && aiReady(getApp().settings?.ai)) void loadAiDraft();
+  if (canDraft()) void loadAiDraft();
 }
 
 /** ⌘J, the Sparkles buttons and the palette: the row, on `key` if named, else on what's in front of the user (§5.3). */
 export function openAiDraft(o: { key?: string; threadId?: number } = {}): void {
-  if (!useAiDraftUi.getState().enabled) return;
+  if (!canDraft()) return;
   const app = getApp();
   if (app.dialog !== null || app.menuOpen) return;
   void loadAiDraft().then((m) => m.openRow(o));

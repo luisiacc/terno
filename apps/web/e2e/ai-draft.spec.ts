@@ -704,16 +704,42 @@ test.describe("drafting with AI (plan 133)", () => {
     });
   });
 
-  test("no provider: the row says what to do, and goes to Settings; off in Settings, it's gone everywhere", async ({ app: page, server }) => {
+  test("no provider: nothing shows; one that goes from under the row says what to do; off in Settings, it's gone everywhere", async ({ app: page, server }) => {
     await seed(server);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await rows(page).first().waitFor();
+    // this window doesn't hear of the change below: what another window's Settings looks like from here
+    await openThread(page, /Contract review/);
+    await page.keyboard.press(CMD_J);
     await server.backend.server.invoke("settings.update", { ai: { provider: "none" } }, dev);
+    await page.getByTestId("ai-row-input").fill("say yes");
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("ai-no-provider")).toContainText("Drafting needs an AI provider. Use your own key or a local model.");
+
+    // Plan 147: a free install: no button, no row, no shortcut, no line in the palette or the help
     await page.reload();
     await page.locator("[data-ready]").waitFor();
     await rows(page).first().waitFor();
     await openThread(page, /Contract review/);
+    await expect(page.getByTestId("quick-ai")).toHaveCount(0);
     await page.keyboard.press(CMD_J);
-    await expect(page.getByTestId("ai-no-provider")).toContainText("Drafting needs an AI provider. Use your own key or a local model.");
-    await page.getByTestId("ai-no-provider-settings").click();
+    await page.waitForTimeout(100);
+    await expect(row(page)).toHaveCount(0);
+    await expect(page.getByTestId("ai-no-provider")).toHaveCount(0);
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByTestId("palette-input").fill("draft with ai");
+    await expect(page.getByTestId("palette-ai-draft")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    await server.backend.server.invoke("settings.update", { ai: { provider: "fake" } }, dev);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await rows(page).first().waitFor();
+    await openThread(page, /Contract review/);
+    await page.getByTestId("quick-ai").waitFor();
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-ai").click();
     await expect(page.getByTestId("ai-tab")).toBeVisible();
     await page.getByTestId("ai-drafting-enabled").click();
     await expect(page.getByTestId("ai-drafting-enabled")).toHaveAttribute("aria-checked", "false");

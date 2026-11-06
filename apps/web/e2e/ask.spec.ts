@@ -185,9 +185,23 @@ test.describe("ask your mail (plan 141)", () => {
     await expect(page.getByTestId("ask-not-found").or(page.getByTestId("ask-answer")).first()).toBeVisible();
   });
 
-  test("no provider says what it needs; off removes the rows and the shortcut", async ({ app: page, server }) => {
+  test("no provider shows nothing; one that goes from under it says what it needs; off removes the rows and the shortcut", async ({ app: page, server }) => {
+    // plan 147: a free install: no row, no shortcut
     await settingUp(page, server, { ai: { provider: "none" } });
+    await focusList(page);
+    await page.keyboard.press("ControlOrMeta+Shift+k");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.keyboard.press("ControlOrMeta+k");
+    await ask(page).fill("ask your");
+    await expect(page.getByTestId("palette-ask")).toHaveCount(0);
+    await expect(page.getByTestId("palette-ask-row")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    // this window hasn't heard yet, as when another one's Settings changed it: the backend's answer says so
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" } });
+    await server.backend.server.invoke("settings.update", { ai: { provider: "none" } }, dev);
     await open(page);
+    await question(page, "does anyone answer?");
     await expect(page.getByTestId("ask-no-provider")).toContainText("Ask needs an AI provider.");
     await page.getByTestId("ask-open-settings").click();
     await expect(page.getByTestId("ai-ask")).toBeVisible();

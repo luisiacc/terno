@@ -1,4 +1,5 @@
-import { aiFeaturesAvailable, DIGEST_ROW_ID, type DigestRow, type TodayList, type ThreadSummary } from "@terno/core";
+import { todayAvailable } from "~/lib/ai";
+import { DIGEST_ROW_ID, type DigestRow, type TodayList, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
@@ -34,7 +35,7 @@ client.on("todayDigest", () => {
 // no provider any more: no row, no list. The digest's data stays until Clear AI data.
 useApp.subscribe((s, prev) => {
   if (!s.today) return;
-  if (aiFeaturesAvailable(prev.settings) && !aiFeaturesAvailable(s.settings)) navigate({ view: "inbox" });
+  if (todayAvailable(prev) && !todayAvailable(s)) navigate({ view: "inbox" });
   if (s.selectedId !== prev.selectedId && s.selectedId !== DIGEST_ROW_ID && useToday.getState().fromDigest && prev.selectedId !== DIGEST_ROW_ID) useToday.setState({ fromDigest: false });
 });
 

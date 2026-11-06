@@ -1,6 +1,7 @@
 import type { ThreadSummary } from "@terno/core";
 import { RpcError, type ThreadScope } from "@terno/core/rpc";
 import { keepInPage } from "@terno/store/list";
+import { followupsOffered } from "~/lib/ai";
 import { prune } from "~/lib/selection";
 import { activeFilter } from "~/lib/unread-filter";
 import { matchesFilter } from "@terno/core";
@@ -126,7 +127,7 @@ async function withTop<P extends { items: ThreadSummary[]; nextCursor: { lastDat
   const held = s.selectedId !== null && inboxTop.ids.includes(s.selectedId) ? useList.getState().items.find((t) => t.id === s.selectedId) : undefined;
   const due = anyDue() ? client.call("reminders.threads", { dueOnly: true, accountId: s.accountId ?? undefined }).then((r) => r.items, () => []) : Promise.resolve([]);
   // plan 142: follow-ups have their own way onto the top, one row a thread under the same heading
-  const following = getApp().settings?.followups?.enabled === true && useFollowups.getState().onTop > 0 ? client.call("followups.threads", { onTop: true, accountId: s.accountId ?? undefined }).then((r) => r.items, () => []) : Promise.resolve([]);
+  const following = followupsOffered(getApp()) && useFollowups.getState().onTop > 0 ? client.call("followups.threads", { onTop: true, accountId: s.accountId ?? undefined }).then((r) => r.items, () => []) : Promise.resolve([]);
   const [p, dueRows, followRows] = await Promise.all([page, due, following]);
   const top = [...dueRows, ...followRows.filter((t) => !dueRows.some((d) => d.id === t.id))];
   if (held && !top.some((t) => t.id === held.id)) top.splice(Math.min(inboxTop.ids.indexOf(held.id), top.length), 0, held);

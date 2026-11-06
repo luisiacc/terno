@@ -48,6 +48,7 @@ import { move } from "~/lib/keyboard";
 import { viewLabel } from "~/lib/format";
 import { useList } from "~/state/list";
 import { useSnack } from "~/lib/snack";
+import { aiAllowed, repliesOffered, summariesOffered } from "~/lib/ai";
 import { summarizable, summarize, useSummaries } from "~/lib/summaries";
 
 const RemindPicker = lazy(() => import("./remind-picker").then((m) => ({ default: m.RemindPicker })));
@@ -61,6 +62,8 @@ const DigestPage = lazy(() => import("./digest-page"));
 function SummarizeButton({ threadId }: { threadId: number }) {
   const kind = useSummaries((s) => s.byThread.get(threadId)?.kind);
   const updates = useApp((s) => kind === "stale" && !s.settings?.summaries.enabled);
+  const offered = useApp(summariesOffered);
+  if (!offered) return null;
   return (
     // a narrow reader (the minimum window) gives its place to the bell, as Mark as unread does; the palette keeps it
     <IconButton className={cn(tool, "@max-[420px]:hidden")} label={updates ? t("actions.updateSummary") : t("actions.summarize")} onClick={() => void summarize(threadId)} data-summarize data-testid="action-summarize" aria-busy={kind === "running" || undefined}>
@@ -602,7 +605,9 @@ function ReaderContent() {
   );
   const draftShown = useApp((s) => s.draftShown);
   const draftKey = useDrafts((s) => (selectedId === null ? null : shownDraftKey(s.drafts, selectedId, draftShown)));
-  const repliesOn = useApp((s) => s.settings?.replies?.enabled === true);
+  const repliesOn = useApp(repliesOffered);
+  // plan 147: Dev mode's switch off, what's stored stays out of sight too; elsewhere reading is never gated (plan 132)
+  const summaryShown = useApp(aiAllowed);
   const fromDigest = useToday((s) => s.fromDigest);
 
   useEffect(() => {
@@ -726,7 +731,7 @@ function ReaderContent() {
                   <ReaderHeader detail={detail} account={account} cats={cats} />
                   <Suspense fallback={null}>
                     <ThreadFollowups key={`f${detail.thread.id}`} detail={detail} />
-                    <ThreadSummary key={detail.thread.id} detail={detail} />
+                    {summaryShown && <ThreadSummary key={detail.thread.id} detail={detail} />}
                   </Suspense>
                   <Conversation key={detail.thread.id} messages={detail.messages} icons={iconsFor(detail.thread)} headless={cardHeader} knownEmail={cardHeader ? senderOf(detail).email : null} />
                 </div>

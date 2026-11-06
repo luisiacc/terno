@@ -87,6 +87,8 @@ Codex (read-only, against `684d28c4`) raised 10 points. Seven are accepted, in w
 6. **A follow-up that's hidden isn't seen.** `followups.ts`' `opened` reads `on()`, so opening a thread with the switch off doesn't end its Inbox row.
 7. **`ThreadSummary` isn't mounted, rather than rendering nothing,** so its effect can't carry on a summary waiting for a body. The gate is in the reader.
 
+8. **Today (plan 145) landed before this did.** It already had its rule (`aiFeaturesAvailable`, where Pro's entitlement joins); `todayAvailable` and `todayOffered` add the switch to it, on the sidebar's and palette's rows, the brief's notice and leaving the list.
+
 Not taken:
 
 - **Stricter readiness for an explicit target (`compatible` without an endpoint, a key confirmed for another origin).** These are the helpers the features already use. A rare broken setup shows the button and the error says what's wrong, which is the better failure.

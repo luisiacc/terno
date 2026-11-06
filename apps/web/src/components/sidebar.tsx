@@ -1,4 +1,3 @@
-import { aiFeaturesAvailable } from "@terno/core";
 import { Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 import { COUNTED_VIEWS, FOLDER_VIEWS, folderRef, separatesTabs, tabRef, TABS, viewRef, type Account, type CategoryColor, type CountedView, type Folder, type FolderView, type Tab, type View } from "@terno/core";
@@ -15,6 +14,7 @@ import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { getApp, navigate, setApp, useApp, type AppState } from "~/state/app";
 import { useReminders } from "~/lib/reminders";
+import { followupsOffered, todayOffered } from "~/lib/ai";
 import { useFollowups } from "~/state/followups";
 import { createCategory as createNamedCategory } from "~/lib/tabs";
 import { offerTip, usePendingTip } from "~/lib/tips";
@@ -1212,13 +1212,13 @@ export function Sidebar() {
   const inFollowups = useApp((s) => s.followups);
   const inToday = useApp((s) => s.today);
   // plan 145: no provider, no row, no list and no work; and never for an app that's still reading its settings
-  const todayShown = useApp((s) => aiFeaturesAvailable(s.settings) && s.settings?.today?.show !== false);
+  const todayShown = useApp(todayOffered);
   const todayTip = usePendingTip("today-first") !== null;
   useEffect(() => {
     if (todayShown) offerTip("today-first", 0);
   }, [todayShown]);
   const dueFollowups = useFollowups((s) => s.due);
-  const followupsOn = useApp((s) => s.settings?.followups?.enabled === true);
+  const followupsOn = useApp(followupsOffered);
   const accounts = useApp((s) => s.accounts);
   // plan 108: focused on one account, the sidebar is its alone
   const soloAccount = useApp((s) => (s.soloAccountId === null ? undefined : s.accounts.find((a) => a.id === s.soloAccountId)));

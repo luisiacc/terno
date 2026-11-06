@@ -5,7 +5,7 @@ import { controllerFor, focusBody } from "~/components/composer/controller";
 import { client } from "~/rpc/connection";
 import { getApp, useApp } from "~/state/app";
 import { loadThread, useThreads } from "~/state/threads";
-import { errorHelp, writingTarget } from "./ai";
+import { draftingOffered, errorHelp, writingTarget } from "./ai";
 import { aiDraftHooks, useAiDraftUi, type AiDraftBadge } from "./ai-draft-state";
 import { addressReply, composeLanding, leaveNewDraft, sendDraft } from "./compose";
 import { focusSoon } from "./compose-focus-move";
@@ -306,7 +306,7 @@ function rowFieldFocused(key: string): boolean {
 function showRow(key: string, opened: boolean) {
   const s = session(key);
   if (!s) {
-    const ready = writingTarget(aiSettings()).ready;
+    const ready = draftingOffered(getApp());
     useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: newSession(key, { opened, phase: ready ? "input" : "noProvider" }) } }));
     publishBadges();
     return;
@@ -424,7 +424,7 @@ export async function submit(key: string): Promise<void> {
   const d = materialize(key);
   if (!s || !d) return;
   const instruction = s.instruction.trim();
-  if (!writingTarget(aiSettings()).ready) return update(key, { phase: "noProvider" });
+  if (!draftingOffered(getApp())) return update(key, { phase: "noProvider" });
   if (instruction) memory.last = instruction;
   if (telling()) return update(key, { phase: "telling", focus: s.focus + 1 });
   update(key, { error: null, confirmFailed: false, question: null, who: false });

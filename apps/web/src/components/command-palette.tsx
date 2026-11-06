@@ -1,4 +1,4 @@
-import { aiFeaturesAvailable, DIGEST_ROW_ID } from "@terno/core";
+import { DIGEST_ROW_ID } from "@terno/core";
 import { focusAccount, goToAccount, goToFolder } from "~/lib/account-folders";
 import { normalizeText, remindPresets, separatesTabs, snippetPreview, TABS, type CategoryColor, type ReminderKind, type Snippet } from "@terno/core";
 import { t, type TextKey } from "@terno/i18n";
@@ -17,8 +17,8 @@ import { setListFilter, toggleUnreadFilter } from "~/lib/unread";
 import { activeFilter, isUnreadOnly } from "~/lib/unread-filter";
 import { DESIGNS } from "@terno/ui/designs/index";
 import { designName } from "~/lib/design";
-import { aiReady } from "~/lib/ai";
-import { openAiDraft, useAiDraftUi } from "~/lib/ai-draft-state";
+import { aiReady, askOffered, followupsOffered, summariesOffered, todayOffered } from "~/lib/ai";
+import { openAiDraft, useCanDraft } from "~/lib/ai-draft-state";
 import { checkForUpdates, installUpdate, useHasUpdates, useUpdates } from "~/lib/updates";
 import { englishWords as english } from "~/lib/palette-words";
 import { getApp, navigate, setApp, useApp } from "~/state/app";
@@ -117,10 +117,11 @@ export function CommandPalette() {
   const design = useApp((s) => (open ? (s.settings?.design ?? null) : null));
   const canAi = useApp((s) => open && aiReady(s.settings?.ai));
   const hasDevMode = useApp((s) => s.devAi !== null);
-  const followupsOn = useApp((s) => open && s.settings?.followups?.enabled === true);
-  const todayOn = useApp((s) => open && aiFeaturesAvailable(s.settings) && s.settings?.today?.show !== false);
-  const canAsk = useApp((s) => open && s.settings?.ask?.enabled === true);
-  const drafting = useAiDraftUi((s) => s.enabled);
+  const followupsOn = useApp((s) => open && followupsOffered(s));
+  const todayOn = useApp((s) => open && todayOffered(s));
+  const canAsk = useApp((s) => open && askOffered(s));
+  const canSummarize = useApp((s) => open && summariesOffered(s));
+  const drafting = useCanDraft();
   const updatesAvailable = useHasUpdates();
   const readyVersion = useUpdates((s) => (open && s.state?.ready && s.state.status !== "installing" ? s.state.ready.version : null));
   const [value, setValue] = useState("");
@@ -308,7 +309,7 @@ export function CommandPalette() {
       }
     }
     // plan 132 §7: the open conversation, never in spam or trash; no shortcut of its own
-    if (replyable && summarizable(openThread?.thread)) {
+    if (canSummarize && replyable && summarizable(openThread?.thread)) {
       add({ id: "thread.summarize", group: "actions", label: t("palette.summarize"), icon: <Sparkles />, testId: "palette-summarize", ...synonyms("palette.alias.summarize", english("palette.summarize")), run: () => void summarize(openThread!.thread.id) });
     }
     if (printable) {
@@ -336,7 +337,7 @@ export function CommandPalette() {
       }
     }
     add({ id: "action.undo", group: "actions", label: t("common.undo"), icon: <Undo2 />, shortcut: "Z", ...synonyms("palette.alias.undo"), keywords: [...english("common.undo"), ...english("palette.alias.undo").flatMap(words)], run: undoLast });
-    // plan 141: there with or without a provider: the page says what it needs
+    // plan 141; plan 147: only where it can run
     if (canAsk) {
       add({ id: "ask.open", group: "actions", label: t("palette.ask"), icon: <Sparkles />, shortcut: isMac ? "⇧⌘K" : "Ctrl+Shift+K", testId: "palette-ask", ...synonyms("palette.alias.ask", english("palette.ask")), page: "ask" });
       add({ id: "ask.history", group: "actions", label: t("palette.askHistory"), icon: <Clock />, testId: "palette-ask-history", keywords: english("palette.askHistory"), page: "askHistory" });

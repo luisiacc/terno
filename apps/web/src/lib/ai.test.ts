@@ -1,11 +1,56 @@
-import type { AiSettings } from "@terno/core/rpc";
+import type { AiSettings, AppSettings } from "@terno/core/rpc";
 import { setLocale, t } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { aiReady, choiceLabel, errorHelp, OUTPUT_LABEL, presetLabel, privacyLine, providerName } from "./ai";
+import { aiReady, askOffered, choiceLabel, draftingOffered, errorHelp, followupsOffered, OUTPUT_LABEL, presetLabel, privacyLine, providerName, repliesOffered, summariesOffered, todayOffered } from "./ai";
 
 const ai = (over: Partial<AiSettings>) => ({ provider: "none", preset: null, baseURL: null, local: false, ...over }) as AiSettings;
+
+describe("what the AI features offer (plan 147)", () => {
+  const set = (over: Partial<AiSettings> = {}) => ({ provider: "none", model: "", preset: null, baseURL: null, local: false, hasKey: false, keyConfirmed: false, keyUnreadable: false, keys: {}, tasks: {}, ...over }) as AiSettings;
+  const settings = (ai: AiSettings, over: Partial<AppSettings> = {}) => ({ ai, ask: { enabled: true }, followups: { enabled: true }, replies: { enabled: true }, devAi: false, ...over }) as AppSettings;
+  const writing = [summariesOffered, draftingOffered, askOffered, todayOffered];
+  const every = [...writing, followupsOffered, repliesOffered];
+  const ownKey = set({ provider: "anthropic", model: "m", hasKey: true, keyConfirmed: true });
+
+  it("a free install with nothing set up sees no writing feature", () => {
+    for (const offered of writing) expect(offered({ devAi: null, settings: settings(set()) })).toBe(false);
+    for (const offered of every) expect(offered({ devAi: null, settings: null })).toBe(false);
+  });
+
+  it("the user's own key or local model shows them, with no Pro (plan 85 decision 9)", () => {
+    for (const offered of every) {
+      expect(offered({ devAi: null, settings: settings(ownKey) })).toBe(true);
+      expect(offered({ devAi: null, settings: settings(set({ provider: "ollama", model: "m", local: true })) })).toBe(true);
+    }
+  });
+
+  it("on a local build the switch decides, whatever the profile has saved", () => {
+    const devAi = { anthropic: true, openai: true, jev: true };
+    for (const offered of every) {
+      expect(offered({ devAi, settings: settings(ownKey) })).toBe(false);
+      expect(offered({ devAi, settings: settings(set({ provider: "fake", model: "demo", local: true })) })).toBe(false);
+      expect(offered({ devAi, settings: settings(ownKey, { devAi: true }) })).toBe(true);
+    }
+    // the switch on with only JEV's key: the overlay has no writing provider
+    for (const offered of writing) expect(offered({ devAi, settings: settings(set({ keys: { jev: { hasKey: true, keyHint: null } } }), { devAi: true }) })).toBe(false);
+  });
+
+  it("summaries: an OpenAI key alone is enough, and a task's own choice never falls back", () => {
+    const openai = { hasKey: true, keyHint: null };
+    expect(summariesOffered({ devAi: null, settings: settings(set({ keys: { openai } })) })).toBe(true);
+    const gone = { ...ownKey, tasks: { summary: { provider: "openai", model: "m" } } } as AiSettings;
+    expect(summariesOffered({ devAi: null, settings: settings(gone) })).toBe(false);
+    expect(summariesOffered({ devAi: null, settings: settings({ ...gone, keys: { openai } }) })).toBe(true);
+  });
+
+  it("each feature's own switch still holds", () => {
+    expect(askOffered({ devAi: null, settings: settings(ownKey, { ask: { enabled: false } as AppSettings["ask"] }) })).toBe(false);
+    expect(followupsOffered({ devAi: null, settings: settings(ownKey, { followups: { enabled: false } as AppSettings["followups"] }) })).toBe(false);
+    expect(repliesOffered({ devAi: null, settings: settings(ownKey, { replies: { enabled: false } as AppSettings["replies"] }) })).toBe(false);
+  });
+});
 
 describe("AI labels and help", () => {
   afterEach(() => setLocale("en", en));

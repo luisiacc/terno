@@ -346,13 +346,17 @@ test.describe("summaries (plan 132)", () => {
     let failing: number | null = null;
     const stub = await startOllamaStub({ summaryFails: () => failing });
     try {
-      // nothing set up: the block points to the row in Settings → AI, and nothing is sent
+      // plan 147: nothing set up: nothing offered, in the toolbar or the palette; Settings → AI is the way in
       await settingUp(page, server, { ai: { provider: "none" } });
       await deliver(page, server, incoming(accountId, "No provider yet"));
       await openSubject(page, "No provider yet");
-      await page.getByTestId("action-summarize").click();
-      await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "no-provider");
-      await page.getByTestId("summary-settings").click();
+      await expect(page.getByTestId("action-summarize")).toHaveCount(0);
+      await page.keyboard.press("ControlOrMeta+k");
+      await page.getByTestId("palette-input").fill("summarize");
+      await expect(page.getByTestId("palette-summarize")).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-ai").click();
       await expect(page.getByTestId("ai-tab")).toBeVisible();
       const target = page.getByTestId("ai-summaries-target");
       await target.scrollIntoViewIfNeeded();
@@ -403,6 +407,16 @@ test.describe("summaries (plan 132)", () => {
       await page.getByTestId("summary-retry").click();
       await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "ready");
       expect(stub.summaries.length).toBeGreaterThanOrEqual(2);
+
+      // the provider went behind this window's back (another window's Settings): the block points to the row
+      await deliver(page, server, incoming(accountId, "Provider went"));
+      await openSubject(page, "Provider went");
+      await server.backend.server.invoke("settings.update", { ai: { provider: "none" } }, dev);
+      await server.backend.server.invoke("ai.setKey", { provider: "openai", value: "" }, dev);
+      await page.getByTestId("action-summarize").click();
+      await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "no-provider");
+      await page.getByTestId("summary-settings").click();
+      await expect(page.getByTestId("ai-tab")).toBeVisible();
     } finally {
       await stub.close();
     }
