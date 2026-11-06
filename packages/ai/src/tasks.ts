@@ -9,6 +9,7 @@ import { describeProvider, isLocalProvider, resolveBaseURL } from "./providers";
 import { planAskTask, runAnswerFromMail } from "./ask";
 import { checkCandidatesTask, countedTransport, planActionTask } from "./actions";
 import { readSentMailTask } from "./followups";
+import { digestTask } from "./digest";
 import { needsReplyTask } from "./replies";
 import { summarizeTask } from "./summarize";
 import { AiError, type AiTasks, type Capabilities, type ClassifyInput, type ModelInfo, type ModelTransport, type OutputMode, type ProviderConfig } from "./types";
@@ -110,6 +111,10 @@ export function createAi(config: ProviderConfig, options: AiOptions = {}): AiTas
 
     parseIntent(input, signal) {
       return run(parseIntentTask(input), signal);
+    },
+
+    digestNewsletters(input, signal) {
+      return run(digestTask(input), signal);
     },
 
     needsReply(input, signal) {

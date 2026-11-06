@@ -89,7 +89,7 @@ export interface MailNotice {
   /** only for a single message */
   snippet: string;
   /** plan 87: what it says: reminders that came due, plan 142: promises that came due (absent: new mail) */
-  kind?: "reminder" | "followup";
+  kind?: "reminder" | "followup" | "brief";
 }
 
 export const NOTICE_SENDERS = 3;
@@ -172,6 +172,8 @@ export function noticeText(n: MailNotice): { title: string; subtitle: string; bo
     const from = n.senderCount <= 1 ? a : n.senderCount === 2 ? t("notify.from.two", { a, b }) : t("notify.from.many", { a, b, count: n.senderCount - 2 });
     return { title, subtitle: "", body: from };
   }
+  // plan 145: how many, and never who or what
+  if (n.kind === "brief") return { title: t("notify.brief", { count: n.count }), subtitle: "", body: "" };
   // plan 142: a promise that came due; with "Show sender and subject" off, that one is
   if (n.kind === "followup") {
     if (n.count > 1) return { title: t("notify.followups", { count: n.count }), subtitle: "", body: "" };

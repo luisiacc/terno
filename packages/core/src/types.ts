@@ -345,6 +345,8 @@ export interface Counts {
   /** plan 17: inbox threads waiting for your reply (inside the window); null until the store's facts are complete, absent from an older backend */
   inboxWaiting?: number | null;
   inboxWaitingByAccount?: Record<AccountId, number>;
+  /** plan 145: Today's number: threads, each once, under its own rules; null while plan 17's backfill runs */
+  today?: number | null;
   /** plan 68: unread threads per folder, by folderRef (listed folders only; absent from an older backend) */
   folderUnread?: Record<string, number>;
   /** plan 86: unread threads per Gmail tab, by tabRef (accounts that separate them; absent from an older backend) */

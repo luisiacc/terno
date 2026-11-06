@@ -1,0 +1,35 @@
+import { describe, expect, it } from "vitest";
+import { aiFeaturesAvailable, nextPrepareAt, prepareTimeToday, todayKey } from "./today";
+
+const settings = (provider: string) => ({ ai: { provider } }) as never;
+
+describe("who sees Today (plan 145)", () => {
+  it("a provider set up, or the entitlement Pro will bring; nothing without either", () => {
+    expect(aiFeaturesAvailable(settings("none"))).toBe(false);
+    expect(aiFeaturesAvailable(settings("ollama"))).toBe(true);
+    expect(aiFeaturesAvailable(settings("none"), { active: true })).toBe(true);
+    expect(aiFeaturesAvailable(settings("none"), { active: false })).toBe(false);
+    expect(aiFeaturesAvailable(null)).toBe(false);
+  });
+});
+
+describe("when it's prepared", () => {
+  it("the next time round, today if it's still to come, tomorrow if it's gone", () => {
+    const morning = new Date(2026, 10, 5, 7, 0).getTime();
+    expect(nextPrepareAt("08:00", morning)).toBe(new Date(2026, 10, 5, 8, 0).getTime());
+    const after = new Date(2026, 10, 5, 8, 0).getTime();
+    expect(nextPrepareAt("08:00", after)).toBe(new Date(2026, 10, 6, 8, 0).getTime());
+    expect(prepareTimeToday("08:30", morning)).toBe(new Date(2026, 10, 5, 8, 30).getTime());
+    expect(todayKey(morning)).toBe("2026-11-05");
+  });
+
+  it("across a clock change, it's the same time on the wall", () => {
+    // a year's worth of days: whichever the zone's changes are, each next is 8:00 local
+    let at = new Date(2026, 0, 1, 9, 0).getTime();
+    for (let i = 0; i < 366; i++) {
+      at = nextPrepareAt("08:00", at);
+      const d = new Date(at);
+      expect([d.getHours(), d.getMinutes()]).toEqual([8, 0]);
+    }
+  });
+});

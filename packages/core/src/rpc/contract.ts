@@ -24,6 +24,7 @@ import {
   type DevAiProvider,
 } from "../ai";
 import type { FollowupRow, FollowupsSetting, FollowupsSnapshot } from "../followups";
+import type { DigestRow, TodayList, TodaySetting } from "../today";
 import type { AiPrepareReply, AiReplyEvent, PreparedReply, RepliesSetting } from "../replies";
 import type { ActionPreviewInfo, AiActionApplied, AiActionCheck, AiActionEvent, AiActionStart } from "../actions";
 import { ASK_QUESTION_MAX, ASK_SOURCES_MAX, type AiAskEvent, type AiAskResult, type AskConversationSummary, type AskOlderOffer, type AskSourceView, type AskTurn } from "../ask";
@@ -196,6 +197,8 @@ export interface AppSettings {
   followups: FollowupsSetting;
   /** plan 144: off by default; the switch is the consent */
   replies: RepliesSetting;
+  /** plan 145 */
+  today: TodaySetting;
   /** anonymous error reports (builds with a DSN, outside local mode): ask each time, send, or never */
   errorReports: "ask" | "always" | "never";
   /** the UI language: follow the system, or a locale Terno ships (@terno/i18n LOCALES) */
@@ -499,6 +502,7 @@ const settingsPatch = z.object({
   ask: z.object({ enabled: z.boolean() }).strict().optional(),
   /** `enabledAt` is the backend's */
   replies: z.object({ enabled: z.boolean() }).strict().optional(),
+  today: z.object({ show: z.boolean().optional(), prepareAt: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), notify: z.boolean().optional(), digest: z.boolean().optional() }).strict().optional(),
   followups: z.object({ enabled: z.boolean().optional(), nudgeAfterDays: z.union([z.literal(3), z.literal(5), z.literal(7), z.literal(14)]).optional(), scanAnswered: z.boolean().optional() }).strict().optional(),
   errorReports: z.enum(["ask", "always", "never"]).optional(),
   language: z.enum(LANGUAGE_SETTINGS).optional(),
@@ -1169,6 +1173,13 @@ export const contract = {
   "ai.ask": m<AiAskResult>()(z.object({ requestId, question: z.string().trim().min(1).max(ASK_QUESTION_MAX), conversationId: id.optional(), timezone: z.string().min(1).max(100), acknowledge: z.string().min(1).max(2000).optional() }), { timeoutMs: 180_000 }),
   /** The user's own servers look further back for this turn's question; one more answer comes of it. Only on a click. */
   "ai.askOlder": m<AiAskResult>()(z.object({ requestId, conversationId: id, turnId: id, timezone: z.string().min(1).max(100) }), { timeoutMs: 300_000 }),
+  /** Plan 145: what needs you. Local, and live: asked again as things change. `heldIds`: the open and checked rows, kept in place. */
+  "today.list": m<TodayList>()(z.object({ heldIds: z.array(id).max(500).default([]) })),
+  "today.digest": m<DigestRow | null>()(z.object({ day: z.string().max(10).optional() })),
+  /** a person's try again */
+  "today.digestRetry": m<{ ok: true }>()(empty),
+  /** only the rows named, and each only if it's still as the page listed it. Undo is `threads.undo`. */
+  "today.digestArchive": m<{ undoId: number | null; archived: number; changed: number; spared: number }>()(z.object({ day: z.string().max(10), threadIds: z.array(id).max(200), jobId: z.string().min(1).max(64).optional() }), { timeoutMs: 120_000 }),
   /**
    * Plan 144: a conversation that waits for an answer stayed open. It reads the switch, the thread and what's stored
    * again, whatever the window thought, and goes on in `aiReply`. Never MCP. Nothing is ever sent from here.
@@ -1380,6 +1391,8 @@ export interface Events {
   followups: FollowupsSnapshot;
   /** plan 142: it stopped reading, or it's going again */
   followupsStatus: { blockedBy: { kind: AiErrorKind; message: string } | null };
+  /** plan 145: the digest moved on: never MCP */
+  todayDigest: { day: string };
   /** plan 144: a prepared reply as it comes, only to the windows reading that conversation; never MCP */
   aiReply: AiReplyEvent;
   /** plan 143: a preview's count as it grows, or why it ended; only to the connection that asked */

@@ -3,7 +3,7 @@ export const AI_PROVIDER_IDS = ["anthropic", "openai", "compatible", "ollama", "
 export type AiProviderId = (typeof AI_PROVIDER_IDS)[number];
 
 /** What a provider and model can be chosen for (plan 131). */
-export const AI_TASK_NAMES = ["summary", "writing", "categorize", "ask", "followup"] as const;
+export const AI_TASK_NAMES = ["summary", "writing", "categorize", "ask", "followup", "digest"] as const;
 export type AiTaskName = (typeof AI_TASK_NAMES)[number];
 
 /** Which provider and model runs a task, when the user chose. */
@@ -39,6 +39,8 @@ export function devAiKeys(env: Record<string, string | undefined>): DevAiKeys {
 /** Plan 142: a small model reads each message you send. */
 export const FOLLOWUP_CLAUDE_MODEL = "claude-haiku-5-5";
 export const REPLY_CHECK_CLAUDE_MODEL = "claude-haiku-5-5";
+export const DIGEST_CLAUDE_MODEL = "claude-haiku-5-5";
+export const DIGEST_OPENAI_MODEL = "gpt-6-luna";
 export const FOLLOWUP_OPENAI_MODEL = "gpt-6-luna";
 /** Plan 141 §6: a cheap model writes the searches, Sonnet 5.5 answers. Planning never leaves the answer's provider. */
 export const ASK_CLAUDE_MODEL = "claude-sonnet-5-5";
