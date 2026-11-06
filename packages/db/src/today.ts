@@ -50,6 +50,8 @@ export function digestFacts(db: Db, messageIds: readonly number[]): { facts: Dig
   return { facts, oldest };
 }
 
+export const messagesHere = (db: Db, ids: readonly number[]): number[] => db.all<{ id: number }>("SELECT id FROM messages WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify(ids)).map((r) => r.id);
+
 export function digestLive(db: Db, threadIds: readonly number[]): number[] {
   return db.all<{ id: number }>("SELECT id FROM threads WHERE id IN (SELECT value FROM json_each(?)) AND in_inbox = 1 AND unread_count > 0", JSON.stringify(threadIds)).map((r) => r.id);
 }

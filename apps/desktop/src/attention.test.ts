@@ -1,3 +1,4 @@
+import { BRIEF_NOTICE_THREAD } from "@terno/core";
 import { redact, type MailNotice } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { DesktopAttention, MAX_LIVE, OpenRelay, parseBadge, parseNotice, type NotificationLike } from "./attention";
@@ -156,5 +157,14 @@ describe("OpenRelay", () => {
     // a ready window gets it at once
     r.want(1, null);
     expect(sent).toEqual([[1, 43], [1, null]]);
+  });
+});
+
+describe("the brief (plan 145)", () => {
+  it("parses with no sender and no thread, and opens Today by its sentinel; nothing else may use them", () => {
+    const brief = { id: "brief-2026-11-05", count: 3, threadId: BRIEF_NOTICE_THREAD, senders: [], senderCount: 0, subject: "", snippet: "", kind: "brief" };
+    expect(parseNotice(brief)).toMatchObject({ kind: "brief", threadId: BRIEF_NOTICE_THREAD, senderCount: 0 });
+    expect(parseNotice({ ...brief, kind: undefined })).toBeNull();
+    expect(parseNotice({ ...brief, threadId: 7, senderCount: 0 })).toBeNull();
   });
 });

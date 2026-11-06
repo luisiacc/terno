@@ -1,4 +1,4 @@
-import { AiError, DIGEST_PROMPT_VERSION, digestBudget, type AiTasks } from "@terno/ai";
+import { AiError, DIGEST_PROMPT_VERSION, digestBudget, type AiTasks, type DigestOutputItem } from "@terno/ai";
 import {
   aiFeaturesAvailable,
   BRIEF_NOTICE_THREAD,
@@ -68,6 +68,7 @@ export class TodayService {
   private refreshing: Promise<void> | null = null;
   /** a key or a setting is what's wrong: nothing goes until they move */
   private paused = false;
+  private leaving: { items: readonly DigestItem[]; stop: AbortController } | null = null;
 
   constructor(private readonly b: Backend) {}
 
@@ -108,6 +109,7 @@ export class TodayService {
     if (this.stopped) return;
     const s = await this.setting();
     const now = this.b.now();
+    await this.purgeGone({ quiet: true });
     if (s.available && now >= prepareTimeToday(s.prepareAt, now)) {
       const day = todayKey(now);
       if (s.digest && !(await this.b.store.today.digest.get(day))) await this.begin(day);
@@ -134,6 +136,13 @@ export class TodayService {
     this.controller.abort();
     await this.draining?.catch(() => {});
     await this.refreshing?.catch(() => {});
+  }
+
+  /** Called as a digest request is about to leave, after any wait. */
+  async holdingUp(): Promise<void> {
+    const leaving = this.leaving;
+    if (!leaving) return;
+    if ((await this.stillListed(leaving.items)).length !== leaving.items.length) leaving.stop.abort();
   }
 
   /** The digest off, or AI gone: what's underway stops and writes nothing. */
@@ -242,20 +251,33 @@ export class TodayService {
         if (signal.aborted) return false;
         const s = await this.setting();
         if (!s.available || !s.digest) return false;
+        // read anew each time: Settings may have moved since the last batch
+        ai = await this.b.aiService.forTask("digest", { foreground: o.foreground === true });
         // what's been deleted, moved to Spam, or changed since it was listed goes no further, and isn't kept (revision 2)
+        row = (await digest.get(day)) ?? row;
         const pending = await this.stillListed(row.pending);
         if (pending.length !== row.pending.length) {
           row = { ...row, pending };
           if (!(await digest.write(row, generation))) return false;
         }
         if (!row.pending.length) break;
-        // read anew each time: Settings may have moved since the last batch
-        ai = await this.b.aiService.forTask("digest", { foreground: o.foreground === true });
         const { batch: size, textChars } = digestBudget(ai.contextTokens);
         const batch: DigestItem[] = row.pending.slice(0, size);
         const labelled = await Promise.all(batch.map(async (item, i) => ({ item, label: `d${i + 1}`, text: await this.textOf(item) })));
         const language = languageName(await this.b.summaries.readerLanguage()) ?? "English";
-        const out = await ai.digestNewsletters({ language, textChars, items: labelled.map(({ item, label, text }) => ({ label, from: item.from, subject: item.subject, text })) }, signal);
+        // as the request leaves, after any wait, each is read again: what no longer holds stops it here, repairs included
+        const batchStop = new AbortController();
+        this.leaving = { items: batch, stop: batchStop };
+        let out: DigestOutputItem[];
+        try {
+          out = await ai.digestNewsletters({ language, textChars, items: labelled.map(({ item, label, text }) => ({ label, from: item.from, subject: item.subject, text })) }, AbortSignal.any([signal, batchStop.signal]));
+        } catch (error) {
+          // it isn't a failure: those go, and the rest are asked about without them
+          if (batchStop.signal.aborted && !signal.aborted) continue;
+          throw error;
+        } finally {
+          this.leaving = null;
+        }
         // read again: off while this was out means nothing it brought back is kept
         const after = await this.setting();
         if (signal.aborted || !after.available || !after.digest) return false;
@@ -263,7 +285,10 @@ export class TodayService {
         // `other`, and what it forgot, fall out
         const stillThere = new Set((await this.stillListed(batch)).map((i) => i.threadId));
         const kept = labelled.flatMap(({ item, label }) => (byLabel.has(label) && stillThere.has(item.threadId) ? [{ ...item, line: byLabel.get(label)! }] : []));
-        row = { ...row, items: [...row.items, ...kept], pending: row.pending.slice(batch.length), model: ai.model, provider: ai.providerId, promptVersion: DIGEST_PROMPT_VERSION };
+        // what's there now: a purge while this was out stays purged, and nothing it took out comes back
+        const current = (await digest.get(day)) ?? row;
+        const done = new Set(batch.map((i) => i.threadId));
+        row = { ...current, items: [...current.items, ...kept], pending: current.pending.filter((i) => !done.has(i.threadId)), model: ai.model, provider: ai.providerId, promptVersion: DIGEST_PROMPT_VERSION };
         if (!(await digest.write(row, generation))) return false;
         await this.b.yieldTurn();
       }
@@ -305,18 +330,19 @@ export class TodayService {
   }
 
   /** What's gone from the mail goes from every stored digest too: nothing shown outlives what it quotes. */
-  async purgeGone(): Promise<void> {
+  async purgeGone(o: { quiet?: boolean } = {}): Promise<void> {
     const { digest } = this.b.store.today;
     this.automated = null;
     const generation = digest.clearGeneration();
     for (const row of await digest.all()) {
-      const ids = [...row.items, ...row.pending].map((i) => i.threadId);
-      if (!ids.length) continue;
-      const here = new Set((await this.b.store.filters.actionFacts(ids)).map((f) => f.id));
-      if (here.size === new Set(ids).size) continue;
-      await digest.write({ ...row, items: row.items.filter((i) => here.has(i.threadId)), pending: row.pending.filter((i) => here.has(i.threadId)) }, generation);
+      const all = [...row.items, ...row.pending];
+      if (!all.length) continue;
+      // by the message it quotes: an older one can keep the thread alive
+      const here = new Set(await this.b.store.today.messagesHere(all.map((i) => i.messageId)));
+      if (all.every((i) => here.has(i.messageId))) continue;
+      await digest.write({ ...row, items: row.items.filter((i) => here.has(i.messageId)), pending: row.pending.filter((i) => here.has(i.messageId)) }, generation);
     }
-    this.ended(todayKey(this.b.now()));
+    if (!o.quiet) this.ended(todayKey(this.b.now()));
   }
 
   /** Its opening, visible text only; the snippet if the body isn't here yet. */
@@ -427,9 +453,10 @@ export class TodayService {
     const row = await store.today.digest.get(day);
     const shown = row && (row.state !== "pending" || row.items.length) ? row : await store.today.digest.latest(day);
     if (!shown) return row ? { day, state: "pending", items: [], automated: false, liveIds: [] } : null;
-    // deleted since: nothing shown outlives what it quotes
-    const here = new Set((await store.filters.actionFacts(shown.items.map((i) => i.threadId))).map((f) => f.id));
-    const items = shown.items.filter((i) => here.has(i.threadId));
+    // deleted since: nothing shown outlives what it quotes, and what's stored goes too
+    const here = new Set(await store.today.messagesHere(shown.items.map((i) => i.messageId)));
+    const items = shown.items.filter((i) => here.has(i.messageId));
+    if (items.length !== shown.items.length) void this.purgeGone().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
     const paused = row?.state === "pending" && row.errorKind !== null && this.paused;
     return { day: row?.state === "pending" ? day : shown.day, state: paused ? "failed" : (row?.state ?? shown.state), items, automated: false, liveIds: await store.today.digestLive(items.map((i) => i.threadId)), errorKind: paused ? row!.errorKind : shown.errorKind, model: shown.model, provider: shown.provider };
   }

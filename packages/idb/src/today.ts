@@ -50,6 +50,8 @@ export function digestFacts(c: Ctx, messageIds: readonly number[]): { facts: Dig
   return { facts, oldest };
 }
 
+export const messagesHere = (c: Ctx, ids: readonly number[]): number[] => ids.filter((id) => !!T(c, "messages").get(id));
+
 export function digestLive(c: Ctx, threadIds: readonly number[]): number[] {
   const threads = T(c, "threads");
   return threadIds.filter((id) => {

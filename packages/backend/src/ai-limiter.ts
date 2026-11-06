@@ -92,7 +92,7 @@ export interface AiLimiterHost {
   /** the monthly ceiling on background AI in US dollars; 0: none */
   monthlyLimitUsd(): Promise<number>;
   /** plan 144 revision 3: what's prepared on its own is read again at the last moment, after any wait: it aborts whatever no longer holds */
-  beforeAhead?(): Promise<void>;
+  beforeAhead?(task: LimiterTask): Promise<void>;
 }
 
 /** A model on this machine costs nothing; a cloud model nobody priced is counted dear rather than free. */
@@ -179,7 +179,7 @@ export class AiLimiter {
     }
     const release = o.local ? await this.takeLocal(o.foreground || o.ahead === true, req.signal) : () => {};
     try {
-      if (o.ahead) await this.host.beforeAhead?.();
+      if (o.ahead || o.task === "digest") await this.host.beforeAhead?.(o.task);
       if (req.signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
       const book = await this.bookFor(o.foreground);
       if (!o.foreground) this.checkCeilings(book!, task, worst, await this.host.monthlyLimitUsd());

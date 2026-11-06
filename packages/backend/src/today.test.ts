@@ -274,6 +274,47 @@ describe("the digest", () => {
     expect((await digest.all()).flatMap((r) => [...r.items, ...r.pending])).toEqual([]);
   });
 
+  it("moved to Spam as the request waits to leave: it doesn't go, and the rest are asked about without it", async () => {
+    const t = await setup();
+    const spam = await t.letter("Spammy");
+    await t.letter("Kept");
+    const limiter = (t.backend as unknown as { aiService: { limiter: { host: { beforeAhead(task: string): Promise<void> } } } }).aiService.limiter;
+    const real = limiter.host.beforeAhead;
+    let once = true;
+    limiter.host.beforeAhead = async (task) => {
+      if (task === "digest" && once) {
+        once = false;
+        await t.backend.store.threads.act({ threadIds: [spam], action: "spam", signal: null, now: NOW });
+      }
+      await real(task);
+    };
+    await on(t);
+    await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(day()))?.state).toBe("ready"));
+    limiter.host.beforeAhead = real;
+    const sent = t.model.reqs.map((r) => promptText(r.messages[0]!.content)).join();
+    expect(sent).toContain("Kept");
+    expect(sent).not.toContain("Spammy");
+  });
+
+  it("a purge while a batch is out stays: its checkpoint doesn't write back what went", async () => {
+    const t = await setup();
+    await t.letter("Gone");
+    await t.letter("Stays");
+    let release!: () => void;
+    const { digest } = t.backend.store.today;
+    const g = digest.clearGeneration();
+    const listed = (await t.backend.store.filters.actionFacts([1, 2])).map((f) => ({ threadId: f.id, messageId: f.id, lastDate: f.lastDate, messageCount: f.messageCount, from: f.subject, subject: f.subject, line: "old" as string | null }));
+    await digest.begin(day(), { at: 0, id: 0 }, [listed[1]!], g);
+    await digest.write({ ...(await digest.get(day()))!, items: [listed[0]!] }, g);
+    t.model.gate = new Promise((r) => (release = r));
+    await t.client.call("settings.update", { today: { digest: true } });
+    await vi.waitFor(() => expect(t.model.reqs).toHaveLength(1));
+    await digest.write({ ...(await digest.get(day()))!, items: [] }, g);
+    release();
+    await vi.waitFor(async () => expect((await digest.get(day()))?.state).toBe("ready"));
+    expect((await digest.get(day()))!.items.some((i) => i.threadId === listed[0]!.threadId)).toBe(false);
+  });
+
   it("stopping waits for what's underway, and leaves no timer", async () => {
     const t = await setup();
     await t.letter("One");

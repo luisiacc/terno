@@ -1,6 +1,6 @@
 # Plan 145: Daily brief (Today)
 
-- **Status:** proposed and Codex-critiqued. Nothing is built. Its "needs you" is richest after plan 142, but doesn't require it. "Revisions after the Codex review" overrides the sections before it.
+- **Status:** built and on `main`, code-reviewed in two rounds (see "What building it changed" and "What the code review changed"). The real-model eval (`scripts/ai-real/digest.real.ts`) is written and not run: it and the owner's read wait for the owner's go-ahead. "Revisions after the Codex review" overrides the sections before it.
 - **Builds on:** plan 17 (`waiting_since`, who is a person), plan 142 (due follow-ups), plan 87 (reminders, one timer, group headings in a list), plan 86 (Gmail tabs), plan 132 (stored summaries, the worker's rules), plan 131 (AI base), plan 113 (tips), plan 122 (the Time Field).
 
 ## The request
@@ -250,3 +250,12 @@ Codex (read-only, `git diff main..HEAD`) raised 15 points. One read main's newer
 12. A small window got oversized batches: `digestBudget` sizes the whole request, headers and repairs included.
 13. The gate left out the walk's setting up: each page's time holds it now.
 14. The test for a thread appearing once never made its fixture: two real due promises and a reminder, and it says so if they're missing.
+
+Round two, on those fixes (6 points, all fixed):
+
+15. Spam could still reach the provider while a request waited to leave: the limiter asks again as any digest request goes, repairs included, and stops it; the rest are asked about without what went.
+16. A late checkpoint brought back what a purge removed: each writes over what's there now.
+17. A deleted message's words stayed when older mail kept the thread: entries go by the message they quote, at every read and tick.
+18. Repairs could still overflow a small window: the budget holds three answers and what the repairs ask.
+19. A kept notification could open a Today that's gone: its click reads whether there is one, else the Inbox.
+20. The desktop's brief had no test: it does.

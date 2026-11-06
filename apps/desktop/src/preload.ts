@@ -125,7 +125,7 @@ contextBridge.exposeInMainWorld("ternoDesktop", {
   },
   // plan 41: a notification's click (a conversation id, or null for the Inbox); main holds it until the page listens
   onOpenThread: (listener: (threadId: number | null) => void) => {
-    const relay = (_e: unknown, threadId: unknown) => listener(Number.isSafeInteger(threadId) && (threadId as number) > 0 ? (threadId as number) : null);
+    const relay = (_e: unknown, threadId: unknown) => listener(Number.isSafeInteger(threadId) && ((threadId as number) > 0 || threadId === -1 /* plan 145: the brief, BRIEF_NOTICE_THREAD: opens Today */) ? (threadId as number) : null);
     ipcRenderer.on("terno:open-thread", relay);
     ipcRenderer.send("terno:open-ready");
     return () => ipcRenderer.removeListener("terno:open-thread", relay);

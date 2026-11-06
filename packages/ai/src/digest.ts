@@ -55,13 +55,15 @@ export function digestPrompt(input: DigestInput): string {
 const HEADER_CHARS = 200;
 const FROM_CHARS = 120;
 const SYSTEM_TOKENS = 400;
-const REPAIR_ROOM = 2;
+/** the ladder keeps its answers and what it asked: two failed, and a third still to come, with room for its words */
+const REPAIR_ROOM = 3;
+const REPAIR_WORDS_TOKENS = 200;
 
 /** How many fit one request, and how much of each: the whole request against the window, its answer and a repair's room too. */
 export function digestBudget(contextTokens: number | null): { batch: number; textChars: number } {
   if (contextTokens === null) return { batch: 40, textChars: ITEM_CHARS };
   for (const batch of [40, 10, 5, 2, 1]) {
-    const room = contextTokens - SYSTEM_TOKENS - REPAIR_ROOM * Math.max(200, batch * OUTPUT_PER_ITEM);
+    const room = contextTokens - SYSTEM_TOKENS - REPAIR_WORDS_TOKENS - REPAIR_ROOM * Math.max(200, batch * OUTPUT_PER_ITEM);
     // its markup too: a block's tags and labels
     const each = Math.floor(room / batch) - (HEADER_CHARS + FROM_CHARS + 60) / 4;
     // too little left to read a line's worth: fewer at a time

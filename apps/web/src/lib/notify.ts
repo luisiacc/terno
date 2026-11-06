@@ -5,7 +5,7 @@
  * installed app's icon where the browser has setAppBadge, and a notification
  * for the backend's `notify` event while this tab is hidden.
  */
-import { BRIEF_NOTICE_THREAD } from "@terno/core";
+import { aiFeaturesAvailable, BRIEF_NOTICE_THREAD } from "@terno/core";
 import { noticeText, type MailNotice } from "@terno/core";
 import { client } from "~/rpc/connection";
 import { reconcileSettings } from "~/lib/appearance";
@@ -35,8 +35,12 @@ export function openFromNotice(threadId: number | null): void {
   const s = getApp();
   // plan 145: the brief's notice opens Today
   if (threadId === BRIEF_NOTICE_THREAD) {
-    if (s.dialog) setApp({ dialog: null });
-    return navigate({ today: true });
+    if (aiFeaturesAvailable(s.settings) && s.settings?.today?.show !== false) {
+      if (s.dialog) setApp({ dialog: null });
+      return navigate({ today: true });
+    }
+    // no Today any more: the Inbox, as a notice with no thread opens
+    threadId = null;
   }
   if (s.dialog) setApp({ dialog: null });
   if (s.view !== "inbox" || s.accountId !== null || s.categoryId !== null || s.reviewCategoryId !== null || s.query !== "") navigate({ view: "inbox", accountId: null, categoryId: null, reviewCategoryId: null });
