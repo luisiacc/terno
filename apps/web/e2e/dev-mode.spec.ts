@@ -81,7 +81,10 @@ test("Plan 147: the switch off, no AI feature shows, whatever the profile has sa
   await openFirst();
   // a summary is stored for this conversation, as from before the switch went off
   const threadId = Number(await page.getByTestId("thread-row").first().getAttribute("data-thread-id"));
-  await server.backend.server.invoke("ai.summarize", { threadId, requestId: "stored" }, dev);
+  // (written straight in: plan 150's backend refuses to make one with the switch off)
+  const { store } = server.backend;
+  const sources = (await store.aiSummaries.sources(threadId))!;
+  await store.aiSummaries.finish({ threadId, stamp: sources.stamp, expectThrough: null, now: Date.now(), clearGeneration: store.aiSummaries.clearGeneration(), contentHash: "stored", promptVersion: 1, language: "en", model: "demo", provider: "fake", endpoint: null, bodyJson: JSON.stringify({ summary: "From before the switch went off.", items: [] }) });
   await page.reload();
   await page.locator("[data-ready]").waitFor();
   await openFirst();

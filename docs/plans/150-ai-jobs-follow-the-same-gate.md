@@ -1,6 +1,6 @@
 # Plan 150: AI's background jobs follow the same gate as its UI
 
-- **Status:** built. "Revisions after the Codex review" overrides the sections before it.
+- **Status:** built and on `main`. "Revisions after the Codex review" overrides the sections before it.
 - **Builds on:** plan 147 (what shows), plan 146 (Dev mode), plan 85 decisions 9 and 10 (`forTask`, the one place that decides).
 
 ## The request
@@ -75,3 +75,14 @@ Not taken, both very rare and on a local build only:
 - **`actions.ts` and `ask.ts` read the target again to record what already happened.** Flipping the switch during that, from a second window, loses a history line or a stopped answer. Mail isn't affected.
 
 The tests are narrower than planned: `forTask` is held for every task, and summaries, the digest and prepared replies end to end. Follow-ups, categorization and the voice learner rest on that one place, and on their suites' own tests of `not_configured`.
+
+## What the full run showed
+
+`pnpm test:all` did not pass. Each failure was run on the same base commit (`a05a45d2`):
+
+- **`dev-mode.spec.ts`'s plan 147 test was this plan's:** it made its stored summary through `ai.summarize` with the switch off, which is now refused. It writes the row itself.
+- **`unit`:** the same 56 tests fail on the base (plan 147's list: `client.on` at import in `replies.ts` and `state/today.ts`, and `digest-page.tsx` in `no-hardcoded.test.ts`).
+- **`e2e`:** the other 37 fail on the base too: mostly baselines. `followups.spec.ts:102` is flaky on both (2 of 3 there, 1 of 3 here), at a race in its own Not now step.
+- **`smoke`:** `update.smoke.ts:290` failed on the base in plan 147's comparison, the same way.
+- **`perf`:** `attachment-admission.perf` is the same import failure. `categorize.perf` and `offers.perf`, the two in `packages/backend`, pass 20 of 20 alone on both trees. `packages/db` and `packages/idb` are untouched here.
+- **Passed:** lint, typecheck, build, web, db-wasm, startup, and ui-perf on its second pass.
