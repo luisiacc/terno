@@ -17,6 +17,8 @@ export type MainToBackend =
 
 export type BackendToMain =
   | { type: "ready" }
+  /** plan 156: how its bundle was compiled (logged: it's what a slow launch is asked first) */
+  | { type: "code-cache"; outcome: "accepted" | "rejected" | "none" }
   /** plan 95: the mailbox is being upgraded (a backup, then the migration), or it opened (once restored, said so) */
   | { type: "gate"; gate: MailboxGate }
   /** plan 95: the mailbox can't open, for a reason the window explains (the process exits next; main doesn't restart it) */

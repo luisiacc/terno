@@ -63,6 +63,7 @@ export const FIELD_TYPES = {
   // plan 95: why the mailbox couldn't open
   openFailure: enumOf("newer", "no-room-backup", "no-room-migrate", "migration", "corrupt", "unwritable", "backup", "other"),
   /** how a quit ended: the database closed, a send kept it open (deferred), or the deadline passed */
+  codeCache: enumOf("accepted", "rejected", "none"),
   outcome: enumOf("closed", "sending", "forced", "timeout", "other", "unsaved", "rolled-back", "completed"),
   op: enumOf("encrypt", "decrypt", "legacy", "sync", "send", "move", "import", "export", "persist", "rebuild", "restore", "generate", "test", "classify", "other"),
   opKind: enumOf(...THREAD_ACTIONS, "send", "move", "moveToFolder", "leaveFolder", "other"),

@@ -221,6 +221,9 @@ function startBackend() {
   child.on("message", (msg: BackendToMain) => {
     if (backend !== child || retirement.retiring) return;
     switch (msg.type) {
+      case "code-cache":
+        diagLog.info("backend.code_cache", { codeCache: msg.outcome });
+        break;
       case "ready":
         resolveReady();
         mainDiag.setEngine("running");

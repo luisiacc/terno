@@ -20,6 +20,7 @@ export const CODES = {
   // main: the backend utility process, renderers, child processes
   "backend.started": c("attempt"),
   "backend.ready": c("attempt", "durationMs"),
+  "backend.code_cache": c("codeCache"),
   "backend.exited": c("exitCode", "attempt", "deliberate"),
   "backend.restart_scheduled": c("attempt", "delayMs"),
   "backend.stopped": c("attempt"),
