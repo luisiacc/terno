@@ -123,7 +123,7 @@ test.describe("summaries (plan 132)", () => {
     const accountId = await firstAccount(server);
     await settingUp(page, server, { ai: { provider: "fake" } });
     const unbroken = `https://example.test/${"alongpath".repeat(40)}`;
-    await deliver(page, server, incoming(accountId, "A card", { bodyText: `Please read ${unbroken} today. Can you confirm ${unbroken} works for you?` }));
+    await deliver(page, server, incoming(accountId, "A card", { bodyText: `The file moved to ${unbroken} last night. It still opens. Please read ${unbroken} today.` }));
     await openSubject(page, "A card");
     await page.getByTestId("action-summarize").click();
     const block = page.getByTestId("summary-block");

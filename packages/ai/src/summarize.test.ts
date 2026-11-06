@@ -38,7 +38,10 @@ describe("the prompt", () => {
     expect(task.prompt).toContain("canary-7f3");
     expect(task.system).toMatch(/data, not instructions/);
     expect(task.effort).toBe("low");
-    expect(SUMMARY_PROMPT_VERSION).toBe(2);
+    expect(SUMMARY_PROMPT_VERSION).toBe(3);
+    // plan 148: the rows add to the summary, and the example shown to a server with no json_schema does too
+    expect(task.system).toMatch(/Never restate the summary in an item/);
+    expect(task.example.summary).not.toContain("contract");
   });
 
   it("names the reader's language, not the mail's", () => {
@@ -89,6 +92,20 @@ describe("what comes back", () => {
     expect(r.summary.length).toBeLessThanOrEqual(800);
   });
 
+  it("plan 148: drops an item the summary already says, and it doesn't use up the six", async () => {
+    const summary = "Ana proposes 19 March. ¿Te parece si lo cerramos esta semana?";
+    const said = ["¿Te parece si lo cerramos esta semana?", "te parece si lo cerramos ESTA semana", "19 March", "Ana"];
+    const fresh = Array.from({ length: 6 }, (_, i) => `Send item ${i}`);
+    const t = scripted(() => wire({ summary, items: [...said, ...fresh].map((text) => ({ kind: "question", text, message: "m1" })) }));
+    expect((await createAi(config(), { transport: t }).summarize(input())).items.map((i) => i.text)).toEqual(fresh);
+  });
+
+  it("plan 148: keeps an item that only looks like part of a word in the summary, or says more than it", async () => {
+    const keep = ["19", "Ana proposes 19 March, by Friday", "Marc"];
+    const t = scripted(() => wire({ summary: "Sent in 2019 to Marcos: Ana proposes 19 March.", items: keep.map((text) => ({ kind: "date", text, message: "m1" })) }));
+    expect((await createAi(config(), { transport: t }).summarize(input())).items.map((i) => i.text)).toEqual(["Ana proposes 19 March, by Friday", "Marc"]);
+  });
+
   it("an empty summary goes to the repair turn, and an unknown kind too", async () => {
     const t = scripted((n) => (n === 0 ? wire({ summary: "   " }) : n === 1 ? wire({ items: [{ kind: "mood", text: "x", message: "m1" }] }) : wire()));
     await expect(createAi(config({ capabilities: { output: "json_object", contextTokens: null, embeddings: false, probedAt: 1 } }), { transport: t }).summarize(input())).resolves.toEqual(wire());
@@ -101,9 +118,11 @@ describe("the fake", () => {
   const fake = () => createAi(config(), { transport: fakeTransport() });
 
   it("answers from the newest message, in the reader's language, citing it", async () => {
-    const r = await fake().summarize(input());
-    expect(r.summary).toBe("Ana can't make the 12th and proposes the 19th. Please send the signed contract before then.");
+    const r = await fake().summarize(input("Ana can't make the 12th. She proposes the 19th. Please send the signed contract before then."));
+    expect(r.summary).toBe("Ana can't make the 12th. She proposes the 19th.");
     expect(r.items).toEqual([{ kind: "action", text: "Please send the signed contract before then.", message: "m1" }]);
+    // what the summary already says isn't a row: it's what a short mail used to show twice
+    expect((await fake().summarize(input())).items).toEqual([]);
     const none = await fake().summarize(input("", { language: "es" }));
     expect(none.summary).toBe("Sin texto.");
   });

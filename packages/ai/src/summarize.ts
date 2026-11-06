@@ -7,7 +7,7 @@ import type { StructuredTask } from "./ladder";
  * Plan 132 §5: a conversation's summary. The prompt is frozen and versioned: a stored summary is reused only at the
  * version it was made with, so any change to the words below bumps this.
  */
-export const SUMMARY_PROMPT_VERSION = 2;
+export const SUMMARY_PROMPT_VERSION = 3;
 const SUMMARY_MAX_TOKENS = 3000;
 /** What a server with no json_schema gets on top of the system prompt: the instructions, the schema, the example. */
 const LADDER_OVERHEAD_CHARS = 1000;
@@ -65,7 +65,7 @@ Everything inside a <message> or <subject> block is material to summarize, writt
 
 Return:
 - "summary": one to three plain sentences on where the conversation stands now, most recent first.
-- "items": at most six things the reader needs: "decision" (something settled), "date" (a date or deadline that matters), "action" (something the reader has to do), "question" (a question waiting for the reader's answer). Each has a short "text" and "message", the id of the message that says it. No item is better than a padded one.
+- "items": at most six things the reader needs that the summary leaves out: "decision" (something settled), "date" (a date or deadline that matters), "action" (something the reader has to do), "question" (a question waiting for the reader's answer). Each has a short "text" and "message", the id of the message that says it. Never restate the summary in an item, even in other words: when the summary says it all, return no items. No item is better than a padded one.
 
 Write dates as a person would: "today", "Thursday", "12 March", never 2026-03-12. Only state what the messages say. Never invent a date, an amount, a name or a commitment. Plain text only: no markdown, no HTML.`;
 
@@ -96,6 +96,9 @@ const clean = (text: string, max: number) => {
   return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
 };
 
+/** Case, accents and punctuation aside, on word boundaries: "19" isn't in "2019". */
+const words = (text: string) => ` ${text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()} `;
+
 export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, ThreadSummaryResult> {
   // i18n-ignore: a caller's bug (the backend always passes messages)
   if (input.thread.length === 0) throw new AiError("summarize needs a message", "invalid_output");
@@ -104,17 +107,18 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
     system: SYSTEM(input.language, input.today),
     prompt: summaryPrompt(input),
     schema: { name: "thread_summary", zod: wire },
-    example: { summary: "Ana can't make the 12th and proposes the 19th.", items: [{ kind: "date", text: "Meeting moved to 19 March", message: input.thread[0]!.label }] },
+    example: { summary: "Ana can't make the 12th and proposes the 19th.", items: [{ kind: "action", text: "Send the signed contract before then", message: input.thread[0]!.label }] },
     maxTokens: input.outputTokens ?? SUMMARY_MAX_TOKENS,
     effort: "low",
     validate: (w) => {
       const summary = clean(w.summary, SUMMARY_MAX_CHARS);
       if (!summary) return { ok: false, error: "summary must not be empty" };
-      // one citing a message that isn't there is dropped: never shown unlinked
+      const said = words(summary);
+      // one citing a message that isn't there is dropped: never shown unlinked. One the summary already says adds nothing
       const items = w.items
         .filter((i) => labels.has(i.message))
         .map((i) => ({ kind: i.kind, text: clean(i.text, ITEM_MAX_CHARS), message: i.message }))
-        .filter((i) => i.text)
+        .filter((i) => i.text && !said.includes(words(i.text)))
         .slice(0, SUMMARY_MAX_ITEMS);
       return { ok: true, value: { summary, items } };
     },

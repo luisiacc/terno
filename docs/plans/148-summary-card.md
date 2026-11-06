@@ -76,3 +76,17 @@ Codex raised 2 points on `f5158c85`, both fixed with a regression test.
 - **`e2e`:** 29 tests failed on the first pass, and 28 of them passed when run again alone; the other was `unsubscribe.spec.ts`' Spanish flow. That flow and every summary flow passed on `d534c01d` at a load near 40: `summaries.spec.ts` and `unsubscribe.spec.ts` in all five designs, 20 of 20.
 
 Not run again: a clean `pnpm test:all`, which can't pass until the `unit` break is fixed.
+
+## The rows repeated the summary
+
+> why are we extracting a question there? and it just repeats part of the summary
+
+> do the 1st option, also dont care about already generated summaries
+
+The screenshot was the offline fake, whose summary and question row came from the same sentence on a short mail. The real prompt never told a model not to do the same, and the example it shows a server with no `json_schema` did it itself: the summary said the 19th and the row said the 19th. Three changes, in `packages/ai/src/summarize.ts`:
+
+- **The prompt says so.** Items are what the summary leaves out, and when it says it all there are none. `SUMMARY_PROMPT_VERSION` goes to 3. Stored summaries aren't touched, by the owner's choice.
+- **The example follows it:** its row is now the contract, which its summary doesn't mention.
+- **The check holds it.** `validate` drops an item whose words are already in the summary, ignoring case, accents and punctuation, on word boundaries, before the limit of six, so the fake and every provider get it. It catches a literal repeat, not a paraphrase: that's the prompt's job, and whether it does the job on a real model hasn't been measured (`scripts/ai-real/summaries.real.ts` is gated and wasn't run).
+
+That eval no longer requires both an action and a question, since a row now only comes back when the summary leaves it out.
