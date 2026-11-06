@@ -40,6 +40,15 @@ def check(row: dict) -> list[str]:
             errors.append(f"message {i}: date isn't YYYY-MM-DD")
         if not str(m["text"]).strip():
             errors.append(f"message {i}: no text")
+        for field in ("to", "cc"):
+            if field not in m:
+                errors.append(f"message {i} has no {field}")
+            elif not isinstance(m[field], list) or not all(isinstance(a, str) and a.strip() for a in m[field]):
+                errors.append(f"message {i}: {field} isn't a list of strings")
+        if isinstance(m.get("to"), list) and not m["to"]:
+            errors.append(f"message {i}: nobody in to")
+        if "list" in m and m["list"] is not True:
+            errors.append(f"message {i}: list, when present, is true")
         dates.append(str(m["date"]))
     if dates != sorted(dates):
         errors.append("messages aren't oldest first")

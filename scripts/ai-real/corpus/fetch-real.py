@@ -121,8 +121,17 @@ def day(value: str):
     return parsed.replace(tzinfo=None) if parsed else None
 
 
-def conversation(source, cid, subject, reader, language, tags, messages):
-    """`messages`: (datetime, from, own, text), any order. The next morning is `today`, as if just read."""
+def people(value: str) -> list:
+    """A To or Cc header as "Name <address>" strings."""
+    out = []
+    for name, address in email.utils.getaddresses([value]):
+        if address:
+            out.append(f"{name} <{address}>" if name else address)
+    return out
+
+
+def conversation(source, cid, subject, reader, language, tags, messages, is_list=False):
+    """`messages`: (datetime, from, own, text, to, cc), any order. The next morning is `today`, as if just read."""
     ordered = sorted(messages, key=lambda m: m[0])
     last = ordered[-1][0]
     return {
@@ -135,7 +144,7 @@ def conversation(source, cid, subject, reader, language, tags, messages):
         "subject": subject,
         "reader": reader,
         "today": (last + dt.timedelta(days=1)).strftime("%Y-%m-%d"),
-        "messages": [{"from": f, "date": d.strftime("%Y-%m-%d"), "own": own, "text": text} for d, f, own, text in ordered],
+        "messages": [{"from": f, "date": d.strftime("%Y-%m-%d"), "own": own, "to": to, "cc": cc, **({"list": True} if is_list else {}), "text": text} for d, f, own, text, to, cc in ordered],
         "truth": {"readerOwes": [], "othersOwe": [], "settled": [], "keyDates": [], "mustNotClaim": []},
     }
 
@@ -200,7 +209,7 @@ def enron() -> None:
             if not topic or recipients > 20 or ROBOT.search(sender) or SSN.search(text):
                 continue
             # the same message sits in several folders
-            boxes[user][topic][hashlib.sha1(f"{sender}|{when.date()}|{text[:400]}".encode()).hexdigest()] = (when, sender, sent, text, subject)
+            boxes[user][topic][hashlib.sha1(f"{sender}|{when.date()}|{text[:400]}".encode()).hexdigest()] = (when, sender, sent, text, subject, people(header(message, "To")), people(header(message, "Cc")))
     threads = []
     for user, topics in boxes.items():
         mine = {a for a, n in addresses[user].items() if n >= 3}
@@ -211,13 +220,13 @@ def enron() -> None:
             # a subject reused a year apart isn't one conversation
             if (items[-1][0] - items[0][0]).days > 60 or len(items) > 12:
                 continue
-            threads.append((f"{user}/{topic}", user, [(w, s, s.lower() in mine, t, subj) for w, s, _, t, subj in items]))
+            threads.append((f"{user}/{topic}", user, [(w, s, s.lower() in mine, t, subj, to, cc) for w, s, _, t, subj, to, cc in items]))
     rows = []
     for key, user, messages in buckets(threads, {(1, 1): 50, (2, 4): 70, (5, 12): 40}):
         reader_addresses = sorted((a for a, n in addresses[user].items() if n >= 3), key=lambda a: -addresses[user][a])
         reader = {"name": user, "email": reader_addresses[0] if reader_addresses else f"{user}@enron.com"}
         tags = ["real", "own-last"] if messages[-1][2] else ["real"]
-        rows.append(conversation("enron", f"enron-{rank(key)[:10]}", messages[0][4] or key, reader, "en", tags, [m[:4] for m in messages]))
+        rows.append(conversation("enron", f"enron-{rank(key)[:10]}", messages[0][4] or key, reader, "en", tags, [(m[0], m[1], m[2], m[3], m[5], m[6]) for m in messages]))
     write("enron", rows, {"origin": "https://www.cs.cmu.edu/~enron/", "note": "Public via FERC; business mail, 1998 to 2002", "messagesRead": seen, "threadsFound": len(threads)})
 
 
@@ -232,7 +241,7 @@ def threads_of_mbox(path: pathlib.Path, source: str, language: str, tags: list, 
         text = tidy(plain(message))
         if not when or not topic or not text or ROBOT.search(sender) or (keep_year and when.year < keep_year):
             continue
-        topics[topic][hashlib.sha1(f"{sender}|{when}|{text[:300]}".encode()).hexdigest()] = (when, sender, text, subject)
+        topics[topic][hashlib.sha1(f"{sender}|{when}|{text[:300]}".encode()).hexdigest()] = (when, sender, text, subject, people(header(message, "To")), people(header(message, "Cc")))
     out = []
     for topic, messages in topics.items():
         items = sorted(messages.values(), key=lambda m: m[0])
@@ -249,11 +258,11 @@ def list_rows(threads: list, source: str, language: str, sizes: dict, extra_tags
         as_starter = int(rank(key + ":who")[:2], 16) % 2 == 0
         reader_from = starter if as_starter else "A subscriber <subscriber@list.invalid>"
         name, address = email.utils.parseaddr(reader_from)
-        messages = [(w, s, s == reader_from, t) for w, s, t, _ in items]
+        messages = [(w, s, s == reader_from, t, to, cc) for w, s, t, _, to, cc in items]
         tags = ["real", "list", *extra_tags, "starter" if as_starter else "bystander"]
         if messages[-1][2]:
             tags.append("own-last")
-        rows.append(conversation(source, f"{source}-{rank(key)[:10]}", items[0][3], {"name": name or address, "email": address}, language, tags, messages))
+        rows.append(conversation(source, f"{source}-{rank(key)[:10]}", items[0][3], {"name": name or address, "email": address}, language, tags, messages, is_list=True))
     return rows
 
 
@@ -314,7 +323,7 @@ def debian_es() -> None:
             text = tidy(strip_html(body.group(1))) if body else ""
             topic = normal_subject(subject)
             if when and topic and text and not ROBOT.search(sender):
-                topics[topic][name + month] = (when, sender, text, subject)
+                topics[topic][name + month] = (when, sender, text, subject, people(head("To")), people(head("Cc")))
     threads = []
     for topic, messages in topics.items():
         items = sorted(messages.values(), key=lambda m: m[0])

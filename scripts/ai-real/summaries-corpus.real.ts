@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { createAi, summaryBudget, type ThreadText } from "@terno/ai";
+import { createAi, deliveryOf, summaryBudget, type SummaryReader, type ThreadText } from "@terno/ai";
 import { describe, expect, it } from "vitest";
 import { promptText } from "../../packages/ai/src/types";
 import { withoutQuotes } from "../../packages/core/src/text";
@@ -33,8 +33,14 @@ interface Conversation {
   tags: string[];
   subject: string;
   today: string;
-  messages: { from: string; date: string; own: boolean; text: string }[];
+  reader: SummaryReader;
+  messages: { from: string; date: string; own: boolean; to?: string[]; cc?: string[]; list?: boolean; text: string }[];
 }
+
+const parsed = (who: string) => {
+  const m = /^(.*?)\s*<([^>]+)>\s*$/.exec(who);
+  return m ? { name: m[1]!.replace(/^"|"$/g, ""), email: m[2]! } : { name: "", email: who.trim() };
+};
 
 const readJsonl = (path: string): Conversation[] =>
   readFileSync(path, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as Conversation);
@@ -52,11 +58,13 @@ function load(sets: string[]): (Conversation & { set: string })[] {
 function thread(c: Conversation): ThreadText[] {
   const newest = [...c.messages].reverse().find((m) => !m.own) ?? c.messages[c.messages.length - 1]!;
   const others = c.messages.filter((m) => m !== newest).slice(-12);
+  const own = new Set([c.reader.email.toLowerCase(), ...c.messages.filter((m) => m.own).map((m) => parsed(m.from).email.toLowerCase())]);
   return c.messages
     .filter((m) => m === newest || others.includes(m) || c.messages.indexOf(m) >= c.messages.length - 53)
     .map((m, i) => ({
       label: `m${i + 1}`,
       from: m.from,
+      ...deliveryOf({ to: (m.to ?? []).map(parsed), cc: (m.cc ?? []).map(parsed), list: m.list === true }, own),
       date: m.date,
       own: m.own,
       text: m === newest ? m.text.slice(0, 16_000) : others.includes(m) ? withoutQuotes(m.text).slice(0, 1_600) || m.text.slice(0, 100) : withoutQuotes(m.text).replace(/\s+/g, " ").slice(0, 120),
@@ -102,7 +110,7 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
           const input = thread(c);
           const started = Date.now();
           try {
-            const r = await ai.summarize({ subject: c.subject, thread: input, language: readerLanguage(c), today: c.today, outputTokens: summaryBudget(null).outputTokens });
+            const r = await ai.summarize({ subject: c.subject, thread: input, reader: c.reader, language: readerLanguage(c), today: c.today, outputTokens: summaryBudget(null).outputTokens });
             appendFileSync(path, `${JSON.stringify({ id: c.id, set: c.set, language: readerLanguage(c), ms: Date.now() - started, summary: r.summary, items: r.items })}\n`);
           } catch (e) {
             failed++;
