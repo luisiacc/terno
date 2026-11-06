@@ -8,7 +8,15 @@ const pkg = (name: string) => fileURLToPath(new URL(`./packages/${name}/src/inde
 
 export default defineConfig({
   // zod for the evals' own judges; the workspace keeps it inside the packages that declare it
-  resolve: { alias: { "@terno/ai/file-ledger": fileURLToPath(new URL("./packages/ai/src/file-ledger.ts", import.meta.url)), "@terno/ai": pkg("ai"), zod: fileURLToPath(new URL("./packages/ai/node_modules/zod/index.js", import.meta.url)) } },
+  resolve: {
+    alias: [
+      { find: "@terno/ai/file-ledger", replacement: fileURLToPath(new URL("./packages/ai/src/file-ledger.ts", import.meta.url)) },
+      { find: /^@terno\/ai$/, replacement: pkg("ai") },
+      // exact: its subpaths resolve as any package's, from where they're asked for
+      { find: /^@terno\/core$/, replacement: pkg("core") },
+      { find: "zod", replacement: fileURLToPath(new URL("./packages/ai/node_modules/zod/index.js", import.meta.url)) },
+    ],
+  },
   test: {
     include: ["scripts/ai-real/**/*.real.ts"],
     // one at a time: the ledger's ceiling is only exact without races

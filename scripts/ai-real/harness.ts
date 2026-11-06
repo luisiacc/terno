@@ -22,7 +22,8 @@ export function fileLedger(path: string = LEDGER_PATH, capUsd: number = HARD_CAP
 
 /** The repo's .env, read only here and held only in this process. Values are never logged. */
 export function realKeys(): { anthropic: string; openai: string; jev: string } {
-  const text = readFileSync(resolve(process.cwd(), ".env"), "utf8");
+  // a worktree has no .env of its own: TERNO_AI_ENV_FILE names the main checkout's
+  const text = readFileSync(process.env.TERNO_AI_ENV_FILE ?? resolve(process.cwd(), ".env"), "utf8");
   const env: Record<string, string> = {};
   for (const line of text.split(/\r?\n/)) {
     const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
