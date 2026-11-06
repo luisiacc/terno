@@ -152,6 +152,8 @@ def conversation(source, cid, subject, reader, language, tags, messages, is_list
 def write(name: str, rows: list, notes: dict) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     path = OUT / f"{name}.jsonl"
+    # a subject reused in another month has the same key, and one conversation is what the id stands for
+    rows = list({row["id"]: row for row in reversed(rows)}.values())[::-1]
     with path.open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")

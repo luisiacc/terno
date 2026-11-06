@@ -25,6 +25,8 @@ const OTHER_TOKENS = 400;
 const OTHERS = 12;
 /** the rest of a long conversation, from, date and snippet: a thread of a thousand can't send a thousand */
 const REST = 40;
+/** the last message whole too, up to this: when it's the reader's, what it quotes can be the only copy here */
+const LAST_TOKENS = 1500;
 /** a quoted reply is mostly quote: read enough of it to have 400 tokens left */
 const QUOTED_READ_FACTOR = 4;
 
@@ -95,15 +97,17 @@ async function assemble(store: MailStore, sources: SummarySources, contextTokens
   const room = summaryBudget(contextTokens).promptChars;
   const newestLimit = Math.min(NEWEST_TOKENS * CHARS_PER_TOKEN, Math.floor(room * 0.6));
   const otherLimit = Math.min(OTHER_TOKENS * CHARS_PER_TOKEN, Math.floor((room * 0.3) / Math.max(1, others.length)));
+  const last = messages[messages.length - 1]!;
+  const lastLimit = Math.min(LAST_TOKENS * CHARS_PER_TOKEN, Math.floor(room * 0.2));
   const texts = await store.aiSummaries.text([
     { messageId: newest.id, limit: newestLimit },
-    ...others.map((m) => ({ messageId: m.id, limit: otherLimit * QUOTED_READ_FACTOR })),
+    ...others.map((m) => ({ messageId: m.id, limit: m === last ? Math.max(lastLimit, otherLimit * QUOTED_READ_FACTOR) : otherLimit * QUOTED_READ_FACTOR })),
   ]);
   const rest = new Set(messages.filter((m) => m !== newest && !others.includes(m)).slice(-REST).map((m) => m.id));
   const chosen = messages.filter((m) => m === newest || others.includes(m) || rest.has(m.id));
   const drafted = chosen.map((m): ThreadText => {
     const stored = texts.get(m.id);
-    const text = m === newest ? stored : stored == null ? null : withoutQuotes(stored).slice(0, otherLimit);
+    const text = m === newest ? stored : stored == null ? null : m === last ? stored.slice(0, Math.max(lastLimit, otherLimit)) : withoutQuotes(stored).slice(0, otherLimit);
     return { label: `m${m.id}`, from: nameOf(m), ...deliveryOf(m, own), date: day(m.date), own: m.own, text: text || m.snippet };
   });
   const { subject, thread: fitted } = fit(sources.subject, drafted, chosen.indexOf(newest), room, reader);

@@ -1,7 +1,9 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { createAi, deliveryOf, summaryBudget, type SummaryReader, type ThreadText } from "@terno/ai";
+import { createAi, deliveryOf, summarizeTask, summaryBudget, type SummaryReader, type ThreadText } from "@terno/ai";
+import { runStructured } from "../../packages/ai/src/ladder";
+import type { ModelTransport } from "../../packages/ai/src/types";
 import { describe, expect, it } from "vitest";
 import { promptText } from "../../packages/ai/src/types";
 import { withoutQuotes } from "../../packages/core/src/text";
@@ -16,6 +18,9 @@ import { realKeys, realTransport, spendReport } from "./harness";
  * - TERNO_AI_SUMMARY_VARIANT: a file of JSON [[find, replace], …] applied to the system prompt, to try wording with no
  *   change to the code
  * - TERNO_AI_SUMMARY_MODEL: the model, GPT Luna by default
+ * - TERNO_AI_SUMMARY_EFFORT: low, medium or high in place of the task's own
+ * - TERNO_AI_SUMMARY_VERIFY=1: a second pass that checks the first against the mail
+ * - TERNO_AI_SUMMARY_IDS: a file of JSON ids, to run only those
  *
  * A run already on disk carries on from where it stopped, and the harness's ledger holds the spend.
  */
@@ -58,6 +63,7 @@ function load(sets: string[]): (Conversation & { set: string })[] {
 function thread(c: Conversation): ThreadText[] {
   const newest = [...c.messages].reverse().find((m) => !m.own) ?? c.messages[c.messages.length - 1]!;
   const others = c.messages.filter((m) => m !== newest).slice(-12);
+  const last = c.messages[c.messages.length - 1]!;
   const own = new Set([c.reader.email.toLowerCase(), ...c.messages.filter((m) => m.own).map((m) => parsed(m.from).email.toLowerCase())]);
   return c.messages
     .filter((m) => m === newest || others.includes(m) || c.messages.indexOf(m) >= c.messages.length - 53)
@@ -67,7 +73,7 @@ function thread(c: Conversation): ThreadText[] {
       ...deliveryOf({ to: (m.to ?? []).map(parsed), cc: (m.cc ?? []).map(parsed), list: m.list === true }, own),
       date: m.date,
       own: m.own,
-      text: m === newest ? m.text.slice(0, 16_000) : others.includes(m) ? withoutQuotes(m.text).slice(0, 1_600) || m.text.slice(0, 100) : withoutQuotes(m.text).replace(/\s+/g, " ").slice(0, 120),
+      text: m === newest ? m.text.slice(0, 16_000) : m === last ? m.text.slice(0, 6_000) : others.includes(m) ? withoutQuotes(m.text).slice(0, 1_600) || m.text.slice(0, 100) : withoutQuotes(m.text).replace(/\s+/g, " ").slice(0, 120),
     }));
 }
 
@@ -79,7 +85,8 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
     const sets = (process.env.TERNO_AI_SUMMARY_SETS ?? "synthetic,enron,apache,python-es,debian-es").split(",");
     const variantPath = process.env.TERNO_AI_SUMMARY_VARIANT;
     const swaps = variantPath ? (JSON.parse(readFileSync(variantPath, "utf8")) as [string, string][]) : [];
-    const budgeted = realTransport({ provider: "openai", model: MODEL }, `summary-corpus-${RUN}`);
+    const provider = MODEL.startsWith("claude") ? ("anthropic" as const) : ("openai" as const);
+    const budgeted = realTransport({ provider, model: MODEL }, `summary-corpus-${RUN}`);
     let swapped = false;
     const transport = {
       ...budgeted,
@@ -90,17 +97,19 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
           system = system.replace(find, replace);
           swapped = true;
         }
-        return (budgeted.complete as (...a: unknown[]) => ReturnType<typeof budgeted.complete>)({ ...req, system }, ...rest);
+        const effort = (process.env.TERNO_AI_SUMMARY_EFFORT as typeof req.effort | undefined) ?? req.effort;
+        return (budgeted.complete as (...a: unknown[]) => ReturnType<typeof budgeted.complete>)({ ...req, system, effort }, ...rest);
       },
     };
-    const ai = createAi({ id: "openai", model: MODEL, apiKey: realKeys().openai, fetch: globalThis.fetch, timeoutMs: 120_000, maxRetries: 0 }, { transport });
+    const ai = createAi({ id: provider, model: MODEL, apiKey: realKeys()[provider], fetch: globalThis.fetch, timeoutMs: 120_000, maxRetries: 0 }, { transport });
 
     const dir = join(HOME, "runs");
     mkdirSync(dir, { recursive: true });
     const path = join(dir, `${RUN}.jsonl`);
     const done = new Set(existsSync(path) ? readJsonl(path).map((r) => r.id) : []);
     if (!existsSync(path)) writeFileSync(path, "");
-    const queue = load(sets).filter((c) => !done.has(c.id));
+    const only = process.env.TERNO_AI_SUMMARY_IDS ? new Set(JSON.parse(readFileSync(process.env.TERNO_AI_SUMMARY_IDS, "utf8")) as string[]) : null;
+    const queue = load(sets).filter((c) => !done.has(c.id) && (!only || only.has(c.id)));
     console.log(`${queue.length} to run, ${done.size} done, ${spendReport()}`);
 
     let failed = 0;
@@ -110,7 +119,16 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
           const input = thread(c);
           const started = Date.now();
           try {
-            const r = await ai.summarize({ subject: c.subject, thread: input, reader: c.reader, language: readerLanguage(c), today: c.today, outputTokens: summaryBudget(null).outputTokens });
+            const request = { subject: c.subject, thread: input, reader: c.reader, language: readerLanguage(c), today: c.today, outputTokens: summaryBudget(null).outputTokens };
+            let r = await ai.summarize(request);
+            if (process.env.TERNO_AI_SUMMARY_VERIFY === "1") {
+              const task = summarizeTask(request);
+              r = await runStructured(transport as ModelTransport, {
+                ...task,
+                system: `${promptText(task.system)}\n\nA first draft of the answer is in <draft>. Check every statement in it against the messages, one by one: who said it, what they said, how sure they were, what's still open after the last message, and each name, date and amount. Remove or correct anything the messages don't support. Add only what the rules above require. Return the corrected answer in the same format, or the draft unchanged if it holds.`,
+                prompt: `${task.prompt}\n\n<draft>${JSON.stringify(r)}</draft>`,
+              }, { output: "json_schema", signal: new AbortController().signal });
+            }
             appendFileSync(path, `${JSON.stringify({ id: c.id, set: c.set, language: readerLanguage(c), ms: Date.now() - started, summary: r.summary, items: r.items })}\n`);
           } catch (e) {
             failed++;

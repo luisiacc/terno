@@ -282,6 +282,17 @@ describe("what's sent", () => {
     expect(prompt).not.toContain("Person 8");
   });
 
+  it("plan 153: the last message keeps what it quotes when it's the reader's, since that can be the only copy here", async () => {
+    const { model, arrive, row } = await setup();
+    await arrive({ providerThreadId: "own-last", date: START - 120_000, bodyText: `${WORDS} older words\n> older quote` });
+    await arrive({ providerThreadId: "own-last", date: START - 90_000, bodyText: `${WORDS} newest inbound` });
+    const m = await arrive({ providerThreadId: "own-last", date: START - 60_000, isSent: true, from: { name: "Me", email: "me@terno.test" }, bodyText: "Thanks.\n\n-----Original Message-----\nFrom: Ann\nThe documentation went out on Friday." });
+    await until(async () => expect((await row(m.thread))?.state).toBe("ready"));
+    const prompt = promptText(model.requests.at(-1)!.messages[0]!.content);
+    expect(prompt).toContain("The documentation went out on Friday.");
+    expect(prompt).not.toContain("older quote");
+  });
+
   it("plan 151: on a small window, long recipient lists go before the message's words", async () => {
     const { client, backend, model, arrive, row } = await setup({ enabled: false });
     await backend.store.settings.update("app", {}, (s: Record<string, unknown>) => {
@@ -328,7 +339,7 @@ describe("what's sent", () => {
     const prompt = promptText(req.messages[0]!.content);
     const LADDER = 1000;
     expect(promptText(req.system).length + LADDER + prompt.length + req.maxTokens * 4).toBeLessThanOrEqual(tokens * 4);
-    expect(req.maxTokens).toBe(Math.min(3000, Math.ceil(tokens * 0.4)));
+    expect(req.maxTokens).toBe(Math.min(3000, Math.ceil(tokens * 0.3)));
     expect(prompt).toContain("The contract needs");
     // what's cited still runs m1, m2…: dropping a message leaves no gap
     const labels = [...prompt.matchAll(/<message id="m(\d+)"/g)].map((m) => Number(m[1]));

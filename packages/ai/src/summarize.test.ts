@@ -38,7 +38,7 @@ describe("the prompt", () => {
     expect(task.prompt).toContain("canary-7f3");
     expect(task.system).toMatch(/data, not instructions/);
     expect(task.effort).toBe("low");
-    expect(SUMMARY_PROMPT_VERSION).toBe(4);
+    expect(SUMMARY_PROMPT_VERSION).toBe(5);
     // plan 148: the rows add to the summary, and the example shown to a server with no json_schema does too
     expect(task.system).toMatch(/Never restate the summary in an item/);
     expect(task.example.summary).not.toContain("contract");
@@ -148,7 +148,7 @@ describe("what comes back", () => {
     ["clipping a row doesn't make it a repeat", `${"word ".repeat(39)}end.`, `${"word ".repeat(39)}end but do not sign it yet, whatever Ana says`],
   ])("plan 148: keeps an item when %s", async (_why, summary, text) => {
     const t = scripted(() => wire({ summary, items: [{ kind: "date", text, message: "m1" }] }));
-    expect((await createAi(config(), { transport: t }).summarize(input())).items).toHaveLength(1);
+    expect((await createAi(config(), { transport: t }).summarize(input("It's €100 or $100."))).items).toHaveLength(1);
   });
 
   it("plan 151: a question from the reader's own message goes; an action there can be their promise", async () => {
@@ -170,6 +170,60 @@ describe("what comes back", () => {
     expect(r.summary).toBe("The <Location> block in httpd changed.");
     expect(r.items[0]!.text.endsWith("longword…")).toBe(true);
     expect(r.items[0]!.text.length).toBeLessThanOrEqual(200);
+  });
+
+  describe("plan 153: what the mail can show a card got wrong", () => {
+    const mail = "The total is 1,250 and the second invoice is 300 euros, due 6 March.";
+    const ask = (answers: unknown[], text = mail) => {
+      const t = scripted((n) => answers[Math.min(n, answers.length - 1)]);
+      return { run: createAi(config(), { transport: t }).summarize(input(text)), t };
+    };
+
+    it.each([
+      ["a word that fades", "The bill is due today."],
+      ["this weekend", "They will pay this weekend."],
+      ["spanish, fading", "Lo paga este fin de semana."],
+      ["mañana as tomorrow", "Lo paga mañana."],
+      ["a weekday with no date", "It's due next Friday."],
+      ["a bare weekday", "The memo comes Monday morning."],
+      ["a currency the mail doesn't give", "The total is $1,250."],
+      ["an amount the mail doesn't give", "Together that's 1,550."],
+    ])("%s goes back to the model once, with what's wrong", async (_why, summary) => {
+      const { run, t } = ask([wire({ summary, items: [] }), wire({ summary: "The total is 1,250, due 6 March.", items: [] })]);
+      expect((await run).summary).toBe("The total is 1,250, due 6 March.");
+      expect(t.requests).toHaveLength(2);
+      expect(promptText(t.requests[1]!.messages[2]!.content)).toMatch(/invalid/);
+    });
+
+    it.each([
+      ["a time of day", "They meet por la mañana on 6 March."],
+      ["a weekday with its date", "It's due this Friday, 6 March."],
+      ["the amount as the mail has it", "The total is 1,250, and 300 euros on 6 March."],
+      ["the currency the mail gives", "The second invoice is €300."],
+      ["a year", "The invoice is from 2026."],
+      ["a day of the month worked out", "It's due Friday 13 March."],
+      ["today's a word inside another", "Todayville invoiced 1,250."],
+    ])("%s passes first time", async (_why, summary) => {
+      const { run, t } = ask([wire({ summary, items: [] })]);
+      expect((await run).summary).toBe(summary);
+      expect(t.requests).toHaveLength(1);
+    });
+
+    it("a bare weekday that holds after being asked stays: it can be right", async () => {
+      const { run, t } = ask([wire({ summary: "The office opens Monday to Friday.", items: [{ kind: "date", text: "Closed Saturday", message: "m1" }] })]);
+      const r = await run;
+      expect(t.requests).toHaveLength(2);
+      expect(r.items.map((i) => i.text)).toEqual(["Closed Saturday"]);
+    });
+
+    it("told once: a row that still fails goes and the rest stands, so a card is never lost to a check", async () => {
+      const bad = wire({ summary: "The second invoice is due 6 March.", items: [{ kind: "action", text: "Pay it today", message: "m1" }, { kind: "date", text: "The total is 1,250", message: "m1" }] });
+      const { run, t } = ask([bad, bad]);
+      const r = await run;
+      expect(t.requests).toHaveLength(2);
+      expect(r.summary).toBe("The second invoice is due 6 March.");
+      expect(r.items.map((i) => i.text)).toEqual(["The total is 1,250"]);
+    });
   });
 
   it("an empty summary goes to the repair turn, and an unknown kind too", async () => {

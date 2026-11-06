@@ -48,4 +48,4 @@ TERNO_AI_REAL=1 TERNO_AI_SUMMARY_CORPUS=<run> pnpm exec vitest run --config vite
 python3 -I scripts/ai-real/corpus/score.py <run> [<other run>]   # what can be counted
 ```
 
-It costs about $0.17 for all 510 on GPT Luna, and goes through the harness's ledger. Counts can't judge meaning: plan 151 records how two judges graded runs blind, with their labels shuffled per conversation.
+It costs about $0.20 for all 502 on GPT Luna, and goes through the harness's ledger. Counts can't judge meaning: plan 151 records how two judges graded runs blind, with their labels shuffled per conversation.
