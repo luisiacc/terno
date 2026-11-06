@@ -129,7 +129,7 @@ export class SimilarFilters {
   }
 
   /** Plan 80: any rule, the same way; plan 90: an automatic category filter for the same mail elsewhere moves here instead. */
-  ensureRule(rule: FilterRule, name: string, learnedKey?: string): Promise<Ensured> {
+  ensureRule(rule: FilterRule, name: string, learnedKey?: string, o: { asked?: boolean } = {}): Promise<Ensured> {
     return this.serial(async () => {
       const all = await this.store.filters.list();
       const { result, filterUndo } = await this.journaled(async (record, skip) => {
@@ -156,7 +156,8 @@ export class SimilarFilters {
             if (from.type === "addCategory") retargeted = { from: from.categoryId };
             if (from.type === "moveToFolder") retargetedFolder = { from: from.folder };
           } else {
-            filter = await this.store.filters.save({ name: capFilterName(name), enabled: true, source: "manual", auto: true, rule, learnedKey }, this.now());
+            // plan 143: a sentence's filter is one the user asked for: theirs, under Your filters
+            filter = await this.store.filters.save({ name: capFilterName(name), enabled: true, source: o.asked ? "ai" : "manual", auto: !o.asked, rule, learnedKey }, this.now());
             record({ filterId: filter.id, before: null, after: filterState(filter) });
           }
         }

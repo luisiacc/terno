@@ -17,6 +17,7 @@ import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
 import { AiAssist } from "./ai-assist";
+import { ActionsService } from "./actions";
 import { AskService } from "./ask";
 import { FollowupWorker } from "./followups";
 import { SummaryWorker } from "./summaries";
@@ -269,6 +270,7 @@ export class BackendCore {
   /** plan 132: summaries of new mail, and by hand; asleep on an empty queue */
   readonly summaries: SummaryWorker;
   readonly ask: AskService;
+  readonly actions: ActionsService;
   readonly followups: FollowupWorker;
   /** plan 133: drafting: what goes into a draft, and the learner, asleep until the feature is used */
   readonly writing: WritingService;
@@ -323,6 +325,7 @@ export class BackendCore {
     });
     this.writing = new WritingService(this);
     this.ask = new AskService(this);
+    this.actions = new ActionsService(this);
     this.followups = new FollowupWorker({
       store: this.store,
       now: () => this.now(),
@@ -440,6 +443,7 @@ export class BackendCore {
       onDisconnect: (ctx) => {
         this.aiService.disconnected(ctx.clientId);
         this.writing.disconnected(ctx.clientId);
+        this.actions.disconnected(ctx.clientId);
       },
     });
   }

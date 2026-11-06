@@ -128,7 +128,7 @@ export class AskService {
   }
 
   /** Where the answer may go, as it was agreed: checked again before anything is sent (revision 2). */
-  private async target(): Promise<{ ai: AiTasks; planner: AiTasks; destination: string }> {
+  async target(): Promise<{ ai: AiTasks; planner: AiTasks; destination: string }> {
     const ai = await this.b.aiService.forTask("ask", { foreground: true });
     const planner = await this.b.aiService.forTask("askPlan", { foreground: true });
     const destination = destinationOf(ai);
@@ -205,6 +205,8 @@ export class AskService {
         this.keep({ conversationId: p.conversationId ?? null, question, status, queries, ai, clearGeneration, entry, ...body });
       try {
         const plan = await planner.planAsk(planInput, signal);
+        // plan 143: nothing ran and nothing's kept: the sentence's own planning and preview take it from here
+        if (plan.kind === "command") return { status: "command" };
         let valid = validAskQueries(plan.queries, now);
         queries = valid.map((v) => v.plan);
         if (!valid.length) {

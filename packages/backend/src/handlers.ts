@@ -226,7 +226,7 @@ export function createHandlers(b: Backend): Handlers {
     if (!listed.some((f) => f.key === folder && f.selectable)) throw new RpcError("NOT_FOUND", L("errors.folderExport.gone"));
     return listed;
   };
-  const moveToFolder = async (accountId: number, folder: string, from: string | null, threadIds: readonly number[], progress?: (done: number) => void) => {
+  const moveToFolder = async (accountId: number, folder: string, from: string | null, threadIds: readonly number[], progress?: (done: number) => void, narrow?: (chunk: number[]) => Promise<number[]>) => {
     const listed = await requireFolder(accountId, folder);
     const source = from !== null && from !== folder && listed.some((f) => f.key === from) ? from : null;
     const moved: FolderMoved[] = [];
@@ -244,7 +244,10 @@ export function createHandlers(b: Backend): Handlers {
       return id;
     };
     try {
-      await b.runBudgeted([...threadIds], async (chunk) => {
+      await b.runBudgeted([...threadIds], async (slice) => {
+        // plan 143: what may still move is read again before each slice
+        const chunk = narrow ? await narrow(slice) : slice;
+        if (!chunk.length) return void progress?.((done += slice.length));
         const r = await store.threads.moveToFolder({ threadIds: chunk, accountId, folder, from: source, now: b.now() });
         for (const t of r.threadIds) changed.add(t);
         for (const m of r.before) before.push(m);
@@ -256,7 +259,7 @@ export function createHandlers(b: Backend): Handlers {
         // a due reminder ends when its conversation is put away, as an archive's does
         if (r.leftInbox.length) for (const x of await b.reminders.endDue(r.leftInbox)) ended.push(x);
         if (r.leftInbox.length) for (const x of await b.followups.endTop(r.leftInbox)) tops.push(x);
-        progress?.((done += chunk.length));
+        progress?.((done += slice.length));
       });
     } catch (error) {
       const undoId = save();
@@ -295,7 +298,56 @@ export function createHandlers(b: Backend): Handlers {
       throw error;
     }
   };
+  /** A move taken back, in slices: one cut short (a failure, a crash) picks up where it was. */
+  const undoMove = async (batchId: number) => {
+    // a move still being applied or trained finishes first
+    const phase = await store.categories.movePhase(batchId);
+    // its journal is gone: saying "undone" would be a lie
+    if (phase === "expired") throw new RpcError("NOT_FOUND", L("errors.moveExpired"));
+    if (phase === "moving" || phase === "training") await b.finishMove(batchId);
+    if ((await store.categories.movePhase(batchId)) === "done") await store.categories.undoMoveBegin(batchId, b.now());
+    // memberships and decisions come back in slices, then the examples
+    const tally = { removed: new Set<number>(), restored: new Set<number>() };
+    await b.finishMove(batchId, tally);
+    return { removed: tally.removed.size, restored: tally.restored.size };
+  };
   const similarFilters = new SimilarFilters(store, () => b.now());
+  // plan 143: its steps go through these same journals; nothing about a sentence gets its own way of moving mail
+  b.actions.bind({
+    act: async (ids, action, narrow, progress) => {
+      const r = await actOn(ids, action, null, progress, true, { narrow, partialUndo: true });
+      return { undoId: r.undoId };
+    },
+    toFolder: async (accountId, folder, ids, narrow, progress) => {
+      const r = await moveToFolder(accountId, folder, null, ids, progress, narrow);
+      return { undoId: r.undoId };
+    },
+    toCategory: async (categoryId, threadIds) => {
+      await requireCategory(categoryId);
+      // `bulk`, and nothing planned: a sentence never forwards (revision 1)
+      const { batchId } = await store.categories.beginMove({ to: categoryId, threadIds, addedBy: "bulk", now: b.now(), source: "sentence" });
+      await b.finishMove(batchId);
+      const hidden = (await store.categories.list()).some((c) => c.id === categoryId && !c.showInInbox);
+      return { batchId, ended: hidden ? await b.reminders.endDue(threadIds) : [], tops: hidden ? await b.followups.endTop(threadIds) : [] };
+    },
+    undoActs,
+    undoMove: async ({ batchId, ended, tops }) => {
+      // the reminders first: refused (the cap), nothing is taken back and the Undo stays for a retry
+      if (ended.length && !(await b.reminders.restore([], ended as Reminder[]))) throw new RpcError("BAD_REQUEST", L("errors.remindersFull", { max: REMINDERS_MAX }));
+      await b.followups.putBack(tops as FollowupSnapshot[]);
+      const r = await undoMove(batchId);
+      return r.restored + r.removed;
+    },
+    ensureFilter: async (rule, name) => {
+      const f = await similarFilters.ensureRule(rule, name, undefined, { asked: true });
+      return { filterUndo: f.filterUndo };
+    },
+    undoFilter: (filterUndo) => similarFilters.undo(filterUndo),
+    categoriesChanged: async () => {
+      b.server.emit("categories", await store.categories.list());
+      b.notifyChanged([]);
+    },
+  });
   /** filters being applied to existing mail (plan 89: one job each) */
   const applying = new Set<number>();
   let resolveQueue: Promise<unknown> = Promise.resolve();
@@ -786,16 +838,8 @@ export function createHandlers(b: Backend): Handlers {
     "categorize.undo": async ({ batchId }) => {
       await restoreFiled(batchId);
       if ((await store.categories.movePhase(batchId)) !== null) {
-        // a move still being applied or trained finishes first; an undo cut short (a failure, a crash) picks up where it was
-        const phase = await store.categories.movePhase(batchId);
-        // its journal is gone: saying "undone" would be a lie
-        if (phase === "expired") throw new RpcError("NOT_FOUND", L("errors.moveExpired"));
-        if (phase === "moving" || phase === "training") await b.finishMove(batchId);
-        if ((await store.categories.movePhase(batchId)) === "done") await store.categories.undoMoveBegin(batchId, b.now());
-        // memberships and decisions come back in slices, then the examples
-        const tally = { removed: new Set<number>(), restored: new Set<number>() };
-        await b.finishMove(batchId, tally);
-        return { removed: tally.removed.size, restored: tally.restored.size };
+        const { removed, restored } = await undoMove(batchId);
+        return { removed, restored };
       }
       let removed = 0;
       await sliced(await store.categories.batchThreads(batchId), async (chunk) => {
@@ -1332,6 +1376,21 @@ export function createHandlers(b: Backend): Handlers {
     "followups.scan": async () => ({ queued: await b.followups.scan() }),
     // plan 141: renderer only; none of these is in MCP_ALLOWED
     "ai.ask": (p, ctx) => b.ask.ask(p, ctx.clientId),
+    "ai.actionStart": (p, ctx) => b.actions.start(p, ctx.clientId).catch((error: unknown) => { throw toRpcError(error); }),
+    "ai.actionPage": (p, ctx) => b.actions.page(p.previewId, p.offset, p.limit, p.leftOut, ctx.clientId),
+    "ai.actionToggle": async (p, ctx) => b.actions.toggle(p.previewId, p.threadId, p.included, ctx.clientId),
+    "ai.actionIncludeSkipped": async (p, ctx) => b.actions.includeSkipped(p.previewId, p.included, ctx.clientId),
+    "ai.actionCheck": (p, ctx) => b.actions.check(p, ctx.clientId).catch((error: unknown) => { throw toRpcError(error); }),
+    "ai.actionApply": (p, ctx) => b.actions.apply(p, ctx.clientId),
+    "ai.actionStop": async (p, ctx) => {
+      b.actions.stop(p.previewId, ctx.clientId);
+      return { ok: true as const };
+    },
+    "ai.actionCancel": async (p, ctx) => {
+      b.actions.cancel(p.previewId, ctx.clientId);
+      return { ok: true as const };
+    },
+    "ai.actionUndo": (p) => b.actions.undo(p.token, p.jobId),
     "ai.askOlder": (p, ctx) => b.ask.older(p, ctx.clientId),
     "ai.askHistory": () => b.ask.history(),
     "ai.askConversation": ({ conversationId }) => b.ask.conversation(conversationId),

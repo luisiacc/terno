@@ -587,6 +587,16 @@ export async function acknowledgeAsk(store: SettingsStore, destination: string):
   });
 }
 
+/** Plan 143: a command's check sends senders and subjects: its own agreement, by destination. */
+export async function acknowledgeActionCheck(store: SettingsStore, destination: string): Promise<void> {
+  await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
+    const s = migrate(raw);
+    const current = s.ask ?? DEFAULT_SETTINGS.ask;
+    const had = current.checkAcknowledged ?? [];
+    return { value: had.includes(destination) ? s : { ...s, ask: { ...current, checkAcknowledged: [...had, destination] } }, result: undefined };
+  });
+}
+
 function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: boolean, now: number): StoredSettings {
   const { ai: aiPatch, summaries: summariesPatch, ask: askPatch, followups: followupsPatch, ...rest } = patch;
   const general: Partial<General> = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
