@@ -110,3 +110,14 @@ Known and left alone: a summary over 800 characters is clipped, and a row could 
 
 What holds on `3b01bf58`, which includes every commit of this plan, at a load near 25: `summaries.spec.ts` and `design-axe.spec.ts` in all five designs, 25 of 25, and `summarize.test.ts` and the backend's summary tests, 77 of 77.
 
+## On a real model
+
+The owner asked to read real results. `scripts/ai-real/summaries.real.ts` now also runs eight synthetic conversations, en and es, and prints each summary and its rows. On GPT Luna, about a cent in all.
+
+- **The prompt on `main` (version 3), one read run:** one row plainly restated the summary (legal's review). Most asks landed in the summary's prose with no row, so what the reader has to do wasn't scannable or linked: both asks in the contract thread and the review in the Spanish launch thread.
+- **A trial, not on `main`, three runs (27 conversations):** the summary is what happened, everything the reader has to do or answer is a row, one thing each, and what they're waiting on from someone else isn't. Asks came back as rows nearly every time. Three conversations still said an ask in both places, and one left it in the prose.
+- **One wrong row in those 27:** "Let Tom know whether the quote works", a question citing the reader's own message when Tom owes the answer. A question waiting for the reader can't come from the reader's own message, which a check can hold.
+- **One soft inference:** "$6,500 a year" where the mail says 6,500 dollars if you sign for two years; every trial run read it that way. The synthetic mail is ambiguous here.
+
+Not decided: whether to adopt the trial. That's the owner's call.
+
