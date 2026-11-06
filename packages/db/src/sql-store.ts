@@ -4,6 +4,7 @@ import { publishBody } from "@terno/store";
 import { resolvable, parseSearch, searchTerms } from "@terno/core";
 import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, BODY_READY_APPLICATION_ID } from "./body-upgrade";
 import { unsubscribeBodyParts, decodeBodyPart } from "@terno/store";
+import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { activeFollowups, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { addAskTurn, askAccountsOf, askHeaders, askMatching, askNewest, askText, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
 import { retainBody, observeBodyRetirement, bodyReadReference, sqlBodyParts, cleanupBodies, finishBodyStage, withBodySelection, hydrateBodyReference, stageBody, prepareBodyMatches, withBodyMatches } from "./body-parts";
@@ -1090,6 +1091,17 @@ export class SqlMailStore implements MailStore {
 
   private followupClears = 0;
 
+  private replyClears = 0;
+  readonly replies: MailStore["replies"] = {
+    get: async (threadId) => getReply(this.db, threadId),
+    finish: async (w) => (w.clearGeneration === this.replyClears ? finishReply(this.db, w) : "cleared"),
+    transition: async (threadId, from, to) => transitionReply(this.db, threadId, from, to),
+    clear: async () => {
+      this.replyClears++;
+      clearReplies(this.db);
+    },
+    clearGeneration: () => this.replyClears,
+  };
   readonly followups: MailStore["followups"] = {
     marks: {
       page: async (after, limit) => sentMarkPage(this.db, after, limit),

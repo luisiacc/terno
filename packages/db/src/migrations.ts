@@ -1376,6 +1376,25 @@ CREATE INDEX followups_active ON followups(due_at, id) WHERE state IN ('open','d
 CREATE INDEX followups_thread ON followups(thread_id, state);
 CREATE INDEX followups_top ON followups(thread_id) WHERE inbox_state = 'onTop';
 ` },
+  { version: 53, name: "prepared replies (plan 144)", sql: `
+CREATE TABLE ai_prepared_replies (
+  thread_id INTEGER PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+  source_stamp TEXT NOT NULL,
+  generation_key TEXT NOT NULL,
+  answering_message_id INTEGER NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('skipped','failed','ready','dismissed','used')),
+  body TEXT,
+  used_json TEXT,
+  checks_json TEXT,
+  to_json TEXT NOT NULL DEFAULT '[]',
+  cc_json TEXT NOT NULL DEFAULT '[]',
+  model TEXT,
+  provider TEXT,
+  prompt_version INTEGER,
+  generated_at INTEGER NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 0
+) WITHOUT ROWID;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

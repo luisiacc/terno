@@ -1,4 +1,5 @@
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
+import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { activeFollowups, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { addAskTurn, askAccountsOf, askCandidates, askHeaders, askNewest, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
 import { projectBodyTokens, messageBodiesReleased } from "@terno/store";
@@ -1957,6 +1958,17 @@ export class IdbMailStore implements MailStore {
 
   private followupClears = 0;
 
+  private replyClears = 0;
+  readonly replies: MailStore["replies"] = {
+    get: (threadId) => this.read(() => getReply(this.c, threadId)),
+    finish: (w) => this.command(() => (w.clearGeneration === this.replyClears ? finishReply(this.c, w) : "cleared")),
+    transition: (threadId, from, to) => this.command(() => transitionReply(this.c, threadId, from, to)),
+    clear: () => {
+      this.replyClears++;
+      return this.command(() => clearReplies(this.c));
+    },
+    clearGeneration: () => this.replyClears,
+  };
   readonly followups: MailStore["followups"] = {
     marks: {
       page: (after, limit) => this.read(() => sentMarkPage(this.c, after, limit)),
