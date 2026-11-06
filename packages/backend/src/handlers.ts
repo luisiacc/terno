@@ -402,6 +402,7 @@ export function createHandlers(b: Backend): Handlers {
     // plan 141: what questions drew on it goes, and what's asking on it stops
     await b.ask.accountRemoved(id);
     b.actions.invalidate(id);
+    await b.today.purgeGone();
     forgetSignInVersion(b, id);
     // nobody from a removed account lingers in suggestions
     await b.autocomplete.reset();

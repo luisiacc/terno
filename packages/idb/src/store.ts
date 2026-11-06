@@ -1,5 +1,5 @@
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
-import { beginDigest, clearDigests, digestFacts, digestLive, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
+import { allDigests, beginDigest, clearDigests, digestFacts, digestLive, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { activeFollowups, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { addAskTurn, askAccountsOf, askCandidates, askHeaders, askNewest, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
@@ -1976,6 +1976,7 @@ export class IdbMailStore implements MailStore {
           return true;
         }),
       pendingDays: () => this.read(() => pendingDigestDays(this.c)),
+      all: () => this.read(() => allDigests(this.c)),
       prune: (keepFrom) => this.command(() => pruneDigests(this.c, keepFrom)),
       clear: () => {
         this.digestClears++;

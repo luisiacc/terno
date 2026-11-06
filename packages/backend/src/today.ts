@@ -1,4 +1,4 @@
-import { AiError, DIGEST_PROMPT_VERSION, digestBatchSize, type AiTasks } from "@terno/ai";
+import { AiError, DIGEST_PROMPT_VERSION, digestBudget, type AiTasks } from "@terno/ai";
 import {
   aiFeaturesAvailable,
   BRIEF_NOTICE_THREAD,
@@ -66,6 +66,8 @@ export class TodayService {
   private controller = new AbortController();
   private automated: { at: number; candidates: Candidates } | null = null;
   private refreshing: Promise<void> | null = null;
+  /** a key or a setting is what's wrong: nothing goes until they move */
+  private paused = false;
 
   constructor(private readonly b: Backend) {}
 
@@ -123,16 +125,20 @@ export class TodayService {
     void this.tick().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
   }
 
-  stop(): void {
+  /** What's underway is told to stop, and has before the store closes. */
+  async stop(): Promise<void> {
     this.stopped = true;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.armedAt = null;
     this.controller.abort();
+    await this.draining?.catch(() => {});
+    await this.refreshing?.catch(() => {});
   }
 
   /** The digest off, or AI gone: what's underway stops and writes nothing. */
   settingsChanged(): void {
+    this.paused = false;
     void this.setting()
       .then((s) => {
         if (!s.available || !s.digest) this.cancelRun();
@@ -204,6 +210,7 @@ export class TodayService {
   /** One at a time, and anything a quit left pending goes on from what's checkpointed (revision 6). */
   drain(o: { foreground?: boolean } = {}): Promise<void> {
     if (this.draining) return this.draining;
+    if (this.paused && !o.foreground) return Promise.resolve();
     this.draining = (async () => {
       try {
         for (const day of await this.b.store.today.digest.pendingDays()) {
@@ -235,19 +242,27 @@ export class TodayService {
         if (signal.aborted) return false;
         const s = await this.setting();
         if (!s.available || !s.digest) return false;
+        // what's been deleted, moved to Spam, or changed since it was listed goes no further, and isn't kept (revision 2)
+        const pending = await this.stillListed(row.pending);
+        if (pending.length !== row.pending.length) {
+          row = { ...row, pending };
+          if (!(await digest.write(row, generation))) return false;
+        }
         if (!row.pending.length) break;
         // read anew each time: Settings may have moved since the last batch
         ai = await this.b.aiService.forTask("digest", { foreground: o.foreground === true });
-        const batch: DigestItem[] = row.pending.slice(0, digestBatchSize(ai.contextTokens));
+        const { batch: size, textChars } = digestBudget(ai.contextTokens);
+        const batch: DigestItem[] = row.pending.slice(0, size);
         const labelled = await Promise.all(batch.map(async (item, i) => ({ item, label: `d${i + 1}`, text: await this.textOf(item) })));
         const language = languageName(await this.b.summaries.readerLanguage()) ?? "English";
-        const out = await ai.digestNewsletters({ language, items: labelled.map(({ item, label, text }) => ({ label, from: item.from, subject: item.subject, text })) }, signal);
+        const out = await ai.digestNewsletters({ language, textChars, items: labelled.map(({ item, label, text }) => ({ label, from: item.from, subject: item.subject, text })) }, signal);
         // read again: off while this was out means nothing it brought back is kept
         const after = await this.setting();
         if (signal.aborted || !after.available || !after.digest) return false;
         const byLabel = new Map(out.filter((x) => x.kind === "newsletter" && x.line).map((x) => [x.label, x.line]));
         // `other`, and what it forgot, fall out
-        const kept = labelled.flatMap(({ item, label }) => (byLabel.has(label) ? [{ ...item, line: byLabel.get(label)! }] : []));
+        const stillThere = new Set((await this.stillListed(batch)).map((i) => i.threadId));
+        const kept = labelled.flatMap(({ item, label }) => (byLabel.has(label) && stillThere.has(item.threadId) ? [{ ...item, line: byLabel.get(label)! }] : []));
         row = { ...row, items: [...row.items, ...kept], pending: row.pending.slice(batch.length), model: ai.model, provider: ai.providerId, promptVersion: DIGEST_PROMPT_VERSION };
         if (!(await digest.write(row, generation))) return false;
         await this.b.yieldTurn();
@@ -264,13 +279,44 @@ export class TodayService {
       if (kind === "cancelled") return false;
       if (!(error instanceof AiError)) captureError(error, { code: "ai.failed" });
       this.b.log("info", "digest failed", { aiKind: kind });
+      // plan 132's table: a key or a setting pauses it, spending no attempt, until Settings move
+      if (kind === "auth" || kind === "not_configured" || kind === "blocked") {
+        this.paused = true;
+        await digest.write({ ...row, errorKind: kind }, generation);
+        this.ended(day);
+        return false;
+      }
       const attempts = row.attempts + 1;
-      // plan 132's table: what no retry helps ends here and says so; what may pass gets a few more goes, on the next start or wake
-      const final = kind === "auth" || kind === "not_configured" || kind === "blocked" || kind === "invalid_output" || kind === "refused" || kind === "unsupported" || attempts >= TRIES;
+      // what no retry helps ends here and says so; what may pass gets a few more goes, on the next start or wake
+      const final = kind === "invalid_output" || kind === "refused" || kind === "unsupported" || attempts >= TRIES;
       await digest.write({ ...row, attempts, errorKind: kind, state: final ? "failed" : "pending" }, generation);
       if (final) this.ended(day);
       return false;
     }
+  }
+
+  private async stillListed(items: readonly DigestItem[]): Promise<DigestItem[]> {
+    if (!items.length) return [];
+    const facts = new Map((await this.b.store.filters.actionFacts(items.map((i) => i.threadId))).map((f) => [f.id, f]));
+    return items.filter((i) => {
+      const f = facts.get(i.threadId);
+      return f && !f.inSpam && !f.inTrash && f.lastDate === i.lastDate && f.messageCount === i.messageCount;
+    });
+  }
+
+  /** What's gone from the mail goes from every stored digest too: nothing shown outlives what it quotes. */
+  async purgeGone(): Promise<void> {
+    const { digest } = this.b.store.today;
+    this.automated = null;
+    const generation = digest.clearGeneration();
+    for (const row of await digest.all()) {
+      const ids = [...row.items, ...row.pending].map((i) => i.threadId);
+      if (!ids.length) continue;
+      const here = new Set((await this.b.store.filters.actionFacts(ids)).map((f) => f.id));
+      if (here.size === new Set(ids).size) continue;
+      await digest.write({ ...row, items: row.items.filter((i) => here.has(i.threadId)), pending: row.pending.filter((i) => here.has(i.threadId)) }, generation);
+    }
+    this.ended(todayKey(this.b.now()));
   }
 
   /** Its opening, visible text only; the snippet if the body isn't here yet. */
@@ -285,8 +331,9 @@ export class TodayService {
     const { digest } = this.b.store.today;
     const day = todayKey(this.b.now());
     const row = await digest.get(day);
+    this.paused = false;
     if (!row) await this.begin(day);
-    else if (row.state === "failed") await digest.write({ ...row, state: "pending", attempts: 0, errorKind: null }, digest.clearGeneration());
+    else if (row.state === "failed" || row.errorKind) await digest.write({ ...row, state: "pending", attempts: 0, errorKind: null }, digest.clearGeneration());
     await this.drain({ foreground: true });
   }
 
@@ -380,8 +427,11 @@ export class TodayService {
     const row = await store.today.digest.get(day);
     const shown = row && (row.state !== "pending" || row.items.length) ? row : await store.today.digest.latest(day);
     if (!shown) return row ? { day, state: "pending", items: [], automated: false, liveIds: [] } : null;
-    const items = shown.items;
-    return { day: row?.state === "pending" ? day : shown.day, state: row?.state ?? shown.state, items, automated: false, liveIds: await store.today.digestLive(items.map((i) => i.threadId)), errorKind: shown.errorKind, model: shown.model, provider: shown.provider };
+    // deleted since: nothing shown outlives what it quotes
+    const here = new Set((await store.filters.actionFacts(shown.items.map((i) => i.threadId))).map((f) => f.id));
+    const items = shown.items.filter((i) => here.has(i.threadId));
+    const paused = row?.state === "pending" && row.errorKind !== null && this.paused;
+    return { day: row?.state === "pending" ? day : shown.day, state: paused ? "failed" : (row?.state ?? shown.state), items, automated: false, liveIds: await store.today.digestLive(items.map((i) => i.threadId)), errorKind: paused ? row!.errorKind : shown.errorKind, model: shown.model, provider: shown.provider };
   }
 
   private refreshAutomated(): void {
@@ -399,13 +449,12 @@ export class TodayService {
       .then(() => undefined);
   }
 
-  /** Only what the page listed, and each only if it's still that: a new message or a star since keeps it (revisions 1, 2). */
-  async archive(p: { day: string; threadIds: readonly number[]; jobId?: string }): Promise<{ undoId: number | null; archived: number; changed: number; spared: number }> {
+  /** Only what the page listed, each only if it's still as the page saw it: a new message or a star since keeps it (revisions 1, 2). */
+  async archive(p: { items: readonly { threadId: number; lastDate: number; messageCount: number }[]; jobId?: string }): Promise<{ undoId: number | null; archived: number; changed: number; spared: number }> {
     const { store } = this.b;
-    const row = await this.digestRow();
-    const listed = new Map((row?.items ?? []).map((i) => [i.threadId, i]));
-    const targets = p.threadIds.filter((id) => listed.has(id));
-    let changed = p.threadIds.length - targets.length;
+    const listed = new Map(p.items.map((i) => [i.threadId, i]));
+    const targets = [...listed.keys()];
+    let changed = 0;
     let spared = 0;
     let archived = 0;
     const narrow = async (chunk: number[]) => {

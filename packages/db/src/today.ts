@@ -95,6 +95,7 @@ export function writeDigest(db: Db, w: DigestStored): void {
   );
 }
 
+export const allDigests = (db: Db): DigestStored[] => db.all<Raw>("SELECT * FROM ai_digests ORDER BY day").map(stored);
 export const pendingDigestDays = (db: Db): string[] => db.all<{ day: string }>("SELECT day FROM ai_digests WHERE state = 'pending' ORDER BY day").map((r) => r.day);
 export const pruneDigests = (db: Db, keepFrom: string): void => void db.run("DELETE FROM ai_digests WHERE day < ?", keepFrom);
 export const clearDigests = (db: Db): void => void db.run("DELETE FROM ai_digests");

@@ -51,6 +51,8 @@ export interface TodayStore {
     /** a batch done, or the last. Refused when cleared since */
     write(row: DigestStored, clearGeneration: number): Promise<boolean>;
     pendingDays(): Promise<string[]>;
+    /** at most the 14 days kept */
+    all(): Promise<DigestStored[]>;
     prune(keepFrom: string): Promise<void>;
     clear(): Promise<void>;
     clearGeneration(): number;

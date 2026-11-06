@@ -2231,6 +2231,7 @@ It contains none of your mail, contacts, settings or keys.
   "today.digest.back": "Back to the digest",
   "today.digest.target": "Where the digest runs",
   "today.digest.targetHint": "A small model is plenty for this.",
+  "today.digest.tick": "Include {subject}",
   "today.digest.settingsTitle": "Newsletter digest",
   "today.digest.settingsSwitch": "Prepare a digest each day",
   "today.digest.settingsHint": "Sends the opening of up to 40 unread newsletters a day to {provider}, to write a line on each. Less than a US cent a day on a small model.",

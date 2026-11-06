@@ -109,6 +109,8 @@ export interface AiSettings {
   preset: CompatiblePreset | null;
   /** keys never cross to the renderer: only whether one is saved and its last 4 characters */
   hasKey: boolean;
+  /** plan 145: this provider can't run without a key */
+  needsKey?: boolean;
   /** the saved key was sealed by Única and couldn't be moved to Terno's keychain: it has to be saved again */
   keyUnreadable: boolean;
   keyHint: string | null;
@@ -1179,7 +1181,7 @@ export const contract = {
   /** a person's try again */
   "today.digestRetry": m<{ ok: true }>()(empty),
   /** only the rows named, and each only if it's still as the page listed it. Undo is `threads.undo`. */
-  "today.digestArchive": m<{ undoId: number | null; archived: number; changed: number; spared: number }>()(z.object({ day: z.string().max(10), threadIds: z.array(id).max(200), jobId: z.string().min(1).max(64).optional() }), { timeoutMs: 120_000 }),
+  "today.digestArchive": m<{ undoId: number | null; archived: number; changed: number; spared: number }>()(z.object({ items: z.array(z.object({ threadId: id, lastDate: z.number(), messageCount: z.number().int() })).max(200), jobId: z.string().min(1).max(64).optional() }), { timeoutMs: 120_000 }),
   /**
    * Plan 144: a conversation that waits for an answer stayed open. It reads the switch, the thread and what's stored
    * again, whatever the window thought, and goes on in `aiReply`. Never MCP. Nothing is ever sent from here.

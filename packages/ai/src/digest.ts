@@ -23,6 +23,8 @@ export interface DigestInput {
   items: readonly DigestInputItem[];
   /** a language's name, for the lines */
   language: string;
+  /** how much of each a window has room for */
+  textChars?: number;
 }
 
 export interface DigestOutputItem {
@@ -47,13 +49,25 @@ const data = (text: string) => text.replace(/<(\s*\/?\s*)(mail|from|subject|text
 const attribute = (text: string) => data(text).replace(/["\r\n]/g, " ");
 
 export function digestPrompt(input: DigestInput): string {
-  return input.items.map((i) => `<mail id="${attribute(i.label)}">\nFrom: ${attribute(i.from)}\nSubject: ${attribute(i.subject)}\n\n${data(i.text.slice(0, ITEM_CHARS))}\n</mail>`).join("\n");
+  return input.items.map((i) => `<mail id="${attribute(i.label)}">\nFrom: ${attribute(i.from.slice(0, FROM_CHARS))}\nSubject: ${attribute(i.subject.slice(0, HEADER_CHARS))}\n\n${data(i.text.slice(0, input.textChars ?? ITEM_CHARS))}\n</mail>`).join("\n");
 }
 
-/** How many fit one request; a small window splits into tens. */
-export function digestBatchSize(contextTokens: number | null): number {
-  if (contextTokens === null) return 40;
-  return Math.max(1, Math.min(40, contextTokens >= 40 * 700 + 4000 ? 40 : 10));
+const HEADER_CHARS = 200;
+const FROM_CHARS = 120;
+const SYSTEM_TOKENS = 400;
+const REPAIR_ROOM = 2;
+
+/** How many fit one request, and how much of each: the whole request against the window, its answer and a repair's room too. */
+export function digestBudget(contextTokens: number | null): { batch: number; textChars: number } {
+  if (contextTokens === null) return { batch: 40, textChars: ITEM_CHARS };
+  for (const batch of [40, 10, 5, 2, 1]) {
+    const room = contextTokens - SYSTEM_TOKENS - REPAIR_ROOM * Math.max(200, batch * OUTPUT_PER_ITEM);
+    // its markup too: a block's tags and labels
+    const each = Math.floor(room / batch) - (HEADER_CHARS + FROM_CHARS + 60) / 4;
+    // too little left to read a line's worth: fewer at a time
+    if (each >= 150) return { batch, textChars: Math.min(ITEM_CHARS, each * 4) };
+  }
+  return { batch: 1, textChars: 400 };
 }
 
 export function digestTask(input: DigestInput): StructuredTask<Wire, DigestOutputItem[]> {

@@ -52,7 +52,7 @@ export function pressRow(id: number, m: PressModifiers): void {
   const toggleKey = isMac ? m.meta : m.ctrl;
   collapseOnClick = null;
   // the open thread counts as selected when a multi-selection starts from it
-  const base = (): ReadonlySet<number> => (s.checked.size ? s.checked : s.selectedId !== null && s.selectedId !== id ? new Set([s.selectedId]) : EMPTY);
+  const base = (): ReadonlySet<number> => (s.checked.size ? s.checked : s.selectedId !== null && s.selectedId !== 0 && s.selectedId !== id ? new Set([s.selectedId]) : EMPTY);
   // the open thread (the cursor) stays where it is: a toggle re-renders the one row it changes
   if (m.shift) {
     setApp({ checked: addRange(base(), listOrder(), s.anchorId ?? s.selectedId, id), scope: null });

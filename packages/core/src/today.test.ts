@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { aiFeaturesAvailable, nextPrepareAt, prepareTimeToday, todayKey } from "./today";
 
-const settings = (provider: string) => ({ ai: { provider } }) as never;
+const settings = (provider: string, over = {}) => ({ ai: { provider, needsKey: false, hasKey: false, keyConfirmed: false, keyUnreadable: false, ...over } }) as never;
 
 describe("who sees Today (plan 145)", () => {
   it("a provider set up, or the entitlement Pro will bring; nothing without either", () => {
@@ -10,6 +10,12 @@ describe("who sees Today (plan 145)", () => {
     expect(aiFeaturesAvailable(settings("none"), { active: true })).toBe(true);
     expect(aiFeaturesAvailable(settings("none"), { active: false })).toBe(false);
     expect(aiFeaturesAvailable(null)).toBe(false);
+  });
+
+  it("a provider that needs a key, without one, is none", () => {
+    expect(aiFeaturesAvailable(settings("anthropic", { needsKey: true }))).toBe(false);
+    expect(aiFeaturesAvailable(settings("anthropic", { needsKey: true, hasKey: true, keyConfirmed: true }))).toBe(true);
+    expect(aiFeaturesAvailable(settings("anthropic", { needsKey: true, hasKey: true, keyConfirmed: true, keyUnreadable: true }))).toBe(false);
   });
 });
 

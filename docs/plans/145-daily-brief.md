@@ -231,3 +231,22 @@ Codex (`gpt-6.1-sol`, high, read-only, `/tmp/terno-plans-141-145/145-daily-brief
 - **The walk by arrival** is the same `messageWalk` plan 143 made: newest first, stopping at the 3-day bound or the watermark.
 - **A notice's click** has `threadId` -1 (`BRIEF_NOTICE_THREAD`): both the web's and the desktop's notices pass one number through, and no thread has that id.
 - **The gate** is `measureToday` in `workloads.perf.test.ts` on both stores, beside its neighbours, rather than a `today.perf.test.ts` of its own.
+
+## What the code review changed
+
+Codex (read-only, `git diff main..HEAD`) raised 15 points. One read main's newer commit as a reversal, and a rebase cleared it. The other 14 are fixed, each with a test that fails without the fix.
+
+1. A pending digest sent what had since moved to Spam or changed: `stillListed` reads each before it's read, sent or checkpointed.
+2. Deleted mail stayed in stored digests: reads filter it, and removing an account purges every stored row.
+3. Archive read the listing again at action time, so a refresh could accept a newer message: it holds to the stamps the page saw.
+4. Desktop rejected every brief's notice: `parseNotice` takes its sentinel and its empty senders.
+5. The digest's ticks couldn't be used by keyboard: the named `Checkbox`.
+6. Ranges and a selection begun from the digest's row could hold 0: every way in, and an action's targets, leave it out.
+7. Undo pressed before Archive answered spent itself: a deferred result, as other sweeps have.
+8. Undo didn't refresh an open digest page: it follows the list's refresh.
+9. Removing the last key left Today on: `aiFeaturesAvailable` reads whether what's chosen can run (`needsKey`, worked out by the backend so the helper names no provider).
+10. Shutdown never stopped it: `stop()` is wired in, and waits for what's underway before the store closes.
+11. A bad key ended the day's digest: auth, not configured and blocked pause it, spending no attempt, and Settings or a new key resume it.
+12. A small window got oversized batches: `digestBudget` sizes the whole request, headers and repairs included.
+13. The gate left out the walk's setting up: each page's time holds it now.
+14. The test for a thread appearing once never made its fixture: two real due promises and a reminder, and it says so if they're missing.

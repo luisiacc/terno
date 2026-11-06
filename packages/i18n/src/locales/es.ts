@@ -2216,6 +2216,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "today.digest.back": "Volver al resumen",
   "today.digest.target": "Dónde se prepara el resumen",
   "today.digest.targetHint": "Un modelo pequeño basta para esto.",
+  "today.digest.tick": "Incluir {subject}",
   "today.digest.settingsTitle": "Resumen de boletines",
   "today.digest.settingsSwitch": "Preparar un resumen cada día",
   "today.digest.settingsHint": "Envía el comienzo de hasta 40 boletines sin leer al día a {provider} para escribir una línea de cada uno. Menos de un céntimo de dólar al día en un modelo pequeño.",

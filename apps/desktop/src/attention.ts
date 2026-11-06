@@ -5,6 +5,7 @@
  * window's page listens. Electron stays behind the deps, so this is tested
  * with fakes.
  */
+import { BRIEF_NOTICE_THREAD } from "@terno/core";
 import { badgeText, NOTICE_SENDERS, noticeText, type MailNotice } from "@terno/core";
 
 const MAX_TEXT = 300;
@@ -28,8 +29,10 @@ export function parseNotice(v: unknown): MailNotice | null {
   const snippet = text(n.snippet);
   if (!id || subject === null || snippet === null) return null;
   if (!Number.isSafeInteger(n.count) || (n.count as number) < 1) return null;
-  if (!Number.isSafeInteger(n.senderCount) || (n.senderCount as number) < 1) return null;
-  if (n.threadId !== null && !isId(n.threadId)) return null;
+  // plan 145: the brief names nobody and no thread, and opens Today
+  const brief = n.kind === "brief" && n.threadId === BRIEF_NOTICE_THREAD && n.senderCount === 0;
+  if (!brief && (!Number.isSafeInteger(n.senderCount) || (n.senderCount as number) < 1)) return null;
+  if (!brief && n.threadId !== null && !isId(n.threadId)) return null;
   // none: "Show sender and subject" is off (the backend redacted it)
   if (!Array.isArray(n.senders) || n.senders.length > NOTICE_SENDERS) return null;
   const senders = n.senders.map((s) => text(s));

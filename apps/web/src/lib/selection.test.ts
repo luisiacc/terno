@@ -10,6 +10,18 @@ const ROWS = order(Array.from({ length: 1000 }, (_, i) => 101 + i));
 const set = (...ids: number[]) => new Set(ids);
 const sorted = (s: ReadonlySet<number>) => [...s].sort((a, b) => a - b);
 
+describe("the digest's row (plan 145)", () => {
+  const order = { ids: [5, 6, 0], index: new Map([[5, 0], [6, 1], [0, 2]]) };
+
+  it("never joins a selection, a range, or an action's targets", () => {
+    expect([...addRange(new Set(), order, 5, 0)]).toEqual([5, 6]);
+    expect([...extend(new Set(), order, 6, 6, 1).checked]).toEqual([6]);
+    expect(targetsOf(new Set([0, 5]), 0)).toEqual([5]);
+    expect(targetsOf(new Set(), 0)).toEqual([]);
+    expect([...pick([{ id: 0 }, { id: 5 }])]).toEqual([5]);
+  });
+});
+
 describe("selection model", () => {
   it("toggle flips one row and never mutates the input", () => {
     const a = set(1, 2);

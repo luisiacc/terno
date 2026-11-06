@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { digestBatchSize, digestPrompt, digestTask, fakeDigest } from "./digest";
+import { digestBudget, digestPrompt, digestTask, fakeDigest } from "./digest";
 
 const item = (over = {}) => ({ label: "d1", from: "Stratechery", subject: "Weekly", text: "Margins.", ...over });
 
@@ -23,9 +23,13 @@ describe("the digest's request (plan 145)", () => {
     expect(r.value[0]!.line.length).toBeLessThanOrEqual(140);
   });
 
-  it("a small window splits into tens", () => {
-    expect(digestBatchSize(null)).toBe(40);
-    expect(digestBatchSize(200_000)).toBe(40);
-    expect(digestBatchSize(8000)).toBe(10);
+  it("the whole request fits the window: a small one gets fewer, shorter", () => {
+    expect(digestBudget(null)).toEqual({ batch: 40, textChars: 2400 });
+    expect(digestBudget(200_000)).toEqual({ batch: 40, textChars: 2400 });
+    for (const window of [32_000, 16_000, 8192, 4096, 2048]) {
+      const { batch, textChars } = digestBudget(window);
+      const prompt = digestPrompt({ language: "English", textChars, items: Array.from({ length: batch }, (_, i) => item({ label: `d${i}`, from: "f".repeat(500), subject: "s".repeat(500), text: "x".repeat(9000) })) });
+      expect(prompt.length / 4 + 400 + 2 * Math.max(200, batch * 80)).toBeLessThanOrEqual(window);
+    }
   });
 });

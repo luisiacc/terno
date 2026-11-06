@@ -28,8 +28,11 @@ export const DEFAULT_TODAY: TodaySetting = { show: true, prepareAt: "08:00", not
  * line. It reads no provider's id but "none".
  */
 export function aiFeaturesAvailable(settings: Pick<AppSettings, "ai"> | null | undefined, entitlement?: { active: boolean } | null): boolean {
-  if (!settings?.ai) return false;
-  return settings.ai.provider !== "none" || entitlement?.active === true;
+  if (entitlement?.active === true) return true;
+  const ai = settings?.ai;
+  if (!ai || ai.provider === "none" || ai.keyUnreadable) return false;
+  // a key removed leaves the provider chosen: without one, it can't run. A model here needs none.
+  return !ai.needsKey || (ai.hasKey && ai.keyConfirmed);
 }
 
 export interface TodayWhy {

@@ -92,7 +92,7 @@ describe("who sees it", () => {
     await vi.waitFor(() => expect(backend.today.nextAt).toBe(new Date(2026, 10, 5, 10).getTime()));
     await client.call("settings.update", { today: { prepareAt: "11:30" } });
     await vi.waitFor(() => expect(backend.today.nextAt).toBe(new Date(2026, 10, 5, 11, 30).getTime()));
-    backend.today.stop();
+    await backend.today.stop();
     expect(backend.today.nextAt).toBeNull();
     void clock;
   });
@@ -112,16 +112,22 @@ describe("the list", () => {
     expect(dates).toEqual([...dates].sort((a, b) => b - a));
   });
 
-  it("a thread appears once: a due follow-up with a reminder is in Needs you only, and counts once", async () => {
-    const { backend, client, put, clock } = await setup();
+  it("a thread appears once: two due promises and a reminder are one row in Needs you, and count once", async () => {
+    const { backend, client, account, clock } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });
-    const t = await put();
-    const [m] = await (backend.store as unknown as { db: { all<T>(s: string, ...a: unknown[]): T[] } }).db.all<{ id: number }>("SELECT id FROM messages WHERE thread_id = ?", t);
-    const base = { kind: "promise" as const, text: "send the contract", quote: "x", personName: "Ana", personEmail: "ana@people.test", dueAt: clock.now - 1000, dated: false, sentAt: clock.now - 86_400_000, rfcMessageId: null };
-    await backend.store.followups.finish({ messageId: m!.id, threadId: t, fromScan: false, now: clock.now, rows: [{ ...base, item: 0 }, { ...base, item: 1, text: "and the deck" }] } as never).catch(() => null);
+    const me = { name: "Me", email: account.email };
+    const m = msg({ accountId: account.id, from: me, to: [{ name: "Tom", email: "tom@acme.test" }], isSent: true, inInbox: true, date: clock.now - 86_400_000, providerMsgId: "s-1", subject: "The contract" });
+    const r = await backend.store.sync.ingest([m], { applyFilters: false, now: clock.now, classifier: null, liveSent: { wanted: true } });
+    const t = await threadOf(backend.store, "s-1");
+    const row = (item: number, text: string) => ({ kind: "promise" as const, item, text, quote: "I'll send it", personName: "Tom", personEmail: "tom@acme.test", dueAt: clock.now + 1000, dated: false });
+    const finished = await backend.store.followups.finish({ messageId: r.inserted[0]!, threadId: t, fromScan: false, now: clock.now, kept: [], model: "m", provider: "p", promptVersion: 1, clearGeneration: backend.store.followups.clearGeneration(), rows: [row(0, "send the contract"), row(1, "and the deck")] });
+    expect(finished).not.toBe("gone");
+    clock.now += 5000;
+    await client.call("reminders.set", { threadIds: [t], dueAt: clock.now - 500, kind: "always" });
     const list = await client.call("today.list", { heldIds: [] });
-    const all = list.sections.flatMap((s) => s.items.map((i) => i.thread.id));
-    expect(all.filter((id) => id === t)).toHaveLength(1);
+    const sections = list.sections.map((s) => [s.kind, s.items.map((i) => i.thread.id)]);
+    expect(sections).toEqual([["needsYou", [t]]]);
+    expect(list.sections[0]!.items[0]!.why.kind).toBe("promise");
     expect((await client.call("counts.get", {})).today).toBe(1);
   });
 
@@ -216,17 +222,69 @@ describe("the digest", () => {
     expect(await t.backend.store.today.digest.get(day())).toBeNull();
   });
 
-  it("a failure says so, with its kind; Try again counts as a person's", async () => {
+  it("a bad key pauses it and says so, spending no attempts; Settings moving resume it; Try again counts as a person's", async () => {
     const t = await setup();
     await t.letter("One");
     const { AiError } = await import("@terno/ai");
     t.model.failWith = new AiError("no", "auth");
     await on(t);
+    await vi.waitFor(async () => expect((await t.client.call("today.digest", {}))?.errorKind).toBe("auth"));
+    expect(await t.client.call("today.digest", {})).toMatchObject({ state: "failed" });
+    expect((await t.backend.store.today.digest.get(day()))).toMatchObject({ state: "pending", attempts: 0 });
+    const n = t.model.reqs.length;
+    await t.backend.today.drain();
+    expect(t.model.reqs).toHaveLength(n);
+    t.model.failWith = null;
+    await t.client.call("settings.update", { today: { prepareAt: "07:00" } });
+    await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(day()))?.state).toBe("ready"));
+  });
+
+  it("what fails for good says so, and Try again goes on", async () => {
+    const t = await setup();
+    await t.letter("One");
+    const { AiError } = await import("@terno/ai");
+    t.model.failWith = new AiError("no", "refused");
+    await on(t);
     await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(day()))?.state).toBe("failed"));
-    expect((await t.backend.store.today.digest.get(day()))?.errorKind).toBe("auth");
     t.model.failWith = null;
     await t.client.call("today.digestRetry", {});
     expect((await t.backend.store.today.digest.get(day()))?.state).toBe("ready");
+  });
+
+  it("what moved to Spam or changed before it's read goes no further; what's deleted leaves stored digests", async () => {
+    const t = await setup();
+    const spam = await t.letter("Spammy");
+    const kept = await t.letter("Kept");
+    await on(t).catch(() => null);
+    const { digest } = t.backend.store.today;
+    const tomorrow = todayKey(NOW + 86_400_000);
+    await vi.waitFor(async () => expect((await digest.get(day()))?.state).toBe("ready"));
+    const listed = (await digest.get(day()))!.items;
+    expect(listed).toHaveLength(2);
+    t.model.reqs.length = 0;
+    await digest.begin(tomorrow, { at: 0, id: 0 }, listed.map((i) => ({ ...i, line: null })), digest.clearGeneration());
+    await t.backend.store.threads.act({ threadIds: [spam], action: "spam", signal: null, now: NOW });
+    await t.backend.today.drain();
+    const sent = t.model.reqs.map((r) => promptText(r.messages[0]!.content)).join();
+    expect(sent).toContain("Kept");
+    expect(sent).not.toContain("Spammy");
+    expect((await digest.get(tomorrow))!.items.map((i) => i.threadId)).toEqual([kept]);
+    await t.client.call("accounts.remove", { id: t.account.id });
+    await t.backend.today.purgeGone();
+    expect((await digest.all()).flatMap((r) => [...r.items, ...r.pending])).toEqual([]);
+  });
+
+  it("stopping waits for what's underway, and leaves no timer", async () => {
+    const t = await setup();
+    await t.letter("One");
+    let release!: () => void;
+    t.model.gate = new Promise((r) => (release = r));
+    await on(t);
+    await vi.waitFor(() => expect(t.model.reqs).toHaveLength(1));
+    const stopped = t.backend.today.stop();
+    release();
+    await stopped;
+    expect(t.backend.today.nextAt).toBeNull();
   });
 
   it("Archive all: only what's listed, spares what changed or was starred, and one Undo brings them back", async () => {
@@ -240,7 +298,12 @@ describe("the digest", () => {
     await t.backend.store.threads.act({ threadIds: [b], action: "star", signal: null, now: NOW });
     await t.put({ providerThreadId: "ct", subject: "Re: Three", from: { name: "Three", email: "news@three.test" } }, false);
     const inbox = async (id: number) => (await t.backend.store.filters.actionFacts([id]))[0]!.inInbox;
-    const r = await t.client.call("today.digestArchive", { day: day(), threadIds: [a, b, c, 999_999] });
+    const listed = (await t.backend.store.today.digest.get(day()))!.items;
+    const asListed = [a, b, c].map((id) => {
+      const i = listed.find((x) => x.threadId === id)!;
+      return { threadId: id, lastDate: i.lastDate, messageCount: i.messageCount };
+    });
+    const r = await t.client.call("today.digestArchive", { items: [...asListed, { threadId: 999_999, lastDate: 1, messageCount: 1 }] });
     expect(r).toMatchObject({ archived: 1, spared: 1, changed: 2 });
     expect([await inbox(a), await inbox(b), await inbox(c), await inbox(later)]).toEqual([false, true, true, true]);
     await t.client.call("threads.undo", { undoId: r.undoId! });

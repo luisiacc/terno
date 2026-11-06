@@ -882,6 +882,7 @@ export class BackendCore {
     if (this.countsTimer) clearTimeout(this.countsTimer);
     this.attention.stop();
     this.reminders.stop();
+    await this.today.stop();
     // plan 94: no new scheduled send starts; the one in flight finishes before the store closes (awaited below)
     const scheduledStopped = this.scheduled.stop();
     const forwardsStopped = this.forwards.stop();

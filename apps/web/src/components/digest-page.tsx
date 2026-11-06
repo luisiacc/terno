@@ -1,11 +1,11 @@
 import type { DigestItem, DigestRow } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { CheckboxMark } from "@terno/ui/components/checkbox";
+import { Checkbox } from "@terno/ui/components/checkbox";
 import { Spinner } from "@terno/ui/components/spinner";
 import { useEffect, useMemo, useState } from "react";
 import { errorHelp, modelName } from "~/lib/ai";
-import { trackJob, undoAction, undoActions } from "~/lib/actions";
+import { deferred, trackJob, undoAction, undoActions } from "~/lib/actions";
 import { registerUndo, snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
@@ -40,6 +40,10 @@ export default function DigestPage() {
   const automated = row?.automated === true;
   const [toggled, setToggled] = useState<ReadonlySet<number>>(new Set());
   const ticked = (i: DigestItem) => (automated ? toggled.has(i.threadId) : !toggled.has(i.threadId));
+  // the list's refresh brings what changed anywhere: an Undo, a read in another window
+  useEffect(() => {
+    if (digest) setRow(digest);
+  }, [digest]);
   // what's already archived or read elsewhere stays listed, muted, and out of the count, so the page doesn't reshuffle
   useEffect(() => {
     if (row) setLive(new Set(row.liveIds));
@@ -60,16 +64,17 @@ export default function DigestPage() {
   const archive = async () => {
     if (!row || !chosen.length) return;
     const job = trackJob(t("today.digest.archiving"));
-    const undoId = { current: null as number | null, n: 0 };
-    const undo = registerUndo(() => (undoId.current === null ? undefined : undoActions([undoId.current], undoId.n)));
+    // pressed before the answer is in, it waits for it
+    const undoId = deferred<{ id: number | null; n: number }>();
+    const undo = registerUndo(() => undoId.promise.then((u) => (u.id === null ? undefined : undoActions([u.id], u.n))));
     try {
-      const r = await client.call("today.digestArchive", { day: row.day, threadIds: chosen.map((i) => i.threadId), jobId: job.jobId });
-      undoId.current = r.undoId;
-      undoId.n = r.archived;
+      const r = await client.call("today.digestArchive", { items: chosen.map((i) => ({ threadId: i.threadId, lastDate: i.lastDate, messageCount: i.messageCount })), jobId: job.jobId });
+      undoId.resolve({ id: r.undoId, n: r.archived });
       const notes = r.changed + r.spared > 0 ? t("today.digest.leftAlone", { count: r.changed + r.spared }) : undefined;
       snack.success(t(automated ? "today.digest.archivedSelected" : "today.digest.archived", { count: r.archived }), { id: job.snackId, duration: 8000, description: notes, action: r.undoId !== null ? undoAction(undo, t("today.digest.undoName")) : undefined });
       setLive((held) => new Set([...(held ?? items.map((i) => i.threadId))].filter((id) => !chosen.some((i) => i.threadId === id))));
     } catch (error) {
+      undoId.resolve({ id: null, n: 0 });
       snack.error(error instanceof Error ? error.message : String(error), { id: job.snackId });
     } finally {
       job.stop();
@@ -106,7 +111,7 @@ export default function DigestPage() {
       <ul className="border-t border-hairline">
         {items.map((i) => (
           <li key={i.threadId} data-testid="digest-item" data-live={live(i)} className={`flex items-baseline gap-3 border-b border-hairline py-2 ${live(i) ? "" : "opacity-50"}`}>
-            <CheckboxMark data-testid="digest-tick" checked={live(i) && ticked(i)} className="translate-y-0.5" onClick={() => live(i) && toggle(i.threadId)} />
+            <Checkbox data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={live(i) && ticked(i)} disabled={!live(i)} className="translate-y-0.5" onCheckedChange={() => toggle(i.threadId)} />
             <button type="button" className="flex min-w-0 flex-1 items-baseline gap-3 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" data-testid="digest-open" onClick={() => open(i.threadId)}>
               <span className="w-36 shrink-0 truncate text-sm font-medium">{i.from}</span>
               <span className="min-w-0 flex-1 text-sm text-muted-foreground">{i.line ?? i.subject}</span>

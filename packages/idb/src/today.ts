@@ -87,6 +87,7 @@ export function writeDigest(c: Ctx, w: DigestStored): void {
   if (r) table.update(r, { state: w.state, body_json: JSON.stringify({ items: w.items, pending: w.pending }), attempts: w.attempts, error_kind: w.errorKind, model: w.model, provider: w.provider, prompt_version: w.promptVersion, generated_at: w.generatedAt });
 }
 
+export const allDigests = (c: Ctx): DigestStored[] => [...T(c, "ai_digests").all()].map(stored).sort((a, b) => a.day.localeCompare(b.day));
 export const pendingDigestDays = (c: Ctx): string[] => [...T(c, "ai_digests").all()].filter((r) => r.state === "pending").map((r) => String(r.day)).sort();
 
 export function pruneDigests(c: Ctx, keepFrom: string): void {

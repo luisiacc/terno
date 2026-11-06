@@ -502,6 +502,7 @@ function withDevAi(ai: AiSettings, keys: DevAiKeys): AiSettings {
     keyHint: null,
     keyOrigin: null,
     keyConfirmed: true,
+    needsKey: false,
     local: false,
     capabilities: null,
     profiles,
@@ -538,6 +539,7 @@ export async function readStoredSettings(store: SettingsStore): Promise<AppSetti
     keyOrigin: bound,
     // unbound: saved before origins were recorded and its endpoint never changed since (pinKeyOrigins)
     keyConfirmed: bound === null || bound === endpointOrigin(provider, profile),
+    needsKey: provider === "anthropic" || provider === "openai" || (provider === "compatible" && (profile?.preset ?? "custom") !== "custom"),
     local: isLocalProvider({ id: provider, baseURL: profile.baseURL, preset: profile.preset }),
     capabilities: capabilities[capabilityKey(provider, profile)] ?? null,
     profiles,

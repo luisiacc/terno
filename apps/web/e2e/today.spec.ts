@@ -87,6 +87,12 @@ test.describe("Today (plan 145)", () => {
       if (!/Morning Brew digest/.test(await item.innerText())) await item.getByTestId("digest-tick").click();
     }
     await expect(page.getByTestId("digest-archive")).toHaveText("Archive all 1");
+    // by keyboard too: a named control, and it's what's kept
+    await page.getByTestId("digest-tick").last().focus();
+    await page.keyboard.press("Space");
+    await expect(page.getByTestId("digest-archive")).not.toHaveText("Archive all 1");
+    await page.keyboard.press("Space");
+    await expect(page.getByTestId("digest-archive")).toHaveText("Archive all 1");
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/digest-on.png` });
     await page.getByTestId("digest-archive").click();
     await expect(page.getByTestId("snack")).toContainText("Archived 1 newsletter");
@@ -96,6 +102,8 @@ test.describe("Today (plan 145)", () => {
     expect(inbox("Sale ends tonight")).toBe(1);
     await page.getByTestId("snack-action").click();
     await expect.poll(() => inbox("Morning Brew digest")).toBe(1);
+    // the open page hears it: back in the count
+    await expect(page.getByTestId("digest-item").filter({ hasText: "Morning Brew digest" })).toHaveAttribute("data-live", "true");
   });
 
   test("the row's selection and keys stay on threads: Select All never takes the digest", async ({ app: page, server }) => {

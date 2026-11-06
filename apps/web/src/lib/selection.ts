@@ -52,7 +52,7 @@ export function extend(checked: ReadonlySet<number>, order: Order, anchor: numbe
   const to = order.ids[Math.max(0, Math.min(order.ids.length - 1, at + delta))]!;
   const next = new Set(checked);
   for (const id of range(order, start, from)) next.delete(id);
-  for (const id of range(order, start, to)) next.add(id);
+  for (const id of range(order, start, to)) if (id !== 0) next.add(id);
   return { checked: next, cursor: to, anchor: start };
 }
 
@@ -73,7 +73,8 @@ export function pick<T extends { id: number }>(items: readonly T[], keep: (t: T)
 
 /** What an action applies to: the checked rows when there are any, else the open thread. */
 export function targetsOf(checked: ReadonlySet<number>, selectedId: number | null, order?: Order): number[] {
-  if (checked.size) return order ? [...checked].sort((a, b) => (order.index.get(a) ?? Infinity) - (order.index.get(b) ?? Infinity)) : [...checked];
+  const acting = checked.has(0) ? new Set([...checked].filter((id) => id !== 0)) : checked;
+  if (acting.size) return order ? [...acting].sort((a, b) => (order.index.get(a) ?? Infinity) - (order.index.get(b) ?? Infinity)) : [...acting];
   // plan 145: the digest takes the cursor; it's nothing a thread action can act on (revision 10)
   return selectedId === null || selectedId === 0 ? [] : [selectedId];
 }

@@ -21,9 +21,10 @@ export async function measureToday(o: WorkloadMailbox, budget: { waitingMs: numb
   let longest = 0;
   let pages = 0;
   for (;;) {
+    // the page and what it reads: a store's first page may hold the walk's setting up
+    const t = performance.now();
     const page = await walk.next(1000);
     if (!page.length) break;
-    const t = performance.now();
     await store.today.digestFacts(page);
     longest = Math.max(longest, performance.now() - t);
     pages++;
