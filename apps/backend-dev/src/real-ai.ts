@@ -15,7 +15,7 @@ type IncomingMessage = Parameters<Backend["store"]["sync"]["ingest"]>[0][number]
  */
 export function realAiFactory(create: typeof createAi = createAi): AiFactory {
   const capUsd = Number(process.env.TERNO_AI_CAP_USD ?? 5);
-  if (!(capUsd > 0 && capUsd <= 5)) throw new Error("TERNO_AI_CAP_USD must be above 0 and at most 5");
+  if (!(capUsd > 0 && capUsd <= 55)) throw new Error("TERNO_AI_CAP_USD must be above 0 and at most 55");
   const book = fileLedger(process.env.TERNO_AI_LEDGER ?? "/tmp/terno-ai/spend.jsonl", capUsd);
   return (config, options) => {
     if (config.id === "fake") return create(config, options);

@@ -64,5 +64,7 @@ A small read on the same scrubbed mailbox copy, in the ledger the panel used ($0
 
 Fixed: an amount like 0.001 is a decimal when a sum's amounts are checked, not a thousands reading. An `opening` pattern can't end in `$`, since that could match with no first lines and stop matching once they arrive, after the rule had acted.
 
+For the rule alone: a category deleted while its preview is open says the rule wasn't saved, instead of saving one that points nowhere. A preview the check emptied doesn't say a rule will follow.
+
 Skipped as too rare: marking your own reply as Spam by hand, in Terno, leaves what it answered as answered until that conversation changes. A move from the provider reopens it.
 

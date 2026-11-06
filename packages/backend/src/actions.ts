@@ -662,7 +662,8 @@ export class ActionsService {
       if (params.future && keep.kind === "ok" && !p.stop) {
         // forwarding is read again: a rule a model wrote never sends mail anywhere (revision 1)
         const now = (await store.categories.list()).find((c) => c.id === categoryId);
-        if (now?.forward?.enabled) filterFailed = true;
+        // or gone since the preview: with no rows, nothing else would have found that out
+        if (now?.forward?.enabled || (categoryId !== null && !now)) filterFailed = true;
         else {
           try {
             const f = await ops.ensureFilter(this.ruleFor(plan, conditions, categoryId), capFilterName(plan.summary));

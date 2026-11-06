@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAi, promptText, type AiOptions, type CompletionRequest, type ProviderConfig } from "@terno/ai";
-import type { ActionPreviewInfo, AiActionStart } from "@terno/core";
+import { savesRuleOnly, type ActionPreviewInfo, type AiActionStart } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import type { IncomingMessage } from "@terno/store";
@@ -861,6 +861,24 @@ describe("what the real-mail panel changed", () => {
     expect(await start({ conditions: [subjectHas("nothing has this")] })).toMatchObject({ status: "noMatch" });
     // everything it finds already done: the rule is still what was asked for
     expect(await start({ future: true })).toMatchObject({ status: "preview", preview: { found: 0 } });
+  });
+
+  it("a rule alone for a category deleted since isn't saved, and a preview the check emptied isn't a rule alone", async () => {
+    const { backend, put, preview, apply, model, client } = await setup();
+    const category = await backend.store.categories.create("Recruiting", "indigo", {});
+    const p = await preview({ actionType: "moveToCategory", categoryId: category.id, lookIn: "everywhere", future: true });
+    expect(savesRuleOnly(p)).toBe(true);
+    await backend.store.categories.delete(category.id);
+    expect(await apply(p, true)).toMatchObject({ filterSaved: false, filterFailed: true });
+    expect(await backend.store.filters.list()).toHaveLength(0);
+
+    await put();
+    model.check = () => JSON.stringify({ drop: ["g1"] });
+    const q = await preview({ future: true, meaning: true });
+    const checked = await client.call("ai.actionCheck", { previewId: q.previewId, requestId: crypto.randomUUID(), acknowledge: "" });
+    if (checked.status !== "done") throw new Error(checked.status);
+    expect(checked.preview).toMatchObject({ count: 0, found: 1 });
+    expect(savesRuleOnly(checked.preview)).toBe(false);
   });
 
   it("a delete's check tells the model to keep out what it's unsure of", async () => {

@@ -7,13 +7,14 @@ import { Bell, ChevronDown, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
-import { matchesFilter, tabRef, type ListFilter as QuickFilter } from "@terno/core";
+import { matchesFilter, savesRuleOnly, tabRef, type ListFilter as QuickFilter } from "@terno/core";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { Button } from "@terno/ui/components/button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { openCompose } from "~/lib/actions";
+import { useActionPreview } from "~/lib/action-preview";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
@@ -658,7 +659,8 @@ function EmptyState() {
   const followups = useApp((s) => s.followups);
   const today = useApp((s) => s.today);
   const previewing = useApp((s) => s.actionPreview !== null);
-  if (previewing)
+  const ruleOnly = useActionPreview((s) => s.preview !== null && savesRuleOnly(s.preview));
+  if (previewing && ruleOnly)
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
         <p className="text-lg font-semibold tracking-tight">{t("action.rule.emptyTitle")}</p>
