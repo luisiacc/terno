@@ -167,6 +167,8 @@ export async function boot(): Promise<void> {
     const reopened = bootPage();
     await Promise.all([reminders, followups]);
     await reloadList({ keepSelection: reopened !== null });
+    // the frame that paints the first rows: what a launch is measured to (startup.perf.ts)
+    requestAnimationFrame(() => performance.mark("terno:first-rows"));
     // plan 41: the badge and notifications; a click main held for this window opens now, after the first list
     startAttention();
   } catch (error) {

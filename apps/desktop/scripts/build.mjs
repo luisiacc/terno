@@ -74,6 +74,7 @@ const common = {
 const entries = [
   { in: join(root, "src/main.ts"), out: "main" },
   { in: join(root, "src/backend-entry.ts"), out: "backend" },
+  { in: join(root, "src/backend-boot.ts"), out: "backend-boot" },
   { in: join(repo, "packages/backend/src/incoming.worker.ts"), out: "incoming.worker" },
   { in: join(root, "src/preload.ts"), out: "preload" },
   { in: join(repo, "packages/mcp/src/bin.ts"), out: "mcp/terno-mcp" },

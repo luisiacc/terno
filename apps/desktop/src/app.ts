@@ -52,6 +52,7 @@ import { NativeReloads, nativeReloadKey } from "./native-reload";
 import type { UpdateController } from "./updates/controller";
 import { startUpdates } from "./updates/main";
 import { MailboxHost } from "./mailbox/host";
+import { EngineCache } from "./code-cache";
 import type { MailboxGate } from "@terno/core/mailbox";
 
 // V8 compile cache for the main bundle (t3code trick): faster subsequent boots.
@@ -153,6 +154,8 @@ let releaseReadyWaiters: () => void = () => {};
 let clientSeq = 0;
 let backendInstance = 0;
 const restarts = new RestartPolicy();
+const ENGINE_CACHE_FILE = "engine.v8cache";
+let engineCache: EngineCache | undefined;
 const windows = new Set<BrowserWindow>();
 
 /** Plan 20: VPNs, Wi-Fi changes and wakes, told to the backend so mail resumes in seconds (network-watch.ts). */
@@ -204,7 +207,9 @@ function startBackend() {
   }
   const instance = ++backendInstance;
   const startedAt = Date.now();
-  const child = utilityProcess.fork(join(__dirname, "backend.cjs"), [], { serviceName: "Terno Mail Engine", stdio: "inherit" });
+  engineCache ??= new EngineCache(join(userData, ENGINE_CACHE_FILE));
+  const cache = engineCache;
+  const child = utilityProcess.fork(join(__dirname, "backend-boot.cjs"), cache.args(), { serviceName: "Terno Mail Engine", stdio: "inherit" });
   const retirement = new BackendRetirement(child);
   backend = child;
   backendRetirement = retirement;
@@ -306,6 +311,7 @@ function startBackend() {
       if (!backend) mainDiag.setEngine("stopped");
       return;
     }
+    cache.crashed();
     mainDiag.backendExited(instance, code, restarts.attempt);
     const delay = restarts.exited(Date.now());
     if (delay === null) {
