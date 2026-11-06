@@ -292,4 +292,4 @@ Real models, on a copy of one real mailbox (5,939 threads, three accounts, Spani
 
 - Prompt version 4. Reviewers held the read to one test: if it went quiet, would anybody notice?
 - **What changed:** accepting an offer whose next step is theirs, and sending what someone needed in order to act, both expect a reply ("quedo a la espera" among them), with those two as examples. An open offer doesn't. What they take on ("de nuestra parte", "vamos a revisar") is a promise, each item of a list its own, while what someone else has under way isn't. Nobody is awaited from an automated address.
-- **Limit:** a conditional offer in a pitch can read as firm. Both stayed split on the last read.
+- **Limit:** a conditional offer in a pitch can read as firm. It stayed split on the last read.

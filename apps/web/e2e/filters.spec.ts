@@ -85,6 +85,23 @@ test.describe("AI filters and learned filters", () => {
       await page.getByTestId("action-toggle-archive").click(); // remove the only action
       await expect(page.getByTestId("filter-save")).toBeDisabled();
     });
+    await scenario("plan 153: a rule on the start of mail is a pattern, with no \"not\"", async () => {
+      await freshStart(page);
+      await page.getByTestId("open-filters").click();
+      await page.getByTestId("condition-field").click();
+      await page.getByRole("option", { name: "Start of mail" }).click();
+      await expect(page.getByTestId("condition-pattern-help")).toBeVisible();
+      await page.getByTestId("condition-value").fill("uber|receipt");
+      await expect(page.getByTestId("preview-count")).toHaveText(/^[1-9]\d*$/);
+      await expect(page.getByTestId("filter-save")).toBeEnabled();
+      if (process.env.ACTION_SHOTS) {
+        for (const scheme of ["light", "dark"] as const) {
+          await page.emulateMedia({ colorScheme: scheme });
+          await page.screenshot({ path: `${process.env.ACTION_SHOTS}/opening-${scheme}.png` });
+        }
+        await page.emulateMedia({ colorScheme: "light" });
+      }
+    });
     await scenario("plan 89: a pattern is checked as it's typed, saved, and applied in the background", async () => {
       await freshStart(page);
       const db = sqlDb(server.backend.store);
