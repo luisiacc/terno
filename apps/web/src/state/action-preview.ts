@@ -1,3 +1,4 @@
+import type { ActionPreviewInfo } from "@terno/core";
 import { client } from "~/rpc/connection";
 import { create } from "zustand";
 import { getApp, setApp, useApp, type AppState } from "./app";
@@ -18,6 +19,18 @@ interface ActionRows {
   showLeftOut: boolean;
   from: From | null;
 }
+
+/** Plan 143: the preview's header state and what it asks of the backend. */
+interface ActionPreviewState {
+  preview: ActionPreviewInfo | null;
+  future: boolean;
+  checking: boolean;
+  consent: { provider: string; endpoint: string | null; destination: string } | null;
+  checkError: string | null;
+  applying: boolean;
+}
+
+export const useActionPreview = create<ActionPreviewState>(() => ({ preview: null, future: false, checking: false, consent: null, checkError: null, applying: false }));
 
 export const useActionRows = create<ActionRows>(() => ({ unticked: new Set(), showLeftOut: false, from: null }));
 

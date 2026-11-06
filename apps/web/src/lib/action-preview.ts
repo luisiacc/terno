@@ -1,7 +1,6 @@
 import { savesRuleOnly, type ActionPreviewInfo, type AiActionApplied, type AiActionEvent, type AiActionStart } from "@terno/core";
 import { t } from "@terno/i18n";
-import { create } from "zustand";
-import { enterPreview, leavePreview, rowsToggled, useActionRows } from "~/state/action-preview";
+import { enterPreview, leavePreview, rowsToggled, useActionPreview, useActionRows } from "~/state/action-preview";
 import { getApp } from "~/state/app";
 import { client } from "~/rpc/connection";
 import { reloadList } from "~/state/list";
@@ -9,17 +8,7 @@ import { deferred, trackJob, undoAction } from "./actions";
 import { localized } from "./i18n";
 import { registerUndo, snack } from "./snack";
 
-/** Plan 143: the preview's header state and what it asks of the backend. */
-interface ActionPreviewState {
-  preview: ActionPreviewInfo | null;
-  future: boolean;
-  checking: boolean;
-  consent: { provider: string; endpoint: string | null; destination: string } | null;
-  checkError: string | null;
-  applying: boolean;
-}
-
-export const useActionPreview = create<ActionPreviewState>(() => ({ preview: null, future: false, checking: false, consent: null, checkError: null, applying: false }));
+export { useActionPreview };
 
 const messageOf = (error: unknown) => {
   const e = error as { message?: string; i18n?: { key: string; params?: Readonly<Record<string, string | number>> } };
