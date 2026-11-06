@@ -9,7 +9,7 @@ import { msg, testDb, withAccounts } from "./test/helpers";
 /** The definition of a thread's derived columns, in SQL, as recomputeThreads has always computed them. */
 function expected(db: Db, threadId: number) {
   const agg = db.get<Record<string, number>>(
-    `SELECT count(*) AS c, coalesce(sum(is_read = 0 AND is_trash = 0), 0) AS unread, coalesce(max(has_attachments), 0) AS att,
+    `SELECT count(*) AS c, coalesce(CASE WHEN sum(is_trash = 0 AND is_spam = 0) > 0 THEN sum(is_read = 0 AND is_trash = 0 AND is_spam = 0) ELSE sum(is_read = 0 AND is_trash = 0) END, 0) AS unread, coalesce(max(has_attachments), 0) AS att,
             coalesce(max(is_starred AND is_trash = 0), 0) AS starred, coalesce(max(in_inbox AND is_trash = 0 AND is_spam = 0), 0) AS inbox,
             coalesce(max(is_sent AND is_trash = 0 AND is_spam = 0), 0) AS sent, coalesce(min(is_trash), 0) AS trash_all,
             coalesce(sum(is_trash = 0), 0) AS visible, coalesce(sum(is_trash = 0 AND is_spam = 0), 0) AS visible_nonspam

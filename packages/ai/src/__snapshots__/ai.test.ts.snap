@@ -49,6 +49,7 @@ exports[`wire schema > stays primitive for strict grammars (no integer bounds) a
               "body",
               "listId",
               "text",
+              "opening",
               "hasAttachment",
               "account",
               "ageDays",
