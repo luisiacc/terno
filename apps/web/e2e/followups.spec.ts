@@ -108,8 +108,8 @@ test.describe("follow-ups (plan 142)", () => {
     await group.scrollIntoViewIfNeeded();
     await expect(group).toContainText("Sends the text of each message you send, and the message it answers, to Offline demo.");
     await page.getByTestId("ai-followups-switch").click();
-    await expect(page.getByTestId("ai-followups-offer").or(page.getByTestId("ai-followups-nudge")).first()).toBeVisible();
-    if (await page.getByTestId("ai-followups-notnow").isVisible()) await page.getByTestId("ai-followups-notnow").click();
+    // the Nudge row comes with the switch; the offer once its count is in
+    await page.getByTestId("ai-followups-notnow").click();
     await expect(page.getByTestId("ai-followups-offer")).toHaveCount(0);
     expect(await server.backend.store.followups.marks.count()).toBe(0);
     expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=ai-followups]").analyze()).violations).toEqual([]);
