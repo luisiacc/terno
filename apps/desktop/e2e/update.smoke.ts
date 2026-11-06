@@ -335,6 +335,8 @@ test("unexpected backend exit after a saved ACK restores editing without install
     stage({ tamper: false });
     await launch({ TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_TEST_SMTP_PORT: String((smtp.server.address() as AddressInfo).port) });
     await updates("check"); await updates("download"); await expect.poll(async () => (await state()).status, { timeout: 180_000 }).toBe("ready");
+    // plan 145: the demo has AI, so Today's tip may be up over the list's first rows: Esc closes it
+    await page.getByTestId("tip-today-first").waitFor({ timeout: 10_000 }).then(() => page.keyboard.press("Escape"), () => {});
     await page.getByTestId("thread-row").first().click(); await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("r");
     const body = page.getByTestId("compose-body"); await body.fill("synthetic send awaiting ACK"); await body.press("Meta+Enter");
     await expect.poll(() => received, { timeout: 20_000 }).toBe(true);
