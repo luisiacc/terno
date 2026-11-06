@@ -1,6 +1,6 @@
 # Plan 147: AI features show only when they can run
 
-- **Status:** built. "Revisions after the Codex review" overrides the sections before it.
+- **Status:** built and on `main`. "Revisions after the Codex review" overrides the sections before it.
 - **Builds on:** plan 146 (Dev mode), plan 85 (decision 9), plans 132, 133, 141 and 142 (the features).
 
 ## The request
@@ -107,3 +107,15 @@ A second round, only on what plans 144 and 145 added, raised 4, all fixed:
 3. **"Back to digest" outlived Today,** since cleanup ran only inside Today, and reopened the digest page. `fromDigest` goes with availability.
 4. **A preview's Cancel could restore Today,** which watching only the available-to-unavailable change missed. Today now leaves whenever it's on and unavailable, once settings are read.
 5. **Undo then `r` could use a hidden prepared reply.** `replyReady` reads `on()`, so those keys go back to an ordinary reply.
+
+## What the full run showed
+
+`pnpm test:all` on a machine shared with other checkouts (load up to 215) did not pass, and none of what failed comes from this plan. Each was run on the same base commit (`d534c01d`, plans 144 and 145 in) for comparison:
+
+- **`unit`:** 56 tests in 41 files fail the same on the base, and none only here. Most are `client.on is not a function`: `replies.ts:102` and `state/today.ts` subscribe at import, which tests mocking the client don't provide. One is `no-hardcoded.test.ts` on `digest-page.tsx:113`.
+- **`e2e`:** the baselines in `visual`, `dnd`, `selection`, `list-layout`, `resign-in` and `themes` fail on the base too, and no baseline was updated here. `unread-filter.spec.ts`' "select all N" failed on this branch alone at load above 190 (4 of 15, at two different timing waits, one a 450 ms read dwell) and not on the base (14 runs, not all at that load). Run side by side at load 25, it passes 12 of 12 on both, and it reaches no AI code. Called flaky, and worth watching on a quiet machine.
+- **`smoke`:** `update.smoke.ts:290` fails 3 of 3 on both: something in a portal covers the thread row. It was run with `TERNO_GOOGLE_DESKTOP_ID=`, since a worktree has no `.env`.
+- **`perf`:** failed in `attachment-admission.perf`, an import failure the `unit` list shares; the rest of the first pass's stalls cleared on the second pass.
+- **Passed:** lint, typecheck, build, web, db-wasm, startup, and ui-perf on its second pass. Plan 147's own tests pass; each fix was checked to fail without it.
+
+So the plans before this one left `main`'s gate red, and that needs its own fix.
