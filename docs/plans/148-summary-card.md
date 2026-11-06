@@ -1,6 +1,6 @@
 # Plan 148: The summary is a card
 
-- **Status:** in progress.
+- **Status:** built and on `main`, code-reviewed (see "What the code review changed"). See "The full run" for what `pnpm test:all` showed.
 - **Replaces:** plan 132 §6's "No card, box or color: type and a hairline". Everything else in that section stands.
 
 ## The request
@@ -65,3 +65,14 @@ Codex raised 2 points on `f5158c85`, both fixed with a regression test.
 
 - **Focus can't jump after a click away.** With the new fallback, a click on the mail's text followed by an incoming reply moved focus to the toolbar: a click away blurs with no `relatedTarget`, just as a removed control does, so the block still thought it held focus. A click outside now ends that. The fallback stays for any way the card goes while it really holds focus, not only Stop, since the page is never the right place.
 - **A short status stays on one row.** The text's `16rem` basis was wider than the row at the minimum window, so "Summarizing…" and Stop split in two and the card lost its header's height. The text now takes its own width: a short status keeps its action beside it, and a long one sends it below.
+
+## The full run
+
+`pnpm test:all` did not pass, and none of what failed comes from this plan. The run took 2345 s, at a load average near 100, while plans 144 and 145 landed on `main` in the same checkout.
+
+- **`unit`, 10 files:** `TypeError: client.on is not a function`. `lib/replies.ts` (`e402954a`, plan 144) and the Today code (`ac82d66f`, plan 145) call `client.on` when the module loads, and these tests' mock of the client has no `on`. It fails the same way when rerun on `d534c01d`, and the error doesn't depend on load, so it's a real break on `main` that someone needs to fix.
+- **`startup`:** the packaged build held schema 53 and the source 54: a migration arrived during the run.
+- **`perf`:** wall-clock limits on SQLite and IndexedDB reads at that load. This plan changes no query.
+- **`e2e`:** 29 tests failed on the first pass, and 28 of them passed when run again alone; the other was `unsubscribe.spec.ts`' Spanish flow. That flow and every summary flow passed on `d534c01d` at a load near 40: `summaries.spec.ts` and `unsubscribe.spec.ts` in all five designs, 20 of 20.
+
+Not run again: a clean `pnpm test:all`, which can't pass until the `unit` break is fixed.

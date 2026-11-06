@@ -113,7 +113,7 @@ needs the signed contract before then.
   Date     Meeting moved to 19 March           →
 ```
 
-- No card, box or color: type and a hairline. A `Disclosure` from `packages/ui/BOARDUI.md`; the open or closed state persists per user, and it opens by default. `→` scrolls to the message and expands it, keeping focus and scroll rules.
+- ~~No card, box or color: type and a hairline.~~ Plan 148 replaced this: it read as part of the mail, so the summary is the design's card. A `Disclosure` from `packages/ui/BOARDUI.md`; the open or closed state persists per user, and it opens by default. `→` scrolls to the message and expands it, keeping focus and scroll rules.
 - Provenance on the label's tooltip: "Written by GPT Luna, 3 March. It can make mistakes." Summary text is plain text, never HTML.
 - While `pending`: nothing at all. It appears when ready, without shifting what the user is reading (added above the scroll anchor, as the thread's other late content is), and with no motion when reduced.
 - `failed`: nothing in the reader. Settings shows the last error kind, so a bad key is findable.
