@@ -30,11 +30,11 @@ Three findings:
 
 `backend-boot.cjs`, a small entry main forks, loads `backend.cjs` through `vm.Script` with `cachedData` (`code-cache.ts`). Nothing is deferred: the bundle runs at once, in full.
 
-- **The file** is one, `<userData>/engine.v8cache`, overwritten: the format and the build it belongs to, then V8's data (3.7 MB). It holds compiled code of our own bundle, nothing of the user's. Main passes its path as an argument, since the profile is main's to resolve.
-- **Which build:** the bundle's debug id, read from its last line (content-derived, `scripts/sourcemaps.mjs`), in the same read as what's compiled. V8 checks its own version, flags and the source's length, never its content, so a same-length build needs this.
+- **One rule for which cache a build may use: a cache's file name says what it was compiled for,** this version of the app and a hash of the code V8 compiles, `<userData>/engine-cache/<version>-<sha256>.v8cache`, and the folder holds nothing else. After an update the new version looks for its own name, which the old one never wrote, so it can't read the old one's code even if the bundle's bytes didn't change; everything else in the folder is deleted before anything is compiled; then it compiles, as a first launch does, and writes the one file of its own. The version is what's baked into the build (`BUILD_VERSION`: `app.getVersion()` is Electron's own on an unpackaged launch), passed by main with the folder, since the profile is main's. The hash covers exactly what V8 compiles, wrapper included, in the same read, and tells two builds of one version apart: V8 checks its own version, flags and the source's length, never its content. The file is a SHA-256 of V8's data and then the data (3.7 MB), compiled code of our own bundle and nothing of the user's.
+- **The checksum, because V8 has none:** a release V8 doesn't check its data, and one flipped byte of a same-length file took the process down with a fatal error (measured: `SIGTRAP`, `SIGBUS`), where a torn file is only refused. The file's hash is checked before V8 sees it; a mismatch is logged as `rejected`, compiles normally and is replaced.
 - **Written** once per build, 2 s after evaluation, so what the first screen uses is in it: 20 ms for `createCachedData` and 2 ms for an atomic write (a temp file of its own, then a rename), once, inside the slicer's budget. Never when a cache was accepted. A launch quit within 2 s writes nothing, and the next one tries again.
 - **Never in the way:** a missing, stale, torn or rejected cache compiles normally. The bundle runs once, outside anything that catches, so its errors stay its own.
-- **Crash safety:** a backend that dies without being asked starts again with no cache and the file goes, for the rest of the session: a Retry too, and however long it ran, since the restart policy's count resets. Bad bytecode can't keep the mail engine down; the next launch writes a new one.
+- **Crash safety:** a backend that dies without being asked starts again with no cache and the folder goes, for the rest of the session: a Retry too, and however long it ran, since the restart policy's count resets. Bad bytecode can't keep the mail engine down; the next launch writes a new one.
 - **Stack traces:** absolute filename, and a negative `columnOffset` so the wrapper doesn't shift line 1; the debug id lookup keeps working.
 
 ### The AI SDKs
@@ -43,10 +43,10 @@ The request offers loading them beside the first screen. Measured with the cache
 
 ## Tests
 
-- `code-cache.test.ts`, each load in a process of its own (in one, V8's compilation cache answers and a bad cache looks accepted): runs as CommonJS; writes, then uses and leaves alone; a same-length build never runs another's code; garbage and a torn file compile and are replaced; an unreadable or unwritable path doesn't get in the way; a bundle's own failure is the process's, once; lines and columns hold with and without the cache; main's switch.
+- `code-cache.test.ts`, each load in a process of its own (in one, V8's compilation cache answers and a bad cache looks accepted): runs as CommonJS; writes, then uses and leaves alone; a new version never uses the old one's cache even with the same bytes, and the old file goes before anything is written; going back to an older version does the same; a same-length build of one version never runs another's code; a leftover in the folder goes; garbage and a torn file compile and are replaced; an unreadable or unwritable path doesn't get in the way; a bundle's own failure is the process's, once; lines and columns hold with and without the cache; main's switch.
 - `backend-retirement.test.ts`: a crash turns the cache off, a replacement asked for doesn't.
 - `startup.perf.ts`: rows by the page's clock (`terno:first-rows`, the frame that paints them, only with a row in the page), and one visible afterwards; waits for the cache outside the measured time; each launch's `backend.code_cache` in main's log says how it compiled (none, then accepted three times); logs the launch without a cache.
-- `update.smoke`: a backend crash, and a real update's relaunch.
+- `update.smoke`: a backend crash, and a real update: before it only `0.1.0-…` is in the folder; after Squirrel's relaunch the log says the new version compiled (`none`) and only `0.1.1-…` is there.
 
 ## Perf
 
@@ -87,3 +87,16 @@ Of the plan, before building: the bundle runs through an explicit CommonJS wrapp
 ## On top of main's AI round two
 
 The same gate after rebasing, whose renderer holds that work too (3.08 MB, 2.9 before), at load 18 to 39: warm samples 832 to 1,308 ms, the best of each of four runs 832, 868, 877 and 986; without a cache 977 to 2,067 ms. That's about 100 ms above the numbers before it, and the gate still passes. What the 100 ms is hasn't been measured: AI round two's own boot work, its code now loading at boot, or the load.
+
+## What the second Codex review changed
+
+Asked to break the cache across updates. Sequential updates and downgrades, the checksum, crash restarts and the eager imports held up.
+
+- **A link couldn't be followed out of the folder:** cleanup was recursive and read through a symlinked `engine-cache`. It now removes the link and leaves what it points to.
+- **The name hashes what's compiled,** rather than a debug id from the file's last line, which left out the wrapper and needed a case for a bundle with none.
+- **`BUILD_VERSION`, not `app.getVersion()`,** which is Electron's own version on an unpackaged launch.
+- **A folder under the file's own name** would have turned the cache off for good: only a regular file is kept.
+- **The no-lazy guard** reads the parser's tree rather than a regex, and its exemptions belong to files (plan 155).
+- **`update.smoke`** also holds that the launch after the update uses its new cache.
+
+Not changed, on purpose: a backend of the old version that outlives the new one's start could still write its file after the cleanup. It can't be read, having the old version's name, and the next launch deletes it; a normal update waits for the backend to exit first. Making writers take turns would add a lock to the one part that has to stay simple.

@@ -13,7 +13,7 @@
  *   before and after (a stale cached download would be reused).
  */
 import { execFile, execFileSync, spawnSync } from "node:child_process";
-import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { homedir } from "node:os";
@@ -364,6 +364,9 @@ test("unexpected backend exit after a saved ACK restores editing without install
 test("an update downloads, Squirrel swaps the bundle and relaunches it, the profile is intact and the new version acknowledges", async () => {
   stage({ tamper: false });
   await launch({ TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US" });
+  // plan 156: this version's code cache, the only one there
+  const caches = () => (existsSync(join(profile(), "engine-cache")) ? readdirSync(join(profile(), "engine-cache")) : []);
+  await expect.poll(caches, { timeout: 15_000 }).toEqual([expect.stringMatching(/^0\.1\.0-[0-9a-f]{64}\.v8cache$/)]);
   const threads = await page.locator("[data-testid=thread-row]").count();
   expect(threads).toBeGreaterThan(5);
   expect((await updates<{ status: string }>("check")).status).toBe("available");
@@ -394,6 +397,9 @@ test("an update downloads, Squirrel swaps the bundle and relaunches it, the prof
   // the quit before the swap went through the coordinated shutdown: the database closed, not killed
   expect(logLines().some((l) => l.code === "shutdown.done" && l.fields?.outcome === "closed" && l.fields?.trigger === "restart")).toBe(true);
   expect(existsSync(join(profile(), "updates/pending.json"))).toBe(false);
+  // plan 156: the new version didn't use the old one's code cache, the old one's is gone, and it wrote its own
+  await expect.poll(() => logLines().filter((l) => l.code === "backend.code_cache" && l.version === "0.1.1").map((l) => l.fields?.codeCache)[0], { timeout: 30_000 }).toBe("none");
+  await expect.poll(caches, { timeout: 15_000 }).toEqual([expect.stringMatching(/^0\.1\.1-[0-9a-f]{64}\.v8cache$/)]);
 
   // a plain quit of the relaunched app (SIGTERM is a quit): drafts, backend, then a clean database
   const pids = pidsOfBundle();
@@ -410,6 +416,10 @@ test("an update downloads, Squirrel swaps the bundle and relaunches it, the prof
   } finally {
     db.close();
   }
+
+  // plan 156: and the launch after it uses the cache it wrote
+  await launch({ TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US" });
+  await expect.poll(() => logLines().filter((l) => l.code === "backend.code_cache" && l.version === "0.1.1").map((l) => l.fields?.codeCache), { timeout: 30_000 }).toEqual(["none", "accepted"]);
 });
 
 test("a required update (plan 95): the feed's minimum covers the window, and one click on Update Terno installs it and relaunches", async () => {

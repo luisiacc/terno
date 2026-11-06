@@ -29,7 +29,7 @@ import { diagSession, log as diagLog } from "@terno/core/diag";
 import { isLanguageSetting } from "@terno/i18n";
 import { parseAppearance, windowVibrancy, type Appearance } from "./appearance";
 import { DesktopAttention, OpenRelay } from "./attention";
-import { BUILD_ID } from "./diag/build-info";
+import { BUILD_ID, BUILD_VERSION } from "./diag/build-info";
 import { mainDiag } from "./diag/main";
 import { RestartPolicy } from "./diag/supervisor";
 import { devModeOf } from "./dev-mode";
@@ -154,7 +154,7 @@ let releaseReadyWaiters: () => void = () => {};
 let clientSeq = 0;
 let backendInstance = 0;
 const restarts = new RestartPolicy();
-const ENGINE_CACHE_FILE = "engine.v8cache";
+const ENGINE_CACHE_DIR = "engine-cache";
 let engineCache: EngineCache | undefined;
 const windows = new Set<BrowserWindow>();
 
@@ -207,7 +207,7 @@ function startBackend() {
   }
   const instance = ++backendInstance;
   const startedAt = Date.now();
-  engineCache ??= new EngineCache(join(userData, ENGINE_CACHE_FILE));
+  engineCache ??= new EngineCache(join(userData, ENGINE_CACHE_DIR), BUILD_VERSION);
   const cache = engineCache;
   const child = utilityProcess.fork(join(__dirname, "backend-boot.cjs"), cache.args(), { serviceName: "Terno Mail Engine", stdio: "inherit" });
   const retirement = new BackendRetirement(child);

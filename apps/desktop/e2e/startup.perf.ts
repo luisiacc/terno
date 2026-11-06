@@ -25,7 +25,7 @@ test("warm start: relaunching with an existing mailbox shows mail fast", { tag: 
   copyTree(SOURCE_APP, appPath);
   const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: join(workdir, "profile") } as Record<string, string>;
   delete env.ELECTRON_RUN_AS_NODE;
-  const cache = join(workdir, "profile", "engine.v8cache");
+  const cacheDir = join(workdir, "profile", "engine-cache");
   // by the page's own clock: a locator's retries (0, 20, 50, 100, 100, then every 500 ms) read a row up to 500 ms late
   const start = async () => {
     const started = Date.now();
@@ -38,7 +38,7 @@ test("warm start: relaunching with an existing mailbox shows mail fast", { tag: 
   };
   console.log(`cold start to first rows (includes seeding 3,000 demo threads): ${await start()} ms`);
   // plan 156: written a moment after the first screen; the launches that follow use it
-  await expect.poll(() => existsSync(cache), { timeout: 15_000 }).toBe(true);
+  await expect.poll(() => existsSync(cacheDir) && readdirSync(cacheDir).some((f) => f.endsWith(".v8cache")), { timeout: 15_000 }).toBe(true);
   // how each launch's backend compiled, in the order they ran (main's log)
   const outcomes = () => {
     const logs = readdirSync(join(workdir, "profile"), { recursive: true, encoding: "utf8" }).filter((f) => f.endsWith("main.jsonl"));
@@ -54,7 +54,7 @@ test("warm start: relaunching with an existing mailbox shows mail fast", { tag: 
   await closePackaged(app);
   app = undefined;
   expect(outcomes(), "each warm start used the code cache").toEqual(["none", "accepted", "accepted", "accepted"]);
-  rmSync(cache);
+  rmSync(cacheDir, { recursive: true });
   console.log(`warm start without a code cache: ${await start()} ms`);
   // includes process spawn, Chromium init, utility process + SQLite open, first query and paint
   expect(Math.min(...samples)).toBeLessThan(1000);
