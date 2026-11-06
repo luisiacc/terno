@@ -60,6 +60,30 @@ A small read on the same scrubbed mailbox copy, in the ledger the panel used ($0
 - "¿Cuánto pagué en total a OpenAI este año?" gave USD 335.32 from eight charges, checked by hand. It says that's what it read, not the year's total.
 - **Limit:** a sum or count covers the messages an answer reads, at most 30. It says "at least", as it did.
 
+## The panel's read (rounds 6 to 8)
+
+The owner raised the budget by $50 (the harness's limit went to $55; $5 stays the default). Same five reviewers, same mailbox copy, 98 then 94 records, with 16 new sentences and questions for sums, counts, first lines and rules with nothing to act on. Round 6 had 8 "wrong, high" verdicts; round 7 had none.
+
+Checked against the mail before fixing, then fixed:
+- **Counts:** a stray lone number, or two numbers in one answer. The tag now belongs in the first place the number is said, and a count alone on its line after an answer doesn't show. What it counted still counts.
+- **"Not found" with the mail there:** the plan searched a stem, and words match whole. The prompt forbids stems.
+- **Totals over the wrong mail:** one query now has the sender in "from", so its own mail fills what's read. OpenAI this year went from 6 or 8 charges to 20 of the 29 there are. It says "at least".
+- **How far back:** `<shown>` gives the oldest date, so the answer doesn't work it out.
+- **A rule that can never match:** `listId` isn't added to named senders, since all 49 messages from two newsletters had none. Two required senders go back for a repair, in code: with nothing here to act on, that rule could have been saved.
+- **Rules:** never both `opening` and `body`; a pattern lists a kind's real wordings. A first wording, "one condition only", overshot (1 row became 172) and was narrowed.
+- **The check:** a non-destructive one dropped 30 alerts that fit; it now drops 6.
+- **Follow-ups:** a courteous offer isn't a promise. A message that only answers awaits nobody: a first fix overshot on two messages and the rerun holds them. The prompt's examples no longer come from real mail. The refusal says one action per sentence.
+
+Checked and left as they are:
+- **PR questions and rules finding nothing:** those messages are in Spam, 1,575 of 1,638 from GitHub in this mailbox. That's decision 2 working, and the owner should know.
+- **A save offer on a sentence like "move Sentry to Errores":** plan 143's decision that filing a whole kind implies mail to come.
+- **A delete's check keeping 19 to 28 of 302 "promotional" rows:** it stays strict on what it's unsure of.
+- **A check that empties a delete's list:** Apply is off at 0, so nothing can be saved.
+- **`text` in the app's language on Spanish mail:** plan 142's decision.
+- **A meeting already held in Needs you:** the rules read no content.
+
+Known, not fixed: 43 declined-payment notices stay ticked for "receipts and invoices" (a move, shown in the preview); an amount past where a message is cut is lost to a sum; one answer reads "invoices to Ius" as those it issued.
+
 ## What the code review changed
 
 Fixed: an amount like 0.001 is a decimal when a sum's amounts are checked, not a thousands reading. An `opening` pattern can't end in `$`, since that could match with no first lines and stop matching once they arrive, after the rule had acted.

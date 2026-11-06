@@ -102,6 +102,12 @@ const CHECK_MAX = 500;
 
 describe("what the real-mail panel found (plan 143)", () => {
   const task = () => planActionTask(input);
+  it("two senders, each required, go back for a repair: a saved rule would never match", () => {
+    const sender = (value: string, negate = false) => ({ field: "from", op: "contains", value, negate });
+    expect(plan({ conditions: [sender("dev list"), sender("daily.dev")] })).toMatchObject({ ok: false, error: expect.stringContaining("one sender") });
+    expect(plan({ conditions: [sender("dev list|daily.dev"), sender("stack overflow", true)] })).toMatchObject({ ok: true });
+  });
+
   it("a meaning held only by an age is sent back: it would catch everything that old", () => {
     const age = { field: "ageDays", op: "gt", value: 60 };
     const r = task().validate(wire({ meaning: true, conditions: [age] }));

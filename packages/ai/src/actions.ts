@@ -11,7 +11,7 @@ import { AiError } from "./types";
  * a sender's name and domain and a subject's shape, never a body or an address, and it can only remove rows. Frozen and
  * versioned: any change to the words bumps this.
  */
-export const ACTION_PROMPT_VERSION = 7;
+export const ACTION_PROMPT_VERSION = 8;
 const PLAN_MAX_TOKENS = 2000;
 export const CHECK_GROUPS_MAX = 200;
 // a delete may drop every group: 200 labels and the JSON around them
@@ -59,7 +59,7 @@ Return:
   - For a kind of mail, match on opening rather than subject: "login alerts" or "job alerts" often say what they are only in their first lines. Subject is for what the sentence says is in the subject.
   - A publication's or a report's name ("Boletín Judicial") is usually in the subject, not the sender.
   - Each condition you add loses mail, so use the fewest that catch it: one for a kind of mail, never subject and sender together for the same thing. Named senders need no list condition.
-  - A kind of mail takes one condition on what it says, never both "opening" and "body": every condition must hold, so a second one only loses mail. Its pattern lists the wordings that kind really uses, with verb forms and both languages: "sign-?in|signed in|new device|inicio de sesi|iniciar sesi|nuevo dispositivo".
+  - A kind of mail never has both "opening" and "body": every condition must hold, so the second only loses mail. A pattern for it lists the wordings that kind really uses, with verb forms and both languages: "sign-?in|signed in|new device|inicio de sesi|iniciar sesi|nuevo dispositivo".
   - A meaning needs a condition that names it: an age alone says nothing about what mail it is. For newsletters and promotions, { field: "listId", op: "matches", value: "." } is mail sent to a list, which also holds a service's alerts, so "meaning" stays true and each is checked.
 - "lookIn": "inbox", or "everywhere" when the sentence says so or the action isn't archive.
 - "future": true only when the sentence itself talks about mail to come ("always", "from now on", "de ahora en adelante", "siempre que llegue") or files a whole kind into a place with no "all" or "these" ("send recruiters to…"). A one-time "archive", "delete" or "star" is false.
@@ -89,6 +89,8 @@ export function planActionTask(input: PlanActionInput): StructuredTask<PlanWire,
       const wire: WireFilter = { name: "x", explanation: "x", match: "all", conditions: w.conditions, actions: [{ type: "archive", categoryId: null }] };
       const converted = convertWireFilter(wire, { now: input.now, categories: input.categories.map((c) => ({ id: c.id, name: c.name })), accounts: input.accounts.map((a) => ({ id: a.id, email: a.email, displayName: a.displayName })) });
       if (!converted.ok && w.conditions.length) return { ok: false, error: converted.error };
+      // a message has one sender: two of them, each required, is a rule that can never match, and it may be saved as one
+      for (const field of ["from", "fromDomain"]) if (w.conditions.filter((c) => c.field === field && !c.negate).length > 1) return { ok: false, error: `every condition must hold, and a message has one sender: put all the ${field} alternatives in one "matches" pattern.` };
       // an age, or having a file, says nothing about what mail this is: it would catch everything that old (the panel's C10)
       if (w.meaning && w.conditions.length && w.conditions.every((c) => c.field === "ageDays" || c.field === "hasAttachment" || c.field === "account")) return { ok: false, error: "conditions must name what this mail is: a sender, a subject pattern, or listId for mail sent to a list. An age alone would catch everything that old." };
       return { ok: true, value: { summary: w.summary.trim().slice(0, 200), action, conditions: converted.ok ? converted.rule.conditions : [], lookIn: w.lookIn, future: w.future, meaning: w.meaning } };

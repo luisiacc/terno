@@ -303,7 +303,9 @@ export function answerFilter(onText: (text: string) => void, known: (label: stri
       // a count alone on its line after an answer is a number nobody can read: what it counted still counts. A total stays
       const before = said + held.slice(0, calc.index);
       const lineStart = calc[1]!.toLowerCase() === "count" && /\n[ \t]*$/.test(before) && !/:\s*$/.test(before) && before.trim() !== "";
-      if (lineStart && !final && !/\S|\n/.test(after)) break;
+      // what follows may be only the status, still arriving
+      const next = after.trimStart().toLowerCase();
+      if (lineStart && !final && !after.includes("\n") && (next === "" || "<status>".startsWith(next) || next.startsWith("<status>"))) break;
       const value = worked(calc[1]!, calc[2]!);
       held = held.slice(0, calc.index) + (lineStart && /^[ \t]*(\n|$)/.test(after) ? "" : value) + after;
     }
