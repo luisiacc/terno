@@ -63,9 +63,15 @@ export interface AiBinding {
 type RunKind = "draft" | "notes" | "refine";
 
 /** What a run was asked, so Try again asks the same. */
+export interface PreparedRef {
+  threadId: number;
+  rowId: string;
+  revision: number;
+}
+
 export interface RunSpec {
   /** plan 144: these words came from a prepared reply */
-  prepared?: { threadId: number; revision: number };
+  prepared?: PreparedRef;
   kind: RunKind;
   instruction: string;
   previous?: string;
@@ -109,8 +115,8 @@ export interface AiStrip {
   instruction: string;
   notes?: string;
   stack: AiCommit[];
-  /** plan 144 revision 6: this came from a prepared reply: an Undo back to nothing gives the row back */
-  prepared?: { threadId: number; revision: number };
+  /** plan 144 revision 6: this came from a prepared reply */
+  prepared?: PreparedRef;
 }
 
 export interface AiChoice {
@@ -842,7 +848,11 @@ export function discard(key: string) {
   const s = session(key);
   if (!s) return;
   clearStream(key);
-  if (s.phase === "choice") giveBack(s.lastSpec?.prepared);
+  if (s.phase === "choice" && preparedDrafts.has(key)) {
+    const held = preparedDrafts.get(key)!;
+    preparedDrafts.delete(key);
+    preparedHooks.back?.(held.ref);
+  }
   const prior = s.run?.prior;
   const c = controllerFor(key);
   if (prior && (!c || c.docToken() === prior.stack[prior.stack.length - 1]?.doc)) {
@@ -932,39 +942,49 @@ export function undoCommit(key: string) {
     return focusEditor(key);
   }
   remove(key);
-  // a draft that was only ever these words goes, and the block is back in its place
-  if (s.strip.prepared && s.opened && !bodyNow(key).trim() && !draftOf(key)?.attachments?.length) {
-    void discardDraft(key).then(() => giveBack(s.strip?.prepared));
-    return;
-  }
+  if (preparedDrafts.has(key)) return backToNothing(key);
   focusEditor(key);
-  giveBack(s.strip.prepared);
   // this draft was only ever what's just gone: no blank one stays in the list
   const left = draftOf(key);
   if (s.opened && left && !bodyNow(key).trim() && !left.attachments?.length) void forgetUndone(key);
 }
 
-const giveBack = (prepared: AiStrip["prepared"]): void => {
-  if (prepared) preparedHooks.back?.(prepared);
-};
-export const preparedHooks: { back: ((prepared: NonNullable<AiStrip["prepared"]>) => void) | null } = { back: null };
+/** Drafts that hold a prepared reply: what to give back, whether it's been typed in, whether this draft began with it. */
+const preparedDrafts = new Map<string, { ref: PreparedRef; text: string; typed: boolean; opened: boolean }>();
+export const preparedHooks: { back: ((prepared: PreparedRef) => void) | null } = { back: null };
+
+function backToNothing(key: string): void {
+  const held = preparedDrafts.get(key);
+  if (!held) return;
+  preparedDrafts.delete(key);
+  const back = () => preparedHooks.back?.(held.ref);
+  // only ever these words: the draft goes, and the block is back in its place. Typed in: the draft is theirs, and the reply waits behind it.
+  if (held.opened && !held.typed && !bodyNow(key).trim() && !draftOf(key)?.attachments?.length) void discardDraft(key).then(back);
+  else back();
+}
 
 /**
  * Plan 144: Use. The words go in as a one-tap draft would, one undo step, with no request. On a draft with work in it
  * they're only offered: the same choice as text arriving under someone's typing (revision 2).
  */
 export function commitPrepared(key: string, row: PreparedReply, opened: boolean): boolean {
+  const d = draftOf(key);
+  // to someone else now: the words were for who they were for, so they're only offered (revision 2)
+  const inDraft = new Set(d ? parseAddressList(d.toText).map((a) => a.email.toLowerCase()) : []);
+  const forOthers = row.to.some((a) => !inDraft.has(a.email.toLowerCase()));
   const c = controllerFor(key);
   const result: Extract<AiComposeResult, { status: "done" }> = { status: "done", text: row.body ?? "", subject: null, stop: "end", used: row.used ?? emptyUsed(), checks: row.checks ?? { specifics: [], placeholders: [] } };
-  const spec: RunSpec = { kind: "draft", instruction: "", prepared: { threadId: row.threadId, revision: row.revision } };
+  const spec: RunSpec = { kind: "draft", instruction: "", prepared: { threadId: row.threadId, rowId: row.rowId, revision: row.revision } };
   if (!session(key)) useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: newSession(key, { opened, phase: "strip" }) } }));
   update(key, { lastSpec: spec });
-  if (!(c ? c.empty() : bodyNow(key) === "")) {
-    update(key, { phase: "choice", choice: { reason: "typed", writtenFor: null, result }, live: t("aiDraft.live.ready", { count: wordCount(result.text) }) });
+  if (!(c ? c.empty() : bodyNow(key) === "") || forOthers) {
+    preparedDrafts.set(key, { ref: spec.prepared!, text: result.text, typed: true, opened: false });
+    update(key, { phase: "choice", choice: { reason: "typed", writtenFor: forOthers ? (row.to[0]?.name || row.to[0]?.email || null) : null, result }, live: t("aiDraft.live.ready", { count: wordCount(result.text) }) });
     focusEditor(key);
     return false;
   }
   const done = commit(key, "replace", result, spec, undefined, false);
+  if (done) preparedDrafts.set(key, { ref: spec.prepared!, text: result.text, typed: false, opened });
   focusEditor(key);
   return done;
 }
@@ -980,8 +1000,18 @@ async function forgetUndone(key: string) {
 export function noteBody(key: string) {
   // the strip's own Undo changes the text too: it isn't a keystroke
   if (undoing.key === key) return;
+  const c0 = controllerFor(key);
+  const held = preparedDrafts.get(key);
+  // revision 6: through edits, refinements and remounts: back to nothing, the reply is there again
+  if (held && c0) {
+    if (c0.empty()) {
+      if (session(key)) remove(key);
+      return backToNothing(key);
+    }
+    held.typed ||= bodyNow(key) !== held.text;
+  }
   const s = session(key);
-  const c = controllerFor(key);
+  const c = c0;
   if (!s || !c) return;
   if (s.run && (s.phase === "writing" || s.phase === "waitingBody" || s.phase === "error")) {
     const typed = s.run.spec.kind === "draft" ? !c.empty() : c.docToken() !== s.run.binding.doc;
@@ -990,8 +1020,6 @@ export function noteBody(key: string) {
   }
   const top = s.strip?.stack[s.strip.stack.length - 1];
   if (s.strip && top && c.docToken() !== top.doc) {
-    // an editor undo back to the empty draft discards it too
-    if (c.empty()) giveBack(s.strip.prepared);
     if (s.phase === "strip") remove(key);
     else update(key, { strip: null });
   }

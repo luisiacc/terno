@@ -1351,6 +1351,7 @@ export function createHandlers(b: Backend): Handlers {
     "ai.listModels": ({ provider, baseURL, preset }) => b.aiService.listModels({ provider, baseURL, preset }),
     "ai.test": ({ provider, model, baseURL, preset }) => b.aiService.test({ provider, model, baseURL, preset }),
     "ai.setKey": async ({ provider, preset, value }) => {
+      b.replies.credentialsChanged();
       const next = await b.aiService.setKey(provider, preset, value);
       b.summaries.settingsChanged(next);
       b.followups.settingsChanged(next);
@@ -1365,6 +1366,7 @@ export function createHandlers(b: Backend): Handlers {
     },
     "ai.usage": () => b.aiService.limiter.report(),
     "ai.confirmKey": async ({ provider, preset }) => {
+      b.replies.credentialsChanged();
       const next = await b.aiService.confirmKey(provider, preset);
       b.summaries.settingsChanged(next);
       b.followups.settingsChanged(next);

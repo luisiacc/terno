@@ -7,6 +7,7 @@ import type { Db } from "./sqlite";
 
 interface Raw {
   thread_id: number;
+  row_id: string;
   source_stamp: string;
   generation_key: string;
   answering_message_id: number;
@@ -24,6 +25,7 @@ interface Raw {
 }
 
 const rowOf = (r: Raw): PreparedReply => ({
+  rowId: r.row_id,
   threadId: r.thread_id,
   sourceStamp: r.source_stamp,
   generationKey: r.generation_key,
@@ -51,11 +53,12 @@ export function finishReply(db: Db, w: ReplyWrite): ReplyFinish {
     const sources = summarySources(db, w.threadId);
     if (!sources) return "gone";
     if (summaryBlocked(sources) || sources.stamp !== w.sourceStamp) return "moved";
-    const revision = db.get<{ revision: number }>("SELECT revision FROM ai_prepared_replies WHERE thread_id = ?", w.threadId)?.revision ?? -1;
+    const prior = db.get<{ row_id: string; revision: number }>("SELECT row_id, revision FROM ai_prepared_replies WHERE thread_id = ?", w.threadId);
+    if ((prior?.row_id ?? null) !== (w.expect?.rowId ?? null) || (prior && prior.revision !== w.expect?.revision)) return "moved";
     db.run(
-      `INSERT OR REPLACE INTO ai_prepared_replies (thread_id, source_stamp, generation_key, answering_message_id, state, body, used_json, checks_json, to_json, cc_json, model, provider, prompt_version, generated_at, revision)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      w.threadId, w.sourceStamp, w.generationKey, w.answeringMessageId, w.state, replyBodyOf(w.body), w.used ? JSON.stringify(w.used) : null, w.checks ? JSON.stringify(w.checks) : null, JSON.stringify(w.to), JSON.stringify(w.cc), w.model, w.provider, w.promptVersion, w.generatedAt, revision + 1,
+      `INSERT OR REPLACE INTO ai_prepared_replies (thread_id, row_id, source_stamp, generation_key, answering_message_id, state, body, used_json, checks_json, to_json, cc_json, model, provider, prompt_version, generated_at, revision)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      w.threadId, w.rowId, w.sourceStamp, w.generationKey, w.answeringMessageId, w.state, replyBodyOf(w.body), w.used ? JSON.stringify(w.used) : null, w.checks ? JSON.stringify(w.checks) : null, JSON.stringify(w.to), JSON.stringify(w.cc), w.model, w.provider, w.promptVersion, w.generatedAt,
     );
     const rows = db.all<{ thread_id: number; state: ReplyState; has_body: number; generated_at: number }>("SELECT thread_id, state, body IS NOT NULL AS has_body, generated_at FROM ai_prepared_replies");
     const { drop, forgetBody } = replyEvictions(rows.map((r) => ({ threadId: r.thread_id, state: r.state, hasBody: !!r.has_body, generatedAt: r.generated_at })));
@@ -65,9 +68,9 @@ export function finishReply(db: Db, w: ReplyWrite): ReplyFinish {
   });
 }
 
-export function transitionReply(db: Db, threadId: number, from: { state: ReplyState; revision: number }, to: ReplyState): PreparedReply | null {
+export function transitionReply(db: Db, threadId: number, from: { rowId: string; state: ReplyState; revision: number }, to: ReplyState): PreparedReply | null {
   return db.tx(() => {
-    const moved = db.run("UPDATE ai_prepared_replies SET state = ?, revision = revision + 1 WHERE thread_id = ? AND state = ? AND revision = ?", to, threadId, from.state, from.revision);
+    const moved = db.run("UPDATE ai_prepared_replies SET state = ?, revision = revision + 1 WHERE thread_id = ? AND row_id = ? AND state = ? AND revision = ?", to, threadId, from.rowId, from.state, from.revision);
     return Number(moved.changes) ? getReply(db, threadId) : null;
   });
 }

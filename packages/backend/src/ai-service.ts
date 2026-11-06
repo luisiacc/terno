@@ -99,6 +99,7 @@ export class AiService {
       store: b.store,
       now: () => b.now(),
       monthlyLimitUsd: async () => (await readSettings(b.store)).ai.monthlyLimitUsd,
+      beforeAhead: () => b.replies.holdingUp(),
     });
   }
 

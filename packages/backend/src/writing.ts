@@ -229,7 +229,7 @@ export class WritingService {
   }
 
   /** A request that stops, at the provider too, the moment the user takes back the permission it runs under. */
-  private underPermission(accountId: number | null, signal: AbortSignal): { signal: AbortSignal; done: () => void } {
+  underPermission(accountId: number | null, signal: AbortSignal): { signal: AbortSignal; done: () => void } {
     const entry = { accountId, controller: new AbortController() };
     this.asking.add(entry);
     return { signal: AbortSignal.any([signal, entry.controller.signal]), done: () => void this.asking.delete(entry) };

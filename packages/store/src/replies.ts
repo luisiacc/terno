@@ -5,6 +5,8 @@ import { REPLY_BODIES_MAX, REPLY_BODY_MAX, REPLY_DECISIONS_MAX, type PreparedRep
  * suggestion, never a draft. Not in drafts, counts, export, search or MCP.
  */
 export interface ReplyWrite extends Omit<PreparedReply, "revision"> {
+  /** the row it read at the start, if any: a Dismiss or anything else since wins */
+  expect: { rowId: string; revision: number } | null;
   /** `replies.clearGeneration()` before it read anything: a clear since refuses the write */
   clearGeneration: number;
 }
@@ -16,7 +18,7 @@ export interface ReplyStore {
   /** in one command: the thread is still as it was read, and not in Spam or Trash; then the bounds */
   finish(row: ReplyWrite): Promise<ReplyFinish>;
   /** only from this state and revision. The new row, or null when it was refused */
-  transition(threadId: number, from: { state: ReplyState; revision: number }, to: ReplyState): Promise<PreparedReply | null>;
+  transition(threadId: number, from: { rowId: string; state: ReplyState; revision: number }, to: ReplyState): Promise<PreparedReply | null>;
   clear(): Promise<void>;
   clearGeneration(): number;
 }

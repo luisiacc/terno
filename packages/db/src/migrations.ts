@@ -1379,6 +1379,7 @@ CREATE INDEX followups_top ON followups(thread_id) WHERE inbox_state = 'onTop';
   { version: 53, name: "prepared replies (plan 144)", sql: `
 CREATE TABLE ai_prepared_replies (
   thread_id INTEGER PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+  row_id TEXT NOT NULL,
   source_stamp TEXT NOT NULL,
   generation_key TEXT NOT NULL,
   answering_message_id INTEGER NOT NULL,

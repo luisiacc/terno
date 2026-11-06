@@ -40,6 +40,7 @@
     "src/snippets-idb.test.ts",
     "src/folder-export.perf.test.ts",
     "src/writing.perf.test.ts",
+    "src/replies.perf.test.ts",
     "src/incoming-persistence-reset.int.test.ts"
   ]
 }

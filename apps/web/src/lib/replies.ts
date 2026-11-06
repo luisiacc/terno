@@ -3,8 +3,9 @@ import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { autoRecipients } from "~/lib/compose-fields";
 import { composeHooks, composeLanding } from "~/lib/compose";
-import { draftIndex, useDrafts } from "~/lib/drafts";
+import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { onExplicitOpen } from "~/lib/open-dwell";
+import { readerShown } from "~/lib/page";
 import { registerUndo, snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { getApp, useApp } from "~/state/app";
@@ -26,6 +27,10 @@ export const useReplies = create<{ shown: Shown | null }>(() => ({ shown: null }
 /** the conversation this window has asked about, and told the backend it's reading */
 let reading: number | null = null;
 let waitingBody: (() => void) | null = null;
+/** they went to write something themselves here: nothing's prepared until the conversation is opened again */
+let composedOn: number | null = null;
+/** the newest message when what's shown was asked for: another means it's out of date */
+let newestShown: number | null = null;
 
 const timezone = () => {
   try {
@@ -56,15 +61,18 @@ const waits = (detail: ThreadDetail): boolean => {
   return since !== null && since !== undefined && Date.now() - since <= WAITING_WINDOW_MS;
 };
 
-const hasDraft = (threadId: number): boolean => draftIndex(useDrafts.getState().drafts).written.has(threadId);
+/** a composer open here, blank or not, is someone writing */
+const hasDraft = (threadId: number): boolean => shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) !== null;
 
 async function ask(threadId: number): Promise<void> {
   const detail = await loadThread(threadId);
-  if (!detail || getApp().selectedId !== threadId || !on() || !waits(detail) || detail.thread.inSpam || detail.thread.inTrash || hasDraft(threadId)) return;
+  if (!detail || getApp().selectedId !== threadId || !readerShown() || composedOn === threadId || !on() || !waits(detail) || detail.thread.inSpam || detail.thread.inTrash || hasDraft(threadId)) return;
+  newestShown = detail.messages.at(-1)?.id ?? null;
   const { to, cc } = autoRecipients("reply", detail, mine());
   reading = threadId;
   const r = await client.call("ai.prepareReply", { threadId, accountId: detail.thread.accountId, to, cc, timezone: timezone() }).catch(() => ({ status: "none" as const }));
   if (reading !== threadId) return;
+  if (composedOn === threadId) return void client.call("ai.replyLeave", { threadId }).catch(() => {});
   if (r.status === "ready") useReplies.setState({ shown: { threadId, phase: "ready", text: r.row.body ?? "", row: r.row } });
   else if (r.status === "waitingBody") {
     // the reader is fetching it: it goes on when it's here, if this is still what's open
@@ -78,7 +86,10 @@ async function ask(threadId: number): Promise<void> {
 }
 
 onExplicitOpen({
-  opened: () => (on() ? true : null),
+  opened: () => {
+    composedOn = null;
+    return on() ? true : null;
+  },
   settled: (id) => void ask(id),
 });
 
@@ -86,6 +97,13 @@ onExplicitOpen({
 let frame: number | null = null;
 let pending: string | null = null;
 client.on("aiReply", (event) => {
+  if (event.phase === "cleared") {
+    // nothing stays on screen, and anything still on its way is nobody's
+    reading = null;
+    stopWaitingBody();
+    useReplies.setState({ shown: null });
+    return;
+  }
   if (event.threadId !== reading) return;
   if (event.phase === "writing") {
     pending = event.text;
@@ -102,14 +120,26 @@ client.on("aiReply", (event) => {
 });
 
 useApp.subscribe((s, prev) => {
+  if (s.selectedId !== prev.selectedId) composedOn = null;
   if (s.selectedId !== prev.selectedId && reading !== null && s.selectedId !== reading) leave();
+  // List's Back or Esc: the conversation isn't on screen any more, though it's still the one selected
+  if (reading !== null && s.readerOpen !== prev.readerOpen && !readerShown()) leave();
   // the switch went off: every window stops showing it
   if (prev.settings?.replies?.enabled && !s.settings?.replies?.enabled) leave();
+});
+
+// another message came in: what's shown answered the last one. It goes, and it doesn't start another by itself.
+useThreads.subscribe((state) => {
+  const { shown } = useReplies.getState();
+  if (!shown || newestShown === null) return;
+  const newest = state.details.get(shown.threadId)?.messages.at(-1)?.id;
+  if (newest !== undefined && newest !== newestShown) useReplies.setState({ shown: null });
 });
 
 // ⌘J, `r` with nothing ready, a click on the reply pill: they asked for something else
 composeHooks.composing = (threadId) => {
   const { shown } = useReplies.getState();
+  composedOn = threadId;
   if (reading !== threadId || shown?.phase === "ready") return;
   useReplies.setState({ shown: null });
   void client.call("ai.replyStop", { threadId, dismiss: false }).catch(() => {});
@@ -130,19 +160,20 @@ export async function useReply(threadId: number, mode: Exclude<Parameters<typeof
   const landing = await composeLanding(mode, threadId);
   if (landing.kind === "none") return;
   const { to, cc } = autoRecipients("reply", detail, mine());
-  const used = await client.call("ai.replyAct", { threadId, revision: row.revision, action: "use", to, cc, timezone: timezone() }).catch(() => null);
+  const used = await client.call("ai.replyAct", { threadId, rowId: row.rowId, revision: row.revision, action: "use", to, cc, timezone: timezone() }).catch(() => null);
   useReplies.setState({ shown: null });
   if (!used) return void snack.error(t("replies.stale"));
   const { commitPrepared, preparedHooks } = await import("./ai-draft");
-  preparedHooks.back = (prepared) => void giveBack(prepared.threadId, used.revision);
+  preparedHooks.back = (prepared) => void giveBack(prepared);
   commitPrepared(landing.key, used, landing.kind === "created");
 }
 
 /** Undo after Use: the block again, only if the row is still what Use left. */
-async function giveBack(threadId: number, revision: number): Promise<void> {
-  const row = await client.call("ai.replyAct", { threadId, revision, action: "restore" }).catch(() => null);
+async function giveBack({ threadId, rowId, revision }: { threadId: number; rowId: string; revision: number }): Promise<void> {
+  const row = await client.call("ai.replyAct", { threadId, rowId, revision, action: "restore" }).catch(() => null);
   if (row && getApp().selectedId === threadId) {
     reading = threadId;
+    composedOn = null;
     useReplies.setState({ shown: { threadId, phase: "ready", text: row.body ?? "", row } });
   }
 }
@@ -150,11 +181,11 @@ async function giveBack(threadId: number, revision: number): Promise<void> {
 export async function dismissReply(threadId: number): Promise<void> {
   const row = useReplies.getState().shown?.row;
   if (!row) return;
-  const dismissed = await client.call("ai.replyAct", { threadId, revision: row.revision, action: "dismiss" }).catch(() => null);
+  const dismissed = await client.call("ai.replyAct", { threadId, rowId: row.rowId, revision: row.revision, action: "dismiss" }).catch(() => null);
   useReplies.setState({ shown: null });
   if (!dismissed) return;
   const undo = registerUndo(async () => {
-    const back = await client.call("ai.replyAct", { threadId, revision: dismissed.revision, action: "undismiss" });
+    const back = await client.call("ai.replyAct", { threadId, rowId: dismissed.rowId, revision: dismissed.revision, action: "undismiss" });
     if (back && getApp().selectedId === threadId) useReplies.setState({ shown: { threadId, phase: "ready", text: back.body ?? "", row: back } });
   });
   const { undoAction } = await import("./actions");

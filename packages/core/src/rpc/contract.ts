@@ -1179,7 +1179,7 @@ export const contract = {
   /** Stop, or the person asked for something else */
   "ai.replyStop": m<{ ok: true }>()(z.object({ threadId: id, dismiss: z.boolean() })),
   /** Conditional on the row as it was seen. Null: refused, and the row isn't what it was. `to` and `cc`: who a reply goes to now. */
-  "ai.replyAct": m<PreparedReply | null>()(z.object({ threadId: id, revision: z.number().int().min(0), action: z.enum(["use", "restore", "dismiss", "undismiss"]), to: z.array(address).max(MAX_RECIPIENTS).default([]), cc: z.array(address).max(MAX_RECIPIENTS).default([]), timezone: z.string().min(1).max(100).default("UTC") })),
+  "ai.replyAct": m<PreparedReply | null>()(z.object({ threadId: id, rowId: z.string().min(1).max(64), revision: z.number().int().min(0), action: z.enum(["use", "restore", "dismiss", "undismiss"]), to: z.array(address).max(MAX_RECIPIENTS).default([]), cc: z.array(address).max(MAX_RECIPIENTS).default([]), timezone: z.string().min(1).max(100).default("UTC") })),
   "ai.replyStatus": m<{ blockedBy: { kind: AiErrorKind } | null }>()(empty),
   /** Plan 143: a sentence into a preview. It only reads: nothing changes until `ai.actionApply`, from the connection that saw it. */
   "ai.actionStart": m<AiActionStart>()(z.object({ requestId, sentence: z.string().trim().min(1).max(ASK_QUESTION_MAX), conversationId: id.optional(), timezone: z.string().min(1).max(100) }), { timeoutMs: 300_000 }),

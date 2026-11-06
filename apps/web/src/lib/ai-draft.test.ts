@@ -3,6 +3,7 @@
  * Plan 133 §10.4: each race, on the real draft store and a stand-in for the editor. What the editor itself does with
  * the text is in composer/generated.test.ts; the whole of it, in a page, in e2e/ai-draft.spec.ts.
  */
+import type { PreparedReply } from "@terno/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Account, AiComposeResult } from "@terno/core";
 
@@ -689,6 +690,54 @@ describe("§5.2: a sentence's decision", () => {
     await run;
     // still cold: treated as nobody
     expect(calls("ai.compose")).toHaveLength(1);
+  });
+});
+
+describe("a prepared reply, used (plan 144)", () => {
+  const row = (over: Partial<PreparedReply> = {}): PreparedReply => ({ rowId: "r1", threadId: 7, sourceStamp: "s", generationKey: "k", answeringMessageId: 3, state: "used", body: "Hola Ana", used: null, checks: null, to: [{ name: "Ana", email: "ana@example.test" }], cc: [], model: "m", provider: "p", promptVersion: 1, generatedAt: 1, revision: 1, ...over });
+  const fresh = (toText = "Ana <ana@example.test>", body = "") => {
+    const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText });
+    return { key, ...editor(key, body) };
+  };
+  const back: unknown[] = [];
+  store.preparedHooks.back = (p) => back.push(p);
+  beforeEach(() => void (back.length = 0));
+
+  it("goes in as one step with no request, and its Undo gives the row back", async () => {
+    const { key, c } = fresh();
+    expect(store.commitPrepared(key, row(), true)).toBe(true);
+    expect(c.text).toBe("Hola Ana");
+    expect(rpc.calls.filter((r) => r.method === "ai.compose")).toEqual([]);
+    store.undoCommit(key);
+    expect(c.text).toBe("");
+    await vi.waitFor(() => expect(back).toEqual([{ threadId: 7, rowId: "r1", revision: 1 }]));
+  });
+
+  it("over work already there it's only offered; nor is it put in a draft to someone else", () => {
+    const typed = fresh(undefined, "My own words");
+    expect(store.commitPrepared(typed.key, row(), false)).toBe(false);
+    expect(typed.c.text).toBe("My own words");
+    expect(session(typed.key)!.phase).toBe("choice");
+    const moved = fresh("Bob <bob@example.test>");
+    expect(store.commitPrepared(moved.key, row(), false)).toBe(false);
+    expect(moved.c.text).toBe("");
+    expect(session(moved.key)!.choice?.writtenFor).toBe("Ana");
+    store.discard(moved.key);
+    expect(back).toEqual([{ threadId: 7, rowId: "r1", revision: 1 }]);
+  });
+
+  it("an editor undo gives it back too, even after typing and through a remount, and each draft gives back its own", () => {
+    const a = fresh();
+    store.commitPrepared(a.key, row(), true);
+    const b = fresh();
+    store.commitPrepared(b.key, row({ rowId: "r2", revision: 5 }), true);
+    a.c.type(" más");
+    a.c.text = "";
+    a.c.doc = {};
+    store.noteBody(a.key);
+    expect(back).toEqual([{ threadId: 7, rowId: "r1", revision: 1 }]);
+    // typed in: the draft is theirs
+    expect(useDrafts.getState().drafts[a.key]).toBeDefined();
   });
 });
 

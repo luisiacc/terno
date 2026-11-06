@@ -96,11 +96,42 @@ test.describe("replies ready (plan 144)", () => {
       await expect(block(page)).toBeVisible();
     });
 
+    await scenario("⌘Z right after Use is the same: the blank draft goes, and the block is back", async () => {
+      await page.getByTestId("reply-ready-use").click();
+      await expect.poll(state).toBe("used");
+      await expect(page.locator("[contenteditable=true]").first()).toBeFocused();
+      await page.keyboard.press("ControlOrMeta+z");
+      await expect.poll(state).toBe("ready");
+      await expect(block(page)).toBeVisible();
+    });
+
     await scenario("r does what Use does", async () => {
       await page.keyboard.press("r");
       await expect(block(page)).toHaveCount(0);
       await expect.poll(state).toBe("used");
     });
+  });
+
+  test("r before the dwell ends: they're writing, so nothing is prepared; new mail hides what was shown; Clear takes it off screen", async ({ app: page, server }) => {
+    const thread = await withMail(page, server, { replies: { enabled: true } });
+    const db = sqlDb(server.backend.store);
+    await row(page).click();
+    await page.keyboard.press("r");
+    await page.waitForTimeout(900);
+    await expect(block(page)).toHaveCount(0);
+    expect(db.get<{ n: number }>("SELECT count(*) n FROM ai_prepared_replies")!.n).toBe(0);
+    await page.keyboard.press("Escape");
+    await page.getByTestId("thread-row").first().click();
+    await row(page).click();
+    await expect(block(page)).toHaveAttribute("data-phase", "ready", { timeout: 15_000 });
+    await server.backend.server.invoke("ai.summaries.clear", {}, dev);
+    await expect(block(page)).toHaveCount(0);
+    await page.getByTestId("thread-row").first().click();
+    await row(page).click();
+    await expect(block(page)).toHaveAttribute("data-phase", "ready", { timeout: 15_000 });
+    await ingestConversation(server, { subject: SUBJECT, count: 2, now: E2E_NOW + 1000 });
+    server.backend.notifyChanged([thread]);
+    await expect(block(page)).toHaveCount(0);
   });
 
   test("“thanks!” shows nothing, once; a new message replaces what was there; Spanish too", async ({ app: page, server }) => {

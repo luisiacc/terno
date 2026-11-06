@@ -135,7 +135,7 @@ describe("what an open spends", () => {
     expect(await prepare(t)).toMatchObject({ status: "ready" });
     expect(model.checks).toHaveLength(1);
     const r = await row(t);
-    await client.call("ai.replyAct", { threadId: t, revision: r!.revision, action: "dismiss" });
+    await client.call("ai.replyAct", { threadId: t, rowId: r!.rowId, revision: r!.revision, action: "dismiss" });
     expect(await prepare(t)).toEqual({ status: "none" });
     expect(model.checks).toHaveLength(1);
   });
@@ -238,7 +238,7 @@ describe("what an open spends", () => {
     const t = await put();
     await prepare(t);
     await vi.waitFor(async () => expect((await row(t))?.state).toBe("ready"));
-    const book = (await backend.store.settings.get("aiUsage")) as Record<string, Record<string, { requests: number }>> | undefined;
+    const book = (await backend.store.settings.get("ai:usage", {})) as Record<string, Record<string, { requests: number }>> | undefined;
     const today = book ? Object.values(book)[0] : undefined;
     if (today) expect(today.reply?.requests).toBe(2);
     expect(model.configs.some((c) => c.model === "claude-haiku-5-5")).toBe(true);
@@ -256,6 +256,77 @@ describe("what an open spends", () => {
     ceilings.mockRestore();
     const compose = await client.call("ai.compose", { requestId: crypto.randomUUID(), session: "s", accountId: account.id, kind: "reply", threadId: u, to: [ANA], cc: [], timezone: "UTC" } as never);
     expect((compose as { status: string }).status).toBe("done");
+  });
+
+  it("read again as a request is about to leave, after any wait: Spam, or a thread that moved, stops it", async () => {
+    const { backend, model, put, prepare, row } = await setup();
+    const t = await put();
+    const limiter = (backend as unknown as { aiService: { limiter: { host: { beforeAhead(): Promise<void> } } } }).aiService.limiter;
+    const real = limiter.host.beforeAhead;
+    // as a local model's slot opening later: the thread went to Spam during the wait
+    limiter.host.beforeAhead = async () => {
+      await backend.store.threads.act({ threadIds: [t], action: "spam", signal: null, now: NOW });
+      await real();
+    };
+    await prepare(t);
+    await new Promise((r) => setTimeout(r, 40));
+    limiter.host.beforeAhead = real;
+    expect(model.checks).toEqual([]);
+    expect(await row(t)).toBeNull();
+  });
+
+  it("revoking what a draft may read stops a preparation, as it stops a person's", async () => {
+    const { client, model, put, prepare, row } = await setup();
+    let write!: () => void;
+    model.gate = new Promise((r) => (write = r));
+    const t = await put();
+    await prepare(t);
+    await vi.waitFor(() => expect(model.drafts.length).toBe(1));
+    await client.call("writing.prefs.set", { global: { enabled: false } });
+    write();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(await row(t)).toBeNull();
+  });
+
+  it("an auth failure pauses it; a new key lifts that", async () => {
+    const { client, model, put, prepare } = await setup({ cloud: true });
+    const { AiError } = await import("@terno/ai");
+    model.wanted = new AiError("bad key", "auth");
+    const t = await put();
+    await prepare(t);
+    await vi.waitFor(async () => expect((await client.call("ai.replyStatus", {})).blockedBy?.kind).toBe("auth"));
+    model.wanted = true;
+    const u = await put({ subject: "Next" });
+    expect(await prepare(u)).toEqual({ status: "none" });
+    await client.call("ai.setKey", { provider: "anthropic", value: "sk-test-another" });
+    expect(await prepare(u)).toEqual({ status: "started" });
+  });
+
+  it("Clear AI data tells every window", async () => {
+    const { client, put, prepare, settled } = await setup();
+    const t = await put();
+    await prepare(t);
+    await settled(t, "ready");
+    const heard: unknown[] = [];
+    client.on("aiReply", (e) => heard.push(e));
+    await client.call("ai.summaries.clear", {});
+    await vi.waitFor(() => expect(heard).toContainEqual({ threadId: 0, phase: "cleared" }));
+  });
+
+  it("an old Undo can't reach a newer reply of the same thread", async () => {
+    const { client, put, prepare, row, settled } = await setup();
+    const t = await put();
+    await prepare(t);
+    await settled(t, "ready");
+    const first = (await row(t))!;
+    const dismissed = await client.call("ai.replyAct", { threadId: t, rowId: first.rowId, revision: first.revision, action: "dismiss" });
+    await client.call("ai.summaries.clear", {});
+    await prepare(t);
+    await settled(t, "ready");
+    const newer = (await row(t))!;
+    await client.call("ai.replyAct", { threadId: t, rowId: newer.rowId, revision: newer.revision, action: "dismiss" });
+    expect(await client.call("ai.replyAct", { threadId: t, rowId: first.rowId, revision: dismissed!.revision, action: "undismiss" })).toBeNull();
+    expect((await row(t))!.state).toBe("dismissed");
   });
 
   it("starts no learning, and what goes is what the hint says", async () => {
@@ -281,13 +352,13 @@ describe("what can happen to a reply", () => {
     const r = (await row(t))!;
     const n = model.drafts.length + model.checks.length;
     // someone else on To: the words were for another person
-    expect(await client.call("ai.replyAct", { threadId: t, revision: r.revision, action: "use", to: [{ name: "Tom", email: "tom@x.test" }], cc: [], timezone: "UTC" })).toBeNull();
-    const used = await client.call("ai.replyAct", { threadId: t, revision: r.revision, action: "use", to: [ANA], cc: [], timezone: "UTC" });
+    expect(await client.call("ai.replyAct", { threadId: t, rowId: r.rowId, revision: r.revision, action: "use", to: [{ name: "Tom", email: "tom@x.test" }], cc: [], timezone: "UTC" })).toBeNull();
+    const used = await client.call("ai.replyAct", { threadId: t, rowId: r.rowId, revision: r.revision, action: "use", to: [ANA], cc: [], timezone: "UTC" });
     expect(used).toMatchObject({ state: "used", body: r.body });
     expect(model.drafts.length + model.checks.length).toBe(n);
-    expect(await client.call("ai.replyAct", { threadId: t, revision: r.revision, action: "use", to: [ANA], cc: [], timezone: "UTC" })).toBeNull();
-    expect(await client.call("ai.replyAct", { threadId: t, revision: r.revision, action: "restore" })).toBeNull();
-    expect(await client.call("ai.replyAct", { threadId: t, revision: used!.revision, action: "restore" })).toMatchObject({ state: "ready" });
+    expect(await client.call("ai.replyAct", { threadId: t, rowId: r.rowId, revision: r.revision, action: "use", to: [ANA], cc: [], timezone: "UTC" })).toBeNull();
+    expect(await client.call("ai.replyAct", { threadId: t, rowId: r.rowId, revision: r.revision, action: "restore" })).toBeNull();
+    expect(await client.call("ai.replyAct", { threadId: t, rowId: r.rowId, revision: used!.revision, action: "restore" })).toMatchObject({ state: "ready" });
   });
 
   it("a thread changed since refuses Use", async () => {
@@ -297,7 +368,7 @@ describe("what can happen to a reply", () => {
     await settled(t, "ready");
     const r = (await row(t))!;
     await put({ providerThreadId: "x", subject: "Re: The 19th" });
-    expect(await client.call("ai.replyAct", { threadId: t, revision: r.revision, action: "use", to: [ANA], cc: [], timezone: "UTC" })).toBeNull();
+    expect(await client.call("ai.replyAct", { threadId: t, rowId: r.rowId, revision: r.revision, action: "use", to: [ANA], cc: [], timezone: "UTC" })).toBeNull();
   });
 
   it("nothing leaves: no op is queued and no draft row made, whatever happens to a reply", async () => {
@@ -306,7 +377,7 @@ describe("what can happen to a reply", () => {
     await prepare(t);
     await settled(t, "ready");
     const r = (await row(t))!;
-    await client.call("ai.replyAct", { threadId: t, revision: r.revision, action: "use", to: [ANA], cc: [], timezone: "UTC" });
+    await client.call("ai.replyAct", { threadId: t, rowId: r.rowId, revision: r.revision, action: "use", to: [ANA], cc: [], timezone: "UTC" });
     expect(await backend.store.drafts.list()).toEqual([]);
     const sent = (backend.store as unknown as { db: { get<T>(sql: string): T } }).db.get<{ n: number }>("SELECT count(*) n FROM messages WHERE is_sent = 1");
     expect(sent.n).toBe(0);

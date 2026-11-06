@@ -11,6 +11,8 @@ export const REPLY_BODIES_MAX = 200;
 export const REPLY_DECISIONS_MAX = 5000;
 
 export interface PreparedReply {
+  /** one generated reply, for good: an old Undo can't reach a newer row of the same thread */
+  rowId: string;
   threadId: number;
   /** any change to the thread hides it */
   sourceStamp: string;
@@ -44,6 +46,8 @@ export type AiPrepareReply =
   | { status: "started" }
   | { status: "ready"; row: PreparedReply };
 
-export type AiReplyEvent = { threadId: number; phase: "writing"; text: string } | { threadId: number; phase: "ready"; row: PreparedReply } | { threadId: number; phase: "none" };
+export type AiReplyEvent = { threadId: number; phase: "writing"; text: string } | { threadId: number; phase: "ready"; row: PreparedReply } | { threadId: number; phase: "none" }
+  /** Clear AI data, in every window: nothing shown outlives it */
+  | { threadId: 0; phase: "cleared" };
 
 export type ReplyAction = "use" | "restore" | "dismiss" | "undismiss";

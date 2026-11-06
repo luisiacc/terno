@@ -6,6 +6,7 @@ import { T, type Ctx, type R } from "./mail";
 /** Plan 144 on IndexedDB: see packages/store/src/replies.ts. */
 
 const rowOf = (r: R): PreparedReply => ({
+  rowId: r.row_id,
   threadId: r.thread_id,
   sourceStamp: r.source_stamp,
   generationKey: r.generation_key,
@@ -34,8 +35,9 @@ export function finishReply(c: Ctx, w: ReplyWrite): ReplyFinish {
   if (summaryBlocked(sources) || sources.stamp !== w.sourceStamp) return "moved";
   const table = T(c, "ai_prepared_replies");
   const prior = table.get(w.threadId);
+  if ((prior?.row_id ?? null) !== (w.expect?.rowId ?? null) || (prior && prior.revision !== w.expect?.revision)) return "moved";
   if (prior) table.delete(w.threadId);
-  table.insert({ thread_id: w.threadId, source_stamp: w.sourceStamp, generation_key: w.generationKey, answering_message_id: w.answeringMessageId, state: w.state, body: replyBodyOf(w.body), used_json: w.used ? JSON.stringify(w.used) : null, checks_json: w.checks ? JSON.stringify(w.checks) : null, to_json: JSON.stringify(w.to), cc_json: JSON.stringify(w.cc), model: w.model, provider: w.provider, prompt_version: w.promptVersion, generated_at: w.generatedAt, revision: (prior?.revision ?? -1) + 1 });
+  table.insert({ thread_id: w.threadId, row_id: w.rowId, source_stamp: w.sourceStamp, generation_key: w.generationKey, answering_message_id: w.answeringMessageId, state: w.state, body: replyBodyOf(w.body), used_json: w.used ? JSON.stringify(w.used) : null, checks_json: w.checks ? JSON.stringify(w.checks) : null, to_json: JSON.stringify(w.to), cc_json: JSON.stringify(w.cc), model: w.model, provider: w.provider, prompt_version: w.promptVersion, generated_at: w.generatedAt, revision: 0 });
   const { drop, forgetBody } = replyEvictions([...table.all()].map((r) => ({ threadId: r.thread_id, state: r.state, hasBody: r.body !== null && r.body !== undefined, generatedAt: r.generated_at })));
   for (const id of drop) table.delete(id);
   for (const id of forgetBody) {
@@ -45,10 +47,10 @@ export function finishReply(c: Ctx, w: ReplyWrite): ReplyFinish {
   return "written";
 }
 
-export function transitionReply(c: Ctx, threadId: number, from: { state: ReplyState; revision: number }, to: ReplyState): PreparedReply | null {
+export function transitionReply(c: Ctx, threadId: number, from: { rowId: string; state: ReplyState; revision: number }, to: ReplyState): PreparedReply | null {
   const table = T(c, "ai_prepared_replies");
   const r = table.get(threadId);
-  if (!r || r.state !== from.state || r.revision !== from.revision) return null;
+  if (!r || r.row_id !== from.rowId || r.state !== from.state || r.revision !== from.revision) return null;
   table.update(r, { state: to, revision: r.revision + 1 });
   return getReply(c, threadId);
 }

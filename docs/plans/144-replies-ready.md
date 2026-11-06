@@ -171,3 +171,21 @@ Codex (`gpt-6.1-sol`, high, read-only, `/tmp/terno-plans-141-145/144-replies-rea
 - **The switch is `settings.replies`,** read in memory, and the account's opt-out is in its writing prefs beside its instructions. The stored row's `generation_key` is the session's `snapshotKey` with no answered message: the stamp already holds the newest inbound.
 - **Show all** is a link button over `line-clamp-6`, not a `Collapsible`: the text is one paragraph, and clamping is what shows six lines of it.
 - **The gate** is `measureReplies` in `workloads.perf.test.ts` on both stores, beside its neighbours, rather than a `replies-ready.perf.test.ts` of its own.
+
+## What the code review changed
+
+Codex (read-only, `git diff main..HEAD`) raised 13 points, all fixed with a test that fails without the fix.
+
+1. Eligibility was read before a request queued, not when it left: the limiter calls `beforeAhead` after any wait, and what no longer holds is aborted there, repairs included.
+2. A preparation didn't stop when drafting or sent mail was turned off: it runs under the same permission as ⌘J, and refuses its write once that's gone.
+3. Use could land in a draft to someone else: it's offered, "Written for Ana", rather than put in.
+4. Clear AI data left the words on screen: `aiReply` says `cleared` to every window.
+5. A late generation overwrote a Dismiss: `finish` is conditional on the row it read.
+6. An old Undo could reach a newer reply: each row has an immutable `rowId`, and every action names it.
+7. Back in List kept a preparation going: leaving follows what's on screen, and a retry reads it again.
+8. A blank composer didn't stop one, nor `r` during the dwell: both count as someone writing, until it's opened again.
+9. New mail left the old reply showing: it goes, and nothing starts by itself.
+10. ⌘Z after Use left a blank draft and lost the row after typing: a draft keeps what it came from through edits, refinements and remounts. Back to nothing, the row returns, and a draft that was only those words goes.
+11. Undo used the last reply's revision: each draft gives back its own.
+12. A new key didn't lift an auth pause.
+13. The gate measured reads, not a preparation: `replies.perf.test.ts` runs the whole path through the service on both stores at 50k+, long conversations included, with the table at its cap. It came in at 21 ms and 17 ms p95, with 22 ms and 8 ms the longest busy.

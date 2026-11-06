@@ -29,6 +29,8 @@ interface Running {
   dropped: boolean;
   /** Stop said not to come back */
   dismissed: boolean;
+  /** what's being read for it, as it was at the start */
+  stamp: string | null;
 }
 
 export class ReplyService {
@@ -40,6 +42,17 @@ export class ReplyService {
 
   status(): { blockedBy: { kind: AiErrorKind } | null } {
     return { blockedBy: this.blockedBy };
+  }
+
+  /** Called as any request of this task is about to leave, after its wait: whatever no longer holds stops there. */
+  async holdingUp(): Promise<void> {
+    for (const entry of this.running.values()) {
+      if (entry.stamp === null || entry.controller.signal.aborted) continue;
+      if (!(await this.eligible(entry.threadId, entry.stamp))) {
+        entry.dropped = true;
+        entry.controller.abort();
+      }
+    }
   }
 
   private emit(entry: Running, event: AiReplyEvent): void {
@@ -90,7 +103,7 @@ export class ReplyService {
       if (held.text) this.b.server.emitTo(clientId, "aiReply", { threadId: p.threadId, phase: "writing", text: held.text });
       return { status: "started" };
     }
-    const entry: Running = { threadId: p.threadId, listeners: new Set([clientId]), controller: new AbortController(), text: "", firstWord: false, dropped: false, dismissed: false };
+    const entry: Running = { threadId: p.threadId, listeners: new Set([clientId]), controller: new AbortController(), text: "", firstWord: false, dropped: false, dismissed: false, stamp: null };
     this.running.set(p.threadId, entry);
     let going = false;
     try {
@@ -111,7 +124,8 @@ export class ReplyService {
       }
       if (waiting !== null) return { status: "waitingBody", messageId: waiting };
       going = true;
-      void this.run(entry, p, { ai, key, stamp: now.stamp, clearGeneration }).finally(() => {
+      entry.stamp = now.stamp;
+      void this.run(entry, p, { ai, key, stamp: now.stamp, clearGeneration, prior: stored ? { rowId: stored.rowId, revision: stored.revision } : null }).finally(() => {
         if (this.running.get(p.threadId) === entry) this.running.delete(p.threadId);
       });
       return { status: "started" };
@@ -131,15 +145,16 @@ export class ReplyService {
     if (error instanceof AiError && error.kind !== "cancelled") this.blockedBy = { kind: error.kind };
   }
 
-  private async run(entry: Running, p: Prepare, o: { ai: AiTasks; key: string; stamp: string; clearGeneration: number }): Promise<void> {
+  private async run(entry: Running, p: Prepare, o: { ai: AiTasks; key: string; stamp: string; clearGeneration: number; prior: { rowId: string; revision: number } | null }): Promise<void> {
     const { store } = this.b;
     const { threadId } = p;
-    const { signal } = entry.controller;
-    const signalAll = AbortSignal.any([signal, this.b.abort.signal]);
+    // a revoked permission to use sent mail, or drafting off, stops this as it stops a person's draft (⌘J)
+    const { signal: permitted, done: permissionDone } = this.b.writing.underPermission(p.accountId, entry.controller.signal);
+    const signalAll = AbortSignal.any([permitted, this.b.abort.signal]);
     const answering = { id: 0 };
     const write = async (state: ReplyState, body: string | null, extra: { used?: WritingUsed; checks?: PreparedReply["checks"] } = {}): Promise<PreparedReply | null> => {
-      if (entry.dropped && !entry.dismissed) return null;
-      const finished = await store.replies.finish({ threadId, sourceStamp: o.stamp, generationKey: o.key, answeringMessageId: answering.id, state: entry.dismissed ? "dismissed" : state, body, used: extra.used ?? null, checks: extra.checks ?? null, to: p.to, cc: p.cc, model: o.ai.model, provider: o.ai.providerId, promptVersion: REPLY_PROMPT_VERSION, generatedAt: this.b.now(), clearGeneration: o.clearGeneration });
+      if ((entry.dropped || permitted.aborted) && !entry.dismissed) return null;
+      const finished = await store.replies.finish({ rowId: globalThis.crypto.randomUUID(), expect: o.prior, threadId, sourceStamp: o.stamp, generationKey: o.key, answeringMessageId: answering.id, state: entry.dismissed ? "dismissed" : state, body, used: extra.used ?? null, checks: extra.checks ?? null, to: p.to, cc: p.cc, model: o.ai.model, provider: o.ai.providerId, promptVersion: REPLY_PROMPT_VERSION, generatedAt: this.b.now(), clearGeneration: o.clearGeneration });
       return finished === "written" ? store.replies.get(threadId) : null;
     };
     try {
@@ -191,6 +206,8 @@ export class ReplyService {
       }
       this.noteFailure(error);
       this.emit(entry, { threadId, phase: "none" });
+    } finally {
+      permissionDone();
     }
   }
 
@@ -217,6 +234,11 @@ export class ReplyService {
     entry.controller.abort();
   }
 
+  /** A new key: a pause for the old one lifts, and what's underway goes on. */
+  credentialsChanged(): void {
+    this.blockedBy = null;
+  }
+
   /** The provider moved, the switch went off: what's underway stops, writes nothing, and a pause lifts. */
   settingsChanged(): void {
     this.blockedBy = null;
@@ -229,14 +251,15 @@ export class ReplyService {
   async clear(): Promise<void> {
     this.settingsChanged();
     await this.b.store.replies.clear();
+    this.b.server.emit("aiReply", { threadId: 0, phase: "cleared" }, { origins: ["renderer", "dev"] });
   }
 
   /** Each only from the state it saw. Use also holds to the same thread, the same people and the same settings (revision 7). */
   async act(p: Act): Promise<PreparedReply | null> {
     const { store } = this.b;
     const row = await store.replies.get(p.threadId);
-    if (!row || row.revision !== p.revision) return null;
-    const from = { state: row.state, revision: row.revision };
+    if (!row || row.rowId !== p.rowId || row.revision !== p.revision) return null;
+    const from = { rowId: row.rowId, state: row.state, revision: row.revision };
     switch (p.action) {
       case "use": {
         if (row.state !== "ready" || !row.body) return null;

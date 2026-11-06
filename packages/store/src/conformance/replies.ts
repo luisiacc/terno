@@ -16,7 +16,8 @@ export function defineRepliesConformance(fresh: () => Promise<MailStore>): void 
       await store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null });
       const thread = await threadOf(store, "r-1");
       const stamp = (await store.aiSummaries.sources(thread))!.stamp;
-      const write = (over: Partial<ReplyWrite> = {}): ReplyWrite => ({ threadId: thread, sourceStamp: stamp, generationKey: "k", answeringMessageId: 1, state: "ready", body: "Hello", used: null, checks: null, to: [{ name: "Ana", email: "ana@x.test" }], cc: [], model: "m", provider: "p", promptVersion: 1, generatedAt: NOW, clearGeneration: store.replies.clearGeneration(), ...over });
+      let seq = 0;
+      const write = (over: Partial<ReplyWrite> = {}): ReplyWrite => ({ rowId: `row-${++seq}`, expect: null, threadId: thread, sourceStamp: stamp, generationKey: "k", answeringMessageId: 1, state: "ready", body: "Hello", used: null, checks: null, to: [{ name: "Ana", email: "ana@x.test" }], cc: [], model: "m", provider: "p", promptVersion: 1, generatedAt: NOW, clearGeneration: store.replies.clearGeneration(), ...over });
       return { store, accountId: accountId!, thread, stamp, write };
     }
 
@@ -43,12 +44,25 @@ export function defineRepliesConformance(fresh: () => Promise<MailStore>): void 
     it("only from the state and revision it saw", async () => {
       const { store, thread, write } = await setup();
       await store.replies.finish(write());
-      expect(await store.replies.transition(thread, { state: "ready", revision: 5 }, "used")).toBeNull();
-      expect(await store.replies.transition(thread, { state: "used", revision: 0 }, "ready")).toBeNull();
-      const used = await store.replies.transition(thread, { state: "ready", revision: 0 }, "used");
+      const rowId = (await store.replies.get(thread))!.rowId;
+      expect(await store.replies.transition(thread, { rowId, state: "ready", revision: 5 }, "used")).toBeNull();
+      expect(await store.replies.transition(thread, { rowId, state: "used", revision: 0 }, "ready")).toBeNull();
+      expect(await store.replies.transition(thread, { rowId: "another", state: "ready", revision: 0 }, "used")).toBeNull();
+      const used = await store.replies.transition(thread, { rowId, state: "ready", revision: 0 }, "used");
       expect(used).toMatchObject({ state: "used", revision: 1 });
-      expect(await store.replies.transition(thread, { state: "ready", revision: 0 }, "used")).toBeNull();
-      expect(await store.replies.transition(thread, { state: "used", revision: 1 }, "ready")).toMatchObject({ state: "ready", revision: 2 });
+      expect(await store.replies.transition(thread, { rowId, state: "ready", revision: 0 }, "used")).toBeNull();
+      expect(await store.replies.transition(thread, { rowId, state: "used", revision: 1 }, "ready")).toMatchObject({ state: "ready", revision: 2 });
+    });
+
+    it("a late generation doesn't overwrite what happened to the row it read", async () => {
+      const { store, thread, write } = await setup();
+      await store.replies.finish(write());
+      const first = (await store.replies.get(thread))!;
+      const late = write({ body: "Newer", expect: { rowId: first.rowId, revision: first.revision } });
+      await store.replies.transition(thread, { rowId: first.rowId, state: "ready", revision: 0 }, "dismissed");
+      expect(await store.replies.finish(late)).toBe("moved");
+      expect(await store.replies.get(thread)).toMatchObject({ state: "dismissed", body: "Hello" });
+      expect(await store.replies.finish(write({ expect: null }))).toBe("moved");
     });
 
     it("a clear empties it and refuses what began before it; the thread's going takes its row", async () => {
