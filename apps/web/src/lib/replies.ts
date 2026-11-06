@@ -31,6 +31,8 @@ let waitingBody: (() => void) | null = null;
 let composedOn: number | null = null;
 /** the newest message when what's shown was asked for: another means it's out of date */
 let newestShown: number | null = null;
+let frame: number | null = null;
+let pending: string | null = null;
 
 const timezone = () => {
   try {
@@ -50,6 +52,9 @@ function stopWaitingBody(): void {
 
 function leave(): void {
   stopWaitingBody();
+  if (frame !== null) cancelAnimationFrame(frame);
+  frame = null;
+  pending = null;
   const id = reading;
   reading = null;
   useReplies.setState({ shown: null });
@@ -94,8 +99,6 @@ onExplicitOpen({
 });
 
 // a frame at most: the text comes faster than anything can be read
-let frame: number | null = null;
-let pending: string | null = null;
 client.on("aiReply", (event) => {
   if (event.phase === "cleared") {
     // nothing stays on screen, and anything still on its way is nobody's
@@ -133,7 +136,8 @@ useThreads.subscribe((state) => {
   const { shown } = useReplies.getState();
   if (!shown || newestShown === null) return;
   const newest = state.details.get(shown.threadId)?.messages.at(-1)?.id;
-  if (newest !== undefined && newest !== newestShown) useReplies.setState({ shown: null });
+  // the stream too: its next word would bring back what's out of date
+  if (newest !== undefined && newest !== newestShown) leave();
 });
 
 // ⌘J, `r` with nothing ready, a click on the reply pill: they asked for something else

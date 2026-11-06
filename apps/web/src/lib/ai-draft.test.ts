@@ -710,6 +710,8 @@ describe("a prepared reply, used (plan 144)", () => {
     expect(rpc.calls.filter((r) => r.method === "ai.compose")).toEqual([]);
     store.undoCommit(key);
     expect(c.text).toBe("");
+    await vi.waitFor(() => expect(calls("drafts.delete")).toHaveLength(1));
+    last("drafts.delete").resolve({ ok: true });
     await vi.waitFor(() => expect(back).toEqual([{ threadId: 7, rowId: "r1", revision: 1 }]));
   });
 
@@ -738,6 +740,26 @@ describe("a prepared reply, used (plan 144)", () => {
     expect(back).toEqual([{ threadId: 7, rowId: "r1", revision: 1 }]);
     // typed in: the draft is theirs
     expect(useDrafts.getState().drafts[a.key]).toBeDefined();
+  });
+
+  it("with no editor listening, as after the strip's gone, the draft's own text still brings it back; a draft that goes takes the words", () => {
+    const { key, c, unmount } = fresh();
+    store.commitPrepared(key, row(), false);
+    unmount();
+    c.text = "typed";
+    editDraft(key, { bodyHtml: "<p>typed</p>", bodyText: "typed" });
+    expect(back).toEqual([]);
+    c.text = "";
+    editDraft(key, { bodyHtml: "", bodyText: "" });
+    expect(back).toEqual([{ threadId: 7, rowId: "r1", revision: 1 }]);
+    back.length = 0;
+    const gone = fresh();
+    store.commitPrepared(gone.key, row(), false);
+    const { [gone.key]: _dropped, ...rest } = useDrafts.getState().drafts;
+    useDrafts.setState({ drafts: rest });
+    gone.c.text = "";
+    store.noteBody(gone.key);
+    expect(back).toEqual([]);
   });
 });
 

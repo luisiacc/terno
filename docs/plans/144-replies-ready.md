@@ -1,6 +1,6 @@
 # Plan 144: Replies ready
 
-- **Status:** proposed and Codex-critiqued. Nothing is built. "Revisions after the Codex review" overrides the sections before it.
+- **Status:** built and on `main`, code-reviewed in two rounds (see "What building it changed" and "What the code review changed"). The real-model eval (`scripts/ai-real/replies-ready.real.ts`) is written and not run: it and the owner's read wait for the owner's go-ahead. The full suite runs once, after plans 141 to 145 are all in (the owner's call). "Revisions after the Codex review" overrides the sections before it.
 - **Builds on:** plan 133 (drafting, voice, the composer's commit, the strip, provenance), plan 17 (`waiting_since`), plan 87 (`noteOpen` and the dwell), plan 132 (how a late block joins the reader, `source_stamp`), plan 131 (AI base).
 
 ## The request
@@ -189,3 +189,9 @@ Codex (read-only, `git diff main..HEAD`) raised 13 points, all fixed with a test
 11. Undo used the last reply's revision: each draft gives back its own.
 12. A new key didn't lift an auth pause.
 13. The gate measured reads, not a preparation: `replies.perf.test.ts` runs the whole path through the service on both stores at 50k+, long conversations included, with the table at its cap. It came in at 21 ms and 17 ms p95, with 22 ms and 8 ms the longest busy.
+
+Round two, on those fixes (3 points, all fixed):
+
+14. A draft's copy of the words outlived the draft: it goes when the draft does, however that happens.
+15. Typing ended the strip's listener, so an Undo to nothing was never heard: what a draft came from follows the draft's own text.
+16. New mail hid a streaming reply only until its next word: it ends the stream's listener and its pending paint too.

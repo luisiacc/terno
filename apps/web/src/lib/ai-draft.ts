@@ -950,7 +950,22 @@ export function undoCommit(key: string) {
 }
 
 /** Drafts that hold a prepared reply: what to give back, whether it's been typed in, whether this draft began with it. */
-const preparedDrafts = new Map<string, { ref: PreparedRef; text: string; typed: boolean; opened: boolean }>();
+const preparedDrafts = new Map<string, { ref: PreparedRef; text: string; typed: boolean; opened: boolean; seen: boolean }>();
+// the strip, and whatever else listens to the editor, ends at the first keystroke: this lasts as long as the draft does
+useDrafts.subscribe((state) => {
+  for (const [key, held] of preparedDrafts) {
+    // sent, discarded, its account gone: nothing keeps the words
+    if (!state.drafts[key]) {
+      preparedDrafts.delete(key);
+      continue;
+    }
+    const body = bodyNow(key);
+    if (body.trim()) {
+      held.seen = true;
+      held.typed ||= body !== held.text;
+    } else if (held.seen && !state.drafts[key]!.sending) backToNothing(key);
+  }
+});
 export const preparedHooks: { back: ((prepared: PreparedRef) => void) | null } = { back: null };
 
 function backToNothing(key: string): void {
@@ -959,7 +974,7 @@ function backToNothing(key: string): void {
   preparedDrafts.delete(key);
   const back = () => preparedHooks.back?.(held.ref);
   // only ever these words: the draft goes, and the block is back in its place. Typed in: the draft is theirs, and the reply waits behind it.
-  if (held.opened && !held.typed && !bodyNow(key).trim() && !draftOf(key)?.attachments?.length) void discardDraft(key).then(back);
+  if (held.opened && !held.typed && !bodyNow(key).trim() && !draftOf(key)?.attachments?.length) void discardDraft(key).then(back, back);
   else back();
 }
 
@@ -978,13 +993,13 @@ export function commitPrepared(key: string, row: PreparedReply, opened: boolean)
   if (!session(key)) useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: newSession(key, { opened, phase: "strip" }) } }));
   update(key, { lastSpec: spec });
   if (!(c ? c.empty() : bodyNow(key) === "") || forOthers) {
-    preparedDrafts.set(key, { ref: spec.prepared!, text: result.text, typed: true, opened: false });
+    preparedDrafts.set(key, { ref: spec.prepared!, text: result.text, typed: true, opened: false, seen: true });
     update(key, { phase: "choice", choice: { reason: "typed", writtenFor: forOthers ? (row.to[0]?.name || row.to[0]?.email || null) : null, result }, live: t("aiDraft.live.ready", { count: wordCount(result.text) }) });
     focusEditor(key);
     return false;
   }
   const done = commit(key, "replace", result, spec, undefined, false);
-  if (done) preparedDrafts.set(key, { ref: spec.prepared!, text: result.text, typed: false, opened });
+  if (done) preparedDrafts.set(key, { ref: spec.prepared!, text: result.text, typed: false, opened, seen: false });
   focusEditor(key);
   return done;
 }
@@ -1004,11 +1019,14 @@ export function noteBody(key: string) {
   const held = preparedDrafts.get(key);
   // revision 6: through edits, refinements and remounts: back to nothing, the reply is there again
   if (held && c0) {
-    if (c0.empty()) {
+    if (c0.empty() && held.seen) {
       if (session(key)) remove(key);
       return backToNothing(key);
     }
-    held.typed ||= bodyNow(key) !== held.text;
+    if (!c0.empty()) {
+      held.seen = true;
+      held.typed ||= bodyNow(key) !== held.text;
+    }
   }
   const s = session(key);
   const c = c0;
