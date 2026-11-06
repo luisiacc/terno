@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { askOperandsMissing, describe, expect, it } from "vitest";
 import { answerWithoutCitations, askSpecifics, buildAskSearch, hasUnlinkedSentence, resolveCitations, validAskQueries } from "./ask";
 
 const NOW = new Date(2026, 10, 5, 12).getTime();
@@ -75,5 +75,12 @@ describe("citations (plan 141)", () => {
     expect(hasUnlinkedSentence("It renews in March. [1]")).toBe(false);
     expect(hasUnlinkedSentence("It renews in March [1]. Notice runs for sixty days.")).toBe(true);
     expect(answerWithoutCitations("It renews in March [1]. Notice [2]")).toBe("It renews in March. Notice");
+  });
+});
+
+describe("a machine sum's amounts (plan 153)", () => {
+  it("are found however the mail writes them, and flagged when no mail holds them", () => {
+    expect(askOperandsMissing(["120.50", "80", "1234.56", "0.001"], ["paid 120,50 then 80.00, then 1.234,56 and BTC 0.001"])).toEqual([]);
+    expect(askOperandsMissing(["7777"], ["paid 80"])).toEqual(["7777"]);
   });
 });

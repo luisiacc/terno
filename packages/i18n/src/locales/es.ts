@@ -674,7 +674,7 @@ const es = {
   "filters.incomplete": "Completa todos los campos y elige al menos una acción.",
   "filters.invalid.oneLocation": "Un filtro solo puede mover el correo a un lugar (archivo, papelera o spam).",
   "filters.invalid.duplicate": "Un filtro no puede tener la misma acción dos veces.",
-  "filters.invalid.opening": "“Inicio del correo” (el asunto y las primeras líneas) solo puede coincidir con un patrón.",
+  "filters.invalid.opening": "“Inicio del correo” (el asunto y las primeras líneas) solo admite un patrón, sin “no” y sin $ al final.",
   "filters.invalid.text": "“Asunto o cuerpo” solo puede comprobar que mencione una palabra o frase.",
   "filters.invalid.patternField": "Los patrones funcionan con el remitente, el dominio, los destinatarios, el asunto o la lista, no con el cuerpo.",
   "filters.invalid.forwardTooMany": "Son demasiadas direcciones para un filtro. Repártelas en dos filtros.",

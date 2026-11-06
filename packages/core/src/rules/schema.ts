@@ -79,8 +79,8 @@ export const filterRuleSchema = z
     if (locations.length > 1) ctx.addIssue(ruleIssue("filters.invalid.oneLocation", ["actions"]));
     rule.conditions.forEach((c, i) => {
       if (c.field === "text" && (c.op !== "contains" || c.negate)) ctx.addIssue(ruleIssue("filters.invalid.text", ["conditions", i]));
-      // first lines can arrive after the message: it only ever turns true, so it's never wrong to decide before them
-      if (c.field === "opening" && (c.op !== "matches" || c.negate)) ctx.addIssue(ruleIssue("filters.invalid.opening", ["conditions", i]));
+      // first lines can arrive after the message: it only ever turns true, so it's never wrong to decide before them. An end anchor could turn back
+      if (c.field === "opening" && (c.op !== "matches" || c.negate || /(^|[^\\])\$/.test(c.value))) ctx.addIssue(ruleIssue("filters.invalid.opening", ["conditions", i]));
       if (c.field === "hasAttachment" || c.field === "account" || c.field === "ageDays" || c.op !== "matches") return;
       if (!(PATTERN_FIELDS as readonly string[]).includes(c.field)) ctx.addIssue(ruleIssue("filters.invalid.patternField", ["conditions", i]));
       else {

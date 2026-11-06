@@ -57,3 +57,10 @@ A small read on the same scrubbed mailbox copy, in the ledger the panel used ($0
 - "Archiva las alertas de inicio de sesión" and "Archive job alerts" both chose `opening` on their own.
 - "¿Cuánto pagué en total a OpenAI este año?" gave USD 335.32 from eight charges, checked by hand. It says that's what it read, not the year's total.
 - **Limit:** a sum or count covers the messages an answer reads, at most 30. It says "at least", as it did.
+
+## What the code review changed
+
+Fixed: an amount like 0.001 is a decimal when a sum's amounts are checked, not a thousands reading. An `opening` pattern can't end in `$`, since that could match with no first lines and stop matching once they arrive, after the rule had acted.
+
+Skipped as too rare: marking your own reply as Spam by hand, in Terno, leaves what it answered as answered until that conversation changes. A move from the provider reopens it.
+

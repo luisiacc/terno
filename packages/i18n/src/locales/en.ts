@@ -681,7 +681,7 @@ const en = {
   "filters.incomplete": "Fill in every field and choose at least one action.",
   "filters.invalid.oneLocation": "A filter can only move mail to one place (archive, trash or spam).",
   "filters.invalid.duplicate": "A filter can’t have the same action twice.",
-  "filters.invalid.opening": "“Start of mail” (the subject and first lines) can only match a pattern.",
+  "filters.invalid.opening": "“Start of mail” (the subject and first lines) only takes a pattern, with no “not” and no $ at its end.",
   "filters.invalid.text": "“Subject or body” can only check that it mentions a word or phrase.",
   "filters.invalid.patternField": "Patterns work on the sender, domain, recipients, subject or list, not the body.",
   "filters.invalid.forwardTooMany": "That's too many addresses for one filter. Split them across two filters.",

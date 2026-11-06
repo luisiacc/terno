@@ -213,6 +213,8 @@ describe("a message's first lines (plan 153)", () => {
     expect(filterRuleSchema.safeParse(base).success).toBe(true);
     expect(filterRuleSchema.safeParse({ ...base, conditions: [{ ...base.conditions[0], negate: true }] }).success).toBe(false);
     expect(filterRuleSchema.safeParse({ ...base, conditions: [{ ...base.conditions[0], op: "contains" }] }).success).toBe(false);
+    expect(filterRuleSchema.safeParse(rule("invoice$")).success).toBe(false);
+    expect(filterRuleSchema.safeParse(rule("\\$12")).success).toBe(true);
   });
   it("reads no body, but runs again once one is here", () => {
     expect(ruleReadsBody(rule("x"))).toBe(false);

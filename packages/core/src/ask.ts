@@ -211,7 +211,9 @@ const foldNumber = (n: string): string => {
 
 /** What a machine sum was given that no source holds: a true total of made-up amounts is still made up. */
 export function askOperandsMissing(operands: readonly string[], sources: readonly string[]): string[] {
-  const held = new Set(numbersIn(sources.join("\n")).map(foldNumber));
+  const source = sources.join("\n");
+  // 0.001 is a decimal here, where a thousands reading would lose it
+  const held = new Set([...numbersIn(source), ...(source.match(/\d+[.,]\d+/g) ?? [])].map(foldNumber));
   return operands.filter((n) => !held.has(foldNumber(n)));
 }
 
