@@ -15,12 +15,14 @@ describe("the digest's request (plan 145)", () => {
   it("text is bounded, an unknown label drops, and a line is one bounded line", () => {
     expect(digestPrompt({ language: "English", items: [item({ text: "x".repeat(9000) })] }).length).toBeLessThan(2600);
     const task = digestTask({ language: "English", items: [item()] });
-    const r = task.validate({ items: [{ label: "d1", kind: "newsletter", line: `a\n  b${"c".repeat(300)}` }, { label: "d9", kind: "newsletter", line: "nobody" }] });
+    const r = task.validate({ items: [{ label: "d1", kind: "newsletter", line: `a\n  b ${"word ".repeat(60)}` }, { label: "d9", kind: "newsletter", line: "nobody" }] });
     expect(r).toMatchObject({ ok: true });
     if (!r.ok) throw new Error("not ok");
     expect(r.value).toHaveLength(1);
     expect(r.value[0]!.line.startsWith("a b")).toBe(true);
     expect(r.value[0]!.line.length).toBeLessThanOrEqual(140);
+    // never cut inside a word
+    expect(r.value[0]!.line.endsWith("word…")).toBe(true);
   });
 
   it("the whole request fits the window: a small one gets fewer, shorter", () => {

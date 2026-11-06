@@ -62,7 +62,7 @@ async function setup(o: { provider?: "fake" | "none"; devAi?: { anthropic: strin
     const m = msg({ accountId: account.id, date: clock.now - 60_000 - seq, from: { name: "Ana", email: "ana@people.test" }, to: [{ name: "Me", email: account.email }], subject: `Subject ${seq}`, providerMsgId: id, isRead: false, ...over });
     await backend.store.sync.ingest([m], { applyFilters: false, now: clock.now, classifier: null });
     const thread = await threadOf(backend.store, id);
-    raw.run("UPDATE threads SET waiting_since = ? WHERE id = ?", waiting ? clock.now - 60_000 : null, thread);
+    raw.run("UPDATE threads SET waiting_since = ?, has_sent = ? WHERE id = ?", waiting ? clock.now - 60_000 : null, waiting ? 1 : 0, thread);
     return thread;
   };
   const letter = async (from: string, over: Partial<IncomingMessage> = {}) => {
@@ -99,6 +99,26 @@ describe("who sees it", () => {
 });
 
 describe("the list", () => {
+  it("needs you is a conversation you're in: a bank's notice and a calendar's answer aren't, and the count agrees (real mail)", async () => {
+    const { client, put, raw } = await setup();
+    const yours = await put();
+    const notice = await put({ from: { name: "Bank", email: "notices@bank.test" } });
+    raw.run("UPDATE threads SET has_sent = 0 WHERE id = ?", notice);
+    await put({ subject: "Aceptado: Demo" });
+    await put({ subject: "Accepted: Demo" });
+    // someone they've written to: their one new conversation counts, a service's many don't
+    raw.run("INSERT INTO correspondents (email, written, own) VALUES ('colleague@people.test', 1, 0), ('service@machine.test', 1, 0), ('other-me@people.test', 1, 1)");
+    // their own forward from another address of theirs
+    raw.run("UPDATE threads SET has_sent = 0 WHERE id = ?", await put({ from: { name: "Me", email: "other-me@people.test" } }));
+    const colleague = await put({ from: { name: "Col", email: "colleague@people.test" } });
+    raw.run("UPDATE threads SET has_sent = 0 WHERE id = ?", colleague);
+    for (let i = 0; i < 2; i++) raw.run("UPDATE threads SET has_sent = 0 WHERE id = ?", await put({ from: { name: "Svc", email: "service@machine.test" } }));
+    const list = await client.call("today.list", { heldIds: [] });
+    const needs = list.sections.find((s) => s.kind === "needsYou")!;
+    expect(new Set(needs.items.map((i) => i.thread.id))).toEqual(new Set([yours, colleague]));
+    expect((await client.call("counts.get", {})).today).toBe(2);
+  });
+
   it("waiting threads, newest first, capped, with how many more", async () => {
     const { client, put } = await setup();
     const ids: number[] = [];

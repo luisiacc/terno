@@ -34,10 +34,12 @@ export interface DigestFact {
 }
 
 export interface TodayStore {
-  /** Inbox threads waiting for a reply, newest first, walking date order: `after` is the last id of the page before */
+  /** Inbox threads waiting in a conversation this person is part of, or the one new conversation from someone they've written to, newest first, leaving out a calendar's answers. Plan 17's "a person" holds any plain address, and on real mail most of it was a bank's and a service's notices: an address that sent several they never answered is a service. `after` is the last id of the page before */
   waitingPage(o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): Promise<{ id: number; lastDate: number }[]>;
   /** which of these threads the Inbox holds as waiting (a due follow-up may be one too: it counts once) */
   waitingAmong(threadIds: readonly number[], now: number): Promise<number[]>;
+  /** how many `waitingPage` would walk */
+  needsCount(now: number): Promise<number>;
   /** of these messages, those that qualify; `arrivedAt` also for those that don't is what a walk stops on */
   digestFacts(messageIds: readonly number[]): Promise<{ facts: DigestFact[]; oldest: number | null }>;
   /** of these listed threads, how many are still as a digest would act on them: in the Inbox and unread */

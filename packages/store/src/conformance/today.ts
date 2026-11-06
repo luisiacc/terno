@@ -9,6 +9,7 @@ const me = { name: "Me", email: "me0@example.com" };
 /** Plan 145: the reads Today makes, and the digest's table, the same in both stores. */
 export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
   describe("Today (plan 145)", () => {
+    let accountId_: () => number = () => 0;
     async function setup() {
       const store = await fresh();
       const [accountId] = await withAccounts(store, 1);
@@ -19,6 +20,7 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
         const r = await store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null });
         return { message: r.inserted[0]!, thread: await threadOf(store, id) };
       };
+      accountId_ = () => accountId!;
       return { store, accountId: accountId!, put };
     }
 
@@ -51,16 +53,26 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
 
     it("the waiting walk goes newest first, in pages, and among says which are", async () => {
       const { store, put } = await setup();
-      const a = await put({ listId: null, from: { name: "Ana", email: "ana@people.test" }, date: NOW - 5000 });
-      const b = await put({ listId: null, from: { name: "Bea", email: "bea@people.test" }, date: NOW - 1000 });
+      // a conversation they're in: their own message, then the answer
+      const talk = async (name: string, date: number, subject = `About ${name}`) => {
+        const email = `${name.toLowerCase()}@people.test`;
+        const threadKey = `conv-${name}-${subject}`;
+        await store.sync.ingest([msg({ date: date - 500, providerMsgId: `${threadKey}-out`, providerThreadId: threadKey, from: me, to: [{ name, email }], isSent: true, subject, accountId: accountId_(), listId: null })], { applyFilters: false, now: NOW, classifier: null });
+        return put({ listId: null, from: { name, email }, date, subject, providerThreadId: threadKey, inReplyTo: `${threadKey}-out` });
+      };
+      const a = await talk("Ana", NOW - 5000);
+      const b = await talk("Bea", NOW - 1000);
+      // never written back: a service's notice from a plain address
+      const notice = await put({ listId: null, from: { name: "Bank", email: "notices@bank.test" }, date: NOW - 900 });
+      const calendar = await talk("Cleo", NOW - 800, "Aceptado: Demo");
       const page = await store.today.waitingPage({ now: NOW, after: null, limit: 1 });
       const waiting = (await store.threads.summaries([a.thread, b.thread])).filter((t) => t.waitingSince != null).map((t) => t.id);
-      if (waiting.length === 2) {
-        expect(page.map((p) => p.id)).toEqual([b.thread]);
-        const next = await store.today.waitingPage({ now: NOW, after: page[0]!, limit: 5 });
-        expect(next.map((p) => p.id)).toEqual([a.thread]);
-      }
-      expect(new Set(await store.today.waitingAmong([a.thread, b.thread, 999_999], NOW))).toEqual(new Set(waiting));
+      expect(waiting).toHaveLength(2);
+      expect(page.map((p) => p.id)).toEqual([b.thread]);
+      const next = await store.today.waitingPage({ now: NOW, after: page[0]!, limit: 5 });
+      expect(next.map((p) => p.id)).toEqual([a.thread]);
+      expect(new Set(await store.today.waitingAmong([a.thread, b.thread, notice.thread, calendar.thread, 999_999], NOW))).toEqual(new Set(waiting));
+      expect(await store.today.needsCount(NOW)).toBe(2);
     });
 
     it("digestLive: only what's in the Inbox and unread", async () => {

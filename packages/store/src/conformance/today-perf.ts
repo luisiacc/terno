@@ -17,6 +17,16 @@ export async function measureToday(o: WorkloadMailbox, budget: { waitingMs: numb
   const p95 = times.sort((a, b) => a - b)[37]!;
   o.log(`today waitingPage: p95 ${p95.toFixed(2)} ms`);
   expect(p95).toBeLessThanOrEqual(budget.waitingMs * o.budget);
+  // every counts.get pays this one
+  const countTimes: number[] = [];
+  for (let i = 0; i < 40; i++) {
+    const t = performance.now();
+    await store.today.needsCount(o.now);
+    countTimes.push(performance.now() - t);
+  }
+  const countP95 = countTimes.sort((a, b) => a - b)[37]!;
+  o.log(`today needsCount: p95 ${countP95.toFixed(2)} ms`);
+  expect(countP95).toBeLessThanOrEqual(budget.waitingMs * o.budget);
   const walk = store.filters.messageWalk();
   let longest = 0;
   let pages = 0;

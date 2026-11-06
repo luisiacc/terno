@@ -410,6 +410,7 @@ export class TodayService {
       after = page[page.length - 1]!;
       if (page.length < TODAY_NEEDS_MAX) break;
     }
+    // Show all goes to plan 17's Waiting filter, which holds what's here and the rest
     const inboxWaiting = (await store.threads.counts(now)).inboxWaiting ?? 0;
     const more = Math.max(0, inboxWaiting - waitingShown);
     const sections: TodaySection[] = [];
@@ -517,12 +518,13 @@ export class TodayService {
     if (counts.inboxWaiting === null || counts.inboxWaiting === undefined) return { ...counts, today: null };
     const settings = await readSettings(store);
     const now = this.b.now();
-    if (!settings.followups?.enabled) return { ...counts, today: counts.inboxWaiting };
+    const needs = await store.today.needsCount(now);
+    if (!settings.followups?.enabled) return { ...counts, today: needs };
     const due = [...new Set(this.dueFollowups(await store.followups.active(), now).map((r) => r.threadId))];
-    if (!due.length) return { ...counts, today: counts.inboxWaiting };
+    if (!due.length) return { ...counts, today: needs };
     const live = (await store.threads.summaries(due)).filter((t) => !t.inSpam && !t.inTrash).map((t) => t.id);
     const already = new Set(await store.today.waitingAmong(live, now));
-    return { ...counts, today: counts.inboxWaiting + live.filter((id) => !already.has(id)).length };
+    return { ...counts, today: needs + live.filter((id) => !already.has(id)).length };
   }
 
   private async notify(day: string, prepareAt: string): Promise<void> {

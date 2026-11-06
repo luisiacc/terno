@@ -111,3 +111,6 @@ export function prepareTimeToday(prepareAt: string, now: number): number {
   at.setHours(h ?? 8, m ?? 0, 0, 0);
   return at.getTime();
 }
+
+/** An acceptance answers an invitation: there's nothing to answer back. Lowercase, as the stores compare them. */
+export const CALENDAR_ANSWER_PREFIXES = ["accepted:", "declined:", "tentative:", "aceptado:", "aceptada:", "rechazado:", "rechazada:", "provisional:", "nueva hora propuesta:", "new time proposed:"] as const;

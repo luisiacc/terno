@@ -271,3 +271,14 @@ Round two, on those fixes (6 points, all fixed):
 - **Perf, not repeatable.** A different set failed each time, and each passed once load fell. `search-everywhere` (its budgets of 5 and 35 ms) and `idb.perf` passed all 26 at load 17; the `expunge` stalls failed at load 104. None of them is code these plans changed, beyond one added `export` in `queries.ts`. They deserve one more run on a quiet machine.
 - **Packaged smoke:** `update.smoke`'s backend-exit test failed in the crowded file and passed alone.
 - **First-pass flakes** that passed alone: attachment conformance, `upgrade.volumes`, `imap.int`, `incoming-retention`, a `writing` test, a `draft-presentation` test, the seeded search conformance, and `ui-perf`'s 250 KB typing.
+
+## What the eval and the panel changed
+
+Real models, on a copy of one real mailbox (5,939 threads, three accounts, Spanish and English) with its keys and queued work removed, read by five reviewers with different concerns: a fact auditor, a busy owner, a safety hawk, a bilingual editor and a recall PM. Four rounds, each reviewer blind to the others. No mail is recorded here. The owner's read is still theirs.
+
+- Prompt version 5 for the digest, whose language was checked by script after the last panel read. **Needs you:** round 1 had ten consensus-wrong rows of 13; the last read had none.
+- **A change to Needs you, for the owner to confirm:** plan 17's "a person" holds any plain address, so most of Today was a payment processor's and a bank's notices (66 waiting threads in 30 days on this mailbox). It's now a waiting conversation they've written in, or the single new conversation from someone they've written to who isn't themselves, and never a calendar's answer. An address with several they never answered is a service. That leaves 3 here. All five reviewers read the 63 left out and called none of them needed. Show all still goes to plan 17's Waiting, which keeps everything, so its number is larger than the sidebar's count. Both stores hold the rule; `needsCount` is a new read in the perf gate.
+- **Limit:** first contact from someone new doesn't reach Needs you, and these local rules can't tell a meeting has happened.
+- **Digest:** a line is one sentence of at most 14 words in the reader's language, says the point rather than that an issue covers it, keeps the author's stance and never their first person, and reads past a sponsor. A longer one is cut on a word. A person's regular essay is a newsletter.
+- **A real bug the eval found:** 80 output tokens per item let hidden reasoning cut off whole batches: three of four failed in one run. It's 200.
+- **Limit:** a few newsletters still file as "other", so they stay out of Archive all, which is the safe side.
