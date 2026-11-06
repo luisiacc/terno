@@ -1,4 +1,4 @@
-import { ruleOutcome, savesRuleOnly, type ActionPreviewInfo, type AiActionApplied, type AiActionEvent, type AiActionStart } from "@terno/core";
+import { type ActionPreviewInfo, type AiActionApplied, type AiActionEvent, type AiActionStart } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { enterPreview, leavePreview, rowsToggled, useActionRows } from "~/state/action-preview";
@@ -63,7 +63,7 @@ client.on("aiAction", (event) => {
 /** The page's part: what came of a sentence. The preview opens with its first rows; anything else stays on the page. */
 export function opened(r: Extract<AiActionStart, { status: "preview" }>): void {
   const { preview } = r;
-  useActionPreview.setState({ preview, future: (preview.plan.future || preview.plan.futureOnly === true || preview.plan.action.type === "spam") && preview.keep.kind === "ok", checking: false, consent: null, checkError: null, applying: false });
+  useActionPreview.setState({ preview, future: (preview.plan.future || preview.plan.action.type === "spam") && preview.keep.kind === "ok", checking: false, consent: null, checkError: null, applying: false });
   enterPreview(preview.previewId);
   const heard = early?.previewId === preview.previewId ? early : null;
   early = null;
@@ -113,7 +113,7 @@ const notes = (r: AiActionApplied): string | undefined => {
 export async function applyPreview(): Promise<void> {
   const s = useActionPreview.getState();
   const { preview } = s;
-  if (!preview || s.applying || preview.scanning || preview.check === "needed" || (preview.count === 0 && !savesRuleOnly(preview))) return;
+  if (!preview || s.applying || preview.scanning || preview.check === "needed" || preview.count === 0) return;
   useActionPreview.setState({ applying: true });
   const verb = preview.plan.action.type === "createCategory" ? "moveToCategory" : preview.plan.action.type;
   const job = trackJob(t("action.job"));
@@ -127,15 +127,10 @@ export async function applyPreview(): Promise<void> {
     void reloadList({ keepSelection: true });
   });
   try {
-    const r = await client.call("ai.actionApply", { previewId: preview.previewId, jobId: job.jobId, future: s.future || savesRuleOnly(preview) });
+    const r = await client.call("ai.actionApply", { previewId: preview.previewId, jobId: job.jobId, future: s.future });
     undoToken.resolve(r.undoToken);
     leavePreview();
-    const outcome = ruleOutcome(preview.plan, r);
-    if (outcome === "failed") {
-      snack.error(t("action.futureOnlyFailed"), { id: job.snackId });
-      return;
-    }
-    const message = outcome === "saved" ? t("action.outcome.futureOnly") : t(`action.outcome.${verb}`, { count: r.done, category: preview.categoryName ?? "" });
+    const message = t(`action.outcome.${verb}`, { count: r.done, category: preview.categoryName ?? "" });
     snack.success(r.stopped ? t("action.outcome.stopped", { outcome: message }) : message, { id: job.snackId, duration: 8000, description: notes(r), action: r.undoToken !== null ? undoAction(undo, t("action.undoName", { outcome: message })) : undefined });
   } catch (error) {
     undoToken.resolve(null);

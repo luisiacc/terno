@@ -1,4 +1,3 @@
-import { savesRuleOnly } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Checkbox } from "@terno/ui/components/checkbox";
@@ -58,8 +57,7 @@ export default function ActionPreviewHeader() {
   if (!preview) return null;
   const { plan, count } = preview;
   const verb = plan.action.type === "createCategory" ? "moveToCategory" : plan.action.type;
-  const onlyAhead = plan.futureOnly === true && count === 0;
-  const title = onlyAhead ? t("action.title.futureOnly", { summary: plan.summary }) : t(`action.title.${verb}`, { count, category: preview.categoryName ?? "", folder: folderName });
+  const title = t(`action.title.${verb}`, { count, category: preview.categoryName ?? "", folder: folderName });
   const waiting = preview.scanning || preview.check === "needed" || checking;
   const conditions = (future ? preview.keepConditions : plan.conditions).map((c) => conditionText(c, accountEmail));
   const label = consent ? providerLabel(consent.provider as Parameters<typeof providerLabel>[0], ai ?? undefined) : "";
@@ -73,7 +71,7 @@ export default function ActionPreviewHeader() {
         ) : (
           <Button size="sm" variant="secondary" className="no-drag" data-testid="action-cancel" onClick={leavePreview}>{t("common.cancel")}</Button>
         )}
-        <Button size="sm" className="no-drag" data-testid="action-apply" disabled={waiting || applying || (count === 0 && !savesRuleOnly(preview))} onClick={() => void applyPreview()}>{onlyAhead ? t("action.button.futureOnly") : t(`action.button.${verb}`)}</Button>
+        <Button size="sm" className="no-drag" data-testid="action-apply" disabled={waiting || applying || count === 0} onClick={() => void applyPreview()}>{t(`action.button.${verb}`)}</Button>
       </div>
       <Line testId="action-conditions">
         <span>{t(plan.lookIn === "inbox" || plan.action.type === "archive" ? "action.in.inbox" : "action.in.everywhere")}</span>
@@ -87,7 +85,6 @@ export default function ActionPreviewHeader() {
           </>
         )}
       </Line>
-      {onlyAhead && <Line testId="action-future-only">{t(preview.found === 0 ? "action.futureOnlyNothing" : "action.futureOnly")}</Line>}
       {preview.scanning && <Line testId="action-finding"><Spinner className="size-3" /> {t("action.finding")}</Line>}
       {plan.action.type === "createCategory" && <Line testId="action-creates">{t("action.creates", { name: plan.action.name })}</Line>}
       {preview.hidden && <Line testId="action-hidden">{t("action.hidden")}</Line>}

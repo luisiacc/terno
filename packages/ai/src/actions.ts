@@ -11,7 +11,7 @@ import { AiError } from "./types";
  * a sender's name and domain and a subject's shape, never a body or an address, and it can only remove rows. Frozen and
  * versioned: any change to the words bumps this.
  */
-export const ACTION_PROMPT_VERSION = 4;
+export const ACTION_PROMPT_VERSION = 5;
 const PLAN_MAX_TOKENS = 2000;
 export const CHECK_GROUPS_MAX = 200;
 // a delete may drop every group: 200 labels and the JSON around them
@@ -29,7 +29,6 @@ const planWire = z.object({
   conditions: wireFilterSchema.shape.conditions,
   lookIn: z.enum(["inbox", "everywhere"]),
   future: z.boolean(),
-  futureOnly: z.boolean(),
   meaning: z.boolean(),
 });
 type PlanWire = z.infer<typeof planWire>;
@@ -62,7 +61,6 @@ Return:
   - A meaning needs a condition that names it: an age alone says nothing about what mail it is. For newsletters and promotions, { field: "listId", op: "matches", value: "." } is mail sent to a list, which also holds a service's alerts, so "meaning" stays true and each is checked.
 - "lookIn": "inbox", or "everywhere" when the sentence says so or the action isn't archive.
 - "future": true only when the sentence itself talks about mail to come ("always", "from now on", "de ahora en adelante", "siempre que llegue") or files a whole kind into a place with no "all" or "these" ("send recruiters to…"). A one-time "archive", "delete" or "star" is false.
-- "futureOnly": true when the sentence is only about mail to come ("from now on", "de ahora en adelante", "siempre que llegue"), and doesn't also ask for what's already here. Then nothing already here is touched.
 - "meaning": true when the sentence names a meaning, like "recruiters" or "shipping notices", rather than literal words, like "from ups.com". A sender by name is literal.
 
 A place: use moveToFolder only when it's in the folder list. "Carpeta", "folder" or a place's name that isn't listed means a category: moveToCategory if listed, else createCategory with that name. A sentence too vague to name any mail ("clean up", "organize what's important") is "other".
@@ -78,7 +76,7 @@ export function planActionTask(input: PlanActionInput): StructuredTask<PlanWire,
     system: SYSTEM(input),
     prompt: `<sentence>${input.sentence.replace(/<(\/?)sentence/gi, "‹$1sentence")}</sentence>`,
     schema: { name: "action_plan", zod: planWire },
-    example: { summary: "Archive shipping notices older than a month", actionType: "archive", categoryId: null, categoryName: null, accountId: null, folder: null, conditions: [{ field: "subject", op: "matches", value: "shipping|delivery", negate: false }, { field: "ageDays", op: "gt", value: "30", negate: false }], lookIn: "inbox", future: false, futureOnly: false, meaning: true },
+    example: { summary: "Archive shipping notices older than a month", actionType: "archive", categoryId: null, categoryName: null, accountId: null, folder: null, conditions: [{ field: "subject", op: "matches", value: "shipping|delivery", negate: false }, { field: "ageDays", op: "gt", value: "30", negate: false }], lookIn: "inbox", future: false, meaning: true },
     maxTokens: PLAN_MAX_TOKENS,
     effort: "low",
     validate: (w) => {
@@ -91,7 +89,7 @@ export function planActionTask(input: PlanActionInput): StructuredTask<PlanWire,
       if (!converted.ok && w.conditions.length) return { ok: false, error: converted.error };
       // an age, or having a file, says nothing about what mail this is: it would catch everything that old (the panel's C10)
       if (w.meaning && w.conditions.length && w.conditions.every((c) => c.field === "ageDays" || c.field === "hasAttachment" || c.field === "account")) return { ok: false, error: "conditions must name what this mail is: a sender, a subject pattern, or listId for mail sent to a list. An age alone would catch everything that old." };
-      return { ok: true, value: { summary: w.summary.trim().slice(0, 200), action, conditions: converted.ok ? converted.rule.conditions : [], lookIn: w.lookIn, future: w.future || w.futureOnly, futureOnly: w.futureOnly, meaning: w.meaning } };
+      return { ok: true, value: { summary: w.summary.trim().slice(0, 200), action, conditions: converted.ok ? converted.rule.conditions : [], lookIn: w.lookIn, future: w.future, meaning: w.meaning } };
     },
   };
 }
@@ -190,7 +188,6 @@ export function countedTransport(transport: ModelTransport, budget: { left: numb
 export function fakeActionPlan(prompt: string, system: string): PlanWire {
   const said = (/<sentence>([\s\S]*?)<\/sentence>/.exec(prompt)?.[1] ?? "").toLowerCase();
   const s = said.replace(/^(from now on|de ahora en adelante|a partir de ahora),?\s+/, "");
-  const onlyAhead = s !== said;
   const categories = JSON.parse(/^Categories: (.*)$/m.exec(system)?.[1] ?? "[]") as { id: number; name: string }[];
   const conditions: PlanWire["conditions"] = [];
   const domain = /\bfrom ([\w-]+\.[a-z]{2,})\b/.exec(s)?.[1];
@@ -226,7 +223,7 @@ export function fakeActionPlan(prompt: string, system: string): PlanWire {
     const word = noun.split(/\s+/)[0]!.replace(/s$/, "");
     conditions.unshift(/shipping/.test(noun) ? { field: "subject", op: "matches", value: "shipping|delivery|tracking", negate: false } : { field: "subject", op: "contains", value: word, negate: false });
   }
-  return { summary: said, actionType, categoryId, categoryName, accountId: null, folder: null, conditions, lookIn: actionType === "archive" ? "inbox" : "everywhere", future: !!into || /from now on|always|siempre/.test(s), futureOnly: onlyAhead, meaning };
+  return { summary: said, actionType, categoryId, categoryName, accountId: null, folder: null, conditions, lookIn: actionType === "archive" ? "inbox" : "everywhere", future: !!into || /from now on|de ahora en adelante|a partir de ahora|always|siempre/.test(said), meaning };
 }
 
 /** Keeps what holds a word of the sentence; a scripted attack only works from outside its block, which mail can't reach. */

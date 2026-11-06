@@ -263,7 +263,6 @@ export class ActionsService {
       previewId: p.id,
       plan: p.plan,
       count: this.count(p),
-      found: p.ids.length,
       skipped: p.skipped.length,
       skippedIncluded: p.includeSkipped,
       leftOut: p.leftOut.size,
@@ -402,7 +401,7 @@ export class ActionsService {
         this.drop(p);
         return;
       }
-      if (!told && (p.ids.length || p.skipped.length) && !p.plan.futureOnly) {
+      if (!told && (p.ids.length || p.skipped.length)) {
         told = true;
         opened("open");
       }
@@ -412,16 +411,12 @@ export class ActionsService {
       }
       await this.b.yieldTurn();
     }
-    if (!p.ids.length && !p.skipped.length && !p.plan.futureOnly) {
+    if (!p.ids.length && !p.skipped.length) {
       this.drop(p);
       opened("none");
       return;
     }
     this.order(p);
-    // only about mail to come: the rows are what the rule would catch, none is touched. The check still reads them: what it takes out goes in the rule as an exception, or no rule is saved
-    if (p.plan.futureOnly) {
-      for (const id of p.ids) p.unticked.add(id);
-    }
     p.scanning = false;
     if (!told) opened("open");
     else this.emit(p);

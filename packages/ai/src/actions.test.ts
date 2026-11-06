@@ -12,7 +12,7 @@ const input: PlanActionInput = {
   now: Date.UTC(2026, 10, 5),
 };
 const subject = { field: "subject" as const, op: "contains" as const, value: "invoice", negate: false };
-const wire = (over: Record<string, unknown> = {}) => ({ summary: "s", actionType: "archive", categoryId: null, categoryName: null, accountId: null, folder: null, conditions: [subject], lookIn: "inbox" as const, future: false, futureOnly: false, meaning: false, ...over }) as Parameters<ReturnType<typeof planActionTask>["validate"]>[0];
+const wire = (over: Record<string, unknown> = {}) => ({ summary: "s", actionType: "archive", categoryId: null, categoryName: null, accountId: null, folder: null, conditions: [subject], lookIn: "inbox" as const, future: false, meaning: false, ...over }) as Parameters<ReturnType<typeof planActionTask>["validate"]>[0];
 const plan = (over: Record<string, unknown> = {}) => planActionTask(input).validate(wire(over));
 
 describe("from a sentence to a plan (plan 143)", () => {
@@ -114,10 +114,6 @@ describe("what the real-mail panel found (plan 143)", () => {
     const groups = [{ label: "g1", name: "Dev List", domain: "beehiiv.com", subject: "jobs", count: 1 }, { label: "g2", name: "Nexo", domain: "nexo.com", subject: "news", count: 1 }];
     const r = checkCandidatesTask({ sentence: "archive job alerts", groups }, CHECK_MAX).validate({ drop: ["Dev List · beehiiv.com · jobs", "g2", "nothing shown"] });
     expect(r).toMatchObject({ ok: true, value: ["g1", "g2"] });
-  });
-  it("only about mail to come implies a rule", () => {
-    const r = task().validate(wire({ futureOnly: true, future: false }));
-    expect(r).toMatchObject({ ok: true, value: { future: true, futureOnly: true } });
   });
   it("a delete's check keeps out what it's unsure of; other actions keep what might", () => {
     const groups = { sentence: "delete old alerts", groups: [] };
