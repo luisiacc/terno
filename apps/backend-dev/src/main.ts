@@ -1,5 +1,7 @@
 import { join } from "node:path";
+import { devAiKeys } from "@terno/core";
 import { adoptLegacyEnv } from "@terno/core/legacy-env";
+import { withDotEnv } from "../../../scripts/release-env.mjs";
 import { startDevServer } from "./server";
 
 adoptLegacyEnv(process.env, () => console.warn("[backend-dev] legacy environment variable detected; use TERNO_* names"));
@@ -16,6 +18,7 @@ const server = await startDevServer({
   fresh: process.env.TERNO_FRESH === "1",
   threads: Number(process.env.TERNO_THREADS ?? 3000),
   accounts: Number(process.env.TERNO_ACCOUNTS ?? 4),
+  devAi: devAiKeys(withDotEnv(process.env)),
   ...(real ? { aiFactory: real.realAiFactory() } : {}),
   ...(realMail ? { seed: false, autoSync: false, iconTransport: null } : {}),
 });

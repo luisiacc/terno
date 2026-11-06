@@ -32,6 +32,7 @@ import { DesktopAttention, OpenRelay } from "./attention";
 import { BUILD_ID } from "./diag/build-info";
 import { mainDiag } from "./diag/main";
 import { RestartPolicy } from "./diag/supervisor";
+import { devModeOf } from "./dev-mode";
 import type { BackendToMain, MainToBackend } from "./ipc";
 import { readLegacySecrets } from "./keychain-helper";
 import { NetworkWatch } from "./network-watch";
@@ -325,6 +326,7 @@ function startBackend() {
     dbPath: join(userData, DB_FILE),
     demo,
     dev: isDev,
+    devMode: devModeOf({ devUrl: process.env.TERNO_DEV_URL, packaged: app.isPackaged }),
     ...agentPaths(),
     version: app.getVersion(),
     diag: { session: diagSession(), build: BUILD_ID, channel: mainDiag.channel },

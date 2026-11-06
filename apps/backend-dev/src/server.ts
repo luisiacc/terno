@@ -2,6 +2,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { APPEARANCE_VERSION, Backend, plaintextCipher, seedDemo, startAgentSocket, webSocketTransport, type AiFactory, type BackendOptions, type LookupAll } from "@terno/backend";
+import type { DevAiKeys } from "@terno/core";
 import { demoRegistry, type ProviderRegistry } from "@terno/mail";
 export { sqlDb } from "@terno/db";
 import { WebSocketServer } from "ws";
@@ -18,6 +19,8 @@ export interface DevServerOptions {
   now?: () => number;
   providers?: ProviderRegistry;
   aiFactory?: AiFactory;
+  /** plan 146: this run's keys for Dev mode; only `main.ts` reads them from the environment */
+  devAi?: DevAiKeys;
   autoSync?: boolean;
   lookup?: LookupAll;
   /** E2E: let accounts added through the demo registry become the owner */
@@ -62,6 +65,7 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
     providers: o.providers ?? demoRegistry,
     aiFactory: o.aiFactory,
     demoAi: true,
+    devAi: o.devAi,
     lookup: o.lookup,
     allowDemoOwnerClaims: o.ownerClaims,
     now: o.now,

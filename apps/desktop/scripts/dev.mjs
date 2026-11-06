@@ -9,6 +9,7 @@
 //                                 goes to the Trash first, so the app starts as a fresh install
 import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { withDotEnv } from "../../../scripts/release-env.mjs";
 import { dirname, join } from "node:path";
 import { existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
@@ -142,6 +143,9 @@ const electronBin = require("electron"); // the electron package exports the bin
 const env = { ...process.env, TERNO_DEV_URL: url };
 // Some hosts (IDEs, agent shells) export this; it makes Electron run as plain Node.
 delete env.ELECTRON_RUN_AS_NODE;
+// plan 146: Dev mode's keys (DEV_AI_ENV), and nothing else of the repo's .env
+const dotEnv = withDotEnv(process.env);
+for (const name of ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "JEV_API_KEY"]) if (dotEnv[name]) env[name] = dotEnv[name];
 if (demo) {
   env.TERNO_DEMO = "1";
   env.TERNO_USER_DATA = devProfile("Terno-dev-demo");

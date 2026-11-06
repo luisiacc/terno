@@ -5,6 +5,7 @@
  */
 import { dirname, join } from "node:path";
 import { Backend, openNodeMailbox, nodeStore, parseGoogleClients, seedDemo, seedDemoCode, startAgentSocket, type LegacySecretReader, type SecretCipher } from "@terno/backend";
+import { devAiKeys } from "@terno/core";
 import type { BackupSummary, MailboxGate } from "@terno/core/mailbox";
 import { cancelClones, classifyOpenError, diskFree, expireBackups, listBackups, mailboxBytes, migrateHeadroom, nodePlatform, prepareUpgrade, quarantineRestored, SCHEMA_VERSION, SqlMailStore, type BackupInfo, type UpgradePlan } from "@terno/db";
 import { captureError, installDiag, log, type DiagEntry, type DiagOptions } from "@terno/core/diag";
@@ -174,6 +175,7 @@ async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal:
       openExternal: async (url) => send({ type: "open-external", url }),
       googleClients: parseGoogleClients(process.env.TERNO_GOOGLE_CLIENTS),
       demoAi: msg.demo || msg.dev,
+      devAi: msg.devMode ? devAiKeys(process.env) : undefined,
       demo: msg.demo,
       online: msg.online,
       onPolicy: (policy) => send({ type: "policy", ...policy }),

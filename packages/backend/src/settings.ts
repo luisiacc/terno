@@ -7,7 +7,7 @@ import {
   type Capabilities,
   type CompatiblePreset,
 } from "@terno/ai";
-import { AI_PROVIDER_IDS, canonicalThemeId, COMPATIBLE_PRESETS, DEFAULT_DESIGN, DESIGN_IDS, DESIGN_PALETTE, fitsMode, isDesignId, JEV_DEFAULT_MODEL, textRef, themeMode, type AiTaskName, type AiTaskTarget, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
+import { AI_PROVIDER_IDS, canonicalThemeId, COMPATIBLE_PRESETS, DEFAULT_DESIGN, DESIGN_IDS, DESIGN_PALETTE, DEV_AI_PROVIDERS, fitsMode, isDesignId, isDevAiProvider, JEV_DEFAULT_MODEL, SUMMARY_DEFAULT_MODEL, textRef, type DevAiKeys, themeMode, type AiTaskName, type AiTaskTarget, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
 import { FAVORITES_MAX, NUDGE_DEFAULT, type FavoriteFolder } from "@terno/core";
 import { isLanguageSetting, L, type Localized } from "@terno/i18n";
@@ -127,6 +127,7 @@ function migrate(s: StoredSettings): StoredSettings {
 }
 
 export const DEFAULT_SETTINGS: General = {
+  devAi: false,
   // new installs start local; migration v3 writes false for installs that predate it
   localMode: true,
   theme: "system",
@@ -463,7 +464,60 @@ export async function readSmartCategorize(store: SettingsStore): Promise<boolean
   return s.aiCategorize === true && (s.autoCategorize ?? DEFAULT_SETTINGS.autoCategorize) !== "off";
 }
 
+/** Plan 146: a local build's keys, by store, since all that reads settings has one and none of it may miss them. */
+const devAiByStore = new WeakMap<SettingsStore, DevAiKeys>();
+
+export function provideDevAi(store: SettingsStore, keys: DevAiKeys): void {
+  devAiByStore.set(store, keys);
+}
+
+/** The environment's keys while Dev mode's switch is on; null for everyone else, whatever is stored. */
+export async function activeDevAi(store: SettingsStore): Promise<DevAiKeys | null> {
+  const keys = devAiByStore.get(store);
+  return keys && (await stored(store)).devAi === true ? keys : null;
+}
+
+/** Plan 146 §1: Pro's routing on the environment's keys, over the saved settings, which it leaves as they are. */
+function withDevAi(ai: AiSettings, keys: DevAiKeys): AiSettings {
+  const provider = keys.anthropic ? "anthropic" : keys.openai ? "openai" : "none";
+  const profiles = { ...ai.profiles };
+  // no saved endpoint: these keys go only to their provider
+  for (const id of DEV_AI_PROVIDERS) if (profiles[id]) profiles[id] = { model: profiles[id].model };
+  profiles.anthropic = { model: profiles.anthropic?.model || DEFAULT_ANTHROPIC_MODEL };
+  profiles.openai = { model: profiles.openai?.model || SUMMARY_DEFAULT_MODEL };
+  // a row may choose among what the environment holds; a choice from before can't send mail elsewhere
+  const tasks = Object.fromEntries(Object.entries(ai.tasks).filter(([, target]) => target && isDevAiProvider(target.provider) && keys[target.provider]));
+  const summary = (id: (typeof DEV_AI_PROVIDERS)[number]) => ({ hasKey: Boolean(keys[id]), keyHint: null });
+  return {
+    ...ai,
+    fromEnv: true,
+    provider,
+    model: provider === "none" ? "" : profiles[provider]!.model,
+    baseURL: null,
+    preset: null,
+    hasKey: provider !== "none",
+    keyUnreadable: false,
+    keyHint: null,
+    keyOrigin: null,
+    keyConfirmed: true,
+    local: false,
+    capabilities: null,
+    profiles,
+    tasks,
+    keys: { anthropic: summary("anthropic"), openai: summary("openai"), jev: summary("jev") },
+  };
+}
+
+/** What every gate reads, with Dev mode's overlay when it's on. */
 export async function readSettings(store: SettingsStore): Promise<AppSettings> {
+  const settings = await readStoredSettings(store);
+  const keys = devAiByStore.get(store);
+  if (!keys) return { ...settings, devAi: false };
+  return settings.devAi ? { ...settings, ai: withDevAi(settings.ai, keys) } : settings;
+}
+
+/** The user's own settings, for what writes them down or works out what they were: an export never records the overlay. */
+export async function readStoredSettings(store: SettingsStore): Promise<AppSettings> {
   const s = await stored(store);
   const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, remoteImagesVersion: _r, errorReportsVersion: _e, localMailVersion: _l, smartCategorizeVersion: _c, gmailClientId: _g, ...general } = s;
   const { provider, profiles, capabilities } = aiState(s, s.aiProvider === undefined && !s.ai?.provider && (await store.secrets.has(keySecretName("anthropic"))));

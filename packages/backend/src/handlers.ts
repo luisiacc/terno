@@ -357,6 +357,7 @@ export function createHandlers(b: Backend): Handlers {
         settings,
         owner,
         demo: b.demo,
+        devAi: b.options.devAi && ctx.origin !== "mcp" ? { anthropic: Boolean(b.options.devAi.anthropic), openai: Boolean(b.options.devAi.openai), jev: Boolean(b.options.devAi.jev) } : null,
         version: b.options.version,
       };
     },
@@ -1245,8 +1246,17 @@ export function createHandlers(b: Backend): Handlers {
       // Keep committed settings and their notifications in the same order.
       const updating = settingsUpdates.then(async () => {
         try {
+          // i18n-ignore: a caller's bug: only a local build offers this
+          if (patch.devAi && !b.options.devAi) throw new RpcError("BAD_REQUEST", "Dev mode is only for a local build");
           const was = await readSettings(store);
           const next = await updateSettings(store, patch, b.now());
+          if (next.devAi !== was.devAi) {
+            b.aiService.devAiChanged();
+            b.summaries.settingsChanged(next);
+            b.followups.settingsChanged(next);
+            b.ask.settingsChanged(next.ask.enabled);
+            b.aiAssist.targetChanged();
+          }
           b.aiAssist.settingsChanged(patch);
           if (patch.ai && (patch.ai.provider !== undefined || patch.ai.model !== undefined || patch.ai.baseURL !== undefined || patch.ai.preset !== undefined || patch.ai.tasks)) b.aiService.configChanged();
           // plan 132: turned off, nothing further goes; a change may unblock what was paused

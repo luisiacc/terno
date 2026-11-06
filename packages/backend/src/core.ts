@@ -6,7 +6,7 @@ import { COOLDOWN_TICKETS, copyOpAdmission, rejectedRecipients, type CooldownSta
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
-import { asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, textRef, type Account, type AccountPrefs, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
+import { asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, textRef, type Account, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -36,7 +36,7 @@ import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreada
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
 import { CARRY_SLICE, carryRenamed } from "./folders";
 import { followFolderFilters } from "./similar";
-import { acknowledgeSummaryProvider, followFavoriteFolders, readAutoCategorize, readComposeSuggestions, readGooglePhotos, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
+import { acknowledgeSummaryProvider, followFavoriteFolders, provideDevAi, readAutoCategorize, readComposeSuggestions, readGooglePhotos, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
 import { IconService } from "./icons/service";
 import type { IconTransport } from "./icons/transport";
 import { browserUnsubscribeTransport, type UnsubscribeTransport } from "./unsubscribe";
@@ -82,6 +82,8 @@ export interface BackendCoreOptions {
   aiFactory?: AiFactory;
   /** offer the offline demo model in Settings (dev, demo and test hosts) */
   demoAi?: boolean;
+  /** plan 146: a local build: the environment's keys, for Dev mode. Never set in a packaged app or the web build. */
+  devAi?: DevAiKeys;
   /** demo build: no owner identity (defaults to true with the demo provider registry) */
   demo?: boolean;
   /** backend-dev E2E only: let the demo registry's no-op verification establish an owner */
@@ -302,6 +304,7 @@ export class BackendCore {
     this.incoming = new IncomingPipeline(options.incomingProcessor);
     this.platform = options.platform;
     this.store = options.store;
+    if (options.devAi) provideDevAi(this.store, options.devAi);
     this.net = createNetworkPolicy({ siteIcons: () => readSiteIcons(this.store), lookup: options.lookup, googleChanged: () => this.cooldownChanged() });
     // the web host POSTs through the policy (no-cors); other hosts pass theirs (Node's in backend.ts)
     this.unsubscribeTransport = options.unsubscribeTransport !== undefined ? options.unsubscribeTransport : options.host?.kind === "web" ? browserUnsubscribeTransport(this.net.fetchFor("unsubscribe")) : null;

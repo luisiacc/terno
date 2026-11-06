@@ -6,7 +6,7 @@ import { draftAddressSchema, exportCategorySchema, exportDraftSchema, exportFilt
 import type { DraftInput, DraftRow } from "@terno/store";
 import { GAP, textToHtmlChunks } from "@terno/richtext/quote";
 import type { BackendCore as Backend } from "./core";
-import { pinKeyOrigins, readSettings, SettingsError, updateSettings } from "./settings";
+import { pinKeyOrigins, readSettings, readStoredSettings, SettingsError, updateSettings, type SettingsStore } from "./settings";
 import { importSnippets, listSnippets } from "./snippets";
 
 const GENERAL_KEYS = [
@@ -33,6 +33,12 @@ const GENERAL_KEYS = [
 const addresses = draftAddressSchema.array().max(MAX_RECIPIENTS);
 
 /** The settings an export carries, as a patch: each field only if valid on its own; secrets never travel. */
+/** Plan 146: what's the user's own, and nothing of a local build's switch. */
+async function exportedSettings(store: SettingsStore) {
+  const { devAi: _devAi, ...settings } = await readStoredSettings(store);
+  return settings;
+}
+
 function settingsFrom(raw: Record<string, unknown>, current: Parameters<typeof switchDesign>[0] & { localMode: boolean; allowAgentSend: boolean; errorReports: string; senderIcons: boolean; remoteImages: string; notifications: boolean; notificationPreview: boolean }): { general: SettingsPatch; ai: SettingsPatch["ai"] } {
   const general: Record<string, unknown> = {};
   for (const key of GENERAL_KEYS) {
@@ -134,7 +140,7 @@ export async function exportMailbox(b: Backend): Promise<MailboxExport> {
     accounts: accounts.map((a) => ({ id: a.id, email: a.email, kind: a.kind, displayName: a.displayName })),
     categories: await store.categories.list(),
     filters: await store.filters.list(),
-    settings: await readSettings(store),
+    settings: await exportedSettings(store),
     drafts,
     snippets: await listSnippets(store),
     ops,
@@ -418,7 +424,7 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
   if (data.settings && typeof data.settings === "object") {
     // saved keys stay bound to the endpoints they serve now: an imported endpoint has to be confirmed before one is sent there
     await pinKeyOrigins(store);
-    const before = await readSettings(store);
+    const before = await readStoredSettings(store);
     const { general, ai } = settingsFrom(data.settings as Record<string, unknown>, before);
     try {
       await updateSettings(store, { ...general, ai });

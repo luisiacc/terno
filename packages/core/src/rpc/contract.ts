@@ -21,6 +21,7 @@ import {
   type ModelInfo,
   type PresetDescriptor,
   type ProviderDescriptor,
+  type DevAiProvider,
 } from "../ai";
 import type { FollowupRow, FollowupsSetting, FollowupsSnapshot } from "../followups";
 import { ASK_QUESTION_MAX, ASK_SOURCES_MAX, type AiAskEvent, type AiAskResult, type AskConversationSummary, type AskOlderOffer, type AskSourceView, type AskTurn } from "../ask";
@@ -97,6 +98,8 @@ export interface AiProfile {
 }
 
 export interface AiSettings {
+  /** plan 146: this comes from a local build's environment, not from what's saved: a saved key or provider changes nothing */
+  fromEnv?: boolean;
   provider: AiProviderId;
   model: string;
   baseURL: string | null;
@@ -148,6 +151,8 @@ export interface AiUsageReport {
 }
 
 export interface AppSettings {
+  /** plan 146: Dev mode's Pro AI switch; always false outside a local build */
+  devAi: boolean;
   /** nothing leaves this Mac except mail with the user's own servers (and loopback AI) */
   localMode: boolean;
   /** the MODE (name kept from v1): follow the OS, or always light / dark */
@@ -279,6 +284,8 @@ export interface Bootstrap {
   owner: OwnerIdentity | null;
   /** demo builds have no owner (and say so) */
   demo: boolean;
+  /** plan 146: which of Dev mode's variables are set; null, and no section, outside a local build. Never a value. */
+  devAi?: Record<DevAiProvider, boolean> | null;
   /** plan 17: the quick filters this backend knows (absent from an older one: plan 15's unread, attachments, starred) */
   filters?: ListFilter[];
   version: string;
@@ -325,7 +332,7 @@ export interface MailboxExport {
   accounts: { id?: number; email: string; kind: Account["kind"]; displayName: string }[];
   categories: Category[];
   filters: Filter[];
-  settings: AppSettings;
+  settings: Omit<AppSettings, "devAi">;
   drafts: ExportedDraft[];
   /** plan 93 */
   snippets: Snippet[];
@@ -459,6 +466,7 @@ const settingsPatch = z.object({
   density: z.enum(["comfortable", "compact"]).optional(),
   layout: z.enum(["split", "list"]).optional(),
   remoteImages: z.enum(["ask", "always"]).optional(),
+  devAi: z.boolean().optional(),
   ai: z
     .object({
       // JEV only picks among choices: it can't be the provider that writes

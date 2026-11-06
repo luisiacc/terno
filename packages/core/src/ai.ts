@@ -19,6 +19,23 @@ export const SUMMARY_DEFAULT_MODEL = "gpt-6-luna";
 export const SUMMARY_CLAUDE_MODEL = "claude-haiku-5-5";
 export const INTENT_CLAUDE_MODEL = "claude-haiku-5-5";
 export const JEV_DEFAULT_MODEL = "jev-latest";
+
+/** Plan 146: what a local build's Dev mode reads, by the provider each runs. */
+export const DEV_AI_ENV = { anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY", jev: "JEV_API_KEY" } as const;
+export type DevAiProvider = keyof typeof DEV_AI_ENV;
+export const DEV_AI_PROVIDERS = Object.keys(DEV_AI_ENV) as DevAiProvider[];
+export type DevAiKeys = Partial<Record<DevAiProvider, string>>;
+export const isDevAiProvider = (provider: string): provider is DevAiProvider => provider in DEV_AI_ENV;
+
+/** The ones set to something. */
+export function devAiKeys(env: Record<string, string | undefined>): DevAiKeys {
+  const keys: DevAiKeys = {};
+  for (const provider of DEV_AI_PROVIDERS) {
+    const value = env[DEV_AI_ENV[provider]]?.trim();
+    if (value) keys[provider] = value;
+  }
+  return keys;
+}
 /** Plan 142: a small model reads each message you send. */
 export const FOLLOWUP_CLAUDE_MODEL = "claude-haiku-5-5";
 export const FOLLOWUP_OPENAI_MODEL = "gpt-6-luna";

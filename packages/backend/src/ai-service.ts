@@ -22,14 +22,14 @@ import {
   type ProviderConfig,
   type StreamEvent,
 } from "@terno/ai";
-import { FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, ASK_CLAUDE_MODEL, ASK_PLAN_CLAUDE_MODEL, ASK_PLAN_OPENAI_MODEL, INTENT_CLAUDE_MODEL, JEV_DEFAULT_MODEL, messageOf, SUMMARY_DEFAULT_MODEL, textRef, WRITING_CLAUDE_MODEL, type AiTaskName } from "@terno/core";
+import { isDevAiProvider, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, ASK_CLAUDE_MODEL, ASK_PLAN_CLAUDE_MODEL, ASK_PLAN_OPENAI_MODEL, INTENT_CLAUDE_MODEL, JEV_DEFAULT_MODEL, messageOf, SUMMARY_DEFAULT_MODEL, textRef, WRITING_CLAUDE_MODEL, type AiTaskName } from "@terno/core";
 import { RpcError, type AiTestResult, type AppSettings } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { BackendCore as Backend } from "./core";
 import { SecretUnreadableError } from "./keychain";
 import { NetworkPolicyError } from "./net-policy";
 import { AiLimiter, type LimiterTask } from "./ai-limiter";
-import { bindKeyOrigin, capabilitiesFor, endpointOrigin, keyOrigins, readSettings, saveCapabilities, setKeyHint } from "./settings";
+import { activeDevAi, bindKeyOrigin, capabilitiesFor, endpointOrigin, keyOrigins, readSettings, readStoredSettings, saveCapabilities, setKeyHint } from "./settings";
 
 export type AiFactory = (config: ProviderConfig, options: AiOptions) => AiTasks;
 export const defaultAiFactory: AiFactory = (config, options) => createAi(config, options);
@@ -130,13 +130,25 @@ export class AiService {
     this.clients.clear();
   }
 
+  /** Plan 146: every key changed at once: also what filters run, and the transports workers already hold. */
+  devAiChanged(): void {
+    this.configChanged();
+    for (const controller of this.generating.values()) controller.abort();
+    for (const lease of this.keyLeases.values()) lease.abort();
+    this.keyLeases.clear();
+    this.models.clear();
+  }
+
   providers() {
     const providers = PROVIDERS.filter((p) => p.id !== "jev" && (p.id !== "fake" || this.b.options.demoAi));
     return { providers: [...providers], presets: Object.values(PRESETS) };
   }
 
   /** Resolves a target to a ready config, failing fast (before any SDK retry) when it can't run. */
-  async config(target: Target): Promise<ProviderConfig> {
+  async config(asked: Target): Promise<ProviderConfig> {
+    const dev = isDevAiProvider(asked.provider) ? await activeDevAi(this.b.store) : null;
+    // plan 146: the environment's keys go only to their provider's own endpoint
+    const target: Target = dev ? { provider: asked.provider, model: asked.model } : asked;
     const { provider, preset } = target;
     if (provider === "none") throw new AiError(L("errors.ai.notConfigured"), "not_configured");
     const local = isLocalProvider({ id: provider, baseURL: target.baseURL, preset });
@@ -146,10 +158,12 @@ export class AiService {
     const baseURL = resolveBaseURL({ id: provider, baseURL: target.baseURL, preset });
     if (provider !== "fake" && !baseURL) throw new AiError(L("errors.ai.serverUrlMissing"), "not_configured");
     const secretName = keySecretName(provider, preset);
-    let apiKey = await this.b.getSecret(secretName).catch((error: unknown) => {
-      throw error instanceof SecretUnreadableError ? new AiError(messageOf(error), "not_configured") : error;
-    });
-    if (apiKey) {
+    let apiKey = dev
+      ? (dev[provider as keyof typeof dev] ?? null)
+      : await this.b.getSecret(secretName).catch((error: unknown) => {
+          throw error instanceof SecretUnreadableError ? new AiError(messageOf(error), "not_configured") : error;
+        });
+    if (apiKey && !dev) {
       // a key goes only to the origin it was saved (or confirmed) for
       const origin = new URL(baseURL!).origin;
       const bound = (await keyOrigins(this.b.store))[secretName];
@@ -347,7 +361,7 @@ export class AiService {
 
   /** The provider's saved endpoint origin (the one its key is for). */
   private async profileOrigin(provider: AiProviderId, preset: CompatiblePreset | undefined): Promise<string | null> {
-    const profile = (await readSettings(this.b.store)).ai.profiles[provider];
+    const profile = (await readStoredSettings(this.b.store)).ai.profiles[provider];
     const own = provider !== "compatible" || (profile?.preset ?? "custom") === (preset ?? "custom") ? profile : { model: "", preset };
     return endpointOrigin(provider, own);
   }
@@ -361,6 +375,8 @@ export class AiService {
   }
 
   async setKey(provider: AiProviderId, preset: CompatiblePreset | undefined, value: string): Promise<AppSettings> {
+    // plan 146: it would change nothing now, and a saved key would be overwritten for later
+    if (isDevAiProvider(provider) && (await activeDevAi(this.b.store))) throw new RpcError("BAD_REQUEST", L("errors.ai.devKeyFromEnv"));
     const name = keySecretName(provider, preset);
     if (value) {
       await this.b.setSecret(name, value);

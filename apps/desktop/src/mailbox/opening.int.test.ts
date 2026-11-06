@@ -47,7 +47,7 @@ function legacy(path: string, fail: boolean) {
   } finally { db.close(); }
 }
 function init(directory: string): MainToBackend {
-  return { type: "init", dbPath: join(directory, "mail.db"), demo: false, dev: false, online: false, socketPath: join(directory, "agent.sock"), tokenPath: join(directory, "agent.token"), version: "test", diag: { session: "synthetic-opening-session", build: "test", channel: "test" } };
+  return { type: "init", dbPath: join(directory, "mail.db"), demo: false, dev: false, devMode: false, online: false, socketPath: join(directory, "agent.sock"), tokenPath: join(directory, "agent.token"), version: "test", diag: { session: "synthetic-opening-session", build: "test", channel: "test" } };
 }
 function exactOld(path: string, version: number) {
   const db = new Db(nodeSqliteDriver, path, { readonly: true });

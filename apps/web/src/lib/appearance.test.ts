@@ -41,6 +41,7 @@ const { getApp, setApp } = await import("~/state/app");
 const { snack } = await import("~/lib/snack");
 
 const SERVER: AppSettings = {
+  devAi: false,
   localMode: true,
   summaries: { enabled: false, enabledAt: null, acknowledged: [] },
       ask: { enabled: true, acknowledged: [] },
