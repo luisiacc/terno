@@ -630,6 +630,8 @@ function startRun(key: string, spec: RunSpec): void {
   const s = session(key);
   const d = materialize(key);
   if (!s || !d) return;
+  // plan 147: every way to run comes here (Shorter, Try again, an answered question). The strip stays, with its Undo
+  if (!draftingOffered(getApp())) return update(key, { phase: "noProvider" });
   listen();
   const requestId = globalThis.crypto.randomUUID();
   const needsSubject = d.mode === "new" && !d.subject.trim();

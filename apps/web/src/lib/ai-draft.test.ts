@@ -580,6 +580,27 @@ describe("existing text, and what goes wrong", () => {
     expect(rpc.calls.filter((c) => c.method.startsWith("ai."))).toHaveLength(0);
   });
 
+  it("Plan 147: Dev mode's switch off, a strip already up asks nothing, whichever way it's asked, and keeps its Undo", async () => {
+    const { key } = await writing();
+    const ai = getApp().settings!.ai;
+    setApp({ devAi: { anthropic: true, openai: false, jev: false }, settings: { ai, devAi: true } as never });
+    delta(key, "Hello");
+    last("ai.compose").resolve(done("Hello"));
+    await tick();
+    expect(session(key)!.phase).toBe("strip");
+    const strip = session(key)!.strip;
+    const asked = calls("ai.compose").length;
+
+    setApp({ settings: { ai, devAi: false } as never });
+    store.refine(key, "shorter");
+    expect(session(key)!.phase).toBe("noProvider");
+    expect(session(key)!.strip).toBe(strip);
+    store.retry(key);
+    await tick();
+    expect(calls("ai.compose")).toHaveLength(asked);
+    setApp({ devAi: null });
+  });
+
   it("a cloud provider's first draft says what it sends, once, before anything goes", async () => {
     setApp({ settings: { ai: { provider: "anthropic", model: "x", local: false, tasks: {}, keys: {}, hasKey: true, keyConfirmed: true, profiles: {} } } as never });
     const key = createDraft({ ...newFields(1), toText: "ana@example.test" });

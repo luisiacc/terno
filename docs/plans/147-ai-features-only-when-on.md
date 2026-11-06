@@ -94,3 +94,9 @@ Not taken:
 - **Stricter readiness for an explicit target (`compatible` without an endpoint, a key confirmed for another origin).** These are the helpers the features already use. A rare broken setup shows the button and the error says what's wrong, which is the better failure.
 - **The preferences read at boot.** Drafting's switch defaults to on until it's read, as it has since plan 133: a brief state for someone who turned it off.
 - **An Ask page open when the switch goes off, and other windows hearing of it.** Settings can't be open over the palette, so this needs a second window, and `settings.update` isn't broadcast for any setting. A window takes the change on reload; the backend's `not_configured` covers anything sent before. Worth its own plan if a settings event is ever added.
+
+## What the code review changed
+
+Codex (read-only, on the fix) raised 1 point, fixed with a test that fails without it:
+
+1. **A strip already up could still run.** Regenerate, Shorter, Warmer, Try again and an answered question go to `startRun` without passing `submit`, so turning the switch off left them running on a saved provider. The check now sits in `startRun`, and the strip stays with its Undo.
