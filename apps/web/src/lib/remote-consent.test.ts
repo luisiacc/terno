@@ -14,6 +14,12 @@ describe("remote content consent", () => {
     expect(useRemoteConsent.getState().allowed).toBe(before);
   });
 
+  it("plan 153: \"always\" never reaches spam; the button still does", () => {
+    expect(remoteAllowed(901, { remoteImages: "always", spam: true }, new Set())).toBe(false);
+    expect(remoteAllowed(901, { remoteImages: "always", spam: true }, new Set([901]))).toBe(true);
+    expect(remoteAllowed(901, { remoteImages: "always", spam: false }, new Set())).toBe(true);
+  });
+
   it("plan 37: local mode doesn't override the button or the setting", () => {
     // the settings object the reader passes carries localMode too; it must not matter
     const local = { remoteImages: "ask" as const, localMode: true };

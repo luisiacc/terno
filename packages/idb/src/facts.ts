@@ -199,7 +199,7 @@ export function factContext(db: MemDb, own: ReadonlySet<string>): FactContext {
       for (const a of t(db, "accounts").all()) {
         for (const ref of t(db, "message_refs").by("ref", a.id, rfcMessageId)) {
           const m = messages.get(ref.message_id);
-          if (!m || m.is_draft || !(m.is_sent || own.has(addressKey(m.from_email)))) continue;
+          if (!m || m.is_draft || m.is_spam || !(m.is_sent || own.has(addressKey(m.from_email)))) continue;
           if (String(m.provider_msg_id ?? "").startsWith("local:") && failedSend(db, m.id)) continue;
           return true;
         }
@@ -414,7 +414,7 @@ const refsOf = (m: R): string[] => [...(JSON.parse(m.references_json) as string[
 export function ownMailChanged(db: MemDb, messageId: number): number[] {
   const m = t(db, "messages").get(messageId);
   if (!m) return [];
-  if (m.is_sent && !m.is_draft) noteSentMail(db, m.from_email, [m.to_json, m.cc_json, m.bcc_json].flatMap(parseAddresses).map((email) => ({ name: "", email })));
+  if (m.is_sent && !m.is_draft && !m.is_spam) noteSentMail(db, m.from_email, [m.to_json, m.cc_json, m.bcc_json].flatMap(parseAddresses).map((email) => ({ name: "", email })));
   return answeredThreads(db, refsOf(m));
 }
 
@@ -448,7 +448,7 @@ export function backfillSlice(db: MemDb, queue: FactsQueue, recency: RecencyOrde
     const to = Math.min(max, state.after + n);
     for (let id = state.after + 1; id <= to; id++) {
       const m = messages.get(id);
-      if (!m || !m.is_sent || m.is_draft) continue;
+      if (!m || !m.is_sent || m.is_draft || m.is_spam) continue;
       const key = addressKey(m.from_email);
       if (key.includes("@")) upsert(db, key, "own");
       for (const json of [m.to_json, m.cc_json, m.bcc_json]) {

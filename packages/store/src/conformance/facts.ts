@@ -19,12 +19,12 @@ export function oracleFacts(s: StoreSnapshot): Map<number, ThreadFacts> {
   const own = new Set(s.accounts.map((a) => addressKey(a.email)));
   const written = new Set<string>();
   for (const m of s.messages) {
-    if (!m.isSent || m.isDraft) continue;
+    if (!m.isSent || m.isDraft || m.isSpam) continue;
     own.add(addressKey(m.fromEmail));
     for (const json of [m.toJson, m.ccJson]) for (const a of JSON.parse(json) as Address[]) written.add(addressKey(a.email));
   }
   const failed = new Set(s.ops.filter((o) => o.kind === "send" && o.state === "failed").map((o) => o.messageIds[0]));
-  const mine = (m: StoreSnapshot["messages"][number]) => !m.isDraft && !(m.providerMsgId?.startsWith("local:") && failed.has(m.id)) && (m.isSent || own.has(addressKey(m.fromEmail)));
+  const mine = (m: StoreSnapshot["messages"][number]) => !m.isDraft && !m.isSpam && !(m.providerMsgId?.startsWith("local:") && failed.has(m.id)) && (m.isSent || own.has(addressKey(m.fromEmail)));
   const answered = new Set<string>();
   for (const m of s.messages) if (mine(m)) for (const r of [...m.references, ...(m.inReplyTo ? [m.inReplyTo] : [])]) answered.add(r);
   const ctx: FactContext = { own: (k) => own.has(k), written: (k) => written.has(k), answered: (id) => answered.has(id), failedSend: (id) => failed.has(id) };

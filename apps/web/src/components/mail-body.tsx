@@ -53,9 +53,9 @@ function paint(root: HTMLElement, look: MailLook): void {
   root.dataset.mail = look.mail;
 }
 
-export interface HtmlBodyProps { attachments?: AttachmentInfo[]; accountId?: number; html: string; messageId: number; remoteImages: "ask" | "always"; appearance: "auto" | "paper"; section?: boolean; onExit?: () => void; onSectionHeight?: (height: number) => boolean; hydrate?: (doc: Document, signal: AbortSignal) => Promise<void>; onHydrationError?: () => void }
+export interface HtmlBodyProps { attachments?: AttachmentInfo[]; accountId?: number; html: string; messageId: number; /** spam never loads on its own, whatever the setting */ spam?: boolean; remoteImages: "ask" | "always"; appearance: "auto" | "paper"; section?: boolean; onExit?: () => void; onSectionHeight?: (height: number) => boolean; hydrate?: (doc: Document, signal: AbortSignal) => Promise<void>; onHydrationError?: () => void }
 
-export function HtmlBody({ html, messageId, remoteImages, appearance, attachments = [], accountId, section = false, onExit, onSectionHeight, hydrate, onHydrationError }: HtmlBodyProps) {
+export function HtmlBody({ html, messageId, remoteImages, spam = false, appearance, attachments = [], accountId, section = false, onExit, onSectionHeight, hydrate, onHydrationError }: HtmlBodyProps) {
   const ref = useRef<HTMLIFrameElement>(null);
   const loaded = useRef<{ markup: string; doc: Document; tabs: WeakMap<Node, string | null> } | null>(null);
   const hydrateRef = useRef(hydrate);
@@ -75,7 +75,7 @@ export function HtmlBody({ html, messageId, remoteImages, appearance, attachment
   useEffect(() => { if (view?.active !== lease) setCopiedText(null); }, [view?.active, lease]);
   useLayoutEffect(() => () => closeView?.(lease, false), [lease, closeView]);
   // the setting or this message's "Load content", in either mode (plan 37)
-  const allowRemote = useRemoteConsent((s) => remoteAllowed(messageId, { remoteImages }, s.allowed));
+  const allowRemote = useRemoteConsent((s) => remoteAllowed(messageId, { remoteImages, spam }, s.allowed));
   const [height, setHeight] = useState(() => section ? 120 : heights.get(messageId) ?? 120);
   // re-rendered when the painted theme changes (the colors are literals inside the document)
   const themeKey = useAppearance((s) => s.themeKey);

@@ -140,7 +140,7 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
   const rows = T(c, "followups");
   const mine = own(c);
   let active = rows.by("state", "open").length + rows.by("state", "due").length;
-  const later = T(c, "messages").by("fk_thread_id", src.threadId).some((m) => m.date > src.date && m.is_sent && !m.is_draft && !m.is_trash && !String(m.provider_msg_id ?? "").startsWith("local:"));
+  const later = T(c, "messages").by("fk_thread_id", src.threadId).some((m) => m.date > src.date && m.is_sent && !m.is_draft && !m.is_trash && !m.is_spam && !String(m.provider_msg_id ?? "").startsWith("local:"));
   for (const r of w.rows) {
     if (r.kind === "awaiting" && (later || replied(c, mine, { accountId: src.accountId, threadId: src.threadId, sentAt: src.date, rfcMessageId: src.rfcMessageId }))) continue;
     if (rows.by("identity", w.messageId, r.item).length) continue;

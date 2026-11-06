@@ -865,7 +865,7 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
       // plan 17: sent mail teaches your addresses and who you write to; mail of yours may answer another thread
       if (!msg.isDraft) {
         own ??= ownAddresses(c.db);
-        if (msg.isSent) {
+        if (msg.isSent && !msg.isSpam) {
           noteSentMail(c.db, fromEmail, [...msg.to, ...msg.cc, ...msg.bcc]);
           own.add(addressKey(fromEmail));
         }
@@ -953,6 +953,7 @@ export function recomputeThreads(c: Ctx, threadIds: Iterable<number>): void {
     }
     if (!thread) continue;
     let unread = 0;
+    let spamUnread = 0;
     let att = 0;
     let starred = 0;
     let inbox = 0;
@@ -964,7 +965,10 @@ export function recomputeThreads(c: Ctx, threadIds: Iterable<number>): void {
     let counterpart: R | null = null;
     let first = rows[0]!;
     for (const m of rows) {
-      if (!m.is_read && !m.is_trash) unread++;
+      if (!m.is_read && !m.is_trash) {
+        if (m.is_spam) spamUnread++;
+        else unread++;
+      }
       if (m.has_attachments) att = 1;
       if (m.is_starred && !m.is_trash) starred = 1;
       if (m.in_inbox && !m.is_trash && !m.is_spam) inbox = 1;
@@ -991,7 +995,8 @@ export function recomputeThreads(c: Ctx, threadIds: Iterable<number>): void {
       last_from_name: (counterpart ?? latest).from_name,
       last_from_email: (counterpart ?? latest).from_email,
       message_count: rows.length,
-      unread_count: unread,
+      // spam raises nothing where the rest of the conversation lives; the Spam folder still reads unread
+      unread_count: visibleNonspam > 0 ? unread : spamUnread,
       has_attachments: att,
       is_starred: starred,
       in_inbox: inbox,
@@ -1655,7 +1660,7 @@ export function findRuleMatches(c: Ctx, rule: FilterRule, now: number, messageId
   const threads = new Set<number>();
   for (const id of messageIds) {
     const m = messages.get(id);
-    if (!m || m.is_trash || (needsBody && m.body_state !== "full")) continue;
+    if (!m || m.is_trash || m.is_spam || (needsBody && m.body_state !== "full")) continue;
     const body = readsBody && m.body_state === "full" ? c.body(id) : null;
     const message = ruleMessage(m, body?.body_text ?? null);
     if (body?.capture_id) message.testBody = (op, value) => c.bodyTest!(body.capture_id!, op, value);
@@ -2223,7 +2228,7 @@ export function unsubscribeCandidate(c: Ctx, threadId: number) {
   // the index's keys, read one row at a time (no copy of the conversation)
   for (const key of messages.keysBy("fk_thread_id", threadId)) {
     const m = messages.get(key as number)!;
-    if (m.is_sent === 1 || m.is_draft === 1) continue;
+    if (m.is_sent === 1 || m.is_draft === 1 || m.is_spam === 1) continue;
     if (window.length === UNSUBSCRIBE_LOOKBACK && !newer(m, window[window.length - 1]!)) continue;
     let i = window.length;
     while (i > 0 && newer(m, window[i - 1]!)) i--;

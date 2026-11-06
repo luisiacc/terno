@@ -142,7 +142,7 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 'none', ?, ?, ?, ?, ?)`,
       src.threadId, w.messageId, src.rfcMessageId, r.item, r.kind, r.text, r.quote, r.personName, r.personEmail, src.date, r.dueAt, r.dated ? 1 : 0, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now,
     ).changes;
-    const later = db.get("SELECT 1 FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND date > ? AND is_sent = 1 AND is_draft = 0 AND is_trash = 0 AND provider_msg_id NOT LIKE 'local:%' LIMIT 1", src.threadId, src.date);
+    const later = db.get("SELECT 1 FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND date > ? AND is_sent = 1 AND is_draft = 0 AND is_trash = 0 AND is_spam = 0 AND provider_msg_id NOT LIKE 'local:%' LIMIT 1", src.threadId, src.date);
     for (const r of w.rows) {
       if (r.kind === "awaiting" && (later || replied(db, own, { accountId: src.accountId, threadId: src.threadId, sentAt: src.date, rfcMessageId: src.rfcMessageId }))) continue;
       if (active >= FOLLOWUPS_ACTIVE_MAX) {

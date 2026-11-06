@@ -150,7 +150,7 @@ export interface RuleMatches {
   threadIds: number[];
 }
 
-/** Messages (not in trash) matching a rule; optionally restricted to a set of message ids. */
+/** Messages matching a rule, never in Trash or Spam (spam triggers nothing: plan 153); optionally restricted to a set of message ids. */
 export function findRuleMatches(
   db: Db,
   rule: FilterRule,
@@ -171,7 +171,7 @@ export function findRuleMatches(
     scopeParams.push(idRange.from, idRange.to);
   }
   const rows = db.all<{ id: number; thread_id: number }>(
-    `SELECT m.id, m.thread_id FROM messages m WHERE m.is_trash = 0 AND (${where})${scope}`,
+    `SELECT m.id, m.thread_id FROM messages m WHERE m.is_trash = 0 AND m.is_spam = 0 AND (${where})${scope}`,
     ...params,
     ...scopeParams,
   );

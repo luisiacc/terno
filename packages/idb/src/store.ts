@@ -1359,8 +1359,8 @@ export class IdbMailStore implements MailStore {
             if (!m || m.account_id !== accountId) continue;
             const after = messages.update(m, Object.fromEntries(sets));
             threads.add(m.thread_id);
-            // plan 17 (Codex R4): a message becoming sent, or a draft, is your mail appearing or going
-            if (after.is_sent !== m.is_sent || after.is_draft !== m.is_draft) for (const t of ownMailChanged(this.db, m.id)) threads.add(t);
+            // plan 17 (Codex R4): a message becoming sent, or a draft, or spam (plan 153), is your mail appearing or going
+            if (after.is_sent !== m.is_sent || after.is_draft !== m.is_draft || after.is_spam !== m.is_spam) for (const t of ownMailChanged(this.db, m.id)) threads.add(t);
           }
           recomputeThreads(this.c, threads);
           return { touched: [...threads], ...reconciliation };

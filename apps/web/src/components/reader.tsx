@@ -201,7 +201,7 @@ function Message({ m, expanded, onToggle, icons, headless, knownEmail }: { m: Me
           {!headless && <div className="hairline-t ml-[calc(var(--avatar-message)+0.75rem)]" />}
           <div className={cn("pb-5", headless ? "pt-5" : "pt-3.5")}>
             {m.bodyHtml ? (
-              <HtmlBody html={m.bodyHtml} messageId={m.id} accountId={m.accountId} attachments={m.attachments} remoteImages={remoteImages} appearance={mailAppearance} />
+              <HtmlBody html={m.bodyHtml} messageId={m.id} accountId={m.accountId} attachments={m.attachments} remoteImages={remoteImages} spam={!icons} appearance={mailAppearance} />
             ) : m.bodyText !== null ? (
               <TextBody text={m.bodyText} />
             ) : (

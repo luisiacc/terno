@@ -21,6 +21,7 @@ import { defineSmartCategorizationConformance } from "./smart-categorization";
 import { defineAskConformance } from "./ask";
 import { defineActionsConformance } from "./actions";
 import { defineRepliesConformance } from "./replies";
+import { defineSpamConformance } from "./spam";
 import { defineTodayConformance } from "./today";
 import { defineFollowupsConformance } from "./followups";
 import { defineWritingConformance } from "./writing";
@@ -132,6 +133,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
     defineActionsConformance(fresh);
     defineRepliesConformance(fresh);
     defineTodayConformance(fresh);
+    defineSpamConformance(fresh);
     defineFollowupsConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);
@@ -372,7 +374,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
           const live = ms.filter((m) => !m.isTrash);
           expect({ messageCount: t.messageCount, unreadCount: t.unreadCount, inInbox: t.inInbox, inTrash: t.inTrash, inSpam: t.inSpam, hasSent: t.hasSent, isStarred: t.isStarred, hasAttachments: t.hasAttachments }).toEqual({
             messageCount: ms.length,
-            unreadCount: live.filter((m) => !m.isRead).length,
+            unreadCount: live.some((m) => !m.isSpam) ? live.filter((m) => !m.isRead && !m.isSpam).length : live.filter((m) => !m.isRead).length,
             inInbox: ms.some((m) => m.inInbox && !m.isTrash && !m.isSpam),
             inTrash: ms.every((m) => m.isTrash),
             inSpam: live.length > 0 && live.every((m) => m.isSpam),
@@ -940,7 +942,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
           hasAttachments: m.hasAttachments,
           date: m.date,
         });
-        const live = snap.messages.filter((m) => !m.isTrash);
+        const live = snap.messages.filter((m) => !m.isTrash && !m.isSpam);
         const range = (await store.filters.messageIdRange())!;
         let nonTrivial = 0;
         const every = harness.ruleSample ?? 1;

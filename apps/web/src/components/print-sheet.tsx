@@ -59,7 +59,7 @@ function printMessages(detail: ThreadDetail | undefined, scope: Scope, messageId
     bodyHtml: m.bodyHtml,
     bodyText: m.bodyText,
     attachments: m.attachments,
-    allowRemote: remoteAllowed(m.id, policy, allowed),
+    allowRemote: remoteAllowed(m.id, { ...policy, spam: detail?.thread.inSpam === true || detail?.thread.hasSpam === true }, allowed),
   }));
 }
 

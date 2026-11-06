@@ -14,7 +14,7 @@ interface Row {
 export function unsubscribeSource(db: Db, threadId: number): UnsubscribeSource | null {
   const rows = db.all<Row>(
     `SELECT id, account_id, from_name, from_email, unsubscribe FROM messages
-     WHERE thread_id = ? AND is_sent = 0 AND is_draft = 0 ORDER BY date DESC, id DESC LIMIT ${UNSUBSCRIBE_LOOKBACK}`,
+     WHERE thread_id = ? AND is_sent = 0 AND is_draft = 0 AND is_spam = 0 ORDER BY date DESC, id DESC LIMIT ${UNSUBSCRIBE_LOOKBACK}`,
     threadId,
   );
   if (!rows.length) return null;

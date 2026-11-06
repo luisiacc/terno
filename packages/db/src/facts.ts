@@ -73,7 +73,7 @@ export function factContext(db: Db, own: ReadonlySet<string>): FactContext {
       // message_refs is keyed by (account_id, ref): a probe per account in one statement, the thread's own account
       // included (a Gmail thread id can put a reply in another thread of the same account)
       for (const m of db.all<{ id: number; is_sent: number; is_draft: number; from_email: string; provider_msg_id: string | null }>(
-        "SELECT m.id, m.is_sent, m.is_draft, m.from_email, m.provider_msg_id FROM message_refs r JOIN messages m ON m.id = r.message_id WHERE r.account_id IN (SELECT id FROM accounts) AND r.ref = ?",
+        "SELECT m.id, m.is_sent, m.is_draft, m.from_email, m.provider_msg_id FROM message_refs r JOIN messages m ON m.id = r.message_id WHERE r.account_id IN (SELECT id FROM accounts) AND r.ref = ? AND m.is_spam = 0",
         rfcMessageId,
       )) {
         if (m.is_draft || !(m.is_sent || own.has(addressKey(m.from_email)))) continue;
@@ -284,12 +284,12 @@ export function answeredThreads(db: Db, refs: readonly string[]): number[] {
  * its references name are what it may answer or stop answering.
  */
 export function ownMailChanged(db: Db, messageId: number): number[] {
-  const m = db.get<{ is_sent: number; is_draft: number; from_email: string; to_json: string; cc_json: string; bcc_json: string; references_json: string; in_reply_to: string | null }>(
-    "SELECT is_sent, is_draft, from_email, to_json, cc_json, bcc_json, references_json, in_reply_to FROM messages WHERE id = ?",
+  const m = db.get<{ is_sent: number; is_draft: number; is_spam: number; from_email: string; to_json: string; cc_json: string; bcc_json: string; references_json: string; in_reply_to: string | null }>(
+    "SELECT is_sent, is_draft, is_spam, from_email, to_json, cc_json, bcc_json, references_json, in_reply_to FROM messages WHERE id = ?",
     messageId,
   );
   if (!m) return [];
-  if (m.is_sent && !m.is_draft) {
+  if (m.is_sent && !m.is_draft && !m.is_spam) {
     const recipients = [m.to_json, m.cc_json, m.bcc_json].flatMap(parseAddresses).map((email) => ({ name: "", email }));
     noteSentMail(db, m.from_email, recipients);
   }
@@ -345,7 +345,7 @@ export function backfillSlice(db: Db, limit: number): SliceResult {
     const max = db.get<{ m: number | null }>("SELECT max(id) AS m FROM messages")!.m ?? 0;
     const to = Math.min(max, state.after + n);
     for (const m of db.all<{ from_email: string; to_json: string; cc_json: string; bcc_json: string }>(
-      "SELECT from_email, to_json, cc_json, bcc_json FROM messages WHERE id > ? AND id <= ? AND is_sent = 1 AND is_draft = 0",
+      "SELECT from_email, to_json, cc_json, bcc_json FROM messages WHERE id > ? AND id <= ? AND is_sent = 1 AND is_draft = 0 AND is_spam = 0",
       state.after,
       to,
     )) {

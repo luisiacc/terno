@@ -720,18 +720,18 @@ export class SqlMailStore implements MailStore {
             if (!owned?.has("category") && acceptFlagObservation(sqlFlags(this.db), u.messageId, "category", observation, category, () => { reconciliation.flagReconcileAccounts ??= [accountId]; })) sets.push(["category", category]);
           }
           if (!sets.length) continue;
-          // plan 17 (Codex R4): a message becoming sent, or a draft, is your mail appearing or going
-          const sentOrDraft = "isSent" in u.flags || "isDraft" in u.flags;
-          const before = sentOrDraft ? this.db.get<{ is_sent: number; is_draft: number }>("SELECT is_sent, is_draft FROM messages WHERE id = ? AND account_id = ?", u.messageId, accountId) : undefined;
-          const r = this.db.get<{ thread_id: number; is_sent: number; is_draft: number }>(
-            `UPDATE messages SET ${sets.map(([c]) => `${c} = ?`).join(", ")} WHERE id = ? AND account_id = ? RETURNING thread_id, is_sent, is_draft`,
+          // plan 17 (Codex R4): a message becoming sent, or a draft, or spam (plan 153), is your mail appearing or going
+          const sentOrDraft = "isSent" in u.flags || "isDraft" in u.flags || "isSpam" in u.flags;
+          const before = sentOrDraft ? this.db.get<{ is_sent: number; is_draft: number; is_spam: number }>("SELECT is_sent, is_draft, is_spam FROM messages WHERE id = ? AND account_id = ?", u.messageId, accountId) : undefined;
+          const r = this.db.get<{ thread_id: number; is_sent: number; is_draft: number; is_spam: number }>(
+            `UPDATE messages SET ${sets.map(([c]) => `${c} = ?`).join(", ")} WHERE id = ? AND account_id = ? RETURNING thread_id, is_sent, is_draft, is_spam`,
             ...sets.map(([, v]) => v),
             u.messageId,
             accountId,
           );
           if (!r) continue;
           threads.add(r.thread_id);
-          if (before && (before.is_sent !== r.is_sent || before.is_draft !== r.is_draft)) for (const t of ownMailChanged(this.db, u.messageId)) threads.add(t);
+          if (before && (before.is_sent !== r.is_sent || before.is_draft !== r.is_draft || before.is_spam !== r.is_spam)) for (const t of ownMailChanged(this.db, u.messageId)) threads.add(t);
         }
         recomputeThreads(this.db, threads);
         return { touched: [...threads], ...reconciliation };

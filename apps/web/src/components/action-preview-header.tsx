@@ -124,7 +124,7 @@ export default function ActionPreviewHeader() {
           <Button variant="link-secondary" size="xs" className="no-drag" data-testid="action-show-left-out" aria-expanded={leftOutShown} onClick={() => showLeftOut(!leftOutShown)}>{t(leftOutShown ? "action.leftOut.hide" : "action.leftOut.show")}</Button>
         </Line>
       )}
-      {preview.keep.kind !== "hidden" && !(onlyAhead && preview.keep.kind === "ok") && (
+      {preview.keep.kind !== "hidden" && (
         <div className="pt-0.5">
           <label className="no-drag flex w-fit items-center gap-2 text-xs" data-testid="action-future">
             <Checkbox checked={future} disabled={preview.keep.kind !== "ok"} onCheckedChange={(on) => useActionPreview.setState({ future: on })} data-testid="action-future-box" />

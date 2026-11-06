@@ -369,7 +369,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       // plan 17: sent mail teaches your addresses and who you write to; mail of yours may answer another thread
       if (!msg.isDraft) {
         own ??= ownAddresses(db);
-        if (msg.isSent) {
+        if (msg.isSent && !msg.isSpam) {
           // Teaching a correspondent can synchronously recompute its threads.
           flushRefs();
           if (preparedRecipients?.correspondentChunks) noteSentMailPrepared(db, fromEmail, preparedRecipients.correspondentChunks);
@@ -544,6 +544,7 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
       continue;
     }
     let unread = 0;
+    let spamUnread = 0;
     let att = 0;
     let starred = 0;
     let inbox = 0;
@@ -559,7 +560,10 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
     for (const m of messages) {
       accountId = m.account_id;
       if (m.user_labels && !m.is_trash && !m.is_spam) for (const l of userLabels(m.user_labels)) labels.add(l);
-      if (!m.is_read && !m.is_trash) unread++;
+      if (!m.is_read && !m.is_trash) {
+        if (m.is_spam) spamUnread++;
+        else unread++;
+      }
       if (m.has_attachments) att = 1;
       if (m.is_starred && !m.is_trash) starred = 1;
       if (m.in_inbox && !m.is_trash && !m.is_spam) inbox = 1;
@@ -591,7 +595,8 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
       (counterpart ?? latest).from_name,
       (counterpart ?? latest).from_email,
       messages.length,
-      unread,
+      // spam raises nothing where the rest of the conversation lives; the Spam folder still reads unread
+      visibleNonspam > 0 ? unread : spamUnread,
       att,
       starred,
       inbox,
