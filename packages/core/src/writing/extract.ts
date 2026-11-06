@@ -1,5 +1,5 @@
 import { detectWritingLanguage } from "./language";
-import { normalizeText } from "../text";
+import { ATTRIBUTION, normalizeText, OUTLOOK_FROM, OUTLOOK_NEXT, QUOTED_BLOCK } from "../text";
 import type { SentMail, WrittenMail } from "./types";
 
 /**
@@ -9,12 +9,6 @@ import type { SentMail, WrittenMail } from "./types";
 
 const MAX_BODY = 64 * 1024;
 
-/** a line that introduces a quote: only a quote if `>` lines follow it */
-const ATTRIBUTION = /^(on\b.{0,300}\bwrote:?|el\b.{0,300}\bescribi[oó]:?|le\b.{0,300}\ba [ée]crit\s?:?|am\b.{0,300}\bschrieb.{0,100}:)$/i;
-/** everything after one of these is someone else's mail, quoted without `>` */
-const QUOTED_BLOCK = /^(-{2,}\s*(original message|mensaje original|forwarded message|mensaje reenviado|message d'origine)\s*-{2,}|_{8,})$/i;
-const OUTLOOK_FROM = /^(from|de|von|da):\s.*(@|\[mailto).*$/i;
-const OUTLOOK_NEXT = /^(sent|enviado|date|fecha|to|para|subject|asunto):\s/i;
 const DEVICE_LINE = /^(sent from|enviado desde|get outlook for)\b.{0,60}$/i;
 
 const CLOSING_WORDS = "thanks|thank you|thx|ty|many thanks|best|all the best|best regards|kind regards|warm regards|regards|warmly|cheers|sincerely|yours|love|lots of love|hugs|take care|talk soon|ttyl|speak soon|see you|xo+|x+|saludos|un saludo|muchos saludos|cordiales saludos|reciba un cordial saludo|reciban un cordial saludo|un cordial saludo|atentamente|cordialmente|un abrazo|abrazos|un beso|besos|gracias|muchas gracias|nos vemos|hablamos";

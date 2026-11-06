@@ -26,14 +26,31 @@ export function baseSubject(subject: string): string {
   return subject.replace(SUBJECT_PREFIX, "").trim();
 }
 
-/** The reader's own words: what they quote from earlier is in those earlier messages. */
+/** a line that introduces a quote: only a quote if `>` lines follow it */
+export const ATTRIBUTION = /^(on\b.{0,300}\bwrote:?|el\b.{0,300}\bescribi[oó]:?|le\b.{0,300}\ba [ée]crit\s?:?|am\b.{0,300}\bschrieb.{0,100}:)$/i;
+/** everything after one of these is someone else's mail, quoted without `>` */
+export const QUOTED_BLOCK = /^(-{2,}\s*(original message|mensaje original|forwarded message|mensaje reenviado|message d'origine)\s*-{2,}|_{8,})$/i;
+export const OUTLOOK_FROM = /^(from|de|von|da):\s.*(@|\[mailto).*$/i;
+export const OUTLOOK_NEXT = /^(sent|enviado|date|fecha|to|para|subject|asunto):\s/i;
+
+/**
+ * The reader's own words: what they quote from earlier is in those earlier messages. An answer written between quoted
+ * lines is theirs (plan 151): an attribution ends the mail only when no `>` follows it, as in an unmarked quote.
+ */
 export function withoutQuotes(text: string): string {
+  const lines = text.split(/\r?\n/);
   const kept: string[] = [];
-  for (const line of text.split(/\r?\n/)) {
-    const l = line.trim();
-    if (/^(on\b.{0,200}\bwrote:|el\b.{0,200}\bescribió:|-{2,}\s*(original message|mensaje original)\s*-{2,})$/i.test(l)) break;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i]!.trim();
     if (l.startsWith(">")) continue;
-    kept.push(line);
+    if (ATTRIBUTION.test(l)) {
+      let next = i + 1;
+      while (next < lines.length && lines[next]!.trim() === "") next++;
+      if (next >= lines.length || !lines[next]!.trim().startsWith(">")) break;
+      continue;
+    }
+    if (QUOTED_BLOCK.test(l) || (OUTLOOK_FROM.test(l) && OUTLOOK_NEXT.test(lines[i + 1]?.trim() ?? ""))) break;
+    kept.push(lines[i]!);
   }
   return kept.join("\n").trim();
 }

@@ -1,4 +1,4 @@
-import { NEW_MAIL_MS, sourceStamp, summaryBlocked, type AiSummaryRow, type AiSummaryState, type NewMailMark, type NewMailWant, type NewMailWants, type SummarySources, type SummaryWrite, type SummaryWriteOutcome } from "@terno/store";
+import { addressesOf, NEW_MAIL_MS, sourceStamp, summaryBlocked, type AiSummaryRow, type AiSummaryState, type NewMailMark, type NewMailWant, type NewMailWants, type SummarySources, type SummaryWrite, type SummaryWriteOutcome } from "@terno/store";
 import { T, type Ctx, type R } from "./mail";
 
 /** Plan 131 revision 5 and plan 132 on IndexedDB, like SQL's (packages/db/src/ai-summaries.ts). */
@@ -120,12 +120,15 @@ export function summarySources(c: Ctx, threadId: number): SummarySources | null 
   if (!thread) return null;
   const heads = T(c, "body_heads");
   const marks = T(c, "ai_new_mail");
-  const own = new Set([...T(c, "accounts").all()].map((a) => String(a.email).toLowerCase()));
+  const accounts = [...T(c, "accounts").all()];
+  const own = new Set(accounts.map((a) => String(a.email).toLowerCase()));
   const rows = T(c, "messages").by("fk_thread_id", threadId).sort((a, b) => a.date - b.date || a.id - b.id);
   const messages = rows.filter((r) => !r.is_draft);
   return {
     threadId,
     accountId: thread.account_id,
+    accountEmail: String(accounts.find((a) => a.id === thread.account_id)?.email ?? "").toLowerCase(),
+    ownEmails: [...own],
     subject: thread.subject,
     inInbox: thread.in_inbox === 1,
     inSpam: thread.in_spam === 1,
@@ -143,6 +146,9 @@ export function summarySources(c: Ctx, threadId: number): SummarySources | null 
         snippet: r.snippet,
         subject: r.subject,
         own: r.is_sent === 1 || own.has(String(r.from_email).toLowerCase()),
+        to: addressesOf(r.to_json),
+        cc: addressesOf(r.cc_json),
+        list: !!r.list_id,
         trash: r.is_trash === 1,
         spam: r.is_spam === 1,
         bodyState: r.body_state,

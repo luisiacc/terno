@@ -87,6 +87,17 @@ export function defineAiSummariesConformance(fresh: () => Promise<MailStore>, re
         expect(await store.newMail.page("summary", null, 10)).toEqual([]);
       });
 
+      it("plan 151: says who a message went to, and whose addresses are the user's", async () => {
+        const { store, arrive } = await setup();
+        const m = await arrive({ to: [{ name: "Tom", email: "tom@x.test" }], cc: [{ name: "Me", email: "me@x.test" }], listId: "dev.lists.x.test" });
+        const sources = (await store.aiSummaries.sources(m.thread))!;
+        expect(sources.messages[0]).toMatchObject({ to: [{ name: "Tom", email: "tom@x.test" }], cc: [{ name: "Me", email: "me@x.test" }], list: true });
+        expect(sources.ownEmails).toContain(sources.accountEmail);
+        expect(sources.accountEmail).toMatch(/@/);
+        const plain = await arrive({ providerMsgId: "another", rfcMessageId: "another@x.test", subject: "Another", listId: null });
+        expect((await store.aiSummaries.sources(plain.thread))!.messages[0]!.list).toBe(false);
+      });
+
       it("marks a message whose text isn't here yet, and its text says so", async () => {
         const { store, arrive } = await setup();
         const m = await arrive({ bodyText: null, bodyState: "none" });

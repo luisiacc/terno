@@ -269,6 +269,19 @@ describe("what's sent", () => {
     expect(prompt.match(/x+/g)!.at(-1)!.length).toBeLessThan(16_000);
   });
 
+  it("plan 151: says who's reading and who each message went to, so a copied reader isn't handed the work", async () => {
+    const { model, arrive, row, backend } = await setup();
+    const account = (await backend.store.accounts.list())[0]!;
+    const many = Array.from({ length: 12 }, (_, i) => ({ name: `Person ${i}`, email: `p${i}@x.test` }));
+    const copied = await arrive({ from: { name: "Ana", email: "ana@x.test" }, to: many, cc: [{ name: "Me Myself", email: account.email.toUpperCase() }] });
+    await until(async () => expect((await row(copied.thread))?.state).toBe("ready"));
+    const prompt = promptText(model.requests[0]!.messages[0]!.content);
+    expect(prompt).toContain(`<reader name="Me Myself" email="${account.email.toLowerCase()}" />`);
+    expect(prompt).toContain('reader-on="cc"');
+    expect(prompt).toContain("and 4 more");
+    expect(prompt).not.toContain("Person 8");
+  });
+
   it("sizes down for a small context window, and keeps the newest message's words", async () => {
     const { client, backend, model, arrive, row } = await setup({ enabled: false });
     const tokens = 2000;
@@ -299,7 +312,7 @@ describe("what's sent", () => {
     const prompt = promptText(req.messages[0]!.content);
     const LADDER = 1000;
     expect(promptText(req.system).length + LADDER + prompt.length + req.maxTokens * 4).toBeLessThanOrEqual(tokens * 4);
-    expect(req.maxTokens).toBe(Math.min(3000, Math.ceil(tokens / 2)));
+    expect(req.maxTokens).toBe(Math.min(3000, Math.ceil(tokens * 0.4)));
     expect(prompt).toContain("The contract needs");
     // what's cited still runs m1, m2…: dropping a message leaves no gap
     const labels = [...prompt.matchAll(/<message id="m(\d+)"/g)].map((m) => Number(m[1]));
@@ -307,7 +320,11 @@ describe("what's sent", () => {
   });
 
   it("keeps an own message's words out of quotes in both languages", () => {
-    expect(withoutQuotes("Yes.\n> Are you coming?\nOn Mon, 3 Mar, Ana wrote:\n> old\nmore")).toBe("Yes.");
+    // plan 151: an answer between quoted lines is theirs, and an unmarked quote still ends it
+    expect(withoutQuotes("Yes.\n> Are you coming?\nOn Mon, 3 Mar, Ana wrote:\n> old\nAlready sent it.")).toBe("Yes.\nAlready sent it.");
+    expect(withoutQuotes("El lun, 3 mar, Ana escribió:\n> ¿Lo enviaste?\nYa lo envié.")).toBe("Ya lo envié.");
+    expect(withoutQuotes("Fine.\nOn Mon, 3 Mar, Ana wrote:\nunmarked old text")).toBe("Fine.");
+    expect(withoutQuotes("On Mon, Ana wrote:\n> intro\nFrom: Bob <bob@x.test>\nSent: Monday\nPlease approve")).toBe("");
     expect(withoutQuotes("Sí.\nEl lun, 3 mar, Ana escribió:\nviejo")).toBe("Sí.");
     expect(withoutQuotes("Hello\n----- Original Message -----\nold")).toBe("Hello");
   });

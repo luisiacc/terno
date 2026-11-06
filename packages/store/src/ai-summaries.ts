@@ -7,6 +7,7 @@
  * - `ai_summaries`: one row a thread. `pending` is the queue; `ready` holds a result and the `source_stamp` of what it
  *   read, which the reader compares with the thread now, so any change of its sources hides it.
  */
+import type { Address } from "@terno/core";
 
 /** Mail older than this at ingest isn't new, a marker older than this has lost its moment. */
 export const NEW_MAIL_MS = 3 * 86_400_000;
@@ -63,6 +64,11 @@ export interface SummarySourceMessage {
   subject: string;
   /** the user sent it, or it's from one of their addresses */
   own: boolean;
+  /** who it went to (plan 151): what a summary needs to tell who was asked */
+  to: readonly Address[];
+  cc: readonly Address[];
+  /** it came through a mailing list */
+  list: boolean;
   trash: boolean;
   spam: boolean;
   bodyState: "none" | "partial" | "full";
@@ -75,6 +81,9 @@ export interface SummarySourceMessage {
 export interface SummarySources {
   threadId: number;
   accountId: number;
+  /** the mailbox this thread is in, and every address of the user's: a copy to another of theirs reached them too */
+  accountEmail: string;
+  ownEmails: readonly string[];
   subject: string;
   inInbox: boolean;
   inSpam: boolean;

@@ -1,7 +1,7 @@
 export * from "./types";
 export * from "./providers";
 export * from "./wire";
-export { SUMMARY_PROMPT_VERSION, summaryBudget, summaryPrompt, summarizeTask, type SummarizeInput, type ThreadSummaryResult, type ThreadText } from "./summarize";
+export { deliveryOf, SUMMARY_PROMPT_VERSION, summaryBudget, summaryPrompt, summarizeTask, type SummarizeInput, type SummaryReader, type ThreadSummaryResult, type ThreadText } from "./summarize";
 export * from "./writing";
 export { DIGEST_PROMPT_VERSION, digestBudget, digestPrompt, type DigestInput, type DigestOutputItem } from "./digest";
 export { REPLY_PROMPT_VERSION, type NeedsReplyInput } from "./replies";
