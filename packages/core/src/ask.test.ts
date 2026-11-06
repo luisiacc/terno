@@ -1,5 +1,5 @@
-import { askOperandsMissing, describe, expect, it } from "vitest";
-import { answerWithoutCitations, askSpecifics, buildAskSearch, hasUnlinkedSentence, resolveCitations, validAskQueries } from "./ask";
+import { describe, expect, it } from "vitest";
+import { answerWithoutCitations, askOperandsMissing, askSpecifics, buildAskSearch, hasUnlinkedSentence, resolveCitations, validAskQueries } from "./ask";
 
 const NOW = new Date(2026, 10, 5, 12).getTime();
 
