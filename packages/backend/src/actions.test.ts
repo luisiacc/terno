@@ -831,13 +831,17 @@ describe("what the real-mail panel changed", () => {
     expect((await backend.store.threads.summaries([id]))[0]!.inInbox).toBe(false);
   });
 
-  it("nothing to do says how many the rule found that are already done or out of reach", async () => {
+  it("nothing to do says how many the rule found that are already done; mail in Spam isn't considered at all", async () => {
     const { client, backend, put, model } = await setup();
     const id = await put();
+    await backend.store.threads.act({ threadIds: [id], action: "markRead", signal: null, now: NOW });
+    model.plan = planWire({ actionType: "markRead", lookIn: "everywhere" });
+    const start = () => client.call("ai.actionStart", { requestId: crypto.randomUUID(), sentence: "read the invoices", timezone: "UTC" } as never);
+    expect(await start()).toMatchObject({ status: "noMatch", done: 1 });
     await backend.store.threads.act({ threadIds: [id], action: "spam", signal: null, now: NOW });
-    model.plan = planWire({ actionType: "spam", lookIn: "everywhere" });
-    const r = await client.call("ai.actionStart", { requestId: crypto.randomUUID(), sentence: "spam the invoices", timezone: "UTC" } as never);
-    expect(r).toMatchObject({ status: "noMatch", done: 1 });
+    const inSpam = await start();
+    expect(inSpam).toMatchObject({ status: "noMatch" });
+    expect((inSpam as { done?: number }).done ?? 0).toBe(0);
   });
 
   it("a delete's check tells the model to keep out what it's unsure of", async () => {

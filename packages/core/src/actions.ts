@@ -60,7 +60,7 @@ export type AiActionStart =
   /** outside what a sentence may do */
   | { status: "refused" }
   | { status: "noCondition" }
-  /** `done`: the rule found mail, all of it already as asked or in Spam or Trash */
+  /** `done`: the rule found mail, all of it already as asked */
   | { status: "noMatch"; summary: string; done?: number }
   | { status: "tooMany" };
 
