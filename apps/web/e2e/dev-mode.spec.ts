@@ -54,6 +54,7 @@ test("Plan 147: the switch off, no AI feature shows, whatever the profile has sa
     await expect(page.getByTestId("action-summarize")).toHaveCount(0);
     await expect(page.getByTestId("quick-ai")).toHaveCount(0);
     await expect(page.getByTestId("summary-block")).toHaveCount(0);
+    await expect(page.getByTestId("nav-today")).toHaveCount(0);
     await palette("summarize");
     await expect(page.getByTestId("palette-summarize")).toHaveCount(0);
     await page.getByTestId("palette-input").fill("ask");
@@ -90,6 +91,7 @@ test("Plan 147: the switch off, no AI feature shows, whatever the profile has sa
   await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "ready");
   await expect(page.getByTestId("action-summarize")).toBeVisible();
   await expect(page.getByTestId("quick-ai")).toBeVisible();
+  await expect(page.getByTestId("nav-today")).toBeVisible();
   await palette("summarize");
   await expect(page.getByTestId("palette-summarize")).toBeVisible();
   await page.getByTestId("palette-input").fill("ask");
