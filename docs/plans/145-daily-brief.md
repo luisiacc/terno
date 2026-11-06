@@ -265,3 +265,9 @@ Round two, on those fixes (6 points, all fixed):
 - **The listeners moved to boot.** `client.on` at the load of `state/today.ts` and `lib/replies.ts` broke 41 web test files, whose mocks have no connection yet; `installToday` and `installReplies` run where the other listeners do. Plan 144 had landed with the second of these.
 - **e2e keeps Today's row off unless a test opts in** (`test.use({ today: true })`, as `tips` does). The demo has an AI provider, so every baseline and every sidebar measure would otherwise hold it. `today.spec` holds the row in all five designs. Settings → General's group does show, so `settings-general` and its Spanish copy were updated, after being looked at: the difference sat right at the comparison's tolerance, so it failed some runs and passed others until then.
 - **Today's tip can sit over the list's first rows** on a first launch with AI. Two packaged smokes clicked there, and they now close it with Esc, as a person would. A click on the tip's own area doesn't reach the row under it, which is how every tip behaves (plan 113).
+
+**The two full runs, for plans 143 to 145 together** (2026-11-05 and 06, with the machine shared and its load between 14 and 184): every gate passed but these, each looked at after the fixes above.
+
+- **Perf, not repeatable.** A different set failed each time, and each passed once load fell. `search-everywhere` (its budgets of 5 and 35 ms) and `idb.perf` passed all 26 at load 17; the `expunge` stalls failed at load 104. None of them is code these plans changed, beyond one added `export` in `queries.ts`. They deserve one more run on a quiet machine.
+- **Packaged smoke:** `update.smoke`'s backend-exit test failed in the crowded file and passed alone.
+- **First-pass flakes** that passed alone: attachment conformance, `upgrade.volumes`, `imap.int`, `incoming-retention`, a `writing` test, a `draft-presentation` test, the seeded search conformance, and `ui-perf`'s 250 KB typing.
