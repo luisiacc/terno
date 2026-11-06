@@ -69,6 +69,7 @@ import { actSimilar, scopeLabel, shownCount, visibleOffers } from "~/lib/similar
 import { orderOffers } from "~/lib/offers";
 import { client } from "~/rpc/connection";
 import { codeKey, copyCode, threadCode } from "~/lib/codes";
+import { copyThreadText } from "~/lib/copy-thread";
 import { listScroller } from "./thread-list";
 import { useAlwaysOffers } from "./review-actions";
 import { clearReminder, openRemind, presetLabel, reminderShort, reminderWhen, setReminder, useReminders } from "~/lib/reminders";
@@ -577,6 +578,7 @@ function MenuItems() {
           <Item icon={<Forward />} label={t("actions.forward")} command="compose.forward" onClick={() => reply("forward")} testId="menu-forward" />
           {/* one conversation only: printing several at once isn't a thing */}
           <Item icon={<Printer />} label={t("actions.printMore")} command="thread.print" onClick={() => openPrint({ threadId: single.id, messageId: null, intent: "print" })} testId="menu-print" />
+          <Item icon={<Copy />} label={t("threadMenu.copyText")} onClick={() => copyThreadText(single.id)} testId="menu-copy-text" />
           <ContextMenuSeparator />
         </>
       )}

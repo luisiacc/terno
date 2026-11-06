@@ -37,7 +37,7 @@ import { hydrateSelectedThread, useThread, useThreadGone } from "~/state/threads
 import { printCommand } from "~/lib/print-open";
 import { HtmlBody, TextBody } from "./mail-body";
 import { MailReaderView } from "./mail-reader-view";
-import { MessageMenu } from "./message-menu";
+import { backgroundMenu, MessageMenu } from "./message-menu";
 import { reasonText } from "~/lib/reasons";
 import { useDesign, variant } from "~/lib/design";
 import { Kbd } from "@terno/ui/components/kbd";
@@ -705,9 +705,9 @@ function ReaderContent() {
         </div>
         {page && <StepButtons id={selectedId} />}
       </div>
-      <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto" style={dock ? { paddingBottom: dock, scrollPaddingBottom: dock } : undefined}>
+      <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto" style={dock ? { paddingBottom: dock, scrollPaddingBottom: dock } : undefined} onContextMenu={backgroundMenu}>
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
-        <div className="mx-auto max-w-(--reader-max) px-(--reader-pad-x) pt-5 pb-16">
+        <div data-reader-column className="mx-auto max-w-(--reader-max) px-(--reader-pad-x) pt-5 pb-16">
           {!detail && gone ? (
             <p data-testid="reader-gone" role="status" className="pt-8 text-center text-sm text-muted-foreground">
               {t("errors.threadGone")}
@@ -721,7 +721,7 @@ function ReaderContent() {
             <>
               {fromDigest && <Button variant="link-secondary" size="xs" className="mb-2" data-testid="back-to-digest" onClick={() => { useToday.setState({ fromDigest: false }); setApp({ selectedId: DIGEST_ROW_ID }); }}>{t("today.digest.back")}</Button>}
               <MessageMenu threadId={detail.thread.id}>
-                <div>
+                <div data-conversation-menu>
                   {/* inside the menu: Lumen's card can stand for the message (plan 59) */}
                   <ReaderHeader detail={detail} account={account} cats={cats} />
                   <Suspense fallback={null}>

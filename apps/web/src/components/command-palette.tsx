@@ -1,16 +1,17 @@
-import { aiFeaturesAvailable } from "@terno/core";
+import { aiFeaturesAvailable, DIGEST_ROW_ID } from "@terno/core";
 import { focusAccount, goToAccount, goToFolder } from "~/lib/account-folders";
 import { normalizeText, remindPresets, separatesTabs, snippetPreview, TABS, type CategoryColor, type ReminderKind, type Snippet } from "@terno/core";
 import { t, type TextKey } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Chip } from "@terno/ui/components/chip";
 import { Command, CommandDescription, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, AtSign, Bell, BellOff, ListChecks, BookmarkPlus, CalendarClock, CheckCheck, Clock, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
+import { Archive, AtSign, Bell, BellOff, ListChecks, BookmarkPlus, CalendarClock, CheckCheck, Clock, Copy, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory } from "~/lib/categorize";
 import { currentTargets, isMac, selectAll } from "~/lib/select";
 import { updateAppearance } from "~/lib/appearance";
+import { copyOpenThread } from "~/lib/copy-thread";
 import { printCommand } from "~/lib/print-open";
 import { setListFilter, toggleUnreadFilter } from "~/lib/unread";
 import { activeFilter, isUnreadOnly } from "~/lib/unread-filter";
@@ -100,6 +101,7 @@ export function CommandPalette() {
   const targets = useApp((s) => (open ? (s.scope ? s.scope.count : s.checked.size ? s.checked.size : s.selectedId !== null ? 1 : 0) : 0));
   // printing takes the conversation the reader shows (one, with no new message in the pane)
   const printable = useApp((s) => open && s.selectedId !== null && !s.scope && s.checked.size < 2 && s.compose === null);
+  const onDigest = useApp((s) => s.selectedId === DIGEST_ROW_ID);
   // Reply, Reply all and Forward: the selected conversation, when it's the one target
   const replyable = useApp((s) => open && s.selectedId !== null && !s.scope && (s.checked.size === 0 || (s.checked.size === 1 && s.checked.has(s.selectedId))));
   const openThread = useThread(useApp((s) => (replyable ? s.selectedId : null)));
@@ -312,6 +314,8 @@ export function CommandPalette() {
     if (printable) {
       add({ id: "thread.print", group: "actions", label: t("palette.print"), icon: <Printer />, shortcut: isMac ? "⌘P" : "Ctrl+P", testId: "palette-print", ...synonyms("palette.alias.print"), keywords: english("palette.print"), run: () => printCommand("print") });
       add({ id: "thread.exportPdf", group: "actions", label: t("palette.exportPdf"), icon: <FileDown />, shortcut: isMac ? "⇧⌘P" : "Ctrl+Shift+P", testId: "palette-pdf", keywords: english("palette.exportPdf"), run: () => printCommand("pdf") });
+      // plan 149: the keyboard's way to the reader's menu; the digest's row isn't a conversation
+      if (!onDigest) add({ id: "thread.copyText", group: "actions", label: t("threadMenu.copyText"), icon: <Copy />, testId: "palette-copy-text", ...synonyms("palette.alias.copyText", english("threadMenu.copyText")), run: copyOpenThread });
     }
     add({ id: "list.selectAll", group: "actions", label: t("palette.selectAll"), icon: <CheckCheck />, shortcut: "⌘A", keywords: english("palette.selectAll"), run: selectAll });
     if (filter) {
