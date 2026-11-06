@@ -99,3 +99,14 @@ That eval now asks that what the mail wants is in the summary or a row, not that
 - The eval's first rewrite would have passed with no facts at all; it now checks them.
 
 Known and left alone: a summary over 800 characters is clipped, and a row could match the fragment at its end. A row of two or more words would have to line up with it exactly.
+
+## The second full run
+
+`pnpm test:all` on `e93b4bd9` failed too (2433 s), with plans 147 and 149 landing during it and load above 100. It didn't include `5b95ef86`, the review's fixes to the check.
+
+- **`unit`:** the same `client.on` break, now in 42 files. Still not fixed on `main`, and still not from this plan.
+- **`e2e`:** 51 of 692 failed on the first pass. Its second pass ran nothing (`--last-failed` said "No tests found"), so those 51 weren't sorted into flaky and real. One was this plan's test, in Graphite: the list hadn't loaded when it reloaded, before anything of the summary.
+- **`smoke`, `db-wasm`, `perf`, `ui-perf`:** failed twice. `smoke`'s two are click timeouts in `update.smoke.ts` and `people.smoke.ts`, neither of which opens a summary. Not looked into further.
+
+What holds on `3b01bf58`, which includes every commit of this plan, at a load near 25: `summaries.spec.ts` and `design-axe.spec.ts` in all five designs, 25 of 25, and `summarize.test.ts` and the backend's summary tests, 77 of 77.
+
