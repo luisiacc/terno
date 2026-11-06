@@ -31,7 +31,7 @@ Terno's shared controls (`src/components/`) are BoardUI's free **Base** componen
 | Button | `button.tsx` | primary, `outline` (BoardUI's secondary), `destructive` (danger), `link`, `link-secondary`, `loading` |
 | Button Group | port on first use | Send's split button is a one-off (`send-button.tsx`) |
 | Carousel | port on first use | |
-| Checkbox | `checkbox.tsx` | with `indeterminate` |
+| Checkbox | `checkbox.tsx` | with `indeterminate`; `CheckboxMark` is the same box as a picture, for a row that is itself the control (an option's children can't be focusable, plan 143) |
 | Chip | `chip.tsx` | an optional named remove |
 | Close Button | `close-button.tsx` | |
 | Color Picker | `color-swatches.tsx` | only the preset row, on RadioGroup |

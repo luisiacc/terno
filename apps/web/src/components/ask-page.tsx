@@ -101,6 +101,29 @@ function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated
   );
 }
 
+/** Plan 143: what a command came to, in history: the sentence, what it meant, what happened, and doing it again from scratch. */
+function CommandTurn({ turn, last }: { turn: AskTurn; last: boolean }) {
+  const running = useAsk((s) => s.running !== null);
+  return (
+    <section className="space-y-1.5" data-testid="ask-turn" data-kind="command">
+      <h3 className="text-xs font-medium text-muted-foreground" data-testid="ask-question">{turn.question}</h3>
+      <p className="whitespace-pre-wrap break-words text-sm leading-relaxed" data-testid="ask-command-outcome">{turn.answer}</p>
+      {last && !running && <Button variant="link-secondary" size="xs" data-testid="ask-run-again" onKeyDown={stopKeys} onClick={() => askQuestion(turn.question)}>{t("action.runAgain")}</Button>}
+    </section>
+  );
+}
+
+function CommandNotice() {
+  const notice = useAsk((s) => s.notice);
+  if (!notice) return null;
+  return (
+    <section className="space-y-1" data-testid="ask-command-notice">
+      <h3 className="text-xs font-medium text-muted-foreground" data-testid="ask-question">{notice.question}</h3>
+      <p className="text-sm">{notice.text}</p>
+    </section>
+  );
+}
+
 /** Older mail, on a click: the main action when nothing here answers, a quiet link otherwise. */
 function Older() {
   const offer = useAsk((s) => s.older);
@@ -268,11 +291,12 @@ function Conversation({ onBack }: { onBack: () => void }) {
       {/* tabbable: it scrolls, and a keyboard has to reach what it holds */}
       <div ref={area} tabIndex={0} data-testid="ask-area" className="max-h-72 space-y-4 overflow-y-auto px-[18px] py-3 outline-none">
         {turns.map((turn, i) => (
-          <Turn key={turn.id} turn={turn} last={turn === last} repeated={turn.question === (i === 0 ? title : turns[i - 1]!.question)} />
+          turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={turn.question === (i === 0 ? title : turns[i - 1]!.question)} />
         ))}
         <Running />
         <Consent />
         <Failure />
+        <CommandNotice />
         <Older />
         {incomplete && <p className="text-xs text-muted-foreground" data-testid="ask-incomplete">{t("ask.incomplete")}</p>}
         <OlderLimit />
@@ -325,6 +349,7 @@ function Empty({ value, setValue, onBack }: { value: string; setValue: (v: strin
       )}
       {!busy && (
         <CommandList label={t("palette.results")}>
+          <div className="px-[18px] py-2 empty:hidden"><CommandNotice /></div>
           {query && (
             <CommandGroup value="ask-go" forceMount>
               <CommandItem forceMount value={`ask\u0000${value}`} data-testid="ask-submit" onSelect={() => { askQuestion(value); setValue(""); }}>

@@ -1,3 +1,4 @@
+import { toggleRow } from "~/state/action-preview";
 import { listFilterOf, matchesFilter } from "@terno/core";
 /**
  * The selection, bound to the app: clicks with their modifiers, ⌘A and the
@@ -46,6 +47,8 @@ let collapseOnClick: number | null = null;
  */
 export function pressRow(id: number, m: PressModifiers): void {
   const s = getApp();
+  // plan 143: a preview's rows have their own check; multi-select is off there (revision 3)
+  if (s.actionPreview) m = { meta: false, ctrl: false, shift: false };
   const toggleKey = isMac ? m.meta : m.ctrl;
   collapseOnClick = null;
   // the open thread counts as selected when a multi-selection starts from it
@@ -95,25 +98,28 @@ export function toggleCurrent(): void {
   const s = getApp();
   // a page covers the list (List): a selection made there would be invisible, and the reader's actions would act on it
   if (s.selectedId === null || listCovered()) return;
+  if (s.actionPreview) return toggleRow(s.selectedId);
   setApp({ checked: toggle(s.checked, s.selectedId), anchorId: s.selectedId, scope: null });
 }
 
 /** ⌘A / `* a`: every loaded row (more may exist: the banner offers the whole view). */
 export function selectAll(): void {
   const { items } = useList.getState();
-  if (items.length === 0 || listCovered()) return;
+  if (items.length === 0 || listCovered() || getApp().actionPreview) return;
   const s = getApp();
   setApp({ checked: pick(items), anchorId: s.anchorId ?? items[0]!.id, scope: null });
 }
 
 /** `* r` / `* u` / `* s` */
 export function selectWhere(keep: (t: { unread: boolean; starred: boolean }) => boolean): void {
+  if (getApp().actionPreview) return;
   if (listCovered()) return;
   setApp({ checked: pick(useList.getState().items, keep), scope: null });
 }
 
 /** ⇧J / ⇧K: the cursor moves and the anchor→cursor range is selected. */
 export function extendSelection(delta: number): void {
+  if (getApp().actionPreview) return;
   if (listCovered()) return;
   const s = getApp();
   const order = listOrder();

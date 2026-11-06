@@ -8,6 +8,7 @@ import { flushSync } from "react-dom";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, getSelectionWriteRevision, inPlainInbox, setApp, setListAutoSelection, useApp } from "./app";
+import { noteRows, useActionRows } from "./action-preview";
 import { useFollowups } from "./followups";
 import { anyDue } from "./reminders";
 
@@ -66,7 +67,7 @@ export function listKey(): string {
   // plan 87: Reminders, only when it's that list (every other list's key is as it was)
   // plan 86: a Gmail tab likewise ("~promotions": never a folder's key)
   // plan 108: a search focused on an account looks only in it, so it's another list than the same search everywhere
-  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.gmailTab ? [`~${s.gmailTab}`] : []), ...(s.reminders ? ["reminders"] : []), ...(s.followups ? ["followups"] : []), ...(soloSearch(s) ? ["~solo"] : []), s.query.trim()]);
+  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.gmailTab ? [`~${s.gmailTab}`] : []), ...(s.reminders ? ["reminders"] : []), ...(s.followups ? ["followups"] : []), ...(s.actionPreview ? [`action:${s.actionPreview}`] : []), ...(soloSearch(s) ? ["~solo"] : []), s.query.trim()]);
 }
 
 /** plan 108: a search while focused on an account: only that account's mail */
@@ -144,6 +145,13 @@ async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE
     const { items } = await client.call("reminders.threads", { dueOnly: false });
     return { items, nextCursor: null };
   }
+  if (s.actionPreview) {
+    const offset = cursor?.id ?? 0;
+    const page = Math.min(limit, 500);
+    const r = await client.call("ai.actionPage", { previewId: s.actionPreview, offset, limit: page, leftOut: useActionRows.getState().showLeftOut });
+    noteRows(r.items.map((t) => t.id), r.unticked);
+    return { items: r.items, nextCursor: offset + page < r.total ? { lastDate: 0, id: offset + page } : null };
+  }
   if (s.followups) {
     if (cursor) return { items: [], nextCursor: null };
     const { items } = await client.call("followups.threads", { onTop: false });
@@ -190,7 +198,7 @@ function keepSearchRows<P extends { items: ThreadSummary[]; nextCursor: { lastDa
 export function currentScope(): ThreadScope | null {
   const s = getApp();
   // Revisar, Reminders: lists of their own, no "select all N"
-  if (s.reviewCategoryId !== null || s.reminders || s.followups) return null;
+  if (s.reviewCategoryId !== null || s.reminders || s.followups || s.actionPreview) return null;
   const filter = activeFilter(s);
   const q = s.query.trim();
   // plan 64: a search looks everywhere (every account, category and place, Spam and Trash too); in:, account:, category: narrow it

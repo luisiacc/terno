@@ -1,3 +1,5 @@
+import { CheckboxMark } from "@terno/ui/components/checkbox";
+import { toggleRow, useActionRows } from "~/state/action-preview";
 import { listFilterOf, matchesFilter, mostUrgent, type CategoryColor, type ThreadSummary } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
@@ -81,6 +83,9 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   const reminder = useReminders((s) => s.byThread.get(thread.id));
   /** the Reminders list's date is the reminder's */
   const remindersList = useApp((s) => s.reminders);
+  /** plan 143: in a sentence's preview, whether this row is in it (only this row renders when it changes) */
+  const previewing = useApp((s) => s.actionPreview !== null);
+  const unticked = useActionRows((s) => previewing && s.unticked.has(thread.id));
   return (
     <ThreadRowView
       thread={thread}
@@ -94,6 +99,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       reminderEnd={reminderEnd}
       selected={selected}
       checked={checked}
+      included={previewing ? !unticked : undefined}
       inSelection={inSelection}
       account={account}
       categories={categories}
@@ -114,6 +120,8 @@ type ViewProps = Omit<Props, "showAccount" | "wide" | "review" | "reminderTop" |
   reminderEnd: boolean;
   selected: boolean;
   checked: boolean;
+  /** plan 143: the row of a preview, in or out; its check is its own */
+  included?: boolean;
   inSelection: boolean;
   account: AccountLabel | undefined;
   categories: AppState["categories"];
@@ -162,7 +170,7 @@ function RowDate({ thread, reminderTop, fallback, className, title }: { thread: 
   return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? reminderShort(dueAt) : fallback}</span>;
 }
 
-export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, reminderTop, reminderEnd, selected, checked, inSelection, account, categories, hasDraft, code, reminder, remindersList, interactive }: ViewProps) {
+export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, reminderTop, reminderEnd, selected, checked, included, inSelection, account, categories, hasDraft, code, reminder, remindersList, interactive }: ViewProps) {
   const cats = thread.categoryIds.length ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
@@ -274,13 +282,14 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     <div
       role="option"
       id={`thread-${thread.id}`}
-      aria-selected={inSelection}
+      aria-selected={included ?? inSelection}
       data-cursor={selected || undefined}
       data-testid="thread-row"
       data-thread-id={thread.id}
       data-unread={thread.unread || undefined}
       data-messages={thread.messageCount > 1 ? thread.messageCount : undefined}
       data-checked={checked || undefined}
+      data-included={included}
       data-layout={layout}
       data-wide={(wide && !compact) || undefined}
       onMouseDown={interactive ? (e) => e.button === 0 && pressRow(thread.id, { meta: e.metaKey, ctrl: e.ctrlKey, shift: e.shiftKey }) : undefined}
@@ -294,10 +303,17 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
         classic && "after:absolute after:right-4 after:bottom-0 after:left-5 after:h-(--hairline-w) after:bg-hairline [&:has(+[data-checked])]:after:hidden [&:has(+[data-cursor])]:after:hidden",
         selected ? "text-row-selected-foreground before:bg-row-selected after:hidden" : checked ? "before:bg-accent after:hidden" : "hover:before:bg-row-hover",
         reminderEnd && "after:hidden",
+        // the check takes the gutter, and the content line moves over as one
+        included !== undefined && "pl-10",
+        included === false && "[&>*:not([data-slot=checkbox])]:opacity-50",
       )}
       style={{ transform: `translateY(${top}px)`, height }}
     >
-      {!(big && !line) && <span className={cn("absolute top-1/2 left-[11px] size-1.5 -translate-y-1/2 rounded-full bg-unread", !thread.unread && "invisible")} />}
+      {included !== undefined && (
+        // the row is the option and `x` its key: this is for the pointer, and says nothing the row doesn't
+        <CheckboxMark data-testid="row-include" checked={included} className="absolute top-1/2 left-5 -translate-y-1/2" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); toggleRow(thread.id); }} />
+      )}
+      {!(big && !line) && included === undefined && <span className={cn("absolute top-1/2 left-[11px] size-1.5 -translate-y-1/2 rounded-full bg-unread", !thread.unread && "invisible")} />}
       {line ? (
         <div className={cn("relative flex min-w-0 items-center", classic ? "gap-2" : "gap-2.5", wide && !classic && "gap-3")}>
           {avatar}

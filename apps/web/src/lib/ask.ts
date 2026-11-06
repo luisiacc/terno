@@ -1,4 +1,5 @@
 import { ASK_TURNS_MAX, type AiAskResult, type AiErrorKind, type AskConversationSummary, type AskOlderOffer, type AskSourceRef, type AskSourceView, type AskTurn } from "@terno/core";
+import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { localized } from "~/lib/i18n";
@@ -29,6 +30,8 @@ export interface AskState {
   /** Where the first question to a destination would go: said once, before anything leaves. */
   consent: { question: string; provider: string; endpoint: string | null; destination: string } | null;
   error: { question: string; message: string; kind: AiErrorKind | undefined } | null;
+  /** plan 143: why a sentence didn't open a preview; the page stays, with the sentence */
+  notice: { question: string; text: string } | null;
   noProvider: boolean;
   older: AskOlderOffer;
   /** mail with no text yet, or a read that stopped at its limit */
@@ -46,7 +49,7 @@ export interface AskState {
   usedAt: number;
 }
 
-const EMPTY: Omit<AskState, "usedAt" | "ready" | "gone"> = { conversationId: null, turns: [], sources: {}, running: null, consent: null, error: null, noProvider: false, older: { kind: "none" }, incomplete: false, olderFound: null, olderPartial: false, armedSource: null };
+const EMPTY: Omit<AskState, "usedAt" | "ready" | "gone"> = { conversationId: null, turns: [], sources: {}, running: null, consent: null, error: null, notice: null, noProvider: false, older: { kind: "none" }, incomplete: false, olderFound: null, olderPartial: false, armedSource: null };
 
 export const useAsk = create<AskState>(() => ({ ...EMPTY, ready: 0, usedAt: 0, gone: 0 }));
 
@@ -75,6 +78,8 @@ async function settle(call: Promise<AiAskResult>, requestId: string, question: s
     const r = await call;
     if (!mine()) return;
     if (r.status === "consent") return useAsk.setState({ running: null, consent: { question, provider: r.provider, endpoint: r.endpoint, destination: r.destination } });
+    // plan 143: something to do, not a question: its own plan, and nothing runs before Apply
+    if (r.status === "command") return await settleCommand(requestId, question);
     const turn = r.turn;
     const sources = turn ? await viewsOf(turn.sources).catch(() => ({})) : {};
     if (!mine()) return;
@@ -100,6 +105,25 @@ async function settle(call: Promise<AiAskResult>, requestId: string, question: s
   }
 }
 
+const COMMAND_NOTICE = { refused: "action.refused", noCondition: "action.noCondition", noMatch: "action.noMatch", tooMany: "action.tooMany" } as const;
+
+async function settleCommand(requestId: string, question: string): Promise<void> {
+  const mine = () => useAsk.getState().running?.requestId === requestId;
+  // before it can say anything: a short walk is over before its answer arrives
+  const { opened } = await import("./action-preview");
+  const r = await client.call("ai.actionStart", { requestId, sentence: question, ...(useAsk.getState().conversationId !== null ? { conversationId: useAsk.getState().conversationId! } : {}), timezone: timezone() });
+  if (!mine()) {
+    // the page moved on while it looked: nothing keeps it
+    if (r.status === "preview") void client.call("ai.actionCancel", { previewId: r.preview.previewId }).catch(() => {});
+    return;
+  }
+  if (r.status === "consent") return useAsk.setState({ running: null, consent: { question, provider: r.provider, endpoint: r.endpoint, destination: r.destination } });
+  if (r.status !== "preview") return useAsk.setState({ running: null, notice: { question, text: t(COMMAND_NOTICE[r.status]) }, usedAt: Date.now() });
+  useAsk.setState({ running: null, usedAt: Date.now() });
+  closePalette();
+  opened(r);
+}
+
 const viewsOf = async (sources: readonly AskSourceRef[]): Promise<Record<number, AskSourceView>> => (sources.length ? client.call("ai.askSources", { messageIds: sources.map((s) => s.messageId) }) : {});
 
 /** A question, or a follow-up on the conversation showing. */
@@ -108,7 +132,7 @@ export function askQuestion(question: string, o: { acknowledge?: string } = {}):
   const s = useAsk.getState();
   if (!text || s.running) return;
   const requestId = globalThis.crypto.randomUUID();
-  useAsk.setState({ running: { requestId, question: text, text: "", older: null, searchingOlder: false }, consent: null, error: null, noProvider: false, olderFound: null, olderPartial: false, usedAt: Date.now() });
+  useAsk.setState({ running: { requestId, question: text, text: "", older: null, searchingOlder: false }, consent: null, error: null, notice: null, noProvider: false, olderFound: null, olderPartial: false, usedAt: Date.now() });
   void settle(client.call("ai.ask", { requestId, question: text, ...(s.conversationId !== null ? { conversationId: s.conversationId } : {}), timezone: timezone(), ...(o.acknowledge ? { acknowledge: o.acknowledge } : {}) }), requestId, text);
 }
 

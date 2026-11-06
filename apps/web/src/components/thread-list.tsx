@@ -15,7 +15,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { openCompose } from "~/lib/actions";
 import { installScrollHairline } from "~/lib/scroll-hairline";
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { create } from "zustand";
 import { formatNumber, t } from "@terno/i18n";
@@ -48,6 +48,8 @@ import { renderProbe } from "~/lib/render-probe";
 
 /** plan 87: the Inbox top's label and the gap after it (px; a row's height comes from the design) */
 /** What covers the list's last rows now: the snack dock, or List's pinned draft. */
+// plan 143: only a sentence's preview needs it
+const ActionPreviewHeader = lazy(() => import("./action-preview-header"));
 const listInset = (): number => bottomInset(useSnack.getState().inset, useAppearance.getState().layout === "list" ? usePinned.getState().inset : 0);
 
 const TOP_LABEL = 28;
@@ -663,6 +665,7 @@ export function ThreadList() {
   const height = wide && !compact ? design.rows.wide : design.rows[compact ? "compact" : "comfortable"];
   const layout = design.variants.row;
   const many = useApp((s) => s.scope !== null || s.checked.size >= 2);
+  const previewing = useApp((s) => s.actionPreview !== null);
   // plan 80: a category's Review list, whose rows answer its suggestions
   const review = useApp((s) => s.reviewCategoryId);
   const tabs = useApp((s) => list && tabsShown(s));
@@ -832,19 +835,27 @@ export function ThreadList() {
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list" data-results-for={itemsKey} data-composing={composing || undefined}>
-      <Header hairlineRef={headerRef} />
-      <ReportRow />
-      <ForwardQuestion />
-      <LearnedBanner />
-      {DesktopBanner && (
-        <Suspense>
-          <DesktopBanner />
+      {previewing ? (
+        <Suspense fallback={<div className="h-[52px] shrink-0" />}>
+          <ActionPreviewHeader />
         </Suspense>
+      ) : (
+        <>
+          <Header hairlineRef={headerRef} />
+          <ReportRow />
+          <ForwardQuestion />
+          <LearnedBanner />
+          {DesktopBanner && (
+            <Suspense>
+              <DesktopBanner />
+            </Suspense>
+          )}
+        </>
       )}
       {/* List has no reader pane for a multi-selection: its actions are a toolbar over the rows (plan 24) */}
       {list && many && <SelectionBar variant="toolbar" />}
-      <SelectAllBanner />
-      <DraftsStrip />
+      {!previewing && <SelectAllBanner />}
+      {!previewing && <DraftsStrip />}
       {/* under tabs the rows are what they control (tabpanel); the listbox is one Tab stop and restores focus when a page closes */}
       <div className="relative flex min-h-0 flex-1 flex-col" {...(tabs ? { role: "tabpanel", id: TAB_PANEL_ID, "aria-labelledby": `list-tab-${tab}` } : {})}>
       <ThreadMenu>
