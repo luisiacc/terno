@@ -112,6 +112,22 @@ test("copying a conversation as text: from the thread, the list and the palette"
   });
 });
 
+test("a link reaches both kinds of paste: real in a document, written out in a composer", async ({ app: page, server, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const html = '<p>See <a href="https://x.test/report?a=1">the <b>report</b></a> and <a href="https://x.test/b">https://x.test/b</a>.</p>';
+  await selectThread(page, await ingest(server, "linked-copy", "Linked copy", html), 'subject:"Linked copy"');
+  await blank(page);
+  await page.locator("[data-reader-scroller]").getByRole("heading").first().click({ button: "right" });
+  await page.getByTestId("message-menu-copy-text").click();
+  expect(await copied(page)).toContain("See the report (https://x.test/report?a=1) and https://x.test/b.");
+  const rich = await page.evaluate(async () => {
+    const [item] = await navigator.clipboard.read();
+    return (await item!.getType("text/html")).text();
+  });
+  expect(rich).toContain('<a href="https://x.test/report?a=1">the <b>report</b></a>');
+  expect(rich).toContain('<a href="https://x.test/b">https://x.test/b</a>');
+});
+
 test("copying loads nothing the mail points at: a pixel, a frame and a stylesheet", async ({ app: page, server, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   const html = '<link rel="stylesheet" href="https://css.tracker.test/a.css"><p>Tracked words</p><iframe src="https://frame.tracker.test/"></iframe><img src="https://pixel.tracker.test/p.gif" alt=""><object data="https://object.tracker.test/o"></object>';

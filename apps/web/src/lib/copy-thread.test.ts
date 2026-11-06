@@ -16,7 +16,7 @@ class Item {
   constructor(readonly parts: Record<string, Promise<Blob>>) {}
 }
 const write = vi.fn(async ([item]: Item[]) => {
-  await item!.parts["text/plain"];
+  await Promise.all(Object.values(item!.parts));
 });
 
 const message = (id: number, bodyState: string, bodyText: string | null) => ({ id, from: { email: "a@x.io", name: "" }, to: [], cc: [], date: 0, bodyText, bodyHtml: null, bodyState, attachments: [] });
@@ -49,6 +49,8 @@ it("copies what's there and says how many, without asking for a download", async
   copyThreadText(5);
   await vi.waitFor(() => expect(h.snack).toHaveBeenCalledWith("Copied 2 messages", { duration: 2000 }));
   expect(await copied()).toContain("One");
+  const rich = await ((write.mock.calls[0]![0][0] as Item).parts["text/html"]!).then((b) => b.text());
+  expect(rich).toContain("<p>One</p>");
   expect(h.call).not.toHaveBeenCalled();
 });
 
@@ -73,7 +75,6 @@ it("copies what it has when a download fails, and says so", async () => {
 
 it("says so when the conversation can't be read or the clipboard refuses", async () => {
   h.load.mockResolvedValue(null);
-  write.mockImplementationOnce(([item]) => item!.parts["text/plain"]!.then(() => {}));
   copyThreadText(5);
   await vi.waitFor(() => expect(h.snack.error).toHaveBeenCalledWith("Couldn’t copy the conversation. Try again."));
   h.load.mockResolvedValue(detail(message(1, "full", "One")));

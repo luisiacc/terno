@@ -34,8 +34,12 @@ async function build(threadId: number) {
 
 export function copyThreadText(threadId: number): void {
   const built = build(threadId);
-  // the write starts inside the click and holds a promise of the text: a browser may refuse one that starts after a wait
-  const item = new ClipboardItem({ "text/plain": built.then(({ text }) => new Blob([text], { type: "text/plain" })) });
+  // the write starts inside the click and holds a promise of the text: a browser may refuse one that starts after a wait.
+  // Both forms: a document takes the links and the bold, an AI's composer the text with its addresses written out
+  const item = new ClipboardItem({
+    "text/plain": built.then(({ text }) => new Blob([text], { type: "text/plain" })),
+    "text/html": built.then(({ html }) => new Blob([html], { type: "text/html" })),
+  });
   void navigator.clipboard.write([item]).then(
     () => built.then(({ messages, missing }) => snack(missing ? t("threadText.copiedMissing", { count: missing }) : t("threadText.copied", { count: messages }), { duration: 2000 })),
     () => snack.error(t("threadText.copyFailed")),

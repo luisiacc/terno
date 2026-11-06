@@ -60,7 +60,7 @@ From: …
 
 `lib/thread-text.ts`, a lazy chunk, parses with `DOMParser` into an inert document: nothing loads, nothing runs, and the output is a string, never HTML, so no sanitizer is needed. Which body: what the reader shows, HTML when there is one. A line model, not string replacement:
 
-- **Inline:** whitespace collapses across inline elements, `&nbsp;` is a space, zero-width spaces, BOMs and soft hyphens go. Formatting goes, and **links are their text** ("text only"; tracking URLs are long and an AI has no use for them).
+- **Inline:** whitespace collapses across inline elements, `&nbsp;` is a space, zero-width spaces, BOMs and soft hyphens go. Links and style: see "Round two".
 - **Lines:** `<br>` ends a line; a `<br>` at the end of a block adds nothing, as in a browser, and `<div><br></div>` is one empty line (Gmail's blank line). `<div>` starts a line; `<p>`, headings, lists, tables, `<pre>`, `<blockquote>` and `<hr>` are set apart by one blank line. `<p style="margin:0">` and Outlook's `MsoNormal` are lines, not paragraphs, because their margin is zero; `<div>&nbsp;</div>` and `<o:p>&nbsp;</o:p>` are their blank line. Never two blank lines in a row.
 - **Lists:** `- item`, `3. item` (`start` kept), nested by two spaces; a wrapped item's lines align under its text.
 - **Tables:** mail uses them for layout, so a cell with several lines reads as blocks, in order. A row of one-line cells is `a | b | c` (real data, and a two-column layout reads fine). An empty row is a gap (a spacer).
@@ -131,5 +131,30 @@ By the user's choice (the request above), this ran its own tests and what shares
 ## Known limits
 
 - Answers typed below Outlook's reply header go with the history (revision 4).
-- Link addresses aren't copied, by request ("text only"): "click here" reads as "click here".
-- `stripTrailingQuote` empties a bare forward when **printing** with quotes hidden. Copying guards against it; print is unchanged here.
+- In the HTML form, lists and data tables are text lines (`- item`, `a | b`), not Word lists or tables. Links, bold, italics, paragraphs and rules are real.
+
+## Round two: links and the print bug
+
+The user, after trying it:
+
+> Do the fix for the existing print bug. Also, when copying the text, we are copying with format if possible. So, if there is a link, If there is a text that has a link inside, we should copy the text along with the link, okay? So when I tested in something like, A word document, It still has the link. And if I paste it, In. If I paste it in a text for an AI, just text composer for an AI. Agent or something, it. It can show both the decks and the link. And of course, only the link, if there's no text.
+
+This replaces "links are their text" in §3.
+
+**Two forms on the clipboard,** so the app pasted into picks:
+
+- `text/plain`: `the report (https://…)`. Only the address when that is all the text says (`https://x.test/a`, `x.test/a`, `www.x.test/a`, any case) or a linked picture has no description. `mailto:` and `tel:` read without their scheme.
+- `text/html`: real links, bold and italics (tags and inline `font-weight`/`font-style`, undone where the mail undoes them), paragraphs, line breaks, a rule between messages, labels in bold, and an address written out in the words linked too.
+
+**The HTML is written from the words, never the mail's markup.** Copying the mail's own HTML would carry its pixels and styles into whatever it's pasted in, and Word would fetch them. No `<img>`, `style` or handler can come through, and an `href` is `http(s)`, `mailto` or `tel` only (`javascript:`, `cid:`, `#` and relative addresses are plain words).
+
+**One reading, two writers.** Style travels inside the lines as private-use markers (`\ue000 flags \ue001 link \ue002`, until the next), so everything that lays out lines (indents, `> `, ` | `, blank lines) needs no change. A marker opens only before a word and closes with its line, so spaces can't start a link and a line never ends mid-style. Mail can't forge one: they go with the invisible characters on the way in, from bodies, names, subjects and file names.
+
+**The print bug.** `stripTrailingQuote` emptied a bare forward when quotes were hidden. Now a mail with nothing but the history, or only the line introducing it ("Begin forwarded message:", "… wrote:"), keeps it, in Gmail's, Apple's and Outlook's shapes, for print and copy alike. A forward with a note above it still loses the forward, and now that line too, as a reply loses its history. Copy keeps its own guard for a reply left with no words (a picture with no description).
+
+**What the code review of this round changed,** each with a regression test:
+
+- An attribution with a linked address ("On Monday, Ana <ana@x> wrote:") is several text nodes. Only the last was removed, leaving a fragment, and the fragment read as a reply, defeating the bare-forward guard. The whole line goes now (back to its block's start or a `<br>`, at most 200 characters). This was in print before this plan too.
+- A URL's balanced parentheses stay in its link (`Thread_(computing)`); a sentence's don't.
+
+**Tests:** `thread-text.test.ts`, `copy-thread.test.ts`, `print.test.ts`, `quote.test.ts`, and `e2e/copy-thread.spec.ts`, which reads both forms back from the clipboard, with `print` and `reader` in macOS and Lumen. As in round one, by the user's choice, not `pnpm test:all`. Not pasted into Word itself: the e2e checks what Chromium gives a reader of the clipboard.

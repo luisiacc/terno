@@ -4,7 +4,7 @@ import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { htmlBodyText, plainBodyText, threadText } from "./thread-text";
+import { htmlBodyHtml, htmlBodyText, plainBodyText, threadText } from "./thread-text";
 
 afterEach(() => setLocale("en", en));
 
@@ -51,8 +51,88 @@ describe("HTML to text: inline text", () => {
     expect(html("<p>un<b>believ</b><i>able</i></p>")).toBe("unbelievable");
   });
 
-  it("makes a link its text and an image its description, spacers leaving nothing", () => {
-    expect(html('<p>See <a href="https://track.example/abc?x=1">the report</a>.</p><img src="a.png" alt="Logo"><img src="b.png" alt="">')).toBe("See the report.\n\nLogo");
+  it("makes an image its description, spacers leaving nothing", () => {
+    expect(html('<p>See this.</p><img src="a.png" alt="Logo"><img src="b.png" alt="">')).toBe("See this.\n\nLogo");
+  });
+});
+
+describe("links, as text a composer takes", () => {
+  it("writes the text and the address", () => {
+    expect(html('<p>See <a href="https://x.test/abc?x=1&amp;y=2">the report</a>.</p>')).toBe("See the report (https://x.test/abc?x=1&y=2).");
+  });
+
+  it("writes only the address when the text is the address, however it's spelled", () => {
+    for (const label of ["https://x.test/a", "http://x.test/a/", "x.test/a", "www.x.test/a", "HTTPS://X.TEST/A"]) {
+      expect(html(`<a href="https://x.test/a">${label}</a>`), label).toBe("https://x.test/a");
+    }
+  });
+
+  it("writes only the address when a picture links and says nothing, its description when it does", () => {
+    expect(html('<a href="https://x.test/a"><img src="b.png"></a>')).toBe("https://x.test/a");
+    expect(html('<a href="https://x.test/a"><img src="b.png" alt=""></a>')).toBe("https://x.test/a");
+    expect(html('<a href="https://x.test/a"><img src="b.png" alt="Banner"></a>')).toBe("Banner (https://x.test/a)");
+  });
+
+  it("drops an empty link and one with nowhere to go", () => {
+    expect(html('<p>a<a href="https://x.test/a"></a> <a href="#top">b</a> <a href="javascript:alert(1)">c</a> <a href="/rel">d</a> <a href="cid:x">e</a> <a>f</a></p>')).toBe("a b c d e f");
+  });
+
+  it("reads mailto and tel without the scheme, and once when it's the text", () => {
+    expect(html('<a href="mailto:ana@x.test?subject=Hi">ana@x.test</a>')).toBe("ana@x.test");
+    expect(html('<a href="mailto:ana@x.test">Ana</a> <a href="tel:+5255">Call</a>')).toBe("Ana (ana@x.test) Call (+5255)");
+  });
+
+  it("is one link across styled words, with its spaces outside", () => {
+    expect(html('<p>Go <a href="https://x.test/a"> the <b>big</b> <i>one</i> </a>now</p>')).toBe("Go the big one (https://x.test/a) now");
+  });
+
+  it("keeps two links apart, and a link across a line break on each line", () => {
+    expect(html('<a href="https://x.test/a">one</a> <a href="https://x.test/b">two</a>')).toBe("one (https://x.test/a) two (https://x.test/b)");
+    expect(html('<a href="https://x.test/a"><div>one</div><div>two</div></a>')).toBe("one (https://x.test/a)\ntwo (https://x.test/a)");
+  });
+
+  it("holds through the layouts: a list, a table, a quote", () => {
+    expect(html('<ul><li><a href="https://x.test/a">one</a></li></ul>')).toBe("- one (https://x.test/a)");
+    expect(html('<table><tr><td><a href="https://x.test/a">one</a></td><td>two</td></tr></table>')).toBe("one (https://x.test/a) | two");
+    expect(html('<blockquote><a href="https://x.test/a">one</a></blockquote>')).toBe("> one (https://x.test/a)");
+  });
+
+  it("can't be forged by what a mail writes", () => {
+    expect(html("<p>\ue000b\ue001https://evil.test\ue002click</p>")).toBe("bhttps://evil.testclick");
+  });
+});
+
+describe("the same mail, as HTML a document takes", () => {
+  const rich = (body: string) => htmlBodyHtml(body, true);
+
+  it("keeps real links, with only the words inside them", () => {
+    expect(rich('<p>See <a href="https://x.test/a?x=1&amp;y=2"> the <b>big</b> one </a>now</p>')).toBe('<p>See <a href="https://x.test/a?x=1&amp;y=2">the <b>big</b> one</a> now</p>');
+    expect(rich('<a href="https://x.test/a"><img src="b.png"></a>')).toBe('<p><a href="https://x.test/a">https://x.test/a</a></p>');
+  });
+
+  it("keeps bold and italics, from tags and from inline styles, undone where the mail undoes them", () => {
+    expect(rich('<p><b>a</b> <em>b</em> <span style="font-weight:700">c</span> <span style="font-style:italic">d</span> <b><span style="font-weight:normal">e</span></b></p>')).toBe("<p><b>a</b> <i>b</i> <b>c</b> <i>d</i> e</p>");
+    expect(rich("<h2>Title</h2>")).toBe("<p><b>Title</b></p>");
+  });
+
+  it("makes blank lines paragraphs and lines breaks, indentation kept", () => {
+    expect(rich("<div>a</div><div>b</div><p>c</p>")).toBe("<p>a<br>b</p><p>c</p>");
+    expect(rich("<ul><li>a<ul><li>b</li></ul></li></ul>")).toBe("<p>- a<br>&nbsp;&nbsp;- b</p>");
+  });
+
+  it("links an address the words write out, without its closing punctuation", () => {
+    expect(rich("<p>Go to https://x.test/a, then.</p>")).toBe('<p>Go to <a href="https://x.test/a">https://x.test/a</a>, then.</p>');
+  });
+
+  it("keeps a URL's balanced parentheses, not a sentence's", () => {
+    expect(rich("<p>https://x.test/Thread_(computing) and (https://x.test/b).</p>")).toBe('<p><a href="https://x.test/Thread_(computing)">https://x.test/Thread_(computing)</a> and (<a href="https://x.test/b">https://x.test/b</a>).</p>');
+  });
+
+  it("escapes what the mail says, and takes nothing else from it: no pictures, styles or handlers", () => {
+    expect(rich("<p>1 &lt; 2 &amp;&amp; &lt;img src=x onerror=y&gt;</p>")).toBe("<p>1 &lt; 2 &amp;&amp; &lt;img src=x onerror=y&gt;</p>");
+    const out = rich('<div style="color:red" onclick="x()"><img src="https://pixel.test/p.gif" alt="Logo"><a href="javascript:alert(1)">go</a><a href="https://x.test/&quot;onmouseover=&quot;y">here</a></div>');
+    expect(out).not.toMatch(/<img|style=|onclick|javascript:/);
+    expect(out).toContain('href="https://x.test/&quot;onmouseover=&quot;y"');
   });
 });
 
@@ -156,7 +236,7 @@ describe("quoted history", () => {
 
 describe("plain text bodies", () => {
   it("tidies line endings, line ends and blank runs, and keeps indentation", () => {
-    expect(plainBodyText("\r\n\r\nHi,  \r\n\r\n\r\n\r\n    code here\n​Bye\n\n", true)).toBe("Hi,\n\n    code here\nBye");
+    expect(plainBodyText("\r\n\r\nHi,  \r\n\r\n\r\n\r\n    code\u00a0here\n\u200bBye\n\n", true)).toBe("Hi,\n\n    code here\nBye");
   });
 });
 
@@ -173,6 +253,11 @@ describe("the conversation", () => {
     const { text, messages, missing } = await threadText(thread([message(1, { bodyText: "First words", cc: [person("b@x.io"), person("c@x.io", "c@x.io")] }), message(2, { bodyHtml: "<p>Second <b>words</b></p>", from: person("l@x.io"), to: [] })]));
     expect(text).toMatch(/^Subject: Contract renewal\n\nFrom: Ana Ruiz <ana@acme\.com>\nTo: Luis <l@x\.io>\nCc: b@x\.io, c@x\.io\nDate: .*2026.*\n\nFirst words\n\n---\n\nFrom: l@x\.io\nDate: .*\n\nSecond words$/);
     expect([messages, missing]).toEqual([2, 0]);
+  });
+
+  it("is the same conversation as HTML: labels bold, a rule between messages, what names say escaped", async () => {
+    const { html: rich } = await threadText(thread([message(1, { bodyText: "Plain https://x.test/a", from: person("a@x.test", "<b>A</b> & co") }), message(2, { bodyHtml: '<a href="https://x.test/b">B</a>', to: [] })], "1 < 2"));
+    expect(rich).toMatch(/^<p><b>Subject:<\/b> 1 &lt; 2<\/p><p><b>From:<\/b> &lt;b&gt;A&lt;\/b&gt; &amp; co &lt;a@x\.test&gt;<br><b>To:<\/b> .*<\/p><p>Plain <a href="https:\/\/x\.test\/a">https:\/\/x\.test\/a<\/a><\/p><hr><p><b>From:<\/b> .*<\/p><p><a href="https:\/\/x\.test\/b">B<\/a><\/p>$/);
   });
 
   it("leaves a message's history out only when the messages above cover it", async () => {
