@@ -91,9 +91,12 @@ export function createHandlers(b: Backend): Handlers {
    */
   /** plan 87: the due reminders a filing into a category hidden from the Inbox ended (it leaves the Inbox), by batch, for its undo */
   const filedReminders = new Map<number, Reminder[]>();
+  const filedTops = new Map<number, FollowupSnapshot[]>();
   const endDueIfHidden = async (categoryId: number, threadIds: readonly number[], batchId: number | null) => {
     if (batchId === null || !(await store.categories.list()).some((c) => c.id === categoryId && !c.showInInbox)) return;
-    await b.followups.endTop(threadIds);
+    const tops = await b.followups.endTop(threadIds);
+    if (tops.length) filedTops.set(batchId, tops);
+    for (const key of filedTops.keys()) if (filedTops.size > 16) filedTops.delete(key);
     const ended = await b.reminders.endDue(threadIds);
     if (ended.length === 0) return;
     filedReminders.set(batchId, ended);
@@ -104,6 +107,8 @@ export function createHandlers(b: Backend): Handlers {
     const ended = filedReminders.get(batchId);
     if (ended && !(await b.reminders.restore([], ended))) throw new RpcError("BAD_REQUEST", L("errors.remindersFull", { max: REMINDERS_MAX }));
     filedReminders.delete(batchId);
+    await b.followups.putBack(filedTops.get(batchId) ?? []);
+    filedTops.delete(batchId);
   };
   /** Plan 116: an agent sets up no filing into a category that forwards, unless agents may send. */
   const agentMayFile = async (categoryIds: readonly number[]) => {
@@ -230,9 +235,10 @@ export function createHandlers(b: Backend): Handlers {
     const changed = new Set<number>();
     let kept = 0;
     let done = 0;
+    const tops: FollowupSnapshot[] = [];
     const save = () => {
-      if (!moved.length && !before.length && !ended.length) return null;
-      const id = remember(before, ended);
+      if (!moved.length && !before.length && !ended.length && !tops.length) return null;
+      const id = remember(before, ended, tops);
       folderMoves.set(id, moved);
       for (const key of folderMoves.keys()) if (folderMoves.size > 16) folderMoves.delete(key);
       return id;
@@ -249,7 +255,7 @@ export function createHandlers(b: Backend): Handlers {
         b.notifyChanged(r.threadIds);
         // a due reminder ends when its conversation is put away, as an archive's does
         if (r.leftInbox.length) for (const x of await b.reminders.endDue(r.leftInbox)) ended.push(x);
-        if (r.leftInbox.length) await b.followups.endTop(r.leftInbox);
+        if (r.leftInbox.length) for (const x of await b.followups.endTop(r.leftInbox)) tops.push(x);
         progress?.((done += chunk.length));
       });
     } catch (error) {
@@ -1204,6 +1210,7 @@ export function createHandlers(b: Backend): Handlers {
       await b.emitAccounts();
       // plan 86: what the Inbox shows changed (lists reload, the counts and the Dock follow)
       if (patch.separateTabs !== undefined) b.notifyChanged([]);
+      if (patch.followups === false) b.followups.accountOff(id);
       return (await b.accountViews([result]))[0]!;
     },
 
@@ -1310,6 +1317,7 @@ export function createHandlers(b: Backend): Handlers {
       await b.followups.endTop([threadId]);
       return { ok: true };
     },
+    "followups.status": () => b.followups.status(),
     "followups.scanOffer": () => b.followups.scanOffer(),
     "followups.scan": async () => ({ queued: await b.followups.scan() }),
     // plan 141: renderer only; none of these is in MCP_ALLOWED

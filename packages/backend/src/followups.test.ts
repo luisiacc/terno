@@ -45,6 +45,8 @@ async function setup(o: { enabled?: boolean } = {}) {
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: me.email, displayName: "Me", color: "indigo", now: 0 });
   await client.call("settings.update", { ai: { provider: "fake", model: "demo" } });
   if (o.enabled ?? true) await client.call("settings.update", { followups: { enabled: true } });
+  // mail sent from here on: it went on a while ago
+  clock.now += 120_000;
   cleanups.push(async () => {
     await backend.stop();
     rmSync(dir, { recursive: true, force: true });
@@ -120,12 +122,12 @@ describe("the worker", () => {
   });
 
   it("a thread is read in order: one waiting for a body holds what's after it on that thread, only", async () => {
-    const { backend, model, send } = await setup();
+    const { backend, model, send, clock } = await setup();
     const heard: string[] = [];
     model.answer = (req) => (heard.push(JSON.stringify(req.messages)), reply());
-    const first = await send({ providerMsgId: "t0", rfcMessageId: "t0@x", bodyText: null, bodyState: "none", date: NOW - 3000 });
-    await send({ providerMsgId: "t1", rfcMessageId: "t1@x", inReplyTo: "t0@x", references: ["t0@x"], bodyText: "Here's the contract.", date: NOW - 2000 });
-    await send({ subject: "Other", bodyText: "An unrelated one.", date: NOW - 1000 });
+    const first = await send({ providerMsgId: "t0", rfcMessageId: "t0@x", bodyText: null, bodyState: "none", date: clock.now - 3000 });
+    await send({ providerMsgId: "t1", rfcMessageId: "t1@x", inReplyTo: "t0@x", references: ["t0@x"], bodyText: "Here's the contract.", date: clock.now - 2000 });
+    await send({ subject: "Other", bodyText: "An unrelated one.", date: clock.now - 1000 });
     backend.followups.wake();
     await expect.poll(() => heard.length).toBe(1);
     expect(heard[0]).toContain("An unrelated one");
@@ -182,6 +184,62 @@ describe("the worker", () => {
     expect(model.requests.length).toBe(1);
     await expect.poll(() => backend.store.followups.marks.count()).toBe(0);
     expect(backend.followups.nextAt).toBeNull();
+  });
+});
+
+describe("permission, while it reads", () => {
+  it("what was sent before it was turned on isn't read, even if it arrives now", async () => {
+    const { backend, model, send, drained } = await setup();
+    await send({ date: NOW - 2 * DAY });
+    backend.followups.wake();
+    await drained();
+    expect(model.requests).toEqual([]);
+  });
+
+  it("the provider changing stops the read, and its answer writes nothing; what it read goes to the new one", async () => {
+    const { backend, client, model, send } = await setup();
+    let release!: (c: Completion) => void;
+    let hung = true;
+    model.answer = () => (hung ? new Promise((r) => (release = r)) : reply());
+    await send();
+    backend.followups.wake();
+    await expect.poll(() => model.requests.length).toBe(1);
+    hung = false;
+    await client.call("settings.update", { ai: { provider: "fake", model: "another" } });
+    release(reply(says));
+    await expect.poll(() => backend.store.followups.marks.count()).toBe(0);
+    expect(await backend.store.followups.active()).toEqual([]);
+  });
+
+  it("an account's switch going off stops what's reading it, and nothing comes of a late answer", async () => {
+    const { backend, client, model, send, account } = await setup();
+    let release!: (c: Completion) => void;
+    model.answer = () => new Promise((r) => (release = r));
+    await send();
+    backend.followups.wake();
+    await expect.poll(() => model.requests.length).toBe(1);
+    await client.call("accounts.update", { id: account.id, followups: false });
+    release(reply(says));
+    await expect.poll(() => backend.store.followups.marks.count()).toBe(0);
+    expect(await backend.store.followups.active()).toEqual([]);
+  });
+
+  it("says why it stopped, for Settings", async () => {
+    const { backend, client, model, send } = await setup();
+    model.answer = () => { throw new AiError("no", "auth"); };
+    await send();
+    backend.followups.wake();
+    await expect.poll(async () => (await client.call("followups.status", {})).blockedBy?.kind).toBe("auth");
+  });
+
+  it("a provider that says slow down has one timer to come back on; stopping clears it", async () => {
+    const { backend, model, send } = await setup();
+    model.answer = () => { throw new AiError("slow", "rate_limited"); };
+    await send();
+    backend.followups.wake();
+    await expect.poll(() => backend.followups.retrying).not.toBeNull();
+    backend.followups.stop();
+    expect(backend.followups.retrying).toBeNull();
   });
 });
 
@@ -249,6 +307,21 @@ describe("when they come due", () => {
     expect(backend.followups.nextAt).toBeNull();
   });
 
+  it("a quit between coming due and saying so says it on the way back", async () => {
+    const { backend, model, send, drained, clock, notices } = await setup();
+    model.answer = () => reply(says);
+    await send();
+    backend.followups.wake();
+    await drained();
+    clock.now += 4 * DAY;
+    await backend.store.followups.makeDue(clock.now);
+    expect(notices).toEqual([]);
+    await backend.followups.look();
+    expect(notices).toHaveLength(1);
+    await backend.followups.look();
+    expect(notices).toHaveLength(1);
+  });
+
   it("no timer while there's nothing", async () => {
     const { backend } = await setup();
     await backend.followups.look();
@@ -273,6 +346,22 @@ describe("when they come due", () => {
     expect((await client.call("followups.threads", { onTop: true })).items.map((t) => t.id)).toEqual([threadId]);
     expect((await client.call("reminders.list", {})).reminders.map((r) => r.threadId)).toEqual([threadId]);
   });
+});
+
+it("filing into a hidden category ends the top, and its Undo puts it back", async () => {
+  const { backend, client, model, send, drained, clock } = await setup();
+  model.answer = () => reply(says);
+  const { m } = await send({ inInbox: true });
+  backend.followups.wake();
+  await drained();
+  clock.now += 10 * DAY;
+  await backend.followups.look();
+  const threadId = (await backend.store.debug.snapshot()).messages.find((x) => x.providerMsgId === m.providerMsgId)!.threadId;
+  const category = await client.call("categories.create", { name: "Hidden", color: "indigo", showInInbox: false } as never);
+  const moved = await client.call("categories.moveThreads", { to: (category as { id: number }).id, threadIds: [threadId], source: "picker" } as never);
+  expect((await client.call("followups.threads", { onTop: true })).items).toEqual([]);
+  await client.call("categorize.undo", { batchId: (moved as { batchId: number }).batchId });
+  expect((await client.call("followups.threads", { onTop: true })).items.map((t) => t.id)).toEqual([threadId]);
 });
 
 describe("what you do", () => {

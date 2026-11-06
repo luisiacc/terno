@@ -1,4 +1,4 @@
-import { listFilterOf, matchesFilter, type CategoryColor, type ThreadSummary } from "@terno/core";
+import { listFilterOf, matchesFilter, mostUrgent, type CategoryColor, type ThreadSummary } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
 import { Bell, Paperclip, Star } from "@terno/ui/icons";
@@ -134,15 +134,32 @@ type ViewProps = Omit<Props, "showAccount" | "wide" | "review" | "reminderTop" |
  * The row's second line. Plan 142: on the Inbox's top and in its own list, what's owed takes its place, in the attention
  * ink. One Map read: a row with nothing owed never re-renders for follow-ups.
  */
-function RowSnippet({ thread, reminderTop }: { thread: ThreadSummary; reminderTop?: boolean }) {
+function useOwed(thread: Pick<ThreadSummary, "id">, reminderTop?: boolean) {
   const followupsList = useApp((s) => s.followups);
   const owed = useFollowups((s) => s.byThread.get(thread.id));
-  const line = followupsList || (reminderTop && owed?.some((r) => r.inboxState === "onTop")) ? rowLine(owed) : null;
+  const shows = !!owed && (followupsList || (reminderTop && owed.some((r) => r.inboxState === "onTop")));
+  return { line: shows ? rowLine(owed) : null, dueAt: shows ? (mostUrgent(owed)?.dueAt ?? null) : null };
+}
+
+function RowSnippet({ thread, reminderTop, ink }: { thread: ThreadSummary; reminderTop?: boolean; ink: string }) {
+  const { line } = useOwed(thread, reminderTop);
   return (
-    <span data-testid="row-snippet" data-followup={line ? true : undefined} className={cn("type-row-snippet min-w-0 truncate", line ? "text-primary" : "text-muted-foreground")}>
+    <span data-testid="row-snippet" data-followup={line ? true : undefined} className={cn("type-row-snippet min-w-0 truncate", line ? ink : "text-muted-foreground")}>
       {line ?? thread.snippet}
     </span>
   );
+}
+
+/** The wide row's words after the subject: the same line, where it reads the same. */
+function RowTail({ thread, reminderTop, ink }: { thread: ThreadSummary; reminderTop?: boolean; ink: string }) {
+  const { line } = useOwed(thread, reminderTop);
+  return <span data-followup={line ? true : undefined} className={line ? ink : "text-muted-foreground"}>— {line ?? thread.snippet}</span>;
+}
+
+/** On the Inbox's top and in its own list, the date a row shows is when it's owed. */
+function RowDate({ thread, reminderTop, fallback, className, title }: { thread: ThreadSummary; reminderTop?: boolean; fallback: string; className: string; title?: string }) {
+  const { dueAt } = useOwed(thread, reminderTop);
+  return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? reminderShort(dueAt) : fallback}</span>;
 }
 
 export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, reminderTop, reminderEnd, selected, checked, inSelection, account, categories, hasDraft, code, reminder, remindersList, interactive }: ViewProps) {
@@ -217,9 +234,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
         {listDate(reminder.dueAt)}
       </span>
     ) : (
-      <span data-testid="row-date" title={remindersList && reminder?.kind === "noReply" ? t("remind.noReplySuffix") : undefined} className={cn("text-xs tabular", thread.unread ? "text-foreground" : "text-muted-foreground")}>
-        {remindersList && reminder ? reminderShort(reminder.dueAt) : listDate(thread.lastDate)}
-      </span>
+      <RowDate thread={thread} reminderTop={reminderTop} title={remindersList && reminder?.kind === "noReply" ? t("remind.noReplySuffix") : undefined} className={cn("text-xs tabular", thread.unread ? "text-foreground" : "text-muted-foreground")} fallback={remindersList && reminder ? reminderShort(reminder.dueAt) : listDate(thread.lastDate)} />
     );
   const draft = hasDraft && <span className="shrink-0 font-medium text-draft-foreground">{t("list.draft")}</span>;
   const subject = (
@@ -227,7 +242,8 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       {thread.subject || t("common.noSubject")}
     </span>
   );
-  const snippet = <RowSnippet thread={thread} reminderTop={reminderTop} />;
+  const owedInk = selected ? "" : checked ? "text-accent-foreground" : "text-primary";
+  const snippet = <RowSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} />;
   const chip = code && <CodeChip threadId={thread.id} code={code} />;
   const reviewed = review !== null ? categories.find((c) => c.id === review) : undefined;
   const answer = reviewed && <ReviewControls threadId={thread.id} categoryId={reviewed.id} category={reviewed.name} />;
@@ -299,7 +315,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
             </>
           )}
           <span className={cn("type-row-subject min-w-0 flex-1 truncate", thread.unread ? "text-foreground" : "text-muted-foreground")}>
-            {thread.subject} {draft} <span className="text-muted-foreground">— {thread.snippet}</span>
+            {thread.subject} {draft} <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} />
           </span>
           {accountTag}
           {!wide && chip}

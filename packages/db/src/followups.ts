@@ -17,9 +17,9 @@ function toSomeoneElse(db: Db, to: string, cc: string): boolean {
   return [...recipientList(to).addresses, ...recipientList(cc).addresses].some((a) => !own.has(addressKey(a)));
 }
 
-function markSent(db: Db, messageId: number, now: number, source: "live" | "scan"): void {
+function markSent(db: Db, messageId: number, now: number, source: "live" | "scan", since?: number | null): void {
   const m = db.get<{ thread_id: number; date: number; to_json: string; cc_json: string; is_sent: number; is_draft: number }>("SELECT thread_id, date, to_json, cc_json, is_sent, is_draft FROM messages WHERE id = ?", messageId);
-  if (!m || m.is_sent !== 1 || m.is_draft === 1 || !toSomeoneElse(db, m.to_json, m.cc_json)) return;
+  if (!m || m.is_sent !== 1 || m.is_draft === 1 || (since != null && m.date < since) || !toSomeoneElse(db, m.to_json, m.cc_json)) return;
   db.run("INSERT OR IGNORE INTO ai_sent_mail (message_id, thread_id, sent_at, queued_at, source) VALUES (?, ?, ?, ?, ?)", messageId, m.thread_id, m.date, now, source);
 }
 
@@ -31,17 +31,18 @@ function closeWaitsBefore(db: Db, messageId: number, now: number): void {
 }
 
 /** In the commit that records a send as done. `wanted`: the feature is on for this account. */
-export function followupSendConfirmed(db: Db, messageId: number, now: number, wanted: boolean): void {
+export function followupSendConfirmed(db: Db, messageId: number, now: number, wanted: boolean, since?: number | null): void {
   closeWaitsBefore(db, messageId, now);
-  if (wanted) markSent(db, messageId, now, "live");
+  // what you sent before you turned it on is read only with a yes
+  if (wanted) markSent(db, messageId, now, "live", since);
 }
 
 /** Ingest's part (in its transaction): live mail you sent from elsewhere, the same way. */
-export function followupLiveSent(db: Db, messageIds: readonly number[], now: number, wanted: boolean): void {
+export function followupLiveSent(db: Db, messageIds: readonly number[], now: number, wanted: boolean, since?: number | null): void {
   if (!messageIds.length) return;
   for (const r of db.all<{ id: number }>("SELECT id FROM messages WHERE id IN (SELECT value FROM json_each(?)) AND is_sent = 1 AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 AND date >= ?", JSON.stringify(messageIds), now - SENT_MARK_MS)) {
     closeWaitsBefore(db, r.id, now);
-    if (wanted) markSent(db, r.id, now, "live");
+    if (wanted) markSent(db, r.id, now, "live", since);
   }
 }
 
@@ -64,7 +65,8 @@ export function queueScan(db: Db, messageIds: readonly number[], now: number): n
     let n = 0;
     for (const id of messageIds) {
       const before = db.get("SELECT 1 FROM ai_sent_mail WHERE message_id = ?", id);
-      if (before) continue;
+      // written here and not yet confirmed: it may never go
+      if (before || db.get("SELECT 1 FROM messages WHERE id = ? AND coalesce(provider_msg_id, 'local:') LIKE 'local:%'", id)) continue;
       markSent(db, id, now, "scan");
       if (db.get("SELECT 1 FROM ai_sent_mail WHERE message_id = ?", id)) n++;
     }
@@ -78,7 +80,7 @@ export function pruneSentMarks(db: Db, now: number): number {
 
 export function followupScanCandidates(db: Db, since: number, limit: number): number[] {
   return db.all<{ id: number }>(
-    `SELECT m.id FROM messages m WHERE m.is_sent = 1 AND m.is_draft = 0 AND m.is_spam = 0 AND m.is_trash = 0 AND m.date >= ? AND m.list_id IS NULL AND m.is_bulk = 0
+    `SELECT m.id FROM messages m WHERE m.is_sent = 1 AND m.is_draft = 0 AND m.is_spam = 0 AND m.is_trash = 0 AND m.date >= ? AND m.list_id IS NULL AND m.is_bulk = 0 AND coalesce(m.provider_msg_id, 'local:') NOT LIKE 'local:%'
        AND m.id NOT IN (SELECT message_id FROM followups) ORDER BY m.date DESC, m.id DESC LIMIT ?`,
     since,
     limit,
@@ -86,13 +88,15 @@ export function followupScanCandidates(db: Db, since: number, limit: number): nu
 }
 
 export function followupSource(db: Db, messageId: number): FollowupSource | null {
-  const m = db.get<{ id: number; thread_id: number; account_id: number; subject: string; rfc_message_id: string | null; date: number; is_bulk: number; list_id: string | null; is_draft: number; is_spam: number; is_trash: number; to_json: string; cc_json: string; body_state: FollowupSource["bodyState"]; attachments_captured: number }>(
-    "SELECT id, thread_id, account_id, subject, rfc_message_id, date, is_bulk, list_id, is_draft, is_spam, is_trash, to_json, cc_json, body_state, attachments_captured FROM messages WHERE id = ?",
+  const m = db.get<{ id: number; thread_id: number; account_id: number; subject: string; rfc_message_id: string | null; in_reply_to: string | null; date: number; is_bulk: number; list_id: string | null; is_draft: number; is_spam: number; is_trash: number; to_json: string; cc_json: string; body_state: FollowupSource["bodyState"]; attachments_captured: number }>(
+    "SELECT id, thread_id, account_id, subject, rfc_message_id, in_reply_to, date, is_bulk, list_id, is_draft, is_spam, is_trash, to_json, cc_json, body_state, attachments_captured FROM messages WHERE id = ?",
     messageId,
   );
   if (!m) return null;
   const own = ownAddresses(db);
-  const before = db.all<{ id: number; from_email: string; body_state: FollowupSource["bodyState"]; attachments_captured: number }>(
+  // what it answers: the message it says it answers; only with none, the newest before it from someone else
+  const target = m.in_reply_to ? db.get<{ id: number; from_email: string; body_state: FollowupSource["bodyState"]; attachments_captured: number }>("SELECT id, from_email, body_state, attachments_captured FROM messages WHERE account_id = ? AND rfc_message_id = ? AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 AND id != ? LIMIT 1", m.account_id, m.in_reply_to, m.id) : undefined;
+  const before = target && !own.has(addressKey(target.from_email)) ? target : db.all<{ id: number; from_email: string; body_state: FollowupSource["bodyState"]; attachments_captured: number }>(
     "SELECT id, from_email, body_state, attachments_captured FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND (date < ? OR (date = ? AND id < ?)) AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 AND is_sent = 0 ORDER BY date DESC, id DESC LIMIT 20",
     m.thread_id, m.date, m.date, m.id,
   ).find((r) => !own.has(addressKey(r.from_email)));

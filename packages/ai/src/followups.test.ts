@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fakeTransport } from "./fake";
 import { fitSentMail, followupBudget, sentMailPrompt, type SentMailInput } from "./followups";
 import { createAi } from "./tasks";
-import type { ProviderConfig } from "./types";
+import { promptText, type CompletionRequest, type ProviderConfig } from "./types";
 
 const config: ProviderConfig = { id: "fake", model: "demo", apiKey: null, fetch: globalThis.fetch, timeoutMs: 1000, maxRetries: 0 };
 const input = (over: Partial<SentMailInput> = {}): SentMailInput => ({ ownText: "I'll send the contract by Friday. Can you confirm?", subject: "Contract", recipients: [{ label: "r1", name: "Tom" }], attachments: [], openPromises: [], sentAt: "Monday, 2 March 2026", language: "en", ...over });
@@ -27,6 +27,28 @@ describe("reading what you sent (plan 142)", () => {
     expect(sentMailPrompt(fitted).length).toBeLessThanOrEqual(budget.promptChars);
     expect((fitted.answering ?? "").length).toBeLessThan(3000);
     expect(followupBudget(null).promptChars).toBe(Infinity);
+  });
+
+  it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
+    const window = 2000;
+    const budget = followupBudget(window);
+    const fitted = fitSentMail(input({ ownText: "o".repeat(6000), answering: "a".repeat(3000), outputTokens: budget.outputTokens }), budget.promptChars);
+    const sizes: number[] = [];
+    let calls = 0;
+    const size = (req: CompletionRequest) => (promptText(req.system).length + req.messages.reduce((n, m) => n + promptText(m.content).length, 0)) / 4 + req.maxTokens;
+    const ai = createAi({ ...config, capabilities: { output: "text", contextTokens: window, embeddings: false, probedAt: null } }, {
+      transport: {
+        complete: async (req) => {
+          sizes.push(size(req));
+          calls++;
+          // an answer the size it's allowed, that isn't what was asked for, until the last try
+          return calls < 3 ? { text: "x".repeat(req.maxTokens * 4), stop: "end" as const } : { text: JSON.stringify({ promises: [], expectsReply: false, awaiting: [], kept: [] }), stop: "end" as const };
+        },
+      },
+    });
+    await ai.readSentMail(fitted);
+    expect(calls).toBe(3);
+    for (const s of sizes) expect(s).toBeLessThanOrEqual(window);
   });
 
   it("runs on the fake, promises and all", async () => {

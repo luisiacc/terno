@@ -58,6 +58,34 @@ export function defineFollowupsConformance(fresh: () => Promise<MailStore>, reop
         expect(a.id).toBeGreaterThan(0);
       });
 
+      it("mail from before it was turned on isn't marked; a check's yes is what reads it", async () => {
+        const { store, accountId } = await setup();
+        const m = msg({ accountId, from: me, to: [tom], isSent: true, inInbox: false, date: NOW - DAY });
+        await store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null, liveSent: { wanted: true, since: NOW - 1000 } });
+        expect(await store.followups.marks.count()).toBe(0);
+      });
+
+      it("a check never takes what isn't confirmed sent: a queued or failed copy may never have gone", async () => {
+        const { store, sent } = await setup();
+        const real = await sent({ providerMsgId: "real" }, null, NOW);
+        const local = await sent({ providerMsgId: "local:abc" }, null, NOW);
+        const found = await store.followups.scanCandidates(NOW - 30 * DAY, 10);
+        expect(found).toContain(real.id);
+        expect(found).not.toContain(local.id);
+        expect(await store.followups.marks.queueScan([local.id], NOW)).toBe(0);
+      });
+
+      it("what a reply answers is what it says it answers, not the newest message", async () => {
+        const { store, accountId, sent } = await setup();
+        const ingest = (over: Partial<IncomingMessage>) => store.sync.ingest([msg({ accountId, from: tom, to: [me], subject: "Re", ...over })], { applyFilters: false, now: NOW, classifier: null });
+        const asked = (await ingest({ providerMsgId: "q", rfcMessageId: "q@x", date: NOW - 5000 })).inserted[0]!;
+        const later = (await ingest({ providerMsgId: "n", rfcMessageId: "n@x", inReplyTo: "q@x", references: ["q@x"], date: NOW - 3000 })).inserted[0]!;
+        const pointed = await sent({ providerMsgId: "a", inReplyTo: "q@x", references: ["q@x", "n@x"], date: NOW - 1000 });
+        expect((await store.followups.source(pointed.id))!.answering?.id).toBe(asked);
+        const unsaid = await sent({ providerMsgId: "b", inReplyTo: null, references: ["q@x", "n@x"], date: NOW - 500 });
+        expect((await store.followups.source(unsaid.id))!.answering?.id).toBe(later);
+      });
+
       it("survives a reopen", async () => {
         const { store, sent } = await setup();
         await sent();

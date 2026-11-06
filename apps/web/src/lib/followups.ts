@@ -4,7 +4,7 @@ import { t } from "@terno/i18n";
 import { onExplicitOpen } from "~/lib/open-dwell";
 import { registerUndo, snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
-import { getApp, inPlainInbox } from "~/state/app";
+import { getApp, inPlainInbox, navigate, useApp } from "~/state/app";
 import { useFollowups } from "~/state/followups";
 import { inboxTop, reloadList, useList } from "~/state/list";
 
@@ -65,6 +65,15 @@ export async function actOnFollowup(row: FollowupRow, action: "done" | "dismiss"
 onExplicitOpen({
   opened: (id) => (useFollowups.getState().byThread.get(id)?.some((r) => r.inboxState === "onTop") ? true : null),
   settled: (id) => void client.call("followups.seen", { threadId: id }).catch(() => {}),
+});
+
+/** Plan 142 §8: off hides the row, the list and the lines at once, here and in every window; on brings them back. */
+useApp.subscribe((s, prev) => {
+  const was = prev.settings?.followups.enabled;
+  const now = s.settings?.followups.enabled;
+  if (was === undefined || was === now) return;
+  if (!now && s.followups) navigate({ view: "inbox" });
+  else if (inPlainInbox(s)) void reloadList({ keepSelection: true });
 });
 
 /** The selection left a thread the Inbox's top held only because it was open: it goes to its place. */

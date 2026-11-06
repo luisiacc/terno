@@ -1273,7 +1273,7 @@ export class IdbMailStore implements MailStore {
           // plan 131 revision 5: the same for the AI features, whether or not its text is here or a classifier is ready
           if (newMail) markNewMail(this.c, result.inserted, now, newMail);
         // plan 142: mail you sent from elsewhere ends the waits before it, and is read if the feature is on
-        if (liveSent) followupLiveSent(this.c, result.inserted, now, liveSent.wanted);
+        if (liveSent) followupLiveSent(this.c, result.inserted, now, liveSent.wanted, liveSent.since);
           const touched = new Set(result.touchedThreads);
           const opIds: string[] = [];
           const folderMoves: FolderFilterMove[] = [];
@@ -1429,7 +1429,7 @@ export class IdbMailStore implements MailStore {
         let refreshNeeded = false;
         const localId = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0];
         // plan 142 revision 3: only a confirmed send closes a wait, in the commit that records it
-        if (op.kind === "send" && localId) followupSendConfirmed(this.c, localId, now, o?.followup === true);
+        if (op.kind === "send" && localId) followupSendConfirmed(this.c, localId, now, o?.followup === true, o?.since);
         if (op.kind === "send" && result && localId) {
           const messages = T(this.c, "messages");
           const local = messages.get(localId);

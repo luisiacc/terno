@@ -33,6 +33,8 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...text("primary-foreground", ["primary"]),
   // plan 125: BoardUI's link button (Button variant="link") on panes and cards (on the tint it fails AA in three palettes: links there are the ink)
   ...text("primary", ["background", "popover", "pane", "card"]),
+  // plan 142: what's owed, in a row's second line, at rest and hovered (selected and checked use their own ink)
+  ...text("primary", ["row-hover"]),
   ...text("accent-foreground", ["accent"]),
   ...text("row-selected-foreground", ["row-selected"]),
   ...text("destructive", ["background", "popover"]),

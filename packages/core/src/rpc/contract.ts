@@ -1141,6 +1141,8 @@ export const contract = {
   /** the Inbox's top ends for this thread: it was opened and stayed on screen */
   "followups.seen": m<{ ok: true }>()(z.object({ threadId: id })),
   /** the one-time check: how much, and what it would cost when the price is known */
+  /** why it has stopped reading, for Settings */
+  "followups.status": m<{ blockedBy: { kind: AiErrorKind; message: string } | null }>()(empty),
   "followups.scanOffer": m<{ count: number; usd: number | null }>()(empty),
   "followups.scan": m<{ queued: number }>()(empty),
 

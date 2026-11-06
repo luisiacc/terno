@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { ArrowRight } from "@terno/ui/icons";
 import { lazy, Suspense, useEffect } from "react";
 import { actOnFollowup, followupLine } from "~/lib/followups";
-import { presetLabel } from "~/lib/reminders";
+import { presetLabel, reminderShort } from "~/lib/reminders";
 import { revealSummaryMessage } from "~/lib/summaries";
 import { nudge } from "~/lib/followup-nudge";
 import { offerTip, usePendingTip } from "~/lib/tips";
@@ -40,6 +40,9 @@ function Line({ row }: { row: FollowupRow }) {
         {row.quote && <TooltipContent data-testid="followup-quote">{row.quote}</TooltipContent>}
       </Tooltip>
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        {/* when it comes back: a promise's line need not say, and Later moves it */}
+        <span data-testid="followup-due" className="tabular">{t(row.state === "due" ? "followup.dueNow" : "followup.dueOn", { date: reminderShort(row.dueAt) })}</span>
+        <span aria-hidden>·</span>
         {row.kind === "awaiting" ? (
           <>
             <Button variant="link-secondary" size="xs" data-testid="followup-nudge" onClick={() => void nudge(row)}>{t("followup.nudge")}</Button>

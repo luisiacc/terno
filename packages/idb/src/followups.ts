@@ -14,10 +14,11 @@ function own(c: Ctx): Set<string> {
 }
 
 const live = (r: R) => r.state === "open" || r.state === "due";
+const unconfirmed = (m: R) => String(m.provider_msg_id ?? "local:").startsWith("local:");
 
-function markSent(c: Ctx, messageId: number, now: number, source: "live" | "scan"): void {
+function markSent(c: Ctx, messageId: number, now: number, source: "live" | "scan", since?: number | null): void {
   const m = T(c, "messages").get(messageId);
-  if (!m || !m.is_sent || m.is_draft) return;
+  if (!m || !m.is_sent || m.is_draft || (since != null && m.date < since)) return;
   const mine = own(c);
   if (![...recipientList(m.to_json).addresses, ...recipientList(m.cc_json).addresses].some((a) => !mine.has(addressKey(a)))) return;
   const marks = T(c, "ai_sent_mail");
@@ -31,18 +32,19 @@ function closeWaitsBefore(c: Ctx, messageId: number, now: number): void {
   for (const r of rows.by("fk_thread_id", m.thread_id)) if (r.kind === "awaiting" && live(r) && r.sent_at < m.date) rows.update(r, { state: "done", closed_reason: "superseded", closed_at: now, inbox_state: "none", revision: r.revision + 1 });
 }
 
-export function followupSendConfirmed(c: Ctx, messageId: number, now: number, wanted: boolean): void {
+export function followupSendConfirmed(c: Ctx, messageId: number, now: number, wanted: boolean, since?: number | null): void {
   closeWaitsBefore(c, messageId, now);
-  if (wanted) markSent(c, messageId, now, "live");
+  // what you sent before you turned it on is read only with a yes
+  if (wanted) markSent(c, messageId, now, "live", since);
 }
 
-export function followupLiveSent(c: Ctx, messageIds: readonly number[], now: number, wanted: boolean): void {
+export function followupLiveSent(c: Ctx, messageIds: readonly number[], now: number, wanted: boolean, since?: number | null): void {
   const messages = T(c, "messages");
   for (const id of messageIds) {
     const m = messages.get(id);
     if (!m || !m.is_sent || m.is_draft || m.is_spam || m.is_trash || m.date < now - SENT_MARK_MS) continue;
     closeWaitsBefore(c, id, now);
-    if (wanted) markSent(c, id, now, "live");
+    if (wanted) markSent(c, id, now, "live", since);
   }
 }
 
@@ -69,7 +71,8 @@ export function queueScan(c: Ctx, messageIds: readonly number[], now: number): n
   const marks = T(c, "ai_sent_mail");
   let n = 0;
   for (const id of messageIds) {
-    if (marks.has(id)) continue;
+    // written here and not yet confirmed: it may never go
+    if (marks.has(id) || unconfirmed(T(c, "messages").get(id) ?? {})) continue;
     markSent(c, id, now, "scan");
     if (marks.has(id)) n++;
   }
@@ -86,7 +89,7 @@ export function pruneSentMarks(c: Ctx, now: number): number {
 export function followupScanCandidates(c: Ctx, since: number, limit: number): number[] {
   const tracked = new Set([...T(c, "followups").all()].map((r) => r.message_id));
   const out: R[] = [];
-  for (const m of T(c, "messages").all()) if (m.is_sent && !m.is_draft && !m.is_spam && !m.is_trash && m.date >= since && m.list_id == null && !m.is_bulk && !tracked.has(m.id)) out.push(m);
+  for (const m of T(c, "messages").all()) if (m.is_sent && !m.is_draft && !m.is_spam && !m.is_trash && m.date >= since && m.list_id == null && !m.is_bulk && !unconfirmed(m) && !tracked.has(m.id)) out.push(m);
   return out.sort((a, b) => b.date - a.date || b.id - a.id).slice(0, limit).map((m) => m.id);
 }
 
@@ -95,7 +98,9 @@ export function followupSource(c: Ctx, messageId: number): FollowupSource | null
   const m = messages.get(messageId);
   if (!m) return null;
   const mine = own(c);
-  const before = messages.by("fk_thread_id", m.thread_id)
+  // what it answers: the message it says it answers; only with none, the newest before it from someone else
+  const target = m.in_reply_to ? messages.by("rfc", m.account_id, m.in_reply_to).find((x) => x.id !== m.id && !x.is_draft && !x.is_spam && !x.is_trash) : undefined;
+  const before = target && !mine.has(addressKey(String(target.from_email))) ? target : messages.by("fk_thread_id", m.thread_id)
     .filter((x) => (x.date < m.date || (x.date === m.date && x.id < m.id)) && !x.is_draft && !x.is_spam && !x.is_trash && !x.is_sent && !mine.has(addressKey(String(x.from_email))))
     .sort((a, b) => b.date - a.date || b.id - a.id)[0];
   const people = (json: string) => {

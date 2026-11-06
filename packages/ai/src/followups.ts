@@ -21,6 +21,9 @@ const QUOTE_CHARS = 400;
 /** The ladder's schema, example and repair, on a server with no json_schema. */
 const LADDER_OVERHEAD_CHARS = 1400;
 const CHARS_PER_TOKEN = 4;
+const REPAIRS_HELD = 2;
+/** a repair's own words, around the validation error */
+const REPAIR_TOKENS = 100;
 
 export interface SentMailInput {
   ownText: string;
@@ -89,9 +92,11 @@ export function sentMailPrompt(input: SentMailInput): string {
 /** Revision 12: the whole request within the window, on a server that also gets the schema and repairs. */
 export function followupBudget(contextTokens: number | null): { outputTokens: number; promptChars: number } {
   if (contextTokens === null) return { outputTokens: FOLLOWUP_MAX_TOKENS, promptChars: Infinity };
-  const outputTokens = Math.min(FOLLOWUP_MAX_TOKENS, Math.ceil(contextTokens / 3));
+  const outputTokens = Math.min(FOLLOWUP_MAX_TOKENS, Math.ceil(contextTokens / 8));
   const fixed = Math.ceil((SYSTEM("en", "x").length + LADDER_OVERHEAD_CHARS) / CHARS_PER_TOKEN);
-  return { outputTokens, promptChars: Math.max(200, contextTokens - outputTokens - fixed) * CHARS_PER_TOKEN };
+  // the last repair holds the prompt, each bad answer before it and its own answer: a free-form server gets two
+  const repairs = REPAIRS_HELD * (outputTokens + REPAIR_TOKENS) + outputTokens;
+  return { outputTokens, promptChars: Math.max(200, contextTokens - repairs - fixed) * CHARS_PER_TOKEN };
 }
 
 /** What's sent, cut to the window: what they answered goes first, then their own words. */

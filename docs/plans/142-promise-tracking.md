@@ -262,3 +262,20 @@ Codex (`gpt-6.1-sol`, high, read-only, `/tmp/terno-plans-141-145/142-promise-tra
 - **Later is a small menu of the reminder presets,** not plan 87's dialog, which only knows reminders.
 - **The monthly ceiling sums `DAILY_REQUESTS`' keys** (revision 8), so plans 144 and 145 get it by adding a line.
 - **The shared dwell** (`lib/open-dwell.ts`) landed here for plan 144 revision 9, and reminders moved onto it.
+
+## What the code review changed
+
+Codex raised 14 points, all fixed, each with a test.
+
+- **Consent runs from `enabledAt`,** at the mark and again before the request. What was sent earlier takes a check's yes.
+- **A read belongs to the provider and the account:** a provider change, a key or the account's switch aborts it, and a late answer writes nothing.
+- **A check takes only confirmed sends.** A queued or failed copy has `local:` as its id, and may never have gone.
+- **Filing and folder moves keep the top in their Undo,** as an archive does.
+- **What a reply answers is its `In-Reply-To`,** and only without one the newest message before it.
+- **Off leaves the list at once, in every window,** and the Inbox's top reloads.
+- **The wide row says what's owed too;** a follow-up's date is when it's owed, in the row and on the thread's line.
+- **Selected rows use their own ink** (AA), and `primary` on `row-hover` is in the contrast suite.
+- **A rate limit has its one timer,** cleared by stopping and by Settings.
+- **A quit between coming due and saying so says it on return:** what's announced is what's due and unsaid.
+- **A small window holds the repairs too:** the prompt, two bad answers and the last answer.
+- **Settings says why it stopped,** with what to do.

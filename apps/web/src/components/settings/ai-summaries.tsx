@@ -1,4 +1,4 @@
-import { ASK_CLAUDE_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, NUDGE_DAYS, SUMMARY_CLAUDE_MODEL, SUMMARY_DEFAULT_MODEL, type AiProviderId, type AiSummariesStatus, type AiTaskName, type ModelInfo } from "@terno/core";
+import { ASK_CLAUDE_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, NUDGE_DAYS, SUMMARY_CLAUDE_MODEL, SUMMARY_DEFAULT_MODEL, type AiErrorKind, type AiProviderId, type AiSummariesStatus, type AiTaskName, type ModelInfo } from "@terno/core";
 import type { AiSettings, AiUsageReport, AppSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
@@ -164,6 +164,13 @@ export function FollowupsGroup({ settings, update }: { settings: AppSettings; up
   const [offer, setOffer] = useState<{ count: number; usd: number | null } | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const offering = followups.enabled && !followups.scanAnswered;
+  const [status, setStatus] = useState<{ blockedBy: { kind: AiErrorKind; message: string } | null } | null>(null);
+  useEffect(() => {
+    if (!followups.enabled) return setStatus(null);
+    let current = true;
+    void client.call("followups.status", {}).then((r) => current && setStatus(r), () => {});
+    return () => { current = false; };
+  }, [followups.enabled, ai]);
   useEffect(() => {
     if (!offering) return setOffer(null);
     let current = true;
@@ -191,6 +198,12 @@ export function FollowupsGroup({ settings, update }: { settings: AppSettings; up
           <span>{offer.usd !== null ? t("ai.followups.offerCost", { count: offer.count, usd: usd(offer.usd) }) : t("ai.followups.offer", { count: offer.count })}</span>{" "}
           <Button variant="link" size="xs" data-testid="ai-followups-check" onClick={() => void answer(true)}>{t("ai.followups.check")}</Button>{" "}
           <Button variant="link-secondary" size="xs" data-testid="ai-followups-notnow" onClick={() => void answer(false)}>{t("ai.followups.notNow")}</Button>
+        </SettingsNote>
+      )}
+      {followups.enabled && status?.blockedBy && (
+        <SettingsNote testId="ai-followups-status">
+          <span role="status" className="text-destructive-ink">{t("ai.followups.paused")}</span>
+          {errorHelp(status.blockedBy.kind, ai) && <span> {errorHelp(status.blockedBy.kind, ai)}</span>}
         </SettingsNote>
       )}
       {followups.enabled && ready && <TaskTargetRow ai={ai} update={update} task="followup" provider={target.provider} model={target.model} choices={[...new Set([...providerChoices(ai), target.provider])]} modelFor={(next) => (next === "anthropic" ? FOLLOWUP_CLAUDE_MODEL : next === "openai" ? FOLLOWUP_OPENAI_MODEL : modelFor(ai, next) || target.model)} models={models} prefix="ai-followups" labels={{ row: t("ai.followups.target"), hint: t("ai.followups.targetHint"), provider: t("ai.followups.targetProvider"), model: t("ai.followups.targetModel") }} />}

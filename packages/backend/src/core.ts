@@ -325,6 +325,7 @@ export class BackendCore {
       now: () => this.now(),
       settings: () => readSettings(this.store),
       forTask: () => this.aiService.forTask("followup", { foreground: false }),
+      begin: (requestId, clientId) => this.aiService.begin(requestId, clientId),
       accountWanted: async (accountId) => (await this.store.accounts.config<AccountPrefs>(accountId))?.config.followups !== false,
       signature: async (accountId) => (await this.store.accounts.get(accountId))?.signature ?? "",
       templated: (accountId) => this.writing.learner.templatedIn(accountId),
@@ -1242,7 +1243,7 @@ export class BackendCore {
       const wants = live ? { summary: this.summaries.isActive, category: await this.aiAssist.wanted() } : null;
       const newMail = wants && (wants.summary || wants.category) ? wants : undefined;
       // plan 142: mail you sent from elsewhere, only while live; the account's own switch is the worker's to read
-      const liveSent = live ? { wanted: this.followups.isActive } : undefined;
+      const liveSent = live ? { wanted: this.followups.isActive, since: this.followups.since } : undefined;
       const ingest = async (batch: IncomingMessage[]) => (batch.length ? this.store.sync.ingest(batch, { applyFilters, now: this.now(), classifier, observation, check: checkCurrent, forwardEligible, newMail, liveSent }) : null);
       // plan 69: a sync pass's slice never overlaps a storage removal unit, and leaves out what one removed
       const write = () => (pass ? this.evictions.ingest(pass.accountId, pass.pass, chunk, ingest) : ingest(chunk));
@@ -2571,7 +2572,7 @@ export class BackendCore {
       if (op.kind === "send") log.info("send.done", { durationMs: performance.now() - started });
       if (this.stopped && !this.store.isOpen) return;
       // a warning in Terno's words stays a catalog message (see opInfo)
-      const done = await this.store.ops.complete(op.id, { ...result, ...(sendAccepted && { sendAccepted }), ...(warning !== undefined && { warning: encodeText(warning) }) }, this.now(), { followup: this.followups.isActive });
+      const done = await this.store.ops.complete(op.id, { ...result, ...(sendAccepted && { sendAccepted }), ...(warning !== undefined && { warning: encodeText(warning) }) }, this.now(), { followup: this.followups.isActive, since: this.followups.since });
       if (sending) this.followups.wake();
       if (sending && receipt) {
         try {

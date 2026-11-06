@@ -49,6 +49,7 @@ test.describe("follow-ups (plan 142)", () => {
       await rows(page).first().click();
       const line = page.getByTestId("followup-line");
       await expect(line).toBeVisible();
+      await expect(page.getByTestId("followup-due")).toContainText("Due");
       const left = async (id: string) => (await page.getByTestId(id).first().boundingBox())!.x;
       expect(Math.abs((await left("followup-text")) - (await left("reader-subject")))).toBeLessThanOrEqual(1);
       await page.getByTestId("followup-go").hover();
@@ -113,6 +114,23 @@ test.describe("follow-ups (plan 142)", () => {
     await server.backend.server.invoke("settings.update", { followups: { enabled: false } }, dev);
     await fresh(page);
     await expect(page.getByTestId("nav-followups")).toHaveCount(0);
+    await expect(rows(page).first()).not.toContainText("You told");
+  });
+
+  test("the wide list says what's owed too, and when; turning it off leaves the list", async ({ app: page, server }) => {
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, layout: "list", followups: { enabled: true, scanAnswered: true } });
+    await tracked(server, "The contract", "promise", true);
+    await fresh(page);
+    await expect(rows(page).first()).toContainText("You told Tom Reed you’d send the contract");
+    await page.getByTestId("nav-followups").click();
+    await expect(rows(page)).toHaveCount(1);
+    await expect(rows(page).first().getByTestId("row-date")).toHaveAttribute("data-due-at", /\d+/);
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-ai").click();
+    await page.getByTestId("ai-followups-switch").click();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("nav-followups")).toHaveCount(0);
+    await expect(page.getByTestId("list-title")).toHaveText("Inbox");
     await expect(rows(page).first()).not.toContainText("You told");
   });
 

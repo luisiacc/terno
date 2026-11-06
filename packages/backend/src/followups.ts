@@ -23,6 +23,8 @@ export interface FollowupHost {
   now(): number;
   settings(): Promise<AppSettings>;
   forTask(): Promise<AiTasks>;
+  /** a request a change of provider aborts */
+  begin(requestId: string, clientId: string): { signal: AbortSignal; release: () => void };
   /** the account's own switch */
   accountWanted(accountId: number): Promise<boolean>;
   signature(accountId: number): Promise<string>;
@@ -96,6 +98,10 @@ export function scanKeeps(row: Pick<FollowupWrite, "kind" | "dueAt">, sentAt: nu
  */
 export class FollowupWorker {
   private active = false;
+  private enabledAt: number | null = null;
+  /** the one request running, and whose: an account's opt-out stops it */
+  private reading: { accountId: number; controller: AbortController } | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
   private running = false;
   private again = false;
@@ -118,6 +124,14 @@ export class FollowupWorker {
   get isActive(): boolean {
     return this.active && !this.stopped;
   }
+  /** the moment it went on: what was sent before it isn't marked (revision of §2) */
+  get since(): number | null {
+    return this.enabledAt;
+  }
+  /** a live timer waiting on a provider (null otherwise); for tests */
+  get retrying(): ReturnType<typeof setTimeout> | null {
+    return this.retryTimer;
+  }
   get nextAt(): number | null {
     return this.armedAt;
   }
@@ -126,7 +140,9 @@ export class FollowupWorker {
   }
 
   async start(): Promise<void> {
-    this.active = (await this.host.settings()).followups.enabled;
+    const { enabled, enabledAt } = (await this.host.settings()).followups;
+    this.active = enabled;
+    this.enabledAt = enabledAt;
     if (this.stopped) return;
     await this.look();
     if (this.active) this.wake();
@@ -135,10 +151,22 @@ export class FollowupWorker {
   stop(): void {
     this.stopped = true;
     this.generation.abort();
+    this.clearRetry();
     if (this.timer) clearTimeout(this.timer);
     if (this.touchTimer) clearTimeout(this.touchTimer);
     this.timer = this.touchTimer = null;
     this.armedAt = null;
+  }
+
+  private clearRetry(): void {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+  }
+
+  /** The account's own switch went off: what's running on it stops, and nothing of it stays queued. */
+  accountOff(accountId: number): void {
+    if (this.reading?.accountId === accountId) this.reading.controller.abort();
+    this.wake();
   }
 
   /** New mail, a confirmed send, a body. A no-op when off, paused, or for a minute after a provider failed. */
@@ -161,9 +189,11 @@ export class FollowupWorker {
     const on = settings.followups.enabled;
     const off = this.active && !on;
     this.active = on;
+    this.enabledAt = settings.followups.enabledAt;
     this.paused = null;
     this.limited = null;
     this.heldUntil = 0;
+    this.clearRetry();
     if (off) {
       this.generation.abort();
       this.generation = new AbortController();
@@ -229,10 +259,15 @@ export class FollowupWorker {
       return "next" as const;
     };
     if (!src || src.draft || src.spam || src.trash || src.bulk) return drop();
+    // what was sent before it went on is read only with a yes: the check's own marks are that yes
+    if (mark.source === "live" && settings.followups.enabledAt !== null && src.date < settings.followups.enabledAt) return drop();
     if (!(await this.host.accountWanted(src.accountId))) return drop();
     if ((await this.host.templated(src.accountId)).has(src.id)) return drop();
     if (src.bodyState !== "full" && !src.bodyUnavailable) return "hold";
     if (src.answering && src.answering.bodyState === "none" && !src.answering.bodyUnavailable) return "hold";
+    const asked = this.host.begin(`followup:${mark.messageId}`, "followup-worker");
+    const mine = { accountId: src.accountId, controller: new AbortController() };
+    this.reading = mine;
     try {
       const ai = await this.host.forTask();
       const language = await this.readerLanguage(settings);
@@ -243,9 +278,11 @@ export class FollowupWorker {
       const recipients = [...src.to, ...src.cc].slice(0, 20).map((r, i) => ({ label: `r${i + 1}`, name: r.name || r.email.split("@")[0]!, email: r.email }));
       const budget = followupBudget(ai.contextTokens);
       const input = fitSentMail({ ownText: own, ...(answering ? { answering } : {}), subject: src.subject, recipients: recipients.map(({ label, name }) => ({ label, name })), attachments: src.attachments, openPromises: [...openLabels].map(([label, r]) => ({ label, text: r.text })), sentAt: inWords(src.date, language), language, outputTokens: budget.outputTokens }, budget.promptChars);
-      const signal = generation.signal;
+      // a change of provider or key, the account's switch, the setting: each stops it, at the provider too
+      const signal = AbortSignal.any([generation.signal, asked.signal, mine.controller.signal]);
       const result = await ai.readSentMail(input, signal);
       if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
+      if (!(await this.host.accountWanted(src.accountId))) return await drop();
       const checked = checkSentMail(result, { ownText: own, recipients, open: openLabels, sentAt: src.date, nudgeAfterDays: settings.followups.nudgeAfterDays });
       const fromScan = mark.source === "scan";
       const now = this.host.now();
@@ -255,7 +292,12 @@ export class FollowupWorker {
       await this.look();
       return "next";
     } catch (error) {
+      // the account's switch went off under it: it isn't read, nor asked about again
+      if (!(await this.host.accountWanted(src.accountId).catch(() => true))) return await drop();
       return this.failed(mark, error);
+    } finally {
+      asked.release();
+      if (this.reading === mine) this.reading = null;
     }
   }
 
@@ -279,6 +321,8 @@ export class FollowupWorker {
     this.host.log("info", "follow-up read failed", { aiKind: kind });
     switch (kind) {
       case "cancelled":
+        // what stopped it (a new provider) may let it run: the next look decides
+        if (this.isActive) this.again = true;
         return "stop";
       case "auth":
       case "not_configured":
@@ -299,6 +343,14 @@ export class FollowupWorker {
           await store.followups.marks.consume(mark.messageId);
         } else this.attempts.set(mark.messageId, tries);
         this.heldUntil = this.host.now() + RETRY_WAIT_MS;
+        // the one timer: a provider that said "slow down", with work still queued (the network coming back wakes the rest)
+        if (kind === "rate_limited" && !this.retryTimer) {
+          this.retryTimer = setTimeout(() => {
+            this.retryTimer = null;
+            this.wake({ network: true });
+          }, RETRY_WAIT_MS);
+          (this.retryTimer as { unref?: () => void }).unref?.();
+        }
         return "stop";
       }
     }
@@ -337,9 +389,10 @@ export class FollowupWorker {
     await this.host.runBudgeted(waits.map((r) => r.id), async (chunk) => {
       await store.followups.closeAnswered(chunk, now);
     });
-    const due = await store.followups.makeDue(now);
-    await this.announce(due, now);
+    await store.followups.makeDue(now);
     const rows = await store.followups.active();
+    // what's due and hasn't been said, not only what came due just now: a quit between the two says it on the way back
+    await this.announce(rows.filter((r) => r.state === "due" && r.notifiedAt === null), now);
     this.ids = new Set(rows.map((r) => r.threadId));
     const snapshot: FollowupsSnapshot = { rows };
     if (this.stopped) return snapshot;
@@ -355,7 +408,7 @@ export class FollowupWorker {
   /** A due promise says so, once, per row (revision 7). A nudge doesn't. */
   private async announce(due: readonly FollowupRow[], now: number): Promise<void> {
     if (this.stopped) return;
-    const fresh = due.filter((r) => r.kind === "promise" && !r.fromScan && r.dueAt > now - NOTIFY_WINDOW_MS);
+    const fresh = due.filter((r) => r.kind === "promise" && !r.fromScan && r.inboxState === "onTop" && r.dueAt > now - NOTIFY_WINDOW_MS);
     if (!fresh.length) return;
     const claimed = new Set(await this.host.store.followups.claimNotice(fresh.map((r) => r.id), now));
     const rows = fresh.filter((r) => claimed.has(r.id));
@@ -455,6 +508,10 @@ export class FollowupWorker {
     const queued = await this.host.store.followups.marks.queueScan(ids, now);
     this.wake();
     return queued;
+  }
+
+  status(): { blockedBy: { kind: AiErrorKind; message: string } | null } {
+    return { blockedBy: this.paused };
   }
 
   /** Clear AI data: nothing in flight may bring back what was cleared. */
