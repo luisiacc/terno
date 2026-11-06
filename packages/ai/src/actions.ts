@@ -1,3 +1,4 @@
+import { L } from "@terno/i18n";
 import { ACTION_VERBS, type ActionPlan, type PlannedAction } from "@terno/core";
 import { z } from "zod";
 import type { StructuredTask } from "./ladder";
@@ -158,7 +159,7 @@ export function countedTransport(transport: ModelTransport, budget: { left: numb
   return {
     ...transport,
     complete: async (req: CompletionRequest) => {
-      if (budget.left <= 0) throw new AiError("the check's requests ran out", "invalid_output");
+      if (budget.left <= 0) throw new AiError(L("errors.ai.checkFailed"), "invalid_output");
       budget.left--;
       return transport.complete(req);
     },

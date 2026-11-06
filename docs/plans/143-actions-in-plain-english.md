@@ -1,6 +1,6 @@
 # Plan 143: Actions in plain English
 
-- **Status:** proposed and Codex-critiqued. Nothing is built. Needs plan 141's palette page and history. "Revisions after the Codex review" overrides the sections before it.
+- **Status:** built and on `main`, code-reviewed in two rounds (see "What building it changed" and "What the code review changed"). The real-model eval (`scripts/ai-real/actions.real.ts`) is written and not run: it and the owner's read wait for the owner's go-ahead. The full suite runs once, after plans 141 to 145 are all in (the owner's call). "Revisions after the Codex review" overrides the sections before it.
 - **Builds on:** plan 141 (Ask's box, its planning step, its history), plan 63 (sweeps, what they skip, one undo), plan 89 (patterns, `#`), plan 90 (`auto`, compare-and-set), plan 83 (hidden categories), plan 116 (forwarding), plan 128 (moving to a folder), plan 134 (what a model may do by itself).
 
 ## The request

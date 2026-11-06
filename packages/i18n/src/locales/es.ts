@@ -2159,6 +2159,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.ai.usageNotSaved": "Terno no pudo guardar lo que costaría esta solicitud, así que no la envió. La IA automática lo intentará más tarde.",
   "errors.ai.summaryProvider": "Los resúmenes necesitan un proveedor. Añade una clave de OpenAI en Ajustes → IA o elige tu proveedor actual para ellos.",
   "errors.ai.summaryBlocked": "Esta conversación está en Spam o en la Papelera, así que no se puede resumir. Sácala de ahí y vuelve a intentarlo.",
+  "errors.ai.checkFailed": "La revisión no pudo terminar. Inténtalo de nuevo u omítela.",
   "errors.ai.actionGone": "Esa vista previa terminó. Vuelve a pedirlo para ver una nueva.",
   "errors.ai.actionNotReady": "La vista previa aún no está lista. Espera a que termine e inténtalo de nuevo.",
   "action.outcome.archive": { one: "# conversación archivada", other: "# conversaciones archivadas" },

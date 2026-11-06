@@ -2174,6 +2174,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.ai.usageNotSaved": "Terno couldn’t save what this request would cost, so it didn’t send it. Automatic AI tries again later.",
   "errors.ai.summaryProvider": "Summaries need a provider. Add an OpenAI key in Settings → AI, or choose your current provider for them.",
   "errors.ai.summaryBlocked": "This conversation is in Spam or Trash, so it can’t be summarized. Move it out and try again.",
+  "errors.ai.checkFailed": "The check couldn't finish. Try again, or skip it.",
   "errors.ai.actionGone": "That preview has ended. Ask again to see a new one.",
   "errors.ai.actionNotReady": "The preview isn't ready yet. Wait for it to finish, then try again.",
   "action.outcome.archive": { one: "Archived # conversation", other: "Archived # conversations" },
