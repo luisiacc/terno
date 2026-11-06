@@ -285,3 +285,11 @@ A second round, on the fixes, raised 7, all fixed: an opt-out reaches a read sti
 ## What the full run showed
 
 `pnpm test:all` took 1,551 s on a machine with a load of 20 to 27 from other work, and exited non-zero: unit and perf failed twice under that load. Those failures were re-run alone and passed: unit's attachment conformance, checkpoint and facts files (1,280 tests), and `expunge`, `writing` and `search-everywhere` (10 tests). Nothing that failed touches Follow-ups. An earlier run found two real problems, both fixed: a settings object with no `followups` crashed the list, and the gate's fixtures took a mailbox snapshot per row.
+
+## What the eval and the panel changed
+
+Real models, on a copy of one real mailbox (5,939 threads, three accounts, Spanish and English) with its keys and queued work removed, read by five reviewers with different concerns: a fact auditor, a busy owner, a safety hawk, a bilingual editor and a recall PM. Four rounds, each reviewer blind to the others. No mail is recorded here. The owner's read is still theirs.
+
+- Prompt version 4. Reviewers held the read to one test: if it went quiet, would anybody notice?
+- **What changed:** accepting an offer whose next step is theirs, and sending what someone needed in order to act, both expect a reply ("quedo a la espera" among them), with those two as examples. An open offer doesn't. What they take on ("de nuestra parte", "vamos a revisar") is a promise, each item of a list its own, while what someone else has under way isn't. Nobody is awaited from an automated address.
+- **Limit:** a list longer than the cap of promises still loses the last one, and a conditional offer in a pitch can read as firm. Both stayed split on the last read.

@@ -6,7 +6,7 @@ import type { StructuredTask } from "./ladder";
  * is frozen and versioned. Only `ownText` is the sender's own: everything else is material, and a closure must quote their
  * words (revision 1), so an instruction in what they answered can't close what they owe.
  */
-export const FOLLOWUP_PROMPT_VERSION = 1;
+export const FOLLOWUP_PROMPT_VERSION = 4;
 export const FOLLOWUP_MAX_TOKENS = 1500;
 export const FOLLOWUP_RECIPIENTS_MAX = 20;
 export const FOLLOWUP_FILES_MAX = 10;
@@ -69,9 +69,11 @@ Return:
   - "quote": their exact words that say it, copied from <own_text>.
   - "to": the label of who it's for, or null.
   - "due": YYYY-MM-DD if they named a day ("Friday", "el viernes", "end of the month"), counted from when it was sent; else null. Never guess one.
-- "expectsReply": true when their message asks or needs something from a person. False for "thanks!", an FYI, or a message to a list.
+- "expectsReply": true when their message asks a person something or needs them to do something: that includes accepting an offer whose next step is theirs, sending what someone needed in order to act, and "quedo atento" or "quedo a la espera" after any of these. Examples of true: "Queremos proceder con la modalidad de 620 usd" (they accepted: the seller's move next); "le comparto la información solicitada para el número D-U-N-S" (the number is still to come). False when it only answers what they asked, for "thanks!", an FYI, an open offer ("join if you like"), or a message to a list.
 - "awaiting": the labels of who should answer, when expectsReply.
-- "kept": open promises this message keeps, each { "label", "evidence" }, where evidence is their exact words from <own_text> that keep it. "Sorry, need one more day" keeps nothing. If in doubt, leave it out.`;
+- "kept": open promises this message keeps, each { "label", "evidence" }, where evidence is their exact words from <own_text> that keep it: sending what was promised, or saying it's done. "Sorry, need one more day" keeps nothing. If in doubt, leave it out.
+
+Something someone else has under way ("quedó en revisión con el banco") isn't their promise. What they take on is: "de nuestra parte", "vamos a revisar", "we'll look into it". When they list several things they'll do, note each one as its own promise: a list headed "de nuestra parte" is that many promises. Nobody is awaited from an automated address (notifications@, noreply@).`;
 
 const dataText = (text: string) => text.replace(/<(\s*\/?\s*)(own_text|answering|subject|recipients|files|open_promises)\b/giu, "‹$1$2");
 
