@@ -47,7 +47,7 @@ Details:
 - **The address being typed.** The token at the end of the input that has an `@` and something before it (`ana@`, `ana@acme`, `ana@acme.te`) is an address *prefix*: it matches addresses starting with it. So typing narrows steadily through the address instead of emptying the list at `ana@acme.t` and jumping back. Once followed by a space or comma, a token that isn't a full address is ordinary text again.
 - **The word match.** An address matches a space-bounded word of `from_email + recipients_norm`. A display name that is itself an address (Outlook writes those) counts; that's what "has the address" reads as anyway.
 
-The choice to look in sender and recipients only, not bodies, is deliberate: a row should visibly involve the address, every quoted reply otherwise matches ("ana@acme.test wrote:"), and quotes ask for the mention.
+Sender and recipients only, not bodies (decided by the user): a mention in a body doesn't count. A row should visibly involve the address, every quoted reply otherwise matches ("ana@acme.test wrote:"), and quotes ask for the mention.
 
 ### The query shape
 
@@ -82,7 +82,7 @@ All of them still apply to the same message. A query without a comma or address 
 
 - MCP's `search_emails` description and its server instructions gain the two forms.
 - README's search section gets a line.
-- No UI string changes. Teaching the comma (a hint or a tip) is left for the user to ask for.
+- No UI string changes, and no hint or tip teaching the comma (decided by the user).
 
 ## Tests
 
