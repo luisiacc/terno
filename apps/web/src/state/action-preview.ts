@@ -1,13 +1,17 @@
 import { client } from "~/rpc/connection";
 import { create } from "zustand";
 import { getApp, setApp, useApp, type AppState } from "./app";
-import { useList } from "./list";
+import { reloadList, useList } from "./list";
 
 /**
  * Plan 143: a sentence's preview, a list of its own. What's here is small enough for the entry chunk: which rows are
  * unticked, and the way back to where you were. The rest of it comes with its header.
  */
-type From = Pick<AppState, "view" | "accountId" | "categoryId" | "reviewCategoryId" | "folder" | "gmailTab" | "reminders" | "followups" | "query" | "selectedId" | "readerOpen"> & { scrollTop: number };
+type From = Pick<AppState, "view" | "accountId" | "categoryId" | "reviewCategoryId" | "folder" | "gmailTab" | "reminders" | "followups" | "query" | "selectedId" | "readerOpen"> & {
+  scrollTop: number;
+  /** the rows you were among, however deep: scroll can't come back to a place the list doesn't hold yet */
+  rows: Pick<ReturnType<typeof useList.getState>, "key" | "itemsKey" | "items" | "index" | "nextCursor">;
+};
 
 interface ActionRows {
   unticked: ReadonlySet<number>;
@@ -32,12 +36,16 @@ const listEl = () => document.querySelector<HTMLElement>('[data-keep-scroll="lis
 
 export function enterPreview(previewId: string): void {
   const s = getApp();
+  const { key, itemsKey, items, index, nextCursor } = useList.getState();
   useActionRows.setState({
     unticked: new Set(),
     showLeftOut: false,
-    from: { view: s.view, accountId: s.accountId, categoryId: s.categoryId, reviewCategoryId: s.reviewCategoryId, folder: s.folder, gmailTab: s.gmailTab, reminders: s.reminders, followups: s.followups, query: s.query, selectedId: s.selectedId, readerOpen: s.readerOpen, scrollTop: listEl()?.scrollTop ?? 0 },
+    from: { view: s.view, accountId: s.accountId, categoryId: s.categoryId, reviewCategoryId: s.reviewCategoryId, folder: s.folder, gmailTab: s.gmailTab, reminders: s.reminders, followups: s.followups, query: s.query, selectedId: s.selectedId, readerOpen: s.readerOpen, scrollTop: listEl()?.scrollTop ?? 0, rows: { key, itemsKey, items, index, nextCursor } },
   });
   setApp({ actionPreview: previewId, view: "all", accountId: null, categoryId: null, reviewCategoryId: null, folder: null, gmailTab: null, reminders: false, followups: false, query: "", selectedId: null, checked: new Set(), anchorId: null, scope: null, readerOpen: false });
+  // from the top: a place deep in the last list means nothing in this one
+  const el = listEl();
+  if (el) el.scrollTop = 0;
 }
 
 /** Back to the list and scroll position you left, with no trace. */
@@ -46,18 +54,18 @@ export function leavePreview(): void {
   if (!getApp().actionPreview) return;
   useActionRows.setState({ unticked: new Set(), from: null });
   if (!from) return setApp({ actionPreview: null });
-  const { scrollTop, ...place } = from;
+  const { scrollTop, rows, ...place } = from;
+  useList.setState({ ...rows, loading: false, loadingMore: false, error: null });
   setApp({ ...place, actionPreview: null, checked: new Set(), anchorId: null, scope: null });
-  if (!scrollTop) return;
-  // once its rows are back: the list has to be tall enough to hold the place
-  const off = useList.subscribe((l) => {
-    if (l.loading || l.key !== l.itemsKey) return;
-    off();
+  // what changed while away comes in place, over the same window
+  void reloadList({ keepSelection: true, window: true });
+  // once those rows have rendered
+  requestAnimationFrame(() =>
     requestAnimationFrame(() => {
       const el = listEl();
       if (el) el.scrollTop = scrollTop;
-    });
-  });
+    }),
+  );
 }
 
 /** `x` and a row's check: this row in or out. Multi-select is off here (revision 3). */

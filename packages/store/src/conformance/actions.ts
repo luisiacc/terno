@@ -72,6 +72,29 @@ export function defineActionsConformance(fresh: () => Promise<MailStore>): void 
       expect(byId.get(c.thread)).toMatchObject({ inSpam: true });
     });
 
+    it("a failed move is abandoned: nothing's left to resume, what it did stays and comes back", async () => {
+      const { store, put } = await setup();
+      const a = await put();
+      const b = await put();
+      const to = await store.categories.create("To", "rose", {});
+      const { batchId } = await store.categories.beginMove({ to: to.id, threadIds: [a.thread, b.thread], addedBy: "bulk", now: NOW, source: "sentence" });
+      await store.categories.applyMoveSlice(batchId, [a.thread], NOW);
+      await store.categories.abandonMove(batchId);
+      const facts = async () => new Map((await store.filters.actionFacts([a.thread, b.thread], to.id)).map((f) => [f.id, f.inCategory]));
+      expect(await facts()).toEqual(new Map([[a.thread, true], [b.thread, false]]));
+      expect(await store.categories.movePhase(batchId)).toBe("training");
+      expect(await store.categories.movePending(batchId)).toEqual([a.thread]);
+      await store.categories.trainMoveSlice(batchId, [a.thread], NOW);
+      expect(await store.categories.unfinishedMoves()).toEqual([]);
+      await store.categories.undoMoveBegin(batchId, NOW);
+      await store.categories.undoMoveSlice(batchId, [a.thread], NOW);
+      expect((await facts()).get(a.thread)).toBe(false);
+      // nothing reached: done, with nothing to train or undo
+      const none = await store.categories.beginMove({ to: to.id, threadIds: [b.thread], addedBy: "bulk", now: NOW, source: "sentence" });
+      await store.categories.abandonMove(none.batchId);
+      expect(await store.categories.movePhase(none.batchId)).toBe("done");
+    });
+
     it("the same rule, through a walk, finds the same messages as its windows", async () => {
       const { store, put } = await setup();
       const hit = await put({ subject: "Shipping 12", date: NOW - 40 * 86_400_000 });

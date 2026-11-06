@@ -36,14 +36,14 @@ import { destinationOf } from "./voice-learner";
 const PREVIEW_MS = 30 * 60_000;
 const WINDOW = 4000;
 const WINDOW_PATTERN = 1000;
+/** a body read is the slow part: few enough that a window stays inside the slicer's budget */
+const WINDOW_BODY = 400;
 const EMIT_EVERY_MS = 150;
 /** at most this many provider requests for one check, repairs included (revision 9) */
 const CHECK_PROVIDER_REQUESTS = 6;
 const CHECK_REQUESTS = 3;
 const CONDITIONS_MAX = 20;
 const UNDOS_KEPT = 16;
-/** a category move in pieces small enough to stop between (revision 12) */
-const MOVE_CHUNK = 2000;
 
 type StartParams = ParsedParamsOf<"ai.actionStart">;
 
@@ -51,8 +51,8 @@ type StartParams = ParsedParamsOf<"ai.actionStart">;
 export interface ActionOps {
   act(ids: number[], action: "archive" | "trash" | "spam" | "markRead" | "star", narrow: Narrow, progress: (done: number) => void): Promise<{ undoId: number | null }>;
   toFolder(accountId: number, folder: string, ids: number[], narrow: Narrow, progress: (done: number) => void): Promise<{ undoId: number | null }>;
-  /** a whole move, finished: stopping never leaves one for startup to resume */
-  toCategory(categoryId: number, ids: number[]): Promise<MoveStep>;
+  /** one slice's move, finished: stopping never leaves one for startup to resume */
+  toCategory(categoryId: number, ids: number[], record: (step: MoveStep) => void): Promise<void>;
   undoActs(undoId: number, jobId: string | undefined): Promise<number>;
   undoMove(step: MoveStep): Promise<number>;
   ensureFilter(rule: FilterRule, name: string): Promise<{ filterUndo: number | null }>;
@@ -107,6 +107,8 @@ interface Preview {
   stop: boolean;
   accounts: Set<number>;
   clearGeneration: number;
+  /** ends what it has underway the moment it's dropped */
+  controller: AbortController;
 }
 
 const stampOf = (f: ActionThreadFacts) => ({ lastDate: f.lastDate, messageCount: f.messageCount });
@@ -154,6 +156,7 @@ export class ActionsService {
 
   private drop(p: Preview): void {
     p.dead = true;
+    p.controller.abort();
     if (p.timer) clearTimeout(p.timer);
     this.previews.delete(p.id);
   }
@@ -178,6 +181,18 @@ export class ActionsService {
       if (!p.applying) this.drop(p);
     }, PREVIEW_MS);
     (p.timer as { unref?: () => void }).unref?.();
+  }
+
+  /** An account removed (or, null, Clear AI data): nothing held of its mail goes on being read or sent. */
+  invalidate(accountId: number | null): void {
+    for (const p of this.previews.values()) {
+      if (accountId !== null && !p.accounts.has(accountId) && !p.groups) continue;
+      p.stop = true;
+      if (!p.applying) {
+        this.drop(p);
+        this.b.server.emitTo(p.clientId, "aiAction", { previewId: p.id, ended: "failed" });
+      }
+    }
   }
 
   disconnected(clientId: string): void {
@@ -314,6 +329,7 @@ export class ActionsService {
         stop: false,
         accounts: new Set(),
         clearGeneration,
+        controller: new AbortController(),
       };
       this.previews.set(p.id, p);
       this.touch(p);
@@ -337,7 +353,7 @@ export class ActionsService {
   private async scan(p: Preview, asked: AbortSignal, opened: (how: "open" | "none" | "tooMany") => void): Promise<void> {
     const { store } = this.b;
     const rule = this.ruleFor(p.plan, p.plan.conditions, 0);
-    const size = p.plan.conditions.some((c) => "op" in c && c.op === "matches") ? WINDOW_PATTERN : WINDOW;
+    const size = p.plan.conditions.some((c) => c.field === "body" || c.field === "text") ? WINDOW_BODY : p.plan.conditions.some((c) => "op" in c && c.op === "matches") ? WINDOW_PATTERN : WINDOW;
     const cap = this.b.options.similarCap ?? SCOPE_CAP;
     const now = this.b.now();
     const walk = store.filters.messageWalk();
@@ -442,7 +458,12 @@ export class ActionsService {
     const byKey = new Map<string, Group>();
     const ids = p.ids;
     for (let i = 0; i < ids.length; i += 1000) {
-      for (const f of await this.b.store.filters.actionFacts(ids.slice(i, i + 1000))) {
+      const slice = ids.slice(i, i + 1000);
+      const facts = new Map((await this.b.store.filters.actionFacts(slice)).map((f) => [f.id, f]));
+      // the preview's order, newest first, whatever order a store answers in
+      for (const id of slice) {
+        const f = facts.get(id);
+        if (!f) continue;
         const domain = domainOf(f.lastFromEmail);
         const name = redactAddresses(f.lastFromName).slice(0, CHECK_NAME_CHARS);
         const subject = subjectKey(normalizeText(baseSubject(redactAddresses(f.subject)))).slice(0, CHECK_SUBJECT_CHARS);
@@ -463,12 +484,18 @@ export class ActionsService {
     const p = this.held(params.previewId, clientId);
     if (p.scanning) throw new RpcError("BAD_REQUEST", L("errors.ai.actionNotReady"));
     if (params.skip) {
-      // nothing sent: the rule's matches are what they are
-      if (p.check === "needed") p.check = "skipped";
+      // nothing sent: the rule's matches are what they are, whatever a check that failed had set up
+      if (p.check === "needed") {
+        p.check = "skipped";
+        p.unchecked.clear();
+        p.groups = null;
+        p.nextGroup = 0;
+      }
       return { status: "done", preview: this.info(p) };
     }
     if (p.check !== "needed" && !(p.check === "done" && p.unchecked.size > 0)) return { status: "done", preview: this.info(p) };
-    const { signal, release } = this.b.aiService.begin(params.requestId, clientId);
+    const { signal: asked, release } = this.b.aiService.begin(params.requestId, clientId);
+    const signal = AbortSignal.any([asked, p.controller.signal]);
     try {
       const { ai, destination } = await this.b.ask.target();
       if (!ai.local && !((await readSettings(this.b.store)).ask.checkAcknowledged ?? []).includes(destination)) {
@@ -480,7 +507,7 @@ export class ActionsService {
       const groups = p.groups!;
       let sent = 0;
       try {
-        for (let r = 0; r < CHECK_REQUESTS && p.nextGroup < groups.length; r++) {
+        for (let r = 0; r < CHECK_REQUESTS && p.nextGroup < groups.length && !p.dead; r++) {
           const planner = await this.stillAgreed(destination, signal);
           const fit = checkBudget(planner.contextTokens);
           if (fit.groups === 0) break;
@@ -583,13 +610,13 @@ export class ActionsService {
       if (action.type === "moveToCategory" || action.type === "createCategory") {
         const moves: MoveStep[] = [];
         steps.push({ kind: "moves", steps: moves });
-        for (let i = 0; i < targets.length; i += MOVE_CHUNK) {
-          const chunk = await narrow(targets.slice(i, i + MOVE_CHUNK));
-          if (chunk.length) moves.push(await ops.toCategory(categoryId!, chunk));
-          progress(Math.min(targets.length, i + MOVE_CHUNK));
-          if (p.stop) break;
-          await this.b.yieldTurn();
-        }
+        let reached = 0;
+        // a move for each slice, read again just before it (revision 10), and Stop falls between them (revision 12)
+        await this.b.runBudgeted(targets, async (slice) => {
+          const chunk = await narrow(slice);
+          if (chunk.length) await ops.toCategory(categoryId!, chunk, (step) => moves.push(step));
+          progress((reached += slice.length));
+        });
       } else {
         const run = action.type === "moveToFolder" ? (ids: number[]) => ops.toFolder(action.accountId, action.folder, ids, narrow, progress) : (ids: number[]) => ops.act(ids, action.type as "archive", narrow, progress);
         try {

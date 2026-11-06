@@ -47,9 +47,13 @@ test.describe("actions in plain English (plan 143)", () => {
     await withMail(page, server);
     const inInbox = (subject: string) => expect.poll(() => sqlDb(server.backend.store).get<{ in_inbox: number }>("SELECT in_inbox FROM threads WHERE subject = ?", subject)?.in_inbox);
     const list = page.locator('[data-keep-scroll="list"]');
-    await list.evaluate((el) => (el.scrollTop = 300));
+    // past the first page: the list has to come back holding those rows
+    await expect.poll(async () => {
+      await list.evaluate((el) => (el.scrollTop = el.scrollHeight));
+      return page.evaluate(() => document.querySelector('[data-keep-scroll="list"] > div:last-child')?.getBoundingClientRect().height ?? 0);
+    }).toBeGreaterThan(7000);
     const place = await list.evaluate((el) => el.scrollTop);
-    expect(place).toBeGreaterThan(0);
+    expect(place).toBeGreaterThan(5000);
 
     await scenario("nothing runs: the preview is the list", async () => {
       await say(page, "Archive shipping notices older than a month");
@@ -76,6 +80,18 @@ test.describe("actions in plain English (plan 143)", () => {
       await inInbox("Your shipping notice 4411").toBe(1);
     });
 
+    await scenario("from All Mail too, Cancel puts its rows back", async () => {
+      await page.getByTestId("nav-more").click();
+      await page.getByTestId("nav-all").click();
+      await expect.poll(() => rows(page).count()).toBeGreaterThan(3);
+      await say(page, "Archive shipping notices older than a month");
+      await expect(page.getByTestId("action-title")).toHaveText("Archive 2 conversations");
+      await page.getByTestId("action-cancel").click();
+      await expect(page.getByTestId("action-preview")).toHaveCount(0);
+      await expect.poll(() => rows(page).count()).toBeGreaterThan(3);
+      await page.getByTestId("nav-inbox").click();
+    });
+
     await scenario("a row out with x, Apply, and the snack's Undo brings them all back", async () => {
       await say(page, "Archive shipping notices older than a month");
       await expect(page.getByTestId("action-title")).toHaveText("Archive 2 conversations");
@@ -97,6 +113,19 @@ test.describe("actions in plain English (plan 143)", () => {
       await page.getByTestId("snack-action").click();
       await inInbox("Tracking your delivery 2231").toBe(1);
       await inInbox("Shipping delivery tracking 9921").toBe(1);
+    });
+
+    await scenario("⌘↩ in a reply sends the reply; it doesn't apply the preview", async () => {
+      await say(page, "Archive shipping notices older than a month");
+      await expect(page.getByTestId("action-title")).toHaveText("Archive 2 conversations");
+      await rows(page).first().click();
+      await page.keyboard.press("r");
+      const editor = page.locator("[contenteditable=true]").first();
+      await expect(editor).toBeFocused();
+      await page.keyboard.press("ControlOrMeta+Enter");
+      await expect(page.getByTestId("action-preview")).toBeVisible();
+      await inInbox("Your shipping notice 4411").toBe(1);
+      await page.getByTestId("action-cancel").click();
     });
   });
 

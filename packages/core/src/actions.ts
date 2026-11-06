@@ -86,4 +86,4 @@ export interface AiActionApplied {
 }
 
 /** Address literals never go in a check's groups, whichever field they're in (revision 8). */
-export const redactAddresses = (text: string): string => text.replace(/[\w.+%-]+@[\w-]+(?:\.[\w-]+)+/g, "…");
+export const redactAddresses = (text: string): string => text.replace(/(?:"[^"\n]*"|[\p{L}\p{N}.!#$%&'*+/=?^_`{|}~-]+)@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*/gu, "…");

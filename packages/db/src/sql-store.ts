@@ -85,6 +85,7 @@ import {
   undoMoveSlice,
   applyMoveSlice,
   unfinishedMoves,
+  abandonMove,
   vetoesFor,
   aiFilingBar,
   categoryEvidence,
@@ -1289,7 +1290,10 @@ export class SqlMailStore implements MailStore {
         )
         .map((t) => ({ id: t.id, accountId: t.account_id, subject: t.subject, lastDate: t.last_date, lastFromName: t.last_from_name, lastFromEmail: t.last_from_email, messageCount: t.message_count, unread: t.unread_count > 0, starred: !!t.is_starred, replied: !!t.has_sent, inInbox: !!t.in_inbox, inTrash: !!t.in_trash, inSpam: !!t.in_spam, inCategory: !!t.in_category })),
     matchMessages: async (rule, now, messageIds) => this.bodyCommand(async () => {
-      const prepared = await prepareBodyMatches(this.db, rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : []), this.yieldTo);
+      const tests = rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : []);
+      // only these messages' bodies: a walk's windows would otherwise each reread the whole mailbox (plan 143's review)
+      const captures = tests.length ? this.db.all<{ id: string }>("SELECT DISTINCT capture_id AS id FROM body_heads WHERE message_id IN (SELECT value FROM json_each(?))", JSON.stringify(messageIds)).map((r) => r.id) : [];
+      const prepared = await prepareBodyMatches(this.db, tests, this.yieldTo, captures, "selected");
       return withBodyMatches(this.db, prepared, () => findRuleMatches(this.db, rule, now, messageIds).messageIds);
     }),
     applyChunk: async (id, ruleJson, messageIds, now) =>
@@ -1364,6 +1368,7 @@ export class SqlMailStore implements MailStore {
     movePhase: async (batchId) => movePhase(this.db, batchId),
     movePending: async (batchId) => movePending(this.db, batchId),
     unfinishedMoves: async () => unfinishedMoves(this.db),
+    abandonMove: async (batchId) => abandonMove(this.db, batchId),
     trainMoveSlice: async (batchId, threadIds, now) => trainMoveSlice(this.db, batchId, threadIds, now),
     applyMoveSlice: async (batchId, threadIds, now) => applyMoveSlice(this.db, batchId, threadIds, now),
     undoMoveBegin: async (batchId, now) => undoMoveBegin(this.db, batchId, now),

@@ -9,6 +9,7 @@
     "src"
   ],
   "exclude": [
+    "src/actions.test.ts",
     "src/foreground-admission.int.test.ts",
     "src/smtp-size-idb-recovery.int.test.ts",
     "src/b41-sign-in-deadline.int.test.ts",

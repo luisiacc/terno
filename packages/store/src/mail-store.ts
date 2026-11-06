@@ -771,6 +771,8 @@ export interface MailStore {
     movePending(batchId: number): Promise<number[]>;
     unfinishedMoves(): Promise<{ batchId: number; phase: "moving" | "training" | "unmoving" | "restoring" }[]>;
     /** one slice of a move, one unit: these threads leave every other category (journaled per row) and join `to` */
+    /** Plan 143: a move that failed: what it hadn't reached isn't resumed at startup; what it did stays, and still comes back with its Undo. */
+    abandonMove(batchId: number): Promise<void>;
     applyMoveSlice(batchId: number, threadIds: readonly number[], now: number): Promise<{ deltas: ModelDelta[]; touched: number[] }>;
     trainMoveSlice(batchId: number, threadIds: readonly number[], now: number): Promise<ModelDelta[]>;
     /** starts an undo (false: nothing left to undo); undoMoveSlice then restores memberships and decisions */

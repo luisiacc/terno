@@ -322,13 +322,24 @@ export function createHandlers(b: Backend): Handlers {
       const r = await moveToFolder(accountId, folder, null, ids, progress, narrow);
       return { undoId: r.undoId };
     },
-    toCategory: async (categoryId, threadIds) => {
+    toCategory: async (categoryId, threadIds, record) => {
       await requireCategory(categoryId);
       // `bulk`, and nothing planned: a sentence never forwards (revision 1)
       const { batchId } = await store.categories.beginMove({ to: categoryId, threadIds, addedBy: "bulk", now: b.now(), source: "sentence" });
-      await b.finishMove(batchId);
-      const hidden = (await store.categories.list()).some((c) => c.id === categoryId && !c.showInInbox);
-      return { batchId, ended: hidden ? await b.reminders.endDue(threadIds) : [], tops: hidden ? await b.followups.endTop(threadIds) : [] };
+      // known before anything can fail: what committed always has its Undo (revision 5)
+      const step = { batchId, ended: [] as unknown[], tops: [] as unknown[] };
+      record(step);
+      try {
+        await b.finishMove(batchId);
+      } catch (error) {
+        // nothing left for the next start to finish behind the user's back
+        await store.categories.abandonMove(batchId);
+        throw error;
+      }
+      if ((await store.categories.list()).some((c) => c.id === categoryId && !c.showInInbox)) {
+        step.ended = await b.reminders.endDue(threadIds);
+        step.tops = await b.followups.endTop(threadIds);
+      }
     },
     undoActs,
     undoMove: async ({ batchId, ended, tops }) => {
@@ -376,6 +387,7 @@ export function createHandlers(b: Backend): Handlers {
     b.accountRemoved(id);
     // plan 141: what questions drew on it goes, and what's asking on it stops
     await b.ask.accountRemoved(id);
+    b.actions.invalidate(id);
     forgetSignInVersion(b, id);
     // nobody from a removed account lingers in suggestions
     await b.autocomplete.reset();
@@ -1356,6 +1368,7 @@ export function createHandlers(b: Backend): Handlers {
     "ai.summaries.clear": async () => {
       await b.summaries.clear();
       await b.ask.clear();
+      b.actions.invalidate(null);
       await b.followups.clear();
       return { ok: true };
     },

@@ -4,6 +4,12 @@ import { activeFilter, isUnreadOnly, LEGACY_FILTERS, LEGACY_KEY, loadListFilters
 const inbox = { view: "inbox" as const, accountId: null, categoryId: null, reviewCategoryId: null };
 
 describe("the quick filter's state (plan 12's unread filter, generalized in plan 15)", () => {
+  it("a sentence's preview shows every row Apply acts on, whatever the mailbox remembers (plan 143)", () => {
+    const listFilters = withFilter(new Map(), mailboxKey({ ...inbox, view: "all" }), "unread");
+    expect(activeFilter({ ...inbox, view: "all", listFilters })).toBe("unread");
+    expect(activeFilter({ ...inbox, view: "all", listFilters, actionPreview: "p" })).toBeUndefined();
+  });
+
   it("is per mailbox: view, account and category", () => {
     expect(mailboxKey(inbox)).toBe("inbox||");
     expect(mailboxKey({ ...inbox, accountId: 2 })).toBe("inbox|2|");

@@ -349,6 +349,15 @@ function nextPhaseWhenDone(c: Ctx, batchId: number, next: MovePhase): void {
   setPhase(c, batchId, next);
 }
 
+export function abandonMove(c: Ctx, batchId: number): void {
+  const b = T(c, "cat_batches").get(batchId);
+  if (!b || scopeOf(b).phase !== "moving") return;
+  const journal = T(c, "cat_move_threads");
+  for (const r of journal.by("fk_batch_id", batchId)) if (r.done === 0) journal.delete(r.batch_id, r.thread_id);
+  if (journal.by("fk_batch_id", batchId).length) nextPhaseWhenDone(c, batchId, "training");
+  else setPhase(c, batchId, "done");
+}
+
 export function movePending(c: Ctx, batchId: number): number[] {
   return T(c, "cat_move_threads")
     .by("fk_batch_id", batchId)

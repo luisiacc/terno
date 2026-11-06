@@ -188,3 +188,31 @@ Codex (`gpt-6.1-sol`, high, read-only, `/tmp/terno-plans-141-145/143-actions-in-
 10. **Every action rechecks.** §6's `narrow` covers only `actOn`, and category and folder moves have no such check. Eligibility is read again before each committing slice for every action, in both stores. Rows explicitly included stay included; a thread starred or replied in since the preview is spared.
 11. **IndexedDB's windows walk everything.** `matchWindow` enumerates every message key per window (`idb/store.ts:1724`), so small pattern windows multiply full scans. A resumable traversal over existing ids goes once through the mailbox, with the same seam in SQLite. Gates on dense and sparse 50k+ fixtures hold total work and the longest uninterrupted time.
 12. **`trackJob` can't cancel.** `stop()` only unsubscribes (`actions.ts:278`), and `actOn` has no abort. So a Stop built on it would hide progress while mail keeps moving. Cancellation is owned by the connection and checked between slices, returns undo handles for what committed, and a stopped category move is persisted so startup doesn't resume it.
+
+## What building it changed
+
+- **The preview opens with its first rows,** and the page stays only when nothing at all matched (§2 and §4 read together): the planning and the walk up to the first match are on the page; the count then grows in the header.
+- **Left out by AI** is a line in the header with Show and Hide, whose rows join the end of the list unticked, rather than a group inside the virtualized list. It's the same choice with one list's rows.
+- **Starring spares nobody, and mark read needs something unread:** a star on a replied thread costs nothing, so `star` has no "skipped" and needs only what isn't starred yet. A move to a category leaves out what's already there.
+- **A row's check is a picture** (`CheckboxMark`): an option's children can't be focusable, so the row carries `aria-selected` and `x`, and the box is for the pointer.
+- **The no-forward intent is `bulk` and no `planForwards`** (revision 1): `membershipForwards` already refuses a bulk filing in both stores, at once and in the start's sweep. A reply arriving later in a conversation filed there still goes, as with any filed conversation: that's the category's rule on new mail, not the sentence's.
+- **The gates are in `workloads.perf.test.ts`,** beside their neighbours in both stores, and `actions.perf.test.ts` holds the order of 100,000 rows.
+- **The pattern limit is 500** in the code (`PATTERN_MAX`), not the 300 this plan assumed: validation reuses it as it is.
+
+## What the code review changed
+
+Codex (read-only, `git diff main..HEAD`) raised 13 points, all fixed with a test that fails without the fix.
+
+1. ⌘↩ in a reply also applied the preview: the shortcut now belongs to the list's own focus (`plain-actions.spec.ts`).
+2. Removing an account or Clear AI data left a check sending what it held: `ActionsService.invalidate` ends those previews and their requests.
+3. A category move that failed partway lost its Undo: the step is recorded before anything can fail, and `categories.abandonMove` (both stores) leaves nothing for startup to resume.
+4. A category move read its threads once for 2,000: now one move per budgeted slice, read again just before it, with Stop between them.
+5. Cancel left a check running: a preview's own abort controller, tested before each dispatch.
+6. Redaction missed `josé@…` and `"anna smith"@…`: Unicode and quoted local parts.
+7. A remembered quick filter on All Mail hid rows Apply still touched: `activeFilter` is off in a preview.
+8. Skip after a failed check left every row out: Skip clears what the check set up.
+9. Cancel from All Mail left the preview's rows: the list follows `actionPreview`.
+10. Cancel lost a place past the first page: the preview keeps the rows you were among and puts them back before the scroll.
+11. The stores checked different groups first: groups follow the preview's order, not a store's answer. Tested on both.
+12. Body conditions reread the whole SQLite mailbox per window: `matchMessages` prepares only that window's captures, and windows with a body test hold 400 messages, so one stays inside the budget (a gate holds it).
+13. Apply and Undo ran only on SQLite: what changed, Undo and the check's order now run on both stores.

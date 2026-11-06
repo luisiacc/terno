@@ -473,6 +473,15 @@ function nextPhaseWhenDone(db: Db, batchId: number, next: MovePhase): boolean {
   return true;
 }
 
+export function abandonMove(db: Db, batchId: number): void {
+  db.tx(() => {
+    if (movePhase(db, batchId) !== "moving") return;
+    db.run("DELETE FROM cat_move_threads WHERE batch_id = ? AND done = 0", batchId);
+    if (db.get("SELECT 1 FROM cat_move_threads WHERE batch_id = ? LIMIT 1", batchId)) nextPhaseWhenDone(db, batchId, "training");
+    else setPhase(db, batchId, "done");
+  });
+}
+
 /** The move's threads whose current phase (training or restore) hasn't reached them yet. */
 export function movePending(db: Db, batchId: number): number[] {
   return db.all<{ thread_id: number }>("SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND done = 0 ORDER BY thread_id", batchId).map((r) => r.thread_id);

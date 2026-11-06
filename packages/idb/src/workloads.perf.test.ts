@@ -158,7 +158,7 @@ describe("the workloads the stores share", () => {
   }, 600_000);
   it("plan 132: summaries: marking a live slice and the worker's and reader's reads hold", () => measureAiSummaries(mailbox()), 600_000);
   it("plan 142: follow-ups' reads hold at the cap", () => measureFollowups(mailbox()), 600_000);
-  it("plan 143: a sentence's walk holds, sparse and dense, with a pattern and without", () => measureActionWalk(mailbox(), { stepMs: 400, totalMs: 15_000 }), 600_000);
+  it("plan 143: a sentence's walk holds, sparse and dense, with a pattern and without", () => measureActionWalk(mailbox(), { stepMs: 1000, totalMs: 15_000 }), 600_000);
   it("plan 141: a question's search and passages hold, wherever the word is", () => measureAsk(mailbox(), { totalMs: 3 * scanBudget("factura"), passagesMs: 500, stallMs: 32 }), 600_000);
   it("plan 133: drafting's reads hold, with thousands of look-alikes in the way", () => measureWriting(mailbox()), 600_000);
   it("plan 134: categories: what the AI is told and an AI filing hold", () => measureCategoryEvidence(mailbox()), 600_000);

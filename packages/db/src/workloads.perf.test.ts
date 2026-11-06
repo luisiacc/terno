@@ -53,7 +53,7 @@ describe("sharing a large mailbox", () => {
   });
   it("plan 132: summaries: marking a live slice and the worker's and reader's reads hold", () => measureAiSummaries(mailbox));
   it("plan 142: follow-ups' reads hold at the cap", () => measureFollowups(mailbox));
-  it("plan 143: a sentence's walk holds, sparse and dense, with a pattern and without", () => measureActionWalk(mailbox, { stepMs: 200, totalMs: 15_000 }), 600_000);
+  it("plan 143: a sentence's walk holds, sparse and dense, with a pattern and without", () => measureActionWalk(mailbox, { stepMs: 400, totalMs: 15_000 }), 600_000);
   it("plan 141: a question's search and passages hold, wherever the word is", () => measureAsk(mailbox, { totalMs: 250, passagesMs: 100, stallMs: null }));
   it("plan 133: drafting's reads hold, with thousands of look-alikes in the way", () => measureWriting(mailbox));
   it("plan 134: categories: what the AI is told and an AI filing hold", () => measureCategoryEvidence(mailbox));

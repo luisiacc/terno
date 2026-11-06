@@ -11,7 +11,9 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import type { IncomingMessage } from "@terno/store";
 import { msg, threadOf } from "@terno/store/conformance";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { databaseName, IdbMailStore } from "@terno/idb";
+import { IDBFactory } from "fake-indexeddb";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
 const NOW = new Date(2026, 10, 5, 12).getTime();
@@ -23,6 +25,19 @@ afterEach(async () => {
 
 const subjectHas = (value: string) => ({ field: "subject", op: "contains", value, negate: false });
 const planWire = (o: Record<string, unknown> = {}) => ({ summary: "Do it", actionType: "archive", categoryId: null, categoryName: null, accountId: null, folder: null, conditions: [subjectHas("invoice")], lookIn: "inbox", future: false, meaning: false, ...o });
+
+/** Where a store could change the result, those suites run on both. */
+let storeKind: "SQLite" | "IndexedDB" = "SQLite";
+const onBoth = (body: () => void) =>
+  describe.each(["SQLite", "IndexedDB"] as const)("%s", (kind) => {
+    beforeEach(() => {
+      storeKind = kind;
+    });
+    afterEach(() => {
+      storeKind = "SQLite";
+    });
+    body();
+  });
 
 async function setup(o: { cloud?: boolean; similarCap?: number } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "terno-actions-"));
@@ -48,7 +63,9 @@ async function setup(o: { cloud?: boolean; similarCap?: number } = {}) {
         },
       },
     });
-  const backend = new Backend({ dbPath: join(dir, "a.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, demoAi: true, aiFactory: factory, now: () => clock.now, similarCap: o.similarCap });
+  const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
+  const idb = storeKind === "IndexedDB" ? await IdbMailStore.open({ name: databaseName(`actions-${crypto.randomUUID()}`), factory: new IDBFactory(), platform, instantSearch: false }) : undefined;
+  const backend = new Backend({ dbPath: join(dir, "a.db"), store: idb, platform: idb ? platform : undefined, version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, demoAi: true, aiFactory: factory, now: () => clock.now, similarCap: o.similarCap });
   await backend.store.ready;
   const connect = (clientId: string) => {
     const [c, s] = createMemoryTransportPair();
@@ -213,7 +230,7 @@ describe("what a sentence finds", () => {
   });
 });
 
-describe("what changed since the preview", () => {
+onBoth(() => describe("what changed since the preview", () => {
   it("a reply that arrived is left alone and counted, and a star is respected", async () => {
     const { backend, put, preview, apply, fact } = await setup();
     const replied = await put({ providerThreadId: "t" });
@@ -249,7 +266,7 @@ describe("what changed since the preview", () => {
     expect((await fact(d)).inInbox).toBe(false);
     expect((await fact(c)).inInbox).toBe(true);
   });
-});
+}));
 
 describe("a row acted on by hand", () => {
   it("leaves the preview's list and is counted as changed; its own action touched only it", async () => {
@@ -264,7 +281,7 @@ describe("a row acted on by hand", () => {
   });
 });
 
-describe("one Undo", () => {
+onBoth(() => describe("one Undo", () => {
   it.each([
     ["archive", (f: { inInbox: boolean }) => f.inInbox],
     ["trash", (f: { inTrash: boolean }) => !f.inTrash],
@@ -410,7 +427,68 @@ describe("one Undo", () => {
     expect(stopped).toMatchObject({ done: 0, stopped: true });
     expect(await backend.store.categories.unfinishedMoves()).toEqual([]);
   });
-});
+
+  it("a thread starred after a move's first slice stays, and Stop falls between its slices", async () => {
+    const { client, backend, put, preview, apply } = await setup();
+    const ids: number[] = [];
+    for (let i = 0; i < 60; i++) ids.push(await put());
+    const to = await client.call("categories.create", { name: "To", color: "lime" });
+    const p = await preview({ actionType: "moveToCategory", categoryId: to.id, lookIn: "everywhere" });
+    const begin = backend.store.categories.beginMove.bind(backend.store.categories);
+    let first = true;
+    let late = 0;
+    const spy = vi.spyOn(backend.store.categories, "beginMove").mockImplementation(async (m) => {
+      if (first) {
+        first = false;
+        late = ids.find((id) => !m.threadIds.includes(id))!;
+        await backend.store.threads.act({ threadIds: [late], action: "star", signal: null, now: NOW });
+      }
+      return begin(m);
+    });
+    const r = await apply(p);
+    spy.mockRestore();
+    expect(r.spared).toBe(1);
+    expect((await backend.store.filters.actionFacts([late], to.id))[0]!.inCategory).toBe(false);
+    expect(r.done).toBe(59);
+  });
+
+  it("a move's slice that fails keeps its Undo, and nothing's left for the next start", async () => {
+    const { client, backend, put, preview, apply } = await setup();
+    const ids: number[] = [];
+    for (let i = 0; i < 60; i++) ids.push(await put());
+    const to = await client.call("categories.create", { name: "To", color: "lime" });
+    const p = await preview({ actionType: "moveToCategory", categoryId: to.id, lookIn: "everywhere" });
+    const slice = backend.store.categories.applyMoveSlice.bind(backend.store.categories);
+    let calls = 0;
+    const spy = vi.spyOn(backend.store.categories, "applyMoveSlice").mockImplementation(async (...a) => {
+      if (++calls === 2) throw new Error("disk full");
+      return slice(...a);
+    });
+    const r = await apply(p);
+    spy.mockRestore();
+    expect(r).toMatchObject({ failed: true, stopped: true });
+    expect(r.undoToken).not.toBeNull();
+    const inTo = async () => (await backend.store.filters.actionFacts(ids, to.id)).filter((f) => f.inCategory).length;
+    expect(await inTo()).toBeGreaterThan(0);
+    await vi.waitFor(async () => expect((await backend.store.categories.unfinishedMoves()).filter((m) => m.phase === "moving")).toEqual([]));
+    await client.call("ai.actionUndo", { token: r.undoToken! });
+    expect(await inTo()).toBe(0);
+  });
+}));
+
+onBoth(() => describe("the check's order", () => {
+  it("newest first whichever store answers, so what's left unchecked is the oldest", async () => {
+    const { model, backend, preview, check } = await setup();
+    const account = (await backend.store.accounts.list())[0]!;
+    await backend.ingestSliced(Array.from({ length: 700 }, (_, i) => msg({ accountId: account.id, date: NOW - DAY - (700 - i) * 60_000, from: { name: `N${i}`, email: `n${i}@d${i}.test` }, subject: "Invoice", providerMsgId: `x-${i}` })), true);
+    const r = await check(await preview({ meaning: true }));
+    if (r.status !== "done") throw new Error(r.status);
+    const sent = model.checks.map((q) => promptText(q.messages[0]!.content)).join();
+    expect(sent).toContain(">N699 ·");
+    expect(sent).not.toContain(">N0 ·");
+    expect(r.preview.unchecked).toBe(100);
+  });
+}));
 
 describe("the check", () => {
   const meaning = { meaning: true };
@@ -427,6 +505,42 @@ describe("the check", () => {
     expect(sent).not.toContain("BODY-CANARY");
     expect(sent).not.toContain("@");
     expect(await rows(p)).toHaveLength(2);
+  });
+
+  it("unusual addresses go too: an accent, a quoted name", async () => {
+    const { model, put, preview, check } = await setup();
+    await put({ subject: 'Invoice from josé@example.com and "anna smith"@example.com', from: { name: "josé@example.com", email: "a@acme.test" } });
+    await check(await preview(meaning));
+    expect(model.checks.map((q) => promptText(q.messages[0]!.content)).join()).not.toMatch(/@|anna smith|josé/i);
+  });
+
+  it("Skip after a check that failed leaves the rule's matches in", async () => {
+    const { model, put, preview, check, apply } = await setup();
+    await put();
+    model.check = () => {
+      throw new Error("down");
+    };
+    const p = await preview(meaning);
+    await expect(check(p)).rejects.toBeTruthy();
+    const r = await check(p, { skip: true });
+    if (r.status !== "done") throw new Error(r.status);
+    expect(r.preview).toMatchObject({ count: 1, unchecked: 0, check: "skipped" });
+    expect((await apply(p)).done).toBe(1);
+  });
+
+  it.each(["cancel", "account", "clear"] as const)("%s while a check runs: nothing more goes", async (how) => {
+    const { client, model, backend, preview, check, account } = await setup();
+    await backend.ingestSliced(Array.from({ length: 450 }, (_, i) => msg({ accountId: account.id, date: NOW - DAY, from: { name: `N${i}`, email: `n${i}@d${i}.test` }, subject: "Invoice", providerMsgId: `x-${i}` })), true);
+    const p = await preview(meaning);
+    model.check = () => {
+      if (how === "cancel") void client.call("ai.actionCancel", { previewId: p.previewId });
+      else backend.actions.invalidate(how === "account" ? account.id : null);
+      return JSON.stringify({ drop: [] });
+    };
+    await check(p).catch(() => null);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(model.checks).toHaveLength(1);
+    await expect(client.call("ai.actionPage", { previewId: p.previewId, offset: 0, limit: 1, leftOut: false })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("only drop removes; an unknown label is ignored; left-out rows come last, unticked, and can be ticked back", async () => {

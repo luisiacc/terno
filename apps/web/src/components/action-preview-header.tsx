@@ -43,7 +43,10 @@ export default function ActionPreviewHeader() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Enter" || !(isMac ? e.metaKey : e.ctrlKey) || getApp().dialog !== null) return;
+      if (e.key !== "Enter" || !(isMac ? e.metaKey : e.ctrlKey) || e.defaultPrevented || getApp().dialog !== null || getApp().menuOpen) return;
+      // ⌘↩ in a reply sends the reply: only the list's own focus means Apply
+      const at = e.target instanceof Element ? e.target : null;
+      if (at?.closest("input, textarea, select, [contenteditable], [role=dialog], [role=menu], [data-composer]")) return;
       e.preventDefault();
       void applyPreview();
     };
