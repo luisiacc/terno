@@ -57,22 +57,4 @@ Rebasing brought 116 commits that had kept to the old rule. What they loaded on 
 
 - **`canDraft` stays with the state.** Plan 147's gate moved with `openAiDraft` into `lib/ai-draft.ts`: main had put it in `ai-draft-state.ts`, which the send path imports, and `ai-draft.ts` imports the send path.
 - **`lib/ask.ts` and `lib/action-preview.ts` subscribed as they loaded,** which now means at every import, test mocks of the client included. They subscribe from `boot.ts` like every other module (`installAsk`, `installActionPreview`). Subscribing does nothing until an event arrives; the features' own gates are unchanged.
-
-## What it measured
-
-**The first open** of the bell and Send later: 306 ms to 8 ms, the choices in the popover's first frame.
-
-**The renderer** is one 2.9 MB file (900 KB gzipped), with no `import(` in it. It was 420 KB (134 KB gzipped) at startup, with the rest in chunks.
-
-**A warm start of the packaged app** (`startup.perf.ts`, its gate is the best of three under 1,500 ms) got slower, and it still passes:
-
-| | to first rows |
-|---|---|
-| Before | 833 to 876 ms, steady |
-| After | 947 to 1,539 ms; many runs near 950 or near 1,400 |
-
-The script is not the cost: it runs by 116 to 190 ms and the first paint is at 244 to 312 ms. The difference comes after the first paint: the rows land at about 480 or about 920 ms on the renderer's clock, so what's waited for is the backend. Evaluating the AI SDKs alone takes about 130 ms each in Node (`openai`, `@anthropic-ai/sdk`), at every launch, for people with no AI set up as well. Why it is two values and not one wasn't looked into. `v8CacheOptions` (`bypassHeatCheck`, with and without eager compile) didn't help, so it isn't set.
-
-## What the Codex review changed
-
-No runtime regression. The guard could pass falsely, as it skipped whole files and missed `require()`: it now exempts only the web host's exact expressions and `require("./app")`, and checks its own pattern against samples of each.
+- **A `Suspense` can hold keys apart.** `ThreadSummary` and `Conversation` both keyed on the thread's id, which was harmless with the boundary between them. Without it they were siblings with one key, and turning the AI switch off left the summary on the page (`dev-mode.spec.ts`). The summary's key is its own now, like the follow-ups' and the prepared reply's.

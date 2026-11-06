@@ -45,7 +45,7 @@ The request offers loading them beside the first screen. Measured with the cache
 
 - `code-cache.test.ts`, each load in a process of its own (in one, V8's compilation cache answers and a bad cache looks accepted): runs as CommonJS; writes, then uses and leaves alone; a same-length build never runs another's code; garbage and a torn file compile and are replaced; an unreadable or unwritable path doesn't get in the way; a bundle's own failure is the process's, once; lines and columns hold with and without the cache; main's switch.
 - `backend-retirement.test.ts`: a crash turns the cache off, a replacement asked for doesn't.
-- `startup.perf.ts`: rows by the page's clock (`terno:first-rows`, the frame that paints them); waits for the cache outside the measured time; a warm start leaves it as it is, which is what says it was accepted; logs the launch without a cache.
+- `startup.perf.ts`: rows by the page's clock (`terno:first-rows`, the frame that paints them, only with a row in the page), and one visible afterwards; waits for the cache outside the measured time; each launch's `backend.code_cache` in main's log says how it compiled (none, then accepted three times); logs the launch without a cache.
 - `update.smoke`: a backend crash, and a real update's relaunch.
 
 ## Perf
@@ -75,6 +75,15 @@ A Developer ID build, with the hardened runtime: this machine has an Apple Devel
 
 `native-reload.smoke.ts:287` fails whenever it shares a run with other spec files, on this branch and 3 of 3 on the build before plan 155: it asserts which window the OS has focused. It passes alone. Not touched.
 
-## Revisions after the Codex review
+## What the Codex review changed
+
+Of the code:
+
+1. **The gate's proof of acceptance proved nothing.** It checked the file was unchanged, but a rejected cache is only rewritten 2 s later and a measured launch quits sooner. The backend now tells main how it compiled, main logs it (`backend.code_cache`, in the diagnostics catalog: it's what a slow launch is asked first), and the gate reads that for every launch.
+2. **The mark fired without rows,** on a list that failed to load, so a fast error screen could pass. It now needs a row in the page, and the gate sees one visible.
 
 Of the plan, before building: the bundle runs through an explicit CommonJS wrapper in this context; main passes the path as an argument; the build id comes from the same read as the source; loads in tests run in separate processes, and with same-length sources; the crash switch is independent of the restart policy's count; temp files are the process's own; the bundle runs once, outside the catches; the perf gate waits for the cache and proves it was accepted, and reads the row's time in the page.
+
+## On top of main's AI round two
+
+The same gate after rebasing, whose renderer holds that work too (3.08 MB, 2.9 before), at load 18 to 39: warm samples 832 to 1,308 ms, the best of each of four runs 832, 868, 877 and 986; without a cache 977 to 2,067 ms. That's about 100 ms above the numbers before it, and the gate still passes. What the 100 ms is hasn't been measured: AI round two's own boot work, its code now loading at boot, or the load.
