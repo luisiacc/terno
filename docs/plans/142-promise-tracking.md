@@ -1,6 +1,6 @@
 # Plan 142: Promise tracking (Follow-ups)
 
-- **Status:** built (see "What building it changed"). The real-model eval (`scripts/ai-real/followups.real.ts`) is written and not run, and the owner's read on a copy of a real profile hasn't happened: both wait for the owner's go-ahead. "Revisions after the Codex review" overrides the sections before it.
+- **Status:** built and on `main`, code-reviewed in two rounds (see "What building it changed" and "What the code review changed"). The real-model eval (`scripts/ai-real/followups.real.ts`) is written and not run, and the owner's read on a copy of a real profile hasn't happened: both wait for the owner's go-ahead. "Revisions after the Codex review" overrides the sections before it.
 - **Builds on:** plan 131 (AI base), plan 17 (who is a person, your addresses), plan 87 (reminders, the Inbox's top, the due notification), plan 133 (the writing extractor, templates, one-tap drafts), plan 132 (the worker's shape), plan 113 (tips).
 - **Used by:** plan 145 (the brief's "needs you").
 
@@ -281,3 +281,7 @@ Codex raised 14 points, all fixed, each with a test.
 - **Settings says why it stopped,** with what to do.
 
 A second round, on the fixes, raised 7, all fixed: an opt-out reaches a read still getting ready, and there's a last look before anything leaves; a reply naming a message we can't use gets no context rather than the wrong one; a validation's words are bounded in a repair (`ladder.ts`, for every task); a row's line uses Draft's ink, already gated on the row's every state, instead of a new pair four palettes failed; a reminder set for next month doesn't speak for a row a promise brought to the top; and Settings hears a failure while it's open.
+
+## What the full run showed
+
+`pnpm test:all` took 1,551 s on a machine with a load of 20 to 27 from other work, and exited non-zero: unit and perf failed twice under that load. Those failures were re-run alone and passed: unit's attachment conformance, checkpoint and facts files (1,280 tests), and `expunge`, `writing` and `search-everywhere` (10 tests). Nothing that failed touches Follow-ups. An earlier run found two real problems, both fixed: a settings object with no `followups` crashed the list, and the gate's fixtures took a mailbox snapshot per row.
