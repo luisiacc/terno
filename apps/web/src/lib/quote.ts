@@ -5,7 +5,7 @@
  * this returns, and printing leaves it out.
  */
 
-const ATTRIBUTION = /(escribió|wrote|a écrit|schrieb):\s*$/i;
+export const ATTRIBUTION = /(escribió|wrote|a écrit|schrieb):\s*$/i;
 /** Outlook's plain-text history: a rule (or "Original Message"), then its own From/De header. */
 const OUTLOOK_RULE = /^(_{8,}|-{2,}\s*(original message|mensaje original)\s*-{2,})\s*$/i;
 const OUTLOOK_FROM = /^(from|de):\s/i;
