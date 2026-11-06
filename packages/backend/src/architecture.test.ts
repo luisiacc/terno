@@ -109,15 +109,21 @@ describe("architecture: every outbound connection goes through the network polic
 
 // A browser reads a script served without a charset as Windows-1252: a literal "Â-ô" range in a
 // regex then turns into an out-of-order one and the whole bundle fails to load (gmail-wire.spec).
-/** Web-only code the desktop build never holds (each behind VITE_TARGET === "web"), dev tools and test helpers. */
-const LOADS_ON_DEMAND = /^apps\/web\/src\/web\/|^apps\/web\/src\/rpc\/connection\.ts$|^apps\/web\/src\/lib\/(sign-in|notify)\.ts$|^apps\/web\/src\/components\/add-account-dialog\.tsx$|^apps\/web\/src\/components\/settings\/sender-pictures\.tsx$|^apps\/backend-dev\/|^packages\/store\/src\/conformance\/|harness\.tsx$|-owned-rpc\.ts$|\.fixture\.ts$/;
+/**
+ * A load on demand: `lazy(`, `<Suspense`, a dynamic `import(` or a `require(` of app code. Not one: a type's
+ * `import("x").Name` or `typeof import("x")`, a builtin, or the web host's `import("~/web/…")`, behind VITE_TARGET and
+ * never in the desktop build. `require("./app")` in main.ts is order, not laziness: the profile is prepared first.
+ */
+const LOADS_ON_DEMAND = /\blazy\s*\(|<Suspense\b|(?<!typeof )\bimport\s*\(\s*(?!"[^"]+"\s*\)\s*\.[A-Z]|"~\/web\/)|\brequire\s*\(\s*(?!["'](?:node:|electron["'])|"\.\/app"\))/;
+/** The web host's own files, dev tools and test helpers. */
+const NOT_THE_APP = /^apps\/web\/src\/web\/|^apps\/backend-dev\/|^packages\/store\/src\/conformance\/|harness\.tsx$|-owned-rpc\.ts$|\.fixture\.ts$/;
 
 it("no lazy loading: a desktop app's code is on disk, and everything is a plain import", () => {
+  for (const load of ['lazy(() => import("./x"))', '<Suspense fallback={null}>', 'const load = () => import("./x");', 'import ("./x")', "import(url)", 'require("./scheduled")', 'require(join(__dirname, "reporter.cjs"))']) expect(load).toMatch(LOADS_ON_DEMAND);
+  for (const fine of ['type A = typeof import("./x");', 'let a: import("./x").Name;', 'import("~/web/google")', 'require("node:fs")', 'require("./app")']) expect(fine).not.toMatch(LOADS_ON_DEMAND);
   const files = SOURCE_DIRS.flatMap(sources).map((f) => ({ rel: relative(ROOT, f), code: stripComments(readFileSync(f, "utf8")) }));
   expect(files.some((f) => f.rel === "apps/web/src/app.tsx")).toBe(true);
-  // (a type's `import("x").Name` is no load)
-  const found = files.filter((f) => !LOADS_ON_DEMAND.test(f.rel)).filter((f) => /\blazy\(|<Suspense\b|(?<!typeof )\bimport\((?!"[^"]+"\)\.[A-Z])/.test(f.code)).map((f) => f.rel);
-  expect(found).toEqual([]);
+  expect(files.filter((f) => !NOT_THE_APP.test(f.rel) && LOADS_ON_DEMAND.test(f.code)).map((f) => f.rel)).toEqual([]);
 });
 
 it("the address code is ASCII outside comments, so it parses however its bundle is decoded", () => {
