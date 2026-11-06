@@ -14,7 +14,7 @@ describe("remote content consent", () => {
     expect(useRemoteConsent.getState().allowed).toBe(before);
   });
 
-  it("plan 153: \"always\" never reaches spam; the button still does", () => {
+  it("plan 154: \"always\" never reaches spam; the button still does", () => {
     expect(remoteAllowed(901, { remoteImages: "always", spam: true }, new Set())).toBe(false);
     expect(remoteAllowed(901, { remoteImages: "always", spam: true }, new Set([901]))).toBe(true);
     expect(remoteAllowed(901, { remoteImages: "always", spam: false }, new Set())).toBe(true);

@@ -10,9 +10,9 @@ const me: Address = { name: "Me", email: "me0@example.com" };
 const ana: Address = { name: "Ana", email: "ana@example.com" };
 const rule = { match: "all" as const, conditions: [{ field: "subject" as const, op: "contains" as const, value: "invoice" }], actions: [{ type: "markRead" as const }] };
 
-/** Plan 153: mail in Spam triggers nothing, in both stores. */
+/** Plan 154: mail in Spam triggers nothing, in both stores. */
 export function defineSpamConformance(fresh: () => Promise<MailStore>): void {
-  describe("spam triggers nothing (plan 153)", () => {
+  describe("spam triggers nothing (plan 154)", () => {
     async function setup() {
       const store = await fresh();
       const [accountId] = await withAccounts(store, 1);

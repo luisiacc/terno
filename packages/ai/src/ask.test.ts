@@ -129,7 +129,7 @@ describe("what the real-mail panel found (plan 141)", () => {
   });
 });
 
-describe("the machine counts and adds (plan 153)", () => {
+describe("the machine counts and adds (plan 154)", () => {
   const run = (chunks: string[], known?: (l: string) => boolean) => {
     let shown = "";
     const f = answerFilter((t) => (shown += t), known);

@@ -21,7 +21,7 @@ export async function checkCountCoverage(store: MailStore) {
     msg({ accountId: a, providerMsgId: "spam-folder-read", providerThreadId: "spam-mixed", isRead: true, gmailLabels: ["Label_1"], inInbox: false }),
     msg({ accountId: a, providerMsgId: "spam-unread", providerThreadId: "spam-mixed", gmailLabels: [], inInbox: false, isSpam: true }),
   ]);
-  // the trash and spam messages raise nothing where the rest of their conversations live (plan 153)
+  // the trash and spam messages raise nothing where the rest of their conversations live (plan 154)
   expect((await counts()).folderUnread?.[key]).toBe(2);
   expect((await counts()).inboxUnread).toBe(0);
 }

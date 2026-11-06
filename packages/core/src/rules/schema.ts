@@ -5,7 +5,7 @@ import { isValidEmail } from "../address";
 import { FORWARD_ADDRESSES_MAX_CHARS } from "../forwarding";
 import { checkPattern, type PatternIssue } from "./pattern";
 
-/** plan 89: `text` is the subject or the body, by words (it only "mentions"). Plan 153: `opening` is the subject and a message's first lines, by pattern. */
+/** plan 89: `text` is the subject or the body, by words (it only "mentions"). Plan 154: `opening` is the subject and a message's first lines, by pattern. */
 export const TEXT_FIELDS = ["from", "fromDomain", "recipients", "subject", "body", "listId", "text", "opening"] as const;
 /** plan 89: `matches` is a regular expression over the field's normalized text */
 export const TEXT_OPS = ["contains", "equals", "startsWith", "endsWith", "matches"] as const;

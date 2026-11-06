@@ -85,7 +85,7 @@ test.describe("AI filters and learned filters", () => {
       await page.getByTestId("action-toggle-archive").click(); // remove the only action
       await expect(page.getByTestId("filter-save")).toBeDisabled();
     });
-    await scenario("plan 153: a rule on the start of mail is a pattern, with no \"not\"", async () => {
+    await scenario("plan 154: a rule on the start of mail is a pattern, with no \"not\"", async () => {
       await freshStart(page);
       await page.getByTestId("open-filters").click();
       await page.getByTestId("condition-field").click();

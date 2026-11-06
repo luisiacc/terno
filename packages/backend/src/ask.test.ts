@@ -182,7 +182,7 @@ describe("from a question to an answer", () => {
   });
 });
 
-describe("the machine's numbers (plan 153)", () => {
+describe("the machine's numbers (plan 154)", () => {
   const reply = (text: string) => () => ({ text, stop: "end" as const });
   it("a machine total isn't called made up, and a count's messages are its sources", async () => {
     const { ask, put, model } = await setup();

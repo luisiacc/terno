@@ -78,7 +78,7 @@ describe("citations (plan 141)", () => {
   });
 });
 
-describe("a machine sum's amounts (plan 153)", () => {
+describe("a machine sum's amounts (plan 154)", () => {
   it("are found however the mail writes them, and flagged when no mail holds them", () => {
     expect(askOperandsMissing(["120.50", "80", "1234.56", "0.001"], ["paid 120,50 then 80.00, then 1.234,56 and BTC 0.001"])).toEqual([]);
     expect(askOperandsMissing(["7777"], ["paid 80"])).toEqual(["7777"]);

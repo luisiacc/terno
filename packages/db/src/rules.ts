@@ -154,7 +154,7 @@ export interface RuleMatches {
   threadIds: number[];
 }
 
-/** Messages matching a rule, never in Trash or Spam (spam triggers nothing: plan 153); optionally restricted to a set of message ids. */
+/** Messages matching a rule, never in Trash or Spam (spam triggers nothing: plan 154); optionally restricted to a set of message ids. */
 export function findRuleMatches(
   db: Db,
   rule: FilterRule,

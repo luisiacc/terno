@@ -200,7 +200,7 @@ describe("a filter's folder (plan 128)", () => {
   });
 });
 
-describe("a message's first lines (plan 153)", () => {
+describe("a message's first lines (plan 154)", () => {
   const message = (subject: string, snippet: string): RuleMessage => ({ accountId: 1, fromName: "", fromEmail: "a@b.test", recipients: "", subject, snippet, bodyText: null, listId: null, hasAttachments: false, date: 0 });
   const rule = (value: string) => ({ match: "all" as const, conditions: [{ field: "opening" as const, op: "matches" as const, value }], actions: [{ type: "archive" as const }] });
   it("matches the subject or the first lines, folded as any pattern is", () => {

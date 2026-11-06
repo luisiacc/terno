@@ -720,7 +720,7 @@ export class SqlMailStore implements MailStore {
             if (!owned?.has("category") && acceptFlagObservation(sqlFlags(this.db), u.messageId, "category", observation, category, () => { reconciliation.flagReconcileAccounts ??= [accountId]; })) sets.push(["category", category]);
           }
           if (!sets.length) continue;
-          // plan 17 (Codex R4): a message becoming sent, or a draft, or spam (plan 153), is your mail appearing or going
+          // plan 17 (Codex R4): a message becoming sent, or a draft, or spam (plan 154), is your mail appearing or going
           const sentOrDraft = "isSent" in u.flags || "isDraft" in u.flags || "isSpam" in u.flags;
           const before = sentOrDraft ? this.db.get<{ is_sent: number; is_draft: number; is_spam: number }>("SELECT is_sent, is_draft, is_spam FROM messages WHERE id = ? AND account_id = ?", u.messageId, accountId) : undefined;
           const r = this.db.get<{ thread_id: number; is_sent: number; is_draft: number; is_spam: number }>(
