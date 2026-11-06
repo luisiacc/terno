@@ -1,46 +1,44 @@
-import { CALENDAR_ANSWER_PREFIXES, waitingCutoff, type DigestItem } from "@terno/core";
-import { type DigestFact, type DigestStored } from "@terno/store";
+import { waitingCutoff, type DigestItem } from "@terno/core";
+import { NEEDS_WALK, needsYou, type DigestFact, type DigestStored, type WaitingRow } from "@terno/store";
 import { inboxHiding, shownSql } from "./queries";
 import type { Db } from "./sqlite";
 
 /** Plan 145 on SQLite (v54): see packages/store/src/today.ts. */
 
-const NOT_CALENDAR = `NOT (${CALENDAR_ANSWER_PREFIXES.map((p) => `lower(subject) GLOB '${p}*'`).join(" OR ")})`;
-
-/** See `waitingPage` in packages/store/src/today.ts. `cutoff` is a number the clock made. */
-const needsYou = (cutoff: number): string =>
-  ` AND ${NOT_CALENDAR} AND (has_sent = 1 OR (EXISTS (SELECT 1 FROM correspondents c WHERE c.email = lower(last_from_email) AND c.written = 1 AND c.own = 0)
-     AND lower(last_from_email) IN (SELECT lower(last_from_email) FROM threads INDEXED BY threads_waiting WHERE waiting_since IS NOT NULL AND last_date >= ${cutoff} AND waiting_since >= ${cutoff} AND in_inbox = 1 AND has_sent = 0 AND ${NOT_CALENDAR} GROUP BY 1 HAVING count(*) = 1)))`;
+/** The newest waiting threads in date order: threads_waiting is in it, threads_waiting_inbox isn't (revision 11). */
+function needsRows(db: Db, now: number): WaitingRow[] {
+  const cutoff = waitingCutoff(now);
+  const hiding = shownSql(inboxHiding(db));
+  const rows = db.all<{ id: number; last_date: number; last_from_email: string; subject: string; has_sent: number }>(
+    `SELECT id, last_date, last_from_email, subject, has_sent FROM threads INDEXED BY threads_waiting
+     WHERE waiting_since IS NOT NULL AND last_date >= ? AND waiting_since >= ? AND in_inbox = 1${hiding.where}
+     ORDER BY last_date DESC, id DESC LIMIT ?`,
+    cutoff,
+    cutoff,
+    ...hiding.params,
+    NEEDS_WALK,
+  );
+  return needsYou(
+    rows.map((r) => ({ id: r.id, lastDate: r.last_date, from: r.last_from_email, subject: r.subject, hasSent: r.has_sent === 1 })),
+    (key) => db.get<{ written: number; own: number }>("SELECT written, own FROM correspondents WHERE email = ?", key),
+  );
+}
 
 export function waitingPage(db: Db, o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): { id: number; lastDate: number }[] {
-  const cutoff = waitingCutoff(o.now);
-  const hiding = shownSql(inboxHiding(db));
-  // threads_waiting is in date order; threads_waiting_inbox isn't (revision 11)
-  return db
-    .all<{ id: number; last_date: number }>(
-      `SELECT id, last_date FROM threads INDEXED BY threads_waiting
-       WHERE waiting_since IS NOT NULL AND last_date >= ? AND waiting_since >= ? AND in_inbox = 1${hiding.where}${needsYou(cutoff)}
-         ${o.after ? "AND (last_date, id) < (?, ?)" : ""}
-       ORDER BY last_date DESC, id DESC LIMIT ?`,
-      cutoff,
-      cutoff,
-      ...hiding.params,
-      ...(o.after ? [o.after.lastDate, o.after.id] : []),
-      o.limit,
-    )
-    .map((r) => ({ id: r.id, lastDate: r.last_date }));
+  const { after } = o;
+  return needsRows(db, o.now)
+    .filter((r) => !after || r.lastDate < after.lastDate || (r.lastDate === after.lastDate && r.id < after.id))
+    .slice(0, o.limit)
+    .map((r) => ({ id: r.id, lastDate: r.lastDate }));
 }
 
 export function waitingAmong(db: Db, threadIds: readonly number[], now: number): number[] {
-  const cutoff = waitingCutoff(now);
-  const hiding = shownSql(inboxHiding(db));
-  return db.all<{ id: number }>(`SELECT id FROM threads WHERE id IN (SELECT value FROM json_each(?)) AND waiting_since IS NOT NULL AND last_date >= ? AND waiting_since >= ? AND in_inbox = 1${hiding.where}${needsYou(cutoff)}`, JSON.stringify(threadIds), cutoff, cutoff, ...hiding.params).map((r) => r.id);
+  const wanted = new Set(threadIds);
+  return needsRows(db, now).filter((r) => wanted.has(r.id)).map((r) => r.id);
 }
 
 export function needsCount(db: Db, now: number): number {
-  const cutoff = waitingCutoff(now);
-  const hiding = shownSql(inboxHiding(db));
-  return db.get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE in_inbox = 1 AND waiting_since IS NOT NULL AND waiting_since >= ?${hiding.where}${needsYou(cutoff)}`, cutoff, ...hiding.params)?.c ?? 0;
+  return needsRows(db, now).length;
 }
 
 export function digestFacts(db: Db, messageIds: readonly number[]): { facts: DigestFact[]; oldest: number | null } {

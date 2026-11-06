@@ -1,76 +1,41 @@
-import { CALENDAR_ANSWER_PREFIXES, waitingCutoff, type DigestItem } from "@terno/core";
-import { type DigestFact, type DigestStored } from "@terno/store";
+import { waitingCutoff, type DigestItem } from "@terno/core";
+import { NEEDS_WALK, needsYou, type DigestFact, type DigestStored, type WaitingRow } from "@terno/store";
 import { inboxHiddenTest, T, type Ctx, type R } from "./mail";
 
 /** Plan 145 on IndexedDB, like SQL's (packages/db/src/today.ts). */
 
-const calendarAnswer = (subject: string): boolean => {
-  const lower = subject.toLowerCase();
-  return CALENDAR_ANSWER_PREFIXES.some((p) => lower.startsWith(p));
-};
-
-/** See `waitingPage` in packages/store/src/today.ts: one pass over what's waiting tells who has sent just one. */
-function needsYouTest(c: Ctx, cutoff: number): (t: R) => boolean {
+/** The newest waiting threads, in the Waiting filter's own date order (revision 11). */
+function needsRows(c: Ctx, now: number): WaitingRow[] {
   const threads = T(c, "threads");
-  const unanswered = new Map<string, number>();
+  const correspondents = T(c, "correspondents");
+  const cutoff = waitingCutoff(now);
+  const hidden = inboxHiddenTest(c);
+  const rows: WaitingRow[] = [];
   for (const id of c.filterOrders.waiting.current(threads)) {
     const t = threads.get(id)!;
     if (t.last_date < cutoff) break;
-    if (t.waiting_since < cutoff || t.in_inbox !== 1 || t.has_sent === 1 || calendarAnswer(String(t.subject))) continue;
-    const key = String(t.last_from_email).toLowerCase();
-    unanswered.set(key, (unanswered.get(key) ?? 0) + 1);
+    if (t.waiting_since < cutoff || t.in_inbox !== 1 || hidden?.(id)) continue;
+    rows.push({ id, lastDate: t.last_date, from: String(t.last_from_email), subject: String(t.subject), hasSent: t.has_sent === 1 });
+    if (rows.length >= NEEDS_WALK) break;
   }
-  const correspondents = T(c, "correspondents");
-  return (t) => {
-    if (calendarAnswer(String(t.subject))) return false;
-    if (t.has_sent === 1) return true;
-    const key = String(t.last_from_email).toLowerCase();
-    const known = correspondents.get(key);
-    return unanswered.get(key) === 1 && known?.written === 1 && known.own !== 1;
-  };
+  return needsYou(rows, (key) => correspondents.get(key) as { written: number; own: number } | undefined);
 }
 
 export function waitingPage(c: Ctx, o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): { id: number; lastDate: number }[] {
-  const threads = T(c, "threads");
-  const cutoff = waitingCutoff(o.now);
-  const hidden = inboxHiddenTest(c);
-  const needsYou = needsYouTest(c, cutoff);
-  const out: { id: number; lastDate: number }[] = [];
-  // the Waiting filter's own date order (revision 11)
-  for (const id of c.filterOrders.waiting.current(threads)) {
-    const t = threads.get(id)!;
-    if (t.last_date < cutoff) break;
-    if (t.waiting_since < cutoff || t.in_inbox !== 1 || hidden?.(id) || !needsYou(t)) continue;
-    if (o.after && (t.last_date > o.after.lastDate || (t.last_date === o.after.lastDate && id >= o.after.id))) continue;
-    out.push({ id, lastDate: t.last_date });
-    if (out.length >= o.limit) break;
-  }
-  return out;
+  const { after } = o;
+  return needsRows(c, o.now)
+    .filter((r) => !after || r.lastDate < after.lastDate || (r.lastDate === after.lastDate && r.id < after.id))
+    .slice(0, o.limit)
+    .map((r) => ({ id: r.id, lastDate: r.lastDate }));
 }
 
 export function waitingAmong(c: Ctx, threadIds: readonly number[], now: number): number[] {
-  const threads = T(c, "threads");
-  const cutoff = waitingCutoff(now);
-  const hidden = inboxHiddenTest(c);
-  const needsYou = needsYouTest(c, cutoff);
-  return threadIds.filter((id) => {
-    const t = threads.get(id);
-    return !!t && t.waiting_since !== null && t.waiting_since !== undefined && t.last_date >= cutoff && t.waiting_since >= cutoff && t.in_inbox === 1 && !hidden?.(id) && needsYou(t);
-  });
+  const wanted = new Set(threadIds);
+  return needsRows(c, now).filter((r) => wanted.has(r.id)).map((r) => r.id);
 }
 
 export function needsCount(c: Ctx, now: number): number {
-  const threads = T(c, "threads");
-  const cutoff = waitingCutoff(now);
-  const hidden = inboxHiddenTest(c);
-  const needsYou = needsYouTest(c, cutoff);
-  let n = 0;
-  for (const id of c.filterOrders.waiting.current(threads)) {
-    const t = threads.get(id)!;
-    if (t.last_date < cutoff) break;
-    if (t.waiting_since >= cutoff && t.in_inbox === 1 && !hidden?.(id) && needsYou(t)) n++;
-  }
-  return n;
+  return needsRows(c, now).length;
 }
 
 export function digestFacts(c: Ctx, messageIds: readonly number[]): { facts: DigestFact[]; oldest: number | null } {

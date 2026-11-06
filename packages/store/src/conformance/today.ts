@@ -73,6 +73,10 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       expect(next.map((p) => p.id)).toEqual([a.thread]);
       expect(new Set(await store.today.waitingAmong([a.thread, b.thread, notice.thread, calendar.thread, 999_999], NOW))).toEqual(new Set(waiting));
       expect(await store.today.needsCount(NOW)).toBe(2);
+      // someone they've written to, from a tagged address: their one new conversation counts, in both stores
+      await store.sync.ingest([msg({ date: NOW - 700, providerMsgId: "to-dia", providerThreadId: "to-dia", from: me, to: [{ name: "Dia", email: "dia@people.test" }], isSent: true, subject: "Hello", accountId: accountId_(), listId: null })], { applyFilters: false, now: NOW, classifier: null });
+      const dia = await put({ listId: null, from: { name: "Dia", email: "dia+work@people.test" }, date: NOW - 600, subject: "Something new" });
+      if ((await store.threads.summaries([dia.thread]))[0]!.waitingSince != null) expect(await store.today.needsCount(NOW)).toBe(3);
     });
 
     it("digestLive: only what's in the Inbox and unread", async () => {

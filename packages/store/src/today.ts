@@ -1,4 +1,4 @@
-import type { DigestItem, DigestState } from "@terno/core";
+import { addressKey, CALENDAR_ANSWER_PREFIXES, type DigestItem, type DigestState } from "@terno/core";
 
 /**
  * Plan 145's reads and table, the part both stores share (`packages/db/src/today.ts`, `packages/idb/src/today.ts`). The
@@ -33,12 +33,45 @@ export interface DigestFact {
   snippet: string;
 }
 
+/** How many of the newest waiting threads the rule reads: every count pays for this, and a window with more isn't a person's. */
+export const NEEDS_WALK = 2000;
+
+export interface WaitingRow {
+  id: number;
+  lastDate: number;
+  from: string;
+  subject: string;
+  hasSent: boolean;
+}
+
+/**
+ * Needs you: a waiting conversation they've written in, or the single new conversation from someone they've written to
+ * who isn't themselves; never a calendar's answer. Both stores come here, so they can't disagree.
+ */
+export function needsYou(rows: readonly WaitingRow[], known: (key: string) => { written: number; own: number } | undefined): WaitingRow[] {
+  const answerless = (r: WaitingRow) => CALENDAR_ANSWER_PREFIXES.some((p) => r.subject.toLowerCase().startsWith(p));
+  const unanswered = new Map<string, number>();
+  for (const r of rows) {
+    if (r.hasSent || answerless(r)) continue;
+    const key = addressKey(r.from);
+    unanswered.set(key, (unanswered.get(key) ?? 0) + 1);
+  }
+  return rows.filter((r) => {
+    if (answerless(r)) return false;
+    if (r.hasSent) return true;
+    const key = addressKey(r.from);
+    if (unanswered.get(key) !== 1) return false;
+    const who = known(key);
+    return who?.written === 1 && who.own !== 1;
+  });
+}
+
 export interface TodayStore {
-  /** Inbox threads waiting in a conversation this person is part of, or the one new conversation from someone they've written to, newest first, leaving out a calendar's answers. Plan 17's "a person" holds any plain address, and on real mail most of it was a bank's and a service's notices: an address that sent several they never answered is a service. `after` is the last id of the page before */
+  /** What needs you (`needsYou`), newest first, among the newest `NEEDS_WALK` waiting: plan 17's "a person" holds any plain address, and on real mail most of it was a bank's and a service's notices. `after` is the last id of the page before */
   waitingPage(o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): Promise<{ id: number; lastDate: number }[]>;
   /** which of these threads the Inbox holds as waiting (a due follow-up may be one too: it counts once) */
   waitingAmong(threadIds: readonly number[], now: number): Promise<number[]>;
-  /** how many `waitingPage` would walk */
+  /** how many `waitingPage` would walk: the sidebar's number, on every count */
   needsCount(now: number): Promise<number>;
   /** of these messages, those that qualify; `arrivedAt` also for those that don't is what a walk stops on */
   digestFacts(messageIds: readonly number[]): Promise<{ facts: DigestFact[]; oldest: number | null }>;

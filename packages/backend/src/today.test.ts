@@ -110,7 +110,8 @@ describe("the list", () => {
     raw.run("INSERT INTO correspondents (email, written, own) VALUES ('colleague@people.test', 1, 0), ('service@machine.test', 1, 0), ('other-me@people.test', 1, 1)");
     // their own forward from another address of theirs
     raw.run("UPDATE threads SET has_sent = 0 WHERE id = ?", await put({ from: { name: "Me", email: "other-me@people.test" } }));
-    const colleague = await put({ from: { name: "Col", email: "colleague@people.test" } });
+    // correspondents hold the address without its +tag, as everything that writes them does
+    const colleague = await put({ from: { name: "Col", email: "colleague+work@people.test" } });
     raw.run("UPDATE threads SET has_sent = 0 WHERE id = ?", colleague);
     for (let i = 0; i < 2; i++) raw.run("UPDATE threads SET has_sent = 0 WHERE id = ?", await put({ from: { name: "Svc", email: "service@machine.test" } }));
     const list = await client.call("today.list", { heldIds: [] });
