@@ -43,10 +43,10 @@ class Lines {
     const parts = text.split(/\r\n?|\n/);
     parts.forEach((part, i) => {
       if (i > 0) this.lineBreak();
-      if (whitespace === "pre") {
-        this.current += part;
-        this.preserved = true;
-      } else this.collapsed(part);
+      if (whitespace === "pre") this.current += part;
+      // pre-line: spaces collapse, and go around a break; the breaks themselves are as written
+      else this.collapsed((i > 0 ? part.trimStart() : part).slice(0, i < parts.length - 1 ? part.trimEnd().length : undefined));
+      this.preserved = true;
     });
   }
 
@@ -108,7 +108,7 @@ class Lines {
 
 const isZero = (value: string) => parseFloat(value) === 0;
 
-/** Gone with everything inside it, whatever a descendant says. */
+/** Gone with everything inside it, whatever a descendant says; `render` removes these before anything reads the mail. */
 function gone(el: HTMLElement): boolean {
   const s = el.style;
   return s.display === "none" || (el.hasAttribute("hidden") && !s.display) || isZero(s.opacity) || (isZero(s.maxHeight) && /hidden|clip/.test(s.overflow || s.overflowY));
@@ -139,7 +139,6 @@ function list(el: HTMLElement, out: Lines, walk: Walk): void {
   let n = ordered ? Number(el.getAttribute("start")) || 1 : 0;
   const item = { ...walk, inItem: true };
   for (const c of el.children as HTMLCollectionOf<HTMLElement>) {
-    if (gone(c)) continue;
     if (c.localName === "ul" || c.localName === "ol") {
       // Word and Outlook put a nested list straight in the list
       const nested = new Lines();
@@ -161,9 +160,9 @@ function table(el: HTMLTableElement, out: Lines, walk: Walk): void {
   out.gap();
   if (el.caption) for (const line of linesOf(el.caption, within(el.caption, walk))) out.push(line, true);
   for (const row of el.rows) {
-    if (gone(row)) continue;
-    const inRow = within(row, walk);
-    const cells = [...row.cells].filter((c) => !gone(c)).map((c) => linesOf(c, within(c, inRow))).filter((c) => c.length > 0);
+    // `rows` skips over its section, which can hold what the row inherits
+    const inRow = within(row, within(row.parentElement as HTMLElement, walk));
+    const cells = [...row.cells].map((c) => linesOf(c, within(c, inRow))).filter((c) => c.length > 0);
     if (cells.length === 0) out.gap();
     else if (cells.every((c) => c.length === 1)) out.push(cells.map((c) => c[0]).join(" | "), true);
     else {
@@ -187,7 +186,6 @@ function walkChildren(parent: Element, out: Lines, walk: Walk): void {
     if (node.nodeType !== 1) continue;
     const el = node as HTMLElement;
     const name = el.localName;
-    if (SKIP.has(name) || !el.style || gone(el)) continue;
     const inner = within(el, walk);
     const s = el.style;
     if (name === "br") out.lineBreak();
@@ -230,6 +228,8 @@ function walkChildren(parent: Element, out: Lines, walk: Walk): void {
 
 const render = (html: string, strip: boolean): string => {
   const { body } = new DOMParser().parseFromString(html, "text/html");
+  // first: what can't be seen isn't words after a quote that make it an inline reply (a tracking footer, a `<style>`)
+  for (const el of body.querySelectorAll<HTMLElement>("*")) if (SKIP.has(el.localName) || gone(el)) el.remove();
   if (strip) stripTrailingQuote(body);
   return linesOf(body, within(body, START)).join("\n");
 };

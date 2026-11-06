@@ -97,7 +97,8 @@ describe("HTML to text: as written", () => {
 
   it("keeps pre-wrap, and pre-line's breaks with its spaces collapsed", () => {
     expect(html('<div style="white-space:pre-wrap">a  b\n  c</div>')).toBe("a  b\n  c");
-    expect(html('<div style="white-space:pre-line">a   b\nc</div>')).toBe("a b\nc");
+    expect(html('<div style="white-space:pre-line">a   b  \n  c <b>d</b></div>')).toBe("a b\nc d");
+    expect(html('<div style="white-space:pre-line">First\n\n\nSecond</div>')).toBe("First\n\n\nSecond");
   });
 
   it("marks quotes, nested ones too", () => {
@@ -112,6 +113,11 @@ describe("HTML to text: what isn't shown", () => {
     }
     expect(html("<div hidden>preheader</div><p>Visible</p>")).toBe("Visible");
     expect(html("<html><head><title>T</title><style>p{color:red}</style></head><body><script>x()</script><noscript>n</noscript><p>Visible</p></body></html>")).toBe("Visible");
+  });
+
+  it("leaves out a table's hidden section and row, what they hide in text included", () => {
+    expect(html('<table><tbody style="display:none"><tr><td>Hidden</td></tr></tbody><tbody><tr style="display:none"><td>Hidden</td></tr><tr><td>Visible</td></tr></tbody></table>')).toBe("Visible");
+    expect(html('<table><tbody style="visibility:hidden"><tr><td>Hidden</td></tr></tbody><tbody><tr><td>Visible</td></tr></tbody></table>')).toBe("Visible");
   });
 
   it("shows a descendant that undoes what it inherited, but nothing undoes display:none", () => {
@@ -129,6 +135,12 @@ describe("quoted history", () => {
     expect(htmlBodyText(reply, true)).toContain("Her question");
     expect(plainBodyText("My answer\n\nOn Mon, Ana wrote:\n> Her question\n", false)).toBe("My answer");
     expect(plainBodyText("My answer\n\nOn Mon, Ana wrote:\n> Her question\n", true)).toContain("> Her question");
+  });
+
+  it("goes even with something unseen after it: a tracking footer isn't an answer below the quote", () => {
+    const quote = '<div>Answer</div><div class="gmail_quote">On Monday, Ana wrote:<blockquote>Old question</blockquote></div>';
+    expect(htmlBodyText(`${quote}<div style="display:none">tracking text</div>`, false)).toBe("Answer");
+    expect(htmlBodyText(`${quote}<style>p{color:red}</style>`, false)).toBe("Answer");
   });
 
   it("stays when it is all a message has: a bare forward", () => {
