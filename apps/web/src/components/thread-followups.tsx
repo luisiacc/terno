@@ -72,7 +72,7 @@ function Line({ row }: { row: FollowupRow }) {
 
 /** Plan 142 §7: a quiet line for each thing this conversation holds, in the conversation's text column, above its summary. */
 export default function ThreadFollowups({ detail }: { detail: ThreadDetail }) {
-  const enabled = useApp((s) => s.settings?.followups.enabled === true);
+  const enabled = useApp((s) => s.settings?.followups?.enabled === true);
   const rows = useFollowups((s) => s.byThread.get(detail.thread.id));
   const shown = enabled && !detail.thread.inTrash && !detail.thread.inSpam ? rows : undefined;
   const tipFor = usePendingTip("followups-first");

@@ -43,7 +43,7 @@ export function toggleSnippets(): void {
 
 /** Plan 141, ⌘⇧K: the palette on Ask: the last conversation for 30 minutes, else empty. On that page it closes. */
 export function toggleAsk(): void {
-  if (getApp().settings?.ask.enabled === false) return;
+  if (getApp().settings?.ask?.enabled === false) return;
   if (getApp().dialog === "palette") {
     if (usePalettePage.getState().page === "ask") return setApp({ dialog: null });
     return setPalettePage("ask");

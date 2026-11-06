@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { AWAITING_ITEM, FOLLOWUPS_ACTIVE_MAX, type FollowupWrite } from "../followups";
-import { msg, threadOf } from "./fixtures";
+import { msg } from "./fixtures";
 import { expectMailbox, type WorkloadMailbox } from "./perf";
 
 /**
@@ -17,7 +17,7 @@ export async function measureFollowups(o: WorkloadMailbox): Promise<void> {
   for (let slice = 0; slice < 10; slice++) {
     const batch = Array.from({ length: 100 }, (_, i) => msg({ accountId, from: me, to: [tom], isSent: true, inInbox: false, providerMsgId: `fu-${slice}-${i}`, subject: `Fu ${slice}-${i}`, date: o.now - 1000 - i, bodyText: "x" }));
     const r = await store.sync.ingest(batch, { applyFilters: false, now: o.now, classifier: null, liveSent: { wanted: true } });
-    for (let i = 0; i < r.inserted.length; i++) ids.push({ id: r.inserted[i]!, thread: await threadOf(store, batch[i]!.providerMsgId!) });
+    for (const id of r.inserted) ids.push({ id, thread: (await store.followups.source(id))!.threadId });
   }
   const row = (i: number): FollowupWrite => (i % 2 ? { kind: "promise", item: 0, text: "send it", quote: "I'll send it", personName: "Tom", personEmail: tom.email, dueAt: o.now + 86_400_000 + i, dated: false } : { kind: "awaiting", item: AWAITING_ITEM, text: "", quote: null, personName: "Tom", personEmail: tom.email, dueAt: o.now + 86_400_000 + i, dated: false });
   let n = 0;

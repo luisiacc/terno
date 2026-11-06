@@ -31,7 +31,7 @@ export async function loadFollowups(): Promise<void> {
   applyFollowups(await client.call("followups.list", {}));
 }
 
-const on = () => getApp().settings?.followups.enabled === true;
+const on = () => getApp().settings?.followups?.enabled === true;
 
 export const anyFollowupOnTop = (): boolean => on() && useFollowups.getState().onTop > 0;
 
@@ -69,8 +69,8 @@ onExplicitOpen({
 
 /** Plan 142 §8: off hides the row, the list and the lines at once, here and in every window; on brings them back. */
 useApp.subscribe((s, prev) => {
-  const was = prev.settings?.followups.enabled;
-  const now = s.settings?.followups.enabled;
+  const was = prev.settings?.followups?.enabled;
+  const now = s.settings?.followups?.enabled;
   if (was === undefined || was === now) return;
   if (!now && s.followups) navigate({ view: "inbox" });
   else if (inPlainInbox(s)) void reloadList({ keepSelection: true });

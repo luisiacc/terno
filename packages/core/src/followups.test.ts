@@ -1,11 +1,8 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { followupDaysSince, followupDue, mostUrgent, validFollowupDate } from "./followups";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 const clock = (ms: number) => { const d = new Date(ms); return [d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()]; };
-const zone = process.env.TZ;
-beforeAll(() => { process.env.TZ = "America/Mexico_City"; });
-afterAll(() => { process.env.TZ = zone; });
 
 describe("when a follow-up comes due (plan 142 §5)", () => {
   const promise = (sentAt: number, due: string | null) => followupDue({ kind: "promise", sentAt, due, nudgeAfterDays: 5 });

@@ -1,7 +1,7 @@
 import { buildAskSearch, type AskPlanQuery } from "@terno/core";
 import { expect } from "vitest";
 import { ASK_MAX_CHARS, ASK_MESSAGES_MAX, type AskTurnWrite } from "../ask";
-import { msg, threadOf } from "./fixtures";
+import { msg } from "./fixtures";
 import { expectMailbox, type WorkloadMailbox } from "./perf";
 
 /**
@@ -15,16 +15,13 @@ export async function measureAsk(o: WorkloadMailbox, limits: { totalMs: number; 
   const now = o.now;
   const seedStart = performance.now();
   const chain = (i: number) => ({ subject: "The long one", providerMsgId: `ask-${i}`, rfcMessageId: `ask-${i}@perf.test`, inReplyTo: i ? `ask-${i - 1}@perf.test` : null, references: i ? [`ask-${i - 1}@perf.test`] : [], date: now - 86_400_000 * 400 + i * 1000 });
-  for (let slice = 0; slice < 5; slice++) {
-    await store.sync.ingest(Array.from({ length: 1000 }, (_, i) => {
-      const at = slice * 1000 + i;
-      return msg({ accountId, ...chain(at), bodyText: at === 40 ? "The zzlease clause says it renews on 1 March." : "Sounds good, thanks." });
-    }), { applyFilters: false, now, classifier: null });
-  }
-  const long = await threadOf(store, "ask-0");
+  // in one commit: a thread's facts are worked out once, and this is the read's fixture, not ingest's gate
+  const seeded = await store.sync.ingest(Array.from({ length: 5000 }, (_, at) => msg({ accountId, ...chain(at), bodyText: at === 40 ? "The zzlease clause says it renews on 1 March." : "Sounds good, thanks." })), { applyFilters: false, now, classifier: null });
+  const threadIdOf = async (id: number) => (await store.followups.source(id))!.threadId;
+  const long = await threadIdOf(seeded.inserted[0]!);
   const tail = `${"plenty of filler words here ".repeat(4000)}The zzdoor code is 4921.`;
-  await store.sync.ingest([msg({ accountId, subject: "House notes", providerMsgId: "ask-captured", bodyText: tail, date: now - 86_400_000 * 30 })], { applyFilters: false, now, classifier: null });
-  const captured = await threadOf(store, "ask-captured");
+  const house = await store.sync.ingest([msg({ accountId, subject: "House notes", providerMsgId: "ask-captured", bodyText: tail, date: now - 86_400_000 * 30 })], { applyFilters: false, now, classifier: null });
+  const captured = await threadIdOf(house.inserted[0]!);
   o.log(`a 5,000-message thread and a captured body written in ${(performance.now() - seedStart).toFixed(0)} ms`);
 
   await limits.settled?.();

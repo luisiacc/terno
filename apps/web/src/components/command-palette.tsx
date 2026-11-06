@@ -113,8 +113,8 @@ export function CommandPalette() {
   const supported = useApp((s) => s.supportedFilters);
   const design = useApp((s) => (open ? (s.settings?.design ?? null) : null));
   const canAi = useApp((s) => open && aiReady(s.settings?.ai));
-  const followupsOn = useApp((s) => open && s.settings?.followups.enabled === true);
-  const canAsk = useApp((s) => open && s.settings?.ask.enabled === true);
+  const followupsOn = useApp((s) => open && s.settings?.followups?.enabled === true);
+  const canAsk = useApp((s) => open && s.settings?.ask?.enabled === true);
   const drafting = useAiDraftUi((s) => s.enabled);
   const updatesAvailable = useHasUpdates();
   const readyVersion = useUpdates((s) => (open && s.state?.ready && s.state.status !== "installing" ? s.state.ready.version : null));

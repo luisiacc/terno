@@ -1208,7 +1208,7 @@ export function Sidebar() {
   const dueReminders = useReminders((s) => s.due);
   const inFollowups = useApp((s) => s.followups);
   const dueFollowups = useFollowups((s) => s.due);
-  const followupsOn = useApp((s) => s.settings?.followups.enabled === true);
+  const followupsOn = useApp((s) => s.settings?.followups?.enabled === true);
   const accounts = useApp((s) => s.accounts);
   // plan 108: focused on one account, the sidebar is its alone
   const soloAccount = useApp((s) => (s.soloAccountId === null ? undefined : s.accounts.find((a) => a.id === s.soloAccountId)));

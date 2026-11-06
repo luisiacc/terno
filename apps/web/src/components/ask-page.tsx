@@ -107,7 +107,7 @@ function Older() {
   const last = useAsk((s) => s.turns.at(-1));
   const found = useAsk((s) => s.olderFound);
   const running = useAsk((s) => s.running !== null);
-  const enabled = useApp((s) => s.settings?.ask.enabled !== false);
+  const enabled = useApp((s) => s.settings?.ask?.enabled !== false);
   if (!enabled) return null;
   if (found === 0) return <p className="text-sm text-muted-foreground" data-testid="ask-older-nothing">{t("ask.older.nothing")}</p>;
   if (running || !last) return null;
@@ -249,7 +249,7 @@ function Conversation({ onBack }: { onBack: () => void }) {
   const running = useAsk((s) => s.running);
   const incomplete = useAsk((s) => s.incomplete);
   const atLimit = useAsk(atTurnLimit);
-  const enabled = useApp((s) => s.settings?.ask.enabled !== false);
+  const enabled = useApp((s) => s.settings?.ask?.enabled !== false);
   const title = turns[0]?.question ?? running?.question ?? "";
   const last = turns.at(-1);
   const area = useRef<HTMLDivElement>(null);
