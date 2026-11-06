@@ -76,7 +76,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
   // ── model discovery: when the tab opens and whenever provider or endpoint change (debounced)
   const [discovery, setDiscovery] = useState<Discovery>({ state: "idle" });
   const discoverySeq = useRef(0);
-  const canDiscover = ai.provider !== "none" && (!needsKey || (ai.hasKey && ai.keyConfirmed));
+  const canDiscover = !ai.fromEnv && ai.provider !== "none" && (!needsKey || (ai.hasKey && ai.keyConfirmed));
   const discover = async () => {
     const seq = ++discoverySeq.current;
     setDiscovery({ state: "loading" });
@@ -175,6 +175,33 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
   const stylePage = useAiDraftUi((s) => s.stylePage);
   useEffect(() => () => useAiDraftUi.setState({ stylePage: false }), []);
   if (stylePage) return <Suspense fallback={null}><WritingStyle /></Suspense>;
+
+  const features = (
+    <>
+      <DraftingGroup settings={settings} />
+      <SummariesGroup settings={settings} update={update} />
+      <AskGroup settings={settings} update={update} />
+      <FollowupsGroup settings={settings} update={update} />
+      <AiUseGroup settings={settings} update={update} />
+    </>
+  );
+  // plan 146: what's below would write settings the overlay hides, and look stuck
+  if (ai.fromEnv) {
+    return (
+      <div data-testid="ai-tab">
+        <SettingsGroup>
+          <SettingsRow label={t("settings.dev.aiNote")} hint={t("settings.dev.aiNote.hint")} testId="ai-dev-note">
+            {() => (
+              <Button variant="outline" size="sm" data-testid="ai-dev-open" onClick={() => setApp({ settingsTab: "dev" })}>
+                {t("settings.dev.open")}
+              </Button>
+            )}
+          </SettingsRow>
+        </SettingsGroup>
+        {features}
+      </div>
+    );
+  }
 
   return (
     <div data-testid="ai-tab">
@@ -392,11 +419,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
           </div>
         )}
       </SettingsGroup>
-      <DraftingGroup settings={settings} />
-      <SummariesGroup settings={settings} update={update} />
-      <AskGroup settings={settings} update={update} />
-      <FollowupsGroup settings={settings} update={update} />
-      <AiUseGroup settings={settings} update={update} />
+      {features}
     </div>
   );
 }

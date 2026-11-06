@@ -1,5 +1,5 @@
 import { t } from "@terno/i18n";
-import { AtSign, Bot, Database, HardDrive, ListFilter, Palette, SlidersHorizontal, Sparkles, Tag, NotepadText } from "@terno/ui/icons";
+import { AtSign, Bot, Database, HardDrive, ListFilter, Palette, SlidersHorizontal, Sparkles, Tag, Terminal, NotepadText } from "@terno/ui/icons";
 import type { SettingsTab } from "~/state/app";
 
 const LABEL_KEYS = {
@@ -13,6 +13,7 @@ const LABEL_KEYS = {
   agents: "settings.tab.agents",
   data: "settings.tab.data",
   storage: "settings.tab.storage",
+  dev: "settings.tab.dev",
 } as const satisfies Record<SettingsTab, string>;
 
 /** A section's name in the current language. */
@@ -30,7 +31,9 @@ const tab = (value: SettingsTab, icon: typeof AtSign) => ({
 });
 
 /** The settings sections, in sidebar order; the palette offers each as "Settings → <label>". */
-export const SETTINGS_TABS: readonly { readonly value: SettingsTab; readonly label: string; readonly icon: typeof AtSign }[] = [
+type TabEntry = { readonly value: SettingsTab; readonly label: string; readonly icon: typeof AtSign };
+
+export const SETTINGS_TABS: readonly TabEntry[] = [
   tab("general", SlidersHorizontal),
   tab("appearance", Palette),
   tab("accounts", AtSign),
@@ -42,3 +45,6 @@ export const SETTINGS_TABS: readonly { readonly value: SettingsTab; readonly lab
   tab("data", Database),
   tab("storage", HardDrive),
 ];
+
+/** Plan 146: a local build's own section, last. */
+export const DEV_TAB: TabEntry = tab("dev", Terminal);

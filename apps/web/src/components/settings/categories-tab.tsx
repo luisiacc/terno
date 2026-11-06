@@ -298,7 +298,7 @@ export function CategoriesTab({ settings, update }: { settings: AppSettings; upd
           {(a) => <Switch {...a} data-testid="ai-categorize-switch" checked={settings.aiCategorize} disabled={noAi && !settings.aiCategorize} onCheckedChange={(on) => void update({ aiCategorize: on })} />}
         </SettingsRow>
         {widened && !settings.aiCategorize && <SettingsNote testId="ai-categorize-widened">{t("settings.categories.askAi.widened")}</SettingsNote>}
-        <JevKeyRow saved={!!jev?.hasKey} hint={jev?.keyHint ?? null} />
+        {!settings.ai.fromEnv && <JevKeyRow saved={!!jev?.hasKey} hint={jev?.keyHint ?? null} />}
       </SettingsGroup>
 
       <SettingsGroup

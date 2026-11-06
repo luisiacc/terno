@@ -16,7 +16,8 @@ import { SnippetsTab } from "./settings/snippets-tab";
 import { closeSnippetEditor, setDeletedSnippet } from "~/lib/snippet-editor-state";
 import { GeneralTab } from "./settings/general-tab";
 import { StorageTab } from "./settings/storage-tab";
-import { SETTINGS_TABS, settingsTabLabel } from "./settings/tabs";
+import { DEV_TAB, SETTINGS_TABS, settingsTabLabel } from "./settings/tabs";
+import { DevTab } from "./settings/dev-tab";
 import { t } from "@terno/i18n";
 import { reconcileSettings } from "~/lib/appearance";
 import { switchFocus } from "~/lib/i18n";
@@ -65,6 +66,7 @@ export function SettingsDialog() {
   const fatalModal = useNativeReload((s) => s.modalHost !== null);
   const tab = useApp((s) => s.settingsTab);
   const settings = useApp((s) => s.settings);
+  const hasDevMode = useApp((s) => s.devAi !== null);
 
   const update = useCallback<SettingsUpdate>(async (patch, options) => {
     try {
@@ -98,7 +100,7 @@ export function SettingsDialog() {
             <h2 className="mb-3 px-2 text-md font-semibold tracking-tight">{t("common.settings")}</h2>
             {/* a 1 px gap: a hovered row's fill never runs into the selected one's */}
             <TabsList activateOnFocus className="h-auto w-full items-stretch gap-px rounded-none bg-transparent p-0 dark:bg-transparent">
-              {SETTINGS_TABS.map(({ value, label, icon: Icon }) => (
+              {(hasDevMode ? [...SETTINGS_TABS, DEV_TAB] : SETTINGS_TABS).map(({ value, label, icon: Icon }) => (
                 <TabsTrigger
                   key={value}
                   value={value}
@@ -114,6 +116,12 @@ export function SettingsDialog() {
           <SettingsPane title={settingsTabLabel(tab)}>
             {/* a section that fails to render stays a section: the sheet and the other tabs keep working */}
             <PaneBoundary area="settings" resetKey={tab} title={t("settings.sectionError")}>
+              {hasDevMode && (
+                <TabsContent value="dev">
+                  <DevTab settings={settings} update={update} />
+                </TabsContent>
+              )}
+
               <TabsContent value="general">
                 <GeneralTab settings={settings} update={update} />
               </TabsContent>

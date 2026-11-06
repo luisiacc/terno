@@ -1,11 +1,11 @@
-import { separatesTabs, type Account, type Category, type Counts, type Filter, type FilterRule, type Folder, type ListFilter, type ReminderKind, type Tab, type View } from "@terno/core";
+import { separatesTabs, type Account, type DevAiProvider, type Category, type Counts, type Filter, type FilterRule, type Folder, type ListFilter, type ReminderKind, type Tab, type View } from "@terno/core";
 import type { AppSettings, HostInfo, OwnerIdentity, ThreadScope } from "@terno/core/rpc";
 import { create } from "zustand";
 import type { PrintTarget } from "~/lib/print-open";
 import { LEGACY_FILTERS, loadListFilters } from "~/lib/unread-filter";
 
 export type DialogName = "settings" | "shortcuts" | "palette" | "categoryPicker" | "filters" | "addAccount" | "print" | "remind" | null;
-export type SettingsTab = "general" | "appearance" | "accounts" | "categories" | "filters" | "snippets" | "ai" | "agents" | "data" | "storage";
+export type SettingsTab = "general" | "appearance" | "accounts" | "categories" | "filters" | "snippets" | "ai" | "agents" | "dev" | "data" | "storage";
 
 /** The draft being written (lib/drafts holds its content); seq changes each time it is (re)opened, for focus. */
 export interface ComposeState {
@@ -38,6 +38,8 @@ export interface AppState {
   owner: OwnerIdentity | null;
   /** demo build: no owner, no first-run */
   demo: boolean;
+  /** plan 146: which of Dev mode's variables are set; null outside a local build, and no section */
+  devAi: Record<DevAiProvider, boolean> | null;
   /** what the backend's host can do (the web can't run IMAP or agents) */
   host: HostInfo | null;
 
@@ -111,6 +113,7 @@ export const useApp = create<AppState>(() => ({
   settings: null,
   owner: null,
   demo: false,
+  devAi: null,
   host: null,
   view: "inbox",
   accountId: null,

@@ -127,6 +127,8 @@ export const ICONS = {
   Sun: "Sun01Icon",
   Sunrise: "SunriseIcon",
   Tag: "Tag01Icon",
+  // plan 146: Settings → Dev mode
+  Terminal: "ComputerTerminal01Icon",
   TextAlignCenter: "TextAlignCenterIcon",
   TextAlignEnd: "TextAlignRightIcon",
   TextAlignStart: "TextAlignLeftIcon",

@@ -57,7 +57,7 @@ function TargetRow({ ai, update }: { ai: AiSettings; update: SettingsUpdate }) {
   if (target.state !== "ready") {
     const configured = target.state === "ask" ? target.provider : null;
     return (
-      <SettingsRow stacked labelFor={adding} label={t("ai.summaries.target")} hint={configured ? t("ai.summaries.ask", { provider: providerLabel(configured, ai) }) : t("ai.summaries.none")} testId="ai-summaries-target">
+      <SettingsRow stacked labelFor={adding} label={t("ai.summaries.target")} hint={ai.fromEnv ? t("ai.summaries.devKey") : configured ? t("ai.summaries.ask", { provider: providerLabel(configured, ai) }) : t("ai.summaries.none")} testId="ai-summaries-target">
         {(a) =>
           adding ? (
             <form
@@ -74,9 +74,12 @@ function TargetRow({ ai, update }: { ai: AiSettings; update: SettingsUpdate }) {
             </form>
           ) : (
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" data-testid="ai-summaries-add-key" onClick={() => setAdding(true)}>
-                {t("ai.summaries.addKey")}
-              </Button>
+              {/* plan 146: a key saved now would change nothing, and overwrite the one kept for later */}
+              {!ai.fromEnv && (
+                <Button variant="outline" size="sm" data-testid="ai-summaries-add-key" onClick={() => setAdding(true)}>
+                  {t("ai.summaries.addKey")}
+                </Button>
+              )}
               {configured && (
                 <Button variant="outline" size="sm" data-testid="ai-summaries-use" onClick={() => void update({ ai: { tasks: { summary: { provider: configured, model: configured === "anthropic" ? SUMMARY_CLAUDE_MODEL : ai.model } } } })}>
                   {t("ai.summaries.use", { provider: providerLabel(configured, ai) })}

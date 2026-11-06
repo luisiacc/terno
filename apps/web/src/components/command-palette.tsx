@@ -33,7 +33,7 @@ import { summarizable, summarize } from "~/lib/summaries";
 import { useThread } from "~/state/threads";
 import { createCategory } from "./category-picker";
 import { snack } from "~/lib/snack";
-import { SETTINGS_TABS } from "./settings/tabs";
+import { DEV_TAB, SETTINGS_TABS } from "./settings/tabs";
 
 /** Plan 141: the question, its answer and the history are a chunk of their own. */
 const AskPages = lazy(() => import("./ask-page"));
@@ -113,6 +113,7 @@ export function CommandPalette() {
   const supported = useApp((s) => s.supportedFilters);
   const design = useApp((s) => (open ? (s.settings?.design ?? null) : null));
   const canAi = useApp((s) => open && aiReady(s.settings?.ai));
+  const hasDevMode = useApp((s) => s.devAi !== null);
   const followupsOn = useApp((s) => open && s.settings?.followups?.enabled === true);
   const canAsk = useApp((s) => open && s.settings?.ask?.enabled === true);
   const drafting = useAiDraftUi((s) => s.enabled);
@@ -353,7 +354,7 @@ export function CommandPalette() {
     if (readyVersion) add({ id: "updates.restart", group: "actions", label: t("updates.pill.restart"), search: `${t("updates.pill.restart")} ${readyVersion}`, icon: <RotateCw />, testId: "palette-restart-update", keywords: english("updates.pill.restart"), run: () => void installUpdate() });
 
     // ── settings
-    for (const { value: tab, label, icon: Icon } of SETTINGS_TABS) {
+    for (const { value: tab, label, icon: Icon } of hasDevMode ? [...SETTINGS_TABS, DEV_TAB] : SETTINGS_TABS) {
       add({
         id: `settings:${tab}`,
         group: "settings",

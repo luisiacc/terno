@@ -111,6 +111,7 @@ export { Strikethrough } from "./iconset/generated/Strikethrough";
 export { Sun } from "./iconset/generated/Sun";
 export { Sunrise } from "./iconset/generated/Sunrise";
 export { Tag } from "./iconset/generated/Tag";
+export { Terminal } from "./iconset/generated/Terminal";
 export { TextAlignCenter } from "./iconset/generated/TextAlignCenter";
 export { TextAlignEnd } from "./iconset/generated/TextAlignEnd";
 export { TextAlignStart } from "./iconset/generated/TextAlignStart";
