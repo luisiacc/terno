@@ -100,7 +100,8 @@ export function followupSource(c: Ctx, messageId: number): FollowupSource | null
   const mine = own(c);
   // what it answers: the message it says it answers; only with none, the newest before it from someone else
   const target = m.in_reply_to ? messages.by("rfc", m.account_id, m.in_reply_to).find((x) => x.id !== m.id && !x.is_draft && !x.is_spam && !x.is_trash) : undefined;
-  const before = target && !mine.has(addressKey(String(target.from_email))) ? target : messages.by("fk_thread_id", m.thread_id)
+  // it names one we can't use (gone, or your own): nothing, rather than a message it isn't answering
+  const before = m.in_reply_to ? (target && !mine.has(addressKey(String(target.from_email))) ? target : undefined) : messages.by("fk_thread_id", m.thread_id)
     .filter((x) => (x.date < m.date || (x.date === m.date && x.id < m.id)) && !x.is_draft && !x.is_spam && !x.is_trash && !x.is_sent && !mine.has(addressKey(String(x.from_email))))
     .sort((a, b) => b.date - a.date || b.id - a.id)[0];
   const people = (json: string) => {

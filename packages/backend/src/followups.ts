@@ -30,6 +30,8 @@ export interface FollowupHost {
   signature(accountId: number): Promise<string>;
   templated(accountId: number): Promise<ReadonlySet<number>>;
   emit(snapshot: FollowupsSnapshot): void;
+  /** why it stopped reading, or that it's going again: to Settings, while it's open */
+  statusChanged(status: { blockedBy: { kind: AiErrorKind; message: string } | null }): void;
   notify(notice: MailNotice): void;
   summaries(threadIds: readonly number[]): Promise<ThreadSummary[]>;
   runBudgeted<T>(items: readonly T[], work: (chunk: T[]) => void | Promise<void>): Promise<void>;
@@ -190,7 +192,9 @@ export class FollowupWorker {
     const off = this.active && !on;
     this.active = on;
     this.enabledAt = settings.followups.enabledAt;
+    const wasPaused = this.paused !== null;
     this.paused = null;
+    if (wasPaused) this.host.statusChanged(this.status());
     this.limited = null;
     this.heldUntil = 0;
     this.clearRetry();
@@ -259,15 +263,29 @@ export class FollowupWorker {
       return "next" as const;
     };
     if (!src || src.draft || src.spam || src.trash || src.bulk) return drop();
-    // what was sent before it went on is read only with a yes: the check's own marks are that yes
-    if (mark.source === "live" && settings.followups.enabledAt !== null && src.date < settings.followups.enabledAt) return drop();
-    if (!(await this.host.accountWanted(src.accountId))) return drop();
-    if ((await this.host.templated(src.accountId)).has(src.id)) return drop();
-    if (src.bodyState !== "full" && !src.bodyUnavailable) return "hold";
-    if (src.answering && src.answering.bodyState === "none" && !src.answering.bodyUnavailable) return "hold";
-    const asked = this.host.begin(`followup:${mark.messageId}`, "followup-worker");
+    // from here on an opt-out reaches it, whatever it's waiting for
     const mine = { accountId: src.accountId, controller: new AbortController() };
     this.reading = mine;
+    const left = () => this.reading === mine && (this.reading = null);
+    // what was sent before it went on is read only with a yes: the check's own marks are that yes
+    if (mark.source === "live" && settings.followups.enabledAt !== null && src.date < settings.followups.enabledAt) return drop();
+    if (!(await this.host.accountWanted(src.accountId))) {
+      left();
+      return drop();
+    }
+    if ((await this.host.templated(src.accountId)).has(src.id)) {
+      left();
+      return drop();
+    }
+    if (src.bodyState !== "full" && !src.bodyUnavailable) {
+      left();
+      return "hold";
+    }
+    if (src.answering && src.answering.bodyState === "none" && !src.answering.bodyUnavailable) {
+      left();
+      return "hold";
+    }
+    const asked = this.host.begin(`followup:${mark.messageId}`, "followup-worker");
     try {
       const ai = await this.host.forTask();
       const language = await this.readerLanguage(settings);
@@ -280,6 +298,8 @@ export class FollowupWorker {
       const input = fitSentMail({ ownText: own, ...(answering ? { answering } : {}), subject: src.subject, recipients: recipients.map(({ label, name }) => ({ label, name })), attachments: src.attachments, openPromises: [...openLabels].map(([label, r]) => ({ label, text: r.text })), sentAt: inWords(src.date, language), language, outputTokens: budget.outputTokens }, budget.promptChars);
       // a change of provider or key, the account's switch, the setting: each stops it, at the provider too
       const signal = AbortSignal.any([generation.signal, asked.signal, mine.controller.signal]);
+      // the last look before anything leaves
+      if (signal.aborted || !(await this.host.accountWanted(src.accountId))) return await drop();
       const result = await ai.readSentMail(input, signal);
       if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
       if (!(await this.host.accountWanted(src.accountId))) return await drop();
@@ -328,6 +348,7 @@ export class FollowupWorker {
       case "not_configured":
       case "blocked":
         this.paused = { kind, message: error instanceof Error ? error.message : String(error) };
+        this.host.statusChanged(this.status());
         return "stop";
       case "invalid_output":
       case "refused":

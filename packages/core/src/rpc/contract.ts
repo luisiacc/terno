@@ -1339,6 +1339,8 @@ export interface Events {
   aiSummary: { threadId: number };
   /** plan 142: what's active, for the windows; never MCP */
   followups: FollowupsSnapshot;
+  /** plan 142: it stopped reading, or it's going again */
+  followupsStatus: { blockedBy: { kind: AiErrorKind; message: string } | null };
   /** plan 141: an answer as it comes, only to the connection that asked */
   aiAsk: AiAskEvent;
   /** plan 141: these conversations went (all of them: null): no window keeps showing them */

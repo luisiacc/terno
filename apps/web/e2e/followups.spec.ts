@@ -42,6 +42,11 @@ test.describe("follow-ups (plan 142)", () => {
     await scenario("on top, under the heading, saying what's owed", async () => {
       await expect(page.getByTestId("inbox-reminders-label")).toBeVisible();
       await expect(rows(page).first()).toContainText("You told Tom Reed you’d send the contract");
+      // a reminder set for next month on the same thread doesn't speak for it: what brought it here does
+      const id = Number(await rows(page).first().getAttribute("data-thread-id"));
+      await server.backend.server.invoke("reminders.set", { threadIds: [id], dueAt: E2E_NOW + 30 * 86_400_000, kind: "always" }, dev);
+      await expect(rows(page).first().getByTestId("row-date")).toHaveAttribute("data-due-at", /\d+/);
+      await expect(rows(page).first().getByTestId("row-reminder")).toHaveCount(0);
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-top-light.png` });
     });
 

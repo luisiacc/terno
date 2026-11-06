@@ -24,6 +24,7 @@ export interface LadderOptions {
   onDowngrade?: (output: OutputMode) => void;
 }
 
+const REPAIR_ERROR_CHARS = 400;
 const WEAKER: Record<OutputMode, OutputMode | null> = { json_schema: "json_object", json_object: "text", text: null };
 /** json_schema output is grammar-constrained, so one repair suffices; free-form modes get two */
 const REPAIRS: Record<OutputMode, number> = { json_schema: 1, json_object: 2, text: 2 };
@@ -87,7 +88,8 @@ export async function runStructured<W, T>(transport: ModelTransport, task: Struc
     if (repairsLeft-- <= 0) throw new AiError(L("errors.ai.invalidOutput", { detail: result.error }), "invalid_output");
     messages.push(
       { role: "assistant", content: completion.text },
-      { role: "user", content: `That output is invalid: ${result.error}. Return only the corrected JSON object.` },
+      // bounded: a validation's own words can't fill a small window
+      { role: "user", content: `That output is invalid: ${result.error.slice(0, REPAIR_ERROR_CHARS)}. Return only the corrected JSON object.` },
     );
   }
 }

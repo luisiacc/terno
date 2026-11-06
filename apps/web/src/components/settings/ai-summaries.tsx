@@ -169,7 +169,9 @@ export function FollowupsGroup({ settings, update }: { settings: AppSettings; up
     if (!followups.enabled) return setStatus(null);
     let current = true;
     void client.call("followups.status", {}).then((r) => current && setStatus(r), () => {});
-    return () => { current = false; };
+    // a failure arriving while this is open says so too
+    const off = client.on("followupsStatus", setStatus);
+    return () => { current = false; off(); };
   }, [followups.enabled, ai]);
   useEffect(() => {
     if (!offering) return setOffer(null);

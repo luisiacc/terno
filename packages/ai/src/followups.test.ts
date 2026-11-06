@@ -42,7 +42,10 @@ describe("reading what you sent (plan 142)", () => {
           sizes.push(size(req));
           calls++;
           // an answer the size it's allowed, that isn't what was asked for, until the last try
-          return calls < 3 ? { text: "x".repeat(req.maxTokens * 4), stop: "end" as const } : { text: JSON.stringify({ promises: [], expectsReply: false, awaiting: [], kept: [] }), stop: "end" as const };
+          if (calls === 1) return { text: "x".repeat(req.maxTokens * 4), stop: "end" as const };
+          // a shape that's wrong in a dozen places: the error it earns can't fill the window either
+          if (calls === 2) return { text: JSON.stringify({ promises: Array.from({ length: 12 }, () => ({})) }), stop: "end" as const };
+          return calls < 3 ? { text: "", stop: "end" as const } : { text: JSON.stringify({ promises: [], expectsReply: false, awaiting: [], kept: [] }), stop: "end" as const };
         },
       },
     });

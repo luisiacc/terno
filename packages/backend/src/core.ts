@@ -330,6 +330,7 @@ export class BackendCore {
       signature: async (accountId) => (await this.store.accounts.get(accountId))?.signature ?? "",
       templated: (accountId) => this.writing.learner.templatedIn(accountId),
       emit: (snapshot) => this.server.emit("followups", snapshot, { origins: ["renderer", "dev"] }),
+      statusChanged: (status) => this.server.emit("followupsStatus", status, { origins: ["renderer", "dev"] }),
       notify: (notice) => this.attention.remind(notice),
       summaries: (ids) => this.store.threads.summaries(ids),
       runBudgeted: (items, work) => this.runBudgeted(items, work),

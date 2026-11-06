@@ -279,3 +279,5 @@ Codex raised 14 points, all fixed, each with a test.
 - **A quit between coming due and saying so says it on return:** what's announced is what's due and unsaid.
 - **A small window holds the repairs too:** the prompt, two bad answers and the last answer.
 - **Settings says why it stopped,** with what to do.
+
+A second round, on the fixes, raised 7, all fixed: an opt-out reaches a read still getting ready, and there's a last look before anything leaves; a reply naming a message we can't use gets no context rather than the wrong one; a validation's words are bounded in a repair (`ladder.ts`, for every task); a row's line uses Draft's ink, already gated on the row's every state, instead of a new pair four palettes failed; a reminder set for next month doesn't speak for a row a promise brought to the top; and Settings hears a failure while it's open.

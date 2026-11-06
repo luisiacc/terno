@@ -96,7 +96,8 @@ export function followupSource(db: Db, messageId: number): FollowupSource | null
   const own = ownAddresses(db);
   // what it answers: the message it says it answers; only with none, the newest before it from someone else
   const target = m.in_reply_to ? db.get<{ id: number; from_email: string; body_state: FollowupSource["bodyState"]; attachments_captured: number }>("SELECT id, from_email, body_state, attachments_captured FROM messages WHERE account_id = ? AND rfc_message_id = ? AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 AND id != ? LIMIT 1", m.account_id, m.in_reply_to, m.id) : undefined;
-  const before = target && !own.has(addressKey(target.from_email)) ? target : db.all<{ id: number; from_email: string; body_state: FollowupSource["bodyState"]; attachments_captured: number }>(
+  // it names one we can't use (gone, or your own): nothing, rather than a message it isn't answering
+  const before = m.in_reply_to ? (target && !own.has(addressKey(target.from_email)) ? target : undefined) : db.all<{ id: number; from_email: string; body_state: FollowupSource["bodyState"]; attachments_captured: number }>(
     "SELECT id, from_email, body_state, attachments_captured FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND (date < ? OR (date = ? AND id < ?)) AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 AND is_sent = 0 ORDER BY date DESC, id DESC LIMIT 20",
     m.thread_id, m.date, m.date, m.id,
   ).find((r) => !own.has(addressKey(r.from_email)));

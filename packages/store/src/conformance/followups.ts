@@ -84,6 +84,8 @@ export function defineFollowupsConformance(fresh: () => Promise<MailStore>, reop
         expect((await store.followups.source(pointed.id))!.answering?.id).toBe(asked);
         const unsaid = await sent({ providerMsgId: "b", inReplyTo: null, references: ["q@x", "n@x"], date: NOW - 500 });
         expect((await store.followups.source(unsaid.id))!.answering?.id).toBe(later);
+        const unknown = await sent({ providerMsgId: "c", inReplyTo: "gone@x", references: ["q@x", "n@x", "gone@x"], date: NOW - 200 });
+        expect((await store.followups.source(unknown.id))!.answering).toBeNull();
       });
 
       it("survives a reopen", async () => {

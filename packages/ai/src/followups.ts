@@ -23,7 +23,7 @@ const LADDER_OVERHEAD_CHARS = 1400;
 const CHARS_PER_TOKEN = 4;
 const REPAIRS_HELD = 2;
 /** a repair's own words, around the validation error */
-const REPAIR_TOKENS = 100;
+const REPAIR_TOKENS = 150;
 
 export interface SentMailInput {
   ownText: string;

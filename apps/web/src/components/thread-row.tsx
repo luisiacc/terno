@@ -227,7 +227,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     </span>
   );
   const date =
-    reminderTop && reminder ? (
+    reminderTop && reminder?.due ? (
       // plan 87: on the Inbox's top, the time it came back, in the attention ink (the mail's own date would read as out of order)
       <span data-testid="row-date" data-reminder className={cn("flex items-center gap-1 text-xs font-medium tabular", selected ? "" : checked ? "text-accent-foreground" : "text-unread-ink")}>
         <Bell aria-hidden data-testid="row-reminder" data-due className="size-3" />
@@ -242,7 +242,8 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       {thread.subject || t("common.noSubject")}
     </span>
   );
-  const owedInk = selected ? "" : checked ? "text-accent-foreground" : "text-primary";
+  // plan 142: gated on the row's every state, as Draft's ink is (contrast.ts)
+  const owedInk = "text-draft-foreground";
   const snippet = <RowSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} />;
   const chip = code && <CodeChip threadId={thread.id} code={code} />;
   const reviewed = review !== null ? categories.find((c) => c.id === review) : undefined;

@@ -224,6 +224,39 @@ describe("permission, while it reads", () => {
     expect(await backend.store.followups.active()).toEqual([]);
   });
 
+  it("an account's switch going off while it's still getting ready: nothing leaves", async () => {
+    const { backend, client, model, send, account } = await setup();
+    let ready!: () => void;
+    const gate = new Promise<void>((r) => (ready = r));
+    const learner = backend.writing.learner;
+    const real = learner.templatedIn.bind(learner);
+    let waiting = false;
+    learner.templatedIn = async (id) => {
+      waiting = true;
+      await gate;
+      return real(id);
+    };
+    await send();
+    backend.followups.wake();
+    await expect.poll(() => waiting).toBe(true);
+    await client.call("accounts.update", { id: account.id, followups: false });
+    ready();
+    await expect.poll(() => backend.store.followups.marks.count()).toBe(0);
+    expect(model.requests).toEqual([]);
+  });
+
+  it("tells an open Settings when it stops", async () => {
+    const { backend, client, model, send } = await setup();
+    const heard: unknown[] = [];
+    client.on("followupsStatus", (s) => void heard.push(s.blockedBy?.kind ?? null));
+    model.answer = () => { throw new AiError("no", "auth"); };
+    await send();
+    backend.followups.wake();
+    await expect.poll(() => heard).toEqual(["auth"]);
+    await client.call("settings.update", { followups: { nudgeAfterDays: 7 } });
+    await expect.poll(() => heard).toEqual(["auth", null]);
+  });
+
   it("says why it stopped, for Settings", async () => {
     const { backend, client, model, send } = await setup();
     model.answer = () => { throw new AiError("no", "auth"); };
