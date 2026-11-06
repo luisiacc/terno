@@ -15,6 +15,9 @@ import { readPrefs } from "./writing";
  * spending, so it charges its own task and keeps to its limits. Nothing this file logs carries mail.
  */
 
+/** Nobody asked for this one: it answers, but what only they can decide stays theirs, as a [placeholder] (the panel's R1, R2). */
+const PREPARED_INSTRUCTION = "Answer what the thread needs, as far as the mail lets you. Don't accept, decline, agree to or commit to anything they haven't already said in this thread: a call, a price, a date, a yes or a no. Leave that decision as a [placeholder]. Say nothing they haven't: no apology of your own. Keep the form of address they use in this thread, tú or usted.";
+
 type Prepare = ParsedParamsOf<"ai.prepareReply">;
 type Act = ParsedParamsOf<"ai.replyAct">;
 
@@ -84,7 +87,7 @@ export class ReplyService {
   }
 
   private composeParams(p: Pick<Prepare, "threadId" | "accountId" | "to" | "cc" | "answeringMessageId" | "timezone">): ParsedParamsOf<"ai.compose"> {
-    return { requestId: "prepared", session: `prepared-${p.threadId}`, accountId: p.accountId, kind: "reply", threadId: p.threadId, ...(p.answeringMessageId !== undefined ? { answeringMessageId: p.answeringMessageId } : {}), to: p.to, cc: p.cc, subject: "", needsSubject: false, instruction: "", timezone: p.timezone } as ParsedParamsOf<"ai.compose">;
+    return { requestId: "prepared", session: `prepared-${p.threadId}`, accountId: p.accountId, kind: "reply", threadId: p.threadId, ...(p.answeringMessageId !== undefined ? { answeringMessageId: p.answeringMessageId } : {}), to: p.to, cc: p.cc, subject: "", needsSubject: false, instruction: PREPARED_INSTRUCTION, timezone: p.timezone } as ParsedParamsOf<"ai.compose">;
   }
 
   /** The answered message is the newest inbound, which the stamp already holds: asked for the same way at both ends. */

@@ -195,3 +195,12 @@ Round two, on those fixes (3 points, all fixed):
 14. A draft's copy of the words outlived the draft: it goes when the draft does, however that happens.
 15. Typing ended the strip's listener, so an Undo to nothing was never heard: what a draft came from follows the draft's own text.
 16. New mail hid a streaming reply only until its next word: it ends the stream's listener and its pending paint too.
+
+## What the eval and the panel changed
+
+Real models, on a copy of one real mailbox (5,939 threads, three accounts, Spanish and English) with its keys and queued work removed, read by five reviewers with different concerns: a fact auditor, a busy owner, a safety hawk, a bilingual editor and a recall PM. Four rounds, each reviewer blind to the others. No mail is recorded here. The owner's read is still theirs.
+
+- Prompt version 2. Consensus-wrong went from one to none, with one split left.
+- **What changed:** a cold pitch or a recruiter's outreach to someone who's never written to them wants no reply. A prepared reply is told not to accept, decline or commit, nor apologize for them, and to keep their tú or usted, leaving decisions as a `[placeholder]`.
+- **A real bug the eval found:** the check's 50 output tokens left no room for a model's hidden reasoning, and a real thread failed. It's 1,000 now.
+- **Limit:** a reviewer still reads tú in one draft where the thread is in usted.
