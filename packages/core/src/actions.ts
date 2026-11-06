@@ -21,6 +21,8 @@ export interface ActionPlan {
   lookIn: "inbox" | "everywhere";
   /** the sentence implies new mail too */
   future: boolean;
+  /** it's only about mail to come: nothing already here is touched */
+  futureOnly?: boolean;
   /** the sentence names a meaning ("recruiters"), not literal words ("from ups.com") */
   meaning: boolean;
 }
@@ -33,6 +35,8 @@ export interface ActionPreviewInfo {
   plan: ActionPlan;
   /** what Apply would act on now */
   count: number;
+  /** what the rule caught, ticked or not: none, and a rule for mail to come may never apply */
+  found: number;
   /** starred or replied in: spared unless they're included */
   skipped: number;
   skippedIncluded: boolean;
@@ -60,7 +64,8 @@ export type AiActionStart =
   /** outside what a sentence may do */
   | { status: "refused" }
   | { status: "noCondition" }
-  | { status: "noMatch"; summary: string }
+  /** `done`: the rule found mail, all of it already as asked or in Spam or Trash */
+  | { status: "noMatch"; summary: string; done?: number }
   | { status: "tooMany" };
 
 export type AiActionCheck = { status: "consent"; provider: AiProviderId; endpoint: string | null; destination: string } | { status: "done"; preview: ActionPreviewInfo };

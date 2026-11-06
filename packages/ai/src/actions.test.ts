@@ -12,7 +12,7 @@ const input: PlanActionInput = {
   now: Date.UTC(2026, 10, 5),
 };
 const subject = { field: "subject" as const, op: "contains" as const, value: "invoice", negate: false };
-const wire = (over: Record<string, unknown> = {}) => ({ summary: "s", actionType: "archive", categoryId: null, categoryName: null, accountId: null, folder: null, conditions: [subject], lookIn: "inbox" as const, future: false, meaning: false, ...over }) as Parameters<ReturnType<typeof planActionTask>["validate"]>[0];
+const wire = (over: Record<string, unknown> = {}) => ({ summary: "s", actionType: "archive", categoryId: null, categoryName: null, accountId: null, folder: null, conditions: [subject], lookIn: "inbox" as const, future: false, futureOnly: false, meaning: false, ...over }) as Parameters<ReturnType<typeof planActionTask>["validate"]>[0];
 const plan = (over: Record<string, unknown> = {}) => planActionTask(input).validate(wire(over));
 
 describe("from a sentence to a plan (plan 143)", () => {
@@ -95,6 +95,34 @@ describe("the check's request (plan 143)", () => {
     await counted.complete({} as never);
     await expect(counted.complete({} as never)).rejects.toThrow();
     expect(calls).toBe(2);
+  });
+});
+
+const CHECK_MAX = 500;
+
+describe("what the real-mail panel found (plan 143)", () => {
+  const task = () => planActionTask(input);
+  it("a meaning held only by an age is sent back: it would catch everything that old", () => {
+    const age = { field: "ageDays", op: "gt", value: 60 };
+    const r = task().validate(wire({ meaning: true, conditions: [age] }));
+    expect(r).toMatchObject({ ok: false });
+    expect(task().validate(wire({ meaning: true, conditions: [age, { field: "listId", op: "matches", value: "." }] }))).toMatchObject({ ok: true });
+    // a literal sentence may mean exactly that
+    expect(task().validate(wire({ meaning: false, conditions: [age] }))).toMatchObject({ ok: true });
+  });
+  it("a model that answers with a row's words still takes it off", () => {
+    const groups = [{ label: "g1", name: "Dev List", domain: "beehiiv.com", subject: "jobs", count: 1 }, { label: "g2", name: "Nexo", domain: "nexo.com", subject: "news", count: 1 }];
+    const r = checkCandidatesTask({ sentence: "archive job alerts", groups }, CHECK_MAX).validate({ drop: ["Dev List · beehiiv.com · jobs", "g2", "nothing shown"] });
+    expect(r).toMatchObject({ ok: true, value: ["g1", "g2"] });
+  });
+  it("only about mail to come implies a rule", () => {
+    const r = task().validate(wire({ futureOnly: true, future: false }));
+    expect(r).toMatchObject({ ok: true, value: { future: true, futureOnly: true } });
+  });
+  it("a delete's check keeps out what it's unsure of; other actions keep what might", () => {
+    const groups = { sentence: "delete old alerts", groups: [] };
+    expect(checkCandidatesTask({ ...groups, destructive: true }, CHECK_MAX).system).toMatch(/aren't sure/);
+    expect(checkCandidatesTask(groups, CHECK_MAX).system).toMatch(/fits or might/);
   });
 });
 

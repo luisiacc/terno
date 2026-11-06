@@ -106,6 +106,8 @@ interface Preview {
   applying: boolean;
   stop: boolean;
   accounts: Set<number>;
+  /** what the rule found that the action has nothing to do to */
+  ineligible: number;
   clearGeneration: number;
   /** ends what it has underway the moment it's dropped */
   controller: AbortController;
@@ -261,6 +263,7 @@ export class ActionsService {
       previewId: p.id,
       plan: p.plan,
       count: this.count(p),
+      found: p.ids.length,
       skipped: p.skipped.length,
       skippedIncluded: p.includeSkipped,
       leftOut: p.leftOut.size,
@@ -336,6 +339,7 @@ export class ActionsService {
         applying: false,
         stop: false,
         accounts: new Set(),
+        ineligible: 0,
         clearGeneration,
         controller: new AbortController(),
       };
@@ -350,7 +354,7 @@ export class ActionsService {
         });
       });
       if (opened === "tooMany") return { status: "tooMany" };
-      if (opened === "none") return { status: "noMatch", summary: plan.summary };
+      if (opened === "none") return { status: "noMatch", summary: plan.summary, ...(p.ineligible ? { done: p.ineligible } : {}) };
       return { status: "preview", preview: this.info(p) };
     } finally {
       release();
@@ -382,7 +386,10 @@ export class ActionsService {
       if (threads.length) {
         const facts = await store.filters.actionFacts(threads, targetCategory(p.plan));
         for (const f of facts) {
-          if (!eligible(p.plan, f)) continue;
+          if (!eligible(p.plan, f)) {
+            p.ineligible++;
+            continue;
+          }
           p.stamps.set(f.id, stampOf(f));
           p.accounts.add(f.accountId);
           (spares(p.plan, f) ? p.skipped : p.ids).push(f.id);
@@ -395,7 +402,7 @@ export class ActionsService {
         this.drop(p);
         return;
       }
-      if (!told && (p.ids.length || p.skipped.length)) {
+      if (!told && (p.ids.length || p.skipped.length) && !p.plan.futureOnly) {
         told = true;
         opened("open");
       }
@@ -405,12 +412,17 @@ export class ActionsService {
       }
       await this.b.yieldTurn();
     }
-    if (!p.ids.length && !p.skipped.length) {
+    if (!p.ids.length && !p.skipped.length && !p.plan.futureOnly) {
       this.drop(p);
       opened("none");
       return;
     }
     this.order(p);
+    // only about mail to come: the rows are what the rule would have caught, and none of them is touched
+    if (p.plan.futureOnly) {
+      for (const id of p.ids) p.unticked.add(id);
+      if (p.check === "needed") p.check = "none";
+    }
     p.scanning = false;
     if (!told) opened("open");
     else this.emit(p);
@@ -522,7 +534,7 @@ export class ActionsService {
           const fit = checkBudget(planner.contextTokens);
           if (fit.groups === 0) break;
           const batch = groups.slice(p.nextGroup, p.nextGroup + fit.groups);
-          const drop = new Set(await planner.checkCandidates({ sentence: p.sentence, groups: batch.map(({ ids: _ids, ...g }) => g) }, { outputTokens: fit.outputTokens, budget, signal }));
+          const drop = new Set(await planner.checkCandidates({ sentence: p.sentence, destructive: p.plan.action.type === "trash" || p.plan.action.type === "spam", groups: batch.map(({ ids: _ids, ...g }) => g) }, { outputTokens: fit.outputTokens, budget, signal }));
           p.nextGroup += batch.length;
           sent++;
           for (const g of batch) {

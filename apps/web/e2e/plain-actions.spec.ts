@@ -43,6 +43,23 @@ async function say(page: Page, sentence: string) {
 const rows = (page: Page) => page.getByTestId("thread-row");
 
 test.describe("actions in plain English (plan 143)", () => {
+  test("only about mail to come: nothing here is touched, and Apply saves the rule", async ({ app: page, server }) => {
+    await withMail(page, server);
+    await say(page, "From now on archive shipping notices");
+    await expect(page.getByTestId("action-future-only")).toBeVisible();
+    if (SHOTS) {
+      await page.screenshot({ path: `${SHOTS}/future-only-light.png` });
+      await page.emulateMedia({ colorScheme: "dark" });
+      await page.screenshot({ path: `${SHOTS}/future-only-dark.png` });
+      await page.emulateMedia({ colorScheme: "light" });
+    }
+    const save = page.getByRole("button", { name: "Save the rule" });
+    await expect(save).toBeEnabled();
+    await save.click();
+    await expect.poll(() => sqlDb(server.backend.store).get<{ n: number }>("SELECT count(*) AS n FROM filters")?.n).toBeGreaterThan(0);
+    expect(sqlDb(server.backend.store).get<{ in_inbox: number }>("SELECT in_inbox FROM threads WHERE subject = ?", "Your shipping notice 4411")?.in_inbox).toBe(1);
+  });
+
   test("a sentence, its preview, one row out, Apply, Undo; Cancel leaves no trace", async ({ app: page, server }) => {
     await withMail(page, server);
     const inInbox = (subject: string) => expect.poll(() => sqlDb(server.backend.store).get<{ in_inbox: number }>("SELECT in_inbox FROM threads WHERE subject = ?", subject)?.in_inbox);

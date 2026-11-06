@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 const subjectHas = (value: string) => ({ field: "subject", op: "contains", value, negate: false });
-const planWire = (o: Record<string, unknown> = {}) => ({ summary: "Do it", actionType: "archive", categoryId: null, categoryName: null, accountId: null, folder: null, conditions: [subjectHas("invoice")], lookIn: "inbox", future: false, meaning: false, ...o });
+const planWire = (o: Record<string, unknown> = {}) => ({ summary: "Do it", actionType: "archive", categoryId: null, categoryName: null, accountId: null, folder: null, conditions: [subjectHas("invoice")], lookIn: "inbox", future: false, futureOnly: false, meaning: false, ...o });
 
 /** Where a store could change the result, those suites run on both. */
 let storeKind: "SQLite" | "IndexedDB" = "SQLite";
@@ -819,3 +819,40 @@ describe("history", () => {
     expect(c!.turns[0]!.answer).toContain("Archived 1 conversation");
   });
 });
+
+describe("what the real-mail panel changed", () => {
+  it("only about mail to come: every row unticked, nothing checked, and Apply saves the rule and moves nothing", async () => {
+    const { client, backend, put, preview, model } = await setup();
+    const id = await put();
+    const p = await preview({ future: true, futureOnly: true, meaning: true });
+    expect(p).toMatchObject({ count: 0, found: 1, check: "none", keep: { kind: "ok" } });
+    expect(model.checks).toEqual([]);
+    const r = await client.call("ai.actionApply", { previewId: p.previewId, future: true });
+    expect(r).toMatchObject({ done: 0, filterSaved: true });
+    expect((await backend.store.filters.list())).toHaveLength(1);
+    expect((await backend.store.threads.summaries([id]))[0]!.inInbox).toBe(true);
+  });
+
+  it("only about mail to come with nothing to show still opens, and says how many it found", async () => {
+    const { preview } = await setup();
+    expect(await preview({ future: true, futureOnly: true })).toMatchObject({ count: 0, found: 0, keep: { kind: "ok" } });
+  });
+
+  it("nothing to do says how many the rule found that are already done or out of reach", async () => {
+    const { client, backend, put, model } = await setup();
+    const id = await put();
+    await backend.store.threads.act({ threadIds: [id], action: "spam", signal: null, now: NOW });
+    model.plan = planWire({ actionType: "spam", lookIn: "everywhere" });
+    const r = await client.call("ai.actionStart", { requestId: crypto.randomUUID(), sentence: "spam the invoices", timezone: "UTC" } as never);
+    expect(r).toMatchObject({ status: "noMatch", done: 1 });
+  });
+
+  it("a delete's check tells the model to keep out what it's unsure of", async () => {
+    const { put, preview, client, model } = await setup();
+    await put();
+    const p = await preview({ actionType: "trash", lookIn: "everywhere", meaning: true });
+    await client.call("ai.actionCheck", { previewId: p.previewId, requestId: crypto.randomUUID() } as never);
+    expect(model.checks[0]!.system).toMatch(/aren't sure/);
+  });
+});
+

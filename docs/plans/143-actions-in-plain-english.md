@@ -224,3 +224,14 @@ Round two, on those fixes (5 points, all fixed):
 16. Clear AI data during a group build left it running and holding what it read: it checks between slices, and a dropped preview lets go of its groups, rows and timer.
 17. Leaving a preview by the sidebar kept the rows it meant to come back to: any way out lets go of them.
 18. Training that failed after a move committed lost the count and left its due reminders pinned: pins end and the step is recorded as soon as the slice commits; training resumes at the next start.
+
+## What the eval and the panel changed
+
+Real models, on a copy of one real mailbox (5,939 threads, three accounts, Spanish and English) with its keys and queued work removed, read by five reviewers with different concerns: a fact auditor, a busy owner, a safety hawk, a bilingual editor and a recall PM. Four rounds, each reviewer blind to the others. No mail is recorded here. The owner's read is still theirs.
+
+- Prompt version 4. No reviewer flagged anything high-severity on the last read, and two remain that four or more called wrong (both rules that catch too little); round 1 had five.
+- **What changed in the plan:** a meaning held only by an age is sent back, since it would catch everything that old. Short words get `\\b` ("PR" caught "Pro"). Alternatives come in both languages. Every sender named goes in; senders plus a kind of mail are the senders, with `meaning` true so each row is checked. Fewest conditions: each one loses mail. `future` is only for explicit words, and "carpeta" with no such folder means a category.
+- **What changed in the check:** "drop" read as "delete these" and one batch came back inverted, ticking production errors for Trash. It now says plainly that drop is what the action must not touch. A delete or a spam drops whatever it's unsure of, and service alerts, banks, payments and people unless named. A model answering with a row's words rather than its id used to be ignored, which left those rows ticked; those words now resolve. The output allowance went up to 3,000 tokens: a delete can drop every group.
+- **An addition to this plan's decision table, for the owner to confirm:** `futureOnly`. "From now on…" touches nothing already here: every row is unticked, zero rows still opens, and Apply saves the rule. With nothing matching it says so, and to check the wording. The plan had no such case: these sentences acted on what was already there.
+- A sentence finding only mail that's done or in Spam and Trash now says so with its count, rather than "nothing matched" (`done`).
+- **Limit:** a subject-word rule still misses what doesn't use the words (some job alerts, "login" notices): conditions can't express "subject or sender". Vague orders are refused without asking which mail.

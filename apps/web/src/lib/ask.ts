@@ -118,7 +118,7 @@ async function settleCommand(requestId: string, question: string): Promise<void>
     return;
   }
   if (r.status === "consent") return useAsk.setState({ running: null, consent: { question, provider: r.provider, endpoint: r.endpoint, destination: r.destination } });
-  if (r.status !== "preview") return useAsk.setState({ running: null, notice: { question, text: t(COMMAND_NOTICE[r.status]) }, usedAt: Date.now() });
+  if (r.status !== "preview") return useAsk.setState({ running: null, notice: { question, text: r.status === "noMatch" && r.done ? t("action.noMatchDone", { count: r.done }) : t(COMMAND_NOTICE[r.status]) }, usedAt: Date.now() });
   useAsk.setState({ running: null, usedAt: Date.now() });
   closePalette();
   opened(r);
