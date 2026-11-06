@@ -50,5 +50,5 @@ test("warm start: relaunching with an existing mailbox shows mail fast", { tag: 
   rmSync(cache);
   console.log(`warm start without a code cache: ${await start()} ms`);
   // includes process spawn, Chromium init, utility process + SQLite open, first query and paint
-  expect(Math.min(...samples)).toBeLessThan(1500);
+  expect(Math.min(...samples)).toBeLessThan(1000);
 });

@@ -28,28 +28,53 @@ Three findings:
 
 ## Design
 
-`backend-boot.cjs`, a small entry main forks, loads `backend.cjs` through `vm.Script` with `cachedData`:
+`backend-boot.cjs`, a small entry main forks, loads `backend.cjs` through `vm.Script` with `cachedData` (`code-cache.ts`). Nothing is deferred: the bundle runs at once, in full.
 
-- **The file** is one, `<userData>/engine.v8cache`, overwritten: the build it belongs to, then V8's data (2 to 3 MB). It holds compiled code of our own bundle, nothing of the user's.
-- **Which build:** the bundle's debug id, read from its last line (content-derived, `scripts/sourcemaps.mjs`). V8 checks its own version, flags and the source's length, never its content, so a same-length build needs this.
-- **Written** once per build, 2 s after evaluation, so the functions used for the first screen are in it, with `createCachedData` (about 12 ms) and an atomic write, never when an accepted cache was used.
-- **Never in the way:** a missing, stale, torn or rejected cache means a normal compile, and any failure around it is ignored. Evaluation errors stay the backend's own.
-- **Crash safety:** a backend restarted after an exit starts without a cache and deletes it. Bad bytecode can't crash-loop the mail engine; the next normal launch writes a new one.
+- **The file** is one, `<userData>/engine.v8cache`, overwritten: the format and the build it belongs to, then V8's data (3.7 MB). It holds compiled code of our own bundle, nothing of the user's. Main passes its path as an argument, since the profile is main's to resolve.
+- **Which build:** the bundle's debug id, read from its last line (content-derived, `scripts/sourcemaps.mjs`), in the same read as what's compiled. V8 checks its own version, flags and the source's length, never its content, so a same-length build needs this.
+- **Written** once per build, 2 s after evaluation, so what the first screen uses is in it: 20 ms for `createCachedData` and 2 ms for an atomic write (a temp file of its own, then a rename), once, inside the slicer's budget. Never when a cache was accepted. A launch quit within 2 s writes nothing, and the next one tries again.
+- **Never in the way:** a missing, stale, torn or rejected cache compiles normally. The bundle runs once, outside anything that catches, so its errors stay its own.
+- **Crash safety:** a backend that dies without being asked starts again with no cache and the file goes, for the rest of the session: a Retry too, and however long it ran, since the restart policy's count resets. Bad bytecode can't keep the mail engine down; the next launch writes a new one.
+- **Stack traces:** absolute filename, and a negative `columnOffset` so the wrapper doesn't shift line 1; the debug id lookup keeps working.
 
 ### The AI SDKs
 
-The request offers loading them beside the first screen. It isn't needed if the cache removes their compile, and it would be the one exception to plan 155's rule. Measured once the cache is in: if evaluating them still costs the first screen a noticeable time, they move; otherwise they stay plain imports. (On one thread, "parallel" would still block the backend while they evaluate.)
+The request offers loading them beside the first screen. Measured with the cache in, it would gain nothing: evaluating the whole bundle takes 38 ms and the backend is ready at 496 ms, about 170 ms before the renderer first asks it for anything (665 ms). They stay plain imports, with no exception to plan 155's rule. Their cost that's left is a first launch after an update, which compiles them with everything else. (And on one thread, "parallel" would still block the backend while they evaluate.)
 
 ## Tests
 
-- Unit (`code-cache.test.ts`): runs the file with `__filename`/`__dirname`/`require`; no cache writes one; an accepted cache is used and not rewritten; another build's, a torn or a garbage file compiles normally and is replaced; an unwritable path doesn't fail the launch.
-- `startup.perf.ts`: reads rows at frame precision (`waitForFunction`, `raf`), holds the budget at a number the app now meets, and checks the cache exists.
-- Packaged smoke: the backend still starts, restarts after a crash and reports errors with the bundle's name.
+- `code-cache.test.ts`, each load in a process of its own (in one, V8's compilation cache answers and a bad cache looks accepted): runs as CommonJS; writes, then uses and leaves alone; a same-length build never runs another's code; garbage and a torn file compile and are replaced; an unreadable or unwritable path doesn't get in the way; a bundle's own failure is the process's, once; lines and columns hold with and without the cache; main's switch.
+- `backend-retirement.test.ts`: a crash turns the cache off, a replacement asked for doesn't.
+- `startup.perf.ts`: rows by the page's clock (`terno:first-rows`, the frame that paints them); waits for the cache outside the measured time; a warm start leaves it as it is, which is what says it was accepted; logs the launch without a cache.
+- `update.smoke`: a backend crash, and a real update's relaunch.
 
 ## Perf
 
-Before: rows painted at 935 ms. Target: under plan 155's starting point of 819.
+Median of 15 launches, in one run, rows painted, ms from spawn, on a machine at load 15 to 25:
+
+| | backend ready | renderer asks | rows painted |
+|---|---|---|---|
+| Before plan 155 | 768 | 620 | 824 |
+| After plan 155 | 865 | 616 | 920 |
+| With the cache | 496 | 665 | 754 |
+
+Compile: 345 ms to 8 ms. `startup.perf.ts` on a clean build: warm 692 to 818 ms, and 880 to 902 ms without a cache, the first launch after an update. **Its budget goes from 1,500 to 1,000 ms,** now that it reads the real thing.
+
+The renderer is now what a launch waits for: about 100 ms of script after commit, on Chromium's own code cache.
 
 ## Out of scope
 
-The main process's own compile, unless measuring shows it matters: it runs before the profile is prepared, so it has nowhere settled to keep a cache. The renderer already has Chromium's.
+- The main process's compile: `main.cjs` grew by 260 KB in plan 155 with no visible change at its first line. It also runs before the profile is prepared, with nowhere settled to keep a cache.
+- A cache shipped in the app, for the first launch after an update: V8's flags and CPU features have to match, so it would need building on the user's machine anyway.
+
+## Not verified
+
+A Developer ID build, with the hardened runtime: this machine has an Apple Development identity only. `update.smoke` ran signed with that; the cache's numbers are from ad-hoc builds. `test:all` on a release machine covers it, through `startup.perf.ts`'s check that the cache was accepted.
+
+## Seen on the way
+
+`native-reload.smoke.ts:287` fails whenever it shares a run with other spec files, on this branch and 3 of 3 on the build before plan 155: it asserts which window the OS has focused. It passes alone. Not touched.
+
+## Revisions after the Codex review
+
+Of the plan, before building: the bundle runs through an explicit CommonJS wrapper in this context; main passes the path as an argument; the build id comes from the same read as the source; loads in tests run in separate processes, and with same-length sources; the crash switch is independent of the restart policy's count; temp files are the process's own; the bundle runs once, outside the catches; the perf gate waits for the cache and proves it was accepted, and reads the row's time in the page.

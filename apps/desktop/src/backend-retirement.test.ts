@@ -140,19 +140,19 @@ function exitHost(o: { stale?: boolean; stopping?: boolean; retiring?: boolean }
   const { child, owned } = utility();
   const retirement = new BackendRetirement(owned);
   const restart = vi.fn(), start = vi.fn(), resolveReady = vi.fn();
-  const timers: (() => void)[] = [];
+  const timers: (() => void)[] = [], cache = { crashed: vi.fn() };
   const h = hostBlock('  child.on("exit", (code)', '  child.postMessage({\n    type: "init",', {
     child, backend: o.stale ? {} : child, backendRetirement: retirement,
     retirement, resolveReady, releaseReadyWaiters: vi.fn(),
     shutdownWaiters: new Map(), sendsIdleWaiters: [], quitState: o.stopping ? "stopping" : "running",
     restartEngine: restart, startBackend: start, instance: 3, backendInstance: 3,
-    cache: { crashed: vi.fn() }, mainDiag: { backendExited: vi.fn(), setEngine: vi.fn() }, restarts: { attempt: 1, exited: () => 500 },
+    cache, mainDiag: { backendExited: vi.fn(), setEngine: vi.fn() }, restarts: { attempt: 1, exited: () => 500 },
     // plan 95: these backends never explained a mailbox failure, so their exits are crashes as before
     mailbox: { exited: () => false },
     diagLog: { info: vi.fn(), error: vi.fn() }, windows: [],
     setTimeout: (fn: () => void) => timers.push(fn),
   }, "{ owner: () => backend, stopping: () => { quitState = 'stopping'; }, replaceGeneration: () => { backendInstance++; } }");
-  return { ...h, child, retirement, restart, start, resolveReady, timers };
+  return { ...h, child, retirement, restart, start, resolveReady, timers, cache };
 }
 
 it("actual exit callback ignores stale exits and late retirement exit restarts exactly once", async () => {
@@ -181,6 +181,20 @@ it.each(["shutdown", "generation"])("actual crash restart timer refuses after %s
   if (mode === "shutdown") h.stopping(); else h.replaceGeneration();
   h.timers[0]!();
   expect(h.start).not.toHaveBeenCalled();
+});
+
+it("a crash turns the engine's code cache off; a replacement asked for doesn't (plan 156)", async () => {
+  const crash = exitHost({});
+  crash.child.emit("exit", 1);
+  expect(crash.cache.crashed).toHaveBeenCalledOnce();
+  vi.useFakeTimers();
+  const retired = exitHost({});
+  const done = retired.retirement.retire();
+  await vi.advanceTimersByTimeAsync(BACKEND_GRACE_MS);
+  await done;
+  retired.child.emit("exit", 0);
+  expect(retired.restart).toHaveBeenCalledOnce();
+  expect(retired.cache.crashed).not.toHaveBeenCalled();
 });
 
 it("actual deliberate exit during shutdown never restarts", async () => {
