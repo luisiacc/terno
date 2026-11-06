@@ -41,3 +41,19 @@ Conformance in both stores for each spam gate and `opening`; core tests for the 
 ## Out of scope
 
 Junk folders IMAP can't identify; undoing what a filter or `written` already did before this; a sum over more mail than an answer reads (it still says "at least"); first contact in Needs you.
+
+## Revisions after the Codex review of the plan
+
+- **Fixed in the design:** an `opening` rule runs again when a body completes (`ruleAwaitsBody`), because the first lines can be filled in from it, and it can't be negated, so it only ever turns true. A reply moving to Spam reopens what it answered. A sum's amounts and a count's messages come back to the backend (`calculations`), so a true total of amounts no mail holds is still flagged, whichever way the mail writes its decimals, and a count's messages are its sources. A tag cut off by the output limit shows nothing.
+- **Remote images:** the reader's flag is the conversation's: any spam message in it means "always" doesn't apply, which is stricter than per message.
+- **Skipped as too rare (recorded, not built):** a message turning spam between a filter's match and its apply; 200 spam messages in one conversation pushing a real one out of the facts window; a promise whose own source turns spam inside an otherwise clean conversation; classifier examples already stored from a mixed conversation; a mixed conversation's stored unread count, which corrects itself the next time that conversation changes.
+- **Changed from the plan:** a total's thousands are always written `1,530.50`: the backend doesn't know the language of the answer.
+
+## What the real models did
+
+A small read on the same scrubbed mailbox copy, in the ledger the panel used ($0.125; $4.83 of $5 now): three count and sum questions, four sentences. No panel read this round.
+
+- "A partir de ahora archiva todo lo que llegue de Temu" and "From now on, star anything from Vercel" each previewed what's already there (26 and 19) with the rule ticked.
+- "Archiva las alertas de inicio de sesión" and "Archive job alerts" both chose `opening` on their own.
+- "¿Cuánto pagué en total a OpenAI este año?" gave USD 335.32 from eight charges, checked by hand. It says that's what it read, not the year's total.
+- **Limit:** a sum or count covers the messages an answer reads, at most 30. It says "at least", as it did.
