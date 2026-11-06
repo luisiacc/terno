@@ -2,6 +2,7 @@ import { AiError, ASK_PROMPT_VERSION, askBudget, answerPrompt, fitAskPrompt, fit
 import {
   ASK_QUESTION_MAX,
   ASK_TURNS_MAX,
+  askOperandsMissing,
   askSpecifics,
   hasUnlinkedSentence,
   resolveCitations,
@@ -302,7 +303,7 @@ export class AskService {
     let raw = "";
     let sent = "";
     const result = await ai.answerFromMail(
-      { question, today, material, moreMatch: moreMatch || fitted.material.length < drafted.material.length, ...(fitted.earlier.length ? { earlier: fitted.earlier } : {}) },
+      { question, today, material, found: { count: o.threadIds.length, capped: o.threadIds.length >= THREADS_PER_QUERY }, moreMatch: moreMatch || fitted.material.length < drafted.material.length, ...(fitted.earlier.length ? { earlier: fitted.earlier } : {}) },
       {
         signal,
         maxTokens: budget.outputTokens,
@@ -325,8 +326,10 @@ export class AskService {
     if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
     const resolved = resolveCitations(result.text, labels);
     const answered = result.status === "not_found" ? "not_found" : result.status === "partial" || result.stop === "length" ? "partial" : "answered";
-    const checks: AskCheck = { unlinked: answered !== "not_found" && (resolved.dropped > 0 || hasUnlinkedSentence(resolved.text)), unsupported: answered === "not_found" ? [] : askSpecifics(resolved.text, authorized(material)) };
-    const sources = answered === "not_found" ? [] : resolved.cited.map((i) => refOf(passages.messages[i]!));
+    const checks: AskCheck = { unlinked: answered !== "not_found" && (resolved.dropped > 0 || hasUnlinkedSentence(resolved.text)), unsupported: answered === "not_found" ? [] : [...askSpecifics(resolved.text, [...authorized(material), String(o.threadIds.length), ...result.calculations.map((c) => c.result)]), ...askOperandsMissing(result.calculations.flatMap((c) => c.operands), authorized(material))] };
+    // a count's messages are its sources, cited in words or not
+    const counted = result.calculations.flatMap((c) => c.labels).flatMap((label) => labels.get(label) ?? []);
+    const sources = answered === "not_found" ? [] : [...new Set([...resolved.cited, ...counted])].map((i) => refOf(passages.messages[i]!));
     // with no sources, a citation left in the words points at nothing
     const words = answered === "not_found" ? resolved.text.replace(/\s*\[\d+\]/g, "") : resolved.text;
     const turn = await this.keep({ conversationId, question, status: answered, answer: words, sources, checks, queries: o.queries, ai, clearGeneration: o.clearGeneration, entry: o.entry });

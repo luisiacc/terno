@@ -182,6 +182,27 @@ describe("from a question to an answer", () => {
   });
 });
 
+describe("the machine's numbers (plan 153)", () => {
+  const reply = (text: string) => () => ({ text, stop: "end" as const });
+  it("a machine total isn't called made up, and a count's messages are its sources", async () => {
+    const { ask, put, model } = await setup();
+    await put({ subject: "Rent", bodyText: "Your lease payment was 120,50." });
+    await put({ subject: "Rent two", bodyText: "Your lease payment was 80." });
+    model.answer = reply("You paid <sum>120.50 + 80</sum> [m1] in <count>m1 m2</count> payments.\n<status>answered</status>") as never;
+    const { turn } = done(await ask("How much was my lease?"));
+    expect(turn!.answer).toBe("You paid 200.50 [1] in 2 payments.");
+    expect(turn!.checks.unsupported).toEqual([]);
+    expect(turn!.sources).toHaveLength(2);
+  });
+
+  it("a true total of amounts no mail holds is flagged", async () => {
+    const { ask, put, model } = await setup();
+    await put({ bodyText: "Your lease payment was 80." });
+    model.answer = reply("You paid <sum>7777 + 80</sum> [m1].\n<status>answered</status>") as never;
+    expect(done(await ask("How much was my lease?")).turn!.checks.unsupported).toEqual(["7777"]);
+  });
+});
+
 describe("consent is for a destination (revision 2)", () => {
   it("a cloud provider asks once and sends nothing first; local doesn't ask", async () => {
     const { model, put, ask } = await setup({ cloud: true });

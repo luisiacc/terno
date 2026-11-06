@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerFilter, answerPrompt, askBudget, ASK_ANSWER_RULES, cleanAnswer, fitAskPrompt, fitPlanEarlier, planAskPrompt } from "./ask";
+import { machineSum, answerFilter, answerPrompt, askBudget, ASK_ANSWER_RULES, cleanAnswer, fitAskPrompt, fitPlanEarlier, planAskPrompt } from "./ask";
 import { createAi } from "./tasks";
 import { fakeTransport } from "./fake";
 import type { ProviderConfig } from "./types";
@@ -129,3 +129,34 @@ describe("what the real-mail panel found (plan 141)", () => {
   });
 });
 
+describe("the machine counts and adds (plan 153)", () => {
+  const run = (chunks: string[], known?: (l: string) => boolean) => {
+    let shown = "";
+    const f = answerFilter((t) => (shown += t), known);
+    for (const c of chunks) f.push(c);
+    f.finish();
+    return { shown, calculations: f.calculations };
+  };
+  it("adds exactly, in decimals, with thousands marked", () => {
+    expect(machineSum("0.1 + 0.2")?.result).toBe("0.3");
+    expect(machineSum("1250.50 + 300 - 20")).toEqual({ result: "1,530.50", operands: ["1250.50", "300", "20"] });
+    expect(machineSum("5 - 7.5")?.result).toBe("-2.5");
+    expect(machineSum("1,250 + nothing")).toBeNull();
+  });
+  it("a tag split across any chunks becomes its number and never shows", () => {
+    const text = "You paid USD <sum>120.50 + 80</sum> [m1], in <count>m1 m2 m2</count> mails.\n<status>answered</status>";
+    for (let cut = 1; cut < text.length; cut++) expect(run([text.slice(0, cut), text.slice(cut)]).shown).toBe("You paid USD 200.50 [m1], in 2 mails.\n");
+  });
+  it("counts only messages it was given, and says which", () => {
+    expect(run(["<count>m1 m9</count>"], (l) => l === "m1")).toMatchObject({ shown: "1", calculations: [{ result: "1", labels: ["m1"] }] });
+  });
+  it("words it can't add stay words, with no total; a tag cut off by the limit shows nothing", () => {
+    expect(run(["about <sum>many + few</sum>"])).toEqual({ shown: "about many + few", calculations: [] });
+    expect(run(["The total is <sum>120 +"]).shown).toBe("The total is ");
+    expect(run(["a < b"]).shown).toBe("a < b");
+  });
+  it("tells the model how many the search found, and that it stopped there", () => {
+    const material = [{ label: "m1", from: "a", date: "2026-01-01", subject: "s", own: false, text: "t" }];
+    expect(answerPrompt({ question: "q", today: "2026-01-02", material, found: { count: 40, capped: true } })).toMatch(/The search found 40 or more conversations/);
+  });
+});

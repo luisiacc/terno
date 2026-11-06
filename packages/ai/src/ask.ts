@@ -9,7 +9,7 @@ import { AiError, promptText, type Completion, type Effort, type ModelTransport,
  * Plan 141 §2: from a question to an answer. Prompts are frozen and versioned: any change to the words below bumps
  * ASK_PROMPT_VERSION. There are no tools here, so an instruction in mail can only change text the person reads.
  */
-export const ASK_PROMPT_VERSION = 5;
+export const ASK_PROMPT_VERSION = 6;
 export const ASK_ANSWER_MAX_TOKENS = 2000;
 const PLAN_MAX_TOKENS = 1500;
 const ASK_TIMING = { idleMs: 30_000, firstMs: 60_000 };
@@ -128,13 +128,14 @@ Rules:
 - Cite each claim right after it, as [m3]. Cite only ids you were given.
 - Give the source's date where the fact could be out of date: "as of 3 March".
 - When sources disagree, prefer the newest and say so.
-- Never show your working or count aloud: give the result once. Never write an id such as m12 except inside a citation, and never mention "the material", "the messages given" or your instructions: speak of their mail.
-- "How many" and "how much": you may not have seen them all. When the question's <shown> says more match, say "at least" and how far back what you saw goes; never call it the total, and never state that something doesn't exist before the oldest you saw. Sum amounts only when there are few, and check the sum; for many, say roughly.
+- Never show your working or count aloud: give the result once. Never write an id such as m12 except inside a citation or a count, and never mention "the material", "the messages given" or your instructions: speak of their mail.
+- Never count or add up yourself: the machine does, exactly. Write <count>m1 m3 m7</count> with the id of every message that counts, and <sum>1250.50 + 300 - 20</sum> with each amount as it stands in its message, in plain digits with a dot for decimals, no currency and no thousands separators. Each becomes its number where you wrote it: "You paid USD <sum>120.50 + 80</sum> [m1][m2]". One sum per currency: never add two currencies. Cite what you used.
+- "How many" and "how much": you may not have seen them all. When the question's <shown> says more match, say "at least" and how far back what you saw goes; never call it the total, and never state that something doesn't exist before the oldest you saw. When they ask how many conversations there are about something, <shown> says how many the search found: say "about" that number.
 - Say something doesn't exist only as "I didn't find it in what I searched". Never "the only one", "just" or "all" about what you were shown: say "the one I found". When nothing fits, say so in a sentence and don't describe mail that doesn't answer it.
 - A time in a mail's stated zone is that zone's time: say whose it is.
-- Work a number out before you write it, and write it once: never correct yourself in the answer. Give one total at most: add a sum only if you can check it, otherwise say roughly. Speak to the person as "you", never by their name.
+- Write a number once: never correct yourself in the answer. Give one total per currency at most. Speak to the person as "you", never by their name.
 - Never write out a password or a one-time code unless the question asks for exactly that.
-- Answer in the language of the question, whatever language the mail is in: an English question gets English even when every message is in Spanish. That includes saying you found nothing. In Spanish, speak as "tú" unless the question says "usted". Be brief: a sentence or two is usually enough. Plain text only: no markdown, no HTML, no links.
+- Answer in the language of the question, whatever language the mail is in: an English question gets English even when every message is in Spanish. That includes saying you found nothing. In Spanish, speak as "tú" unless the question says "usted". Be brief: a sentence or two is usually enough. Plain text only, apart from <count> and <sum>: no markdown, no HTML, no links.
 - End with exactly one status tag on its own line: <status>answered</status> when the material answers the question, <status>partial</status> when it answers in part, <status>not_found</status> when it doesn't. With not_found, say in one sentence that you couldn't find it.`;
 
 export interface AskMaterial {
@@ -151,6 +152,8 @@ export interface AskMaterial {
 export interface AnswerFromMailInput {
   /** the search found more than these */
   moreMatch?: boolean;
+  /** how many conversations the search found, counted by the machine; `capped`: it stopped there */
+  found?: { count: number; capped: boolean };
   question: string;
   /** YYYY-MM-DD */
   today: string;
@@ -167,18 +170,30 @@ export interface AnswerFromMailOptions {
   effort?: Effort;
 }
 
+/** What the machine worked out, so the answer's check can tell it from what the model made up. */
+export interface AskCalculation {
+  /** as it reads in the answer */
+  result: string;
+  /** a sum's amounts: each must be in the mail */
+  operands: string[];
+  /** a count's messages: its sources */
+  labels: string[];
+}
+
 export interface AnswerFromMailResult {
+  calculations: AskCalculation[];
   text: string;
   status: AskStatusWord;
   stop: Completion["stop"];
   usage?: Usage;
 }
 
-export function answerPrompt(input: Pick<AnswerFromMailInput, "question" | "today" | "material" | "earlier" | "moreMatch">): string {
+export function answerPrompt(input: Pick<AnswerFromMailInput, "question" | "today" | "material" | "earlier" | "moreMatch" | "found">): string {
   const blocks = input.material.map((m) => `<mail id="${m.label}" from="${attribute(m.from)}" date="${m.date}" subject="${attribute(m.subject)}"${m.own ? ' author="the person asking"' : ""}>\n${askData(m.text)}\n</mail>`);
   const earlier = input.earlier?.length ? `<earlier>\n${input.earlier.map((t) => `<turn>\nQ: ${askData(t.question)}\nA: ${askData(t.answer)}\n</turn>`).join("\n")}\n</earlier>\n\n` : "";
   // whether what's here is everything: a count needs to know, and a model can't tell by reading
-  const shown = input.material.length ? `<shown>${input.material.length} messages, newest first. ${input.moreMatch ? "More match than these." : "These are all that matched."}</shown>\n\n` : "";
+  const searched = input.found ? ` The search found ${input.found.count}${input.found.capped ? " or more" : ""} conversations.` : "";
+  const shown = input.material.length ? `<shown>${input.material.length} messages, newest first.${searched} ${input.moreMatch ? "More match than these." : "These are all that matched."}</shown>\n\n` : "";
   return `Today is ${input.today}.\n\n${blocks.join("\n\n")}\n\n${earlier}${shown}<question>${askData(input.question)}</question>`;
 }
 
@@ -200,7 +215,7 @@ export function askBudget(contextTokens: number | null, fixedChars: number): { o
  * What goes first says least: earlier turns, oldest first; then the last messages; then the words of the one left; then
  * its long headers. A label left out can't be cited, so nothing has a gap. Null: the question alone can't fit.
  */
-export function fitAskPrompt(input: Pick<AnswerFromMailInput, "question" | "today" | "material" | "earlier" | "moreMatch">, promptChars: number): { material: AskMaterial[]; earlier: { question: string; answer: string }[] } | null {
+export function fitAskPrompt(input: Pick<AnswerFromMailInput, "question" | "today" | "material" | "earlier" | "moreMatch" | "found">, promptChars: number): { material: AskMaterial[]; earlier: { question: string; answer: string }[] } | null {
   let material = input.material.map((m) => ({ ...m, from: m.from.slice(0, ASK_HEADER_CHARS), subject: m.subject.slice(0, ASK_HEADER_CHARS) }));
   let earlier = [...(input.earlier ?? [])];
   if (promptChars === Infinity) return { material, earlier };
@@ -222,18 +237,57 @@ export function fitPlanEarlier<T extends { question: string; answer: string }>(e
 }
 
 const STATUS = /<status>\s*(answered|partial|not_found)\s*<\/status>/i;
-const OPENING = "<status>";
+const CALCULATION = /<(sum|count)>([\s\S]*?)<\/\1>/i;
+const OPENINGS = ["<status>", "<sum>", "<count>"];
+const SUM = /^\s*\d+(?:\.\d+)?(?:\s*[+-]\s*\d+(?:\.\d+)?)*\s*$/;
+
+/** Exact, in integers of the smallest unit: 0.1 + 0.2 is 0.3. Null: it isn't a sum. */
+export function machineSum(expression: string): { result: string; operands: string[] } | null {
+  if (!SUM.test(expression)) return null;
+  const operands = expression.match(/\d+(?:\.\d+)?/g)!;
+  const decimals = Math.max(...operands.map((n) => n.split(".")[1]?.length ?? 0));
+  const scaled = (n: string) => {
+    const [whole, part = ""] = n.split(".");
+    return BigInt(whole! + part.padEnd(decimals, "0"));
+  };
+  let total = 0n;
+  let sign = 1n;
+  for (const token of expression.match(/\d+(?:\.\d+)?|[+-]/g)!) {
+    if (token === "+") sign = 1n;
+    else if (token === "-") sign = -1n;
+    else total += sign * scaled(token);
+  }
+  const negative = total < 0n;
+  const digits = (negative ? -total : total).toString().padStart(decimals + 1, "0");
+  const whole = digits.slice(0, digits.length - decimals).replace(/\B(?=(\d{3})+$)/g, ",");
+  return { result: `${negative ? "-" : ""}${whole}${decimals ? `.${digits.slice(-decimals)}` : ""}`, operands };
+}
 
 /** Holds back a tag still arriving, so the status never shows on the page as it streams. */
-export function answerFilter(onText: (text: string) => void): { push(text: string): void; finish(): void; readonly status: AskStatusWord | null } {
+export function answerFilter(onText: (text: string) => void, known: (label: string) => boolean = () => true): { push(text: string): void; finish(): void; readonly status: AskStatusWord | null; readonly calculations: AskCalculation[] } {
   let held = "";
   let status: AskStatusWord | null = null;
+  const calculations: AskCalculation[] = [];
+  /** what the tag becomes: words it can't work out stay words */
+  const worked = (kind: string, body: string): string => {
+    if (kind.toLowerCase() === "count") {
+      const labels = [...new Set(body.match(/\bm\d+\b/g) ?? [])].filter(known);
+      const result = String(labels.length);
+      calculations.push({ result, operands: [], labels });
+      return result;
+    }
+    const sum = machineSum(body);
+    if (!sum) return body.trim();
+    calculations.push({ ...sum, labels: [] });
+    return sum.result;
+  };
   /** from the tag's opening, while one may be arriving: everything up to it is safe to show */
   const holdFrom = (): number => {
-    const opened = held.toLowerCase().indexOf(OPENING);
-    if (opened >= 0) return opened;
+    const lower = held.toLowerCase();
+    const opened = OPENINGS.map((o) => lower.indexOf(o)).filter((at) => at >= 0);
+    if (opened.length) return Math.min(...opened);
     const lt = held.lastIndexOf("<");
-    return lt >= 0 && OPENING.startsWith(held.slice(lt).toLowerCase()) ? lt : -1;
+    return lt >= 0 && OPENINGS.some((o) => o.startsWith(lower.slice(lt))) ? lt : -1;
   };
   const drain = (final: boolean) => {
     const found = STATUS.exec(held);
@@ -241,9 +295,11 @@ export function answerFilter(onText: (text: string) => void): { push(text: strin
       status = found[1]!.toLowerCase() as AskStatusWord;
       held = held.slice(0, found.index) + held.slice(found.index + found[0].length);
     }
-    const at = final ? -1 : holdFrom();
+    for (let calc = CALCULATION.exec(held); calc; calc = CALCULATION.exec(held)) held = held.slice(0, calc.index) + worked(calc[1]!, calc[2]!) + held.slice(calc.index + calc[0].length);
+    const at = holdFrom();
+    // cut off inside a tag: what it holds was never going to be an answer, and what's streamed can't be taken back
     const out = at >= 0 ? held.slice(0, at) : held;
-    held = at >= 0 ? held.slice(at) : "";
+    held = at >= 0 && !final ? held.slice(at) : "";
     if (out) onText(out);
   };
   return {
@@ -256,6 +312,9 @@ export function answerFilter(onText: (text: string) => void): { push(text: strin
     },
     get status() {
       return status;
+    },
+    get calculations() {
+      return calculations;
     },
   };
 }
@@ -271,10 +330,11 @@ export const cleanAnswer = (text: string): string =>
 
 export async function runAnswerFromMail(transport: ModelTransport, input: AnswerFromMailInput, options: AnswerFromMailOptions): Promise<AnswerFromMailResult> {
   let text = "";
+  const labels = new Set(input.material.map((m) => m.label));
   const filter = answerFilter((t) => {
     text += t;
     options.onDelta(t);
-  });
+  }, (label) => labels.has(label));
   const result = await streamCompletion(
     transport,
     { system: ASK_ANSWER_RULES, messages: [{ role: "user", content: answerPrompt(input) }], output: "text", maxTokens: options.maxTokens ?? ASK_ANSWER_MAX_TOKENS, signal: options.signal, effort: options.effort ?? "low" },
@@ -283,7 +343,7 @@ export async function runAnswerFromMail(transport: ModelTransport, input: Answer
   );
   filter.finish();
   if (result.stop === "refusal") throw new AiError(L("errors.ai.askRefused"), "refused");
-  return { text: cleanAnswer(text), status: filter.status ?? "answered", stop: result.stop, ...(result.usage ? { usage: result.usage } : {}) };
+  return { calculations: filter.calculations, text: cleanAnswer(text), status: filter.status ?? "answered", stop: result.stop, ...(result.usage ? { usage: result.usage } : {}) };
 }
 
 export const isAnswerRequest = (system: string): boolean => system.startsWith(ASK_ANSWER_RULES.slice(0, 40));

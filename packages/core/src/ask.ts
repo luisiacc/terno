@@ -203,6 +203,18 @@ export function hasUnlinkedSentence(text: string): boolean {
   return sentences.some((s) => !/\[\d+\]/.test(s));
 }
 
+/** A number whatever way it's written: 120,50 and 120.50 and 120.5 are one amount. */
+const foldNumber = (n: string): string => {
+  const dot = n.replace(",", ".");
+  return dot.includes(".") ? dot.replace(/\.?0+$/, "") : dot;
+};
+
+/** What a machine sum was given that no source holds: a true total of made-up amounts is still made up. */
+export function askOperandsMissing(operands: readonly string[], sources: readonly string[]): string[] {
+  const held = new Set(numbersIn(sources.join("\n")).map(foldNumber));
+  return operands.filter((n) => !held.has(foldNumber(n)));
+}
+
 /** The answer without its citations, to copy. */
 export const answerWithoutCitations = (text: string): string => text.replace(/\s*\[\d+\]/g, "").trim();
 
