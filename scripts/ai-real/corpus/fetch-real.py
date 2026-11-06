@@ -21,6 +21,7 @@ import html
 import http.client
 import json
 import mailbox
+import os
 import pathlib
 import re
 import sys
@@ -30,8 +31,9 @@ import urllib.request
 
 HOME = pathlib.Path.home() / ".terno-evals"
 DOWNLOADS = HOME / "downloads"
-OUT = HOME / "real-mail"
-SEED = "terno-corpus-1"
+# another seed draws a fresh sample, into its own folder, for a measure no prompt has been tuned on
+SEED = os.environ.get("TERNO_CORPUS_SEED", "terno-corpus-1")
+OUT = HOME / ("real-mail" if SEED == "terno-corpus-1" else f"real-mail-{SEED}")
 MAX_TEXT = 12_000
 USER_AGENT = "terno-eval-corpus/1 (research; one-off fetch of public list archives)"
 

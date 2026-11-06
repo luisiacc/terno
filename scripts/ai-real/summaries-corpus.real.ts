@@ -14,7 +14,8 @@ import { realKeys, realTransport, spendReport } from "./harness";
  * ~/.terno-evals/runs/<run>.jsonl for scoring and for a person to read. Real mail stays on this machine, so its results
  * do too. Needs the owner's go-ahead: TERNO_AI_SUMMARY_CORPUS=<run name>, and optionally:
  *
- * - TERNO_AI_SUMMARY_SETS: comma-separated sets (synthetic,enron,apache,python-es,debian-es); all by default
+ * - TERNO_AI_SUMMARY_SETS: comma-separated sets (synthetic,enron,apache,python-es,debian-es); all by default. A real
+ *   set from another seed is <folder>/<set>, as real-mail-fresh/enron
  * - TERNO_AI_SUMMARY_VARIANT: a file of JSON [[find, replace], …] applied to the system prompt, to try wording with no
  *   change to the code
  * - TERNO_AI_SUMMARY_MODEL: the model, GPT Luna by default
@@ -53,7 +54,7 @@ const readJsonl = (path: string): Conversation[] =>
 function load(sets: string[]): (Conversation & { set: string })[] {
   const out: (Conversation & { set: string })[] = [];
   for (const set of sets) {
-    const paths = set === "synthetic" ? readdirSync(SYNTHETIC).filter((f) => f.endsWith(".jsonl")).sort().map((f) => join(SYNTHETIC, f)) : [join(HOME, "real-mail", `${set}.jsonl`)];
+    const paths = set === "synthetic" ? readdirSync(SYNTHETIC).filter((f) => f.endsWith(".jsonl")).sort().map((f) => join(SYNTHETIC, f)) : [join(HOME, ...(set.includes("/") ? [] : ["real-mail"]), `${set}.jsonl`)];
     for (const path of paths) if (existsSync(path)) out.push(...readJsonl(path).map((c) => ({ ...c, set })));
   }
   return out;

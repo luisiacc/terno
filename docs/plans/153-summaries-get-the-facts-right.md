@@ -83,7 +83,7 @@ Of what shipped: no firm wrong fact in the 78 fictional conversations, and 4 in 
 
 On real mail alone, firm cards fell from 10 to 3 of 119. Accuracy didn't cost completeness: omissions fell too.
 
-**It isn't zero.** About 1 card in 40 has something both judges call wrong, and about 1 in 100 has something both call serious. What's left is mostly work addressed to someone else inside the same message ("J- please pull…" with the reader as C-, or the reader telling someone "forward it to me"), a deadline stretched from one item to the next, and small misreadings. The same message holding several people's tasks is the hardest case, and both judges suggest what might reach it: having the model say who owns each row before writing it. That's untested.
+**It isn't zero.** About 1 card in 40 has something both judges call wrong, and about 1 in 100 has something both call serious. What's left is mostly work addressed to someone else inside the same message ("J- please pull…" with the reader as C-, or the reader telling someone "forward it to me"), a deadline stretched from one item to the next, and small misreadings. The same message holding several people's tasks is the hardest case. Having the model say who owns each row was tried next, and it made things worse: see "Owner and evidence".
 
 **Rules not added,** measured first:
 
@@ -118,3 +118,25 @@ Codex raised 8 points on `1b75ed4b`. Six are fixed, each with a regression test.
 - **Only what will show is checked,** so a row that was going anyway costs no request.
 
 Left alone: a repaired reply that brings a new problem just loses that row, which is safe. "USA Today" is sent back once as a word that fades. 30% of a 2,000-token window fits the longest answer in rough tokens, with little to spare, but a window that small has no hidden reasoning to take from it.
+
+## Owner and evidence: tried, not shipped
+
+> you can go past the ceiling, and yes do try make the model do that if it improves something, you can run the eval
+
+Both judges had suggested it: before writing each row, the model fills in who owns it and copies the words of the mail that say so. Code then drops a row owned by someone else, or one whose words aren't in the message it cites. It ran under a separate ledger, by the owner's choice, on 100 real conversations newly drawn (`TERNO_CORPUS_SEED=fresh`) and the 80 hardest fictional ones. Against what's on `main`:
+
+| | Wrong, Claude / Codex | Firm | Owner errors, either judge | Key facts missing, Claude / Codex |
+|---|---:|---:|---:|---:|
+| On `main` | 10 / 5 | 2 | 1 | 4 / 36 |
+| Owner and evidence | 10 / 11 | 4 | 4 | 11 / 45 |
+
+The first try also had date rows saying only "Deadline for reply.", with the date in the field nobody sees. Rejecting those fixed that, and this table is the fixed version. It cost about 20% more per card.
+
+On the 20 conversations where an audit had caught an owner error, it removed 3 of the 6 still there, but on the fresh set it added more than it removed, and `marta-009` went away in one run and came back in the next. A model that's sure of the wrong owner writes the wrong owner into the field too. The field gives code nothing to check it against.
+
+**Not shipped.** The patch was against `ea70c398`, and the numbers above are the record: don't try this again without a new reason.
+
+**What this round says about `main`.** The same cards were audited twice, in two rounds, on mail the prompt never saw: wrong 8 / 9 then 10 / 5, firm 3 then 2. That spread is how noisy a judge is at these counts. On the 100 fresh real conversations, 0 or 1 cards were firm. Two fictional errors came up both times, and both are real: a certified copy read as the original (`graham-017`), and one direction's deadline moved onto another item in a long legal list (`graham-018`). Runs differ too, so one run of a conversation isn't its fate.
+
+**Not done:** a stronger model. Claude Sonnet 5.5 costs about 20 times as much and is untested. Whether it reads long threads better is the open question, at about $1.50 for this set.
+
