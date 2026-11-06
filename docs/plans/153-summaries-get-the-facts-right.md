@@ -1,4 +1,4 @@
-# Plan 154: Summaries get the facts right
+# Plan 153: Summaries get the facts right
 
 - **Status:** built and on `main`, code-reviewed. See "What the audits showed".
 - **Builds on:** plan 151 (who was asked, the corpus and how it's judged).
