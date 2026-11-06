@@ -55,7 +55,8 @@ def language_of(text: str) -> str:
 
 
 def score(run: str, rows: dict) -> dict:
-    results = [json.loads(l) for l in open(HOME / "runs" / f"{run}.jsonl", encoding="utf-8") if l.strip()]
+    # a run from before the corpus last changed can hold a conversation it no longer has
+    results = [r for r in (json.loads(l) for l in open(HOME / "runs" / f"{run}.jsonl", encoding="utf-8") if l.strip()) if r["id"] in rows]
     groups = collections.defaultdict(list)
     for r in results:
         groups[r["set"]].append(r)

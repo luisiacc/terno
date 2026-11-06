@@ -1,6 +1,6 @@
 # Plan 153: Summaries get the facts right
 
-- **Status:** built and on `main`, code-reviewed. See "What the audits showed".
+- **Status:** built and on `main`, code-reviewed, and audited on mail not used for tuning. Wrong facts are lower, and not zero: see "What the audits showed".
 - **Builds on:** plan 151 (who was asked, the corpus and how it's judged).
 
 ## The request
@@ -74,7 +74,16 @@ More thinking and a second pass didn't help, and the second pass doubles the tim
 
 Of what shipped: no firm wrong fact in the 78 fictional conversations, and 4 in the 72 real ones, 1 of them serious. No card obeyed a scam or injected text. Haiku is faster (1.9 s against 5.4 s) and costs about the same, and gets far more wrong, so summaries stay on GPT Luna.
 
-**It isn't zero.** About 1 card in 40 has something both judges call wrong, and about 1 in 150 has something both call serious. What's left is mostly misreading long technical threads: a sentence credited to the wrong setting, a title on the wrong person. Rules don't reach those.
+**The final audit: the committed code against version 4,** on 119 real conversations no judge had seen, and the 78 fictional ones.
+
+| | Wrong, Claude / Codex | Firm | Firm and high | Asks missing, Claude / Codex | Key facts missing, Claude / Codex |
+|---|---:|---:|---:|---:|---:|
+| Version 4 | 16 / 22 | 11 | 2 | 7 / 19 | 5 / 47 |
+| **What shipped** | 12 / 10 | 5 | 2 | 7 / 12 | 3 / 29 |
+
+On real mail alone, firm cards fell from 10 to 3 of 119. Accuracy didn't cost completeness: omissions fell too.
+
+**It isn't zero.** About 1 card in 40 has something both judges call wrong, and about 1 in 100 has something both call serious. What's left is mostly work addressed to someone else inside the same message ("J- please pull…" with the reader as C-, or the reader telling someone "forward it to me"), a deadline stretched from one item to the next, and small misreadings. The same message holding several people's tasks is the hardest case, and both judges suggest what might reach it: having the model say who owns each row before writing it. That's untested.
 
 **Rules not added,** measured first:
 
