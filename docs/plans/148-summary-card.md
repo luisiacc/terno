@@ -58,3 +58,10 @@ Codex (read-only, against the prototype) raised 4 points on this plan, all accep
 2. **Long unbroken text wraps.** A link or an id in a summary, an item or a status line was cut off by the panel's `overflow-hidden` or ran past the card. All three are `wrap-anywhere` now.
 3. **The surface check names each design's card.** "Differs from the page" would pass with no card at all. The test holds a fill in the tinted designs and an outline on no fill in Graphite.
 4. **The card's checks are `@design`.** `@variant` doesn't run in Graphite or Luma, and Graphite's card is the one that differs, so the geometry and surface checks are a test of their own in all five.
+
+## What the code review changed
+
+Codex raised 2 points on `f5158c85`, both fixed with a regression test.
+
+- **Focus can't jump after a click away.** With the new fallback, a click on the mail's text followed by an incoming reply moved focus to the toolbar: a click away blurs with no `relatedTarget`, just as a removed control does, so the block still thought it held focus. A click outside now ends that. The fallback stays for any way the card goes while it really holds focus, not only Stop, since the page is never the right place.
+- **A short status stays on one row.** The text's `16rem` basis was wider than the row at the minimum window, so "Summarizing…" and Stop split in two and the card lost its header's height. The text now takes its own width: a short status keeps its action beside it, and a long one sends it below.

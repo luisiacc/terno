@@ -75,11 +75,12 @@ function Ready({ summary }: { summary: AiSummary }) {
 /** The card's other states, its header's size: what's happening, and what the user can do about it. */
 function Line({ state, status, icon, actions, children }: { state: string; status?: boolean; icon?: React.ReactNode; actions?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div data-testid="summary-block" data-state={state} role={status ? "status" : undefined} className={cn(CARD, "flex items-start gap-1.5 px-3.5 py-2.5 text-sm text-muted-foreground")}>
+    <div data-testid="summary-block" data-state={state} role={status ? "status" : undefined} className={cn(CARD, "flex min-h-10 items-start gap-1.5 px-3.5 py-2.5 text-sm text-muted-foreground")}>
       {/* on the first line, however many the text takes */}
       <span className="flex h-[1lh] shrink-0 items-center">{icon ?? <Sparkles aria-hidden className={GLYPH} />}</span>
       <div className="flex min-w-0 flex-1 flex-wrap gap-x-3 gap-y-1">
-        <span className="min-w-0 flex-[1_1_16rem] wrap-anywhere">{children}</span>
+        {/* its own width: a short status keeps its action on the row, and a long one sends it below */}
+        <span className="min-w-0 flex-auto wrap-anywhere">{children}</span>
         {/* the 24 px buttons reach 2 px past the 20 px line, as the header's height holds them */}
         {actions && <span className="-my-0.5 ms-auto flex shrink-0 items-center gap-1.5">{actions}</span>}
       </div>
@@ -105,9 +106,17 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
     bodyArrivedForSummary(threadId);
   }, [threadId, sources]);
   // Stop goes away with the state it's in: focus stays with the block (its next control), or when that went too, the
-  // toolbar's button that started it; never on the page
+  // toolbar's button that started it; never on the page. Only while it's really here: a click away blurs with no
+  // relatedTarget, just as a removed control does, so a later change must not pull focus back from wherever the user went.
   const block = useRef<HTMLDivElement>(null);
   const hadFocus = useRef(false);
+  useEffect(() => {
+    const onPointerDown = (e: PointerEvent) => {
+      if (!block.current?.contains(e.target as Node)) hadFocus.current = false;
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, []);
   useLayoutEffect(() => {
     if (!hadFocus.current || document.activeElement !== document.body) return;
     hadFocus.current = false;

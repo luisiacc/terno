@@ -151,8 +151,8 @@ test.describe("summaries (plan 132)", () => {
     expect(inset).toBeGreaterThanOrEqual(12);
     expect((await page.getByTestId("summary-toggle").locator("svg").first().boundingBox())!.x - box.x).toBe(inset);
 
-    // the narrowest reader: a long link wraps, inside the card
-    await page.setViewportSize({ width: 1000, height: 700 });
+    // the minimum window: a long link wraps, inside the card
+    await page.setViewportSize({ width: 980, height: 600 });
     for (const text of [page.getByTestId("summary-text"), page.getByTestId("summary-item").first().locator("span").nth(1)]) {
       const fits = await text.evaluate((el) => el.scrollWidth <= el.clientWidth);
       expect(fits).toBe(true);
@@ -190,6 +190,10 @@ test.describe("summaries (plan 132)", () => {
       const block = page.getByTestId("summary-block");
       await expect(block).toHaveAttribute("data-state", "running");
       await expect(block).toContainText("Summarizing…");
+      // plan 148: at the minimum window a short status keeps its action on the row, the height of the card's header
+      await page.setViewportSize({ width: 980, height: 600 });
+      expect((await block.boundingBox())!.height).toBe(40);
+      await page.setViewportSize({ width: 1440, height: 900 });
       await page.getByTestId("summary-stop").click();
       await expect(block).toHaveCount(0);
       expect(await server.backend.store.aiSummaries.get(threadId)).toBeNull();
@@ -284,11 +288,17 @@ test.describe("summaries (plan 132)", () => {
       await page.getByTestId("action-summarize").click();
       await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "ready");
 
+      // the user clicked away from the card before it went: focus stays where they left it, not on the toolbar
+      await page.getByTestId("summary-toggle").focus();
+      await page.getByTestId("reader-subject").click();
+      await expect(page.getByTestId("summary-toggle")).not.toBeFocused();
+
       server.net.incoming.push(incoming(accountId, "Changing thread", { providerMsgId: "summary-next", rfcMessageId: "next@summary.test", inReplyTo: first.rfcMessageId, references: [first.rfcMessageId!], date: E2E_NOW - 20_000, bodyText: `${LONG} One more thing.` }));
       await server.backend.syncAccount(accountId);
       await expect(page.getByTestId("message")).toHaveCount(2);
       await expect(page.getByTestId("summary-block")).toHaveCount(0);
       const button = page.getByTestId("action-summarize");
+      await expect(button).not.toBeFocused();
       await expect(button).toHaveAttribute("aria-label", "Update summary");
       await button.click();
       await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "ready");
