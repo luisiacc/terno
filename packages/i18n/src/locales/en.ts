@@ -100,6 +100,7 @@ const en = {
   "remind.time": "Time",
   "remind.set": "Set reminder",
   "remind.past": "Pick a time in the future.",
+  "remind.fieldsFailed": "The date and time didn't load.",
   "remind.current": "Reminds you {when}",
   "remind.currentNoReply": "Reminds you {when} if they don't answer",
   "remind.clear": "Clear reminder",

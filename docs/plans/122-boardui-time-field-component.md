@@ -89,4 +89,9 @@ The first open took 306 ms every time, whatever the machine, and later opens 3 m
 - **Measured** on the e2e build, three runs of each: bell 306 → 8 ms, Send later 306 → 8 ms, both now in the popover's first frame; Custom with its time in the first frame. No long task.
 - `watchWhole` (`e2e/fixtures.ts`) checks the first open holds the picker from its first mutation, with no clock in it; it fails without this change.
 
+What the Codex review changed:
+
+1. **Custom before its fields:** Set and Schedule were enabled beside the blank line, and would have used a moment nobody saw. `useWhen`'s `ready` now needs the fields in.
+2. **A chunk that fails to load** left Custom silently empty. It now says "The date and time didn't load." with Retry, in the fields' place; the presets keep working (`when-lazy.test.tsx`).
+
 Left as they are: the other lazy dialogs (Settings, Filters, Shortcuts, Add account and others) wait the same 300 ms on their first open.
