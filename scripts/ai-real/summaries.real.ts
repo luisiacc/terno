@@ -23,8 +23,10 @@ describe.skipIf(process.env.TERNO_AI_LUNA !== "1")("summaries on GPT Luna", () =
     console.log("luna summary", r, spendReport());
     expect(r.summary.length).toBeLessThan(500);
     expect(r.summary).toMatch(/19/);
-    // plan 148: a row adds to the summary, so which kinds come back depends on what the summary already says
-    expect(r.items.length).toBeLessThanOrEqual(6);
+    // plan 148: a row adds to the summary, so what the mail asks may be in either; it has to be in one
+    const said = [r.summary, ...r.items.map((i) => i.text)].join(" ");
+    expect(said).toMatch(/contract/i);
+    expect(said).toMatch(/bank/i);
     expect(r.items.every((i) => i.message === "m3" || i.message === "m1")).toBe(true);
     const source = thread.map((m) => m.text).join(" ");
     for (const n of numbers([r.summary, ...r.items.map((i) => i.text)].join(" "))) expect(source).toContain(n.replace(/[.,]$/, ""));

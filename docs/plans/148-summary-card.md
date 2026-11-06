@@ -87,6 +87,15 @@ The screenshot was the offline fake, whose summary and question row came from th
 
 - **The prompt says so.** Items are what the summary leaves out, and when it says it all there are none. `SUMMARY_PROMPT_VERSION` goes to 3. Stored summaries aren't touched, by the owner's choice.
 - **The example follows it:** its row is now the contract, which its summary doesn't mention.
-- **The check holds it.** `validate` drops an item whose words are already in the summary, ignoring case, accents and punctuation, on word boundaries, before the limit of six, so the fake and every provider get it. It catches a literal repeat, not a paraphrase: that's the prompt's job, and whether it does the job on a real model hasn't been measured (`scripts/ai-real/summaries.real.ts` is gated and wasn't run).
+- **The check holds it.** `validate` drops a row of two or more words whose whole text is already in the summary, ignoring case and punctuation, on word boundaries, before the limit of six, so the fake and every provider get it. It catches a literal repeat, not a paraphrase: that's the prompt's job, and whether it does the job on a real model hasn't been measured (`scripts/ai-real/summaries.real.ts` is gated and wasn't run).
 
-That eval no longer requires both an action and a question, since a row now only comes back when the summary leaves it out.
+That eval now asks that what the mail wants is in the summary or a row, not that it comes back as a particular kind of row.
+
+**What the code review changed.** Codex raised 5 points, all in the check's first version, which dropped too much. Losing a row the reader needs is worse than showing one twice, so the check now leans the other way:
+
+- A row of one word stays: "May" isn't repeated by "we may proceed", and "Sí" isn't "si".
+- Currency symbols and accents count, so "pay $100" isn't "pay €100".
+- It compares the row before it's clipped, so clipping can't make a longer row look like a repeat.
+- The eval's first rewrite would have passed with no facts at all; it now checks them.
+
+Known and left alone: a summary over 800 characters is clipped, and a row could match the fragment at its end. A row of two or more words would have to line up with it exactly.

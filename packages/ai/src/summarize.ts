@@ -96,8 +96,17 @@ const clean = (text: string, max: number) => {
   return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
 };
 
-/** Case, accents and punctuation aside, on word boundaries: "19" isn't in "2019". */
-const words = (text: string) => ` ${text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()} `;
+/** Case and punctuation aside, on word boundaries: "19" isn't in "2019". Accents and currency mean something: "sí", "$100". */
+const words = (text: string) => ` ${text.normalize("NFC").toLowerCase().replace(/[^\p{L}\p{M}\p{N}\p{Sc}]+/gu, " ").trim()} `;
+
+/**
+ * The whole of a row, before it's clipped, already in the summary. One word proves nothing ("May" in "we may proceed"),
+ * and losing a row the reader needs is worse than showing one twice, so a row of one word stays.
+ */
+const repeats = (said: string, text: string) => {
+  const row = words(clean(text, Infinity));
+  return row.trim().includes(" ") && said.includes(row);
+};
 
 export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, ThreadSummaryResult> {
   // i18n-ignore: a caller's bug (the backend always passes messages)
@@ -116,9 +125,9 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
       const said = words(summary);
       // one citing a message that isn't there is dropped: never shown unlinked. One the summary already says adds nothing
       const items = w.items
-        .filter((i) => labels.has(i.message))
+        .filter((i) => labels.has(i.message) && !repeats(said, i.text))
         .map((i) => ({ kind: i.kind, text: clean(i.text, ITEM_MAX_CHARS), message: i.message }))
-        .filter((i) => i.text && !said.includes(words(i.text)))
+        .filter((i) => i.text)
         .slice(0, SUMMARY_MAX_ITEMS);
       return { ok: true, value: { summary, items } };
     },

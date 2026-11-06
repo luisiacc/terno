@@ -94,16 +94,24 @@ describe("what comes back", () => {
 
   it("plan 148: drops an item the summary already says, and it doesn't use up the six", async () => {
     const summary = "Ana proposes 19 March. ¿Te parece si lo cerramos esta semana?";
-    const said = ["¿Te parece si lo cerramos esta semana?", "te parece si lo cerramos ESTA semana", "19 March", "Ana"];
+    const said = ["¿Te parece si lo cerramos esta semana?", "te parece si lo cerramos ESTA semana", "19 March"];
     const fresh = Array.from({ length: 6 }, (_, i) => `Send item ${i}`);
     const t = scripted(() => wire({ summary, items: [...said, ...fresh].map((text) => ({ kind: "question", text, message: "m1" })) }));
     expect((await createAi(config(), { transport: t }).summarize(input())).items.map((i) => i.text)).toEqual(fresh);
   });
 
-  it("plan 148: keeps an item that only looks like part of a word in the summary, or says more than it", async () => {
-    const keep = ["19", "Ana proposes 19 March, by Friday", "Marc"];
-    const t = scripted(() => wire({ summary: "Sent in 2019 to Marcos: Ana proposes 19 March.", items: keep.map((text) => ({ kind: "date", text, message: "m1" })) }));
-    expect((await createAi(config(), { transport: t }).summarize(input())).items.map((i) => i.text)).toEqual(["Ana proposes 19 March, by Friday", "Marc"]);
+  it.each([
+    ["one word proves nothing", "We may proceed once the date is confirmed.", "May"],
+    ["nor one amount", "The budget is €100.", "$100"],
+    ["nor one word that differs by its accent", "Si necesitas algo, responde.", "Sí"],
+    ["part of a word isn't the word", "Sent in 2019 to Marcos: Ana proposes 19 March.", "Ana Marc"],
+    ["it says more than the summary", "Ana proposes 19 March.", "Ana proposes 19 March, by Friday"],
+    ["another currency is another amount", "Please pay €100.", "Please pay $100"],
+    ["an accent is another word", "Esta bien.", "Está bien"],
+    ["clipping a row doesn't make it a repeat", `${"word ".repeat(39)}end.`, `${"word ".repeat(39)}end but do not sign it yet, whatever Ana says`],
+  ])("plan 148: keeps an item when %s", async (_why, summary, text) => {
+    const t = scripted(() => wire({ summary, items: [{ kind: "date", text, message: "m1" }] }));
+    expect((await createAi(config(), { transport: t }).summarize(input())).items).toHaveLength(1);
   });
 
   it("an empty summary goes to the repair turn, and an unknown kind too", async () => {
