@@ -6,8 +6,8 @@ import type { StructuredTask } from "./ladder";
  * is frozen and versioned. Only `ownText` is the sender's own: everything else is material, and a closure must quote their
  * words (revision 1), so an instruction in what they answered can't close what they owe.
  */
-export const FOLLOWUP_PROMPT_VERSION = 4;
-export const FOLLOWUP_MAX_TOKENS = 1500;
+export const FOLLOWUP_PROMPT_VERSION = 5;
+export const FOLLOWUP_MAX_TOKENS = 2500;
 export const FOLLOWUP_RECIPIENTS_MAX = 20;
 export const FOLLOWUP_FILES_MAX = 10;
 export const FOLLOWUP_FILE_CHARS = 120;
@@ -15,7 +15,8 @@ export const FOLLOWUP_OPEN_MAX = 10;
 export const FOLLOWUP_SUBJECT_CHARS = 200;
 export const FOLLOWUP_OWN_CHARS = 1500 * 4;
 export const FOLLOWUP_ANSWERING_CHARS = 800 * 4;
-const FOLLOWUP_PROMISES_MAX = 3;
+/** A list of what they'll do is that many promises: what the next message can be shown as open. */
+const FOLLOWUP_PROMISES_MAX = FOLLOWUP_OPEN_MAX;
 const TEXT_CHARS = 200;
 const QUOTE_CHARS = 400;
 /** The ladder's schema, example and repair, on a server with no json_schema. */
