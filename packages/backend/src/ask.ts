@@ -285,8 +285,8 @@ export class AskService {
     if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
     for (const m of passages.messages) o.entry.accounts.add(m.accountId);
     const drafted = materialOf(passages.messages, o.p.timezone);
-    // the threads found hold more than the messages read: an answer about "how many" has to know
-    const moreMatch = passages.messages.length >= Math.min(ASK_MESSAGES_MAX, budget.maxMessages) || o.threadIds.length > new Set(passages.messages.map((m) => m.threadId)).size;
+    // threads the page didn't reach count too
+    const moreMatch = passages.omitted === true || o.threadIds.length > new Set(passages.messages.map((m) => m.threadId)).size;
     const fitted = fitAskPrompt({ question, today, material: drafted.material, earlier, moreMatch }, budget.promptChars);
     if (!fitted) throw new AiError(L("errors.ai.askTooSmall"), "unsupported");
     const { material } = fitted;
@@ -302,7 +302,7 @@ export class AskService {
     let raw = "";
     let sent = "";
     const result = await ai.answerFromMail(
-      { question, today, material, moreMatch, ...(fitted.earlier.length ? { earlier: fitted.earlier } : {}) },
+      { question, today, material, moreMatch: moreMatch || fitted.material.length < drafted.material.length, ...(fitted.earlier.length ? { earlier: fitted.earlier } : {}) },
       {
         signal,
         maxTokens: budget.outputTokens,

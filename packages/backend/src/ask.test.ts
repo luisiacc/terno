@@ -148,6 +148,13 @@ describe("from a question to an answer", () => {
     expect(r.turn!.checks.unsupported).toEqual(["4921", "https://evil.test/x"]);
   });
 
+  it("one thread holding more than it reads says so, or the model would call six the total", async () => {
+    const { model, put, ask } = await setup();
+    for (let i = 0; i < 10; i++) await put({ providerThreadId: "invoices", subject: "lease invoice", bodyText: `lease invoice ${i}` });
+    await ask("How many lease invoices?");
+    expect(promptText(model.answers.at(-1)!.messages[0]!.content)).toContain("More match than these.");
+  });
+
   it("not found keeps no citation: with no sources it would point at nothing", async () => {
     const { model, put, ask } = await setup();
     await put();

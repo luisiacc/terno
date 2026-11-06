@@ -46,6 +46,8 @@ export interface AskPassages {
   messages: AskSource[];
   /** some mail has no text here yet, or the work's limit was reached */
   incomplete: boolean;
+  /** matched, and not among these: an answer about "how many" has to know */
+  omitted?: boolean;
 }
 
 export interface AskHeader {
@@ -213,7 +215,8 @@ export async function readPassages(req: AskPassageRequest, io: AskPassageIo): Pr
     chars += body.length;
     messages.push({ messageId: m.id, threadId: m.threadId, accountId: m.accountId, fromName: m.fromName, fromEmail: m.fromEmail, subject: m.subject, date: m.date, own: m.own, text: body });
   }
-  return { messages, incomplete };
+  const omitted = incomplete || [...byThread.values()].some((list) => list.some((id) => !taken.has(id)));
+  return { messages, incomplete, omitted };
 }
 
 /** One turn as it's written: every field with a length, trimmed the same way in both stores (revision 11). */
