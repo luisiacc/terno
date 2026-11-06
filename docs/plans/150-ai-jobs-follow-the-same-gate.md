@@ -45,7 +45,7 @@ What a job has queued stays, as with any pause: mail that came in while off may 
 
 ## Tests
 
-`dev-ai.test.ts`:
+(See the revisions for what was narrowed.) `dev-ai.test.ts`:
 
 - **The one place:** with a provider saved and the switch off, every task but `filter` refuses and builds no client. On, they build. Off a local build, a saved provider builds as before, and no extra settings read.
 - **Each job, end to end, with the model counting requests:** the switch off and summaries, follow-ups, the digest, categorization and a prepared reply on: mail arrives, wakes run, no request. Then the switch on: it runs, without a restart.
@@ -62,10 +62,10 @@ Entitlements (plan 85). AI filters. Settings' switches staying visible: they're 
 
 ## Revisions after the Codex review
 
-Codex (read-only, against `78bfd84c`) raised 6 points. Four are accepted:
+Codex (read-only, against `78bfd84c`) raised 6 points. Three change the design, and one is recorded as it stands:
 
 1. **Prepared replies stored a refusal as a verdict.** Every error but a cancel or a limit wrote `failed`, and a thread with a `failed` row never tries again. `not_configured` now writes no row, so it can run once something is set up.
-2. **The voice learner's judgments wouldn't resume.** They refresh only after a mail pass, and nothing started one. A toggle now wakes the learner.
+2. **The voice learner's judgments don't resume at once, and that stands.** They refresh only after a pass, and a pass needs enough new mail or a rebuild. One skipped while off waits for the next pass, as a refresh is rare by design. Waking the learner wouldn't change it (the code review's one point: `force` only skips its throttle, so that first fix was removed).
 3. **`today.list` has its own check,** apart from `setting()`. Both go through `available()`.
 4. **A late refusal could pause what the toggle just woke.** `forTask` checks the epoch before it throws, and starts over.
 

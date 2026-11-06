@@ -1327,10 +1327,9 @@ export function createHandlers(b: Backend): Handlers {
             b.followups.settingsChanged(next);
             b.ask.settingsChanged(next.ask.enabled);
             b.aiAssist.targetChanged();
-            // plan 150: every job hears of it, and what it couldn't do while off comes up to date
+            // plan 150: the jobs added after plan 146 hear of it too
             b.replies.settingsChanged();
             b.today.settingsChanged();
-            b.writing.learner.wake({ force: true });
           }
           b.aiAssist.settingsChanged(patch);
           if (patch.ai && (patch.ai.provider !== undefined || patch.ai.model !== undefined || patch.ai.baseURL !== undefined || patch.ai.preset !== undefined || patch.ai.tasks)) b.aiService.configChanged();

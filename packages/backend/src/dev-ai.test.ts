@@ -95,11 +95,9 @@ describe("what runs follows what shows (plan 150)", () => {
     const { backend, on } = await start(ALL);
     const replies = vi.spyOn(backend.replies, "settingsChanged");
     const today = vi.spyOn(backend.today, "settingsChanged");
-    const learner = vi.spyOn(backend.writing.learner, "wake");
     await on();
     expect(replies).toHaveBeenCalled();
     expect(today).toHaveBeenCalled();
-    expect(learner).toHaveBeenCalledWith({ force: true });
   });
 
   it("a no read just before the switch came on doesn't arrive after it", async () => {
