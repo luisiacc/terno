@@ -36,7 +36,7 @@ import { SliceClock } from "@terno/store/autocomplete";
 
 /**
  * Plan 133 §2: how someone writes, worked out on this machine with no network and nothing spent. Runs in slices on
- * wake-ups that already happen, no timers, only once the feature has been used (the checkpoint exists from then on).
+ * wake-ups that already happen, no timers, whenever AI is available and the prefs want it (plan 157).
  *
  * - The revision log says what changed, as additions and removals from each account's window of newest sent mail.
  *   A log that was pruned past the checkpoint costs a walk of headers and the same comparison.
@@ -118,6 +118,8 @@ export interface VoiceLearnerHost {
   readonly platform: Pick<Platform, "yield">;
   now(): number;
   prefs(): Promise<WritingPrefs>;
+  /** plan 157: AI is here (Dev mode's switch on a local build, and a provider that can draft): without it, nothing runs */
+  available(): Promise<boolean>;
   /** the writing task's model, counted as the limiter's `voice` task */
   forVoice(): Promise<AiTasks>;
   begin(requestId: string, clientId: string): { signal: AbortSignal; release: () => void };
@@ -139,6 +141,9 @@ export function scrubbed(error: unknown): Error {
 }
 
 export const usesSentMail = (prefs: WritingPrefs, accountId: number): boolean => prefs.global.enabled && (prefs.accounts[String(accountId)]?.useSentMail ?? prefs.global.useSentMail);
+
+/** Whether anything here is to learn at all. */
+const wantsLearning = (prefs: WritingPrefs): boolean => prefs.global.enabled && (prefs.global.useSentMail || Object.values(prefs.accounts).some((a) => a.useSentMail));
 
 const passThreshold = (size: number) => Math.max(1, Math.min(20, Math.floor(size / 20)));
 
@@ -197,19 +202,36 @@ export class VoiceLearner {
     this.clock = new SliceClock({ yield: host.platform.yield, sliceMs: host.sliceMs ?? 3 });
   }
 
-  /** Boot: one setting read. Nothing runs unless the feature has been used. */
+  /** Boot: a few setting reads. With AI here it learns, or goes on learning; without it, nothing runs. */
   start(): Promise<void> {
     this.starting = (async () => {
       if (this.stopped) return;
       this.active = (await this.checkpoint()) !== null;
-      if (this.active) this.wake({ force: true });
+      await this.aiChanged();
     })();
     return this.starting;
   }
 
-  /** The feature was used, or its settings opened: from now on it stays on. */
+  /** Plan 157: AI came or went. Gone: what's running stops, and what was learned stays for when it's back. */
+  async aiChanged(): Promise<void> {
+    if (this.stopped) return;
+    try {
+      if (!(await this.host.available())) {
+        this.withdraw();
+        return;
+      }
+      if (wantsLearning(await this.host.prefs())) await this.activate();
+      this.wake({ force: true });
+    } catch (error) {
+      captureError(scrubbed(error), { code: "ai.failed" });
+    }
+  }
+
+  /** From now on it stays on, for as long as AI is here. */
   async activate(): Promise<void> {
     if (this.active || this.stopped) return;
+    const available = await this.host.available();
+    if (!available || this.active || this.stopped) return;
     this.active = true;
     if (!(await this.checkpoint())) {
       const head = await this.host.store.autocomplete.head();
@@ -277,6 +299,7 @@ export class VoiceLearner {
       if (!usesSentMail(before, a.id) && usesSentMail(after, a.id)) this.pendingForced.add(a.id);
     }
     if (before.global.useSentMail && !after.global.useSentMail) await store.writing.profiles.clearJudgments();
+    if (wantsLearning(after)) await this.activate();
     this.wake({ force: true });
   }
 
@@ -287,7 +310,7 @@ export class VoiceLearner {
     this.permission = new AbortController();
   }
 
-  /** Clear all: nothing learned stays, and it sleeps until the feature is used again. */
+  /** Clear all: nothing learned stays, and it sleeps until the next launch, or AI or the prefs change. */
   async clear(): Promise<void> {
     this.withdraw();
     this.active = false;
@@ -300,9 +323,11 @@ export class VoiceLearner {
   }
 
   async status(): Promise<WritingStatus> {
-    const [cp, prefs, study] = await Promise.all([this.checkpoint(), this.host.prefs(), this.host.store.settings.get<StudyConsent | null>(STUDY_KEY, null)]);
-    if (!prefs.global.enabled || !(prefs.global.useSentMail || Object.values(prefs.accounts).some((a) => a.useSentMail))) return { state: "off", messages: cp?.messages ?? 0, updatedAt: cp?.updatedAt ?? null, study };
+    const [cp, prefs, study, available] = await Promise.all([this.checkpoint(), this.host.prefs(), this.host.store.settings.get<StudyConsent | null>(STUDY_KEY, null), this.host.available()]);
+    if (!wantsLearning(prefs)) return { state: "off", messages: cp?.messages ?? 0, updatedAt: cp?.updatedAt ?? null, study };
     if (!cp) return { state: "idle", messages: 0, updatedAt: null, study };
+    // nothing is running, or about to, whatever the checkpoint says is due
+    if (!available) return { state: cp.updatedAt === null ? "idle" : "ready", messages: cp.messages, updatedAt: cp.updatedAt, study };
     const learning = this.running !== null || cp.forced.length > 0 || cp.updatedAt === null;
     return { state: learning ? "learning" : "ready", messages: cp.messages, updatedAt: cp.updatedAt, study };
   }
@@ -332,6 +357,7 @@ export class VoiceLearner {
     if (!store.isOpen) return;
     const epoch = this.epoch;
     const live = () => !this.stopped && epoch === this.epoch && store.isOpen;
+    if (!(await this.host.available()) || !live()) return;
     let cp = await this.checkpoint();
     if (!cp) return;
     const prefs = await this.host.prefs();
@@ -753,6 +779,8 @@ export class VoiceLearner {
   async study(p: { requestId: string; clientId: string; confirm?: { provider: string; accountIds: readonly number[]; destination?: string } }): Promise<WritingStudyResult> {
     // before anything is read: a withdrawal from here on stops it, and leaves no consent behind
     const epoch = this.epoch;
+    // without AI nothing was counted, and "nothing to study" would be the wrong thing to say: this one says why
+    if (!(await this.host.available())) await this.host.forVoice();
     await this.activate();
     const { store } = this.host;
     await this.idle();

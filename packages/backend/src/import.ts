@@ -435,6 +435,9 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
       settings = true;
     }
     const after = await readSettings(store);
+    // plan 157: an imported provider is AI coming or going
+    b.summaries.settingsChanged(after);
+    await b.writing.learner.aiChanged();
     if (after.localMode !== before.localMode || after.errorReports !== before.errorReports || after.language !== before.language) await b.publishPolicy();
     if (after.dockBadge !== before.dockBadge || after.notifications !== before.notifications || after.notificationPreview !== before.notificationPreview) await b.attention.refresh();
   }

@@ -24,6 +24,7 @@ import {
   scopeKeys,
   UNKNOWN_LOCAL_CAPACITY,
   voiceForLanguage,
+  writingCanRun,
   type Account,
   type AiComposeResult,
   type AiIntentResult,
@@ -48,6 +49,7 @@ import { RpcError, type ParsedParamsOf } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { GENERATIONS_MAX_ROWS, SearchCancelledError, summaryBlocked, type MailStore, type SummarySourceMessage, type ThreadContextMessage, type WritingProfileRow } from "@terno/store";
 import type { BackendCore as Backend } from "./core";
+import { aiAllowed, readSettings } from "./settings";
 import { toRpcError } from "./ai-service";
 import { withoutQuotes } from "./summaries";
 import { scrubbed, usesSentMail, VoiceLearner } from "./voice-learner";
@@ -205,6 +207,7 @@ export class WritingService {
       platform: b.platform,
       now: () => b.now(),
       prefs: () => readPrefs(b.store),
+      available: async () => (await aiAllowed(b.store)) && writingCanRun((await readSettings(b.store)).ai),
       forVoice: () => b.aiService.forTask("voice", { foreground: false }),
       begin: (requestId, clientId) => b.aiService.begin(requestId, clientId),
       studyProgress: (clientId, progress) => b.server.emitTo(clientId, "aiStudy", progress),

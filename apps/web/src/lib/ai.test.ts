@@ -1,3 +1,4 @@
+import { summaryCanRun, writingCanRun } from "@terno/core";
 import type { AiSettings, AppSettings } from "@terno/core/rpc";
 import { setLocale, t } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
@@ -49,6 +50,28 @@ describe("what the AI features offer (plan 147)", () => {
     expect(askOffered({ devAi: null, settings: settings(ownKey, { ask: { enabled: false } as AppSettings["ask"] }) })).toBe(false);
     expect(followupsOffered({ devAi: null, settings: settings(ownKey, { followups: { enabled: false } as AppSettings["followups"] }) })).toBe(false);
     expect(repliesOffered({ devAi: null, settings: settings(ownKey, { replies: { enabled: false } as AppSettings["replies"] }) })).toBe(false);
+  });
+});
+
+describe("what runs with no one asking (plan 157)", () => {
+  const set = (over: Partial<AiSettings>) => ai({ model: "m", tasks: {}, keys: {}, hasKey: false, keyConfirmed: true, ...over });
+  it("summaries: a task's own choice answers for itself, then an OpenAI key, then a local model; a paid provider nobody picked isn't one", () => {
+    expect(summaryCanRun(set({}))).toBe(false);
+    expect(summaryCanRun(set({ provider: "anthropic", hasKey: true }))).toBe(false);
+    expect(summaryCanRun(set({ provider: "ollama", local: true }))).toBe(true);
+    expect(summaryCanRun(set({ keys: { openai: { hasKey: true, keyHint: null } } }))).toBe(true);
+    expect(summaryCanRun(set({ tasks: { summary: { provider: "anthropic", model: "m" } }, keys: { anthropic: { hasKey: true, keyHint: null } } }))).toBe(true);
+    // its key went: an OpenAI key isn't where the user said this goes
+    expect(summaryCanRun(set({ tasks: { summary: { provider: "anthropic", model: "m" } }, keys: { openai: { hasKey: true, keyHint: null } } }))).toBe(false);
+  });
+  it("drafting: as the row's rule: a model chosen, its key, or a task's own choice", () => {
+    expect(writingCanRun(set({}))).toBe(false);
+    expect(writingCanRun(set({ provider: "ollama", local: true, model: " " }))).toBe(false);
+    expect(writingCanRun(set({ provider: "ollama", local: true }))).toBe(true);
+    expect(writingCanRun(set({ provider: "anthropic" }))).toBe(false);
+    expect(writingCanRun(set({ provider: "anthropic", hasKey: true }))).toBe(true);
+    expect(writingCanRun(set({ provider: "compatible", preset: "custom" }))).toBe(false);
+    expect(writingCanRun(set({ tasks: { writing: { provider: "anthropic", model: "m" } }, provider: "ollama", local: true }))).toBe(false);
   });
 });
 

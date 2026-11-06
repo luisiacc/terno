@@ -14,20 +14,82 @@ const rows = async (t: Awaited<ReturnType<typeof setup>>, accountId?: number) =>
 const checkpoint = (t: Awaited<ReturnType<typeof setup>>) => t.backend.store.settings.get<LearnerCheckpoint | null>(LEARNER_KEY, null);
 
 describe("waking", () => {
-  it("does nothing, reads nothing and sends nothing until the feature is used or its settings opened", async () => {
-    const t = await setup();
+  it("plan 157: without AI it reads nothing, sends nothing and makes no checkpoint, whoever asks; AI coming starts it with no click", async () => {
+    const t = await setup({ provider: "none" });
     await t.sentMany(30);
     const headers = vi.spyOn(t.backend.store.writing.corpus, "headers");
     t.backend.writing.learner.wake({ force: true });
-    await t.client.call("app.bootstrap", {});
-    await t.client.call("writing.prefs.get", {});
+    await t.client.call("writing.activate", {});
+    await t.client.call("writing.profiles.list", { limit: 10 });
+    await t.client.call("writing.prefs.set", { global: { useSentMail: true } });
     await t.backend.writing.learner.idle();
     expect(headers).not.toHaveBeenCalled();
     expect(await checkpoint(t)).toBeNull();
-    await t.client.call("writing.activate", {});
+    await t.client.call("settings.update", { ai: { provider: "fake" } });
+    await vi.waitFor(async () => expect(await checkpoint(t)).not.toBeNull());
     await t.backend.writing.learner.idle();
     expect(await rows(t)).toContain(`account:${t.account.id}||30`);
     expect(t.model.requests).toEqual([]);
+  });
+
+  it("plan 157: a launch with AI learns by itself; turned off, it doesn't", async () => {
+    const t = await setup({ keep: true, provider: "none" });
+    await t.sentMany(30);
+    await t.backend.store.settings.update("app", {}, (s: Record<string, unknown>) => ({ value: { ...s, ai: { provider: "fake" } }, result: undefined }));
+    await t.stop();
+    const again = await setup({ dir: t.dir, keep: true });
+    await vi.waitFor(async () => expect(await checkpoint(again)).not.toBeNull());
+    await again.backend.writing.learner.idle();
+    expect(await rows(again)).toContain(`account:${t.account.id}||30`);
+
+    const off = await setup({ keep: true, provider: "none" });
+    await off.sentMany(30);
+    await off.client.call("writing.prefs.set", { global: { useSentMail: false } });
+    await off.client.call("settings.update", { ai: { provider: "fake" } });
+    await off.backend.writing.learner.idle();
+    expect(await checkpoint(off)).toBeNull();
+    await off.client.call("writing.prefs.set", { global: { useSentMail: true } });
+    await off.backend.writing.learner.idle();
+    expect(await rows(off)).toContain(`account:${off.account.id}||30`);
+  });
+
+  it("plan 157: turning Draft with AI back on starts it too", async () => {
+    const t = await setup({ provider: "none" });
+    await t.sentMany(30);
+    await t.client.call("writing.prefs.set", { global: { enabled: false } });
+    await t.client.call("settings.update", { ai: { provider: "fake" } });
+    await t.backend.writing.learner.idle();
+    expect(await checkpoint(t)).toBeNull();
+    await t.client.call("writing.prefs.set", { global: { enabled: true } });
+    await t.backend.writing.learner.idle();
+    expect(await rows(t)).toContain(`account:${t.account.id}||30`);
+  });
+
+  it("plan 157: AI going stops what's running and keeps what was learned; status doesn't say it's learning", async () => {
+    const t = await setup();
+    await t.sentMany(30);
+    await t.learned();
+    const learned = await rows(t);
+    const headers = vi.spyOn(t.backend.store.writing.corpus, "headers");
+    await t.client.call("settings.update", { ai: { provider: "none" } });
+    await t.sentMany(30);
+    t.backend.writing.learner.wake({ force: true });
+    await t.backend.writing.learner.idle();
+    expect(headers).not.toHaveBeenCalled();
+    expect(await rows(t)).toEqual(learned);
+    // a pass was due when it went: nothing's about to run it
+    await t.backend.store.settings.set(LEARNER_KEY, { ...(await checkpoint(t))!, forced: [t.account.id] });
+    await expect(t.backend.writing.learner.status()).resolves.toMatchObject({ state: "ready" });
+  });
+
+  it("plan 157: an imported provider is AI coming: it learns", async () => {
+    const t = await setup({ provider: "none" });
+    await t.sentMany(30);
+    const file = await t.client.call("app.export", {});
+    await t.client.call("app.import", { data: { ...file, settings: { ...file.settings, ai: { provider: "fake" } } } } as never);
+    await vi.waitFor(async () => expect(await checkpoint(t)).not.toBeNull());
+    await t.backend.writing.learner.idle();
+    expect(await rows(t)).toContain(`account:${t.account.id}||30`);
   });
 
   it("after that it comes back on its own at the next start, resuming with no request from anyone", async () => {

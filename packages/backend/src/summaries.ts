@@ -36,6 +36,8 @@ export interface SummaryHost {
   readonly store: MailStore;
   now(): number;
   settings(): Promise<AppSettings>;
+  /** plan 157: the switch, and AI being there at all: off, nothing is marked, queued or sent */
+  runs(settings: AppSettings): boolean;
   forTask(o: { foreground: boolean }): Promise<AiTasks>;
   begin(requestId: string, clientId: string): { signal: AbortSignal; release: () => void };
   acknowledge(provider: AiProviderId): Promise<void>;
@@ -187,9 +189,11 @@ export class SummaryWorker {
   }
 
   async start(): Promise<void> {
-    this.active = (await this.host.settings()).summaries.enabled;
+    this.active = this.host.runs(await this.host.settings());
     if (this.stopped) return;
     if (this.active) this.wake();
+    // what a quit left queued can't wait for AI to come back: that would send mail from before it
+    else void this.host.store.aiSummaries.dropPending().catch(() => {});
   }
 
   stop(): void {
@@ -217,9 +221,9 @@ export class SummaryWorker {
     });
   }
 
-  /** Settings changed: a key or a provider may unblock it; off drops the queue and what's running. */
+  /** Settings changed: a key or a provider may unblock it; off, or AI gone, drops the queue and what's running. */
   settingsChanged(settings: AppSettings): void {
-    const on = settings.summaries.enabled;
+    const on = this.host.runs(settings);
     const off = this.active && !on;
     this.active = on;
     this.paused = null;
@@ -289,7 +293,7 @@ export class SummaryWorker {
   private async consider(row: AiSummaryRow, generation: AbortController): Promise<"next" | "stop"> {
     const { store } = this.host;
     const settings = await this.host.settings();
-    if (!settings.summaries.enabled) return "stop";
+    if (!this.host.runs(settings)) return "stop";
     const sources = await store.aiSummaries.sources(row.threadId);
     // a cascade took the row with the thread
     if (!sources) return "next";

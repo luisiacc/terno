@@ -32,7 +32,7 @@ afterEach(async () => {
 
 const replying = (body: unknown = ANSWER): Completion => ({ text: JSON.stringify(body), stop: "end" });
 
-async function setup(o: { enabled?: boolean; provider?: "fake" | "none"; dir?: string; keep?: boolean; at?: number; devAi?: { openai: string } } = {}) {
+async function setup(o: { enabled?: boolean | "default"; provider?: "fake" | "none"; dir?: string; keep?: boolean; at?: number; devAi?: { openai: string } } = {}) {
   const dir = o.dir ?? mkdtempSync(join(tmpdir(), "terno-summaries-"));
   const model: Model = { requests: [], configs: [], answer: () => replying() };
   const clock = { now: o.at ?? START };
@@ -61,7 +61,8 @@ async function setup(o: { enabled?: boolean; provider?: "fake" | "none"; dir?: s
   const mcp = connect("mcp", "mcp");
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@terno.test", displayName: "Me", color: "indigo", now: 0 });
   if ((o.provider ?? "fake") === "fake") await client.call("settings.update", { ai: { provider: "fake" } });
-  if (o.enabled ?? true) await client.call("settings.update", { summaries: { enabled: true } });
+  // "default": nobody touched the switch. A later launch of the same profile keeps what it saved.
+  if (o.enabled !== "default" && !(o.enabled === false && o.dir)) await client.call("settings.update", { summaries: { enabled: o.enabled ?? true } });
   await settle();
   let stopped = false;
   const stop = async () => {
@@ -411,16 +412,21 @@ describe("the queue's states", () => {
     expect(await row(a.thread)).toMatchObject({ state: "failed", errorKind: kind });
   });
 
-  it("plan 150: Dev mode's switch off: new mail waits and nothing is asked, whatever is saved; on, it goes, with no restart", async () => {
-    const { arrive, backend, client, model, read } = await setup({ devAi: { openai: "env-openai" } });
-    const { thread } = await arrive();
+  it("plans 150, 157: Dev mode's switch off: new mail queues nothing and nothing is asked, whatever is saved; on, new mail goes with no restart, and what came before stays out", async () => {
+    const { arrive, backend, client, model, read, row } = await setup({ devAi: { openai: "env-openai" } });
+    expect(backend.summaries.isActive).toBe(false);
+    const before = await arrive();
     await settle();
     expect(model.requests).toHaveLength(0);
-    await expect(backend.summaries.status()).resolves.toMatchObject({ pending: 1, blockedBy: { kind: "not_configured", message: expect.stringContaining("Dev mode") } });
+    expect(await row(before.thread)).toBeNull();
+    await expect(backend.summaries.status()).resolves.toMatchObject({ pending: 0, blockedBy: null });
     await client.call("settings.update", { devAi: true });
+    expect(backend.summaries.isActive).toBe(true);
+    const { thread } = await arrive();
     await vi.waitFor(async () => expect((await read(thread)).state).toBe("ready"));
     expect(model.requests).toHaveLength(1);
     expect(model.configs.at(-1)).toMatchObject({ id: "openai", apiKey: "env-openai" });
+    expect(await row(before.thread)).toBeNull();
   });
 
   it.each([["auth"], ["not_configured"], ["blocked"]] as const)("%s: paused with no attempt spent; a change in settings resumes it", async (kind) => {
@@ -884,26 +890,103 @@ describe("by hand", () => {
 });
 
 describe("settings", () => {
-  it("is off by default, and an import never turns it on", async () => {
-    const { client, backend } = await setup({ enabled: false });
-    const before = await client.call("app.bootstrap", {});
-    expect(before.settings.summaries).toEqual({ enabled: false, enabledAt: null, acknowledged: [] });
+  it("is on by default, and an import never changes that, nor a switch someone turned off", async () => {
+    const { client, backend } = await setup({ enabled: "default" });
+    const on = { enabled: true, enabledAt: null, acknowledged: [] };
+    expect((await client.call("app.bootstrap", {})).settings.summaries).toEqual(on);
+    expect(backend.summaries.isActive).toBe(true);
     const exported = await client.call("app.export", {});
-    const file = { ...exported, settings: { ...exported.settings, summaries: { enabled: true, enabledAt: 1, acknowledged: ["openai"] } } };
-    await client.call("app.import", { data: file } as never);
-    expect((await client.call("app.bootstrap", {})).settings.summaries).toEqual({ enabled: false, enabledAt: null, acknowledged: [] });
-    expect(backend.summaries.isActive).toBe(false);
+    await client.call("app.import", { data: { ...exported, settings: { ...exported.settings, summaries: { enabled: false, enabledAt: null, acknowledged: ["openai"] } } } } as never);
+    expect((await client.call("app.bootstrap", {})).settings.summaries).toEqual(on);
+
+    const off = await setup({ enabled: false });
+    const file = await off.client.call("app.export", {});
+    await off.client.call("app.import", { data: { ...file, settings: { ...file.settings, summaries: { enabled: true, enabledAt: 1, acknowledged: ["openai"] } } } } as never);
+    expect((await off.client.call("app.bootstrap", {})).settings.summaries).toEqual({ enabled: false, enabledAt: null, acknowledged: [] });
+    expect(off.backend.summaries.isActive).toBe(false);
   });
 
   it("off and on again starts over from the moment it went on", async () => {
-    const { client, clock } = await setup();
-    const first = (await client.call("app.bootstrap", {})).settings.summaries.enabledAt;
-    expect(first).toBe(START);
+    const { client, clock } = await setup({ enabled: "default" });
+    expect((await client.call("app.bootstrap", {})).settings.summaries.enabledAt).toBeNull();
     clock.now += 5000;
     await client.call("settings.update", { summaries: { enabled: true } });
-    expect((await client.call("app.bootstrap", {})).settings.summaries.enabledAt).toBe(START);
+    expect((await client.call("app.bootstrap", {})).settings.summaries.enabledAt).toBeNull();
     await client.call("settings.update", { summaries: { enabled: false } });
     await client.call("settings.update", { summaries: { enabled: true } });
     expect((await client.call("app.bootstrap", {})).settings.summaries.enabledAt).toBe(START + 5000);
+  });
+
+  describe("plan 157: it follows AI", () => {
+    it("with no provider it does nothing; a provider starts it with no backfill; going away drops the queue", async () => {
+      const { client, backend, model, arrive, row } = await setup({ enabled: "default", provider: "none" });
+      expect(backend.summaries.isActive).toBe(false);
+      const before = await arrive();
+      await settle();
+      expect(await row(before.thread)).toBeNull();
+
+      await client.call("settings.update", { ai: { provider: "fake" } });
+      expect(backend.summaries.isActive).toBe(true);
+      await settle();
+      expect(model.requests).toHaveLength(0);
+      const after = await arrive();
+      await until(async () => expect((await row(after.thread))?.state).toBe("ready"));
+      expect(await row(before.thread)).toBeNull();
+
+      const stuck = gate();
+      model.answer = (req) => held(req, stuck.opened);
+      const waiting = await arrive();
+      await until(() => expect(model.requests).toHaveLength(2));
+      await client.call("settings.update", { ai: { provider: "none" } });
+      expect(backend.summaries.isActive).toBe(false);
+      await until(async () => expect(await row(waiting.thread)).toBeNull());
+    });
+
+    it("a paid provider nobody picked for summaries isn't where they go: nothing queues until someone picks it", async () => {
+      const { client, backend, arrive, row } = await setup({ enabled: "default", provider: "none" });
+      await client.call("settings.update", { ai: { provider: "anthropic", baseURL: "http://127.0.0.1:9" } });
+      await backend.setSecret("ai:anthropic:apiKey", "sk-ant-not-a-real-key-0000");
+      backend.summaries.settingsChanged((await client.call("app.bootstrap", {})).settings as never);
+      expect(backend.summaries.isActive).toBe(false);
+      const { thread } = await arrive();
+      await settle();
+      expect(await row(thread)).toBeNull();
+    });
+
+    it("someone's own off stays off, through AI coming and going", async () => {
+      const { client, backend } = await setup({ enabled: false, provider: "none" });
+      await client.call("settings.update", { ai: { provider: "fake" } });
+      expect(backend.summaries.isActive).toBe(false);
+      expect((await client.call("app.bootstrap", {})).settings.summaries.enabled).toBe(false);
+    });
+
+    it("a launch without AI clears what a quit left queued, so AI coming back sends nothing old", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "terno-summaries-"));
+      cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+      const first = await setup({ dir, keep: true, enabled: "default" });
+      const gone = gate();
+      first.model.answer = (req) => held(req, gone.opened);
+      const { thread } = await first.arrive();
+      await until(() => expect(first.model.requests).toHaveLength(1));
+      // written straight in: a key gone from the environment, say, which no running backend hears of
+      await first.backend.store.settings.update("app", {}, (s: Record<string, unknown>) => ({ value: { ...s, ai: { provider: "none" } }, result: undefined }));
+      await first.stop();
+      const next = await setup({ dir, keep: true, enabled: "default", provider: "none" });
+      // what a host does at start
+      await next.backend.summaries.start();
+      await settle();
+      await next.client.call("settings.update", { ai: { provider: "fake" } });
+      await settle();
+      expect(next.model.requests).toHaveLength(0);
+      expect(await next.row(thread)).toBeNull();
+    });
+
+    it("an imported provider is AI coming: it starts", async () => {
+      const { client, backend } = await setup({ enabled: "default", provider: "none" });
+      const file = await client.call("app.export", {});
+      await client.call("app.import", { data: { ...file, settings: { ...file.settings, aiProvider: "fake", ai: { provider: "fake" } } } } as never);
+      expect((await client.call("app.bootstrap", {})).settings.ai.provider).toBe("fake");
+      expect(backend.summaries.isActive).toBe(true);
+    });
   });
 });

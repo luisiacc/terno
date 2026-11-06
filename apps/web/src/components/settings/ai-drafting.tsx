@@ -4,11 +4,12 @@ import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Switch } from "@terno/ui/components/switch";
 import { useEffect, useState } from "react";
-import { modelName, providerLabel, writingTarget } from "~/lib/ai";
+import { draftingOffered, modelName, providerLabel, writingTarget } from "~/lib/ai";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { isMac } from "~/lib/select";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
+import { useApp } from "~/state/app";
 import { CommitInput, SettingsGroup, SettingsNote, SettingsRow, type SettingsUpdate } from "./parts";
 
 /** Plan 133 §7: what the renderer reads through `writing.prefs.*`, never `AppSettings`: nothing here reaches MCP. */
@@ -34,12 +35,13 @@ function writingModel(ai: AppSettings["ai"]): string {
   return ai.tasks.writing?.model ?? (ai.provider === "anthropic" ? WRITING_CLAUDE_MODEL : ai.model);
 }
 
-/** Settings → AI → Drafting. It starts nothing: the local learner runs from the first draft or the Writing style page, not from looking at the AI tab. */
+/** Settings → AI → Drafting. It starts nothing: the local learner follows AI being here (plan 157), not looking at this tab. */
 export function DraftingGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const { ai } = settings;
   const repliesOn = settings.replies?.enabled === true;
   const [prefs, save] = usePrefs();
   const target = writingTarget(ai);
+  const offered = useApp(draftingOffered);
   return (
     <SettingsGroup title={t("aiDraft.settings.title")} testId="ai-drafting">
       <SettingsRow label={t("aiDraft.settings.enabled")} hint={t("aiDraft.settings.enabledHint", { key: isMac ? "⌘J" : "Ctrl+J" })}>
@@ -50,9 +52,12 @@ export function DraftingGroup({ settings, update }: { settings: AppSettings; upd
           <SettingsRow stacked labelFor label={t("aiDraft.settings.instructions")} hint={t("aiDraft.settings.instructionsHint")}>
             {(a) => <CommitInput multiline a11y={a} data-testid="ai-drafting-instructions" value={prefs?.global.instructions ?? ""} placeholder={t("aiDraft.settings.instructionsPlaceholder")} maxLength={WRITING_INSTRUCTIONS_MAX} onCommit={(instructions) => save({ global: { instructions } })} />}
           </SettingsRow>
-          <SettingsRow label={t("aiDraft.settings.sentMail")} hint={t("aiDraft.settings.sentMailHint")}>
-            {(a) => <Switch {...a} checked={prefs?.global.useSentMail ?? true} data-testid="ai-drafting-sent-mail" onCheckedChange={(useSentMail) => void save({ global: { useSentMail } }).catch(failed)} />}
-          </SettingsRow>
+          {/* plan 157: on with AI; without it the setting does nothing, so it isn't here */}
+          {offered && (
+            <SettingsRow label={t("aiDraft.settings.sentMail")} hint={t("aiDraft.settings.sentMailHint")}>
+              {(a) => <Switch {...a} checked={prefs?.global.useSentMail ?? true} data-testid="ai-drafting-sent-mail" onCheckedChange={(useSentMail) => void save({ global: { useSentMail } }).catch(failed)} />}
+            </SettingsRow>
+          )}
           <SettingsRow label={t("replies.settings.switch")} hint={target.provider === "none" ? t("replies.settings.noProvider") : t("replies.settings.hint", { provider: providerLabel(target.provider, ai) })} testId="replies-setting">
             {(a) => <Switch {...a} checked={repliesOn} disabled={target.provider === "none"} data-testid="replies-switch" onCheckedChange={(enabled) => void update({ replies: { enabled } })} />}
           </SettingsRow>

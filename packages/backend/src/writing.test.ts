@@ -2,7 +2,6 @@
  * Plan 133 §5, §6 and §8 through the real backend, with a scripted model: nothing leaves this process.
  */
 import { AiError, COMPOSE_MAX_TOKENS, WRITING_RULES, type CompletionRequest } from "@terno/ai";
-import { MIN_SAMPLES } from "@terno/core";
 import { setDiagSink } from "@terno/core/diag";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { scrubbed, STUDY_KEY } from "./voice-learner";
@@ -719,13 +718,13 @@ describe("nothing reaches MCP, bootstrap, account events, diagnostics or the log
     expect(await t.backend.store.settings.get(PREFS_KEY, null)).not.toBeNull();
   });
 
-  it("no provider and no study means no network at all", async () => {
+  it("no provider and no study means no network at all, and plan 157: nothing counted either", async () => {
     const t = await setup({ provider: "none" });
     await t.sentMany(30);
     await t.learned();
     expect(t.model.requests).toEqual([]);
     expect(await t.backend.store.settings.get(STUDY_KEY, null)).toBeNull();
-    expect((await t.backend.store.writing.profiles.list({ limit: 5 })).length).toBeGreaterThanOrEqual(MIN_SAMPLES.person > 0 ? 1 : 0);
+    expect(await t.backend.store.writing.profiles.list({ limit: 5 })).toEqual([]);
   });
 });
 

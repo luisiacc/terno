@@ -150,7 +150,8 @@ export const DEFAULT_SETTINGS: General = {
   autoCategorize: "auto",
   aiCategorize: false,
   aiCategorizeWidened: false,
-  summaries: { enabled: false, enabledAt: null, acknowledged: [] },
+  // plan 157: on with AI; the worker reads `summaryCanRun` and the switch, so this alone sends nothing
+  summaries: { enabled: true, enabledAt: null, acknowledged: [] },
   ask: { enabled: true, acknowledged: [] },
   replies: { enabled: false },
   today: DEFAULT_TODAY,

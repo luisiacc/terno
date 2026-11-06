@@ -1,4 +1,4 @@
-import { aiFeaturesAvailable, ASK_CLAUDE_MODEL, DIGEST_CLAUDE_MODEL, DIGEST_OPENAI_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type AiErrorKind, type AiProviderId, type CompatiblePreset, type OutputMode } from "@terno/core";
+import { aiFeaturesAvailable, aiReady, ASK_CLAUDE_MODEL, chosenTargetReady, DIGEST_CLAUDE_MODEL, DIGEST_OPENAI_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type AiErrorKind, type AiProviderId, type CompatiblePreset, type OutputMode } from "@terno/core";
 import type { AiSettings, AppSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 
@@ -85,17 +85,7 @@ export function providerName(ai: Pick<AiSettings, "provider" | "preset" | "local
   return choiceLabel(choiceOf(ai));
 }
 
-/**
- * The AI can really run: a provider and a model chosen, and its key saved (readable, for this endpoint) when it
- * needs one. AI features are offered only then; otherwise they could only fail.
- */
-export function aiReady(ai: AiSettings | null | undefined): ai is AiSettings {
-  if (!ai || ai.provider === "none" || !ai.model.trim()) return false;
-  // as the backend: a saved key it can't open fails every provider, required or not; a compatible one needs its server
-  if (ai.keyUnreadable || (ai.provider === "compatible" && !endpointOf(ai))) return false;
-  const keyed = ai.provider === "anthropic" || ai.provider === "openai" || (ai.provider === "compatible" && (ai.preset ?? "custom") !== "custom");
-  return !keyed || (ai.hasKey && ai.keyConfirmed);
-}
+export { aiReady };
 
 /**
  * Plan 131 §2 and plan 132 §2: what summaries run on, by the same rule as the backend's `AiService.targetFor`. A
@@ -132,21 +122,18 @@ export function digestTarget(ai: AiSettings): { provider: AiProviderId; model: s
   return { provider: ai.provider, model: ai.provider === "anthropic" ? DIGEST_CLAUDE_MODEL : ai.provider === "openai" ? DIGEST_OPENAI_MODEL : ai.model };
 }
 
-/** A task's own choice can go: the backend never falls back from one to anything else. */
-const chosenReady = (ai: AiSettings, chosen: { provider: AiProviderId }): boolean => chosen.provider !== "none" && (LOCAL_PROVIDERS.includes(chosen.provider) || chosen.provider === "compatible" || ai.keys[chosen.provider]?.hasKey === true);
-
 /** Whether a question can go: Ask's own target if it has one, whatever the main provider is. */
 export function askReady(ai: AiSettings | null | undefined): boolean {
   if (!ai) return false;
   const chosen = ai.tasks.ask;
-  return chosen ? chosenReady(ai, chosen) : aiReady(ai);
+  return chosen ? chosenTargetReady(ai, chosen) : aiReady(ai);
 }
 
 /** Whether a summary has somewhere to go, or a provider to ask about (`summaryTarget`'s "ask": the block then says where). */
 export function summaryReady(ai: AiSettings | null | undefined): boolean {
   if (!ai) return false;
   const chosen = ai.tasks.summary;
-  return chosen ? chosenReady(ai, chosen) : ai.keys.openai?.hasKey === true || aiReady(ai);
+  return chosen ? chosenTargetReady(ai, chosen) : ai.keys.openai?.hasKey === true || aiReady(ai);
 }
 
 const LOCAL_PROVIDERS: readonly AiProviderId[] = ["ollama", "lmstudio", "fake"];

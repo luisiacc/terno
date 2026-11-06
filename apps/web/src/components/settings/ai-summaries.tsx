@@ -7,12 +7,12 @@ import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
 import { useEffect, useState } from "react";
-import { digestTarget, askTarget, errorHelp, followupTarget, modelName, providerLabel, summaryTarget } from "~/lib/ai";
+import { digestTarget, askTarget, errorHelp, followupTarget, modelName, providerLabel, summariesOffered, summaryTarget } from "~/lib/ai";
 import { reconcileSettings } from "~/lib/appearance";
 import { localized } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
-import { setApp } from "~/state/app";
+import { setApp, useApp } from "~/state/app";
 import { CommitInput, SettingsGroup, SettingsNote, SettingsRow, type SettingsUpdate } from "./parts";
 
 /** The providers summaries may run on here: what has a key, and what's set up as the configured one. */
@@ -277,7 +277,7 @@ export function DigestGroup({ settings, update }: { settings: AppSettings; updat
   );
 }
 
-/** Plan 132 §2 and §6: turning summaries on, where they run, and why they've stopped, findable here. */
+/** Plan 132 §2 and §6: where summaries run, and why they've stopped. The switch only with AI (plan 157); the row below is how someone gets it. */
 export function SummariesGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const { ai, summaries } = settings;
   const target = summaryTarget(ai);
@@ -289,13 +289,16 @@ export function SummariesGroup({ settings, update }: { settings: AppSettings; up
   }, [summaries.enabled, ai.tasks.summary?.provider, ai.keys.openai?.hasKey]);
   const blocked = status?.blockedBy;
   const help = blocked ? errorHelp(blocked.limit ? undefined : blocked.kind, ai) : status?.lastError ? errorHelp(status.lastError, ai) : null;
+  const offered = useApp(summariesOffered);
   return (
     <SettingsGroup title={t("ai.summaries.title")} testId="ai-summaries">
-      <SettingsRow label={t("ai.summaries.switch")} hint={target.state === "ready" ? t("ai.summaries.hint", { provider: providerLabel(target.provider, ai) }) : t("ai.summaries.hintNoProvider")}>
-        {(a) => <Switch {...a} checked={summaries.enabled} disabled={target.state !== "ready" && !summaries.enabled} data-testid="ai-summaries-switch" onCheckedChange={(enabled) => void update({ summaries: { enabled } })} />}
-      </SettingsRow>
+      {offered && (
+        <SettingsRow label={t("ai.summaries.switch")} hint={target.state === "ready" ? t("ai.summaries.hint", { provider: providerLabel(target.provider, ai) }) : t("ai.summaries.hintNoProvider")}>
+          {(a) => <Switch {...a} checked={summaries.enabled} disabled={target.state !== "ready" && !summaries.enabled} data-testid="ai-summaries-switch" onCheckedChange={(enabled) => void update({ summaries: { enabled } })} />}
+        </SettingsRow>
+      )}
       <TargetRow ai={ai} update={update} />
-      {summaries.enabled && (blocked || status?.lastError) && (
+      {offered && summaries.enabled && (blocked || status?.lastError) && (
         <SettingsNote testId="ai-summaries-status">
           <span role="status" className="text-destructive-ink">{blocked ? localized(blocked.message, blocked.i18n) : t("ai.summaries.lastError")}</span>
           {help && <span> {help}</span>}

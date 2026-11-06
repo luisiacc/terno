@@ -103,6 +103,21 @@ test("Plan 147: the switch off, no AI feature shows, whatever the profile has sa
 
   await toggle();
   await hidden();
+
+  // plan 157: the two that come on with AI: nowhere with the switch off, and on with it on
+  const aiTab = async () => {
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-ai").click();
+    await expect(page.getByTestId("ai-tab")).toBeVisible();
+  };
+  await aiTab();
+  await expect(page.getByTestId("ai-summaries-switch")).toHaveCount(0);
+  await expect(page.getByTestId("ai-drafting-sent-mail")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await toggle();
+  await aiTab();
+  await expect(page.getByTestId("ai-summaries-switch")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("ai-drafting-sent-mail")).toHaveAttribute("aria-checked", "true");
 });
 
 test.describe("without a local build", () => {

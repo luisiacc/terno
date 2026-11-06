@@ -1330,11 +1330,13 @@ export function createHandlers(b: Backend): Handlers {
             // plan 150: the jobs added after plan 146 hear of it too
             b.replies.settingsChanged();
             b.today.settingsChanged();
+            void b.writing.learner.aiChanged();
           }
           b.aiAssist.settingsChanged(patch);
           if (patch.ai && (patch.ai.provider !== undefined || patch.ai.model !== undefined || patch.ai.baseURL !== undefined || patch.ai.preset !== undefined || patch.ai.tasks)) b.aiService.configChanged();
           // plan 132: turned off, nothing further goes; a change may unblock what was paused
           if (patch.ai || patch.summaries) b.summaries.settingsChanged(next);
+          if (patch.ai) void b.writing.learner.aiChanged();
           if (patch.ask) b.ask.settingsChanged(next.ask.enabled);
           if (patch.ai || patch.replies) b.replies.settingsChanged();
           if (patch.ai || patch.today) b.today.settingsChanged();
@@ -1371,6 +1373,7 @@ export function createHandlers(b: Backend): Handlers {
       b.ask.settingsChanged(next.ask.enabled);
       // plan 134: a JEV key chooses where categorization runs
       b.aiAssist.targetChanged();
+      void b.writing.learner.aiChanged();
       return next;
     },
     "ai.cancel": ({ requestId }, ctx) => {
@@ -1384,6 +1387,7 @@ export function createHandlers(b: Backend): Handlers {
       b.today.settingsChanged();
       b.summaries.settingsChanged(next);
       b.followups.settingsChanged(next);
+      void b.writing.learner.aiChanged();
       return next;
     },
     "ai.summarize": ({ threadId, requestId, acknowledge }, ctx) => b.summaries.request(threadId, requestId, ctx.clientId, acknowledge),

@@ -57,7 +57,7 @@ async function openSubject(page: Page, subject: string) {
 
 
 test.describe("summaries (plan 132)", () => {
-  test("turned on, new mail gets a summary between the header and the conversation; old mail has none; axe-clean in both modes", { tag: "@variant" }, async ({ app: page, server }) => {
+  test("on with AI, new mail gets a summary between the header and the conversation; old mail has none; axe-clean in both modes", { tag: "@variant" }, async ({ app: page, server }) => {
     const accountId = await firstAccount(server);
     await settingUp(page, server, { ai: { provider: "fake" } });
 
@@ -67,11 +67,10 @@ test.describe("summaries (plan 132)", () => {
     await group.scrollIntoViewIfNeeded();
     await expect(group).toContainText("Summarize new mail");
     await expect(group).toContainText("Sends the text of each new conversation to Offline demo as it arrives.");
-    const toggle = page.getByTestId("ai-summaries-switch");
-    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    // plan 157: on with AI, with no click
+    await expect(page.getByTestId("ai-summaries-switch")).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByTestId("ai-drafting-sent-mail")).toHaveAttribute("aria-checked", "true");
     expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=ai-summaries]").include("[data-testid=ai-use]").analyze()).violations).toEqual([]);
-    await toggle.click();
-    await expect(toggle).toHaveAttribute("aria-checked", "true");
     await page.keyboard.press("Escape");
 
     // what was here before it went on has no summary and sends nothing
@@ -256,7 +255,8 @@ test.describe("summaries (plan 132)", () => {
   test("never in spam or trash; a new message hides it; Clear AI data; every word in en and es", async ({ app: page, server }) => {
     await scenario("never offered in spam or trash, nor with one spam message in the thread", async () => {
       const accountId = await firstAccount(server);
-      await settingUp(page, server, { ai: { provider: "fake" } });
+      // by hand only: new mail waits for a click here
+      await settingUp(page, server, { ai: { provider: "fake" }, summaries: { enabled: false } });
       await deliver(page, server, incoming(accountId, "Clean, then spam"));
       await openSubject(page, "Clean, then spam");
       await expect(page.getByTestId("action-summarize")).toBeVisible();
@@ -347,7 +347,7 @@ test.describe("summaries (plan 132)", () => {
     const stub = await startOllamaStub({ summaryFails: () => failing });
     try {
       // plan 147: nothing set up: nothing offered, in the toolbar or the palette; Settings → AI is the way in
-      await settingUp(page, server, { ai: { provider: "none" } });
+      await settingUp(page, server, { ai: { provider: "none" }, summaries: { enabled: false } });
       await deliver(page, server, incoming(accountId, "No provider yet"));
       await openSubject(page, "No provider yet");
       await expect(page.getByTestId("action-summarize")).toHaveCount(0);
@@ -362,7 +362,9 @@ test.describe("summaries (plan 132)", () => {
       await target.scrollIntoViewIfNeeded();
       await expect(target.getByTestId("ai-summaries-add-key")).toHaveText("Add an OpenAI key");
       await expect(target.getByTestId("ai-summaries-use")).toHaveCount(0);
-      await expect(page.getByTestId("ai-summaries-switch")).toBeDisabled();
+      // plan 157: they do nothing without AI, so they aren't here
+      await expect(page.getByTestId("ai-summaries-switch")).toHaveCount(0);
+      await expect(page.getByTestId("ai-drafting-sent-mail")).toHaveCount(0);
 
       // only another provider's key: it asks, with both ways, and sends nothing to anyone
       await server.backend.server.invoke("settings.update", { ai: { provider: "anthropic", baseURL: `${stub.url}`, model: "claude-sonnet-5-5" } }, dev);
