@@ -1325,6 +1325,7 @@ export function createHandlers(b: Backend): Handlers {
           // plan 132: turned off, nothing further goes; a change may unblock what was paused
           if (patch.ai || patch.summaries) b.summaries.settingsChanged(next);
           if (patch.ask) b.ask.settingsChanged(next.ask.enabled);
+          if (patch.ai || patch.replies) b.replies.settingsChanged();
           if (patch.ai || patch.followups) b.followups.settingsChanged(next);
           if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
           if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
@@ -1377,6 +1378,7 @@ export function createHandlers(b: Backend): Handlers {
       await b.ask.clear();
       b.actions.invalidate(null);
       await b.followups.clear();
+      await b.replies.clear();
       return { ok: true };
     },
     // plan 142: renderer only; none of these is in MCP_ALLOWED
@@ -1396,6 +1398,17 @@ export function createHandlers(b: Backend): Handlers {
     "followups.scan": async () => ({ queued: await b.followups.scan() }),
     // plan 141: renderer only; none of these is in MCP_ALLOWED
     "ai.ask": (p, ctx) => b.ask.ask(p, ctx.clientId),
+    "ai.prepareReply": (p, ctx) => b.replies.prepare(p, ctx.clientId),
+    "ai.replyLeave": async (p, ctx) => {
+      b.replies.leave(p.threadId, ctx.clientId);
+      return { ok: true as const };
+    },
+    "ai.replyStop": async (p, ctx) => {
+      await b.replies.stop(p.threadId, p.dismiss, ctx.clientId);
+      return { ok: true as const };
+    },
+    "ai.replyAct": (p) => b.replies.act(p),
+    "ai.replyStatus": () => b.replies.status(),
     "ai.actionStart": (p, ctx) => b.actions.start(p, ctx.clientId).catch((error: unknown) => { throw toRpcError(error); }),
     "ai.actionPage": (p, ctx) => b.actions.page(p.previewId, p.offset, p.limit, p.leftOut, ctx.clientId),
     "ai.actionToggle": async (p, ctx) => b.actions.toggle(p.previewId, p.threadId, p.included, ctx.clientId),

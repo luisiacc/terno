@@ -152,6 +152,7 @@ export const DEFAULT_SETTINGS: General = {
   aiCategorizeWidened: false,
   summaries: { enabled: false, enabledAt: null, acknowledged: [] },
   ask: { enabled: true, acknowledged: [] },
+  replies: { enabled: false },
   followups: { enabled: false, enabledAt: null, nudgeAfterDays: NUDGE_DEFAULT, scanAnswered: false },
   errorReports: "ask",
   // new installs follow the system: English unless it's a language Terno ships
@@ -598,7 +599,7 @@ export async function acknowledgeActionCheck(store: SettingsStore, destination: 
 }
 
 function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: boolean, now: number): StoredSettings {
-  const { ai: aiPatch, summaries: summariesPatch, ask: askPatch, followups: followupsPatch, ...rest } = patch;
+  const { ai: aiPatch, summaries: summariesPatch, ask: askPatch, followups: followupsPatch, replies: repliesPatch, ...rest } = patch;
   const general: Partial<General> = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
   if (summariesPatch) {
     // the moment it went on: mail from before it is never sent (off and on again starts over)
@@ -612,6 +613,7 @@ function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: 
     // the moment it went on: what was sent before it is read only with a yes
     general.followups = { ...was, ...followupsPatch, enabled, enabledAt: !enabled ? null : was.enabled ? was.enabledAt : now };
   }
+  if (repliesPatch) general.replies = { enabled: repliesPatch.enabled };
   if (askPatch) general.ask = { ...(s.ask ?? DEFAULT_SETTINGS.ask), enabled: askPatch.enabled };
   const state = aiState(s, hasLegacyKey);
   let { provider } = state;

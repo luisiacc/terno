@@ -22,7 +22,7 @@ import {
   type ProviderConfig,
   type StreamEvent,
 } from "@terno/ai";
-import { isDevAiProvider, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, ASK_CLAUDE_MODEL, ASK_PLAN_CLAUDE_MODEL, ASK_PLAN_OPENAI_MODEL, INTENT_CLAUDE_MODEL, JEV_DEFAULT_MODEL, messageOf, SUMMARY_DEFAULT_MODEL, textRef, WRITING_CLAUDE_MODEL, type AiTaskName } from "@terno/core";
+import { isDevAiProvider, REPLY_CHECK_CLAUDE_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, ASK_CLAUDE_MODEL, ASK_PLAN_CLAUDE_MODEL, ASK_PLAN_OPENAI_MODEL, INTENT_CLAUDE_MODEL, JEV_DEFAULT_MODEL, messageOf, SUMMARY_DEFAULT_MODEL, textRef, WRITING_CLAUDE_MODEL, type AiTaskName } from "@terno/core";
 import { RpcError, type AiTestResult, type AppSettings } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { BackendCore as Backend } from "./core";
@@ -213,15 +213,21 @@ export class AiService {
   }
 
   /** What a task runs on: the user's choice, else its default. Never another provider without the user having set it up. */
-  private async targetFor(task: AiTaskName | "filter" | "voice" | "intent" | "askPlan", settings: AppSettings): Promise<Target> {
+  private async targetFor(task: AiTaskName | "filter" | "voice" | "intent" | "askPlan" | "reply" | "replyCheck", settings: AppSettings): Promise<Target> {
     // plan 141 §6: a cheap model writes the searches, on the provider that answers: a question never reaches one the row doesn't name
     if (task === "askPlan") {
       const answer = await this.targetFor("ask", settings);
       return { ...answer, model: answer.provider === "anthropic" ? ASK_PLAN_CLAUDE_MODEL : answer.provider === "openai" ? ASK_PLAN_OPENAI_MODEL : answer.model };
     }
+    // plan 144 §2: on the drafting provider, so this adds no second place mail goes
+    if (task === "reply") return this.targetFor("writing", settings);
+    if (task === "replyCheck") {
+      const writing = await this.targetFor("writing", settings);
+      return writing.provider === "anthropic" ? { ...writing, model: REPLY_CHECK_CLAUDE_MODEL } : writing;
+    }
     // who a sentence is for is a tiny question with no mail in it, asked before the first word: speed is all that matters
     if (task === "intent" && settings.ai.provider === "anthropic" && !settings.ai.tasks.writing) return { ...this.currentTarget(settings), model: INTENT_CLAUDE_MODEL };
-    const name = task === "voice" || task === "intent" ? "writing" : task;
+    const name = task === "voice" || task === "intent" ? "writing" : (task as AiTaskName | "filter");
     const chosen = name === "filter" ? undefined : settings.ai.tasks[name];
     const configured = this.currentTarget(settings);
     const profiled = (provider: AiProviderId, model: string): Target => {
@@ -255,7 +261,7 @@ export class AiService {
    * immutable for their configuration: a change in Settings gives the next
    * caller others, and aborts what's in flight (configChanged).
    */
-  async forTask(task: AiTaskName | "filter" | "voice" | "intent" | "askPlan", o: { foreground?: boolean } = {}): Promise<AiTasks> {
+  async forTask(task: AiTaskName | "filter" | "voice" | "intent" | "askPlan" | "reply" | "replyCheck", o: { foreground?: boolean } = {}): Promise<AiTasks> {
     const epoch = this.devAiEpoch.signal;
     const settings = await readSettings(this.b.store);
     const target = await this.targetFor(task, settings);
@@ -274,7 +280,7 @@ export class AiService {
       if (this.clients.size > 16) this.clients.clear();
       const local = isLocalProvider({ id: target.provider, baseURL: target.baseURL, preset: target.preset });
       ai = this.factory(config, {
-        wrapTransport: (transport) => revocable(this.limiter.wrap(transport, { task: (task === "askPlan" ? "ask" : task) as LimiterTask, model: target.model, local, foreground }), lease.signal),
+        wrapTransport: (transport) => revocable(this.limiter.wrap(transport, { task: (task === "askPlan" ? "ask" : task === "replyCheck" ? "reply" : task) as LimiterTask, ahead: task === "reply" || task === "replyCheck", model: target.model, local, foreground }), lease.signal),
         onCapabilities: (next) =>
           void saveCapabilities(this.b.store, target.provider, { model: target.model, baseURL: target.baseURL, preset: target.preset }, next),
       });

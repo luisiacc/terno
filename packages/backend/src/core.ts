@@ -18,6 +18,7 @@ import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
 import { AiAssist } from "./ai-assist";
 import { ActionsService } from "./actions";
+import { ReplyService } from "./replies";
 import { AskService } from "./ask";
 import { FollowupWorker } from "./followups";
 import { SummaryWorker } from "./summaries";
@@ -271,6 +272,7 @@ export class BackendCore {
   readonly summaries: SummaryWorker;
   readonly ask: AskService;
   readonly actions: ActionsService;
+  readonly replies: ReplyService;
   readonly followups: FollowupWorker;
   /** plan 133: drafting: what goes into a draft, and the learner, asleep until the feature is used */
   readonly writing: WritingService;
@@ -326,6 +328,7 @@ export class BackendCore {
     this.writing = new WritingService(this);
     this.ask = new AskService(this);
     this.actions = new ActionsService(this);
+    this.replies = new ReplyService(this);
     this.followups = new FollowupWorker({
       store: this.store,
       now: () => this.now(),
@@ -444,6 +447,7 @@ export class BackendCore {
         this.aiService.disconnected(ctx.clientId);
         this.writing.disconnected(ctx.clientId);
         this.actions.disconnected(ctx.clientId);
+        this.replies.disconnected(ctx.clientId);
       },
     });
   }

@@ -561,7 +561,7 @@ export class WritingService {
   }
 
   /** One session's sources and settings: anything else re-assembles. Reads headers, no bodies. */
-  private async snapshotKey(p: ComposeParams, ai: AiTasks, account: Account, prefs: WritingPrefs): Promise<{ key: string; waiting: number | null }> {
+  async snapshotKey(p: ComposeParams, ai: AiTasks, account: Account, prefs: WritingPrefs): Promise<{ key: string; waiting: number | null }> {
     const sources = p.threadId !== undefined ? await this.b.store.aiSummaries.sources(p.threadId) : null;
     if (p.threadId !== undefined && !sources) throw new RpcError("NOT_FOUND", L("errors.threadGone"));
     let waiting: number | null = null;
@@ -588,18 +588,35 @@ export class WritingService {
   }
 
   async compose(p: ComposeParams, clientId: string): Promise<AiComposeResult> {
-    const { store } = this.b;
     const { signal: asked, release } = this.b.aiService.begin(p.requestId, clientId);
     const { signal, done: permissionDone } = this.underPermission(p.accountId, asked);
     const stream = coalescer((text) => this.b.server.emitTo(clientId, "aiCompose", { requestId: p.requestId, text }));
     void this.learner.activate().catch(() => {});
     try {
-      const prefs = await readPrefs(store);
+      // foreground: it waits for nothing but a local model's slot (plan 131 revision 3)
+      const ai = await this.b.aiService.forTask("writing", { foreground: true });
+      return await this.generate(p, clientId, { ai, signal, onDelta: (text) => stream.push(text), flush: () => stream.flush() });
+    } catch (error) {
+      stream.flush();
+      throw toRpcError(clean(error));
+    } finally {
+      permissionDone();
+      release();
+    }
+  }
+
+  /**
+   * One draft, from the voice that exists. Who pays and who hears it is the caller's: a person's ⌘J, or plan 144's
+   * preparation, which charges its own task and never starts the learner (revisions 1 and 10).
+   */
+  async generate(p: ComposeParams, clientId: string, o: { ai: AiTasks; signal: AbortSignal; onDelta(text: string): void; flush(): void; prefs?: WritingPrefs }): Promise<AiComposeResult> {
+    const { store } = this.b;
+    const { ai, signal } = o;
+    {
+      const prefs = o.prefs ?? (await readPrefs(store));
       if (!prefs.global.enabled) throw new AiError(L("errors.ai.draftingOff"), "not_configured");
       const account = await store.accounts.get(p.accountId);
       if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
-      // foreground: it waits for nothing but a local model's slot (plan 131 revision 3)
-      const ai = await this.b.aiService.forTask("writing", { foreground: true });
       const { key, waiting } = await this.snapshotKey(p, ai, account, prefs);
       if (waiting !== null) return { status: "waitingBody", messageId: waiting };
       const session = `${clientId}\n${p.session}`;
@@ -641,8 +658,8 @@ export class WritingService {
         ...(p.previousDraft !== undefined ? { previousDraft: p.previousDraft } : {}),
         ...(p.attachments?.length ? { attachments: p.attachments } : {}),
       };
-      const result = await ai.compose({ ...snapshot.input, task }, { onDelta: (text) => stream.push(text), signal, effort: "low", maxTokens: snapshot.maxTokens });
-      stream.flush();
+      const result = await ai.compose({ ...snapshot.input, task }, { onDelta: o.onDelta, signal, effort: "low", maxTokens: snapshot.maxTokens });
+      o.flush();
       if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
       const authorized = [...snapshot.authorized, p.instruction, p.draft ?? "", p.previousDraft ?? "", p.subject, ...[...p.to, ...p.cc].flatMap((a) => [a.email, a.name])];
       const stop = result.stop === "length" ? "length" : "end";
@@ -654,12 +671,6 @@ export class WritingService {
         used: { ...snapshot.used, reused },
         checks: { specifics: checkSpecifics(result.text, { texts: authorized, today }), placeholders: findPlaceholders(result.text) },
       };
-    } catch (error) {
-      stream.flush();
-      throw toRpcError(clean(error));
-    } finally {
-      permissionDone();
-      release();
     }
   }
 
