@@ -63,6 +63,16 @@ const PROBES: [string, Probe][] = [
     expect(await css(page, "danger", "box-shadow")).not.toBe("none");
   }],
 
+  ["a button group is one bordered control on the card, at the control height, split by a hairline, with no fill of its own items", async (page, mode, expect) => {
+    expect(await css(page, "button-group", "background-color")).toBe(await css(page, "probe-card", "background-color"));
+    expect(await css(page, "button-group", "border-top-width")).toBe("1px");
+    expect(await css(page, "button-group", "height")).toBe("32px");
+    expect(await css(page, "button-group", "box-shadow")).not.toMatch(FLAT);
+    expect(await css(page, "button-group-item", "background-color")).toBe("rgba(0, 0, 0, 0)");
+    expect(await css(page, "button-group-item", "border-right-width")).toBe("1px");
+    expect(await page.getByTestId("button-group-icon").evaluate((el) => el.getBoundingClientRect().width === el.getBoundingClientRect().height)).toBe(true);
+  }],
+
   ["unavailable buttons take the muted fill (the outline the field wash), muted text, no shadow, no opacity", async (page, mode, expect) => {
     const muted = await css(page, "probe-muted-ink", "color");
     for (const id of ["primary-off", "danger-off"]) {

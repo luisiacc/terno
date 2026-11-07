@@ -3,6 +3,7 @@
 import { Avatar, AvatarFallback } from "@terno/ui/components/avatar";
 import { Announcement } from "@terno/ui/components/announcement";
 import { Button } from "@terno/ui/components/button";
+import { ButtonGroup, ButtonGroupItem } from "@terno/ui/components/button-group";
 import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@terno/ui/components/accordion";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Checkbox } from "@terno/ui/components/checkbox";
@@ -89,6 +90,7 @@ process.stdout.write(
       h("i", { "data-testid": "probe-cat-rose", className: "bg-cat-rose" }),
       // plan 125, phase 2b: the icon button, the chip, the search field, the announcement, the link button and the toast's
       // surface at rest; the tokens they should show
+      h(ButtonGroup, { "aria-label": "Respond", "data-testid": "button-group" }, h(ButtonGroupItem, { "data-testid": "button-group-item" }, h(Archive), "Reply"), h(ButtonGroupItem, { iconOnly: true, "aria-label": "More", "data-testid": "button-group-icon" }, h(Archive))),
       h("div", { style: { display: "flex", gap: 8 } }, h(IconButton, { label: "Archive", shortcut: "e", "data-testid": "icon-ghost" }, h(Archive)), h(IconButton, { label: "Archive", variant: "secondary", size: "icon", "data-testid": "icon-secondary" }, h(Archive))),
       h("div", { style: { display: "flex", gap: 8 } }, h(Chip, { dot: h(CategoryDot, { color: "rose" }), onRemove: () => {}, removeLabel: "Remove Work", removeProps: { "data-testid": "chip-remove" }, "data-testid": "chip" }, "Work")),
       h(SearchField, { "aria-label": "Search", value: "ana", onValueChange: () => {}, "data-testid": "search-full", hint: h(Kbd, null, "/") }),
