@@ -93,22 +93,26 @@ function MessageItems({ threadId, messageId, respond, parts: { Item, Separator }
 const CONTEXT_PARTS: ItemParts = { Item: ContextMenuItem, Separator: ContextMenuSeparator };
 const DROPDOWN_PARTS: ItemParts = { Item: DropdownMenuItem, Separator: DropdownMenuSeparator };
 
-/** Answers this message, wherever it is in the conversation; a menu's closing hands focus to the draft, so it restores none (`handedOff`). */
+/**
+ * Answers this message, wherever it is in the conversation. A row chosen in a menu hands focus to the draft, so the
+ * closing menu restores none (`handedOff`); refused, it does after all, or the trigger takes it if the menu has gone.
+ */
 function useRespond(threadId: number, messageId: number | null, fallback: () => HTMLElement | null | undefined) {
   const handedOff = useRef(false);
-  const respond = (mode: Respond) => {
+  const respond = (mode: Respond, fromMenu = true) => {
     if (messageId === null) return;
-    handedOff.current = true;
+    handedOff.current = fromMenu;
     void composeLanding(mode, threadId, 0, undefined, undefined, { sourceId: messageId }).then((landing) => {
-      if (landing.kind === "none" && document.activeElement === document.body) fallback()?.focus();
+      if (landing.kind !== "none") return;
+      handedOff.current = false;
+      if (document.activeElement === document.body) fallback()?.focus();
     });
   };
-  const finalFocus = () => {
-    const handed = handedOff.current;
-    handedOff.current = false;
-    return !handed;
+  const opened = (open: boolean) => {
+    if (open) handedOff.current = false;
+    setApp({ menuOpen: open });
   };
-  return { respond, finalFocus };
+  return { respond, opened, finalFocus: () => !handedOff.current };
 }
 
 /**
@@ -117,7 +121,7 @@ function useRespond(threadId: number, messageId: number | null, fallback: () => 
  */
 export function MessageActions({ threadId, messageId, quiet, className }: { threadId: number; messageId: number; quiet: boolean; className?: string }) {
   const trigger = useRef<HTMLButtonElement>(null);
-  const { respond, finalFocus } = useRespond(threadId, messageId, () => trigger.current);
+  const { respond, opened, finalFocus } = useRespond(threadId, messageId, () => trigger.current);
   return (
     <div
       role="group"
@@ -126,10 +130,10 @@ export function MessageActions({ threadId, messageId, quiet, className }: { thre
       data-quiet={quiet || undefined}
       className={cn("flex items-center gap-px", quiet && "opacity-0 transition-opacity duration-fast group-hover/mh:opacity-100 group-has-[:focus-visible]/mh:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100", className)}
     >
-      <IconButton size="icon-xs" label={t("reader.message.reply")} onClick={() => respond("reply")} data-testid="message-reply">
+      <IconButton size="icon-xs" label={t("reader.message.reply")} onClick={() => respond("reply", false)} data-testid="message-reply">
         <Reply className="size-4" />
       </IconButton>
-      <DropdownMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
+      <DropdownMenu onOpenChange={opened}>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -159,9 +163,9 @@ export function MessageActions({ threadId, messageId, quiet, className }: { thre
 export function MessageMenu({ threadId, children }: { threadId: number; children: ReactElement }) {
   const [messageId, setMessageId] = useState<number | null>(null);
   const [selected, setSelected] = useState("");
-  const { respond, finalFocus } = useRespond(threadId, messageId, () => document.querySelector<HTMLElement>(`[aria-controls="msg-body-${messageId}"]`));
+  const { respond, opened, finalFocus } = useRespond(threadId, messageId, () => document.querySelector<HTMLElement>(`[aria-controls="msg-body-${messageId}"]`));
   return (
-    <ContextMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
+    <ContextMenu onOpenChange={opened}>
       {/* the trigger wraps the whole conversation: mail stays selectable (the primitive defaults to select-none) */}
       <ContextMenuTrigger
         render={children}

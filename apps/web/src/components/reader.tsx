@@ -42,7 +42,7 @@ import { copyThreadText } from "~/lib/copy-thread";
 import { openPrint } from "~/lib/print-open";
 import { isMac } from "~/lib/select";
 import { HtmlBody, TextBody } from "./mail-body";
-import { MailReaderView } from "./mail-reader-view";
+import { MailReaderView, useMailReaderView } from "./mail-reader-view";
 import { backgroundMenu, MessageActions, MessageMenu } from "./message-menu";
 import { reasonText } from "~/lib/reasons";
 import { useDesign, variant } from "~/lib/design";
@@ -171,10 +171,12 @@ function ReplyGroup({ replyAll }: { replyAll: boolean }) {
   const trigger = useRef<HTMLButtonElement>(null);
   // a choice hands focus to the draft, and any focus moved meanwhile would cancel that; refused (a forward's files, say), the button takes it back
   const chosen = useRef(false);
-  const choose = (mode: "replyAll" | "forward") => {
-    chosen.current = true;
+  const choose = (mode: "replyAll" | "forward", fromMenu = true) => {
+    chosen.current = fromMenu;
     void composeLanding(mode).then((landing) => {
-      if (landing.kind === "none" && document.activeElement === document.body) trigger.current?.focus();
+      if (landing.kind !== "none") return;
+      chosen.current = false;
+      if (document.activeElement === document.body) trigger.current?.focus();
     });
   };
   return (
@@ -199,7 +201,7 @@ function ReplyGroup({ replyAll }: { replyAll: boolean }) {
         <Tooltip>
           <TooltipTrigger
             render={
-              <ButtonGroupItem iconOnly aria-label={t("actions.replyAll")} data-testid="action-reply-all-direct" onClick={() => choose("replyAll")} className="w-8 @max-[560px]:hidden">
+              <ButtonGroupItem iconOnly aria-label={t("actions.replyAll")} data-testid="action-reply-all-direct" onClick={() => choose("replyAll", false)} className="w-8 @max-[560px]:hidden">
                 <ReplyAll />
               </ButtonGroupItem>
             }
@@ -210,7 +212,7 @@ function ReplyGroup({ replyAll }: { replyAll: boolean }) {
           </TooltipContent>
         </Tooltip>
       )}
-      <DropdownMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
+      <DropdownMenu onOpenChange={(open) => { if (open) chosen.current = false; setApp({ menuOpen: open }); }}>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -228,11 +230,7 @@ function ReplyGroup({ replyAll }: { replyAll: boolean }) {
           sideOffset={6}
           className="w-48"
           data-testid="reply-menu"
-          finalFocus={() => {
-            const handedOff = chosen.current;
-            chosen.current = false;
-            return !handedOff;
-          }}
+          finalFocus={() => !chosen.current}
         >
           <DropdownMenuGroup>
             {replyAll && (
@@ -402,8 +400,12 @@ function useFold(messages: MessageDetail[]) {
     // the button goes away: focus moves to the first message it revealed
     requestAnimationFrame(() => document.querySelector<HTMLElement>(`[aria-controls="msg-body-${ids[0]}"]`)?.focus());
   };
-  // collapsing all still leaves the newest to read, and long runs fold again
-  const toggleAll = () => setState({ toggled: new Map(messages.map((m) => [m.id, !allOpen || m.id === last?.id])), revealed: new Set(allOpen ? [] : messages.map((m) => m.id)) });
+  // collapsing all still leaves the newest to read, and long runs fold again; what held focus may fold away with them, and focus goes to the newest then
+  const toggleAll = () => {
+    const held = document.activeElement;
+    setState({ toggled: new Map(messages.map((m) => [m.id, !allOpen || m.id === last?.id])), revealed: new Set(allOpen ? [] : messages.map((m) => m.id)) });
+    requestAnimationFrame(() => { if (held && held !== document.body && !held.isConnected) document.querySelector<HTMLElement>(`[aria-controls="msg-body-${last?.id}"]`)?.focus({ preventScroll: true }); });
+  };
 
   // where N and P are: the message they last went to, or the newest one open. The tint says so (no ring: a shortcut moved focus), until focus leaves it; leaving the last one for the next doesn't clear the next's
   const position = useRef<number | null>(null);
@@ -424,8 +426,10 @@ function useFold(messages: MessageDetail[]) {
     requestAnimationFrame(() => document.querySelector<HTMLElement>(`[aria-controls="msg-body-${id}"]`)?.focus({ preventScroll: true }));
     revealMessage(id);
   };
+  // not while the full-message view covers it: its headers are out of reach, and folding a message would close the view
+  const covered = useMailReaderView()?.active != null;
   useEffect(() => {
-    if (messages.length < 2) return;
+    if (messages.length < 2 || covered) return;
     conversationKeys.current = { step, toggleAll, allOpen: () => allOpen };
     return () => { conversationKeys.current = null; };
   });

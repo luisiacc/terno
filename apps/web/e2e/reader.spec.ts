@@ -202,6 +202,8 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       await page.getByTestId("action-reply-menu").click();
       await expect(page.getByTestId("action-forward")).toBeVisible();
       await expect(page.getByTestId("action-reply-all")).toHaveCount(0);
+      // a key before the menu holds focus goes to where the click was
+      await expect.poll(() => page.evaluate(() => document.activeElement?.closest("[role=menu]") != null)).toBe(true);
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("action-reply-menu")).toBeFocused();
       await page.evaluate(() => (document.activeElement as HTMLElement).blur());
@@ -247,6 +249,12 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       await page.getByTestId("compose-quote").click();
       await expect(page.getByTestId("composer")).toContainText(older);
     });
+    await scenario("a direct Reply leaves nothing behind: its menu, opened and closed after, gives focus back", async () => {
+      await messages.nth(2).getByTestId("message-more").click();
+      await expect.poll(() => page.evaluate(() => document.activeElement?.closest("[role=menu]") != null)).toBe(true);
+      await page.keyboard.press("Escape");
+      await expect(messages.nth(2).getByTestId("message-more")).toBeFocused();
+    });
     await scenario("the ⋯ menu and a right-click offer the same; choosing another message turns the draft to it, keeping the words", async () => {
       await page.getByTestId("compose-body").click();
       await page.keyboard.type("Lo que escribí");
@@ -265,6 +273,58 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "reply");
       await expect(page.getByTestId("compose-body")).toContainText("Lo que escribí");
     });
+  });
+
+  test("a chosen message that's gone: nothing answers another in its place; a draft on one that's gone can still turn to one that's there", async ({ app: page, server }) => {
+    const store = server.backend.store;
+    const db = sqlDb(store);
+    const id = await ingestConversation(server, { subject: "Mensajes que se van", count: 3, now: E2E_NOW });
+    await selectThread(page, id, 'subject:"Mensajes que se van"');
+    const messages = page.getByTestId("message");
+    const idOf = async (i: number) => Number(await messages.nth(i).getAttribute("data-message-id"));
+    const [first, last] = [await idOf(0), await idOf(2)];
+    const drafted = async () => (await store.drafts.list())[0];
+    await scenario("the draft answers the newest; that message goes; Reply on the first still turns the draft, with its words", async () => {
+      await page.keyboard.press("r");
+      await page.getByTestId("compose-body").click();
+      await page.keyboard.type("Lo escrito");
+      await expect.poll(async () => (await drafted())?.body_text).toContain("Lo escrito");
+      db.run("DELETE FROM messages WHERE id = ?", last);
+      await messages.nth(0).getByTestId("message-toggle").click();
+      await messages.nth(0).getByTestId("message-reply").click();
+      await expect(page.getByTestId("snack-message")).toHaveText("The draft is now on that message");
+      await expect(page.getByTestId("compose-body")).toContainText("Lo escrito");
+      await expect.poll(async () => (await drafted())?.in_reply_to_message_id).toBe(first);
+    });
+    await scenario("the one chosen is gone: the draft stays as it was, and the person is told", async () => {
+      const second = await idOf(1);
+      db.run("DELETE FROM messages WHERE id = ?", second);
+      await messages.nth(1).getByTestId("message-toggle").click();
+      await messages.nth(1).getByTestId("message-reply").click();
+      await expect(page.getByTestId("snack-message")).toContainText("no longer in this conversation");
+      await expect.poll(async () => (await drafted())?.in_reply_to_message_id).toBe(first);
+      await expect(page.getByTestId("compose-body")).toContainText("Lo escrito");
+    });
+  });
+
+  test("the full-message view covers the conversation: its keys wait, and nothing folds under it", async ({ app: page, server }) => {
+    const store = server.backend.store;
+    const account = (await store.accounts.list())[0]!;
+    const yuki = { name: "Yuki", email: "yuki@acme.studio" };
+    const one = (n: number, bodyHtml: string) => ({ accountId: account.id, providerMsgId: `tall-${n}`, providerThreadId: "tall-thread", rfcMessageId: `<tall-${n}@e2e.test>`, inReplyTo: null, references: [], from: yuki, replyTo: [], to: [{ name: "", email: account.email }], cc: [], bcc: [], subject: "Una larga de verdad", date: E2E_NOW - 1000 + n, snippet: "Hola", bodyText: null, bodyHtml, bodyState: "full" as const, listId: null, isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100 });
+    const tall = `<div>${Array.from({ length: 1400 }, (_, i) => `<p style="margin:0;height:20px">Line ${i}</p>`).join("")}</div>`;
+    const { touched } = await store.sync.ingest([one(1, "<p>Corta</p>"), one(2, tall)], { applyFilters: false, now: E2E_NOW, classifier: null });
+    await selectThread(page, touched[0]!, 'subject:"Una larga de verdad"');
+    await page.getByRole("button", { name: "Show full message", exact: true }).click();
+    const scroller = page.locator("[data-full-message-scroller]");
+    await expect(scroller.locator("iframe")).toBeVisible();
+    await page.keyboard.press("Shift+E");
+    await page.keyboard.press("Shift+P");
+    await expect(scroller.locator("iframe")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(scroller).toHaveCount(0);
+    await expect(page.getByTestId("message-toggle").first()).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByTestId("expand-all")).toHaveText("Expand all");
   });
 
   test("the keyboard through a conversation: N and P go message by message, o and Enter open, ⇧E opens or folds them all", async ({ app: page, server }) => {
@@ -295,6 +355,13 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     await scenario("⇧E and the header's button open everything, then fold back to the newest", async () => {
       await page.keyboard.press("Shift+E");
       for (const i of [0, 3, 6]) await expect(toggles.nth(i)).toHaveAttribute("aria-expanded", "true");
+      await expect(page.getByTestId("expand-all")).toHaveText("Collapse all");
+      // folding away the header that held focus: focus goes to the newest, never to nothing
+      await toggles.nth(2).focus();
+      await page.keyboard.press("Shift+E");
+      await expect(page.getByTestId("more-messages")).toBeVisible();
+      await expect(toggles.last()).toBeFocused();
+      await page.keyboard.press("Shift+E");
       await expect(page.getByTestId("expand-all")).toHaveText("Collapse all");
       await page.getByTestId("expand-all").click();
       await expect(page.getByTestId("more-messages")).toBeVisible();

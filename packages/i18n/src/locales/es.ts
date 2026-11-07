@@ -1640,6 +1640,7 @@ const es = {
   "compose.converted.replyAll": "Convertido en Responder a todos",
   "compose.converted.forward": "Convertido en Reenviar",
   "compose.converted.message": "El borrador ahora es sobre ese mensaje",
+  "compose.sourceGone": "Ese mensaje ya no está en esta conversación. Tu borrador no cambió.",
   "compose.undoConvert.message": "Deshacer el cambio de mensaje",
   "compose.undoConvert.reply": "Deshacer convertir en Responder",
   "compose.undoConvert.replyAll": "Deshacer convertir en Responder a todos",

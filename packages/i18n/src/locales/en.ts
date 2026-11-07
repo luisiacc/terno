@@ -1654,6 +1654,7 @@ const en = {
   "compose.converted.replyAll": "Converted to reply all",
   "compose.converted.forward": "Converted to a forward",
   "compose.converted.message": "The draft is now on that message",
+  "compose.sourceGone": "That message is no longer in this conversation. Your draft hasn't changed.",
   "compose.undoConvert.message": "Undo changing the message",
   "compose.undoConvert.reply": "Undo convert to reply",
   "compose.undoConvert.replyAll": "Undo convert to reply all",

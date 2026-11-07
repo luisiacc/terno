@@ -647,7 +647,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     if (mine !== intent || !focusAllowed() || readDraftAck(proof) !== existing) { endDraftAckRead(proof); return; }
   }
   const originalSourceId = existing ? activeSourceId(existing) : null;
-  const canonicalNullSource = Boolean(proof && existing && existing.threadId === null && existing.showSourceContext === true && !existing.presentationExpired && originalSourceId !== null && draftPresentationThread(existing) === threadId);
+  const canonicalNullSource = Boolean(!retarget && proof && existing && existing.threadId === null && existing.showSourceContext === true && !existing.presentationExpired && originalSourceId !== null && draftPresentationThread(existing) === threadId);
   let originalContext: { threadId: number; accountId: number } | null | undefined;
   if (lease && proof) {
     lease.ackRead = proof;
@@ -667,7 +667,8 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     if (showStoredStandalone(existing.key, mine, undefined, lease)) land(cell, "resumed", existing.key);
     return;
   }
-  if (existing?.showSourceContext) {
+  // (a retarget answers to the chosen message, checked below: the one it leaves may be gone, and that's no reason to refuse it)
+  if (existing?.showSourceContext && !retarget) {
     let snapshot = existing;
     const destination = sameModeSource && proof ? loaded ?? await loadThread(threadId) : undefined;
     if (sameModeSource && proof) {
@@ -732,6 +733,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     }
     return;
   }
+  if (chosenSource !== undefined && !detail.messages.some((m) => m.id === chosenSource)) { snack.error(t("compose.sourceGone")); return; }
   takeFocus = focusUnchanged();
   existing = proof ? readDraftAck(proof) : existingKey ? materialize(existingKey) : undefined;
   if (existingKey && (!existing || existing.sending || existing.recovery)) return;
@@ -824,6 +826,8 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
       finalOriginalContext = originalSourceId ? await client.call("drafts.sourceContext", { messageId: originalSourceId }) : null;
     } else finalOriginalContext = sourceContext;
   } catch { return stillAsked() ? "failed" : undefined; }
+  // what was chosen is gone: nothing answers another message in its place, and the person hears why
+  if (chosenSource !== undefined && currentIntent() && (!sourceContext || sourceContext.threadId !== threadId)) { snack.error(t("compose.sourceGone")); return; }
   if (!currentIntent() || (lease && !lease.valid) || !sourceContext || sourceContext.threadId !== threadId || sourceContext.accountId !== detail.thread.accountId) return;
   if (canonicalNullSource && (!finalOriginalContext || finalOriginalContext.threadId !== threadId || finalOriginalContext.accountId !== detail.thread.accountId)) return;
   if (canonicalNullSource && (await loadThread(threadId) !== detail || !currentIntent() || !lease?.valid || focusLease !== lease || lease.ackRead !== proof)) return;

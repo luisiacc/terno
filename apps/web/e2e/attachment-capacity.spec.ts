@@ -16,6 +16,12 @@ test("Forward refuses 101 files before mutation; continued typing and the 100-fi
   // refused: nothing took focus, so the menu's button keeps it
   await expect(page.getByTestId("action-reply-menu")).toBeFocused();
   await expect(page.getByTestId("snack-message")).toContainText("This message is too large. Remove an attachment or shorten the message.");
+  // the same from a message's own menu: refused, its button takes focus back
+  await page.getByTestId("message-more").focus();
+  await page.keyboard.press("Enter");
+  await page.getByTestId("message-menu-forward").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("message-more")).toBeFocused();
   await expect(body).toHaveText(before.body_text);
   await expect(page.getByTestId("draft-attachment")).toHaveCount(100);
   expect(await store.drafts.list()).toEqual([before]);
