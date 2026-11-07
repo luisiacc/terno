@@ -297,12 +297,12 @@ function ComposeRow() {
   );
 }
 
-const REVIEW_BADGE = "flex h-6 min-w-6 items-center justify-center gap-0.5 rounded-(--nav-radius) px-1 text-2xs tabular";
+const REVIEW_BADGE = "flex size-6 shrink-0 items-center justify-center rounded-(--nav-radius)";
 
 /**
- * A category's pending suggestions: a quiet mark beside its unread count, the same in every design; its meaning on
- * hover and to a screen reader. Its own control, drawn over the row; an invisible copy of the count puts it left of
- * that count, so the sidebar's counts keep one column.
+ * A category's pending suggestions: a quiet mark beside its unread count, no second number, the same in every design;
+ * how many, in a sentence, on hover and focus and to a screen reader. Its own control, drawn over the row; an
+ * invisible copy of the count puts it left of that count, so the sidebar's counts keep one column.
  */
 function ReviewBadge({ id, name, n, active, unread }: { id: number; name: string; n: number; active: boolean; unread: number }) {
   const label = t("sidebar.reviewBadge", { count: n, name });
@@ -317,16 +317,17 @@ function ReviewBadge({ id, name, n, active, unread }: { id: number; name: string
               data-active={active || undefined}
               aria-label={label}
               onClick={() => navigate({ view: "all", reviewCategoryId: id, accountId: null })}
-              className={cn(REVIEW_BADGE, "pointer-events-auto text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground")}
+              data-count={n}
+              className={cn(REVIEW_BADGE, "pointer-events-auto text-muted-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground")}
             >
-              <Sparkles className="size-3" />
-              {formatNumber(n)}
+              <Sparkles className="size-3.5" />
             </button>
           }
         />
         <TooltipContent side="right">{label}</TooltipContent>
       </Tooltip>
-      {unread > 0 && <span aria-hidden className="invisible text-xs tabular">{formatNumber(unread)}</span>}
+      {/* the marks keep a column of their own, whatever the count beside each */}
+      <span aria-hidden className="invisible min-w-[3ch] text-xs tabular">{unread > 0 ? formatNumber(unread) : ""}</span>
     </div>
   );
 }
@@ -1403,7 +1404,7 @@ export function Sidebar() {
                 label={c.name}
                 count={counts.categoryUnread[c.id] || undefined}
                 countHelp={help ? { id: `sidebar-count-category-${c.id}`, text: help } : undefined}
-                beforeCount={suggested > 0 ? <span aria-hidden className={cn(REVIEW_BADGE, "invisible")}><Sparkles className="size-3" />{formatNumber(suggested)}</span> : undefined}
+                beforeCount={suggested > 0 ? <span aria-hidden className={cn(REVIEW_BADGE, "invisible")} /> : undefined}
                 note={
                   (!c.showInInbox || c.forward?.enabled) && (
                     <>

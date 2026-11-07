@@ -79,7 +79,7 @@ test.describe("Review list: answering from the rows (plan 80)", () => {
     await expect.poll(() => filed(target)).toBe("suggestion");
     expect(await cursor(page)).toBe(open);
     await expect(page.getByTestId("category-snackbar")).toBeVisible();
-    await expect(page.getByTestId(`nav-review-${facturas}`)).toContainText("2");
+    await expect(page.getByTestId(`nav-review-${facturas}`)).toHaveAttribute("data-count", "2");
     // the snackbar's undo puts it back in Review
     await page.getByTestId("snackbar-undo").click();
     await expect.poll(() => filed(target)).toBeNull();

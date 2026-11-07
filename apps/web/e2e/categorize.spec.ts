@@ -396,7 +396,7 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
   test("Review lists the suggestions; y accepts (with the snackbar), n rejects", { tag: "@variant" }, async ({ app: page, server }) => {
     const { db, facturas, threads } = await withSuggestions(page, server);
     const review = page.getByTestId(`nav-review-${facturas}`);
-    await expect(review).toContainText("2");
+    await expect(review).toHaveAttribute("data-count", "2");
     await review.click();
     await expect(page.getByTestId("list-title")).toHaveText("Review · Facturas");
     await expect(page.getByTestId("thread-row")).toHaveCount(2);

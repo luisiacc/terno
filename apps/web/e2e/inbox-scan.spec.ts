@@ -79,22 +79,57 @@ test.describe("the inbox list", { tag: "@design" }, () => {
 });
 
 test.describe("the filters and the suggestions", () => {
-  test("the filter's state sits on the title's line: turning it on moves nothing, every filter is one menu away, × clears it", async ({ app: page }) => {
+  test("one filter control, a real target with its state in words: turning it on moves nothing but itself, every filter is in its menu, × clears it", { tag: "@design" }, async ({ app: page, design }) => {
+    test.skip(design === "lumen", "Lumen's filters are chips");
     const title = page.getByTestId("list-title");
     const list = page.locator("[data-testid=thread-list] [data-keep-scroll=list]");
+    const control = page.getByTestId("filter-menu");
     const before = await box(title);
     const listTop = (await box(list)).y;
-    await page.getByTestId("filter-menu").click();
-    await expect(page.getByTestId("filter-option-attachments")).toBeVisible();
-    await page.keyboard.press("Escape");
-    await page.getByTestId("unread-filter").click();
-    await expect(page.getByTestId("unread-filter-status")).toContainText("Unread");
-    await expect(page.getByTestId("filter-menu")).toHaveCount(0);
+    await expect(control).toHaveText("Filter");
+    expect((await box(control)).height).toBeGreaterThanOrEqual(24);
+    await control.click();
+    for (const f of ["all", "unread", "people", "attachments", "starred"]) await expect(page.getByTestId(`filter-option-${f}`)).toBeVisible();
+    await page.getByTestId("filter-option-unread").click();
+    await expect(control).toHaveText("Unread");
     expect((await box(title)).y).toBe(before.y);
     expect((await box(list)).y).toBe(listTop);
+    expect((await box(page.getByTestId("filter-clear"))).height).toBeGreaterThanOrEqual(24);
     await page.getByTestId("filter-clear").click();
-    await expect(page.getByTestId("unread-filter")).toHaveAttribute("aria-pressed", "false");
-    await expect(page.getByTestId("unread-filter")).toBeFocused();
+    await expect(control).toHaveText("Filter");
+    await expect(control).toBeFocused();
+    expect((await box(list)).y).toBe(listTop);
+  });
+
+  test("the rule offer says what its button does; a rule comes with Undo, and z or Undo takes it back and brings the offer back", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    const rules = () => db.get<{ c: number }>("SELECT count(*) c FROM filters WHERE source = 'learned'")!.c;
+    const banner = page.getByTestId("learned-banner");
+    const accept = page.getByTestId("learned-accept");
+    const before = rules();
+    await expect(accept).toHaveText("Create rule");
+    await expect(accept).toHaveAccessibleName("Create rule: Always archive daily.morningbrew.com?");
+    expect((await box(page.getByTestId("learned-dismiss"))).height).toBeGreaterThanOrEqual(24);
+    await accept.click();
+    await expect(banner).toHaveCount(0);
+    const snack = page.getByTestId("snack");
+    await expect(snack).toContainText("Rule created");
+    await expect(snack).toContainText("New mail from daily.morningbrew.com is archived from now on.");
+    await expect.poll(rules).toBe(before + 1);
+    await snack.getByTestId("snack-action").click();
+    await expect.poll(rules).toBe(before);
+    await expect(banner).toBeVisible();
+    // z too
+    await accept.click();
+    await expect(snack).toContainText("Rule created");
+    await expect.poll(rules).toBe(before + 1);
+    await page.keyboard.press("z");
+    await expect.poll(rules).toBe(before);
+    await expect(banner).toBeVisible();
+    // a long name is said whole, not cut
+    await page.setViewportSize({ width: 1100, height: 700 });
+    await expect.poll(() => page.getByTestId("learned-line").evaluate((el) => el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth)).toBe(true);
+    await page.setViewportSize({ width: 1440, height: 900 });
   });
 
   test("the rule offer: one quiet ×, and what it dismisses doesn't come back", async ({ app: page }) => {
@@ -107,7 +142,7 @@ test.describe("the filters and the suggestions", () => {
     await expect(banner).toHaveCount(0);
   });
 
-  test("a suggestion's mark is quiet, a 24 px target named in full, left of the count, in the sidebar's one column of counts", { tag: "@design" }, async ({ app: page, server }) => {
+  test("a suggestion's mark is quiet and has no digits, a 24 px target named in full, left of the count, in the sidebar's one column of counts", { tag: "@design" }, async ({ app: page, server }) => {
     const db = sqlDb(server.backend.store);
     const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
     const t = db.get<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1")!.id;
@@ -115,10 +150,14 @@ test.describe("the filters and the suggestions", () => {
     await fresh(page);
     const badge = page.getByTestId(`nav-review-${facturas}`);
     await expect(badge).toHaveAccessibleName(/Review \d+ suggestions? in Facturas/);
+    // one number at rest: the unread count's; how many suggestions is the sentence, on hover and in its name
+    await expect(badge).toHaveText("");
     const b = await box(badge);
     expect(b.height).toBeGreaterThanOrEqual(24);
     expect(b.width).toBeGreaterThanOrEqual(24);
     expect(await badge.evaluate((el) => getComputedStyle(el).backgroundColor)).toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+    await badge.hover();
+    await expect(page.locator("[data-slot=tooltip-content]")).toHaveText(/Review \d+ suggestions? in Facturas/);
     const count = (id: string) => page.getByTestId(id).locator("[data-slot=nav-count]");
     const category = await box(count(`nav-category-${facturas}`));
     const inbox = await box(count("nav-inbox"));
@@ -128,16 +167,16 @@ test.describe("the filters and the suggestions", () => {
 
   test.describe("Atelier's display title", () => {
     test.use({ design: "atelier" });
-    test("a filter that's on stays said while the list scrolls; off, its line gives way", async ({ app: page }) => {
+    test("a filter that's on stays said while the list scrolls; the subtitle gives way all the same", async ({ app: page }) => {
       const list = page.locator("[data-testid=thread-list] [data-keep-scroll=list]");
       await list.evaluate((el) => el.scrollTo(0, 300));
       await expect(page.getByTestId("list-subtitle")).toBeHidden();
       await list.evaluate((el) => el.scrollTo(0, 0));
-      await page.getByTestId("unread-filter").click();
-      await expect(page.getByTestId("unread-filter-status")).toBeVisible();
+      await pickFilter(page, "unread");
+      await expect(page.getByTestId("filter-menu")).toHaveText("Unread");
       await list.evaluate((el) => el.scrollTo(0, 300));
       await expect(page.getByTestId("thread-list")).toHaveAttribute("data-scrolled", "");
-      await expect(page.getByTestId("unread-filter-status")).toBeVisible();
+      await expect(page.getByTestId("filter-menu")).toHaveText("Unread");
       await expect(page.getByTestId("filter-clear")).toBeVisible();
     });
   });
