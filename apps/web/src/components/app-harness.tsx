@@ -14,7 +14,7 @@ const answered = vi.hoisted(() => (method: string, params: unknown) => {
 vi.mock("~/rpc/connection", () => ({ client: { get call() { return gate.ownedCall ?? answered; } } }));
 vi.mock("~/state/threads", async (original) => ({ ...await original<typeof import("~/state/threads")>(), loadThread: gate.load }));
 vi.mock("./sidebar", () => ({ Sidebar: () => null }));
-vi.mock("./thread-list", async () => { const { DraftsStrip } = await import("./drafts-strip"); return { ThreadList: () => <DraftsStrip /> }; });
+vi.mock("./thread-list", async () => { const { DraftsStrip } = await import("./drafts-strip"); return { ThreadList: () => <DraftsStrip />, skipToList: () => {} }; });
 vi.mock("./pane-handle", () => ({ PaneHandle: () => null }));
 vi.mock("./snack-dock", () => ({ SnackDock: () => null }));
 vi.mock("./command-palette", () => ({ CommandPalette: () => null }));

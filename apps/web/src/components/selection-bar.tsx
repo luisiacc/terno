@@ -1,7 +1,7 @@
 import { shortcutsFor, type Command, type ThreadAction } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
-import { IconButton } from "@terno/ui/components/icon-button";
 import { Shortcut } from "@terno/ui/components/shortcut";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { Archive, Bell, CheckCheck, FolderInput, Inbox, Mail, MailOpen, OctagonAlert, ShieldCheck, Star, StarOff, Tag, Trash2, X } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
@@ -22,14 +22,33 @@ const DANGER =
 /** A key on the primary, as on Send */
 const LEAD = "[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_svg:not([class*='text-'])]:text-primary-foreground";
 
-function BarButton({ label, command, onClick, children, testId, disabled, bar, tone }: { label: string; command?: Command; onClick: () => void; children: React.ReactNode; testId: string; disabled?: boolean; bar: Variant; tone?: "lead" | "danger" }) {
+/**
+ * In List's toolbar, which words a narrow bar lets go first (their icon stays, the name in its tooltip and to a screen
+ * reader): 1 never (Archive, Delete), 2 below 60rem, 3 below 78rem
+ */
+type Rank = 1 | 2 | 3;
+const FOLD: Record<Rank, string> = { 1: "", 2: "@max-[60rem]/bar:sr-only", 3: "@max-[78rem]/bar:sr-only" };
+const FOLD_PAD: Record<Rank, string> = { 1: "", 2: "@max-[60rem]/bar:px-2", 3: "@max-[78rem]/bar:px-2" };
+
+function BarButton({ label, command, onClick, children, testId, disabled, bar, tone, rank = 2 }: { label: string; command?: Command; onClick: () => void; children: React.ReactNode; testId: string; disabled?: boolean; bar: Variant; tone?: "lead" | "danger"; rank?: Rank }) {
   const keys = command ? shortcutsFor(command, undefined, isMac)[0] : undefined;
-  // the toolbar's: the icon, named; the name and key in the tooltip
+  // plan 158: the toolbar's are the pane's buttons, smaller and side by side: the same words, tones and order; the key on hover
   if (bar === "toolbar")
     return (
-      <IconButton label={label} shortcut={keys} data-testid={testId} disabled={disabled} onClick={onClick}>
-        {children}
-      </IconButton>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button variant={tone === "lead" ? "default" : "ghost"} size="sm" data-testid={testId} disabled={disabled} onClick={onClick} aria-label={label} aria-keyshortcuts={keys} className={cn("shrink-0 gap-1.5", tone === "lead" && LEAD, tone === "danger" && DANGER, FOLD_PAD[rank])}>
+              {children}
+              <span className={FOLD[rank]}>{label}</span>
+            </Button>
+          }
+        />
+        <TooltipContent>
+          {label}
+          {keys && <Shortcut keys={keys} />}
+        </TooltipContent>
+      </Tooltip>
     );
   // the pane's says its name and its key
   return (
@@ -74,7 +93,7 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
   const placeButtons = places && (
     <>
       {places.notSpam.length > 0 && (
-        <BarButton bar={bar} label={t("actions.notSpam")} onClick={runOn("notSpam", places.notSpam)} testId="bar-not-spam">
+        <BarButton bar={bar} label={t("actions.notSpam")} onClick={runOn("notSpam", places.notSpam)} testId="bar-not-spam" rank={3}>
           <ShieldCheck />
         </BarButton>
       )}
@@ -83,10 +102,10 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
           <Inbox />
         </BarButton>
       )}
-      <BarButton bar={bar} tone="lead" label={t("actions.archive")} command="thread.archive" onClick={runOn("archive", places.archive)} testId="bar-archive" disabled={places.archive.length === 0}>
+      <BarButton bar={bar} tone="lead" label={t("actions.archive")} command="thread.archive" onClick={runOn("archive", places.archive)} testId="bar-archive" rank={1} disabled={places.archive.length === 0}>
         <Archive />
       </BarButton>
-      <BarButton bar={bar} tone="danger" label={t("actions.trash")} command="thread.trash" onClick={runOn("trash", places.trash)} testId="bar-trash" disabled={places.trash.length === 0}>
+      <BarButton bar={bar} tone="danger" label={t("actions.trash")} command="thread.trash" onClick={runOn("trash", places.trash)} testId="bar-trash" rank={1} disabled={places.trash.length === 0}>
         <Trash2 />
       </BarButton>
     </>
@@ -104,13 +123,13 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
               <Inbox />
             </BarButton>
           )}
-          <BarButton bar={bar} tone="lead" label={t("actions.archive")} command="thread.archive" onClick={run("archive")} testId="bar-archive">
+          <BarButton bar={bar} tone="lead" label={t("actions.archive")} command="thread.archive" onClick={run("archive")} testId="bar-archive" rank={1}>
             <Archive />
           </BarButton>
         </>
       )}
       {!placeButtons && (
-        <BarButton bar={bar} tone="danger" label={t("actions.trash")} command="thread.trash" onClick={run("trash")} testId="bar-trash" disabled={view === "trash"}>
+        <BarButton bar={bar} tone="danger" label={t("actions.trash")} command="thread.trash" onClick={run("trash")} testId="bar-trash" rank={1} disabled={view === "trash"}>
           <Trash2 />
         </BarButton>
       )}
@@ -125,11 +144,11 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
           <Mail />
         </BarButton>
       )}
-      <BarButton bar={bar} label={t(allStarred ? "actions.unstar" : "actions.star")} command="thread.star" onClick={run(allStarred ? "unstar" : "star")} testId="bar-star">
+      <BarButton bar={bar} label={t(allStarred ? "actions.unstar" : "actions.star")} command="thread.star" onClick={run(allStarred ? "unstar" : "star")} testId="bar-star" rank={3}>
         {allStarred ? <StarOff /> : <Star />}
       </BarButton>
       {/* a "select all N" has no ids to set it on (the row menu's rule) */}
-      <BarButton bar={bar} label={t("remind.menu")} command="thread.remind" onClick={() => openRemind({ kind: "always" })} testId="bar-remind" disabled={scope !== null}>
+      <BarButton bar={bar} label={t("remind.menu")} command="thread.remind" onClick={() => openRemind({ kind: "always" })} testId="bar-remind" rank={3} disabled={scope !== null}>
         <Bell />
       </BarButton>
       <BarButton bar={bar} label={t("actions.moveTo")} command="thread.move" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "move" })} testId="bar-move" disabled={scope !== null}>
@@ -138,7 +157,7 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
       <BarButton bar={bar} label={t("actions.category")} command="thread.category" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} testId="bar-category">
         <Tag />
       </BarButton>
-      <BarButton bar={bar} label={t("actions.markSpam")} command="thread.spam" onClick={places ? runOn("spam", places.spam) : run("spam")} testId="bar-spam" disabled={places ? places.spam.length === 0 : view === "spam"}>
+      <BarButton bar={bar} label={t("actions.markSpam")} command="thread.spam" onClick={places ? runOn("spam", places.spam) : run("spam")} testId="bar-spam" rank={3} disabled={places ? places.spam.length === 0 : view === "spam"}>
         <OctagonAlert />
       </BarButton>
     </>
@@ -147,14 +166,14 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
   if (bar === "toolbar")
     return (
       // over the list's title line: nothing moves under the pointer of whoever is ⌘-clicking rows (plan 158)
-      <div role="toolbar" aria-label={title} data-testid="selection-bar" data-variant="toolbar" className="no-drag hairline-b absolute inset-x-0 top-0 z-20 flex h-[52px] items-center gap-0.5 bg-pane pr-4 pl-5">
-        <span className="mr-2 min-w-0 truncate text-xs font-medium text-foreground tabular" data-testid="selection-count">
+      <div role="toolbar" aria-label={title} data-testid="selection-bar" data-variant="toolbar" className="no-drag hairline-b @container/bar absolute inset-x-0 top-0 z-20 flex h-[52px] items-center gap-1 bg-pane pr-4 pl-5">
+        <span className="mr-2 min-w-0 shrink truncate text-xs font-medium text-foreground tabular" data-testid="selection-count">
           {title}
         </span>
         {actions}
         <span className="ml-auto flex items-center gap-0.5">
           {more && (
-            <BarButton bar={bar} label={t("actions.selectAll")} command="list.selectAll" onClick={selectAll} testId="bar-select-all">
+            <BarButton bar={bar} label={t("actions.selectAll")} command="list.selectAll" onClick={selectAll} testId="bar-select-all" rank={3}>
               <CheckCheck />
             </BarButton>
           )}

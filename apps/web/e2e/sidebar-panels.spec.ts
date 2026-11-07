@@ -10,7 +10,7 @@ import type { Locator, Page } from "@playwright/test";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import type { DesignDefinition } from "../../../packages/ui/src/designs/types";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, navTo, openRow, selectedRow, test, scenario } from "./fixtures";
+import { expect, focusList, navTo, openRow, selectedRow, test, scenario, openReview } from "./fixtures";
 
 // plan 87: Reminders too (shown closed only while one is due)
 const HIDDEN = ["reminders", "sent", "archive", "all", "spam", "trash"] as const;
@@ -581,8 +581,8 @@ test.describe("Part A: More", () => {
     const t = db.get<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1")!.id;
     db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.8, '[]', ?)", t, facturas, Date.now());
     await reload(page);
-    await page.getByTestId(`nav-review-${facturas}`).click();
-    await expect(page.getByTestId(`nav-review-${facturas}`)).toHaveAttribute("data-active");
+    await openReview(page, facturas);
+    await expect(page.getByTestId("nav-review")).toHaveAttribute("data-active");
     await expect(page.getByTestId("nav-all")).toBeHidden();
     await more(page).click();
     await expect(page.getByTestId("nav-all")).not.toHaveAttribute("data-active");

@@ -89,7 +89,7 @@ for (const design of ["macos", "lumen"] as const) {
         await expect(page.getByTestId("unread-empty-clear")).toHaveAccessibleName(copy[language].clear);
         await page.getByTestId("unread-empty-clear").click();
         await expect(filtered).toHaveCount(0);
-        await expect(page.locator('[data-testid=filter-menu], [data-testid=quick-filter-all]').filter({ visible: true }).first()).toBeFocused();
+        await expect(page.locator('[data-testid=filter-segment-all], [data-testid=quick-filter-all]').filter({ visible: true }).first()).toBeFocused();
         await page.getByTestId(`nav-account-${account.id}`).click();
         await empty(page, page.getByTestId("list-empty"), copy[language].inbox, copy[language].name);
         await page.getByTestId(`nav-folder-${account.id}-trash`).click();

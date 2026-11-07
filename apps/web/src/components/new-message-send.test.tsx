@@ -5,7 +5,7 @@ import { beforeAll, expect, it, vi } from "vitest";
 import type { Account } from "@terno/core";
 const rpc = vi.hoisted(() => ({ call: vi.fn() }));
 vi.mock("~/rpc/connection", () => ({ client: { call: rpc.call, on: () => () => {} } }));
-vi.mock("./thread-list", async () => { const { DraftsStrip } = await import("./drafts-strip"); return { ThreadList: () => <DraftsStrip /> }; });
+vi.mock("./thread-list", async () => { const { DraftsStrip } = await import("./drafts-strip"); return { ThreadList: () => <DraftsStrip />, skipToList: () => {} }; });
 vi.mock("./pane-handle", () => ({ PaneHandle: () => null }));
 vi.mock("./snack-dock", () => ({ SnackDock: () => null }));
 vi.mock("./command-palette", () => ({ CommandPalette: () => null }));

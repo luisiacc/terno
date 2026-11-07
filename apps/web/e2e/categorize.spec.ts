@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { termsQuery } from "@terno/core";
 import type { DevServer } from "../../backend-dev/src/server";
-import { menuPath, expect, focusList, scenario, selectRows, selectThread, test, searchBox, openOffers } from "./fixtures";
+import { menuPath, expect, focusList, scenario, selectRows, selectThread, test, searchBox, openOffers, openReview, suggestedIn } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 /** What the backend would add for a scope (the same RPC the chips call). */
@@ -406,9 +406,8 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
 
   test("Review lists the suggestions; y accepts (with the snackbar), n rejects", { tag: "@variant" }, async ({ app: page, server }) => {
     const { db, facturas, threads } = await withSuggestions(page, server);
-    const review = page.getByTestId(`nav-review-${facturas}`);
-    await expect(review).toHaveAttribute("data-count", "2");
-    await review.click();
+    expect(await suggestedIn(page, facturas)).toBe(2);
+    await openReview(page, facturas);
     await expect(page.getByTestId("list-title")).toHaveText("Review · Facturas");
     await expect(page.getByTestId("thread-row")).toHaveCount(2);
 
@@ -431,7 +430,7 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
     await page.keyboard.press("n");
     await expect.poll(() => db.get("SELECT label, weight, source FROM cls_examples WHERE thread_id = ?", threads[1]!)).toEqual({ label: -1, weight: 1, source: "reject" });
     await expect(page.getByTestId("reader").getByTestId("suggestion-chip")).toHaveCount(0);
-    await expect(page.getByTestId(`nav-review-${facturas}`)).toHaveCount(0);
+    await expect.poll(() => suggestedIn(page, facturas)).toBe(0);
   });
 
   test("out of a category, by hand and by the engine; Settings → Categories", async ({ app: page, server }) => {

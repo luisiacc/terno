@@ -10,7 +10,7 @@ import { waitingCutoff, type DesignId, type ListFilter } from "@terno/core";
 import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
-import { expect, focusList, selectedRow, test, fresh, scenario } from "./fixtures";
+import { expect, focusList, selectedRow, test, fresh, scenario, pickFilter, expectFilter } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 const db = (server: DevServer) => sqlDb(server.backend.store);
@@ -26,8 +26,7 @@ async function chooseFilter(page: Page, design: DesignId | null, filter: ListFil
     await page.getByTestId(`quick-filter-${filter}`).click();
     return;
   }
-  await page.getByTestId("filter-menu").click();
-  await page.getByTestId(`filter-option-${filter}`).click();
+  await pickFilter(page, filter);
 }
 
 test.describe("the People filter", () => {
@@ -89,7 +88,7 @@ test.describe("the People filter", () => {
     await page.keyboard.press("j");
     await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(0);
     if (design === "lumen" || design === null) await expect(page.getByTestId("quick-filter-people")).toHaveAttribute("aria-pressed", "true");
-    else await expect(page.getByTestId("filter-menu")).toHaveText("People");
+    else await expectFilter(page, "people", "People");
   });
 
   test("macOS: the palette offers People and Waiting; the filter menu", async ({ app: page, server }) => {
@@ -115,10 +114,10 @@ test.describe("the People filter", () => {
       await fresh();
       await chooseFilter(page, "macos", "people");
       await showing(page, "people");
-      await expect(page.getByTestId("filter-menu")).toHaveText("People");
+      await expectFilter(page, "people", "People");
       await chooseFilter(page, "macos", "waiting");
       await showing(page, "waiting");
-      await expect(page.getByTestId("filter-menu")).toHaveText("Waiting for reply");
+      await expectFilter(page, "waiting", "Waiting for reply");
       const waiting = new Set(ids(server, "waiting_since >= ?", cutoff));
       expect((await loadedIds(page)).every((id) => waiting.has(id))).toBe(true);
       // a new, empty category: the empty state says what the filter would hold

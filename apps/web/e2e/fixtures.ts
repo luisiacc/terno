@@ -238,8 +238,21 @@ export const test = base.extend<Fixtures>({
  */
 /** Where a design keeps its filters in a menu: the header's one control, a choice in it. */
 export async function pickFilter(page: Page, filter: "all" | "unread" | "people" | "waiting" | "attachments" | "starred"): Promise<void> {
+  // plan 158: All and Unread are one click, on the header's segmented control; the rest are in More filters
+  if (filter === "all" || filter === "unread") return page.getByTestId(`filter-segment-${filter}`).click();
   await page.getByTestId("filter-menu").click();
   await page.getByTestId(`filter-option-${filter}`).click();
+}
+
+/** The header's filter state where filters are a menu: All, Unread, or the More filter that's on. */
+export async function expectFilter(page: Page, filter: "all" | "unread" | "people" | "waiting" | "attachments" | "starred", name?: string): Promise<void> {
+  for (const f of ["all", "unread"] as const) await expect(page.getByTestId(`filter-segment-${f}`)).toHaveAttribute("aria-pressed", String(f === filter));
+  const more = page.getByTestId("filter-menu");
+  if (filter === "all" || filter === "unread") await expect(more).not.toHaveAttribute("data-active");
+  else {
+    await expect(more).toHaveAttribute("data-active");
+    if (name) await expect(more).toHaveAccessibleName(`More filters: ${name} is on`);
+  }
 }
 
 /** A filing's or an archive's snack is one line: what could follow from it opens here (the keys stay the list's). */
@@ -451,6 +464,16 @@ export async function stabilize(page: Page): Promise<void> {
 }
 
 /** Goes to a folder from the sidebar, opening More first where it hides (plan 21: only Inbox and Starred are always shown). */
+/** Plan 158: a category's own suggestions, from its menu (the sidebar's one Review line opens the category with the most). */
+export async function openReview(page: Page, categoryId: number): Promise<void> {
+  await page.getByTestId(`nav-category-${categoryId}`).click({ button: "right" });
+  await page.getByTestId("category-menu-review").click();
+}
+
+/** How many suggestions a category's row holds (0 with none). */
+export const suggestedIn = (page: Page, categoryId: number): Promise<number> =>
+  page.getByTestId(`nav-category-${categoryId}`).evaluate((el) => Number(el.closest<HTMLElement>("[data-suggested]")?.dataset.suggested ?? 0));
+
 export async function navTo(page: Page, view: "inbox" | "starred" | "sent" | "archive" | "all" | "spam" | "trash"): Promise<void> {
   const item = page.getByTestId(`nav-${view}`);
   if (!(await item.isVisible())) {

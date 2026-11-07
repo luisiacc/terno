@@ -5,10 +5,12 @@
  */
 import type { Locator } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, fresh, freshNoDrafts, pickFilter, rows, scenario, test } from "./fixtures";
+import { expect, focusList, fresh, freshNoDrafts, pickFilter, rows, scenario, test, expectFilter } from "./fixtures";
 
 /** Whole rows at 1440x900 with a suggestion and no drafts, the plan's bar. */
 const WHOLE_ROWS = { lumen: 10, atelier: 10, macos: 12, graphite: 12, luma: 10 } as const;
+/** And at 1100x700 (plan 158: the header gives its spare room to the rows there; the offer is the list's first item) */
+const SMALL_ROWS = { lumen: 8, atelier: 8, macos: 9, graphite: 9, luma: 8 } as const;
 const box = async (l: Locator) => (await l.boundingBox())!;
 const weight = (l: Locator) => l.evaluate((el) => Number(getComputedStyle(el).fontWeight));
 
@@ -30,7 +32,7 @@ test.describe("the inbox list", { tag: "@design" }, () => {
       expect(await whole()).toBeGreaterThanOrEqual(WHOLE_ROWS[design ?? "macos"]);
       // a laptop's small window still shows a useful list
       await page.setViewportSize({ width: 1100, height: 700 });
-      await expect.poll(whole).toBeGreaterThanOrEqual(7);
+      await expect.poll(whole).toBeGreaterThanOrEqual(SMALL_ROWS[design ?? "macos"]);
       await page.setViewportSize({ width: 1440, height: 900 });
     });
     await scenario("a row reads sender, subject, preview, each on its own line; unread is stronger and has one dot, off any avatar; read has none", async () => {
@@ -41,6 +43,11 @@ test.describe("the inbox list", { tag: "@design" }, () => {
       expect(snippet!.y).toBeGreaterThanOrEqual(subject!.y + subject!.height - 1);
       expect(await weight(unread.getByTestId("row-from"))).toBeGreaterThan(await weight(read.getByTestId("row-from")));
       expect(await weight(unread.getByTestId("row-subject"))).toBeGreaterThan(await weight(read.getByTestId("row-subject")));
+      // plan 158: a read row has a hierarchy too: the sender anchors it (heavier than the subject, in the same ink), the preview is quieter
+      const ink = (id: string) => read.getByTestId(id).evaluate((el) => getComputedStyle(el).color);
+      expect(await weight(read.getByTestId("row-from"))).toBeGreaterThan(await weight(read.getByTestId("row-subject")));
+      expect(await ink("row-from")).toBe(await ink("row-subject"));
+      expect(await ink("row-snippet")).not.toBe(await ink("row-subject"));
       await expect(read.getByTestId("row-unread-dot")).toHaveCount(0);
       await expect(unread.getByTestId("row-unread-dot")).toHaveCount(1);
       const dot = await box(unread.getByTestId("row-unread-dot"));
@@ -70,14 +77,78 @@ test.describe("the inbox list", { tag: "@design" }, () => {
       await list.evaluate((el) => el.scrollTo(0, 0));
       await freshNoDrafts(page, server);
     });
-    await scenario("scrolled, the suggestion and the subtitle give way and the list has their room; at the top they come back", async () => {
-      const top = (await box(list)).y;
+    await scenario("the suggestion is the list's first item: it goes up with the rows, and comes back at the top", async () => {
+      const first = rows(page).first();
+      const gap = async () => (await box(first)).y - ((await box(banner)).y + (await box(banner)).height);
+      const at = await gap();
+      expect(at).toBeGreaterThanOrEqual(-1);
+      // part way: it moved as far as the rows did (in the list: a display header's subtitle gives way too, moving the list)
+      const inList = () => list.evaluate((el) => {
+        const top = el.getBoundingClientRect().top;
+        const y = (id: string) => el.parentElement!.querySelector(`[data-testid=${id}]`)!.getBoundingClientRect().top - top;
+        return { banner: y("learned-banner"), row: y("thread-row") };
+      });
+      const before = await inList();
+      await list.evaluate((el) => el.scrollTo(0, 12));
+      await expect.poll(async () => before.row - (await inList()).row).toBe(12);
+      // (it follows the scroll event, which comes with the next frame)
+      await expect.poll(async () => before.banner - (await inList()).banner).toBe(12);
       await list.evaluate((el) => el.scrollTo(0, 300));
       await expect(banner).toBeHidden();
-      await expect.poll(async () => (await box(list)).y).toBeLessThan(top);
-      await list.evaluate((el) => el.scrollTo(0, 0));
-      await expect(banner).toBeVisible();
-      await expect.poll(async () => (await box(list)).y).toBe(top);
+      // its room above the rows takes no pointer once it's gone: what's there is a row (Codex review)
+      const hit = await list.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return document.elementFromPoint(r.left + r.width / 2, r.top + 10)?.closest("[data-testid=thread-row]") !== null;
+      });
+      expect(hit).toBe(true);
+      // gone while scrolled (here dismissed elsewhere): the mail on screen doesn't move
+      const proposal = (await server.backend.server.invoke("learning.proposals", {}, { clientId: "setup", origin: "dev" })) as { key: string }[];
+      const firstRow = () => list.evaluate((el) => {
+        const top = el.getBoundingClientRect().top;
+        const row = [...el.querySelectorAll<HTMLElement>("[data-testid=thread-row]")].filter((r) => r.getBoundingClientRect().bottom > top + 0.5).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0]!;
+        return [row.dataset.threadId, Math.round(row.getBoundingClientRect().top)];
+      });
+      const was = await firstRow();
+      await server.backend.server.invoke("learning.dismiss", { key: proposal[0]!.key }, { clientId: "setup", origin: "dev" });
+      const someRow = Number(await rows(page).first().getAttribute("data-thread-id"));
+      server.backend.notifyChanged([someRow]);
+      await expect(banner).toHaveCount(0);
+      expect(await firstRow()).toEqual(was);
+      // back while scrolled: nothing on screen moves either
+      sqlDb(server.backend.store).run("DELETE FROM dismissed_suggestions WHERE key = ?", proposal[0]!.key);
+      server.backend.notifyChanged([someRow]);
+      await expect(banner).toHaveCount(1);
+      expect(await firstRow()).toEqual(was);
+      // reached by Tab while partly scrolled away, it comes back whole (second Codex review)
+      await list.evaluate((el) => el.scrollTo(0, 20));
+      await page.getByTestId("learned-accept").focus();
+      await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBe(0);
+      // gone at the list's very end, where the shorter list clamps the offset first (second Codex review). Lumen's greeting
+      // asks for the counts again when the window comes back, so the offer is asked for again with no refresh of the rows
+      // (a refresh at the end of a long list moves it on its own)
+      if (design === "lumen") {
+        const loaded = () => page.evaluate(() => (window as unknown as { __terno: { loadedIds(): number[] } }).__terno.loadedIds().length);
+        for (let i = 0, same = 0, count = -1; i < 120 && same < 3; i++) {
+          await list.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+          await page.waitForTimeout(250);
+          const n = await loaded();
+          same = n === count ? same + 1 : 0;
+          count = n;
+        }
+        await list.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+        await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+        // the last row in view (the rendered ones run past it)
+        const lastRow = () => list.evaluate((el) => {
+          const bottom = el.getBoundingClientRect().bottom;
+          const row = [...el.querySelectorAll<HTMLElement>("[data-testid=thread-row]")].filter((r) => r.getBoundingClientRect().top < bottom - 1).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top).at(-1)!;
+          return [row.dataset.threadId, Math.round(row.getBoundingClientRect().top)];
+        });
+        const end = await lastRow();
+        await server.backend.server.invoke("learning.dismiss", { key: proposal[0]!.key }, { clientId: "setup", origin: "dev" });
+        await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+        await expect(banner).toHaveCount(0);
+        expect(await lastRow()).toEqual(end);
+      }
     });
   });
 });
@@ -97,30 +168,33 @@ test.describe("the filters and the suggestions", () => {
     const open = page.locator(`[data-thread-id="${id}"]`);
     await expect(open.getByTestId("row-kept")).toHaveText("Opened");
     await expect(page.locator("[data-testid=row-kept]")).toHaveCount(1);
-    await page.getByTestId("filter-clear").click();
+    await page.getByTestId("filter-segment-all").click();
     await expect(page.locator("[data-testid=row-kept]")).toHaveCount(0);
   });
 
-  test("one filter control, a real target with its state in words: turning it on moves nothing but itself, every filter is in its menu, × clears it", { tag: "@design" }, async ({ app: page, design }) => {
+  test("Unread in one click, the rest behind More filters; nothing in the header changes shape with a filter", { tag: "@design" }, async ({ app: page, design }) => {
     test.skip(design === "lumen", "Lumen's filters are chips");
-    const title = page.getByTestId("list-title");
+    const header = page.getByTestId("list-header");
     const list = page.locator("[data-testid=thread-list] [data-keep-scroll=list]");
-    const control = page.getByTestId("filter-menu");
-    const before = await box(title);
-    const listTop = (await box(list)).y;
-    await expect(control).toHaveText("Filter");
-    expect((await box(control)).height).toBeGreaterThanOrEqual(24);
-    await control.click();
-    for (const f of ["all", "unread", "people", "attachments", "starred"]) await expect(page.getByTestId(`filter-option-${f}`)).toBeVisible();
-    await page.getByTestId("filter-option-unread").click();
-    await expect(control).toHaveText("Unread");
-    expect((await box(title)).y).toBe(before.y);
-    expect((await box(list)).y).toBe(listTop);
-    expect((await box(page.getByTestId("filter-clear"))).height).toBeGreaterThanOrEqual(24);
-    await page.getByTestId("filter-clear").click();
-    await expect(control).toHaveText("Filter");
-    await expect(control).toBeFocused();
-    expect((await box(list)).y).toBe(listTop);
+    const segments = page.getByTestId("filter-segments");
+    const more = page.getByTestId("filter-menu");
+    const shape = async () => [await box(segments), await box(more), await box(page.getByTestId("list-title")), await box(list)].map((b) => [b.x, b.y, b.width, b.height].join()).join("|");
+    const before = await shape();
+    await expectFilter(page, "all");
+    for (const l of [page.getByTestId("filter-segment-unread"), more]) expect((await box(l)).height).toBeGreaterThanOrEqual(24);
+    await page.getByTestId("filter-segment-unread").click();
+    await expectFilter(page, "unread");
+    expect(await shape()).toBe(before);
+    await more.click();
+    for (const f of ["people", "attachments", "starred"]) await expect(page.getByTestId(`filter-option-${f}`)).toBeVisible();
+    await expect(page.getByTestId("filter-option-unread")).toHaveCount(0);
+    await page.getByTestId("filter-option-attachments").click();
+    await expectFilter(page, "attachments", "With attachments");
+    expect(await shape()).toBe(before);
+    await page.getByTestId("filter-segment-all").click();
+    await expectFilter(page, "all");
+    expect(await shape()).toBe(before);
+    expect((await box(header)).height).toBeGreaterThan(0);
   });
 
   test("the rule offer says what its button does; a rule comes with Undo, and z or Undo takes it back and brings the offer back", async ({ app: page, server }) => {
@@ -148,9 +222,10 @@ test.describe("the filters and the suggestions", () => {
     await page.keyboard.press("z");
     await expect.poll(rules).toBe(before);
     await expect(banner).toBeVisible();
-    // a long name is said whole, not cut
+    // one line in a small window too: a long name truncates, and is said whole in the button's name
     await page.setViewportSize({ width: 1100, height: 700 });
-    await expect.poll(() => page.getByTestId("learned-line").evaluate((el) => el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth)).toBe(true);
+    await expect.poll(async () => (await box(banner)).height).toBeLessThanOrEqual(36);
+    expect(await page.getByTestId("learned-line").evaluate((el) => el.getClientRects().length)).toBe(1);
     await page.setViewportSize({ width: 1440, height: 900 });
   });
 
@@ -164,27 +239,29 @@ test.describe("the filters and the suggestions", () => {
     await expect(banner).toHaveCount(0);
   });
 
-  test("a suggestion's mark is quiet and has no digits, a 24 px target named in full, left of the count, in the sidebar's one column of counts", { tag: "@design" }, async ({ app: page, server }) => {
+  test("suggestions are one line in words under the Categories heading, to the category with the most; each category's own is in its menu", { tag: "@design" }, async ({ app: page, server }) => {
     const db = sqlDb(server.backend.store);
     const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
     const t = db.get<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1")!.id;
     db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.8, '[]', ?)", t, facturas, Date.now());
     await fresh(page);
-    const badge = page.getByTestId(`nav-review-${facturas}`);
-    await expect(badge).toHaveAccessibleName(/Review \d+ suggestions? in Facturas/);
-    // one number at rest: the unread count's; how many suggestions is the sentence, on hover and in its name
-    await expect(badge).toHaveText("");
-    const b = await box(badge);
-    expect(b.height).toBeGreaterThanOrEqual(24);
-    expect(b.width).toBeGreaterThanOrEqual(24);
-    expect(await badge.evaluate((el) => getComputedStyle(el).backgroundColor)).toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
-    await badge.hover();
-    await expect(page.locator("[data-slot=tooltip-content]")).toHaveText(/Review \d+ suggestions? in Facturas/);
-    const count = (id: string) => page.getByTestId(id).locator("[data-slot=nav-count]");
-    const category = await box(count(`nav-category-${facturas}`));
-    const inbox = await box(count("nav-inbox"));
-    expect(Math.abs(category.x + category.width - (inbox.x + inbox.width))).toBeLessThanOrEqual(1);
-    expect(b.x + b.width).toBeLessThanOrEqual(category.x);
+    const line = page.getByTestId("nav-review");
+    const total = Number(await line.getAttribute("data-count"));
+    await expect(line).toHaveText(`Review ${total} suggestion${total === 1 ? "" : "s"}`);
+    // on the heading's text column, right under it; no mark on any category row
+    const heading = page.getByText("Categories", { exact: true });
+    expect(Math.abs((await box(line.locator("span"))).x - (await box(heading)).x)).toBeLessThanOrEqual(1);
+    expect((await box(line)).y).toBeGreaterThanOrEqual((await box(heading)).y);
+    await expect(page.locator("[data-testid^=nav-review-]")).toHaveCount(0);
+    // the most suggestions: its review opens
+    const most = await page.locator("[data-suggested]").evaluateAll((els) => els.reduce((a, el) => (Number((el as HTMLElement).dataset.suggested) > Number((a as HTMLElement).dataset.suggested) ? el : a)).querySelector("[data-testid^=nav-category-]")!.textContent!);
+    await line.click();
+    await expect(page.getByTestId("list-title")).toContainText(most.replace(/\d+$/, ""));
+    // a category's own, from its menu, with its count in words
+    await page.getByTestId(`nav-category-${facturas}`).click({ button: "right" });
+    await expect(page.getByTestId("category-menu-review")).toHaveText(/^Review \d+ suggestions?$/);
+    await page.getByTestId("category-menu-review").click();
+    await expect(page.getByTestId("list-title")).toHaveText("Review · Facturas");
   });
 
   test.describe("Atelier's display title", () => {
@@ -195,11 +272,11 @@ test.describe("the filters and the suggestions", () => {
       await expect(page.getByTestId("list-subtitle")).toBeHidden();
       await list.evaluate((el) => el.scrollTo(0, 0));
       await pickFilter(page, "unread");
-      await expect(page.getByTestId("filter-menu")).toHaveText("Unread");
+      await expectFilter(page, "unread");
       await list.evaluate((el) => el.scrollTo(0, 300));
       await expect(page.getByTestId("thread-list")).toHaveAttribute("data-scrolled", "");
-      await expect(page.getByTestId("filter-menu")).toHaveText("Unread");
-      await expect(page.getByTestId("filter-clear")).toBeVisible();
+      await expectFilter(page, "unread");
+      await expect(page.getByTestId("filter-segment-unread")).toBeVisible();
     });
   });
 

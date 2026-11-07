@@ -8,7 +8,7 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, navTo, focusList, selectedRow, test, fresh, scenario, pickFilter } from "./fixtures";
+import { expect, navTo, focusList, selectedRow, test, fresh, scenario, pickFilter, expectFilter } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 const db = (server: DevServer) => sqlDb(server.backend.store);
@@ -29,7 +29,7 @@ test.describe("macOS: the criterion menu", () => {
       await showing(page, "unread");
       await pickFilter(page, "attachments");
       await showing(page, "attachments");
-      await expect(page.getByTestId("filter-menu")).toHaveText("With attachments");
+      await expectFilter(page, "attachments", "With attachments");
       const open = Number(await selectedRow(page).getAttribute("data-thread-id"));
       const withFiles = new Set(inboxWhere(server, "has_attachments = 1"));
       expect((await loadedIds(page)).filter((id) => id !== open).every((id) => withFiles.has(id))).toBe(true);
@@ -43,9 +43,12 @@ test.describe("macOS: the criterion menu", () => {
       await page.keyboard.press("ControlOrMeta+k");
       await page.getByTestId("palette-unread-filter").click();
       await showing(page, "unread");
-      await page.getByTestId("filter-clear").click();
+      await expectFilter(page, "unread");
+      // All, one click, clears any
+      await pickFilter(page, "starred");
+      await page.getByTestId("filter-segment-all").click();
       await showing(page, null);
-      await expect(page.getByTestId("filter-menu")).toHaveText("Filter");
+      await expectFilter(page, "all");
     });
     await scenario("a starred thread unstarred while open stays until the selection moves; select-all counts the starred ones", async () => {
       await fresh();
@@ -75,8 +78,8 @@ test.describe("macOS: the criterion menu", () => {
       await expect(page.getByTestId("unread-empty")).toHaveAttribute("data-filter", "attachments");
       await expect(page.getByTestId("unread-empty")).toContainText("No conversations with attachments");
       await page.getByTestId("unread-empty-clear").click();
-      await expect(page.getByTestId("filter-menu")).toBeFocused();
-      await expect(page.getByTestId("filter-menu")).not.toHaveAttribute("data-active");
+      await expect(page.getByTestId("filter-segment-all")).toBeFocused();
+      await expectFilter(page, "all");
     });
     await scenario("the palette offers the other filters; its unread toggle switches to Unread; Show all turns any filter off", async () => {
       await fresh();

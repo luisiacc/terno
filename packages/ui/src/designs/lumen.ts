@@ -28,7 +28,7 @@ export const lumen: DesignDefinition = {
     listSubtitle: { family: "sans", size: "0.8125rem", leading: "1.125rem", weight: 400, strong: 600, tracking: "0em", style: "normal" },
     sectionLabel: { family: "sans", size: "0.75rem", leading: "1rem", weight: 600, strong: 600, tracking: "0em", style: "normal" },
     nav: { family: "sans", size: "0.875rem", leading: "1.25rem", weight: 400, strong: 600, tracking: "0em", style: "normal" },
-    rowFrom: { family: "sans", size: "0.875rem", leading: "1.25rem", weight: 400, strong: 700, tracking: "0em", style: "normal" },
+    rowFrom: { family: "sans", size: "0.875rem", leading: "1.25rem", weight: 500, strong: 700, tracking: "0em", style: "normal" },
     rowSubject: { family: "sans", size: "0.8125rem", leading: "1.125rem", weight: 400, strong: 600, tracking: "0em", style: "normal" },
     rowSnippet: { family: "sans", size: "0.78125rem", leading: "1.125rem", weight: 400, strong: 400, tracking: "0em", style: "normal" },
     readerSubject: { family: "display", size: "1.375rem", leading: "1.75rem", weight: 700, strong: 700, tracking: "-0.018em", style: "normal" },

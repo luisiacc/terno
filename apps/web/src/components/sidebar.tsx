@@ -1,12 +1,12 @@
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
-import { COUNTED_VIEWS, FOLDER_VIEWS, folderRef, separatesTabs, tabRef, TABS, viewRef, type Account, type CategoryColor, type CountedView, type Folder, type FolderView, type Tab, type View } from "@terno/core";
+import { COUNTED_VIEWS, FOLDER_VIEWS, folderRef, separatesTabs, tabRef, TABS, viewRef, type Account, type Category, type CategoryColor, type CountedView, type Folder, type FolderView, type Tab, type View } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Sun, Archive, ArrowLeft, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, OctagonAlert, Plus, Route, Send, Settings2, Sparkles, SquarePen, Star, Tag, Trash2, Users, ListChecks } from "@terno/ui/icons";
+import { Sun, Archive, ArrowLeft, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, OctagonAlert, Plus, Route, Send, Settings2, SquarePen, Star, Tag, Trash2, Users, ListChecks } from "@terno/ui/icons";
 import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
 import { formatNumber, t } from "@terno/i18n";
@@ -116,7 +116,6 @@ function NavItem({
   shortcut,
   note,
   hoverAction,
-  beforeCount,
 }: {
   active: boolean;
   onClick: () => void;
@@ -144,8 +143,6 @@ function NavItem({
   note?: React.ReactNode;
   /** plan 107: a control over the row's end on hover (a folder's "+"): the count steps aside meanwhile */
   hoverAction?: boolean;
-  /** room before the count for a control drawn over the row (its copy, invisible): the counts keep one column */
-  beforeCount?: React.ReactNode;
 }) {
   renderProbe("NavItem");
   // the perf gates tell the rows below More (which only slide when it toggles) from the folders
@@ -203,7 +200,6 @@ function NavItem({
         </span>
       )}
       {drop === "already" && <Check aria-label={t("sidebar.alreadyHere")} className="size-3.5 text-muted-foreground" />}
-      {beforeCount}
       {count ? (
         <span data-slot="nav-count" className={cn("inline-block text-xs tabular", countTone === "unread" ? "font-semibold text-unread-ink" : "text-muted-foreground", hoverAction && "group-hover/row:invisible")}>
           {formatNumber(count)}
@@ -298,38 +294,31 @@ function ComposeRow() {
   );
 }
 
-const REVIEW_BADGE = "flex size-6 shrink-0 items-center justify-center rounded-(--nav-radius)";
-
 /**
- * A category's pending suggestions: a quiet mark beside its unread count, no second number, the same in every design;
- * how many, in a sentence, on hover and focus and to a screen reader. Its own control, drawn over the row; an
- * invisible copy of the count puts it left of that count, so the sidebar's counts keep one column.
+ * Plan 158: the categories' suggestions as one quiet line under their heading, in words: how many in all, and a click
+ * opens the review of the category with the most. Each category's own is in its menu; its count is in its row's tooltip.
  */
-function ReviewBadge({ id, name, n, active, unread }: { id: number; name: string; n: number; active: boolean; unread: number }) {
-  const label = t("sidebar.reviewBadge", { count: n, name });
+function ReviewLine({ categories, suggestions, reviewing }: { categories: readonly Category[]; suggestions: Readonly<Record<number, number>>; reviewing: boolean }) {
+  let total = 0;
+  let most: Category | undefined;
+  for (const c of categories) {
+    const n = suggestions[c.id] ?? 0;
+    total += n;
+    if (n > 0 && (!most || n > (suggestions[most.id] ?? 0))) most = c;
+  }
+  if (!most) return null;
+  const to = most.id;
   return (
-    <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center gap-2.5">
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              data-testid={`nav-review-${id}`}
-              data-active={active || undefined}
-              data-count={n}
-              aria-label={label}
-              onClick={() => navigate({ view: "all", reviewCategoryId: id, accountId: null })}
-              className={cn(REVIEW_BADGE, "pointer-events-auto text-muted-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground")}
-            >
-              <Sparkles className="size-3.5" />
-            </button>
-          }
-        />
-        <TooltipContent side="right">{label}</TooltipContent>
-      </Tooltip>
-      {/* the marks keep a column of their own, whatever the count beside each */}
-      <span aria-hidden className="invisible min-w-[3ch] text-xs tabular">{unread > 0 ? formatNumber(unread) : ""}</span>
-    </div>
+    <button
+      type="button"
+      data-testid="nav-review"
+      data-count={total}
+      data-active={reviewing || undefined}
+      onClick={() => navigate({ view: "all", reviewCategoryId: to, accountId: null })}
+      className="-mt-0.5 mb-1 flex max-w-full items-center rounded-sm px-2 text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring data-active:text-foreground"
+    >
+      <span className="min-w-0 truncate">{t("sidebar.reviewAll", { count: total })}</span>
+    </button>
   );
 }
 
@@ -1388,12 +1377,13 @@ export function Sidebar() {
         >
           {t("sidebar.categories")}
         </SectionTitle>
+        <ReviewLine categories={categories} suggestions={counts.categorySuggestions} reviewing={reviewCategoryId !== null} />
         {categories.map((c) => {
           const help = categoryHelp(counts.categoryUnread[c.id] ?? 0, counts.categorySuggestions[c.id] ?? 0);
           const suggested = counts.categorySuggestions[c.id] ?? 0;
           return (
-            <CategoryMenu key={c.id} category={c}>
-            <div className="relative">
+            <CategoryMenu key={c.id} category={c} suggested={suggested}>
+            <div className="relative" data-suggested={suggested || undefined}>
               {help && <span id={`sidebar-count-category-${c.id}`} className="sr-only">{help}</span>}
               <NavItem
                 testId={`nav-category-${c.id}`}
@@ -1405,7 +1395,6 @@ export function Sidebar() {
                 label={c.name}
                 count={counts.categoryUnread[c.id] || undefined}
                 countHelp={help ? { id: `sidebar-count-category-${c.id}`, text: help } : undefined}
-                beforeCount={suggested > 0 ? <span aria-hidden className={cn(REVIEW_BADGE, "invisible")} /> : undefined}
                 note={
                   (!c.showInInbox || c.forward?.enabled) && (
                     <>
@@ -1430,7 +1419,6 @@ export function Sidebar() {
                   )
                 }
               />
-              {suggested > 0 && <ReviewBadge id={c.id} name={c.name} n={suggested} active={reviewCategoryId === c.id} unread={counts.categoryUnread[c.id] ?? 0} />}
             </div>
             </CategoryMenu>
           );

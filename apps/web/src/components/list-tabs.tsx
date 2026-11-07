@@ -25,8 +25,9 @@ const GAP = 4;
 export function tabClass(kind: "underline" | "pill") {
   return variant(kind, {
     underline: cn(
-      "type-nav relative flex h-8 shrink-0 items-center gap-1.5 rounded-sm px-2 whitespace-nowrap text-muted-foreground hover:text-foreground",
-      "aria-selected:type-nav-strong aria-selected:text-foreground",
+      // plan 158: a step under the mail it sorts (the row's subject is larger): small, regular, the chosen one medium
+      "relative flex h-7 shrink-0 items-center gap-1.5 rounded-sm px-2 text-xs whitespace-nowrap text-muted-foreground hover:text-foreground",
+      "aria-selected:font-medium aria-selected:text-foreground",
       // the indicator sits on the strip's hairline
       "after:pointer-events-none after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary after:opacity-0 after:transition-opacity after:duration-fast aria-selected:after:opacity-100",
     ),
@@ -239,11 +240,11 @@ export function ListTabs({ inline = false }: { /** on the title's line (a wide l
       {/* every tab, measured where nobody sees it (the strong weight: the widest a tab gets); in a box of no size, so it adds no overflow */}
       <div aria-hidden inert className="pointer-events-none invisible absolute top-0 left-0 size-0 overflow-hidden">
       <div ref={mirrorRef} className="flex w-max gap-1">
-        <span data-measure="pinned" className={cn(tabClass(kind), kind === "underline" && "type-nav-strong")}>
+        <span data-measure="pinned" className={cn(tabClass(kind), kind === "underline" && "font-medium")}>
           {labelOf("all", categories, gmailTab)}
         </span>
         {categories.map((c) => (
-          <span key={c.id} data-measure="category" className={cn(tabClass(kind), kind === "underline" && "type-nav-strong")}>
+          <span key={c.id} data-measure="category" className={cn(tabClass(kind), kind === "underline" && "font-medium")}>
             <CategoryDot color={c.color as CategoryColor} />
             {c.name}
             {(counts[c.id] ?? 0) > 0 && <span className="tabular">{formatNumber(counts[c.id]!)}</span>}

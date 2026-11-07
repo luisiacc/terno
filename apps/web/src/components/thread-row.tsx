@@ -163,6 +163,12 @@ function useOwed(thread: Pick<ThreadSummary, "id">, reminderTop?: boolean) {
   return { line: shows ? rowLine(owed) : null, dueAt: shows ? (mostUrgent(owed)?.dueAt ?? null) : null };
 }
 
+/** A cursor that marks a place, not a selection: an outline in the quiet ink (3:1 on every pane), the hover's fill inside */
+const CURSOR = "before:shadow-[inset_0_0_0_1.5px_var(--muted-foreground)]";
+
+/** The open row's rail: 2 px at the selection shape's leading edge, inset by its radius so it stays straight */
+export const RAIL = "pointer-events-none absolute top-[min(calc(var(--row-radius)+1px),30%)] bottom-[min(calc(var(--row-radius)+1px),30%)] left-2 w-0.5 rounded-full bg-row-rail group-data-many/list:hidden";
+
 /** How far into its line a match may stand: near the start, so it shows whole on the narrowest row (a 1100 px window, an account beside it). */
 const LEAD = { own: 12, wide: 40 };
 
@@ -180,11 +186,11 @@ function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead }: {
   );
 }
 
-/** A wide row's preview: a column of its own, a step smaller than the subject and in the quiet ink, and the first thing cut. */
+/** A wide row's preview: right after the subject, a step smaller and in the quiet ink, and the first thing cut. */
 function WideSnippet({ thread, reminderTop, ink, quiet, match, excerpt }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string }) {
   const { line } = useOwed(thread, reminderTop);
   return (
-    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("min-w-0 flex-1 truncate text-xs", line ? ink : quiet)}>
+    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("ml-1.5 min-w-0 flex-1 truncate text-xs", line ? ink : quiet)}>
       {line ?? matchLine(match, excerpt ?? thread.snippet, LEAD.wide)}
     </span>
   );
@@ -213,11 +219,11 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
   /** where it lives when that isn't where mail usually is (Trash wins: trashed spam is in the trash) */
   const place = thread.inTrash ? "trash" : thread.inSpam ? "spam" : null;
 
-  // unread reads first: a stronger sender and subject, one dot. Read is quieter
-  const readInk = "text-row-read";
+  // plan 158: who, then what, then how it starts: sender and subject in the row's ink (the sender a step heavier), the
+  // preview and meta quiet. Unread reads first: a stronger sender and subject, and one dot
   const quiet = "text-muted-foreground";
   const from = (
-    <span data-testid="row-from" className={cn("min-w-0 truncate", thread.unread ? "type-row-from-strong" : cn("type-row-from", readInk))}>
+    <span data-testid="row-from" className={cn("min-w-0 truncate", thread.unread ? "type-row-from-strong" : "type-row-from")}>
       <Marked text={thread.fromName} needles={match?.from} />
     </span>
   );
@@ -287,8 +293,8 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
     );
   // a small tag at the row's own scale: its line box is no taller than the subject's, so no line moves for it
   const draft = hasDraft && <span data-testid="row-draft" className="shrink-0 text-xs leading-none font-medium text-draft-foreground">{t("list.draft")}</span>;
-  // the subject leads a read row: the sender's quieter ink, the preview quieter still
-  const subjectInk = thread.unread ? "type-row-subject-strong text-foreground" : "type-row-subject text-foreground";
+  // the row's own ink (the open row's on its fill), so sender and subject never drift apart
+  const subjectInk = thread.unread ? "type-row-subject-strong" : "type-row-subject";
   // its own line: only a very long subject truncates
   const subject = (
     <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>
@@ -379,11 +385,13 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
         "before:absolute before:inset-x-2 before:inset-y-px before:rounded-(--row-radius)",
         // classic rows: one hairline separator, hidden under the selection and above it (rows render in list order, so the next sibling is the next row)
         classic && "after:absolute after:right-4 after:bottom-0 after:left-5 after:h-(--hairline-w) after:bg-hairline [&:has(+[data-checked])]:after:hidden [&:has(+[data-cursor])]:after:hidden",
-        // plan 158: one selection, one look: every checked row, the first too, is the open row's shape and ink. Among
-        // several, a cursor that's outside them only shows where it is, and by keys it's outlined (the list says when)
-        opened || checked ? "text-row-selected-foreground before:bg-row-selected after:hidden" : selected ? "before:bg-muted after:hidden" : "hover:before:bg-row-hover",
+        // plan 158: four states, four looks. Checked and open share the selection's fill; the open row alone has a rail at
+        // its leading edge (none while several are checked: the reader shows them, not it); the check marks the rest. A
+        // cursor that isn't either (List's, or outside several) is a place: the hover's fill inside an outline
+        opened || checked ? "text-row-selected-foreground before:bg-row-selected after:hidden" : selected ? cn("text-foreground before:bg-row-hover after:hidden", CURSOR) : "text-foreground hover:before:bg-row-hover",
         selected && !checked && "group-data-many/list:text-foreground group-data-many/list:before:bg-row-hover",
-        selected && "group-data-keyed/list:before:shadow-[inset_0_0_0_1px_var(--ring)]",
+        // among several, j/k's cursor is outlined too (the list says when; a click needs none)
+        selected && "group-data-keyed/list:before:shadow-[inset_0_0_0_1.5px_var(--muted-foreground)]",
         reminderEnd && "after:hidden",
         // the check takes the gutter, and the content line moves over as one
         included !== undefined && "pl-10",
@@ -392,13 +400,15 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
       )}
       style={{ transform: `translateY(${top}px)`, height }}
     >
+      {/* plan 158: the open row's mark, straight inside the selection's rounded edge; none while several are checked */}
+      {opened && <span aria-hidden data-testid="row-rail" className={RAIL} />}
       {included !== undefined && (
         // the row is the option and `x` its key: this is for the pointer, and says nothing the row doesn't
         <CheckboxMark data-testid="row-include" checked={included} className="absolute top-1/2 left-5 -translate-y-1/2" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); toggleRow(thread.id); }} />
       )}
       {wide ? (
-        // a table: sender, subject, preview, then fixed columns on the right edge (account, category, attachment, star,
-        // date), so the eye runs down each. What's narrow gives way from the left of them, the preview's width first
+        // a table: sender, then subject and preview as one line, then fixed columns on the right edge (account, category,
+        // attachment, star, date), so the eye runs down each. What's narrow gives way from the left of them, the preview first
         <div className="relative flex min-w-0 items-center gap-3">
           {dot}
           {avatar}
@@ -408,15 +418,17 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
             {count}
             {chip}
           </span>
-          <span className="flex w-[clamp(11rem,30%,24rem)] shrink-0 items-center gap-1.5">
-            <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
+          {/* plan 158: subject then preview, one flowing line (no fixed subject column leaving a gap before the preview), the
+              preview what gives way; the meta columns follow it on the right */}
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span data-testid="row-subject" className={cn("max-w-[70%] min-w-0 flex-none truncate", subjectInk)}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
             {draft}
             {/* what a row is, not a column: beside the subject, so the columns on the right never move */}
             {keptTag}
             {placeTag}
             {reminder && !reminderTop && bell}
+            {answer ? <span className="flex min-w-0 flex-1 justify-end">{answer}</span> : <WideSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} />}
           </span>
-          {answer ? <span className="flex min-w-0 flex-1 justify-end">{answer}</span> : <WideSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} />}
           {accountTag}
           <span data-testid="row-marks" className="flex shrink-0 items-center justify-end gap-1.5">
             {wideCategory}

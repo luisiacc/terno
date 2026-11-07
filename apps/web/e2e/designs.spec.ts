@@ -19,7 +19,7 @@ import es from "@terno/i18n/locales/es";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import type { DesignDefinition } from "../../../packages/ui/src/designs/types";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, openRow, rows, scenario, selectedRow, stabilize, test } from "./fixtures";
+import { expect, focusList, openRow, rows, scenario, selectedRow, stabilize, test, openReview } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 const reload = async (page: Page) => {
@@ -141,11 +141,14 @@ test.describe("in every design", { tag: "@design" }, () => {
       db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.8, '[]', ?)", t, facturas, Date.now());
       await page.reload();
       await page.locator("[data-ready]").waitFor();
-      const review = page.getByTestId(`nav-review-${facturas}`);
-      await expect(review).toBeVisible();
+      // plan 158: one line under the heading, in words, to the category with the most; each one's own in its menu
+      const review = page.getByTestId("nav-review");
+      await expect(review).toHaveText(/^Review \d+ suggestions?$/);
       await review.click();
-      await expect(page.getByTestId("list-title")).toContainText("Facturas");
+      await expect(page.getByTestId("list-title")).toContainText("Review ·");
       await expect(review).toHaveAttribute("data-active");
+      await openReview(page, facturas);
+      await expect(page.getByTestId("list-title")).toContainText("Facturas");
     });
   });
 
@@ -229,7 +232,12 @@ test.describe("switching designs", () => {
         return { id: row.dataset.threadId, into: (top - r.top) / r.height };
       });
     // a viewport that starts partway into a row (Codex review #3: the restore must keep the same row, at the same depth)
-    await page.locator("[data-keep-scroll=list]").evaluate((el) => el.scrollBy(0, 30));
+    await page.locator("[data-keep-scroll=list]").evaluate((el) => {
+      // 40% into the row at the top, whatever lies above the rows (plan 158: the rule offer is the list's first item)
+      const top = el.getBoundingClientRect().top;
+      const row = [...el.querySelectorAll<HTMLElement>("[data-testid=thread-row]")].map((r) => r.getBoundingClientRect()).filter((r) => r.bottom > top + 0.5).sort((a, b) => a.top - b.top)[0]!;
+      el.scrollBy(0, row.top - top + row.height * 0.4);
+    });
     for (const id of ["atelier", "lumen", "graphite", "macos"] as const) {
       const before = await anchor();
       expect(before.into).toBeGreaterThan(0.05);

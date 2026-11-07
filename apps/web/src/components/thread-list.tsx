@@ -3,7 +3,6 @@ import { SearchField } from "@terno/ui/components/search-field";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Bell, ChevronDown, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun, ListChecks } from "@terno/ui/icons";
-import { CloseButton } from "@terno/ui/components/close-button";
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
@@ -37,9 +36,9 @@ import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
 import { ThreadMenu } from "./thread-menu";
 import { DraftsStrip } from "./drafts-strip";
 import { ReviewAlwaysMenu } from "./review-actions";
-import { ThreadRow } from "./thread-row";
+import { RAIL, ThreadRow } from "./thread-row";
 import { registerDesignAnchor, useDesign } from "~/lib/design";
-import { LearnedBanner } from "./learned-banner";
+import { LEARNED_H, LearnedBanner, LearnedSource, useLearnedProposal } from "./learned-banner";
 import { ForwardQuestion } from "./forward-question";
 import { ReportRow } from "./diag/report-row";
 import { DesktopBanner } from "~/lib/web-parts";
@@ -83,6 +82,7 @@ function DigestListRow({ thread, top, height }: { thread: ThreadSummary; top: nu
       className={cn("group/row absolute left-0 flex w-full cursor-default items-center gap-2.5 px-5 select-none before:absolute before:inset-x-2 before:inset-y-px before:rounded-(--row-radius)", selected ? "text-row-selected-foreground before:bg-row-selected" : "hover:before:bg-row-hover")}
       style={{ transform: `translateY(${top}px)`, height }}
     >
+      {selected && <span aria-hidden className={RAIL} />}
       <Newspaper className={cn("relative size-4 shrink-0", selected ? "" : "text-muted-foreground")} />
       <span className="type-row-subject relative min-w-0 flex-1 truncate">{thread.subject}</span>
     </div>
@@ -130,70 +130,91 @@ function useOfferedFilters(): readonly QuickFilter[] {
   return useMemo(() => supported.filter((f) => !(f === "starred" && view === "starred")), [supported, view]);
 }
 
+/** The filters behind More filters: what isn't All or Unread. */
+const MORE_FILTERS = (f: QuickFilter) => f !== "unread";
+
 /**
- * Where a design keeps its filters in a menu, the one control for them: it says "Filter", or the filter that's on, and
- * opens every choice (⇧U and ⇧A still work from anywhere). On, a × beside it clears in one click, and it grows away
- * from the title: nothing else in the header moves. N: the mailbox's unread threads, said on hover.
+ * Where a design keeps its filters in a menu (plan 158): the one that's used most is one click, on a segmented All |
+ * Unread, and the rest are in a small More filters menu beside it, which is filled while one of them is on (its name on
+ * hover and in its own). Nothing changes shape with a filter; ⇧U and ⇧A still work from anywhere, and All clears any.
  */
 function FilterControl({ filter, search }: { filter: QuickFilter | undefined; search: boolean }) {
   const offered = useOfferedFilters();
+  // on, Unread says how many it shows (the mailbox's unread threads; a search counts its own)
   const total = useList((s) => (s.unreadTotal && s.unreadTotal.key === s.key ? s.unreadTotal : null));
-  const name = filter ? filterName(filter) : t("list.filter.trigger");
   const n = filter === "unread" && !search && total && total.n > 0 ? `${formatNumber(total.n)}${total.capped ? "+" : ""}` : null;
+  const more = useMemo(() => offered.filter(MORE_FILTERS), [offered]);
+  const other = filter && filter !== "unread" ? filter : undefined;
+  const moreName = other ? t("list.filter.moreOn", { name: filterName(other) }) : t("list.filter.more");
   return (
-    <div data-testid="filter-control" className="no-drag flex min-w-0 shrink items-center gap-1">
-      <DropdownMenu>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    ref={(el) => {
-                      unreadFilterButton.current = el;
-                    }}
-                    data-testid="filter-menu"
-                    data-active={filter ? true : undefined}
-                    variant="ghost"
-                    size="sm"
-                    aria-label={filter ? t("list.filter.triggerOn", { name }) : name}
-                    className={cn("min-w-0 shrink text-muted-foreground hover:text-foreground aria-expanded:text-foreground", filter && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground aria-expanded:bg-accent aria-expanded:text-accent-foreground")}
-                  />
-                }
-              />
-            }
-          >
-            <span className="min-w-0 truncate">{name}</span>
-            <ChevronDown aria-hidden className="size-3" />
-          </TooltipTrigger>
-          <TooltipContent>{filter ? (n ? t("list.filter.onCount", { name, n }) : t("list.filter.on", { name })) : t("list.filter.help")}</TooltipContent>
-        </Tooltip>
-        <DropdownMenuContent align="end" className="min-w-48">
-          <DropdownMenuRadioGroup value={filter ?? "all"} onValueChange={(v) => setListFilter(v === "all" ? undefined : (v as QuickFilter))}>
-            <DropdownMenuRadioItem value="all" closeOnClick data-testid="filter-option-all">
-              <span className="min-w-0 flex-1 truncate">{t("list.filter.all")}</span>
-              <Shortcut keys="shift+a" className="ms-auto" />
-            </DropdownMenuRadioItem>
-            {offered.map((f) => (
-              <DropdownMenuRadioItem key={f} value={f} closeOnClick data-testid={`filter-option-${f}`}>
-                <span className="min-w-0 flex-1 truncate">{filterName(f)}</span>
-                {f === "unread" && <Shortcut keys="shift+u" className="ms-auto" />}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {filter && (
-        <CloseButton
-          size="sm"
-          data-testid="filter-clear"
-          label={t("list.unreadEmpty.clear")}
-          onClick={() => {
-            setListFilter(undefined);
-            // the control stays: the × goes with the filter
-            unreadFilterButton.current?.focus();
-          }}
-        />
+    <div data-testid="filter-control" className="no-drag flex shrink-0 items-center gap-1">
+      <ToggleGroup
+        data-testid="filter-segments"
+        aria-label={t("list.filter.label")}
+        variant="segmented"
+        // with another filter on, neither: All clears it, Unread takes its place
+        value={filter === "unread" ? ["unread"] : other ? [] : ["all"]}
+        onValueChange={(v: string[]) => v[0] && setListFilter(v[0] === "all" ? undefined : "unread")}
+      >
+        {(["all", "unread"] as const).map((f) => (
+          <Tooltip key={f}>
+            <TooltipTrigger
+              render={
+                <ToggleGroupItem
+                  value={f}
+                  data-testid={`filter-segment-${f}`}
+                  className="h-6 px-2.5 text-xs"
+                  ref={
+                    f === "all"
+                      ? (el: HTMLButtonElement | null) => {
+                          unreadFilterButton.current = el;
+                        }
+                      : undefined
+                  }
+                />
+              }
+            >
+              {f === "all" ? t("list.filter.all") : filterName("unread")}
+            </TooltipTrigger>
+            <TooltipContent>
+              {f === "unread" && n ? t("list.filter.onCount", { name: filterName("unread"), n }) : f === "all" ? t("list.filter.allHelp") : t("list.filter.unreadHelp")} <Shortcut keys={f === "all" ? "shift+a" : "shift+u"} />
+            </TooltipContent>
+          </Tooltip>
+        ))}
+      </ToggleGroup>
+      {more.length > 0 && (
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      data-testid="filter-menu"
+                      data-active={other ? true : undefined}
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={moreName}
+                      className={cn("text-muted-foreground hover:text-foreground aria-expanded:text-foreground", other && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground aria-expanded:bg-accent aria-expanded:text-accent-foreground")}
+                    />
+                  }
+                />
+              }
+            >
+              <ListFilter />
+            </TooltipTrigger>
+            <TooltipContent>{moreName}</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end" className="min-w-48">
+            <DropdownMenuRadioGroup value={other ?? ""} onValueChange={(v) => setListFilter(v === other ? undefined : (v as QuickFilter))}>
+              {more.map((f) => (
+                <DropdownMenuRadioItem key={f} value={f} closeOnClick data-testid={`filter-option-${f}`}>
+                  <span className="min-w-0 flex-1 truncate">{filterName(f)}</span>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
     </div>
   );
@@ -321,13 +342,19 @@ export function closeEmptySearch(): void {
 const listRows = () => document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]");
 
 /** Focus on the rows (where j/k and Esc are the list's), as soon as there are some: an empty list hands focus away. */
-function focusRows(): void {
+export function focusRows(): void {
   if (useList.getState().items.length) return void listRows()?.focus({ preventScroll: true });
   const off = useList.subscribe((l) => {
     if (l.loading) return;
     off();
     if (l.items.length && document.activeElement === document.body) requestAnimationFrame(() => listRows()?.focus({ preventScroll: true }));
   });
+}
+
+/** Plan 158, the skip link: the rows, or with none the list's own first control (its header, or a preview's), never a wait. */
+export function skipToList(): void {
+  if (useList.getState().items.length) return focusRows();
+  document.querySelector<HTMLElement>("[data-testid=thread-list] :is(button, input):not([disabled])")?.focus();
 }
 
 /**
@@ -518,18 +545,20 @@ function Subtitle({ filter, greeting }: { filter: QuickFilter | undefined; greet
     <p data-testid="list-subtitle" className="type-list-subtitle flex min-w-0 items-center gap-1 text-muted-foreground tabular">
       <span className="min-w-0 truncate">
       {greeting && <Greeting />}
-      {unread > 0 && <span className="type-list-subtitle-strong text-unread-ink">{t("list.unreadCount", { count: unread })}</span>}
+      {/* plan 158: the mail leads, not a count about it: the same quiet ink as the rest of the line */}
+      {unread > 0 && <span>{t("list.unreadCount", { count: unread })}</span>}
       {unread > 0 && waiting > 0 && <span aria-hidden> · </span>}
       {waiting > 0 && (
-        <button
-          type="button"
+        // a link button (BoardUI's secondary link) that shows what it says: on, it stays underlined in the ink, its chip beside
+        <Button
+          variant="link-secondary"
           data-testid="waiting-count"
           aria-pressed={filter === "waiting"}
-          className="no-drag rounded-sm text-foreground underline decoration-border underline-offset-2 hover:decoration-current focus-visible:outline-2 focus-visible:outline-ring aria-pressed:decoration-current"
+          className="no-drag align-baseline text-[length:inherit] leading-[inherit] font-normal text-muted-foreground hover:text-foreground aria-pressed:text-foreground aria-pressed:underline"
           onClick={() => setListFilter(filter === "waiting" ? undefined : "waiting")}
         >
           {t("list.waitingCount", { count: waiting })}
-        </button>
+        </Button>
       )}
       {unread === 0 && waiting === 0 && t("list.caughtUp")}
       </span>
@@ -639,7 +668,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
 
   return (
     // every fill starts at 8 px, as a row's selection does; every line of text at 20 px, as a row's does
-    <div ref={hairlineRef} data-testid="list-header" data-kind={kind} className="drag-region scroll-hairline @container shrink-0 pr-4 pb-2 pl-2">
+    <div ref={hairlineRef} data-testid="list-header" data-kind={kind} className="drag-region scroll-hairline @container shrink-0 pr-4 pb-1.5 pl-2">
       {oneRow ? (
         <div inert={covered} className="flex h-[52px] min-w-0 items-center gap-3 pr-1.5 pl-3">
           {/* tabs on this line: the selected one says this, and says what's unread */}
@@ -690,7 +719,8 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
           {/* gives way as the list scrolls (at once: moving through a list never animates), unless it says what a search found */}
           <div
             data-keep={query ? true : undefined}
-            className="-mt-1.5 pb-2 pl-3 group-data-scrolled/list:not-data-keep:hidden"
+            // on a short window it gives its room to the rows (the counts are the sidebar's too), unless it says what a search found
+            className="-mt-1.5 pb-2 pl-3 group-data-scrolled/list:not-data-keep:hidden [@media(max-height:760px)]:not-data-keep:hidden"
           >
             {query && (searchMs !== null || searchAll) ? (
               <p className="flex items-center gap-2">
@@ -954,6 +984,11 @@ export function ThreadList() {
     return n;
   }, [items]);
   const topGap = top > 0 && top < items.length ? TOP_GAP : 0;
+  // plan 158: the rule offer is the list's first item: room above the first row, and it goes up with them
+  const learned = useLearnedProposal();
+  const lead = learned.proposal && !previewing ? LEARNED_H : 0;
+  const leadRef = useRef(lead);
+  leadRef.current = lead;
   const inToday = useApp((s) => s.today);
   const todayGroups = useToday((s) => (inToday ? s.groups : EMPTY_GROUPS));
   const virtualizer = useVirtualizer({
@@ -961,17 +996,34 @@ export function ThreadList() {
     getScrollElement: () => parentRef.current,
     // plan 145: a section's heading is space under the row before it, or above the first
     estimateSize: (i) => height + (i === top - 1 ? topGap : 0) + (todayGroups.some((g) => g.at === i + 1) ? TOP_LABEL : 0),
-    paddingStart: top > 0 || todayGroups.length ? TOP_LABEL : 0,
+    paddingStart: lead + (top > 0 || todayGroups.length ? TOP_LABEL : 0),
     overscan: 10,
     getItemKey,
     paddingEnd: dock,
     scrollPaddingEnd: dock,
   });
 
-  // the top came or went (or grew): positions recomputed before paint
+  // the top came or went (or grew), or the offer above it: positions recomputed before paint
   useLayoutEffect(() => {
     virtualizer.measure();
-  }, [top, topGap, todayGroups]);
+  }, [top, topGap, todayGroups, lead]);
+  // the offer came or went while the list was scrolled: what's on screen stays where it is (at the top, it's the first item arriving)
+  const shownLead = useRef(lead);
+  // the offset as last scrolled: by the time the change is laid out, a shorter list has already clamped the element's own (at its end)
+  const lastTop = useRef(0);
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const read = () => (lastTop.current = el.scrollTop);
+    el.addEventListener("scroll", read, { passive: true });
+    return () => el.removeEventListener("scroll", read);
+  }, []);
+  useLayoutEffect(() => {
+    const d = lead - shownLead.current;
+    shownLead.current = lead;
+    const el = parentRef.current;
+    if (d && el && lastTop.current > 0) el.scrollTop = lastTop.current + d;
+  }, [lead]);
 
   // a new row height (design or density): every position is recomputed before paint
   const measuredHeight = useRef(height);
@@ -988,24 +1040,28 @@ export function ThreadList() {
         const rows = useList.getState().items;
         if (!el || rows.length === 0) return;
         const oldH = measuredHeight.current;
-        const first = Math.min(rows.length - 1, Math.floor(el.scrollTop / oldH));
+        // the offer above the rows keeps its height whatever theirs: only what's past it is measured in rows
+        const lead = leadRef.current;
+        const above = Math.min(el.scrollTop, lead);
+        const y = el.scrollTop - above;
+        const first = Math.min(rows.length - 1, Math.floor(y / oldH));
         // how far into that row the viewport starts (≥ 0), kept as the same share of the new height
-        const into = el.scrollTop - first * oldH;
+        const into = y - first * oldH;
         const id = getApp().selectedId;
         const sel = id === null ? undefined : useList.getState().index.get(id);
-        const selVisible = sel !== undefined && sel * oldH < el.scrollTop + el.clientHeight && (sel + 1) * oldH > el.scrollTop;
+        const selVisible = sel !== undefined && lead + sel * oldH < el.scrollTop + el.clientHeight && lead + (sel + 1) * oldH > el.scrollTop;
         const anchorId = rows[first]!.id;
         return () => {
           const i = useList.getState().index.get(anchorId);
           if (i === undefined) return;
           const h = measuredHeight.current;
-          el.scrollTop = Math.max(0, i * h + into * (h / oldH));
+          el.scrollTop = Math.max(0, above + i * h + into * (h / oldH));
           // where the open thread is now (rows may have arrived above it since the capture)
           const sel = id === null ? undefined : useList.getState().index.get(id);
           // the open thread was on screen: if the new heights carried it out of view, it comes back (set directly: the
           // virtualizer's own scroll would land on positions measured before this switch)
           if (selVisible && sel !== undefined) {
-            const top = sel * h;
+            const top = leadRef.current + sel * h;
             const bottom = el.scrollTop + el.clientHeight - listInset();
             if (top + h <= el.scrollTop) el.scrollTop = top;
             else if (top >= bottom) el.scrollTop = top + h - (el.clientHeight - listInset());
@@ -1019,21 +1075,23 @@ export function ThreadList() {
     listAnchor.firstVisible = () => {
       const el = parentRef.current;
       const rows = useList.getState().items;
-      return el && rows.length ? (rows[Math.min(rows.length - 1, Math.floor(el.scrollTop / measuredHeight.current))]?.id ?? null) : null;
+      return el && rows.length ? (rows[Math.min(rows.length - 1, Math.floor(Math.max(0, el.scrollTop - leadRef.current) / measuredHeight.current))]?.id ?? null) : null;
     };
     // plan 158: where a mailbox was left, and back there (or to the top) when it shows again
     listAnchor.scrollAt = () => {
       const el = parentRef.current;
       const rows = useList.getState().items;
-      if (!el || rows.length === 0 || el.scrollTop <= 0) return null;
+      // (scrolled only into the offer above the rows is the top)
+      if (!el || rows.length === 0 || el.scrollTop <= leadRef.current) return null;
       const h = measuredHeight.current;
-      const first = Math.min(rows.length - 1, Math.floor(el.scrollTop / h));
-      return { id: rows[first]!.id, into: el.scrollTop / h - first };
+      const y = el.scrollTop - leadRef.current;
+      const first = Math.min(rows.length - 1, Math.floor(y / h));
+      return { id: rows[first]!.id, into: y / h - first };
     };
     listAnchor.scrollTo = (at) => {
       const i = at ? useList.getState().index.get(at.id) : undefined;
       // through the virtualizer: a scrollToIndex of the last list's (j, then Esc) may still be settling, and this replaces it
-      virtualizer.scrollToOffset(at && i !== undefined ? (i + at.into) * measuredHeight.current : 0);
+      virtualizer.scrollToOffset(at && i !== undefined ? leadRef.current + (i + at.into) * measuredHeight.current : 0);
     };
     const off = registerDesignAnchor(capture);
     return () => {
@@ -1139,7 +1197,6 @@ export function ThreadList() {
           <Header hairlineRef={headerRef} oneRow={wide} />
           <ReportRow />
           <ForwardQuestion />
-          <LearnedBanner />
           {DesktopBanner && <DesktopBanner />}
         </>
       )}
@@ -1148,11 +1205,13 @@ export function ThreadList() {
       {!previewing && <SelectAllBanner />}
       {/* under tabs the rows are what they control (tabpanel); the listbox is one Tab stop and restores focus when a page closes */}
       <div className="relative flex min-h-0 flex-1 flex-col" {...(tabs ? { role: "tabpanel", id: TAB_PANEL_ID, "aria-labelledby": `list-tab-${tab}` } : {})}>
+      <LearnedSource />
+      {learned.proposal && lead > 0 && <LearnedBanner proposal={learned.proposal} setProposal={learned.setProposal} scroller={parentRef} />}
       <ThreadMenu>
       <div ref={parentRef} data-keep-scroll="list" role={items.length > 0 ? "listbox" : "group"} tabIndex={items.length > 0 ? 0 : -1} onFocus={(e) => empty && e.target === e.currentTarget && leaveEmptyList()} aria-label={t("list.label")} aria-multiselectable={items.length > 0 ? true : undefined} className="@container/rows relative min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [contain:strict]">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         {loading && items.length === 0 ? (
-          <div className="space-y-3 p-4">
+          <div className="space-y-3 p-4" style={lead ? { marginTop: lead } : undefined}>
             {Array.from({ length: 8 }, (_, i) => (
               <div key={i} className="space-y-1.5">
                 <Skeleton shape="text" className="w-1/3" />
@@ -1166,14 +1225,14 @@ export function ThreadList() {
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {top > 0 && (
               // what the rows under it are (each row says "Reminder" to a screen reader itself)
-              <div aria-hidden data-testid="inbox-reminders-label" className="absolute inset-x-0 top-0 flex items-end gap-1.5 px-5 pb-1 text-xs font-medium text-muted-foreground" style={{ height: TOP_LABEL }}>
+              <div aria-hidden data-testid="inbox-reminders-label" className="absolute inset-x-0 flex items-end gap-1.5 px-5 pb-1 text-xs font-medium text-muted-foreground" style={{ top: lead, height: TOP_LABEL }}>
                 <Bell className="size-3" />
                 {t("view.reminders")}
               </div>
             )}
-            {topGap > 0 && <div aria-hidden data-testid="inbox-reminders-end" className="absolute inset-x-5 h-(--hairline-w) bg-hairline" style={{ top: TOP_LABEL + top * height + topGap / 2 }} />}
+            {topGap > 0 && <div aria-hidden data-testid="inbox-reminders-end" className="absolute inset-x-5 h-(--hairline-w) bg-hairline" style={{ top: lead + TOP_LABEL + top * height + topGap / 2 }} />}
             {todayGroups.map((g, i) => (
-              <TodayHeading key={g.kind} kind={g.kind} top={i * TOP_LABEL + g.at * height} />
+              <TodayHeading key={g.kind} kind={g.kind} top={lead + i * TOP_LABEL + g.at * height} />
             ))}
             {virtualItems.map((v) => (
               items[v.index]!.id === DIGEST_ROW_ID ? <DigestListRow key={v.key} thread={items[v.index]!} top={v.start} height={height} /> :

@@ -50,11 +50,15 @@ test.describe("the table (plan 158)", () => {
   test("one header line, columns that line up, a preview a step under the subject, a selection that moves nothing, and back exactly where it was", { tag: "@design" }, async ({ app: page, server, design }) => {
     const box = async (l: Locator) => (await l.boundingBox())!;
     const list = listbox(page);
-    await scenario("the columns: every row's subject and preview start on one line, the date ends on one, and the row is short", async () => {
+    await scenario("the columns: every row's subject starts on one line with its preview right after it, the date ends on one, and the row is short", async () => {
       await expect(rows(page).first()).toHaveAttribute("data-wide", "true");
-      const lefts = await rows(page).evaluateAll((els) => els.slice(0, 12).map((r) => ["row-subject", "row-snippet"].map((id) => r.querySelector(`[data-testid=${id}]`)!.getBoundingClientRect().left)));
-      expect(new Set(lefts.map((l) => l[0])).size).toBe(1);
-      expect(new Set(lefts.map((l) => l[1])).size).toBe(1);
+      const lefts = await rows(page).evaluateAll((els) => els.slice(0, 12).map((r) => {
+        const [subject, snippet] = ["row-subject", "row-snippet"].map((id) => r.querySelector(`[data-testid=${id}]`)!.getBoundingClientRect());
+        return { subject: subject!.left, gap: snippet!.left - subject!.right };
+      }));
+      expect(new Set(lefts.map((l) => l.subject)).size).toBe(1);
+      // plan 158: no column gap between what a mail is about and how it starts (a draft or state tag may sit between)
+      for (const l of lefts) expect(l.gap).toBeLessThanOrEqual(64);
       const rights = await rows(page).evaluateAll((els) => els.slice(0, 12).map((r) => Math.round(r.querySelector("[data-testid=row-date]")!.getBoundingClientRect().right)));
       expect(new Set(rights).size).toBe(1);
       const marks = await rows(page).evaluateAll((els) => els.slice(0, 12).map((r) => Math.round(r.querySelector("[data-testid=row-marks]")!.getBoundingClientRect().left)));
@@ -103,6 +107,14 @@ test.describe("the table (plan 158)", () => {
       await b.click({ modifiers: ["ControlOrMeta"] });
       await expect(page.getByTestId("selection-count")).toHaveText("2 conversations selected");
       expect((await box(b)).y).toBe(before.y);
+      // plan 158: the cursor is a place, never mistaken for what's checked: outlined, on another fill, and no open row's rail
+      await page.mouse.move(0, 0);
+      const look = (l: Locator) => l.evaluate((el) => ({ fill: getComputedStyle(el, "::before").backgroundColor, ring: getComputedStyle(el, "::before").boxShadow }));
+      const cursor = page.locator("[data-testid=thread-row][data-cursor]:not([data-checked])");
+      const [c, k] = [await look(cursor), await look(b)];
+      expect(c.ring).not.toBe("none");
+      expect(c.fill).not.toBe(k.fill);
+      await expect(page.getByTestId("row-rail")).toHaveCount(0);
       // what's under the toolbar can't be reached; a search ends the selection and takes the keys (the field behind a button opens)
       const covered = page.getByTestId("list-title").locator("xpath=ancestor::*[@inert]");
       await expect(covered).toHaveCount(1);
@@ -510,9 +522,8 @@ test.describe("category tabs", () => {
       await expect(page.getByTestId("quick-filter-unread")).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByTestId("filter-menu")).toHaveCount(0);
     } else {
-      await page.getByTestId("filter-menu").click();
-      await page.getByTestId("filter-option-unread").click();
-      await expect(page.getByTestId("filter-menu")).toHaveAttribute("data-active");
+      await page.getByTestId("filter-segment-unread").click();
+      await expect(page.getByTestId("filter-segment-unread")).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByTestId("quick-filters")).toHaveCount(0);
     }
     await expect(all).toHaveAttribute("aria-selected", "true");

@@ -4,7 +4,7 @@ import type { DesignDefinition, TypeRole, TypeSpec } from "./types";
 const SF = '-apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif';
 const TRACKING = "-0.15px";
 
-/** [size, leading, weight, strong]: the only sizes are 12, 13, 14 and 24, the only weights 400 and 500 */
+/** [size, leading, weight, strong]: the only sizes are 12, 13, 14 and 24, the only weights 400 and 500 (an unread sender's 600 aside) */
 const role = (size: string, leading: string, weight: 400 | 500, strong: 400 | 500): TypeSpec => ({ family: "sans", size, leading, weight, strong, tracking: TRACKING, style: "normal" });
 
 const TYPE: Record<TypeRole, TypeSpec> = {
@@ -13,7 +13,8 @@ const TYPE: Record<TypeRole, TypeSpec> = {
   listSubtitle: role("0.75rem", "1rem", 400, 500),
   sectionLabel: role("0.75rem", "1rem", 400, 400),
   nav: role("0.8125rem", "1.25rem", 400, 500),
-  rowFrom: role("0.8125rem", "1.125rem", 400, 500),
+  // plan 158: a read row's sender is its anchor at 500, so an unread one needs a step above it to stay the stronger
+  rowFrom: { ...role("0.8125rem", "1.125rem", 500, 500), strong: 600 },
   rowSubject: role("0.8125rem", "1.125rem", 400, 500),
   rowSnippet: role("0.8125rem", "1.125rem", 400, 400),
   readerSubject: role("1.5rem", "2rem", 500, 500),

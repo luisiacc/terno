@@ -19,12 +19,16 @@ for (const layout of ["list", "split"] as const) {
         await inbox.focus();
         await expect(inbox).toBeFocused();
         let reached = false;
+        const path: string[] = [];
         for (let step = 0; step < 60; step++) {
           await page.keyboard.press("Tab");
           if (await list.evaluate((node) => node === document.activeElement)) { reached = true; break; }
+          path.push(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.testid ?? ""));
         }
         expect(reached).toBe(true);
         await expect(list).toBeFocused();
+        // plan 158: sidebar, then the list's header, then the list: never a pane's edge or the reader on the way
+        expect(path.filter((id) => id.startsWith("pane-handle-") || id.startsWith("action-"))).toEqual([]);
         // the focus is the highlighted row, never a ring around the whole list (plan 52)
         expect(await list.evaluate((node) => [getComputedStyle(node).outlineStyle, getComputedStyle(node).boxShadow])).toEqual(["none", "none"]);
         const active = page.locator(`[id="${await list.getAttribute("aria-activedescendant")}"]`);
@@ -47,6 +51,42 @@ for (const layout of ["list", "split"] as const) {
         await page.keyboard.press("Tab");
         await expect(list).not.toBeFocused();
         expect(await list.evaluate((node) => node.contains(document.activeElement))).toBe(false);
+      });
+      if (layout === "split") test("the first Tab offers a way past the sidebar; the panes' edges come after the reader", async ({ app: page }) => {
+        const list = page.getByRole("listbox", { name: "Conversations", exact: true });
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await page.keyboard.press("Tab");
+        const skip = page.getByTestId("skip-to-list");
+        await expect(skip).toBeFocused();
+        await expect(skip).toHaveAccessibleName("Skip to conversations");
+        expect(await skip.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+        await page.keyboard.press("Enter");
+        await expect(list).toBeFocused();
+        const after: string[] = [];
+        for (let step = 0; step < 40 && !after.includes("pane-handle-list"); step++) {
+          await page.keyboard.press("Tab");
+          after.push(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.testid ?? ""));
+        }
+        const handle = after.indexOf("pane-handle-sidebar");
+        expect(handle).toBeGreaterThan(0);
+        expect(after.indexOf("action-archive")).toBeGreaterThanOrEqual(0);
+        expect(after.indexOf("action-archive")).toBeLessThan(handle);
+        expect(after[handle + 1]).toBe("pane-handle-list");
+      });
+      if (layout === "list") test("the skip link is there only while the list shows; on an empty list it lands in the list's header", async ({ app: page, server }) => {
+        const skip = page.getByTestId("skip-to-list");
+        await expect(skip).toHaveCount(1);
+        await rows(page).first().click();
+        await expect(page.getByTestId("list-page")).toBeVisible();
+        await expect(skip).toHaveCount(0);
+        await page.keyboard.press("Escape");
+        await expect(page.getByTestId("list-page")).toHaveCount(0);
+        const c = (await server.backend.server.invoke("categories.create", { name: "Vacía", color: "violet" }, { clientId: "setup", origin: "dev" })) as { id: number };
+        await page.locator(`[data-drop-target="${c.id}"]`).first().click();
+        await expect(page.getByTestId("list-empty")).toBeVisible();
+        await skip.focus();
+        await page.keyboard.press("Enter");
+        expect(await page.evaluate(() => document.activeElement?.closest("[data-testid=list-header]") !== null)).toBe(true);
       });
       if (layout === "list") test(`Tab preserves a scrolled list without a missing active descendant (${theme})`, async ({ app: page, server }) => {
         await server.backend.server.invoke("settings.update", { theme }, { clientId: "setup", origin: "dev" });

@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import type { ThreadSummary } from "@terno/core";
 import type { ReactVirtualizerOptions } from "@tanstack/react-virtual";
-import { ThreadList } from "./thread-list";
+import { skipToList, ThreadList } from "./thread-list";
 import { listKey, useList } from "~/state/list";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
@@ -32,7 +32,7 @@ vi.mock("~/lib/drag-install", () => ({ installDragController: () => () => {} }))
 vi.mock("~/lib/scroll-hairline", () => ({ installScrollHairline: () => () => {} }));
 vi.mock("./thread-menu", () => ({ ThreadMenu: ({ children }: { children: ReactNode }) => children }));
 vi.mock("./drafts-strip", () => ({ DraftsStrip: () => null }));
-vi.mock("./learned-banner", () => ({ LearnedBanner: () => null }));
+vi.mock("./learned-banner", () => ({ LEARNED_H: 36, LearnedBanner: () => null, LearnedSource: () => null, useLearnedProposal: () => ({ proposal: null, setProposal: () => {} }) }));
 vi.mock("./diag/report-row", () => ({ ReportRow: () => null }));
 vi.mock("~/lib/web-parts", () => ({ DesktopBanner: null }));
 vi.mock("./thread-row", () => ({ ThreadRow: ({ thread, top, height }: { thread: ThreadSummary; top: number; height: number }) => <div id={`thread-${thread.id}`} data-testid="thread-row" data-thread-id={thread.id} style={{ transform: `translateY(${top}px)`, height }} /> }));
@@ -136,4 +136,12 @@ it("the visible-range pagination trigger appends current keys once and keeps the
     useApp.setState(app, true); useList.setState(list, true); host.remove();
     call.mockReset(); call.mockResolvedValue({ items: [], nextCursor: null } as never);
   }
+});
+
+it("plan 158: the skip link with no rows lands on the list's first control, a preview's header as well as the list's", () => {
+  useList.setState({ items: [] });
+  document.body.innerHTML = '<section data-testid="thread-list"><div data-testid="action-preview-header"><button disabled>no</button><button id="first">Back</button></div></section>';
+  skipToList();
+  expect(document.activeElement?.id).toBe("first");
+  document.body.innerHTML = "";
 });

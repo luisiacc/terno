@@ -2,7 +2,7 @@ import type { IncomingMessage } from "@terno/store";
 import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
 import type { Page } from "@playwright/test";
-import { expect, focusList, navTo, rows, search, selectedRow, test, fresh, scenario, ingestConversation, pickFilter } from "./fixtures";
+import { expect, focusList, navTo, rows, search, selectedRow, test, fresh, scenario, ingestConversation, pickFilter, expectFilter } from "./fixtures";
 
 const scrollerOf = (page: Page) => page.locator("[data-testid=thread-list] [data-keep-scroll=list]");
 
@@ -329,10 +329,10 @@ test.describe("search", () => {
     await pickFilter(page, "unread");
     await search(page, "zzfiltro");
     await expect(rows(page)).toHaveCount(1);
-    await expect(page.getByTestId("filter-menu")).toHaveText("Unread");
-    await page.getByRole("button", { name: "Clear filter" }).click();
+    await expectFilter(page, "unread");
+    await page.getByTestId("filter-segment-all").click();
     await expect(rows(page)).toHaveCount(2);
-    await expect(page.getByTestId("filter-menu")).toHaveText("Filter");
+    await expectFilter(page, "all");
 
     // a draft that isn't one of the results steps aside for the search, and comes back after it
     await page.getByRole("button", { name: "Clear search" }).click();

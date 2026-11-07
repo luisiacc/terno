@@ -13,7 +13,7 @@ import type { Page } from "@playwright/test";
 import { msg } from "@terno/store/conformance";
 import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
-import { addRecipients, expect, focusList, navTo, openRow, rows, search, selectedRow, test, type DevServerFixture } from "./fixtures";
+import { addRecipients, expect, focusList, navTo, openRow, rows, search, selectedRow, test, type DevServerFixture, openReview } from "./fixtures";
 import { BACKUP, base, failed, fakeMain, gate, release, upd } from "./helpers/fake-main";
 
 // the format bar's controls are what this drives (plan 158: closed by default)
@@ -173,7 +173,7 @@ test.describe("axe", { tag: "@variant" }, () => {
     await page.getByTestId("search-input").fill("");
 
     // a category's Review, with a row's answers open
-    await page.getByTestId(`nav-review-${facturas}`).click();
+    await openReview(page, facturas);
     await rows(page).first().waitFor();
     await rows(page).first().hover();
     await rows(page).first().getByTestId("row-review-always").click();

@@ -51,7 +51,10 @@ test("a batch: every row shows it's in, Delete reads as the menu's, Undo puts th
   const ids = (await idsOf(rows(page))).slice(1, 4);
   const open = selectedRow(page);
   await expect(open.getByTestId("row-check")).toHaveCount(0);
+  // plan 158: the open row is told from a checked one by its rail; with several checked the reader shows them, not it
+  await expect(open.getByTestId("row-rail")).toBeVisible();
   await selectRows(page, ids);
+  await expect(page.getByTestId("row-rail")).toBeHidden();
   await expect(checked(page).getByTestId("row-check")).toHaveCount(3);
   // plan 158: one selection, one look: the first row (the cursor among them) is the rest's fill and ink, its check on the
   // sender's line, in the unread dot's slot
@@ -133,6 +136,10 @@ test.describe("context menu on one thread", () => {
       await expect(item(page, "menu-read")).toContainText("⇧I");
       // the row's inset selection shape is outlined while the menu is up; the selection didn't move to it
       expect(await row(page, id).evaluate((e) => getComputedStyle(e, "::before").boxShadow)).not.toBe("none");
+      // plan 158: and it's the one row that looks chosen: the open one gives up its fill, keeping its rail
+      const opened = page.locator("[data-testid=thread-row][data-opened]");
+      expect(await opened.evaluate((e) => getComputedStyle(e, "::before").backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+      await expect(opened.getByTestId("row-rail")).toBeVisible();
       await expect(row(page, id)).not.toHaveAttribute("aria-selected", "true");
       await item(page, "menu-read").click();
       await expect(menu(page)).toBeHidden();

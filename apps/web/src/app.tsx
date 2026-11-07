@@ -26,7 +26,7 @@ import { SelectionBar } from "./components/selection-bar";
 import { SnackDock } from "./components/snack-dock";
 import { Sidebar } from "./components/sidebar";
 import { PaneHandle } from "./components/pane-handle";
-import { ThreadList } from "./components/thread-list";
+import { skipToList, ThreadList } from "./components/thread-list";
 import { EngineStopped } from "./components/diag/engine-stopped";
 import { unsavedDraftWork } from "./lib/drafts";
 import { startMailbox, useGateBlocks, useMailbox } from "./lib/mailbox";
@@ -154,7 +154,11 @@ export function App() {
       {gate}
       {/* plan 24: Split is three panes; List is the sidebar and one content pane (the list, or a page over it). The tree keeps its
           shape across a switch, so the list (and its scroll) survives it. */}
-      <div className={cn("grid h-screen overflow-hidden", list ? "app-panes-list" : "app-panes")} data-ready={ready || undefined}>
+      <div className={cn("relative grid h-screen overflow-hidden", list ? "app-panes-list" : "app-panes")} data-ready={ready || undefined}>
+        {/* plan 158: the first Tab stop, seen only then: past the sidebar, straight to the mail (while the list is what shows) */}
+        {!covered && <button type="button" data-testid="skip-to-list" onClick={skipToList} className="absolute top-2 left-2 z-50 rounded-md bg-popover px-3 py-1.5 text-sm text-popover-foreground opacity-0 shadow-menu outline-none pointer-events-none focus-reveal:pointer-events-auto focus-reveal:opacity-100 focus-visible:ring-2 focus-visible:ring-ring">
+          {t("list.skipTo")}
+        </button>}
         <Sidebar />
         <section id="app-list" role={list ? "main" : undefined} aria-label={list ? undefined : t("list.label")} className={cn("hairline-l relative min-h-0", !list && "hairline-r hairline-strong")}>
           {/* under a page the list stays laid out (scroll, measured rows, mounted rows) but isn't painted or reachable */}
@@ -172,9 +176,6 @@ export function App() {
           {/* plan 115: the pinned draft, over the list or its page, kept while other mail is read */}
           {list && pinned && <PinnedDraft key={pinned} list />}
           <SnackDock />
-          {/* plan 21: the panes' edges, over the hairlines; List has no list|reader edge (its width is Split's, kept for it) */}
-          <PaneHandle pane="sidebar" />
-          {!list && <PaneHandle pane="list" />}
         </section>
         {!list && (
           <main className="relative min-h-0" style={composeInset ? { paddingBottom: composeInset } : undefined}>
@@ -185,6 +186,10 @@ export function App() {
             {pinned && <PinnedDraft key={pinned} list={false} />}
           </main>
         )}
+        {/* plan 21: the panes' edges, over the hairlines; List has no list|reader edge (its width is Split's, kept for it).
+            Plan 158: last in the page, so Tab goes sidebar, list, reader and only then to them */}
+        <PaneHandle pane="sidebar" />
+        {!list && <PaneHandle pane="list" />}
       </div>
       <CommandPalette />
       <CategoryPicker />

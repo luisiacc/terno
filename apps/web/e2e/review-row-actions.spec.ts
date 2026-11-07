@@ -7,7 +7,7 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, test } from "./fixtures";
+import { expect, focusList, test, openReview, suggestedIn } from "./fixtures";
 
 const ctx = { clientId: "test", origin: "dev" } as const;
 const SUBJECT = "Tu recibo de Rappi";
@@ -51,7 +51,7 @@ async function reviewing(page: Page, server: DevServer) {
     db.all<{ name: string; rule_json: string }>("SELECT name, rule_json FROM filters WHERE rule_json LIKE '%recibos@rappi.com%' ORDER BY id").map((f) => ({ name: f.name, rule: JSON.parse(f.rule_json) as unknown }));
   await page.reload();
   await page.locator("[data-ready]").waitFor();
-  await page.getByTestId(`nav-review-${facturas}`).click();
+  await openReview(page, facturas);
   await expect(page.getByTestId("list-title")).toHaveText("Review · Facturas");
   await expect(page.getByTestId("thread-row")).toHaveCount(3);
   return { db, facturas, threads, sameSubject, fromRappi, filed, filters };
@@ -79,7 +79,7 @@ test.describe("Review list: answering from the rows (plan 80)", () => {
     await expect.poll(() => filed(target)).toBe("suggestion");
     expect(await cursor(page)).toBe(open);
     await expect(page.getByTestId("category-snackbar")).toBeVisible();
-    await expect(page.getByTestId(`nav-review-${facturas}`)).toHaveAttribute("data-count", "2");
+    await expect.poll(() => suggestedIn(page, facturas)).toBe(2);
     // the snackbar's undo puts it back in Review
     await page.getByTestId("snackbar-undo").click();
     await expect.poll(() => filed(target)).toBeNull();

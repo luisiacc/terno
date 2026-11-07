@@ -1,16 +1,19 @@
 import type { Category } from "@terno/core";
 import { ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@terno/ui/components/context-menu";
 import { t } from "@terno/i18n";
-import { Forward, Inbox, Trash2 } from "@terno/ui/icons";
+import { Forward, Inbox, Sparkles, Trash2 } from "@terno/ui/icons";
 import { useState, type ReactElement } from "react";
 import { setShowInInbox } from "~/lib/categorize";
-import { setApp } from "~/state/app";
+import { navigate, setApp } from "~/state/app";
 import { CategoryDeleteDialog } from "./category-delete-dialog";
 import { CategoryForwardDialog } from "./category-forward-dialog";
 
 
-/** A category's right-click menu (plan 83): whether its mail shows in the Inbox, where its new mail is forwarded (plan 116), and Delete…. */
-export function CategoryMenu({ category, children }: { category: Category; children: ReactElement }) {
+/**
+ * A category's right-click menu (plan 83): its suggestions to review (plan 158), whether its mail shows in the Inbox,
+ * where its new mail is forwarded (plan 116), and Delete….
+ */
+export function CategoryMenu({ category, suggested = 0, children }: { category: Category; suggested?: number; children: ReactElement }) {
   // mounted from the first Delete… on, so the dialog can animate out after
   const [deleting, setDeleting] = useState<boolean | null>(null);
   const [forwarding, setForwarding] = useState<boolean | null>(null);
@@ -21,6 +24,15 @@ export function CategoryMenu({ category, children }: { category: Category; child
       <ContextMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
         <ContextMenuTrigger data-context-menu render={children} />
         <ContextMenuContent className="w-52" data-testid={`category-menu-${category.id}`}>
+          {suggested > 0 && (
+            <>
+              <ContextMenuItem data-testid="category-menu-review" onClick={() => navigate({ view: "all", reviewCategoryId: category.id, accountId: null })}>
+                <Sparkles />
+                <span className="flex-1">{t("sidebar.reviewAll", { count: suggested })}</span>
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+            </>
+          )}
           <ContextMenuCheckboxItem closeOnClick data-testid="category-menu-show-in-inbox" checked={category.showInInbox} onCheckedChange={(on) => void setShowInInbox(category.id, on)}>
             <Inbox />
             <span className="flex-1">{t("category.showInInbox")}</span>

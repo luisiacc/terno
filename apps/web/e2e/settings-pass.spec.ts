@@ -9,7 +9,7 @@ import type { Page } from "@playwright/test";
 import { contrast } from "../../../packages/ui/src/themes/color";
 import { THEMES } from "../../../packages/ui/src/themes/registry";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
-import { expect, fresh, rows, scenario, test } from "./fixtures";
+import { expect, fresh, rows, scenario, test, openReview } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 const COLOR_NAMES = { rose: "Rose", amber: "Amber", lime: "Lime", emerald: "Emerald", cyan: "Cyan", indigo: "Indigo", violet: "Violet", slate: "Slate" } as const;
@@ -332,9 +332,8 @@ test.describe("editable, persisted and in effect", () => {
       db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.91, '[]', ?)", thread, id, Date.now());
       await page.reload();
       await page.locator("[data-ready]").waitFor();
-      const review = page.getByTestId(`nav-review-${id}`);
-      await review.click();
-      await expect(review).toHaveAttribute("data-active", "true");
+      await openReview(page, id);
+      await expect(page.getByTestId("nav-review")).toHaveAttribute("data-active", "true");
       await openVia(page, "gear", "categories");
       const item = page.locator(`[data-category-id="${id}"]`);
       await item.getByTestId("category-toggle").click();

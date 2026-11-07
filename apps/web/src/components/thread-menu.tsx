@@ -196,8 +196,10 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
           const row = Number(el.dataset.threadId);
           const target = targetFor(row);
           useMenuTarget.setState(target);
-          // the ring follows the row's inset, rounded selection shape
-          setRule("menu-target", `${rowSelector([row], "::before")}{box-shadow:inset 0 0 0 2px var(--ring)}`);
+          // the ring follows the row's inset, rounded selection shape. Plan 158: one row looks chosen at a time, so the open
+          // row, when it isn't what the menu is for, gives up its fill while the menu is up and keeps only its rail
+          const elsewhere = `[data-testid=thread-row][data-opened]:not([data-checked]):not([data-thread-id="${Math.trunc(row)}"])`;
+          setRule("menu-target", `${rowSelector([row], "::before")}{box-shadow:inset 0 0 0 2px var(--ring)}${elsewhere}{color:var(--foreground)}${elsewhere}::before{background:transparent}`);
         }}
       />
       <ContextMenuContent

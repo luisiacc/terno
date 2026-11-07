@@ -72,7 +72,7 @@
   --type-row-from-family: "Figtree Variable", ui-sans-serif, system-ui, sans-serif;
   --type-row-from-size: 0.875rem;
   --type-row-from-leading: 1.25rem;
-  --type-row-from-weight: 400;
+  --type-row-from-weight: 500;
   --type-row-from-strong: 700;
   --type-row-from-tracking: 0em;
   --type-row-from-style: normal;
@@ -224,7 +224,7 @@
   --type-row-from-family: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
   --type-row-from-size: 0.84375rem;
   --type-row-from-leading: 1.25rem;
-  --type-row-from-weight: 400;
+  --type-row-from-weight: 500;
   --type-row-from-strong: 600;
   --type-row-from-tracking: 0em;
   --type-row-from-style: normal;
@@ -376,7 +376,7 @@
   --type-row-from-family: -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif;
   --type-row-from-size: 0.8125rem;
   --type-row-from-leading: 1.125rem;
-  --type-row-from-weight: 400;
+  --type-row-from-weight: 500;
   --type-row-from-strong: 600;
   --type-row-from-tracking: 0em;
   --type-row-from-style: normal;
@@ -528,7 +528,7 @@
   --type-row-from-family: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
   --type-row-from-size: 0.875rem;
   --type-row-from-leading: 1.25rem;
-  --type-row-from-weight: 400;
+  --type-row-from-weight: 500;
   --type-row-from-strong: 600;
   --type-row-from-tracking: -0.006em;
   --type-row-from-style: normal;
@@ -680,8 +680,8 @@
   --type-row-from-family: -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif;
   --type-row-from-size: 0.8125rem;
   --type-row-from-leading: 1.125rem;
-  --type-row-from-weight: 400;
-  --type-row-from-strong: 500;
+  --type-row-from-weight: 500;
+  --type-row-from-strong: 600;
   --type-row-from-tracking: -0.15px;
   --type-row-from-style: normal;
   --type-row-subject-family: -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif;

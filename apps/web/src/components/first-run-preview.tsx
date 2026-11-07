@@ -6,7 +6,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Kbd } from "@terno/ui/components/kbd";
 import { cn } from "@terno/ui/lib/utils";
 import { Separator } from "@terno/ui/components/separator";
-import { Archive, ChevronDown, Inbox, Mail, OctagonAlert, Reply, Search, Send, SquarePen, Star, Tag, Trash2 } from "@terno/ui/icons";
+import { Archive, ChevronDown, Inbox, ListFilter, Mail, OctagonAlert, Reply, Search, Send, SquarePen, Star, Tag, Trash2 } from "@terno/ui/icons";
 import { formatNumber, t } from "@terno/i18n";
 import { useLayoutEffect, useRef, useState } from "react";
 import { listDate, viewLabel } from "~/lib/format";
@@ -153,9 +153,13 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
   const actions = (
     <>
       {quick === "menu" && (
-        <span className="flex h-7 shrink-0 items-center gap-1 px-2.5 text-[length:var(--ds-text-control)] font-medium text-muted-foreground">
-          {t("list.filter.trigger")}
-          <ChevronDown className="size-3" />
+        // the header's All | Unread and its More filters (plan 158), drawn
+        <span className="flex shrink-0 items-center gap-1">
+          <span className="flex items-center gap-0.5 rounded-[calc(var(--radius-md)+var(--spacing)*0.5)] bg-field p-0.5 text-xs dark:bg-background">
+            <span className="flex h-6 items-center rounded-md bg-card px-2.5 font-medium shadow-xs dark:bg-muted">{t("list.filter.all")}</span>
+            <span className="flex h-6 items-center px-2.5 text-muted-foreground">{t("list.filter.unread")}</span>
+          </span>
+          {icon(<ListFilter />)}
         </span>
       )}
       {behindButton && icon(<Search />)}

@@ -3,7 +3,8 @@ import { Button } from "@terno/ui/components/button";
 import { Announcement } from "@terno/ui/components/announcement";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { t } from "@terno/i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { create } from "zustand";
 import { richT } from "~/lib/i18n";
 import { registerUndo, snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
@@ -13,17 +14,18 @@ const SENTENCE = { archive: "list.learned.archive", trash: "list.learned.trash",
 const LINE = { archive: "list.learned.line.archive", trash: "list.learned.line.trash", spam: "list.learned.line.spam" } as const;
 const CREATED = { archive: "list.learned.created.archive", trash: "list.learned.created.trash", spam: "list.learned.created.spam" } as const;
 
-/**
- * One learned rule's offer, above the inbox: one quiet line that doesn't outrank the mail, its reason on hover, and it
- * gives way as the list scrolls. Its button says what it does: a rule for new mail, no mail touched, and Undo (or z)
- * takes the rule back and brings the offer back. The × is "not now": the offer doesn't come back.
- */
-export function LearnedBanner() {
+/** Its height: one line in every window, so the rows under it start where they always do (the list's first item) */
+export const LEARNED_H = 32;
+
+/** The offer shown, kept while the backend says the same one (counts change often: the list renders only when the offer does) */
+const useOffer = create<{ proposal: LearnedProposal | null }>(() => ({ proposal: null }));
+const setProposal = (p: LearnedProposal | null) => useOffer.setState((s) => (s.proposal?.key === p?.key && s.proposal?.support === p?.support ? s : { proposal: p }));
+
+/** Asks for the inbox's first learned-rule offer whenever the counts change; renders nothing (its own renders stay its own). */
+export function LearnedSource() {
   const view = useApp((s) => s.view);
   const query = useApp((s) => s.query);
   const counts = useApp((s) => s.counts);
-  const [proposal, setProposal] = useState<LearnedProposal | null>(null);
-
   useEffect(() => {
     if (view !== "inbox" || query) return;
     let alive = true;
@@ -32,27 +34,70 @@ export function LearnedBanner() {
       alive = false;
     };
   }, [view, query, counts]);
+  return null;
+}
 
-  if (!proposal || view !== "inbox" || query) return null;
+/** The offer to show: none in a search or another mailbox. */
+export function useLearnedProposal() {
+  const here = useApp((s) => s.view === "inbox" && !s.query);
+  const proposal = useOffer((s) => s.proposal);
+  return { proposal: here ? proposal : null, setProposal };
+}
+
+/**
+ * One learned rule's offer, as the list's first item (plan 158): one quiet line under the mail's rank, that goes up with
+ * the rows as they scroll, its reason on hover. It lies over the room the list leaves above its first row, outside the
+ * listbox (which holds only options), and follows the scroller's offset: a plain transform, not an animation, so it
+ * holds with motion off. Its button says what it does: a rule for new mail, no mail touched, and Undo (or z) takes the
+ * rule back and brings the offer back. The × is "not now": the offer doesn't come back.
+ */
+export function LearnedBanner({ proposal, setProposal, scroller }: { proposal: LearnedProposal; setProposal: (p: LearnedProposal | null) => void; scroller: RefObject<HTMLElement | null> }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const self = ref.current;
+    if (!el || !self) return;
+    // past its own height there's nothing to move: it's gone, out of the keyboard's way too
+    const follow = () => {
+      const y = Math.min(el.scrollTop, LEARNED_H);
+      self.style.transform = y ? `translateY(${-y}px)` : "";
+      self.style.visibility = y >= LEARNED_H ? "hidden" : "";
+    };
+    follow();
+    el.addEventListener("scroll", follow, { passive: true });
+    return () => el.removeEventListener("scroll", follow);
+  }, [scroller]);
   const who = proposal.scope === "list" ? t("list.learned.list", { value: proposal.value }) : proposal.scope === "domain" ? t("list.learned.domain", { value: proposal.value }) : proposal.value;
   const line = t(LINE[proposal.action], { who: proposal.value });
   const sentence = richT(SENTENCE[proposal.action], { who, count: proposal.support, b: (text) => <span className="font-medium">{text}</span> });
   return (
+    // it lies over the scroller, not in it: a wheel over it still moves the list. Clipped to its room, as the rows are
+    // Its room takes no pointer itself: only the part of the offer still showing does (a hidden one none), so a row scrolled under it is clicked
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-10 overflow-hidden" style={{ height: LEARNED_H }} onWheel={(e) => scroller.current?.scrollBy(0, e.deltaY)}>
+    <div
+      ref={ref}
+      className="pointer-events-auto h-full"
+      // reached by Tab while partly scrolled away: the list comes back to its top, so what has the focus shows whole
+      onFocus={() => {
+        const el = scroller.current;
+        if (el && el.scrollTop > 0) el.scrollTop = 0;
+      }}
+    >
     <Announcement
       data-testid="learned-banner"
       inline
-      // at once, not on a transition: moving through a list never animates
-      className="bg-transparent py-1 pr-1.5 pl-3 text-muted-foreground group-data-scrolled/list:not-focus-within:hidden"
+      // quieter than any row: small, muted, on no fill, its button the quietest kind
+      className="my-0 h-full bg-transparent py-0 pr-1.5 pl-3 text-muted-foreground"
       title={
         <Tooltip>
-          {/* the deciding words whole: a long name takes a second line rather than being cut */}
-          <TooltipTrigger render={<span data-testid="learned-line" className="line-clamp-2 break-words whitespace-normal" />}>
+          {/* one line: a long name truncates, said whole on hover and in the button's name */}
+          <TooltipTrigger render={<span data-testid="learned-line" className="block min-w-0 truncate" />}>
             {line}
           </TooltipTrigger>
           <TooltipContent className="max-w-72">{sentence}</TooltipContent>
         </Tooltip>
       }
-      titleProps={{ className: "font-normal" }}
+      titleProps={{ className: "font-normal text-muted-foreground" }}
       closeLabel={t("list.learned.notNow")}
       closeProps={{ "data-testid": "learned-dismiss" }}
       onClose={() => {
@@ -61,11 +106,12 @@ export function LearnedBanner() {
       }}
       actions={
         <>
-          {/* a suggestion, not the screen's main action: a quiet raised button */}
+          {/* a suggestion, not the screen's main action: the quiet button, its words in the ink */}
           <Button
             size="xs"
-            variant="outline"
+            variant="ghost"
             data-testid="learned-accept"
+            className="text-foreground"
             aria-label={t("list.learned.acceptName", { line })}
             onClick={async () => {
               let id: number;
@@ -88,5 +134,7 @@ export function LearnedBanner() {
         </>
       }
     />
+    </div>
+    </div>
   );
 }
