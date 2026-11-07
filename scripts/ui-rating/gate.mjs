@@ -18,7 +18,12 @@ const isScore = (n) => typeof n === "number" && n >= 1 && n <= 10;
 export function reportProblems(report) {
   const problems = [];
   if (report.viewed_all_images !== true) problems.push("did not view all the images");
-  for (const k of ["overall", "ui", "ux"]) if (!isScore(report[k]?.score)) problems.push(`no ${k} score`);
+  if (!report.hands_on?.length) problems.push("did not try the app");
+  if (!Array.isArray(report.issues)) problems.push("no issues list");
+  for (const k of ["overall", "ui", "ux"]) {
+    if (!isScore(report[k]?.score)) problems.push(`no ${k} score`);
+    else if (!report[k].why?.trim()) problems.push(`no ${k} reason`);
+  }
   for (const s of SCREENS) {
     const screen = report.screens?.[s];
     if (!screen) { problems.push(`no screen ${s}`); continue; }
@@ -87,8 +92,12 @@ function summary(found, result) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const dir = process.argv[2];
   if (!dir) throw new Error("usage: gate.mjs <roundDir>");
+  if (!existsSync(join(dir, "round.json"))) throw new Error(`${dir} isn't a round`);
+  const { designs, raters } = JSON.parse(readFileSync(join(dir, "round.json"), "utf8"));
   const found = readRound(dir);
+  // a narrowed round reports its numbers and can't pass the rule
   const result = verdict(found);
+  if (designs.length !== DESIGNS.length || raters.length !== RATERS.length) console.log("a narrowed round: it can't pass the rule");
   writeFileSync(join(dir, "summary.md"), summary(found, result));
   console.log(`${result.pass ? "PASS" : "below the bar"}: ${result.below.length} cells under ${BAR}, ${result.missing.length} reports missing, ${result.invalid.length} problems. ${join(dir, "summary.md")}`);
   process.exit(result.pass ? 0 : 1);

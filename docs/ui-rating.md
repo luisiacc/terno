@@ -4,7 +4,7 @@ How Terno's everyday screens are scored, and the bar they have to hold (plan 158
 
 ## The rule
 
-**Every score, on every rated screen, in every rated style, from both raters, is at least 9 out of 10, on one commit.** A series that changes how a rated screen looks or behaves re-rates the styles it touches before it's done, and all of them before a release.
+**Every score, on every rated screen, in every rated style, from both raters, is at least 9 out of 10, on one commit, in two whole rounds in a row.** The second round confirms the first, so a lucky pass can't count; if it falls short, the commit hasn't passed. A series that changes how a rated screen looks or behaves re-rates the styles it touches before it's done, and all of them before a release.
 
 ## The screens and styles
 
@@ -42,19 +42,21 @@ pnpm ui:rate --out /tmp/terno-scratch/rating/<id>  # about 30 minutes, four rate
 pnpm ui:gate /tmp/terno-scratch/rating/<id>        # writes summary.md; exit 1 below the bar
 ```
 
-`--designs lumen,macos` and `--raters codex` narrow a round while working. Only a whole round passes the rule.
+`--designs lumen,macos` and `--raters codex` narrow a round while working. Only whole rounds pass the rule. Styles are rated in their own colors ("Style colors"), even where a new install starts Lumen in plan 98's GitHub palettes.
 
 ## Keeping the raters independent
 
 The scores mean something only if the raters can't be led. `rate.mjs` holds this:
 
-- Each rater starts in a new session in an empty, randomly named folder outside the repo: no `AGENTS.md`, no memory, no MCP servers, nothing kept afterwards.
-- It sees only the brief, that round's screenshots and a harness to run the frozen build. It never sees an earlier score, how many rounds there have been, what changed or what the bar is.
+- Each rater starts in a new session in an empty, randomly named folder outside the repo, with only a shell's environment: no `AGENTS.md`, no memory, no user settings, hooks or MCP servers, nothing kept afterwards.
+- It sees only the brief, that round's screenshots and a harness to run a frozen copy of the build, also outside the repo. It never sees an earlier score, how many rounds there have been, what changed or what the bar is.
+- Raters have shell access for the app's sake, so the brief also tells them to stay in their folder. That's an instruction, not a wall.
 - Claude and Codex rate at the same time and never see each other's work.
 
 Rules for whoever runs it:
 
-- **Never tell a rater** the target, the last score or what you fixed, and never send it back to reconsider. A score you disagree with gets a new round.
+- **Never tell a rater** the target, the last score or what you fixed, and never send it back to reconsider.
+- **A new round needs a code change,** apart from the confirming round. Re-rolling an unchanged commit until the numbers land proves nothing. Keep every round, and log it in the plan.
 - **Fix the app, not the evidence.** Don't change the demo data or what's captured to flatter a screen, and don't drop a feature to raise a score without the owner's say.
 - **Raters can be wrong.** A finding that contradicts a product rule (`AGENTS.md`) goes to the owner rather than into the code. It stays in the numbers until then.
 - **Report the numbers as they are,** including what stayed under the bar.

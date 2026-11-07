@@ -4,6 +4,8 @@ import { belowBar, DESIGNS, FACETS, RATERS, reportProblems, SCREENS, verdict } f
 function report(score = 9) {
   return {
     viewed_all_images: true,
+    hands_on: ["tried it"],
+    issues: [],
     overall: { score, why: "x" },
     ui: { score, why: "x" },
     ux: { score, why: "x" },
@@ -43,5 +45,12 @@ describe("the UI rating's bar (plan 158)", () => {
     r.screens.search.facets.clarity.improve = " ";
     r.viewed_all_images = false as true;
     expect(reportProblems(r)).toEqual(["did not view all the images", "search.clarity: no improve"]);
+  });
+
+  it("a report that never tried the app, or gives no reasons, is incomplete", () => {
+    const r = report();
+    r.hands_on = [];
+    r.ui.why = "";
+    expect(reportProblems(r)).toEqual(["did not try the app", "no ui reason"]);
   });
 });

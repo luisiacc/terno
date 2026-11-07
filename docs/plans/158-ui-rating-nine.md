@@ -41,6 +41,22 @@ A round freezes one commit's build, so an edit mid-round can't reach a rater.
 - Only `e2e` flows and baselines that a change really moves are updated, and looked at.
 - A finding that contradicts a product decision goes to the owner, not into the code.
 
+## Revisions after the Codex review
+
+The plan's critique found twelve holes, all taken:
+
+- **Raters could still inherit context:** user config, hooks and MCP servers are now off, and the environment is an allowlist.
+- **Raters could find the repo and other ratings by path:** a round runs from a frozen copy in a random folder (build, Electron, Playwright, harness, brief). Raters still have a shell, so staying out is an instruction, not a wall.
+- **A reused folder could pass falsely:** every round gets a new folder, and the runner refuses one that's in use. Untracked files count as dirty.
+- **A report could pass without the evaluation:** no hands-on list, no reasons or no issues list makes it incomplete. A narrowed round can't pass.
+- **Modes could hide each other:** a cell's score is its weakest case, across light and dark, layouts and window sizes.
+- **Non-Lumen raters were told flows were "rated elsewhere":** gone. They try what the style changes, and whatever else a score needs.
+- **The brief pushed raters to invent findings:** fewer issues are allowed, "nothing I can support" is a valid `improve`, and equal scores are fine.
+- **Native appearance:** the harness sets `nativeTheme` too. macOS's translucent sidebar can't be captured behind other windows without Screen Recording permission, so it stays flattened, and that rater is told.
+- **A lucky pass:** the rule needs two whole rounds in a row on one commit, every round is kept, and an unchanged commit doesn't get re-rolled.
+
+The brief changed after the baseline, so round 0 is slightly less strict than later rounds on the weakest-case rule.
+
 ## Tests
 
 - `gate.test.ts`: the bar, and a report can't pass by omission.

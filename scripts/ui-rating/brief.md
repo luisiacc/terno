@@ -58,11 +58,13 @@ Benchmark against the best of the category: Apple Mail, Mimestream, Superhuman, 
 - **3–4** problems a user notices every day
 - **1–2** broken
 
-Use the whole range and half points. Scores should differ where quality differs: a flat wall of the same number is useless. Every claim must point at something you saw, in a named screenshot or a flow you ran.
+Use the whole range and half points. Give equal scores only where quality really is equal. Every claim must point at something you saw, in a named screenshot or a flow you ran.
+
+**A cell's score is its weakest case:** when a screen differs between light and dark, between layouts or between window sizes, score the worst of them and say which.
 
 ## What to score
 
-Score each of the 9 screens on all 11 facets, plus an overall. Each facet has a score and `improve`: **the specific change that would raise that score**, naming what you saw. Only a 10 may leave `improve` empty.
+Score each of the 9 screens on all 11 facets, plus an overall. Each facet has a score and `improve`: **the specific change that would raise that score**, naming what you saw. If you can't support a specific change, say so there rather than inventing one. Only a 10 may leave `improve` empty.
 
 **UI facets**
 - `typography`: typeface, scale, weights, line length, rhythm
@@ -105,7 +107,7 @@ Write both files in this folder:
 }
 ```
 
-Screens are `split_inbox`, `conversation`, `reply_draft`, `new_message`, `list_layout_inbox`, `search`, `command_palette`, `multi_select`, `row_menu`. Give 3 to 5 strengths and 10 to 15 issues, the most damaging first. Mark anything you saw only in one mode.
+Screens are `split_inbox`, `conversation`, `reply_draft`, `new_message`, `list_layout_inbox`, `search`, `command_palette`, `multi_select`, `row_menu`. Give up to 5 strengths and up to 15 issues, the most damaging first. List only real ones: fewer is fine. Mark anything you saw only in one mode.
 
 2. `report.md`, a short critique: your verdict, how it compares to the benchmarks by name, and what you'd change first.
 

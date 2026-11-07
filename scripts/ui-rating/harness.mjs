@@ -6,11 +6,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const require = createRequire(join(repo, "apps/desktop/package.json"));
-const { _electron: electron } = require("@playwright/test");
-const ELECTRON = join(repo, "apps/desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron");
-/** A round rates one frozen build, so a later edit can't reach a rater halfway through. */
-const BUILD = process.env.UI_RATING_BUILD ?? join(repo, "apps/desktop/dist");
+/** A round runs from its own frozen copy (rate.mjs), so neither a later edit nor the checkout's path can reach a rater. */
+const RUNTIME = process.env.UI_RATING_RUNTIME;
+const { _electron: electron } = RUNTIME ? createRequire(join(RUNTIME, "app/package.json"))("playwright-core") : createRequire(join(repo, "apps/desktop/package.json"))("@playwright/test");
+const ELECTRON = RUNTIME ? join(RUNTIME, "Electron.app/Contents/MacOS/Electron") : join(repo, "apps/desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron");
+const BUILD = RUNTIME ? join(RUNTIME, "app/dist") : join(repo, "apps/desktop/dist");
 
 export async function resize(app, width, height) {
   await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height), { width, height });
@@ -52,6 +52,7 @@ export async function launch({ design = "lumen", dark = false, width = 1440, hei
       return ["127.0.0.1", "localhost", "[::1]"].includes(host) ? route.continue() : route.abort("blockedbyclient");
     });
     const page = await app.firstWindow();
+    await app.evaluate(({ nativeTheme }, source) => { nativeTheme.themeSource = source; }, dark ? "dark" : "light");
     await page.emulateMedia({ colorScheme: dark ? "dark" : "light" });
     await (await page.context().newCDPSession(page)).send("Emulation.setFocusEmulationEnabled", { enabled: true });
     await resize(app, width, height);
