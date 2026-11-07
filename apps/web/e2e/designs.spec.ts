@@ -339,7 +339,8 @@ test.describe("Lumen: search behind a button", () => {
     await input.focus();
     await page.keyboard.press("Escape");
     await expect(input).toHaveCount(0);
-    await expect(page.getByTestId("search-button")).toBeFocused();
+    // the keys are the rows' again, and the button isn't left lit by focus (plan 158)
+    await expect(page.locator("[data-testid=thread-list] [data-keep-scroll=list]")).toBeFocused();
     // a query keeps it open, whatever happens to focus
     await page.getByTestId("search-button").click();
     await page.keyboard.type("factura");

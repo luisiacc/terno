@@ -1,14 +1,17 @@
 import type { IncomingMessage } from "@terno/store";
 import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
-import { expect, rows, search, test, fresh, scenario } from "./fixtures";
+import type { Page } from "@playwright/test";
+import { expect, focusList, navTo, rows, search, selectedRow, test, fresh, scenario, ingestConversation } from "./fixtures";
+
+const scrollerOf = (page: Page) => page.locator("[data-testid=thread-list] [data-keep-scroll=list]");
 
 test.describe("search", () => {
   test("search: results and clearing, from:, accents, every account, Escape and /, any of, addresses", async ({ app: page, server }) => {
     await scenario("shows results with timing and restores the inbox when cleared", async () => {
       const inboxFirst = await rows(page).first().getAttribute("data-thread-id");
       await search(page, "factura");
-      await expect(page.getByTestId("search-stats")).toHaveText(/\d+\+? results · (<1|\d+) ms/);
+      await expect(page.getByTestId("search-stats")).toHaveText(/^\d+\+? results?$/);
       // plan 64: a search looks everywhere, so the list is the search's
       await expect(page.getByTestId("list-title")).toHaveText("Search");
       const n = await rows(page).count();
@@ -74,6 +77,67 @@ test.describe("search", () => {
       await found("ana@pepino.test,bob@pepino.studio", ["Pepino uno", "Pepino dos"]);
       await found('"ana@pepino.test"', ["Pepino uno", "Pepino mencion", "Pepino parecido"]);
     });
+    await scenario("the coverage note: only with few results or none, and drafts stay out of the results (plan 158)", async () => {
+      await fresh(page);
+      await search(page, "factura");
+      await expect(page.getByTestId("search-coverage")).toHaveCount(0);
+      await search(page, "zzqxjv");
+      await expect(page.getByTestId("search-coverage")).toBeVisible();
+      await expect(page.getByTestId("search-input")).toHaveAccessibleDescription(await page.getByTestId("search-coverage").innerText());
+    });
   });
 
+  test("Esc: from the results to the field, the query kept; from the field out, the mailbox as it was (plan 158)", async ({ app: page, server }) => {
+    for (let i = 0; i < 3; i++) await ingestConversation(server, { subject: `zzvuelta ${i}`, count: 1, now: E2E_NOW - i });
+    await fresh(page);
+    const input = page.getByTestId("search-input");
+    const scroller = scrollerOf(page);
+    await focusList(page);
+    for (let i = 0; i < 12; i++) await page.keyboard.press("j");
+    await scroller.evaluate((el) => (el.scrollTop = 320));
+    const open = await selectedRow(page).getAttribute("data-thread-id");
+
+    await search(page, "zzvuelta");
+    await expect(rows(page)).toHaveCount(3);
+    await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBe(0);
+    const subject = await page.getByTestId("reader-subject").innerText();
+
+    await page.keyboard.press("ArrowDown");
+    await expect(scroller).toBeFocused();
+    // ↓ arrives on the top hit; it doesn't step past it
+    await expect(selectedRow(page)).toHaveText(/zzvuelta/);
+    await expect(page.getByTestId("reader-subject")).toHaveText(subject);
+    await page.keyboard.press("j");
+    await page.keyboard.press("Escape");
+    await expect(input).toBeFocused();
+    await expect(input).toHaveValue("zzvuelta");
+
+    await page.keyboard.press("Escape");
+    await expect(input).toHaveValue("");
+    await expect(page.getByTestId("search-stats")).toHaveCount(0);
+    await expect(selectedRow(page)).toHaveAttribute("data-thread-id", open!);
+    await expect(scroller).toBeFocused();
+    await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBe(320);
+
+    // and the same across a mailbox and back
+    await navTo(page, "sent");
+    await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBe(0);
+    await navTo(page, "inbox");
+    await expect(selectedRow(page)).toHaveAttribute("data-thread-id", open!);
+    await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBe(320);
+  });
+
+  test("an inherited quick filter shows in the search's header and clears there; nothing above the results but results (plan 158)", async ({ app: page, server }) => {
+    await ingestConversation(server, { subject: "zzfiltro leido", count: 1, now: E2E_NOW });
+    await ingestConversation(server, { subject: "zzfiltro nuevo", count: 1, unread: 1, now: E2E_NOW });
+    await fresh(page);
+    await page.getByTestId("unread-filter").click();
+    await search(page, "zzfiltro");
+    await expect(rows(page)).toHaveCount(1);
+    await expect(page.getByTestId("unread-filter-status")).toBeVisible();
+    await page.getByRole("button", { name: "Clear filter" }).click();
+    await expect(rows(page)).toHaveCount(2);
+    await expect(page.getByTestId("unread-filter-status")).toHaveCount(0);
+    await expect(page.getByTestId("search-input")).toBeFocused();
+  });
 });

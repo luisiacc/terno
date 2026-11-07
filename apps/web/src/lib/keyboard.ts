@@ -12,7 +12,7 @@ import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, answerReview, rejectSuggestion } from "~/lib/categorize";
 import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
-import { focusSearch, listScroller } from "~/components/thread-list";
+import { closeEmptySearch, focusSearch, listScroller } from "~/components/thread-list";
 import { snackbarControls } from "~/components/category-snackbar";
 import { setListFilter, toggleUnreadFilter } from "~/lib/unread";
 import { closePage, currentPage, goBack, goForward, listLayout, openThread, uncoverList } from "~/lib/page";
@@ -101,11 +101,14 @@ function filterList(filter: "unread" | undefined) {
   setListFilter(filter);
 }
 
-/** Esc: Back from a page (List), else the multi-selection ends. */
+/** Esc: Back from a page (List), else the multi-selection ends, else from a search's results to its field (plan 158: the query kept, the field's own Esc leaves). */
 function escape() {
+  const s = getApp();
   if (listLayout() && currentPage() !== "list") { markSelectionIntent(); closePage({ focus: true }); }
-  else if (getApp().actionPreview) leavePreview();
-  else clearSelection();
+  else if (s.actionPreview) leavePreview();
+  else if (s.checked.size || s.scope) clearSelection();
+  else if (s.query) focusSearch();
+  else closeEmptySearch();
 }
 
 /** y / n answer the reader's first "¿Categoría?" chip; in a category's Review list, that category's (plan 80). */

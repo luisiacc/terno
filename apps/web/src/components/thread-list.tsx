@@ -11,6 +11,7 @@ import { matchesFilter, savesRuleOnly, tabRef, type ListFilter as QuickFilter } 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { Button } from "@terno/ui/components/button";
+import { CloseButton } from "@terno/ui/components/close-button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { openCompose } from "~/lib/actions";
@@ -192,6 +193,19 @@ function FilterStatus({ search, filter }: { search: boolean; filter: QuickFilter
         </DropdownMenuContent>
       </DropdownMenu>
       {n && <span className="whitespace-pre"> · {n}</span>}
+      {/* plan 158: a search keeps the mailbox's filter: it says so, and it goes in one click */}
+      {search && (
+        <CloseButton
+          size="2xs"
+          data-testid="search-filter-clear"
+          label={t("list.unreadEmpty.clear")}
+          className="no-drag ml-1 shrink-0"
+          onClick={() => {
+            setListFilter(undefined);
+            searchInputRef.current?.focus();
+          }}
+        />
+      )}
     </p>
   );
 }
@@ -231,7 +245,7 @@ function QuickChips({ filter }: { filter: QuickFilter | undefined }) {
 
 /**
  * Search behind a button (Lumen): open while asked for or while there's a
- * query. It closes on Esc in an empty field, on its button (which clears the
+ * query. It closes on leaving search (Esc), on its button (which clears the
  * query too), or when another mailbox opens with nothing typed; never on blur, so focus that leaves for a moment (F6 to
  * the snack, a menu) comes back to it.
  */
@@ -253,17 +267,42 @@ function toggleSearch(): void {
   useSearchOpen.setState({ open: false });
 }
 
-function ListSearch({ autoCollapse }: { autoCollapse: boolean }) {
+/** A field behind a button with nothing in it: Esc from the rows closes it too. */
+export function closeEmptySearch(): void {
+  if (useSearchOpen.getState().open) useSearchOpen.setState({ open: false });
+}
+
+const listRows = () => document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]");
+
+/** Focus on the rows (where j/k and Esc are the list's), as soon as there are some: an empty list hands focus away. */
+function focusRows(): void {
+  if (useList.getState().items.length) return void listRows()?.focus({ preventScroll: true });
+  const off = useList.subscribe((l) => {
+    if (l.loading) return;
+    off();
+    if (l.items.length && document.activeElement === document.body) requestAnimationFrame(() => listRows()?.focus({ preventScroll: true }));
+  });
+}
+
+/**
+ * Plan 158, Esc's last step in every design: the query goes, a field behind a button closes, the mailbox comes back
+ * where it was left (state/list) and the keys are the rows' again. The step before it: focusSearch, from the results.
+ */
+function leaveSearch(field: HTMLInputElement): void {
+  field.blur();
+  if (getApp().query) setApp({ query: "" });
+  closeEmptySearch();
+  focusRows();
+}
+
+function ListSearch() {
   const query = useApp((s) => s.query);
-  const review = useApp((s) => s.reviewCategoryId !== null);
-  const [focused, setFocused] = useState(false);
   // plan 108: focused on an account, the field says whose mail it looks in
   const soloName = useApp((s) => (s.soloAccountId === null ? null : (s.accounts.find((a) => a.id === s.soloAccountId)?.displayName ?? null)));
   const placeholder = soloName === null ? t("list.search.placeholder") : t("list.search.placeholderIn", { account: soloName });
-  const showCoverage = !review && (focused || query.trim() !== "");
+  const coverage = useCoverageNote();
   return (
-    <>
-      <SearchField
+    <SearchField
         className="no-drag"
         ref={(el) => {
           searchInputRef.current = el;
@@ -272,33 +311,39 @@ function ListSearch({ autoCollapse }: { autoCollapse: boolean }) {
         value={query}
         placeholder={placeholder}
         aria-label={placeholder}
-        aria-describedby={showCoverage ? "search-coverage" : undefined}
+        aria-describedby={coverage ? "search-coverage" : undefined}
         clearLabel={t("list.search.clear")}
         hint={<Kbd>/</Kbd>}
         // the list's compact field, on the tint
         fieldClassName="h-[30px] bg-tint text-sm dark:bg-tint"
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
         onValueChange={(q) => setApp({ query: q })}
-        // its own Escape: clear, then close the field and give focus back
         clearOnEscape={false}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
-            if (getApp().query) setApp({ query: "" });
-            else if (autoCollapse) {
-              // an empty field behind a button closes, and focus goes back to the button
-              useSearchOpen.setState({ open: false });
-              requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-testid=search-button]")?.focus());
-            }
-            e.currentTarget.blur();
+            e.preventDefault();
+            leaveSearch(e.currentTarget);
           } else if (e.key === "Enter" || e.key === "ArrowDown") {
-            e.currentTarget.blur();
+            // nothing to move to: the field keeps the keys
+            if (!useList.getState().items.length) return e.preventDefault();
+            // Enter goes on to open the cursor's row (the document's handler); ↓ only arrives on it
+            if (e.key === "ArrowDown") e.preventDefault();
+            listRows()?.focus({ preventScroll: true });
           }
         }}
       />
-      {showCoverage && <p id="search-coverage" data-testid="search-coverage" className="no-drag mt-1.5 text-2xs text-muted-foreground">{t("list.search.coverage")}</p>}
-    </>
   );
+}
+
+/** Plan 158: few results or none are when it matters that only saved mail is searched; a filtered empty list says what to do itself. */
+const FEW_RESULTS = 3;
+function useCoverageNote(): boolean {
+  const searching = useApp((s) => s.query.trim() !== "" && s.reviewCategoryId === null);
+  const filtered = useApp((s) => activeFilter(s) !== undefined);
+  return useList((l) => searching && l.itemsKey === l.key && !l.loading && !l.nextCursor && l.items.length <= FEW_RESULTS && (l.items.length > 0 || !filtered));
+}
+
+function CoverageNote({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return <p id="search-coverage" data-testid="search-coverage" className={cn("text-xs text-muted-foreground", className)} style={style}>{t("list.search.coverage")}</p>;
 }
 
 /**
@@ -441,12 +486,10 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const list = useAppearance((s) => s.layout === "list");
   const tabs = useApp((s) => list && tabsShown(s));
   const showField = !behindButton || searchOpen || query !== "";
+  const results = more ? t("list.search.resultsMore", { count }) : t("list.search.results", { count });
   const stats = query && searchMs !== null && (
-    <span data-testid="search-stats" className="shrink-0 text-2xs text-muted-foreground tabular">
-      {t(complete ? "list.search.stats" : "list.search.statsIndexing", {
-        results: more ? t("list.search.resultsMore", { count }) : t("list.search.results", { count }),
-        ms: searchMs < 1 ? "<1" : Math.round(searchMs),
-      })}
+    <span data-testid="search-stats" role="status" className="shrink-0 text-2xs text-muted-foreground tabular">
+      {complete ? results : t("list.search.statsIndexing", { results })}
     </span>
   );
   const actions = (
@@ -525,10 +568,13 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
               {kind !== "greeting" && accountSuffix}
             </h1>
             {query && (searchMs !== null || searchAll) ? (
-              <p className="mt-1 flex items-center gap-2">
-                {stats}
-                {searchAll}
-              </p>
+              <>
+                <p className="mt-1 flex items-center gap-2">
+                  {stats}
+                  {searchAll}
+                </p>
+                {filter && quick === "menu" && <div className="mt-1"><FilterStatus search filter={filter} /></div>}
+              </>
             ) : (
               <Subtitle filter={filter} search={query.trim() !== ""} greeting={kind === "greeting"} />
             )}
@@ -536,7 +582,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
           <div className="flex shrink-0 items-center gap-0.5 pt-0.5">{actions}</div>
         </div>
       )}
-      {showField && <ListSearch autoCollapse={behindButton} />}
+      {showField && <ListSearch />}
       {!review && !reminders && quick === "chips" && <QuickChips filter={filter} />}
       {tabs && <ListTabs />}
     </div>
@@ -660,6 +706,7 @@ function EmptyState() {
   const today = useApp((s) => s.today);
   const previewing = useApp((s) => s.actionPreview !== null);
   const ruleOnly = useActionPreview((s) => s.preview !== null && savesRuleOnly(s.preview));
+  const coverage = useCoverageNote();
   if (previewing && ruleOnly)
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
@@ -697,6 +744,7 @@ function EmptyState() {
       <p className="text-xs text-muted-foreground">
         {query ? t("list.empty.searchBody") : view === "inbox" ? t("list.empty.inboxBody") : t("list.empty.body")}
       </p>
+      {coverage && <CoverageNote className="mt-3 max-w-72" />}
     </div>
   );
 }
@@ -715,6 +763,8 @@ export function ThreadList() {
   // and the rows on screen allow them too (leaving Spam, its rows stay until the new ones arrive)
   const icons = iconsHere && iconsAllowedForList(itemsKey);
   const filter = useApp(activeFilter);
+  const searching = useApp((s) => s.query.trim() !== "" && s.reviewCategoryId === null);
+  const coverage = useCoverageNote();
   const design = useDesign();
   // plan 24: List's full-width list draws one-line rows once its scroller is wide enough for them
   const list = useAppearance((s) => s.layout === "list");
@@ -924,7 +974,8 @@ export function ThreadList() {
       {/* List has no reader pane for a multi-selection: its actions are a toolbar over the rows (plan 24) */}
       {list && many && <SelectionBar variant="toolbar" />}
       {!previewing && <SelectAllBanner />}
-      {!previewing && <DraftsStrip />}
+      {/* plan 158: nothing above the results that isn't one */}
+      {!previewing && !searching && <DraftsStrip />}
       {/* under tabs the rows are what they control (tabpanel); the listbox is one Tab stop and restores focus when a page closes */}
       <div className="relative flex min-h-0 flex-1 flex-col" {...(tabs ? { role: "tabpanel", id: TAB_PANEL_ID, "aria-labelledby": `list-tab-${tab}` } : {})}>
       <ThreadMenu>
@@ -964,6 +1015,7 @@ export function ThreadList() {
       </ThreadMenu>
       {review !== null && <ReviewAlwaysMenu />}
       {filter && !loading && items.length === 0 && itemsKey === listKey() && <UnreadEmptyState filter={filter} />}
+      {coverage && items.length > 0 && <CoverageNote className="pointer-events-none absolute inset-x-0 px-5 pt-3" style={{ top: virtualizer.getTotalSize() }} />}
       </div>
     </section>
   );

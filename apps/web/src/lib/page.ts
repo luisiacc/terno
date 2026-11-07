@@ -6,6 +6,7 @@
  */
 import { dwellOn } from "~/lib/open-dwell";
 import { returnFromMailReaderView } from "~/components/mail-reader-back";
+import { focusSearch } from "~/components/thread-list";
 import { flushSync } from "react-dom";
 import { useAppearance } from "~/lib/appearance";
 import { leaveNewDraft, supersedeCompose } from "~/lib/compose";
@@ -217,7 +218,14 @@ export function forwardNavKey(e: KeyboardEvent): void {
   const back = (e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) || (e.key === "[" && mod && !e.altKey && !e.shiftKey);
   if (!back) return;
   if (returnFromMailReaderView()) { e.preventDefault(); return; }
-  if (!listLayout() || currentPage() === "list") return;
+  if (!listLayout() || currentPage() === "list") {
+    // plan 158: Esc from a search's results, whichever part of them has focus
+    if (e.key === "Escape" && getApp().query) {
+      e.preventDefault();
+      focusSearch();
+    }
+    return;
+  }
   e.preventDefault();
   markSelectionIntent();
   closePage({ focus: true });
