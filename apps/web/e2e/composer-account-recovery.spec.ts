@@ -91,9 +91,9 @@ for (const [placement, theme] of [["caret", "light"], ["backward selection", "da
       if (placement === "backward selection") {
         for (let i = 0; i < 5; i++) await page.keyboard.press("Shift+ArrowLeft");
       } else if (placement === "list focus") {
-        await page.getByTestId("strip-item").focus();
-        // The draft strip immediately precedes the real listbox in keyboard order.
-        await page.keyboard.press("Tab");
+        // by Tab, from the search field above it
+        await page.getByTestId("search-input").focus();
+        for (let i = 0; i < 12 && !(await list.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press("Tab");
         await expect(list).toBeFocused();
       }
       const before = await snapshot(page);

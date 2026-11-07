@@ -1087,8 +1087,6 @@ export function ThreadList() {
       {/* List has no reader pane for a multi-selection: its actions are a toolbar over the rows (plan 24) */}
       {list && many && <SelectionBar variant="toolbar" />}
       {!previewing && <SelectAllBanner />}
-      {/* plan 158: nothing above the results that isn't one */}
-      {!previewing && !searching && <DraftsStrip />}
       {/* under tabs the rows are what they control (tabpanel); the listbox is one Tab stop and restores focus when a page closes */}
       <div className="relative flex min-h-0 flex-1 flex-col" {...(tabs ? { role: "tabpanel", id: TAB_PANEL_ID, "aria-labelledby": `list-tab-${tab}` } : {})}>
       <ThreadMenu>
@@ -1130,6 +1128,8 @@ export function ThreadList() {
       {filter && !loading && items.length === 0 && itemsKey === listKey() && <UnreadEmptyState filter={filter} />}
       {coverage && items.length > 0 && <CoverageNote className="pointer-events-none absolute inset-x-0 px-5 pt-3" style={{ top: virtualizer.getTotalSize() }} />}
       </div>
+      {/* plan 158: nothing with the results that isn't one */}
+      {!previewing && !searching && <DraftsStrip />}
     </section>
   );
 }

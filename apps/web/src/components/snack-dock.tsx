@@ -216,6 +216,8 @@ export function SnackDock() {
   /** the snack focus came into */
   const focusedSeq = useRef<number | undefined>(undefined);
   const inert = useWatchers(cardRef);
+  // Split only: List's dock is narrower than the line, and a page over the list covers the strip anyway
+  const lift = useSnack((s) => s.lift);
 
   // the list keeps room for the dock below its last row
   const open = current !== null;
@@ -260,7 +262,7 @@ export function SnackDock() {
   const spoken = current && !inert && hushed !== current.heard ? current.spoken : "";
   const alert = current?.tone === "error";
   return (
-    <section aria-label={t("snack.dock")} data-testid="snack-dock" className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex flex-col justify-end in-data-[layout=list]:right-auto in-data-[layout=list]:w-[min(calc(100%-1rem),30rem)]">
+    <section aria-label={t("snack.dock")} data-testid="snack-dock" style={{ "--dock-lift": `${lift}px` } as React.CSSProperties} className="pointer-events-none absolute inset-x-2 bottom-[calc(0.5rem+var(--dock-lift))] z-10 flex flex-col justify-end in-data-[layout=list]:right-auto in-data-[layout=list]:bottom-2 in-data-[layout=list]:w-[min(calc(100%-1rem),30rem)]">
       <div role="status" aria-live="polite" aria-atomic className="sr-only" data-testid="snack-live">
         {!alert && spoken && <span key={current?.heard}>{spoken}</span>}
       </div>

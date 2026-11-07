@@ -1649,7 +1649,7 @@ const en = {
   "compose.undoConvert.forward": "Undo convert to forward",
   "compose.strip.label": "Drafts",
   "compose.strip.to": "— To {recipients}",
-  "compose.strip.noRecipients": "no recipients",
+  "compose.strip.none": "— No recipients yet",
   "compose.strip.andMore": "{name} and {count} more",
   "compose.strip.more": { one: "+# draft", other: "+# drafts" },
   // written into a draft when it is created (in that moment's language; from then on it is the draft's text)

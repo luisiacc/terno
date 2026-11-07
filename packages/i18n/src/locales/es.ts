@@ -1635,7 +1635,7 @@ const es = {
   "compose.undoConvert.forward": "Deshacer convertir en Reenviar",
   "compose.strip.label": "Borradores",
   "compose.strip.to": "— Para {recipients}",
-  "compose.strip.noRecipients": "sin destinatarios",
+  "compose.strip.none": "— Sin destinatarios aún",
   "compose.strip.andMore": "{name} y {count} más",
   "compose.strip.more": { one: "+# borrador", other: "+# borradores" },
   "compose.prefix.reply": "Re: {subject}",

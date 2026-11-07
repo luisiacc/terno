@@ -91,9 +91,11 @@ interface SnackState {
   undo: Undo | null;
   /** the dock's height plus its gaps while it shows: the list keeps that much room below its last row */
   inset: number;
+  /** what stands at the list's foot under the dock (the drafts strip) */
+  lift: number;
 }
 
-export const useSnack = create<SnackState>(() => ({ current: null, last: null, countdown: { elapsed: 0, since: null }, paused: [], undo: null, inset: 0 }));
+export const useSnack = create<SnackState>(() => ({ current: null, last: null, countdown: { elapsed: 0, since: null }, paused: [], undo: null, inset: 0, lift: 0 }));
 
 let seq = 0;
 let heard = 0;

@@ -85,9 +85,10 @@ test.describe("inline reply, reply-all, forward", () => {
       await page.getByTestId("compose-quote").click();
       await expect(composer(page)).toContainText("Forwarded message");
       await page.getByTestId("compose-to").fill("esto no es un correo");
-      await page.getByTestId("compose-send").click();
-      // Send says which entry isn't an address, and shows it: its chip selected (plan 34)
-      await expect(toast(page, "“esto no es un correo” isn’t an email address. Fix or remove it, then send.")).toBeVisible();
+      // it reads as unavailable, and a click still says why (plan 158: force, as Playwright won't click aria-disabled)
+      await page.getByTestId("compose-send").click({ force: true });
+      // Send says which entry isn't an address, at its field, and shows it: its chip selected (plan 34)
+      await expect(page.getByTestId("compose-field-problem")).toHaveText("“esto no es un correo” isn’t an email address. Fix or remove it, then send.");
       await expect(composer(page)).toBeVisible();
       await expect(chipsOf(page, "compose-to").first()).toBeFocused();
       await expect(chipsOf(page, "compose-to").first()).toHaveAttribute("aria-invalid", "true");
@@ -167,9 +168,12 @@ test.describe("drafts are kept", () => {
       await expect(page.locator("[data-cursor]")).not.toHaveAttribute("data-thread-id", id);
       await page.keyboard.press("k");
       await expect(page.locator("[data-cursor]")).toHaveAttribute("data-thread-id", id);
-      // Reader navigation retires cached source placement; explicit Reply validates it again.
+      // plan 158: it comes back to its own conversation, one line, its source checked (plan 44); only a key opens it
+      await expect(page.getByTestId("draft-slot")).toHaveAttribute("data-state", "collapsed");
+      await expect(page.getByTestId("draft-collapsed")).toContainText("Lo pienso y te digo.");
       await expect(page.getByTestId("compose-body")).toHaveCount(0);
-      await expect(page.getByTestId("strip-item")).toHaveCount(1);
+      await expect(page.getByTestId("strip-item")).toHaveCount(0);
+      await expect(page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`)).toContainText("Draft");
       await page.keyboard.press("r");
       await expect(page.getByTestId("compose-body")).toBeFocused();
       await expect(page.getByTestId("compose-body")).toHaveText("Lo pienso y te digo.");
@@ -212,8 +216,8 @@ test.describe("drafts are kept", () => {
       expect(await recipientEmails(page, "compose-to")).toEqual(["alice@example.com", "bob@"]);
       await expect(chipsOf(page, "compose-to").nth(1)).toHaveAttribute("aria-invalid", "true");
       // and it isn't sent like that
-      await page.getByTestId("compose-send").click();
-      await expect(toast(page, "“bob@” isn’t an email address. Fix or remove it, then send.")).toBeVisible();
+      await page.getByTestId("compose-send").click({ force: true });
+      await expect(page.getByTestId("compose-field-problem")).toHaveText("“bob@” isn’t an email address. Fix or remove it, then send.");
     });
     await scenario("r, then a, then f, then r: what was written and typed recipients survive every conversion, even with a save pending; Undo goes back", async () => {
       await freshNoDrafts(page, server);
@@ -319,10 +323,12 @@ test.describe("new message, in the reader pane", () => {
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(page.getByTestId("reader")).toHaveCount(0);
       await expect(page.getByTestId("compose-to")).toBeFocused();
-      await expect(page.getByTestId("strip-item").first()).toHaveAttribute("aria-current", "true");
+      // what's being written is on screen: it isn't in the strip too
+      await expect(page.getByTestId("strip-item")).toHaveCount(0);
       await page.getByTestId("compose-to").fill("Ana Torres <ana@example.com>");
       await page.getByTestId("compose-subject").fill("Propuesta de colaboración");
-      await expect(page.getByTestId("compose-title")).toHaveText("Propuesta de colaboración");
+      // the subject is in its field, once (plan 158)
+      await expect(page.getByTestId("compose-title")).toHaveText("New message");
       await page.getByTestId("compose-body").fill("Hola Ana, te comparto la propuesta.");
       await page.keyboard.press("Meta+Enter");
       await expect(page.getByTestId("composer")).toHaveCount(0);
@@ -472,4 +478,207 @@ test.describe("new message, in the reader pane", () => {
     });
   });
 
+});
+
+test.describe("the composer at rest and at its limits (plan 158)", () => {
+  const send = (page: Page) => page.getByTestId("compose-send");
+  const reply = async (page: Page, row = 0) => {
+    await openRow(page, row);
+    await focusList(page);
+    await page.keyboard.press("r");
+    await expect(page.getByTestId("compose-body")).toBeFocused();
+  };
+
+  test("Send stays on screen and the caret clear of it, typing from the first key, in any window", async ({ app: page, server }) => {
+    await scenario("the format bar starts closed; Aa opens it and that's remembered; its shortcuts work either way", async () => {
+      await reply(page);
+      await expect(page.getByTestId("format-bar")).toHaveCount(0);
+      await expect(page.getByTestId("format-toggle")).toHaveAttribute("aria-expanded", "false");
+      await page.getByTestId("format-toggle").click();
+      await expect(page.getByTestId("format-bar")).toBeVisible();
+      expect(await page.evaluate(() => localStorage.getItem("terno:format-bar"))).toBe("shown");
+      await page.getByTestId("format-toggle").click();
+      await expect(page.getByTestId("format-bar")).toHaveCount(0);
+    });
+    await scenario("in a short window, typing right after r: Send in view, the subject still there", async () => {
+      await freshNoDrafts(page, server);
+      await page.setViewportSize({ width: 1100, height: 700 });
+      await openRow(page, 0);
+      await focusList(page);
+      await page.keyboard.press("r");
+      // spaces too: a space scrolls the reader only when it isn't being typed into something
+      await page.keyboard.type("una respuesta con varias palabras", { delay: 0 });
+      await expect(page.getByTestId("compose-body")).toContainText("una respuesta");
+      await expect(send(page)).toBeInViewport({ ratio: 1 });
+    });
+    await scenario("a draft taller than the view: Send stays at the pane's foot, the line being typed above it", async () => {
+      for (let i = 0; i < 40; i++) { await page.keyboard.press("Enter"); await page.keyboard.type(`línea ${i}`); }
+      await expect(send(page)).toBeInViewport({ ratio: 1 });
+      const foot = await page.locator("[data-draft-foot]").boundingBox(), caret = await page.evaluate(() => {
+        const node = getSelection()!.anchorNode!;
+        return (node.nodeType === 1 ? node as Element : node.parentElement!).getBoundingClientRect().bottom;
+      });
+      expect(caret).toBeLessThanOrEqual(foot!.y);
+      // scrolled up to read what was written, it's still there; scrolled past the draft's top, it goes with it
+      await page.locator("[data-reader-scroller]").evaluate((el) => { el.scrollTop -= 200; });
+      await expect(send(page)).toBeInViewport({ ratio: 1 });
+      await page.setViewportSize({ width: 1280, height: 800 });
+    });
+    await scenario("a chip doesn't take the To row to a second line until it has to, and values share one line", async () => {
+      await freshNoDrafts(page, server);
+      await page.setViewportSize({ width: 1100, height: 700 });
+      await reply(page);
+      const row = page.locator("[data-recipient-row]").first();
+      expect((await row.boundingBox())!.height).toBe(38);
+      await page.getByTestId("compose-show-subject").click();
+      const subject = await page.getByTestId("compose-subject").evaluate((el: HTMLElement) => el.getBoundingClientRect().x + parseFloat(getComputedStyle(el).paddingLeft));
+      expect(await page.getByTestId("recipient-chips").locator("[role=option]").first().evaluate((el) => {
+        const range = document.createRange(); range.selectNodeContents(el.querySelector("span")!); return range.getBoundingClientRect().x;
+      })).toBeCloseTo(subject, 0);
+      await page.setViewportSize({ width: 1280, height: 800 });
+    });
+  });
+
+  test("a saved reply stays with its conversation; the strip takes what isn't on a row, and no row moves for it", async ({ app: page, server }) => {
+    const row = (id: string) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
+    await scenario("away and back, by j/k and by clicks: the same Draft line, the same mark, nothing in the strip, the same words", async () => {
+      await reply(page);
+      await page.keyboard.type("Lo veo mañana.");
+      await page.keyboard.press("Escape");
+      const id = (await page.locator("[data-cursor]").getAttribute("data-thread-id"))!;
+      const y = (await page.getByTestId("thread-row").nth(1).boundingBox())!.y;
+      await focusList(page);
+      await page.keyboard.press("j");
+      await expect(page.locator("[data-cursor]")).not.toHaveAttribute("data-thread-id", id);
+      await expect(row(id)).toContainText("Draft");
+      await expect(page.getByTestId("strip-item")).toHaveCount(0);
+      // j/k never moves a row: there's nothing above the list to come and go
+      expect((await page.getByTestId("thread-row").nth(1).boundingBox())!.y).toBe(y);
+      await page.keyboard.press("k");
+      await expect(page.getByTestId("draft-collapsed")).toContainText("Lo veo mañana.");
+      await page.keyboard.press("j");
+      await row(id).click();
+      await expect(page.getByTestId("draft-collapsed")).toContainText("Lo veo mañana.");
+      await expect(row(id)).toContainText("Draft");
+      // and opens as it was, in place, focus in the text
+      await page.getByTestId("draft-collapsed").click();
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+      await expect(page.getByTestId("compose-body")).toHaveText("Lo veo mañana.");
+    });
+    await scenario("left open, it comes back as the same one line, without taking focus or the scroll", async () => {
+      await page.getByTestId("thread-row").nth(1).click();
+      await page.getByTestId("thread-row").first().click();
+      await expect(page.getByTestId("draft-slot")).toHaveAttribute("data-state", "collapsed");
+      await expect(page.getByTestId("compose-body")).toHaveCount(0);
+    });
+    await scenario("Discard, then Undo, after coming back: the exact words again", async () => {
+      await page.getByTestId("draft-collapsed").click();
+      await page.getByTestId("compose-discard").click();
+      await expect(page.getByTestId("draft-slot")).toHaveAttribute("data-state", "bar");
+      await page.getByRole("button", { name: /undo/i }).click();
+      await expect(page.getByTestId("compose-body")).toHaveText("Lo veo mañana.");
+    });
+    await scenario("the strip is one line and a count at the list's foot: opening it, writing a new message and putting it away move no row", async () => {
+      await freshNoDrafts(page, server);
+      const y = async () => (await page.getByTestId("thread-row").nth(1).boundingBox())!.y;
+      const before = await y();
+      for (const subject of ["Primera nota", "Segunda nota", "Tercera nota"]) {
+        await focusList(page);
+        await page.keyboard.press("c");
+        await expect(page.getByTestId("compose-to")).toBeFocused();
+        await page.getByTestId("compose-subject").fill(subject);
+        expect(await y()).toBe(before);
+        // being written, it's on screen: not in the strip as well
+        await expect(page.locator("[data-testid=strip-item]").filter({ hasText: subject })).toHaveCount(0);
+        await page.keyboard.press("Escape");
+        // and Esc lands on it, on the one line
+        await expect(page.locator("[data-testid=strip-item]").filter({ hasText: subject })).toBeFocused();
+        expect(await y()).toBe(before);
+      }
+      await expect(page.getByTestId("strip-item")).toHaveCount(1);
+      await expect(page.getByTestId("strip-more")).toHaveText("+2 drafts");
+      const strip = (await page.getByTestId("drafts-strip").boundingBox())!, list = (await page.getByTestId("thread-list").boundingBox())!;
+      expect(strip.y + strip.height).toBeCloseTo(list.y + list.height, 0);
+      await page.getByTestId("strip-more").click();
+      await expect(page.getByTestId("strip-item")).toHaveCount(3);
+      expect(await y()).toBe(before);
+      await page.getByTestId("strip-item").filter({ hasText: "Primera nota" }).click();
+      await expect(page.getByTestId("compose-subject")).toHaveValue("Primera nota");
+      await page.keyboard.press("Escape");
+      await expect(page.locator("[data-testid=strip-item]").filter({ hasText: "Primera nota" })).toBeFocused();
+      await page.getByTestId("strip-more").click();
+      await expect(page.getByTestId("strip-item")).toHaveCount(1);
+    });
+    await scenario("a snack stands on the strip, not over it", async () => {
+      await page.getByTestId("strip-item").first().click();
+      await page.getByTestId("compose-discard").click();
+      const strip = (await page.getByTestId("drafts-strip").boundingBox())!, snack = (await page.getByTestId("snack").boundingBox())!;
+      expect(snack.y + snack.height).toBeLessThanOrEqual(strip.y);
+    });
+  });
+
+  test("Send says why at the field, and a refused send leaves nothing behind", async ({ app: page, server }) => {
+    const compose = async () => {
+      await focusList(page);
+      await page.keyboard.press("c");
+      await expect(page.getByTestId("compose-to")).toBeFocused();
+    };
+    await scenario("with nobody to send to, Send reads as unavailable; a click and ⌘↵ say so at To, not in a toast", async () => {
+      await compose();
+      await expect(page.getByTestId("compose-send")).toHaveAttribute("aria-disabled", "true");
+      await page.getByTestId("compose-send").click({ force: true });
+      await expect(page.getByTestId("compose-field-problem")).toHaveText("Add a recipient to send");
+      await expect(page.getByTestId("compose-to")).toBeFocused();
+      await expect(page.getByTestId("compose-to")).toHaveAttribute("aria-describedby", await page.getByTestId("compose-field-problem").getAttribute("id") as string);
+      await expect(page.getByTestId("snack")).toHaveCount(0);
+    });
+    await scenario("Esc: the message goes with the composer, and no empty draft stays, here or after a reload", async () => {
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("compose-field-problem")).toHaveCount(0);
+      await expect(page.getByTestId("strip-item")).toHaveCount(0);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await expect(page.getByTestId("strip-item")).toHaveCount(0);
+    });
+    await scenario("fixing the field takes the message away and Send is ready", async () => {
+      await compose();
+      await page.keyboard.press("ControlOrMeta+Enter");
+      await expect(page.getByTestId("compose-field-problem")).toBeVisible();
+      await page.keyboard.type("ana@example.com");
+      await expect(page.getByTestId("compose-field-problem")).toHaveCount(0);
+      await expect(page.getByTestId("compose-send")).not.toHaveAttribute("aria-disabled", "true");
+      await page.getByTestId("compose-discard").click();
+    });
+    await scenario("an untouched forward or reply put away is gone, the reply bar back; with words in it, it's kept", async () => {
+      await freshNoDrafts(page, server);
+      await openRow(page, 0);
+      await focusList(page);
+      await page.keyboard.press("f");
+      await expect(page.getByTestId("compose-to")).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("draft-slot")).toHaveAttribute("data-state", "bar");
+      await expect(page.getByTestId("quick-reply")).toBeFocused();
+      await page.keyboard.press("r");
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("draft-slot")).toHaveAttribute("data-state", "bar");
+      await page.keyboard.press("r");
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+      await page.keyboard.type("algo");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("draft-slot")).toHaveAttribute("data-state", "collapsed");
+    });
+  });
+});
+
+test.describe("the composer in List (plan 158)", () => {
+  test.use({ layout: "list" });
+  test("Send is in view when typing starts right after r", async ({ app: page }) => {
+    await rows(page).first().click();
+    await expect(page.getByTestId("reader-subject")).toBeVisible();
+    await page.keyboard.press("r");
+    await page.keyboard.type("Hola, gracias por escribir", { delay: 0 });
+    await expect(page.getByTestId("compose-body")).toContainText("Hola");
+    await expect(page.getByTestId("compose-send")).toBeInViewport({ ratio: 1 });
+  });
 });

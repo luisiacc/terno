@@ -481,10 +481,11 @@ describe("mail landmarks", () => {
     const list = h.host.querySelector<HTMLElement>("#app-list")!;
     const section = h.host.querySelector<HTMLElement>("[data-list-section]")!;
     const draft = h.host.querySelector<HTMLButtonElement>('[data-testid="strip-item"]')!;
-    const sameList = () => {
+    const sameList = (stripped = true) => {
       expect(h.host.querySelector("#app-list")).toBe(list);
       expect(h.host.querySelector("[data-list-section]")).toBe(section);
-      expect(h.host.querySelector('[data-testid="strip-item"]')).toBe(draft);
+      // the draft being written isn't in the strip (plan 158): it's on the page over it
+      if (stripped) expect(h.host.querySelector('[data-testid="strip-item"]')).toBe(draft);
       expect(section.scrollTop).toBe(128);
       expect(mains()).toHaveLength(1);
       expect(mains()[0]!.querySelector('main, [role="main"]')).toBeNull();
@@ -504,13 +505,14 @@ describe("mail landmarks", () => {
       expect(mains()[0]).toBe(list);
       for (const page of ["thread", "compose"] as const) {
         await act(async () => h.app.setApp({ readerOpen: true, compose: page === "compose" ? { key: h.key, seq: 0 } : null }));
-        sameList();
+        sameList(page !== "compose");
         expect(section.hasAttribute("inert")).toBe(true);
         expect(mains()[0]!.contains(h.host.querySelector('[data-testid="list-page"]'))).toBe(true);
         expect(h.host.querySelector('[data-testid="list-page"]')?.getAttribute("data-page")).toBe(page);
       }
       await act(async () => h.app.setApp({ compose: null, readerOpen: false }));
-      sameList();
+      sameList(false);
+      expect(h.host.querySelector('[data-testid="strip-item"]')).not.toBeNull();
       expect(section.hasAttribute("inert")).toBe(false);
     } finally { await h.cleanup(); }
   });
