@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 export const BAR = 9;
 export const SCREENS = ["split_inbox", "conversation", "reply_draft", "new_message", "list_layout_inbox", "search", "command_palette", "multi_select", "row_menu"];
-export const UI_FACETS = ["typography", "contrast", "placement", "hierarchy", "controls", "density"];
+export const UI_FACETS = ["typography", "contrast", "placement", "hierarchy", "iconography", "controls", "density"];
 export const UX_FACETS = ["efficiency", "clarity", "feedback", "consistency", "accessibility"];
 export const FACETS = [...UI_FACETS, ...UX_FACETS];
 export const RATERS = ["claude", "codex"];

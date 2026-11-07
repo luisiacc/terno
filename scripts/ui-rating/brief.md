@@ -64,21 +64,22 @@ Use the whole range and half points. Give equal scores only where quality really
 
 ## What to score
 
-Score each of the 9 screens on all 11 facets, plus an overall. Each facet has a score and `improve`: **the specific change that would raise that score**, naming what you saw. If you can't support a specific change, say so there rather than inventing one. Only a 10 may leave `improve` empty.
+Score each of the 9 screens on all 12 facets, plus an overall. Each facet has a score and `improve`: **the specific change that would raise that score**, naming what you saw. If you can't support a specific change, say so there rather than inventing one. Only a 10 may leave `improve` empty.
 
 **UI facets**
 - `typography`: typeface, scale, weights, line length, rhythm
 - `contrast`: color, legibility and accents, in light and in dark
 - `placement`: layout, grid, margins, spacing, alignment to a shared line
 - `hierarchy`: what draws the eye first, and whether it should
-- `controls`: icons, buttons, chips, menus and their states
+- `iconography`: whether each icon says what it does, one family, one weight, sized and aligned to its text
+- `controls`: buttons, chips, menus, fields and their states
 - `density`: how much useful content fits, and how fast it can be scanned
 
 **UX facets**
 - `efficiency`: steps and effort for the job on this screen, keyboard flow
 - `clarity`: can a new user tell what things do; is the copy plain
 - `feedback`: what the app tells you; selection, draft, error and undo states
-- `consistency`: same thing looks and behaves the same across screens and layouts
+- `consistency`: consistency and polish: the same thing looks and behaves the same across screens and layouts, nothing misaligned, no stray pixels, states that finish cleanly
 - `accessibility`: legibility, target size, focus, as far as you can judge
 
 Also give the whole app in this style a `ui` score, a `ux` score and an `overall`, each with one or two sentences.
