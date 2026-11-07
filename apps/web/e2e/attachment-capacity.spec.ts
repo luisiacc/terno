@@ -13,8 +13,8 @@ test("Forward refuses 101 files before mutation; continued typing and the 100-fi
   await expect.poll(async () => (await store.drafts.list())[0]?.body_text).toBe("Every file and this reply must stay saved");
   const before = (await store.drafts.list())[0]!;
   await respondByKeys(page, "forward");
-  // refused: nothing took focus, so the menu's button keeps it
-  await expect(page.getByTestId("action-reply-menu")).toBeFocused();
+  // refused: nothing took focus, so Forward keeps it
+  await expect(page.getByTestId("action-forward")).toBeFocused();
   await expect(page.getByTestId("snack-message")).toContainText("This message is too large. Remove an attachment or shorten the message.");
   // the same from a message's own menu: refused, its button takes focus back
   await page.getByTestId("message-more").focus();

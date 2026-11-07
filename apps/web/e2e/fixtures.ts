@@ -14,16 +14,13 @@ import { iconStub, type IconStub } from "./icon-stub";
 
 export { expect };
 
-/** Reply all or Forward from the reader's toolbar: they're in the menu beside Reply (plan 158). */
+/** Reply all or Forward from the reader's toolbar: buttons of their own beside Reply (plan 158). */
 export async function respond(page: Page, mode: "reply-all" | "forward"): Promise<void> {
-  await page.getByTestId("action-reply-menu").click();
   await page.getByTestId(`action-${mode}`).click();
 }
 
-/** The same with the keyboard alone: the menu's trigger, then its row. */
+/** The same with the keyboard alone. */
 export async function respondByKeys(page: Page, mode: "reply-all" | "forward"): Promise<void> {
-  await page.getByTestId("action-reply-menu").focus();
-  await page.keyboard.press("Enter");
   await page.getByTestId(`action-${mode}`).focus();
   await page.keyboard.press("Enter");
 }

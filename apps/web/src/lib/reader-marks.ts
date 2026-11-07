@@ -1,6 +1,7 @@
 import { matchParts, rowMatchOf, type MatchNeedle, type MessageDetail, type RowMatch } from "@terno/core";
 import { create } from "zustand";
 import { searchOfKey, useList } from "~/state/list";
+import { topCover } from "./reader-scroll";
 
 /**
  * Plan 158: a search's words in the open conversation. Marked where the mail is drawn (React's marks in a plain-text body,
@@ -121,6 +122,6 @@ export function revealMark(scroller: HTMLElement, mark: HTMLElement, bottomInset
   const rect = mark.getBoundingClientRect();
   const top = rect.top + offset;
   const box = scroller.getBoundingClientRect();
-  if (top >= box.top + 8 && top + rect.height <= box.bottom - bottomInset - 8) return;
+  if (top >= box.top + 8 + topCover(scroller) && top + rect.height <= box.bottom - bottomInset - 8) return;
   scroller.scrollTop += top - box.top - scroller.clientHeight / 3;
 }

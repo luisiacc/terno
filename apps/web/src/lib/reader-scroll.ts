@@ -84,6 +84,9 @@ export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.cl
  * Brings a message's top to the top of the reader (as far as the reader
  * scrolls), once it renders (a few frames at most): navigation never animates.
  */
+/** What covers the reader's head once its subject scrolls away (the subject's line: its scroll-padding-top). */
+export const topCover = (scroller: HTMLElement): number => parseFloat(getComputedStyle(scroller).scrollPaddingTop) || 0;
+
 export function revealMessage(id: number, pad = 16): void {
   cancelReaderScroll();
   let frame = 0;
@@ -97,7 +100,7 @@ export function revealMessage(id: number, pad = 16): void {
       return;
     }
     if (cancel === stop) cancel = null;
-    scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - pad;
+    scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - pad - topCover(scroller);
   };
   const stop = () => cancelAnimationFrame(frame);
   cancel = stop;

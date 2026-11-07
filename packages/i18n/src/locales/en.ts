@@ -1072,7 +1072,6 @@ const en = {
   "codes.copied": "Copied {code}",
   "codes.sr": "Verification code {code}",
   "reader.account": "In {name} ({email})",
-  "reader.replyMenu": "More ways to respond",
   "reader.more": "More actions",
   "reader.markSpam": "Mark as spam",
   "reader.messageCount": { one: "# message", other: "# messages" },

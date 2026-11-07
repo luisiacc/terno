@@ -512,6 +512,12 @@ export interface RichEditor {
   destroy(): void;
 }
 
+/** What covers the reader's head (its scroll-padding-top): a caret moving up stays below it. */
+const headClearance = (mount: HTMLElement): number => {
+  const scroller = mount.closest<HTMLElement>("[data-reader-scroller]");
+  return scroller ? parseFloat(getComputedStyle(scroller).scrollPaddingTop) || 0 : 0;
+};
+
 const footClearance = (mount: HTMLElement): number => {
   const scroller = mount.closest<HTMLElement>("[data-reader-scroller]");
   const foot = scroller ? mount.closest("form")?.querySelector<HTMLElement>("[data-draft-foot]") : null;
@@ -532,8 +538,9 @@ export function createEditor(
     editable: o.editable,
     // the caret clears a composer's foot where it sticks over the text (a reply in the reader): the threshold is when
     // ProseMirror scrolls, the margin how far; both read each time it does
-    scrollThreshold: { top: 0, left: 0, right: 0, get bottom() { return footClearance(mount) || 0; } },
-    scrollMargin: { top: 5, left: 5, right: 5, get bottom() { return footClearance(mount) || 5; } },
+    // and its head, where the subject's line covers the reader once the header has scrolled away (plan 158)
+    scrollThreshold: { get top() { return headClearance(mount); }, left: 0, right: 0, get bottom() { return footClearance(mount) || 0; } },
+    scrollMargin: { get top() { return headClearance(mount) + 5; }, left: 5, right: 5, get bottom() { return footClearance(mount) || 5; } },
     dispatchTransaction(tr) {
       if (!o.editable()) return;
       const next = view.state.apply(tr);

@@ -7,14 +7,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { IconButton } from "@terno/ui/components/icon-button";
 import { Kbd } from "@terno/ui/components/kbd";
 import { cn } from "@terno/ui/lib/utils";
-import { ChevronUp, Forward, PenLine, Pin, PinOff, ReplyAll, Trash2 } from "@terno/ui/icons";
+import { ChevronUp, Forward, PenLine, Pin, PinOff, Reply, ReplyAll, Trash2 } from "@terno/ui/icons";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { closesEmpty, collapseInlineDraft, composeFocusPending, finishComposeFocus, openCompose, reopenInlineDraft, sendDraft, useDraftsReturning } from "~/lib/compose";
 import { attachmentUploading } from "~/lib/attachments";
 import { authored, copyDraft, discardDraft, discardIfEmpty, draftEditsHeld, draftSenderLocked, editDraft, editDraftRecipients, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
-import { SenderAvatar } from "./sender-avatar";
 import { RecipientInput, recipientSummary } from "./recipient-input";
 import { warmAutocomplete } from "~/lib/autocomplete";
 import { richT } from "~/lib/i18n";
@@ -396,6 +395,12 @@ function formLabel(forward: boolean, who: string): string {
   return who ? t("compose.form.reply", { name: who }) : t("compose.form.replyEmpty");
 }
 
+/** What a draft is, in a few words: "Reply to Isabella Álvarez", "Forward to Ana", "New message". */
+export function draftTitle(d: LocalDraft): string {
+  const who = d.toText.split(",")[0]?.replace(/<.*$/, "").replace(/"/g, "").trim() || d.toText;
+  return d.mode === "new" ? t("compose.newMessage") : formLabel(d.mode === "forward", who);
+}
+
 /**
  * What follows the last message of a conversation: the reply bar, or the
  * conversation's draft (open, or collapsed into one line). The three share
@@ -508,8 +513,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
   };
 
   const me = account?.displayName || account?.email || "";
-  const who = d ? d.toText.split(",")[0]?.replace(/<.*$/, "").replace(/"/g, "").trim() || d.toText : "";
-  const label = !d ? "" : d.mode === "new" ? t("compose.newMessage") : formLabel(d.mode === "forward", who);
+  const label = d ? draftTitle(d) : "";
   const drop = useComposerDrop(d?.key ?? "", d?.sending ?? false);
 
   return (
@@ -517,10 +521,11 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
     <div ref={rootRef} className={cn("mt-4", DRAFT_SURFACE, "not-data-[state=open]:[box-shadow:0_0_0_1px_var(--border),var(--draft-shadow)] data-[state=bar]:has-[[data-testid=quick-reply]:hover]:bg-muted", state === "returning" && "min-h-10")} data-testid="draft-slot" data-state={state} data-thread={threadId}>
       <Expand open={state === "bar"}>
         <div className="flex h-10 items-center gap-0.5 pr-1.5" data-testid="reply-bar">
-          {/* its words on the messages' name column; you, as a quiet mark in the avatars' (initials: it's your own account, no logo to compete with what you're answering) */}
-          <button type="button" onClick={() => void openCompose("reply", threadId)} title={me ? t("compose.bar.from", { name: me }) : undefined} data-testid="quick-reply" className="flex h-full min-w-0 flex-1 items-center gap-[7px] rounded-xl pl-[7px] text-left text-sm text-foreground-soft outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
-            <SenderAvatar name={me} email={account?.email ?? me} className="size-6 text-2xs" />
+          {/* its words on the messages' name column, the reply glyph in the avatars'; the account it answers from in words, and only when there's a choice (initials read as a person) */}
+          <button type="button" onClick={() => void openCompose("reply", threadId)} title={me ? t("compose.bar.from", { name: me }) : undefined} data-testid="quick-reply" className="group/qr flex h-full min-w-0 flex-1 items-center gap-[7px] rounded-xl pl-[7px] text-left text-sm text-foreground-soft outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+            <span aria-hidden className="flex size-6 shrink-0 items-center justify-center text-muted-foreground group-hover/qr:text-foreground"><Reply className="size-4" /></span>
             <span className="truncate">{t("compose.bar.reply", { name: replyTo })}</span>
+            {me && accounts.length > 1 && <span data-testid="quick-reply-from" className="shrink-[3] truncate text-muted-foreground">{t("compose.fromLabel", { name: me })}</span>}
             <Kbd aria-hidden className="@max-[560px]:hidden">R</Kbd>
           </button>
           {replyAll && (

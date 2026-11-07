@@ -117,6 +117,20 @@ Not taken: steps in Split (j and k and the list beside it already do this; two m
 - The keys kept working behind the full-message view, and could close it.
 
 
+## The reader, third pass
+
+On round 2's ratings (`90d8de335`), with the owner's decisions:
+
+- **One clear way to reply.** The toolbar has Reply in words, Reply all in words when it reaches someone else, and Forward as its glyph, with no menu. Reply all comes in on Reply's far side, so Reply and Forward never move between conversations. It shows its words only on a full-width column, where every language fits (Split ≥ 720 px, List ≥ 1080 px), and not when the toolbar also holds Move to Inbox and Summarize. A message's own Reply and ⋯ show on hover and focus only, the newest's too (the reply bar is just below it), at 28 px.
+- **The reply bar names the account in words:** the reply glyph sits in the avatars' column, and "from Acme Studio" shows only with more than one account. Initials read as a person.
+- **Headers show that they open.** Every message header and "N more messages" carries the quoted text's chevron on the dates' edge: right when folded, down when open. This reverses the second pass's "the chevrons went": raters still couldn't tell the rows open.
+- **Context in a short window.** Once the whole header is above the reader, one line under the toolbar keeps the subject and, while a draft is open, its title ("Reply to Isabella Álvarez"). It takes over the toolbar's hairline. The scroller's `scroll-padding-top` is that line's height, and every reveal (`keepInView`, `revealMessage`, `revealMark`, the composer's caret margins) clears it.
+- **List's page:** Back and the steps hang just outside the column's edges, not out at the pane's.
+
+Not taken: the body measure (35 em, about 75 characters, already in every style); darker avatars (the initials hold 4.5:1 on their tint, and the avatar is shared with the list); a shorter tooltip delay (app-wide).
+
+**What the two Codex reviews changed:** Reply all's words overflowed narrower readers and longer languages, so they now show only where they fit; the composer's own scroll (an undo above the view) put the caret under the line; a reduced-motion opening could land under it; switching style left the line watching a heading that was gone.
+
 ## Second pass: the row menu, the palette, selection and undo, search
 
 Decisions of the second pass in this area, and why:

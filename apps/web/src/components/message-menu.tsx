@@ -116,10 +116,10 @@ function useRespond(threadId: number, messageId: number | null, fallback: () => 
 }
 
 /**
- * A message's own actions at the end of its header, so there's no scrolling to the end to answer it. The newest shows
- * them; an older one on hover and focus (`quiet`), in a place kept for them, so nothing moves when they come.
+ * A message's own actions at the end of its header, so there's no scrolling to the end to answer it. They show on hover and
+ * focus, the newest's too (the reply bar is right below it), in a place kept for them, so nothing moves when they come.
  */
-export function MessageActions({ threadId, messageId, quiet, className }: { threadId: number; messageId: number; quiet: boolean; className?: string }) {
+export function MessageActions({ threadId, messageId, className }: { threadId: number; messageId: number; className?: string }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const { respond, opened, finalFocus } = useRespond(threadId, messageId, () => trigger.current);
   return (
@@ -127,10 +127,9 @@ export function MessageActions({ threadId, messageId, quiet, className }: { thre
       role="group"
       aria-label={t("reader.message.actions")}
       data-testid="message-actions"
-      data-quiet={quiet || undefined}
-      className={cn("flex items-center gap-px", quiet && "opacity-0 transition-opacity duration-fast group-hover/mh:opacity-100 group-has-[:focus-visible]/mh:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100", className)}
+      className={cn("flex items-center gap-px opacity-0 transition-opacity duration-fast group-hover/mh:opacity-100 group-has-[:focus-visible]/mh:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100", className)}
     >
-      <IconButton size="icon-xs" label={t("reader.message.reply")} onClick={() => respond("reply", false)} data-testid="message-reply">
+      <IconButton size="icon-sm" label={t("reader.message.reply")} onClick={() => respond("reply", false)} data-testid="message-reply">
         <Reply className="size-4" />
       </IconButton>
       <DropdownMenu onOpenChange={opened}>
@@ -138,7 +137,7 @@ export function MessageActions({ threadId, messageId, quiet, className }: { thre
           <TooltipTrigger
             render={
               <DropdownMenuTrigger
-                render={<Button ref={trigger} variant="ghost" size="icon-xs" aria-label={t("reader.message.more")} data-testid="message-more" className="text-muted-foreground hover:text-foreground" />}
+                render={<Button ref={trigger} variant="ghost" size="icon-sm" aria-label={t("reader.message.more")} data-testid="message-more" className="text-muted-foreground hover:text-foreground" />}
               />
             }
           >
