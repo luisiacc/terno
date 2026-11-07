@@ -1,6 +1,9 @@
 import { ingest, msg } from "@terno/store/conformance";
 import { mkdirSync } from "node:fs";
 import { axeBothModes, expect, openRow, stabilize, test } from "./fixtures";
+
+// the format bar's controls are what this drives (plan 158: closed by default)
+test.use({ formatBar: true });
 mkdirSync("/tmp/terno-missing-draft-r2-shots", { recursive: true });
 
 for (const normalization of ["missing original", "cross-account"] as const) test(`copy context normalization keeps its original inline editor (${normalization})`, async ({ app: page, server }) => {

@@ -1,5 +1,8 @@
 import { axeBothModes, expect, stabilize, test } from "./fixtures";
 
+// the format bar's controls are what this drives (plan 158: closed by default)
+test.use({ formatBar: true });
+
 type Probe = { composerReadFault(enabled?: boolean): number; throwIn(area: string): void; composerDoc(): unknown; setComposerCaret(index: number, offset?: number): boolean; parseMailHtml(html: string): unknown };
 const fault = (page: import("@playwright/test").Page, enabled?: boolean) => page.evaluate((value) => (window as unknown as { __terno: Probe }).__terno.composerReadFault(value), enabled);
 const selection = (page: import("@playwright/test").Page) => page.evaluate(() => {

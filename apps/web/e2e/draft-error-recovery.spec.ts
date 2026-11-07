@@ -1,5 +1,8 @@
 import { mkdirSync } from "node:fs";
 import { axeBothModes, expect, openRow, stabilize, test } from "./fixtures";
+
+// the format bar's controls are what this drives (plan 158: closed by default)
+test.use({ formatBar: true });
 mkdirSync("/tmp/terno-missing-draft-r2-shots", { recursive: true });
 
 test("render-error recovery reviews exact draft history and files outside the broken app", async ({ app: page, server }) => {

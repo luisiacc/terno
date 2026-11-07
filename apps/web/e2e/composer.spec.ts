@@ -8,6 +8,9 @@ import type { Locator, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
 import { expect, focusList, openRow, test, scenario, freshNoDrafts } from "./fixtures";
 
+// the format bar's controls are what this drives (plan 158: closed by default)
+test.use({ formatBar: true });
+
 const body = (page: Page) => page.getByTestId("compose-body");
 const ctx = { clientId: "setup", origin: "dev" as const };
 

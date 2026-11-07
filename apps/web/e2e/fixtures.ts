@@ -172,6 +172,8 @@ interface Fixtures {
   siteIcons: boolean;
   /** plan 113: education tips, all seen already unless a test opts in (one would sit over the list) */
   tips: boolean;
+  /** plan 158: the composer's format bar starts closed; a spec about its controls starts with it open (Aa still decides after that) */
+  formatBar: boolean;
   /** plan 145: Today's row, hidden unless a test opts in: the demo has an AI provider, and every screen would show it (today.spec holds it in every design) */
   today: boolean;
   server: DevServer & { smtp: CapturedMail[]; net: TestNetwork; icons: IconStub; unsubscribes: UnsubscribeRecorder };
@@ -186,6 +188,7 @@ export const test = base.extend<Fixtures>({
   layout: [null, { option: true }],
   siteIcons: [false, { option: true }],
   tips: [false, { option: true }],
+  formatBar: [false, { option: true }],
   today: [false, { option: true }],
   server: async ({ backendOptions, siteIcons, today }, use) => {
     const template = process.env[TEMPLATE_ENV];
@@ -216,9 +219,10 @@ export const test = base.extend<Fixtures>({
     await capture?.close();
     rmSync(dir, { recursive: true, force: true });
   },
-  app: async ({ page, server, fixedClock, backendOptions, design, layout, tips }, use) => {
+  app: async ({ page, server, fixedClock, backendOptions, design, layout, tips, formatBar }, use) => {
     if (fixedClock) await page.clock.setFixedTime(new Date(E2E_NOW));
     if (!tips) await page.addInitScript((keys) => keys.forEach((k) => localStorage.setItem(k, "shown")), TIPS.map(tipKey));
+    if (formatBar) await page.addInitScript(() => { if (localStorage.getItem("terno:format-bar") === null) localStorage.setItem("terno:format-bar", "shown"); });
     // a project's design in its own colors, as its baselines show it (plan 98's GitHub defaults are a new install's: `design: null`)
     if (design) await server.backend.server.invoke("settings.update", { design, lightTheme: "design", darkTheme: "design" }, { clientId: "setup", origin: "dev" as const });
     if (layout) await server.backend.server.invoke("settings.update", { layout }, { clientId: "setup", origin: "dev" as const });

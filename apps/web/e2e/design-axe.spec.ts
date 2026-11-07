@@ -16,6 +16,9 @@ import { E2E_NOW } from "./constants";
 import { addRecipients, expect, focusList, navTo, openRow, rows, search, selectedRow, test, type DevServerFixture } from "./fixtures";
 import { BACKUP, base, failed, fakeMain, gate, release, upd } from "./helpers/fake-main";
 
+// the format bar's controls are what this drives (plan 158: closed by default)
+test.use({ formatBar: true });
+
 const ctx = { clientId: "setup", origin: "dev" as const };
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 

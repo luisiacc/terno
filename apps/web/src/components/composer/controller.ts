@@ -194,9 +194,10 @@ export const cancelFocusBody = (key: string): boolean => {
 const SHOWN_KEY = "terno:format-bar";
 function readShown(): boolean {
   try {
-    return localStorage.getItem(SHOWN_KEY) !== "hidden";
+    // quiet until asked for (plan 158): only someone who opened it keeps it open
+    return localStorage.getItem(SHOWN_KEY) === "shown";
   } catch {
-    return true;
+    return false;
   }
 }
 export const useFormatBar = create<{ shown: boolean }>(() => ({ shown: readShown() }));

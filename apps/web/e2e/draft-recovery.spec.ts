@@ -1,6 +1,9 @@
 import { RpcError } from "@terno/core/rpc";
 import { axeBothModes, expect, openRow, stabilize, test } from "./fixtures";
 
+// the format bar's controls are what this drives (plan 158: closed by default)
+test.use({ formatBar: true });
+
 test("terminal draft copy keeps rich history, caret, recipient chips and exact files", async ({ app: page, server }) => {
   await openRow(page, 0); await page.getByTestId("quick-reply").click();
   const body = page.getByTestId("compose-body");
