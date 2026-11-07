@@ -146,6 +146,30 @@ describe("reply destinations", () => {
     expect(replyFields("reply", { ...thread, messages: [incoming, sent] }, me).inReplyToMessageId).toBe(incoming.id);
   });
 
+  it("a chosen message: the fields answer it, and a draft on another turns to it keeping what was written (plan 158)", () => {
+    const first = { ...incoming, id: 501, from: other, replyTo: [], to: [{ name: "Luis", email: me.email }], cc: [], bodyText: "The older one" };
+    const second = { ...incoming, id: 502, bodyText: "The newer one" };
+    const two = { ...thread, messages: [first, second] };
+    const older = replyFields("reply", two, me, { sourceId: first.id });
+    expect(older.inReplyToMessageId).toBe(first.id);
+    expect(older.replyContext?.sourceId).toBe(first.id);
+    expect(parseAddressList(older.toText)).toEqual([other]);
+    expect(older.quotedText).toContain("The older one");
+    expect(replyFields("forward", two, me, { sourceId: first.id }).forwardOfMessageId).toBe(first.id);
+
+    const fresh = replyFields("reply", two, me);
+    const draft = { ...fresh, bodyText: "Written", toText: `${fresh.toText}, Typed <typed@help.test>` };
+    expect(draft.inReplyToMessageId).toBe(second.id);
+    // no choice: a reply stays on the message it answers
+    expect(convertFields(draft, "reply", two, me).inReplyToMessageId).toBe(second.id);
+    const turned = convertFields(draft, "reply", two, me, [], undefined, first.id);
+    expect(turned.inReplyToMessageId).toBe(first.id);
+    expect(turned.replyContext?.sourceId).toBe(first.id);
+    expect(turned.quotedText).toContain("The older one");
+    expect(turned.bodyText).toBe("Written");
+    expect(parseAddressList(turned.toText)).toEqual([{ name: "Typed", email: "typed@help.test" }, other]);
+  });
+
   it("mode conversion retains typed recipients and deduplicates new automatic destinations", () => {
     const draft = replyFields("reply", thread, me);
     const converted = convertFields({ ...draft, toText: `${draft.toText}, Manual <manual@help.test>`, ccText: "Session <SESSION@HELP.TEST>", bccText: "Private <private@help.test>" }, "replyAll", thread, me);

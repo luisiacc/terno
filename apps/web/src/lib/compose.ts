@@ -495,6 +495,8 @@ const NOWHERE: ComposeLanding = { kind: "none" };
 export interface ComposeOpenOptions {
   /** where focus goes in the draft it lands on, instead of To or the body */
   target?: "ai";
+  /** the message it answers or forwards, chosen by the person (plan 158): a draft on another message turns to this one */
+  sourceId?: number;
   /** told the moment the draft is known, before anything takes focus or paints, so its row shows with it */
   onLanded?: (landing: Exclude<ComposeLanding, { kind: "none" }>) => void;
 }
@@ -632,10 +634,13 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     return;
   }
   let proof: DraftAckRead | undefined, noWriter = false;
-  const sameModeSource = Boolean(existing && existing.mode === mode && existing.showSourceContext && !existing.presentationExpired && !existing.recovery && activeSourceId(existing) !== null && lease);
-  if (existing && (existing.mode !== mode || sameModeSource) && !existing.presentationExpired && lease) {
+  const chosenSource = cell.options?.sourceId;
+  // the draft answers another message than the one chosen: a conversion, as a change of mode is
+  const retarget = Boolean(existing && chosenSource !== undefined && activeSourceId(existing) !== chosenSource);
+  const sameModeSource = Boolean(existing && !retarget && existing.mode === mode && existing.showSourceContext && !existing.presentationExpired && !existing.recovery && activeSourceId(existing) !== null && lease);
+  if (existing && (existing.mode !== mode || retarget || sameModeSource) && !existing.presentationExpired && lease) {
     if (mine !== intent || !focusAllowed()) return;
-    const admission = existing.mode !== mode ? beginComposeBodyAckRead(existing) : beginDraftAckRead(existing);
+    const admission = existing.mode !== mode || retarget ? beginComposeBodyAckRead(existing) : beginDraftAckRead(existing);
     if (admission.kind === "refused") return;
     noWriter = admission.kind === "no-writer";
     proof = admission.kind === "proof" ? admission.proof : admission.continuity;
@@ -694,7 +699,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
       existing = validated;
     } else existing = current;
   }
-  if (existing && existing.mode === mode) {
+  if (existing && existing.mode === mode && !retarget) {
     const expected = openedDraft(existing);
     let transitions = 0, receipt: LocalDraft | undefined;
     const stop = sameModeSource ? useDrafts.subscribe((state, previous) => {
@@ -719,7 +724,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   if (!currentIntent()) {
     if (mode === "forward" && mine === intent && destinationAvailable(lease) && (!lease || (lease.valid && focusLease === lease)) && getSelectionWriteRevision() === selectionRevision && getApp().selectedId === selected && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === existingKey) {
       const current = existingKey ? useDrafts.getState().drafts[existingKey] : undefined, accounts = getApp().accounts;
-      const message = answered(detail, accounts.map((a) => a.email)), source = accounts.find((a) => a.id === detail.thread.accountId);
+      const message = detail.messages.find((m) => m.id === chosenSource) ?? answered(detail, accounts.map((a) => a.email)), source = accounts.find((a) => a.id === detail.thread.accountId);
       if (current && message.attachmentState === "complete" && message.attachments.length && message.attachments.every((a) => a.assetId)) {
         if (!source) snack.error(t("errors.accountGone"));
         else if (forwardAccountMismatch(current.accountId, detail, accounts.map((a) => a.email))) snack.error(t("compose.forwardAccountMismatch", { account: source.email }));
@@ -736,7 +741,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   const identities = accounts.map((a) => a.email);
   let forwardRefs: AttachmentRef[] | undefined, forwardSource: { threadId: number; messageId: number; accountId: number } | undefined;
   if (mode === "forward") {
-    const message = answered(detail, identities);
+    const message = detail.messages.find((m) => m.id === chosenSource) ?? answered(detail, identities);
     // plan 60: only the files confirmed on this device go in now; one not ready never stops the forward (it follows)
     const parts = message.attachments.filter((a) => a.assetId);
     if (parts.length && !source) { snack.error(t("errors.accountGone")); return; }
@@ -800,8 +805,8 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   const before = existing ? fieldsOf(existing) : undefined;
   if (proof && readDraftAck(proof) !== existing) return;
   const converted = existing && existing.mode !== "new" && (written(existing) || (mode !== "forward" && existing.mode !== "forward"))
-    ? convertFields(before!, mode, detail, account, identities, forwardRefs)
-    : replyFields(mode, detail, account, { identities, forwardRefs });
+    ? convertFields(before!, mode, detail, account, identities, forwardRefs, chosenSource)
+    : replyFields(mode, detail, account, { identities, forwardRefs, ...(chosenSource !== undefined ? { sourceId: chosenSource } : {}) });
   if (converted === before) { snack.error(t("attachments.tooLarge")); return; }
   converted.showSourceContext = true;
   converted.attachments = mergeAttachmentRefs([], converted.attachments ?? []);

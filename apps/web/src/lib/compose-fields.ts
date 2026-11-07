@@ -171,13 +171,15 @@ export function forwardAccountMismatch(accountId: number, detail: ThreadDetail, 
  * A draft turned into another mode (r → a, a → f, …), keeping what the user
  * wrote: the body, every recipient they typed, and a subject they edited.
  * Only what Terno filled in (auto recipients, subject, quote, threading) is
- * recomputed for the new mode.
+ * recomputed for the new mode. `sourceId`: the message it now answers, when the
+ * person chose one (plan 158); otherwise a reply stays on the one it answers.
  */
-export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account, identities: readonly string[] = [], forwardRefs?: readonly AttachmentRef[]): DraftFields {
+export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account, identities: readonly string[] = [], forwardRefs?: readonly AttachmentRef[], sourceId?: number): DraftFields {
   if (mode === "forward" && forwardAccountMismatch(d.accountId, detail, identities, forwardRefs)) return d;
-  const continuing = mode !== "forward" && d.mode !== "forward" && d.mode !== "new" && d.inReplyToMessageId !== null;
+  const continuing = sourceId === undefined && mode !== "forward" && d.mode !== "forward" && d.mode !== "new" && d.inReplyToMessageId !== null;
   if (continuing && !detail.messages.some((message) => message.id === d.inReplyToMessageId)) return d;
-  const fresh = replyFields(mode, detail, account, { identities, forwardRefs, ...(continuing ? { sourceId: d.inReplyToMessageId! } : {}) });
+  const source = sourceId ?? (continuing ? d.inReplyToMessageId! : undefined);
+  const fresh = replyFields(mode, detail, account, { identities, forwardRefs, ...(source !== undefined ? { sourceId: source } : {}) });
   const attachments = mergeAttachmentRefs(d.attachments ?? [], mode === "forward" ? fresh.attachments ?? [] : []);
   if (!attachmentMessageBudget("", undefined, attachments)) return d;
   const lower = (e: string) => e.toLowerCase();
@@ -205,8 +207,8 @@ export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, d
     subject: d.subjectEdited ? d.subject : continuing ? d.subject : fresh.subject,
     quotedText: fresh.quotedText,
     includeQuote: fresh.includeQuote,
-    replyContext: mode !== "forward" && d.mode !== "forward" && d.mode !== "new" ? d.replyContext : fresh.replyContext,
-    inReplyToMessageId: mode !== "forward" && d.mode !== "forward" && d.mode !== "new" ? d.inReplyToMessageId : fresh.inReplyToMessageId,
+    replyContext: sourceId === undefined && mode !== "forward" && d.mode !== "forward" && d.mode !== "new" ? d.replyContext : fresh.replyContext,
+    inReplyToMessageId: sourceId === undefined && mode !== "forward" && d.mode !== "forward" && d.mode !== "new" ? d.inReplyToMessageId : fresh.inReplyToMessageId,
     forwardOfMessageId: fresh.forwardOfMessageId,
     uiState: "open",
   };
