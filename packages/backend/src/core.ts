@@ -239,6 +239,7 @@ export class BackendCore {
   private syncTimer: ReturnType<typeof setInterval> | null = null;
   private workerTimer: ReturnType<typeof setTimeout> | null = null;
   private workerRunning = false;
+  private readonly workerIdle: (() => void)[] = [];
   private workerKicked = false;
   private stopped = false;
   /** plan 69: what a storage removal took off this device, kept from sync passes that overlapped it */
@@ -826,6 +827,10 @@ export class BackendCore {
    * then recovered as unknown, never resent).
    */
   async quiesce(deadlineMs: number): Promise<"idle" | "sending"> {
+    const until = this.now() + Math.max(0, deadlineMs);
+    // plan 158: a send held for its Undo goes now: whoever quit a moment after Send means it to go, not at the next launch
+    if (await this.scheduled.releaseHolds().catch(() => 0)) await this.workerSettled(deadlineMs);
+    deadlineMs = until - this.now();
     this.draining = true;
     if (this.workerTimer) clearTimeout(this.workerTimer);
     this.workerTimer = null;
@@ -850,6 +855,14 @@ export class BackendCore {
     if (!this.draining) return;
     this.draining = false;
     this.kickWorker();
+  }
+
+  /** Runs the worker now, and resolves once it has gone through what's ready, or at the deadline. */
+  private async workerSettled(deadlineMs: number): Promise<void> {
+    const running = this.workerRunning ? new Promise<void>((r) => this.workerIdle.push(r)) : this.runWorker();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([running, new Promise((r) => (timer = setTimeout(r, Math.max(0, deadlineMs))))]);
+    clearTimeout(timer);
   }
 
   /** Resolves once no send is in flight. */
@@ -2450,6 +2463,7 @@ export class BackendCore {
       } while (this.workerKicked && !this.stopped && !this.draining && this.connectivity.online);
     } finally {
       this.workerRunning = false;
+      for (const idle of this.workerIdle.splice(0)) idle();
     }
     await this.scheduleRetry();
     return processed;

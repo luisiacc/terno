@@ -4,7 +4,7 @@ import { authored, draftEditsHeld, draftPresentationThread, flushDraft, forgetDr
 import { useAppearance } from "~/lib/appearance";
 import { pageOf } from "~/lib/page";
 import { snack } from "~/lib/snack";
-import { focusPinned, pinnedKey, usePinned } from "~/lib/pinned-draft-state";
+import { focusPinned, pinnedKey, pinning, usePinned } from "~/lib/pinned-draft-state";
 import { getApp, setApp } from "~/state/app";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 
@@ -42,6 +42,8 @@ export function pinDraft(key: string): boolean {
   stopWatch = () => { stopDrafts(); stopRecovery(); };
   return true;
 }
+
+pinning.pin = pinDraft;
 
 /** Is the draft's own conversation the one on screen? */
 function onScreen(threadId: number | null): boolean {

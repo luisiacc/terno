@@ -140,7 +140,7 @@ test.describe("light", () => {
     await page.keyboard.press("r");
     await expect(page.getByTestId("compose-body")).toBeFocused();
     await page.keyboard.type("Hola Isabella, sí lo reviso hoy.");
-    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    await expect(page.getByTestId("draft-status")).toHaveText("Saved");
     await expect(page).toHaveScreenshot("reply-inline.png");
   });
 
@@ -151,7 +151,7 @@ test.describe("light", () => {
     await page.getByTestId("compose-to").fill("Ana Torres <ana@example.com>");
     await page.getByTestId("compose-subject").fill("Propuesta de colaboración");
     await page.getByTestId("compose-body").fill("Hola Ana,\n\nTe comparto la propuesta que platicamos. Si te parece bien, la revisamos el jueves.\n\nSaludos,\nLuis");
-    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    await expect(page.getByTestId("draft-status")).toHaveText("Saved");
     await expect(page).toHaveScreenshot("compose-new-inline.png");
   });
 

@@ -291,7 +291,7 @@ test.describe("live autolinks", () => {
   test("a draft reopened keeps its autolinks live", async ({ app: page }) => {
     await reply(page, "ver https://santo.com fin");
     await expect.poll(() => links(page).then((ls) => ls.length)).toBe(1);
-    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved", {
+    await expect(page.getByTestId("draft-status")).toHaveText("Saved", {
       timeout: 15_000,
     });
     await page.reload();

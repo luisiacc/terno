@@ -304,3 +304,18 @@ it("withdrawal removes private text from the fading body and announcement withou
   expect(useSnack.getState().undo).toBe(undo);
   expect(snackRetentionForTests()).toEqual({ queued: [], displaced: [] });
 });
+
+it("a loading snack given a lifetime spins until then, and isn't waiting on a result under its id (plan 158)", async () => {
+  const { snackRetentionForTests } = await import("./snack");
+  snack.loading("Sending…", { id: "held", duration: 5000 });
+  expect(current()).toMatchObject({ tone: "loading", duration: 5000 });
+  snack.success("Message sent", { background: true });
+  expect(message()).toBe("Message sent");
+  expect(snackRetentionForTests().displaced).toEqual([]);
+  snack.loading("Sending…", { id: "held-2", duration: 5000 });
+  vi.advanceTimersByTime(5000);
+  expect(current()).toBeNull();
+  // without one it still waits for its result
+  snack.loading("Working", { id: "job" });
+  expect(current()?.duration).toBe(Infinity);
+});

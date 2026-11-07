@@ -4,6 +4,7 @@ import { Download, Paperclip } from "@terno/ui/icons";
 import type { AttachmentInfo } from "@terno/core";
 import { formatList, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { IconButton } from "@terno/ui/components/icon-button";
 import { Chip } from "@terno/ui/components/chip";
 import { cn } from "@terno/ui/lib/utils";
 import { attachFiles, downloadAttachment, useAttachmentUploads } from "~/lib/attachments";
@@ -17,7 +18,7 @@ export function AttachButton({ d }: { d: LocalDraft }) {
   const input = useRef<HTMLInputElement>(null);
   const busy = useAttachmentUploads((s) => s.keys.has(d.key));
   return <>
-    <Button type="button" variant="ghost" size="icon-sm" aria-label={t("attachments.attach")} aria-busy={busy} disabled={d.sending || busy} onClick={() => input.current?.click()}><Paperclip /></Button>
+    <IconButton label={t("attachments.attach")} aria-busy={busy} disabled={d.sending || busy} onClick={() => input.current?.click()} className="[&_svg]:[--icon-line:var(--icon-line-toolbar)]"><Paperclip /></IconButton>
     <input ref={input} type="file" multiple hidden data-testid="attachment-input" aria-label={t("attachments.attach")} disabled={d.sending || busy} onChange={(e) => { const files = [...(e.currentTarget.files ?? [])]; e.currentTarget.value = ""; void attachFiles(d.key, files); }} />
   </>;
 }

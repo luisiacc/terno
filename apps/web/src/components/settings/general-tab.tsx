@@ -1,4 +1,4 @@
-import { aiFeaturesAvailable } from "@terno/core";
+import { aiFeaturesAvailable, UNDO_SEND_MS } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
 import { NumberField } from "@terno/ui/components/number-field";
@@ -293,6 +293,9 @@ export function GeneralTab({ settings, update }: { settings: AppSettings; update
       <SettingsGroup title={t("settings.general.writing")}>
         <SettingsRow label={t("settings.general.suggestions")} hint={t("settings.general.suggestions.hint")} testId="suggestions-row">
           {(a) => <Switch {...a} data-testid="suggestions-switch" checked={settings.composeSuggestions} onCheckedChange={(on) => void update({ composeSuggestions: on })} />}
+        </SettingsRow>
+        <SettingsRow label={t("settings.general.undoSend")} hint={t("settings.general.undoSend.hint", { seconds: UNDO_SEND_MS / 1000 })} testId="undo-send-row">
+          {(a) => <Switch {...a} data-testid="undo-send-switch" checked={settings.undoSend} onCheckedChange={(on) => void update({ undoSend: on })} />}
         </SettingsRow>
       </SettingsGroup>
 

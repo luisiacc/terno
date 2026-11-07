@@ -4,7 +4,9 @@ import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { forgetScheduledDrafts, loadDrafts, scheduledDrafts, useDrafts } from "~/lib/drafts";
 import { reminderWhen } from "~/lib/when";
-import { registerUndo, snack } from "~/lib/snack";
+import { dismissSnack, newsWaiting, registerUndo, snack, useSnack } from "~/lib/snack";
+import { pinning } from "~/lib/pinned-draft-state";
+import { forgetHeldSend, revealHeldSend } from "~/lib/sent-reveal";
 import { getApp, setApp } from "~/state/app";
 import { openStoredDraft } from "~/lib/compose";
 
@@ -57,10 +59,12 @@ export async function loadScheduled(): Promise<void> {
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /** A draft back from the backend (unscheduled, given back), opened in the composer. */
-async function openDraftById(draftId: number): Promise<void> {
+async function openDraftById(draftId: number, pinned = false): Promise<void> {
   await loadDrafts();
   const d = Object.values(useDrafts.getState().drafts).find((x) => x.id === draftId);
   if (!d) return;
+  // sent from the pinned card: back on the card, with the reader left where it is
+  if (pinned && pinning.pin(d.key)) return;
   await openStoredDraft(d.key);
 }
 
@@ -90,11 +94,57 @@ export async function rescheduleScheduled(draftId: number, sendAt: number, now =
     return;
   }
   if (now) {
-    snack.success(t("compose.sending"));
+    sendingSnack();
     return;
   }
   const undo = before === undefined ? undefined : registerUndo(() => client.call("scheduled.reschedule", { draftId, sendAt: before }).then(() => undefined));
   snack.success(t("sendLater.scheduled", { when: reminderWhen(sendAt) }), undo && { action: { label: t("common.undo"), name: t("sendLater.undoReschedule"), undo } });
+}
+
+/** How long "Sending…" stays for a result that isn't coming soon (offline, a long retry): a send's own deadline. Its result takes the dock whenever it comes. */
+const SENDING_MS = 30_000;
+
+/** A spinner until it's sent: "Message sent" takes its place, with the check (send-warning). */
+export function sendingSnack(id?: string): void {
+  snack.loading(t("compose.sending"), { ...(id ? { id } : {}), duration: SENDING_MS });
+}
+
+let holds = 0;
+
+/**
+ * Plan 158: Send's Undo window: the backend holds the message (`compose.schedule`'s `hold`) and sends it at its moment
+ * whatever happens here. Undo cancels that row: it either wins, and the draft is back as it was saved, or the message has
+ * already gone, and it says so.
+ */
+export function heldSendSnack(draftId: number, threadId: number | null, holdMs: number, pinned = false): void {
+  const id = `held-send-${++holds}`;
+  if (threadId !== null) revealHeldSend(threadId, holdMs);
+  const undo = registerUndo(async () => {
+    if (await cancelHeldSend(draftId, pinned) && threadId !== null) forgetHeldSend(threadId);
+  });
+  // set before the snack's own timer, so it runs first and finds the snack still up: the spinner goes on, the Undo's gone
+  setTimeout(() => {
+    if (undo.state !== "ready") return;
+    if (useSnack.getState().undo === undo) useSnack.setState({ undo: null });
+    // the backend's clock started first: its "Message sent" can already be waiting behind the Undo
+    if (useSnack.getState().current?.id !== id) return;
+    if (newsWaiting()) dismissSnack(id);
+    else sendingSnack(id);
+  }, holdMs);
+  snack.loading(t("compose.sending"), { id, duration: holdMs, action: { label: t("common.undo"), name: t("compose.undoSend"), undo } });
+}
+
+/** False if it had already gone. Anything else that goes wrong is Undo's to say, with a retry. */
+async function cancelHeldSend(draftId: number, pinned: boolean): Promise<boolean> {
+  try {
+    await client.call("scheduled.cancel", { draftId });
+  } catch (error) {
+    if ((error as { code?: string } | null)?.code !== "NOT_FOUND") throw error;
+    snack(t("compose.undoSendTooLate"));
+    return false;
+  }
+  await openDraftById(draftId, pinned);
+  return true;
 }
 
 /** Scheduled from a composer (lib/compose's send): the snack, with Undo back to the draft. */

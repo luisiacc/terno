@@ -35,28 +35,34 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
   const disabled = d.sending || Boolean(d.recovery);
   const uploading = useFilesOnTheirWay(d.key);
   const ready = canSendTo(d) && !uploading;
+  const invalid = firstInvalid(d.toText) ?? firstInvalid(d.ccText) ?? firstInvalid(d.bccText);
   // the group owns the fill (a primary button's, plan 118), radius and shadow, so the halves meet with no seam; each half
   // only tints on hover (bg-none: a half's own gradient would hide that), and keeps the group's look when unavailable (the
   // group fades instead).
   // The group clips, so focus is a ring inside each half, 2 px in so it doesn't read as the half's edge, in the
   // text's color (the ring token is primary itself, 1:1 here).
   const half =
-    "border-0 bg-transparent bg-none shadow-none hover:bg-primary-hover aria-expanded:bg-primary-hover focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-[inset_0_0_0_2px_var(--primary),inset_0_0_0_3.5px_var(--primary-foreground)] active:not-aria-[haspopup]:scale-100 unavailable:bg-transparent unavailable:text-primary-foreground";
+    "border-0 bg-transparent bg-none shadow-none hover:bg-primary-hover aria-expanded:bg-primary-hover focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-[inset_0_0_0_2px_var(--primary),inset_0_0_0_3.5px_var(--primary-foreground)] active:not-aria-[haspopup]:scale-100 text-inherit unavailable:bg-transparent unavailable:text-inherit";
   return (
     <div
-      className={cn("flex shrink-0 items-stretch overflow-hidden rounded-[max(var(--cta-floor),min(var(--ds-radius-md),12px))] bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground dark:from-primary dark:to-primary-hover shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] has-disabled:opacity-50 has-[[aria-disabled=true]]:opacity-50", className)}
+      className={cn(
+        "flex shrink-0 items-stretch overflow-hidden rounded-[max(var(--cta-floor),min(var(--ds-radius-md),12px))] bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground dark:from-primary dark:to-primary-hover shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)]",
+        // what a primary reads as when it can't go yet (plan 118's unavailable), in a color its label stays readable on; a click still says why
+        "has-disabled:bg-none has-disabled:bg-transparent has-disabled:text-muted-foreground has-disabled:shadow-[inset_0_0_0_1px_var(--border)] has-[[aria-disabled=true]]:bg-none has-[[aria-disabled=true]]:bg-transparent has-[[aria-disabled=true]]:text-muted-foreground has-[[aria-disabled=true]]:shadow-[inset_0_0_0_1px_var(--border)]",
+        className,
+      )}
       data-testid="compose-send-group"
     >
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button type="submit" size="sm" data-testid="compose-send" aria-busy={d.sending} aria-disabled={!disabled && !ready ? true : undefined} disabled={disabled} className={cn(half, "peer gap-2 rounded-r-none pr-2")}>
+            <Button type="submit" size="sm" data-testid="compose-send" aria-busy={d.sending} aria-disabled={!disabled && !ready ? true : undefined} disabled={disabled} className={cn(half, !ready && "hover:bg-muted", "peer gap-2 rounded-r-none pr-2")}>
               <Send /> {t("common.send")}
             </Button>
           }
         />
         <TooltipContent className="flex items-center gap-2">
-          {ready ? t("common.send") : uploading ? t("compose.stillAdding") : t("compose.noRecipient")}
+          {ready ? t("common.send") : uploading ? t("compose.stillAdding") : invalid !== null ? t("compose.invalidRecipient", { entry: invalid }) : t("compose.noRecipient")}
           {ready && <Shortcut keys="mod+enter" />}
         </TooltipContent>
       </Tooltip>
@@ -66,7 +72,7 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
             render={
               <PopoverTrigger
                 render={
-                  <Button type="button" size="sm" aria-label={t("sendLater.button")} data-testid="compose-send-later" disabled={disabled} className={cn(half, "relative gap-0.5 rounded-l-none px-1.5 before:absolute before:inset-y-1.5 before:left-0 before:w-(--hairline-w) before:bg-primary-foreground/25 peer-hover:before:opacity-0 hover:before:opacity-0 aria-expanded:before:opacity-0")} />
+                  <Button type="button" size="sm" aria-label={t("sendLater.button")} data-testid="compose-send-later" disabled={disabled} className={cn(half, !ready && "hover:bg-muted aria-expanded:bg-muted", "relative gap-0.5 rounded-l-none px-2 before:absolute before:inset-y-1.5 before:left-0 before:w-(--hairline-w) before:bg-current/25 peer-hover:before:opacity-0 hover:before:opacity-0 aria-expanded:before:opacity-0")} />
                 }
               />
             }

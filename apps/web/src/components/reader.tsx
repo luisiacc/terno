@@ -21,7 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/po
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { cancelReaderScroll, keepInView, revealMessage } from "~/lib/reader-scroll";
-import { takeSent } from "~/lib/sent-reveal";
+import { takeHeldSent, takeSent } from "~/lib/sent-reveal";
 import { Expand } from "./expand";
 import { DraftSlot } from "./inline-draft";
 import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
@@ -380,7 +380,7 @@ function useFold(messages: MessageDetail[]) {
     const unseen = messages.filter((m) => !shown.has(m.id));
     if (!unseen.length) return;
     // a reply just sent from here: the reader goes to it, open (newer mail can follow it, never folds it away)
-    const sent = takeSent(unseen.map((m) => m.id));
+    const sent = takeSent(unseen.map((m) => m.id)) ?? takeHeldSent(unseen);
     setShown(new Map([...shown, ...unseen.map((m) => [m.id, m.id === sent || opensAt(m)] as const)]));
     if (sent !== null) revealMessage(sent);
   }, [messages]);

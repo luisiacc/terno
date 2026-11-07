@@ -42,7 +42,7 @@ export interface SnackInput {
   action?: SnackAction;
   /** a quiet text button before it ("View") */
   secondary?: SnackAction;
-  /** ms; loading snacks never expire */
+  /** ms; a loading snack without one stays until its id is updated or dismissed */
   duration?: number;
   tone?: SnackTone;
   /** news nobody just asked for (a send's result, the engine's adds): waits behind a snack that offers something */
@@ -102,6 +102,9 @@ let heard = 0;
 let ids = 0;
 let publication = 0;
 
+/** Background news is waiting behind the current snack. */
+export const newsWaiting = (): boolean => queue.length > 0;
+
 /** Ownership changes even when newer feedback waits in the queue. */
 export const snackPublication = (): number => publication;
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -132,7 +135,7 @@ const fresh = (paused: readonly PauseReason[]): Countdown => ({ elapsed: 0, sinc
 const spokenOf = (s: { message: string; description?: string }) => (s.description ? `${s.message}. ${s.description}` : s.message);
 
 function durationOf(input: SnackInput): number {
-  if (input.tone === "loading") return Infinity;
+  if (input.tone === "loading" && input.duration === undefined) return Infinity;
   return input.duration ?? (input.action || input.tone === "error" ? ACTION_MS : DEFAULT_MS);
 }
 
@@ -164,7 +167,8 @@ function show(input: SnackInput & { render?: () => ReactNode }): string {
     queue = [...queue.filter((q) => q.id !== id), { ...input, id, background: true }].slice(-QUEUE_MAX);
     return id;
   }
-  if (s.current?.tone === "loading") displaced.add(s.current.id);
+  // (one with a lifetime has no result coming under its id)
+  if (s.current?.tone === "loading" && s.current.duration === Infinity) displaced.add(s.current.id);
   const current: Snack = { ...rest, id, seq: ++seq, tone, duration: durationOf(input), spoken: spokenOf(input), heard: ++heard, news };
   useSnack.setState({ current, last: current, countdown: fresh(s.paused) });
   schedule();

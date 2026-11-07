@@ -70,9 +70,10 @@ export function designVars(d: DesignDefinition): [string, string][] {
     ["--avatar-sender", `${d.avatar.senderCard}px`],
     // token references only: the colors stay the palette's (and their pairs are in CONTRAST_PAIRS)
     ["--draft-bg", d.surfaces.draft === "tint" ? "var(--tint)" : d.surfaces.draft === "outline" ? "var(--background)" : "var(--card)"],
-    ["--draft-ring", d.surfaces.draft === "tint" ? "transparent" : "var(--border)"],
+    ["--draft-ring", "var(--border)"],
     // plan 16: the composer's format bar, a quieter strip of the draft's own surface
-    ["--format-bg", d.surfaces.draft === "outline" ? "transparent" : d.surfaces.draft === "card" ? "var(--tint)" : "color-mix(in oklab, var(--foreground) 4.5%, transparent)"],
+    // (a mix of the ink, not --tint: in dark, tint and card are the same color and the well is gone)
+    ["--format-bg", d.surfaces.draft === "outline" ? "transparent" : "color-mix(in oklab, var(--foreground) 4.5%, transparent)"],
     ["--format-ring", d.surfaces.draft === "outline" ? "0 0 0 var(--hairline-w) var(--border)" : "none"],
     ["--draft-shadow", d.surfaces.draft === "card" ? "0 1px 2px color-mix(in oklab, var(--shadow-color) 40%, transparent), 0 8px 24px -12px var(--shadow-color)" : "0 0 transparent"],
   );

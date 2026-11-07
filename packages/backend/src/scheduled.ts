@@ -15,6 +15,12 @@ import type { MailStore, ScheduledSend } from "@terno/store";
  * failure is kept (a setting) until the user saw it. Anything else (a full
  * Sent-copy queue, a store hiccup) keeps it scheduled, says why, and tries
  * again later.
+ *
+ * Send's Undo window (plan 158) is one of these, for a few seconds: the same durable row, timer and fence, so a quit or a
+ * crash neither loses it nor sends it twice (the row goes in the transaction that queues the send, and Undo is that row's
+ * delete: one of them wins). Only the name differs: a hold isn't something the user scheduled, so it's left out of the
+ * snapshot, and a quit sends it instead of keeping it for the next launch. One that couldn't go stops being a hold: it's
+ * listed, saying why, and from then on it's a scheduled send like any other, moved and kept as one.
  */
 
 export type ComposeSendParams = ParsedParamsOf<"compose.send">;
@@ -73,6 +79,8 @@ export class ScheduledSends {
   private armedAt: number | null = null;
   /** the drafts scheduled as of the last look (drafts.list leaves them out) */
   private ids = new Set<number>();
+  /** those that are Send's Undo window: in memory, since after a restart one is due and goes first anyway */
+  private holds = new Set<number>();
   private stopped = false;
 
   constructor(private readonly host: ScheduledHost) {}
@@ -128,21 +136,38 @@ export class ScheduledSends {
     await this.running?.catch(() => {});
   }
 
-  async schedule(params: ComposeSendParams & { draftId: number; draftGeneration: string; draftRevision: number }, sendAt: number): Promise<"ok" | "full" | "stale"> {
+  async schedule(params: ComposeSendParams & { draftId: number; draftGeneration: string; draftRevision: number }, sendAt: number, hold = false): Promise<"ok" | "full" | "stale"> {
     const r = await this.host.store.scheduled.put(
       { draftId: params.draftId, generation: params.draftGeneration, revision: params.draftRevision, sendAt, setAt: this.host.now(), paramsJson: JSON.stringify(params) },
-      { count: SCHEDULED_MAX, bytes: SCHEDULED_BYTES_MAX },
+      // a full list of scheduled sends doesn't stop a plain Send: holds have room of their own, and past that it isn't held
+      hold ? { count: SCHEDULED_MAX * 2, bytes: SCHEDULED_BYTES_MAX * 2 } : { count: SCHEDULED_MAX, bytes: SCHEDULED_BYTES_MAX },
     );
     if (r === "ok") {
       this.ids.add(params.draftId);
+      if (hold) this.holds.add(params.draftId);
+      else this.holds.delete(params.draftId);
       this.poke();
     }
     return r;
   }
 
+  /** A quit: what's held for its Undo goes now, as a send in flight would, not whenever the app next opens. How many there were. */
+  async releaseHolds(): Promise<number> {
+    const held = [...this.holds];
+    if (!held.length) return 0;
+    const now = this.host.now();
+    // asked each time: another window's new time may have made one a real schedule while the last write was out
+    for (const draftId of held) if (this.holds.has(draftId)) await this.host.store.scheduled.reschedule(draftId, now);
+    await this.refresh();
+    return held.length;
+  }
+
   async reschedule(draftId: number, sendAt: number): Promise<boolean> {
     const ok = await this.host.store.scheduled.reschedule(draftId, sendAt);
-    if (ok) this.poke();
+    if (ok) {
+      this.holds.delete(draftId);
+      this.poke();
+    }
     return ok;
   }
 
@@ -151,6 +176,8 @@ export class ScheduledSends {
     if (ok) {
       this.ids.delete(draftId);
       this.poke();
+      // no snapshot told the other windows it was gone, so none will tell them it's back
+      if (this.holds.delete(draftId)) this.host.draftsBack();
     }
     return ok;
   }
@@ -163,6 +190,8 @@ export class ScheduledSends {
 
   private async look(): Promise<ScheduledSnapshot> {
     const store = this.host.store;
+    // only these can be judged by what's about to be read: a hold made while this runs isn't in it, and isn't gone
+    const heldAtStart = [...this.holds];
     let list = await store.scheduled.list();
     const due = list.filter((s) => (s.retryAt ?? s.sendAt) <= this.host.now());
     const tried = new Set(due.map((s) => s.draftId));
@@ -179,8 +208,9 @@ export class ScheduledSends {
     }
     if (due.length) list = await store.scheduled.list();
     const failed = await store.settings.get<ScheduledFailure[]>(FAILED_KEY, []);
-    const snapshot: ScheduledSnapshot = { items: list.map(toInfo), failed };
     this.ids = new Set(list.map((s) => s.draftId));
+    for (const draftId of heldAtStart) if (!this.ids.has(draftId)) this.holds.delete(draftId);
+    const snapshot: ScheduledSnapshot = { items: list.filter((s) => !this.holds.has(s.draftId)).map(toInfo), failed };
     if (this.stopped) return snapshot;
     this.arm(list, tried, held);
     const text = JSON.stringify(snapshot);
@@ -213,6 +243,7 @@ export class ScheduledSends {
       const message = error instanceof Error ? error.message : String(error);
       captureError(error, { code: "scheduled.send_failed", expected: error instanceof RpcError });
       await store.scheduled.fail(s.draftId, row.sendAt, message, now + retryDelay(now - row.sendAt));
+      this.holds.delete(s.draftId);
     }
   }
 

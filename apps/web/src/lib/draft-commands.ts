@@ -66,13 +66,19 @@ export function DraftCommandsHost({ draftKey: key, root, ...own }: { draftKey: s
   });
   useLayoutEffect(() => {
     const control = (testId: string) => root.current?.querySelector<HTMLElement>(`[data-testid=${testId}]`) ?? null;
+    // already showing: the shortcut still takes you there
+    const reveal = (field: "cc" | "bcc") => {
+      const toggle = control(`compose-show-${field}`);
+      if (toggle) toggle.click();
+      else control(`compose-${field}`)?.focus();
+    };
     return registerDraftCommands(key, {
       send: (at) => latest.current.send(at),
       discard: () => latest.current.discard(),
       close: () => latest.current.close?.(),
       attach: () => control("attachment-input")?.click(),
-      showCc: () => control("compose-show-cc")?.click(),
-      showBcc: () => control("compose-show-bcc")?.click(),
+      showCc: () => reveal("cc"),
+      showBcc: () => reveal("bcc"),
       link: () => controllerFor(key)?.openLink(),
       pin: () => pinDraft(key),
       unpin: () => unpinDraft(key),

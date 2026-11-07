@@ -6,6 +6,7 @@
  * can be undone.
  */
 import type { Page } from "@playwright/test";
+import { UNDO_SEND_MS } from "@terno/core";
 import { E2E_NOW } from "./constants";
 import { axeBothModes, addRecipients, chipsOf, expect, navTo, focusList, ingestConversation, openRow, recipientEmails, rows, selectThread, stabilize, test, scenario, freshNoDrafts, respond } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
@@ -190,7 +191,7 @@ test.describe("drafts are kept", () => {
       await page.keyboard.press("r");
       await page.getByTestId("compose-body").focus();
       await page.keyboard.type("No lo pierdas.");
-      await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+      await expect(page.getByTestId("draft-status")).toHaveText("Saved");
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       await page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`).dispatchEvent("mousedown");
@@ -205,7 +206,7 @@ test.describe("drafts are kept", () => {
       await focusList(page);
       await page.keyboard.press("f");
       await page.getByTestId("compose-to").fill("alice@example.com, bob@");
-      await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+      await expect(page.getByTestId("draft-status")).toHaveText("Saved");
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       await page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`).dispatchEvent("mousedown");
@@ -285,7 +286,7 @@ test.describe("drafts are kept", () => {
       await page.keyboard.press("r");
       await page.getByTestId("compose-body").focus();
       await page.keyboard.type("Quizá no.");
-      await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+      await expect(page.getByTestId("draft-status")).toHaveText("Saved");
       await page.getByTestId("compose-discard").click();
       await expect(composer(page)).toHaveCount(0);
       await expect(page.getByTestId("quick-reply")).toBeFocused();
@@ -470,7 +471,7 @@ test.describe("new message, in the reader pane", () => {
       await page.keyboard.press("c");
       await page.getByTestId("compose-to").fill("ana@example.com");
       await page.getByTestId("compose-body").fill("Para después");
-      await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+      await expect(page.getByTestId("draft-status")).toHaveText("Saved");
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       await page.getByTestId("strip-item").first().click();
@@ -702,4 +703,215 @@ test.describe("the composer in List (plan 158)", () => {
     await expect(page.getByTestId("compose-body")).toContainText("Hola");
     await expect(page.getByTestId("compose-send")).toBeInViewport({ ratio: 1 });
   });
+});
+
+test("Undo send (plan 158): a spinner, not a check, while it's held; Undo brings the draft back exactly; too late says so", async ({ app: page, server }) => {
+  const dev = { clientId: "setup", origin: "dev" as const };
+  await server.backend.server.invoke("settings.update", { undoSend: true }, dev);
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+  await openRow(page, 0);
+  const before = await page.getByTestId("message").count();
+  await page.keyboard.press("r");
+  const body = page.getByTestId("compose-body");
+  await expect(body).toBeFocused();
+  await page.keyboard.type("Exactly these words");
+  await page.getByTestId("compose-show-cc").click();
+  await addRecipients(page, "compose-cc", "copy@example.com");
+  await body.click();
+  await page.keyboard.press("ControlOrMeta+Enter");
+
+  const snack = page.locator("[data-testid=snack]").filter({ hasText: "Sending…" });
+  await expect(snack).toBeVisible();
+  await expect(snack.locator("[data-slot=spinner]")).toBeVisible();
+  await expect(snack.locator("svg.text-success-ink")).toHaveCount(0);
+  await expect(snack.getByTestId("snack-action")).toHaveAccessibleName("Undo send");
+  await expect(page.getByTestId("composer")).toHaveCount(0);
+  // not a thing the user scheduled, and nothing has gone
+  await expect(page.getByTestId("strip-scheduled")).toHaveCount(0);
+  expect(await page.getByTestId("message").count()).toBe(before);
+
+  await snack.getByTestId("snack-action").click();
+  await expect(page.getByTestId("composer")).toBeVisible();
+  await expect(body).toHaveText("Exactly these words");
+  await expect(body).toBeFocused();
+  expect(await recipientEmails(page, "compose-cc")).toEqual(["copy@example.com"]);
+  expect(await page.getByTestId("message").count()).toBe(before);
+
+  // again, and past its moment on the backend's clock (fixed here): Undo finds it gone, and says so
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await expect(snack.getByTestId("snack-action")).toBeVisible();
+  await expect.poll(async () => (await server.backend.store.scheduled.list()).length).toBe(1);
+  const { draftId } = (await server.backend.store.scheduled.list())[0]!;
+  await server.backend.server.invoke("scheduled.reschedule", { draftId, sendAt: E2E_NOW - 1 }, dev);
+  await expect(page.getByTestId("message")).toHaveCount(before + 1);
+  // the reader goes to its copy
+  await expect(page.getByTestId("message").last()).toBeInViewport();
+  await snack.getByTestId("snack-action").click();
+  await expect(page.locator("[data-testid=snack]").filter({ hasText: "Too late to undo" })).toBeVisible();
+  await expect(page.getByTestId("composer")).toHaveCount(0);
+
+  // the hold's end on this side: the spinner goes on, the Undo's gone, and z no longer reaches it
+  await page.keyboard.press("r");
+  await expect(body).toBeFocused();
+  await page.keyboard.type("Second");
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await expect(snack.getByTestId("snack-action")).toBeVisible();
+  await page.clock.fastForward(UNDO_SEND_MS);
+  await expect(snack).toBeVisible();
+  await expect(snack.locator("[data-slot=spinner]")).toBeVisible();
+  await expect(snack.getByTestId("snack-action")).toHaveCount(0);
+
+  // and Settings turns it off
+  await page.getByTestId("open-settings").click();
+  await expect(page.getByTestId("undo-send-switch")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("undo-send-switch").click();
+  await expect(page.getByTestId("undo-send-switch")).toHaveAttribute("aria-checked", "false");
+});
+
+test("Undo send from the pinned card: back on the card, with the reader where it is (plan 158)", async ({ app: page, server }) => {
+  await server.backend.server.invoke("settings.update", { undoSend: true }, { clientId: "setup", origin: "dev" as const });
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+  await openRow(page, 0);
+  await page.keyboard.press("r");
+  await expect(page.getByTestId("compose-body")).toBeFocused();
+  await page.keyboard.type("Pinned words");
+  await page.getByTestId("compose-pin").click();
+  const card = page.getByTestId("pinned-draft");
+  await expect(card).toBeVisible();
+  await openRow(page, 2);
+  const reading = await page.getByTestId("reader-subject").textContent();
+  await card.getByTestId("compose-send").click();
+  await expect(card).toHaveCount(0);
+  await page.locator("[data-testid=snack]").filter({ hasText: "Sending…" }).getByTestId("snack-action").click();
+  await expect(card.getByTestId("compose-body")).toHaveText("Pinned words");
+  await expect(page.getByTestId("reader-subject")).toHaveText(reading!);
+});
+
+test("the To row: Tab goes To, Subject, text; Cc and Bcc by key or button; the sending account shows (plan 158)", async ({ app: page }) => {
+  const focused = () => page.evaluate(() => document.activeElement?.getAttribute("data-testid"));
+  await scenario("a new message: To, Subject, the text, with Cc and Bcc off the path and two keys away", async () => {
+    await focusList(page);
+    await page.keyboard.press("c");
+    await expect(page.getByTestId("compose-to")).toBeFocused();
+    await page.keyboard.type("ana@example.com");
+    await page.keyboard.press("Tab");
+    await expect(page.getByTestId("compose-subject")).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.getByTestId("compose-body")).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Shift+Tab");
+    expect(await focused()).toBe("compose-to");
+    // the buttons are named and big enough, and keep working
+    for (const [id, name] of [["compose-show-cc", "Add Cc"], ["compose-show-bcc", "Add Bcc"]] as const) {
+      const button = page.getByTestId(id);
+      await expect(button).toHaveAccessibleName(name);
+      await expect(button).toBeVisible();
+      expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(24);
+    }
+    await page.getByTestId("compose-body").focus();
+    await page.keyboard.press("ControlOrMeta+Shift+C");
+    await expect(page.getByTestId("compose-cc")).toBeFocused();
+    await page.getByTestId("compose-body").focus();
+    await page.keyboard.press("ControlOrMeta+Shift+B");
+    await expect(page.getByTestId("compose-bcc")).toBeFocused();
+    // again, with the field showing: it goes there
+    await page.getByTestId("compose-body").focus();
+    await page.keyboard.press("ControlOrMeta+Shift+C");
+    await expect(page.getByTestId("compose-cc")).toBeFocused();
+    await page.getByTestId("compose-discard").click();
+  });
+  await scenario("a reply says who it's from in the To row, on one line, and the whole row is one click away", async () => {
+    await openRow(page, 0);
+    await page.keyboard.press("r");
+    await expect(page.getByTestId("compose-body")).toBeFocused();
+    const label = page.getByTestId("compose-from-label");
+    await expect(label).toHaveText(/^from \S/);
+    await expect(page.getByTestId("compose-from")).toHaveCount(0);
+    const to = await page.locator("[data-recipient-row]").first().boundingBox();
+    expect(to!.height).toBe(38);
+    await page.getByTestId("compose-quote").waitFor();
+    expect((await page.getByTestId("compose-quote").boundingBox())!.height).toBeGreaterThanOrEqual(24);
+    await page.getByTestId("compose-show-from").click();
+    await expect(page.getByTestId("compose-from")).toBeFocused();
+    await expect(label).toHaveCount(0);
+  });
+});
+
+test("the composer's states: unavailable Send, Saving and Saved, an invalid address in words (plan 158)", async ({ app: page }) => {
+  await focusList(page);
+  await page.keyboard.press("c");
+  const group = page.getByTestId("compose-send-group"), clock = page.getByTestId("compose-send-later");
+  const css = (l: typeof group, prop: "backgroundColor" | "color") => l.evaluate((el, p) => getComputedStyle(el)[p], prop);
+  // nothing to send to: no fill, its label and clock in the muted ink, and it says why
+  expect(await css(group, "backgroundColor")).toBe("rgba(0, 0, 0, 0)");
+  expect(await css(clock, "color")).toBe(await css(page.getByTestId("compose-send"), "color"));
+  await page.getByTestId("compose-send").hover();
+  await expect(page.locator("[data-slot=tooltip-content]")).toContainText("Add a recipient to send");
+  await page.mouse.move(1, 1);
+
+  // what's still being typed isn't wrong yet
+  const to = page.getByTestId("compose-to");
+  await to.focus();
+  await page.keyboard.type("bad-addr");
+  await expect(page.getByTestId("compose-field-problem")).toHaveCount(0);
+  await page.keyboard.press("Tab");
+  const note = page.getByTestId("compose-field-problem");
+  await expect(note).toHaveText("“bad-addr” isn’t an email address. Fix or remove it, then send.");
+  await expect(to).toHaveAttribute("aria-describedby", /problem/);
+  await page.getByTestId("compose-send").hover();
+  await expect(page.locator("[data-slot=tooltip-content]")).toContainText("“bad-addr” isn’t an email address.");
+  await page.mouse.move(1, 1);
+  // fixed: it goes, and Send is ready again
+  await page.getByTestId("recipient-chip").click();
+  await page.keyboard.press("Backspace");
+  await page.keyboard.press("Backspace");
+  await to.focus();
+  await page.keyboard.type("ana@example.com,");
+  await expect(note).toHaveCount(0);
+  expect(await css(group, "backgroundColor")).not.toBe("rgba(0, 0, 0, 0)");
+
+  // a saved state in the form, not a toast: said aloud only once it's true
+  const status = page.getByTestId("draft-status");
+  await page.getByTestId("compose-body").click();
+  await page.keyboard.type("Something");
+  await expect(status).toHaveText("Saving…");
+  await expect(status.locator("[aria-live]")).toHaveText("");
+  await expect(status).toHaveText("Saved");
+  await expect(status.locator("[aria-live]")).toHaveText("Saved");
+
+  // what the draft's lifecycle controls do can be read
+  await expect(page.getByTestId("compose-collapse")).toHaveText("Close");
+  await expect(page.getByTestId("compose-collapse")).toHaveAccessibleName("Save and close");
+  await expect(page.getByTestId("compose-pin")).toHaveAccessibleName(/stays open/);
+});
+
+test("the composer reads like the message above it, and a short window gives it room, whole (plan 158)", { tag: "@design" }, async ({ app: page }) => {
+  await openRow(page, 0);
+  await page.keyboard.press("r");
+  const body = page.getByTestId("compose-body");
+  await expect(body).toBeFocused();
+  await page.keyboard.type("A long enough line to reach the width of the text, whatever that is here, and go on to the next one.");
+  const set = (l: ReturnType<Page["locator"]>) => l.evaluate((el) => { const s = getComputedStyle(el); return { size: s.fontSize, line: s.lineHeight, family: s.fontFamily, width: el.getBoundingClientRect().width }; });
+  const message = await set(page.locator("[data-testid=message][data-expanded] .type-body").last());
+  const written = await set(body.locator("p").first());
+  expect(written).toEqual(message);
+
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 1100, height: 700 });
+  for (const open of [() => page.getByTestId("draft-collapsed").click(), () => page.keyboard.press("r")]) {
+    await open();
+    await expect(body).toBeFocused();
+    const composer = page.getByTestId("composer");
+    await expect(composer).toBeInViewport({ ratio: 1 });
+    const pane = (await page.locator("[data-reader-scroller]").boundingBox())!;
+    expect((await body.boundingBox())!.height / pane.height).toBeGreaterThanOrEqual(0.4);
+    const card = (await composer.boundingBox())!;
+    expect(pane.y + pane.height - (card.y + card.height), "the card's foot isn't against the window").toBeGreaterThanOrEqual(8);
+    // a chip and the row's own controls fit on the row: it doesn't double for them
+    expect((await page.locator("[data-recipient-row]").first().boundingBox())!.height).toBe(38);
+    await page.keyboard.press("Escape");
+    await page.getByTestId("reader-subject").evaluate((el) => el.closest("[data-reader-scroller]")!.scrollTo(0, 0));
+  }
 });

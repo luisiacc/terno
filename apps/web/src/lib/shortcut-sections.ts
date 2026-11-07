@@ -75,6 +75,8 @@ export const SECTIONS: { title: Label; rows: [Command, Label][] }[] = [
       ["compose.send", "common.send"],
       ["snippets.open", "shortcuts.insertSnippet"],
       ["compose.ai", "shortcuts.aiDraft"],
+      ["compose.cc", "compose.addCc"],
+      ["compose.bcc", "compose.addBcc"],
     ],
   },
 ];

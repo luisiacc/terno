@@ -79,7 +79,7 @@ for (const [placement, theme] of [["caret", "light"], ["backward selection", "da
       await expect(chipsOf(page, "compose-to").nth(1)).toHaveAttribute("aria-invalid", "true");
       await expect(chipsOf(page, "compose-cc")).toHaveAttribute("data-email", "copy@example.test");
       await expect(chipsOf(page, "compose-bcc")).toHaveAttribute("data-email", "blind@example.test");
-      await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+      await expect(page.getByTestId("draft-status")).toHaveText("Saved");
       const saved = (await server.backend.store.drafts.list())[0]!;
       expect(saved).toMatchObject({ account_id: account.id, body_text: text, subject });
       const refs: AttachmentRef[] = JSON.parse(saved.attachments_json);

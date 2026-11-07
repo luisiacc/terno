@@ -59,6 +59,7 @@ export function RecipientInput({
   className,
   placeholder,
   describedBy,
+  onInvalid,
   label,
 }: {
   id: string;
@@ -74,6 +75,8 @@ export function RecipientInput({
   className?: string;
   /** Send's message about this field, while it holds */
   describedBy?: string;
+  /** what's made a chip and can't be an address (never what's still being typed), for saying so in words */
+  onInvalid?: (entry: string | null) => void;
   placeholder?: string;
   /** the field's name ("To"), for the chips' list */
   label: string;
@@ -98,6 +101,10 @@ export function RecipientInput({
   const caretAfter = useRef<number | null>(null);
   const open = items.length > 0;
   const ids = useMemo(() => ({ invalid: `${descId}-invalid`, noReply: `${descId}-noreply`, hint: `${descId}-hint` }), [descId]);
+
+  const invalid = field.chips.find((c) => !c.valid);
+  const invalidEntry = invalid ? invalid.address.email || invalid.address.name : null;
+  useEffect(() => onInvalid?.(invalidEntry), [invalidEntry]);
 
   // a change from elsewhere (a draft loaded, a mode converted): read it again; this field's history starts over
   useLayoutEffect(() => {

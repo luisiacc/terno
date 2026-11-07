@@ -19,7 +19,7 @@ for (const position of ["backward range", "italic caret"] as const) test(`fatal 
     await page.getByTestId("compose-to").fill('"Pérez, Ana" <ana@example.test>, bob@');
     await body.fill("authored rich work"); await body.press("Meta+a"); await body.press("Meta+b"); await body.press("ArrowRight");
     await page.getByTestId("attachment-input").setInputFiles({ name: "checkpoint.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 255, 128]) });
-    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    await expect(page.getByTestId("draft-status")).toHaveText("Saved");
     const original = (await server.backend.store.drafts.list()).find((d) => d.body_text === "authored rich work")!;
     expect(original).toBeDefined();
     await server.backend.store.drafts.delete(original.id, original.generation);
@@ -71,7 +71,7 @@ for (const position of ["backward range", "italic caret"] as const) test(`fatal 
     const ref = JSON.parse(original.attachments_json)[0];
     expect(await server.backend.store.attachments.read(original.account_id, ref.assetId, 0)).toBe("AP+A");
     expect(await server.backend.store.drafts.list()).toHaveLength(0);
-    await expect(page.getByTestId("draft-status")).not.toHaveText("Draft saved");
+    await expect(page.getByTestId("draft-status")).not.toHaveText("Saved");
     const reads = await fault(page);
     await page.clock.fastForward(5_100);
     expect(await fault(page)).toBe(reads); expect(await server.backend.store.drafts.list()).toHaveLength(0); expect(navigations).toBe(0);
@@ -86,7 +86,7 @@ for (const position of ["backward range", "italic caret"] as const) test(`fatal 
     await page.getByTestId("recovery-review").click(); await expect(page.getByTestId("recovery-workspace")).toBeVisible();
     await page.getByTestId("draft-status").getByRole("button", { name: /retry/i }).click();
     await expect(page.getByTestId("draft-save-copy")).toBeVisible();
-    await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Saved");
     const copy = (await server.backend.store.drafts.list()).find((d) => d.id !== original.id)!;
     expect(copy.body_html).toContain("<b>"); expect(copy.body_text).toBe("authored rich work latest");
     expect(await page.evaluate((html) => (window as unknown as { __terno: Probe }).__terno.parseMailHtml(html), copy.body_html)).toEqual(doc);

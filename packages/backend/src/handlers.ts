@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, type Reminder, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
+import { capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, type Reminder, REMINDERS_MAX, SCHEDULED_MAX, UNDO_SEND_MS, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
 import { L } from "@terno/i18n";
 import { movedNothing, SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type FolderMoved, type FollowupSnapshot, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
@@ -1025,6 +1025,15 @@ export function createHandlers(b: Backend): Handlers {
       // a scheduled draft sent now (another window's Send): its row went with it
       if (p.draftId !== undefined && b.scheduled.has(p.draftId)) b.scheduled.poke();
       return r;
+    },
+    "compose.hold": async (p, ctx) => {
+      const params = ctx.origin === "renderer" ? p : { ...p, bodyHtml: undefined, authoredText: undefined };
+      const r = await b.scheduled.schedule(params, b.now() + UNDO_SEND_MS, true);
+      if (r === "stale") throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftRevision" });
+      if (r === "ok") return { held: true as const };
+      // no room to hold it: it goes as a plain send, with no Undo, rather than being refused
+      const { threadId, messageId } = await b.queueComposeSend(p, { renderer: ctx.origin === "renderer" });
+      return { held: false as const, threadId, messageId };
     },
     "compose.schedule": async ({ sendAt, ...p }, ctx) => {
       const params = ctx.origin === "renderer" ? p : { ...p, bodyHtml: undefined, authoredText: undefined };

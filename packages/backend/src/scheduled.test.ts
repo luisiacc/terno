@@ -2,12 +2,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient, type ScheduledSnapshot } from "@terno/core/rpc";
-import { SCHEDULED_MAX } from "@terno/core";
+import { SCHEDULED_BYTES_MAX, SCHEDULED_MAX, UNDO_SEND_MS } from "@terno/core";
 import { createAccount, sqlDb } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
-import { FAILED_KEY, retryDelay } from "./scheduled";
+import { FAILED_KEY, retryDelay, ScheduledSends } from "./scheduled";
 
 const NOW = Date.UTC(2026, 9, 31, 12);
 const HOUR = 3_600_000;
@@ -70,6 +70,161 @@ describe("scheduled sends (plan 94)", () => {
     expect(events.at(-1)!.items).toEqual([]);
     expect(backend.scheduled.nextAt).toBeNull();
     expect(await backend.store.drafts.list()).toEqual([]);
+  });
+
+  describe("Send's Undo window (plan 158)", () => {
+    const hold = (client: RpcClient, account: number, d: { id: number; subject: string; generation?: string | null; revision: number }) =>
+      client.call("compose.hold", { accountId: account, to: [{ name: "Ana", email: "ana@friends.com" }], subject: d.subject, bodyText: "Friday?", draftId: d.id, draftGeneration: d.generation!, draftRevision: d.revision });
+
+    it("isn't a scheduled send to the user, and goes once, at its moment on the backend's clock", async () => {
+      const { backend, client, account, events, advance, draft, sends } = await setup();
+      const d = await draft();
+      await hold(client, account, d);
+      await settle();
+      expect(events.at(-1)?.items ?? []).toEqual([]);
+      expect((await client.call("scheduled.list", {})).items).toEqual([]);
+      expect(await client.call("drafts.list", {})).toEqual([]);
+      expect(backend.scheduled.nextAt).toBe(NOW + UNDO_SEND_MS);
+      await advance(UNDO_SEND_MS - 1);
+      expect(await sends()).toEqual([]);
+      await advance(1);
+      expect(await sends()).toHaveLength(1);
+      await advance(UNDO_SEND_MS * 2);
+      expect(await sends()).toHaveLength(1);
+      expect(await backend.store.drafts.list()).toEqual([]);
+      expect(backend.scheduled.nextAt).toBeNull();
+    });
+
+    it("Undo puts the draft back exactly and nothing goes, and tells the other windows; once gone, Undo finds nothing", async () => {
+      const { backend, client, account, drafts, advance, draft, sends } = await setup();
+      const d = await draft();
+      await hold(client, account, d);
+      await settle();
+      const before = drafts.length;
+      await client.call("scheduled.cancel", { draftId: d.id });
+      await settle();
+      expect(drafts.length).toBeGreaterThan(before);
+      expect(await client.call("drafts.list", {})).toEqual([d]);
+      await advance(UNDO_SEND_MS * 2);
+      expect(await sends()).toEqual([]);
+
+      await hold(client, account, d);
+      await advance(UNDO_SEND_MS);
+      expect(await sends()).toHaveLength(1);
+      await expect(client.call("scheduled.cancel", { draftId: d.id })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(await backend.store.drafts.list()).toEqual([]);
+    });
+
+    it("a full list of scheduled sends doesn't stop Send, and holds have a budget: past it, a plain send, no Undo", async () => {
+      const { client, account, draft, backend, sends } = await setup();
+      const d = await draft();
+      const real = backend.store.scheduled.put;
+      const caps: { count: number; bytes: number }[] = [];
+      backend.store.scheduled.put = (row, cap) => { caps.push(cap); return real.call(backend.store.scheduled, row, cap); };
+      expect(await hold(client, account, d)).toEqual({ held: true });
+      expect(caps).toEqual([{ count: SCHEDULED_MAX * 2, bytes: SCHEDULED_BYTES_MAX * 2 }]);
+      await client.call("scheduled.cancel", { draftId: d.id });
+      backend.store.scheduled.put = async () => "full";
+      expect(await hold(client, account, d)).toEqual({ held: false, threadId: expect.any(Number), messageId: expect.any(Number) });
+      expect(await sends()).toHaveLength(1);
+      expect(await backend.store.drafts.list()).toEqual([]);
+    });
+
+    it("a hold that can't go yet is listed, saying why", async () => {
+      const { backend, client, account, events, advance, draft } = await setup();
+      const d = await draft();
+      await hold(client, account, d);
+      await settle();
+      const real = backend.store.compose.queueSend;
+      backend.store.compose.queueSend = () => Promise.reject(new Error("disk full"));
+      await advance(UNDO_SEND_MS);
+      backend.store.compose.queueSend = real;
+      expect(events.at(-1)!.items).toEqual([expect.objectContaining({ draftId: d.id, error: "disk full" })]);
+    });
+
+    it("one that couldn't go is a scheduled send from then on: moved to tomorrow, a quit doesn't send it", async () => {
+      const { backend, client, account, events, advance, draft, sends } = await setup();
+      const d = await draft();
+      await hold(client, account, d);
+      await settle();
+      const real = backend.store.compose.queueSend;
+      backend.store.compose.queueSend = () => Promise.reject(new Error("disk full"));
+      await advance(UNDO_SEND_MS);
+      backend.store.compose.queueSend = real;
+      const tomorrow = NOW + 24 * HOUR;
+      await client.call("scheduled.reschedule", { draftId: d.id, sendAt: tomorrow });
+      await settle();
+      expect(events.at(-1)!.items).toEqual([expect.objectContaining({ draftId: d.id, sendAt: tomorrow, error: null })]);
+      vi.useRealTimers();
+      await backend.quiesce(500);
+      expect(await sends()).toEqual([]);
+      expect((await backend.store.scheduled.list()).map((s) => s.sendAt)).toEqual([tomorrow]);
+    });
+
+    it("a restart neither loses it nor sends it twice: it's due, and goes once", async () => {
+      const { backend, client, account, clock, draft, sends } = await setup();
+      const d = await draft();
+      await hold(client, account, d);
+      await settle();
+      clock.now += UNDO_SEND_MS;
+      // what starting up does, with nothing of the hold in memory (a new ScheduledSends over the same store)
+      const restarted = new ScheduledSends({ store: backend.store, now: () => clock.now, emit: () => {}, send: async (p) => void (await backend.queueComposeSend(p, { renderer: true, scheduledAt: p.scheduledAt })), draftsBack: () => {}, log: () => {} });
+      await restarted.refresh();
+      await restarted.refresh();
+      await backend.scheduled.refresh();
+      expect(await sends()).toHaveLength(1);
+      expect((await backend.store.scheduled.list())).toEqual([]);
+      await restarted.stop();
+    });
+
+    it("a hold made while a look is reading stays a hold; a quit leaves a hold another window just moved to tomorrow", async () => {
+      const { backend, client, account, events, draft, sends } = await setup();
+      const during = await draft("During");
+      const real = backend.store.settings.get.bind(backend.store.settings);
+      let once = true;
+      backend.store.settings.get = (async (key: string, fallback: unknown) => {
+        if (once && key === FAILED_KEY) { once = false; await hold(client, account, during); }
+        return real(key, fallback);
+      }) as typeof backend.store.settings.get;
+      await backend.scheduled.refresh();
+      await settle();
+      backend.store.settings.get = real;
+      await backend.scheduled.refresh();
+      expect(events.at(-1)?.items ?? []).toEqual([]);
+
+      const moved = await draft("Moved");
+      await hold(client, account, moved);
+      await settle();
+      const tomorrow = NOW + 24 * HOUR;
+      const reschedule = backend.store.scheduled.reschedule.bind(backend.store.scheduled);
+      let first = true;
+      backend.store.scheduled.reschedule = async (id, at) => {
+        const ok = await reschedule(id, at);
+        if (first) { first = false; await client.call("scheduled.reschedule", { draftId: moved.id, sendAt: tomorrow }); }
+        return ok;
+      };
+      await backend.scheduled.releaseHolds();
+      backend.store.scheduled.reschedule = reschedule;
+      await settle();
+      expect((await sends()).map((o) => JSON.parse(o.payload_json).subject)).toEqual(["During"]);
+      expect((await backend.store.scheduled.list()).map((s) => [s.draftId, s.sendAt])).toEqual([[moved.id, tomorrow]]);
+    });
+
+    it("a quit sends what's held, within its deadline, rather than leaving it for the next launch; a real schedule stays", async () => {
+      const { backend, client, account, draft, schedule, sends } = await setup();
+      const held = await draft("Held");
+      const later = await draft("Later");
+      await schedule(later, NOW + HOUR);
+      await hold(client, account, held);
+      await settle();
+      // (the send itself takes real time)
+      vi.useRealTimers();
+      expect(await backend.quiesce(3000)).toBe("idle");
+      // sent, not waiting: a queued one would still be listed here
+      expect(await sends()).toEqual([]);
+      expect(sqlDb(backend.store).all("SELECT subject FROM messages WHERE is_sent = 1 AND subject = 'Held'")).toHaveLength(1);
+      expect((await backend.store.scheduled.list()).map((s) => s.draftId)).toEqual([later.id]);
+    });
   });
 
   it("a moment already past sends at once; nothing scheduled, no timer", async () => {

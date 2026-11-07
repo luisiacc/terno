@@ -207,6 +207,8 @@ export interface AppSettings {
   language: LanguageSetting;
   /** plan 18: ghost text while writing, learned from the user's sent mail on this device (recipients are always suggested) */
   composeSuggestions: boolean;
+  /** plan 158: Send holds a message for a few seconds in the backend's own queue, with Undo */
+  undoSend: boolean;
   /**
    * Plan 22: website icons for senders, loaded from each sender's own site. Unset it follows the
    * mode (on in connected mode, off in local mode); the user's choice sticks.
@@ -509,6 +511,7 @@ const settingsPatch = z.object({
   errorReports: z.enum(["ask", "always", "never"]).optional(),
   language: z.enum(LANGUAGE_SETTINGS).optional(),
   composeSuggestions: z.boolean().optional(),
+  undoSend: z.boolean().optional(),
   senderIcons: z.boolean().optional(),
   dockBadge: z.boolean().optional(),
   notifications: z.boolean().optional(),
@@ -947,6 +950,8 @@ export const contract = {
   "compose.send": m<{ opId: string; threadId: number; messageId: number }>()(composeSend),
   /** plan 94: the same send, prepared now, sent at `sendAt` (its draft stays until then; past: at once) */
   "compose.schedule": m<{ ok: true }>()(composeSend.extend({ draftId: id, draftGeneration: z.string().min(1).max(64), draftRevision: z.number().int().positive(), sendAt: z.number().int().nonnegative() })),
+  /** plan 158: Send's Undo window: a schedule of UNDO_SEND_MS, on the backend's clock, that isn't listed as one (`scheduled.cancel` takes it back). With no room to hold it, it's queued as a plain send */
+  "compose.hold": m<{ held: true } | { held: false; threadId: number; messageId: number }>()(composeSend.extend({ draftId: id, draftGeneration: z.string().min(1).max(64), draftRevision: z.number().int().positive() })),
   /** plan 116: what is waiting to be forwarded, held, going, and what settled lately; the questions past the cap */
   "forwards.list": m<import("../forwarding").ForwardSnapshot>()(empty),
   /** the user's Cancel (those still waiting or held) */

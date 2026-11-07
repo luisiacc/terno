@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { shallow } from "zustand/shallow";
-import { formatAddressList, type AttachmentRef, type ThreadDetail } from "@terno/core";
+import { formatAddressList, UNDO_SEND_MS, type AttachmentRef, type ThreadDetail } from "@terno/core";
 import { attachmentUploading, draftAttachmentBudget } from "./attachments";
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
@@ -21,8 +21,9 @@ import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead,
 import { focusPinned, pinnedKey, usePinned } from "./pinned-draft-state";
 import { prepareEarlyComposeInput, prepareInlineFocusMove, type ComposeFocusTarget, type EarlyComposeInput } from "./compose-focus-move";
 import { aiDraftHooks } from "./ai-draft-state";
-import { parseHtml, toEmailHtml, toPlainText } from "@terno/richtext";
-import { scheduledSnack } from "./scheduled";
+import { fromPlainText, parseHtml, toEmailHtml, toPlainText } from "@terno/richtext";
+import { controllerFor } from "~/components/composer/controller";
+import { heldSendSnack, scheduledSnack, sendingSnack } from "./scheduled";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -47,7 +48,7 @@ let seq = 0;
  */
 let intent = 0;
 type ReaderDestination = { token: object; active: boolean; generation: number };
-type FocusLease = { earlyInput?: EarlyComposeInput; selectionRevision: number; ackRead?: DraftAckRead; stopSelection?: () => void; stopContext?: () => void; intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; view?: { id: LocalDraft["id"]; generation: LocalDraft["generation"]; revision: number; localRev: number; uiState: LocalDraft["uiState"]; recovery: LocalDraft["recovery"]; missingAccount: boolean; sending: boolean }; destination?: ReaderDestination };
+type FocusLease = { mode?: DraftMode; earlyInput?: EarlyComposeInput; selectionRevision: number; ackRead?: DraftAckRead; stopSelection?: () => void; stopContext?: () => void; intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; view?: { id: LocalDraft["id"]; generation: LocalDraft["generation"]; revision: number; localRev: number; uiState: LocalDraft["uiState"]; recovery: LocalDraft["recovery"]; missingAccount: boolean; sending: boolean }; destination?: ReaderDestination };
 const readerDestinations = new Map<number, ReaderDestination>();
 const failedReaderHosts = new Map<object, { threadId: number }>();
 const readerFailed = (threadId: number): boolean => {
@@ -165,6 +166,55 @@ function beginFocusLease(owner: number, threadId: number | null, standalone?: { 
     if (focusLease === lease && lease.destination === destination && !destination.active && lease.intent === intent) supersedeCompose();
   });
   return lease;
+}
+
+/** What an open still on its way to this conversation will be: ⌘J arriving meanwhile goes along with it, Reply all staying Reply all. */
+export const composeOpening = (threadId: number): DraftMode | undefined => focusLease?.valid && focusLease.threadId === threadId ? focusLease.mode : undefined;
+
+/**
+ * Words typed while an open was on its way, whose open ended before they could go in: by conversation, until a draft lands
+ * on it. They're the text's, whatever that open's focus is for. Only for the moment that takes: with no open left, they
+ * become that conversation's draft, put away as Esc would have put it (`keepStrandedWords`), so they're saved like typing.
+ */
+const strandedWords = new Map<number, string>();
+
+/** They go in as what's next in the text, with the editor's own undo when it's on screen; false if the draft can't change now. */
+function addWords(key: string, words: string): boolean {
+  const c = controllerFor(key);
+  if (c) return c.insertGenerated(words, "below") !== null;
+  const d = materialize(key);
+  if (!d) return false;
+  if (d.bodyHtml) return editDraft(key, { bodyHtml: `${d.bodyHtml}${toEmailHtml(fromPlainText(words))}`, bodyText: `${d.bodyText}\n\n${words}` });
+  return editDraft(key, { bodyText: d.bodyText ? `${d.bodyText}\n\n${words}` : words });
+}
+
+function strandWords(threadId: number, words: string, key: string | null): void {
+  if (key && addWords(key, words)) return;
+  strandedWords.set(threadId, [strandedWords.get(threadId), words].filter(Boolean).join("\n\n"));
+}
+
+function placeStrandedWords(threadId: number, key: string): void {
+  const words = strandedWords.get(threadId);
+  if (words && addWords(key, words)) strandedWords.delete(threadId);
+}
+
+/** Nothing landed for them: a reply on that conversation, collapsed, or the draft it has. */
+async function keepStrandedWords(threadId: number): Promise<void> {
+  const detail = await loadThread(threadId);
+  const words = strandedWords.get(threadId);
+  // another open came meanwhile: its landing takes them
+  if (!detail || !words || openingNow > 0 || draftEditsHeld()) return;
+  const drafts = useDrafts.getState().drafts;
+  const existing = shownDraftKey(drafts, threadId, getApp().draftShown) ?? comingHome(drafts, threadId)[0]?.key;
+  if (existing) return placeStrandedWords(threadId, existing);
+  const accounts = getApp().accounts;
+  const account = accounts.find((a) => a.id === detail.thread.accountId);
+  if (!account) return;
+  const key = createDraft({ ...replyFields("reply", detail, account, { identities: accounts.map((a) => a.email) }), showSourceContext: true, uiState: "collapsed", bodyText: words });
+  strandedWords.delete(threadId);
+  editDraft(key, {});
+  void flushDraft(key);
+  if (getApp().selectedId !== threadId) expireDraftPresentation(threadId);
 }
 
 /** Reader's passive focus must wait for this conversation's explicit compose focus. */
@@ -519,6 +569,17 @@ setForwardOpenProbe(() => openingNow > 0);
  * failed, or there's no single target.
  */
 export async function composeLanding(mode: DraftMode = "new", threadId: number | null = getApp().selectedId, attempt = 0, prefill?: (accountId: number) => Partial<DraftFields>, from?: number, options?: ComposeOpenOptions): Promise<ComposeLanding> {
+  const landing = await openLanding(mode, threadId, attempt, prefill, from, options);
+  if (strandedWords.size) {
+    // a new message opened over the conversation isn't what they were written for (it only says which one's selected)
+    if (threadId !== null && landing.kind !== "none" && mode !== "new") placeStrandedWords(threadId, landing.key);
+    // with no open left, nothing else will take them, whichever conversation they're from
+    if (openingNow === 0) for (const from of strandedWords.keys()) void keepStrandedWords(from);
+  }
+  return landing;
+}
+
+async function openLanding(mode: DraftMode, threadId: number | null, attempt: number, prefill: ((accountId: number) => Partial<DraftFields>) | undefined, from: number | undefined, options: ComposeOpenOptions | undefined): Promise<ComposeLanding> {
   const finish = beginDraftWork();
   if (!finish) return NOWHERE;
   markSelectionIntent();
@@ -545,9 +606,11 @@ export async function composeLanding(mode: DraftMode = "new", threadId: number |
   const unsubSelection = !lease && mode !== "new" && threadId !== null ? useApp.subscribe((current) => {
     if (mine === intent && (current.scope !== null || current.checked.size >= 2)) supersedeCompose();
   }) : undefined;
+  if (lease) lease.mode = mode;
   if (lease && typeof document !== "undefined") lease.earlyInput = prepareEarlyComposeInput(
     () => lease.valid && focusLease === lease && mine === intent && lease.selectionRevision === getSelectionWriteRevision() && destinationAvailable(lease) && !draftEditsHeld(),
     () => { if (focusLease === lease) supersedeCompose(); }, t("compose.body"),
+    (words, key) => { if (threadId !== null) strandWords(threadId, words, key); },
   );
   let outcome: OpenOutcome;
   openingNow++;
@@ -563,7 +626,7 @@ export async function composeLanding(mode: DraftMode = "new", threadId: number |
   // nothing newer was asked for: a refresh that replaced the conversation mid-open (a sync, its own read state, a send
   // landing) is retried with it, and a failure says so instead of leaving the click without an answer
   if (mine !== intent || !outcome) return cell.landing;
-  if (outcome === "stale" && attempt < 2) return composeLanding(mode, threadId, attempt + 1, prefill, from, options);
+  if (outcome === "stale" && attempt < 2) return openLanding(mode, threadId, attempt + 1, prefill, from, options);
   snack.error(t(mode === "forward" ? "compose.openFailed.forward" : "compose.openFailed.reply"));
   return cell.landing;
 }
@@ -1097,13 +1160,21 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
       scheduledSnack(d.id!, sendAt);
       return true;
     }
-    const res = await client.call("compose.send", params);
-    forgetDraft(key);
-    // sent from a thread: the reader goes to its copy in the conversation
-    if (d.threadId !== null) revealSent(res.messageId);
-    if (getApp().compose?.key === key) setApp({ compose: null });
-    invalidateThreads([res.threadId]);
-    snack.success(t("compose.sending"));
+    // plan 158: Send's Undo window is a schedule of a few seconds: the backend holds it, durably, and the draft stays until it goes
+    if (getApp().settings?.undoSend === true) {
+      const hold = await client.call("compose.hold", { ...params, draftId: d.id!, draftGeneration: d.generation!, draftRevision: d.revision });
+      // (no room to hold it: the backend queued it as a plain send)
+      if (hold.held) {
+        const pinned = pinnedKey() === key;
+        forgetDraft(key);
+        if (getApp().compose?.key === key) setApp({ compose: null });
+        heldSendSnack(d.id!, d.mode === "new" ? null : d.threadId, UNDO_SEND_MS, pinned);
+        return true;
+      }
+      sentAway(key, d, hold);
+      return true;
+    }
+    sentAway(key, d, await client.call("compose.send", params));
     return true;
   } catch (error) {
     markSending(key, false);
@@ -1120,4 +1191,14 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
     snack.error(t(sendAt !== undefined ? "sendLater.scheduleFailed" : "compose.sendFailed", { error: error instanceof Error ? error.message : String(error) }));
     return false;
   }
+}
+
+/** It's queued: the draft is gone, and the reader goes to its copy in the conversation. */
+function sentAway(key: string, d: LocalDraft, res: { threadId: number; messageId: number }): void {
+  forgetDraft(key);
+  // sent from a thread: the reader goes to its copy in the conversation
+  if (d.threadId !== null) revealSent(res.messageId);
+  if (getApp().compose?.key === key) setApp({ compose: null });
+  invalidateThreads([res.threadId]);
+  sendingSnack();
 }

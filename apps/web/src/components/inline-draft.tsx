@@ -7,11 +7,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { IconButton } from "@terno/ui/components/icon-button";
 import { Kbd } from "@terno/ui/components/kbd";
 import { cn } from "@terno/ui/lib/utils";
-import { ChevronDown, Forward, PenLine, Pin, PinOff, ReplyAll, Trash2 } from "@terno/ui/icons";
+import { ChevronUp, Forward, PenLine, Pin, PinOff, ReplyAll, Trash2 } from "@terno/ui/icons";
+import { Shortcut } from "@terno/ui/components/shortcut";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { closesEmpty, collapseInlineDraft, composeFocusPending, finishComposeFocus, openCompose, reopenInlineDraft, sendDraft, useDraftsReturning } from "~/lib/compose";
 import { attachmentUploading } from "~/lib/attachments";
-import { copyDraft, discardDraft, discardIfEmpty, draftEditsHeld, draftSenderLocked, editDraft, editDraftRecipients, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
+import { authored, copyDraft, discardDraft, discardIfEmpty, draftEditsHeld, draftSenderLocked, editDraft, editDraftRecipients, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { SenderAvatar } from "./sender-avatar";
 import { RecipientInput, recipientSummary } from "./recipient-input";
 import { warmAutocomplete } from "~/lib/autocomplete";
@@ -20,12 +22,14 @@ import { keepInView } from "~/lib/reader-scroll";
 import { clearSendProblem, useSendProblem } from "~/lib/send-problem";
 import { registerUndo, snack } from "~/lib/snack";
 import { getSelectionWriteRevision, setApp, useApp } from "~/state/app";
+import { isMac } from "~/lib/select";
 import { Expand } from "./expand";
 import { isSendLaterKey, openSendLater, SendButton } from "./send-button";
 import { controllerFor, popupOpen } from "./composer/controller";
 import { DraftCommandsHost } from "~/lib/draft-commands";
 import { ComposerFormatBar, FormatToggle, LinkButton } from "./composer/controls";
 import { RichBody } from "./composer/rich";
+import { QuoteToggle } from "./mail-body";
 import { focusPinned, usePinned } from "~/lib/pinned-draft-state";
 import { pinDraft, unpinDraft } from "~/lib/pinned-draft";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
@@ -35,14 +39,17 @@ import { aiDraftHooks, useAiDraftUi } from "~/lib/ai-draft-state";
 export { focusSoon } from "~/lib/compose-focus-move";
 import { focusSelector, focusSoon, focusMoveGeneration, type InlineFocusMove } from "~/lib/compose-focus-move";
 
+/** "mod+shift+c" as `aria-keyshortcuts` writes it. */
+const shortcutAria = (keys: string) => keys.split("+").map((k) => (k === "mod" ? (isMac ? "Meta" : "Control") : k === "shift" ? "Shift" : k.toUpperCase())).join("+");
+
 /** A borderless field row: a real label, the control, hairline below. */
 function Row({ label, htmlFor, children, hidden, note }: { label: string; htmlFor?: string; children: React.ReactNode; hidden?: boolean; note?: React.ReactNode }) {
   if (hidden) return null;
   return (
-    <div className="hairline-b group/row">
+    <div className="hairline-b group/row relative after:pointer-events-none after:absolute after:inset-x-0 after:-bottom-px after:h-px after:bg-ring after:opacity-0 has-[input:focus]:after:opacity-100">
       <div className="flex min-h-[38px] items-center gap-2.5 px-3.5" data-recipient-row>
         {/* on the first line when the chips wrap */}
-        <label htmlFor={htmlFor} className="w-14 shrink-0 self-start text-xs leading-[38px] text-muted-foreground group-focus-within/row:text-foreground">
+        <label htmlFor={htmlFor} className="w-14 shrink-0 self-start text-xs leading-[38px] text-muted-foreground">
           {label}
         </label>
         {children}
@@ -75,8 +82,15 @@ export function DraftFieldsForm({ d, accounts, showSubject, threadAccountId }: {
   // Send's message goes with the form it was about
   useEffect(() => () => clearSendProblem(d.key), [d.key]);
   const problem = useSendProblem((s) => (s.problem?.key === d.key ? s.problem : null));
-  const problemNote = (field: "to" | "cc" | "bcc") => problem?.field === field ? <FieldProblem id={`${id}-problem`} message={problem.message} /> : undefined;
-  const problemId = (field: "to" | "cc" | "bcc") => problem?.field === field ? `${id}-problem` : undefined;
+  // an address that can't be one says so as soon as it's a chip, in words, until it's fixed; Send's own message for a field is the same words or "add a recipient"
+  const [badChips, setBadChips] = useState<Partial<Record<"to" | "cc" | "bcc", string | null>>>({});
+  const noteBadChip = (field: "to" | "cc" | "bcc") => (entry: string | null) => setBadChips((was) => (was[field] ?? null) === entry ? was : { ...was, [field]: entry });
+  const fieldProblem = (field: "to" | "cc" | "bcc") => {
+    const bad = badChips[field] ?? null;
+    return bad !== null ? t("compose.invalidRecipient", { entry: bad }) : problem?.field === field ? problem.message : null;
+  };
+  const problemNote = (field: "to" | "cc" | "bcc") => { const message = fieldProblem(field); return message !== null ? <FieldProblem id={`${id}-${field}-problem`} message={message} /> : undefined; };
+  const problemId = (field: "to" | "cc" | "bcc") => fieldProblem(field) !== null ? `${id}-${field}-problem` : undefined;
   // a row shows when it was disclosed, when it has something in it, or when the mode needs it (a forward's
   // subject): a conversion that fills Cc in while the draft is open shows it, never sends to a hidden field
   const [ccOpen, setCc] = useState(false);
@@ -114,12 +128,19 @@ export function DraftFieldsForm({ d, accounts, showSubject, threadAccountId }: {
       return accepted && !changed && sameOwner(current) && matches(current!, text, expectedAuto);
     } finally { stop(); }
   };
-  const toggle = (open: boolean, set: (v: boolean) => void, label: string, field: string, testId: string) =>
+  /** `keys`: it has a shortcut, so it's off the Tab path: To goes straight on to Subject and the text (plan 158). `name`: when the words alone don't say what it opens */
+  const toggle = (open: boolean, set: (v: boolean) => void, label: React.ReactNode, field: string, testId: string, o: { tip: string; name?: string; keys?: string; className?: string }) =>
     !open && (
+      <Tooltip key={field}>
+        <TooltipTrigger
+          render={
       <button
         type="button"
         aria-expanded="false"
         aria-controls={`${id}-${field}`}
+        aria-label={o.name}
+        aria-keyshortcuts={o.keys ? shortcutAria(o.keys) : undefined}
+        tabIndex={o.keys ? -1 : undefined}
         data-testid={testId}
         onClick={(event) => {
           cancelReveal.current?.();
@@ -150,14 +171,23 @@ export function DraftFieldsForm({ d, accounts, showSubject, threadAccountId }: {
             root.querySelector<HTMLElement>(`[data-testid="compose-${field}"]`)?.focus();
           });
         }}
-        // quiet at rest: they come up with the row (hovered, or being written in), and always under Tab
-        className="h-[22px] rounded-sm px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity duration-fast group-focus-within/row:opacity-100 group-hover/row:opacity-100 hover:bg-muted hover:text-foreground focus-reveal:opacity-100"
+        className={cn("h-6 rounded-sm px-1.5 text-xs text-muted-foreground transition-opacity duration-fast outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring", o.className)}
       >
         {label}
       </button>
+          }
+        />
+        <TooltipContent className="flex items-center gap-2">
+          {o.tip}
+          {o.keys && <Shortcut keys={o.keys} />}
+        </TooltipContent>
+      </Tooltip>
     );
   const severalFrom = accounts.length > 1 || !accounts.some((a) => a.id === d.accountId);
   const fromRow = severalFrom && (fromOpen || threadAccountId === undefined || d.accountId !== threadAccountId);
+  // with several accounts the one sending always shows, in a word, in the To row: a reply from the wrong address is a costly, invisible error
+  const sender = accounts.find((a) => a.id === d.accountId);
+  const senderName = sender?.displayName || sender?.email || "";
   return (
     <div data-draft-key={d.key}>
       {fromRow && (
@@ -178,19 +208,20 @@ export function DraftFieldsForm({ d, accounts, showSubject, threadAccountId }: {
         </Row>
       )}
       <Row label={t("compose.to")} htmlFor={`${id}-to`} note={problemNote("to")}>
-        <RecipientInput id={`${id}-to`} testId="compose-to" label={t("compose.to")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.toText} onChange={(v, a) => recipients("to", v, a)} placeholder={t("compose.toPlaceholder")} accountId={d.accountId} others={[d.ccText, d.bccText]} describedBy={problemId("to")} />
-        <span className="mt-2 flex shrink-0 gap-0.5 self-start">
-          {toggle(cc, setCc, t("compose.cc"), "cc", "compose-show-cc")}
-          {toggle(bcc, setBcc, t("compose.bcc"), "bcc", "compose-show-bcc")}
-          {toggle(subject, setSubject, t("compose.subject"), "subject", "compose-show-subject")}
-          {severalFrom && toggle(fromRow, setFromOpen, t("compose.from"), "from", "compose-show-from")}
+        <RecipientInput id={`${id}-to`} testId="compose-to" label={t("compose.to")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.toText} onChange={(v, a) => recipients("to", v, a)} placeholder={t("compose.toPlaceholder")} accountId={d.accountId} others={[d.ccText, d.bccText]} describedBy={problemId("to")} onInvalid={noteBadChip("to")} />
+        <span className="relative mt-[7px] flex max-w-[65%] min-w-0 shrink-0 items-center justify-end gap-0.5 self-start">
+          {/* Subject comes up with the row, over what's beside it: at rest it takes no room, so a chip doesn't wrap for it */}
+          {toggle(subject, setSubject, t("compose.subject"), "subject", "compose-show-subject", { tip: t("compose.addSubject"), className: "absolute right-full mr-0.5 bg-(--draft-bg) opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 focus-reveal:opacity-100" })}
+          {toggle(cc, setCc, t("compose.cc"), "cc", "compose-show-cc", { tip: t("compose.addCc"), name: t("compose.addCc"), keys: "mod+shift+c" })}
+          {toggle(bcc, setBcc, t("compose.bcc"), "bcc", "compose-show-bcc", { tip: t("compose.addBcc"), name: t("compose.addBcc"), keys: "mod+shift+b" })}
+          {severalFrom && toggle(fromRow, setFromOpen, <span className="block truncate" data-testid="compose-from-label">{t("compose.fromLabel", { name: senderName })}</span>, "from", "compose-show-from", { tip: t("compose.fromTip", { email: sender?.email ?? "" }), name: t("compose.fromName", { name: senderName, email: sender?.email ?? "" }), className: "ml-1 max-w-40 min-w-0" })}
         </span>
       </Row>
       <Row label={t("compose.cc")} htmlFor={`${id}-cc`} hidden={!cc} note={problemNote("cc")}>
-        <RecipientInput id={`${id}-cc`} testId="compose-cc" label={t("compose.cc")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.ccText} onChange={(v, a) => (setCc(true), recipients("cc", v, a))} accountId={d.accountId} others={[d.toText, d.bccText]} describedBy={problemId("cc")} />
+        <RecipientInput id={`${id}-cc`} testId="compose-cc" label={t("compose.cc")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.ccText} onChange={(v, a) => (setCc(true), recipients("cc", v, a))} accountId={d.accountId} others={[d.toText, d.bccText]} describedBy={problemId("cc")} onInvalid={noteBadChip("cc")} />
       </Row>
       <Row label={t("compose.bcc")} htmlFor={`${id}-bcc`} hidden={!bcc} note={problemNote("bcc")}>
-        <RecipientInput id={`${id}-bcc`} testId="compose-bcc" label={t("compose.bcc")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.bccText} onChange={(v, a) => (setBcc(true), recipients("bcc", v, a))} accountId={d.accountId} others={[d.toText, d.ccText]} describedBy={problemId("bcc")} />
+        <RecipientInput id={`${id}-bcc`} testId="compose-bcc" label={t("compose.bcc")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.bccText} onChange={(v, a) => (setBcc(true), recipients("bcc", v, a))} accountId={d.accountId} others={[d.toText, d.ccText]} describedBy={problemId("bcc")} onInvalid={noteBadChip("bcc")} />
       </Row>
       <Row label={t("compose.subject")} htmlFor={`${id}-subject`} hidden={!subject}>
         <input id={`${id}-subject`} data-testid="compose-subject" className={input} value={d.subject} onChange={(e) => update({ subject: e.target.value, subjectEdited: true })} />
@@ -212,8 +243,11 @@ export function SaveState({ d }: { d: LocalDraft }) {
   }, [d.key]);
   const recovery = d.recovery;
   const message = recovery?.state === "refused" ? recovery.reason ?? "invalid" : recovery?.state;
+  // said aloud only when it has happened: "Saving…" at every pause in typing would talk over the writing
+  const saving = !held && !message && authored(d) && (d.status === "dirty" || d.status === "saving");
   return (
     <span className="inline-flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground" data-testid="draft-status">
+      {saving && <span aria-hidden>{t("compose.status.saving")}</span>}
       <span aria-live="polite" aria-atomic="true">
         {held ? t("compose.status.restart") : message ? t(`compose.recovery.${message}`) : d.status === "saved" ? t("compose.status.saved") : null}
         {recovery?.state === "unknown" && recovery.reason && ` ${t(`compose.recovery.${recovery.reason}`)}`}
@@ -274,17 +308,7 @@ export function Quote({ d }: { d: LocalDraft }) {
   }
   return (
     <div className="px-3.5 pb-1">
-      <button
-        type="button"
-        aria-expanded={show}
-        aria-controls={id}
-        aria-label={show ? t("compose.quote.hide") : t("compose.quote.show")}
-        data-testid="compose-quote"
-        onClick={() => setShow((v) => !v)}
-        className="h-4 rounded-sm bg-muted px-1.5 text-[10px] leading-4 tracking-[0.15em] text-muted-foreground hover:text-foreground"
-      >
-        •••
-      </button>
+      <QuoteToggle open={show} onToggle={() => setShow((v) => !v)} controls={id} testId="compose-quote" className="mt-0" />
       <div id={id}>
         {show && (
           <div className="mt-2 border-l-2 border-hairline pl-3 text-sm whitespace-pre-wrap text-muted-foreground">
@@ -299,16 +323,43 @@ export function Quote({ d }: { d: LocalDraft }) {
   );
 }
 
+/** Puts the draft away: a chevron alone never said its words are kept, so it says what it does, in the tooltip too. */
+export function DraftClose({ onClick }: { onClick: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button type="button" variant="ghost" size="sm" aria-label={t("compose.collapse")} onClick={onClick} data-testid="compose-collapse" className="px-2 text-muted-foreground hover:text-foreground">
+            {t("compose.close")}
+          </Button>
+        }
+      />
+      <TooltipContent className="flex items-center gap-2">
+        {t("compose.collapse")}
+        <Shortcut keys="escape" />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 /** The collapsed draft's words: all of them on the one line (the greeting alone says nothing). */
 const draftPreview = (text: string): string => text.slice(0, 300).replace(/\s+/g, " ").trim();
 
-/** How much of an opening composer has to show: down to its first lines of text, with room for its foot. */
+/**
+ * How much of an opening composer has to show: all of it when the pane can hold it, so a short window doesn't open it cut
+ * off at the edge. A draft longer than the pane (its foot sticks anyway) shows down to 40% of the pane's worth of text.
+ */
 function composerWanted(el: HTMLElement): number {
   const body = el.querySelector<HTMLElement>("[data-testid=compose-body]");
-  if (!body) return Infinity;
+  const pane = el.closest("[data-reader-scroller]")?.clientHeight;
+  if (!body || !pane) return Infinity;
+  const whole = el.getBoundingClientRect().height;
+  if (whole <= pane - 2 * WANTED_MARGIN) return Infinity;
   const foot = el.querySelector<HTMLElement>("[data-draft-foot]")?.offsetHeight ?? 0;
-  return body.getBoundingClientRect().top - el.getBoundingClientRect().top + 72 + foot;
+  return body.getBoundingClientRect().top - el.getBoundingClientRect().top + pane * 0.4 + foot;
 }
+/** keepInView's own margin at the pane's edge */
+const WANTED_MARGIN = 16;
 
 /** The inline draft's accessible name: "Reply to Ana", "Forward" (nobody yet). Reply-all reads as a reply. */
 function formLabel(forward: boolean, who: string): string {
@@ -474,7 +525,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
             <span className="min-w-0 flex-1 truncate text-muted-foreground">
               {t(d.mode === "forward" ? "compose.collapsed.forward" : "compose.collapsed.to", { to: recipientSummary(d.toText) || "—", preview: aiBadge === "writing" ? t("aiDraft.writing") : aiBadge === "ready" ? t("aiDraft.choice.ready") : draftPreview(d.bodyText) })}
             </span>
-            <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+            {/* it opens upward, into the card: not the chevron that closes it */}
+            <ChevronUp className="size-4 shrink-0 text-muted-foreground" />
           </button>
         )}
       </Expand>
@@ -516,7 +568,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
               showSubject={d.mode === "forward" || d.mode === "new"}
               threadAccountId={account?.id}
             />
-            <RichBody draftKey={d.key} checkpoint={checkpoint} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="block min-h-[132px] w-full px-3.5 pt-3 pb-1 text-base" />
+            <RichBody draftKey={d.key} checkpoint={checkpoint} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="rt-measure block min-h-[132px] w-full px-3.5 pt-3 pb-3 [@media(max-height:820px)]:min-h-[40vh]" />
             <DraftAttachments d={d} />
             <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
             <Quote d={d} />
@@ -529,7 +581,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
               <AttachButton d={d} />
               <LinkButton draftKey={d.key} disabled={d.sending} />
               <AiDraftButton draftKey={d.key} disabled={d.sending} testId="compose-ai" />
-              <span className="ml-1.5 min-w-0">
+              <span className="ml-1.5 flex min-w-0">
                 <SaveState d={d} />
               </span>
               <span className="ml-auto flex gap-0.5">
@@ -542,9 +594,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
                 <IconButton label={t("compose.discard")} onClick={() => void discard()} data-testid="compose-discard" disabled={d.sending}>
                   <Trash2 />
                 </IconButton>
-                <IconButton label={t("compose.collapse")} shortcut="escape" onClick={collapse} data-testid="compose-collapse">
-                  <ChevronDown />
-                </IconButton>
+                <DraftClose onClick={collapse} />
               </span>
             </div>
             </div>

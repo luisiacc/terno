@@ -327,6 +327,8 @@ for (const mode of ["light", "dark"] as const) {
       await scenario("Send's schedule half, open, keeps its hover fill when the pointer leaves (no gradient over it)", async () => {
         await focusList(page);
         await page.keyboard.press("c");
+        // ready to go: until then the group reads as unavailable, with no primary to tint (plan 158)
+        await page.getByTestId("compose-to").fill("ana@example.com");
         await page.getByTestId("compose-send-later").click();
         await page.mouse.move(1, 1);
         await baseExpect(page.getByTestId("compose-send-later")).toHaveAttribute("aria-expanded", "true");

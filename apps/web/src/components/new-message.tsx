@@ -4,13 +4,13 @@ import { t } from "@terno/i18n";
 import { IconButton } from "@terno/ui/components/icon-button";
 import { isSendLaterKey, openSendLater, SendButton } from "./send-button";
 import { cn } from "@terno/ui/lib/utils";
-import { ChevronDown, Pin, Trash2 } from "@terno/ui/icons";
+import { Pin, Trash2 } from "@terno/ui/icons";
 import { useEffect, useId, useRef } from "react";
 import { registerUndo, snack } from "~/lib/snack";
 import { composeFocusPending, finishComposeFocus, leaveNewDraft, leaveNewDraftWithFocus, sendDraft, showNewDraft } from "~/lib/compose";
 import { discardDraft, restoreDiscarded, useDrafts } from "~/lib/drafts";
 import { setApp, useApp } from "~/state/app";
-import { DRAFT_SURFACE, DraftFieldsForm, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
+import { DRAFT_SURFACE, DraftClose, DraftFieldsForm, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
 import { popupOpen } from "./composer/controller";
 import { ComposerFormatBar, FormatToggle, LinkButton } from "./composer/controls";
 import { RichBody } from "./composer/rich";
@@ -129,7 +129,7 @@ export function NewMessage() {
             {/* pt-0.5: the first row's text field keeps its whole focus ring */}
             <div className="min-h-0 overflow-y-auto pt-0.5" data-draft-scroll>
               <DraftFieldsForm d={d} accounts={accounts} showSubject />
-              <RichBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="block min-h-[220px] w-full px-3.5 pt-3 pb-1 text-base" />
+              <RichBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="rt-measure block min-h-[220px] w-full px-3.5 pt-3 pb-3" />
               <DraftAttachments d={d} />
               <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
               <Quote d={d} />
@@ -143,7 +143,7 @@ export function NewMessage() {
                 <AttachButton d={d} />
                 <LinkButton draftKey={key} disabled={d.sending} />
                 <AiDraftButton draftKey={key} disabled={d.sending} testId="compose-ai" />
-                <span className="ml-1.5 min-w-0">
+                <span className="ml-1.5 flex min-w-0">
                   <SaveState d={d} />
                 </span>
                 <span className="ml-auto flex gap-0.5">
@@ -154,9 +154,7 @@ export function NewMessage() {
                   <IconButton label={t("compose.discard")} onClick={() => void discard()} data-testid="compose-discard" disabled={d.sending}>
                     <Trash2 />
                   </IconButton>
-                  <IconButton label={t("compose.collapse")} shortcut="escape" onClick={() => leave(key)} data-testid="compose-collapse">
-                    <ChevronDown />
-                  </IconButton>
+                  <DraftClose onClick={() => leave(key)} />
                 </span>
               </div>
             </div>

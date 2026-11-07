@@ -160,6 +160,8 @@ export const DEFAULT_SETTINGS: General = {
   // new installs follow the system: English unless it's a language Terno ships
   language: "system",
   composeSuggestions: true,
+  // plan 158: on until turned off: a send is the action people regret most
+  undoSend: true,
   // plan 22: website icons are on in either mode until turned off
   senderIcons: true,
   googlePhotos: {},

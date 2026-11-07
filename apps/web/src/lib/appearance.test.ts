@@ -49,6 +49,7 @@ const SERVER: AppSettings = {
       today: { show: true, prepareAt: "08:00", notify: false, digest: false },
   followups: { enabled: false, enabledAt: null, nudgeAfterDays: 5, scanAnswered: false },
   composeSuggestions: true,
+      undoSend: true,
   senderIcons: false,
   googlePhotos: {}, googlePhotosPending: [], favoriteFolders: [],
   dockBadge: true,

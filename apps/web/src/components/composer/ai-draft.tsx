@@ -508,7 +508,7 @@ export function AiPreview({ draftKey, className }: { draftKey: string; className
       className={cn(below ? "hairline-t mx-3.5 mt-2 pt-2 pb-1 [grid-area:2/1]" : "pointer-events-none [grid-area:1/1]")}
     >
       {below && <p className="mb-1 text-xs text-muted-foreground">{t("aiDraft.suggestion")}</p>}
-      <div ref={textRef} data-testid="ai-preview-text" className={cn("rt-body rt-ai-preview type-body", below ? "text-base" : className)} />
+      <div ref={textRef} data-testid="ai-preview-text" className={cn("rt-body rt-ai-preview type-body", below ? "rt-measure" : className)} />
     </div>
   );
 }

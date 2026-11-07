@@ -26,3 +26,6 @@ export const bottomInset = (snackInset: number, pinnedInset: number): number => 
 export function focusPinned(): void {
   usePinned.setState((s) => ({ focus: s.focus + 1 }));
 }
+
+/** Pins a draft, for what can't import the card's module (it's the DOM's); `pinned-draft` sets it. */
+export const pinning: { pin: (key: string) => boolean } = { pin: () => false };

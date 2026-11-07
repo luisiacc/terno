@@ -23,6 +23,10 @@
   outline: none;
   overflow-wrap: anywhere;
 }
+/* the message above it reads at this width (mail-body's text): what's being written reads the same; the box stays full width, so a click beside a short line still lands in the text */
+.rt-measure > * {
+  max-width: 35em;
+}
 /* lines without margins: Enter starts the next one, an empty line is the gap (as mail shows it) */
 .rt-body p {
   margin: 0;

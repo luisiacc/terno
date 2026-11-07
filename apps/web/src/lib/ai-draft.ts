@@ -7,7 +7,7 @@ import { getApp, useApp } from "~/state/app";
 import { loadThread, useThreads } from "~/state/threads";
 import { draftingOffered, errorHelp, writingTarget } from "./ai";
 import { aiDraftHooks, canDraft, useAiDraftUi, type AiDraftBadge } from "./ai-draft-state";
-import { addressReply, composeLanding, leaveNewDraft, sendDraft } from "./compose";
+import { addressReply, composeLanding, composeOpening, leaveNewDraft, sendDraft } from "./compose";
 import { focusSoon } from "./compose-focus-move";
 import { draftCommands, draftKeyOf } from "./draft-commands";
 import { discardDraft, authored, draftPresentationThread, editDraft, editDraftRecipients, flushDraft, forgetDraft, loseDraftHome, materialize, NO_AUTO, shownDraftKey, unsaveDraft, useDrafts, validateDraftPresentation, validRecipients, type LocalDraft } from "./drafts";
@@ -336,7 +336,8 @@ export async function openRow(o: { key?: string; threadId?: number } = {}): Prom
     if (listLayout() && currentPage() === "list") openThread(threadId);
     const drafts = useDrafts.getState().drafts;
     const existing = shownDraftKey(drafts, threadId, getApp().draftShown);
-    await composeLanding(existing ? drafts[existing]!.mode : "reply", threadId, 0, undefined, undefined, { target: "ai", onLanded });
+    // an open still on its way is what they asked for: it goes on as that, with this row
+    await composeLanding(existing ? drafts[existing]!.mode : composeOpening(threadId) ?? "reply", threadId, 0, undefined, undefined, { target: "ai", onLanded });
     return;
   }
   await composeLanding("new", null, 0, undefined, undefined, { target: "ai", onLanded });

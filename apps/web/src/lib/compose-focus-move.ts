@@ -6,23 +6,30 @@ export interface EarlyComposeInput {
 }
 /** plan 133: where each target's focus goes; "ai" falls to the body once the row has moved past its field */
 export const focusSelector = (target: ComposeFocusTarget): string => target === "to" ? "[data-testid=compose-to]" : target === "ai" ? "[data-testid=ai-row-input], [data-testid=compose-body]" : "[data-testid=compose-body]";
-type EarlyText = { text: string; start: number; end: number; direction: "forward" | "backward" | "none" };
+/** `giveBack`: it couldn't be placed after all, so it's still the user's */
+type EarlyText = { text: string; start: number; end: number; direction: "forward" | "backward" | "none"; giveBack: () => void };
 let earlyInput: { owns(el: Element | null): boolean; take(): EarlyText; armed(el: HTMLElement): boolean; wait(resume: () => void): boolean } | null = null;
 
-/** Native text input while source admission has no editor yet. The lease owns its lifetime. */
-export function prepareEarlyComposeInput(valid: () => boolean, cancel: () => void, label: string): EarlyComposeInput {
+/**
+ * Native text input while source admission has no editor yet. The lease owns its lifetime; words still in it when that
+ * ends (a second open, ⌘J; a click away; Esc) go to `strand`, with the draft they were headed for if it's known by then:
+ * ending an open never ends what was typed (plan 158).
+ */
+export function prepareEarlyComposeInput(valid: () => boolean, cancel: () => void, label: string, strand: (words: string, key: string | null) => void = () => {}): EarlyComposeInput {
   let receiver: HTMLTextAreaElement | null = null, destination: { key: string; target: ComposeFocusTarget } | null = null, finished = false;
   const initial = document.activeElement;
   let composing = false, resume: (() => void) | undefined;
   const owns = (el: Element | null) => receiver !== null && el === receiver;
-  const stop = () => {
+  const stop = (taken = false) => {
     if (finished) return;
     finished = true;
     document.removeEventListener("keydown", key, true);
     document.removeEventListener("visibilitychange", hidden, true);
     window.removeEventListener("pagehide", exit, true);
+    const words = taken ? "" : receiver?.value ?? "";
     receiver?.remove(); receiver = null; resume = undefined;
     if (earlyInput === session) earlyInput = null;
+    if (words) strand(words, destination?.key ?? null);
   };
   const exit = () => { stop(); cancel(); };
   const hidden = () => { if (document.hidden) exit(); };
@@ -49,12 +56,12 @@ export function prepareEarlyComposeInput(valid: () => boolean, cancel: () => voi
     // Keep the browser's native insertion, including Unicode, but not page shortcuts.
     e.stopImmediatePropagation();
   };
-  const session = { owns, wait: (next: () => void) => { if (!composing) return false; resume = next; return true; }, armed: (el: HTMLElement) => !!destination && valid() && el.closest("[data-draft-key]")?.getAttribute("data-draft-key") === destination.key && el.dataset.testid === (destination.target === "to" ? "compose-to" : destination.target === "ai" && el.dataset.testid === "ai-row-input" ? "ai-row-input" : "compose-body"), take: () => { const value: EarlyText = { text: receiver?.value ?? "", start: receiver?.selectionStart ?? 0, end: receiver?.selectionEnd ?? 0, direction: receiver?.selectionDirection ?? "none" }; stop(); return value; } };
+  const session = { owns, wait: (next: () => void) => { if (!composing) return false; resume = next; return true; }, armed: (el: HTMLElement) => !!destination && valid() && el.closest("[data-draft-key]")?.getAttribute("data-draft-key") === destination.key && el.dataset.testid === (destination.target === "to" ? "compose-to" : destination.target === "ai" && el.dataset.testid === "ai-row-input" ? "ai-row-input" : "compose-body"), take: () => { const text = receiver?.value ?? ""; const to = destination?.key ?? null; const value: EarlyText = { text, start: receiver?.selectionStart ?? 0, end: receiver?.selectionEnd ?? 0, direction: receiver?.selectionDirection ?? "none", giveBack: () => { if (text) strand(text, to); } }; stop(true); return value; } };
   earlyInput = session;
   document.addEventListener("keydown", key, true);
   document.addEventListener("visibilitychange", hidden, true);
   window.addEventListener("pagehide", exit, true);
-  return { owns, arm: (key, target) => { destination = { key, target }; }, cancel: stop };
+  return { owns, arm: (key, target) => { destination = { key, target }; }, cancel: () => stop() };
 }
 const takeEarlyInput = (el: HTMLElement) => earlyInput?.armed(el) ? earlyInput.take() : undefined;
 
@@ -75,9 +82,9 @@ const focusable = (el: HTMLElement | null): el is HTMLElement => el !== null && 
 function place(el: HTMLElement, input: EarlyText | undefined = undefined, current: () => boolean = () => true) {
   el.focus({ preventScroll: true });
   if (el instanceof HTMLTextAreaElement) el.setSelectionRange(el.value.length, el.value.length);
-  if (!input?.text || !current() || document.activeElement !== el || !el.isConnected || el.closest("[inert]")) return;
+  if (!input?.text) return;
   const field = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
-  if (field ? el.readOnly || el.disabled : !el.isContentEditable) return;
+  if (!current() || document.activeElement !== el || !el.isConnected || el.closest("[inert]") || (field ? el.readOnly || el.disabled : !el.isContentEditable)) return input.giveBack();
   document.execCommand("insertText", false, input.text);
   if (!current() || document.activeElement !== el || !el.isConnected) return;
   if (field) {
@@ -115,7 +122,7 @@ function keyDuringMove(e: KeyboardEvent) {
   document.addEventListener("focusin", observe, true);
   let allowed: boolean, current: boolean;
   try { allowed = p.done(true); current = p.current(el); } finally { p.release?.(); document.removeEventListener("focusin", observe, true); }
-  if (!allowed || moved || !current || !focusable(el)) return;
+  if (!allowed || moved || !current || !focusable(el)) return text?.giveBack();
   place(el, text, () => p.current(el));
   if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) return;
   e.preventDefault();
@@ -166,7 +173,7 @@ export function focusSoon(selector: string, root: HTMLElement | null, frames = 1
       if (!focusable(el) && left > 0) return tick(left - 1);
       if (earlyInput?.wait(() => tick(left))) return;
       const text = focusable(el) ? takeEarlyInput(el) : undefined;
-      if (!cleanup()) return;
+      if (!cleanup()) return text?.giveBack();
       const active = document.activeElement;
       let changed = false;
       const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) changed = true; };
@@ -174,6 +181,7 @@ export function focusSoon(selector: string, root: HTMLElement | null, frames = 1
       let allowed: boolean | void;
       try { allowed = onDone?.(!focusable(el)); } finally { document.removeEventListener("focusin", observe, true); }
       if (!changed && request === focusRequest && (!valid || allowed === true) && focusable(el)) place(el, text, () => request === focusRequest && target(selector, root) === el);
+      else text?.giveBack();
     });
   };
   tick(frames);

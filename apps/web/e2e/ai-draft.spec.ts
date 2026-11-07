@@ -704,6 +704,113 @@ test.describe("drafting with AI (plan 133)", () => {
     });
   });
 
+  test("what comes while a reply is still opening: words are the body's however the open ends, and Reply all stays Reply all (plan 158)", async ({ app: page, server }) => {
+    /** The open stays on its way, at the backend's check of its source: what a person typing fast meets on a loaded machine. */
+    const whileOpening = async (keys: () => Promise<void>) => {
+      const drafts = server.backend.store.drafts;
+      const real = drafts.sourceContext;
+      let release = () => {};
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      drafts.sourceContext = async (id: number) => { await held; return real.call(drafts, id); };
+      try {
+        await keys();
+      } finally {
+        drafts.sourceContext = real;
+        release();
+      }
+    };
+    const saved = async () => ((await server.backend.server.invoke("drafts.list", {}, dev)) as { bodyText: string }[]).map((d) => d.bodyText);
+    await scenario("⌘J: the words are in the text, the row is empty, and the draft goes by them", async () => {
+      await ready(page, server);
+      instant();
+      await openThread(page, /Contract review/);
+      await whileOpening(async () => {
+        await page.keyboard.press("r");
+        await page.keyboard.type("short and mine");
+        await page.keyboard.press(CMD_J);
+      });
+      await expect(field(page)).toBeFocused();
+      await expect(body(page)).toHaveText("short and mine");
+      await expect(field(page)).toHaveValue("");
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("ai-choice")).toHaveAttribute("data-reason", "notes");
+      await page.getByTestId("ai-choice-discard").click();
+      await expect(body(page)).toHaveText("short and mine");
+      await expect.poll(saved).toEqual(["short and mine"]);
+    });
+    await scenario("a click away: the reply still opens, with the words, and doesn't take focus back", async () => {
+      await fresh(page, server);
+      await openThread(page, /Contract review/);
+      await whileOpening(async () => {
+        await page.keyboard.press("r");
+        await page.keyboard.type("before the click");
+        await page.getByTestId("reader-subject").click();
+      });
+      await expect(body(page)).toHaveText("before the click");
+      await expect(body(page)).not.toBeFocused();
+    });
+    await scenario("Esc: the open ends and the words are a draft put away, saved, as a moment later they would have been", async () => {
+      await fresh(page, server);
+      await openThread(page, /Contract review/);
+      await whileOpening(async () => {
+        await page.keyboard.press("r");
+        await page.keyboard.type("before the esc");
+        await page.keyboard.press("Escape");
+      });
+      await expect(page.getByTestId("composer")).toHaveCount(0);
+      await expect(page.getByTestId("draft-collapsed")).toContainText("before the esc");
+      await expect.poll(saved).toEqual(["before the esc"]);
+      await page.keyboard.press("r");
+      await expect(body(page)).toHaveText("before the esc");
+    });
+    await scenario("Reply all, still opening when ⌘J comes", async () => {
+      await fresh(page, server);
+      await openThread(page, /Contract review/);
+      await whileOpening(async () => {
+        await page.keyboard.press("a");
+        await page.keyboard.press(CMD_J);
+      });
+      await expect(field(page)).toBeFocused();
+      await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "replyAll");
+    });
+    await scenario("an open of another conversation still going: when it settles, the first one's words are saved there, not left in memory", async () => {
+      await fresh(page, server);
+      await openThread(page, /Contract review/);
+      await whileOpening(async () => {
+        await page.keyboard.press("r");
+        await page.keyboard.type("for the contract");
+        await page.keyboard.press("Escape");
+        await openThread(page, /Studio lunch/);
+        await page.keyboard.press("r");
+      });
+      await expect(body(page)).toBeFocused();
+      await expect(body(page)).toHaveText("");
+      await page.keyboard.type("for the lunch");
+      await expect.poll(async () => (await saved()).sort()).toEqual(["for the contract", "for the lunch"]);
+      await page.getByTestId("compose-discard").click();
+      await expect.poll(saved).toEqual(["for the contract"]);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await openThread(page, /Contract review/);
+      await expect(page.getByTestId("draft-collapsed")).toContainText("for the contract");
+      await page.getByTestId("draft-collapsed").click();
+      await page.getByTestId("compose-discard").click();
+    });
+    await scenario("c right after: a new message isn't what they were written for: it opens empty, and they're the reply's", async () => {
+      await fresh(page, server);
+      await openThread(page, /Contract review/);
+      await whileOpening(async () => {
+        await page.keyboard.press("r");
+        await page.keyboard.type("for the reply");
+        await page.keyboard.press("Escape");
+        await page.keyboard.press("c");
+        await expect(page.getByTestId("compose-to")).toBeFocused();
+      });
+      await expect.poll(saved).toEqual(["for the reply"]);
+      await expect(body(page)).toHaveText("");
+    });
+  });
+
   test("no provider: nothing shows; one that goes from under the row says what to do; off in Settings, it's gone everywhere", async ({ app: page, server }) => {
     await seed(server);
     await page.reload();

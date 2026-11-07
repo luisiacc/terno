@@ -49,7 +49,7 @@ test("terminal draft copy keeps rich history, caret, recipient chips and exact f
     expect(copy.to_json).toContain("bob@"); expect(copy.to_json).toContain("Pérez, Ana");
     const ref = JSON.parse(copy.attachments_json)[0];
     expect(await server.backend.store.attachments.read(copy.account_id, ref.assetId, 0)).toBe("AP+A");
-    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    await expect(page.getByTestId("draft-status")).toHaveText("Saved");
     await page.reload(); await expect(body).toHaveText(copy.body_text);
     await expect(page.getByTestId("draft-attachment")).toContainText("exact.bin");
   } finally { release(); server.backend.store.drafts.save = save; }
@@ -116,7 +116,7 @@ test("missing account and files stay explicit; removing refs permits the sole co
   const from = page.getByTestId("compose-from"); await expect(from).toBeVisible(); await expect(from).toBeDisabled();
   await page.getByRole("button", { name: "Remove unavailable.bin", exact: true }).click(); await expect(from).toBeEnabled();
   await from.focus(); await page.keyboard.press("Space"); await page.getByRole("option", { name: `${remaining.displayName} · ${remaining.email}`, exact: true }).click();
-  await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Saved");
   expect((await server.backend.store.drafts.list())[0]).toMatchObject({ account_id: remaining.id, body_text: "account recovery text retained", attachments_json: "[]" });
 });
 

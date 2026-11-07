@@ -39,6 +39,8 @@ export type Command =
   | "compose.forward"
   | "compose.send"
   | "compose.ai"
+  | "compose.cc"
+  | "compose.bcc"
   | "search.focus"
   | "palette.open"
   | "snippets.open"
@@ -151,6 +153,9 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "mod+enter", command: "compose.send", inEditable: true, inDialog: true },
   // plan 133: from a draft, a conversation or the list (a chord types nothing; the dispatcher's preventDefault keeps it from Chrome's Downloads)
   { keys: "mod+j", command: "compose.ai", inEditable: true, inDialog: true },
+  // plan 158: they're off the Tab path, so To goes straight to Subject; most mail apps use these
+  { keys: "mod+shift+c", command: "compose.cc", inEditable: true, inDialog: true },
+  { keys: "mod+shift+b", command: "compose.bcc", inEditable: true, inDialog: true },
   { keys: "/", command: "search.focus" },
   { keys: "mod+k", command: "palette.open", inEditable: true, inDialog: true },
   // plan 93: Superhuman's snippets key, while writing above all (a chord types nothing)

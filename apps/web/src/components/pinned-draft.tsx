@@ -165,7 +165,7 @@ export function PinnedDraft({ list }: { list: boolean }) {
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto" data-draft-scroll>
           <DraftFieldsForm d={d} accounts={accounts} showSubject={d.mode === "forward" || d.mode === "new"} />
-          <RichBody draftKey={key} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="block min-h-[132px] w-full px-3.5 pt-3 pb-1 text-base" />
+          <RichBody draftKey={key} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="rt-measure block min-h-[132px] w-full px-3.5 pt-3 pb-3" />
           <DraftAttachments d={d} />
           <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
           <Quote d={d} />
@@ -178,7 +178,7 @@ export function PinnedDraft({ list }: { list: boolean }) {
             <AttachButton d={d} />
             <LinkButton draftKey={key} disabled={d.sending} />
             <AiDraftButton draftKey={key} disabled={d.sending} testId="compose-ai" />
-            <span className="ml-1.5 min-w-0">
+            <span className="ml-1.5 flex min-w-0">
               <SaveState d={d} />
             </span>
             <span className="ml-auto flex gap-0.5">

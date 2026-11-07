@@ -22,3 +22,29 @@ it("a draft no longer scheduled (unscheduled in another window, given back) is l
   applyScheduled({ items: [], failed: [] });
   await vi.waitFor(() => expect(Object.values(useDrafts.getState().drafts).some((d) => d.id === 5)).toBe(true));
 });
+
+it("the hold's end (plan 158): Undo goes and the spinner stays; a result already waiting behind the Undo takes the dock instead", async () => {
+  const { heldSendSnack } = await import("./scheduled");
+  const { resetSnacks, snack, useSnack } = await import("./snack");
+  vi.useFakeTimers();
+  try {
+    resetSnacks();
+    heldSendSnack(7, null, 5000);
+    expect(useSnack.getState().current).toMatchObject({ tone: "loading", duration: 5000, action: { label: expect.any(String) } });
+    expect(useSnack.getState().undo).not.toBeNull();
+    vi.advanceTimersByTime(5000);
+    expect(useSnack.getState().current).toMatchObject({ tone: "loading" });
+    expect(useSnack.getState().current?.action).toBeUndefined();
+    expect(useSnack.getState().undo).toBeNull();
+
+    resetSnacks();
+    heldSendSnack(8, null, 5000);
+    snack.success("Message sent", { background: true });
+    expect(useSnack.getState().current?.tone).toBe("loading");
+    vi.advanceTimersByTime(5000);
+    expect(useSnack.getState().current?.message).toBe("Message sent");
+  } finally {
+    vi.useRealTimers();
+    resetSnacks();
+  }
+});

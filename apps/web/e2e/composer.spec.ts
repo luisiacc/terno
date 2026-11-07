@@ -451,7 +451,7 @@ test.describe("drafts keep their formatting", () => {
       await reply(page);
       await select(page, "propuesta");
       await page.keyboard.press("ControlOrMeta+b");
-      await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+      await expect(page.getByTestId("draft-status")).toHaveText("Saved");
       const row = sqlDb(server.backend.store).get<{ body_text: string; body_html: string }>("SELECT body_text, body_html FROM drafts ORDER BY id DESC LIMIT 1")!;
       expect(row.body_text).toBe("Hola Ana, gracias por la propuesta del viernes.");
       expect(row.body_html).toBe("<div>Hola Ana, gracias por la <b>propuesta</b> del viernes.</div>");
