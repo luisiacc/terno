@@ -243,11 +243,11 @@
   --type-row-snippet-tracking: 0em;
   --type-row-snippet-style: normal;
   --type-reader-subject-family: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
-  --type-reader-subject-size: 2rem;
-  --type-reader-subject-leading: 1.15;
+  --type-reader-subject-size: 1.625rem;
+  --type-reader-subject-leading: 1.2;
   --type-reader-subject-weight: 600;
   --type-reader-subject-strong: 600;
-  --type-reader-subject-tracking: -0.02em;
+  --type-reader-subject-tracking: -0.012em;
   --type-reader-subject-style: normal;
   --type-sender-name-family: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
   --type-sender-name-size: 0.90625rem;
@@ -399,7 +399,7 @@
   --type-reader-subject-leading: 1.625rem;
   --type-reader-subject-weight: 600;
   --type-reader-subject-strong: 600;
-  --type-reader-subject-tracking: -0.018em;
+  --type-reader-subject-tracking: -0.01em;
   --type-reader-subject-style: normal;
   --type-sender-name-family: -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif;
   --type-sender-name-size: 0.875rem;

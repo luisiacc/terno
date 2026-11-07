@@ -31,7 +31,7 @@ export const atelier: DesignDefinition = {
     rowFrom: { family: "sans", size: "0.84375rem", leading: "1.25rem", weight: 400, strong: 600, tracking: "0em", style: "normal" },
     rowSubject: { family: "sans", size: "0.8125rem", leading: "1.125rem", weight: 400, strong: 500, tracking: "0em", style: "normal" },
     rowSnippet: { family: "sans", size: "0.78125rem", leading: "1.125rem", weight: 400, strong: 400, tracking: "0em", style: "normal" },
-    readerSubject: { family: "display", size: "2rem", leading: "1.15", weight: 600, strong: 600, tracking: "-0.02em", style: "normal" },
+    readerSubject: { family: "display", size: "1.625rem", leading: "1.2", weight: 600, strong: 600, tracking: "-0.012em", style: "normal" },
     senderName: { family: "sans", size: "0.90625rem", leading: "1.375rem", weight: 600, strong: 600, tracking: "0em", style: "normal" },
     body: { family: "sans", size: "0.9375rem", leading: "1.625", weight: 400, strong: 600, tracking: "0em", style: "normal" },
     compose: { family: "sans", size: "0.84375rem", leading: "1.25rem", weight: 500, strong: 600, tracking: "0em", style: "normal" },

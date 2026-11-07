@@ -32,7 +32,7 @@ export const macos: DesignDefinition = {
     rowFrom: { family: "sans", size: "0.8125rem", leading: "1.125rem", weight: 400, strong: 600, tracking: "0em", style: "normal" },
     rowSubject: { family: "sans", size: "0.8125rem", leading: "1.125rem", weight: 400, strong: 500, tracking: "0em", style: "normal" },
     rowSnippet: { family: "sans", size: "0.8125rem", leading: "1.125rem", weight: 400, strong: 400, tracking: "0em", style: "normal" },
-    readerSubject: { family: "sans", size: "1.25rem", leading: "1.625rem", weight: 600, strong: 600, tracking: "-0.018em", style: "normal" },
+    readerSubject: { family: "sans", size: "1.25rem", leading: "1.625rem", weight: 600, strong: 600, tracking: "-0.01em", style: "normal" },
     senderName: { family: "sans", size: "0.875rem", leading: "1.375rem", weight: 600, strong: 600, tracking: "0em", style: "normal" },
     body: { family: "sans", size: "0.875rem", leading: "1.625", weight: 400, strong: 600, tracking: "0em", style: "normal" },
     compose: { family: "sans", size: "0.8125rem", leading: "1.125rem", weight: 500, strong: 600, tracking: "0em", style: "normal" },
