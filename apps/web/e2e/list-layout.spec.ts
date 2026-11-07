@@ -57,6 +57,8 @@ test.describe("the table (plan 158)", () => {
       expect(new Set(lefts.map((l) => l[1])).size).toBe(1);
       const rights = await rows(page).evaluateAll((els) => els.slice(0, 12).map((r) => Math.round(r.querySelector("[data-testid=row-date]")!.getBoundingClientRect().right)));
       expect(new Set(rights).size).toBe(1);
+      const marks = await rows(page).evaluateAll((els) => els.slice(0, 12).map((r) => Math.round(r.querySelector("[data-testid=row-marks]")!.getBoundingClientRect().left)));
+      expect(new Set(marks).size).toBe(1);
       const row = rows(page).nth(1);
       const size = (id: string) => row.getByTestId(id).evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
       expect(await size("row-snippet")).toBeLessThan(await size("row-subject"));

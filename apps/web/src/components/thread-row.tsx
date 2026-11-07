@@ -238,14 +238,14 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
   const star = thread.starred && <Star className="size-3 fill-star text-star" />;
   const dots = cats.map((c) => <CategoryDot key={c.id} data-cat-dot={c.id} color={c.color as CategoryColor} title={c.name} />);
   // plan 87: due, in the accent (the Inbox's top); set, quiet
-  const bell = reminder && <Bell aria-hidden data-testid="row-reminder" data-due={reminder.due || undefined} className={cn("size-3", opened ? "" : checked ? "text-accent-foreground" : reminder.due ? "text-primary" : "text-muted-foreground")} />;
+  const bell = reminder && <Bell aria-hidden data-testid="row-reminder" data-due={reminder.due || undefined} className={cn("size-3 shrink-0", opened ? "" : checked ? "text-accent-foreground" : reminder.due ? "text-primary" : "text-muted-foreground")} />;
   // plan 64: a search looks everywhere, so a row in Spam or Trash says so (quiet, before the date; said once at the end)
   const placeTag = place && (
-    <span aria-hidden data-testid="row-place" data-place={place} className={cn("text-2xs", onAccent ? "text-accent-foreground" : "text-muted-foreground")}>
+    <span aria-hidden data-testid="row-place" data-place={place} className={cn("shrink-0 text-2xs", onAccent ? "text-accent-foreground" : "text-muted-foreground")}>
       {t(place === "spam" ? "list.place.spam" : "list.place.trash")}
     </span>
   );
-  const keptTag = kept && <span data-testid="row-kept" className="text-2xs text-muted-foreground">{t("list.kept")}</span>;
+  const keptTag = kept && <span data-testid="row-kept" className="shrink-0 text-2xs text-muted-foreground">{t("list.kept")}</span>;
   const marks = (
     <>
       {dots}
@@ -416,14 +416,15 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
           <span className="flex w-[clamp(11rem,30%,24rem)] shrink-0 items-center gap-1.5">
             <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
             {draft}
+            {/* what a row is, not a column: beside the subject, so the columns on the right never move */}
+            {keptTag}
+            {placeTag}
+            {reminder && !reminderTop && bell}
           </span>
           {answer ? <span className="flex min-w-0 flex-1 justify-end">{answer}</span> : <WideSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} />}
           {accountTag}
           <span data-testid="row-marks" className="flex shrink-0 items-center justify-end gap-1.5">
             {wideCategory}
-            {placeTag}
-            {keptTag}
-            {reminder && !reminderTop && bell}
             <span className="flex w-3 justify-center">{clip}</span>
             <span className="flex w-3 justify-center">{star}</span>
           </span>
