@@ -7,7 +7,16 @@ const key = (k: string, mods: Partial<KeyInput> = {}): KeyInput => ({ key: k, me
 describe("resolveKey", () => {
   it("resolves single keys", () => {
     expect(resolveKey(key("j"), ctx, null).command).toBe("list.next");
-    expect(resolveKey(key("E", { shift: true }), ctx, null).command).toBe(null); // shift+e is not archive
+    expect(resolveKey(key("S", { shift: true }), ctx, null).command).toBe(null); // shift+s is not star
+  });
+
+  it("N and P walk a conversation's messages, ⇧E opens or folds them all, from the letters alone (plan 158)", () => {
+    expect(resolveKey({ ...key("N"), shift: true }, ctx, null).command).toBe("message.next");
+    expect(resolveKey({ ...key("P"), shift: true }, ctx, null).command).toBe("message.prev");
+    expect(resolveKey({ ...key("E"), shift: true }, ctx, null).command).toBe("message.toggleAll");
+    // plain n stays the suggestion's, plain e the archive
+    expect(resolveKey(key("n"), ctx, null).command).toBe("suggestion.reject");
+    expect(resolveKey(key("e"), ctx, null).command).toBe("thread.archive");
   });
 
   it("treats shifted symbols by their produced character", () => {

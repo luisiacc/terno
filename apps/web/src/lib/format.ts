@@ -50,6 +50,11 @@ export function messageDate(ms: number, now = Date.now()): string {
   return day === time ? day : `${day}, ${time}`;
 }
 
+/** What messageDate adds to listDate (", 3:41 PM"), so a tight row can give it up first. */
+export function messageTime(ms: number, now = Date.now()): string {
+  return messageDate(ms, now).slice(listDate(ms, now).length);
+}
+
 export function fullDate(ms: number): string {
   return formats().full.format(new Date(ms));
 }

@@ -2,7 +2,7 @@ import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { formatBytes, fullDate, listDate, messageDate, viewLabel } from "./format";
+import { formatBytes, fullDate, listDate, messageDate, messageTime, viewLabel } from "./format";
 
 afterEach(() => setLocale("en", en));
 
@@ -66,5 +66,14 @@ describe("labels and sizes", () => {
     const b = messageDate(new Date(2026, 9, 12, 15, 41).getTime(), now);
     expect(a).toContain(listDate(new Date(2026, 9, 12, 9, 27).getTime(), now));
     expect(a).not.toBe(b);
+  });
+
+  it("a tight row gives up the time first: the day and the rest make the whole", () => {
+    const now = new Date(2026, 9, 22, 18, 0).getTime();
+    const earlier = new Date(2026, 9, 12, 9, 27).getTime();
+    expect(listDate(earlier, now) + messageTime(earlier, now)).toBe(messageDate(earlier, now));
+    expect(messageTime(earlier, now)).not.toBe("");
+    // today, the day is the time: nothing more to say
+    expect(messageTime(new Date(2026, 9, 22, 9, 27).getTime(), now)).toBe("");
   });
 });

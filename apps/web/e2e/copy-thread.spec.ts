@@ -45,7 +45,7 @@ test("copying a conversation as text: from the thread, the list and the palette"
 
   await scenario("on a message: the text, and that message's own actions; the text is the whole thread, once", async () => {
     await messages.nth(1).getByTestId("message-toggle").click({ button: "right" });
-    await expect(menu(page).getByRole("menuitem")).toHaveText(["Copy conversation as text", "Print this message…", "Export message as PDF…"]);
+    await expect(menu(page).getByRole("menuitem")).toHaveText(["Reply", "Forward", "Copy conversation as text", "Print this message…", "Export message as PDF…"]);
     await blank(page);
     await page.getByTestId("message-menu-copy-text").click();
     const text = await copied(page);

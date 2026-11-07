@@ -1,8 +1,8 @@
 /**
  * Plan 59: one sender header. In Lumen the card above the subject is the
  * header of a one-message conversation (who wrote it, to whom, when), so the
- * message shows no second one. Longer conversations keep a header per message;
- * the other designs never had a sender card and don't change.
+ * message shows no second one. Longer conversations have a header per message
+ * and no card (plan 158: it said one of them twice); the other designs never had one.
  */
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
@@ -73,25 +73,22 @@ test.describe("Lumen's sender card", () => {
       server.backend.notifyChanged([id]);
       const messages = reader(page).getByTestId("message");
       await expect(messages).toHaveCount(2);
-      // the card is the conversation again: who it's with, no date of its own
-      await expect(card(page).getByTestId("message-date")).toHaveCount(0);
-      await expect(card(page).getByTestId("recipients")).toHaveCount(0);
-      await expect(card(page)).not.toHaveAttribute("data-message-id");
+      // the card goes: each message has its own header now
+      await expect(card(page)).toHaveCount(0);
       for (const i of [0, 1]) await expect(messages.nth(i).getByTestId("message-toggle")).toHaveAttribute("aria-expanded", "true");
       // the first message's body (and its frame) stayed where it was, and so did the caret
       expect(await page.evaluate(() => (window as unknown as { __frame: Element | null }).__frame?.isConnected)).toBe(true);
       await expect(page.getByTestId("compose-body")).toBeFocused();
     });
-    await scenario("in a longer conversation the card's address isn't revealed again on a message header; others' still are", async () => {
+    await scenario("in a longer conversation there's no card, and each open message says who wrote it, address too", async () => {
       await fresh(page);
       const id = await ingestConversation(server, { subject: "Plan de medios", count: 3, now: E2E_NOW });
       await selectThread(page, id, 'subject:"Plan de medios"');
       const messages = reader(page).getByTestId("message");
       await messages.nth(1).getByTestId("message-toggle").click();
       for (const i of [0, 1, 2]) await expect(messages.nth(i).getByTestId("message-toggle")).toBeVisible();
-      await expect(card(page).getByTestId("message-date")).toHaveCount(0);
-      await expect(card(page)).toContainText(YUKI);
-      await expect(messages.getByText(YUKI, { exact: true })).toHaveCount(0);
+      await expect(card(page)).toHaveCount(0);
+      await expect(messages.nth(2).getByText(YUKI, { exact: true })).toHaveCount(1);
       await expect(messages.nth(1).getByText(ownerEmail(server), { exact: true })).toHaveCount(1);
     });
     await scenario("a one-message conversation with attachments keeps them under the body", async () => {

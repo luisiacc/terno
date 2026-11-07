@@ -1,4 +1,5 @@
 import { DIGEST_ROW_ID } from "@terno/core";
+import { conversationKeys } from "~/lib/conversation-keys";
 import { focusAccount, goToAccount, goToFolder } from "~/lib/account-folders";
 import { normalizeText, remindPresets, separatesTabs, snippetPreview, TABS, type CategoryColor, type ReminderKind, type Snippet } from "@terno/core";
 import { t, type TextKey } from "@terno/i18n";
@@ -324,6 +325,8 @@ export function CommandPalette() {
       add({ id: "thread.print", group: "conversation", label: t("palette.print"), icon: <Printer />, shortcut: isMac ? "⌘P" : "Ctrl+P", testId: "palette-print", ...synonyms("palette.alias.print"), keywords: english("palette.print"), run: () => printCommand("print") });
       add({ id: "thread.exportPdf", group: "conversation", label: t("palette.exportPdf"), icon: <FileDown />, shortcut: isMac ? "⇧⌘P" : "Ctrl+Shift+P", testId: "palette-pdf", keywords: english("palette.exportPdf"), run: () => printCommand("pdf") });
       // plan 149: the keyboard's way to the reader's menu; the digest's row isn't a conversation
+      // plan 158: every message open, or folded again, in a conversation of several
+      if (conversationKeys.current) add({ id: "message.toggleAll", group: "conversation", label: t(conversationKeys.current.allOpen() ? "reader.collapseAll" : "reader.expandAll"), icon: <Layers />, shortcut: "⇧E", testId: "palette-toggle-all", run: () => conversationKeys.current?.toggleAll() });
       if (!onDigest) add({ id: "thread.copyText", group: "conversation", label: t("threadMenu.copyText"), icon: <Copy />, testId: "palette-copy-text", ...synonyms("palette.alias.copyText", english("threadMenu.copyText")), run: copyOpenThread });
     }
     add({ id: "list.selectAll", group: "actions", label: t("palette.selectAll"), icon: <CheckCheck />, shortcut: "⌘A", keywords: english("palette.selectAll"), run: selectAll });

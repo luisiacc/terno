@@ -6,7 +6,7 @@ import { ReaderAttachments } from "./attachments";
 import type { Account, Category, CategoryColor, MessageDetail, Reason, ThreadDetail } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { ButtonGroup, ButtonGroupItem } from "@terno/ui/components/button-group";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Separator } from "@terno/ui/components/separator";
 import { Chip } from "@terno/ui/components/chip";
 import { CategoryDot } from "@terno/ui/components/category-dot";
@@ -15,7 +15,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Forward, Inbox, Layers, Mail, OctagonAlert, Printer, Reply, ReplyAll, Sparkles, SquarePen, Star, Tag, Trash2 } from "@terno/ui/icons";
+import { Archive, Bell, ChevronDown, ChevronLeft, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Printer, Reply, ReplyAll, Sparkles, SquarePen, Star, Tag, Trash2 } from "@terno/ui/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
@@ -33,14 +33,17 @@ import { composeFocusPending, composeLanding, registerReaderFocusDestination, re
 import { act, cancelMarkRead, openCompose, readChosenThread, scheduleMarkRead, toggleStar } from "~/lib/actions";
 import { acceptSuggestion, answerReview, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { t } from "@terno/i18n";
-import { fullDate, messageDate } from "~/lib/format";
+import { fullDate, listDate, messageDate, messageTime } from "~/lib/format";
 import { SenderAvatar } from "./sender-avatar";
 import { chooseOpenThread, inSeparateTab, onThreadChosen, openedByApp, setApp, useApp } from "~/state/app";
 import { hydrateSelectedThread, useThread, useThreadGone } from "~/state/threads";
-import { printCommand } from "~/lib/print-open";
+import { conversationKeys } from "~/lib/conversation-keys";
+import { copyThreadText } from "~/lib/copy-thread";
+import { openPrint } from "~/lib/print-open";
+import { isMac } from "~/lib/select";
 import { HtmlBody, TextBody } from "./mail-body";
 import { MailReaderView } from "./mail-reader-view";
-import { backgroundMenu, MessageMenu } from "./message-menu";
+import { backgroundMenu, MessageActions, MessageMenu } from "./message-menu";
 import { reasonText } from "~/lib/reasons";
 import { useDesign, variant } from "~/lib/design";
 import { Kbd } from "@terno/ui/components/kbd";
@@ -93,7 +96,7 @@ function RemindButton({ threadId }: { threadId: number }) {
                   aria-label={label}
                   data-testid="action-remind"
                   data-set={reminder ? true : undefined}
-                  className={cn(tool, "text-muted-foreground hover:text-foreground", reminder && "text-primary hover:text-primary")}
+                  className={cn(tool, reminder && "text-primary hover:text-primary")}
                 />
               }
             />
@@ -114,17 +117,54 @@ function RemindButton({ threadId }: { threadId: number }) {
 }
 
 // the reader's toolbar icons: out of the window's drag region, at the toolbar's line weight, a size down where the reader is narrow
-const tool = "no-drag size-8 rounded-md @max-[560px]:size-7 [&_svg]:[--icon-line:var(--icon-line-toolbar)]";
+const tool = "no-drag size-8 rounded-md text-foreground/75 hover:text-foreground @max-[560px]:size-7 [&_svg]:[--icon-line:var(--icon-line-toolbar)]";
 
 // one column for the toolbar and the conversation, so their edges agree at every width (narrow: less margin, for the toolbar's icons)
 const COLUMN = "mx-auto w-full max-w-(--reader-max) px-(--reader-pad-x) @max-[420px]:px-4";
 
 /** Between the toolbar's groups; a narrow reader has no room for it. */
-const ToolbarDivider = () => <Separator orientation="vertical" className="my-auto h-4 @max-[420px]:hidden" />;
+const ToolbarDivider = ({ className }: { className?: string }) => <Separator orientation="vertical" className={cn("my-auto h-4 @max-[420px]:hidden", className)} />;
+
+/** What's done to a whole conversation less often than triage: print, export, copy. Their keys and the palette still reach them. */
+function ToolbarMore({ threadId }: { threadId: number }) {
+  return (
+    <DropdownMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <DropdownMenuTrigger
+              render={<Button variant="ghost" size="icon-sm" aria-label={t("reader.more")} data-testid="action-more" className={tool} />}
+            />
+          }
+        >
+          <Ellipsis />
+        </TooltipTrigger>
+        <TooltipContent>{t("reader.more")}</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="start" sideOffset={6} className="w-64" data-testid="reader-more-menu">
+        <DropdownMenuItem data-testid="action-print" onClick={() => openPrint({ threadId, messageId: null, intent: "print" })}>
+          <Printer />
+          <span className="flex-1">{t("palette.print")}</span>
+          <DropdownMenuShortcut>{isMac ? "⌘P" : "Ctrl+P"}</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuItem data-testid="action-pdf" onClick={() => openPrint({ threadId, messageId: null, intent: "pdf" })}>
+          <FileDown />
+          <span className="flex-1">{t("palette.exportPdf")}</span>
+          <DropdownMenuShortcut>{isMac ? "⇧⌘P" : "Ctrl+Shift+P"}</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem data-testid="action-copy-text" onClick={() => copyThreadText(threadId)}>
+          <Copy />
+          <span className="flex-1">{t("threadMenu.copyText")}</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 /**
  * One way to reply: Reply in words, and the others a click away beside it. Reply all only when it reaches someone Reply
- * doesn't (`a` still works: it's the same as Reply then). The pill also shows its key.
+ * doesn't (`a` still works: it's the same as Reply then), and then as direct as Reply where there's room. The pill also shows its key.
  */
 function ReplyGroup({ replyAll }: { replyAll: boolean }) {
   const pill = useDesign().variants.replyAction === "pill";
@@ -138,7 +178,7 @@ function ReplyGroup({ replyAll }: { replyAll: boolean }) {
     });
   };
   return (
-    <ButtonGroup aria-label={t("reader.group.respond")} className={cn("no-drag [&_svg]:[--icon-line:var(--icon-line-toolbar)]", pill && "rounded-full")}>
+    <ButtonGroup aria-label={t("reader.group.respond")} className={cn("no-drag ml-auto [&_svg]:[--icon-line:var(--icon-line-toolbar)]", pill && "rounded-full")}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -155,6 +195,21 @@ function ReplyGroup({ replyAll }: { replyAll: boolean }) {
           <Shortcut keys="r" />
         </TooltipContent>
       </Tooltip>
+      {replyAll && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <ButtonGroupItem iconOnly aria-label={t("actions.replyAll")} data-testid="action-reply-all-direct" onClick={() => choose("replyAll")} className="w-8 @max-[560px]:hidden">
+                <ReplyAll />
+              </ButtonGroupItem>
+            }
+          />
+          <TooltipContent className="flex items-center gap-2">
+            {t("actions.replyAll")}
+            <Shortcut keys="a" />
+          </TooltipContent>
+        </Tooltip>
+      )}
       <DropdownMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
         <Tooltip>
           <TooltipTrigger
@@ -224,66 +279,77 @@ function Recipients({ m, className }: { m: MessageDetail; className?: string }) 
   );
 }
 
-/** A message header's state, at the column's edge: it turns as the message opens. */
-function Disclosure({ open }: { open: boolean }) {
-  return <ChevronRight aria-hidden className={cn("size-3.5 shrink-0 self-center text-muted-foreground transition-transform duration-base ease-motion group-hover/mh:text-foreground", open && "rotate-90 self-start mt-1")} />;
-}
+/**
+ * A long preview cut for the name a screen reader says, which ends where the row's does.
+ */
+const previewFor = (snippet: string) => (snippet.length > 80 ? `${snippet.slice(0, 80).trimEnd()}…` : snippet);
 
 /**
  * `headless`: the sender card above the subject shows this message's header (Lumen, one message: plan 59), so it
  * renders its body alone and never folds. Only the header comes and goes: the body keeps its place (and its frames)
- * when a second message arrives. `knownEmail`: an address already on screen (the card's), not revealed again on hover.
+ * when a second message arrives. `timed`: another message of the conversation shares its day, so a folded row says the
+ * time as well (while the row has room). `current`: N or P put you here.
+ * A header is one family, open or folded: the same avatar column, the same name column, dates on the column's edge. The
+ * open one's weight, recipients and body are what say it's open; its actions sit under the date, in a place kept for them.
  */
-function Message({ m, expanded, onToggle, icons, headless, knownEmail }: { m: MessageDetail; expanded: boolean; onToggle: () => void; icons: boolean; headless: boolean; knownEmail: string | null }) {
+function Message({ m, threadId, newest, expanded, onToggle, icons, headless, timed, current, onLeave }: { m: MessageDetail; threadId: number; newest: boolean; expanded: boolean; onToggle: () => void; icons: boolean; headless: boolean; timed: boolean; current: boolean; onLeave: () => void }) {
   const remoteImages = useApp((s) => s.settings?.remoteImages ?? "ask");
   const mailAppearance = useApp((s) => s.settings?.htmlMailAppearance ?? "auto");
   const name = m.from.name || m.from.email;
   const bodyId = `msg-body-${m.id}`;
   const open = headless || expanded;
+  const date = messageDate(m.date);
   return (
     <article data-testid="message" data-message-id={m.id} data-expanded={open || undefined} className="hairline-b">
-      {/* one heading and one button in both states, so the focused control survives expanding and collapsing */}
-      {!headless && <h3>
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-controls={bodyId}
-          title={fullDate(m.date)}
-          onClick={onToggle}
-          data-testid="message-toggle"
-          className={cn(
-            "group/mh -mx-2 flex w-[calc(100%+1rem)] gap-2.5 rounded-lg px-2 text-left outline-none transition-colors hover:bg-tint focus-visible:ring-2 focus-visible:ring-ring",
-            expanded ? "items-start pt-2.5 pb-1.5" : "h-9 items-center text-sm",
-          )}
-        >
-          {expanded ? (
-            <>
-              <SenderAvatar name={name} email={m.from.email} icon={icons} className="mt-px size-(--avatar-message) text-2xs" />
-              <span className="min-w-0 flex-1">
-                <span className="flex items-baseline gap-2">
-                  <span className="type-sender-name min-w-0 truncate">{name}</span>
-                  {m.from.name && m.from.email.toLowerCase() !== knownEmail?.toLowerCase() && <span className="min-w-0 flex-1 basis-0 truncate text-xs text-muted-foreground opacity-0 group-hover/mh:opacity-100 group-focus-reveal/mh:opacity-100">{m.from.email}</span>}
-                  <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{messageDate(m.date)}</span>
+      {/* one heading and one button in both states, so the focused control survives expanding and collapsing; the actions sit beside it, never inside */}
+      {!headless && <div className="group/mh relative">
+        <h3>
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={bodyId}
+            aria-label={expanded ? t("reader.message.header", { name, date }) : t("reader.message.headerPreview", { name, date, preview: previewFor(m.snippet) })}
+            title={fullDate(m.date)}
+            onClick={onToggle}
+            onBlur={onLeave}
+            data-testid="message-toggle"
+            data-current={current || undefined}
+            className={cn(
+              "-mx-2 flex w-[calc(100%+1rem)] gap-2.5 rounded-lg px-2 text-left outline-none transition-colors group-hover/mh:bg-tint data-current:bg-tint focus-visible:ring-2 focus-visible:ring-ring",
+              expanded ? "items-start pt-3 pb-1.5" : "h-9 items-center text-sm",
+            )}
+          >
+            {expanded ? (
+              <>
+                <SenderAvatar name={name} email={m.from.email} icon={icons} className="mt-px size-(--avatar-message) text-2xs" />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-baseline gap-2">
+                    <span className="type-sender-name min-w-0 truncate">{name}</span>
+                    {m.from.name && <span className="min-w-0 flex-1 basis-0 truncate text-xs text-muted-foreground">{m.from.email}</span>}
+                    <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{date}</span>
+                  </span>
+                  <Recipients m={m} className="mt-px pr-14" />
                 </span>
-                <Recipients m={m} className="mt-px" />
-              </span>
-              <Disclosure open />
-            </>
-          ) : (
-            <>
-              <SenderAvatar name={name} email={m.from.email} icon={icons} className="size-(--avatar-collapsed) text-2xs" />
-              <span className="shrink-0 font-medium">{name}</span>
-              <span className="min-w-0 flex-1 truncate text-muted-foreground">{m.snippet}</span>
-              <span className="shrink-0 text-xs text-muted-foreground tabular">{messageDate(m.date)}</span>
-              <Disclosure open={false} />
-            </>
-          )}
-        </button>
-      </h3>}
+              </>
+            ) : (
+              <>
+                <SenderAvatar name={name} email={m.from.email} icon={icons} className="size-(--avatar-collapsed) text-2xs" />
+                <span className="max-w-[45%] shrink-0 truncate">{name}</span>
+                <span className="min-w-0 flex-1 truncate text-[length:var(--ds-text-control)] text-muted-foreground">{m.snippet}</span>
+                <span className="shrink-0 text-xs text-muted-foreground tabular">
+                  {listDate(m.date)}
+                  {timed && <span className="@max-[560px]:hidden">{messageTime(m.date)}</span>}
+                </span>
+              </>
+            )}
+          </button>
+        </h3>
+        {expanded && <MessageActions threadId={threadId} messageId={m.id} quiet={!newest} className="absolute -right-[5px] bottom-0.5" />}
+      </div>}
       {/* the region is always there (aria-controls); its content is mounted only while open */}
       <div id={bodyId}>
         <Expand open={open} onOpening={(el) => keepInView(el.closest("article") ?? el)}>
-          <div className={cn("pb-5", headless ? "pt-4" : "pt-1.5")}>
+          <div className={cn("pb-4", headless ? "pt-3" : "pt-2")}>
             {m.bodyHtml ? (
               <HtmlBody html={m.bodyHtml} messageId={m.id} accountId={m.accountId} attachments={m.attachments} remoteImages={remoteImages} spam={!icons} appearance={mailAppearance} />
             ) : m.bodyText !== null ? (
@@ -301,16 +367,12 @@ function Message({ m, expanded, onToggle, icons, headless, knownEmail }: { m: Me
 }
 
 /**
- * The conversation: every message, with runs of 4+ collapsed ones folded into
- * one "N more messages" disclosure. Keyed by thread: each one starts from its
- * defaults (unread messages and the last one open) on mount, so a swap never
- * animates, and keeps each message's while it is shown: the dwell's mark-read
- * or a newer message never folds one away under the reader.
+ * Which messages of a conversation show open. Keyed by thread (its component is): each one starts from its defaults
+ * (unread messages and the last one open) on mount, so a swap never animates, and keeps each message's while it is
+ * shown: the dwell's mark-read or a newer message never folds one away under the reader. Runs of 4+ collapsed ones
+ * fold into one "N more messages" disclosure. Also the keyboard's way through them (N, P, ⇧E).
  */
-/** `icons`: senders' icons may be asked for (never in spam: plan 22) */
-/** `headless`: the card above shows the one message's header (plan 59); `knownEmail`: the card's address */
-function Conversation({ messages, icons, headless, knownEmail }: { messages: MessageDetail[]; icons: boolean; headless: boolean; knownEmail: string | null }) {
-  renderProbe("Conversation");
+function useFold(messages: MessageDetail[]) {
   const last = messages[messages.length - 1];
   const opensAt = (m: MessageDetail) => !m.isRead || m.id === last?.id;
   const [shown, setShown] = useState(() => new Map(messages.map((m) => [m.id, opensAt(m)])));
@@ -334,6 +396,7 @@ function Conversation({ messages, icons, headless, knownEmail }: { messages: Mes
     revealMessage(messageId);
   }, [summaryReveal, messages]);
   const isOpen = (m: MessageDetail) => own.toggled.get(m.id) ?? shown.get(m.id) ?? opensAt(m);
+  const allOpen = messages.every(isOpen);
   const toggle = (id: number, now: boolean) => setState({ ...own, toggled: new Map(own.toggled).set(id, !now) });
   // every message of a revealed run stays unfolded, whatever opens or closes around it later
   const reveal = (ids: number[]) => {
@@ -341,6 +404,44 @@ function Conversation({ messages, icons, headless, knownEmail }: { messages: Mes
     // the button goes away: focus moves to the first message it revealed
     requestAnimationFrame(() => document.querySelector<HTMLElement>(`[aria-controls="msg-body-${ids[0]}"]`)?.focus());
   };
+  // collapsing all still leaves the newest to read, and long runs fold again
+  const toggleAll = () => setState({ toggled: new Map(messages.map((m) => [m.id, !allOpen || m.id === last?.id])), revealed: new Set(allOpen ? [] : messages.map((m) => m.id)) });
+
+  // where N and P are: the message they last went to, or the newest one open. The tint says so (no ring: a shortcut moved focus), until focus leaves
+  const position = useRef<number | null>(null);
+  const [current, setCurrent] = useState<number | null>(null);
+  const step = (delta: 1 | -1) => {
+    const ids = messages.map((m) => m.id);
+    const from = ids.indexOf(position.current ?? [...messages].reverse().find(isOpen)?.id ?? last?.id ?? -1);
+    const id = ids[Math.max(0, Math.min(ids.length - 1, from + delta))];
+    if (id === undefined) return;
+    position.current = id;
+    setCurrent(id);
+    // the whole run it's in unfolds, as the disclosure's would: a message opened in it later doesn't fold the rest away
+    const at = messages.findIndex((m) => m.id === id);
+    const run = [id];
+    for (let i = at - 1; i >= 0 && !isOpen(messages[i]!); i--) run.push(messages[i]!.id);
+    for (let i = at + 1; i < messages.length && !isOpen(messages[i]!); i++) run.push(messages[i]!.id);
+    setState({ ...own, revealed: new Set([...own.revealed, ...run]) });
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[aria-controls="msg-body-${id}"]`)?.focus({ preventScroll: true }));
+    revealMessage(id);
+  };
+  useEffect(() => {
+    if (messages.length < 2) return;
+    conversationKeys.current = { step, toggleAll, allOpen: () => allOpen };
+    return () => { conversationKeys.current = null; };
+  });
+  return { isOpen, allOpen, toggle, reveal, toggleAll, revealed: own.revealed, current, clearCurrent: () => setCurrent(null) };
+}
+type Fold = ReturnType<typeof useFold>;
+
+/** `icons`: senders' icons may be asked for (never in spam: plan 22); `headless`: the card above shows the one message's header (plan 59) */
+function Conversation({ threadId, messages, fold, icons, headless }: { threadId: number; messages: MessageDetail[]; fold: Fold; icons: boolean; headless: boolean }) {
+  renderProbe("Conversation");
+  const { isOpen, toggle, reveal, revealed, current, clearCurrent } = fold;
+  const last = messages[messages.length - 1];
+  const days = new Map<string, number>();
+  for (const m of messages) days.set(listDate(m.date), (days.get(listDate(m.date)) ?? 0) + 1);
 
   const items: ({ kind: "message"; m: MessageDetail } | { kind: "more"; ids: number[] })[] = [];
   for (let i = 0; i < messages.length; ) {
@@ -348,7 +449,7 @@ function Conversation({ messages, icons, headless, knownEmail }: { messages: Mes
     while (j < messages.length && !isOpen(messages[j]!)) j++;
     const run = j - i;
     const ids = messages.slice(i, j).map((m) => m.id);
-    if (run >= 4 && !ids.some((id) => own.revealed.has(id))) {
+    if (run >= 4 && !ids.some((id) => revealed.has(id))) {
       items.push({ kind: "more", ids });
       i = j;
     } else if (run > 0) {
@@ -359,10 +460,11 @@ function Conversation({ messages, icons, headless, knownEmail }: { messages: Mes
     }
   }
   return (
-    <div className="hairline-t">
+    // the stronger hairline: these lines are what tell one message from the next
+    <div className="hairline-t [--hairline-color:var(--border)]">
       {items.map((it) =>
         it.kind === "message" ? (
-          <Message key={it.m.id} m={it.m} icons={icons} headless={headless && messages.length === 1} knownEmail={knownEmail} expanded={isOpen(it.m)} onToggle={() => toggle(it.m.id, isOpen(it.m))} />
+          <Message key={it.m.id} m={it.m} threadId={threadId} newest={it.m.id === last?.id} icons={icons} headless={headless && messages.length === 1} timed={(days.get(listDate(it.m.date)) ?? 0) > 1} current={current === it.m.id} onLeave={clearCurrent} expanded={isOpen(it.m)} onToggle={() => toggle(it.m.id, isOpen(it.m))} />
         ) : (
           <div key={`more-${it.ids[0]}`} className="hairline-b">
             <button
@@ -371,11 +473,11 @@ function Conversation({ messages, icons, headless, knownEmail }: { messages: Mes
               aria-controls={`more-${it.ids[0]}`}
               onClick={() => reveal(it.ids)}
               data-testid="more-messages"
-              className="group/mh -mx-2 flex h-9 w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 text-left text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-tint hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className="-mx-2 flex h-9 w-[calc(100%+1rem)] items-center gap-2.5 rounded-lg px-2 text-left text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-tint hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <Layers className="size-3.5" />
+              {/* on the avatars' column, its words on the names' */}
+              <span className="flex size-(--avatar-collapsed) shrink-0 items-center justify-center"><Layers className="size-3.5" /></span>
               <span className="min-w-0 flex-1 truncate">{t("reader.moreMessages", { count: it.ids.length })}</span>
-              <Disclosure open={false} />
             </button>
             <div id={`more-${it.ids[0]}`} />
           </div>
@@ -434,8 +536,26 @@ function AccountMark({ account }: { account: Account }) {
   );
 }
 
+/** How many messages, and all of them open or folded at once. The count gives way first where the reader is narrow. */
+function MessageCount({ count, fold }: { count: number; fold: Fold }) {
+  const label = t(fold.allOpen ? "reader.collapseAll" : "reader.expandAll");
+  return (
+    <span className="inline-flex items-center gap-1.5" data-testid="message-count">
+      <span className="tabular @max-[560px]:hidden">{t("reader.messageCount", { count })}</span>
+      <span aria-hidden className="@max-[560px]:hidden">·</span>
+      <Tooltip>
+        <TooltipTrigger render={<Button variant="link-secondary" size="xs" onClick={fold.toggleAll} data-testid="expand-all" className="font-normal text-foreground/80 hover:text-foreground" />}>{label}</TooltipTrigger>
+        <TooltipContent className="flex items-center gap-2">
+          {label}
+          <Shortcut keys="shift+e" />
+        </TooltipContent>
+      </Tooltip>
+    </span>
+  );
+}
+
 /** The account, the categories (with why and how to undo) and the engine's suggestions (y / n): the same in every design. */
-function ThreadChips({ detail, account, cats, className }: { detail: ThreadDetail; account: Account | undefined; cats: Category[]; className?: string }) {
+function ThreadChips({ detail, account, cats, fold, className }: { detail: ThreadDetail; account: Account | undefined; cats: Category[]; fold: Fold; className?: string }) {
   const categories = useApp((s) => s.categories);
   /** plan 80: in a category's Review list, its chip is the one y and n answer, and an answer takes the row out of the list */
   const reviewing = useApp((s) => s.reviewCategoryId);
@@ -446,6 +566,7 @@ function ThreadChips({ detail, account, cats, className }: { detail: ThreadDetai
   return (
     <div data-testid="thread-chips" className={cn("flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs text-muted-foreground", className)}>
       {account && <AccountMark account={account} />}
+      {detail.messages.length > 1 && <MessageCount count={detail.messages.length} fold={fold} />}
       {cats.map((c) => {
         const auto = detail.categorization?.auto.find((a) => a.categoryId === c.id);
         return (
@@ -519,50 +640,49 @@ function MessageDate({ ms, className }: { ms: number; className?: string }) {
   );
 }
 
-/** Who the conversation is with: the last person who wrote who isn't you (or its sender when every message is yours). */
-function senderOf(detail: ThreadDetail): { name: string; email: string } {
-  const last = [...detail.messages].reverse().find((m) => !m.isSent);
-  return last ? { name: last.from.name || last.from.email, email: last.from.email } : { name: detail.thread.fromName || detail.thread.fromEmail, email: detail.thread.fromEmail };
-}
+// a narrow reader keeps the mail's first line high: less around a smaller subject
+const HEADER = "mb-3 @max-[560px]:mb-2";
 
-/** The subject, chips and (Lumen) sender above the conversation: the design arranges the same parts, and the mail starts soon after them. */
-function ReaderHeader({ detail, account, cats }: { detail: ThreadDetail; account: Account | undefined; cats: Category[] }) {
+/** The subject, chips and (Lumen, one message) sender above the conversation: the design arranges the same parts, and the mail starts soon after them. */
+function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; account: Account | undefined; cats: Category[]; fold: Fold }) {
   const design = useDesign();
   const subject = detail.thread.subject || t("common.noSubject");
-  const heading = <h2 id="reader-subject" data-testid="reader-subject" className="type-reader-subject min-w-0">{subject}</h2>;
+  const heading = <h2 id="reader-subject" data-testid="reader-subject" className="type-reader-subject min-w-0 @max-[560px]:text-lg @max-[560px]:tracking-[-0.01em]">{subject}</h2>;
   // on the subject's line, at the dates' edge, while they fit; on a line of their own when they don't
   const titled = (
     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
       {heading}
-      <ThreadChips detail={detail} account={account} cats={cats} />
+      <ThreadChips detail={detail} account={account} cats={cats} fold={fold} />
     </div>
   );
   return variant(design.variants.readerHeader, {
-    classic: <div className="mb-3">{titled}</div>,
+    classic: <div className={HEADER}>{titled}</div>,
     "chips-display": (
-      <div className="mb-3">
-        <ThreadChips detail={detail} account={account} cats={cats} className="mb-1.5" />
+      <div className={HEADER}>
+        <ThreadChips detail={detail} account={account} cats={cats} fold={fold} className="mb-1.5 @max-[560px]:mb-1" />
         {heading}
       </div>
     ),
     "sender-card": (() => {
-      // one message: the card is its header (who wrote it, to whom, when), so the message shows no second one (plan 59)
+      // one message: the card is its header (who wrote it, to whom, when), so the message shows no second one (plan 59). More: each message has its own, and a card would say one of them twice
       const one = detail.messages.length === 1 ? detail.messages[0]! : null;
-      const who = one ? { name: one.from.name || one.from.email, email: one.from.email } : senderOf(detail);
+      if (!one) return <div className={HEADER}>{titled}</div>;
+      const name = one.from.name || one.from.email;
       return (
-        <div className="mb-3">
+        <div className={HEADER}>
           {titled}
           {/* the message's id: a right-click here is a right-click on the message (Print this message, Copy) */}
-          <div data-testid="sender-card" data-message-id={one?.id} className="mt-1.5 flex items-start gap-2.5">
-            <SenderAvatar name={who.name} email={who.email} icon={iconsFor(detail.thread)} className="size-(--avatar-sender) text-xs" />
+          <div data-testid="sender-card" data-message-id={one.id} className="relative mt-1.5 flex items-start gap-2.5">
+            <SenderAvatar name={name} email={one.from.email} icon={iconsFor(detail.thread)} className="size-(--avatar-sender) text-xs" />
             <div className="flex min-h-(--avatar-sender) min-w-0 flex-1 flex-col justify-center">
               <span className="flex items-baseline gap-2">
-                <span className="type-sender-name min-w-0 truncate">{who.name}</span>
-                {who.name !== who.email && <span className="min-w-0 flex-1 basis-0 truncate text-xs text-muted-foreground">{who.email}</span>}
-                {one && <MessageDate ms={one.date} className="ml-auto shrink-0 text-xs text-muted-foreground" />}
+                <span className="type-sender-name min-w-0 truncate">{name}</span>
+                {name !== one.from.email && <span className="min-w-0 flex-1 basis-0 truncate text-xs text-muted-foreground">{one.from.email}</span>}
+                <MessageDate ms={one.date} className="ml-auto shrink-0 text-xs text-muted-foreground" />
               </span>
-              {one && <Recipients m={one} className="mt-px" />}
+              <Recipients m={one} className="mt-px pr-14" />
             </div>
+            <MessageActions threadId={detail.thread.id} messageId={one.id} quiet={false} className="absolute -right-[5px] -bottom-1" />
           </div>
         </div>
       );
@@ -580,13 +700,28 @@ function useListTitle(): string {
   });
 }
 
-/** List's page (plan 24): Back to the list, at the toolbar's start. */
+// a wide pane has room beside the column: Back and the steps go to the pane's edges, so the toolbar on the column is the one Split has
+const BESIDE = "@min-[1080px]:absolute @min-[1080px]:top-0 @min-[1080px]:h-[52px]";
+
+/** List's page (plan 24): Back to the list, at the toolbar's start, and saying where to once there's room. */
 function BackButton() {
   const title = useListTitle();
+  const label = t("reader.back", { mailbox: title });
   return (
-    <IconButton className={tool} label={t("reader.back", { mailbox: title })} shortcut="escape" onClick={goBack} data-testid="reader-back">
-      <ChevronLeft />
-    </IconButton>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button variant="ghost" size="sm" aria-label={label} onClick={goBack} data-testid="reader-back" className={cn(tool, "w-auto gap-1 px-1.5 @max-[1079px]:w-8 @max-[1079px]:px-0 @max-[560px]:w-7")}>
+            <ChevronLeft className="size-4" />
+            <span className="max-w-24 truncate @max-[1079px]:hidden">{title}</span>
+          </Button>
+        }
+      />
+      <TooltipContent className="flex items-center gap-2">
+        {label}
+        <Shortcut keys="escape" />
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -598,7 +733,7 @@ function StepButtons({ id }: { id: number }) {
   const busy = useList((s) => s.loadingMore);
   return (
     // the toolbar's last glyph, on the column's right edge
-    <div className="-mr-2 flex items-center gap-0.5 @max-[560px]:-mr-1.5" role="group" aria-label={t("reader.group.navigate")}>
+    <div className={cn("-mr-2 flex items-center gap-0.5 @max-[560px]:-mr-1.5 @min-[1080px]:right-4 @min-[1080px]:mr-0", BESIDE)} role="group" aria-label={t("reader.group.navigate")}>
       <IconButton className={tool} label={t("reader.newer")} shortcut="k" onClick={() => move(-1)} data-testid="reader-newer" disabled={at === undefined || at === 0}>
         <ChevronUp />
       </IconButton>
@@ -618,6 +753,23 @@ export function Reader() {
   // plan 145: the digest's row reads here, and isn't a thread
   if (selectedId === DIGEST_ROW_ID) return <DigestPage />;
   return <MailReaderView identity={selectedId} focusRequest={focusRequest}><ReaderContent /></MailReaderView>;
+}
+
+/** One conversation, from its subject to its last message: keyed by thread, so what's open starts afresh with each. */
+function Thread({ detail, account, cats, summaryShown }: { detail: ThreadDetail; account: Account | undefined; cats: Category[]; summaryShown: boolean }) {
+  const fold = useFold(detail.messages);
+  const cardHeader = useDesign().variants.readerHeader === "sender-card";
+  return (
+    <MessageMenu threadId={detail.thread.id}>
+      <div data-conversation-menu>
+        {/* inside the menu: Lumen's card can stand for the message (plan 59) */}
+        <ReaderHeader detail={detail} account={account} cats={cats} fold={fold} />
+        <ThreadFollowups detail={detail} />
+        {summaryShown && <ThreadSummary detail={detail} />}
+        <Conversation threadId={detail.thread.id} messages={detail.messages} fold={fold} icons={iconsFor(detail.thread)} headless={cardHeader} />
+      </div>
+    </MessageMenu>
+  );
 }
 
 function ReaderContent() {
@@ -715,24 +867,28 @@ function ReaderContent() {
   const thread = detail?.thread;
   const cats = thread ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
   const account = thread ? accounts.find((a) => a.id === thread.accountId) : undefined;
-  const cardHeader = design.variants.readerHeader === "sender-card";
   const myEmails = accounts.map((a) => a.email);
   const replyAll = detail ? reachesSeveral(detail, myEmails) : false;
 
   return (
     <section ref={sectionRef} tabIndex={page ? -1 : undefined} aria-labelledby={page && detail ? "reader-subject" : undefined} onPointerDownCapture={chooseOpenThread} className="@container flex h-full min-h-0 flex-col bg-background outline-none" data-testid="reader">
-      <div ref={toolbarRef} className="drag-region scroll-hairline shrink-0">
+      {/* the same gutter as the conversation below, so the two columns share their edges */}
+      <div ref={toolbarRef} className="drag-region scroll-hairline relative shrink-0 overflow-hidden [scrollbar-gutter:stable]">
         {/* on the conversation's column: the first glyph on its left edge, the last control on its right, whatever the width */}
         <div data-reader-toolbar className={cn(COLUMN, "flex h-[52px] items-center gap-2 @max-[420px]:gap-1 [&>:first-child]:-ml-2 @max-[560px]:[&>:first-child]:-ml-1.5")}>
-        {page && <BackButton />}
-        {/* List's page hides the list, and with it the one place this design has New message */}
-        {page && design.variants.compose === "list-header" && (
-          <IconButton className={tool} label={t("list.compose")} shortcut="c" onClick={() => void openCompose("new")} data-testid="reader-compose">
-            <SquarePen />
-          </IconButton>
+        {page && (
+          <div className={cn("flex items-center gap-2 @max-[420px]:gap-1 @min-[1080px]:left-6", BESIDE)}>
+            <BackButton />
+            {/* List's page hides the list, and with it the one place this design has New message */}
+            {design.variants.compose === "list-header" && (
+              <IconButton className={tool} label={t("list.compose")} shortcut="c" onClick={() => void openCompose("new")} data-testid="reader-compose">
+                <SquarePen />
+              </IconButton>
+            )}
+          </div>
         )}
-        {page && <ToolbarDivider />}
-        <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.organize")}>
+        {page && <ToolbarDivider className="@min-[1080px]:hidden" />}
+        <div className={cn("flex items-center gap-0.5", page && "@min-[1080px]:-ml-2")} role="group" aria-label={t("reader.group.organize")}>
         {thread?.inTrash || thread?.inSpam ? (
           <IconButton className={tool} label={t("actions.moveToInbox")} onClick={() => act(thread.inSpam ? "notSpam" : "moveToInbox")} data-testid="action-inbox">
             <Inbox />
@@ -753,7 +909,7 @@ function ReaderContent() {
         <IconButton className={tool} label={t("actions.trash")} shortcut="#" onClick={() => act("trash")} data-testid="action-trash">
           <Trash2 />
         </IconButton>
-        <IconButton className={tool} label={t("actions.spam")} shortcut="!" onClick={() => act("spam")} data-testid="action-spam">
+        <IconButton className={tool} label={t("reader.markSpam")} shortcut="!" onClick={() => act("spam")} data-testid="action-spam">
           <OctagonAlert />
         </IconButton>
         </div>
@@ -772,20 +928,16 @@ function ReaderContent() {
         </IconButton>
         <RemindButton key={`remind-${selectedId}`} threadId={selectedId} />
         {summarizable(thread) && <SummarizeButton threadId={selectedId} />}
-        </div>
-        <div className="ml-auto flex items-center" role="group" aria-label={t("reader.group.print")}>
-          <IconButton className={tool} label={t("actions.print")} shortcut="mod+p" onClick={() => printCommand("print")} data-testid="action-print">
-            <Printer />
-          </IconButton>
+        <ToolbarMore threadId={selectedId} />
         </div>
         <ReplyGroup replyAll={replyAll} />
-        {page && <ToolbarDivider />}
+        {page && <ToolbarDivider className="@min-[1080px]:hidden" />}
         {page && <StepButtons id={selectedId} />}
         </div>
       </div>
       <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]" style={dock ? { paddingBottom: dock, scrollPaddingBottom: dock } : undefined} onContextMenu={backgroundMenu}>
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
-        <div data-reader-column className={cn(COLUMN, "pt-2 pb-16")}>
+        <div data-reader-column className={cn(COLUMN, "pt-2 pb-16 @max-[560px]:pt-0")}>
           {!detail && gone ? (
             <p data-testid="reader-gone" role="status" className="pt-8 text-center text-sm text-muted-foreground">
               {t("errors.threadGone")}
@@ -798,19 +950,11 @@ function ReaderContent() {
           ) : (
             <>
               {fromDigest && <Button variant="link-secondary" size="xs" className="mb-2" data-testid="back-to-digest" onClick={() => { useToday.setState({ fromDigest: false }); setApp({ selectedId: DIGEST_ROW_ID }); }}>{t("today.digest.back")}</Button>}
-              <MessageMenu threadId={detail.thread.id}>
-                <div data-conversation-menu>
-                  {/* inside the menu: Lumen's card can stand for the message (plan 59) */}
-                  <ReaderHeader detail={detail} account={account} cats={cats} />
-                  <ThreadFollowups key={`f${detail.thread.id}`} detail={detail} />
-                  {summaryShown && <ThreadSummary key={`s${detail.thread.id}`} detail={detail} />}
-                  <Conversation key={detail.thread.id} messages={detail.messages} icons={iconsFor(detail.thread)} headless={cardHeader} knownEmail={cardHeader ? senderOf(detail).email : null} />
-                </div>
-              </MessageMenu>
+              <Thread key={`t${detail.thread.id}`} detail={detail} account={account} cats={cats} summaryShown={summaryShown} />
               {/* plan 144: off, it never shows; a draft here means it's out of the way */}
               {repliesOn && !draftKey && <ReplyReady key={`r${detail.thread.id}`} threadId={detail.thread.id} />}
               <ScheduledReplyLine threadId={detail.thread.id} />
-              <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyName(detail, myEmails)} replyAll={replyAll} account={account} icons={iconsFor(detail.thread)} />
+              <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyName(detail, myEmails)} replyAll={replyAll} account={account} />
             </>
           )}
         </div>

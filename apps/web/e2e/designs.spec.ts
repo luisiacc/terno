@@ -84,7 +84,7 @@ test.describe("in every design", { tag: "@design" }, () => {
       );
       for (const [id, extra] of overflow) expect(extra, id).toBeLessThanOrEqual(0);
       const reader = (await page.getByTestId("reader").boundingBox())!;
-      for (const id of ["action-archive", "action-trash", "action-star", "action-reply", "action-reply-menu", "action-print"]) {
+      for (const id of ["action-archive", "action-trash", "action-star", "action-reply", "action-reply-menu", "action-more"]) {
         const b = (await page.getByTestId(id).boundingBox())!;
         expect(b.x, id).toBeGreaterThanOrEqual(reader.x);
         expect(b.x + b.width, id).toBeLessThanOrEqual(reader.x + reader.width + 0.5);
@@ -109,7 +109,7 @@ test.describe("in every design", { tag: "@design" }, () => {
       await openRow(page, 2);
       await expect(page.getByTestId("reader-subject")).toBeVisible();
       await expect(page.getByTestId("thread-chips")).toBeVisible();
-      for (const id of ["action-reply", "action-reply-menu", "action-archive", "action-print"]) await expect(page.getByTestId(id)).toBeVisible();
+      for (const id of ["action-reply", "action-reply-menu", "action-archive", "action-more"]) await expect(page.getByTestId(id)).toBeVisible();
       await expect(page.getByRole("button", { name: "Reply", exact: true })).toHaveCount(1);
       // plan 21: More (a disclosure) and the two pane edges (separators), named alike everywhere
       await expect(page.getByRole("button", { name: "More", exact: true })).toHaveAttribute("aria-expanded", "false");

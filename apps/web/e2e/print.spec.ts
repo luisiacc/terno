@@ -151,12 +151,13 @@ test.describe("print sheet", () => {
 
   test("from the toolbar (focus comes back to it), the thread menu, a message's menu, inside an HTML mail, and the palette", { tag: "@variant" }, async ({ app: page, server }) => {
     const ids = await open(page, server, "inline-replies", 'subject:"Preguntas sobre el contrato"');
+    await page.getByTestId("action-more").click();
     await page.getByTestId("action-print").click();
     await expect(sheet(page)).toBeVisible();
     await pressed(page, "print-scope-thread");
     await page.keyboard.press("Escape");
     await expect(sheet(page)).toHaveCount(0);
-    await expect(page.getByTestId("action-print")).toBeFocused();
+    await expect(page.getByTestId("action-more")).toBeFocused();
 
     // the thread's context menu: one conversation
     await page.locator(`[data-testid=thread-row][data-thread-id="${ids["inline-replies"]}"]`).click({ button: "right" });

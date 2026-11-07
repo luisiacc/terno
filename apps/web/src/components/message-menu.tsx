@@ -1,12 +1,20 @@
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "@terno/ui/components/context-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
+import { IconButton } from "@terno/ui/components/icon-button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
+import { Button } from "@terno/ui/components/button";
+import { cn } from "@terno/ui/lib/utils";
 import { t } from "@terno/i18n";
-import { Copy, FileDown, Printer } from "@terno/ui/icons";
-import { useState, type MouseEvent, type ReactElement } from "react";
+import { Copy, Ellipsis, FileDown, Forward, Printer, Reply, ReplyAll } from "@terno/ui/icons";
+import { useRef, useState, type ComponentType, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { composeLanding } from "~/lib/compose";
+import { identitiesIn, reachesSeveral } from "~/lib/compose-fields";
 import { copyThreadText } from "~/lib/copy-thread";
 import { openPrint, wantsNativeMenu, type PrintIntent } from "~/lib/print-open";
 import { isMac } from "~/lib/select";
 import { snack } from "~/lib/snack";
-import { setApp } from "~/state/app";
+import { setApp, useApp } from "~/state/app";
+import { useThread } from "~/state/threads";
 
 /**
  * A right-click on the reader's background is the conversation's too, so it is passed to the trigger as a mail
@@ -22,17 +30,136 @@ export function backgroundMenu(e: MouseEvent<HTMLElement>): void {
   trigger.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: e.clientX, clientY: e.clientY, button: 2 }));
 }
 
+type Respond = "reply" | "replyAll" | "forward";
+interface ItemParts {
+  Item: ComponentType<{ "data-testid"?: string; onClick?: () => void; children: ReactNode }>;
+  Separator: ComponentType;
+}
+
+/** Would answering everyone on this one message reach more than one other person? */
+function useReachesSeveral(threadId: number, messageId: number | null): boolean {
+  const detail = useThread(threadId);
+  const emails = useApp((s) => s.accounts.map((a) => a.email).join("\n"));
+  const message = detail?.messages.find((m) => m.id === messageId);
+  return Boolean(detail && message && reachesSeveral({ ...detail, messages: [message] }, identitiesIn(detail, emails.split("\n"))));
+}
+
+/** What a message offers, in its ⋯ menu and on a right-click alike (off a message, only the conversation's copy). */
+function MessageItems({ threadId, messageId, respond, parts: { Item, Separator } }: { threadId: number; messageId: number | null; respond: (mode: Respond) => void; parts: ItemParts }) {
+  const replyAll = useReachesSeveral(threadId, messageId);
+  const print = (intent: PrintIntent) => messageId !== null && openPrint({ threadId, messageId, intent });
+  return (
+    <>
+      {messageId !== null && (
+        <>
+          <Item data-testid="message-menu-reply" onClick={() => respond("reply")}>
+            <Reply />
+            <span className="flex-1">{t("actions.reply")}</span>
+          </Item>
+          {replyAll && (
+            <Item data-testid="message-menu-reply-all" onClick={() => respond("replyAll")}>
+              <ReplyAll />
+              <span className="flex-1">{t("actions.replyAll")}</span>
+            </Item>
+          )}
+          <Item data-testid="message-menu-forward" onClick={() => respond("forward")}>
+            <Forward />
+            <span className="flex-1">{t("actions.forward")}</span>
+          </Item>
+          <Separator />
+        </>
+      )}
+      <Item data-testid="message-menu-copy-text" onClick={() => copyThreadText(threadId)}>
+        <Copy />
+        <span className="flex-1">{t("threadMenu.copyText")}</span>
+      </Item>
+      {messageId !== null && (
+        <>
+          <Separator />
+          <Item data-testid="message-menu-print" onClick={() => print("print")}>
+            <Printer />
+            <span className="flex-1">{t("threadMenu.printMessage")}</span>
+          </Item>
+          <Item data-testid="message-menu-pdf" onClick={() => print("pdf")}>
+            <FileDown />
+            <span className="flex-1">{t("threadMenu.exportMessagePdf")}</span>
+          </Item>
+        </>
+      )}
+    </>
+  );
+}
+
+const CONTEXT_PARTS: ItemParts = { Item: ContextMenuItem, Separator: ContextMenuSeparator };
+const DROPDOWN_PARTS: ItemParts = { Item: DropdownMenuItem, Separator: DropdownMenuSeparator };
+
+/** Answers this message, wherever it is in the conversation; a menu's closing hands focus to the draft, so it restores none (`handedOff`). */
+function useRespond(threadId: number, messageId: number | null, fallback: () => HTMLElement | null | undefined) {
+  const handedOff = useRef(false);
+  const respond = (mode: Respond) => {
+    if (messageId === null) return;
+    handedOff.current = true;
+    void composeLanding(mode, threadId, 0, undefined, undefined, { sourceId: messageId }).then((landing) => {
+      if (landing.kind === "none" && document.activeElement === document.body) fallback()?.focus();
+    });
+  };
+  const finalFocus = () => {
+    const handed = handedOff.current;
+    handedOff.current = false;
+    return !handed;
+  };
+  return { respond, finalFocus };
+}
+
 /**
- * The conversation's menu: copy it as text (plan 149), and print or export the
- * message the right-click landed in (HTML mail replays its frame's right-click
- * here; off a message, the header or the background, only the first). One menu
- * around the conversation, no per-message trigger. Selected text adds Copy: the
+ * A message's own actions at the end of its header, so there's no scrolling to the end to answer it. The newest shows
+ * them; an older one on hover and focus (`quiet`), in a place kept for them, so nothing moves when they come.
+ */
+export function MessageActions({ threadId, messageId, quiet, className }: { threadId: number; messageId: number; quiet: boolean; className?: string }) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const { respond, finalFocus } = useRespond(threadId, messageId, () => trigger.current);
+  return (
+    <div
+      role="group"
+      aria-label={t("reader.message.actions")}
+      data-testid="message-actions"
+      data-quiet={quiet || undefined}
+      className={cn("flex items-center gap-px", quiet && "opacity-0 transition-opacity duration-fast group-hover/mh:opacity-100 group-has-[:focus-visible]/mh:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100", className)}
+    >
+      <IconButton size="icon-xs" label={t("reader.message.reply")} onClick={() => respond("reply")} data-testid="message-reply">
+        <Reply className="size-4" />
+      </IconButton>
+      <DropdownMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <DropdownMenuTrigger
+                render={<Button ref={trigger} variant="ghost" size="icon-xs" aria-label={t("reader.message.more")} data-testid="message-more" className="text-muted-foreground hover:text-foreground" />}
+              />
+            }
+          >
+            <Ellipsis className="size-4" />
+          </TooltipTrigger>
+          <TooltipContent>{t("reader.message.more")}</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="end" sideOffset={4} className="w-60" data-testid="message-actions-menu" finalFocus={finalFocus}>
+          <MessageItems threadId={threadId} messageId={messageId} respond={respond} parts={DROPDOWN_PARTS} />
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+/**
+ * The conversation's menu: answer, print or export the message the right-click landed in (HTML mail replays its
+ * frame's right-click here), and copy the conversation as text (plan 149); off a message, the header or the
+ * background, only the copy. One menu around the conversation, no per-message trigger. Selected text adds Copy: the
  * desktop app has no native menu to offer it.
  */
 export function MessageMenu({ threadId, children }: { threadId: number; children: ReactElement }) {
   const [messageId, setMessageId] = useState<number | null>(null);
   const [selected, setSelected] = useState("");
-  const print = (intent: PrintIntent) => messageId !== null && openPrint({ threadId, messageId, intent });
+  const { respond, finalFocus } = useRespond(threadId, messageId, () => document.querySelector<HTMLElement>(`[aria-controls="msg-body-${messageId}"]`));
   return (
     <ContextMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
       {/* the trigger wraps the whole conversation: mail stays selectable (the primitive defaults to select-none) */}
@@ -53,7 +180,7 @@ export function MessageMenu({ threadId, children }: { threadId: number; children
           setSelected(text.trim() ? text : "");
         }}
       />
-      <ContextMenuContent className="w-60" data-testid="message-menu">
+      <ContextMenuContent className="w-60" data-testid="message-menu" finalFocus={finalFocus}>
         {selected && (
           <>
             <ContextMenuItem data-testid="message-menu-copy" onClick={() => void navigator.clipboard.writeText(selected).catch(() => snack.error(t("threadMenu.copyFailed")))}>
@@ -64,23 +191,7 @@ export function MessageMenu({ threadId, children }: { threadId: number; children
             <ContextMenuSeparator />
           </>
         )}
-        <ContextMenuItem data-testid="message-menu-copy-text" onClick={() => copyThreadText(threadId)}>
-          <Copy />
-          <span className="flex-1">{t("threadMenu.copyText")}</span>
-        </ContextMenuItem>
-        {messageId !== null && (
-          <>
-            <ContextMenuSeparator />
-            <ContextMenuItem data-testid="message-menu-print" onClick={() => print("print")}>
-              <Printer />
-              <span className="flex-1">{t("threadMenu.printMessage")}</span>
-            </ContextMenuItem>
-            <ContextMenuItem data-testid="message-menu-pdf" onClick={() => print("pdf")}>
-              <FileDown />
-              <span className="flex-1">{t("threadMenu.exportMessagePdf")}</span>
-            </ContextMenuItem>
-          </>
-        )}
+        <MessageItems threadId={threadId} messageId={messageId} respond={respond} parts={CONTEXT_PARTS} />
       </ContextMenuContent>
     </ContextMenu>
   );

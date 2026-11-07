@@ -84,7 +84,7 @@ test.describe("reader conversation", () => {
       await fresh(page);
       await openRow(page, 0);
       const subject = (await page.getByTestId("reader-subject").textContent())!;
-      await expect(page.getByTestId("quick-reply")).toContainText(/Reply to \S+…$/);
+      await expect(page.getByTestId("quick-reply")).toContainText(/Reply to \S+…/);
       await page.getByTestId("quick-reply").click();
       await expect(page.getByTestId("reader").getByTestId("composer")).toBeVisible();
       await page.getByTestId("compose-show-subject").click();
@@ -139,7 +139,9 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
   const geometry = (page: Page) => page.evaluate(() => {
     const column = document.querySelector<HTMLElement>("[data-reader-column]")!;
     const box = column.getBoundingClientRect(), style = getComputedStyle(column);
-    const bar = [...document.querySelectorAll("[data-reader-toolbar] button")].filter((b) => (b as HTMLElement).offsetParent !== null);
+    // on the column: a wide List page keeps Back and the steps at the pane's edges, beside it
+    const beside = (b: Element) => { for (let e: Element | null = b; e && !e.matches("[data-reader-toolbar]"); e = e.parentElement) if (getComputedStyle(e).position === "absolute") return true; return false; };
+    const bar = [...document.querySelectorAll("[data-reader-toolbar] button")].filter((b) => (b as HTMLElement).offsetParent !== null && !beside(b));
     const body = [...document.querySelectorAll("[data-testid=message][data-expanded] .type-body")].at(-1) as HTMLElement;
     const type = getComputedStyle(body);
     const ctx2d = document.createElement("canvas").getContext("2d")!;
@@ -218,16 +220,92 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     });
   });
 
+  test("a message's own actions: answer the one you chose, from its header or a right-click, and what's written comes along", async ({ app: page, server }) => {
+    const id = await ingestConversation(server, { subject: "Elegir a cuál responder", count: 3, now: E2E_NOW });
+    await selectThread(page, id, 'subject:"Elegir a cuál responder"');
+    const messages = page.getByTestId("message");
+    // its name is who and when, and a preview cut short: not the whole mail
+    expect((await messages.nth(0).getByTestId("message-toggle").getAttribute("aria-label"))!.length).toBeLessThan(160);
+    await scenario("the newest shows them; an older one when you point at it or Tab to it, in a place kept for them", async () => {
+      const opacity = (i: number) => messages.nth(i).getByTestId("message-actions").evaluate((el) => getComputedStyle(el).opacity);
+      await expect.poll(() => opacity(2)).toBe("1");
+      await messages.nth(0).getByTestId("message-toggle").click();
+      await page.mouse.move(0, 0);
+      await expect.poll(() => opacity(0)).toBe("0");
+      await messages.nth(0).getByTestId("message-toggle").hover();
+      await expect.poll(() => opacity(0)).toBe("1");
+      await page.mouse.move(0, 0);
+      await messages.nth(0).getByTestId("message-toggle").focus();
+      await page.keyboard.press("Tab");
+      await expect(messages.nth(0).getByTestId("message-reply")).toBeFocused();
+      await expect.poll(() => opacity(0)).toBe("1");
+    });
+    await scenario("Reply on an older message answers that one, with its words quoted", async () => {
+      const older = (await messages.nth(0).locator("[id^=msg-body-]").innerText()).trim().split("\n")[0]!;
+      await messages.nth(0).getByTestId("message-reply").click();
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+      await page.getByTestId("compose-quote").click();
+      await expect(page.getByTestId("composer")).toContainText(older);
+    });
+    await scenario("the ⋯ menu and a right-click offer the same; choosing another message turns the draft to it, keeping the words", async () => {
+      await page.getByTestId("compose-body").click();
+      await page.keyboard.type("Lo que escribí");
+      await messages.nth(2).getByTestId("message-more").click();
+      await expect(page.getByTestId("message-actions-menu")).toBeVisible();
+      await expect(page.getByTestId("message-menu-print")).toBeVisible();
+      await page.getByTestId("message-menu-forward").click();
+      await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "forward");
+      await expect(page.getByTestId("compose-body")).toContainText("Lo que escribí");
+      await messages.nth(1).getByTestId("message-toggle").click({ button: "right" });
+      await page.getByTestId("message-menu-reply").click();
+      await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "reply");
+      await expect(page.getByTestId("compose-body")).toContainText("Lo que escribí");
+    });
+  });
+
+  test("the keyboard through a conversation: N and P go message by message, o and Enter open, ⇧E opens or folds them all", async ({ app: page, server }) => {
+    const id = await ingestConversation(server, { subject: "Un hilo largo", count: 7, now: E2E_NOW });
+    await selectThread(page, id, 'subject:"Un hilo largo"');
+    const toggles = page.getByTestId("message-toggle");
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await scenario("P from the newest steps back, into a folded run if it must, with a tint and no ring; N steps on", async () => {
+      await expect(page.getByTestId("more-messages")).toBeVisible();
+      await page.keyboard.press("Shift+P");
+      await expect(page.getByTestId("more-messages")).toHaveCount(0);
+      const target = page.locator("[data-testid=message-toggle]:focus");
+      await expect(target).toHaveCount(1);
+      await expect(target).toHaveAttribute("data-current", "true");
+      expect(await target.evaluate((el) => getComputedStyle(el).boxShadow)).not.toContain("rgb");
+      await page.keyboard.press("Shift+N");
+      await expect(toggles.last()).toBeFocused();
+      await page.keyboard.press("Shift+P");
+      await expect(toggles.nth(5)).toBeFocused();
+      await expect(toggles.nth(5)).toHaveAttribute("aria-expanded", "false");
+      await page.keyboard.press("o");
+      await expect(toggles.nth(5)).toHaveAttribute("aria-expanded", "true");
+      await page.keyboard.press("Enter");
+      await expect(toggles.nth(5)).toHaveAttribute("aria-expanded", "false");
+    });
+    await scenario("⇧E and the header's button open everything, then fold back to the newest", async () => {
+      await page.keyboard.press("Shift+E");
+      for (const i of [0, 3, 6]) await expect(toggles.nth(i)).toHaveAttribute("aria-expanded", "true");
+      await expect(page.getByTestId("expand-all")).toHaveText("Collapse all");
+      await page.getByTestId("expand-all").click();
+      await expect(page.getByTestId("more-messages")).toBeVisible();
+      await expect(toggles.last()).toHaveAttribute("aria-expanded", "true");
+      await expect(page.getByTestId("expand-all")).toHaveText("Expand all");
+    });
+  });
+
   test("older messages say they open, a Tab reaches them, and history folds the same in plain text and HTML", async ({ app: page, server }) => {
     const store = server.backend.store;
     const id = await ingestConversation(server, { subject: "Con mensajes viejos", count: 3, now: E2E_NOW });
-    await scenario("a collapsed header shows its disclosure, turned when open, and Tab reaches it with a ring", async () => {
+    await scenario("Expand all says they open, and Tab reaches a collapsed header with a ring", async () => {
       await selectThread(page, id, 'subject:"Con mensajes viejos"');
-      const [closed, open] = [page.getByTestId("message-toggle").first(), page.getByTestId("message-toggle").last()];
+      const closed = page.getByTestId("message-toggle").first();
       await expect(closed).toHaveAttribute("aria-expanded", "false");
-      const turn = (el: typeof closed) => el.locator("svg").last().evaluate((svg) => getComputedStyle(svg).rotate);
-      expect(await turn(closed)).toBe("none");
-      expect(await turn(open)).toBe("90deg");
+      await expect(page.getByTestId("message-count")).toContainText("3 messages");
+      await expect(page.getByTestId("expand-all")).toHaveText("Expand all");
       await page.getByTestId("action-reply-menu").focus();
       for (let i = 0; i < 8 && !(await closed.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press("Tab");
       await expect(closed).toBeFocused();

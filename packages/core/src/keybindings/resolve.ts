@@ -30,6 +30,9 @@ export type Command =
   | "thread.print"
   | "thread.exportPdf"
   | "thread.remind"
+  | "message.next"
+  | "message.prev"
+  | "message.toggleAll"
   | "compose.new"
   | "compose.reply"
   | "compose.replyAll"
@@ -135,6 +138,10 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "v", command: "thread.move" },
   // plan 87: Superhuman's "remind me"
   { keys: "h", command: "thread.remind" },
+  // plan 158: within the open conversation, on letters every keyboard types without Option (j and k are the list's, n a suggestion's)
+  { keys: "shift+n", command: "message.next" },
+  { keys: "shift+p", command: "message.prev" },
+  { keys: "shift+e", command: "message.toggleAll" },
   { keys: "z", command: "action.undo" },
   { keys: "mod+z", command: "action.undo" },
   { keys: "c", command: "compose.new" },

@@ -10,6 +10,7 @@ import { chooseOpenThread, getApp, markSelectionIntent, navigate, setApp } from 
 import { loadMore, useList } from "~/state/list";
 import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, answerReview, rejectSuggestion } from "~/lib/categorize";
+import { conversationKeys } from "~/lib/conversation-keys";
 import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
 import { closeEmptySearch, focusSearch, listScroller } from "~/components/thread-list";
@@ -75,6 +76,9 @@ export function move(delta: number) {
 
 /** Enter / o: in List the cursor's conversation becomes the page. */
 function openCurrent() {
+  // on a message's header (N and P put you there), o opens it as Enter does
+  const header = document.activeElement;
+  if (header instanceof HTMLElement && header.dataset.testid === "message-toggle") return header.click();
   const id = getApp().selectedId;
   if (!listLayout()) {
     if (id !== null) {
@@ -153,6 +157,9 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "thread.category": () => hasTargets() && setApp({ dialog: "categoryPicker", pickerMode: "toggle" }),
   "thread.move": () => hasTargets() && setApp({ dialog: "categoryPicker", pickerMode: "move" }),
   "thread.remind": () => hasTargets() && openRemind(),
+  "message.next": () => conversationKeys.current?.step(1),
+  "message.prev": () => conversationKeys.current?.step(-1),
+  "message.toggleAll": () => conversationKeys.current?.toggleAll(),
   "action.undo": undoLast,
   "thread.print": () => printCommand("print"),
   "thread.exportPdf": () => printCommand("pdf"),
