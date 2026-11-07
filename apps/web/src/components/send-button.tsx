@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { cn } from "@terno/ui/lib/utils";
 import { Clock, Send } from "@terno/ui/icons";
 import { create } from "zustand";
-import { useAttachmentUploads } from "~/lib/attachments";
+import { useFilesOnTheirWay } from "~/lib/attachments";
 import { validRecipients, type LocalDraft } from "~/lib/drafts";
 import { firstInvalid } from "~/lib/recipient-field";
 import { SendLaterPicker } from "./send-later-picker";
@@ -33,7 +33,7 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
   const open = useSendLater((s) => s.open === d.key);
   const setOpen = (o: boolean) => useSendLater.setState({ open: o ? d.key : null });
   const disabled = d.sending || Boolean(d.recovery);
-  const uploading = useAttachmentUploads((s) => s.keys.has(d.key));
+  const uploading = useFilesOnTheirWay(d.key);
   const ready = canSendTo(d) && !uploading;
   // the group owns the fill (a primary button's, plan 118), radius and shadow, so the halves meet with no seam; each half
   // only tints on hover (bg-none: a half's own gradient would hide that), and keeps the group's look when unavailable (the

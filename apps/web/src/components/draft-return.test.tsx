@@ -69,7 +69,7 @@ describe("away and back", () => {
     } finally { await h.cleanup(); }
   });
 
-  it("asks once however often the reader arrives, and not at all for a conversation with no draft", async () => {
+  it("asks on each arrival (an answer from before leaving may be stale), and not at all for a conversation with no draft", async () => {
     const h = await setup("split", true), waiting = deferred<{ threadId: number; accountId: number }>();
     try {
       await act(async () => h.app.setApp({ selectedId: 8 }));
@@ -80,7 +80,7 @@ describe("away and back", () => {
       await act(async () => h.app.setApp({ selectedId: 7 }));
       await act(async () => h.app.setApp({ selectedId: 8 }));
       await act(async () => h.app.setApp({ selectedId: 7 }));
-      expect(lookups()).toBe(none + 1);
+      expect(lookups()).toBe(none + 2);
     } finally { waiting.resolve({ threadId: 7, accountId: 1 }); await h.cleanup(); }
   });
 
@@ -119,23 +119,19 @@ describe("the check on arriving doesn't overreach", () => {
   };
 
   it("an answer about the draft as it was isn't applied to what a save made of it since", async () => {
-    const h = await setup("split", true);
+    // no reader here to call the question off when the draft changes: this is the answer landing before it has rendered
+    const h = await setup("list"), { returnDraftsTo } = await import("~/lib/compose");
     try {
-      await listed([7, 8]);
-      await act(async () => h.app.setApp({ selectedId: 8 }));
+      await act(async () => { h.app.setApp({ selectedId: 7, readerOpen: false }); h.drafts.expireDraftPresentation(7); });
       const answer = gated();
-      await act(async () => h.app.setApp({ selectedId: 7 }));
-      // a save's normalization: the source is gone from the draft while the question is out, the answer right behind it,
-      // before the reader has rendered and could call its question off
-      await act(async () => {
-        h.drafts.useDrafts.setState((s) => ({ drafts: { ...s.drafts, [h.key]: { ...s.drafts[h.key]!, inReplyToMessageId: null, showSourceContext: false, revision: 5 } } }));
-        answer.resolve({ threadId: 7, accountId: 1 });
-        await answer.promise;
-        await Promise.resolve();
-      });
-      for (let i = 0; i < 3; i++) await h.flush();
-      expect(h.drafts.useDrafts.getState().drafts[h.key]?.presentationExpired).toBe(true);
-      expect(state(h)).toBe("bar");
+      let stop = () => {};
+      await act(async () => { stop = returnDraftsTo(7); });
+      expect(gate.call).toHaveBeenCalledWith("drafts.sourceContext", { messageId: 3 });
+      // a save's normalization: another revision while the question is out
+      await act(async () => h.drafts.useDrafts.setState((s) => ({ drafts: { ...s.drafts, [h.key]: { ...s.drafts[h.key]!, revision: 5 } } })));
+      await act(async () => { answer.resolve({ threadId: 7, accountId: 1 }); await answer.promise; for (let i = 0; i < 5; i++) await Promise.resolve(); });
+      expect(h.drafts.useDrafts.getState().drafts[h.key]).toMatchObject({ presentationExpired: true, revision: 5 });
+      stop();
     } finally { await h.cleanup(); }
   });
 
@@ -167,6 +163,24 @@ describe("the check on arriving doesn't overreach", () => {
       for (let i = 0; i < 3; i++) await h.flush();
       expect(h.drafts.useDrafts.getState().drafts[h.key]).toMatchObject({ uiState: "open", presentationExpired: true });
     } finally { await act(async () => useDraftRecovery.setState({ open: false })); await h.cleanup(); }
+  });
+
+  it("an answer from before leaving isn't taken for the arrival after it: the source moved meanwhile", async () => {
+    const h = await setup("split", true);
+    try {
+      await listed([7, 8]);
+      await act(async () => h.app.setApp({ selectedId: 8 }));
+      const old = gated();
+      await act(async () => h.app.setApp({ selectedId: 7 }));
+      await act(async () => h.app.setApp({ selectedId: 8 }));
+      const fresh = gated();
+      await act(async () => h.app.setApp({ selectedId: 7 }));
+      await act(async () => { old.resolve({ threadId: 7, accountId: 1 }); await old.promise; for (let i = 0; i < 5; i++) await Promise.resolve(); });
+      expect(state(h)).toBe("returning");
+      await act(async () => { fresh.resolve({ threadId: 9, accountId: 1 }); await fresh.promise; for (let i = 0; i < 5; i++) await Promise.resolve(); });
+      expect(state(h)).toBe("bar");
+      expect(h.drafts.useDrafts.getState().drafts[h.key]?.homeLost).toBe(true);
+    } finally { await h.cleanup(); }
   });
 
   it("the reader gone before the answer (a new message over it): the draft stays as it is", async () => {
@@ -240,6 +254,40 @@ describe("putting a draft away", () => {
       expect(h.drafts.useDrafts.getState().drafts[h.key]?.bodyText).toBe("still here");
       expect(gate.call.mock.calls.some(([method]) => method === "drafts.delete")).toBe(false);
     } finally { save.resolve(); h.drafts.setDraftTransport((method, p) => gate.call(method, p)); await h.cleanup(); }
+  });
+
+  it("what's accepted as the wait ends counts: a discard reads the draft in the tick it deletes it", async () => {
+    const h = await setup("split", true);
+    try {
+      await act(async () => { h.drafts.editDraft(h.key, { bodyText: "" }); });
+      let gone: unknown = "pending";
+      await act(async () => {
+        const discarding = h.drafts.discardIfEmpty(h.key);
+        h.drafts.editDraft(h.key, { bodyText: "just in time" });
+        gone = await discarding;
+      });
+      expect(gone).toBeUndefined();
+      expect(h.drafts.useDrafts.getState().drafts[h.key]?.bodyText).toBe("just in time");
+    } finally { await h.cleanup(); }
+  });
+
+  it("files still being prepared: Send reads as unavailable, and Esc lands on the kept draft's strip item", async () => {
+    const h = await setup("split", true), { attachFilesInTurn } = await import("~/lib/attachments"), { showNewDraft } = await import("~/lib/compose"), { newFields } = await import("~/lib/compose-fields"), prepared = deferred<{ files: readonly File[] }>();
+    try {
+      await act(async () => h.drafts.forgetDraft(h.key));
+      const key = h.drafts.createDraft({ ...newFields(1), toText: "ana@example.com" });
+      await act(async () => showNewDraft(key));
+      for (let i = 0; i < 3; i++) await h.flush();
+      expect(h.host.querySelector('[data-testid="compose-send"]')?.getAttribute("aria-disabled")).toBeNull();
+      let dropped: Promise<boolean> | undefined;
+      await act(async () => { dropped = attachFilesInTurn(key, prepared.promise); });
+      expect(h.host.querySelector('[data-testid="compose-send"]')?.getAttribute("aria-disabled")).toBe("true");
+      await press(h.host.querySelector('[data-testid="compose-to"]')!, "Escape");
+      for (let i = 0; i < 4; i++) await h.flush();
+      expect(h.app.getApp().compose).toBeNull();
+      expect(document.activeElement).toBe(h.host.querySelector(`[data-testid="strip-item"][data-key="${key}"]`));
+      await act(async () => { prepared.resolve({ files: [] }); await dropped; });
+    } finally { prepared.resolve({ files: [] }); await h.cleanup(); }
   });
 
   it("a file on its way is something written, on Esc in a reply and in a new message", async () => {

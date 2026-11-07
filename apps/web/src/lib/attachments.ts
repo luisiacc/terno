@@ -12,8 +12,11 @@ import { snack } from "./snack";
 
 /** plan 76: drops waiting their turn, by draft (Send waits for them as for a staging) */
 const queued = new Map<string, Promise<unknown>>();
-export const useAttachmentUploads = create<{ keys: Set<string> }>(() => ({ keys: new Set() }));
+/** `keys`: staging now; `waiting`: dropped, being prepared or waiting their turn */
+export const useAttachmentUploads = create<{ keys: Set<string>; waiting: Set<string> }>(() => ({ keys: new Set(), waiting: new Set() }));
 export const attachmentUploading = (key: string) => useAttachmentUploads.getState().keys.has(key) || queued.has(key);
+/** The same as `attachmentUploading`, for a component to follow (Send's look, the strip). */
+export const useFilesOnTheirWay = (key: string): boolean => useAttachmentUploads((s) => s.keys.has(key) || s.waiting.has(key));
 
 /** Use the same body, quote, signature and MIME-envelope rules as Send. */
 export async function draftAttachmentBudget(d: DraftFields, signature = ""): Promise<boolean> {
@@ -61,7 +64,12 @@ export function attachFilesInTurn(key: string, files: readonly File[] | Promise<
   const run = (queued.get(key) ?? Promise.resolve()).then(() => idle(key)).then(async () => { const r = await ready; return attachFiles(key, r.files, r.o); }).finally(finish);
   const tail = run.catch(() => false);
   queued.set(key, tail);
-  void tail.then(() => { if (queued.get(key) === tail) queued.delete(key); });
+  if (!useAttachmentUploads.getState().waiting.has(key)) useAttachmentUploads.setState((s) => ({ waiting: new Set([...s.waiting, key]) }));
+  void tail.then(() => {
+    if (queued.get(key) !== tail) return;
+    queued.delete(key);
+    useAttachmentUploads.setState((s) => ({ waiting: new Set([...s.waiting].filter((k) => k !== key)) }));
+  });
   return run;
 }
 

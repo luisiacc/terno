@@ -169,6 +169,19 @@ describe("the stream", () => {
 });
 
 describe("§10.4: binding and races", () => {
+  it("coming back with its source gone: its AI work stays, and the strip has it, not that row (plan 158)", async () => {
+    const { key } = await writing();
+    useDrafts.setState((s) => ({ drafts: { ...s.drafts, [key]: { ...s.drafts[key]!, showSourceContext: true, presentationExpired: true, departedThreadId: 7 } } }));
+    setApp({ selectedId: 8 });
+    setApp({ selectedId: 7 });
+    await tick();
+    rpc.calls.findLast((c) => c.method === "drafts.sourceContext")!.resolve(null);
+    await tick();
+    expect(useDrafts.getState().drafts[key]!.homeLost).toBe(true);
+    expect(session(key)).toBeDefined();
+    setApp({ selectedId: null });
+  });
+
   it("autosave mid-stream doesn't invalidate: the first save's identity is adopted, and a later one changes nothing", async () => {
     const { key, c } = await writing();
     delta(key, "Hi");

@@ -50,7 +50,7 @@ import { exposeForTests } from "~/lib/render-probe";
 import { openLink } from "../mail-body";
 import { togglePalette } from "~/lib/palette-open";
 import { isMac } from "~/lib/select";
-import { EMPTY_FORMAT, registerController, useController, useFormatState, type Align, type ComposerController, type FormatCommand, type FormatState } from "./controller";
+import { EMPTY_FORMAT, registerController, useController, useFormatBar, useFormatState, type Align, type ComposerController, type FormatCommand, type FormatState } from "./controller";
 import { addPlaceholders, dropPlaceholders, dropPos, inlineFile, placeImages, type ImageHooks } from "./images";
 import { attachFilesInTurn } from "~/lib/attachments";
 import { imageUrl, isInlineImage, newImageCid, seedImageUrl } from "~/lib/inline-images";
@@ -432,6 +432,15 @@ export function RichBody({ draftKey, placeholder, className, checkpoint }: { dra
     setBubble((b) => (b && b.from === at.from && b.to === at.to && b.href === at.href && b.top === top && b.left === left ? b : { ...at, top, left }));
   }
 
+  // Aa raises a foot that sticks over the text: the caret stays clear of it (plan 158)
+  const formatBarShown = useFormatBar((s) => s.shown);
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view?.hasFocus()) return;
+    const frame = requestAnimationFrame(() => view.dispatch(view.state.tr.scrollIntoView()));
+    return () => cancelAnimationFrame(frame);
+  }, [formatBarShown]);
+
   // an open bubble follows the scroller: which side has room changes as the link moves (nothing runs while none is open)
   const bubbleOpen = bubble !== null;
   useEffect(() => {
@@ -441,6 +450,9 @@ export function RichBody({ draftKey, placeholder, className, checkpoint }: { dra
     scroller.addEventListener("scroll", place, { passive: true });
     const resized = new ResizeObserver(place);
     resized.observe(scroller);
+    // Aa raises the composer's foot under it, with nothing else moving
+    const foot = wrapRef.current?.closest("form")?.querySelector("[data-draft-foot]");
+    if (foot) resized.observe(foot);
     return () => { scroller.removeEventListener("scroll", place); resized.disconnect(); };
   }, [bubbleOpen]);
 

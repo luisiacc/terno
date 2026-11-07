@@ -533,8 +533,17 @@ test.describe("the composer at rest and at its limits (plan 158)", () => {
       await page.keyboard.press("ArrowLeft");
       const bubble = page.getByTestId("link-bubble");
       await expect(bubble).toBeVisible();
-      const b = (await bubble.boundingBox())!, foot = (await page.locator("[data-draft-foot]").boundingBox())!;
-      expect(b.y + b.height).toBeLessThanOrEqual(foot.y);
+      const clear = async () => {
+        const b = (await bubble.boundingBox())!, foot = (await page.locator("[data-draft-foot]").boundingBox())!;
+        expect(b.y + b.height).toBeLessThanOrEqual(foot.y);
+      };
+      await clear();
+      // Aa raises the foot under an open bubble
+      await page.getByTestId("format-toggle").click();
+      await expect(page.getByTestId("format-bar")).toBeVisible();
+      await expect(bubble).toBeVisible();
+      await expect.poll(async () => { const b = (await bubble.boundingBox())!, foot = (await page.locator("[data-draft-foot]").boundingBox())!; return b.y + b.height <= foot.y; }).toBe(true);
+      await page.getByTestId("format-toggle").click();
     });
     await scenario("a chip doesn't take the To row to a second line until it has to, and values share one line", async () => {
       await freshNoDrafts(page, server);

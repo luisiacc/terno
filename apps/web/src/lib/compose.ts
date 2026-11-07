@@ -331,7 +331,8 @@ export function returnDraftsTo(threadId: number): () => void {
   const settled = () => { if (returning === owner) { returning = null; useDraftsReturning.setState({ threadId: null }); } };
   void Promise.all(candidates.map(async (d) => {
     const source = activeSourceId(d);
-    const context = source === null ? null : await sourceLookup(d.key, source);
+    // asked by each arrival: an answer from before leaving may be about where the source was then
+    const context = source === null ? null : await client.call("drafts.sourceContext", { messageId: source }).catch(() => null);
     if (left) return;
     const now = useDrafts.getState().drafts[d.key];
     if (!now?.presentationExpired || intent !== before || openingStored.has(d.key) || draftEditsHeld()) return;
@@ -343,19 +344,8 @@ export function returnDraftsTo(threadId: number): () => void {
   return () => { left = true; settled(); };
 }
 let returning: object | null = null;
-/** one question per draft and source, however often the reader arrives while it's out */
-const lookups = new Map<string, Promise<{ threadId: number; accountId: number } | null>>();
-function sourceLookup(key: string, source: number) {
-  const id = `${key}:${source}`;
-  let answer = lookups.get(id);
-  if (!answer) {
-    answer = client.call("drafts.sourceContext", { messageId: source }).catch(() => null).finally(() => lookups.delete(id));
-    lookups.set(id, answer);
-  }
-  return answer;
-}
-/** drafts `openStoredDraft` is opening: it checks them itself, and a change under it would call its open off */
-const openingStored = new Set<string>();
+/** drafts `openStoredDraft` is opening, and how many times: it checks them itself, and a change under it would call its open off */
+const openingStored = new Map<string, number>();
 
 function showStoredStandalone(key: string, owner: number, allowed: () => boolean = () => true, transfer?: FocusLease | null): FocusLease | null {
   let snapshot = materialize(key);
@@ -415,7 +405,7 @@ export async function openStoredDraft(key: string): Promise<void> {
   const mine = ++intent;
   if (focusLease && releaseForAcquisition(focusLease)) { finish(); return; }
   if (mine !== intent) { finish(); return; }
-  openingStored.add(key);
+  openingStored.set(key, (openingStored.get(key) ?? 0) + 1);
   let lease: FocusLease | null = null, cancelled = false, missingFromAtStart = false;
   let expected = getApp();
   let publicationBefore: typeof expected | undefined;
@@ -479,7 +469,8 @@ export async function openStoredDraft(key: string): Promise<void> {
     unsubscribe();
     if (typeof document !== "undefined") document.removeEventListener?.("focusin", moved, true);
     if (lease && lease.seq === undefined) releaseFocusLease(lease, false);
-    openingStored.delete(key);
+    const opening = openingStored.get(key)! - 1;
+    if (opening) openingStored.set(key, opening); else openingStored.delete(key);
     finish();
   }
 }

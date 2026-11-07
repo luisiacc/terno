@@ -10,7 +10,7 @@ import { aiDraftHooks, canDraft, useAiDraftUi, type AiDraftBadge } from "./ai-dr
 import { addressReply, composeLanding, leaveNewDraft, sendDraft } from "./compose";
 import { focusSoon } from "./compose-focus-move";
 import { draftCommands, draftKeyOf } from "./draft-commands";
-import { discardDraft, authored, draftPresentationThread, editDraft, editDraftRecipients, flushDraft, forgetDraft, materialize, NO_AUTO, shownDraftKey, unsaveDraft, useDrafts, validateDraftPresentation, validRecipients, type LocalDraft } from "./drafts";
+import { discardDraft, authored, draftPresentationThread, editDraft, editDraftRecipients, flushDraft, forgetDraft, loseDraftHome, materialize, NO_AUTO, shownDraftKey, unsaveDraft, useDrafts, validateDraftPresentation, validRecipients, type LocalDraft } from "./drafts";
 import { localized } from "./i18n";
 import { currentPage, listLayout, openThread } from "./page";
 import { snack } from "./snack";
@@ -1173,7 +1173,10 @@ useApp.subscribe((state, previous) => {
     void (async () => {
       const context = await client.call("drafts.sourceContext", { messageId: source }).catch(() => null);
       const now = draftOf(key);
-      if (context?.threadId === threadId && getApp().selectedId === threadId && now?.presentationExpired && session(key)) validateDraftPresentation(key, threadId);
+      if (getApp().selectedId !== threadId || !now?.presentationExpired || !session(key)) return;
+      if (context?.threadId === threadId) validateDraftPresentation(key, threadId);
+      // it isn't here any more: the strip has it (plan 158)
+      else loseDraftHome(key);
     })();
   }
 });

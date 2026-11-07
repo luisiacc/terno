@@ -6,6 +6,7 @@ import { Clock, PenLine } from "@terno/ui/icons";
 import { Button } from "@terno/ui/components/button";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { useAttachmentUploads } from "~/lib/attachments";
 import { openStoredDraft } from "~/lib/compose";
 import { authored, draftHomeThread, draftIndex, draftPresentationThread, shownDraftKey, useDrafts, type LocalDraft } from "~/lib/drafts";
 import { useApp } from "~/state/app";
@@ -99,12 +100,14 @@ export function DraftsStrip() {
   const [lead, setLead] = useState<string | null>(null);
   useEffect(() => { if (compose) setLead(compose); }, [compose]);
   const rootRef = useRef<HTMLDivElement>(null);
+  // a file on its way counts as written: closing kept the draft, so Esc has its item to land on
+  const uploads = useAttachmentUploads((s) => s);
   const items = useDrafts(
     useShallow((s) => {
       const out: LocalDraft[] = [];
       const drafts = draftIndex(s.drafts);
       for (const d of Object.values(s.drafts)) {
-        if (d.key === pinned || d.key === compose || !authored(d)) continue;
+        if (d.key === pinned || d.key === compose || !(authored(d) || uploads.keys.has(d.key) || uploads.waiting.has(d.key))) continue;
         const home = draftHomeThread(d);
         if (home === null) { out.push(d); continue; }
         const placed = draftPresentationThread(d) !== null;

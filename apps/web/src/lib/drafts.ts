@@ -1162,7 +1162,8 @@ export async function discardIfEmpty(key: string, still: () => boolean = () => t
   const w = writer(key);
   w.stopping = "discard";
   let d: LocalDraft | undefined;
-  try { d = await settle(key); } catch { /* an editor that can't be read isn't empty */ d = undefined; }
+  // read again here, in the tick that deletes it: what was accepted on the way back from the wait counts
+  try { await settle(key); d = materialize(key); } catch { /* an editor that can't be read isn't empty */ d = undefined; }
   if (!d || d.sending || !nothingWritten(d) || !still()) {
     w.stopping = null;
     const current = get(key);

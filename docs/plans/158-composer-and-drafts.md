@@ -41,15 +41,29 @@ Plan 44 retires a draft's place when the reader leaves its conversation: a cache
 
 ## Revisions after the Codex review
 
-Round 1 raised eight points. All were real, and all are fixed with a regression test, each checked by removing its fix:
+Round 1 raised eight points. All were real, and all are fixed with a regression test:
 
 1. **Words typed while a save was out could be deleted without Undo.** Emptiness was read before the discard waited for that save. `discardIfEmpty` asks again after it, and keeps the draft, autosaving, if anything came meanwhile (`leaveNewDraft` also if it was opened again).
 2. **Esc cancelled a file on its way.** Nothing referred to it yet, so the draft looked empty. `closesEmpty` counts an upload as written, and an untouched new message's plain forget does too.
 3. **An old answer could reattach a draft a save had since changed.** The answer now holds only for the draft as it was asked about (identity, generation, revision, account, mode, source). Otherwise it's asked again.
-4. **An answer could close the editor in Review drafts.** Arrival returns a cancel, called when the reader leaves or the question changes. Lookups are shared per draft and source, so a cancelled arrival's question isn't asked twice.
+4. **An answer could close the editor in Review drafts.** Arrival returns a cancel, called when the reader leaves or the question changes.
 5. **A draft hydrated late was in neither place:** Reply in the reader, not in the strip since its home is listed. The reader's effect also follows `comingHomeKey`, so it finds what arrives.
 6. **The caret could fall behind a pinned card.** The caret's clearance adds the scroller's padding for what covers its end. This test also showed the first version counted the dock twice: sticky already stops at a scroller's padding, so the foot needs `bottom-0`.
 7. **The link bubble could cover Send.** `bubbleBounds` flips it above the composer's foot in the reader, as under a draft's own scroller.
 8. **Send looked ready during an upload.** It reads as unavailable, and its tooltip says why.
 
-Removing each fix also caught two weak tests (fixed) and one dead check, a recovery test the reader's cancel already covered (removed).
+Removing each fix in turn (points 1 to 5 and 8, at unit level) found two weak tests and one the reader's cancel was hiding, all tightened, and one dead check, a recovery test the reader's cancel already covered, removed.
+
+Round 2 raised seven points, all fixed:
+
+1. **A discard read the draft a few ticks before deleting it.** It reads again in the tick that deletes.
+2. **A shared lookup could answer for a source that had since moved.** Each arrival asks for itself; a draft on a conversation is rare enough that the extra read costs nothing.
+3. **Two opens of one strip item:** the first's end cleared the second's protection. `openingStored` counts. No test of its own: it takes a re-render landing inside that gap, which the harness can't arrange without changing the code.
+4. **A draft with AI work had no way out if its source moved:** its own return now loses the home too.
+5. **Esc on a new message with a file on its way** kept the draft but gave focus no item to land on. The strip counts it as written.
+6. **Aa under an open link bubble** raised the foot over it, and over the caret's line, which the test for this found. The bubble follows the foot's size, and the caret scrolls clear when the bar opens.
+7. **Send looked ready while files were being prepared,** before staging. `useFilesOnTheirWay` covers preparing, queued and staging.
+
+Stopped after two rounds, per the review cap: what's left is the same kind of narrow timing these rounds were finding. Each fix's test was checked by removing the fix, except point 3's and the e2e-level ones (round 1's 6 and 7, round 2's 6), which were seen failing before their fix.
+
+**Found on the way, not touched:** `r`, typing and ⌘J, then Enter, with no pause between them: the AI draft ignores the typed words and the text is gone from the body. It fails the same way on the base commit (`ai-draft.spec.ts`, "the choice at the send") when the machine is idle. It's plan 133's code, so it's reported rather than fixed here.

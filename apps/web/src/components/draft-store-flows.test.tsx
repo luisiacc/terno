@@ -260,10 +260,11 @@ describe("list selection handoff", () => {
       expect(h.app.getApp().selectedId).toBe(threadId);
       await h.store.sync.remove([source.id]);
       h.other.focus();
+      // (arriving asks too, plan 158: this counts the open's own)
+      sourceCount = 0;
       await act(async () => { opening = openCompose("forward", threadId); await bounded(sourceStarted.promise, "source lookup start"); });
       phase("source lookup held");
-      // arriving checks its source once (plan 158), and the open asks again for itself
-      expect(sourceCount).toBe(2); expect(composeFocusPending(threadId)).toBe(true);
+      expect(sourceCount).toBe(1); expect(composeFocusPending(threadId)).toBe(true);
       expect(h.app.getApp().selectedId).toBe(threadId);
       if (scenario === "later user") await act(async () => { pressRow(otherId, { meta: false, ctrl: false, shift: false }); later.focus(); });
       await act(async () => { listGate.resolve(); await Promise.resolve(); await Promise.resolve(); });
