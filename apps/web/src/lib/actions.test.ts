@@ -74,7 +74,7 @@ describe("Undo puts the selection back (plan 158)", () => {
   const acted = () => {
     fake.handlers["threads.act"] = async () => ({ undoId: 9 });
     fake.handlers["threads.undo"] = async () => ({ restored: 2 });
-    fake.handlers["threads.list"] = async () => ({ items: [row(1), row(2), row(3)], nextCursor: null });
+    fake.handlers["threads.list"] = vi.fn(async () => ({ items: [row(1), row(2), row(3)], nextCursor: null }));
   };
   const undo = () => runUndo(useSnack.getState().undo!);
 
@@ -85,7 +85,7 @@ describe("Undo puts the selection back (plan 158)", () => {
     expect(getApp().checked.size).toBe(0);
     expect(getApp().selectedId).toBe(3);
     await undo();
-    expect([...getApp().checked]).toEqual([1, 2]);
+    await vi.waitFor(() => expect([...getApp().checked]).toEqual([1, 2]));
     expect(getApp().selectedId).toBe(1);
   });
 
@@ -95,6 +95,8 @@ describe("Undo puts the selection back (plan 158)", () => {
     await act("archive");
     setApp({ selectedId: 2, checked: new Set([3]) });
     await undo();
+    await vi.waitFor(() => expect(fake.handlers["threads.list"]).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r));
     expect([...getApp().checked]).toEqual([3]);
     expect(getApp().selectedId).toBe(2);
   });
@@ -105,6 +107,8 @@ describe("Undo puts the selection back (plan 158)", () => {
     await act("archive");
     setApp({ view: "sent" });
     await undo();
+    await vi.waitFor(() => expect(fake.handlers["threads.list"]).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r));
     expect(getApp().checked.size).toBe(0);
   });
 });

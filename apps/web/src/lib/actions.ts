@@ -180,11 +180,7 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   // z right after the key: this action is the last one already, its undo waits for the backend's answer
   const connection = client.connectionVersion;
   const undoIds = deferred<number[]>();
-  const undo = options.quiet ? null : registerUndo(() => undoIds.promise.then(async (ids) => {
-    if (!ids.length) return;
-    await undoActions(ids, targets.length);
-    restoreSelection(before);
-  }));
+  const undo = options.quiet ? null : registerUndo(() => undoIds.promise.then((ids) => (ids.length ? undoActions(ids, targets.length, () => restoreSelection(before)) : undefined)));
   try {
     // the contract takes ≤ 5,000 ids a call (the backend slices each); each call can be undone exactly
     const ids: number[] = [];
@@ -345,11 +341,7 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
   before.left = getApp().selectedId;
   const progress = trackJob(t(DOING[action], { count: sel.count }));
   const undoId = deferred<{ id: number | null; n: number }>();
-  const undo = registerUndo(() => undoId.promise.then(async (u) => {
-    if (u.id === null) return;
-    await undoActions([u.id], u.n);
-    restoreSelection(before);
-  }));
+  const undo = registerUndo(() => undoId.promise.then((u) => (u.id === null ? undefined : undoActions([u.id], u.n, () => restoreSelection(before)))));
   try {
     const r = await client.call("threads.actScope", { scope: sel.scope, action, jobId: progress.jobId });
     undoId.resolve({ id: r.undoId, n: r.affected });
@@ -412,21 +404,26 @@ export async function markAccountRead(accountId: number, count: number): Promise
 
 /**
  * Undo: the backend puts back each message the action changed, exactly
- * as it was (read, star, place). Large ones show their progress.
+ * as it was (read, star, place). Large ones show their progress. `restored`
+ * runs once the list holds those rows again.
  */
-export async function undoActions(undoIds: readonly number[], n: number): Promise<void> {
+export async function undoActions(undoIds: readonly number[], n: number, restored?: () => void): Promise<void> {
   const progress = n > 200 ? trackJob(t("actions.undoing", { count: n })) : null;
+  let undone = false;
   try {
-    let restored = 0;
-    for (const undoId of undoIds) restored += (await client.call("threads.undo", { undoId, jobId: progress?.jobId })).restored;
-    if (progress) snack.success(t("actions.undone", { count: restored }), { id: progress.snackId, duration: 4000 });
+    let back = 0;
+    for (const undoId of undoIds) back += (await client.call("threads.undo", { undoId, jobId: progress?.jobId })).restored;
+    undone = true;
+    if (progress) snack.success(t("actions.undone", { count: back }), { id: progress.snackId, duration: 4000 });
   } catch (error) {
     // the undo token says so, with a retry (z points back at it too)
     if (progress) dismissSnack(progress.snackId);
     throw error;
   } finally {
     progress?.stop();
-    await reloadList({ keepSelection: true });
+    void reloadList({ keepSelection: true }).then(() => {
+      if (undone) restored?.();
+    });
   }
 }
 
