@@ -863,7 +863,8 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     if (!written(original)) return;
     const undo = registerUndo(() => editDraft(original.key, { ...before!, uiState: "open" }));
     if (!fresh()) { if (lease && focusLease === lease) releaseFocusLease(lease, false); if (useSnack.getState().undo === undo) useSnack.setState({ undo: null }); return; }
-    const [message, name] = CONVERTED[mode];
+    // the same kind of draft, on another message: "Converted to a reply" would say nothing true
+    const [message, name] = original.mode === mode ? (["compose.converted.message", "compose.undoConvert.message"] as const) : CONVERTED[mode];
     snack(t(message), { action: { label: t("common.undo"), name: t(name), undo } });
     return;
   }

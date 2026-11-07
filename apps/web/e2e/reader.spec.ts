@@ -225,7 +225,7 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     await selectThread(page, id, 'subject:"Elegir a cuál responder"');
     const messages = page.getByTestId("message");
     // its name is who and when, and a preview cut short: not the whole mail
-    expect((await messages.nth(0).getByTestId("message-toggle").getAttribute("aria-label"))!.length).toBeLessThan(160);
+    await expect(messages.nth(0).getByTestId("message-toggle")).toHaveAccessibleName(/^.{1,160}$/);
     await scenario("the newest shows them; an older one when you point at it or Tab to it, in a place kept for them", async () => {
       const opacity = (i: number) => messages.nth(i).getByTestId("message-actions").evaluate((el) => getComputedStyle(el).opacity);
       await expect.poll(() => opacity(2)).toBe("1");
@@ -250,6 +250,10 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     await scenario("the ⋯ menu and a right-click offer the same; choosing another message turns the draft to it, keeping the words", async () => {
       await page.getByTestId("compose-body").click();
       await page.keyboard.type("Lo que escribí");
+      // the same kind of draft, on another message: the words stay, and the snack says what changed
+      await messages.nth(2).getByTestId("message-reply").click();
+      await expect(page.getByTestId("snack-message")).toHaveText("The draft is now on that message");
+      await expect(page.getByTestId("compose-body")).toContainText("Lo que escribí");
       await messages.nth(2).getByTestId("message-more").click();
       await expect(page.getByTestId("message-actions-menu")).toBeVisible();
       await expect(page.getByTestId("message-menu-print")).toBeVisible();
@@ -278,6 +282,8 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       expect(await target.evaluate((el) => getComputedStyle(el).boxShadow)).not.toContain("rgb");
       await page.keyboard.press("Shift+N");
       await expect(toggles.last()).toBeFocused();
+      // each step keeps its mark: the header it left clears only its own
+      await expect(toggles.last()).toHaveAttribute("data-current", "true");
       await page.keyboard.press("Shift+P");
       await expect(toggles.nth(5)).toBeFocused();
       await expect(toggles.nth(5)).toHaveAttribute("aria-expanded", "false");

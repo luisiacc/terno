@@ -279,9 +279,7 @@ function Recipients({ m, className }: { m: MessageDetail; className?: string }) 
   );
 }
 
-/**
- * A long preview cut for the name a screen reader says, which ends where the row's does.
- */
+/** A long preview cut for what a screen reader says: a row's name is who, a taste and when, not the whole mail. */
 const previewFor = (snippet: string) => (snippet.length > 80 ? `${snippet.slice(0, 80).trimEnd()}…` : snippet);
 
 /**
@@ -308,7 +306,6 @@ function Message({ m, threadId, newest, expanded, onToggle, icons, headless, tim
             type="button"
             aria-expanded={expanded}
             aria-controls={bodyId}
-            aria-label={expanded ? t("reader.message.header", { name, date }) : t("reader.message.headerPreview", { name, date, preview: previewFor(m.snippet) })}
             title={fullDate(m.date)}
             onClick={onToggle}
             onBlur={onLeave}
@@ -335,7 +332,8 @@ function Message({ m, threadId, newest, expanded, onToggle, icons, headless, tim
               <>
                 <SenderAvatar name={name} email={m.from.email} icon={icons} className="size-(--avatar-collapsed) text-2xs" />
                 <span className="max-w-[45%] shrink-0 truncate">{name}</span>
-                <span className="min-w-0 flex-1 truncate text-[length:var(--ds-text-control)] text-muted-foreground">{m.snippet}</span>
+                <span aria-hidden className="min-w-0 flex-1 truncate text-[length:var(--ds-text-control)] text-muted-foreground">{m.snippet}</span>
+                <span className="sr-only">{previewFor(m.snippet)}</span>
                 <span className="shrink-0 text-xs text-muted-foreground tabular">
                   {listDate(m.date)}
                   {timed && <span className="@max-[560px]:hidden">{messageTime(m.date)}</span>}
@@ -407,7 +405,7 @@ function useFold(messages: MessageDetail[]) {
   // collapsing all still leaves the newest to read, and long runs fold again
   const toggleAll = () => setState({ toggled: new Map(messages.map((m) => [m.id, !allOpen || m.id === last?.id])), revealed: new Set(allOpen ? [] : messages.map((m) => m.id)) });
 
-  // where N and P are: the message they last went to, or the newest one open. The tint says so (no ring: a shortcut moved focus), until focus leaves
+  // where N and P are: the message they last went to, or the newest one open. The tint says so (no ring: a shortcut moved focus), until focus leaves it; leaving the last one for the next doesn't clear the next's
   const position = useRef<number | null>(null);
   const [current, setCurrent] = useState<number | null>(null);
   const step = (delta: 1 | -1) => {
@@ -431,14 +429,14 @@ function useFold(messages: MessageDetail[]) {
     conversationKeys.current = { step, toggleAll, allOpen: () => allOpen };
     return () => { conversationKeys.current = null; };
   });
-  return { isOpen, allOpen, toggle, reveal, toggleAll, revealed: own.revealed, current, clearCurrent: () => setCurrent(null) };
+  return { isOpen, allOpen, toggle, reveal, toggleAll, revealed: own.revealed, current, leaveCurrent: (id: number) => setCurrent((c) => (c === id ? null : c)) };
 }
 type Fold = ReturnType<typeof useFold>;
 
 /** `icons`: senders' icons may be asked for (never in spam: plan 22); `headless`: the card above shows the one message's header (plan 59) */
 function Conversation({ threadId, messages, fold, icons, headless }: { threadId: number; messages: MessageDetail[]; fold: Fold; icons: boolean; headless: boolean }) {
   renderProbe("Conversation");
-  const { isOpen, toggle, reveal, revealed, current, clearCurrent } = fold;
+  const { isOpen, toggle, reveal, revealed, current, leaveCurrent } = fold;
   const last = messages[messages.length - 1];
   const days = new Map<string, number>();
   for (const m of messages) days.set(listDate(m.date), (days.get(listDate(m.date)) ?? 0) + 1);
@@ -464,7 +462,7 @@ function Conversation({ threadId, messages, fold, icons, headless }: { threadId:
     <div className="hairline-t [--hairline-color:var(--border)]">
       {items.map((it) =>
         it.kind === "message" ? (
-          <Message key={it.m.id} m={it.m} threadId={threadId} newest={it.m.id === last?.id} icons={icons} headless={headless && messages.length === 1} timed={(days.get(listDate(it.m.date)) ?? 0) > 1} current={current === it.m.id} onLeave={clearCurrent} expanded={isOpen(it.m)} onToggle={() => toggle(it.m.id, isOpen(it.m))} />
+          <Message key={it.m.id} m={it.m} threadId={threadId} newest={it.m.id === last?.id} icons={icons} headless={headless && messages.length === 1} timed={(days.get(listDate(it.m.date)) ?? 0) > 1} current={current === it.m.id} onLeave={() => leaveCurrent(it.m.id)} expanded={isOpen(it.m)} onToggle={() => toggle(it.m.id, isOpen(it.m))} />
         ) : (
           <div key={`more-${it.ids[0]}`} className="hairline-b">
             <button
