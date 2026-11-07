@@ -19,8 +19,8 @@ const TEXT_PX: Record<string, string[]> = {
   "packages/ui/src/components/avatar.tsx": ["10px"],
   // the 7 px file type on an attachment's glyph, the 10 px "auto" mark and suggestion key
   "apps/web/src/components/reader.tsx": ["7px", "10px"],
-  // the initials in the 22 px avatar of the quick reply bar; the 10 px quote toggle
-  "apps/web/src/components/inline-draft.tsx": ["9.5px", "10px"],
+  // the 10 px quote toggle
+  "apps/web/src/components/inline-draft.tsx": ["10px"],
   // the Style cards' mini-mocks (a picture of a window, not text to read)
   "apps/web/src/components/settings/appearance-tab.tsx": ["10px"],
   // first run's Style specimens: one size in all of them, each design's own scale would make them uneven

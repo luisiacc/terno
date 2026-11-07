@@ -5,6 +5,7 @@ import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { IconButton } from "@terno/ui/components/icon-button";
+import { Kbd } from "@terno/ui/components/kbd";
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, Pin, PinOff, ReplyAll, Trash2 } from "@terno/ui/icons";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -321,9 +322,8 @@ function formLabel(forward: boolean, who: string): string {
  * one tinted surface; switching between them animates its rows. Opening
  * keeps the draft in view; focus moves only on an explicit open or exit.
  */
-/** `icons`: the account's own picture may be asked for (plan 22; never in spam) */
 /** `replyAll`: offered in the bar only when it reaches someone Reply doesn't */
-export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, account, icons = true, checkpoint, onCheckpointReopen }: { threadId: number; draftKey: string | null; replyTo: string; replyAll?: boolean; account: Account | undefined; icons?: boolean; checkpoint?: BodyCheckpoint; onCheckpointReopen?: () => () => void }) {
+export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, account, checkpoint, onCheckpointReopen }: { threadId: number; draftKey: string | null; replyTo: string; replyAll?: boolean; account: Account | undefined; checkpoint?: BodyCheckpoint; onCheckpointReopen?: () => () => void }) {
   // plan 115: this conversation's draft is in the pinned card (kept so even after the conversation's placement expired)
   const pinned = usePinned((s) => s.key !== null && (s.key === draftKey || (draftKey === null && s.threadId === threadId)));
   const d = useDrafts((s) => (draftKey && !pinned ? s.drafts[draftKey] : undefined));
@@ -433,19 +433,22 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
   const drop = useComposerDrop(d?.key ?? "", d?.sending ?? false);
 
   return (
-    <div ref={rootRef} className={cn("mt-5", DRAFT_SURFACE, state === "returning" && "min-h-10")} data-testid="draft-slot" data-state={state} data-thread={threadId}>
+    // short of the composer, it's an invitation: a full line around it in every style, however faint the style's own fill or ring, and it answers the pointer
+    <div ref={rootRef} className={cn("mt-4", DRAFT_SURFACE, "not-data-[state=open]:[box-shadow:0_0_0_1px_var(--border),var(--draft-shadow)] data-[state=bar]:has-[[data-testid=quick-reply]:hover]:bg-muted", state === "returning" && "min-h-10")} data-testid="draft-slot" data-state={state} data-thread={threadId}>
       <Expand open={state === "bar"}>
-        <div className="flex h-10 items-center gap-0.5 pr-1.5 pl-2.5" data-testid="reply-bar">
-          <button type="button" onClick={() => void openCompose("reply", threadId)} title={me ? t("compose.bar.from", { name: me }) : undefined} data-testid="quick-reply" className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground">
-            <SenderAvatar name={me} email={account?.email ?? me} icon={icons} className="size-[22px] text-[9.5px]" />
+        <div className="flex h-10 items-center gap-0.5 pr-1.5" data-testid="reply-bar">
+          {/* its words on the messages' name column; you, as a quiet mark in the avatars' (initials: it's your own account, no logo to compete with what you're answering) */}
+          <button type="button" onClick={() => void openCompose("reply", threadId)} title={me ? t("compose.bar.from", { name: me }) : undefined} data-testid="quick-reply" className="flex h-full min-w-0 flex-1 items-center gap-[7px] rounded-xl pl-[7px] text-left text-sm text-foreground/75 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+            <SenderAvatar name={me} email={account?.email ?? me} className="size-6 text-2xs" />
             <span className="truncate">{t("compose.bar.reply", { name: replyTo })}</span>
+            <Kbd aria-hidden className="@max-[560px]:hidden">R</Kbd>
           </button>
           {replyAll && (
-            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => void openCompose("replyAll", threadId)} data-testid="quick-reply-all">
+            <Button variant="ghost" size="sm" className="text-foreground/75 hover:text-foreground [&_svg]:text-muted-foreground hover:[&_svg]:text-foreground" onClick={() => void openCompose("replyAll", threadId)} data-testid="quick-reply-all">
               <ReplyAll /> {t("compose.bar.replyAll")}
             </Button>
           )}
-          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => void openCompose("forward", threadId)} data-testid="quick-forward">
+          <Button variant="ghost" size="sm" className="text-foreground/75 hover:text-foreground [&_svg]:text-muted-foreground hover:[&_svg]:text-foreground" onClick={() => void openCompose("forward", threadId)} data-testid="quick-forward">
             <Forward /> {t("compose.bar.forward")}
           </Button>
           <AiDraftButton threadId={threadId} testId="quick-ai" />
