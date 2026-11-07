@@ -3,7 +3,7 @@ import { toggleRow, useActionRows } from "~/state/action-preview";
 import { listFilterOf, matchesFilter, mostUrgent, type CategoryColor, type ThreadSummary } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
-import { Bell, Paperclip, Star } from "@terno/ui/icons";
+import { Bell, Check, Paperclip, Star } from "@terno/ui/icons";
 import { memo } from "react";
 import { formatNumber, t } from "@terno/i18n";
 import { listDate } from "~/lib/format";
@@ -314,7 +314,9 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
         // the row is the option and `x` its key: this is for the pointer, and says nothing the row doesn't
         <CheckboxMark data-testid="row-include" checked={included} className="absolute top-1/2 left-5 -translate-y-1/2" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); toggleRow(thread.id); }} />
       )}
-      {!(big && !line) && included === undefined && <span className={cn("absolute top-1/2 left-[11px] size-1.5 -translate-y-1/2 rounded-full bg-unread", !thread.unread && "invisible")} />}
+      {!(big && !line) && included === undefined && !checked && <span className={cn("absolute top-1/2 left-[11px] size-1.5 -translate-y-1/2 rounded-full bg-unread", !thread.unread && "invisible")} />}
+      {/* in the batch, not just open: a check in the gutter, in every row style, moving nothing (it takes the unread dot's place; the row's weight still says unread) */}
+      {checked && included === undefined && <Check aria-hidden data-testid="row-check" className={cn("absolute top-1/2 left-[7px] size-3 -translate-y-1/2 [--icon-line:1.5px]", selected ? "text-row-selected-foreground" : "text-accent-foreground")} />}
       {line ? (
         <div className={cn("relative flex min-w-0 items-center", classic ? "gap-2" : "gap-2.5", wide && !classic && "gap-3")}>
           {avatar}

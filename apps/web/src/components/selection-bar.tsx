@@ -2,9 +2,9 @@ import { shortcutsFor, type Command, type ThreadAction } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { IconButton } from "@terno/ui/components/icon-button";
 import { Shortcut } from "@terno/ui/components/shortcut";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { Archive, CheckCheck, FolderInput, Inbox, Mail, MailOpen, OctagonAlert, ShieldCheck, Star, Tag, Trash2, X } from "@terno/ui/icons";
-import { formatNumber, t } from "@terno/i18n";
+import { cn } from "@terno/ui/lib/utils";
+import { Archive, CheckCheck, FolderInput, Inbox, Mail, MailOpen, OctagonAlert, ShieldCheck, Star, StarOff, Tag, Trash2, X } from "@terno/ui/icons";
+import { t } from "@terno/i18n";
 import { act, tabbedTest, targetRows } from "~/lib/actions";
 import { actionView, placeActions } from "~/lib/places";
 import { clearSelection, isMac, selectAll } from "~/lib/select";
@@ -13,7 +13,13 @@ import { useList } from "~/state/list";
 
 type Variant = "pane" | "toolbar";
 
-function BarButton({ label, command, onClick, children, testId, disabled, bar }: { label: string; command?: Command; onClick: () => void; children: React.ReactNode; testId: string; disabled?: boolean; bar: Variant }) {
+/** The menu's destructive row, on a secondary button: red text and icon, the red's wash under the pointer */
+const DANGER =
+  "text-destructive hover:bg-destructive/10 hover:text-destructive active:bg-destructive/10 aria-expanded:text-destructive dark:hover:bg-destructive/20 dark:active:bg-destructive/20 [&_svg:not([class*='text-'])]:text-destructive hover:[&_svg:not([class*='text-'])]:text-destructive unavailable:text-muted-foreground unavailable:[&_svg:not([class*='text-'])]:text-muted-foreground";
+/** A key on the primary, as on Send */
+const LEAD = "[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_svg:not([class*='text-'])]:text-primary-foreground";
+
+function BarButton({ label, command, onClick, children, testId, disabled, bar, tone }: { label: string; command?: Command; onClick: () => void; children: React.ReactNode; testId: string; disabled?: boolean; bar: Variant; tone?: "lead" | "danger" }) {
   const keys = command ? shortcutsFor(command, undefined, isMac)[0] : undefined;
   // the toolbar's: the icon, named; the name and key in the tooltip
   if (bar === "toolbar")
@@ -22,21 +28,13 @@ function BarButton({ label, command, onClick, children, testId, disabled, bar }:
         {children}
       </IconButton>
     );
-  // the pane's keeps its visible name; the tooltip only has the key
-  const button = (
-    <Button variant="outline" size="sm" data-testid={testId} disabled={disabled} onClick={onClick} className="justify-start gap-2">
+  // the pane's says its name and its key
+  return (
+    <Button variant={tone === "lead" ? "default" : "outline"} data-testid={testId} disabled={disabled} onClick={onClick} aria-label={label} aria-keyshortcuts={keys} className={cn("justify-start gap-2", tone === "lead" && LEAD, tone === "danger" && DANGER)}>
       {children}
       {label}
+      {keys && <Shortcut keys={keys} className="ms-auto" />}
     </Button>
-  );
-  if (!keys) return button;
-  return (
-    <Tooltip>
-      <TooltipTrigger render={button} />
-      <TooltipContent>
-        <Shortcut keys={keys} />
-      </TooltipContent>
-    </Tooltip>
   );
 }
 
@@ -62,6 +60,11 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
   useApp((s) => s.checked);
   const runOn = (a: ThreadAction, _fits: number[]) => () => void act(a);
   const bar = variant;
+  // only what would change something, as in the row menu ("select all N" holds rows it hasn't loaded: both)
+  const rows = scope ? [] : targetRows();
+  const anyUnread = scope !== null || rows.some((r) => r.unread);
+  const anyRead = scope !== null || rows.some((r) => !r.unread);
+  const allStarred = scope === null && rows.length > 0 && rows.every((r) => r.starred);
   const title = scope ? t("selection.scope", { count, label: scope.label }) : t("selection.count", { count });
   const placeButtons = places && (
     <>
@@ -75,10 +78,10 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
           <Inbox />
         </BarButton>
       )}
-      <BarButton bar={bar} label={t("actions.archive")} command="thread.archive" onClick={runOn("archive", places.archive)} testId="bar-archive" disabled={places.archive.length === 0}>
+      <BarButton bar={bar} tone="lead" label={t("actions.archive")} command="thread.archive" onClick={runOn("archive", places.archive)} testId="bar-archive" disabled={places.archive.length === 0}>
         <Archive />
       </BarButton>
-      <BarButton bar={bar} label={t("actions.trash")} command="thread.trash" onClick={runOn("trash", places.trash)} testId="bar-trash" disabled={places.trash.length === 0}>
+      <BarButton bar={bar} tone="danger" label={t("actions.trash")} command="thread.trash" onClick={runOn("trash", places.trash)} testId="bar-trash" disabled={places.trash.length === 0}>
         <Trash2 />
       </BarButton>
     </>
@@ -96,26 +99,18 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
               <Inbox />
             </BarButton>
           )}
-          <BarButton bar={bar} label={t("actions.archive")} command="thread.archive" onClick={run("archive")} testId="bar-archive">
+          <BarButton bar={bar} tone="lead" label={t("actions.archive")} command="thread.archive" onClick={run("archive")} testId="bar-archive">
             <Archive />
           </BarButton>
         </>
       )}
       {!placeButtons && (
-        <BarButton bar={bar} label={t("actions.trash")} command="thread.trash" onClick={run("trash")} testId="bar-trash" disabled={view === "trash"}>
+        <BarButton bar={bar} tone="danger" label={t("actions.trash")} command="thread.trash" onClick={run("trash")} testId="bar-trash" disabled={view === "trash"}>
           <Trash2 />
         </BarButton>
       )}
-      <BarButton bar={bar} label={t("actions.markRead")} command="thread.markRead" onClick={run("markRead")} testId="bar-read">
-        <MailOpen />
-      </BarButton>
-      <BarButton bar={bar} label={t("actions.markUnread")} command="thread.markUnread" onClick={run("markUnread")} testId="bar-unread">
-        <Mail />
-      </BarButton>
-      <BarButton bar={bar} label={t("actions.star")} command="thread.star" onClick={run("star")} testId="bar-star">
-        <Star />
-      </BarButton>
-      <BarButton bar={bar} label={t("actions.spam")} command="thread.spam" onClick={places ? runOn("spam", places.spam) : run("spam")} testId="bar-spam" disabled={places ? places.spam.length === 0 : view === "spam"}>
+      {/* the toolbar's order: where it goes, then what it's filed as, then its state */}
+      <BarButton bar={bar} label={t("actions.markSpam")} command="thread.spam" onClick={places ? runOn("spam", places.spam) : run("spam")} testId="bar-spam" disabled={places ? places.spam.length === 0 : view === "spam"}>
         <OctagonAlert />
       </BarButton>
       <BarButton bar={bar} label={t("actions.category")} command="thread.category" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} testId="bar-category">
@@ -123,6 +118,19 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
       </BarButton>
       <BarButton bar={bar} label={t("actions.moveTo")} command="thread.move" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "move" })} testId="bar-move" disabled={scope !== null}>
         <FolderInput />
+      </BarButton>
+      {anyUnread && (
+        <BarButton bar={bar} label={t("actions.markRead")} command="thread.markRead" onClick={run("markRead")} testId="bar-read">
+          <MailOpen />
+        </BarButton>
+      )}
+      {anyRead && (
+        <BarButton bar={bar} label={t("actions.markUnread")} command="thread.markUnread" onClick={run("markUnread")} testId="bar-unread">
+          <Mail />
+        </BarButton>
+      )}
+      <BarButton bar={bar} label={t(allStarred ? "actions.unstar" : "actions.star")} command="thread.star" onClick={run(allStarred ? "unstar" : "star")} testId="bar-star">
+        {allStarred ? <StarOff /> : <Star />}
       </BarButton>
     </>
   );
@@ -147,24 +155,26 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
       </div>
     );
   return (
-    <section data-testid="selection-bar" className="flex h-full min-h-0 flex-col items-center justify-center gap-6 bg-background p-10 text-center">
-      <div>
-        <div className="mb-3 inline-flex h-10 min-w-10 items-center justify-center rounded-xl bg-tint px-2.5 text-xl font-semibold tracking-display text-foreground tabular" data-testid="selection-count">
-          {count > 999 ? `${formatNumber(999)}+` : formatNumber(count)}
+    // where the reader's column starts, so the actions sit where the eye was, not across an empty pane
+    <section data-testid="selection-bar" className="h-full min-h-0 overflow-y-auto bg-background">
+      <div data-reader-column className="mx-auto flex max-w-(--reader-max) flex-col items-start gap-5 px-(--reader-pad-x) pt-18 pb-16">
+        <div>
+          <h2 className="text-xl font-semibold tracking-display tabular" data-testid="selection-count">
+            {title}
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t("selection.hint")}</p>
         </div>
-        <p className="text-lg font-semibold tracking-tight">{title}</p>
-        <p className="mt-1 text-sm text-muted-foreground">{t("selection.hint")}</p>
-      </div>
-      <div className="grid w-full max-w-md grid-cols-2 gap-2">{actions}</div>
-      <div className="flex items-center gap-2">
-        {more && (
-          <Button variant="ghost" size="sm" data-testid="bar-select-all" onClick={selectAll}>
-            <CheckCheck /> {t("actions.selectAll")} <Shortcut keys="mod+a" className="ml-1" />
+        <div className="grid w-full max-w-md grid-cols-2 gap-2">{actions}</div>
+        <div className="-ml-2.5 flex items-center gap-2">
+          {more && (
+            <Button variant="ghost" size="sm" data-testid="bar-select-all" onClick={selectAll}>
+              <CheckCheck /> {t("actions.selectAll")} <Shortcut keys="mod+a" className="ml-1" />
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" data-testid="bar-clear" onClick={clearSelection}>
+            <X /> {t("selection.deselect")} <Shortcut keys="escape" className="ml-1" />
           </Button>
-        )}
-        <Button variant="ghost" size="sm" data-testid="bar-clear" onClick={clearSelection}>
-          <X /> {t("selection.deselect")} <Shortcut keys="escape" className="ml-1" />
-        </Button>
+        </div>
       </div>
     </section>
   );

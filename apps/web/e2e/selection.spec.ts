@@ -47,6 +47,41 @@ async function rightClick(page: Page, target: Locator) {
   await expect(menu(page)).toBeVisible();
 }
 
+test("a batch: every row shows it's in, Delete reads as the menu's, Undo puts the selection back and the keyboard in the list", async ({ app: page }) => {
+  const ids = (await idsOf(rows(page))).slice(1, 4);
+  const open = selectedRow(page);
+  await expect(open.getByTestId("row-check")).toHaveCount(0);
+  await selectRows(page, ids);
+  await expect(checked(page).getByTestId("row-check")).toHaveCount(3);
+  await expect(page.getByTestId("selection-count")).toHaveText("3 conversations selected");
+  await expect(page.getByTestId("bar-spam")).toHaveAccessibleName("Mark as spam");
+  // the same red as the menu's Delete
+  const red = (l: Locator) => l.evaluate((el) => getComputedStyle(el).color);
+  const barRed = await red(page.getByTestId("bar-trash"));
+  await rightClick(page, row(page, ids[0]!));
+  expect(await red(item(page, "menu-trash"))).toBe(barRed);
+  await page.keyboard.press("Escape");
+  await expect(menu(page)).toBeHidden();
+
+  // from the pane's button, then the snack's: the button that had focus is gone, focus isn't lost
+  await page.getByTestId("bar-archive").click();
+  await expect(checked(page)).toHaveCount(0);
+  await expect(toast(page, "Archived · 3 conversations").getByTestId("snack-action")).toHaveAttribute("aria-keyshortcuts", "z");
+  await page.getByTestId("snack-action").click();
+  await expect(checked(page)).toHaveCount(3);
+  expect(await idsOf(checked(page))).toEqual(ids);
+  await expect(page.locator("[role=listbox]")).toBeFocused();
+
+  // and with the keys: e, z, e again resumes the same cleanup
+  await page.keyboard.press("e");
+  await expect(checked(page)).toHaveCount(0);
+  await expect(toast(page, "Archived · 3 conversations").getByTestId("snack-action")).toBeVisible();
+  await page.keyboard.press("z");
+  await expect(checked(page)).toHaveCount(3);
+  await page.keyboard.press("e");
+  await expect(row(page, ids[0]!)).toHaveCount(0);
+});
+
 test.describe("context menu on one thread", () => {
   test("one thread's menu: what it acts on, Trash and Spam, ⇧F10, categories and the picker", async ({ app: page, server }) => {
     await scenario("acts on the row it opened on: read state, star, archive with undo", async () => {

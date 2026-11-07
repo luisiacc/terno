@@ -53,7 +53,7 @@ test.describe("an account's own folders", () => {
       await page.getByRole("listbox").focus();
       await page.keyboard.press("ControlOrMeta+a");
       // every thread of the folder (one page of it), never more
-      await expect(page.getByTestId("selection-count")).toHaveText(String(membersOf(server, acme, "Label_21").length));
+      await expect(page.getByTestId("selection-count")).toContainText(String(membersOf(server, acme, "Label_21").length));
     });
     await scenario("a parent that only groups (IMAP \\Noselect) isn't a place to go; its child is", async () => {
       await freshStart(page);
