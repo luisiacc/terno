@@ -142,7 +142,7 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("chart-3", () => o("cat-amber"));
   def("chart-4", () => o("cat-rose"));
   def("chart-5", () => o("cat-slate"));
-  def("overlay", () => (light ? "0 0 0 / 10%" : "0 0 0 / 45%"));
+  def("overlay", () => (light ? "0 0 0 / 16%" : "0 0 0 / 45%"));
   def("shadow-color", () => (light ? "0 0 0 / 10%" : "0 0 0 / 40%"));
   def("ink-anchor", () => (light ? "0.2 0.01 265" : "0.98 0 0"));
   def("mail-paper", () => (light ? o("background") : "0.97 0.003 85"));
@@ -152,11 +152,11 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   // plan 66: the selected fill at 60% of its opacity, so it stays translucent over vibrancy like the fill it echoes
   def("sidebar-hover", () => withAlpha(o("sidebar-accent"), Math.round(o("sidebar-accent").alpha * 0.6 * 1000) / 1000));
   // plan 07
-  def("hairline", () => withAlpha(o("foreground"), light ? 0.09 : 0.08));
+  def("hairline", () => withAlpha(o("foreground"), 0.11));
   def("highlight", () => (light ? "1 0 0 / 16%" : "1 0 0 / 6%"));
   def("tint", () => {
     // a faint shift toward the ink, smaller until text on it still reads
-    for (let t = light ? 0.035 : 0.05; t > 0; t = Math.round((t - 0.005) * 1000) / 1000) {
+    for (let t = light ? 0.045 : 0.07; t > 0; t = Math.round((t - 0.005) * 1000) / 1000) {
       const c = mixOklab(o("background"), o("foreground"), t);
       if (contrast(o("muted-foreground"), c, bg) >= 4.5 && contrast(o("foreground"), c, bg) >= 4.5) return c;
     }
@@ -267,7 +267,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.22 0.04 268",
       "sidebar-accent": "0.22 0.01 265 / 7%",
     },
-    cats: cats(".675 .12 10 | .665 .12 75 | .65 .12 130 | .645 .12 165 | .65 .1 215 | .62 .13 268 | .64 .13 300 | .62 .02 265"),
+    cats: cats(".645 .12 10 | .635 .12 75 | .62 .12 130 | .615 .12 165 | .62 .1 215 | .59 .13 268 | .61 .13 300 | .59 .02 265"),
     overrides: { "draft-foreground": "0.42 0.17 268" },
   }),
   defineTheme({
@@ -439,7 +439,7 @@ export const THEMES: readonly Theme[] = [
       popover: "1 0 0",
       sidebar: "0.986 0.002 68",
       muted: "0.967 0.003 85",
-      "muted-foreground": "0.515 0.012 72",
+      "muted-foreground": "0.5 0.012 72",
       accent: "0.96 0.016 83",
       "accent-foreground": "0.5 0.1 74",
       border: "0.3 0.01 70 / 13%",
@@ -455,7 +455,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.211 0.005 68",
       "sidebar-accent": "0.953 0.006 75",
     },
-    cats: cats(".6 .14 25 | .64 .12 78 | .62 .11 125 | .58 .095 149 | .589 .079 208 | .55 .1 265 | .589 .109 306 | .58 .015 70"),
+    cats: cats(".6 .14 25 | .63 .15 52 | .62 .11 125 | .58 .095 149 | .589 .079 208 | .55 .1 265 | .589 .109 306 | .58 .015 70"),
     overrides: { ring: "0.6 0.12 76", "draft-foreground": "0.47 0.1 74" },
   }),
   defineTheme({
@@ -472,7 +472,7 @@ export const THEMES: readonly Theme[] = [
       popover: "1 0 0",
       sidebar: "0.97 0.004 91",
       muted: "0.961 0.004 91",
-      "muted-foreground": "0.515 0.013 90",
+      "muted-foreground": "0.5 0.013 90",
       accent: "0.954 0.006 255",
       "accent-foreground": "0.326 0.061 256",
       border: "0.227 0.004 85 / 12%",
@@ -555,7 +555,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "#292929",
       "sidebar-accent": "#F4F4F4",
     },
-    cats: cats(".645 .17 16 | .64 .13 66 | .62 .13 131 | .61 .11 163 | .61 .1 225 | .585 .14 277 | .606 .15 300 | .56 .01 257"),
+    cats: cats(".645 .17 16 | .64 .13 66 | .62 .13 131 | .61 .11 163 | .61 .1 205 | .54 .15 262 | .6 .17 322 | .56 .01 257"),
     overrides: { "sidebar-foreground": "#5D5D5D", "sidebar-glyph": "#5D5D5D", "sidebar-accent-foreground": "#292929", "control-edge": "#949494", "control-edge-hover": "#5D5D5D", "draft-foreground": "#292929" },
   }),
   defineTheme({
@@ -838,7 +838,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.96 0.01 85",
       "sidebar-accent": "1 0 0 / 7%",
     },
-    cats: cats(".72 .13 30 | .8 .12 82 | .78 .12 130 | .74 .1 150 | .76 .08 208 | .72 .1 265 | .74 .1 306 | .72 .015 75"),
+    cats: cats(".72 .13 20 | .76 .14 58 | .78 .12 130 | .74 .1 150 | .76 .08 208 | .72 .1 265 | .74 .1 306 | .72 .015 75"),
     overrides: { ring: "0.8 0.13 82 / 80%", "draft-foreground": "0.87 0.09 85" },
   }),
   defineTheme({
@@ -935,7 +935,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "#EDEDED",
       "sidebar-accent": "#2A2A2A",
     },
-    cats: cats(".72 .13 16 | .8 .12 75 | .78 .13 131 | .74 .11 163 | .76 .09 225 | .7 .12 277 | .72 .12 300 | .7 .01 257"),
+    cats: cats(".72 .13 16 | .8 .12 75 | .78 .13 131 | .74 .11 163 | .76 .09 205 | .68 .13 262 | .72 .14 322 | .7 .01 257"),
     overrides: { "sidebar-foreground": "#9E9E9E", "sidebar-glyph": "#9E9E9E", "sidebar-accent-foreground": "#EDEDED", "control-edge": "#808080", "control-edge-hover": "#9E9E9E", "draft-foreground": "#EDEDED" },
   }),
 ];

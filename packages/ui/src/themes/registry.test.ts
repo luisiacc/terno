@@ -36,7 +36,7 @@ describe("theme registry", () => {
     // ring: primary at the lowest alpha ≥ .55 that still reaches 3:1 on the background and on the sidebar
     expect(parseColor(light.ring).alpha).toBe(0.8);
     expect(parseColor(dark.ring).alpha).toBe(0.6);
-    expect(parseColor(light.overlay).alpha).toBe(0.1);
+    expect(parseColor(light.overlay).alpha).toBe(0.16);
     expect(parseColor(dark.overlay).alpha).toBe(0.45);
     expect(parseColor(dark["sidebar-translucent"]).alpha).toBe(0.62);
   });
@@ -48,9 +48,9 @@ describe("theme registry", () => {
 });
 
 describe("plan 07 tokens", () => {
-  it("hairline is ink at 9 % / 8 %; highlight is white at 16 % / 6 %", () => {
-    expect(parseColor(builtinTheme("terno-light")!.tokens.hairline).alpha).toBe(0.09);
-    expect(parseColor(builtinTheme("terno-dark")!.tokens.hairline).alpha).toBe(0.08);
+  it("hairline is ink at 11 %; highlight is white at 16 % / 6 %", () => {
+    expect(parseColor(builtinTheme("terno-light")!.tokens.hairline).alpha).toBe(0.11);
+    expect(parseColor(builtinTheme("terno-dark")!.tokens.hairline).alpha).toBe(0.11);
     expect(parseColor(builtinTheme("terno-light")!.tokens.highlight).alpha).toBe(0.16);
     expect(parseColor(builtinTheme("nord")!.tokens.highlight).alpha).toBe(0.06);
   });
@@ -58,7 +58,7 @@ describe("plan 07 tokens", () => {
   it("tint sits between the background and the ink, and text on it still reads", () => {
     for (const t of THEMES) {
       const [bg, tint, fg] = [t.tokens.background, t.tokens.tint, t.tokens.foreground].map((c) => parseColor(c).l);
-      expect(Math.abs(tint! - bg!), t.id).toBeLessThanOrEqual(Math.abs(fg! - bg!) * 0.06);
+      expect(Math.abs(tint! - bg!), t.id).toBeLessThanOrEqual(Math.abs(fg! - bg!) * 0.08);
       expect(contrast(t.tokens["muted-foreground"], t.tokens.tint, t.tokens.background), t.id).toBeGreaterThanOrEqual(4.5);
     }
   });
