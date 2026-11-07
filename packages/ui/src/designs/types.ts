@@ -74,8 +74,8 @@ export interface DesignDefinition {
     /** a command list's rows (the palette, the category picker): its panel is these plus their 8 px inset */
     commandRadius: string;
   };
-  /** list row heights in px: the virtualizer reads these; `wide` is the one-line row of the List layout's full-width list at comfortable density (plan 24) */
-  rows: Record<"comfortable" | "compact" | "wide", number>;
+  /** list row heights in px: the virtualizer reads these; `wide` is the one-line row of the List layout's full-width list at comfortable density (plan 24); `results` a search's comfortable row (plan 158: the same row, closer together, more of them to compare) */
+  rows: Record<"comfortable" | "compact" | "wide" | "results", number>;
   /** avatar sizes in px (0: none); `rowWide` goes with `rows.wide` */
   avatar: { row: number; rowCompact: number; rowWide: number; message: number; collapsed: number; senderCard: number };
   surfaces: {

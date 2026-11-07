@@ -741,6 +741,8 @@ export const contract = {
       limit: z.number().int().min(1).max(500).default(100),
     }),
   ),
+  /** plan 158: for results whose row doesn't show why they matched, the sentence that does; a few at a time, the rows on screen */
+  "threads.excerpts": m<{ excerpts: { threadId: number; text: string }[] }>()(z.object({ query: z.string().max(2000), threadIds: z.array(id).max(10) })),
   "threads.get": m<ThreadDetail>()(z.object({ threadId: id, bodyFormat: z.literal("parts").optional() })),
   "threads.bodyPart": m<string>()(z.object({ accountId: id, messageId: id, version: z.string().min(1).max(100), field: z.enum(["text", "html"]), ordinal: z.number().int().min(0) })),
   "reader.hydrate": m<{ changed: boolean; unavailable?: true }>()(z.object({ threadId: id, messageId: id })),

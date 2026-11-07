@@ -31,7 +31,7 @@ const DAY_MS = 86_400_000;
 /** The DB keeps this many trailing body tokens (body_tail_norm) so body endsWith is index-free SQL. */
 export const BODY_TAIL_TOKENS = 32;
 // letters/numbers plus combining marks that survived (non-Latin scripts keep theirs)
-const WORD_WITH_MARKS = /[\p{L}\p{N}][\p{L}\p{N}\p{M}]*/gu;
+export const WORD_WITH_MARKS = /[\p{L}\p{N}][\p{L}\p{N}\p{M}]*/gu;
 
 /** Combining marks that follow a Latin letter (unicode61 folds diacritics for Latin script only). */
 const LATIN_MARKS = /(\p{Script=Latin})[\u0300-\u036f]+/gu;
@@ -97,6 +97,21 @@ export function* iterateBodyTokens(text: string): Generator<string> {
 
 export function tokenize(text: string): string[] {
   return foldTokens(text).match(WORD_WITH_MARKS) ?? [];
+}
+
+/** Folded as `tokenize` folds, each folded unit saying where in the text it came from (`at[folded.length]`: the text's end). Character by character: for a line, not a body. */
+export function foldedWithOffsets(text: string): { folded: string; at: number[] } {
+  let folded = "";
+  const at: number[] = [];
+  let i = 0;
+  for (const ch of text) {
+    const f = foldTokens(ch);
+    for (let k = 0; k < f.length; k++) at.push(i);
+    folded += f;
+    i += ch.length;
+  }
+  at.push(text.length);
+  return { folded, at };
 }
 
 function textOp(op: TextOp, haystack: string, needle: string): boolean {

@@ -38,7 +38,7 @@ export const atelier: DesignDefinition = {
   },
   icon: { stroke: 1.5, toolbar: 1.5, nav: 16 },
   layout: { sidebar: "240px", listMin: "340px", listMax: "min(390px, 32vw)", readerMin: 380, readerMax: "768px", readerPadX: "2.5rem", rowRadius: "0.75rem", navRadius: "0.625rem", navHeight: "2rem", sidebarPad: "0.5rem", navSectionGap: "1rem", navSectionHeight: "1.25rem", cardRadius: "calc(var(--ds-radius-lg) + 2px)", commandRadius: "var(--ds-radius-xl)" },
-  rows: { comfortable: 84, compact: 44, wide: 52 },
+  rows: { comfortable: 84, compact: 44, wide: 52, results: 72 },
   avatar: { row: 36, rowCompact: 22, rowWide: 26, message: 40, collapsed: 28, senderCard: 0 },
   surfaces: { draft: "outline", reviewBadge: "plain", inboxCount: "muted", cta: "control", card: "tint" },
   variants: {

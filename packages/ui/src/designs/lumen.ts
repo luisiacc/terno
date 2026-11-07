@@ -38,7 +38,7 @@ export const lumen: DesignDefinition = {
   },
   icon: { stroke: 1.5, toolbar: 1.5, nav: 16 },
   layout: { sidebar: "248px", listMin: "340px", listMax: "min(400px, 32vw)", readerMin: 380, readerMax: "760px", readerPadX: "2.5rem", rowRadius: "1rem", navRadius: "0.75rem", navHeight: "2.125rem", sidebarPad: "0.5rem", navSectionGap: "1rem", navSectionHeight: "1.25rem", cardRadius: "calc(var(--ds-radius-lg) + 2px)", commandRadius: "var(--ds-radius-xl)" },
-  rows: { comfortable: 84, compact: 48, wide: 56 },
+  rows: { comfortable: 84, compact: 48, wide: 56, results: 72 },
   avatar: { row: 44, rowCompact: 24, rowWide: 32, message: 32, collapsed: 32, senderCard: 64 },
   surfaces: { draft: "card", reviewBadge: "tinted", inboxCount: "muted", cta: "control", card: "tint" },
   variants: {

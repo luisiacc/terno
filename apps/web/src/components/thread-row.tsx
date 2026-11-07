@@ -1,6 +1,6 @@
 import { CheckboxMark } from "@terno/ui/components/checkbox";
 import { toggleRow, useActionRows } from "~/state/action-preview";
-import { listFilterOf, matchesFilter, mostUrgent, type CategoryColor, type ThreadSummary } from "@terno/core";
+import { listFilterOf, matchesFilter, matchFocus, matchParts, mostUrgent, type CategoryColor, type MatchNeedle, type RowMatch, type ThreadSummary } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
 import { Bell, Check, Paperclip, Star } from "@terno/ui/icons";
@@ -22,6 +22,7 @@ import { reminderShort, useReminders } from "~/lib/reminders";
 import { rowLine } from "~/lib/followups";
 import { useFollowups } from "~/state/followups";
 import { onlyOnTop } from "~/state/list";
+import { useExcerpts } from "~/state/excerpts";
 
 /** The account, in all-accounts views: a small ring in its color (category dots are filled) before its name (plan 23). */
 const ACCOUNT_MARK: Record<CategoryColor, string> = {
@@ -53,6 +54,8 @@ interface Props {
   reminderTop?: boolean;
   /** the top's last row: the hairline under the top replaces its own separator */
   reminderEnd?: boolean;
+  /** plan 158: in a search's results, what to mark on the row (one object per search) */
+  match?: RowMatch | null;
 }
 
 /**
@@ -62,7 +65,7 @@ interface Props {
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, reminderTop = false, reminderEnd = false }: Props) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, reminderTop = false, reminderEnd = false, match = null }: Props) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -86,6 +89,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   /** plan 143: in a sentence's preview, whether this row is in it (only this row renders when it changes) */
   const previewing = useApp((s) => s.actionPreview !== null);
   const unticked = useActionRows((s) => previewing && s.unticked.has(thread.id));
+  /** plan 158: the sentence it matched in, when its own words don't show it (one Map read: only this row renders when it comes) */
+  const excerpt = useExcerpts((s) => (match && s.match === match ? s.byThread.get(thread.id) : undefined));
   return (
     <ThreadRowView
       thread={thread}
@@ -108,12 +113,16 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       reminder={reminder}
       remindersList={remindersList}
       review={review}
+      match={match}
+      excerpt={excerpt}
       interactive
     />
   );
 });
 
-type ViewProps = Omit<Props, "showAccount" | "wide" | "review" | "reminderTop" | "reminderEnd"> & {
+type ViewProps = Omit<Props, "showAccount" | "wide" | "review" | "reminderTop" | "reminderEnd" | "match"> & {
+  match?: RowMatch | null;
+  excerpt?: string;
   wide: boolean;
   review: number | null;
   reminderTop: boolean;
@@ -149,19 +158,39 @@ function useOwed(thread: Pick<ThreadSummary, "id">, reminderTop?: boolean) {
   return { line: shows ? rowLine(owed) : null, dueAt: shows ? (mostUrgent(owed)?.dueAt ?? null) : null };
 }
 
-function RowSnippet({ thread, reminderTop, ink }: { thread: ThreadSummary; reminderTop?: boolean; ink: string }) {
+/**
+ * Plan 158: why a result is here. Weight as well as the tint (the tint alone would be color alone); on the cursor and
+ * on a checked row, the row's own ink on a lighter tint (contrast.ts holds both).
+ */
+const MARK = "rounded-xs bg-star/25 px-px font-semibold text-foreground group-data-cursor/row:bg-star/12 group-data-cursor/row:text-row-selected-foreground group-data-checked/row:bg-star/12 group-data-checked/row:text-accent-foreground";
+
+function Marked({ text, needles }: { text: string; needles: readonly MatchNeedle[] | undefined }) {
+  const parts = needles ? matchParts(text, needles) : null;
+  if (!parts) return text;
+  return parts.map((p, i) => (p.hit ? <mark key={i} data-testid="row-match" className={MARK}>{p.text}</mark> : p.text));
+}
+
+/** How far into its line a match may stand: what shows of it is short beside a classic row's subject, longer on a line of its own. */
+const LEAD = { beside: 10, own: 28, wide: 40 };
+
+/** The row's words after the subject in a search: from near the match, the match marked. */
+function matchLine(match: RowMatch | null | undefined, text: string, lead: number) {
+  return match ? <Marked text={matchFocus(text, match.body, lead)} needles={match.body} /> : text;
+}
+
+function RowSnippet({ thread, reminderTop, ink, match, excerpt, lead }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; match?: RowMatch | null; excerpt?: string; lead: number }) {
   const { line } = useOwed(thread, reminderTop);
   return (
-    <span data-testid="row-snippet" data-followup={line ? true : undefined} className={cn("type-row-snippet min-w-0 truncate", line ? ink : "text-muted-foreground")}>
-      {line ?? thread.snippet}
+    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("type-row-snippet min-w-0 truncate", line ? ink : "text-muted-foreground")}>
+      {line ?? matchLine(match, excerpt ?? thread.snippet, lead)}
     </span>
   );
 }
 
 /** The wide row's words after the subject: the same line, where it reads the same. */
-function RowTail({ thread, reminderTop, ink }: { thread: ThreadSummary; reminderTop?: boolean; ink: string }) {
+function RowTail({ thread, reminderTop, ink, match, excerpt }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; match?: RowMatch | null; excerpt?: string }) {
   const { line } = useOwed(thread, reminderTop);
-  return <span data-followup={line ? true : undefined} className={line ? ink : "text-muted-foreground"}>— {line ?? thread.snippet}</span>;
+  return <span data-followup={line ? true : undefined} className={line ? ink : "text-muted-foreground"}>— {line ?? matchLine(match, excerpt ?? thread.snippet, LEAD.wide)}</span>;
 }
 
 /** On the Inbox's top and in its own list, the date a row shows is when it's owed. */
@@ -170,7 +199,7 @@ function RowDate({ thread, reminderTop, fallback, className, title }: { thread: 
   return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? reminderShort(dueAt) : fallback}</span>;
 }
 
-export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, reminderTop, reminderEnd, selected, checked, included, inSelection, account, categories, hasDraft, code, reminder, remindersList, interactive }: ViewProps) {
+export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, reminderTop, reminderEnd, selected, checked, included, inSelection, account, categories, hasDraft, code, reminder, remindersList, interactive, match, excerpt }: ViewProps) {
   const cats = thread.categoryIds.length ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
@@ -181,7 +210,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
 
   const from = (
     <span data-testid="row-from" className={cn("min-w-0 truncate", thread.unread ? "type-row-from-strong" : "type-row-from text-foreground")}>
-      {thread.fromName}
+      <Marked text={thread.fromName} needles={match?.from} />
     </span>
   );
   const count = thread.messageCount > 1 && <span className="text-xs text-muted-foreground tabular">{formatNumber(thread.messageCount)}</span>;
@@ -245,14 +274,16 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       <RowDate thread={thread} reminderTop={reminderTop} title={remindersList && reminder?.kind === "noReply" ? t("remind.noReplySuffix") : undefined} className={cn("text-xs tabular", thread.unread ? "text-foreground" : "text-muted-foreground")} fallback={remindersList && reminder ? reminderShort(reminder.dueAt) : listDate(thread.lastDate)} />
     );
   const draft = hasDraft && <span className="shrink-0 font-medium text-draft-foreground">{t("list.draft")}</span>;
+  // plan 158: beside a classic row's subject, a match in the text after it needs room to show, unless the subject has one itself
+  const roomForMatch = classic && !!match && !matchParts(thread.subject, match.subject) && !!matchParts(excerpt ?? thread.snippet, match.body);
   const subject = (
-    <span data-testid="row-subject" className={cn("truncate", classic && "shrink-0", thread.unread ? "type-row-subject-strong text-foreground" : "type-row-subject text-foreground")} style={classic ? { maxWidth: "60%" } : undefined}>
-      {thread.subject || t("common.noSubject")}
+    <span data-testid="row-subject" className={cn("truncate", classic && "shrink-0", thread.unread ? "type-row-subject-strong text-foreground" : "type-row-subject text-foreground")} style={classic ? { maxWidth: roomForMatch ? "35%" : "60%" } : undefined}>
+      {thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}
     </span>
   );
   // plan 142: gated on the row's every state, as Draft's ink is (contrast.ts)
   const owedInk = "text-draft-foreground";
-  const snippet = <RowSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} />;
+  const snippet = <RowSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} match={match} excerpt={excerpt} lead={classic ? LEAD.beside : LEAD.own} />;
   const chip = code && <CodeChip threadId={thread.id} code={code} />;
   const reviewed = review !== null ? categories.find((c) => c.id === review) : undefined;
   const answer = reviewed && <ReviewControls threadId={thread.id} categoryId={reviewed.id} category={reviewed.name} />;
@@ -335,7 +366,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
             </>
           )}
           <span className={cn("type-row-subject min-w-0 flex-1 truncate", thread.unread ? "text-foreground" : "text-muted-foreground")}>
-            {thread.subject} {draft} <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} />
+            <Marked text={thread.subject} needles={match?.subject} /> {draft} <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} match={match} excerpt={excerpt} />
           </span>
           {accountTag}
           {!wide && chip}

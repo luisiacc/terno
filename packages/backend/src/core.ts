@@ -262,6 +262,8 @@ export class BackendCore {
   readonly searchSeq = new Map<string, number>();
   /** each client's search in flight: a newer one aborts it (slow paths stop early) */
   readonly searchAborts = new Map<string, AbortController>();
+  /** the excerpts being read for each client: its next ask replaces them (plan 158) */
+  readonly excerptAborts = new Map<string, AbortController>();
   readonly abort = new AbortController();
   readonly platform: Platform;
   /** the only way out of the backend: every outbound request asks it first */

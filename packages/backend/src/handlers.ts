@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction, type AccountPrefs, type Reminder, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
+import { capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, type Reminder, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
 import { L } from "@terno/i18n";
 import { movedNothing, SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type FolderMoved, type FollowupSnapshot, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
@@ -64,6 +64,9 @@ function toDraft(r: DraftRow): Draft {
     updatedAt: r.updated_at,
   };
 }
+
+/** Matching messages read per thread for its excerpt: with the 10 threads an ask holds, what plan 141's gate measures (30 messages). */
+const EXCERPT_MESSAGES = 3;
 
 export function createHandlers(b: Backend): Handlers {
   const store = b.store;
@@ -482,6 +485,32 @@ export function createHandlers(b: Backend): Handlers {
         throw error;
       } finally {
         if (b.searchAborts.get(ctx.clientId) === abort) b.searchAborts.delete(ctx.clientId);
+      }
+    },
+
+    // plan 158: the matching sentence of the rows on screen, after the search answered (it never waits for this). The
+    // store's own bounded read for Ask, in both engines: never Spam or Trash, whose rows keep their own line
+    "threads.excerpts": async ({ query, threadIds }, ctx) => {
+      b.excerptAborts.get(ctx.clientId)?.abort();
+      const abort = new AbortController();
+      b.excerptAborts.set(ctx.clientId, abort);
+      try {
+        const parsed = parseSearch(query, b.now());
+        const needles = rowMatchOf(parsed)?.body ?? [];
+        if (!needles.length || !threadIds.length) return { excerpts: [] };
+        // these threads are the search's answer already: account: and category: have had their say
+        const search = resolveSearch({ ...parsed, accounts: [], categories: [], excludeAccounts: [], excludeCategories: [] }, query, {}, { accounts: [], categories: [] });
+        // a thread's newest few matches, newest first: a reply may hold the word only where it quotes it, and quotes aren't read
+        const maxMessages = threadIds.length * EXCERPT_MESSAGES;
+        const { messages } = await store.ask.passages({ threadIds, queries: [search], maxMessages, maxChars: maxMessages * 2400, signal: abort.signal });
+        const excerpts = new Map<number, string>();
+        for (const m of messages) {
+          const text = excerpts.has(m.threadId) ? null : matchExcerpt(m.text, needles);
+          if (text) excerpts.set(m.threadId, text);
+        }
+        return { excerpts: [...excerpts].map(([threadId, text]) => ({ threadId, text })) };
+      } finally {
+        if (b.excerptAborts.get(ctx.clientId) === abort) b.excerptAborts.delete(ctx.clientId);
       }
     },
 

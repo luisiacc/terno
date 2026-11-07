@@ -118,6 +118,13 @@ export function listKey(): string {
   return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.gmailTab ? [`~${s.gmailTab}`] : []), ...(s.reminders ? ["reminders"] : []), ...(s.followups ? ["followups"] : []), ...(s.actionPreview ? [`action:${s.actionPreview}`] : []), ...(s.today ? ["today"] : []), ...(soloSearch(s) ? ["~solo"] : []), s.query.trim()]);
 }
 
+/** The search a list's key holds: what its rows answer to, whatever is being typed by now. Empty for a mailbox, Review or a preview. */
+export function searchOfKey(key: string): string {
+  if (!key) return "";
+  const parts = JSON.parse(key) as unknown[];
+  return parts[3] === null && !parts.some((p) => typeof p === "string" && p.startsWith("action:")) ? (parts.at(-1) as string) : "";
+}
+
 /** plan 108: a search while focused on an account: only that account's mail */
 export function soloSearch(s: { soloAccountId: number | null; query: string }): boolean {
   return s.soloAccountId !== null && s.query.trim() !== "";

@@ -7,7 +7,7 @@ import { Bell, ChevronDown, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
-import { matchesFilter, savesRuleOnly, tabRef, type ListFilter as QuickFilter } from "@terno/core";
+import { matchesFilter, rowMatchOf, savesRuleOnly, tabRef, type ListFilter as QuickFilter } from "@terno/core";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { Button } from "@terno/ui/components/button";
@@ -24,7 +24,8 @@ import { viewLabel } from "~/lib/format";
 import { useActionPreview } from "~/state/action-preview";
 import { navigate, getApp, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
-import { currentScope, inboxTop, listKey, loadMore, useList } from "~/state/list";
+import { currentScope, inboxTop, listKey, loadMore, searchOfKey, useList } from "~/state/list";
+import { wantExcerpts } from "~/state/excerpts";
 import { useToday, type TodayGroup } from "~/state/today";
 import { pressRow, releaseRow } from "~/lib/select";
 import { DIGEST_ROW_ID, type ThreadSummary } from "@terno/core";
@@ -314,8 +315,8 @@ function ListSearch() {
         aria-describedby={coverage ? "search-coverage" : undefined}
         clearLabel={t("list.search.clear")}
         hint={<Kbd>/</Kbd>}
-        // the list's compact field, on the tint
-        fieldClassName="h-[30px] bg-tint text-sm dark:bg-tint"
+        // the list's compact field, on the tint; its ring in the app's weight, not louder than the results it's for
+        fieldClassName="h-[30px] bg-tint text-sm dark:bg-tint focus-visible:ring-2"
         onValueChange={(q) => setApp({ query: q })}
         clearOnEscape={false}
         onKeyDown={(e) => {
@@ -770,7 +771,9 @@ export function ThreadList() {
   const list = useAppearance((s) => s.layout === "list");
   const [wideEnough, setWideEnough] = useState(false);
   const wide = list && wideEnough;
-  const height = wide && !compact ? design.rows.wide : design.rows[compact ? "compact" : "comfortable"];
+  // plan 158: the search these rows answer, not what's being typed by now (the row height and marks change with the rows they're for)
+  const resultsOf = searchOfKey(itemsKey);
+  const height = wide && !compact ? design.rows.wide : design.rows[compact ? "compact" : resultsOf ? "results" : "comfortable"];
   const layout = design.variants.row;
   const many = useApp((s) => s.scope !== null || s.checked.size >= 2);
   const previewing = useApp((s) => s.actionPreview !== null);
@@ -952,6 +955,11 @@ export function ThreadList() {
   useLayoutEffect(() => {
     pointListCursor(parentRef.current, getApp().selectedId);
   }, [virtualItems]);
+  // for rows that don't show why they matched, the sentence that does
+  const match = useMemo(() => (resultsOf ? rowMatchOf(resultsOf) : null), [resultsOf]);
+  useEffect(() => {
+    wantExcerpts(resultsOf, match, virtualItems.flatMap((v) => items[v.index] ?? []));
+  }, [match, virtualItems, items]);
   const last = virtualItems[virtualItems.length - 1];
   // a new list (itemsKey) asks too: one that arrives while the old one sat at its end has the same length and last row
   useEffect(() => {
@@ -1007,7 +1015,7 @@ export function ThreadList() {
             ))}
             {virtualItems.map((v) => (
               items[v.index]!.id === DIGEST_ROW_ID ? <DigestListRow key={v.key} thread={items[v.index]!} top={v.start} height={height} /> :
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} reminderTop={v.index < top} reminderEnd={topGap > 0 && v.index === top - 1} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} reminderTop={v.index < top} reminderEnd={topGap > 0 && v.index === top - 1} match={match} />
             ))}
           </div>
         )}

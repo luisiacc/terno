@@ -127,6 +127,38 @@ test.describe("search", () => {
     await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBe(320);
   });
 
+  test("results say why they matched: the words marked, and for a match in the body the sentence it's in, not a quote of it (plan 158)", async ({ app: page, server }) => {
+    const accountId = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM accounts ORDER BY id LIMIT 1")!.id;
+    const mail = (i: number, over: Partial<IncomingMessage>): IncomingMessage => ({
+      accountId, providerMsgId: `why-${i}`, providerThreadId: "why", rfcMessageId: `<why-${i}@e2e.test>`, inReplyTo: i ? `<why-${i - 1}@e2e.test>` : null, references: i ? [`<why-${i - 1}@e2e.test>`] : [],
+      from: { name: "Otro Remitente", email: "otro@else.example" }, to: [{ name: "Luis", email: "luis@else.example" }], cc: [], bcc: [],
+      subject: "Cena del viernes", date: E2E_NOW - (5 - i) * 3_600_000, snippet: "Nos vemos a las ocho", bodyText: "Nos vemos a las ocho.", bodyHtml: null, bodyState: "full", listId: null,
+      isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 1000, ...over,
+    });
+    await server.backend.store.sync.ingest([
+      mail(0, { bodyText: "Hola Luis.\nTe paso el zzpresupuesto del local, a ver qué te parece.\nUn abrazo." }),
+      mail(1, { bodyText: "Nos vemos a las ocho.\n\nOn Tue, Otro wrote:\n> Te paso el zzpresupuesto del local" }),
+    ], { applyFilters: false, now: E2E_NOW, classifier: null });
+    await fresh(page);
+    await search(page, "zzpresupuesto");
+    const row = rows(page).first();
+    await expect(row.getByTestId("row-snippet")).toHaveAttribute("data-excerpt");
+    await expect(row.getByTestId("row-snippet")).toContainText("zzpresupuesto del local, a ver qué te parece.");
+    await expect(row.getByTestId("row-match")).toHaveText("zzpresupuesto");
+
+    // accents and case, in the sender and the subject, and only where the operator looks
+    await search(page, "CENA");
+    await expect(rows(page).first().getByTestId("row-subject").getByTestId("row-match")).toHaveText("Cena");
+    await search(page, "from:remitente");
+    await expect(rows(page).first().getByTestId("row-from").getByTestId("row-match")).toHaveText("Remitente");
+    await expect(rows(page).first().getByTestId("row-subject").getByTestId("row-match")).toHaveCount(0);
+
+    // and only in a search
+    await page.getByRole("button", { name: "Clear search" }).click();
+    await expect(page.getByTestId("search-stats")).toHaveCount(0);
+    await expect(page.getByTestId("row-match")).toHaveCount(0);
+  });
+
   test("an inherited quick filter shows in the search's header and clears there; nothing above the results but results (plan 158)", async ({ app: page, server }) => {
     await ingestConversation(server, { subject: "zzfiltro leido", count: 1, now: E2E_NOW });
     await ingestConversation(server, { subject: "zzfiltro nuevo", count: 1, unread: 1, now: E2E_NOW });
@@ -139,5 +171,17 @@ test.describe("search", () => {
     await expect(rows(page)).toHaveCount(2);
     await expect(page.getByTestId("unread-filter-status")).toHaveCount(0);
     await expect(page.getByTestId("search-input")).toBeFocused();
+
+    // a draft that isn't one of the results steps aside for the search, and comes back after it
+    await page.getByRole("button", { name: "Clear search" }).click();
+    await focusList(page);
+    await page.keyboard.press("c");
+    await page.getByTestId("compose-subject").fill("Borrador aparte");
+    await focusList(page);
+    await expect(page.getByTestId("drafts-strip")).toBeVisible();
+    await search(page, "zzfiltro");
+    await expect(page.getByTestId("drafts-strip")).toHaveCount(0);
+    await page.getByRole("button", { name: "Clear search" }).click();
+    await expect(page.getByTestId("drafts-strip")).toBeVisible();
   });
 });
