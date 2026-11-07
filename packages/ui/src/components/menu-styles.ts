@@ -22,11 +22,21 @@ export const MENU_ROW =
   "relative flex h-8 shrink-0 cursor-default items-center gap-2 rounded-md px-2 text-sm font-medium outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-inset:ps-8 data-disabled:pointer-events-none data-disabled:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground focus:[&_svg:not([class*='text-'])]:text-accent-foreground"
 
 /**
+ * A panel with a submenu keeps a chevron's column on every row, so the shortcuts form one column and the chevrons
+ * another (the row's end padding, plus the chevron, plus the gap before it)
+ */
+export const MENU_CHEVRON_COLUMN = "[&:has(>[data-slot=context-menu-sub-trigger])>[data-slot=context-menu-item]]:pe-[calc(1rem+1.15em)]"
+
+/**
  * A destructive row: red text; highlighted, the red's wash (plan 125 review: red on the neutral highlight fails AA in
  * six palettes, a deviation from BoardUI)
  */
 export const MENU_ROW_DESTRUCTIVE =
   "data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-[variant=destructive]:[&_svg:not([class*='text-'])]:text-destructive"
+
+/** The same on a row whose submenu is open */
+export const MENU_ROW_DESTRUCTIVE_OPEN =
+  "data-[variant=destructive]:data-popup-open:bg-destructive/10 data-[variant=destructive]:data-popup-open:text-destructive dark:data-[variant=destructive]:data-popup-open:bg-destructive/20 data-[variant=destructive]:data-popup-open:[&_svg:not([class*='text-'])]:text-destructive"
 
 /** A row with a check or radio mark at its end, the mark in the primary */
 export const MENU_ROW_CHECKABLE = "pe-8"

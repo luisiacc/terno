@@ -8,7 +8,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { E2E_NOW } from "./constants";
-import { expect, focusList, openRow, rows, selectedRow, test, timeText, typeTime, fresh, scenario, watchWhole } from "./fixtures";
+import { menuPath, expect, focusList, openRow, rows, selectedRow, test, timeText, typeTime, fresh, scenario, watchWhole } from "./fixtures";
 
 const snackWith = (page: Page, text: string | RegExp) => page.locator("[data-testid=snack]").filter({ hasText: text });
 const rowOf = (page: Page, id: string | number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
@@ -26,13 +26,14 @@ test.describe("remind me", () => {
     const row = rows(page).nth(2);
     const id = (await row.getAttribute("data-thread-id"))!;
     await row.click({ button: "right" });
-    // near the top: right after Reply, Reply all, Forward and Print, before the read and star items
+    // right after triage and reply
     const items = await page.locator("[role=menu] > [data-testid^=menu-]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.testid));
-    expect(items.indexOf("menu-remind-always")).toBe(items.indexOf("menu-print") + 1);
-    expect(items.indexOf("menu-remind-noReply")).toBe(items.indexOf("menu-remind-always") + 1);
-    expect(items.indexOf("menu-remind-noReply")).toBeLessThan(items.indexOf("menu-read") === -1 ? items.indexOf("menu-unread") : items.indexOf("menu-read"));
-    await page.getByTestId("menu-remind-always").hover();
+    expect(items.indexOf("menu-remind-always")).toBe(items.indexOf("menu-forward") + 1);
+    await menuPath(page, "menu-remind-always");
     const list = page.getByTestId("menu-remind-always-list");
+    // the day isn't said twice: "Tomorrow" beside its time, the if-no-reply kind inside
+    await expect(list.getByTestId("menu-remind-always-tomorrow")).toHaveText(/^Tomorrow\s*\d/);
+    await expect(list.getByTestId("menu-remind-noReply")).toBeVisible();
     await expect(list.getByTestId("menu-remind-always-laterToday")).toContainText("1:00 PM");
     await expect(list.getByTestId("menu-remind-always-weekend")).toContainText("Sat 9:00 AM");
     await list.getByTestId("menu-remind-always-tomorrow").click();
@@ -145,7 +146,7 @@ test.describe("remind me", () => {
       await server.backend.server.invoke("reminders.set", { threadIds: [id], dueAt: E2E_NOW + 86_400_000, kind: "always" }, { clientId: "setup", origin: "dev" });
       await expect(rowOf(page, id).getByTestId("row-reminder")).toBeVisible();
       await row.click({ button: "right" });
-      await page.getByTestId("menu-remind-noReply").hover();
+      await menuPath(page, "menu-remind-always", "menu-remind-noReply");
       await page.getByTestId("menu-remind-noReply-pick").click();
       const dialog = page.getByTestId("remind-dialog");
       await expect(dialog.getByTestId("remind-kind-noReply")).toHaveAttribute("aria-pressed", "true");

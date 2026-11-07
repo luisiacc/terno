@@ -47,6 +47,9 @@ export function reminderWhen(ms: number, now = Date.now()): string {
   return t("remind.when.date", { date: dayOf(ms, now), time });
 }
 
+/** The time alone, where something beside it already says the day. */
+export const reminderTime = (ms: number): string => fmt().time.format(ms);
+
 /** Compact (a menu's right side, a row's date): "Tomorrow 9:00 AM", "Sat 9:00 AM", "Nov 17 9:00 AM". */
 export function reminderShort(ms: number, now = Date.now()): string {
   const f = fmt();

@@ -5,7 +5,7 @@ import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group"
 import { cn } from "@terno/ui/lib/utils";
 import { BellOff, CalendarClock } from "@terno/ui/icons";
 import { useId, useRef, useState } from "react";
-import { clearReminder, presetLabel, reminderShort, reminderWhen, setReminder, useReminders } from "~/lib/reminders";
+import { clearReminder, presetLabel, presetWhen, reminderWhen, setReminder, useReminders } from "~/lib/reminders";
 import { useWhen, WhenFields } from "./when-fields";
 
 /**
@@ -73,7 +73,7 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
         {presets.map((p) => (
           <button key={p.id} type="button" data-remind-choice data-testid={`remind-preset-${p.id}`} className={choice} onClick={() => set(p.at)}>
             <span className="min-w-0 flex-1 truncate">{presetLabel(p.id)}</span>
-            <span className="shrink-0 text-xs text-muted-foreground tabular">{reminderShort(p.at)}</span>
+            <span className="shrink-0 text-xs text-muted-foreground tabular">{presetWhen(p)}</span>
           </button>
         ))}
         <button type="button" data-remind-choice data-testid="remind-pick" aria-expanded={picking} className={choice} onClick={() => setPicking((v) => !v)}>

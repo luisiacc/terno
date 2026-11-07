@@ -3,6 +3,7 @@ import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu
 import { cn } from "cn"
 import { ChevronRight as ChevronRightIcon, Check as CheckIcon } from "@terno/ui/icons"
 import {
+  MENU_CHEVRON_COLUMN,
   MENU_GROUP,
   MENU_INDICATOR,
   MENU_LABEL,
@@ -12,6 +13,7 @@ import {
   MENU_ROW,
   MENU_ROW_CHECKABLE,
   MENU_ROW_DESTRUCTIVE,
+  MENU_ROW_DESTRUCTIVE_OPEN,
   MENU_SEPARATOR,
   MENU_SHORTCUT,
   SUBMENU_ALIGN_OFFSET,
@@ -61,11 +63,13 @@ function ContextMenuContent({
         alignOffset={alignOffset}
         side={side}
         sideOffset={sideOffset}
+        // near a window edge it slides just enough to fit, its first rows still by the pointer (flipping would put them a panel away)
+        collisionAvoidance={{ align: "shift" }}
       >
         <ContextMenuPrimitive.Popup
           data-slot="context-menu-content"
           // BoardUI's menu (plan 125, menu-styles.ts)
-          className={cn("z-50 min-w-36", MENU_PANEL, MENU_MOTION, className)}
+          className={cn("z-50 min-w-36", MENU_PANEL, MENU_CHEVRON_COLUMN, MENU_MOTION, className)}
           {...props}
         />
       </ContextMenuPrimitive.Positioner>
@@ -125,16 +129,19 @@ function ContextMenuSub({ ...props }: ContextMenuPrimitive.SubmenuRoot.Props) {
 function ContextMenuSubTrigger({
   className,
   inset,
+  variant = "default",
   children,
   ...props
 }: ContextMenuPrimitive.SubmenuTrigger.Props & {
   inset?: boolean
+  variant?: "default" | "destructive"
 }) {
   return (
     <ContextMenuPrimitive.SubmenuTrigger
       data-slot="context-menu-sub-trigger"
       data-inset={inset}
-      className={cn(MENU_ROW, "data-popup-open:bg-accent data-popup-open:text-accent-foreground data-popup-open:[&_svg:not([class*='text-'])]:text-accent-foreground", className)}
+      data-variant={variant}
+      className={cn(MENU_ROW, MENU_ROW_DESTRUCTIVE, "data-popup-open:bg-accent data-popup-open:text-accent-foreground data-popup-open:[&_svg:not([class*='text-'])]:text-accent-foreground", MENU_ROW_DESTRUCTIVE_OPEN, className)}
       {...props}
     >
       {children}

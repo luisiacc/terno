@@ -86,6 +86,13 @@ export function autoRecipients(mode: Exclude<DraftMode, "new">, detail: ThreadDe
   return { to, cc };
 }
 
+/** Would Reply all reach more than one other person? (With one, it's just Reply.) */
+export function reachesSeveral(detail: ThreadDetail, mine: Mine | string | readonly string[]): boolean {
+  if (detail.messages.length === 0) return false;
+  const { to, cc } = autoRecipients("replyAll", detail, mine);
+  return to.length + cc.length > 1;
+}
+
 /** The first name a reply goes to, for "Reply to Ana…": who autoRecipients puts in To. */
 export function replyName(detail: ThreadDetail, mine: Mine | string | readonly string[]): string {
   const to = autoRecipients("reply", detail, mine).to[0];

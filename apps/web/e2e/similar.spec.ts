@@ -6,7 +6,7 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, selectThread, test, fresh, scenario } from "./fixtures";
+import { menuPath, expect, focusList, selectThread, test, fresh, scenario } from "./fixtures";
 
 const wcag = (page: Page) => new AxeBuilder({ page }).setLegacyMode().include("[data-testid=snack-dock]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
 
@@ -65,6 +65,7 @@ test.describe("similar mail", () => {
       const { email, ids, anywhere, inSpam } = senderSetup(server);
       await selectThread(page, ids[0]!, `in:inbox from:${email}`);
       await page.locator(`[data-testid=thread-row][data-thread-id="${ids[0]}"]`).click({ button: "right" });
+      await menuPath(page, "menu-similar");
       await page.getByTestId("menu-spam-similar").hover();
       const list = page.getByTestId("menu-spam-similar-list");
       await expect(list.getByTestId("menu-spam-similar-note")).toHaveText("Their future mail goes to Spam too.");
@@ -91,9 +92,11 @@ test.describe("similar mail", () => {
       await focusList(page);
       await page.keyboard.press("Shift+F10");
       await expect(page.getByTestId("thread-menu")).toBeVisible();
-      const trigger = page.getByTestId("menu-archive-similar");
-      // down the menu to the trigger, then into its submenu
+      const trigger = page.getByTestId("menu-similar");
+      // down the menu to Similar mail, into it, then into Archive's offers
       for (let i = 0; i < 20 && !(await trigger.evaluate((el) => el === document.activeElement || el.hasAttribute("data-highlighted"))); i++) await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowRight");
+      await expect(page.getByTestId("menu-archive-similar")).toBeFocused();
       await page.keyboard.press("ArrowRight");
       await expect(page.getByTestId("menu-similar-sender")).toBeVisible();
       await expect(page.getByTestId("menu-similar-sender-count")).toHaveText(String(ids.length));

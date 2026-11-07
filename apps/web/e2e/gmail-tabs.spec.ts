@@ -9,7 +9,7 @@ import type { Page } from "@playwright/test";
 import { msg } from "@terno/store/conformance";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
-import { expect, rows, test } from "./fixtures";
+import { menuPath, expect, rows, test } from "./fixtures";
 
 const accountOf = (server: DevServer, name: string) => sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM accounts WHERE display_name = ?", name)!.id;
 const rowIds = (page: Page) => page.locator("[data-testid=thread-row]").evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-thread-id"))));
@@ -130,12 +130,14 @@ test.describe("Gmail's Promotions and Social (plan 86)", () => {
     const first = rows(page).first();
     const id = Number(await first.getAttribute("data-thread-id"));
     await first.click({ button: "right" });
+    await menuPath(page, "menu-move");
     await page.getByTestId("menu-to-promotions").click();
     await expect(page.getByTestId("snack").filter({ hasText: "Moved to Promotions" })).toBeVisible();
     await expect(row(page, id)).toHaveCount(0);
     await page.getByTestId(`nav-tab-${personal}-promotions`).click();
     await expect(row(page, id)).toBeVisible();
     await row(page, id).click({ button: "right" });
+    await menuPath(page, "menu-move");
     await expect(page.getByTestId("menu-to-promotions")).toHaveCount(0);
     await page.getByTestId("menu-inbox").click();
     await expect(row(page, id)).toHaveCount(0);

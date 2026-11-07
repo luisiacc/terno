@@ -5,7 +5,7 @@
  */
 import type { Page } from "@playwright/test";
 import { E2E_NOW } from "./constants";
-import { expect, focusList, ingestPrintFixtures, scenario, selectThread, test } from "./fixtures";
+import { menuPath, expect, focusList, ingestPrintFixtures, scenario, selectThread, test } from "./fixtures";
 import type { DevServer } from "../../backend-dev/src/server";
 
 const clipboard = (page: Page) => page.evaluate(() => navigator.clipboard.readText());
@@ -96,6 +96,7 @@ test("copying a conversation as text: from the thread, the list and the palette"
     const row = page.locator(`[role=listbox] [data-thread-id="${ids.images}"]`);
     await row.click({ button: "right" });
     await blank(page);
+    await menuPath(page, "menu-more");
     await page.getByTestId("menu-copy-text").click();
     expect(await copied(page)).toMatch(/^Subject: Fotos de la visita a la obra/);
   });

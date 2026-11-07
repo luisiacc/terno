@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { termsQuery } from "@terno/core";
 import type { DevServer } from "../../backend-dev/src/server";
-import { expect, focusList, scenario, selectRows, selectThread, test, searchBox } from "./fixtures";
+import { menuPath, expect, focusList, scenario, selectRows, selectThread, test, searchBox } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 /** What the backend would add for a scope (the same RPC the chips call). */
@@ -463,7 +463,7 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
       // filed behind the list's back: the row shows it once the change arrives
       await expect(row.locator("[data-cat-dot]")).toHaveCount(1);
       await row.click({ button: "right" });
-      await page.getByTestId("menu-sender-file").hover();
+      await menuPath(page, "menu-sender", "menu-sender-file");
       // only the categories this mail is in are offered to leave
       await expect(page.getByTestId(`menu-sender-out-${facturas}`)).toHaveText("Out of Facturas");
       await expect(page.getByTestId(`menu-sender-out-${viajes}`)).toHaveCount(0);

@@ -20,6 +20,7 @@ import {
   Check,
   CheckCheck,
   Copy,
+  Ellipsis,
   Filter,
   Forward,
   Folder as FolderIcon,
@@ -28,6 +29,7 @@ import {
   Mail,
   MailMinus,
   MailOpen,
+  Mails,
   MessageSquareReply,
   OctagonAlert,
   Plus,
@@ -72,7 +74,9 @@ import { codeKey, copyCode, threadCode } from "~/lib/codes";
 import { copyThreadText } from "~/lib/copy-thread";
 import { listScroller } from "./thread-list";
 import { useAlwaysOffers } from "./review-actions";
-import { clearReminder, openRemind, presetLabel, reminderShort, reminderWhen, setReminder, useReminders } from "~/lib/reminders";
+import { clearReminder, openRemind, presetLabel, presetWhen, reminderWhen, setReminder, useReminders } from "~/lib/reminders";
+import { reachesSeveral } from "~/lib/compose-fields";
+import { loadThread, useThreads } from "~/state/threads";
 
 /** What the open menu acts on: explicit threads, or a "select all N" scope. Set at right-click; rows never read it. */
 interface MenuTarget {
@@ -218,9 +222,18 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
   );
 }
 
-function Item({ icon, label, command, onClick, disabled, testId, variant }: { icon: ReactNode; label: string; command?: Command; onClick: () => void; disabled?: boolean; testId: string; variant?: "destructive" }) {
+interface MenuEntry {
+  icon: ReactNode;
+  label: string;
+  command?: Command;
+  onClick: () => void;
+  testId: string;
+  variant?: "destructive";
+}
+
+function Item({ icon, label, command, onClick, testId, variant }: MenuEntry) {
   return (
-    <ContextMenuItem data-testid={testId} disabled={disabled} onClick={onClick} variant={variant}>
+    <ContextMenuItem data-testid={testId} onClick={onClick} variant={variant}>
       {icon}
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {command && hint(command)}
@@ -236,19 +249,19 @@ function sharedSender(rows: readonly ThreadSummary[]): { email: string; name: st
   return rows.every((t) => t.fromEmail.toLowerCase() === email) ? { email, name: first.fromName || first.fromEmail } : null;
 }
 
-/** The view decides the third group: what "out of here" means in Archive, Trash and Spam. */
-function placeItems(view: View, run: (a: ThreadAction) => void) {
+/** The view decides what "out of here" means in Archive, Trash and Spam; what can't apply there isn't offered. */
+function placeItems(view: View, run: (a: ThreadAction) => void): MenuEntry[] {
   const archive = { icon: <Archive />, label: t("actions.archive"), command: "thread.archive" as Command, onClick: () => run("archive"), testId: "menu-archive" };
   const trash = { icon: <Trash2 />, label: t("actions.trash"), command: "thread.trash" as Command, onClick: () => run("trash"), testId: "menu-trash", variant: "destructive" as const };
   const spam = { icon: <OctagonAlert />, label: t("actions.markSpam"), command: "thread.spam" as Command, onClick: () => run("spam"), testId: "menu-spam" };
   const toInbox = (label: string) => ({ icon: <Inbox />, label, onClick: () => run("moveToInbox"), testId: "menu-inbox" });
   switch (view) {
     case "trash":
-      return [toInbox(t("actions.restoreToInbox")), { ...archive, disabled: true }, { ...trash, disabled: true }, spam];
+      return [toInbox(t("actions.restoreToInbox")), spam];
     case "spam":
-      return [{ icon: <ShieldCheck />, label: t("actions.notSpam"), onClick: () => run("notSpam"), testId: "menu-not-spam" }, { ...archive, disabled: true }, trash, { ...spam, disabled: true }];
+      return [{ icon: <ShieldCheck />, label: t("actions.notSpam"), onClick: () => run("notSpam"), testId: "menu-not-spam" }, trash];
     case "archive":
-      return [toInbox(t("actions.moveToInbox")), { ...archive, disabled: true }, trash, spam];
+      return [toInbox(t("actions.moveToInbox")), trash, spam];
     case "inbox":
       return [archive, trash, spam];
     default:
@@ -256,8 +269,8 @@ function placeItems(view: View, run: (a: ThreadAction) => void) {
   }
 }
 
-/** Plan 87: "Remind me ▸" / "Remind me if no reply ▸": the presets with their moments, a moment of your own, Clear. */
-function RemindSub({ kind, ids, disabled }: { kind: ReminderKind; ids: number[]; disabled: boolean }) {
+/** Plan 87: "Remind me ▸" (and inside it, "Remind me if no reply ▸"): the presets with their moments, a moment of your own, Clear. */
+function RemindSub({ kind, ids, disabled, children }: { kind: ReminderKind; ids: number[]; disabled: boolean; children?: ReactNode }) {
   const current = useReminders((s) => (ids.length === 1 ? s.byThread.get(ids[0]!) : undefined));
   const anySet = useReminders((s) => ids.some((id) => s.byThread.has(id)));
   const presets = remindPresets(new Date(), kind);
@@ -277,7 +290,7 @@ function RemindSub({ kind, ids, disabled }: { kind: ReminderKind; ids: number[];
         {presets.map((p) => (
           <ContextMenuItem key={p.id} data-testid={`menu-remind-${kind}-${p.id}`} onClick={() => void setReminder(ids, p.at, kind)}>
             <span className="min-w-0 flex-1 truncate">{presetLabel(p.id)}</span>
-            <ContextMenuShortcut className="tracking-normal tabular-nums">{reminderShort(p.at)}</ContextMenuShortcut>
+            <ContextMenuShortcut className="tracking-normal tabular-nums">{presetWhen(p)}</ContextMenuShortcut>
           </ContextMenuItem>
         ))}
         <ContextMenuSeparator />
@@ -291,14 +304,38 @@ function RemindSub({ kind, ids, disabled }: { kind: ReminderKind; ids: number[];
             <span className="min-w-0 flex-1 truncate">{t("remind.clear")}</span>
           </ContextMenuItem>
         )}
+        {children && <ContextMenuSeparator />}
+        {children}
       </ContextMenuSubContent>
     </ContextMenuSub>
   );
 }
 
-const SIMILAR_LABEL = { archive: "similar.archive", trash: "similar.trash", spam: "similar.spam" } as const;
+const SIMILAR_LABEL = { archive: "actions.archive", trash: "actions.trash", spam: "actions.markSpam" } as const;
 
-/** "Archive similar ▸" / "Delete similar ▸" / "Mark similar as spam ▸": its offers are read when it opens (plan 91: the snackbar's lines, in its order). */
+/** "Similar mail ▸": one row per action that still applies here, each opening what it would take. */
+function SimilarMailSub({ view, ids }: { view: View; ids: number[] }) {
+  const actions: SimilarAction[] = [];
+  if (view === "inbox" || view === "all" || view === "starred" || view === "sent") actions.push("archive");
+  if (view !== "trash") actions.push("trash");
+  if (view !== "spam" && view !== "trash") actions.push("spam");
+  if (actions.length === 0) return null;
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger data-testid="menu-similar">
+        <Mails />
+        <span className="min-w-0 flex-1 truncate">{t("threadMenu.similar")}</span>
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent className="w-48" data-testid="menu-similar-list">
+        {actions.map((action) => (
+          <SimilarSub key={action} action={action} ids={ids} />
+        ))}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
+  );
+}
+
+/** "Archive ▸" / "Delete ▸" / "Mark as spam ▸" under Similar mail: its offers are read when it opens (plan 91: the snackbar's lines, in its order). */
 function SimilarSub({ action, ids }: { action: SimilarAction; ids: number[] }) {
   /** opened from the keyboard: the first offer takes focus once counted (a hover leaves focus alone) */
   const byKey = useRef(false);
@@ -306,6 +343,7 @@ function SimilarSub({ action, ids }: { action: SimilarAction; ids: number[] }) {
     <ContextMenuSub>
       <ContextMenuSubTrigger
         data-testid={`menu-${action}-similar`}
+        variant={action === "trash" ? "destructive" : undefined}
         onKeyDown={(e) => {
           if (e.key === "ArrowRight" || e.key === "ArrowLeft" || e.key === "Enter" || e.key === " ") byKey.current = true;
         }}
@@ -339,10 +377,12 @@ function SimilarItems({ action, ids, byKey }: { action: SimilarAction; ids: numb
     };
   }, [action, ids]);
   const shown = offers ? orderOffers(visibleOffers(action, offers.offers)) : [];
+  // what a delete would take reads as one, however many it is
+  const variant = action === "trash" ? "destructive" : undefined;
   return (
     <>
       {/* plan 91: the plain action first, said as plainly as the snackbar's "No, only …" (no default, no sweep) */}
-      <ContextMenuItem ref={first} data-testid="menu-similar-only" onClick={() => void act(action, ids, { automation: "none" })}>
+      <ContextMenuItem ref={first} data-testid="menu-similar-only" variant={variant} onClick={() => void act(action, ids, { automation: "none" })}>
         <span className="min-w-0 flex-1 truncate">{t(`offers.onlyThis.${action}`, { count: ids.length })}</span>
       </ContextMenuItem>
       <ContextMenuSeparator />
@@ -361,7 +401,7 @@ function SimilarItems({ action, ids, byKey }: { action: SimilarAction; ids: numb
         </ContextMenuItem>
       ) : (
         shown.map((o) => (
-          <ContextMenuItem key={o.scope.kind} data-testid={`menu-similar-${o.scope.kind}`} title={o.scope.kind === "subject" ? o.scope.subject : undefined} onClick={() => void actSimilar(action, ids, o.scope, offers.senderName)}>
+          <ContextMenuItem key={o.scope.kind} data-testid={`menu-similar-${o.scope.kind}`} variant={variant} title={o.scope.kind === "subject" ? o.scope.subject : undefined} onClick={() => void actSimilar(action, ids, o.scope, offers.senderName)}>
             <ScopeLabel scope={o.scope} senderName={offers.senderName} />
             <ContextMenuShortcut className="tracking-normal tabular-nums" data-testid={`menu-similar-${o.scope.kind}-count`}>{shownCount(o) ? formatCount(o) : ""}</ContextMenuShortcut>
           </ContextMenuItem>
@@ -372,8 +412,8 @@ function SimilarItems({ action, ids, byKey }: { action: SimilarAction; ids: numb
 }
 
 /**
- * Plan 96: "Unsubscribe", shown once the conversation is known to offer it (read from the store when the menu
- * opens, no network). At the end of the sender group, so appearing moves nothing above it.
+ * Plan 96: "Unsubscribe", shown once the conversation is known to offer it (read from the store when its submenu
+ * opens, no network). Last among the sender's, so appearing moves nothing above it.
  */
 function UnsubscribeItem({ threadId }: { threadId: number }) {
   const [offer, setOffer] = useState<UnsubscribeOffer | null>(null);
@@ -389,7 +429,7 @@ function UnsubscribeItem({ threadId }: { threadId: number }) {
   }, [threadId]);
   if (!offer) return null;
   return (
-    <ContextMenuItem data-testid="menu-unsubscribe" onClick={() => unsubscribe(threadId, offer)}>
+    <ContextMenuItem data-testid="menu-unsubscribe" title={offer.target} onClick={() => unsubscribe(threadId, offer)}>
       <MailMinus />
       <span className="min-w-0 flex-1 truncate">
         {t("threadMenu.unsubscribe")}
@@ -422,13 +462,13 @@ function unsubscribe(threadId: number, offer: UnsubscribeOffer) {
 
 /** Plan 64: a search's rows, each action for the rows it fits (a selection can span places). */
 function searchPlaceItems(p: NonNullable<ReturnType<typeof placeActions>>, runOn: (a: ThreadAction, ids: number[]) => void) {
-  const item = (action: ThreadAction, ids: number[], o: { icon: ReactNode; label: string; testId: string; command?: Command; variant?: "destructive" }) => ({ ...o, onClick: () => runOn(action, ids), disabled: ids.length === 0 });
+  const item = (action: ThreadAction, ids: number[], o: { icon: ReactNode; label: string; testId: string; command?: Command; variant?: "destructive" }) => ({ ...o, onClick: () => runOn(action, ids) });
   const items = [];
   if (p.notSpam.length) items.push(item("notSpam", p.notSpam, { icon: <ShieldCheck />, label: t("actions.notSpam"), testId: "menu-not-spam" }));
   if (p.toInbox.length) items.push(item("moveToInbox", p.toInbox, { icon: <Inbox />, label: t(p.restoreOnly ? "actions.restoreToInbox" : "actions.moveToInbox"), testId: "menu-inbox" }));
-  items.push(item("archive", p.archive, { icon: <Archive />, label: t("actions.archive"), command: "thread.archive", testId: "menu-archive" }));
-  items.push(item("trash", p.trash, { icon: <Trash2 />, label: t("actions.trash"), command: "thread.trash", testId: "menu-trash", variant: "destructive" }));
-  items.push(item("spam", p.spam, { icon: <OctagonAlert />, label: t("actions.markSpam"), command: "thread.spam", testId: "menu-spam" }));
+  if (p.archive.length) items.push(item("archive", p.archive, { icon: <Archive />, label: t("actions.archive"), command: "thread.archive", testId: "menu-archive" }));
+  if (p.trash.length) items.push(item("trash", p.trash, { icon: <Trash2 />, label: t("actions.trash"), command: "thread.trash", testId: "menu-trash", variant: "destructive" }));
+  if (p.spam.length) items.push(item("spam", p.spam, { icon: <OctagonAlert />, label: t("actions.markSpam"), command: "thread.spam", testId: "menu-spam" }));
   return items;
 }
 
@@ -499,6 +539,28 @@ function ReviewItems({ thread }: { thread: ThreadSummary }) {
   );
 }
 
+/**
+ * Reply all, only where it reaches more than one other person: read from the conversation (cached when it's the open
+ * one, else one local read). A conversation that can't be read keeps the row: Reply all says what's wrong itself.
+ */
+function useReplyAllOffered(id: number | undefined): boolean {
+  const detail = useThreads((s) => (id === undefined ? undefined : s.details.get(id)));
+  const accounts = useApp((s) => s.accounts);
+  const [unread, setUnread] = useState<number | null>(null);
+  useEffect(() => {
+    if (id === undefined || detail) return;
+    let alive = true;
+    void loadThread(id).then((d) => {
+      if (alive && !d) setUnread(id);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [id, detail]);
+  if (id === undefined) return false;
+  return detail ? reachesSeveral(detail, accounts.map((a) => a.email)) : unread === id;
+}
+
 function MenuItems() {
   renderProbe("ThreadMenu");
   const { ids, scope } = useMenuTarget();
@@ -551,6 +613,20 @@ function MenuItems() {
   const count = scope ? scope.count : ids.length;
   // plan 72: the keyboard's (and screen readers') way to the code a row's chip copies
   const code = single ? threadCode(single, Date.now()) : null;
+  const replyAllOffered = useReplyAllOffered(single?.id);
+
+  // what the view offers, sorted by where it goes: triage on top; the way back leads only where it replaces Archive
+  const placed: MenuEntry[] = searchPlaces ? searchPlaceItems(searchPlaces, (a) => run(a)) : placeItems(view, run);
+  const wayBack = placed.filter((it) => it.testId === "menu-inbox" || it.testId === "menu-not-spam");
+  const spam = placed.find((it) => it.testId === "menu-spam");
+  const triage = placed.filter((it) => it !== spam && !wayBack.includes(it));
+  const archivable = triage.some((it) => it.testId === "menu-archive");
+  const moves = [
+    ...(archivable ? wayBack : []),
+    ...(!searchPlaces && view === "inbox" && (gmailTab !== null || tabbed.length > 0) ? [{ icon: <Inbox />, label: t("actions.moveToInbox"), testId: "menu-inbox", onClick: () => run("moveToInbox") }] : []),
+    ...(intoTab("promotions") ? [{ icon: <Tag />, label: t("actions.toPromotions"), testId: "menu-to-promotions", onClick: () => run("toPromotions") }] : []),
+    ...(intoTab("social") ? [{ icon: <Users />, label: t("actions.toSocial"), testId: "menu-to-social", onClick: () => run("toSocial") }] : []),
+  ];
 
   return (
     <>
@@ -560,52 +636,61 @@ function MenuItems() {
         </div>
       )}
       {single && <ReviewItems thread={single} />}
-      {single && code && (
-        <>
-          <Item
-            icon={<Copy />}
-            label={t("codes.copy", { code })}
-            testId="menu-copy-code"
-            onClick={() => void copyCode(codeKey(single.id, code), code).then((ok) => ok && snack(t("codes.copied", { code }), { duration: 2000 }))}
-          />
-          <ContextMenuSeparator />
-        </>
-      )}
-      {single && (
-        <>
-          <Item icon={<Reply />} label={t("actions.reply")} command="compose.reply" onClick={() => reply("reply")} testId="menu-reply" />
-          <Item icon={<ReplyAll />} label={t("actions.replyAll")} command="compose.replyAll" onClick={() => reply("replyAll")} testId="menu-reply-all" />
-          <Item icon={<Forward />} label={t("actions.forward")} command="compose.forward" onClick={() => reply("forward")} testId="menu-forward" />
-          {/* one conversation only: printing several at once isn't a thing */}
-          <Item icon={<Printer />} label={t("actions.printMore")} command="thread.print" onClick={() => openPrint({ threadId: single.id, messageId: null, intent: "print" })} testId="menu-print" />
-          <Item icon={<Copy />} label={t("threadMenu.copyText")} onClick={() => copyThreadText(single.id)} testId="menu-copy-text" />
-          <ContextMenuSeparator />
-        </>
-      )}
-      {/* plan 87: near the top; a "select all N" has no ids to set them on */}
-      <RemindSub kind="always" ids={ids} disabled={scope !== null} />
-      <RemindSub kind="noReply" ids={ids} disabled={scope !== null} />
-      <ContextMenuSeparator />
+      {/* triage first: what a row is usually right-clicked for */}
+      {(archivable ? triage : [...wayBack, ...triage]).map((it) => (
+        <Item key={it.testId} {...it} />
+      ))}
       {anyUnread && <Item icon={<MailOpen />} label={t("actions.markRead")} command="thread.markRead" onClick={() => run("markRead")} testId="menu-read" />}
       {anyRead && <Item icon={<Mail />} label={t("actions.markUnread")} command="thread.markUnread" onClick={() => run("markUnread")} testId="menu-unread" />}
       {anyPlain && <Item icon={<Star />} label={t("actions.star")} command="thread.star" onClick={() => run("star")} testId="menu-star" />}
       {anyStarred && <Item icon={<StarOff />} label={t("actions.unstar")} command={anyPlain ? undefined : "thread.star"} onClick={() => run("unstar")} testId="menu-unstar" />}
       <ContextMenuSeparator />
-      {(searchPlaces ? searchPlaceItems(searchPlaces, (a) => run(a)) : placeItems(view, run)).map((it) => (
-        <Item key={it.testId} {...it} />
-      ))}
-      {!searchPlaces && view === "inbox" && (gmailTab !== null || tabbed.length > 0) && <Item icon={<Inbox />} label={t("actions.moveToInbox")} testId="menu-inbox" onClick={() => run("moveToInbox")} />}
-      {intoTab("promotions") && <Item icon={<Tag />} label={t("actions.toPromotions")} testId="menu-to-promotions" onClick={() => run("toPromotions")} />}
-      {intoTab("social") && <Item icon={<Users />} label={t("actions.toSocial")} testId="menu-to-social" onClick={() => run("toSocial")} />}
-      {/* plan 63: the same, for everything like it (explicit rows only: a "select all N" scope is already everything) */}
-      {!scope && ids.length <= 200 && (view === "inbox" || view === "all" || view === "starred" || view === "sent") && <SimilarSub action="archive" ids={ids} />}
-      {!scope && ids.length <= 200 && view !== "trash" && <SimilarSub action="trash" ids={ids} />}
-      {!scope && ids.length <= 200 && view !== "spam" && view !== "trash" && <SimilarSub action="spam" ids={ids} />}
-      <ContextMenuSeparator />
+      {single && (
+        <>
+          <Item icon={<Reply />} label={t("actions.reply")} command="compose.reply" onClick={() => reply("reply")} testId="menu-reply" />
+          {replyAllOffered && <Item icon={<ReplyAll />} label={t("actions.replyAll")} command="compose.replyAll" onClick={() => reply("replyAll")} testId="menu-reply-all" />}
+          <Item icon={<Forward />} label={t("actions.forward")} command="compose.forward" onClick={() => reply("forward")} testId="menu-forward" />
+          <ContextMenuSeparator />
+        </>
+      )}
+      {/* plan 87: a "select all N" has no ids to set them on */}
+      <RemindSub kind="always" ids={ids} disabled={scope !== null}>
+        <RemindSub kind="noReply" ids={ids} disabled={false} />
+      </RemindSub>
+      <ContextMenuSub>
+        <ContextMenuSubTrigger data-testid="menu-move" disabled={scope !== null && moves.length === 0}>
+          <FolderInput />
+          <span className="min-w-0 flex-1 truncate">{t("threadMenu.moveTo")}</span>
+          {hint("thread.move")}
+        </ContextMenuSubTrigger>
+        <ContextMenuSubContent className="w-56" data-testid="menu-move-list">
+          {moves.map((it) => (
+            <Item key={it.testId} {...it} />
+          ))}
+          {/* a "select all N" moves nothing into a category or a folder: only out of a Gmail tab, or into one */}
+          {scope === null && (
+            <>
+              {moves.length > 0 && <ContextMenuSeparator />}
+              {categories.map((c) => (
+                <ContextMenuItem key={c.id} data-testid={`menu-move-${c.id}`} disabled={isExclusivelyIn(c.id, ids)} onClick={() => void moveToCategory(c.id, ids, { source: "picker" })}>
+                  <CategoryDot color={c.color as CategoryColor} />
+                  <span className="truncate">{c.name}</span>
+                </ContextMenuItem>
+              ))}
+              {categories.length > 0 && <ContextMenuSeparator />}
+              <ContextMenuItem data-testid="menu-move-new" onClick={() => picker("move")}>
+                <Plus /> {t("threadMenu.newCategory")}
+              </ContextMenuItem>
+              {/* plan 127: the keyboard's way to what a drag onto a folder does */}
+              <MoveToFolderItems rows={rows} ids={ids} />
+            </>
+          )}
+        </ContextMenuSubContent>
+      </ContextMenuSub>
       <ContextMenuSub>
         <ContextMenuSubTrigger data-testid="menu-categories">
           <Tag />
-          <span className="flex-1">{t("threadMenu.categories")}</span>
+          <span className="min-w-0 flex-1 truncate">{t("actions.category")}</span>
           {hint("thread.category")}
         </ContextMenuSubTrigger>
         <ContextMenuSubContent className="w-56" data-testid="menu-categories-list">
@@ -621,78 +706,89 @@ function MenuItems() {
           </ContextMenuItem>
         </ContextMenuSubContent>
       </ContextMenuSub>
+      <ContextMenuSeparator />
+      {/* plan 63: the same, for everything like it (explicit rows only: a "select all N" scope is already everything) */}
+      {!scope && ids.length <= 200 && <SimilarMailSub view={view} ids={ids} />}
+      {sender && (
+        <ContextMenuSub>
+          <ContextMenuSubTrigger data-testid="menu-sender">
+            <UserRound />
+            <span className="min-w-0 flex-1 truncate">{t("threadMenu.from", { name: sender.name })}</span>
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="w-max max-w-md min-w-56" data-testid="menu-sender-list">
+            {categories.length > 0 && (
+              <ContextMenuSub>
+                <ContextMenuSubTrigger data-testid="menu-sender-file">
+                  <Tag />
+                  <span className="min-w-0 flex-1 truncate">{t("threadMenu.fileAll")}</span>
+                </ContextMenuSubTrigger>
+                <ContextMenuSubContent className="w-56" data-testid="menu-sender-file-list">
+                  {fileTo.map((c) => (
+                    <ContextMenuItem key={c.id} data-testid={`menu-sender-file-${c.id}`} onClick={() => void applyScope(c.id, { kind: "sender", email: sender.email })}>
+                      <CategoryDot color={c.color as CategoryColor} />
+                      <span className="truncate">{t("threadMenu.toCategory", { category: c.name })}</span>
+                    </ContextMenuItem>
+                  ))}
+                  {/* plan 77: the categories this mail is in offer the way out instead */}
+                  {fileTo.length > 0 && filedIn.length > 0 && <ContextMenuSeparator />}
+                  {filedIn.map((c) => (
+                    <ContextMenuItem key={c.id} data-testid={`menu-sender-out-${c.id}`} onClick={() => void removeSenderFromCategory(c.id, sender.email)}>
+                      <CategoryDot color={c.color as CategoryColor} />
+                      <span className="truncate">{t("threadMenu.outOfCategory", { category: c.name })}</span>
+                    </ContextMenuItem>
+                  ))}
+                </ContextMenuSubContent>
+              </ContextMenuSub>
+            )}
+            <Item
+              icon={<Filter />}
+              label={t("threadMenu.createFilter")}
+              testId="menu-filter"
+              onClick={() => setApp({ dialog: "filters", filterPrefill: { name: t("threadMenu.filterName", { name: sender.name }), rule: { match: "all", conditions: [{ field: "from", op: "equals", value: sender.email }], actions: [{ type: "archive" }] } } })}
+            />
+            <Item icon={<Search />} label={t("threadMenu.searchSender")} testId="menu-search-sender" onClick={() => setApp({ query: `from:${sender.email}`, view: "all", categoryId: null, reviewCategoryId: null, checked: new Set(), scope: null })} />
+            <Item
+              icon={<Copy />}
+              label={t("threadMenu.copyAddress")}
+              testId="menu-copy"
+              onClick={() =>
+                void navigator.clipboard.writeText(sender.email).then(
+                  () => snack(t("threadMenu.copied", { email: sender.email }), { duration: 2000 }),
+                  () => snack.error(t("threadMenu.copyFailed")),
+                )
+              }
+            />
+            {/* keyed: a menu moved onto another row never shows (or opens) the last row's offer while its own loads */}
+            {single && <UnsubscribeItem key={single.id} threadId={single.id} />}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      )}
       <ContextMenuSub>
-        <ContextMenuSubTrigger data-testid="menu-move" disabled={scope !== null}>
-          <FolderInput />
-          <span className="flex-1">{t("actions.moveTo")}</span>
-          {hint("thread.move")}
+        <ContextMenuSubTrigger data-testid="menu-more">
+          <Ellipsis />
+          <span className="min-w-0 flex-1 truncate">{t("threadMenu.more")}</span>
         </ContextMenuSubTrigger>
-        <ContextMenuSubContent className="w-56" data-testid="menu-move-list">
-          {categories.map((c) => (
-            <ContextMenuItem key={c.id} data-testid={`menu-move-${c.id}`} disabled={isExclusivelyIn(c.id, ids)} onClick={() => void moveToCategory(c.id, ids, { source: "picker" })}>
-              <CategoryDot color={c.color as CategoryColor} />
-              <span className="truncate">{c.name}</span>
-            </ContextMenuItem>
-          ))}
-          {categories.length > 0 && <ContextMenuSeparator />}
-          <ContextMenuItem data-testid="menu-move-new" onClick={() => picker("move")}>
-            <Plus /> {t("threadMenu.newCategory")}
-          </ContextMenuItem>
-          {/* plan 127: the keyboard's way to what a drag onto a folder does */}
-          {scope === null && <MoveToFolderItems rows={rows} ids={ids} />}
+        <ContextMenuSubContent className="w-max max-w-md min-w-56" data-testid="menu-more-list">
+          {spam && <Item {...spam} />}
+          {single && code && (
+            <Item
+              icon={<Copy />}
+              label={t("codes.copy", { code })}
+              testId="menu-copy-code"
+              onClick={() => void copyCode(codeKey(single.id, code), code).then((ok) => ok && snack(t("codes.copied", { code }), { duration: 2000 }))}
+            />
+          )}
+          {single && (
+            <>
+              {/* one conversation only: printing several at once isn't a thing */}
+              <Item icon={<Printer />} label={t("actions.printMore")} command="thread.print" onClick={() => openPrint({ threadId: single.id, messageId: null, intent: "print" })} testId="menu-print" />
+              <Item icon={<Copy />} label={t("threadMenu.copyText")} onClick={() => copyThreadText(single.id)} testId="menu-copy-text" />
+            </>
+          )}
+          {(spam || single) && <ContextMenuSeparator />}
+          <Item icon={<CheckCheck />} label={t("actions.selectAll")} command="list.selectAll" onClick={selectAll} testId="menu-select-all" />
         </ContextMenuSubContent>
       </ContextMenuSub>
-      {sender && (
-        <>
-          <ContextMenuSeparator />
-          {categories.length > 0 && (
-            <ContextMenuSub>
-              <ContextMenuSubTrigger data-testid="menu-sender-file">
-                <UserRound />
-                <span className="min-w-0 flex-1 truncate">{t("threadMenu.allFrom", { name: sender.name })}</span>
-              </ContextMenuSubTrigger>
-              <ContextMenuSubContent className="w-56" data-testid="menu-sender-file-list">
-                {fileTo.map((c) => (
-                  <ContextMenuItem key={c.id} data-testid={`menu-sender-file-${c.id}`} onClick={() => void applyScope(c.id, { kind: "sender", email: sender.email })}>
-                    <CategoryDot color={c.color as CategoryColor} />
-                    <span className="truncate">{t("threadMenu.toCategory", { category: c.name })}</span>
-                  </ContextMenuItem>
-                ))}
-                {/* plan 77: the categories this mail is in offer the way out instead */}
-                {fileTo.length > 0 && filedIn.length > 0 && <ContextMenuSeparator />}
-                {filedIn.map((c) => (
-                  <ContextMenuItem key={c.id} data-testid={`menu-sender-out-${c.id}`} onClick={() => void removeSenderFromCategory(c.id, sender.email)}>
-                    <CategoryDot color={c.color as CategoryColor} />
-                    <span className="truncate">{t("threadMenu.outOfCategory", { category: c.name })}</span>
-                  </ContextMenuItem>
-                ))}
-              </ContextMenuSubContent>
-            </ContextMenuSub>
-          )}
-          <Item
-            icon={<Filter />}
-            label={t("threadMenu.createFilter")}
-            testId="menu-filter"
-            onClick={() => setApp({ dialog: "filters", filterPrefill: { name: t("threadMenu.filterName", { name: sender.name }), rule: { match: "all", conditions: [{ field: "from", op: "equals", value: sender.email }], actions: [{ type: "archive" }] } } })}
-          />
-          <Item icon={<Search />} label={t("threadMenu.searchSender", { name: sender.name })} testId="menu-search-sender" onClick={() => setApp({ query: `from:${sender.email}`, view: "all", categoryId: null, reviewCategoryId: null, checked: new Set(), scope: null })} />
-          <Item
-            icon={<Copy />}
-            label={t("threadMenu.copyAddress")}
-            testId="menu-copy"
-            onClick={() =>
-              void navigator.clipboard.writeText(sender.email).then(
-                () => snack(t("threadMenu.copied", { email: sender.email }), { duration: 2000 }),
-                () => snack.error(t("threadMenu.copyFailed")),
-              )
-            }
-          />
-        </>
-      )}
-      {/* keyed: a menu moved onto another row never shows (or opens) the last row's offer while its own loads */}
-      {single && <UnsubscribeItem key={single.id} threadId={single.id} />}
-      <ContextMenuSeparator />
-      <Item icon={<CheckCheck />} label={t("actions.selectAll")} command="list.selectAll" onClick={selectAll} testId="menu-select-all" />
     </>
   );
 }

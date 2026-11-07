@@ -6,7 +6,7 @@
  */
 import AxeBuilder from "@axe-core/playwright";
 import type { FrameLocator, Page } from "@playwright/test";
-import { expect, focusList, ingestPrintFixtures, selectThread, test, fresh, scenario } from "./fixtures";
+import { menuPath, expect, focusList, ingestPrintFixtures, selectThread, test, fresh, scenario } from "./fixtures";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 
 const sheet = (page: Page) => page.getByTestId("print-sheet");
@@ -160,6 +160,7 @@ test.describe("print sheet", () => {
 
     // the thread's context menu: one conversation
     await page.locator(`[data-testid=thread-row][data-thread-id="${ids["inline-replies"]}"]`).click({ button: "right" });
+    await menuPath(page, "menu-more");
     await page.getByTestId("menu-print").click();
     await expect(sheet(page)).toBeVisible();
     await pressed(page, "print-scope-thread");

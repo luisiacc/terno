@@ -8,7 +8,7 @@ import { setLocale, t } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { autoRecipients, convertFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
+import { autoRecipients, convertFields, quoteFor, reachesSeveral, replyFields, subjectFor } from "./compose-fields";
 import { fullDate } from "./format";
 import { splitTextQuote } from "./quote";
 
@@ -88,6 +88,24 @@ describe("drafts strip copy", () => {
   });
 });
 
+
+describe("Reply all, where it adds something", () => {
+  const me = "luis@acme.studio";
+  const on = (to: string[], cc: string[] = [], from = yuki.email, isSent = false) =>
+    ({ thread: { id: 1 }, messages: [{ id: 1, isSent, from: { name: "", email: from }, replyTo: [], to: to.map((email) => ({ name: "", email })), cc: cc.map((email) => ({ name: "", email })) }] }) as unknown as ThreadDetail;
+  it("one other person: Reply is all there is", () => {
+    expect(reachesSeveral(on([me]), me)).toBe(false);
+    // my own message to one person
+    expect(reachesSeveral(on([yuki.email], [], me, true), me)).toBe(false);
+  });
+  it("anyone else on To or Cc: it reaches them too", () => {
+    expect(reachesSeveral(on([me, "ana@acme.studio"]), me)).toBe(true);
+    expect(reachesSeveral(on([me], ["ana@acme.studio"]), me)).toBe(true);
+  });
+  it("a second address of mine isn't another person", () => {
+    expect(reachesSeveral(on([me, "me@home.example"]), [me, "me@home.example"])).toBe(false);
+  });
+});
 
 describe("reply destinations", () => {
   const session = { name: "Support, Session", email: "session@help.test" };

@@ -2,7 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { IncomingMessage } from "@terno/store";
 import { E2E_NOW } from "./constants";
-import { expect, search, stabilize, test, type DevServerFixture } from "./fixtures";
+import { menuPath, expect, search, stabilize, test, type DevServerFixture } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 const AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
@@ -41,14 +41,17 @@ test("one-click: the menu offers it, axe-clean in light and dark, and it's done 
   await page.locator("[data-ready]").waitFor();
   await search(page, '"Weekly issue"');
   await rowOf(page, id).click({ button: "right" });
+  await menuPath(page, "menu-sender");
   const item = page.getByTestId("menu-unsubscribe");
   await expect(item).toHaveText("Unsubscribe weekly.example");
   await expect(item).toHaveAttribute("role", "menuitem");
   await stabilize(page);
+  // (stabilizing parks the pointer, which closes a submenu)
+  await menuPath(page, "menu-sender");
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme });
     await expect(page.locator("html")).toHaveClass(theme === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
-    const axe = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=thread-menu]").withTags(AXE_TAGS).analyze();
+    const axe = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=thread-menu]").include("[data-testid=menu-sender-list]").withTags(AXE_TAGS).analyze();
     expect(axe.violations.map((v) => v.id), theme).toEqual([]);
   }
   // nothing went out just because the menu opened
@@ -64,6 +67,7 @@ test("a refused one-click offers the sender's page instead", async ({ app: page,
   await search(page, '"Weekly refused issue"');
   const opened = await recordOpens(page);
   await rowOf(page, id).click({ button: "right" });
+  await menuPath(page, "menu-sender");
   await page.getByTestId("menu-unsubscribe").click();
   await expect(page.getByTestId("snack-message")).toHaveText("weekly.example didn’t take the one-click request. Finish on its unsubscribe page.");
   await page.getByRole("button", { name: "Open page" }).click();
@@ -74,6 +78,7 @@ test("mail: queues the unsubscribe message from the account it came to", async (
   const id = await ingest(server, { id: "weekly-mail", subject: "Weekly mail issue", unsubscribe: { mailto: "mailto:off@weekly.example?subject=unsubscribe" } });
   await search(page, '"Weekly mail issue"');
   await rowOf(page, id).click({ button: "right" });
+  await menuPath(page, "menu-sender");
   await expect(page.getByTestId("menu-unsubscribe")).toHaveText("Unsubscribe off@weekly.example");
   await page.getByTestId("menu-unsubscribe").click();
   await expect(page.getByTestId("snack-message")).toHaveText("Queued an unsubscribe request to off@weekly.example.");
@@ -87,6 +92,7 @@ test("the link in the mail opens in the click itself", async ({ app: page, serve
   await search(page, '"Shop sale this week"');
   const opened = await recordOpens(page);
   await rowOf(page, id).click({ button: "right" });
+  await menuPath(page, "menu-sender");
   await expect(page.getByTestId("menu-unsubscribe")).toHaveText("Unsubscribe shop.example");
   await page.getByTestId("menu-unsubscribe").click();
   expect(await opened()).toEqual(["https://shop.example/bye?u=9"]);
@@ -100,10 +106,12 @@ test("no item for personal mail or a selection of several", async ({ app: page, 
   const b = await ingest(server, { id: "weekly-sel-b", subject: "Weekly sel issue B", unsubscribe: ONE_CLICK });
   await search(page, '"Lunch on Friday unsub test"');
   await rowOf(page, personal).click({ button: "right" });
+  await menuPath(page, "menu-sender");
   await expect(page.getByTestId("menu-copy")).toBeVisible();
   // the lookup is a local read: give it time to answer, then nothing may have appeared
   await page.waitForTimeout(300);
   await expect(page.getByTestId("menu-unsubscribe")).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
 
   await search(page, '"Weekly sel issue"');
@@ -111,6 +119,7 @@ test("no item for personal mail or a selection of several", async ({ app: page, 
   await rowOf(page, b).click({ modifiers: ["ControlOrMeta"] });
   await rowOf(page, b).click({ button: "right" });
   await expect(page.getByTestId("menu-count")).toBeVisible();
+  await menuPath(page, "menu-sender");
   await page.waitForTimeout(300);
   await expect(page.getByTestId("menu-unsubscribe")).toHaveCount(0);
 });
@@ -122,6 +131,7 @@ test("Spanish", async ({ app: page, server }) => {
   await page.locator("[data-ready]").waitFor();
   await search(page, '"Boletín semanal baja"');
   await rowOf(page, id).click({ button: "right" });
+  await menuPath(page, "menu-sender");
   await expect(page.getByTestId("menu-unsubscribe")).toHaveText("Cancelar suscripción weekly.example");
   await page.getByTestId("menu-unsubscribe").click();
   await expect(page.getByTestId("snack-message")).toHaveText("Cancelaste tu suscripción a The Weekly.");
@@ -138,11 +148,13 @@ test("Codex review #3: the menu moved onto another row never keeps the last row'
   threads.unsubscribeSource = (id) => (id === ana ? Promise.reject(new Error("synthetic lookup failure")) : read(id));
   const box = (await rowOf(page, ana).boundingBox())!;
   await rowOf(page, shop).click({ button: "right" });
+  await menuPath(page, "menu-sender");
   await expect(page.getByTestId("menu-unsubscribe")).toHaveText("Unsubscribe shop.example");
   // right-click the other row while the menu is open (over the menu's backdrop, as a person would): it moves there,
   // and Ana's mail offers nothing
   await page.mouse.click(box.x + 40, box.y + box.height / 2, { button: "right" });
-  await expect(page.getByTestId("menu-search-sender")).toHaveText("Search mail from Ana");
+  await expect(page.getByTestId("menu-sender")).toHaveText("From Ana");
+  await menuPath(page, "menu-sender");
   await expect(page.getByTestId("menu-unsubscribe")).toHaveCount(0);
   await page.waitForTimeout(300);
   await expect(page.getByTestId("menu-unsubscribe")).toHaveCount(0);

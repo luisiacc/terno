@@ -5,7 +5,8 @@
  */
 import type { Locator, Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
-import { expect, navTo, focusList, rows, selectedRow, selectRows, stabilize, test, searchBox, fresh, scenario } from "./fixtures";
+import { expect, menuPath, navTo, focusList, rows, search, selectedRow, selectRows, stabilize, test, searchBox, fresh, scenario } from "./fixtures";
+import { E2E_NOW } from "./constants";
 import { sqlDb } from "../../backend-dev/src/server";
 
 // baselines are at twice the pixels; everything else draws at one (plan 139)
@@ -28,6 +29,18 @@ const checkedCount = (page: Page) => page.evaluate(() => (window as unknown as {
 const loadedIds = (page: Page) => page.evaluate(() => (window as unknown as { __terno: { loadedIds(): number[] } }).__terno.loadedIds());
 /** submenus render in their own popup, outside the menu's element */
 const sub = (page: Page, id: string) => page.getByTestId(id);
+
+/** One message from someone else, to me and whoever's on Cc. */
+async function ingestConversation(server: DevServer, subject: string, cc: { name: string; email: string }[]): Promise<number> {
+  const account = (await server.backend.store.accounts.list())[0]!;
+  const { touched } = await server.backend.store.sync.ingest([{
+    accountId: account.id, providerMsgId: subject, providerThreadId: null, rfcMessageId: `${subject.replace(/ /g, "-")}@acme.test`, inReplyTo: null, references: [],
+    from: { name: "Bea", email: "bea@acme.test" }, replyTo: [], to: [{ name: "Me", email: account.email }], cc, bcc: [],
+    subject, date: E2E_NOW - 60_000, snippet: "Hello", bodyText: "Hello", bodyHtml: null, bodyState: "full", listId: null,
+    isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100,
+  }], { applyFilters: false, now: E2E_NOW, classifier: null });
+  return touched[0]!;
+}
 
 async function rightClick(page: Page, target: Locator) {
   await target.click({ button: "right" });
@@ -73,7 +86,8 @@ test.describe("context menu on one thread", () => {
       await expect(row(page, a!)).toHaveCount(0);
       await expect.poll(() => flags(server, a!).in_trash).toBe(1);
       await rightClick(page, row(page, b!));
-      await item(page, "menu-spam").click();
+      await menuPath(page, "menu-more");
+      await sub(page, "menu-spam").click();
       await expect(row(page, b!)).toHaveCount(0);
       await expect.poll(() => flags(server, b!).in_spam).toBe(1);
       // z is the undo of what the snack offers: the row goes at once, but the snack (and z with it) waits for the backend's answer
@@ -89,29 +103,76 @@ test.describe("context menu on one thread", () => {
       const target = rows(page).nth(1);
       const id = (await target.getAttribute("data-thread-id"))!;
       await rightClick(page, target);
-      await expect(item(page, "menu-sender-file")).toContainText("Everything from");
-      await item(page, "menu-copy").click();
+      await menuPath(page, "menu-sender");
+      await expect(sub(page, "menu-sender-file")).toContainText("File all their mail");
+      await sub(page, "menu-copy").click();
       const copied = await page.evaluate(() => navigator.clipboard.readText());
       expect(copied).toMatch(/@/);
       await rightClick(page, row(page, id));
-      await item(page, "menu-search-sender").click();
+      await menuPath(page, "menu-sender");
+      await sub(page, "menu-search-sender").click();
       await expect(page.getByTestId("search-input")).toHaveValue(`from:${copied}`);
       await expect(page.getByTestId("list-title")).toHaveText("Search");
       await rightClick(page, rows(page).first());
-      await item(page, "menu-filter").click();
+      await menuPath(page, "menu-sender");
+      await sub(page, "menu-filter").click();
       await expect(page.getByTestId("filters-dialog")).toBeVisible();
       await expect(page.getByTestId("condition-value").first()).toHaveValue(copied);
     });
-    await scenario("Trash and Spam: what can't apply there is disabled, the way back is offered", async () => {
+    await scenario("the top level stays short, triage then reply, and fits a small window beside the pointer", async () => {
+      await fresh(page);
+      await page.setViewportSize({ width: 1100, height: 700 });
+      const low = rows(page).nth(3);
+      const at = (await low.boundingBox())!;
+      await rightClick(page, low);
+      const own = () => menu(page).locator("> [role=menuitem]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.testid!));
+      const top = await own();
+      expect(top.length).toBeLessThanOrEqual(13);
+      expect(top.slice(0, 2)).toEqual(["menu-archive", "menu-trash"]);
+      expect(top.indexOf("menu-reply")).toBeLessThan(top.indexOf("menu-remind-always"));
+      for (const moved of ["menu-print", "menu-copy-text", "menu-spam", "menu-select-all", "menu-copy", "menu-filter", "menu-trash-similar"]) expect(top).not.toContain(moved);
+      // no scrolling, and its first rows stay by the pointer (shifted to fit, never flipped a panel away)
+      await menu(page).evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+      const box = (await menu(page).boundingBox())!;
+      expect(await menu(page).evaluate((el) => el.scrollHeight <= el.clientHeight)).toBe(true);
+      expect(box.y).toBeLessThanOrEqual(at.y + at.height);
+      expect(box.y + box.height).toBeLessThanOrEqual(700);
+      expect(at.y + at.height / 2 - box.y).toBeLessThan(box.height);
+      // shortcuts in one column, chevrons in another
+      const ends = (id: string) => item(page, id).locator("[data-slot=context-menu-shortcut]").evaluate((el) => el.getBoundingClientRect().right);
+      expect(await ends("menu-remind-always")).toBeCloseTo(await ends("menu-archive"), 0);
+      await page.keyboard.press("Escape");
+      await page.setViewportSize({ width: 1280, height: 800 });
+    });
+    await scenario("Reply all is offered only where it reaches more than one other person, and from there it opens", async () => {
+      const one = await ingestConversation(server, "Pepino for one", []);
+      const many = await ingestConversation(server, "Pepino for many", [{ name: "Ana", email: "ana@acme.test" }]);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await search(page, "Pepino for");
+      await rightClick(page, row(page, one));
+      await expect(item(page, "menu-reply")).toBeVisible();
+      await expect(item(page, "menu-reply-all")).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(menu(page)).toBeHidden();
+      await rightClick(page, row(page, many));
+      await item(page, "menu-reply-all").click();
+      await expect(page.getByTestId("reader").getByTestId("composer")).toBeVisible();
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+      await page.keyboard.press("Escape");
+    });
+    await scenario("Trash and Spam: what can't apply there isn't offered, the way back leads", async () => {
       await fresh(page);
       await navTo(page, "trash");
       await expect(page.getByTestId("list-title")).toHaveText("Trash");
       await viewLoaded(page, "trash");
       await rightClick(page, rows(page).first());
-      await expect(item(page, "menu-trash")).toHaveAttribute("data-disabled", "");
-      await expect(item(page, "menu-archive")).toHaveAttribute("data-disabled", "");
+      await expect(item(page, "menu-trash")).toHaveCount(0);
+      await expect(item(page, "menu-archive")).toHaveCount(0);
       await expect(item(page, "menu-inbox")).toHaveText(/Restore to Inbox/);
-      await expect(item(page, "menu-spam")).not.toHaveAttribute("data-disabled");
+      await menuPath(page, "menu-more");
+      await expect(sub(page, "menu-spam")).toBeVisible();
+      await page.keyboard.press("Escape");
       await page.keyboard.press("Escape");
       await expect(menu(page)).toBeHidden();
 
@@ -119,10 +180,15 @@ test.describe("context menu on one thread", () => {
       await expect(page.getByTestId("list-title")).toHaveText("Spam");
       await viewLoaded(page, "spam");
       await rightClick(page, rows(page).first());
-      await expect(item(page, "menu-spam")).toHaveAttribute("data-disabled", "");
       await expect(item(page, "menu-not-spam")).toBeVisible();
-      await expect(item(page, "menu-trash")).not.toHaveAttribute("data-disabled");
+      await expect(item(page, "menu-trash")).toBeVisible();
+      await menuPath(page, "menu-more");
+      await expect(sub(page, "menu-spam")).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape");
+      await expect(menu(page)).toBeHidden();
       const id = (await rows(page).first().getAttribute("data-thread-id"))!;
+      await rightClick(page, row(page, id));
       await item(page, "menu-not-spam").click();
       await expect(row(page, id)).toHaveCount(0);
     });
@@ -209,10 +275,10 @@ test.describe("context menu on one thread", () => {
       await page.getByTestId("compose-show-subject").click();
       await expect(page.getByTestId("compose-subject")).toHaveValue(subject.startsWith("Re:") ? subject : `Re: ${subject}`);
     });
-    await scenario("reply, reply all and forward from the menu: the closing menu never hands focus back to the list, so they always open", async () => {
+    await scenario("reply and forward from the menu: the closing menu never hands focus back to the list, so they always open", async () => {
       await fresh(page);
       // the hand-back landed while the reply was still opening and made it give up: nothing opened, often
-      for (const [n, action, field] of [[3, "menu-reply", "compose-body"], [5, "menu-reply-all", "compose-body"], [6, "menu-forward", "compose-to"]] as const) {
+      for (const [n, action, field] of [[3, "menu-reply", "compose-body"], [6, "menu-forward", "compose-to"]] as const) {
         await rightClick(page, rows(page).nth(n));
         // from the menu on (the right-click itself focuses the list)
         await page.evaluate(() => {

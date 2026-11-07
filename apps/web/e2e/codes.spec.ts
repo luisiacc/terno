@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import type { IncomingMessage } from "@terno/store";
 import { E2E_NOW } from "./constants";
-import { axeBothModes, expect, scenario, search, stabilize, test, type DevServerFixture } from "./fixtures";
+import { menuPath, axeBothModes, expect, scenario, search, stabilize, test, type DevServerFixture } from "./fixtures";
 
 async function ingestCode(server: DevServerFixture, o: { id: string; subject: string; ageMs: number; code?: string }): Promise<number> {
   const [account] = await server.backend.store.accounts.list();
@@ -68,6 +68,7 @@ test("a code: from the menu, under a drag, too old", async ({ app: page, server,
     await search(page, '"Acme menu code"');
     const row = rowOf(page, id);
     await row.click({ button: "right" });
+    await menuPath(page, "menu-more");
     await expect(page.getByTestId("menu-copy-code")).toHaveText("Copy verification code 048291");
     await page.getByTestId("menu-copy-code").click();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("048291");

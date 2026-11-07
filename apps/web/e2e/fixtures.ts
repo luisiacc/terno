@@ -494,3 +494,11 @@ export async function ingestPrintFixtures(server: DevServer): Promise<Record<Pri
   const db = sqlDb(server.backend.store);
   return Object.fromEntries(Object.entries(first).map(([key, msgId]) => [key, db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", msgId)!.thread_id])) as Record<PrintFixtureKey, number>;
 }
+
+/** Through a row menu's submenus, as a pointer goes: each named row opens its `-list`. */
+export async function menuPath(page: Page, ...triggers: string[]): Promise<void> {
+  for (const id of triggers) {
+    await page.getByTestId(id).hover();
+    await expect(page.getByTestId(`${id}-list`)).toBeVisible();
+  }
+}

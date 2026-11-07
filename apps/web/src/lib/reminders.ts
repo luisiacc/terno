@@ -41,7 +41,7 @@ export async function loadReminders(): Promise<void> {
 
 // ───────────────────────────── when ─────────────────────────────
 
-import { reminderWhen } from "~/lib/when";
+import { reminderShort, reminderTime, reminderWhen } from "~/lib/when";
 export { reminderShort, reminderWhen } from "~/lib/when";
 
 const PRESET_KEYS = {
@@ -56,6 +56,9 @@ const PRESET_KEYS = {
 } as const satisfies Record<RemindPresetId, string>;
 
 export const presetLabel = (id: RemindPresetId): string => t(PRESET_KEYS[id]);
+
+/** A preset's moment beside its name: "Tomorrow" says the day itself, so only its time ("Tomorrow  9:00 AM", "Next week  Mon 9:00 AM"). */
+export const presetWhen = (p: { id: RemindPresetId; at: number }, now = Date.now()): string => (p.id === "tomorrow" || p.id === "laterToday" ? reminderTime(p.at) : reminderShort(p.at, now));
 
 // ───────────────────────────── set and clear ─────────────────────────────
 

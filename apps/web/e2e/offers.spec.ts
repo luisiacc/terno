@@ -10,7 +10,7 @@ import type { Locator, Page } from "@playwright/test";
 import { normalizeText, subjectKey } from "@terno/core";
 import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, selectThread, test, fresh, scenario } from "./fixtures";
+import { menuPath, expect, focusList, selectThread, test, fresh, scenario } from "./fixtures";
 
 test.use({ reducedMotion: "no-preference" });
 
@@ -144,12 +144,14 @@ test.describe("plan 91: defaults and the same offers everywhere", () => {
     await selectThread(page, g.target, `in:inbox from:${g.email}`);
     // the menu first: Only this email, then the offers in the snackbar's order
     await page.locator(`[data-testid=thread-row][data-thread-id="${g.target}"]`).click({ button: "right" });
+    await menuPath(page, "menu-similar");
     await page.getByTestId("menu-spam-similar").hover();
     const list = page.getByTestId("menu-spam-similar-list");
     await expect(list.getByTestId("menu-similar-only")).toHaveText("Only this email");
     const menuOrder = await list.locator("[data-testid^=menu-similar-]:not([data-testid$=-count]):not([data-testid=menu-similar-only])").evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
     expect(menuOrder[0]).toBe("menu-similar-subject");
     expect(menuOrder[1]).toBe("menu-similar-sender");
+    await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
 

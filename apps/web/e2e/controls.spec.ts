@@ -528,9 +528,9 @@ for (const mode of ["light", "dark"] as const) {
         const menu = page.locator("[data-slot=context-menu-content]");
         await baseExpect(menu).toBeVisible();
         await menu.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
-        const [reply, all] = [menu.getByTestId("menu-reply"), menu.getByTestId("menu-reply-all")];
-        baseExpect(await reply.evaluate((el) => getComputedStyle(el).fontWeight)).toBe("500");
-        const [a, b] = [(await reply.boundingBox())!, (await all.boundingBox())!];
+        const [archive, trash] = [menu.getByTestId("menu-archive"), menu.getByTestId("menu-trash")];
+        baseExpect(await archive.evaluate((el) => getComputedStyle(el).fontWeight)).toBe("500");
+        const [a, b] = [(await archive.boundingBox())!, (await trash.boundingBox())!];
         baseExpect(b.y - (a.y + a.height), "2 px between rows").toBeCloseTo(2, 1);
         const sep = menu.locator("[role=separator]").first();
         const [panel, line] = [(await menu.boundingBox())!, (await sep.boundingBox())!];
