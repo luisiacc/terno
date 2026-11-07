@@ -86,7 +86,7 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...text("muted-foreground", ["menu-highlight"]),
   // plan 158: a search's match on a row, in the row's ink on a wash of the star's gold; lighter on the cursor and on a checked row, whose fills are deeper
   ...(["pane", "background", "row-hover"] as const).map((over): ContrastPair => ({ fg: "foreground", bg: "star", alpha: 0.25, min: 4.5, overToken: over })),
-  { fg: "row-selected-foreground", bg: "star", alpha: 0.12, min: 4.5, overToken: "row-selected" },
+  { fg: "row-selected-foreground", bg: "star", alpha: 0.2, min: 4.5, overToken: "row-selected" },
   { fg: "accent-foreground", bg: "star", alpha: 0.12, min: 4.5, overToken: "accent" },
   // translucent menus: their text over anything (black or white) behind them
   ...GLASS_TEXT.flatMap((fg) => GLASS_BACKDROPS.map((over): ContrastPair => ({ fg, bg: "popover-glass", min: 4.5, over: `oklch(${over})` }))),

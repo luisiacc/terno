@@ -65,3 +65,25 @@ describe("applySimilar's one Undo (plan 63)", () => {
     expect(undo.state).toBe("done");
   });
 });
+
+describe("plan 158: an offer says what it will do", () => {
+  const scope = {
+    sender: { kind: "sender", email: "a@xataka.com" },
+    subject: { kind: "subject", email: "a@xataka.com", subject: "291 gadgets que cambiarán tu escritorio para siempre" },
+    domain: { kind: "domain", domain: "xataka.com" },
+    list: { kind: "list", listId: "abc123.list-id.xataka.com" },
+  } as const;
+
+  it("a sentence, the verb first; the subject is the mail's own, never a rule's #; a list isn't its id", async () => {
+    const { offerSentence } = await import("./similar");
+    const of = (s: (typeof scope)[keyof typeof scope], count = 5, capped = false) => ({ scope: s, count, capped });
+    expect(offerSentence("archive", of(scope.sender), "Xataka")).toBe("Archive 5 more from Xataka");
+    expect(offerSentence("trash", of(scope.domain, 1000, true), null)).toBe("Delete 1,000+ more from @xataka.com");
+    expect(offerSentence("spam", of(scope.list), null)).toBe("Mark 5 more from this mailing list as spam");
+    const subject = offerSentence("archive", of(scope.subject), "Xataka");
+    expect(subject).toMatch(/^Archive 5 more like “291 gadgets/);
+    expect(subject).not.toContain("#");
+    // nothing counted yet: no "0"
+    expect(offerSentence("archive", of(scope.sender, 0, true), "Xataka")).toBe("Archive everything from Xataka");
+  });
+});

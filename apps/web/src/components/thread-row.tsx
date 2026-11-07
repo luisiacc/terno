@@ -1,6 +1,6 @@
 import { CheckboxMark } from "@terno/ui/components/checkbox";
 import { toggleRow, useActionRows } from "~/state/action-preview";
-import { listFilterOf, matchesFilter, matchFocus, matchParts, mostUrgent, type CategoryColor, type MatchNeedle, type RowMatch, type ThreadSummary } from "@terno/core";
+import { listFilterOf, matchesFilter, matchFocus, mostUrgent, type CategoryColor, type RowMatch, type ThreadSummary } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
 import { Bell, Check, Paperclip, Star } from "@terno/ui/icons";
@@ -17,6 +17,7 @@ import type { ReminderInfo } from "@terno/core/rpc";
 import type { DesignVariants } from "@terno/ui/designs/index";
 import { SenderAvatar } from "./sender-avatar";
 import { CodeChip } from "./code-chip";
+import { Marked } from "./match-mark";
 import { ReviewControls } from "./review-actions";
 import { useThreadCode } from "~/lib/codes";
 import { reminderShort, useReminders } from "~/lib/reminders";
@@ -162,20 +163,8 @@ function useOwed(thread: Pick<ThreadSummary, "id">, reminderTop?: boolean) {
   return { line: shows ? rowLine(owed) : null, dueAt: shows ? (mostUrgent(owed)?.dueAt ?? null) : null };
 }
 
-/**
- * Plan 158: why a result is here. Weight as well as the tint (the tint alone would be color alone); on the cursor and
- * on a checked row, the row's own ink on a lighter tint (contrast.ts holds both).
- */
-const MARK = "rounded-xs bg-star/25 px-px font-semibold text-foreground group-data-opened/row:bg-star/12 group-data-opened/row:text-row-selected-foreground group-data-checked/row:bg-star/12 group-data-checked/row:text-accent-foreground";
-
-function Marked({ text, needles }: { text: string; needles: readonly MatchNeedle[] | undefined }) {
-  const parts = needles ? matchParts(text, needles) : null;
-  if (!parts) return text;
-  return parts.map((p, i) => (p.hit ? <mark key={i} data-testid="row-match" className={MARK}>{p.text}</mark> : p.text));
-}
-
-/** How far into its line a match may stand. */
-const LEAD = { own: 28, wide: 40 };
+/** How far into its line a match may stand: near the start, so it shows whole on the narrowest row (a 1100 px window, an account beside it). */
+const LEAD = { own: 12, wide: 40 };
 
 /** The row's words after the subject in a search: from near the match, the match marked. */
 function matchLine(match: RowMatch | null | undefined, text: string, lead: number) {
@@ -224,10 +213,9 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
   /** where it lives when that isn't where mail usually is (Trash wins: trashed spam is in the trash) */
   const place = thread.inTrash ? "trash" : thread.inSpam ? "spam" : null;
 
-  // unread reads first: a stronger sender and subject, one dot. Read is quieter, and a checked row is on the accent, where only its own foreground holds
-  const onAccent = checked && !opened;
-  const readInk = onAccent ? "text-accent-foreground" : "text-row-read";
-  const quiet = onAccent ? "text-accent-foreground" : "text-muted-foreground";
+  // unread reads first: a stronger sender and subject, one dot. Read is quieter
+  const readInk = "text-row-read";
+  const quiet = "text-muted-foreground";
   const from = (
     <span data-testid="row-from" className={cn("min-w-0 truncate", thread.unread ? "type-row-from-strong" : cn("type-row-from", readInk))}>
       <Marked text={thread.fromName} needles={match?.from} />
@@ -238,10 +226,10 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
   const star = thread.starred && <Star className="size-3 fill-star text-star" />;
   const dots = cats.map((c) => <CategoryDot key={c.id} data-cat-dot={c.id} color={c.color as CategoryColor} title={c.name} />);
   // plan 87: due, in the accent (the Inbox's top); set, quiet
-  const bell = reminder && <Bell aria-hidden data-testid="row-reminder" data-due={reminder.due || undefined} className={cn("size-3 shrink-0", opened ? "" : checked ? "text-accent-foreground" : reminder.due ? "text-primary" : "text-muted-foreground")} />;
+  const bell = reminder && <Bell aria-hidden data-testid="row-reminder" data-due={reminder.due || undefined} className={cn("size-3 shrink-0", opened || checked ? "" : reminder.due ? "text-primary" : "text-muted-foreground")} />;
   // plan 64: a search looks everywhere, so a row in Spam or Trash says so (quiet, before the date; said once at the end)
   const placeTag = place && (
-    <span aria-hidden data-testid="row-place" data-place={place} className={cn("shrink-0 text-2xs", onAccent ? "text-accent-foreground" : "text-muted-foreground")}>
+    <span aria-hidden data-testid="row-place" data-place={place} className={"shrink-0 text-2xs text-muted-foreground"}>
       {t(place === "spam" ? "list.place.spam" : "list.place.trash")}
     </span>
   );
@@ -273,7 +261,6 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
       title={account.email}
       className={cn(
         "flex min-w-0 shrink-0 items-center self-center text-xs",
-        // a checked row is on the accent (muted text isn't checked there): its own foreground
         quiet,
         wide ? "w-20 @max-[52rem]/rows:hidden" : line ? "max-w-[min(7rem,32%)]" : "ml-auto max-w-[min(8rem,40%)] pl-2",
       )}
@@ -291,7 +278,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
   const date =
     reminderTop && reminder?.due ? (
       // plan 87: on the Inbox's top, the time it came back, in the attention ink (the mail's own date would read as out of order)
-      <span data-testid="row-date" data-reminder className={cn("flex items-center gap-1 text-xs font-medium tabular", opened ? "" : checked ? "text-accent-foreground" : "text-unread-ink")}>
+      <span data-testid="row-date" data-reminder className={cn("flex items-center gap-1 text-xs font-medium tabular", opened || checked ? "" : "text-unread-ink")}>
         <Bell aria-hidden data-testid="row-reminder" data-due className="size-3" />
         {listDate(reminder.dueAt)}
       </span>
@@ -301,7 +288,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
   // a small tag at the row's own scale: its line box is no taller than the subject's, so no line moves for it
   const draft = hasDraft && <span data-testid="row-draft" className="shrink-0 text-xs leading-none font-medium text-draft-foreground">{t("list.draft")}</span>;
   // the subject leads a read row: the sender's quieter ink, the preview quieter still
-  const subjectInk = thread.unread ? "type-row-subject-strong text-foreground" : cn("type-row-subject", onAccent ? "text-accent-foreground" : "text-foreground");
+  const subjectInk = thread.unread ? "type-row-subject-strong text-foreground" : "type-row-subject text-foreground";
   // its own line: only a very long subject truncates
   const subject = (
     <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>
@@ -332,10 +319,15 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
       />
     </span>
   );
-  // one mark in every design and layout: in the gutter, on the sender's line, never on an avatar
-  const dot = thread.unread && !checked && included === undefined && (
-    <span data-testid="row-unread-dot" className={cn("absolute -left-[11px] size-[7px] -translate-y-1/2 rounded-full bg-unread", line ? "top-1/2" : "top-[calc(var(--type-row-from-leading)/2)]")} />
-  );
+  // one mark in every design and layout: in the gutter, on the sender's line, never on an avatar. In the batch, a check
+  // takes the unread dot's place, centered where it is, moving nothing (the row's weight still says unread)
+  const onSenderLine = line ? "top-1/2" : "top-[calc(var(--type-row-from-leading)/2)]";
+  const dot =
+    checked && included === undefined ? (
+      <Check aria-hidden data-testid="row-check" className={cn("absolute -left-[13px] size-[11px] -translate-y-1/2 text-row-selected-foreground [--icon-line:1.5px]", onSenderLine)} />
+    ) : (
+      thread.unread && included === undefined && <span data-testid="row-unread-dot" className={cn("absolute -left-[11px] size-[7px] -translate-y-1/2 rounded-full bg-unread", onSenderLine)} />
+    );
   // a three-line row's first line: its marks and date hold the right edge
   const firstLine = (
     <div className="flex min-w-0 items-center gap-1.5">
@@ -387,7 +379,11 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
         "before:absolute before:inset-x-2 before:inset-y-px before:rounded-(--row-radius)",
         // classic rows: one hairline separator, hidden under the selection and above it (rows render in list order, so the next sibling is the next row)
         classic && "after:absolute after:right-4 after:bottom-0 after:left-5 after:h-(--hairline-w) after:bg-hairline [&:has(+[data-checked])]:after:hidden [&:has(+[data-cursor])]:after:hidden",
-        opened ? "text-row-selected-foreground before:bg-row-selected after:hidden" : checked ? "before:bg-accent after:hidden" : selected ? "before:bg-muted after:hidden" : "hover:before:bg-row-hover",
+        // plan 158: one selection, one look: every checked row, the first too, is the open row's shape and ink. Among
+        // several, a cursor that's outside them only shows where it is, and by keys it's outlined (the list says when)
+        opened || checked ? "text-row-selected-foreground before:bg-row-selected after:hidden" : selected ? "before:bg-muted after:hidden" : "hover:before:bg-row-hover",
+        selected && !checked && "group-data-many/list:text-foreground group-data-many/list:before:bg-row-hover",
+        selected && "group-data-keyed/list:before:shadow-[inset_0_0_0_1px_var(--ring)]",
         reminderEnd && "after:hidden",
         // the check takes the gutter, and the content line moves over as one
         included !== undefined && "pl-10",
@@ -400,8 +396,6 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
         // the row is the option and `x` its key: this is for the pointer, and says nothing the row doesn't
         <CheckboxMark data-testid="row-include" checked={included} className="absolute top-1/2 left-5 -translate-y-1/2" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); toggleRow(thread.id); }} />
       )}
-      {/* in the batch, not just open: a check in the gutter, in every row style, moving nothing (it takes the unread dot's place; the row's weight still says unread) */}
-      {checked && included === undefined && <Check aria-hidden data-testid="row-check" className={cn("absolute top-1/2 left-[7px] size-3 -translate-y-1/2 [--icon-line:1.5px]", opened ? "text-row-selected-foreground" : "text-accent-foreground")} />}
       {wide ? (
         // a table: sender, subject, preview, then fixed columns on the right edge (account, category, attachment, star,
         // date), so the eye runs down each. What's narrow gives way from the left of them, the preview's width first
@@ -440,7 +434,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
           <span className="min-w-0 flex-1 truncate">
             <span data-testid="row-subject" className={subjectInk}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
             {draft && <span className="ml-1.5">{draft}</span>}
-            <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} />
+            <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} />
           </span>
           {answer}
           {accountTag}

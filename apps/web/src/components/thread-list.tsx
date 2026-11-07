@@ -31,6 +31,7 @@ import { pressRow, releaseRow } from "~/lib/select";
 import { DIGEST_ROW_ID, type ThreadSummary } from "@terno/core";
 import { clearSelection, selectScope } from "~/lib/select";
 import { scopeLabel } from "~/lib/selection";
+import { SearchHelp } from "./search-help";
 import { client } from "~/rpc/connection";
 import { useSnack } from "~/lib/snack";
 import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
@@ -347,7 +348,21 @@ function ListSearch() {
   const soloName = useApp((s) => (s.soloAccountId === null ? null : (s.accounts.find((a) => a.id === s.soloAccountId)?.displayName ?? null)));
   const placeholder = soloName === null ? t("list.search.placeholder") : t("list.search.placeholderIn", { account: soloName });
   const coverage = useCoverageNote();
+  // plan 158: arriving at an empty field, what it can do: quiet, over the rows, gone at the first letter and not back when
+  // it's emptied again (that's the mailbox coming back, its rows wanted)
+  const [help, setHelp] = useState(false);
+  const wrapper = useRef<HTMLDivElement>(null);
   return (
+    <div
+      ref={wrapper}
+      className="relative"
+      onFocus={(e) => {
+        if (!wrapper.current?.contains(e.relatedTarget as Node | null)) setHelp(true);
+      }}
+      onBlur={(e) => {
+        if (!wrapper.current?.contains(e.relatedTarget as Node | null)) setHelp(false);
+      }}
+    >
     <SearchField
         className="no-drag"
         ref={(el) => {
@@ -362,7 +377,10 @@ function ListSearch() {
         hint={<Kbd>/</Kbd>}
         // the list's compact field, on the tint; its ring in the app's weight, not louder than the results it's for
         fieldClassName="h-[30px] bg-tint text-sm dark:bg-tint focus-visible:ring-2"
-        onValueChange={(q) => setApp({ query: q })}
+        onValueChange={(q) => {
+          setHelp(false);
+          setApp({ query: q });
+        }}
         clearOnEscape={false}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
@@ -377,6 +395,24 @@ function ListSearch() {
           }
         }}
       />
+      {help && query === "" && (
+        <div
+          role="group"
+          aria-label={t("search.help.title")}
+          data-testid="search-help-panel"
+          className="no-drag absolute inset-x-0 top-full z-30 mt-1.5 rounded-menu bg-popover p-1.5 text-popover-foreground shadow-menu"
+          onMouseDown={(e) => e.preventDefault()}
+          onKeyDown={(e) => {
+            // Esc from a row here is Esc from the field
+            if (e.key !== "Escape" || !searchInputRef.current) return;
+            e.preventDefault();
+            leaveSearch(searchInputRef.current);
+          }}
+        >
+          <SearchHelp onPick={(text) => { setHelp(false); setApp({ query: text }); searchInputRef.current?.focus(); }} scope={soloName === null ? t("search.help.scope") : t("search.help.scopeIn", { account: soloName })} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -535,7 +571,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
   const inlineTabs = oneRow && tabs && quick === "menu";
   // List's selection toolbar stands on this line: what's under it can't be reached until it goes
   const covered = useApp((s) => list && (s.scope !== null || s.checked.size >= 1));
-  const results = more ? t("list.search.resultsMore", { count }) : t("list.search.results", { count });
+  const results = t("list.search.inSaved", { results: more ? t("list.search.resultsMore", { count }) : t("list.search.results", { count }) });
   const stats = query && searchMs !== null && (
     <span data-testid="search-stats" role="status" className="shrink-0 text-2xs text-muted-foreground tabular">
       {complete ? results : t("list.search.statsIndexing", { results })}
@@ -824,8 +860,8 @@ function EmptyState() {
     );
   return (
     <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
-      <Inbox className="mb-2 size-7 text-muted-foreground" aria-hidden />
-      <p className="text-lg font-semibold tracking-tight">{query ? t("list.empty.searchTitle") : view === "inbox" ? t("list.empty.inboxTitle") : t("list.empty.title")}</p>
+      {query ? <Search className="mb-2 size-7 text-muted-foreground" aria-hidden /> : <Inbox className="mb-2 size-7 text-muted-foreground" aria-hidden />}
+      <p className="text-lg font-semibold tracking-tight">{query ? t("list.empty.searchTitle", { query: query.trim() }) : view === "inbox" ? t("list.empty.inboxTitle") : t("list.empty.title")}</p>
       <p className="text-xs text-muted-foreground">
         {query ? t("list.empty.searchBody") : view === "inbox" ? t("list.empty.inboxBody") : t("list.empty.body")}
       </p>
@@ -877,6 +913,7 @@ export function ThreadList() {
   const headerRef = useRef<HTMLDivElement>(null);
   const sectionRef = useRef<HTMLElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const pressing = useRef(false);
 
   // the docked snackbar sits over the last rows: the list keeps room below them, and j/k stop above it;
   // so does List's pinned draft (plan 115; Split's is over the reader, not the list)
@@ -1024,7 +1061,12 @@ export function ThreadList() {
 
   // Selection changes update the attribute directly without rendering the list.
   useEffect(() => useApp.subscribe((s, prev) => {
-    if (s.selectedId !== prev.selectedId) pointListCursor(parentRef.current, s.selectedId);
+    // plan 158: among several selected, j/k's cursor needs a mark of its own (the rows all look alike); a click needs none
+    const several = s.scope !== null || s.checked.size >= 2;
+    if (!several) delete sectionRef.current?.dataset.keyed;
+    if (s.selectedId === prev.selectedId) return;
+    pointListCursor(parentRef.current, s.selectedId);
+    if (several && !pressing.current && sectionRef.current) sectionRef.current.dataset.keyed = "";
   }), []);
 
   // the filter toggled (the same mailbox and query otherwise): the open thread, kept, comes into view
@@ -1056,7 +1098,13 @@ export function ThreadList() {
   }, [last?.index, items.length, itemsKey]);
 
   return (
-    <section ref={sectionRef} className="group/list relative flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list" data-results-for={itemsKey} data-composing={composing || undefined}>
+    <section ref={sectionRef} className="group/list relative flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list" data-results-for={itemsKey} data-composing={composing || undefined} data-many={many || undefined}
+      onPointerDownCapture={() => {
+        pressing.current = true;
+        delete sectionRef.current?.dataset.keyed;
+      }}
+      onPointerUpCapture={() => (pressing.current = false)}
+    >
       {previewing ? (
         <ActionPreviewHeader />
       ) : (

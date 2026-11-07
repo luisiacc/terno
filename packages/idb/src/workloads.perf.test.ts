@@ -107,6 +107,16 @@ it("plan 64: the instant index: every search through the store within 5 ms, ever
   expect(over).toEqual([]);
 }, 600_000);
 
+it("plan 158: the palette's ask for mail, a name or a word as it's typed, a few rows: within the same 5 ms", async () => {
+  const over: string[] = [];
+  for (const query of ["isabel", "lucia", "fa", "pro", "factura", "zzqxjv"]) {
+    const ms = await median(() => store.threads.searchText({ query, limit: 10, now: NOW }));
+    log(`palette "${query}": ${ms.toFixed(2)} ms`);
+    if (ms > 5 * MULT) over.push(`"${query}": ${ms.toFixed(2)} ms`);
+  }
+  expect(over).toEqual([]);
+}, 600_000);
+
 /** a free-text scan reads every body, the same pass with a different test: "everywhere" reads the most of them, so it holds the budget for the rest */
 const SCANNED: readonly (readonly [string, (q: string) => string, string])[] = [
   ...QUERIES.filter((q) => scanBudget(q) < 10_000).flatMap((q) => SCOPES.map(([s, f]) => [s, f, q] as const)),

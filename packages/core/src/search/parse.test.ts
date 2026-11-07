@@ -294,4 +294,12 @@ describe("a typed address means that address (plan 140)", () => {
     expect(parsed("@acme.test")).toEqual({ terms: ["text:@acme.test*"], anyOf: [] });
     expect(parsed("___@")).toEqual({ terms: ["text:___@*"], anyOf: [] });
   });
+
+  it("plan 158: an operator still waiting for its value asks for nothing yet, in either language", () => {
+    expect(isEmptyQuery(parseSearch("from:"))).toBe(true);
+    expect(isEmptyQuery(parseSearch("asunto:"))).toBe(true);
+    expect(parseSearch("factura from:").terms.map((t) => [t.field, t.value])).toEqual([["text", "factura"]]);
+    // a word with a colon that isn't an operator stays what it is
+    expect(parseSearch("nota:").terms.map((t) => t.value)).toEqual(["nota:"]);
+  });
 });

@@ -1,4 +1,4 @@
-import type { AttachmentInfo } from "@terno/core";
+import type { AttachmentInfo, MatchNeedle } from "@terno/core";
 import DOMPurify from "dompurify";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -17,11 +17,13 @@ import { forwardPrintKey, wantsNativeMenu } from "~/lib/print-open";
 import { forwardMouseNav, forwardNavKey } from "~/lib/page";
 import { chooseOpenThread } from "~/state/app";
 import { allowRemoteFor, remoteAllowed, useRemoteConsent } from "~/lib/remote-consent";
+import { FRAME_MAX_HEIGHT, htmlHolds, markDocument, marksChanged, textHolds } from "~/lib/reader-marks";
+import { Marked } from "./match-mark";
 
 import { openLink } from "~/lib/open-link";
 export { openLink };
 
-const MAX_HEIGHT = 20000;
+const MAX_HEIGHT = FRAME_MAX_HEIGHT;
 const WEB = import.meta.env.VITE_TARGET === "web";
 
 /** The last measured height of each message's frame: an expanding message opens to it, not to a guess. */
@@ -49,7 +51,7 @@ interface MailLook {
 /** A mail document's colors, scheme and padding for the painted theme. */
 function mailLook(paper: boolean, mode: string): MailLook {
   const c = mailColors()[paper ? "paper" : "themed"];
-  const vars = { "--m-bg": c.bg, "--m-fg": c.fg, "--m-link": c.link, "--m-scheme": paper ? "light" : mode, "--m-pad": paper ? "16px" : "0" };
+  const vars = { "--m-bg": c.bg, "--m-fg": c.fg, "--m-link": c.link, "--m-mark": c.mark, "--m-scheme": paper ? "light" : mode, "--m-pad": paper ? "16px" : "0" };
   return { mail: paper ? "paper" : "themed", vars, style: Object.entries(vars).map(([k, v]) => `${k}:${v}`).join(";") };
 }
 
@@ -59,9 +61,9 @@ function paint(root: HTMLElement, look: MailLook): void {
   root.dataset.mail = look.mail;
 }
 
-export interface HtmlBodyProps { attachments?: AttachmentInfo[]; accountId?: number; html: string; messageId: number; /** spam never loads on its own, whatever the setting */ spam?: boolean; remoteImages: "ask" | "always"; appearance: "auto" | "paper"; section?: boolean; onExit?: () => void; onSectionHeight?: (height: number) => boolean; hydrate?: (doc: Document, signal: AbortSignal) => Promise<void>; onHydrationError?: () => void }
+export interface HtmlBodyProps { /** plan 158: a search's words, marked in the loaded mail */ marks?: readonly MatchNeedle[]; attachments?: AttachmentInfo[]; accountId?: number; html: string; messageId: number; /** spam never loads on its own, whatever the setting */ spam?: boolean; remoteImages: "ask" | "always"; appearance: "auto" | "paper"; section?: boolean; onExit?: () => void; onSectionHeight?: (height: number) => boolean; hydrate?: (doc: Document, signal: AbortSignal) => Promise<void>; onHydrationError?: () => void }
 
-export function HtmlBody({ html, messageId, remoteImages, spam = false, appearance, attachments = [], accountId, section = false, onExit, onSectionHeight, hydrate, onHydrationError }: HtmlBodyProps) {
+export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, appearance, attachments = [], accountId, section = false, onExit, onSectionHeight, hydrate, onHydrationError }: HtmlBodyProps) {
   const ref = useRef<HTMLIFrameElement>(null);
   const loaded = useRef<{ markup: string; doc: Document; tabs: WeakMap<Node, string | null> } | null>(null);
   const hydrateRef = useRef(hydrate);
@@ -71,6 +73,7 @@ export function HtmlBody({ html, messageId, remoteImages, spam = false, appearan
   useLayoutEffect(() => { heightRef.current = onSectionHeight; }, [onSectionHeight]);
   const exitRef = useRef(onExit);
   useLayoutEffect(() => { exitRef.current = onExit; }, [onExit]);
+  const marksRef = useRef(marks);
   const view = useMailReaderView();
   const closeView = view?.close;
   const [opening, setOpening] = useState(0);
@@ -90,6 +93,10 @@ export function HtmlBody({ html, messageId, remoteImages, spam = false, appearan
   const [quoteShown, setQuoteShown] = useState(false);
   const main = useMemo(() => (section ? null : withoutTrailingQuote(clean)), [clean, section]);
   const folded = main !== null && !quoteShown;
+  // plan 158: the only match is in the folded history: it opens, or the search would seem wrong
+  useEffect(() => {
+    if (marks?.length && folded && !htmlHolds(main, marks) && htmlHolds(clean, marks)) setQuoteShown(true);
+  }, [marks, clean]);
   // read from what the frame gets (parsed once per message, not per render)
   const remote = useMemo(() => hasRemoteContent(folded ? main : clean, WEB), [clean, main, folded]);
   const blocked = !allowRemote && remote;
@@ -117,9 +124,11 @@ export function HtmlBody({ html, messageId, remoteImages, spam = false, appearan
   if (built.html !== visibleHtml || built.allowRemote !== allowRemote) setBuilt({ html: visibleHtml, allowRemote, look });
   const version = useRef(0);
   const sourceId = useMemo(() => String(++version.current), [built]);
+  // a search's mark: the tint under the mail's own ink, weight as well as color; the one in hand outlined (no color of its own, so it holds on any mail)
+  const markStyle = "mark[data-reader-match]{background:color-mix(in srgb,var(--m-mark) 30%,transparent);color:inherit;font-weight:600;border-radius:2px}mark[data-reader-current]{outline:1.5px solid var(--m-mark)}";
   const doc = useMemo(
     () =>
-      `<!doctype html><html data-mail="${built.look.mail}" style="${built.look.style}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(built.allowRemote)}"><base target="_blank"><style>${measured ? "[data-terno-flow]{max-width:35em}[data-terno-flow] img,[data-terno-flow] table{max-width:100vw}" : ""}html{overflow-y:clip}html,body{margin:0;padding:0;background:var(--m-bg);color:var(--m-fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;overflow-wrap:anywhere;color-scheme:var(--m-scheme)}body{padding:var(--m-pad);${section ? "" : "max-height:20000px;overflow:clip;box-sizing:border-box;position:relative;contain:paint"}}[data-terno-flow]{display:flow-root}img{max-width:100%;height:auto}a{color:var(--m-link)}table{max-width:100%}${section ? "body{padding:0}body *:not(svg,svg *){position:static!important;float:none!important;transform:none!important;zoom:1!important;writing-mode:horizontal-tb!important;height:auto!important;min-height:0!important;max-height:none!important;min-width:0!important;max-width:100%!important;margin:0!important;padding:0!important;border-width:0!important;border-spacing:0!important;text-indent:0!important;letter-spacing:normal!important;word-spacing:normal!important;overflow:visible!important;font-size:14px!important;line-height:1.55!important;overflow-wrap:anywhere!important;white-space:pre-wrap!important}body img,body svg,body video,body canvas,body input,body select{max-width:100%!important;max-height:2048px!important;object-fit:contain}body table{table-layout:auto}" : ""}</style></head><body><div data-terno-flow data-terno-document="${sourceId}">${built.html}</div></body></html>`,
+      `<!doctype html><html data-mail="${built.look.mail}" style="${built.look.style}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(built.allowRemote)}"><base target="_blank"><style>${section ? "" : markStyle}${measured ? "[data-terno-flow]{max-width:35em}[data-terno-flow] img,[data-terno-flow] table{max-width:100vw}" : ""}html{overflow-y:clip}html,body{margin:0;padding:0;background:var(--m-bg);color:var(--m-fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;overflow-wrap:anywhere;color-scheme:var(--m-scheme)}body{padding:var(--m-pad);${section ? "" : "max-height:20000px;overflow:clip;box-sizing:border-box;position:relative;contain:paint"}}[data-terno-flow]{display:flow-root}img{max-width:100%;height:auto}a{color:var(--m-link)}table{max-width:100%}${section ? "body{padding:0}body *:not(svg,svg *){position:static!important;float:none!important;transform:none!important;zoom:1!important;writing-mode:horizontal-tb!important;height:auto!important;min-height:0!important;max-height:none!important;min-width:0!important;max-width:100%!important;margin:0!important;padding:0!important;border-width:0!important;border-spacing:0!important;text-indent:0!important;letter-spacing:normal!important;word-spacing:normal!important;overflow:visible!important;font-size:14px!important;line-height:1.55!important;overflow-wrap:anywhere!important;white-space:pre-wrap!important}body img,body svg,body video,body canvas,body input,body select{max-width:100%!important;max-height:2048px!important;object-fit:contain}body table{table-layout:auto}" : ""}</style></head><body><div data-terno-flow data-terno-document="${sourceId}">${built.html}</div></body></html>`,
     [built, section, sourceId, measured],
   );
   const source = useCallback((signal: AbortSignal) => new Promise<{ root: HTMLElement; tabs: WeakMap<Node, string | null> }>((resolve, reject) => {
@@ -160,6 +169,11 @@ export function HtmlBody({ html, messageId, remoteImages, spam = false, appearan
       const finish = () => {
         if (!active || frame.contentDocument !== d || !flow.isConnected) return;
         paint(d.documentElement, lookRef.current);
+        // (counted, and scrolled to, once the height measured below is on the frame)
+        if (!section && marksRef.current?.length) {
+          markDocument(flow, marksRef.current);
+          requestAnimationFrame(marksChanged);
+        }
         const tabStops = section ? [] : [...d.querySelectorAll<HTMLElement>("a[href], area[href], button, input, select, textarea, [tabindex]")].map((element) => ({ element, tab: element.getAttribute("tabindex") }));
         loaded.current = { markup: flow.dataset.ternoDocument!, doc: d, tabs: new WeakMap(tabStops.map(({ element, tab }) => [element, tab])) };
         const styled = [...d.body.querySelectorAll<HTMLElement>(section ? "[style]:not(svg *)" : "[style]")];
@@ -235,6 +249,10 @@ export function HtmlBody({ html, messageId, remoteImages, spam = false, appearan
         const onNavKey = (event: KeyboardEvent) => {
           if (section && event.key === "Escape" && !event.isComposing && !event.defaultPrevented) {
             event.preventDefault(); event.stopImmediatePropagation(); exitRef.current?.();
+          } else if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "g") {
+            // plan 158: the next and previous match with focus in the mail too (the frame's keys stop at its document)
+            event.preventDefault();
+            document.dispatchEvent(new KeyboardEvent("keydown", { key: event.key, metaKey: event.metaKey, ctrlKey: event.ctrlKey, shiftKey: event.shiftKey }));
           } else forwardNavKey(event);
         };
         d.addEventListener("keydown", onNavKey);
@@ -266,6 +284,17 @@ export function HtmlBody({ html, messageId, remoteImages, spam = false, appearan
       detach?.();
     };
   }, [doc, section]);
+
+  // a message folded away takes its marks with it
+  useEffect(() => () => marksChanged(), []);
+  // the search changed under a mail that's already loaded
+  useEffect(() => {
+    if (marksRef.current === marks) return;
+    marksRef.current = marks;
+    const flow = ref.current?.contentDocument?.querySelector<HTMLElement>("[data-terno-flow]");
+    if (flow && !section) markDocument(flow, marks);
+    marksChanged();
+  }, [marks, section]);
 
   const inlineControl = hasCid && !cidAllowed && <button type="button" data-testid="inline-load" className="mb-3 text-xs text-muted-foreground hover:text-foreground" onClick={() => setCidAllowed(true)}>{t("attachments.loadInline")}</button>;
   const remoteControl = blocked && <RemoteBlocked onLoad={() => allowRemoteFor(messageId)} />;
@@ -333,17 +362,26 @@ function QuoteToggle({ open, onToggle }: { open: boolean; onToggle: () => void }
 const URL_RE = /(https?:\/\/[^\s<>"')]+)/g;
 
 /** Plain-text body: trailing quoted history folded, links clickable. */
-export function TextBody({ text }: { text: string }) {
+export function TextBody({ text, marks }: { text: string; /** plan 158: a search's words */ marks?: readonly MatchNeedle[] }) {
   const [showQuoted, setShowQuoted] = useState(false);
   const { main, quoted } = splitTextQuote(text);
+  // the only match is in the folded history: it opens
+  useEffect(() => {
+    if (marks?.length && quoted && !textHolds(main, marks) && textHolds(quoted, marks)) setShowQuoted(true);
+  }, [marks, text]);
+  useLayoutEffect(() => {
+    if (marks) marksChanged();
+  }, [marks, showQuoted, text]);
+  // a message folded away takes its marks with it
+  useEffect(() => () => marksChanged(), []);
   const render = (s: string) =>
     s.split(URL_RE).map((part, i) =>
       i % 2 ? (
         <a key={i} href={part} className="text-primary underline-offset-2 hover:underline" onClick={(e) => (e.preventDefault(), openLink(part))}>
-          {part}
+          <Marked text={part} needles={marks} testId="reader-match" body />
         </a>
       ) : (
-        part
+        <Marked key={i} text={part} needles={marks} testId="reader-match" body />
       ),
     );
   return (

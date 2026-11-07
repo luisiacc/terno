@@ -54,7 +54,7 @@ test.describe("AI filters and learned filters", () => {
         await page.getByTestId("palette-input").fill("Create rule with AI");
         // the search row always answers, so a 0 isn't a palette not yet drawn
         const results = page.getByRole("listbox", { name: "Results" });
-        await expect(results.getByRole("option", { name: "Search for “Create rule with AI” in all accounts" })).toBeVisible();
+        await expect(results.getByRole("option", { name: "Search mail for “Create rule with AI”" })).toBeVisible();
         await expect(results.getByRole("option", { name: "Create rule with AI", exact: true })).toHaveCount(count);
         await page.keyboard.press("Escape");
       };

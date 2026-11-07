@@ -329,6 +329,8 @@ test.describe("the List layout: what stays put", () => {
       await page.keyboard.press("Escape");
       for (const id of ids.slice(1)) await page.locator(`[data-thread-id="${id}"]`).click({ modifiers: ["ControlOrMeta"] });
       await expect(page.getByTestId("selection-bar")).toHaveAttribute("data-variant", "toolbar");
+      // plan 158: it lies over the title line: nothing under it takes the keyboard
+      await expect(page.getByTestId("list-title").locator("xpath=ancestor::*[@inert]")).toHaveCount(1);
       await focusList(page);
       await page.keyboard.press("Enter");
       await expect(listPage(page)).toBeVisible();

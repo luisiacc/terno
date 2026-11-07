@@ -61,7 +61,7 @@ test.describe("accounts, settings and command palette", () => {
       await expect(page.getByTestId("list-title")).toHaveText("Viajes");
       await page.keyboard.press("Meta+k");
       await page.getByTestId("palette-input").fill("presupuesto");
-      await page.getByRole("option", { name: /Search for “presupuesto”/ }).click();
+      await page.getByRole("option", { name: /Search mail for “presupuesto”/ }).click();
       await expect(page.getByTestId("search-input")).toHaveValue("presupuesto");
       await expect(page.getByTestId("search-stats")).toBeVisible();
     });

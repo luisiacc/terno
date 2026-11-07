@@ -9,7 +9,7 @@ Terno's shared controls (`src/components/`) are BoardUI's free **Base** componen
 3. Translate it, keeping what is Terno's:
    - **Colours:** our tokens, never BoardUI's palette. Its neutral steps become `foreground`, `muted-foreground`, `muted`, `field`, `card`, `popover` and `border`; its accent becomes `primary`; its error becomes `destructive`. Text goes only on pairs in `CONTRAST_PAIRS` (add the pair when it's a new fill).
    - **Primitive:** Base UI's when it has one. React Aria only for a part Base UI lacks (the Time Field).
-   - **Heights:** Terno's control heights (32 px default), not BoardUI's 36 px.
+   - **Heights:** Terno's control heights (32 px default, a menu's row 28 px), not BoardUI's 36 px.
    - **Corners:** the radius ladder, with corners concentric with what they hold (plan 119).
    - **Icons:** Hugeicons from `@terno/ui/icons`, at one line weight; tune it with `--icon-line`.
    - **Focus:** `focus-visible:` rings.

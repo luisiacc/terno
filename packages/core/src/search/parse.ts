@@ -125,6 +125,9 @@ function lex(input: string): RawToken[] {
     }
     let key: string | null = linked && isListKey(before.key) ? before.key : null;
     // key:value — key is letters only, immediately followed by ':'
+    // plan 158: an operator still waiting for its value ("from:", at the end of what's typed) asks for nothing yet: it isn't the word "from"
+    const waiting = /^([a-zA-Záéíóú]+):$/.exec(input.slice(i));
+    if (waiting && KEY_ALIASES[normalizeText(waiting[1]!)]) break;
     const keyMatch = /^([a-zA-Záéíóú]+):(?=\S)/.exec(input.slice(i));
     if (keyMatch && KEY_ALIASES[normalizeText(keyMatch[1])]) {
       key = KEY_ALIASES[normalizeText(keyMatch[1])]!;

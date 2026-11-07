@@ -152,7 +152,7 @@ test.describe("focus on one account", () => {
       await page.keyboard.press("ControlOrMeta+k");
       await expect(page.getByRole("dialog").getByRole("combobox")).toBeFocused();
       await page.keyboard.type("zzqx");
-      await expect(page.getByRole("dialog")).toContainText(`Search for “zzqx” in ${name}`);
+      await expect(page.getByRole("dialog")).toContainText(`Search ${name} for “zzqx”`);
       await page.keyboard.press("Escape");
       await search(page, "design");
       await page.getByTestId("solo-search-all").focus();

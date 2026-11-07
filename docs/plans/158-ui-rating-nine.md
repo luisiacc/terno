@@ -101,3 +101,18 @@ Not taken: steps in Split (j and k and the list beside it already do this; two m
 - A direct Reply left a focus handoff set, so its menu didn't give focus back later; a refusal while a menu closed lost focus.
 - Collapse all could drop focus to nothing, from a header it folded or a body closing under it.
 - The keys kept working behind the full-message view, and could close it.
+
+
+## Second pass: the row menu, the palette, selection and undo, search
+
+Decisions of the second pass in this area, and why:
+
+- **Row menu:** Reply, Reply all, Forward; Archive, Delete, Mark unread, Star; Remind me, Move to, Category; More. More is flat under small labels (Similar mail, From *name*). A row with several answers unfolds them in place (`Unfolding`), so nothing is three levels deep. It also keeps the panel short, and offers are only read once asked for. Menu rows are 28 px. A row that isn't the open one is outlined and says itself in a caption (and in the menu's accessible name).
+- **Palette:** aliases hold the app's own words (compose, search, preferences…); an alias shows only when it's why the row matched. The panel hugs its results with the field in place. With nothing named outright, "Search mail for …" leads, then real conversations from `threads.search`, asked once typing rests (120 ms) and held at 57k threads in both stores (`search-everywhere.perf.test.ts`, `idb/workloads.perf.test.ts`). Spam and Trash aren't offered there; a search asked for by hand still looks in them.
+- **Offers:** a sentence that says what it does ("Archive 5 more from Xataka"), with the mail's own subject rather than a rule's `#`, and a list by name rather than its id. The digit is the line's shortcut, at its end.
+- **Selection:** every checked row has the open row's fill and ink, the check in the unread dot's slot. Among several, a cursor outside them only shows where it is, and an outline marks it only after j/k (`data-keyed`). The pane holds Remind me, the menu's order, and lists what's selected. List's toolbar lies over the title line, which goes inert, so no row moves under a ⌘-click.
+- **Search:** focused and empty, it says what it understands and what it looks through. An operator waiting for its value asks for nothing. A result opens at its match: marks in plain text through React, in a frame through its DOM (bounded, removed exactly, nothing past the frame's clip counted), the reader scrolled to it (the frame never scrolls), with a count and ⌘G / ⇧⌘G. A folded message or quote holding the only match opens. The base catalog's Pagination is page-based and wordy, so the steps are the reader's own icon buttons, as StepButtons are.
+
+**The undo toast stays over the list:** the list already keeps room under its last row and brings the open row clear of the dock (`thread-list.tsx`), which is what was asked; docking it in the layout would resize the list on every action.
+
+**What the two Codex reviews changed:** a palette row opens among its own results, with nothing left selected, the composer stepping aside, Review left and the list's filter applied to what's offered; marks hold their bound inside one long text node and go with a folded message; ⌘G works with focus in the mail; nothing is counted past a frame's clip; the one in hand survives folding what's before it; entities and block boundaries are read as they're drawn; a link's text is marked; what's under List's toolbar can't take focus; Esc works from the help rows.

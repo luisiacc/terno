@@ -68,6 +68,7 @@ test.describe("axe", { tag: "@variant" }, () => {
     const [account] = await server.backend.store.accounts.list();
     const ingest = (place: "inbox" | "archive" | "spam" | "trash") => msg({ accountId: account!.id, providerMsgId: `sweep-${place}`, subject: "Pepinillo quarter", date: E2E_NOW - 3_600_000, from: { name: `Sender ${place}`, email: `hello@${place}.test` }, inInbox: place === "inbox", isSpam: place === "spam", isTrash: place === "trash", isRead: true, bodyText: "Numbers.", hasAttachments: place === "inbox", attachments: place === "inbox" ? [{ filename: "report.pdf", mime: "application/pdf", size: 1024 }] : [] });
     await server.backend.store.sync.ingest((["inbox", "archive", "spam", "trash"] as const).map(ingest), { applyFilters: false, now: E2E_NOW, classifier: null });
+    await server.backend.store.sync.ingest([msg({ accountId: account!.id, providerMsgId: "sweep-match", subject: "With a match", date: E2E_NOW - 3_600_000, bodyText: "It says zzhallazgoaxe here." })], { applyFilters: false, now: E2E_NOW, classifier: null });
     const db = sqlDb(server.backend.store);
     const facturas = id(server, "categories", "name", "Facturas");
     const threads = db.all<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 2");
@@ -147,6 +148,12 @@ test.describe("axe", { tag: "@variant" }, () => {
     await clean(page, "the categorization snack", "[data-testid=snack-dock]");
     await page.keyboard.press("Escape");
 
+    // plan 158: what search understands, before there's a search
+    await focusList(page);
+    await page.keyboard.press("/");
+    await expect(page.getByTestId("search-help-panel")).toBeVisible();
+    await clean(page, "what search understands", "[data-testid=search-help-panel]");
+    await page.keyboard.press("Escape");
     // a search with each place's tag, then one with nothing
     await search(page, "pepinillo");
     await expect(rows(page)).toHaveCount(4);
@@ -155,7 +162,13 @@ test.describe("axe", { tag: "@variant" }, () => {
     await rows(page).filter({ hasText: "Sender inbox" }).dispatchEvent("mousedown");
     await page.getByTestId("attachment").first().waitFor();
     await clean(page, "a message's attachment", "[data-testid=attachment]");
+    // plan 158: a result open at its match, its steps; and the reader with nothing to show
+    await search(page, "zzhallazgoaxe");
+    await rows(page).first().click();
+    await expect(page.getByTestId("reader-matches")).toBeVisible();
+    await clean(page, "a result's matches", "[data-testid=reader]");
     await search(page, "zzz-nothing-here");
+    await clean(page, "the reader with no results", "[data-testid=reader-search-empty]");
     await clean(page, "an empty list", "[data-testid=thread-list]");
     await page.getByTestId("search-input").fill("");
 

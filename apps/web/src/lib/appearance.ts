@@ -278,9 +278,9 @@ function commitAppearance(asked: AppearancePatch): Promise<AppSettings | null> {
 
 export interface MailColors {
   /** the theme itself: mail that brings no colors of its own */
-  themed: { bg: string; fg: string; link: string };
+  themed: { bg: string; fg: string; link: string; mark: string };
   /** the light card designed mail sits on, so it is never inverted */
-  paper: { bg: string; fg: string; link: string };
+  paper: { bg: string; fg: string; link: string; mark: string };
 }
 
 /**
@@ -298,7 +298,7 @@ export function mailColors(): MailColors {
   };
   const ink = builtinTheme(DEFAULT_THEME.light)!.tokens;
   return {
-    themed: { bg: hex("background", ink.background), fg: hex("foreground", ink.foreground), link: hex("primary", ink.primary) },
-    paper: { bg: hex("mail-paper", ink["mail-paper"]), fg: hex("mail-ink", ink["mail-ink"]), link: hex("mail-link", ink["mail-link"]) },
+    themed: { bg: hex("background", ink.background), fg: hex("foreground", ink.foreground), link: hex("primary", ink.primary), mark: hex("star", ink.star) },
+    paper: { bg: hex("mail-paper", ink["mail-paper"]), fg: hex("mail-ink", ink["mail-ink"]), link: hex("mail-link", ink["mail-link"]), mark: hex("star", ink.star) },
   };
 }

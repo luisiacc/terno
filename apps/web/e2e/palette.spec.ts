@@ -21,6 +21,84 @@ async function palette(page: Page, query?: string) {
 }
 
 test.describe("palette", () => {
+  test("it finds actions by the app's own words, hugs what it holds, and a name or subject offers mail (plan 158)", async ({ app: page, server }) => {
+    const accountId = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM accounts ORDER BY id LIMIT 1")!.id;
+    await server.backend.store.sync.ingest([{
+      accountId, providerMsgId: "pal-1", providerThreadId: "pal", rfcMessageId: "<pal-1@e2e.test>", inReplyTo: null, references: [],
+      from: { name: "Zzisabel Quintana", email: "zzisabel@else.example" }, to: [{ name: "Luis", email: "luis@else.example" }], cc: [], bcc: [],
+      subject: "Sobre el concierto", date: 1, snippet: "", bodyText: "Hola.", bodyHtml: null, bodyState: "full", listId: null,
+      isRead: true, isStarred: false, inInbox: false, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100,
+    }], { applyFilters: false, now: 1, classifier: null });
+    await openRow(page, 0);
+    await focusList(page);
+    await scenario("compose finds New message, said why; new finds it by name, with nothing after it; the rest of the main words", async () => {
+      await palette(page, "compose");
+      await expect(selected(page)).toHaveAttribute("data-testid", "palette-compose");
+      await expect(selected(page).getByTestId("palette-alias")).toHaveText("(compose)");
+      await input(page).fill("new");
+      await expect(selected(page)).toContainText("New message");
+      await expect(selected(page).getByTestId("palette-alias")).toHaveCount(0);
+      for (const [word, command] of [["respond", "compose.reply"], ["fwd", "compose.forward"], ["done", "thread.archive"], ["preferences", "settings:general"], ["search", "search.focus"]]) {
+        await input(page).fill(word!);
+        await expect(selected(page), word).toHaveAttribute("data-command", command!);
+      }
+    });
+    await scenario("the panel is as tall as what it holds, the field where it was, and Search mail goes to the field", async () => {
+      const list = page.locator("[data-slot=command-list]");
+      await input(page).fill("");
+      const full = (await list.boundingBox())!.height;
+      const field = (await input(page).boundingBox())!.y;
+      await input(page).fill("search");
+      await expect(page.getByTestId("palette-search-mail")).toBeVisible();
+      expect((await list.boundingBox())!.height).toBeLessThan(full / 2);
+      expect((await input(page).boundingBox())!.y).toBe(field);
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("search-input")).toBeFocused();
+      await page.keyboard.press("Escape");
+      await focusList(page);
+    });
+    await scenario("a person's name: the search first, then their conversations; choosing one opens it in those results", async () => {
+      // from a new message in the pane too: it steps aside for the conversation, as for a click on a row
+      await page.keyboard.press("c");
+      await expect(page.getByTestId("compose-to")).toBeVisible();
+      await palette(page, "zzisabel");
+      await expect(selected(page)).toHaveAttribute("data-testid", "palette-search-row");
+      await expect(selected(page)).toHaveText("Search mail for “zzisabel”");
+      const found = page.getByTestId("palette-mail");
+      await expect(found).toHaveCount(1);
+      await expect(found).toContainText("Sobre el concierto");
+      // a row still on screen under what's typed next opens among its own results, and leaves no selection to act on instead
+      await page.evaluate(() => {
+        const field = document.querySelector<HTMLInputElement>("[data-testid=palette-input]")!;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, "zzotra cosa");
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+        document.querySelector<HTMLElement>("[data-testid=palette-mail]")!.click();
+      });
+      await expect(page.getByTestId("search-input")).toHaveValue("zzisabel");
+      await expect(page.getByTestId("reader-subject")).toHaveText("Sobre el concierto");
+      await expect(selectedRow(page)).toContainText("Zzisabel Quintana");
+    });
+    await scenario("Enter on the search row runs the search; Spam and Trash aren't offered", async () => {
+      await fresh(page);
+      // the filter the results will keep: read mail isn't offered with Unread on
+      await page.getByTestId("unread-filter").click();
+      await focusList(page);
+      await palette(page, "zzisabel");
+      await page.waitForTimeout(400);
+      await expect(page.getByTestId("palette-mail")).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await page.getByTestId("unread-filter").click();
+      const id = sqlDb(server.backend.store).get<{ id: number }>("SELECT thread_id id FROM messages WHERE from_email = 'zzisabel@else.example'")!.id;
+      await server.backend.store.threads.act({ threadIds: [id], action: "spam", signal: null, now: 2 });
+      await focusList(page);
+      await palette(page, "zzisabel");
+      await page.waitForTimeout(400);
+      await expect(page.getByTestId("palette-mail")).toHaveCount(0);
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("search-input")).toHaveValue("zzisabel");
+    });
+  });
+
   test("commands: Recent, a synonym, Reply and Forward, what's in it, no draft group, and in Spanish", async ({ app: page }) => {
     await scenario("what you ran leads it under Recent, once; typing hides Recent", async () => {
       await openRow(page, 0);

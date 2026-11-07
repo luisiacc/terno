@@ -1,10 +1,10 @@
-import { similarValue, subjectTemplate, type SimilarAction, type SimilarOffer, type SimilarOffers } from "@terno/core";
+import { similarValue, type SimilarAction, type SimilarOffer, type SimilarOffers } from "@terno/core";
 import { t } from "@terno/i18n";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useId, useState } from "react";
 import { said } from "~/lib/actions";
 import { chainUndo, isLatest, orderOffers, unchain } from "~/lib/offers";
-import { applySimilar, scopeLabel, shownCount, visibleOffers } from "~/lib/similar";
+import { applySimilar, offerSentence, scopeLabel, shownCount, visibleOffers } from "~/lib/similar";
 import { dismissSnack, growSnack, patchSnack, snack, undoNow, useSnack, zHolds, type Undo } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp } from "~/state/app";
@@ -198,8 +198,7 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
             key={o.scope.kind}
             n={i + 1}
             testId={`similar-${o.scope.kind}`}
-            label={scopeLabel(o.scope, offers.senderName)}
-            detail={o.scope.kind === "subject" ? subjectTemplate(o.scope.subject) : undefined}
+            label={offerSentence(action, o, offers.senderName, true)}
             help={t(`offers.help.${action}`, { scope: scopeLabel(o.scope, offers.senderName) })}
             future={action === "spam"}
             disabled={def?.status === "running" || busy}

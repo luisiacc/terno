@@ -16,10 +16,10 @@ export const MENU_GROUP = "flex flex-col gap-0.5"
 
 /**
  * A row: medium weight, its icon 8 px from the label and muted until the row is highlighted. Unavailable, its text
- * goes muted (no opacity). Terno's 32 px height and md corners (concentric with the panel's, plan 119).
+ * goes muted (no opacity). 28 px, as dense as a native menu (plan 158: thirteen rows at 32 px ran to the window's foot), and md corners (concentric with the panel's, plan 119).
  */
 export const MENU_ROW =
-  "relative flex h-8 shrink-0 cursor-default items-center gap-2 rounded-md px-2 text-sm font-medium outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-inset:ps-8 data-disabled:pointer-events-none data-disabled:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground focus:[&_svg:not([class*='text-'])]:text-accent-foreground"
+  "relative flex h-7 shrink-0 cursor-default items-center gap-2 rounded-md px-2 text-sm font-medium outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-inset:ps-[calc(1rem+1.15em)] data-disabled:pointer-events-none data-disabled:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground focus:[&_svg:not([class*='text-'])]:text-accent-foreground"
 
 /**
  * A panel with a submenu keeps a chevron's column on every row, so the shortcuts form one column and the chevrons
@@ -44,7 +44,7 @@ export const MENU_INDICATOR = "pointer-events-none absolute end-2 flex items-cen
 export const MENU_MARK = "text-primary"
 
 /** A group's heading: muted body text on the rows' text line */
-export const MENU_LABEL = "flex h-7 shrink-0 items-center px-2 text-sm font-medium text-muted-foreground data-inset:ps-8"
+export const MENU_LABEL = "flex h-7 shrink-0 items-center px-2 text-sm font-medium text-muted-foreground data-inset:ps-[calc(1rem+1.15em)]"
 
 /** A separator runs to the panel's edges (through its p-1.5) */
 export const MENU_SEPARATOR = "-mx-1.5 my-1 h-(--hairline-w) shrink-0 bg-hairline"

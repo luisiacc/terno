@@ -8,7 +8,7 @@ import { boost, recentIds, type Usage } from "./palette-usage";
  */
 
 export type PalettePage = "root" | "move" | "addTo" | "remind" | "snippets" | "ask" | "askHistory";
-export type PaletteGroup = "draft" | "recent" | "conversation" | "goTo" | "actions" | "settings" | "move" | "addTo" | "remindAlways" | "remindNoReply" | "remindClear" | "snippets" | "snippetsManage";
+export type PaletteGroup = "draft" | "recent" | "conversation" | "start" | "goTo" | "actions" | "settings" | "move" | "addTo" | "remindAlways" | "remindNoReply" | "remindClear" | "snippets" | "snippetsManage";
 
 export interface PaletteCommand {
   /** stable across opens and languages: what usage counts ("thread.archive", "move:12", "remind:always:tomorrow") */
@@ -44,7 +44,8 @@ export interface PaletteCommand {
 
 /** the groups each page shows, in order */
 export const PAGE_GROUPS: Record<PalettePage, readonly PaletteGroup[]> = {
-  root: ["draft", "recent", "conversation", "goTo", "actions", "settings"],
+  // plan 158: what a palette is opened for, ahead of the list of places
+  root: ["draft", "recent", "conversation", "start", "goTo", "actions", "settings"],
   move: ["move"],
   addTo: ["addTo"],
   remind: ["remindAlways", "remindNoReply", "remindClear"],
@@ -102,7 +103,9 @@ export function match(c: Pick<PaletteCommand, "label" | "search" | "aliases" | "
       at = i;
     }
   });
-  return { score, alias: at >= 1 && at <= aliases ? all[at]! : null };
+  // plan 158: said only when it's why the row is here: "new" finds New message by its own name, with no "(new)" after it
+  const own = at >= 1 && at <= aliases ? defaultFilter(all[0]!, q) : 0;
+  return { score, alias: at >= 1 && at <= aliases && own < STRONG ? all[at]! : null };
 }
 
 /** The score with use: up to 1.5× for what you run often, never past an exact match. */
@@ -177,6 +180,11 @@ export function arrange(commands: readonly PaletteCommand[], page: PalettePage, 
   return groups
     .map((group) => ({ group, commands: of(group).map((command) => ({ command, alias: null })) }))
     .filter((g) => g.commands.length > 0);
+}
+
+/** Does a query name a command outright (a word's start or better)? Then Enter runs that; if not, it's about mail. */
+export function namesCommand(arranged: readonly Arranged[], query: string): boolean {
+  return arranged.some((g) => g.commands.some((c) => match(c.command, query).score >= STRONG));
 }
 
 /** A localized comma-separated list ("done, mark done") as words. */

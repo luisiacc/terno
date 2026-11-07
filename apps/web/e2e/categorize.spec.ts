@@ -59,7 +59,7 @@ test.describe("categorization snackbar", () => {
       const snack = page.getByTestId("category-snackbar");
       await openOffers(page);
       await expect(snack.getByTestId("snackbar-title")).toHaveText("Added to Facturas");
-      await expect(snack.getByTestId("snackbar-sender")).toContainText("Everything from Uber Receipts");
+      await expect(snack.getByTestId("snackbar-sender")).toContainText(`Add ${rest} more from Uber Receipts to Facturas`);
       await expect(snack.getByTestId("snackbar-sender-count")).toHaveText(`${rest}`);
       await expect(page.getByTestId("reader").locator("[data-testid=category-chip]", { hasText: "Facturas" })).toBeVisible();
       // plan 81: it says it catches new mail too, in a word and in full
@@ -134,7 +134,7 @@ test.describe("categorization snackbar", () => {
       const snack = page.getByTestId("category-snackbar");
       await openOffers(page);
       await expect(snack.getByTestId("snackbar-title")).toHaveText("2 conversations added to Lecturas");
-      await expect(snack.getByTestId("snackbar-sender")).toContainText("Everything from GitHub");
+      await expect(snack.getByTestId("snackbar-sender")).toContainText("more from GitHub to Lecturas");
       // @github.com has no mail beyond this sender: no second chip saying the same
       await expect(snack.getByTestId("snackbar-sender-count")).toBeVisible();
       await expect(snack.getByTestId("snackbar-domain")).toHaveCount(0);
@@ -164,7 +164,7 @@ test.describe("categorization snackbar", () => {
       expect(outside()).toBe(0);
       const snack = page.getByTestId("category-snackbar");
       await openOffers(page);
-      await expect(snack.getByTestId("snackbar-sender")).toContainText("Everything from Uber Receipts");
+      await expect(snack.getByTestId("snackbar-sender")).toContainText("Add everything from Uber Receipts to Facturas");
       await expect(snack.getByTestId("snackbar-count-loading")).toHaveCount(0);
       await expect(snack.getByTestId("snackbar-sender-count")).toHaveCount(0);
       await page.keyboard.press("5");
@@ -474,7 +474,8 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
       // filed behind the list's back: the row shows it once the change arrives
       await expect(row.locator("[data-cat-dot]")).toHaveCount(1);
       await row.click({ button: "right" });
-      await menuPath(page, "menu-sender", "menu-sender-file");
+      await menuPath(page, "menu-more");
+      await page.getByTestId("menu-sender-file").click();
       // only the categories this mail is in are offered to leave
       await expect(page.getByTestId(`menu-sender-out-${facturas}`)).toHaveText("Out of Facturas");
       await expect(page.getByTestId(`menu-sender-out-${viajes}`)).toHaveCount(0);

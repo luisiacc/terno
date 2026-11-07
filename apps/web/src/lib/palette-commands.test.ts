@@ -10,6 +10,12 @@ const cmd = (id: string, group: PaletteCommand["group"], extra: Partial<PaletteC
 const archive = cmd("thread.archive", "actions", { label: "Archive conversation", aliases: ["done", "mark done"], keywords: ["Archivar conversación"] });
 
 describe("palette matching", () => {
+  it("plan 158: an alias is said only when it's why the row is here", () => {
+    const compose = cmd("compose.new", "start", { label: "New message", aliases: ["compose", "new", "write"] });
+    expect(match(compose, "compose").alias).toBe("compose");
+    expect(match(compose, "new").alias).toBeNull();
+  });
+
   it("scores each text on its own and names the alias that matched", () => {
     expect(match(archive, "arch")).toMatchObject({ alias: null });
     expect(match(archive, "arch").score).toBeGreaterThan(0.9);

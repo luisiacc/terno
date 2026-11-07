@@ -3,15 +3,18 @@ import { Button } from "@terno/ui/components/button";
 import { IconButton } from "@terno/ui/components/icon-button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, CheckCheck, FolderInput, Inbox, Mail, MailOpen, OctagonAlert, ShieldCheck, Star, StarOff, Tag, Trash2, X } from "@terno/ui/icons";
+import { Archive, Bell, CheckCheck, FolderInput, Inbox, Mail, MailOpen, OctagonAlert, ShieldCheck, Star, StarOff, Tag, Trash2, X } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { act, tabbedTest, targetRows } from "~/lib/actions";
+import { openRemind } from "~/lib/reminders";
 import { actionView, placeActions } from "~/lib/places";
 import { clearSelection, isMac, selectAll } from "~/lib/select";
 import { setApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
 
 type Variant = "pane" | "toolbar";
+
+const SHOWN_ROWS = 8;
 
 /** The menu's destructive row, on a secondary button: red text and icon, the red's wash under the pointer */
 const DANGER =
@@ -111,35 +114,40 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
           <Trash2 />
         </BarButton>
       )}
-      {/* the toolbar's order: where it goes, then what it's filed as, then its state */}
-      <BarButton bar={bar} label={t("actions.markSpam")} command="thread.spam" onClick={places ? runOn("spam", places.spam) : run("spam")} testId="bar-spam" disabled={places ? places.spam.length === 0 : view === "spam"}>
-        <OctagonAlert />
-      </BarButton>
-      <BarButton bar={bar} label={t("actions.category")} command="thread.category" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} testId="bar-category">
-        <Tag />
-      </BarButton>
-      <BarButton bar={bar} label={t("actions.moveTo")} command="thread.move" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "move" })} testId="bar-move" disabled={scope !== null}>
-        <FolderInput />
-      </BarButton>
+      {/* plan 158: as the row menu says them: what it's marked, then where it goes, spam last */}
       {anyUnread && (
         <BarButton bar={bar} label={t("actions.markRead")} command="thread.markRead" onClick={run("markRead")} testId="bar-read">
           <MailOpen />
         </BarButton>
       )}
       {anyRead && (
-        <BarButton bar={bar} label={t("actions.markUnread")} command="thread.markUnread" onClick={run("markUnread")} testId="bar-unread">
+        <BarButton bar={bar} label={t("actions.markUnread")} command="thread.toggleRead" onClick={run("markUnread")} testId="bar-unread">
           <Mail />
         </BarButton>
       )}
       <BarButton bar={bar} label={t(allStarred ? "actions.unstar" : "actions.star")} command="thread.star" onClick={run(allStarred ? "unstar" : "star")} testId="bar-star">
         {allStarred ? <StarOff /> : <Star />}
       </BarButton>
+      {/* a "select all N" has no ids to set it on (the row menu's rule) */}
+      <BarButton bar={bar} label={t("remind.menu")} command="thread.remind" onClick={() => openRemind({ kind: "always" })} testId="bar-remind" disabled={scope !== null}>
+        <Bell />
+      </BarButton>
+      <BarButton bar={bar} label={t("actions.moveTo")} command="thread.move" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "move" })} testId="bar-move" disabled={scope !== null}>
+        <FolderInput />
+      </BarButton>
+      <BarButton bar={bar} label={t("actions.category")} command="thread.category" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} testId="bar-category">
+        <Tag />
+      </BarButton>
+      <BarButton bar={bar} label={t("actions.markSpam")} command="thread.spam" onClick={places ? runOn("spam", places.spam) : run("spam")} testId="bar-spam" disabled={places ? places.spam.length === 0 : view === "spam"}>
+        <OctagonAlert />
+      </BarButton>
     </>
   );
   const more = !scope && count < loaded;
   if (bar === "toolbar")
     return (
-      <div role="toolbar" aria-label={title} data-testid="selection-bar" data-variant="toolbar" className="no-drag hairline-b absolute inset-x-0 top-0 z-10 flex h-[52px] items-center gap-0.5 bg-pane pr-4 pl-5">
+      // over the list's title line: nothing moves under the pointer of whoever is ⌘-clicking rows (plan 158)
+      <div role="toolbar" aria-label={title} data-testid="selection-bar" data-variant="toolbar" className="no-drag hairline-b absolute inset-x-0 top-0 z-20 flex h-[52px] items-center gap-0.5 bg-pane pr-4 pl-5">
         <span className="mr-2 min-w-0 truncate text-xs font-medium text-foreground tabular" data-testid="selection-count">
           {title}
         </span>
@@ -166,7 +174,8 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">{t("selection.hint")}</p>
         </div>
-        <div className="grid w-full max-w-md grid-cols-2 gap-2">{actions}</div>
+        {/* a mixed read state adds a button: the last one alone takes the row rather than leave a hole */}
+        <div className="grid w-full max-w-md grid-cols-2 gap-2 [&>:last-child:nth-child(odd)]:col-span-2">{actions}</div>
         <div className="-ml-2.5 flex items-center gap-2">
           {more && (
             <Button variant="ghost" size="sm" data-testid="bar-select-all" onClick={selectAll}>
@@ -177,6 +186,18 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
             <X /> {t("selection.deselect")} <Shortcut keys="escape" className="ml-1" />
           </Button>
         </div>
+        {/* plan 158: what they are, to check before acting on them */}
+        {rows.length > 0 && (
+          <ul data-testid="selection-rows" className="hairline-t flex w-full flex-col gap-1.5 pt-4 text-sm">
+            {rows.slice(0, SHOWN_ROWS).map((r) => (
+              <li key={r.id} className="flex min-w-0 gap-2">
+                <span className="max-w-[40%] shrink-0 truncate font-medium">{r.fromName || r.fromEmail}</span>
+                <span className="min-w-0 truncate text-muted-foreground">{r.subject || t("common.noSubject")}</span>
+              </li>
+            ))}
+            {rows.length > SHOWN_ROWS && <li className="text-muted-foreground">{t("selection.andMore", { count: rows.length - SHOWN_ROWS })}</li>}
+          </ul>
+        )}
       </div>
     </section>
   );

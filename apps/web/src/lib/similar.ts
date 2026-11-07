@@ -1,5 +1,5 @@
-import { similarValue, type SimilarAction, type SimilarScope } from "@terno/core";
-import { t } from "@terno/i18n";
+import { similarValue, type SimilarAction, type SimilarOffer, type SimilarScope } from "@terno/core";
+import { formatNumber, t } from "@terno/i18n";
 import { RpcError } from "@terno/core/rpc";
 import { captureUi } from "~/lib/diag";
 import { client } from "~/rpc/connection";
@@ -23,6 +23,31 @@ export function scopeLabel(scope: SimilarScope, senderName: string | null): stri
     case "list":
       return t("similar.scope.list", { list: scope.listId });
   }
+}
+
+/** Where a sentence's count goes when the caller draws it itself (its own element, for tabular digits and tests). */
+export const COUNT_SLOT = "\u0000";
+
+const SUBJECT_CHARS = 36;
+const short = (subject: string) => (subject.length > SUBJECT_CHARS ? `${subject.slice(0, SUBJECT_CHARS).trimEnd()}…` : subject);
+
+/**
+ * Plan 158: what an offer takes, as the words of a sentence ("5 more from Xataka", "12 more like “291 gadgets…”"): the
+ * subject is the mail's own (its template's # is a rule's business, not a reader's), a list isn't its raw id. A scope with
+ * nothing counted yet says "everything".
+ */
+export function offerWhat(o: Pick<SimilarOffer, "scope" | "count" | "capped">, senderName: string | null, slot = false): string {
+  const { scope } = o;
+  const name = senderName || ("email" in scope ? scope.email : "");
+  const params = { name, subject: scope.kind === "subject" ? short(scope.subject) : "", domain: scope.kind === "domain" ? scope.domain : "" };
+  if (o.count === 0) return t(`offers.whatAll.${scope.kind}`, params);
+  const n = slot ? COUNT_SLOT : `${formatNumber(o.count)}${o.capped ? "+" : ""}`;
+  return t(`offers.what.${scope.kind}`, { ...params, n });
+}
+
+/** Plan 158: an offer after archive, delete or spam says what it will do, in one line ("Archive 5 more from Xataka"). */
+export function offerSentence(action: SimilarAction, o: Pick<SimilarOffer, "scope" | "count" | "capped">, senderName: string | null, slot = false): string {
+  return t(`offers.line.${action}`, { what: offerWhat(o, senderName, slot) });
 }
 
 /** The filter's name for this scope, in the user's language (the same names learned filters use). */

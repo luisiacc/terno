@@ -3,7 +3,7 @@ import { useToday } from "~/state/today";
 import "~/lib/replies";
 import { folderName } from "~/lib/account-folders";
 import { ReaderAttachments } from "./attachments";
-import type { Account, Category, CategoryColor, MessageDetail, Reason, ThreadDetail } from "@terno/core";
+import type { Account, Category, CategoryColor, MatchNeedle, MessageDetail, Reason, ThreadDetail } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { ButtonGroup, ButtonGroupItem } from "@terno/ui/components/button-group";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
@@ -42,6 +42,9 @@ import { copyThreadText } from "~/lib/copy-thread";
 import { openPrint } from "~/lib/print-open";
 import { isMac } from "~/lib/select";
 import { HtmlBody, TextBody } from "./mail-body";
+import { Marked } from "./match-mark";
+import { SearchHelp } from "./search-help";
+import { firstHolding, readerMarks, revealMark, useReaderMarks, useSearchMarks } from "~/lib/reader-marks";
 import { MailReaderView, useMailReaderView } from "./mail-reader-view";
 import { backgroundMenu, MessageActions, MessageMenu } from "./message-menu";
 import { reasonText } from "~/lib/reasons";
@@ -52,7 +55,7 @@ import { useAppearance } from "~/lib/appearance";
 import { goBack } from "~/lib/page";
 import { move } from "~/lib/keyboard";
 import { viewLabel } from "~/lib/format";
-import { useList } from "~/state/list";
+import { listKey, useList } from "~/state/list";
 import { useSnack } from "~/lib/snack";
 import { aiAllowed, repliesOffered, summariesOffered } from "~/lib/ai";
 import { summarizable, summarize, useSummaries } from "~/lib/summaries";
@@ -288,7 +291,7 @@ const previewFor = (snippet: string) => (snippet.length > 80 ? `${snippet.slice(
  * A header is one family, open or folded: the same avatar column, the same name column, dates on the column's edge. The
  * open one's weight, recipients and body are what say it's open; its actions sit under the date, in a place kept for them.
  */
-function Message({ m, threadId, newest, expanded, onToggle, icons, headless, timed, current, onLeave }: { m: MessageDetail; threadId: number; newest: boolean; expanded: boolean; onToggle: () => void; icons: boolean; headless: boolean; timed: boolean; current: boolean; onLeave: () => void }) {
+function Message({ m, threadId, newest, expanded, onToggle, icons, headless, timed, current, onLeave, marks }: { m: MessageDetail; threadId: number; newest: boolean; expanded: boolean; onToggle: () => void; icons: boolean; headless: boolean; timed: boolean; current: boolean; onLeave: () => void; marks: readonly MatchNeedle[] | undefined }) {
   const remoteImages = useApp((s) => s.settings?.remoteImages ?? "ask");
   const mailAppearance = useApp((s) => s.settings?.htmlMailAppearance ?? "auto");
   const name = m.from.name || m.from.email;
@@ -347,9 +350,9 @@ function Message({ m, threadId, newest, expanded, onToggle, icons, headless, tim
         <Expand open={open} onOpening={(el) => keepInView(el.closest("article") ?? el)}>
           <div className={cn("pb-4", headless ? "pt-3" : "pt-2")}>
             {m.bodyHtml ? (
-              <HtmlBody html={m.bodyHtml} messageId={m.id} accountId={m.accountId} attachments={m.attachments} remoteImages={remoteImages} spam={!icons} appearance={mailAppearance} />
+              <HtmlBody marks={marks} html={m.bodyHtml} messageId={m.id} accountId={m.accountId} attachments={m.attachments} remoteImages={remoteImages} spam={!icons} appearance={mailAppearance} />
             ) : m.bodyText !== null ? (
-              <TextBody text={m.bodyText} />
+              <TextBody text={m.bodyText} marks={marks} />
             ) : (
               <p className="text-sm text-muted-foreground italic">{m.bodyUnavailable ? t("attachments.bodyUnavailable") : m.bodyState === "full" ? t("attachments.noBody") : t("reader.downloading")}</p>
             )}
@@ -393,6 +396,14 @@ function useFold(messages: MessageDetail[]) {
   }, [summaryReveal, messages]);
   const isOpen = (m: MessageDetail) => own.toggled.get(m.id) ?? shown.get(m.id) ?? opensAt(m);
   const allOpen = messages.every(isOpen);
+  // plan 158: opened from a search, the first message holding its words opens, wherever it's folded
+  const marks = useSearchMarks()?.body;
+  useEffect(() => {
+    if (!marks?.length) return;
+    const first = firstHolding(messages, marks);
+    if (!first || isOpen(first)) return;
+    setState((s) => ({ toggled: new Map(s.toggled).set(first.id, true), revealed: new Set([...s.revealed, first.id]) }));
+  }, [marks, messages]);
   const toggle = (id: number, now: boolean) => setState({ ...own, toggled: new Map(own.toggled).set(id, !now) });
   // every message of a revealed run stays unfolded, whatever opens or closes around it later
   const reveal = (ids: number[]) => {
@@ -441,6 +452,7 @@ type Fold = ReturnType<typeof useFold>;
 
 /** `icons`: senders' icons may be asked for (never in spam: plan 22); `headless`: the card above shows the one message's header (plan 59) */
 function Conversation({ threadId, messages, fold, icons, headless }: { threadId: number; messages: MessageDetail[]; fold: Fold; icons: boolean; headless: boolean }) {
+  const marks = useSearchMarks()?.body;
   renderProbe("Conversation");
   const { isOpen, toggle, reveal, revealed, current, leaveCurrent } = fold;
   const last = messages[messages.length - 1];
@@ -468,7 +480,7 @@ function Conversation({ threadId, messages, fold, icons, headless }: { threadId:
     <div className="hairline-t [--hairline-color:var(--border)]">
       {items.map((it) =>
         it.kind === "message" ? (
-          <Message key={it.m.id} m={it.m} threadId={threadId} newest={it.m.id === last?.id} icons={icons} headless={headless && messages.length === 1} timed={(days.get(listDate(it.m.date)) ?? 0) > 1} current={current === it.m.id} onLeave={() => leaveCurrent(it.m.id)} expanded={isOpen(it.m)} onToggle={() => toggle(it.m.id, isOpen(it.m))} />
+          <Message key={it.m.id} m={it.m} marks={marks} threadId={threadId} newest={it.m.id === last?.id} icons={icons} headless={headless && messages.length === 1} timed={(days.get(listDate(it.m.date)) ?? 0) > 1} current={current === it.m.id} onLeave={() => leaveCurrent(it.m.id)} expanded={isOpen(it.m)} onToggle={() => toggle(it.m.id, isOpen(it.m))} />
         ) : (
           <div key={`more-${it.ids[0]}`} className="hairline-b">
             <button
@@ -486,6 +498,93 @@ function Conversation({ threadId, messages, fold, icons, headless }: { threadId:
             <div id={`more-${it.ids[0]}`} />
           </div>
         ),
+      )}
+    </div>
+  );
+}
+
+/**
+ * Plan 158: a search's words in the open conversation: how many, which one's in hand, the next and the previous (⌘G, ⇧⌘G,
+ * as a Mac's find does). Opening a result goes to the first; once the user has moved, it stays out of the way. Keyed by
+ * thread and search, so each starts over.
+ */
+function ReaderMatches({ scroller, bottomInset }: { scroller: React.RefObject<HTMLDivElement | null>; bottomInset: number }) {
+  const version = useReaderMarks((s) => s.version);
+  const marks = useRef<HTMLElement[]>([]);
+  const [shown, setShown] = useState({ at: 0, count: 0 });
+  const moved = useRef(false);
+  const go = (at: number) => {
+    const list = marks.current;
+    const mark = list[at];
+    if (!mark || !scroller.current) return;
+    for (const m of list) delete m.dataset.readerCurrent;
+    mark.dataset.readerCurrent = "";
+    revealMark(scroller.current, mark, bottomInset);
+    setShown({ at, count: list.length });
+  };
+  const step = (by: number) => {
+    const n = marks.current.length;
+    if (!n) return;
+    moved.current = true;
+    go((shown.at + by + n) % n);
+  };
+  // counted again when a frame loads or a message opens; until the user moves, the first in reading order is the one
+  useEffect(() => {
+    const column = scroller.current?.querySelector("[data-reader-column]");
+    if (!column) return;
+    const list = readerMarks(column);
+    marks.current = list;
+    if (!moved.current && list.length) return go(0);
+    // the one in hand stays the one in hand, wherever it now counts; gone with what was folded, its neighbour takes over, nothing scrolls
+    let at = list.findIndex((m) => m.dataset.readerCurrent !== undefined);
+    if (at < 0) at = Math.min(shown.at, Math.max(0, list.length - 1));
+    if (list[at]) list[at]!.dataset.readerCurrent = "";
+    setShown({ at, count: list.length });
+  }, [version]);
+  useEffect(() => {
+    const el = scroller.current;
+    const stay = () => (moved.current = true);
+    // from a wheel, a key or a press on, the reader is the user's (folding a message counts again, and scrolls nowhere)
+    for (const type of ["wheel", "keydown", "pointerdown"]) el?.addEventListener(type, stay, { passive: true });
+    return () => {
+      for (const type of ["wheel", "keydown", "pointerdown"]) el?.removeEventListener(type, stay);
+    };
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        step(e.shiftKey ? -1 : 1);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
+  if (shown.count === 0) return null;
+  return (
+    <div role="group" aria-label={t("reader.match.group")} data-testid="reader-matches" className={cn(COLUMN, "flex h-7 shrink-0 items-center gap-1 text-xs text-muted-foreground")}>
+      <span role="status" data-testid="reader-matches-count" className="tabular">{t("reader.match.count", { at: shown.at + 1, count: shown.count })}</span>
+      <IconButton className="size-6" label={t("reader.match.previous")} shortcut="mod+shift+g" onClick={() => step(-1)} data-testid="reader-match-previous">
+        <ChevronUp />
+      </IconButton>
+      <IconButton className="size-6" label={t("reader.match.next")} shortcut="mod+g" onClick={() => step(1)} data-testid="reader-match-next">
+        <ChevronDown />
+      </IconButton>
+    </div>
+  );
+}
+
+/** Plan 158: nothing open while searching: no greeting. With no results, what a search understands; with some, which to do next. */
+function SearchReaderEmpty() {
+  const none = useList((s) => !s.loading && s.items.length === 0 && s.itemsKey === listKey());
+  return (
+    <div className="flex h-full flex-col items-center justify-center p-10" data-testid="reader-search-empty" data-results={none ? undefined : true}>
+      {none ? (
+        <div className="w-full max-w-sm">
+          <SearchHelp />
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">{t("reader.search.pick")}</p>
       )}
     </div>
   );
@@ -651,7 +750,8 @@ const HEADER = "mb-3 @max-[560px]:mb-2";
 function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; account: Account | undefined; cats: Category[]; fold: Fold }) {
   const design = useDesign();
   const subject = detail.thread.subject || t("common.noSubject");
-  const heading = <h2 id="reader-subject" data-testid="reader-subject" className="type-reader-subject min-w-0 @max-[560px]:text-lg @max-[560px]:tracking-[-0.01em]">{subject}</h2>;
+  const marks = useSearchMarks()?.subject;
+  const heading = <h2 id="reader-subject" data-testid="reader-subject" className="type-reader-subject min-w-0 @max-[560px]:text-lg @max-[560px]:tracking-[-0.01em]"><Marked text={subject} needles={marks} testId="reader-subject-match" /></h2>;
   // on the subject's line, at the dates' edge, while they fit; on a line of their own when they don't
   const titled = (
     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -862,12 +962,14 @@ function ReaderContent() {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const open = selectedId !== null;
+  const searching = useApp((s) => s.query.trim() !== "" && s.reviewCategoryId === null);
+  const bodyMarks = useSearchMarks()?.body;
   useEffect(() => {
     const [root, sentinel, bar] = [scrollerRef.current, sentinelRef.current, toolbarRef.current];
     return open && root && sentinel && bar ? installScrollHairline(root, sentinel, bar) : undefined;
   }, [open]);
 
-  if (selectedId === null) return <Welcome />;
+  if (selectedId === null) return searching ? <SearchReaderEmpty /> : <Welcome />;
   const thread = detail?.thread;
   const cats = thread ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
   const account = thread ? accounts.find((a) => a.id === thread.accountId) : undefined;
@@ -939,6 +1041,7 @@ function ReaderContent() {
         {page && <StepButtons id={selectedId} />}
         </div>
       </div>
+      {bodyMarks?.length ? <ReaderMatches key={`${selectedId}:${JSON.stringify(bodyMarks)}`} scroller={scrollerRef} bottomInset={dock} /> : null}
       <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]" style={dock ? { paddingBottom: dock, scrollPaddingBottom: dock } : undefined} onContextMenu={backgroundMenu}>
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         <div data-reader-column className={cn(COLUMN, "pt-2 pb-16 @max-[560px]:pt-0")}>

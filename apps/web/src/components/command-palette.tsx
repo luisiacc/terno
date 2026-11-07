@@ -1,4 +1,4 @@
-import { DIGEST_ROW_ID } from "@terno/core";
+import { DIGEST_ROW_ID, type ThreadSummary } from "@terno/core";
 import { conversationKeys } from "~/lib/conversation-keys";
 import { focusAccount, goToAccount, goToFolder } from "~/lib/account-folders";
 import { normalizeText, remindPresets, separatesTabs, snippetPreview, TABS, type CategoryColor, type ReminderKind, type Snippet } from "@terno/core";
@@ -7,7 +7,8 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Chip } from "@terno/ui/components/chip";
 import { Command, CommandDescription, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
 import { Archive, AtSign, Bell, BellOff, ListChecks, BookmarkPlus, CalendarClock, CheckCheck, Clock, Copy, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { cn } from "@terno/ui/lib/utils";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { act, openCompose, targetRows, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory } from "~/lib/categorize";
 import { currentTargets, isMac, selectAll } from "~/lib/select";
@@ -30,9 +31,12 @@ import { askFrom, paletteFrom, paletteKeys, setPalettePage, usePalettePage } fro
 import { loadSnippets, newSnippetId, useSnippets } from "~/lib/snippets";
 import { insertSnippetInto, newMessageFromSnippet, saveDraftAsSnippet } from "~/lib/snippet-insert";
 import { openSnippetEditor } from "~/lib/snippet-editor-state";
-import { arrange, itemValue, words, type PaletteCommand, type PaletteGroup, type PalettePage } from "~/lib/palette-commands";
+import { arrange, itemValue, namesCommand, words, type PaletteCommand, type PaletteGroup, type PalettePage } from "~/lib/palette-commands";
 import { noteUse, readUsage, type Usage } from "~/lib/palette-usage";
-import { reply } from "~/lib/keyboard";
+import { focusSearchField, reply } from "~/lib/keyboard";
+import { listDate } from "~/lib/format";
+import { openThread as openConversation } from "~/lib/page";
+import { client } from "~/rpc/connection";
 import { summarizable, summarize } from "~/lib/summaries";
 import { useThread } from "~/state/threads";
 import { createCategory } from "./category-picker";
@@ -80,6 +84,7 @@ const HEADINGS: Record<PaletteGroup, (count: number) => string | undefined> = {
   draft: () => t("palette.group.draft"),
   recent: () => t("palette.group.recent"),
   conversation: (count) => t("palette.group.conversation", { count }),
+  start: () => undefined,
   goTo: () => t("palette.group.goTo"),
   actions: () => t("palette.group.actions"),
   settings: () => t("common.settings"),
@@ -91,6 +96,39 @@ const HEADINGS: Record<PaletteGroup, (count: number) => string | undefined> = {
   snippets: () => t("palette.group.snippets"),
   snippetsManage: () => undefined,
 };
+
+/** how long typing rests before mail is asked for, and the most rows it offers (the list has the rest) */
+const MAIL_MS = 120;
+const MAIL_ROWS = 5;
+
+/**
+ * Plan 158: the conversations a query finds, for the palette to go straight to one. The search the list runs (at 50k+
+ * threads in both stores it answers within its gates), asked once typing rests; a stale answer is dropped and the rows
+ * on screen stay until a new one comes, so the panel doesn't flicker. Spam and Trash stay out: a search of its own still
+ * looks there, but nothing offers their mail unasked.
+ */
+function useFoundMail(query: string, on: boolean, accountId: number | null, filter: ReturnType<typeof activeFilter>): { query: string; rows: readonly ThreadSummary[] } | null {
+  const [found, setFound] = useState<{ query: string; rows: readonly ThreadSummary[] } | null>(null);
+  const asks = on && query.length >= 2;
+  useEffect(() => {
+    if (!asks) {
+      setFound(null);
+      return;
+    }
+    let alive = true;
+    const timer = setTimeout(() => {
+      void client.call("threads.search", { query, limit: MAIL_ROWS * 2, accountId: accountId ?? undefined, filter }).then(
+        (page) => alive && setFound({ query, rows: page.items.filter((r) => !r.inSpam && !r.inTrash).slice(0, MAIL_ROWS) }),
+        () => alive && setFound(null),
+      );
+    }, MAIL_MS);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [query, asks, accountId, filter]);
+  return found;
+}
 
 export function CommandPalette() {
   const open = useApp((s) => s.dialog === "palette");
@@ -232,7 +270,7 @@ export function CommandPalette() {
     if (followupsOn) add({ id: "go.followups", group: "goTo", label: t("palette.goFollowups"), icon: <ListChecks />, testId: "palette-go-followups", keywords: [goTo("palette.goFollowups"), ...english("palette.goFollowups")], run: () => navigate({ followups: true }) });
     add({ id: "go.reminders", group: "goTo", label: t("palette.goReminders"), icon: <Bell />, shortcut: "G R", testId: "palette-go-reminders", keywords: [goTo("palette.goReminders"), ...english("palette.goReminders")], run: () => navigate({ reminders: true }) });
     for (const c of categories) {
-      add({ id: `category:${c.id}`, group: "goTo", label: c.name, search: `${t("palette.search.category")} ${c.name}`, icon: <CategoryDot color={c.color as CategoryColor} />, keywords: english("palette.search.category"), run: () => navigate({ categoryId: c.id, accountId: null }) });
+      add({ id: `category:${c.id}`, group: "goTo", label: c.name, search: `${t("palette.search.category")} ${c.name}`, icon: <CategoryDot color={c.color as CategoryColor} className="mx-1" />, keywords: english("palette.search.category"), run: () => navigate({ categoryId: c.id, accountId: null }) });
     }
     if (accounts.length > 1) {
       add({ id: "account:all", group: "goTo", label: t("sidebar.allAccounts"), search: `${t("palette.search.account")} ${t("sidebar.allAccounts")}`, icon: <Layers />, keywords: english("palette.search.account"), run: () => navigate({ view: "inbox", accountId: null }) });
@@ -254,7 +292,9 @@ export function CommandPalette() {
     }
 
     // ── actions
-    add({ id: "compose.new", group: "actions", label: t("palette.compose"), icon: <PenLine />, shortcut: "C", ...synonyms("palette.alias.compose"), keywords: [...english("palette.compose"), ...english("palette.alias.compose").flatMap(words)], run: () => void openCompose("new") });
+    add({ id: "compose.new", group: "start", label: t("palette.compose"), icon: <PenLine />, shortcut: "C", testId: "palette-compose", ...synonyms("palette.alias.compose"), keywords: [...english("palette.compose"), ...english("palette.alias.compose").flatMap(words)], run: () => void openCompose("new") });
+    // once the closing palette has given focus back (it would take it from the field)
+    add({ id: "search.focus", group: "start", label: t("palette.searchMail"), icon: <Search />, shortcut: "/", testId: "palette-search-mail", ...synonyms("palette.alias.search", english("palette.searchMail")), run: () => requestAnimationFrame(() => requestAnimationFrame(focusSearchField)) });
     // plan 133: from a conversation or the list, the draft §5.2 opens, with its row
     if (drafting && !draft) add({ id: "compose.ai", group: "actions", label: t("palette.aiDraft"), icon: <Sparkles />, shortcut: isMac ? "⌘J" : "Ctrl+J", testId: "palette-ai-draft", ...synonyms("palette.alias.aiDraft", english("palette.aiDraft")), run: () => requestAnimationFrame(() => requestAnimationFrame(() => openAiDraft())) }); // once the closing palette has given focus back: an open whose focus moves under it gives up
     if (targets > 0) {
@@ -276,7 +316,7 @@ export function CommandPalette() {
       }
       add({ id: "thread.star", group: inHand, label: t(starKey), icon: <Star />, shortcut: "S", ...withEnglish([t("actions.star"), t("actions.unstar"), ...english("actions.star"), ...english("actions.unstar")], "palette.alias.star"), run: () => toggleStar() });
       if (scoped || rows.some((r) => r.unread)) add({ id: "thread.markRead", group: inHand, label: t("palette.markRead"), icon: <MailOpen />, shortcut: "⇧I", ...withEnglish(english("palette.markRead"), "palette.alias.markRead"), run: () => void act("markRead") });
-      if (scoped || rows.some((r) => !r.unread)) add({ id: "thread.markUnread", group: inHand, label: t("palette.markUnread"), icon: <Mail />, ...withEnglish(english("palette.markUnread"), "palette.alias.markUnread"), run: () => void act("markUnread") });
+      if (scoped || rows.some((r) => !r.unread)) add({ id: "thread.markUnread", group: inHand, label: t("palette.markUnread"), icon: <Mail />, shortcut: isMac ? "⇧⌘U" : "Ctrl+Shift+U", ...withEnglish(english("palette.markUnread"), "palette.alias.markUnread"), run: () => void act("markUnread") });
       if (!scoped) add({ id: "thread.remind", group: inHand, label: t("palette.remind"), icon: <Bell />, shortcut: "H", testId: "palette-remind", ...withEnglish(english("palette.remind"), "palette.alias.remind"), page: "remind" });
       // a "select all N" moves nothing in the palette: the picker says why (moves need selected conversations)
       add({ id: "thread.move", group: inHand, label: t("palette.move"), icon: <FolderInput />, shortcut: "V", testId: "palette-move", ...withEnglish(english("palette.move"), "palette.alias.move"), ...(scoped ? { run: () => setApp({ dialog: "categoryPicker", pickerMode: "move" }) } : { page: "move" as const }) });
@@ -286,7 +326,7 @@ export function CommandPalette() {
 
       const targetIds = scoped ? [] : ids();
       for (const c of categories) {
-        const dot = <CategoryDot color={c.color as CategoryColor} />;
+        const dot = <CategoryDot color={c.color as CategoryColor} className="mx-1" />;
         if (!scoped) {
           const moveTo = () => void moveToCategory(c.id, ids(), { source: "picker" });
           const disabled = targetIds.length > 0 && isExclusivelyIn(c.id, targetIds);
@@ -388,7 +428,8 @@ export function CommandPalette() {
         testId: `palette-settings-${tab}`,
         // Rules were Filters: the old word still finds them
         ...(tab === "filters" ? { aliases: words(t("palette.alias.aiFilter")).map((w) => `${t("common.settings")} ${w}`) } : {}),
-        keywords: english("common.settings"),
+        // plan 158: "preferences" finds where they start
+        ...(tab === "general" ? synonyms("palette.alias.settings", english("common.settings")) : { keywords: english("common.settings") }),
         run: () => setApp({ dialog: "settings", settingsTab: tab }),
       });
     }
@@ -397,6 +438,40 @@ export function CommandPalette() {
 
   const query = value.trim();
   const groups = open ? arrange(commands, page, value, usage, now) : [];
+  const soloId = useApp((s) => s.soloAccountId);
+  // (the filter the list would keep: what's offered is what the results will hold)
+  const mail = useFoundMail(query, open && page === "root", soloId, active);
+  // plan 158: nothing named outright, so it's about mail: the search leads, and Enter runs it
+  const aboutMail = page === "root" && query !== "" && !namesCommand(groups, value);
+  // the search that found it, whatever's typed by now: the row opens among its own results, and is what acts on next
+  const openFound = (id: number, query: string) => {
+    close();
+    // as a click on a row: a new message in the pane steps aside (it stays in the drafts), and it's a search, not Review
+    setApp({ query, checked: new Set(), scope: null, compose: null, reviewCategoryId: null });
+    openConversation(id);
+  };
+  const mailRows = page === "root" && query && (
+    <>
+      <CommandGroup value="search" forceMount>
+        <CommandItem forceMount value={`search\u0000${value}`} data-testid="palette-search-row" onSelect={() => { close(); setApp({ query: value }); }}>
+          {/* plan 108: focused, a search looks only in that account (Codex code review #4) */}
+          <Search /> <span className="truncate">{soloName === null ? t("palette.searchAll", { query: value }) : t("palette.searchIn", { query: value, account: soloName })}</span>
+        </CommandItem>
+      </CommandGroup>
+      {mail && mail.rows.length > 0 && (
+        <CommandGroup value="mail" heading={t("palette.group.mail")} forceMount data-group="mail">
+          {mail.rows.map((r) => (
+            <CommandItem key={r.id} forceMount value={`mail\u0000${r.id}`} data-testid="palette-mail" data-thread-id={r.id} onSelect={() => openFound(r.id, mail.query)}>
+              <Mail />
+              <span className="max-w-[40%] shrink-0 truncate">{r.fromName || r.fromEmail}</span>
+              <span className="min-w-0 truncate font-normal text-muted-foreground">{r.subject || t("common.noSubject")}</span>
+              <CommandDescription className="shrink-0 tabular">{listDate(r.lastDate)}</CommandDescription>
+            </CommandItem>
+          ))}
+        </CommandGroup>
+      )}
+    </>
+  );
   // a page's create row, and the root's search: always there while typing, last (Enter on a match wins)
   const exact = categories.some((c) => normalizeText(c.name) === normalizeText(query));
   const create = (page === "move" || page === "addTo") && query !== "" && !exact;
@@ -480,10 +555,11 @@ export function CommandPalette() {
             )
           }
         />
-        {/* one height, whatever matches: the footer stays where the eye left it */}
-        <CommandList ref={listRef} label={t("palette.results")} className="h-96">
+        {/* plan 158: as tall as what it holds, up to its maximum: the field stays put, the footer follows the last row */}
+        <CommandList ref={listRef} label={t("palette.results")}>
           {/* a row offered below says it already: the root's search while typing, a page's create */}
           {!(page === "root" && query) && !create && <CommandEmpty>{t("palette.empty")}</CommandEmpty>}
+          {aboutMail && mailRows}
           {groups.map(({ group, commands: list }) => (
             // an ASCII value: cmdk finds a group to sort it by its URL-encoded value (a heading with spaces never matched)
             <CommandGroup key={group} value={group} heading={group === "snippetsManage" && snippets.length === 0 && !query ? t("palette.snippets.empty") : HEADINGS[group](targets)} data-group={group}>
@@ -494,9 +570,13 @@ export function CommandPalette() {
                     {alias && <span className="shrink-0 text-muted-foreground" data-testid="palette-alias">({alias})</span>}
                     {c.hint && <CommandDescription>{c.hint}</CommandDescription>}
                     {c.shortcut && (
-                      <span className={c.hint ? "ms-3 flex gap-0.5" : "ms-auto flex gap-0.5"}>
-                        {c.shortcut.split(" ").map((key) => (
-                          <CommandShortcut key={key} className="ms-0">{key}</CommandShortcut>
+                      <span className={cn(c.hint ? "ms-3" : "ms-auto", "flex items-center gap-0.5")}>
+                        {/* G then I: two presses, not a chord */}
+                        {c.shortcut.split(" ").map((key, i) => (
+                          <Fragment key={key}>
+                            {i > 0 && <span className="px-0.5 text-2xs font-normal text-muted-foreground">{t("ui.shortcut.then")}</span>}
+                            <CommandShortcut className="ms-0">{key}</CommandShortcut>
+                          </Fragment>
                         ))}
                       </span>
                     )}
@@ -512,14 +592,7 @@ export function CommandPalette() {
               </CommandItem>
             </CommandGroup>
           )}
-          {page === "root" && query && (
-            <CommandGroup value="search" heading={t("common.search")} forceMount>
-              <CommandItem forceMount value={`search\u0000${value}`} onSelect={() => { close(); setApp({ query: value }); }}>
-                {/* plan 108: focused, a search looks only in that account (Codex code review #4) */}
-                <Search /> {soloName === null ? t("palette.searchAll", { query: value }) : t("palette.searchIn", { query: value, account: soloName })}
-              </CommandItem>
-            </CommandGroup>
-          )}
+          {!aboutMail && mailRows}
           {/* plan 141: last, like search: Enter on a command that matches still wins */}
           {page === "root" && query && canAsk && (
             <CommandGroup value="ask" forceMount>

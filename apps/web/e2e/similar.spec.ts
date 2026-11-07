@@ -44,7 +44,10 @@ test.describe("similar mail", () => {
 
       await openOffers(page);
       await expect(snack.getByTestId("snack-message")).toHaveText("Archived");
-      await expect(snack.getByTestId("similar-sender")).toContainText("Everything from");
+      await expect(snack.getByTestId("similar-sender")).toContainText(`Archive ${ids.length - 1} more from`);
+      // plan 158: the digit is the line's shortcut, at its end, after the sentence that says what it does
+      await expect(snack.getByTestId("similar-sender").locator("> :last-child")).toHaveText(/^\d$/);
+      await expect(snack.getByTestId("similar-sender")).toHaveAttribute("aria-keyshortcuts", /^\d$/);
       await expect(snack.getByTestId("similar-sender-count")).toHaveText(`${ids.length - 1}`);
       await expect.poll(inInbox).toBe(ids.length - 1);
       // plan 91: archiving has no default; the lines are the category snackbar's, the same sender and subject first
@@ -67,13 +70,12 @@ test.describe("similar mail", () => {
       const { email, ids, anywhere, inSpam } = senderSetup(server);
       await selectThread(page, ids[0]!, `in:inbox from:${email}`);
       await page.locator(`[data-testid=thread-row][data-thread-id="${ids[0]}"]`).click({ button: "right" });
-      await menuPath(page, "menu-similar");
-      await page.getByTestId("menu-spam-similar").hover();
-      const list = page.getByTestId("menu-spam-similar-list");
+      await menuPath(page, "menu-more");
+      await page.getByTestId("menu-spam-similar").click();
+      const list = page.getByTestId("menu-more-list");
       await expect(list.getByTestId("menu-spam-similar-note")).toHaveText("Their future mail goes to Spam too.");
-      await expect(list.getByTestId("menu-similar-sender-count")).toHaveText(String(anywhere.length));
-      // the full address follows the name, so same-named senders tell apart
-      await expect(list.getByTestId("menu-similar-sender")).toContainText(new RegExp(`^Everything from .+ ${email.replace(/[.+]/g, "\\$&")}`));
+      // says how many; the full address follows the name, so same-named senders tell apart
+      await expect(list.getByTestId("menu-similar-sender")).toContainText(new RegExp(`^Mark ${anywhere.length} more from .+ as spam ${email.replace(/[.+]/g, "\\$&")}`));
       await list.getByTestId("menu-similar-sender").click();
 
       const done = result(page, `Marked ${anywhere.length} as spam`);
@@ -87,21 +89,35 @@ test.describe("similar mail", () => {
       await expect.poll(inSpam).toBe(0);
       await expect.poll(async () => (await filters()).length).toBe(0);
     });
-    await scenario("the submenu is reachable with the keyboard", async () => {
+    await scenario("More and what unfolds in it are reachable with the keyboard", async () => {
       await fresh(page);
       const { email, ids, inInbox } = senderSetup(server);
       await selectThread(page, ids[0]!, `in:inbox from:${email}`);
       await focusList(page);
+      // (the pointer isn't resting on a row: that row would be highlighted, not the keyboard's)
+      await page.mouse.move(0, 0);
       await page.keyboard.press("Shift+F10");
       await expect(page.getByTestId("thread-menu")).toBeVisible();
-      const trigger = page.getByTestId("menu-similar");
-      // down the menu to Similar mail, into it, then into Archive's offers
-      for (let i = 0; i < 20 && !(await trigger.evaluate((el) => el === document.activeElement || el.hasAttribute("data-highlighted"))); i++) await page.keyboard.press("ArrowDown");
+      const trigger = page.getByTestId("menu-more");
+      // down the menu to More, into it, down to Archive similar mail, then into its offers
+      for (let i = 0; i < 14 && !(await trigger.evaluate((el) => el === document.activeElement)); i++) {
+        await page.keyboard.press("ArrowDown");
+        await page.waitForTimeout(50);
+      }
+      await expect(trigger).toBeFocused();
       await page.keyboard.press("ArrowRight");
-      await expect(page.getByTestId("menu-archive-similar")).toBeFocused();
+      const unfolds = page.getByTestId("menu-archive-similar");
+      await expect(unfolds).toBeVisible();
+      // the keys are the submenu's once focus is in it (before that ↓ is still the menu's, and closes it)
+      await expect.poll(() => page.evaluate(() => document.activeElement?.closest("[data-testid=menu-more-list]") != null)).toBe(true);
+      for (let i = 0; i < 12 && !(await unfolds.evaluate((el) => el === document.activeElement)); i++) {
+        await page.keyboard.press("ArrowDown");
+        await page.waitForTimeout(50);
+      }
+      await expect(unfolds).toHaveAttribute("aria-expanded", "false");
       await page.keyboard.press("ArrowRight");
-      await expect(page.getByTestId("menu-similar-sender")).toBeVisible();
-      await expect(page.getByTestId("menu-similar-sender-count")).toHaveText(String(ids.length));
+      await expect(unfolds).toHaveAttribute("aria-expanded", "true");
+      await expect(page.getByTestId("menu-similar-sender")).toContainText(`Archive ${ids.length} more from`);
       // plan 91: the plain action comes first, focused: Enter archives only this one
       await expect(page.getByTestId("menu-similar-only")).toBeFocused();
       await page.keyboard.press("Enter");

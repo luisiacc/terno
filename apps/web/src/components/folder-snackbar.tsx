@@ -1,4 +1,4 @@
-import { subjectTemplate, type SimilarOffer, type SimilarOffers, type SimilarScope } from "@terno/core";
+import { type SimilarOffer, type SimilarOffers, type SimilarScope } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { useEffect } from "react";
@@ -6,7 +6,7 @@ import { trackJob, undoAction, undoActions } from "~/lib/actions";
 import type { FolderDrop } from "~/lib/folder-move";
 import { filterNameOf } from "~/lib/categorize";
 import { chainUndo, filingOffers } from "~/lib/offers";
-import { scopeLabel } from "~/lib/similar";
+import { offerWhat, scopeLabel } from "~/lib/similar";
 import { dismissSnack, growSnack, snack, undoNow, useSnack, zHolds, type Undo } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { getApp, setApp } from "~/state/app";
@@ -126,8 +126,7 @@ function FolderSnackbar({ id, to, from, targets, offers, undo, undoName, note }:
             key={o.scope.kind}
             n={i + 1}
             testId={`folder-${o.scope.kind}`}
-            label={scopeLabel(o.scope, offers.senderName)}
-            detail={o.scope.kind === "subject" ? subjectTemplate(o.scope.subject) : undefined}
+            label={t("offers.line.move", { what: offerWhat(o, offers.senderName, true), category: to.name })}
             help={t("folder.move.help", { scope: scopeLabel(o.scope, offers.senderName), folder: to.name })}
             future
             // the sender with nothing left now: the line is about their future mail, no "0"

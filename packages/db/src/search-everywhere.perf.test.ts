@@ -223,6 +223,12 @@ describe("search everywhere at 57k threads", () => {
     expect(over).toEqual([]);
   }, 600_000);
 
+  it("plan 158: the palette's ask for mail, a name or a word as it's typed, a few rows, through the store: as a keystroke", async () => {
+    over = [];
+    for (const query of ["isabel", "lucia", "fa", "pro", "factura", "zzqxjv"]) keep(await measureAsync(`palette · ${query}`, 5, () => store.threads.searchText({ query, limit: 10, now: NOW }), 20));
+    expect(over).toEqual([]);
+  }, 600_000);
+
   it("any of and addresses, on a mailbox with captured bodies: the FTS path's form real mailboxes use, within the same budget", async () => {
     over = [];
     const { own, busy, rare } = anyOfQueries();

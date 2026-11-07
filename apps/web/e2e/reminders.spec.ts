@@ -26,9 +26,9 @@ test.describe("remind me", () => {
     const row = rows(page).nth(2);
     const id = (await row.getAttribute("data-thread-id"))!;
     await row.click({ button: "right" });
-    // right after triage and reply
+    // right after reply and triage
     const items = await page.locator("[role=menu] > [data-testid^=menu-]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.testid));
-    expect(items.indexOf("menu-remind-always")).toBe(items.indexOf("menu-forward") + 1);
+    expect(items.indexOf("menu-remind-always")).toBe(items.indexOf("menu-star") + 1);
     await menuPath(page, "menu-remind-always");
     const list = page.getByTestId("menu-remind-always-list");
     // the day isn't said twice: "Tomorrow" beside its time, the if-no-reply kind inside
@@ -146,7 +146,8 @@ test.describe("remind me", () => {
       await server.backend.server.invoke("reminders.set", { threadIds: [id], dueAt: E2E_NOW + 86_400_000, kind: "always" }, { clientId: "setup", origin: "dev" });
       await expect(rowOf(page, id).getByTestId("row-reminder")).toBeVisible();
       await row.click({ button: "right" });
-      await menuPath(page, "menu-remind-always", "menu-remind-noReply");
+      await menuPath(page, "menu-remind-always");
+      await page.getByTestId("menu-remind-noReply").click();
       await page.getByTestId("menu-remind-noReply-pick").click();
       const dialog = page.getByTestId("remind-dialog");
       await expect(dialog.getByTestId("remind-kind-noReply")).toHaveAttribute("aria-pressed", "true");

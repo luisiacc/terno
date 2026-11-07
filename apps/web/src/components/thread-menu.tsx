@@ -1,10 +1,13 @@
-import { remindPresets, separatesTabs, shortcutsFor, subjectTemplate, TAB_CODE, type CategoryColor, type ReminderKind, type Tab, type Command, type SimilarAction, type SimilarOffers, type SimilarScope, type ThreadAction, type ThreadSummary, type UnsubscribeOffer, type View } from "@terno/core";
+import { remindPresets, separatesTabs, shortcutsFor, subjectTemplate, TAB_CODE, type Category, type CategoryColor, type ReminderKind, type Tab, type Command, type SimilarAction, type SimilarOffers, type SimilarScope, type ThreadAction, type ThreadSummary, type UnsubscribeOffer, type View } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
+import { cn } from "@terno/ui/lib/utils";
 import {
   ContextMenu,
   ContextMenuCheckboxItem,
   ContextMenuContent,
+  ContextMenuGroup,
   ContextMenuItem,
+  ContextMenuLabel,
   ContextMenuSeparator,
   ContextMenuShortcut,
   ContextMenuSub,
@@ -19,6 +22,7 @@ import {
   CalendarClock,
   Check,
   CheckCheck,
+  ChevronRight,
   Copy,
   Ellipsis,
   Filter,
@@ -29,7 +33,6 @@ import {
   Mail,
   MailMinus,
   MailOpen,
-  Mails,
   MessageSquareReply,
   OctagonAlert,
   Plus,
@@ -43,11 +46,10 @@ import {
   StarOff,
   Tag,
   Trash2,
-  UserRound,
   Users,
 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { snack } from "~/lib/snack";
 import { openLink } from "~/lib/open-link";
 import { create } from "zustand";
@@ -67,7 +69,7 @@ import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { listKey, useList } from "~/state/list";
 import { actionView, placeActions } from "~/lib/places";
 import { applyScope, formatCount } from "./category-snackbar";
-import { actSimilar, scopeLabel, shownCount, visibleOffers } from "~/lib/similar";
+import { actSimilar, offerSentence, scopeLabel, visibleOffers } from "~/lib/similar";
 import { orderOffers } from "~/lib/offers";
 import { client } from "~/rpc/connection";
 import { codeKey, copyCode, threadCode } from "~/lib/codes";
@@ -84,6 +86,12 @@ interface MenuTarget {
   scope: ScopeSelection | null;
 }
 const useMenuTarget = create<MenuTarget>(() => ({ ids: [], scope: null }));
+
+/** Which row a menu on one conversation is about: for a screen reader always, on screen when it isn't the open one (plan 158). */
+function targetName(t: Pick<ThreadSummary, "fromName" | "fromEmail" | "subject">): string {
+  return `${t.fromName || t.fromEmail}: ${t.subject || noSubject()}`;
+}
+const noSubject = () => t("common.noSubject");
 
 const GLYPH: Record<string, string> = { shift: "⇧", alt: "⌥", ctrl: "⌃", enter: "↵", escape: "esc", backspace: "⌫", delete: "⌦", arrowup: "↑", arrowdown: "↓" };
 /** "mod+shift+u" → "⌘⇧U" (Ctrl+Shift+U off Mac), "g i" → "G I". */
@@ -177,6 +185,7 @@ export function replyOpened(threadId: number, paneBefore: ReturnType<typeof getA
  */
 export function ThreadMenu({ children }: { children: ReactElement }) {
   const [open, setOpen] = useState(false);
+  const name = useMenuTarget((m) => (!m.scope && m.ids.length === 1 ? targetRows(m.ids)[0] : undefined));
   return (
     <ContextMenu
       open={open}
@@ -206,6 +215,7 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
       <ContextMenuContent
         className="w-64"
         data-testid="thread-menu"
+        aria-label={name ? targetName(name) : undefined}
         finalFocus={() => {
           const handedOff = handOff.pending;
           handOff.pending = false;
@@ -269,103 +279,129 @@ function placeItems(view: View, run: (a: ThreadAction) => void): MenuEntry[] {
   }
 }
 
-/** Plan 87: "Remind me ▸" (and inside it, "Remind me if no reply ▸"): the presets with their moments, a moment of your own, Clear. */
-function RemindSub({ kind, ids, disabled, children }: { kind: ReminderKind; ids: number[]; disabled: boolean; children?: ReactNode }) {
+/** A row of a menu's section that unfolds what it holds in place, so nothing stands three menus deep (plan 158). */
+function Unfolding({ id, open, onToggle, icon, label, testId, variant, children }: { id: string; open: string | null; onToggle: (id: string | null) => void; icon: ReactNode; label: string; testId: string; variant?: "destructive"; children: ReactNode }) {
+  const unfolded = open === id;
+  return (
+    <>
+      <ContextMenuItem
+        data-testid={testId}
+        aria-expanded={unfolded}
+        variant={variant}
+        closeOnClick={false}
+        onClick={() => onToggle(unfolded ? null : id)}
+        onKeyDown={(e) => {
+          // the arrows open and close it as they do a submenu, → going in; ← on a closed one still leaves the panel
+          if (e.key === "ArrowRight" && !unfolded) {
+            const row = e.currentTarget;
+            onToggle(id);
+            // the menu's own ↓, once they're there: it knows its rows (a focus from here, it takes back)
+            requestAnimationFrame(() => row.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })));
+          } else if (e.key === "ArrowLeft" && unfolded) {
+            e.stopPropagation();
+            (e as unknown as { preventBaseUIHandler(): void }).preventBaseUIHandler();
+            onToggle(null);
+          }
+        }}
+      >
+        {icon}
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <ChevronRight className={cn("ms-auto rtl:-scale-x-100", unfolded && "rotate-90")} />
+      </ContextMenuItem>
+      {unfolded && children}
+    </>
+  );
+}
+
+/** A panel's quiet section label; what's under it names itself (plan 158: the labels are small, the rows carry the words). */
+function Section({ label, testId, children }: { label: string; testId?: string; children: ReactNode }) {
+  return (
+    <ContextMenuGroup>
+      <ContextMenuLabel data-testid={testId} className="h-6 truncate text-xs" title={label}>
+        <span className="truncate">{label}</span>
+      </ContextMenuLabel>
+      {children}
+    </ContextMenuGroup>
+  );
+}
+
+/** Plan 87: a kind's presets with their moments, a moment of your own, Clear. */
+function RemindItems({ kind, ids, inset }: { kind: ReminderKind; ids: number[]; inset?: boolean }) {
   const current = useReminders((s) => (ids.length === 1 ? s.byThread.get(ids[0]!) : undefined));
   const anySet = useReminders((s) => ids.some((id) => s.byThread.has(id)));
   const presets = remindPresets(new Date(), kind);
   return (
-    <ContextMenuSub>
-      <ContextMenuSubTrigger data-testid={`menu-remind-${kind}`} disabled={disabled}>
-        {kind === "noReply" ? <MessageSquareReply /> : <Bell />}
-        <span className="min-w-0 flex-1 truncate">{t(kind === "noReply" ? "remind.menuNoReply" : "remind.menu")}</span>
-        {kind === "always" && hint("thread.remind")}
-      </ContextMenuSubTrigger>
-      <ContextMenuSubContent className="w-max min-w-60" data-testid={`menu-remind-${kind}-list`}>
-        {current && (
-          <div className="max-w-72 px-1.5 py-1 text-xs text-muted-foreground" data-testid="menu-remind-current">
-            {t(current.kind === "noReply" ? "remind.currentNoReply" : "remind.current", { when: reminderWhen(current.dueAt) })}
-          </div>
-        )}
-        {presets.map((p) => (
-          <ContextMenuItem key={p.id} data-testid={`menu-remind-${kind}-${p.id}`} onClick={() => void setReminder(ids, p.at, kind)}>
-            <span className="min-w-0 flex-1 truncate">{presetLabel(p.id)}</span>
-            <ContextMenuShortcut className="tracking-normal tabular-nums">{presetWhen(p)}</ContextMenuShortcut>
-          </ContextMenuItem>
-        ))}
-        <ContextMenuSeparator />
-        <ContextMenuItem data-testid={`menu-remind-${kind}-pick`} onClick={() => openRemind({ kind, custom: true, ids })}>
-          <CalendarClock />
-          <span className="min-w-0 flex-1 truncate">{t("remind.pick")}</span>
+    <>
+      {current && (
+        <div className={cn("max-w-72 px-2 py-1 text-xs text-muted-foreground", inset && "ps-[calc(1rem+1.15em)]")} data-testid="menu-remind-current">
+          {t(current.kind === "noReply" ? "remind.currentNoReply" : "remind.current", { when: reminderWhen(current.dueAt) })}
+        </div>
+      )}
+      {presets.map((p) => (
+        <ContextMenuItem key={p.id} inset={inset} data-testid={`menu-remind-${kind}-${p.id}`} onClick={() => void setReminder(ids, p.at, kind)}>
+          <span className="min-w-0 flex-1 truncate">{presetLabel(p.id)}</span>
+          <ContextMenuShortcut className="tracking-normal tabular-nums">{presetWhen(p)}</ContextMenuShortcut>
         </ContextMenuItem>
-        {anySet && (
-          <ContextMenuItem data-testid={`menu-remind-${kind}-clear`} onClick={() => void clearReminder(ids)}>
-            <BellOff />
-            <span className="min-w-0 flex-1 truncate">{t("remind.clear")}</span>
-          </ContextMenuItem>
-        )}
-        {children && <ContextMenuSeparator />}
-        {children}
+      ))}
+      <ContextMenuItem inset={inset} data-testid={`menu-remind-${kind}-pick`} onClick={() => openRemind({ kind, custom: true, ids })}>
+        {!inset && <CalendarClock />}
+        <span className="min-w-0 flex-1 truncate">{t("remind.pick")}</span>
+      </ContextMenuItem>
+      {anySet && (
+        <ContextMenuItem inset={inset} data-testid={`menu-remind-${kind}-clear`} onClick={() => void clearReminder(ids)}>
+          {!inset && <BellOff />}
+          <span className="min-w-0 flex-1 truncate">{t("remind.clear")}</span>
+        </ContextMenuItem>
+      )}
+    </>
+  );
+}
+
+/** "Remind me ▸": when, and "Remind me if no reply" unfolding under it. */
+function RemindSub({ ids, disabled }: { ids: number[]; disabled: boolean }) {
+  const [unfolded, setUnfolded] = useState<string | null>(null);
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger data-testid="menu-remind-always" disabled={disabled}>
+        <Bell />
+        <span className="min-w-0 flex-1 truncate">{t("remind.menu")}</span>
+        {hint("thread.remind")}
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent className="w-max min-w-60" data-testid="menu-remind-always-list">
+        <RemindItems kind="always" ids={ids} />
+        <ContextMenuSeparator />
+        <Unfolding id="noReply" open={unfolded} onToggle={setUnfolded} icon={<MessageSquareReply />} label={t("remind.menuNoReply")} testId="menu-remind-noReply">
+          <RemindItems kind="noReply" ids={ids} inset />
+        </Unfolding>
       </ContextMenuSubContent>
     </ContextMenuSub>
   );
 }
 
-const SIMILAR_LABEL = { archive: "actions.archive", trash: "actions.trash", spam: "actions.markSpam" } as const;
+const SIMILAR_LABEL = { archive: "threadMenu.similar.archive", trash: "threadMenu.similar.trash", spam: "threadMenu.similar.spam" } as const;
+const SIMILAR_ICON = { archive: <Archive />, trash: <Trash2 />, spam: <OctagonAlert /> };
 
-/** "Similar mail ▸": one row per action that still applies here, each opening what it would take. */
-function SimilarMailSub({ view, ids }: { view: View; ids: number[] }) {
+/** More's "Similar mail": one row per action that still applies here, each unfolding what it would take. */
+function SimilarSection({ view, ids, open, onToggle }: { view: View; ids: number[]; open: string | null; onToggle: (id: string | null) => void }) {
   const actions: SimilarAction[] = [];
   if (view === "inbox" || view === "all" || view === "starred" || view === "sent") actions.push("archive");
   if (view !== "trash") actions.push("trash");
   if (view !== "spam" && view !== "trash") actions.push("spam");
   if (actions.length === 0) return null;
   return (
-    <ContextMenuSub>
-      <ContextMenuSubTrigger data-testid="menu-similar">
-        <Mails />
-        <span className="min-w-0 flex-1 truncate">{t("threadMenu.similar")}</span>
-      </ContextMenuSubTrigger>
-      <ContextMenuSubContent className="w-48" data-testid="menu-similar-list">
-        {actions.map((action) => (
-          <SimilarSub key={action} action={action} ids={ids} />
-        ))}
-      </ContextMenuSubContent>
-    </ContextMenuSub>
+    <Section label={t("threadMenu.similar")} testId="menu-similar">
+      {actions.map((action) => (
+        <Unfolding key={action} id={`similar:${action}`} open={open} onToggle={onToggle} icon={SIMILAR_ICON[action]} label={t(SIMILAR_LABEL[action])} testId={`menu-${action}-similar`} variant={action === "trash" ? "destructive" : undefined}>
+          <SimilarItems action={action} ids={ids} />
+        </Unfolding>
+      ))}
+    </Section>
   );
 }
 
-/** "Archive ▸" / "Delete ▸" / "Mark as spam ▸" under Similar mail: its offers are read when it opens (plan 91: the snackbar's lines, in its order). */
-function SimilarSub({ action, ids }: { action: SimilarAction; ids: number[] }) {
-  /** opened from the keyboard: the first offer takes focus once counted (a hover leaves focus alone) */
-  const byKey = useRef(false);
-  return (
-    <ContextMenuSub>
-      <ContextMenuSubTrigger
-        data-testid={`menu-${action}-similar`}
-        variant={action === "trash" ? "destructive" : undefined}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowRight" || e.key === "ArrowLeft" || e.key === "Enter" || e.key === " ") byKey.current = true;
-        }}
-        onPointerMove={() => (byKey.current = false)}
-      >
-        {action === "archive" ? <Archive /> : action === "trash" ? <Trash2 /> : <OctagonAlert />}
-        <span className="min-w-0 flex-1 truncate">{t(SIMILAR_LABEL[action])}</span>
-      </ContextMenuSubTrigger>
-      <ContextMenuSubContent className="w-max min-w-72 max-w-md" data-testid={`menu-${action}-similar-list`}>
-        <SimilarItems action={action} ids={ids} byKey={byKey} />
-      </ContextMenuSubContent>
-    </ContextMenuSub>
-  );
-}
-
-function SimilarItems({ action, ids, byKey }: { action: SimilarAction; ids: number[]; byKey: { current: boolean } }) {
+/** What a similar row holds: read when it unfolds (plan 91: the snackbar's lines, in its order, its sentences). */
+function SimilarItems({ action, ids }: { action: SimilarAction; ids: number[] }) {
   const [offers, setOffers] = useState<SimilarOffers | null>(null);
-  const first = useRef<HTMLDivElement>(null);
-  // the keyboard opened it while it was counting (nothing to focus yet): Enter must reach the first offer
-  useLayoutEffect(() => {
-    if (offers && byKey.current) first.current?.focus();
-  }, [offers]);
   useEffect(() => {
     let alive = true;
     void client.call("offers.forAction", { threadIds: ids, action }).then(
@@ -382,30 +418,35 @@ function SimilarItems({ action, ids, byKey }: { action: SimilarAction; ids: numb
   return (
     <>
       {/* plan 91: the plain action first, said as plainly as the snackbar's "No, only …" (no default, no sweep) */}
-      <ContextMenuItem ref={first} data-testid="menu-similar-only" variant={variant} onClick={() => void act(action, ids, { automation: "none" })}>
+      <ContextMenuItem inset data-testid="menu-similar-only" variant={variant} onClick={() => void act(action, ids, { automation: "none" })}>
         <span className="min-w-0 flex-1 truncate">{t(`offers.onlyThis.${action}`, { count: ids.length })}</span>
       </ContextMenuItem>
-      <ContextMenuSeparator />
       {action === "spam" && (
-        <div className="px-1.5 py-1 text-xs text-muted-foreground" data-testid="menu-spam-similar-note">
+        <div className="px-2 py-1 ps-[calc(1rem+1.15em)] text-xs text-muted-foreground" data-testid="menu-spam-similar-note">
           {t("similar.spamFuture")}
         </div>
       )}
       {!offers ? (
-        <ContextMenuItem disabled data-testid="menu-similar-counting">
+        <ContextMenuItem inset disabled data-testid="menu-similar-counting">
           {t("similar.counting")}
         </ContextMenuItem>
       ) : shown.length === 0 ? (
-        <ContextMenuItem disabled data-testid="menu-similar-nothing">
+        <ContextMenuItem inset disabled data-testid="menu-similar-nothing">
           {t("similar.nothing")}
         </ContextMenuItem>
       ) : (
-        shown.map((o) => (
-          <ContextMenuItem key={o.scope.kind} data-testid={`menu-similar-${o.scope.kind}`} variant={variant} title={o.scope.kind === "subject" ? o.scope.subject : undefined} onClick={() => void actSimilar(action, ids, o.scope, offers.senderName)}>
-            <ScopeLabel scope={o.scope} senderName={offers.senderName} />
-            <ContextMenuShortcut className="tracking-normal tabular-nums" data-testid={`menu-similar-${o.scope.kind}-count`}>{shownCount(o) ? formatCount(o) : ""}</ContextMenuShortcut>
-          </ContextMenuItem>
-        ))
+        shown.map((o) => {
+          const sentence = offerSentence(action, o, offers.senderName);
+          return (
+            <ContextMenuItem key={o.scope.kind} inset data-testid={`menu-similar-${o.scope.kind}`} variant={variant} title={sentence} onClick={() => void actSimilar(action, ids, o.scope, offers.senderName)}>
+              <span className="min-w-0 flex-1 truncate">
+                {sentence}
+                {/* a named sender carries its address, muted, so same-named senders tell apart */}
+                {o.scope.kind === "sender" && offers.senderName && offers.senderName !== o.scope.email && <span className="font-normal text-muted-foreground"> {o.scope.email}</span>}
+              </span>
+            </ContextMenuItem>
+          );
+        })
       )}
     </>
   );
@@ -614,8 +655,11 @@ function MenuItems() {
   // plan 72: the keyboard's (and screen readers') way to the code a row's chip copies
   const code = single ? threadCode(single, Date.now()) : null;
   const replyAllOffered = useReplyAllOffered(single?.id);
+  // plan 158: a row that isn't the one open says itself: the reader beside the menu shows another conversation
+  const openId = useApp((s) => s.selectedId);
+  const caption = single && single.id !== openId ? targetName(single) : null;
 
-  // what the view offers, sorted by where it goes: triage on top; the way back leads only where it replaces Archive
+  // what the view offers, sorted by where it goes; the way back leads only where it replaces Archive
   const placed: MenuEntry[] = searchPlaces ? searchPlaceItems(searchPlaces, (a) => run(a)) : placeItems(view, run);
   const wayBack = placed.filter((it) => it.testId === "menu-inbox" || it.testId === "menu-not-spam");
   const spam = placed.find((it) => it.testId === "menu-spam");
@@ -635,16 +679,12 @@ function MenuItems() {
           {scope ? t("selection.scope", { count, label: scope.label }) : t("common.conversations", { count })}
         </div>
       )}
+      {caption && (
+        <div className="truncate px-2 py-1 text-xs font-medium text-muted-foreground" data-testid="menu-target" title={caption}>
+          {caption}
+        </div>
+      )}
       {single && <ReviewItems thread={single} />}
-      {/* triage first: what a row is usually right-clicked for */}
-      {(archivable ? triage : [...wayBack, ...triage]).map((it) => (
-        <Item key={it.testId} {...it} />
-      ))}
-      {anyUnread && <Item icon={<MailOpen />} label={t("actions.markRead")} command="thread.markRead" onClick={() => run("markRead")} testId="menu-read" />}
-      {anyRead && <Item icon={<Mail />} label={t("actions.markUnread")} command="thread.markUnread" onClick={() => run("markUnread")} testId="menu-unread" />}
-      {anyPlain && <Item icon={<Star />} label={t("actions.star")} command="thread.star" onClick={() => run("star")} testId="menu-star" />}
-      {anyStarred && <Item icon={<StarOff />} label={t("actions.unstar")} command={anyPlain ? undefined : "thread.star"} onClick={() => run("unstar")} testId="menu-unstar" />}
-      <ContextMenuSeparator />
       {single && (
         <>
           <Item icon={<Reply />} label={t("actions.reply")} command="compose.reply" onClick={() => reply("reply")} testId="menu-reply" />
@@ -653,17 +693,23 @@ function MenuItems() {
           <ContextMenuSeparator />
         </>
       )}
+      {(archivable ? triage : [...wayBack, ...triage]).map((it) => (
+        <Item key={it.testId} {...it} />
+      ))}
+      {anyUnread && <Item icon={<MailOpen />} label={t("actions.markRead")} command="thread.markRead" onClick={() => run("markRead")} testId="menu-read" />}
+      {anyRead && <Item icon={<Mail />} label={t("actions.markUnread")} command="thread.toggleRead" onClick={() => run("markUnread")} testId="menu-unread" />}
+      {anyPlain && <Item icon={<Star />} label={t("actions.star")} command="thread.star" onClick={() => run("star")} testId="menu-star" />}
+      {anyStarred && <Item icon={<StarOff />} label={t("actions.unstar")} command={anyPlain ? undefined : "thread.star"} onClick={() => run("unstar")} testId="menu-unstar" />}
+      <ContextMenuSeparator />
       {/* plan 87: a "select all N" has no ids to set them on */}
-      <RemindSub kind="always" ids={ids} disabled={scope !== null}>
-        <RemindSub kind="noReply" ids={ids} disabled={false} />
-      </RemindSub>
+      <RemindSub ids={ids} disabled={scope !== null} />
       <ContextMenuSub>
         <ContextMenuSubTrigger data-testid="menu-move" disabled={scope !== null && moves.length === 0}>
           <FolderInput />
           <span className="min-w-0 flex-1 truncate">{t("threadMenu.moveTo")}</span>
           {hint("thread.move")}
         </ContextMenuSubTrigger>
-        <ContextMenuSubContent className="w-56" data-testid="menu-move-list">
+        <ContextMenuSubContent className="w-60" data-testid="menu-move-list">
           {moves.map((it) => (
             <Item key={it.testId} {...it} />
           ))}
@@ -671,9 +717,10 @@ function MenuItems() {
           {scope === null && (
             <>
               {moves.length > 0 && <ContextMenuSeparator />}
+              {categories.length > 0 && <p className="px-2 py-1 text-xs text-muted-foreground" data-testid="menu-move-note">{t("threadMenu.moveNote")}</p>}
               {categories.map((c) => (
                 <ContextMenuItem key={c.id} data-testid={`menu-move-${c.id}`} disabled={isExclusivelyIn(c.id, ids)} onClick={() => void moveToCategory(c.id, ids, { source: "picker" })}>
-                  <CategoryDot color={c.color as CategoryColor} />
+                  <CategoryDot color={c.color as CategoryColor} className="mx-1" />
                   <span className="truncate">{c.name}</span>
                 </ContextMenuItem>
               ))}
@@ -693,10 +740,11 @@ function MenuItems() {
           <span className="min-w-0 flex-1 truncate">{t("actions.category")}</span>
           {hint("thread.category")}
         </ContextMenuSubTrigger>
-        <ContextMenuSubContent className="w-56" data-testid="menu-categories-list">
+        <ContextMenuSubContent className="w-60" data-testid="menu-categories-list">
+          {categories.length > 0 && <p className="px-2 py-1 text-xs text-muted-foreground" data-testid="menu-category-note">{t("threadMenu.categoryNote")}</p>}
           {categories.map((c) => (
             <ContextMenuCheckboxItem key={c.id} data-testid={`menu-category-${c.id}`} checked={!scope && inAll(c.id)} closeOnClick onClick={() => toggleCategory(c.id)}>
-              <CategoryDot color={c.color as CategoryColor} />
+              <CategoryDot color={c.color as CategoryColor} className="mx-1" />
               <span className="truncate">{c.name}</span>
             </ContextMenuCheckboxItem>
           ))}
@@ -707,88 +755,85 @@ function MenuItems() {
         </ContextMenuSubContent>
       </ContextMenuSub>
       <ContextMenuSeparator />
-      {/* plan 63: the same, for everything like it (explicit rows only: a "select all N" scope is already everything) */}
-      {!scope && ids.length <= 200 && <SimilarMailSub view={view} ids={ids} />}
-      {sender && (
-        <ContextMenuSub>
-          <ContextMenuSubTrigger data-testid="menu-sender">
-            <UserRound />
-            <span className="min-w-0 flex-1 truncate">{t("threadMenu.from", { name: sender.name })}</span>
-          </ContextMenuSubTrigger>
-          <ContextMenuSubContent className="w-max max-w-md min-w-56" data-testid="menu-sender-list">
-            {categories.length > 0 && (
-              <ContextMenuSub>
-                <ContextMenuSubTrigger data-testid="menu-sender-file">
-                  <Tag />
-                  <span className="min-w-0 flex-1 truncate">{t("threadMenu.fileAll")}</span>
-                </ContextMenuSubTrigger>
-                <ContextMenuSubContent className="w-56" data-testid="menu-sender-file-list">
-                  {fileTo.map((c) => (
-                    <ContextMenuItem key={c.id} data-testid={`menu-sender-file-${c.id}`} onClick={() => void applyScope(c.id, { kind: "sender", email: sender.email })}>
-                      <CategoryDot color={c.color as CategoryColor} />
-                      <span className="truncate">{t("threadMenu.toCategory", { category: c.name })}</span>
-                    </ContextMenuItem>
-                  ))}
-                  {/* plan 77: the categories this mail is in offer the way out instead */}
-                  {fileTo.length > 0 && filedIn.length > 0 && <ContextMenuSeparator />}
-                  {filedIn.map((c) => (
-                    <ContextMenuItem key={c.id} data-testid={`menu-sender-out-${c.id}`} onClick={() => void removeSenderFromCategory(c.id, sender.email)}>
-                      <CategoryDot color={c.color as CategoryColor} />
-                      <span className="truncate">{t("threadMenu.outOfCategory", { category: c.name })}</span>
-                    </ContextMenuItem>
-                  ))}
-                </ContextMenuSubContent>
-              </ContextMenuSub>
-            )}
-            <Item
-              icon={<Filter />}
-              label={t("threadMenu.createFilter")}
-              testId="menu-filter"
-              onClick={() => setApp({ dialog: "filters", filterPrefill: { name: t("threadMenu.filterName", { name: sender.name }), rule: { match: "all", conditions: [{ field: "from", op: "equals", value: sender.email }], actions: [{ type: "archive" }] } } })}
-            />
-            <Item icon={<Search />} label={t("threadMenu.searchSender")} testId="menu-search-sender" onClick={() => setApp({ query: `from:${sender.email}`, view: "all", categoryId: null, reviewCategoryId: null, checked: new Set(), scope: null })} />
-            <Item
-              icon={<Copy />}
-              label={t("threadMenu.copyAddress")}
-              testId="menu-copy"
-              onClick={() =>
-                void navigator.clipboard.writeText(sender.email).then(
-                  () => snack(t("threadMenu.copied", { email: sender.email }), { duration: 2000 }),
-                  () => snack.error(t("threadMenu.copyFailed")),
-                )
-              }
-            />
-            {/* keyed: a menu moved onto another row never shows (or opens) the last row's offer while its own loads */}
-            {single && <UnsubscribeItem key={single.id} threadId={single.id} />}
-          </ContextMenuSubContent>
-        </ContextMenuSub>
-      )}
       <ContextMenuSub>
         <ContextMenuSubTrigger data-testid="menu-more">
           <Ellipsis />
           <span className="min-w-0 flex-1 truncate">{t("threadMenu.more")}</span>
         </ContextMenuSubTrigger>
-        <ContextMenuSubContent className="w-max max-w-md min-w-56" data-testid="menu-more-list">
-          {spam && <Item {...spam} />}
-          {single && code && (
-            <Item
-              icon={<Copy />}
-              label={t("codes.copy", { code })}
-              testId="menu-copy-code"
-              onClick={() => void copyCode(codeKey(single.id, code), code).then((ok) => ok && snack(t("codes.copied", { code }), { duration: 2000 }))}
-            />
-          )}
-          {single && (
-            <>
-              {/* one conversation only: printing several at once isn't a thing */}
-              <Item icon={<Printer />} label={t("actions.printMore")} command="thread.print" onClick={() => openPrint({ threadId: single.id, messageId: null, intent: "print" })} testId="menu-print" />
-              <Item icon={<Copy />} label={t("threadMenu.copyText")} onClick={() => copyThreadText(single.id)} testId="menu-copy-text" />
-            </>
-          )}
-          {(spam || single) && <ContextMenuSeparator />}
-          <Item icon={<CheckCheck />} label={t("actions.selectAll")} command="list.selectAll" onClick={selectAll} testId="menu-select-all" />
+        {/* plan 158: everything else, flat under small labels; a row with several answers unfolds them, nothing goes a level deeper */}
+        <ContextMenuSubContent className="w-80" data-testid="menu-more-list">
+          <MoreItems spam={spam} single={single} code={code} view={view} ids={ids} scope={scope !== null} sender={sender} categories={categories} fileTo={fileTo} filedIn={filedIn} />
         </ContextMenuSubContent>
       </ContextMenuSub>
+    </>
+  );
+}
+
+/** "More ▸": what a row is rarely right-clicked for. One row unfolded at a time: the panel stays short. */
+function MoreItems({ spam, single, code, view, ids, scope, sender, categories, fileTo, filedIn }: { spam: MenuEntry | undefined; single: ThreadSummary | undefined; code: string | null; view: View; ids: number[]; scope: boolean; sender: { email: string; name: string } | null; categories: readonly Category[]; fileTo: readonly Category[]; filedIn: readonly Category[] }) {
+  const [unfolded, setUnfolded] = useState<string | null>(null);
+  return (
+    <>
+      {spam && <Item {...spam} />}
+      {single && code && (
+        <Item
+          icon={<Copy />}
+          label={t("codes.copy", { code })}
+          testId="menu-copy-code"
+          onClick={() => void copyCode(codeKey(single.id, code), code).then((ok) => ok && snack(t("codes.copied", { code }), { duration: 2000 }))}
+        />
+      )}
+      {single && (
+        <>
+          {/* one conversation only: printing several at once isn't a thing */}
+          <Item icon={<Printer />} label={t("actions.printMore")} command="thread.print" onClick={() => openPrint({ threadId: single.id, messageId: null, intent: "print" })} testId="menu-print" />
+          <Item icon={<Copy />} label={t("threadMenu.copyText")} onClick={() => copyThreadText(single.id)} testId="menu-copy-text" />
+        </>
+      )}
+      <Item icon={<CheckCheck />} label={t("actions.selectAll")} command="list.selectAll" onClick={selectAll} testId="menu-select-all" />
+      {/* plan 63: the same, for everything like it (explicit rows only: a "select all N" scope is already everything) */}
+      {!scope && ids.length <= 200 && <SimilarSection view={view} ids={ids} open={unfolded} onToggle={setUnfolded} />}
+      {sender && (
+        <Section label={t("threadMenu.from", { name: sender.name })} testId="menu-sender">
+          {categories.length > 0 && (
+            <Unfolding id="file" open={unfolded} onToggle={setUnfolded} icon={<Tag />} label={t("threadMenu.fileAll")} testId="menu-sender-file">
+              {fileTo.map((c) => (
+                <ContextMenuItem key={c.id} data-testid={`menu-sender-file-${c.id}`} onClick={() => void applyScope(c.id, { kind: "sender", email: sender.email })}>
+                  <CategoryDot color={c.color as CategoryColor} className="mx-1" />
+                  <span className="truncate">{t("threadMenu.toCategory", { category: c.name })}</span>
+                </ContextMenuItem>
+              ))}
+              {/* plan 77: the categories this mail is in offer the way out instead */}
+              {filedIn.map((c) => (
+                <ContextMenuItem key={c.id} data-testid={`menu-sender-out-${c.id}`} onClick={() => void removeSenderFromCategory(c.id, sender.email)}>
+                  <CategoryDot color={c.color as CategoryColor} className="mx-1" />
+                  <span className="truncate">{t("threadMenu.outOfCategory", { category: c.name })}</span>
+                </ContextMenuItem>
+              ))}
+            </Unfolding>
+          )}
+          <Item
+            icon={<Filter />}
+            label={t("threadMenu.createFilter")}
+            testId="menu-filter"
+            onClick={() => setApp({ dialog: "filters", filterPrefill: { name: t("threadMenu.filterName", { name: sender.name }), rule: { match: "all", conditions: [{ field: "from", op: "equals", value: sender.email }], actions: [{ type: "archive" }] } } })}
+          />
+          <Item icon={<Search />} label={t("threadMenu.searchSender")} testId="menu-search-sender" onClick={() => setApp({ query: `from:${sender.email}`, view: "all", categoryId: null, reviewCategoryId: null, checked: new Set(), scope: null })} />
+          <Item
+            icon={<Copy />}
+            label={t("threadMenu.copyAddress")}
+            testId="menu-copy"
+            onClick={() =>
+              void navigator.clipboard.writeText(sender.email).then(
+                () => snack(t("threadMenu.copied", { email: sender.email }), { duration: 2000 }),
+                () => snack.error(t("threadMenu.copyFailed")),
+              )
+            }
+          />
+          {/* keyed: a menu moved onto another row never shows (or opens) the last row's offer while its own loads */}
+          {single && <UnsubscribeItem key={single.id} threadId={single.id} />}
+        </Section>
+      )}
     </>
   );
 }

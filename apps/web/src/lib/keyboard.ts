@@ -92,6 +92,12 @@ function openCurrent() {
 }
 
 /** r / a / f (and the palette's Reply): on List's list page, the conversation opens first (its draft is in it; R3). */
+/** / and the palette's Search mail: the field, wherever the list is. */
+export function focusSearchField(): void {
+  uncoverList();
+  focusSearch();
+}
+
 export function reply(mode: DraftMode) {
   const id = getApp().selectedId;
   if (listLayout() && currentPage() === "list" && id !== null) openThread(id);
@@ -168,10 +174,7 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "compose.replyAll": () => reply("replyAll"),
   "compose.forward": () => reply("forward"),
   "compose.ai": () => openAiDraft(),
-  "search.focus": () => {
-    uncoverList();
-    focusSearch();
-  },
+  "search.focus": focusSearchField,
   "palette.open": togglePalette,
   "snippets.open": toggleSnippets,
   "ask.open": toggleAsk,

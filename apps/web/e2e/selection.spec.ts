@@ -53,8 +53,30 @@ test("a batch: every row shows it's in, Delete reads as the menu's, Undo puts th
   await expect(open.getByTestId("row-check")).toHaveCount(0);
   await selectRows(page, ids);
   await expect(checked(page).getByTestId("row-check")).toHaveCount(3);
+  // plan 158: one selection, one look: the first row (the cursor among them) is the rest's fill and ink, its check on the
+  // sender's line, in the unread dot's slot
+  await page.mouse.move(0, 0);
+  const looks = await checked(page).evaluateAll((els) => els.map((el) => {
+    const fill = getComputedStyle(el, "::before").backgroundColor;
+    const from = el.querySelector("[data-testid=row-from]")!.getBoundingClientRect();
+    const check = el.querySelector("[data-testid=row-check]")!.getBoundingClientRect();
+    return { fill, ink: getComputedStyle(el).color, off: Math.abs(check.top + check.height / 2 - (from.top + from.height / 2)) };
+  }));
+  expect(new Set(looks.map((l) => l.fill)).size).toBe(1);
+  expect(new Set(looks.map((l) => l.ink)).size).toBe(1);
+  for (const l of looks) expect(l.off).toBeLessThanOrEqual(2);
+  // j among them: the cursor gets a mark of its own, only by keys, and only while there's a selection
+  const list = page.getByTestId("thread-list");
+  await expect(list).not.toHaveAttribute("data-keyed");
+  await focusList(page);
+  await page.keyboard.press("j");
+  await expect(list).toHaveAttribute("data-keyed");
+  await page.keyboard.press("k");
   await expect(page.getByTestId("selection-count")).toHaveText("3 conversations selected");
   await expect(page.getByTestId("bar-spam")).toHaveAccessibleName("Mark as spam");
+  // plan 158: Remind me is here too, as in the row menu; and what's selected is listed, to check before acting
+  await expect(page.getByTestId("bar-remind")).toHaveAccessibleName("Remind me");
+  await expect(page.getByTestId("selection-rows").locator("li")).toHaveCount(3);
   // the same red as the menu's Delete
   const red = (l: Locator) => l.evaluate((el) => getComputedStyle(el).color);
   const barRed = await red(page.getByTestId("bar-trash"));
@@ -155,23 +177,26 @@ test.describe("context menu on one thread", () => {
       const target = rows(page).nth(1);
       const id = (await target.getAttribute("data-thread-id"))!;
       await rightClick(page, target);
-      await menuPath(page, "menu-sender");
+      await menuPath(page, "menu-more");
+      // what's about the sender stands under their name: a label, no level of its own
+      await expect(sub(page, "menu-sender")).toHaveText(/^From /);
+      await expect(page.getByTestId("menu-more-list").locator("[data-slot=context-menu-sub-trigger]")).toHaveCount(0);
       await expect(sub(page, "menu-sender-file")).toContainText("File all their mail");
       await sub(page, "menu-copy").click();
       const copied = await page.evaluate(() => navigator.clipboard.readText());
       expect(copied).toMatch(/@/);
       await rightClick(page, row(page, id));
-      await menuPath(page, "menu-sender");
+      await menuPath(page, "menu-more");
       await sub(page, "menu-search-sender").click();
       await expect(page.getByTestId("search-input")).toHaveValue(`from:${copied}`);
       await expect(page.getByTestId("list-title")).toHaveText("Search");
       await rightClick(page, rows(page).first());
-      await menuPath(page, "menu-sender");
+      await menuPath(page, "menu-more");
       await sub(page, "menu-filter").click();
       await expect(page.getByTestId("filters-dialog")).toBeVisible();
       await expect(page.getByTestId("condition-value").first()).toHaveValue(copied);
     });
-    await scenario("the top level stays short, triage then reply, and fits a small window beside the pointer", async () => {
+    await scenario("the top level stays short, reply then triage, and fits a small window beside the pointer", async () => {
       await fresh(page);
       await page.setViewportSize({ width: 1100, height: 700 });
       const low = rows(page).nth(3);
@@ -179,16 +204,23 @@ test.describe("context menu on one thread", () => {
       await rightClick(page, low);
       const own = () => menu(page).locator("> [role=menuitem]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.testid!));
       const top = await own();
-      expect(top.length).toBeLessThanOrEqual(13);
-      expect(top.slice(0, 2)).toEqual(["menu-archive", "menu-trash"]);
-      expect(top.indexOf("menu-reply")).toBeLessThan(top.indexOf("menu-remind-always"));
+      expect(top.length).toBeLessThanOrEqual(11);
+      expect(top[0]).toBe("menu-reply");
+      expect(top.indexOf("menu-forward")).toBeLessThan(top.indexOf("menu-archive"));
+      expect(top.slice(top.indexOf("menu-archive"), top.indexOf("menu-archive") + 2)).toEqual(["menu-archive", "menu-trash"]);
+      expect(top.slice(-4)).toEqual(["menu-remind-always", "menu-move", "menu-categories", "menu-more"]);
       for (const moved of ["menu-print", "menu-copy-text", "menu-spam", "menu-select-all", "menu-copy", "menu-filter", "menu-trash-similar"]) expect(top).not.toContain(moved);
+      // a row that isn't the open one says itself, on screen and to a screen reader
+      const name = await menu(page).getByTestId("menu-target").textContent();
+      expect(name).toContain(":");
+      await expect(menu(page)).toHaveAttribute("aria-label", name!);
       // no scrolling, and its first rows stay by the pointer (shifted to fit, never flipped a panel away)
       await menu(page).evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
       const box = (await menu(page).boundingBox())!;
       expect(await menu(page).evaluate((el) => el.scrollHeight <= el.clientHeight)).toBe(true);
       expect(box.y).toBeLessThanOrEqual(at.y + at.height);
-      expect(box.y + box.height).toBeLessThanOrEqual(700);
+      // (Reply all comes once the conversation's read; the panel shifts to fit it)
+      await expect.poll(async () => { const b = (await menu(page).boundingBox())!; return b.y + b.height; }).toBeLessThanOrEqual(700);
       expect(at.y + at.height / 2 - box.y).toBeLessThan(box.height);
       // shortcuts in one column, chevrons in another
       const ends = (id: string) => item(page, id).locator("[data-slot=context-menu-shortcut]").evaluate((el) => el.getBoundingClientRect().right);
@@ -257,6 +289,7 @@ test.describe("context menu on one thread", () => {
       for (let i = 0; i < 24; i++) {
         await page.keyboard.press("ArrowDown");
         // read without waiting: between two keys there may be no highlighted item yet
+        await page.waitForTimeout(30);
         const now = await page.evaluate(() => document.querySelector("[data-testid=thread-menu] [data-highlighted]")?.textContent ?? "");
         if (now.startsWith("Archive")) break;
       }

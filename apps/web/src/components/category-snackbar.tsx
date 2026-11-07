@@ -9,7 +9,7 @@ import { Check, Search } from "@terno/ui/icons";
 import { useEffect, useId, useRef, useState } from "react";
 import { fileAlways, filterNameOf, stopFiling, undoFiled, type Filed } from "~/lib/categorize";
 import { chainUndo, filingOffers, isLatest, unchain } from "~/lib/offers";
-import { scopeLabel } from "~/lib/similar";
+import { offerWhat } from "~/lib/similar";
 import { dismissSnack, patchSnack, pause, resume, runUndo, snack, useSnack, type Undo } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
@@ -447,8 +447,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
                 key={l.offer.scope.kind}
                 n={i + 1}
                 testId={`snackbar-${l.offer.scope.kind}`}
-                label={scopeLabel(l.offer.scope, senderName)}
-                detail={l.offer.scope.kind === "subject" ? subjectTemplate(l.offer.scope.subject) : undefined}
+                label={t(filed.moved ? "offers.line.move" : "offers.line.add", { what: offerWhat(l.offer, senderName, true), category: category.name })}
                 help={offerHelp(l.offer, senderName, category.name)}
                 future
                 disabled={busy || undoing}
@@ -475,13 +474,13 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
                           />
                         }
                       >
-                        <Kbd className={lineKey}>{i + 1}</Kbd>
-                        {t("category.topic")}
+                        <span className="min-w-0 flex-1 truncate">{t("category.topic")}</span>
                         {topic?.kind === "words" && (
                           <span data-testid="snackbar-topic-future" className="text-2xs whitespace-nowrap text-muted-foreground">
                             {t("category.newMailToo")}
                           </span>
                         )}
+                        <Kbd className={lineKey}>{i + 1}</Kbd>
                       </TooltipTrigger>
                       <TooltipContent align="start" data-testid="snackbar-topic-help">
                         {help}
@@ -490,7 +489,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
                     <span id={helpId} hidden>
                       {help}
                     </span>
-                    <div className="flex shrink-0 items-center gap-2 pr-1.5">
+                    <div className="flex shrink-0 items-center gap-2 pr-1.5 empty:hidden">
                       {topic && (
                         <button type="button" data-testid="snackbar-view" onClick={view} className="inline-flex h-5 items-center gap-1 rounded-full px-1.5 text-2xs text-primary hover:bg-muted">
                           <Search className="size-3" /> {t("common.view")}
@@ -499,8 +498,8 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
                       {topic && <OfferCount count={topicCount} testId="snackbar-topic-count" />}
                     </div>
                   </div>
-                  {/* indented to the label: the line's padding, the key and the gap */}
-                  <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-1 pr-1.5 pb-1 pl-7.5">
+                  {/* on the label's line */}
+                  <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-1 pr-1.5 pb-1 pl-1.5">
                     {custom === null ? (
                       <>
                         {qa.terms.map(({ term }) => (
