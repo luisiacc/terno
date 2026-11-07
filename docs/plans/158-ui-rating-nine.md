@@ -78,3 +78,26 @@ Nothing here may cost a perf gate. Compact rows and header changes go through th
 - **One filter control:** `filter-menu` says Filter or the filter that's on, a × clears it. The `unread-filter` button and `filter-criterion` are gone; ⇧U and ⇧A stay.
 - **List return:** a rater's row "moved" from y=485 to 811 because Playwright's click retries with `scrollIntoView({block:'end'})` while the header gives way. Traced: nothing in the app writes the scroll. The position holds, and `list-layout.spec` keeps it so.
 - **Codex review, two rounds:** the header under the selection toolbar stayed reachable (now inert, and `/` ends the selection); long titles pushed controls off; touch icons replaced people's initials and filled the disc (only a photo does now); Similar… was hand-built; a search from a category hid that category's dot; a third dot overflowed the narrow slot.
+
+
+## The reader, second pass
+
+What the ratings on `19a089d8` asked of the reader, and what was decided:
+
+- **A message's own actions.** Reply and a ⋯ menu sit under the date of every open message: always on the newest, on hover and focus elsewhere, in a place kept for them, so nothing moves. The right-click offers the same. `composeLanding` takes the chosen message (`sourceId`); a draft on another message turns to it and keeps what's written, with Undo. A chosen message that's gone answers nothing else, and says so.
+- **One family of headers.** Folded rows and open headers share the avatar and name columns, and dates sit on the column's edge. The chevrons went: an open message says so by its weight, recipients and body, and "3 messages · Expand all" says the rows open. A tight row gives up the time first. The address shows at rest. Lumen's sender card shows only on a one-message conversation: on more it said one of them twice.
+- **Keys.** ⇧N and ⇧P go message by message, `o` and Enter open, ⇧E opens or folds them all. On letters, since `[` and `]` need Option on a Spanish keyboard and `n` is a suggestion's.
+- **Toolbar.** Print, Export and Copy moved to a More menu; their keys and the palette still reach them. Reply all is direct beside Reply when it reaches someone else. On a wide List page Back (with its name) and the steps sit at the pane's edges, so the toolbar on the column is Split's. Toolbar and conversation share a scrollbar gutter: that was the 4 px their edges disagreed by.
+- **Reply bar.** A full line around it in every style, its words on the names' column, your initials quiet on a tint, the R key, an answer to the pointer.
+- **Narrow reader.** A smaller subject and less around it, so the mail's first line stays high at 1100x700.
+
+Not taken: steps in Split (j and k and the list beside it already do this; two more icons take away nothing), "after archive, open next" in List (a setting, a product choice), and moving the pane handles in the tab order (the sidebar's and list's area).
+
+### What the Codex review changed
+
+- N and P lost their mark on the second step: the header left cleared the next one's.
+- A chosen message that vanished fell back to answering another; now it's refused, with a message.
+- A retarget was refused or turned standalone when the message the draft left had gone, or the draft's placement had expired.
+- A direct Reply left a focus handoff set, so its menu didn't give focus back later; a refusal while a menu closed lost focus.
+- Collapse all could drop focus to nothing, from a header it folded or a body closing under it.
+- The keys kept working behind the full-message view, and could close it.

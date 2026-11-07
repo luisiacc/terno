@@ -403,6 +403,8 @@ function useFold(messages: MessageDetail[]) {
   // collapsing all still leaves the newest to read, and long runs fold again; what held focus may fold away with them, and focus goes to the newest then
   const toggleAll = () => {
     const held = document.activeElement;
+    // a closing body keeps its controls for its last frames, inert: focus in one leaves before it closes
+    if (allOpen && held?.closest(`[id^="msg-body-"]:not([id="msg-body-${last?.id}"])`)) document.querySelector<HTMLElement>(`[aria-controls="msg-body-${last?.id}"]`)?.focus({ preventScroll: true });
     setState({ toggled: new Map(messages.map((m) => [m.id, !allOpen || m.id === last?.id])), revealed: new Set(allOpen ? [] : messages.map((m) => m.id)) });
     requestAnimationFrame(() => { if (held && held !== document.body && !held.isConnected) document.querySelector<HTMLElement>(`[aria-controls="msg-body-${last?.id}"]`)?.focus({ preventScroll: true }); });
   };

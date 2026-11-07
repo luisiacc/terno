@@ -556,6 +556,27 @@ describe("openCompose's outcome", () => {
     } finally { await h.cleanup(); }
   });
 
+  it("a chosen message turns an expired draft whose own source has gone (plan 158)", async () => {
+    const h = await setup("split", true);
+    const { composeLanding } = await import("~/lib/compose");
+    try {
+      const detail = await gate.load(7) as ThreadDetail;
+      const two = { ...detail, messages: [detail.messages[0]!, { ...detail.messages[0]!, id: 4 }] };
+      gate.load.mockImplementation(async () => two);
+      await act(async () => { h.drafts.editDraft(h.key, { mode: "reply", threadId: 7, inReplyToMessageId: 3, forwardOfMessageId: null, showSourceContext: true, uiState: "open" }); });
+      gate.call.mockImplementation(async (method: string, params: { messageId?: number }) => method === "drafts.sourceContext" ? (params.messageId === 4 ? { threadId: 7, accountId: 1 } : null) : {});
+      await act(async () => { h.drafts.expireDraftPresentation(7); });
+      expect(h.drafts.useDrafts.getState().drafts[h.key]?.presentationExpired).toBe(true);
+      let landed: Awaited<ReturnType<typeof composeLanding>> | undefined;
+      await act(async () => { landed = await composeLanding("reply", 7, 0, undefined, undefined, { sourceId: 4 }); });
+      await h.flush();
+      expect(landed).toEqual({ kind: "converted", key: h.key });
+      const d = h.drafts.useDrafts.getState().drafts[h.key]!;
+      expect(d.inReplyToMessageId).toBe(4);
+      expect(d.presentationExpired).toBeFalsy();
+    } finally { await h.cleanup(); }
+  });
+
   it("a refresh that replaces the conversation mid-open is retried with it, and the reply opens", async () => {
     const h = await setup("split", true);
     const { openCompose } = await import("~/lib/compose"), { gate } = await import("./app-harness"), { useSnack } = await import("~/lib/snack");

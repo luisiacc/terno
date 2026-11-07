@@ -699,6 +699,12 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
       if (mine !== intent || (lease && !lease.valid) || !sameStoredDraft(validated)) return;
       existing = validated;
     } else existing = current;
+  } else if (retarget && existing?.presentationExpired) {
+    // a draft whose conversation it had left: back here first, as the check above would, and the conversion below finds it shown
+    const validated = validatedPresentation(existing, threadId);
+    validateDraftPresentation(existing.key, threadId);
+    if (mine !== intent || (lease && !lease.valid) || !sameStoredDraft(validated)) return;
+    existing = validated;
   }
   if (existing && existing.mode === mode && !retarget) {
     const expected = openedDraft(existing);

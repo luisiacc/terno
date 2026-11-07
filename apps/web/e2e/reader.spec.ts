@@ -363,6 +363,12 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       await expect(toggles.last()).toBeFocused();
       await page.keyboard.press("Shift+E");
       await expect(page.getByTestId("expand-all")).toHaveText("Collapse all");
+      // the same from inside a body that closes
+      await page.getByTestId("message").nth(1).locator(".type-body").evaluate((el: HTMLElement) => { el.tabIndex = -1; el.focus(); });
+      await page.keyboard.press("Shift+E");
+      await expect(toggles.last()).toBeFocused();
+      await page.keyboard.press("Shift+E");
+      await expect(page.getByTestId("expand-all")).toHaveText("Collapse all");
       await page.getByTestId("expand-all").click();
       await expect(page.getByTestId("more-messages")).toBeVisible();
       await expect(toggles.last()).toHaveAttribute("aria-expanded", "true");
