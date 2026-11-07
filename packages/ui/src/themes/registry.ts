@@ -142,7 +142,7 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("chart-3", () => o("cat-amber"));
   def("chart-4", () => o("cat-rose"));
   def("chart-5", () => o("cat-slate"));
-  def("overlay", () => (light ? "0 0 0 / 16%" : "0 0 0 / 45%"));
+  def("overlay", () => (light ? "0 0 0 / 16%" : "0 0 0 / 60%"));
   def("shadow-color", () => (light ? "0 0 0 / 10%" : "0 0 0 / 40%"));
   def("ink-anchor", () => (light ? "0.2 0.01 265" : "0.98 0 0"));
   // plan 158: in dark, a sheet of paper in low light rather than the brightest thing on screen

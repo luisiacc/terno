@@ -37,7 +37,7 @@ describe("theme registry", () => {
     expect(parseColor(light.ring).alpha).toBe(0.8);
     expect(parseColor(dark.ring).alpha).toBe(0.6);
     expect(parseColor(light.overlay).alpha).toBe(0.16);
-    expect(parseColor(dark.overlay).alpha).toBe(0.45);
+    expect(parseColor(dark.overlay).alpha).toBe(0.6);
     expect(parseColor(dark["sidebar-translucent"]).alpha).toBe(0.62);
   });
 
