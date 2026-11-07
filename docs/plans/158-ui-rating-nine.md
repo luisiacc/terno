@@ -72,3 +72,9 @@ Nothing here may cost a perf gate. Compact rows and header changes go through th
 - **Luma:** not one of the four named, and not rated. Shared changes reach it, and its baselines and contrast tests keep passing.
 - Settings and onboarding: not rated.
 - New features: a fix may rearrange what exists, not add a product area.
+
+## The inbox list, its header and the sidebar (second pass)
+
+- **One filter control:** `filter-menu` says Filter or the filter that's on, a × clears it. The `unread-filter` button and `filter-criterion` are gone; ⇧U and ⇧A stay.
+- **List return:** a rater's row "moved" from y=485 to 811 because Playwright's click retries with `scrollIntoView({block:'end'})` while the header gives way. Traced: nothing in the app writes the scroll. The position holds, and `list-layout.spec` keeps it so.
+- **Codex review, two rounds:** the header under the selection toolbar stayed reachable (now inert, and `/` ends the selection); long titles pushed controls off; touch icons replaced people's initials and filled the disc (only a photo does now); Similar… was hand-built; a search from a category hid that category's dot; a third dot overflowed the narrow slot.

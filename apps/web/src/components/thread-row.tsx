@@ -76,7 +76,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
     return filter !== undefined && !matchesFilter(filter, thread);
   });
   /** the category this list is: its rows needn't say so */
-  const inCategory = useApp((s) => s.categoryId);
+  const inCategory = useApp((s) => (s.query.trim() ? null : s.categoryId));
   /** a draft with something written in it (one boolean: only this row renders when it changes) */
   const hasDraft = useHasDraft(thread.id);
   /** plan 72: a verification code in fresh mail, one click from the clipboard */
@@ -258,8 +258,9 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
   );
   // a wide row has the room to name a category, not only to color it; narrower, its dot is the column
   const wideCategory = wide && (
-    <span className="flex w-[5.5rem] items-center gap-1.5 @max-[58rem]/rows:w-5">
-      {dots}
+    <span title={cats.map((c) => c.name).join(", ") || undefined} className="flex w-[5.5rem] items-center gap-1.5 @max-[58rem]/rows:w-[1.375rem]">
+      {/* two at most in this slot: every name is in the title and said to a screen reader */}
+      {dots.slice(0, 2)}
       {cats[0] && <span aria-hidden className={cn("min-w-0 truncate text-xs @max-[58rem]/rows:hidden", quiet)}>{cats[0].name}</span>}
     </span>
   );

@@ -1,4 +1,4 @@
-import { expect, rows, test, scenario, freshStart } from "./fixtures";
+import { expect, rows, test, scenario, freshStart, search } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 test.describe("categories", () => {
@@ -86,6 +86,11 @@ test.describe("a category hidden from the Inbox (plan 83)", () => {
     await expect(page.getByTestId("list-title")).toHaveText(name);
     // (its rows don't repeat the category they're in)
     await expect(rows(page).first()).toBeVisible();
+    await expect(inCat).toHaveCount(0);
+    // a search from here looks everywhere: there the rows say it again
+    await search(page, `category:"${name}"`);
+    await expect(inCat.first()).toBeVisible();
+    await page.getByRole("button", { name: "Clear search" }).click();
     await expect(inCat).toHaveCount(0);
     await page.getByTestId("nav-inbox").click();
     await expect(inCat).toHaveCount(0);

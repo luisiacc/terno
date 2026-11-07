@@ -47,7 +47,7 @@ function rpcLog(page: Page): string[] {
 }
 
 test.describe("the table (plan 158)", () => {
-  test("one header line, columns that line up, a preview a step under the subject, a selection that moves nothing, and back exactly where it was", { tag: "@design" }, async ({ app: page, design }) => {
+  test("one header line, columns that line up, a preview a step under the subject, a selection that moves nothing, and back exactly where it was", { tag: "@design" }, async ({ app: page, server, design }) => {
     const box = async (l: Locator) => (await l.boundingBox())!;
     const list = listbox(page);
     await scenario("the columns: every row's subject and preview start on one line, the date ends on one, and the row is short", async () => {
@@ -65,10 +65,19 @@ test.describe("the table (plan 158)", () => {
       expect((await box(row)).height).toBeLessThanOrEqual(40);
     });
     await scenario("narrow, the same columns: the category's dot takes one fixed slot, so account and marks stay on one line", async () => {
+      const row = rows(page).nth(3);
+      const id = Number(await row.getAttribute("data-thread-id"));
+      const all = sqlDb(server.backend.store).all<{ id: number }>("SELECT id FROM categories").map((c) => c.id);
+      for (const categoryId of all) await server.backend.server.invoke("categories.addThreads", { categoryId, threadIds: [id], source: "picker" }, ctx);
+      server.backend.notifyChanged([id]);
       await page.setViewportSize({ width: 1100, height: 700 });
       await expect(rows(page).first()).toHaveAttribute("data-wide", "true");
+      await expect.poll(() => row.locator("[data-cat-dot]").count()).toBe(2);
       const lefts = await rows(page).evaluateAll((els) => els.slice(0, 14).map((r) => Math.round(r.querySelector("[data-testid=row-marks]")!.getBoundingClientRect().left)));
       expect(new Set(lefts).size).toBe(1);
+      const dots = await row.locator("[data-cat-dot]").last().boundingBox();
+      const marks = await row.getByTestId("row-marks").evaluate((el) => (el.children[0] as HTMLElement).getBoundingClientRect().right);
+      expect(dots!.x + dots!.width).toBeLessThanOrEqual(marks + 0.5);
       await page.setViewportSize({ width: 1440, height: 900 });
     });
     await scenario("the header: with the filters in a menu, title, tabs, filter and search share one line", async () => {
