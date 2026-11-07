@@ -58,6 +58,7 @@ export function RecipientInput({
   others,
   className,
   placeholder,
+  describedBy,
   label,
 }: {
   id: string;
@@ -71,6 +72,8 @@ export function RecipientInput({
   /** the draft's other recipient fields (their addresses aren't suggested again) */
   others: readonly string[];
   className?: string;
+  /** Send's message about this field, while it holds */
+  describedBy?: string;
   placeholder?: string;
   /** the field's name ("To"), for the chips' list */
   label: string;
@@ -521,7 +524,8 @@ export function RecipientInput({
       data-recipient-field={testId}
       data-testid={`${testId}-field`}
       data-collapsed={collapsed || undefined}
-      className="flex min-h-9 min-w-0 flex-1 flex-wrap items-center gap-1 py-1"
+      // -ml: a chip's text, not its pill, sits on the fields' value line (the input's own padding gives it back)
+      className="-ml-1.5 flex min-h-9 min-w-0 flex-1 flex-wrap items-center gap-1 py-1"
       onMouseDown={(e) => {
         // the field's empty space puts the caret at the end
         if (e.target === e.currentTarget) {
@@ -572,7 +576,10 @@ export function RecipientInput({
         ref={inputRef}
         id={id}
         data-testid={testId}
-        className={cn(className, "h-7 min-w-24 basis-24")}
+        // room to type only once there's typing: an empty input beside a chip doesn't take the row to a second line
+        className={cn(className, "h-7 pl-1.5", field.text ? "min-w-24 basis-24" : "min-w-6 basis-6")}
+        aria-describedby={describedBy}
+        aria-invalid={describedBy ? true : undefined}
         value={field.text}
         readOnly={readOnly}
         placeholder={field.chips.length ? undefined : placeholder}

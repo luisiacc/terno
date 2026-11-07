@@ -45,7 +45,8 @@ for (const position of ["backward range", "italic caret"] as const) test(`fatal 
     const beforeSendReads = await fault(page);
     await page.evaluate(() => (document.querySelector('[data-testid="compose-send"]') as HTMLButtonElement).click());
     await expect.poll(() => fault(page)).toBeGreaterThan(beforeSendReads);
-    await expect(page.getByTestId("compose-send")).toBeEnabled();
+    // its recipients need fixing (aria-disabled, plan 158), but it isn't held by a send
+    await expect(page.getByTestId("compose-send")).not.toHaveAttribute("disabled");
     expect((await server.backend.store.ops.recent(10)).filter((op) => op.kind === "send")).toEqual([]);
     await page.evaluate(() => (window as unknown as { __terno: Probe }).__terno.throwIn("app"));
     await expect(page.getByTestId("app-boundary")).toBeVisible();

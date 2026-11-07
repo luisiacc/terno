@@ -13,6 +13,8 @@ test("last attachment removal keeps From locked until acknowledgement, then edit
   await page.getByTestId("attachment-input").setInputFiles({ name: "remove.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 255, 128]) });
   await expect.poll(async () => JSON.parse((await server.backend.store.drafts.list())[0]?.attachments_json ?? "[]").length).toBe(1);
   await page.reload();
+  // From stays out of the way while a reply goes from its conversation's account (plan 158)
+  await page.getByTestId("compose-show-from").click();
   const from = page.getByTestId("compose-from");
   await expect(from).toBeDisabled();
   const saved = (await server.backend.store.drafts.list())[0]!;
@@ -179,6 +181,7 @@ test("Forward refuses foreign account refs before changing authored work, with k
   await page.reload();
   await selectThread(page, touched[0]!, 'subject:"From conversion fixture"');
   await page.getByTestId("quick-reply").click();
+  await page.getByTestId("compose-show-from").click();
   const from = page.getByTestId("compose-from");
   await from.focus(); await page.keyboard.press("Space");
   await page.getByRole("option", { name: `${other.displayName} · ${other.email}`, exact: true }).focus();

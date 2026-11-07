@@ -4,9 +4,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/po
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { ChevronDown, Clock, Send } from "@terno/ui/icons";
+import { Clock, Send } from "@terno/ui/icons";
 import { create } from "zustand";
-import type { LocalDraft } from "~/lib/drafts";
+import { validRecipients, type LocalDraft } from "~/lib/drafts";
+import { firstInvalid } from "~/lib/recipient-field";
 import { SendLaterPicker } from "./send-later-picker";
 
 /** Plan 94: which composer's Send later is open (⌘⇧↩ opens it from the keyboard). */
@@ -16,16 +17,22 @@ export const openSendLater = (key: string) => useSendLater.setState({ open: key 
 /** ⌘⇧↩ (before ⌘↩: both are a modified Enter) */
 export const isSendLaterKey = (e: React.KeyboardEvent) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && e.shiftKey;
 
+/** Whether the draft has what a send needs: somebody to go to, and nothing typed that isn't an address. */
+export const canSendTo = (d: Pick<LocalDraft, "toText" | "ccText" | "bccText">): boolean =>
+  validRecipients(d.toText).length > 0 && firstInvalid(d.toText) === null && firstInvalid(d.ccText) === null && firstInvalid(d.bccText) === null;
+
 /**
  * Send, and joined to its right the clock that schedules it (plan 94): one
  * filled shape split by a short inset hairline, like a macOS split button.
- * The clock opens Send now, Tomorrow at 8:00 and Custom above it.
+ * The clock opens Send now, Tomorrow at 8:00 and Custom above it. With nobody
+ * to send to yet it reads as unavailable, but a click still says why, at the
+ * field (plan 158): aria-disabled, never disabled.
  */
 export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (sendAt?: number) => void; className?: string }) {
   const open = useSendLater((s) => s.open === d.key);
   const setOpen = (o: boolean) => useSendLater.setState({ open: o ? d.key : null });
   const disabled = d.sending || Boolean(d.recovery);
-  const kbd = "[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none";
+  const ready = canSendTo(d);
   // the group owns the fill (a primary button's, plan 118), radius and shadow, so the halves meet with no seam; each half
   // only tints on hover (bg-none: a half's own gradient would hide that), and keeps the group's look when unavailable (the
   // group fades instead).
@@ -35,12 +42,22 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
     "border-0 bg-transparent bg-none shadow-none hover:bg-primary-hover aria-expanded:bg-primary-hover focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-[inset_0_0_0_2px_var(--primary),inset_0_0_0_3.5px_var(--primary-foreground)] active:not-aria-[haspopup]:scale-100 unavailable:bg-transparent unavailable:text-primary-foreground";
   return (
     <div
-      className={cn("flex shrink-0 items-stretch overflow-hidden rounded-[max(var(--cta-floor),min(var(--ds-radius-md),12px))] bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground dark:from-primary dark:to-primary-hover shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] has-disabled:opacity-50", className)}
+      className={cn("flex shrink-0 items-stretch overflow-hidden rounded-[max(var(--cta-floor),min(var(--ds-radius-md),12px))] bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground dark:from-primary dark:to-primary-hover shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] has-disabled:opacity-50 has-[[aria-disabled=true]]:opacity-50", className)}
       data-testid="compose-send-group"
     >
-      <Button type="submit" size="sm" data-testid="compose-send" aria-busy={d.sending} disabled={disabled} className={cn(half, "peer gap-2 rounded-r-none pr-2")}>
-        <Send /> {t("common.send")} <Shortcut keys="mod+enter" className={kbd} />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button type="submit" size="sm" data-testid="compose-send" aria-busy={d.sending} aria-disabled={!disabled && !ready ? true : undefined} disabled={disabled} className={cn(half, "peer gap-2 rounded-r-none pr-2")}>
+              <Send /> {t("common.send")}
+            </Button>
+          }
+        />
+        <TooltipContent className="flex items-center gap-2">
+          {ready ? t("common.send") : t("compose.noRecipient")}
+          {ready && <Shortcut keys="mod+enter" />}
+        </TooltipContent>
+      </Tooltip>
       <Popover open={open} onOpenChange={setOpen}>
         <Tooltip>
           <TooltipTrigger
@@ -53,7 +70,6 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
             }
           >
             <Clock />
-            <ChevronDown className="size-3" />
           </TooltipTrigger>
           <TooltipContent className="flex items-center gap-2">
             {t("sendLater.button")}

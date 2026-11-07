@@ -15,6 +15,7 @@ import { RecipientInput, recipientSummary } from "./recipient-input";
 import { warmAutocomplete } from "~/lib/autocomplete";
 import { richT } from "~/lib/i18n";
 import { keepInView } from "~/lib/reader-scroll";
+import { clearSendProblem, useSendProblem } from "~/lib/send-problem";
 import { registerUndo, snack } from "~/lib/snack";
 import { getSelectionWriteRevision, setApp, useApp } from "~/state/app";
 import { Expand } from "./expand";
@@ -33,16 +34,28 @@ export { focusSoon } from "~/lib/compose-focus-move";
 import { focusSelector, focusSoon, focusMoveGeneration, type InlineFocusMove } from "~/lib/compose-focus-move";
 
 /** A borderless field row: a real label, the control, hairline below. */
-function Row({ label, htmlFor, children, hidden }: { label: string; htmlFor?: string; children: React.ReactNode; hidden?: boolean }) {
+function Row({ label, htmlFor, children, hidden, note }: { label: string; htmlFor?: string; children: React.ReactNode; hidden?: boolean; note?: React.ReactNode }) {
   if (hidden) return null;
   return (
-    <div className="hairline-b group/row flex min-h-[38px] items-center gap-2.5 px-3.5" data-recipient-row>
-      {/* on the first line when the chips wrap */}
-      <label htmlFor={htmlFor} className="w-14 shrink-0 self-start text-xs leading-[38px] text-muted-foreground group-focus-within/row:text-foreground">
-        {label}
-      </label>
-      {children}
+    <div className="hairline-b group/row">
+      <div className="flex min-h-[38px] items-center gap-2.5 px-3.5" data-recipient-row>
+        {/* on the first line when the chips wrap */}
+        <label htmlFor={htmlFor} className="w-14 shrink-0 self-start text-xs leading-[38px] text-muted-foreground group-focus-within/row:text-foreground">
+          {label}
+        </label>
+        {children}
+      </div>
+      {note}
     </div>
+  );
+}
+
+/** Send's message about a field, under it on the values' line (px-3.5 + the label's w-14 + the gap); it goes with the form. */
+function FieldProblem({ id, message }: { id: string; message: string }) {
+  return (
+    <p id={id} role="alert" data-testid="compose-field-problem" className="-mt-1.5 pr-3.5 pb-2 pl-20 text-xs text-destructive-ink">
+      {message}
+    </p>
   );
 }
 
@@ -52,16 +65,22 @@ export const DRAFT_SURFACE = "rounded-xl bg-(--draft-bg) [box-shadow:0_0_0_var(-
 const input = "h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground";
 
 /** The draft's fields, shared by the inline reply and the new message in the reader. */
-/** `corner`: a control at the end of the first row, the form's top right (the inline draft's Pin, plan 115) */
-export function DraftFieldsForm({ d, accounts, showSubject, corner }: { d: LocalDraft; accounts: Account[]; showSubject: boolean; corner?: React.ReactNode }) {
+/** `threadAccountId`: a reply's conversation's account: From stays out of the way while the reply goes from it (plan 158) */
+export function DraftFieldsForm({ d, accounts, showSubject, threadAccountId }: { d: LocalDraft; accounts: Account[]; showSubject: boolean; threadAccountId?: number }) {
   const id = useId();
   const cancelReveal = useRef<(() => void) | null>(null);
   useEffect(() => () => cancelReveal.current?.(), []);
+  // Send's message goes with the form it was about
+  useEffect(() => () => clearSendProblem(d.key), [d.key]);
+  const problem = useSendProblem((s) => (s.problem?.key === d.key ? s.problem : null));
+  const problemNote = (field: "to" | "cc" | "bcc") => problem?.field === field ? <FieldProblem id={`${id}-problem`} message={problem.message} /> : undefined;
+  const problemId = (field: "to" | "cc" | "bcc") => problem?.field === field ? `${id}-problem` : undefined;
   // a row shows when it was disclosed, when it has something in it, or when the mode needs it (a forward's
   // subject): a conversion that fills Cc in while the draft is open shows it, never sends to a hidden field
   const [ccOpen, setCc] = useState(false);
   const [bccOpen, setBcc] = useState(false);
   const [subjectOpen, setSubject] = useState(false);
+  const [fromOpen, setFromOpen] = useState(false);
   const cc = ccOpen || d.ccText !== "";
   const bcc = bccOpen || d.bccText !== "";
   const subject = subjectOpen || showSubject || d.subjectEdited;
@@ -73,6 +92,7 @@ export function DraftFieldsForm({ d, accounts, showSubject, corner }: { d: Local
   };
   const recipients = (field: "to" | "cc" | "bcc", text: string, authored: readonly string[]): boolean => {
     if (!canEditRecipients()) return false;
+    clearSendProblem(d.key);
     const before = useDrafts.getState().drafts[d.key]!;
     const expectedAuto = authored.length ? before.auto[field].filter((email) => !authored.includes(email.toLowerCase())) : before.auto[field];
     const sameOwner = (current: LocalDraft | undefined) => !!current && current.key === before.key && current.id === before.id && current.generation === before.generation && current.accountId === before.accountId && current.mode === before.mode && current.threadId === before.threadId && current.inReplyToMessageId === before.inReplyToMessageId && current.forwardOfMessageId === before.forwardOfMessageId && current.uiState === before.uiState && current.recovery === before.recovery;
@@ -133,15 +153,14 @@ export function DraftFieldsForm({ d, accounts, showSubject, corner }: { d: Local
         {label}
       </button>
     );
-  const fromRow = accounts.length > 1 || !accounts.some((a) => a.id === d.accountId);
-  // on the first row's line (its label's), whichever row that is
-  const cornerSlot = corner && <span className="-mr-1 mt-[5px] flex shrink-0 self-start">{corner}</span>;
+  const severalFrom = accounts.length > 1 || !accounts.some((a) => a.id === d.accountId);
+  const fromRow = severalFrom && (fromOpen || threadAccountId === undefined || d.accountId !== threadAccountId);
   return (
     <div data-draft-key={d.key}>
       {fromRow && (
         <Row label={t("compose.from")}>
           <Select disabled={d.sending || draftSenderLocked(d)} value={String(d.accountId)} onValueChange={(v) => update({ accountId: Number(v) })} items={accounts.map((a) => ({ value: String(a.id), label: `${a.displayName} · ${a.email}` }))}>
-            <SelectTrigger size="sm" aria-label={t("compose.from")}className="-ml-2 h-7 min-w-0 border-0 bg-transparent shadow-none dark:bg-transparent dark:hover:bg-muted" data-testid="compose-from" title={draftSenderLocked(d) ? t("attachments.senderLocked") : undefined}>
+            <SelectTrigger id={`${id}-from`} size="sm" aria-label={t("compose.from")} className="-ml-2.5 h-7 min-w-0 border-0 bg-transparent shadow-none dark:bg-transparent dark:hover:bg-muted" data-testid="compose-from" title={draftSenderLocked(d) ? t("attachments.senderLocked") : undefined}>
               {/* a long address truncates in a narrow pane: the corner's Pin stays in the row */}
               <SelectValue className="block! min-w-0 truncate" />
             </SelectTrigger>
@@ -153,23 +172,22 @@ export function DraftFieldsForm({ d, accounts, showSubject, corner }: { d: Local
               ))}
             </SelectContent>
           </Select>
-          {cornerSlot && <span className="ml-auto flex self-start">{cornerSlot}</span>}
         </Row>
       )}
-      <Row label={t("compose.to")} htmlFor={`${id}-to`}>
-        <RecipientInput id={`${id}-to`} testId="compose-to" label={t("compose.to")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.toText} onChange={(v, a) => recipients("to", v, a)} placeholder={t("compose.toPlaceholder")} accountId={d.accountId} others={[d.ccText, d.bccText]} />
+      <Row label={t("compose.to")} htmlFor={`${id}-to`} note={problemNote("to")}>
+        <RecipientInput id={`${id}-to`} testId="compose-to" label={t("compose.to")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.toText} onChange={(v, a) => recipients("to", v, a)} placeholder={t("compose.toPlaceholder")} accountId={d.accountId} others={[d.ccText, d.bccText]} describedBy={problemId("to")} />
         <span className="mt-2 flex shrink-0 gap-0.5 self-start">
           {toggle(cc, setCc, t("compose.cc"), "cc", "compose-show-cc")}
           {toggle(bcc, setBcc, t("compose.bcc"), "bcc", "compose-show-bcc")}
           {toggle(subject, setSubject, t("compose.subject"), "subject", "compose-show-subject")}
+          {severalFrom && toggle(fromRow, setFromOpen, t("compose.from"), "from", "compose-show-from")}
         </span>
-        {!fromRow && cornerSlot}
       </Row>
-      <Row label={t("compose.cc")} htmlFor={`${id}-cc`} hidden={!cc}>
-        <RecipientInput id={`${id}-cc`} testId="compose-cc" label={t("compose.cc")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.ccText} onChange={(v, a) => (setCc(true), recipients("cc", v, a))} accountId={d.accountId} others={[d.toText, d.bccText]} />
+      <Row label={t("compose.cc")} htmlFor={`${id}-cc`} hidden={!cc} note={problemNote("cc")}>
+        <RecipientInput id={`${id}-cc`} testId="compose-cc" label={t("compose.cc")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.ccText} onChange={(v, a) => (setCc(true), recipients("cc", v, a))} accountId={d.accountId} others={[d.toText, d.bccText]} describedBy={problemId("cc")} />
       </Row>
-      <Row label={t("compose.bcc")} htmlFor={`${id}-bcc`} hidden={!bcc}>
-        <RecipientInput id={`${id}-bcc`} testId="compose-bcc" label={t("compose.bcc")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.bccText} onChange={(v, a) => (setBcc(true), recipients("bcc", v, a))} accountId={d.accountId} others={[d.toText, d.ccText]} />
+      <Row label={t("compose.bcc")} htmlFor={`${id}-bcc`} hidden={!bcc} note={problemNote("bcc")}>
+        <RecipientInput id={`${id}-bcc`} testId="compose-bcc" label={t("compose.bcc")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.bccText} onChange={(v, a) => (setBcc(true), recipients("bcc", v, a))} accountId={d.accountId} others={[d.toText, d.ccText]} describedBy={problemId("bcc")} />
       </Row>
       <Row label={t("compose.subject")} htmlFor={`${id}-subject`} hidden={!subject}>
         <input id={`${id}-subject`} data-testid="compose-subject" className={input} value={d.subject} onChange={(e) => update({ subject: e.target.value, subjectEdited: true })} />
@@ -442,7 +460,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
             <PenLine className="size-4 shrink-0 text-primary" />
             <span className="shrink-0 font-medium">{t("compose.draft")}</span>
             <span className="min-w-0 flex-1 truncate text-muted-foreground">
-              {t(d.mode === "forward" ? "compose.collapsed.forward" : "compose.collapsed.to", { to: recipientSummary(d.toText) || "—", preview: aiBadge === "writing" ? t("aiDraft.writing") : aiBadge === "ready" ? t("aiDraft.choice.ready") : (d.bodyText.split("\n").find((l) => l.trim()) ?? "") })}
+              {t(d.mode === "forward" ? "compose.collapsed.forward" : "compose.collapsed.to", { to: recipientSummary(d.toText) || "—", preview: aiBadge === "writing" ? t("aiDraft.writing") : aiBadge === "ready" ? t("aiDraft.choice.ready") : draftPreview(d.bodyText) })}
             </span>
             <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
           </button>
@@ -484,12 +502,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
               d={d}
               accounts={accounts}
               showSubject={d.mode === "forward" || d.mode === "new"}
-              // plan 115: not from Review drafts, which owns the draft while it's open
-              corner={!recovering && (
-                <IconButton label={t("compose.pin")} onClick={() => pinDraft(d.key)} data-testid="compose-pin" disabled={d.sending}>
-                  <Pin />
-                </IconButton>
-              )}
+              threadAccountId={account?.id}
             />
             <RichBody draftKey={d.key} checkpoint={checkpoint} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="block min-h-[132px] w-full px-3.5 pt-3 pb-1 text-base" />
             <DraftAttachments d={d} />
@@ -508,6 +521,12 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
                 <SaveState d={d} />
               </span>
               <span className="ml-auto flex gap-0.5">
+                {/* plan 115: not from Review drafts, which owns the draft while it's open */}
+                {!recovering && (
+                  <IconButton label={t("compose.pin")} onClick={() => pinDraft(d.key)} data-testid="compose-pin" disabled={d.sending}>
+                    <Pin />
+                  </IconButton>
+                )}
                 <IconButton label={t("compose.discard")} onClick={() => void discard()} data-testid="compose-discard" disabled={d.sending}>
                   <Trash2 />
                 </IconButton>

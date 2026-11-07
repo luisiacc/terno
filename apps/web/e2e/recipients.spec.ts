@@ -197,8 +197,8 @@ test.describe("recipient chips", () => {
       // Tab into the collapsed field lands in its input, never on a button that goes away (Codex code review 7)
       await page.getByTestId("compose-subject").focus();
       await expect(page.getByTestId("recipient-more")).toBeVisible();
-      // (from the control before it: the first row's Pin, as in a reply; plan 130)
-      await page.getByTestId("compose-pin").focus();
+      // (from the control before it: From)
+      await page.getByTestId("compose-from").focus();
       await page.keyboard.press("Tab");
       await expect(to(page)).toBeFocused();
       await expect(chips(page)).toHaveCount(200);
@@ -282,7 +282,8 @@ test.describe("reply-all with addresses other clients mangled", () => {
       await expect(chipsOf(page, "compose-cc")).toHaveAttribute("aria-invalid", "true");
       await page.getByTestId("compose-body").focus();
       await page.keyboard.press("ControlOrMeta+Enter");
-      await expect(toast(page, "“not an address” isn’t an email address. Fix or remove it, then send.")).toBeVisible();
+      // said at the field it's about (plan 158)
+      await expect(page.getByTestId("compose-field-problem")).toHaveText("“not an address” isn’t an email address. Fix or remove it, then send.");
       await expect(chipsOf(page, "compose-cc")).toBeFocused();
       // removing it lets the reply go
       await page.keyboard.press("Backspace");

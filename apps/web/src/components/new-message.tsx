@@ -114,28 +114,21 @@ export function NewMessage() {
         }
       }}
     >
-      {/* the window's drag strip: the title stays on the line of a conversation's subject */}
-      <div className="drag-region h-[52px] shrink-0" />
-      {/* scrolls only where the card's minimum doesn't fit (a short window under a tall pinned card) */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex h-full max-w-(--reader-max) flex-col px-(--reader-pad-x) pt-5 pb-5">
-          <h2 className={cn("type-reader-subject mb-4 line-clamp-2 shrink-0 text-balance", !d.subject && "text-muted-foreground")} data-testid="compose-title">
-            {d.subject || t("compose.untitled")}
+      {/* the window's drag strip, and what this is: the subject is in its field, once (plan 158) */}
+      <div className="drag-region h-[52px] shrink-0 [scrollbar-gutter:stable] overflow-y-hidden">
+        <div className="mx-auto flex h-full max-w-(--reader-max) items-end px-(--reader-pad-x) pb-2.5">
+          <h2 className="truncate pl-3.5 text-sm font-medium text-muted-foreground" data-testid="compose-title">
+            {t("compose.untitled")}
           </h2>
+        </div>
+      </div>
+      {/* scrolls only where the card's minimum doesn't fit (a short window under a tall pinned card) */}
+      <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+        <div className="mx-auto flex h-full max-w-(--reader-max) flex-col px-(--reader-pad-x) pb-5">
           <div className={cn("relative flex min-h-60 flex-col", DRAFT_SURFACE)} data-testid="composer-card">
             {/* pt-0.5: the first row's text field keeps its whole focus ring */}
             <div className="min-h-0 overflow-y-auto pt-0.5" data-draft-scroll>
-              <DraftFieldsForm
-                d={d}
-                accounts={accounts}
-                showSubject
-                // plan 115: kept at the bottom right while conversations are read
-                corner={
-                  <IconButton label={t("compose.pin")} onClick={() => pinDraft(key)} data-testid="compose-pin" disabled={d.sending}>
-                    <Pin />
-                  </IconButton>
-                }
-              />
+              <DraftFieldsForm d={d} accounts={accounts} showSubject />
               <RichBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="block min-h-[220px] w-full px-3.5 pt-3 pb-1 text-base" />
               <DraftAttachments d={d} />
               <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
@@ -154,6 +147,10 @@ export function NewMessage() {
                   <SaveState d={d} />
                 </span>
                 <span className="ml-auto flex gap-0.5">
+                  {/* plan 115: kept at the bottom right while conversations are read */}
+                  <IconButton label={t("compose.pin")} onClick={() => pinDraft(key)} data-testid="compose-pin" disabled={d.sending}>
+                    <Pin />
+                  </IconButton>
                   <IconButton label={t("compose.discard")} onClick={() => void discard()} data-testid="compose-discard" disabled={d.sending}>
                     <Trash2 />
                   </IconButton>

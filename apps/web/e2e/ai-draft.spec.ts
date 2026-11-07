@@ -162,7 +162,8 @@ test.describe("drafting with AI (plan 133)", () => {
       const aiLabel = await row(page).locator("label").boundingBox();
       expect(aiLabel!.x).toBe(toLabel!.x);
       const toField = await page.locator("[data-recipient-field=compose-to]").boundingBox();
-      expect((await field(page).boundingBox())!.x).toBe(toField!.x);
+      // on To's value line: its field reaches 6 px further left, for the chips' pills (plan 158)
+      expect((await field(page).boundingBox())!.x).toBe(toField!.x + 6);
       await expect(row(page)).toHaveCSS("min-height", "38px");
 
       const commit = await recordCommit(page);
@@ -345,7 +346,6 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(strip(page)).toBeVisible();
       // an empty subject gets one; Undo takes both back
       await expect(page.getByTestId("compose-subject")).toHaveValue("Fake subject");
-      await expect(page.getByTestId("compose-title")).toHaveText("Fake subject");
       await page.getByTestId("ai-strip-undo").click();
       await expect(page.getByTestId("compose-subject")).toHaveValue("");
       await expect(body(page)).toHaveText("");

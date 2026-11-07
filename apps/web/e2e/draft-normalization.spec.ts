@@ -18,6 +18,7 @@ for (const normalization of ["missing original", "cross-account"] as const) test
   const original = (await server.backend.store.drafts.list())[0]!;
   if (normalization === "cross-account") {
     const accounts = await server.backend.store.accounts.list(), other = accounts.find((a) => a.id !== original.account_id)!;
+    await page.getByTestId("compose-show-from").click();
     await page.getByTestId("compose-from").click(); await page.getByRole("option").filter({ hasText: other.email }).click();
     await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.account_id).toBe(other.id);
     await expect(body).toBeVisible();

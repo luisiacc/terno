@@ -4,6 +4,7 @@ import { attachmentUploading, draftAttachmentBudget } from "./attachments";
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { firstInvalid, SELECT_INVALID } from "./recipient-field";
+import { useSendProblem } from "./send-problem";
 import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
@@ -957,6 +958,19 @@ function showRecipient(key: string, field: "to" | "cc" | "bcc") {
   );
 }
 
+/** Nobody to send to, or something typed that isn't an address: said at the field when it's on screen (plan 158), its first invalid chip selected. */
+function recipientProblem(d: LocalDraft): { field: "to" | "cc" | "bcc"; message: string } | null {
+  const bad = (["to", "cc", "bcc"] as const).map((field) => ({ field, entry: firstInvalid(d[`${field}Text`]) })).find((b) => b.entry !== null);
+  if (bad) return { field: bad.field, message: t("compose.invalidRecipient", { entry: bad.entry! }) };
+  return validRecipients(d.toText).length === 0 ? { field: "to", message: t("compose.noRecipient") } : null;
+}
+function sayRecipientProblem(key: string, problem: { field: "to" | "cc" | "bcc"; message: string }): void {
+  const shown = typeof document !== "undefined" && document.querySelector(`[data-draft-key="${CSS.escape(key)}"] [data-recipient-field="compose-${problem.field}"]`) !== null;
+  if (shown) useSendProblem.setState({ problem: { key, ...problem } });
+  else snack.error(problem.message);
+  showRecipient(key, problem.field);
+}
+
 async function send(key: string, sendAt?: number): Promise<boolean> {
   if (draftEditsHeld()) return false;
   // plan 133 §10.4: buttons, shortcuts, the palette and Send Later all come through here
@@ -965,6 +979,9 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
   const draft = useDrafts.getState().drafts[key];
   if (draft && !getApp().accounts.some((a) => a.id === draft.accountId)) { snack.error(t("errors.accountGone")); return false; }
   if (attachmentUploading(key)) { snack.error(t("compose.stillAdding")); return false; }
+  // before anything is saved: a refused send leaves no draft behind that wasn't there
+  const refused = draft && recipientProblem(draft);
+  if (refused) { sayRecipientProblem(key, refused); return false; }
   // read-only from here: nothing typed while the save in flight settles can fall between it and the send
   markSending(key, true);
   let preparing = true;
@@ -980,12 +997,11 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
     const cc = validRecipients(d.ccText);
     const bcc = validRecipients(d.bccText);
     // something typed that isn't an address (or nobody at all): stay, say what is wrong, and show it (plan 34 §2.6)
-    const bad = (["to", "cc", "bcc"] as const).map((field) => ({ field, entry: firstInvalid(d[`${field}Text`]) })).find((b) => b.entry !== null);
-    if (to.length === 0 || bad) {
+    const problem = recipientProblem(d);
+    if (problem) {
       markSending(key, false);
       resumeDraft(key);
-      snack.error(bad ? t("compose.invalidRecipient", { entry: bad.entry! }) : t("compose.noRecipient"));
-      showRecipient(key, bad?.field ?? "to");
+      sayRecipientProblem(key, problem);
       return false;
     }
     breadcrumb("action", "action.send");
