@@ -22,35 +22,39 @@ const TINT: Record<ReturnType<typeof avatarColor>, string> = {
  * settings allow. A plain span, cheap enough for every list row; size and
  * type come from the caller (design variables). The icon lives in its own
  * memoized child, so one arriving re-renders that child, never the row.
+ * `person` (plan 158): someone writing from a company's domain is that person, not the company: their photo or their
+ * initials, never the company's logo on five different people.
  */
-export function SenderAvatar({ name, email, className, icon = false }: { name: string; email: string; className?: string; icon?: boolean }) {
+export function SenderAvatar({ name, email, className, icon = false, person = false }: { name: string; email: string; className?: string; icon?: boolean; person?: boolean }) {
   return (
     <span aria-hidden data-testid="sender-avatar" className={cn("relative flex shrink-0 items-center justify-center overflow-hidden rounded-full font-medium select-none", TINT[avatarColor(email)], className)}>
       {initials(name || email)}
-      {icon && <SenderIcon email={email} />}
+      {icon && <SenderIcon email={email} person={person} />}
     </span>
   );
 }
 
 /**
  * The icon layer: always there (it's what the visibility observer watches), empty until an icon
- * arrives. A photo or a touch icon fills the circle; a favicon sits on a paper tile at no more
- * than twice its own size, so a 16 px one stays small and crisp instead of stretched. In dark that
- * paper is dimmed: still light enough for a dark logo, no longer the brightest thing in the list. It fades in
- * (within --motion) only when it arrives after the avatar showed; one already loaded shows at once
- * (scrolling back through a list doesn't flicker).
+ * arrives. A photo or a touch icon fills the circle; a favicon is a small mark on a muted plate, the
+ * same disc and size as initials, at no more than twice its own size, so a 16 px one stays small and
+ * crisp instead of stretched: quiet enough that the names lead, in dark most of all. A faint halo keeps
+ * a dark logo's edge on that plate. It fades in (within --motion) only when it arrives after the avatar
+ * showed; one already loaded shows at once (scrolling back through a list doesn't flicker).
  */
-const SenderIcon = memo(function SenderIcon({ email }: { email: string }) {
+const SenderIcon = memo(function SenderIcon({ email, person }: { email: string; person: boolean }) {
   renderProbe("SenderIcon");
   const ref = useRef<HTMLSpanElement>(null);
-  const icon = useSenderIcon(email, ref, true);
+  const found = useSenderIcon(email, ref, true);
+  // a company's icon doesn't stand for a person: their initials stay
+  const icon = found && (found.ref.full || !person) ? found : null;
   // what the first render had: an icon there from the start never fades
   const [atMount] = useState(() => icon?.url ?? null);
   const [loaded, setLoaded] = useState(false);
   const fade = icon !== null && icon.url !== atMount;
   const full = icon?.ref.full ?? false;
   return (
-    <span ref={ref} data-testid={icon ? "sender-icon" : undefined} data-icon-kind={icon?.ref.kind} className={cn("pointer-events-none absolute inset-0 flex items-center justify-center rounded-full", icon && !full && "bg-[var(--mail-paper)] shadow-[inset_0_0_0_var(--hairline-w)_var(--hairline)] dark:bg-[color-mix(in_oklab,var(--mail-paper)_40%,var(--background))]")}>
+    <span ref={ref} data-testid={icon ? "sender-icon" : undefined} data-icon-kind={icon?.ref.kind} className={cn("pointer-events-none absolute inset-0 flex items-center justify-center rounded-full", icon && !full && "bg-muted")}>
       {icon && (
         <img
           key={icon.url}
@@ -61,8 +65,8 @@ const SenderIcon = memo(function SenderIcon({ email }: { email: string }) {
           referrerPolicy="no-referrer"
           onLoad={() => setLoaded(true)}
           onError={() => iconFailed(email)}
-          className={cn(full ? "size-full object-cover" : "aspect-square object-contain", fade && "transition-opacity duration-base", fade && !loaded && "opacity-0")}
-          style={full ? undefined : { width: `min(62%, ${Math.max(16, icon.ref.px) * 2}px)` }}
+          className={cn(full ? "size-full object-cover" : "aspect-square object-contain dark:drop-shadow-[0_0_0.5px_var(--muted-foreground)]", fade && "transition-opacity duration-base", fade && !loaded && "opacity-0")}
+          style={full ? undefined : { width: `min(max(50%, 14px), ${Math.max(16, icon.ref.px) * 2}px)` }}
         />
       )}
     </span>

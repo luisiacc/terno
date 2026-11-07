@@ -45,6 +45,9 @@ test.describe("sender icons", () => {
       expect([a.width, a.height, a.x]).toEqual([b.width, b.height, b.x]);
       const icon = (await withIcon.getByTestId("sender-icon").boundingBox())!;
       expect(icon).toEqual(a);
+      // the person writing from a company isn't its logo: their initials
+      const person = page.locator("[data-testid=thread-row]", { hasText: "Nicolás Mendoza" }).first();
+      if (await person.count()) await expect(person.getByTestId("sender-icon")).toHaveCount(0);
       // freemail people never get their provider's icon
       const freemail = page.locator("[data-testid=thread-row]", { has: page.locator("[data-testid=row-from]") }).filter({ hasNot: page.getByTestId("sender-icon") });
       expect(await freemail.count()).toBeGreaterThan(0);

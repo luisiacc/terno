@@ -320,6 +320,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     <>
       {firstLine}
       <div className="flex min-w-0 items-baseline gap-1.5">
+        person={thread.person === true}
         {subject}
         {draft}
       </div>
