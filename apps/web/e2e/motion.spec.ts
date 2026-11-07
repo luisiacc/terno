@@ -94,6 +94,8 @@ async function exercise(page: Page) {
   await page.keyboard.press("r");
   await expect(page.getByTestId("compose-body")).toBeFocused();
   await frames(page);
+  // (with something in it: an empty one goes on Esc)
+  await page.keyboard.type("x");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("draft-collapsed")).toBeVisible();
   await frames(page);

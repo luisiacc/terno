@@ -639,13 +639,12 @@ test.describe("the new message", () => {
       await page.keyboard.press("Enter");
       await expect(body(page)).toContainText("Lo sigo luego");
     });
-    await scenario("plan 130: a very long subject is the title's two lines at most; the card keeps its foot in view", async () => {
+    await scenario("plan 130: a very long subject stays in its field; the card keeps its foot in view", async () => {
       await freshNoDrafts(page, server);
       await page.setViewportSize({ width: 980, height: 600 });
       await compose(page);
       await page.getByTestId("compose-subject").fill("Una propuesta larguísima de colaboración ".repeat(12).trim());
-      const title = page.getByTestId("compose-title");
-      expect(await title.evaluate((el) => el.clientHeight < el.scrollHeight)).toBe(true);
+      await expect(page.getByTestId("compose-title")).toHaveText("New message");
       await expect(page.getByTestId("compose-send")).toBeInViewport({ ratio: 1 });
       await expect(page.getByTestId("compose-collapse")).toBeInViewport({ ratio: 1 });
     });

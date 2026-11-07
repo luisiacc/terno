@@ -1080,6 +1080,7 @@ export function takeFocusRequest(key: string, seq: number): boolean {
   return true;
 }
 
+aiDraftHooks.working = (key) => session(key) !== undefined;
 aiDraftHooks.busy = (key) => {
   const s = session(key);
   return !!s && (s.phase === "writing" || s.phase === "waitingBody" || s.phase === "choice" || s.phase === "resolving");

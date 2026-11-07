@@ -56,9 +56,9 @@ for (const layout of ["split", "list"] as const) it.each(["authored successor", 
       expect(document.activeElement).toBe(focus);
     } else if (scenario === "outside focus" || scenario === "outside roundtrip") { outside.focus(); if (scenario === "outside roundtrip") { another.focus(); outside.focus(); } expect(document.activeElement).toBe(outside); }
     else if (scenario === "same-key strip") {
-      const item = host.querySelector<HTMLButtonElement>(`[data-testid="strip-item"][data-key="${original.key}"]`);
-      expect(item).not.toBeNull();
-      await act(async () => item!.click());
+      // the message being written has no strip item any more (plan 158); what asks for it elsewhere is answered the same
+      const { openStoredDraft } = await import("~/lib/compose");
+      await act(async () => openStoredDraft(original.key));
       expect(app.getApp().compose).toBe(original);
     }
     if (scenario === "rejected") await act(async () => { send.reject(new Error("offline")); await send.promise.catch(() => {}); });

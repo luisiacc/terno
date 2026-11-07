@@ -565,7 +565,7 @@ test.describe("drafting with AI (plan 133)", () => {
   });
 
   test("during the stream: Esc, typing, collapsing, switching", async ({ app: page, server }) => {
-    await scenario("Esc mid-stream stops and discards, handled before the form's collapse; a second Esc collapses", async () => {
+    await scenario("Esc mid-stream stops and discards, handled before the form's collapse; a second Esc puts the empty draft away", async () => {
       await ready(page, server);
       await openThread(page, /Contract review/);
       await openField(page);
@@ -579,7 +579,7 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(body(page)).toHaveText("");
       await expect(body(page)).toBeFocused();
       await page.keyboard.press("Escape");
-      await expect(page.getByTestId("draft-slot")).toHaveAttribute("data-state", "collapsed");
+      await expect(page.getByTestId("draft-slot")).toHaveAttribute("data-state", "bar");
     });
     await scenario("typing during the stream: it goes on, and ends as a suggestion; a change of recipients says who it was for", async () => {
       await fresh(page, server);

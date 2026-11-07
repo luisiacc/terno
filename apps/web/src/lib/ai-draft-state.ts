@@ -22,11 +22,14 @@ export const aiDraftHooks: {
   escape: (key: string) => boolean;
   /** a preview is up: no ghost text under it */
   busy: (key: string) => boolean;
+  /** its AI work is still there to come back to: it returns open, on its own (§10.4) */
+  working: (key: string) => boolean;
 } = {
   blocksSend: () => false,
   provenance: () => Promise.resolve(),
   escape: () => false,
   busy: () => false,
+  working: () => false,
 };
 
 /** Plan 147: the feature's own switch, and whether it can run at all. */

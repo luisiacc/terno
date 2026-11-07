@@ -92,6 +92,8 @@ export interface LocalDraft {
   inReplyToMessageId: number | null;
   forwardOfMessageId: number | null;
   uiState: "open" | "collapsed";
+  /** session: a check found the conversation it left no longer holds it (its source moved or went), or it was opened on its own: the strip has it, not that row (plan 158) */
+  homeLost?: boolean;
   updatedAt: number;
   /** a send is in flight: the draft can't be edited or discarded until it settles */
   sending: boolean;
@@ -566,6 +568,28 @@ function materializeOrCurrent(key: string): LocalDraft | undefined {
 
 /** Has the user written anything worth keeping? A reply only prefilled by Terno isn't saved. */
 export const authored = (d: LocalDraft): boolean => d.localRev > 0 || d.id !== null;
+
+/**
+ * Nothing the user put there: no text, no subject of theirs, no file, only the addresses Terno filled in. Such a draft
+ * isn't kept when it closes, however it got an id on the way (plan 158). Pass what `materialize` returns.
+ */
+export function nothingWritten(d: LocalDraft): boolean {
+  if (d.bodyText.trim() || /<img\b/i.test(d.bodyHtml) || d.subjectEdited || d.attachments?.length || d.attachmentOwner || d.recovery || d.sending) return false;
+  return (["to", "cc", "bcc"] as const).every((field) => {
+    const auto = d.auto[field].map((email) => email.toLowerCase());
+    return parseAddressList(d[`${field}Text`]).every((a) => auto.includes(a.email.toLowerCase()));
+  });
+}
+
+/** Whether the draft as the editor has it now is empty; an editor that can't be read isn't (its text may be there). */
+export function nothingWrittenIn(key: string): boolean {
+  try {
+    const d = materialize(key);
+    return Boolean(d && nothingWritten(d));
+  } catch {
+    return false;
+  }
+}
 
 // ───────────────────────────── the writer ─────────────────────────────
 
@@ -1195,9 +1219,17 @@ interface DraftIndex {
   newest: Map<number, LocalDraft>;
   /** conversations with a draft that has something written in it */
   written: Set<number>;
+  /** each conversation's most recently edited written draft, shown there or waiting for the check on coming back */
+  home: Map<number, LocalDraft>;
 }
 /** Durable context and session editor placement have independent lifetimes. */
 export const draftPresentationThread = (d: LocalDraft): number | null => d.presentationExpired ? null : d.presentationThreadId ?? (d.sourceContextThreadId !== undefined ? d.sourceContextThreadId : d.mode === "new" ? null : d.threadId);
+
+/**
+ * The conversation a draft belongs to for the list and the strip (plan 158): where it shows, or after leaving it, the one
+ * it left, until the check on coming back says otherwise. A row's mark only: its text shows there after that check (plan 44).
+ */
+export const draftHomeThread = (d: LocalDraft): number | null => draftPresentationThread(d) ?? (d.presentationExpired && d.showSourceContext && d.mode !== "new" && !d.homeLost ? d.departedThreadId ?? d.sourceContextThreadId ?? null : null);
 
 /** Leaving Reader retires cached placement, not the durable source intent or authored fields. */
 export function expireDraftPresentation(threadId: number): void {
@@ -1215,15 +1247,26 @@ export function expireDraftPresentation(threadId: number): void {
 }
 
 /** Retire one display association without changing its durable fields or editor revision. */
-export function invalidateDraftPresentation(key: string): void {
+export function invalidateDraftPresentation(key: string, homeLost = false): void {
   const d = get(key);
-  if (d) { const next = { ...d, departedThreadId: d.departedThreadId ?? draftPresentationThread(d) ?? undefined, presentationThreadId: undefined, presentationExpired: true, presentationEpoch: (d.presentationEpoch ?? 0) + 1 }; advanceBodyAuthority(d, next); put(next); }
+  if (d) { const next = { ...d, departedThreadId: d.departedThreadId ?? draftPresentationThread(d) ?? undefined, presentationThreadId: undefined, presentationExpired: true, presentationEpoch: (d.presentationEpoch ?? 0) + 1, ...(homeLost ? { homeLost } : {}) }; advanceBodyAuthority(d, next); put(next); }
 }
 
 /** Explicit strip open has just validated this source; no authored edit or save is needed. */
-export function validateDraftPresentation(key: string, threadId: number): void {
+export function validateDraftPresentation(key: string, threadId: number, ui: Partial<Pick<LocalDraft, "uiState">> = {}): void {
   const d = get(key);
-  if (d) { const next = { ...d, presentationThreadId: undefined, sourceContextThreadId: threadId, presentationExpired: false, presentationEpoch: (d.presentationEpoch ?? 0) + 1 }; advanceBodyAuthority(d, next); put(next); }
+  if (d) { const next = { ...d, ...ui, presentationThreadId: undefined, sourceContextThreadId: threadId, presentationExpired: false, homeLost: undefined, presentationEpoch: (d.presentationEpoch ?? 0) + 1 }; advanceBodyAuthority(d, next); put(next); }
+}
+
+/** Coming back to its conversation, source checked: the draft shows there again, as the one line it was put away as. Not an edit: nothing to save. */
+export function returnDraftToThread(key: string, threadId: number): void {
+  validateDraftPresentation(key, threadId, { uiState: "collapsed" });
+}
+
+/** The check on coming back said no: the strip has it from here on, and an explicit open finds where it goes now. */
+export function loseDraftHome(key: string): void {
+  const d = get(key);
+  if (d && !d.homeLost) put({ ...d, homeLost: true });
 }
 
 /** One pass per drafts update (the map is replaced on every change), shared by every row, the reader and the strip. */
@@ -1231,7 +1274,7 @@ const indexes = new WeakMap<Record<string, LocalDraft>, DraftIndex>();
 export function draftIndex(drafts: Record<string, LocalDraft>): DraftIndex {
   let index = indexes.get(drafts);
   if (index) return index;
-  index = { newest: new Map(), written: new Set(), expiredBySource: new Map(), expiredByThread: new Map() };
+  index = { newest: new Map(), written: new Set(), home: new Map(), expiredBySource: new Map(), expiredByThread: new Map() };
   for (const d of Object.values(drafts)) {
     const add = (map: Map<number, LocalDraft[]>, id: number) => { const rows = map.get(id); if (rows) rows.push(d); else map.set(id, [d]); };
     const hints = new Set<number>();
@@ -1244,11 +1287,16 @@ export function draftIndex(drafts: Record<string, LocalDraft>): DraftIndex {
       }
     }
     for (const hint of hints) add(index.expiredByThread, hint);
+    const home = draftHomeThread(d);
+    if (home !== null && authored(d)) {
+      const best = index.home.get(home);
+      if (!best || d.updatedAt > best.updatedAt) index.home.set(home, d);
+      if (d.bodyText.trim() || d.id !== null || sources.get(d.key)?.dirty) index.written.add(home);
+    }
     const threadId = draftPresentationThread(d);
     if (threadId === null) continue;
     const best = index.newest.get(threadId);
     if (!best || d.updatedAt > best.updatedAt) index.newest.set(threadId, d);
-    if (authored(d) && (d.bodyText.trim() || d.id !== null || sources.get(d.key)?.dirty)) index.written.add(threadId);
   }
   indexes.set(drafts, index);
   return index;

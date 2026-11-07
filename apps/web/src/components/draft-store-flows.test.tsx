@@ -262,7 +262,8 @@ describe("list selection handoff", () => {
       h.other.focus();
       await act(async () => { opening = openCompose("forward", threadId); await bounded(sourceStarted.promise, "source lookup start"); });
       phase("source lookup held");
-      expect(sourceCount).toBe(1); expect(composeFocusPending(threadId)).toBe(true);
+      // arriving checks its source once (plan 158), and the open asks again for itself
+      expect(sourceCount).toBe(2); expect(composeFocusPending(threadId)).toBe(true);
       expect(h.app.getApp().selectedId).toBe(threadId);
       if (scenario === "later user") await act(async () => { pressRow(otherId, { meta: false, ctrl: false, shift: false }); later.focus(); });
       await act(async () => { listGate.resolve(); await Promise.resolve(); await Promise.resolve(); });

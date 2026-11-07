@@ -8,8 +8,8 @@ import { IconButton } from "@terno/ui/components/icon-button";
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, Pin, PinOff, ReplyAll, Trash2 } from "@terno/ui/icons";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { collapseInlineDraft, composeFocusPending, finishComposeFocus, openCompose, reopenInlineDraft, sendDraft } from "~/lib/compose";
-import { copyDraft, discardDraft, draftEditsHeld, draftSenderLocked, editDraft, editDraftRecipients, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
+import { collapseInlineDraft, composeFocusPending, finishComposeFocus, openCompose, reopenInlineDraft, sendDraft, useDraftsReturning } from "~/lib/compose";
+import { copyDraft, discardDraft, draftEditsHeld, draftSenderLocked, editDraft, editDraftRecipients, nothingWrittenIn, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { SenderAvatar } from "./sender-avatar";
 import { RecipientInput, recipientSummary } from "./recipient-input";
 import { warmAutocomplete } from "~/lib/autocomplete";
@@ -148,7 +148,8 @@ export function DraftFieldsForm({ d, accounts, showSubject, threadAccountId }: {
             root.querySelector<HTMLElement>(`[data-testid="compose-${field}"]`)?.focus();
           });
         }}
-        className="h-[22px] rounded-sm px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+        // quiet at rest: they come up with the row (hovered, or being written in), and always under Tab
+        className="h-[22px] rounded-sm px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity duration-fast group-focus-within/row:opacity-100 group-hover/row:opacity-100 hover:bg-muted hover:text-foreground focus-reveal:opacity-100"
       >
         {label}
       </button>
@@ -337,7 +338,9 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
   const exitWatches = useRef(new Set<() => void>());
   useEffect(() => () => { for (const stop of exitWatches.current) stop(); }, []);
   const formatId = useId();
-  const state: "bar" | "open" | "collapsed" | "pinned" = pinned ? "pinned" : !d ? "bar" : d.uiState;
+  // a written draft on its way back to this conversation: nothing for the moment its source takes to check (plan 158)
+  const returning = useDraftsReturning((s) => s.threadId === threadId) && !d && !pinned && !recovering;
+  const state: "bar" | "open" | "collapsed" | "pinned" | "returning" = pinned ? "pinned" : returning ? "returning" : !d ? "bar" : d.uiState;
 
   // a conversation is open: its reply may come next, so the editor starts loading (once)
   // and ⌘J may too, on someone who has AI set up: the row answers in the frame of the key
@@ -365,8 +368,11 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
     if (useApp.getState().draftFocus === focus) setApp({ draftFocus: null });
   }, [focus?.seq]);
 
+  const aiBadge = useAiDraftUi((s) => (d ? s.rows[d.key] : undefined));
   const collapse = () => {
     if (!d) return;
+    // put away with nothing in it, it isn't a draft: it goes, and the reply bar is back (plan 158)
+    if (!aiBadge && nothingWrittenIn(d.key)) { void discard(true); return; }
     const valid = collapseInlineDraft(d.key);
     if (!valid || !valid()) return;
     focusSoon("[data-testid=draft-collapsed]", rootRef.current, 12, () => true, valid, (cancel) => {
@@ -404,15 +410,17 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
       if (ok && request.valid()) { request.prepare(); focusSoon("[data-testid=quick-reply]", request.root, 12, () => true, request.valid, request.watch); transferred = true; }
     } finally { if (!transferred) request.stop(); }
   };
-  const discard = async () => {
+  const discard = async (empty = false) => {
     if (!d) return;
     const request = exitFocus();
     let transferred = false;
     try {
       const gone = await discardDraft(d.key);
       if (!gone) return;
-      const undo = registerUndo(() => restoreDiscarded(gone));
-      snack(t("compose.discarded"), { action: { label: t("common.undo"), name: t("compose.undoDiscard"), undo } });
+      if (!empty) {
+        const undo = registerUndo(() => restoreDiscarded(gone));
+        snack(t("compose.discarded"), { action: { label: t("common.undo"), name: t("compose.undoDiscard"), undo } });
+      }
       if (request.valid()) { request.prepare(); focusSoon("[data-testid=quick-reply]", request.root, 12, () => true, request.valid, request.watch); transferred = true; }
     } finally { if (!transferred) request.stop(); }
   };
@@ -421,10 +429,9 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
   const who = d ? d.toText.split(",")[0]?.replace(/<.*$/, "").replace(/"/g, "").trim() || d.toText : "";
   const label = !d ? "" : d.mode === "new" ? t("compose.newMessage") : formLabel(d.mode === "forward", who);
   const drop = useComposerDrop(d?.key ?? "", d?.sending ?? false);
-  const aiBadge = useAiDraftUi((s) => (d ? s.rows[d.key] : undefined));
 
   return (
-    <div ref={rootRef} className={cn("mt-5", DRAFT_SURFACE)} data-testid="draft-slot" data-state={state} data-thread={threadId}>
+    <div ref={rootRef} className={cn("mt-5", DRAFT_SURFACE, state === "returning" && "min-h-10")} data-testid="draft-slot" data-state={state} data-thread={threadId}>
       <Expand open={state === "bar"}>
         <div className="flex h-10 items-center gap-0.5 pr-1.5 pl-2.5" data-testid="reply-bar">
           <button type="button" onClick={() => void openCompose("reply", threadId)} title={me ? t("compose.bar.from", { name: me }) : undefined} data-testid="quick-reply" className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground">
@@ -511,7 +518,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
             {/* Send stays on screen however long the draft or the conversation is (plan 158); what's written fades under it */}
             <div data-draft-foot className="sticky bottom-[var(--reader-dock,0px)] z-[1] rounded-b-xl bg-(--draft-bg) before:pointer-events-none before:absolute before:inset-x-0 before:-top-3 before:h-3 before:bg-linear-to-t before:from-(--draft-bg) before:to-transparent">
             <ComposerFormatBar draftKey={d.key} id={formatId} className="px-2 pt-1.5" />
-            <div className="flex items-center gap-1 px-2.5 pt-2 pb-2.5">
+            <div className="flex flex-wrap items-center gap-1 px-2.5 pt-2 pb-2.5">
               <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
               <FormatToggle controls={formatId} />
               <AttachButton d={d} />

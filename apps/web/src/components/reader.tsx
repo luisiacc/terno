@@ -29,7 +29,7 @@ import { ScheduledReplyLine } from "./scheduled-popover";
 import { ForwardLine } from "./forward-line";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { reachesSeveral, replyName } from "~/lib/compose-fields";
-import { composeFocusPending, composeLanding, registerReaderFocusDestination, subscribeComposeFocus } from "~/lib/compose";
+import { composeFocusPending, composeLanding, registerReaderFocusDestination, returnDraftsTo, subscribeComposeFocus } from "~/lib/compose";
 import { act, cancelMarkRead, openCompose, readChosenThread, scheduleMarkRead, toggleStar } from "~/lib/actions";
 import { acceptSuggestion, answerReview, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { t } from "@terno/i18n";
@@ -697,6 +697,10 @@ function ReaderContent() {
   useEffect(() => {
     if (draftShown?.threadId === selectedId && draftShown.key !== draftKey) setApp({ draftShown: null });
   }, [draftShown, selectedId, draftKey]);
+  // what was written here comes back with the conversation (plan 158), before the slot's first paint offers a blank Reply
+  useLayoutEffect(() => {
+    if (selectedId !== null) returnDraftsTo(selectedId);
+  }, [selectedId]);
 
   const toolbarRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
