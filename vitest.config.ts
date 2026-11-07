@@ -13,7 +13,7 @@ export default defineConfig({
           name: "unit",
           globalSetup: ["packages/backend/scripts/test-worker-setup.mjs"],
           setupFiles: ["packages/backend/src/test/sqlite-template.fixture.ts"],
-          include: ["packages/*/src/**/*.test.{ts,tsx}", "apps/*/src/**/*.test.{ts,tsx}"],
+          include: ["packages/*/src/**/*.test.{ts,tsx}", "apps/*/src/**/*.test.{ts,tsx}", "scripts/ui-rating/*.test.ts"],
           exclude: ["**/*.perf.test.ts", "**/node_modules/**"],
           environment: "node",
           testTimeout: 20_000,

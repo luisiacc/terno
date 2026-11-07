@@ -19,6 +19,8 @@
     "test": "vitest run --project unit && vitest run --project db-wasm",
     "test:all": "node scripts/test-all.mjs",
     "test:watch": "vitest",
+    "ui:rate": "node scripts/ui-rating/rate.mjs",
+    "ui:gate": "node scripts/ui-rating/gate.mjs",
     "test:perf": "vitest run --project perf",
     "test:e2e": "pnpm --filter @terno/web test:e2e",
     "test:smoke": "pnpm --filter @terno/desktop test:smoke",
