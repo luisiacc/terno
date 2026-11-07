@@ -68,8 +68,8 @@ function Announcement({
         {actions && <div className={cn("flex flex-wrap gap-1.5", !inline && "mt-1.5", inline && "shrink-0")}>{actions}</div>}
       </div>
       {onClose && (
-        // centred on the first line of text (16 px), the 20 px button reaching 2 px past it
-        <CloseButton size="xs" label={closeLabel} onClick={onClose} {...closeProps} className={cn(!inline && "-my-0.5", closeProps?.className)} />
+        // centred on the first line of text (16 px), the 24 px target reaching 4 px past it
+        <CloseButton size="sm" label={closeLabel} onClick={onClose} {...closeProps} className={cn(!inline && "-my-1", closeProps?.className)} />
       )}
     </div>
   )
