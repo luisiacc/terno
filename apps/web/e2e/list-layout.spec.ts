@@ -72,7 +72,8 @@ test.describe("the table (plan 158)", () => {
       await page.setViewportSize({ width: 1440, height: 900 });
     });
     await scenario("the header: with the filters in a menu, title, tabs, filter and search share one line", async () => {
-      test.skip(design === "lumen", "Lumen's chips have a line of their own");
+      // (Lumen's chips have a line of their own)
+      if (design === "lumen") return;
       const y = async (id: string) => {
         const b = await box(page.getByTestId(id));
         return b.y + b.height / 2;

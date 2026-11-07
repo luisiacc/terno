@@ -8,7 +8,7 @@ import { sqlDb } from "../../backend-dev/src/server";
 import { expect, focusList, fresh, freshNoDrafts, pickFilter, rows, scenario, test } from "./fixtures";
 
 /** Whole rows at 1440x900 with a suggestion and no drafts, the plan's bar. */
-const WHOLE_ROWS = { lumen: 10, atelier: 10, macos: 11, graphite: 11, luma: 10 } as const;
+const WHOLE_ROWS = { lumen: 10, atelier: 10, macos: 12, graphite: 12, luma: 10 } as const;
 const box = async (l: Locator) => (await l.boundingBox())!;
 const weight = (l: Locator) => l.evaluate((el) => Number(getComputedStyle(el).fontWeight));
 
@@ -20,14 +20,18 @@ test.describe("the inbox list", { tag: "@design" }, () => {
       await freshNoDrafts(page, server);
       await expect(banner).toBeVisible();
       expect((await box(banner)).height).toBeLessThanOrEqual(36);
-      const whole = await list.evaluate((el) => {
+      const whole = () => list.evaluate((el) => {
         const { top, bottom } = el.getBoundingClientRect();
         return [...el.querySelectorAll("[data-testid=thread-row]")].filter((r) => {
           const b = r.getBoundingClientRect();
           return b.top >= top - 1 && b.bottom <= bottom + 1;
         }).length;
       });
-      expect(whole).toBeGreaterThanOrEqual(WHOLE_ROWS[design ?? "macos"]);
+      expect(await whole()).toBeGreaterThanOrEqual(WHOLE_ROWS[design ?? "macos"]);
+      // a laptop's small window still shows a useful list
+      await page.setViewportSize({ width: 1100, height: 700 });
+      await expect.poll(whole).toBeGreaterThanOrEqual(7);
+      await page.setViewportSize({ width: 1440, height: 900 });
     });
     await scenario("a row reads sender, subject, preview, each on its own line; unread is stronger and has one dot, off any avatar; read has none", async () => {
       const unread = page.locator("[data-testid=thread-row][data-unread]").first();

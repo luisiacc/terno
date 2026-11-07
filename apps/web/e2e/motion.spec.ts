@@ -126,6 +126,7 @@ async function exerciseLoading(page: Page, server: DevServer) {
   await focusList(page);
   await page.keyboard.press("l");
   await page.getByTestId(`pick-category-${facturas}`).click();
+  await page.getByTestId("snackbar-similar").click();
   await expect(page.getByTestId("snackbar-count-loading").first()).toBeVisible();
   await frames(page);
   releaseCount();
