@@ -622,9 +622,10 @@ test("switching theme: painted within 50 ms, no row re-renders", async ({ app: p
 test("resizing panes (plan 21): dragging either edge keeps frames smooth with five HTML mails open; the list and its rows never render", async ({ app: page, server }) => {
   const id = await ingestConversation(server, { subject: "Presupuesto con cinco boletines", count: 6, html: 5, now: Date.now() });
   await selectThread(page, id, 'subject:"Presupuesto con cinco boletines"');
-  // then the search cleared, the conversation still open: the list being resized is the whole, virtualized inbox
+  // then the search cleared and the conversation opened from the inbox: the list being resized is the whole, virtualized inbox
   await page.getByTestId("search-input").fill("");
   await expect(page.getByTestId("search-stats")).toBeHidden();
+  await page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`).click();
   await expect(page.getByTestId("reader-subject")).toHaveText("Presupuesto con cinco boletines");
   await expect.poll(() => rows(page).count(), { message: "a full screen of rows mounted" }).toBeGreaterThanOrEqual(10);
   const reader = page.getByTestId("reader");
