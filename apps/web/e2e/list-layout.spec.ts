@@ -94,9 +94,31 @@ test.describe("the table (plan 158)", () => {
       await b.click({ modifiers: ["ControlOrMeta"] });
       await expect(page.getByTestId("selection-count")).toHaveText("2 conversations selected");
       expect((await box(b)).y).toBe(before.y);
+      // what's under the toolbar can't be reached; a search ends the selection and takes the keys (the field behind a button opens)
+      const covered = page.getByTestId("list-title").locator("xpath=ancestor::*[@inert]");
+      await expect(covered).toHaveCount(1);
+      await focusList(page);
+      await page.keyboard.press("/");
+      await expect(page.getByTestId("search-input")).toBeFocused();
+      await expect(page.getByTestId("selection-bar")).toHaveCount(0);
+      await page.getByTestId("search-input").press("Escape");
+      await a.click({ modifiers: ["ControlOrMeta"] });
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("selection-bar")).toHaveCount(0);
       expect((await box(b)).y).toBe(before.y);
+    });
+    await scenario("a long title truncates: the controls keep the right edge", async () => {
+      if (design === "lumen") return;
+      await page.keyboard.press("g");
+      await page.keyboard.press("a");
+      await expect(page.getByTestId("list-title")).toContainText("Archive");
+      await page.getByTestId("list-title").evaluate((el) => (el.textContent = "A very long folder name ".repeat(20)));
+      const header = await box(page.getByTestId("list-header"));
+      const control = await box(page.getByTestId("filter-menu"));
+      expect(control.x + control.width).toBeLessThanOrEqual(header.x + header.width);
+      await page.keyboard.press("g");
+      await page.keyboard.press("i");
+      await expect(rows(page).first()).toBeVisible();
     });
     await scenario("the row opened comes back where it was, to the pixel, however the list is scrolled", async () => {
       for (const at of [0, 300, 900]) {

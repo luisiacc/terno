@@ -1,4 +1,5 @@
 import { t } from "@terno/i18n";
+import { Button } from "@terno/ui/components/button";
 import { Kbd } from "@terno/ui/components/kbd";
 import { cn } from "@terno/ui/lib/utils";
 import { motionOff } from "@terno/ui/themes/apply";
@@ -116,7 +117,7 @@ export function SnackPill({ label, name, onClick, shortcut, disabled, testId = "
 }
 
 /** A quiet text button before the pill ("View"), on a snack's line. */
-export const SNACK_QUIET = "inline-flex h-6 shrink-0 items-center rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors duration-fast hover:bg-muted hover:text-foreground";
+const SNACK_QUIET = "rounded-full font-medium text-muted-foreground duration-fast";
 
 const TONE_ICON = {
   success: <CircleCheck className="size-3.5 shrink-0 text-success-ink" aria-hidden />,
@@ -146,7 +147,7 @@ export function SnackMore({ open, onToggle, controls }: { open: boolean; onToggl
   }, [open]);
   return (
     <Tooltip>
-      <TooltipTrigger render={<button type="button" data-testid="snackbar-similar" aria-expanded={open} aria-controls={open ? controls : undefined} onClick={onToggle} className={SNACK_QUIET} />}>
+      <TooltipTrigger render={<Button variant="ghost" size="xs" data-testid="snackbar-similar" aria-expanded={open} aria-controls={open ? controls : undefined} onClick={onToggle} className={SNACK_QUIET} />}>
         {t("offers.similar")}
       </TooltipTrigger>
       <TooltipContent>{t("offers.similarHelp")}</TooltipContent>
@@ -171,15 +172,9 @@ function Row({ snack }: { snack: Snack }) {
         )}
       </div>
       {snack.secondary && (
-        <button
-          type="button"
-          data-testid="snack-secondary"
-          aria-label={snack.secondary.name}
-          onClick={() => runAction("secondary")}
-          className={SNACK_QUIET}
-        >
+        <Button variant="ghost" size="xs" data-testid="snack-secondary" aria-label={snack.secondary.name} onClick={() => runAction("secondary")} className={SNACK_QUIET}>
           {snack.secondary.label}
-        </button>
+        </Button>
       )}
       {snack.action && <SnackPill label={snack.action.label} name={nameOf(snack.action, snack)} onClick={() => runAction("action")} shortcut={z ? "z" : undefined} />}
       <SnackClose />

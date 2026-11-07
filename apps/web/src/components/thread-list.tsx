@@ -301,6 +301,8 @@ useApp.subscribe((s, prev) => {
 /** "/" and ⌘F: the search field, opened first where the design keeps it behind a button. */
 export function focusSearch(): void {
   if (!searchInputRef.current) flushSync(() => useSearchOpen.setState({ open: true }));
+  // under List's selection toolbar: searching ends the selection, and the field is there to take the focus
+  if (searchInputRef.current?.closest("[inert]")) flushSync(clearSelection);
   searchInputRef.current?.focus();
 }
 
@@ -531,6 +533,8 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
   const tabs = useApp((s) => list && tabsShown(s));
   const showField = !behindButton || searchOpen || query !== "";
   const inlineTabs = oneRow && tabs && quick === "menu";
+  // List's selection toolbar stands on this line: what's under it can't be reached until it goes
+  const covered = useApp((s) => list && (s.scope !== null || s.checked.size >= 1));
   const results = more ? t("list.search.resultsMore", { count }) : t("list.search.results", { count });
   const stats = query && searchMs !== null && (
     <span data-testid="search-stats" role="status" className="shrink-0 text-2xs text-muted-foreground tabular">
@@ -597,9 +601,9 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
     // every fill starts at 8 px, as a row's selection does; every line of text at 20 px, as a row's does
     <div ref={hairlineRef} data-testid="list-header" data-kind={kind} className="drag-region scroll-hairline @container shrink-0 pr-4 pb-2 pl-2">
       {oneRow ? (
-        <div className="flex h-[52px] min-w-0 items-center gap-3 pr-1.5 pl-3">
+        <div inert={covered} className="flex h-[52px] min-w-0 items-center gap-3 pr-1.5 pl-3">
           {/* tabs on this line: the selected one says this, and says what's unread */}
-          <h1 className={cn("shrink-0 truncate", inlineTabs && !account ? "sr-only" : kind === "title" ? "text-md font-semibold tracking-tight" : kind === "greeting" ? "type-greeting" : "type-list-title")} data-testid="list-title">
+          <h1 className={cn("min-w-0 max-w-[40cqw] truncate", inlineTabs && !account ? "sr-only" : kind === "title" ? "text-md font-semibold tracking-tight" : kind === "greeting" ? "type-greeting" : "type-list-title")} data-testid="list-title">
             {title}
             {accountSuffix}
           </h1>
@@ -622,7 +626,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
           <div className="flex shrink-0 items-center gap-2 empty:hidden">{actions}</div>
         </div>
       ) : kind === "title" ? (
-        <div className="flex h-[52px] items-center gap-2 pr-1.5 pl-3">
+        <div inert={covered} className="flex h-[52px] items-center gap-2 pr-1.5 pl-3">
           <h1 className="min-w-0 flex-1 truncate text-md font-semibold tracking-tight" data-testid="list-title">
             {title}
             {accountSuffix}
@@ -635,7 +639,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
       ) : (
         <>
           {/* on the reader toolbar's line */}
-          <div className="flex h-[52px] items-center gap-2 pr-1.5 pl-3">
+          <div inert={covered} className="flex h-[52px] items-center gap-2 pr-1.5 pl-3">
             <h1 className={cn("min-w-0 flex-1 truncate", kind === "greeting" ? "type-greeting" : "type-list-title")} data-testid="list-title">
               {title}
               {accountSuffix}

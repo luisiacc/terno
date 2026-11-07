@@ -2,7 +2,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { memo, useRef, useState } from "react";
 import { avatarColor, initials } from "~/lib/format";
 import { renderProbe } from "~/lib/render-probe";
-import { iconFailed, useSenderIcon } from "~/lib/sender-icons";
+import { iconFailed, iconStandsFor, useSenderIcon } from "~/lib/sender-icons";
 
 /** A person's initials on their color's faint tint, quieter than the mail beside them: the ink holds 4.5:1 on that tint wherever avatars sit (rows, drafts, the reader). */
 const TINT: Record<ReturnType<typeof avatarColor>, string> = {
@@ -36,7 +36,7 @@ export function SenderAvatar({ name, email, className, icon = false, person = fa
 
 /**
  * The icon layer: always there (it's what the visibility observer watches), empty until an icon
- * arrives. A photo or a touch icon fills the circle; a favicon is a small mark on a muted plate, the
+ * arrives. A photo fills the circle; a website's icon is a small mark on a muted plate, the
  * same disc and size as initials, at no more than twice its own size, so a 16 px one stays small and
  * crisp instead of stretched: quiet enough that the names lead, in dark most of all. A faint halo keeps
  * a dark logo's edge on that plate. It fades in (within --motion) only when it arrives after the avatar
@@ -46,13 +46,13 @@ const SenderIcon = memo(function SenderIcon({ email, person }: { email: string; 
   renderProbe("SenderIcon");
   const ref = useRef<HTMLSpanElement>(null);
   const found = useSenderIcon(email, ref, true);
-  // a company's icon doesn't stand for a person: their initials stay
-  const icon = found && (found.ref.full || !person) ? found : null;
+  const icon = found && iconStandsFor(found.ref, person) ? found : null;
   // what the first render had: an icon there from the start never fades
   const [atMount] = useState(() => icon?.url ?? null);
   const [loaded, setLoaded] = useState(false);
   const fade = icon !== null && icon.url !== atMount;
-  const full = icon?.ref.full ?? false;
+  // only a photo fills the disc: a touch icon is a logo too, whatever its size
+  const full = icon?.ref.kind === "photo";
   return (
     <span ref={ref} data-testid={icon ? "sender-icon" : undefined} data-icon-kind={icon?.ref.kind} className={cn("pointer-events-none absolute inset-0 flex items-center justify-center rounded-full", icon && !full && "bg-muted")}>
       {icon && (
@@ -65,7 +65,7 @@ const SenderIcon = memo(function SenderIcon({ email, person }: { email: string; 
           referrerPolicy="no-referrer"
           onLoad={() => setLoaded(true)}
           onError={() => iconFailed(email)}
-          className={cn(full ? "size-full object-cover" : "aspect-square object-contain dark:drop-shadow-[0_0_0.5px_var(--muted-foreground)]", fade && "transition-opacity duration-base", fade && !loaded && "opacity-0")}
+          className={cn(full ? "size-full object-cover" : "aspect-square rounded-sm object-contain dark:drop-shadow-[0_0_0.5px_var(--muted-foreground)]", fade && "transition-opacity duration-base", fade && !loaded && "opacity-0")}
           style={full ? undefined : { width: `min(max(50%, 14px), ${Math.max(16, icon.ref.px) * 2}px)` }}
         />
       )}

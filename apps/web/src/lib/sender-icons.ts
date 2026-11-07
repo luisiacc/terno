@@ -405,3 +405,8 @@ export const __senderIconsForTests = {
   },
   reset: () => [entries, data, visible, batch, dataBatch, snapshots, listeners, refetched, held, replacing].forEach((m) => m.clear()),
 };
+
+/** Plan 158: a person is their photo or their initials; a website's icon, of any size, stands for the company. */
+export function iconStandsFor(ref: { kind: string }, person: boolean): boolean {
+  return ref.kind === "photo" || !person;
+}

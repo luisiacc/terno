@@ -164,8 +164,7 @@ test.describe("drag and drop to a category", () => {
       await page.getByTestId(`nav-category-${lecturas}`).click();
       await expect(page.getByTestId("list-title")).toHaveText("Lecturas");
       // the title changes first; wait until the rows are Lecturas' own
-      await expect(page.locator("[data-testid=thread-row]:not(:has([data-cat-dot]))")).toHaveCount(0);
-      await expect(page.locator(`[data-testid=thread-row]:not(:has([data-cat-dot="${lecturas}"]))`)).toHaveCount(0);
+      await expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", new RegExp(`,${lecturas},`));
       const row = notIn(page, viajes).first();
       const id = Number(await row.getAttribute("data-thread-id"));
       await dragTo(page, row, page.getByTestId(`nav-category-${viajes}`));
@@ -221,7 +220,7 @@ test.describe("drag and drop to a category", () => {
     const lecturas = categoryId(server, "Lecturas");
     const viajes = categoryId(server, "Viajes");
     await page.getByTestId(`nav-category-${lecturas}`).click();
-    await expect(page.locator(`[data-testid=thread-row]:not(:has([data-cat-dot="${lecturas}"]))`)).toHaveCount(0);
+    await expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", new RegExp(`,${lecturas},`));
     const row = notIn(page, viajes).first();
     const id = Number(await row.getAttribute("data-thread-id"));
     const inCat = (cat: number) => !!sqlDb(server.backend.store).get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, cat);
