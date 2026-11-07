@@ -57,6 +57,20 @@ The plan's critique found twelve holes, all taken:
 
 The brief changed after the baseline, so round 0 is slightly less strict than later rounds on the weakest-case rule.
 
+## Rounds
+
+Each round is a whole rating on one commit, all four styles, Claude and Codex, in `/tmp/terno-scratch/ui9/rounds/rNN`. Shown: each rater's overall for the style, and its lowest screen.
+
+| Round | Commit | Lumen | Atelier | macOS | Graphite | Cells under 9 |
+|---|---|---|---|---|---|---:|
+| r00 (baseline) | `91dcc803` | 6.5 (5) / 7 (5.5) | 7 (5.5) / 7 (6) | 7 (5.5) / 7 (6) | 6.5 (5.5) / 7 (6) | 883 of 888 |
+| r01 | `19a089d8` | 7 (6.5) / 7.5 (7) | 7.5 (7) / 7 (6) | 7 (6) / 7 (6.5) | 7 (6.5) / 7.5 (7) | 876 |
+| r02 | `90d8de33` | 7 (6) / 7.5 (7) | 7 (6.5) / 7.5 (7) | 7.5 (7.5) / 7.5 (6.5) | 6.5 (5.5) / 7.5 (7) | 858 |
+
+Claude / Codex in each cell. r00's brief didn't yet score a cell's weakest case, so later rounds are slightly stricter.
+
+What changed between them: r01 had the first pass (search, the row menu and selection, the composer and drafts, the list and sidebar, the reader, the palettes); r02 the second (Undo send, a shorter menu, the reader's per-message actions, one filter control, and an AI-draft data-loss fix). Round 2's Claude found regressions from the second pass, which pass three takes first.
+
 ## Tests
 
 - `gate.test.ts`: the bar, and a report can't pass by omission.
