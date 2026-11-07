@@ -16,7 +16,7 @@ Most flows are shared between styles, so raters don't repeat them. Lumen, the de
 
 ## What's scored
 
-Each screen gets an overall and twelve facets. Each facet has a score and `improve`, the specific change that would raise it, so a low number always says what to do.
+Each screen gets an overall and eleven facets. Each facet has a score and `improve`, the specific change that would raise it, so a low number always says what to do.
 
 | | Facet | What it covers |
 |---|---|---|
@@ -24,18 +24,15 @@ Each screen gets an overall and twelve facets. Each facet has a score and `impro
 | UI | `contrast` | color, legibility and accents, in light and in dark |
 | UI | `placement` | layout, grid, margins, spacing, alignment to a shared line |
 | UI | `hierarchy` | what draws the eye first, and whether it should |
-| UI | `iconography` | each icon says what it does; one family, one weight, sized and aligned to its text |
-| UI | `controls` | buttons, chips, menus, fields and their states |
+| UI | `controls` | icons, buttons, chips, menus and their states |
 | UI | `density` | how much useful content fits, how fast it scans |
 | UX | `efficiency` | steps and effort for the job, keyboard flow |
 | UX | `clarity` | can a new user tell what things do; is the copy plain |
 | UX | `feedback` | selection, draft, error and undo states |
-| UX | `consistency` | consistency and polish: the same thing looks and behaves the same everywhere; nothing misaligned, no stray pixels |
+| UX | `consistency` | same thing looks and behaves the same everywhere |
 | UX | `accessibility` | legibility, target size, focus |
 
 The scale is in `scripts/ui-rating/brief.md`: 10 is best in class, 8 to 9 stands beside Apple Mail, Mimestream, Superhuman, Spark, Notion Mail and Linear, 7 is a solid product with clear rough edges. **Don't change the scale or the brief to reach the bar.** A rewording that moves scores makes every earlier number meaningless.
-
-The facets follow the owner's categories: typography, hierarchy, spacing and density (`placement`, `density`), color and contrast, iconography, consistency and polish, clarity, plus the UX facets that catch what a picture can't (efficiency, feedback, accessibility). The bar is every cell, never an average, so one weak facet can't hide under a good overall. Iconography joined at round 3, which is its baseline.
 
 ## Running a round
 
