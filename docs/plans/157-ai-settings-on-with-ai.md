@@ -11,7 +11,7 @@
 
 ## What the words mean here
 
-- **"Has AI features":** plan 147's rule. A local build: Dev mode's switch. Any other build: a provider that can run, or Pro once it exists. Someone's own key or local model has AI features by that rule, so they get these defaults too. The request names only the local build and Pro; this is the one reading to confirm, and it's one condition in `summaryCanRun`.
+- **"Has AI features":** plan 147's rule. A local build: Dev mode's switch. Any other build: a provider that can run, or Pro once it exists. Someone's own key or local model has AI features by that rule, so they get these defaults too. The owner confirmed this: "yes free users on their own key get those defaults too".
 - **"ON by default":** a choice the user never made reads as on. Someone who turned one off keeps it off. A switch can't tell the difference once a value is stored, so a profile that already saved `summaries.enabled: false` stays off.
 - **"No effect":** nothing is marked, queued, counted or sent while AI isn't there, whatever the switch says.
 - **The answer to the question:** it's continuous. Once started, the learner keeps counting new sent mail, on this device, looking at most every 30 s when something changes, and rebuilds an account when about 5% of its window (at most 20 messages) has changed. Today it starts only with the first draft or the Writing style page; after this it starts when AI does.
