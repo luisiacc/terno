@@ -109,7 +109,7 @@ export function SnackPill({ label, name, onClick, shortcut, disabled, testId = "
       <Ring size={size} />
       {label}
       {/* the key is aria-keyshortcuts; drawn as generated content so the button's text stays its label ("Undo" in "Undo archive") */}
-      {shortcut && <Kbd aria-hidden data-key={shortcut} className="h-4 min-w-4 rounded-full bg-tint px-1 text-2xs shadow-none after:content-[attr(data-key)]" />}
+      {shortcut && <Kbd aria-hidden data-key={shortcut.toUpperCase()} className="h-4 min-w-4 rounded-full bg-tint px-1 text-2xs shadow-none after:content-[attr(data-key)]" />}
     </button>
   );
 }

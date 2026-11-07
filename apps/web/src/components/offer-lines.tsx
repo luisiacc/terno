@@ -17,13 +17,13 @@ export const formatCount = (c: { count: number; capped: boolean }) => (c.capped 
 export const lineKey = "h-4 min-w-4 shrink-0 rounded-full bg-tint text-2xs shadow-none";
 export const line = "flex h-7 min-w-0 items-center gap-2 rounded-md px-1.5 text-xs transition-colors duration-fast hover:bg-muted";
 
-/** An offer's count: right-aligned so the column lines up; a pulse while counting. */
+/** An offer's count: right-aligned so the column lines up, saying what it counts (a keycap's "1" sits at the line's start); a pulse while counting. */
 export function OfferCount({ count, testId }: { count: Count | "loading" | undefined; testId: string }) {
   if (count === undefined) return null;
   if (count === "loading") return <span data-testid="snackbar-count-loading" className="h-3 w-5 shrink-0 animate-pulse rounded bg-muted" />;
   return (
-    <span data-testid={testId} className="shrink-0 font-mono text-2xs text-muted-foreground tabular">
-      {count ? formatCount(count) : formatNumber(0)}
+    <span className="shrink-0 text-2xs whitespace-nowrap text-muted-foreground tabular">
+      <span data-testid={testId}>{count ? formatCount(count) : formatNumber(0)}</span> {t("offers.more")}
     </span>
   );
 }

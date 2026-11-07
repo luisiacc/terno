@@ -1381,6 +1381,7 @@ const es = {
   "offers.only.done": { one: "Se movió solo este correo a {category}", other: "Se movieron solo estos # correos a {category}" },
   "offers.only.spam": { one: "No, marcar como spam solo este correo", other: "No, marcar como spam solo estos # correos" },
   "offers.only.spamDone": { one: "Se marcó como spam solo este correo", other: "Se marcaron como spam solo estos # correos" },
+  "offers.more": "más",
   "offers.onlyThis.archive": { one: "Solo este correo", other: "Solo estos # correos" },
   "offers.onlyThis.trash": { one: "Solo este correo", other: "Solo estos # correos" },
   "offers.onlyThis.spam": { one: "Solo este correo", other: "Solo estos # correos" },
