@@ -5,11 +5,14 @@ import { createPortal } from "react-dom";
 import FullMessage from "./full-message";
 import { FullMessageBoundary, useMailReaderView } from "./mail-reader-view";
 import { resolveCidHtml } from "~/lib/cid";
-import { ImageOff } from "@terno/ui/icons";
+import { Button } from "@terno/ui/components/button";
+import { ChevronRight, ImageOff } from "@terno/ui/icons";
+import { cn } from "@terno/ui/lib/utils";
 import { t } from "@terno/i18n";
 import { mailColors, useAppearance } from "~/lib/appearance";
 import { csp, hasOwnColors, hasRemoteContent } from "~/lib/mail";
 import { splitTextQuote } from "~/lib/quote";
+import { withoutTrailingQuote } from "~/lib/quote-html";
 import { forwardPrintKey, wantsNativeMenu } from "~/lib/print-open";
 import { forwardMouseNav, forwardNavKey } from "~/lib/page";
 import { chooseOpenThread } from "~/state/app";
@@ -83,8 +86,12 @@ export function HtmlBody({ html, messageId, remoteImages, spam = false, appearan
   const themeKey = useAppearance((s) => s.themeKey);
   const mode = useAppearance((s) => s.mode);
   const clean = useMemo(() => DOMPurify.sanitize(html, { WHOLE_DOCUMENT: false, FORBID_TAGS: ["style"], FORBID_ATTR: ["srcset"], ADD_ATTR: ["target"] }), [html]);
+  // one rule for quoted history, in text and in HTML: a trailing block is folded behind the same control
+  const [quoteShown, setQuoteShown] = useState(false);
+  const main = useMemo(() => (section ? null : withoutTrailingQuote(clean)), [clean, section]);
+  const folded = main !== null && !quoteShown;
   // read from what the frame gets (parsed once per message, not per render)
-  const remote = useMemo(() => hasRemoteContent(clean, WEB), [clean]);
+  const remote = useMemo(() => hasRemoteContent(folded ? main : clean, WEB), [clean, main, folded]);
   const blocked = !allowRemote && remote;
   const [cidAllowed, setCidAllowed] = useState(false);
   const [cidResult, setCidResult] = useState<{ key: string; html: string } | null>(null);
@@ -96,8 +103,12 @@ export function HtmlBody({ html, messageId, remoteImages, spam = false, appearan
     void resolveCidHtml(clean, accountId, attachments, () => active).then((html) => { if (active) setCidResult({ key: cidKey, html }); });
     return () => { active = false; };
   }, [cidAllowed, accountId, cidKey, clean]);
-  const visibleHtml = cidAllowed && cidResult?.key === cidKey ? cidResult.html : clean;
-  const paper = appearance === "paper" || (!section && hasOwnColors(clean));
+  const resolved = cidAllowed && cidResult?.key === cidKey ? cidResult.html : clean;
+  const visibleHtml = useMemo(() => (!folded ? resolved : resolved === clean ? main : (withoutTrailingQuote(resolved) ?? resolved)), [resolved, clean, main, folded]);
+  const ownColors = useMemo(() => !section && hasOwnColors(clean), [clean, section]);
+  const paper = appearance === "paper" || ownColors;
+  // a designed mail keeps its own layout; anything else wraps at the reader's measure, while its pictures and fixed tables keep the frame's width
+  const measured = !section && !ownColors;
   // the colors, as variables on the document's root: a theme or "HTML mail" change repaints the loaded mail in place
   const look = useMemo(() => mailLook(paper, mode), [paper, themeKey, mode]);
   // the document is rebuilt only when what it shows changes (the mail, its remote content); its first paint has the
@@ -108,8 +119,8 @@ export function HtmlBody({ html, messageId, remoteImages, spam = false, appearan
   const sourceId = useMemo(() => String(++version.current), [built]);
   const doc = useMemo(
     () =>
-      `<!doctype html><html data-mail="${built.look.mail}" style="${built.look.style}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(built.allowRemote)}"><base target="_blank"><style>html{overflow-y:clip}html,body{margin:0;padding:0;background:var(--m-bg);color:var(--m-fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;overflow-wrap:anywhere;color-scheme:var(--m-scheme)}body{padding:var(--m-pad);${section ? "" : "max-height:20000px;overflow:clip;box-sizing:border-box;position:relative;contain:paint"}}[data-terno-flow]{display:flow-root}img{max-width:100%;height:auto}a{color:var(--m-link)}table{max-width:100%}${section ? "body{padding:0}body *:not(svg,svg *){position:static!important;float:none!important;transform:none!important;zoom:1!important;writing-mode:horizontal-tb!important;height:auto!important;min-height:0!important;max-height:none!important;min-width:0!important;max-width:100%!important;margin:0!important;padding:0!important;border-width:0!important;border-spacing:0!important;text-indent:0!important;letter-spacing:normal!important;word-spacing:normal!important;overflow:visible!important;font-size:14px!important;line-height:1.55!important;overflow-wrap:anywhere!important;white-space:pre-wrap!important}body img,body svg,body video,body canvas,body input,body select{max-width:100%!important;max-height:2048px!important;object-fit:contain}body table{table-layout:auto}" : ""}</style></head><body><div data-terno-flow data-terno-document="${sourceId}">${built.html}</div></body></html>`,
-    [built, section, sourceId],
+      `<!doctype html><html data-mail="${built.look.mail}" style="${built.look.style}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(built.allowRemote)}"><base target="_blank"><style>${measured ? "[data-terno-flow]{max-width:35em}[data-terno-flow] img,[data-terno-flow] table{max-width:100vw}" : ""}html{overflow-y:clip}html,body{margin:0;padding:0;background:var(--m-bg);color:var(--m-fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;overflow-wrap:anywhere;color-scheme:var(--m-scheme)}body{padding:var(--m-pad);${section ? "" : "max-height:20000px;overflow:clip;box-sizing:border-box;position:relative;contain:paint"}}[data-terno-flow]{display:flow-root}img{max-width:100%;height:auto}a{color:var(--m-link)}table{max-width:100%}${section ? "body{padding:0}body *:not(svg,svg *){position:static!important;float:none!important;transform:none!important;zoom:1!important;writing-mode:horizontal-tb!important;height:auto!important;min-height:0!important;max-height:none!important;min-width:0!important;max-width:100%!important;margin:0!important;padding:0!important;border-width:0!important;border-spacing:0!important;text-indent:0!important;letter-spacing:normal!important;word-spacing:normal!important;overflow:visible!important;font-size:14px!important;line-height:1.55!important;overflow-wrap:anywhere!important;white-space:pre-wrap!important}body img,body svg,body video,body canvas,body input,body select{max-width:100%!important;max-height:2048px!important;object-fit:contain}body table{table-layout:auto}" : ""}</style></head><body><div data-terno-flow data-terno-document="${sourceId}">${built.html}</div></body></html>`,
+    [built, section, sourceId, measured],
   );
   const source = useCallback((signal: AbortSignal) => new Promise<{ root: HTMLElement; tabs: WeakMap<Node, string | null> }>((resolve, reject) => {
     const frame = ref.current;
@@ -275,6 +286,7 @@ export function HtmlBody({ html, messageId, remoteImages, spam = false, appearan
           className="block w-full border-0"
         />
       </div>
+      {main !== null && <QuoteToggle open={quoteShown} onToggle={() => setQuoteShown((v) => !v)} />}
       {((clipping.source === clean && clipping.clipped) || (!section && view?.active === lease)) && <button type="button" className="mt-3 rounded-md text-sm text-muted-foreground hover:text-foreground focus-visible:ring-2" onClick={(event) => {
         const original = ref.current?.contentDocument;
         const selection = original?.getSelection();
@@ -308,6 +320,16 @@ function RemoteBlocked({ onLoad }: { onLoad: () => void }) {
   );
 }
 
+/** Quoted history, folded: says what it holds and turns as it opens. The same in plain text and HTML mail. */
+function QuoteToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <Button variant="link-secondary" size="xs" onClick={onToggle} aria-expanded={open} data-testid="quote-toggle" className="mt-3 flex h-6 gap-1 font-normal text-muted-foreground hover:text-foreground hover:no-underline">
+      <ChevronRight className={cn("size-3.5 transition-transform duration-base ease-motion", open && "rotate-90")} />
+      {t(open ? "reader.quote.hide" : "reader.quote.show")}
+    </Button>
+  );
+}
+
 const URL_RE = /(https?:\/\/[^\s<>"')]+)/g;
 
 /** Plain-text body: trailing quoted history folded, links clickable. */
@@ -325,13 +347,12 @@ export function TextBody({ text }: { text: string }) {
       ),
     );
   return (
-    <div className="type-body whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">
+    // the measure: about 75 characters a line, in every style's body type
+    <div className="type-body max-w-[35em] whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">
       {render(main)}
       {quoted && (
         <>
-          <button type="button" onClick={() => setShowQuoted((v) => !v)} className="mt-2 block rounded bg-muted px-1.5 text-xs leading-5 text-muted-foreground hover:text-foreground" aria-label={showQuoted ? t("reader.quote.hide") : t("reader.quote.show")} aria-expanded={showQuoted}>
-            •••
-          </button>
+          <QuoteToggle open={showQuoted} onToggle={() => setShowQuoted((v) => !v)} />
           {showQuoted && <div className="mt-2 border-l-2 border-border pl-3 text-muted-foreground">{render(quoted)}</div>}
         </>
       )}
