@@ -14,6 +14,7 @@ const fake = vi.hoisted(() => {
   const g = globalThis as Record<string, unknown>;
   g.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   g.requestAnimationFrame = () => 0;
+  g.document ??= { activeElement: null, querySelector: () => null };
   return { handlers: {} as Record<string, (params: unknown) => Promise<unknown>> };
 });
 
@@ -27,7 +28,7 @@ vi.mock("~/rpc/connection", () => ({
 const { act, said } = await import("./actions");
 const { getApp, navigate, setAccounts, setApp } = await import("~/state/app");
 const { useList } = await import("~/state/list");
-const { resetSnacks, undoLast, useSnack } = await import("~/lib/snack");
+const { resetSnacks, runUndo, undoLast, useSnack } = await import("~/lib/snack");
 
 const row = (id: number): ThreadSummary => ({ id, unread: false, starred: false, categoryIds: [] }) as unknown as ThreadSummary;
 
@@ -66,6 +67,45 @@ describe("action snacks", () => {
     };
     await act("archive", [1]);
     expect(useSnack.getState().current?.message).toBe("Couldn’t complete: offline");
+  });
+});
+
+describe("Undo puts the selection back (plan 158)", () => {
+  const acted = () => {
+    fake.handlers["threads.act"] = async () => ({ undoId: 9 });
+    fake.handlers["threads.undo"] = async () => ({ restored: 2 });
+    fake.handlers["threads.list"] = async () => ({ items: [row(1), row(2), row(3)], nextCursor: null });
+  };
+  const undo = () => runUndo(useSnack.getState().undo!);
+
+  it("what was checked, and the row that was open", async () => {
+    acted();
+    setApp({ selectedId: 1, checked: new Set([1, 2]) });
+    await act("archive");
+    expect(getApp().checked.size).toBe(0);
+    expect(getApp().selectedId).toBe(3);
+    await undo();
+    expect([...getApp().checked]).toEqual([1, 2]);
+    expect(getApp().selectedId).toBe(1);
+  });
+
+  it("never over a selection made since, nor when the open row has moved on", async () => {
+    acted();
+    setApp({ selectedId: 1, checked: new Set([1, 2]) });
+    await act("archive");
+    setApp({ selectedId: 2, checked: new Set([3]) });
+    await undo();
+    expect([...getApp().checked]).toEqual([3]);
+    expect(getApp().selectedId).toBe(2);
+  });
+
+  it("not in another list", async () => {
+    acted();
+    setApp({ selectedId: 1, checked: new Set([1, 2]) });
+    await act("archive");
+    setApp({ view: "sent" });
+    await undo();
+    expect(getApp().checked.size).toBe(0);
   });
 });
 

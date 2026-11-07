@@ -174,11 +174,17 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   const targets = fitting(action, ids);
   if (targets.length === 0) return;
   breadcrumb("action", "action.thread", { action, count: targets.length });
+  const before = selectionBefore();
   leaveList(action, targets, options);
+  before.left = getApp().selectedId;
   // z right after the key: this action is the last one already, its undo waits for the backend's answer
   const connection = client.connectionVersion;
   const undoIds = deferred<number[]>();
-  const undo = options.quiet ? null : registerUndo(() => undoIds.promise.then((ids) => (ids.length ? undoActions(ids, targets.length) : undefined)));
+  const undo = options.quiet ? null : registerUndo(() => undoIds.promise.then(async (ids) => {
+    if (!ids.length) return;
+    await undoActions(ids, targets.length);
+    restoreSelection(before);
+  }));
   try {
     // the contract takes ≤ 5,000 ids a call (the backend slices each); each call can be undone exactly
     const ids: number[] = [];
@@ -217,6 +223,36 @@ function fitting(action: ThreadAction, ids: number[]): number[] {
   if (!kind || !getApp().query.trim()) return ids;
   const places = placeActions(targetRows(ids), tabbedTest());
   return places ? places[kind] : ids;
+}
+
+/** What was selected before an action, and the open row the action left behind. */
+interface SelectionBefore {
+  key: string;
+  checked: AppState["checked"];
+  scope: ScopeSelection | null;
+  selectedId: number | null;
+  left: number | null;
+}
+
+const selectionBefore = (): SelectionBefore => {
+  const s = getApp();
+  return { key: listKey(), checked: s.checked, scope: s.scope, selectedId: s.selectedId, left: s.selectedId };
+};
+
+/**
+ * Undo puts the selection back so a cleanup can resume: what was checked, the row that was open, and the keyboard in
+ * the list. Not over what the user has chosen since (another list, a new selection, moving on), and focus only from
+ * where nothing is being typed. After the rows are back: a reload drops checks on rows it doesn't hold.
+ */
+function restoreSelection(before: SelectionBefore): void {
+  const s = getApp();
+  if (listKey() !== before.key) return;
+  setApp({
+    ...(s.checked.size === 0 && s.scope === null ? { checked: before.checked, scope: before.scope } : {}),
+    ...(s.selectedId === before.left ? { selectedId: before.selectedId } : {}),
+  });
+  if (document.activeElement?.closest("input, textarea, select, [contenteditable=true], [role=dialog]")) return;
+  document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]")?.focus({ preventScroll: true });
 }
 
 /** Plan 86: a row in a Gmail tab its account keeps apart (Move to Inbox fits it). */
@@ -293,6 +329,7 @@ export function trackJob(title: string): { jobId: string; snackId: string; stop(
 async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void> {
   const connection = client.connectionVersion;
   const s = getApp();
+  const before = selectionBefore();
   // the scope's loaded rows: with the unread filter, not a read row it kept (the open one)
   const loaded = scopeRows(useList.getState().items, sel.scope).map((t) => t.id);
   const reading = unmatches(action, listFilterOfScope(sel.scope));
@@ -305,9 +342,14 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
   }
   patchRows(loaded, (t) => (leaving && t.id !== stays ? null : patched(t, action)));
   setApp({ checked: new Set(), scope: null });
+  before.left = getApp().selectedId;
   const progress = trackJob(t(DOING[action], { count: sel.count }));
   const undoId = deferred<{ id: number | null; n: number }>();
-  const undo = registerUndo(() => undoId.promise.then((u) => (u.id === null ? undefined : undoActions([u.id], u.n))));
+  const undo = registerUndo(() => undoId.promise.then(async (u) => {
+    if (u.id === null) return;
+    await undoActions([u.id], u.n);
+    restoreSelection(before);
+  }));
   try {
     const r = await client.call("threads.actScope", { scope: sel.scope, action, jobId: progress.jobId });
     undoId.resolve({ id: r.undoId, n: r.affected });
@@ -384,7 +426,7 @@ export async function undoActions(undoIds: readonly number[], n: number): Promis
     throw error;
   } finally {
     progress?.stop();
-    void reloadList({ keepSelection: true });
+    await reloadList({ keepSelection: true });
   }
 }
 
