@@ -5,7 +5,7 @@
  *   minimum window, row heights, keyboard and scroll, the parts every variant keeps, a baseline of each key screen), other
  *   baselines, the icon line, corners, and the List layout's round trip.
  * - **@variant, Lumen and Atelier:** a flow that goes through a structural variant macOS doesn't hold (designs/types.ts:
- *   compose, listHeader, search, quickFilters, row, categoryReview, readerHeader, replyAction, categoryTabs), or a part only
+ *   compose, listHeader, search, quickFilters, row, readerHeader, replyAction, categoryTabs), or a part only
  *   those rows have (an avatar's icon); and the axe sweep (design-axe.spec.ts) and motion, which change only with a structure.
  * - **@variant-graphite, also Graphite:** a flow through its own value, the sidebar's compose row. Luma adds no value.
  *
@@ -134,7 +134,7 @@ test.describe("in every design", { tag: "@design" }, () => {
       await expect(rows(page).first()).toHaveCSS("height", `${d.rows.compact}px`);
       await server.backend.server.invoke("settings.update", { density: "comfortable" }, ctx);
     });
-    await scenario("a category's suggestions are reachable from the sidebar in every design (a sub-row or a badge, the same name)", async () => {
+    await scenario("a category's suggestions are reachable from the sidebar in every design", async () => {
       const db = sqlDb(server.backend.store);
       const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
       const t = db.get<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1")!.id;

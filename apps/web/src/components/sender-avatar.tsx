@@ -4,16 +4,16 @@ import { avatarColor, initials } from "~/lib/format";
 import { renderProbe } from "~/lib/render-probe";
 import { iconFailed, useSenderIcon } from "~/lib/sender-icons";
 
-/** A person's initials on their color's soft tint: the ink holds 4.5:1 on that tint wherever avatars sit (rows, drafts, the reader). */
+/** A person's initials on their color's faint tint, quieter than the mail beside them: the ink holds 4.5:1 on that tint wherever avatars sit (rows, drafts, the reader). */
 const TINT: Record<ReturnType<typeof avatarColor>, string> = {
-  rose: "bg-cat-rose/15 text-cat-rose-ink",
-  amber: "bg-cat-amber/15 text-cat-amber-ink",
-  lime: "bg-cat-lime/15 text-cat-lime-ink",
-  emerald: "bg-cat-emerald/15 text-cat-emerald-ink",
-  cyan: "bg-cat-cyan/15 text-cat-cyan-ink",
-  indigo: "bg-cat-indigo/15 text-cat-indigo-ink",
-  violet: "bg-cat-violet/15 text-cat-violet-ink",
-  slate: "bg-cat-slate/15 text-cat-slate-ink",
+  rose: "bg-cat-rose/10 text-cat-rose-ink",
+  amber: "bg-cat-amber/10 text-cat-amber-ink",
+  lime: "bg-cat-lime/10 text-cat-lime-ink",
+  emerald: "bg-cat-emerald/10 text-cat-emerald-ink",
+  cyan: "bg-cat-cyan/10 text-cat-cyan-ink",
+  indigo: "bg-cat-indigo/10 text-cat-indigo-ink",
+  violet: "bg-cat-violet/10 text-cat-violet-ink",
+  slate: "bg-cat-slate/10 text-cat-slate-ink",
 };
 
 /**
@@ -25,7 +25,7 @@ const TINT: Record<ReturnType<typeof avatarColor>, string> = {
  */
 export function SenderAvatar({ name, email, className, icon = false }: { name: string; email: string; className?: string; icon?: boolean }) {
   return (
-    <span aria-hidden data-testid="sender-avatar" className={cn("relative flex shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold select-none", TINT[avatarColor(email)], className)}>
+    <span aria-hidden data-testid="sender-avatar" className={cn("relative flex shrink-0 items-center justify-center overflow-hidden rounded-full font-medium select-none", TINT[avatarColor(email)], className)}>
       {initials(name || email)}
       {icon && <SenderIcon email={email} />}
     </span>
@@ -35,7 +35,8 @@ export function SenderAvatar({ name, email, className, icon = false }: { name: s
 /**
  * The icon layer: always there (it's what the visibility observer watches), empty until an icon
  * arrives. A photo or a touch icon fills the circle; a favicon sits on a paper tile at no more
- * than twice its own size, so a 16 px one stays small and crisp instead of stretched. It fades in
+ * than twice its own size, so a 16 px one stays small and crisp instead of stretched. In dark that
+ * paper is dimmed: still light enough for a dark logo, no longer the brightest thing in the list. It fades in
  * (within --motion) only when it arrives after the avatar showed; one already loaded shows at once
  * (scrolling back through a list doesn't flicker).
  */
@@ -49,7 +50,7 @@ const SenderIcon = memo(function SenderIcon({ email }: { email: string }) {
   const fade = icon !== null && icon.url !== atMount;
   const full = icon?.ref.full ?? false;
   return (
-    <span ref={ref} data-testid={icon ? "sender-icon" : undefined} data-icon-kind={icon?.ref.kind} className={cn("pointer-events-none absolute inset-0 flex items-center justify-center rounded-full", icon && !full && "bg-[var(--mail-paper)] shadow-[inset_0_0_0_var(--hairline-w)_var(--hairline)]")}>
+    <span ref={ref} data-testid={icon ? "sender-icon" : undefined} data-icon-kind={icon?.ref.kind} className={cn("pointer-events-none absolute inset-0 flex items-center justify-center rounded-full", icon && !full && "bg-[var(--mail-paper)] shadow-[inset_0_0_0_var(--hairline-w)_var(--hairline)] dark:bg-[color-mix(in_oklab,var(--mail-paper)_40%,var(--background))]")}>
       {icon && (
         <img
           key={icon.url}

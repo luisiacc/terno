@@ -801,6 +801,8 @@ describe("accounts", () => {
     await expect(client.call("accounts.addImap", { ...base, password: "wrong" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     const account = await client.call("accounts.addImap", { ...base, password: "correct" });
     expect(await backend.getSecret(`account:${account.id}:password`)).toBe("correct");
+    // plan 158: color is the categories'; a new account is neutral until its owner picks one
+    expect(account.color).toBe("slate");
     // never exposed through bootstrap
     expect(JSON.stringify(await client.call("app.bootstrap", {}))).not.toContain("correct");
   });

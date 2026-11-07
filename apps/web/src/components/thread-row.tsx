@@ -24,18 +24,6 @@ import { useFollowups } from "~/state/followups";
 import { onlyOnTop } from "~/state/list";
 import { useExcerpts } from "~/state/excerpts";
 
-/** The account, in all-accounts views: a small ring in its color (category dots are filled) before its name (plan 23). */
-const ACCOUNT_MARK: Record<CategoryColor, string> = {
-  rose: "border-cat-rose",
-  amber: "border-cat-amber",
-  lime: "border-cat-lime",
-  emerald: "border-cat-emerald",
-  cyan: "border-cat-cyan",
-  indigo: "border-cat-indigo",
-  violet: "border-cat-violet",
-  slate: "border-cat-slate",
-};
-
 interface Props {
   thread: ThreadSummary;
   top: number;
@@ -170,27 +158,27 @@ function Marked({ text, needles }: { text: string; needles: readonly MatchNeedle
   return parts.map((p, i) => (p.hit ? <mark key={i} data-testid="row-match" className={MARK}>{p.text}</mark> : p.text));
 }
 
-/** How far into its line a match may stand: what shows of it is short beside a classic row's subject, longer on a line of its own. */
-const LEAD = { beside: 10, own: 28, wide: 40 };
+/** How far into its line a match may stand. */
+const LEAD = { own: 28, wide: 40 };
 
 /** The row's words after the subject in a search: from near the match, the match marked. */
 function matchLine(match: RowMatch | null | undefined, text: string, lead: number) {
   return match ? <Marked text={matchFocus(text, match.body, lead)} needles={match.body} /> : text;
 }
 
-function RowSnippet({ thread, reminderTop, ink, match, excerpt, lead }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; match?: RowMatch | null; excerpt?: string; lead: number }) {
+function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string; lead: number }) {
   const { line } = useOwed(thread, reminderTop);
   return (
-    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("type-row-snippet min-w-0 truncate", line ? ink : "text-muted-foreground")}>
+    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("type-row-snippet min-w-0 truncate", line ? ink : quiet)}>
       {line ?? matchLine(match, excerpt ?? thread.snippet, lead)}
     </span>
   );
 }
 
-/** The wide row's words after the subject: the same line, where it reads the same. */
-function RowTail({ thread, reminderTop, ink, match, excerpt }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; match?: RowMatch | null; excerpt?: string }) {
+/** A one-line row's words after the subject: the same line, where it reads the same; apart from the subject by ink and space, no dash (subjects have their own). */
+function RowTail({ thread, reminderTop, ink, quiet, match, excerpt }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string }) {
   const { line } = useOwed(thread, reminderTop);
-  return <span data-followup={line ? true : undefined} className={line ? ink : "text-muted-foreground"}>— {line ?? matchLine(match, excerpt ?? thread.snippet, LEAD.wide)}</span>;
+  return <span data-testid="row-snippet" data-followup={line ? true : undefined} className={cn("type-row-snippet ml-2", line ? ink : quiet)}>{line ?? matchLine(match, excerpt ?? thread.snippet, LEAD.wide)}</span>;
 }
 
 /** On the Inbox's top and in its own list, the date a row shows is when it's owed. */
@@ -208,19 +196,25 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   /** where it lives when that isn't where mail usually is (Trash wins: trashed spam is in the trash) */
   const place = thread.inTrash ? "trash" : thread.inSpam ? "spam" : null;
 
+  // unread reads first: a stronger sender and subject, one dot. Read is quieter, and a checked row is on the accent, where only its own foreground holds
+  const onAccent = checked && !selected;
+  const readInk = onAccent ? "text-accent-foreground" : "text-row-read";
+  const quiet = onAccent ? "text-accent-foreground" : "text-muted-foreground";
   const from = (
-    <span data-testid="row-from" className={cn("min-w-0 truncate", thread.unread ? "type-row-from-strong" : "type-row-from text-foreground")}>
+    <span data-testid="row-from" className={cn("min-w-0 truncate", thread.unread ? "type-row-from-strong" : cn("type-row-from", readInk))}>
       <Marked text={thread.fromName} needles={match?.from} />
     </span>
   );
   const count = thread.messageCount > 1 && <span className="text-xs text-muted-foreground tabular">{formatNumber(thread.messageCount)}</span>;
+  const clip = thread.hasAttachments && <Paperclip className="size-3 text-muted-foreground" />;
+  const star = thread.starred && <Star className="size-3 fill-star text-star" />;
   const marks = (
     <>
       {cats.map((c) => (
         <CategoryDot key={c.id} data-cat-dot={c.id} color={c.color as CategoryColor} />
       ))}
-      {thread.hasAttachments && <Paperclip className="size-3 text-muted-foreground" />}
-      {thread.starred && <Star className="size-3 fill-star text-star" />}
+      {!wide && clip}
+      {!wide && star}
       {reminder && !reminderTop && (
         // plan 87: due, in the accent (the Inbox's top); set, quiet
         <Bell
@@ -238,21 +232,20 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       )}
     </>
   );
-  // Apple Mail's "to which account" (plan 23): muted, under the date (before it in compact), within a share of the line so the
-  // subject always keeps the rest; an address truncates its local part first (shrink 100 to 1: a factor under 1 leaves overflow unresolved), then its @domain. Screen readers get it once, at the end.
+  // Apple Mail's "to which account" (plan 23): quiet text, at the end of the preview's line (a column of its own in a wide list, before the date in
+  // compact), within a share of the line so the preview keeps the rest; an address truncates its local part first (shrink 100 to 1: a factor under 1 leaves overflow unresolved), then its @domain. Screen readers get it once, at the end.
   const accountTag = account && (
     <span
       aria-hidden
       data-testid="account-label"
       title={account.email}
       className={cn(
-        "flex min-w-0 shrink-0 items-center gap-1 self-center text-2xs",
+        "flex min-w-0 shrink-0 items-center self-center text-xs",
         // a checked row is on the accent (muted text isn't checked there): its own foreground
-        checked && !selected ? "text-accent-foreground" : "text-muted-foreground",
-        line ? "max-w-[min(7rem,32%)]" : "ml-auto max-w-[min(8rem,40%)] pl-1",
+        quiet,
+        wide ? "w-28" : line ? "max-w-[min(7rem,32%)]" : "ml-auto max-w-[min(8rem,40%)] pl-2",
       )}
     >
-      <span data-testid="account-mark" className={cn("size-1.5 shrink-0 rounded-full border-[1.5px]", ACCOUNT_MARK[account.color])} />
       {account.local !== undefined ? (
         <>
           <span className="min-w-[1ch] shrink-[100] truncate">{account.local}</span>
@@ -274,21 +267,21 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       <RowDate thread={thread} reminderTop={reminderTop} title={remindersList && reminder?.kind === "noReply" ? t("remind.noReplySuffix") : undefined} className={cn("text-xs tabular", thread.unread ? "text-foreground" : "text-muted-foreground")} fallback={remindersList && reminder ? reminderShort(reminder.dueAt) : listDate(thread.lastDate)} />
     );
   const draft = hasDraft && <span className="shrink-0 font-medium text-draft-foreground">{t("list.draft")}</span>;
-  // plan 158: beside a classic row's subject, a match in the text after it needs room to show, unless the subject has one itself
-  const roomForMatch = classic && !!match && !matchParts(thread.subject, match.subject) && !!matchParts(excerpt ?? thread.snippet, match.body);
+  const subjectInk = thread.unread ? "type-row-subject-strong text-foreground" : cn("type-row-subject", readInk);
+  // its own line: only a very long subject truncates
   const subject = (
-    <span data-testid="row-subject" className={cn("truncate", classic && "shrink-0", thread.unread ? "type-row-subject-strong text-foreground" : "type-row-subject text-foreground")} style={classic ? { maxWidth: roomForMatch ? "35%" : "60%" } : undefined}>
-      {thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}
+    <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>
+      {thread.subject || t("common.noSubject")}
     </span>
   );
   // plan 142: gated on the row's every state, as Draft's ink is (contrast.ts)
   const owedInk = "text-draft-foreground";
-  const snippet = <RowSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} match={match} excerpt={excerpt} lead={classic ? LEAD.beside : LEAD.own} />;
+  const snippet = <RowSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} lead={LEAD.own} />;
   const chip = code && <CodeChip threadId={thread.id} code={code} />;
   const reviewed = review !== null ? categories.find((c) => c.id === review) : undefined;
   const answer = reviewed && <ReviewControls threadId={thread.id} categoryId={reviewed.id} category={reviewed.name} />;
   const avatar = !classic && (
-    <span className={cn("relative shrink-0", !line && !big && "self-start mt-0.5")}>
+    <span className={cn("shrink-0", !line && !big && "self-start mt-0.5")}>
       <SenderAvatar
         name={thread.fromName}
         email={thread.fromEmail}
@@ -299,14 +292,40 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
             ? "size-(--avatar-row-compact) text-[length:calc(var(--avatar-row-compact)*0.42)]"
             : wide
               ? "size-(--avatar-row-wide) text-[length:calc(var(--avatar-row-wide)*0.38)]"
-              : "size-(--avatar-row) text-[length:calc(var(--avatar-row)*0.3)]"
+              : "size-(--avatar-row) text-[length:calc(var(--avatar-row)*0.34)]"
         }
       />
-      {/* Lumen: what's new sits on the person, ringed in what's behind the row */}
-      {big && !line && thread.unread && (
-        <span data-testid="row-unread-dot" className={cn("absolute -top-0.5 -left-0.5 size-3 rounded-full bg-unread ring-2", selected ? "ring-row-selected" : checked ? "ring-accent" : "ring-pane")} />
-      )}
     </span>
+  );
+  // one mark in every design and layout: in the gutter, on the sender's line, never on an avatar
+  const dot = thread.unread && !checked && included === undefined && (
+    <span data-testid="row-unread-dot" className={cn("absolute -left-[11px] size-[7px] -translate-y-1/2 rounded-full bg-unread", line ? "top-1/2" : "top-[calc(var(--type-row-from-leading)/2)]")} />
+  );
+  // a three-line row's first line: its marks and date hold the right edge
+  const firstLine = (
+    <div className="flex min-w-0 items-center gap-1.5">
+      {from}
+      {count}
+      <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-1">
+        {chip}
+        {marks}
+        {date}
+      </span>
+    </div>
+  );
+  // Apple Mail's three lines: who, what about, how it starts (plan 80: in Review, the answers take the preview's place, so they have the width)
+  const lines = (
+    <>
+      {firstLine}
+      <div className="flex min-w-0 items-baseline gap-1.5">
+        {subject}
+        {draft}
+      </div>
+      <div className="flex min-w-0 items-baseline">
+        {answer || snippet}
+        {!answer && accountTag}
+      </div>
+    </>
   );
 
   return (
@@ -345,11 +364,11 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
         // the row is the option and `x` its key: this is for the pointer, and says nothing the row doesn't
         <CheckboxMark data-testid="row-include" checked={included} className="absolute top-1/2 left-5 -translate-y-1/2" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); toggleRow(thread.id); }} />
       )}
-      {!(big && !line) && included === undefined && !checked && <span className={cn("absolute top-1/2 left-[11px] size-1.5 -translate-y-1/2 rounded-full bg-unread", !thread.unread && "invisible")} />}
       {/* in the batch, not just open: a check in the gutter, in every row style, moving nothing (it takes the unread dot's place; the row's weight still says unread) */}
       {checked && included === undefined && <Check aria-hidden data-testid="row-check" className={cn("absolute top-1/2 left-[7px] size-3 -translate-y-1/2 [--icon-line:1.5px]", selected ? "text-row-selected-foreground" : "text-accent-foreground")} />}
       {line ? (
         <div className={cn("relative flex min-w-0 items-center", classic ? "gap-2" : "gap-2.5", wide && !classic && "gap-3")}>
+          {dot}
           {avatar}
           {wide ? (
             // the senders line up in a column, so the subjects do too
@@ -365,65 +384,42 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
               {count}
             </>
           )}
-          <span className={cn("type-row-subject min-w-0 flex-1 truncate", thread.unread ? "text-foreground" : "text-muted-foreground")}>
-            <Marked text={thread.subject} needles={match?.subject} /> {draft} <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} match={match} excerpt={excerpt} />
+          <span className="min-w-0 flex-1 truncate">
+            <span data-testid="row-subject" className={subjectInk}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
+            {draft && <span className="ml-1.5">{draft}</span>}
+            <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} />
           </span>
-          {accountTag}
-          {!wide && chip}
           {answer}
-          <span className={cn("flex shrink-0 items-center gap-1.5", !answer && "ml-auto")}>
-            {marks}
-            {date}
-          </span>
-        </div>
-      ) : classic ? (
-        <>
-          <div className="relative flex min-w-0 items-center gap-2">
-            {from}
-            {count}
-            {/* plan 80: in Review, the answers sit beside the sender, the subject keeps its line */}
-            {answer && <span className="ml-auto flex min-w-0 shrink">{answer}</span>}
-            <span className={cn("flex shrink-0 items-center gap-1.5", !answer && "ml-auto")}>
+          {wide ? (
+            // fixed columns, so the eye runs down each and the right edge is straight: account, marks, attachment, star, date
+            <>
+              {accountTag}
+              <span className="flex min-w-8 shrink-0 items-center justify-end gap-1.5">{marks}</span>
+              <span className="flex w-3 shrink-0 justify-center">{clip}</span>
+              <span className="flex w-3 shrink-0 justify-center">{star}</span>
+              <span className="flex w-[4.25rem] shrink-0 justify-end">{date}</span>
+            </>
+          ) : (
+            <>
+              {accountTag}
               {chip}
-              {marks}
-              {date}
-            </span>
-          </div>
-          <div className="relative mt-0.5 flex min-w-0 items-baseline gap-1.5 text-sm">
-            <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-              {subject}
-              {draft}
-              {snippet}
-            </span>
-            {accountTag}
-          </div>
-        </>
-      ) : (
-        <div className={cn("relative flex min-w-0", big ? "items-center gap-3.5" : "gap-3")}>
-          {avatar}
-          <div className={cn("flex min-w-0 flex-1 flex-col", !big && "gap-0.5")}>
-            <div className="flex min-w-0 items-center gap-1.5">
-              {from}
-              {count}
-              <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                {chip}
-                {!big && marks}
+              <span className={cn("flex shrink-0 items-center gap-1.5", !answer && "ml-auto")}>
+                {marks}
                 {date}
               </span>
-            </div>
-            <div className="flex min-w-0 items-baseline gap-1.5 text-sm">
-              <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-                {subject}
-                {draft}
-              </span>
-              {accountTag}
-            </div>
-            <div className={cn("flex min-w-0 items-center gap-1.5", big && "mt-0.5")}>
-              {/* plan 80: in Review, the answers take the preview's place */}
-              {answer || snippet}
-              {big && <span className="ml-auto flex shrink-0 items-center gap-1.5">{marks}</span>}
-            </div>
-          </div>
+            </>
+          )}
+        </div>
+      ) : classic ? (
+        <div className="relative flex min-w-0 flex-col">
+          {dot}
+          {lines}
+        </div>
+      ) : (
+        <div className={cn("relative flex min-w-0", big ? "items-center gap-3" : "gap-2.5")}>
+          {dot}
+          {avatar}
+          <div className="flex min-w-0 flex-1 flex-col">{lines}</div>
         </div>
       )}
       {place && <span className="sr-only">{t(place === "spam" ? "list.place.spam.sr" : "list.place.trash.sr")}</span>}

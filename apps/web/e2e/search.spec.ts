@@ -37,8 +37,7 @@ test.describe("search", () => {
     await scenario("searches across all accounts at once", async () => {
       await fresh(page);
       await search(page, "in:all factura");
-      const bars = await page.getByTestId("account-mark").evaluateAll((els) => new Set(els.map((e) => e.className)).size);
-      expect(bars).toBeGreaterThan(1);
+      expect(new Set(await page.getByTestId("account-label").allTextContents()).size).toBeGreaterThan(1);
     });
     await scenario("Escape clears an active query; / focuses the box from anywhere", async () => {
       await fresh(page);

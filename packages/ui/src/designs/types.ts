@@ -81,8 +81,6 @@ export interface DesignDefinition {
   surfaces: {
     /** the inline draft's surface */
     draft: "tint" | "outline" | "card";
-    /** a category's review badge (inline-badge): plain text, or on the accent wash */
-    reviewBadge: "plain" | "tinted";
     /** the inbox's unread count in the sidebar: quiet, or in the unread color */
     inboxCount: "muted" | "unread";
     /** a button with words on it: the control's corners, or a pill */
@@ -132,7 +130,7 @@ export interface TypeSpec {
 export interface DesignVariants {
   /** where "new message" lives */
   compose: "list-header" | "sidebar-outline" | "sidebar-pill" | "sidebar-row";
-  /** the list header's title area */
+  /** the list header's title area: a compact title, a display title, or a display title with the Inbox's greeting in its subtitle */
   listHeader: "title" | "display" | "greeting";
   /** search: always a field, or a button that opens one */
   search: "field" | "button";
@@ -140,8 +138,6 @@ export interface DesignVariants {
   quickFilters: "menu" | "chips";
   /** the list row's layout */
   row: "classic" | "avatar" | "large-avatar";
-  /** a category's pending suggestions: a sub-row, or a badge in the category's row */
-  categoryReview: "sub-rows" | "inline-badge";
   /** the reader's header above the conversation */
   readerHeader: "classic" | "chips-display" | "sender-card";
   /** the reader toolbar's Reply: on the control's corners, or a pill with its key */

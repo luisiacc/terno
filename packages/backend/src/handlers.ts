@@ -32,9 +32,11 @@ const ENDS_REMINDER: ReadonlySet<ThreadAction> = new Set(["archive", "trash", "s
 /** Messages a similar sweep reads per page while resolving its scope (plan 63). */
 const SIMILAR_PAGE = 2000;
 
+/** Plan 158: color belongs to categories; an account is neutral until its owner picks one (Settings, or its menu). */
+const NEW_ACCOUNT_COLOR = "slate";
+
 const ADDED_BY = { picker: "user", dnd: "user", suggestion: "suggestion", snackbar: "bulk" } as const;
 
-const ACCOUNT_COLORS = ["indigo", "emerald", "amber", "cyan", "violet", "rose", "lime", "slate"];
 
 function toDraft(r: DraftRow): Draft {
   return {
@@ -384,7 +386,6 @@ export function createHandlers(b: Backend): Handlers {
     resolveQueue = next.catch(() => undefined);
     return next;
   };
-  const nextAccountColor = async () => ACCOUNT_COLORS[(await store.accounts.list()).length % ACCOUNT_COLORS.length]!;
   /** accounts.remove's work; a Gmail account's grant is withdrawn at Google after it's gone here (plan 125) */
   const removeAccount = async (id: number, wasOwner: boolean, gmail: boolean): Promise<{ ok: true; google?: "revoked" | "failed" }> => {
     await b.dropAccount(id, { remove: true });
@@ -1158,7 +1159,7 @@ export function createHandlers(b: Backend): Handlers {
         kind: "imap",
         email: p.email,
         displayName: label.displayName,
-        color: await nextAccountColor(),
+        color: NEW_ACCOUNT_COLOR,
         providerConfig: config,
         secret: { key: "password", blob },
         ownerClaim: claim ? imapClaim({ email: p.email }, config, p.displayName || p.email) : undefined,
@@ -1205,7 +1206,7 @@ export function createHandlers(b: Backend): Handlers {
       if (existing) throw new RpcError("BAD_REQUEST", L("errors.alreadyConnected", { email: result.email }));
       const config: GmailAccountConfig & AccountPrefs = { senderName: result.name || result.email, googleSubject: result.sub!, googleClientId: oauth.clientId, ...(syncWindowDays !== undefined && { syncWindowDays }) };
       const blob = await b.options.cipher.encrypt(result.refreshToken);
-      const color = await nextAccountColor();
+      const color = NEW_ACCOUNT_COLOR;
       const label = accountLabel(result.email.split("@")[0]!, result.email, await store.accounts.list());
       googleFlowActive(b);
       const { account, claimed } = await store.accounts.create({
@@ -1270,7 +1271,7 @@ export function createHandlers(b: Backend): Handlers {
         }
         // a new mailbox only: one already here (reconnected above) keeps its window
         const config: GmailAccountConfig & AccountPrefs = { senderName: who.name || who.email, googleSubject: who.sub!, ...(syncWindowDays !== undefined && { syncWindowDays }) };
-        const color = await nextAccountColor();
+        const color = NEW_ACCOUNT_COLOR;
         const label = accountLabel(who.email.split("@")[0]!, who.email, await store.accounts.list());
         googleFlowActive(b);
         if (expiresAt <= b.now()) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));

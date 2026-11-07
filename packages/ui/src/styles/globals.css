@@ -103,6 +103,8 @@
   /* Terno email tokens */
   --color-pane: var(--pane);
   --color-row-hover: var(--row-hover);
+  /* a read row's sender and subject: quieter than unread, still above its preview (plan 158); between two inks that hold on every row state */
+  --color-row-read: color-mix(in oklab, var(--foreground) 62%, var(--muted-foreground));
   --color-row-selected: var(--row-selected);
   --color-row-selected-foreground: var(--row-selected-foreground);
   --color-row-rail: var(--row-rail);
