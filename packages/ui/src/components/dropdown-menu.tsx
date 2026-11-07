@@ -18,6 +18,7 @@ import {
   MENU_SHORTCUT,
   SUBMENU_ALIGN_OFFSET,
   SUBMENU_SIDE_OFFSET,
+  menuFinalFocus,
 } from "./menu-styles"
 
 function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
@@ -39,6 +40,7 @@ function DropdownMenuContent({
   sideOffset = 4,
   anchor,
   className,
+  finalFocus,
   ...props
 }: MenuPrimitive.Popup.Props &
   Pick<
@@ -59,6 +61,7 @@ function DropdownMenuContent({
           data-slot="dropdown-menu-content"
           // BoardUI's menu (plan 125, menu-styles.ts)
           className={cn("z-50 w-(--anchor-width) min-w-32", MENU_PANEL, MENU_MOTION, className)}
+          finalFocus={menuFinalFocus(finalFocus)}
           {...props}
         />
       </MenuPrimitive.Positioner>

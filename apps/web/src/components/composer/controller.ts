@@ -102,8 +102,8 @@ export interface ComposerController {
   empty(): boolean;
   /** plan 133: a suggestion made before a preview came up goes */
   dismissGhost(): void;
-  /** focus the editor, its caret where it was (or at the end the first time) */
-  focus(where?: "end" | "keep"): void;
+  /** focus the editor, its caret where it was (or at the end the first time); "last": at the end, always (a click on the page under the text) */
+  focus(where?: "end" | "keep" | "last"): void;
   /** the editable root */
   dom: HTMLElement;
   getState(): FormatState;

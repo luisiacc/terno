@@ -49,4 +49,17 @@ describe("keepInView", () => {
     expect(scroller.scrollTop).toBe(116);
     expect(frames).toHaveLength(0);
   });
+
+  it("stops short of what sticks at the top (its scroll padding), in either motion: the context line stays clear (plan 158)", () => {
+    scroller.style.scrollPaddingTop = "40px";
+    for (const motionMs of [80, 0]) {
+      scroller.scrollTop = 0;
+      useAppearance.setState({ motionMs });
+      // all of it wanted (900 tall in a 900 pane): it goes up only until its top is 16 + 40 below the pane's
+      el.getBoundingClientRect = () => rect(800 - scroller.scrollTop, 900);
+      keepInView(el, scroller, 16, () => 900);
+      frame();
+      expect(scroller.scrollTop).toBe(800 - 56);
+    }
+  });
 });

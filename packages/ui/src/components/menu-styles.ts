@@ -1,3 +1,5 @@
+import type { RefObject } from "react"
+
 /**
  * BoardUI's menu recipe (plan 125, its menu-styles.ts), shared by the dropdown, the context menu and the select: they
  * keep their own Base UI semantics (actions, a value) and draw the same panel and rows.
@@ -55,3 +57,22 @@ export const MENU_SHORTCUT = "ms-auto ps-3 text-sm font-normal text-muted-foregr
 /** The submenu opens 4 px from its panel (the row sits 6 px in), its first row level with the one that opened it */
 export const SUBMENU_SIDE_OFFSET = 10
 export const SUBMENU_ALIGN_OFFSET = -6
+
+type FinalFocus = boolean | RefObject<HTMLElement | null> | ((closeType: never) => boolean | HTMLElement | null | void)
+
+/**
+ * Base UI keeps focus the user moved elsewhere while a menu closed (a click into a draft that opened meanwhile), but
+ * only for `true`: a function's answer counts as explicit and is applied even then, and it lands after the closing
+ * animation, so a menu dismissed just before Reply took the composer's focus and the first letters typed (plan 158).
+ * A function here decides only while focus is still the menu's, a menu trigger's, or nowhere.
+ */
+export function menuFinalFocus<T extends FinalFocus | undefined>(finalFocus: T): T {
+  if (typeof finalFocus !== "function") return finalFocus
+  const decide = finalFocus as (closeType: never) => boolean | HTMLElement | null | void
+  return ((closeType: never) => {
+    // asked either way: a callback may also clear its own state (the thread menu's hand-off)
+    const answer = decide(closeType)
+    const active = document.activeElement
+    return active && active !== document.body && !active.closest("[role=menu]") && active.getAttribute("aria-haspopup") !== "menu" ? false : answer
+  }) as T
+}

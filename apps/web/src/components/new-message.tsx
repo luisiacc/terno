@@ -4,14 +4,14 @@ import { t } from "@terno/i18n";
 import { IconButton } from "@terno/ui/components/icon-button";
 import { isSendLaterKey, openSendLater, SendButton } from "./send-button";
 import { cn } from "@terno/ui/lib/utils";
-import { Pin, Trash2 } from "@terno/ui/icons";
+import { Trash2 } from "@terno/ui/icons";
 import { useEffect, useId, useRef } from "react";
 import { registerUndo, snack } from "~/lib/snack";
 import { composeFocusPending, finishComposeFocus, leaveNewDraft, leaveNewDraftWithFocus, sendDraft, showNewDraft } from "~/lib/compose";
 import { discardDraft, restoreDiscarded, useDrafts } from "~/lib/drafts";
 import { setApp, useApp } from "~/state/app";
-import { DRAFT_SURFACE, DraftClose, DraftFieldsForm, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
-import { popupOpen } from "./composer/controller";
+import { DRAFT_SURFACE, DraftClose, DraftFieldsForm, DraftPin, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
+import { controllerFor, popupOpen } from "./composer/controller";
 import { ComposerFormatBar, FormatToggle, LinkButton } from "./composer/controls";
 import { RichBody } from "./composer/rich";
 import { warmAutocomplete } from "~/lib/autocomplete";
@@ -115,9 +115,10 @@ export function NewMessage() {
       }}
     >
       {/* the window's drag strip, and what this is: the subject is in its field, once (plan 158) */}
-      <div className="drag-region h-[52px] shrink-0 [scrollbar-gutter:stable] overflow-y-hidden">
-        <div className="mx-auto flex h-full max-w-(--reader-max) items-end px-(--reader-pad-x) pb-2.5">
-          <h2 className="truncate pl-3.5 text-sm font-medium text-muted-foreground" data-testid="compose-title">
+      <div className="drag-region h-[60px] shrink-0 [scrollbar-gutter:stable] overflow-y-hidden">
+        <div className="mx-auto flex h-full max-w-(--reader-max) items-end px-(--reader-pad-x) pb-3">
+          {/* the pane's heading, as a conversation's subject is: what the pane is doing now */}
+          <h2 className="type-reader-subject truncate pl-3.5" data-testid="compose-title">
             {t("compose.untitled")}
           </h2>
         </div>
@@ -125,14 +126,17 @@ export function NewMessage() {
       {/* scrolls only where the card's minimum doesn't fit (a short window under a tall pinned card) */}
       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         <div className="mx-auto flex h-full max-w-(--reader-max) flex-col px-(--reader-pad-x) pb-5">
-          <div className={cn("relative flex min-h-60 flex-col", DRAFT_SURFACE)} data-testid="composer-card">
+          {/* a writing surface the pane's height (plan 158): fields at the top, Send at the foot, the page between */}
+          <div className={cn("relative flex min-h-60 flex-1 flex-col", DRAFT_SURFACE)} data-testid="composer-card">
             {/* pt-0.5: the first row's text field keeps its whole focus ring */}
-            <div className="min-h-0 overflow-y-auto pt-0.5" data-draft-scroll>
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-0.5" data-draft-scroll>
               <DraftFieldsForm d={d} accounts={accounts} showSubject />
-              <RichBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="rt-measure block min-h-[220px] w-full px-3.5 pt-3 pb-3" />
+              <RichBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="rt-measure block min-h-[132px] w-full px-3.5 pt-3 pb-3" />
               <DraftAttachments d={d} />
               <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
               <Quote d={d} />
+              {/* the rest of the page is the text's too: a click there writes at its end */}
+              <div aria-hidden className="min-h-4 flex-1 cursor-text" data-testid="compose-page-rest" onMouseDown={(e) => { if (e.button !== 0 || d.sending) return; e.preventDefault(); controllerFor(key)?.focus("last"); }} />
             </div>
             <div className="shrink-0">
               <ComposerFormatBar draftKey={key} id={formatId} className="px-2 pt-1.5" />
@@ -148,9 +152,7 @@ export function NewMessage() {
                 </span>
                 <span className="ml-auto flex gap-0.5">
                   {/* plan 115: kept at the bottom right while conversations are read */}
-                  <IconButton label={t("compose.pin")} onClick={() => pinDraft(key)} data-testid="compose-pin" disabled={d.sending}>
-                    <Pin />
-                  </IconButton>
+                  <DraftPin pinned={false} onClick={() => pinDraft(key)} disabled={d.sending} />
                   <IconButton label={t("compose.discard")} onClick={() => void discard()} data-testid="compose-discard" disabled={d.sending}>
                     <Trash2 />
                   </IconButton>

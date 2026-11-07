@@ -210,6 +210,19 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       await page.keyboard.press("a");
       await expect(page.getByTestId("compose-body")).toBeFocused();
       await page.getByTestId("compose-discard").click();
+      // the menu put away with Esc and Reply clicked while it's still closing: the closing menu doesn't take focus back
+      // from the draft, so every letter typed lands in it (plan 158: "Probe" lost its "Pr" to the trigger and to r)
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.getByTestId("action-reply-menu").click();
+      await expect.poll(() => page.evaluate(() => document.activeElement?.closest("[role=menu]") != null)).toBe(true);
+      await page.keyboard.press("Escape");
+      await page.getByTestId("action-reply").click();
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+      await page.keyboard.type("Probe text.");
+      await expect(page.getByTestId("compose-body")).toContainText("Probe text.");
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+      await page.getByTestId("compose-discard").click();
     });
     await scenario("someone else on it: both offer it, and the menu's row hands focus to the draft", async () => {
       const account = (await store.accounts.list())[0]!;

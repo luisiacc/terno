@@ -450,10 +450,10 @@
   --avatar-message: 28px;
   --avatar-collapsed: 28px;
   --avatar-sender: 0px;
-  --draft-bg: var(--tint);
+  --draft-bg: var(--background);
   --draft-ring: var(--border);
-  --format-bg: color-mix(in oklab, var(--foreground) 4.5%, transparent);
-  --format-ring: none;
+  --format-bg: transparent;
+  --format-ring: 0 0 0 var(--hairline-w) var(--border);
   --draft-shadow: 0 0 transparent;
 }
 

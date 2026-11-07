@@ -59,17 +59,20 @@ function Row({ label, htmlFor, children, hidden, note }: { label: string; htmlFo
   );
 }
 
-/** Send's message about a field, under it on the values' line (px-3.5 + the label's w-14 + the gap); it goes with the form. */
+/** Send's message about a field, under it on the values' line (px-3.5 + the label's w-14 + the gap); it goes with the form. Keyed by each refusal, so a second Send says it again. */
 function FieldProblem({ id, message }: { id: string; message: string }) {
   return (
-    <p id={id} role="alert" data-testid="compose-field-problem" className="-mt-1.5 pr-3.5 pb-2 pl-20 text-xs text-destructive-ink">
+    <p id={id} role="alert" data-testid="compose-field-problem" className="-mt-1.5 pr-3.5 pb-2 pl-20 text-xs text-destructive-ink animate-in fade-in-0 duration-fast">
       {message}
     </p>
   );
 }
 
-/** The tinted card a draft is written in: a conversation's, and a new message's (plan 130). */
-export const DRAFT_SURFACE = "rounded-xl bg-(--draft-bg) [box-shadow:0_0_0_var(--hairline-w)_var(--draft-ring),var(--draft-shadow)]";
+/**
+ * The card a draft is written in: a conversation's, and a new message's (plan 130). Its edge is the border token; in
+ * dark a device pixel of it vanished against the pane (plan 158), so there it's a whole point.
+ */
+export const DRAFT_SURFACE = "rounded-xl bg-(--draft-bg) [box-shadow:0_0_0_var(--hairline-w)_var(--draft-ring),var(--draft-shadow)] dark:[box-shadow:0_0_0_1px_var(--draft-ring),var(--draft-shadow)]";
 
 const input = "h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground";
 
@@ -89,7 +92,7 @@ export function DraftFieldsForm({ d, accounts, showSubject, threadAccountId }: {
     const bad = badChips[field] ?? null;
     return bad !== null ? t("compose.invalidRecipient", { entry: bad }) : problem?.field === field ? problem.message : null;
   };
-  const problemNote = (field: "to" | "cc" | "bcc") => { const message = fieldProblem(field); return message !== null ? <FieldProblem id={`${id}-${field}-problem`} message={message} /> : undefined; };
+  const problemNote = (field: "to" | "cc" | "bcc") => { const message = fieldProblem(field); return message !== null ? <FieldProblem key={problem?.field === field ? problem.seq : 0} id={`${id}-${field}-problem`} message={message} /> : undefined; };
   const problemId = (field: "to" | "cc" | "bcc") => fieldProblem(field) !== null ? `${id}-${field}-problem` : undefined;
   // a row shows when it was disclosed, when it has something in it, or when the mode needs it (a forward's
   // subject): a conversion that fills Cc in while the draft is open shows it, never sends to a hidden field
@@ -323,20 +326,42 @@ export function Quote({ d }: { d: LocalDraft }) {
   );
 }
 
-/** Puts the draft away: a chevron alone never said its words are kept, so it says what it does, in the tooltip too. */
+/** Puts the draft away, and says so in its words (plan 158: "Close" beside the bin didn't say the words are kept). */
 export function DraftClose({ onClick }: { onClick: () => void }) {
   return (
     <Tooltip>
       <TooltipTrigger
         render={
-          <Button type="button" variant="ghost" size="sm" aria-label={t("compose.collapse")} onClick={onClick} data-testid="compose-collapse" className="px-2 text-muted-foreground hover:text-foreground">
-            {t("compose.close")}
+          <Button type="button" variant="ghost" size="sm" onClick={onClick} data-testid="compose-collapse" className="px-2 text-muted-foreground hover:text-foreground">
+            {t("compose.collapse")}
           </Button>
         }
       />
       <TooltipContent className="flex items-center gap-2">
-        {t("compose.collapse")}
+        {t("compose.collapseTip")}
         <Shortcut keys="escape" />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * Pin, and what it does (plan 115): its tooltip says it, and a pinned draft's own pin shows pressed, in the accent, so
+ * the state reads without a hover (plan 158). Pressed, it unpins.
+ */
+export function DraftPin({ pinned, onClick, disabled }: { pinned: boolean; onClick: () => void; disabled?: boolean }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button type="button" variant="ghost" size="icon-sm" aria-label={t(pinned ? "compose.unpin" : "compose.pin")} aria-pressed={pinned} onClick={onClick} disabled={disabled} data-testid={pinned ? "compose-unpin" : "compose-pin"} className="text-muted-foreground hover:text-foreground aria-pressed:bg-muted aria-pressed:text-primary">
+            <Pin />
+          </Button>
+        }
+      />
+      <TooltipContent className="max-w-64 flex-col items-start gap-0.5 text-left">
+        <span className="font-medium">{t(pinned ? "compose.unpin" : "compose.pinTitle")}</span>
+        <span className="text-muted-foreground">{t(pinned ? "compose.pinnedTip" : "compose.pinTip")}</span>
       </TooltipContent>
     </Tooltip>
   );
@@ -348,11 +373,15 @@ const draftPreview = (text: string): string => text.slice(0, 300).replace(/\s+/g
 /**
  * How much of an opening composer has to show: all of it when the pane can hold it, so a short window doesn't open it cut
  * off at the edge. A draft longer than the pane (its foot sticks anyway) shows down to 40% of the pane's worth of text.
+ * The text starts a few lines tall and grows with what's written (plan 158: a short reply in a short window kept a
+ * blank page and pushed the message it answers away).
  */
 function composerWanted(el: HTMLElement): number {
   const body = el.querySelector<HTMLElement>("[data-testid=compose-body]");
-  const pane = el.closest("[data-reader-scroller]")?.clientHeight;
-  if (!body || !pane) return Infinity;
+  const scroller = el.closest<HTMLElement>("[data-reader-scroller]");
+  if (!body || !scroller) return Infinity;
+  // what sticks at the pane's top (its scroll padding) isn't room the composer has
+  const pane = scroller.clientHeight - (parseFloat(getComputedStyle(scroller).scrollPaddingTop) || 0);
   const whole = el.getBoundingClientRect().height;
   if (whole <= pane - 2 * WANTED_MARGIN) return Infinity;
   const foot = el.querySelector<HTMLElement>("[data-draft-foot]")?.offsetHeight ?? 0;
@@ -568,7 +597,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
               showSubject={d.mode === "forward" || d.mode === "new"}
               threadAccountId={account?.id}
             />
-            <RichBody draftKey={d.key} checkpoint={checkpoint} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="rt-measure block min-h-[132px] w-full px-3.5 pt-3 pb-3 [@media(max-height:820px)]:min-h-[40vh]" />
+            <RichBody draftKey={d.key} checkpoint={checkpoint} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="rt-measure block min-h-24 w-full px-3.5 pt-3 pb-3" />
             <DraftAttachments d={d} />
             <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
             <Quote d={d} />
@@ -586,11 +615,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
               </span>
               <span className="ml-auto flex gap-0.5">
                 {/* plan 115: not from Review drafts, which owns the draft while it's open */}
-                {!recovering && (
-                  <IconButton label={t("compose.pin")} onClick={() => pinDraft(d.key)} data-testid="compose-pin" disabled={d.sending}>
-                    <Pin />
-                  </IconButton>
-                )}
+                {!recovering && <DraftPin pinned={false} onClick={() => pinDraft(d.key)} disabled={d.sending} />}
                 <IconButton label={t("compose.discard")} onClick={() => void discard()} data-testid="compose-discard" disabled={d.sending}>
                   <Trash2 />
                 </IconButton>

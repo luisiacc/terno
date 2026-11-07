@@ -268,9 +268,9 @@ export function RichBody({ draftKey, placeholder, className, checkpoint }: { dra
         views.add(view);
         liveViews.set(draftKey, view);
         emptyClass(view);
-        const focus = (where: "end" | "keep" = "keep") => {
+        const focus = (where: "end" | "keep" | "last" = "keep") => {
           if (!canMutate()) return;
-          if (where === "end" && !focusedOnce) view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
+          if ((where === "end" && !focusedOnce) || where === "last") view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
           focusedOnce = true;
           view.focus();
         };

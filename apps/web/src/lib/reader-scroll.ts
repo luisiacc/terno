@@ -22,6 +22,15 @@ export function cancelReaderScroll(): void {
 /** A key typed into a field or the editor writes there: it isn't the reader being scrolled. */
 const typing = (target: EventTarget | null): boolean => target instanceof Element && target.closest("input, textarea, select, [contenteditable=true]") !== null;
 
+/**
+ * What covers the scroller's edges, as its scroll padding says: at the foot the snack dock and the pinned draft, at the
+ * top what sticks there (the conversation's context line once its header has gone, plan 158). The element clears both.
+ */
+function coverOf(scroller: HTMLElement): { covered: number; coveredTop: number } {
+  const style = getComputedStyle(scroller);
+  return { covered: parseFloat(style.scrollPaddingBottom) || 0, coveredTop: parseFloat(style.scrollPaddingTop) || 0 };
+}
+
 /** `wanted`: how much of the element, from its top, has to show (all of it by default): a composer's foot sticks, so its first lines are enough. */
 export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.closest<HTMLElement>("[data-reader-scroller]"), pad = 16, wanted?: () => number): () => void {
   cancelReaderScroll();
@@ -30,16 +39,15 @@ export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.cl
   if (motionMs === 0 || reducedMotion) {
     const id = requestAnimationFrame(() => {
       if (!wanted) { el.scrollIntoView({ block: "nearest" }); return; }
-      const covered = parseFloat(getComputedStyle(scroller).scrollPaddingBottom) || 0;
+      const { covered, coveredTop } = coverOf(scroller);
       const r = el.getBoundingClientRect(), s = scroller.getBoundingClientRect();
       const overflow = r.top + Math.min(wanted(), r.height) - (s.bottom - pad - covered);
-      if (overflow > 0) scroller.scrollTop += Math.min(overflow, r.top - (s.top + pad));
+      if (overflow > 0) scroller.scrollTop += Math.min(overflow, r.top - (s.top + pad + coveredTop));
     });
     cancel = () => cancelAnimationFrame(id);
     return cancelReaderScroll;
   }
-  // what covers the scroller's foot (the snack dock, the pinned draft) is room the element must clear too
-  const covered = parseFloat(getComputedStyle(scroller).scrollPaddingBottom) || 0;
+  const { covered, coveredTop } = coverOf(scroller);
   // the transition (slow ≤ 100 ms) plus two frames for layout to settle
   const until = performance.now() + Math.min(100, Math.round(motionMs * 1.33)) + 34;
   let frame = 0;
@@ -57,7 +65,7 @@ export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.cl
     const r = el.getBoundingClientRect();
     const s = scroller.getBoundingClientRect();
     const overflow = (wanted ? r.top + Math.min(wanted(), r.height) : r.bottom) - (s.bottom - pad - covered);
-    const room = r.top - (s.top + pad);
+    const room = r.top - (s.top + pad + coveredTop);
     // write
     if (overflow > 0 && room > 0) scroller.scrollTop += Math.min(overflow, room);
     if (performance.now() < until) frame = requestAnimationFrame(step);

@@ -18,6 +18,7 @@ import {
   MENU_SHORTCUT,
   SUBMENU_ALIGN_OFFSET,
   SUBMENU_SIDE_OFFSET,
+  menuFinalFocus,
 } from "./menu-styles"
 
 function ContextMenu({ ...props }: ContextMenuPrimitive.Root.Props) {
@@ -49,6 +50,7 @@ function ContextMenuContent({
   alignOffset = 4,
   side = "right",
   sideOffset = 0,
+  finalFocus,
   ...props
 }: ContextMenuPrimitive.Popup.Props &
   Pick<
@@ -70,6 +72,7 @@ function ContextMenuContent({
           data-slot="context-menu-content"
           // BoardUI's menu (plan 125, menu-styles.ts)
           className={cn("z-50 min-w-36", MENU_PANEL, MENU_CHEVRON_COLUMN, MENU_MOTION, className)}
+          finalFocus={menuFinalFocus(finalFocus)}
           {...props}
         />
       </ContextMenuPrimitive.Positioner>

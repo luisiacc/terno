@@ -5,7 +5,7 @@ import { attachmentUploading, draftAttachmentBudget } from "./attachments";
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { firstInvalid, SELECT_INVALID } from "./recipient-field";
-import { useSendProblem } from "./send-problem";
+import { sayProblem } from "./send-problem";
 import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
@@ -1090,7 +1090,7 @@ function recipientProblem(d: LocalDraft): { field: "to" | "cc" | "bcc"; message:
 }
 function sayRecipientProblem(key: string, problem: { field: "to" | "cc" | "bcc"; message: string }): void {
   const shown = typeof document !== "undefined" && document.querySelector(`[data-draft-key="${CSS.escape(key)}"] [data-recipient-field="compose-${problem.field}"]`) !== null;
-  if (shown) useSendProblem.setState({ problem: { key, ...problem } });
+  if (shown) sayProblem({ key, ...problem });
   else snack.error(problem.message);
   showRecipient(key, problem.field);
 }

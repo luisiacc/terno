@@ -650,13 +650,25 @@ test.describe("the new message", () => {
     });
   });
 
-  test("plan 130: a card that hugs the text: the bar right under it, far from the pane's foot, every control inside", { tag: "@variant" }, async ({ app: page }) => {
+  test("plan 158: a writing surface the pane's height: fields at the top, the bar at the foot, the page below the text writes at its end", { tag: "@variant" }, async ({ app: page }) => {
     await compose(page);
     await body(page).click();
     await page.keyboard.type("Hola");
-    const text = await box(body(page)), bar = await box(page.getByTestId("format-bar")), c = await box(card(page)), pane = await box(page.getByTestId("composer"));
-    expect(bar.y - (text.y + text.height)).toBeLessThan(24);
-    expect(pane.y + pane.height - (c.y + c.height)).toBeGreaterThan(150);
+    const bar = await box(page.getByTestId("format-bar")), c = await box(card(page)), pane = await box(page.getByTestId("composer"));
+    // the card reaches the pane's foot (its padding), and the bar is at the card's
+    expect(pane.y + pane.height - (c.y + c.height)).toBeLessThanOrEqual(24);
+    expect(c.y + c.height - (bar.y + bar.height)).toBeLessThan(60);
+    // a click in the empty page goes on writing where the text ends
+    await page.getByTestId("compose-to").click();
+    await page.getByTestId("compose-page-rest").click();
+    await expect(body(page)).toBeFocused();
+    await page.keyboard.type(" mundo");
+    await expect(body(page)).toHaveText("Hola mundo");
+    // every time, not only the first: with words selected, a click there doesn't type over them (Codex review)
+    await body(page).getByText("Hola mundo").dblclick({ position: { x: 4, y: 4 } });
+    await page.getByTestId("compose-page-rest").click();
+    await page.keyboard.type("!");
+    await expect(body(page)).toHaveText("Hola mundo!");
     for (const id of ["compose-send", "compose-send-later", "compose-pin", "compose-discard", "compose-collapse", "format-toggle", "compose-link"]) await expect(card(page).getByTestId(id)).toBeVisible();
     // nothing left in the strip above it: the only controls are the card's
     expect(await page.getByTestId("composer").locator("button").count()).toBe(await card(page).locator("button").count());

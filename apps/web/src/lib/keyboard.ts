@@ -132,6 +132,18 @@ function answerSuggestion(yes: boolean) {
   void (yes ? acceptSuggestion(id, s.categoryId) : rejectSuggestion(id, s.categoryId));
 }
 
+/**
+ * ⌘Enter that no form took: from a draft's own controls, or with focus nowhere (a click on the pane's blank space) while
+ * a new message is on screen, it's that message's Send, which says at the field what stops it (plan 158). Never from a
+ * dialog, a menu or another field: those keep the key.
+ */
+export function sendShownDraft(): void {
+  const el = document.activeElement, s = getApp();
+  const nowhere = !el || el === document.body;
+  const key = draftKeyOf(el) ?? (nowhere && s.dialog === null && !s.menuOpen ? s.compose?.key : null);
+  draftCommands(key)?.send();
+}
+
 const HANDLERS: Partial<Record<Command, () => void>> = {
   "list.next": () => move(1),
   "list.prev": () => move(-1),
@@ -174,6 +186,7 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "compose.reply": () => reply("reply"),
   "compose.replyAll": () => reply("replyAll"),
   "compose.forward": () => reply("forward"),
+  "compose.send": sendShownDraft,
   "compose.ai": () => openAiDraft(),
   "compose.cc": () => draftCommands(draftKeyOf(document.activeElement) ?? getApp().compose?.key)?.showCc(),
   "compose.bcc": () => draftCommands(draftKeyOf(document.activeElement) ?? getApp().compose?.key)?.showBcc(),

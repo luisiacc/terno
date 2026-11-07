@@ -113,3 +113,21 @@ Round 2 raised five. Four are fixed:
 4. **`awaitingIn` kept expired entries.** Pruned on insert, as `revealSent` does.
 
 Not fixed, per the review cap: two sends within five seconds, with the first's result arriving behind the second's Undo. At the second's expiry the first's check shows, then the second's own result follows. It's brief, never wrong about what was sent, and correcting it needs send-level correlation the op events don't carry for a hold. Stopped after two rounds.
+
+## Third pass (ratings on `90d8de33`)
+
+**Regressions.**
+
+- *Send with nobody to send to "did nothing".* It did, but only with focus in the form: `compose.send` (⌘↵) had a binding and no handler, so after a click on the pane's blank space the key was dropped. It's now `sendShownDraft`: the focused draft, or with focus nowhere (no dialog or menu) the new message on screen. Each refusal is a new alert (`SendProblem.seq` keys it), so a second Send is said again.
+- *An invalid address accepted silently.* The field said so; the strip didn't, so a draft put away like that read "To bad-address". It now says "— “bad-address” isn't an email address", in the destructive ink.
+- *Reply focus went back to the response menu's trigger.* Base UI keeps focus the user moved elsewhere for `finalFocus` `true`, but a function's answer counts as explicit and is applied after the exit animation, whatever has focus by then. Dismissing the menu just before Reply took the composer's focus, and "Pr" of "Probe" went to the trigger and to `r`. `menuFinalFocus` (the shared dropdown and context menus) lets a function decide only while focus is the menu's, a trigger's, or nowhere. The thread menu and Review's menu did this by hand already.
+
+**A new message is a page.** The card fills the pane (List: the page), fields at the top, Send at the foot; the empty page under the text writes at its end on a click. Its title is the pane's heading (`type-reader-subject`), as a conversation's subject is. While it's open the list's last open row has no fill (it still answers the pointer). macOS's drafts use the window's surface (`surfaces.draft: "outline"`), not a gray card that read as disabled. In dark the card's edge is a whole point of `--border` (a device pixel vanished); the token itself is the lead's.
+
+**Save and close.** The visible label is the accessible one: "Save and close", "Guardar y cerrar". Its tooltip says the draft is kept as you write, with Esc.
+
+**Pin.** One control (`DraftPin`) for the reply, the new message and the pinned card: its tooltip says "Pin draft" and what it does; on the pinned card the same pin shows pressed, in the accent, and unpins.
+
+**Short windows.** A reply's text starts four lines tall and grows with what's written: the 40vh minimum below 820 px left a short reply a blank page and pushed the message it answers away. `keepInView` and `composerWanted` treat the reader scroller's `scroll-padding-top` as covered, so the sticky context line the reader adds when its header scrolls away (its height as that padding) never sits on the composer's top.
+
+**Codex review (third pass).** Round 1 found two, both fixed with a test that fails without the fix: a second click on the empty page, with words selected, typed over them (`focus("end")` moves the caret only the first time; the page asks for `"last"`); and `menuFinalFocus` skipped a callback whose state it also clears (the thread menu's hand-off), so the next menu's Esc didn't return focus. The callback is now always asked; only its answer is overridden. Round 2 found nothing.

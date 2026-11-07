@@ -653,6 +653,13 @@ test.describe("the composer at rest and at its limits (plan 158)", () => {
       await expect(page.getByTestId("compose-to")).toBeFocused();
       await expect(page.getByTestId("compose-to")).toHaveAttribute("aria-describedby", await page.getByTestId("compose-field-problem").getAttribute("id") as string);
       await expect(page.getByTestId("snack")).toHaveCount(0);
+      // every time (plan 158): ⌘↵ with focus nowhere (a click on the pane's blank space) is still this message's Send, and the alert is new, so it's said again
+      await page.getByTestId("compose-field-problem").evaluate((el) => el.setAttribute("data-was", ""));
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      await page.keyboard.press("ControlOrMeta+Enter");
+      await expect(page.getByTestId("compose-to")).toBeFocused();
+      await expect(page.getByTestId("compose-field-problem")).toHaveText("Add a recipient to send");
+      await expect(page.getByTestId("compose-field-problem")).not.toHaveAttribute("data-was");
     });
     await scenario("Esc: the message goes with the composer, and no empty draft stays, here or after a reload", async () => {
       await page.keyboard.press("Escape");
@@ -863,6 +870,12 @@ test("the composer's states: unavailable Send, Saving and Saved, an invalid addr
   await page.getByTestId("compose-send").hover();
   await expect(page.locator("[data-slot=tooltip-content]")).toContainText("“bad-addr” isn’t an email address.");
   await page.mouse.move(1, 1);
+  // put away like that, the strip still says it won't go (plan 158: it read "To bad-addr", as if it were fine)
+  await to.focus();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("strip-item-recipients")).toHaveText("— “bad-addr” isn’t an email address");
+  await page.getByTestId("strip-item").click();
+  await expect(note).toBeVisible();
   // fixed: it goes, and Send is ready again
   await page.getByTestId("recipient-chip").click();
   await page.keyboard.press("Backspace");
@@ -882,9 +895,14 @@ test("the composer's states: unavailable Send, Saving and Saved, an invalid addr
   await expect(status.locator("[aria-live]")).toHaveText("Saved");
 
   // what the draft's lifecycle controls do can be read
-  await expect(page.getByTestId("compose-collapse")).toHaveText("Close");
+  // it says it keeps the draft, in the words it's named by (plan 158)
+  await expect(page.getByTestId("compose-collapse")).toHaveText("Save and close");
   await expect(page.getByTestId("compose-collapse")).toHaveAccessibleName("Save and close");
   await expect(page.getByTestId("compose-pin")).toHaveAccessibleName(/stays open/);
+  await expect(page.getByTestId("compose-pin")).toHaveAttribute("aria-pressed", "false");
+  await page.getByTestId("compose-pin").hover();
+  await expect(page.locator("[data-slot=tooltip-content]")).toContainText("Keeps it open at the bottom right while you read other mail.");
+  await page.mouse.move(1, 1);
 });
 
 test("the composer reads like the message above it, and a short window gives it room, whole (plan 158)", { tag: "@design" }, async ({ app: page }) => {
@@ -900,18 +918,24 @@ test("the composer reads like the message above it, and a short window gives it 
 
   await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 1100, height: 700 });
+  // what sticks at the reader's top says so in its scroll padding: the opening composer clears it (plan 158)
+  const scroller = page.locator("[data-reader-scroller]");
+  await scroller.evaluate((el) => { el.style.scrollPaddingTop = "44px"; });
   for (const open of [() => page.getByTestId("draft-collapsed").click(), () => page.keyboard.press("r")]) {
     await open();
     await expect(body).toBeFocused();
     const composer = page.getByTestId("composer");
     await expect(composer).toBeInViewport({ ratio: 1 });
-    const pane = (await page.locator("[data-reader-scroller]").boundingBox())!;
-    expect((await body.boundingBox())!.height / pane.height).toBeGreaterThanOrEqual(0.4);
+    const pane = (await scroller.boundingBox())!;
+    // a two-line reply keeps no blank page: the text is about its own height, so the message stays in view above it
+    expect((await body.boundingBox())!.height).toBeLessThanOrEqual(120);
     const card = (await composer.boundingBox())!;
+    expect(card.y - pane.y, "the composer clears what sticks at the top").toBeGreaterThanOrEqual(44);
     expect(pane.y + pane.height - (card.y + card.height), "the card's foot isn't against the window").toBeGreaterThanOrEqual(8);
     // a chip and the row's own controls fit on the row: it doesn't double for them
     expect((await page.locator("[data-recipient-row]").first().boundingBox())!.height).toBe(38);
     await page.keyboard.press("Escape");
     await page.getByTestId("reader-subject").evaluate((el) => el.closest("[data-reader-scroller]")!.scrollTo(0, 0));
   }
+  await scroller.evaluate((el) => { el.style.scrollPaddingTop = ""; });
 });

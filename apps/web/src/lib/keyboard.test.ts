@@ -34,7 +34,8 @@ vi.mock("~/components/snack-dock", () => ({ focusDock() {} }));
 vi.mock("~/components/thread-menu", () => ({ openMenuForSelection() {} }));
 vi.mock("~/components/category-snackbar", () => ({ snackbarControls: { current: null } }));
 
-const { move } = await import("./keyboard");
+const { move, sendShownDraft } = await import("./keyboard");
+const { registerDraftCommands } = await import("~/lib/draft-commands");
 const { useSnack, resetSnacks } = await import("~/lib/snack");
 const { useAppearance } = await import("~/lib/appearance");
 const { closePage } = await import("./page");
@@ -103,5 +104,31 @@ describe("j past the loaded rows on the page (plan 24)", () => {
     fake.page!(nextPage);
     await vi.waitFor(() => expect(useList.getState().items).toHaveLength(5));
     expect(getApp().selectedId).toBe(3);
+  });
+});
+
+describe("⌘Enter that no form took (plan 158)", () => {
+  const sends: string[] = [];
+  const commands = (key: string) => registerDraftCommands(key, { send: () => sends.push(key) } as unknown as Parameters<typeof registerDraftCommands>[1]);
+  beforeEach(() => { sends.length = 0; (document as { activeElement: unknown }).activeElement = null; });
+
+  it("with focus nowhere, the new message on screen is the one it sends (which says what stops it)", () => {
+    const off = commands("new:1");
+    setApp({ compose: { key: "new:1", seq: 1 } as never, dialog: null, menuOpen: false });
+    sendShownDraft();
+    expect(sends).toEqual(["new:1"]);
+    off();
+  });
+
+  it("never from behind a dialog or a menu, nor with no new message", () => {
+    const off = commands("new:1");
+    setApp({ compose: { key: "new:1", seq: 1 } as never, dialog: "settings", menuOpen: false });
+    sendShownDraft();
+    setApp({ dialog: null, menuOpen: true });
+    sendShownDraft();
+    setApp({ compose: null, menuOpen: false });
+    sendShownDraft();
+    expect(sends).toEqual([]);
+    off();
   });
 });

@@ -14,6 +14,7 @@ import { usePinned } from "~/lib/pinned-draft-state";
 import { useSnack } from "~/lib/snack";
 import { useList } from "~/state/list";
 import { reminderShort, reminderWhen } from "~/lib/when";
+import { firstInvalid } from "~/lib/recipient-field";
 import { useScheduled } from "~/lib/scheduled";
 import { ScheduledPopover } from "./scheduled-popover";
 
@@ -71,11 +72,15 @@ function ScheduledRow({ s }: { s: ScheduledInfo }) {
 }
 
 function DraftRow({ d }: { d: LocalDraft }) {
+  // put away with an address that can't be one, it still says so: it won't send like that (plan 158)
+  const invalid = firstInvalid(d.toText) ?? firstInvalid(d.ccText) ?? firstInvalid(d.bccText);
   return (
     <button type="button" data-testid="strip-item" data-key={d.key} onClick={() => void openStoredDraft(d.key)} className={cn(ROW, "hover:before:bg-row-hover")}>
       <PenLine className="relative size-3.5 shrink-0 text-muted-foreground" />
       <span className="relative min-w-0 shrink truncate font-medium">{d.subject || t(d.mode === "new" ? "compose.untitled" : "common.noSubject")}</span>
-      <span className="relative min-w-0 flex-1 truncate text-muted-foreground">{recipientsLine(d)}</span>
+      <span className={cn("relative min-w-0 flex-1 truncate", invalid !== null ? "text-destructive-ink" : "text-muted-foreground")} data-testid="strip-item-recipients">
+        {invalid !== null ? t("compose.strip.invalid", { entry: invalid }) : recipientsLine(d)}
+      </span>
     </button>
   );
 }

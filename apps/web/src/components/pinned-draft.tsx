@@ -3,7 +3,7 @@ import { useComposerDrop } from "./composer-drop";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { PinOff, Trash2 } from "@terno/ui/icons";
+import { Trash2 } from "@terno/ui/icons";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { finishComposeFocus } from "~/lib/compose";
 import { sendDraft } from "~/lib/compose";
@@ -14,7 +14,7 @@ import { focusReading, pinDraft, unpinDraft } from "~/lib/pinned-draft";
 import { usePinned } from "~/lib/pinned-draft-state";
 import { registerUndo, snack, useSnack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
-import { DraftFieldsForm, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
+import { DraftFieldsForm, DraftPin, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
 import { isSendLaterKey, openSendLater, SendButton } from "./send-button";
 import { popupOpen } from "./composer/controller";
 import { ComposerFormatBar, FormatToggle, LinkButton } from "./composer/controls";
@@ -152,16 +152,7 @@ export function PinnedDraft({ list }: { list: boolean }) {
             {what}
             {d.subject && <span className="font-normal text-muted-foreground"> · {d.subject}</span>}
           </span>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button type="button" variant="ghost" size="icon-sm" aria-label={t("compose.unpin")} onClick={() => unpinDraft(key)} data-testid="compose-unpin" className="text-muted-foreground hover:text-foreground">
-                  <PinOff />
-                </Button>
-              }
-            />
-            <TooltipContent>{t("compose.unpin")}</TooltipContent>
-          </Tooltip>
+          <DraftPin pinned onClick={() => unpinDraft(key)} />
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto" data-draft-scroll>
           <DraftFieldsForm d={d} accounts={accounts} showSubject={d.mode === "forward" || d.mode === "new"} />

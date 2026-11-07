@@ -93,6 +93,8 @@ test.describe("a pinned draft", () => {
     await scenario("unpinned on its conversation, it drops back inline, open, focused, with its text", async () => {
       await fresh(page);
       await pinReply(page, 1, "Back where it was");
+      // pinned reads without a hover: its pin is pressed (plan 158)
+      await expect(card(page).getByTestId("compose-unpin")).toHaveAttribute("aria-pressed", "true");
       await card(page).getByTestId("compose-unpin").click();
       await expect(card(page)).toHaveCount(0);
       const inline = page.getByTestId("reader").getByTestId("compose-body");
