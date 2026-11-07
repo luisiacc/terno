@@ -120,7 +120,7 @@ function RemindButton({ threadId }: { threadId: number }) {
 }
 
 // the reader's toolbar icons: out of the window's drag region, at the toolbar's line weight, a size down where the reader is narrow
-const tool = "no-drag size-8 rounded-md text-foreground/75 hover:text-foreground @max-[560px]:size-7 [&_svg]:[--icon-line:var(--icon-line-toolbar)]";
+const tool = "no-drag size-8 rounded-md text-foreground-soft hover:text-foreground @max-[560px]:size-7 [&_svg]:[--icon-line:var(--icon-line-toolbar)]";
 
 // one column for the toolbar and the conversation, so their edges agree at every width (narrow: less margin, for the toolbar's icons)
 const COLUMN = "mx-auto w-full max-w-(--reader-max) px-(--reader-pad-x) @max-[420px]:px-4";
@@ -647,7 +647,7 @@ function MessageCount({ count, fold }: { count: number; fold: Fold }) {
       <span className="tabular @max-[560px]:hidden">{t("reader.messageCount", { count })}</span>
       <span aria-hidden className="@max-[560px]:hidden">·</span>
       <Tooltip>
-        <TooltipTrigger render={<Button variant="link-secondary" size="xs" onClick={fold.toggleAll} data-testid="expand-all" className="font-normal text-foreground/80 hover:text-foreground" />}>{label}</TooltipTrigger>
+        <TooltipTrigger render={<Button variant="link-secondary" size="xs" onClick={fold.toggleAll} data-testid="expand-all" className="font-normal text-foreground-soft hover:text-foreground" />}>{label}</TooltipTrigger>
         <TooltipContent className="flex items-center gap-2">
           {label}
           <Shortcut keys="shift+e" />

@@ -70,8 +70,9 @@ export const THEME_TOKENS = [
   "tint",
   "highlight",
   "draft-foreground",
-  // plan 158: the keyboard's place in a menu or the palette
+  // plan 158: the keyboard's place in a menu or the palette; an enabled control's quieter ink
   "menu-highlight",
+  "foreground-soft",
   "sidebar-glyph",
   "control-edge",
   "control-edge-hover",

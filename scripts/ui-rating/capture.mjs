@@ -58,9 +58,10 @@ async function pass(design, mode, dir) {
     // the list filtered, by the chip or the button the style has
     const chip = page.getByTestId("quick-filter-unread");
     const onChip = await chip.isVisible().catch(() => false);
-    const filter = onChip ? chip : page.getByTestId("unread-filter");
-    await filter.click(); await page.waitForTimeout(500); await settle(); await s("15-filtered-unread");
-    await (onChip ? page.getByTestId("quick-filter-all") : filter).click(); await page.waitForTimeout(400);
+    if (onChip) await chip.click(); else { await blur(); await page.keyboard.press("Shift+U"); }
+    await page.waitForTimeout(500); await settle(); await s("15-filtered-unread");
+    if (onChip) await page.getByTestId("quick-filter-all").click(); else await page.keyboard.press("Shift+A");
+    await page.waitForTimeout(400);
 
     // a smaller window
     await resize(app, 1100, 700); await page.waitForTimeout(500);

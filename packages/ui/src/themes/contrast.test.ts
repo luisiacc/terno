@@ -49,7 +49,7 @@ describe("WCAG AA in every built-in theme", () => {
     // plan 125: the danger button's text on both stops of its fill; a key's text on its field wash over a highlighted row;
     // the link button on panes and cards
     // plan 158: a menu's chosen row, its two inks; a search's match on a row, in each of a row's states
-    expect(CONTRAST_PAIRS).toHaveLength(5 + 49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2 + 2);
+    expect(CONTRAST_PAIRS).toHaveLength(2 + 4 + 49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2 + 2);
   });
 
   it("reports a failing pair with its ratio", () => {

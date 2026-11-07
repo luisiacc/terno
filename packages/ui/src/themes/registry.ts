@@ -145,7 +145,8 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("overlay", () => (light ? "0 0 0 / 16%" : "0 0 0 / 45%"));
   def("shadow-color", () => (light ? "0 0 0 / 10%" : "0 0 0 / 40%"));
   def("ink-anchor", () => (light ? "0.2 0.01 265" : "0.98 0 0"));
-  def("mail-paper", () => (light ? o("background") : "0.97 0.003 85"));
+  // plan 158: in dark, a sheet of paper in low light rather than the brightest thing on screen
+  def("mail-paper", () => (light ? o("background") : "0.92 0.004 85"));
   def("mail-ink", () => "0.24 0.01 265");
   def("mail-link", () => "0.5 0.18 265");
   def("sidebar-translucent", () => withAlpha(o("sidebar"), light ? 0.72 : 0.62));
@@ -165,6 +166,14 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("draft-foreground", () =>
     stepUntil(o("destructive"), ["background", "row-hover", "row-selected", "accent"].map((k) => formatOklch(o(k as ThemeToken))), 4.5, bg, o("foreground"), light),
   );
+  // plan 158: a quiet control that's still plainly enabled: the ink, at most a quarter of the way to the ground, as far as it still reads
+  def("foreground-soft", () => {
+    for (let t = 0.25; t > 0; t = Math.round((t - 0.01) * 100) / 100) {
+      const c = mixOklab(o("foreground"), o("background"), t);
+      if (["background", "card"].every((k) => contrast(c, formatOklch(o(k as ThemeToken)), bg) >= 4.5)) return c;
+    }
+    return o("foreground");
+  });
   // plan 158: the popover stepped toward the ink until the keyboard's place shows, while its text still reads
   def("menu-highlight", () => {
     const pop = formatOklch(opaquePopover());
@@ -254,7 +263,7 @@ export const THEMES: readonly Theme[] = [
       "muted-foreground": "0.5 0.012 265",
       accent: "0.945 0.012 268",
       "accent-foreground": "0.3 0.06 268",
-      border: "0.22 0.01 265 / 12%",
+      border: "0.22 0.01 265 / 15%",
       input: "0.22 0.01 265 / 18%",
       primary: "0.56 0.19 268",
       "primary-foreground": "0.99 0.004 268",
@@ -442,7 +451,7 @@ export const THEMES: readonly Theme[] = [
       "muted-foreground": "0.5 0.012 72",
       accent: "0.96 0.016 83",
       "accent-foreground": "0.5 0.1 74",
-      border: "0.3 0.01 70 / 13%",
+      border: "0.3 0.01 70 / 15%",
       input: "0.3 0.01 70 / 17%",
       primary: "0.211 0.005 68",
       "primary-foreground": "1 0 0",
@@ -475,7 +484,7 @@ export const THEMES: readonly Theme[] = [
       "muted-foreground": "0.5 0.013 90",
       accent: "0.954 0.006 255",
       "accent-foreground": "0.326 0.061 256",
-      border: "0.227 0.004 85 / 12%",
+      border: "0.227 0.004 85 / 15%",
       input: "0.227 0.004 85 / 17%",
       primary: "0.326 0.061 256",
       "primary-foreground": "1 0 0",
@@ -542,16 +551,16 @@ export const THEMES: readonly Theme[] = [
       "muted-foreground": "#5D5D5D",
       accent: "#F4F4F4",
       "accent-foreground": "#292929",
-      border: "0 0 0 / 11%",
+      border: "0 0 0 / 14%",
       input: "0 0 0 / 16%",
       primary: "#292929",
       "primary-foreground": "1 0 0",
       destructive: "0.577 0.215 27",
       success: "0.54 0.13 150",
-      unread: "0.59 0.15 237",
+      unread: "0.57 0.15 237",
       star: "0.65 0.16 66",
       "row-hover": "#F8F8F8",
-      "row-selected": "#E8E8E8",
+      "row-selected": "#E4E4E4",
       "row-selected-foreground": "#292929",
       "sidebar-accent": "#F4F4F4",
     },
@@ -574,7 +583,7 @@ export const THEMES: readonly Theme[] = [
       "muted-foreground": "0.68 0.01 265",
       accent: "0.27 0.03 268",
       "accent-foreground": "0.92 0.03 268",
-      border: "1 0 0 / 11%",
+      border: "1 0 0 / 15%",
       input: "1 0 0 / 15%",
       primary: "0.7 0.16 268",
       "primary-foreground": "0.16 0.03 268",
@@ -825,7 +834,7 @@ export const THEMES: readonly Theme[] = [
       "muted-foreground": "0.72 0.012 75",
       accent: "0.29 0.035 80",
       "accent-foreground": "0.87 0.09 85",
-      border: "1 0 0 / 11%",
+      border: "1 0 0 / 15%",
       input: "1 0 0 / 15%",
       primary: "0.94 0.006 85",
       "primary-foreground": "0.19 0.006 70",
@@ -857,7 +866,7 @@ export const THEMES: readonly Theme[] = [
       "muted-foreground": "0.72 0.012 85",
       accent: "0.29 0.03 255",
       "accent-foreground": "0.9 0.03 255",
-      border: "1 0 0 / 11%",
+      border: "1 0 0 / 15%",
       input: "1 0 0 / 15%",
       primary: "0.76 0.07 255",
       "primary-foreground": "0.2 0.03 255",
@@ -922,7 +931,7 @@ export const THEMES: readonly Theme[] = [
       "muted-foreground": "#9E9E9E",
       accent: "#2A2A2A",
       "accent-foreground": "#EDEDED",
-      border: "1 0 0 / 11%",
+      border: "1 0 0 / 15%",
       input: "1 0 0 / 14%",
       primary: "#EDEDED",
       "primary-foreground": "#1A1A1A",
@@ -931,7 +940,7 @@ export const THEMES: readonly Theme[] = [
       unread: "0.74 0.13 237",
       star: "0.82 0.14 80",
       "row-hover": "1 0 0 / 4%",
-      "row-selected": "#333333",
+      "row-selected": "#353535",
       "row-selected-foreground": "#EDEDED",
       "sidebar-accent": "#2A2A2A",
     },

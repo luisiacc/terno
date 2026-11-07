@@ -352,7 +352,7 @@ function RemoteBlocked({ onLoad }: { onLoad: () => void }) {
 /** Quoted history, folded: says what it holds and turns as it opens. The same in plain text and HTML mail. */
 export function QuoteToggle({ open, onToggle, controls, testId = "quote-toggle", className }: { open: boolean; onToggle: () => void; controls?: string; testId?: string; className?: string }) {
   return (
-    <Button type="button" variant="link-secondary" size="xs" onClick={onToggle} aria-expanded={open} aria-controls={controls} data-testid={testId} className={cn("mt-2 -ml-1 flex h-6 gap-1 font-normal text-foreground/75 hover:text-foreground hover:no-underline", className)}>
+    <Button type="button" variant="link-secondary" size="xs" onClick={onToggle} aria-expanded={open} aria-controls={controls} data-testid={testId} className={cn("mt-2 -ml-1 flex h-6 gap-1 font-normal text-foreground-soft hover:text-foreground hover:no-underline", className)}>
       <ChevronRight className={cn("size-3.5 transition-transform duration-base ease-motion", open && "rotate-90")} />
       {t(open ? "reader.quote.hide" : "reader.quote.show")}
     </Button>

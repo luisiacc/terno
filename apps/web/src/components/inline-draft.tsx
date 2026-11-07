@@ -489,17 +489,17 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
       <Expand open={state === "bar"}>
         <div className="flex h-10 items-center gap-0.5 pr-1.5" data-testid="reply-bar">
           {/* its words on the messages' name column; you, as a quiet mark in the avatars' (initials: it's your own account, no logo to compete with what you're answering) */}
-          <button type="button" onClick={() => void openCompose("reply", threadId)} title={me ? t("compose.bar.from", { name: me }) : undefined} data-testid="quick-reply" className="flex h-full min-w-0 flex-1 items-center gap-[7px] rounded-xl pl-[7px] text-left text-sm text-foreground/75 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+          <button type="button" onClick={() => void openCompose("reply", threadId)} title={me ? t("compose.bar.from", { name: me }) : undefined} data-testid="quick-reply" className="flex h-full min-w-0 flex-1 items-center gap-[7px] rounded-xl pl-[7px] text-left text-sm text-foreground-soft outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
             <SenderAvatar name={me} email={account?.email ?? me} className="size-6 text-2xs" />
             <span className="truncate">{t("compose.bar.reply", { name: replyTo })}</span>
             <Kbd aria-hidden className="@max-[560px]:hidden">R</Kbd>
           </button>
           {replyAll && (
-            <Button variant="ghost" size="sm" className="text-foreground/75 hover:text-foreground [&_svg]:text-muted-foreground hover:[&_svg]:text-foreground" onClick={() => void openCompose("replyAll", threadId)} data-testid="quick-reply-all">
+            <Button variant="ghost" size="sm" className="text-foreground-soft hover:text-foreground [&_svg]:text-muted-foreground hover:[&_svg]:text-foreground" onClick={() => void openCompose("replyAll", threadId)} data-testid="quick-reply-all">
               <ReplyAll /> {t("compose.bar.replyAll")}
             </Button>
           )}
-          <Button variant="ghost" size="sm" className="text-foreground/75 hover:text-foreground [&_svg]:text-muted-foreground hover:[&_svg]:text-foreground" onClick={() => void openCompose("forward", threadId)} data-testid="quick-forward">
+          <Button variant="ghost" size="sm" className="text-foreground-soft hover:text-foreground [&_svg]:text-muted-foreground hover:[&_svg]:text-foreground" onClick={() => void openCompose("forward", threadId)} data-testid="quick-forward">
             <Forward /> {t("compose.bar.forward")}
           </Button>
           <AiDraftButton threadId={threadId} testId="quick-ai" />
