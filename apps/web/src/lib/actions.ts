@@ -227,26 +227,25 @@ interface SelectionBefore {
   checked: AppState["checked"];
   scope: ScopeSelection | null;
   selectedId: number | null;
+  anchorId: number | null;
   left: number | null;
 }
 
 const selectionBefore = (): SelectionBefore => {
   const s = getApp();
-  return { key: listKey(), checked: s.checked, scope: s.scope, selectedId: s.selectedId, left: s.selectedId };
+  return { key: listKey(), checked: s.checked, scope: s.scope, selectedId: s.selectedId, anchorId: s.anchorId, left: s.selectedId };
 };
 
 /**
- * Undo puts the selection back so a cleanup can resume: what was checked, the row that was open, and the keyboard in
- * the list. Not over what the user has chosen since (another list, a new selection, moving on), and focus only from
- * where nothing is being typed. After the rows are back: a reload drops checks on rows it doesn't hold.
+ * Undo puts the selection back so a cleanup can resume: what was checked, the row that was open, where a range grows
+ * from, and the keyboard in the list. Not over what the user has chosen since (another list, a new selection, another
+ * row: the next action would hit the old batch), and focus only from where nothing is being typed. After the rows are
+ * back: a reload drops checks on rows it doesn't hold.
  */
 function restoreSelection(before: SelectionBefore): void {
   const s = getApp();
   if (listKey() !== before.key) return;
-  setApp({
-    ...(s.checked.size === 0 && s.scope === null ? { checked: before.checked, scope: before.scope } : {}),
-    ...(s.selectedId === before.left ? { selectedId: before.selectedId } : {}),
-  });
+  if (s.checked.size === 0 && s.scope === null && s.selectedId === before.left) setApp({ checked: before.checked, scope: before.scope, selectedId: before.selectedId, anchorId: before.anchorId });
   if (document.activeElement?.closest("input, textarea, select, [contenteditable=true], [role=dialog]")) return;
   document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]")?.focus({ preventScroll: true });
 }

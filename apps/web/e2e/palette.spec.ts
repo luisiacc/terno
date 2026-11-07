@@ -22,26 +22,6 @@ async function palette(page: Page, query?: string) {
 
 test.describe("palette", () => {
   test("commands: Recent, a synonym, Reply and Forward, what's in it, no draft group, and in Spanish", async ({ app: page }) => {
-    await scenario("with a conversation open: its actions first, one row per intent, no \"No results\" above a search", async () => {
-      await fresh(page);
-      await openRow(page, 0);
-      await focusList(page);
-      await palette(page);
-      await expect(page.getByRole("option").first()).toHaveAttribute("data-command", "thread.archive");
-      await expect(page.locator("[data-group=goTo]")).toContainText("Reminders");
-      await expect(page.locator("[data-group=goTo]")).not.toContainText("Go to Reminders");
-      await input(page).fill("arch");
-      await expect(selected(page)).toHaveAttribute("data-command", "thread.archive");
-      await input(page).fill("star");
-      await expect(page.locator("[data-command=\"go.starred\"]")).toHaveCount(1);
-      await expect(page.getByTestId("palette-filter-starred")).toHaveCount(0);
-      await expect(page.locator("[data-command^=design]")).toHaveCount(0);
-      await input(page).fill("zqxpago");
-      await expect(page.locator("[data-command]")).toHaveCount(0);
-      await expect(selected(page)).toContainText("zqxpago");
-      await expect(page.locator("[cmdk-empty]")).toHaveCount(0);
-      await page.keyboard.press("Escape");
-    });
     await scenario("what you ran leads it under Recent, once; typing hides Recent", async () => {
       await openRow(page, 0);
       await focusList(page);
@@ -57,6 +37,38 @@ test.describe("palette", () => {
       await expect(page.locator("[data-command=\"thread.star\"]")).toHaveCount(1);
       await input(page).fill("sta");
       await expect(group(page, "recent")).toHaveCount(0);
+    });
+    await scenario("with a conversation open: its actions first, one row per intent, no \"No results\" above a search", async () => {
+      await fresh(page);
+      await openRow(page, 0);
+      await focusList(page);
+      await palette(page);
+      await expect(page.locator("[data-group=conversation] [role=option]").first()).toHaveAttribute("data-command", "thread.archive");
+      await expect(page.locator("[data-group=goTo]")).toContainText("Reminders");
+      await expect(page.locator("[data-group=goTo]")).not.toContainText("Go to Reminders");
+      await input(page).fill("arch");
+      await expect(selected(page)).toHaveAttribute("data-command", "thread.archive");
+      await input(page).fill("go to reminders");
+      await expect(selected(page)).toHaveAttribute("data-testid", "palette-go-reminders");
+      await input(page).fill("star");
+      await expect(page.locator("[data-command=\"go.starred\"]")).toHaveCount(1);
+      // the action is what it would do, and "star" finds it either way
+      await expect(selected(page)).toHaveAttribute("data-command", "thread.star");
+      const was = (await selected(page).textContent())!.includes("Unstar");
+      await page.keyboard.press("Enter");
+      await palette(page, "star");
+      await expect(selected(page)).toHaveAttribute("data-command", "thread.star");
+      await expect(selected(page)).toContainText(was ? /\bStar/ : "Unstar");
+      await page.keyboard.press("Enter");
+      await palette(page);
+      await input(page).fill("star");
+      await expect(page.getByTestId("palette-filter-starred")).toHaveCount(0);
+      await expect(page.locator("[data-command^=design]")).toHaveCount(0);
+      await input(page).fill("zqxpago");
+      await expect(page.locator("[data-command]")).toHaveCount(0);
+      await expect(selected(page)).toContainText("zqxpago");
+      await expect(page.locator("[cmdk-empty]")).toHaveCount(0);
+      await page.keyboard.press("Escape");
     });
     await scenario("a synonym finds the command and says so", async () => {
       await fresh(page);

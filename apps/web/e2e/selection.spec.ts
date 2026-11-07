@@ -80,6 +80,23 @@ test("a batch: every row shows it's in, Delete reads as the menu's, Undo puts th
   await expect(checked(page)).toHaveCount(3);
   await page.keyboard.press("e");
   await expect(row(page, ids[0]!)).toHaveCount(0);
+  await page.keyboard.press("z");
+  await expect(checked(page)).toHaveCount(3);
+
+  // a range survives too: where it grew from comes back, so the next ⇧K shrinks it
+  await rows(page).nth(6).click();
+  await expect(checked(page)).toHaveCount(0);
+  await focusList(page);
+  await page.keyboard.press("Shift+J");
+  await page.keyboard.press("Shift+J");
+  await expect(checked(page)).toHaveCount(3);
+  await page.keyboard.press("e");
+  await expect(checked(page)).toHaveCount(0);
+  await expect(toast(page, "Archived · 3 conversations").getByTestId("snack-action")).toBeVisible();
+  await page.keyboard.press("z");
+  await expect(checked(page)).toHaveCount(3);
+  await page.keyboard.press("Shift+K");
+  await expect(checked(page)).toHaveCount(2);
 });
 
 test.describe("context menu on one thread", () => {

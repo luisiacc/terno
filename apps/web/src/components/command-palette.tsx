@@ -216,6 +216,8 @@ export function CommandPalette() {
     add({ id: "snippet.new", group: "snippetsManage", label: t("palette.newSnippet"), icon: <Plus />, testId: "palette-snippet-new", keywords: english("palette.newSnippet"), run: newSnippet });
 
     // ── go to
+    /** The heading names them, so the rows don't; "go to reminders" still finds them. */
+    const goTo = (key: "palette.goToday" | "palette.goFollowups" | "palette.goReminders") => `${t("palette.group.goTo")} ${t(key)}`;
     const folder = (id: string, key: "view.inbox" | "view.starred" | "view.sent" | "view.archive" | "view.spam" | "view.trash" | "view.all", icon: ReactNode, run: () => void, shortcut?: string, testId?: string) =>
       add({ id, group: "goTo", label: t(key), icon, shortcut, testId, keywords: english(key), run });
     folder("go.inbox", "view.inbox", <Inbox />, () => goToFolder("inbox"), "G I");
@@ -225,9 +227,9 @@ export function CommandPalette() {
     folder("go.spam", "view.spam", <OctagonAlert />, () => goToFolder("spam"), undefined, "palette-go-spam");
     folder("go.trash", "view.trash", <Trash2 />, () => goToFolder("trash"));
     folder("go.all", "view.all", <Mails />, () => goToFolder("all"), undefined, "palette-go-all");
-    if (todayOn) add({ id: "go.today", group: "goTo", label: t("palette.goToday"), icon: <Sun />, testId: "palette-go-today", keywords: english("palette.goToday"), run: () => navigate({ today: true }) });
-    if (followupsOn) add({ id: "go.followups", group: "goTo", label: t("palette.goFollowups"), icon: <ListChecks />, testId: "palette-go-followups", keywords: english("palette.goFollowups"), run: () => navigate({ followups: true }) });
-    add({ id: "go.reminders", group: "goTo", label: t("palette.goReminders"), icon: <Bell />, shortcut: "G R", testId: "palette-go-reminders", keywords: english("palette.goReminders"), run: () => navigate({ reminders: true }) });
+    if (todayOn) add({ id: "go.today", group: "goTo", label: t("palette.goToday"), icon: <Sun />, testId: "palette-go-today", keywords: [goTo("palette.goToday"), ...english("palette.goToday")], run: () => navigate({ today: true }) });
+    if (followupsOn) add({ id: "go.followups", group: "goTo", label: t("palette.goFollowups"), icon: <ListChecks />, testId: "palette-go-followups", keywords: [goTo("palette.goFollowups"), ...english("palette.goFollowups")], run: () => navigate({ followups: true }) });
+    add({ id: "go.reminders", group: "goTo", label: t("palette.goReminders"), icon: <Bell />, shortcut: "G R", testId: "palette-go-reminders", keywords: [goTo("palette.goReminders"), ...english("palette.goReminders")], run: () => navigate({ reminders: true }) });
     for (const c of categories) {
       add({ id: `category:${c.id}`, group: "goTo", label: c.name, search: `${t("palette.search.category")} ${c.name}`, icon: <CategoryDot color={c.color as CategoryColor} />, keywords: english("palette.search.category"), run: () => navigate({ categoryId: c.id, accountId: null }) });
     }
@@ -271,7 +273,7 @@ export function CommandPalette() {
         add({ id: "compose.reply", group: inHand, label: t("palette.reply"), icon: <Reply />, shortcut: "R", testId: "palette-reply", ...synonyms("palette.alias.reply", english("palette.reply")), run: () => reply("reply") });
         add({ id: "compose.forward", group: inHand, label: t("palette.forward"), icon: <Forward />, shortcut: "F", testId: "palette-forward", ...synonyms("palette.alias.forward", english("palette.forward")), run: () => reply("forward") });
       }
-      add({ id: "thread.star", group: inHand, label: t(starKey), icon: <Star />, shortcut: "S", ...withEnglish([...english("actions.star"), ...english("actions.unstar")], "palette.alias.star"), run: () => toggleStar() });
+      add({ id: "thread.star", group: inHand, label: t(starKey), icon: <Star />, shortcut: "S", ...withEnglish([t("actions.star"), t("actions.unstar"), ...english("actions.star"), ...english("actions.unstar")], "palette.alias.star"), run: () => toggleStar() });
       if (scoped || rows.some((r) => r.unread)) add({ id: "thread.markRead", group: inHand, label: t("palette.markRead"), icon: <MailOpen />, shortcut: "⇧I", ...withEnglish(english("palette.markRead"), "palette.alias.markRead"), run: () => void act("markRead") });
       if (scoped || rows.some((r) => !r.unread)) add({ id: "thread.markUnread", group: inHand, label: t("palette.markUnread"), icon: <Mail />, ...withEnglish(english("palette.markUnread"), "palette.alias.markUnread"), run: () => void act("markUnread") });
       if (!scoped) add({ id: "thread.remind", group: inHand, label: t("palette.remind"), icon: <Bell />, shortcut: "H", testId: "palette-remind", ...withEnglish(english("palette.remind"), "palette.alias.remind"), page: "remind" });

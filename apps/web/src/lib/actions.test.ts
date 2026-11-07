@@ -101,6 +101,20 @@ describe("Undo puts the selection back (plan 158)", () => {
     expect(getApp().selectedId).toBe(2);
   });
 
+  it("nor after opening another row: the next action would hit the old batch", async () => {
+    acted();
+    setApp({ selectedId: 1, checked: new Set([1, 2]) });
+    await act("archive");
+    setApp({ selectedId: 3 });
+    fake.handlers["threads.list"] = vi.fn(async () => ({ items: [row(1), row(2), row(3), row(4)], nextCursor: null }));
+    setApp({ selectedId: 4 });
+    await undo();
+    await vi.waitFor(() => expect(fake.handlers["threads.list"]).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r));
+    expect(getApp().checked.size).toBe(0);
+    expect(getApp().selectedId).toBe(4);
+  });
+
   it("not in another list", async () => {
     acted();
     setApp({ selectedId: 1, checked: new Set([1, 2]) });

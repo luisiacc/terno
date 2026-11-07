@@ -60,7 +60,9 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
   useApp((s) => s.checked);
   const runOn = (a: ThreadAction, _fits: number[]) => () => void act(a);
   const bar = variant;
-  // only what would change something, as in the row menu ("select all N" holds rows it hasn't loaded: both)
+  // only what would change something, as in the row menu ("select all N" holds rows it hasn't loaded: both);
+  // read again when a row changes under the selection (mail read elsewhere)
+  useList((s) => s.items);
   const rows = scope ? [] : targetRows();
   const anyUnread = scope !== null || rows.some((r) => r.unread);
   const anyRead = scope !== null || rows.some((r) => !r.unread);
