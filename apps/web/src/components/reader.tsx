@@ -27,7 +27,7 @@ import { DraftSlot } from "./inline-draft";
 import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
 import { ScheduledReplyLine } from "./scheduled-popover";
 import { ForwardLine } from "./forward-line";
-import { shownDraftKey, useDrafts } from "~/lib/drafts";
+import { comingHomeKey, shownDraftKey, useDrafts } from "~/lib/drafts";
 import { reachesSeveral, replyName } from "~/lib/compose-fields";
 import { composeFocusPending, composeLanding, registerReaderFocusDestination, returnDraftsTo, subscribeComposeFocus } from "~/lib/compose";
 import { act, cancelMarkRead, openCompose, readChosenThread, scheduleMarkRead, toggleStar } from "~/lib/actions";
@@ -697,10 +697,10 @@ function ReaderContent() {
   useEffect(() => {
     if (draftShown?.threadId === selectedId && draftShown.key !== draftKey) setApp({ draftShown: null });
   }, [draftShown, selectedId, draftKey]);
-  // what was written here comes back with the conversation (plan 158), before the slot's first paint offers a blank Reply
-  useLayoutEffect(() => {
-    if (selectedId !== null) returnDraftsTo(selectedId);
-  }, [selectedId]);
+  // what was written here comes back with the conversation (plan 158), before the slot's first paint offers a blank Reply;
+  // and when one turns up late (the stored drafts still loading) or changes under the check
+  const homing = useDrafts((s) => (selectedId === null ? "" : comingHomeKey(s.drafts, selectedId)));
+  useLayoutEffect(() => (selectedId === null ? undefined : returnDraftsTo(selectedId)), [selectedId, homing]);
 
   const toolbarRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -783,7 +783,7 @@ function ReaderContent() {
         {page && <StepButtons id={selectedId} />}
         </div>
       </div>
-      <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]" style={dock ? { paddingBottom: dock, scrollPaddingBottom: dock, "--reader-dock": `${dock}px` } as React.CSSProperties : undefined} onContextMenu={backgroundMenu}>
+      <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]" style={dock ? { paddingBottom: dock, scrollPaddingBottom: dock } : undefined} onContextMenu={backgroundMenu}>
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         <div data-reader-column className={cn(COLUMN, "pt-2 pb-16")}>
           {!detail && gone ? (

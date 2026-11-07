@@ -513,8 +513,11 @@ export interface RichEditor {
 }
 
 const footClearance = (mount: HTMLElement): number => {
-  const foot = mount.closest("[data-reader-scroller]") ? mount.closest("form")?.querySelector<HTMLElement>("[data-draft-foot]") : null;
-  return foot ? foot.offsetHeight + 16 : 0;
+  const scroller = mount.closest<HTMLElement>("[data-reader-scroller]");
+  const foot = scroller ? mount.closest("form")?.querySelector<HTMLElement>("[data-draft-foot]") : null;
+  if (!foot) return 0;
+  // the foot stands on what covers the reader's end (a pinned card, the dock), which the scroller pads for
+  return foot.offsetHeight + 16 + (parseFloat(scroller!.style.paddingBottom) || 0);
 };
 
 export function createEditor(

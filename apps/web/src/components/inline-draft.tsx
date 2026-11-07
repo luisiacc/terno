@@ -8,8 +8,9 @@ import { IconButton } from "@terno/ui/components/icon-button";
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, Pin, PinOff, ReplyAll, Trash2 } from "@terno/ui/icons";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { collapseInlineDraft, composeFocusPending, finishComposeFocus, openCompose, reopenInlineDraft, sendDraft, useDraftsReturning } from "~/lib/compose";
-import { copyDraft, discardDraft, draftEditsHeld, draftSenderLocked, editDraft, editDraftRecipients, nothingWrittenIn, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
+import { closesEmpty, collapseInlineDraft, composeFocusPending, finishComposeFocus, openCompose, reopenInlineDraft, sendDraft, useDraftsReturning } from "~/lib/compose";
+import { attachmentUploading } from "~/lib/attachments";
+import { copyDraft, discardDraft, discardIfEmpty, draftEditsHeld, draftSenderLocked, editDraft, editDraftRecipients, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { SenderAvatar } from "./sender-avatar";
 import { RecipientInput, recipientSummary } from "./recipient-input";
 import { warmAutocomplete } from "~/lib/autocomplete";
@@ -372,7 +373,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
   const collapse = () => {
     if (!d) return;
     // put away with nothing in it, it isn't a draft: it goes, and the reply bar is back (plan 158)
-    if (!aiBadge && nothingWrittenIn(d.key)) { void discard(true); return; }
+    if (!aiBadge && closesEmpty(d.key)) { void discard(true); return; }
     const valid = collapseInlineDraft(d.key);
     if (!valid || !valid()) return;
     focusSoon("[data-testid=draft-collapsed]", rootRef.current, 12, () => true, valid, (cancel) => {
@@ -415,7 +416,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
     const request = exitFocus();
     let transferred = false;
     try {
-      const gone = await discardDraft(d.key);
+      // nothing was written, as far as can be told yet: what comes while a save answers keeps it, open
+      const gone = empty ? await discardIfEmpty(d.key, () => !attachmentUploading(d.key)) : await discardDraft(d.key);
       if (!gone) return;
       if (!empty) {
         const undo = registerUndo(() => restoreDiscarded(gone));
@@ -515,8 +517,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
             <DraftAttachments d={d} />
             <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
             <Quote d={d} />
-            {/* Send stays on screen however long the draft or the conversation is (plan 158); what's written fades under it */}
-            <div data-draft-foot className="sticky bottom-[var(--reader-dock,0px)] z-[1] rounded-b-xl bg-(--draft-bg) before:pointer-events-none before:absolute before:inset-x-0 before:-top-3 before:h-3 before:bg-linear-to-t before:from-(--draft-bg) before:to-transparent">
+            {/* Send stays on screen however long the draft or the conversation is (plan 158); what's written fades under it. Sticky stops at the scroller's padding: that's what clears a pinned card */}
+            <div data-draft-foot className="sticky bottom-0 z-[1] rounded-b-xl bg-(--draft-bg) before:pointer-events-none before:absolute before:inset-x-0 before:-top-3 before:h-3 before:bg-linear-to-t before:from-(--draft-bg) before:to-transparent">
             <ComposerFormatBar draftKey={d.key} id={formatId} className="px-2 pt-1.5" />
             <div className="flex flex-wrap items-center gap-1 px-2.5 pt-2 pb-2.5">
               <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />

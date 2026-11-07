@@ -42,6 +42,8 @@ The new message becomes the same card, in the reading column, where a conversati
 - **The From row, found in the screenshots:** at the narrowest pane a long address pushed the Pin out of the card, so the value now truncates. The Pin also sat 2.5 px under the row's line with several accounts (both fixed in the shared `DraftFieldsForm`, so a reply gets them too).
 - The form's `aria-label`, `data-testid="composer"`, `data-mode="new"` and all control test ids stay the same; only `flex`/position changes, plus `composer-card` for tests.
 
+(Plan 158 replaced the title that mirrored the subject with a compact label, and moved Pin to the action row. Plan 130's `compose-title` test id stays.)
+
 ## Tests
 
 - e2e, `apps/web/e2e/composer.spec.ts` → "the new message" (`@design`, so all four designs):

@@ -49,6 +49,8 @@
 
 The form, the editor's state hand-off across unmounts (kept editor body), autosave and focus requests already exist; the card is a fourth host for the same parts. The only new cross-cutting thing is the inset, which already exists for the snack dock.
 
+(Plan 158 moved Pin from the fields' corner to the action row, beside Discard and Collapse.)
+
 ## Tests
 
 - Unit (`pinned-draft.test.ts`): pin/unpin state transitions; untouched new message forgotten on unpin; written draft collapsed and flushed; key disappearing unpins; pinning a second draft puts the first away; strip omission.

@@ -111,6 +111,93 @@ describe("away and back", () => {
   });
 });
 
+describe("the check on arriving doesn't overreach", () => {
+  const gated = () => {
+    const answer = deferred<{ threadId: number; accountId: number } | null>();
+    gate.call.mockImplementation(async (method: string) => method === "drafts.sourceContext" ? answer.promise : {});
+    return answer;
+  };
+
+  it("an answer about the draft as it was isn't applied to what a save made of it since", async () => {
+    const h = await setup("split", true);
+    try {
+      await listed([7, 8]);
+      await act(async () => h.app.setApp({ selectedId: 8 }));
+      const answer = gated();
+      await act(async () => h.app.setApp({ selectedId: 7 }));
+      // a save's normalization: the source is gone from the draft while the question is out, the answer right behind it,
+      // before the reader has rendered and could call its question off
+      await act(async () => {
+        h.drafts.useDrafts.setState((s) => ({ drafts: { ...s.drafts, [h.key]: { ...s.drafts[h.key]!, inReplyToMessageId: null, showSourceContext: false, revision: 5 } } }));
+        answer.resolve({ threadId: 7, accountId: 1 });
+        await answer.promise;
+        await Promise.resolve();
+      });
+      for (let i = 0; i < 3; i++) await h.flush();
+      expect(h.drafts.useDrafts.getState().drafts[h.key]?.presentationExpired).toBe(true);
+      expect(state(h)).toBe("bar");
+    } finally { await h.cleanup(); }
+  });
+
+  it("changed only by a save's answer, it's asked again and comes back", async () => {
+    const h = await setup("split", true);
+    try {
+      await listed([7, 8]);
+      await act(async () => h.app.setApp({ selectedId: 8 }));
+      const answer = gated();
+      await act(async () => h.app.setApp({ selectedId: 7 }));
+      await act(async () => h.drafts.useDrafts.setState((s) => ({ drafts: { ...s.drafts, [h.key]: { ...s.drafts[h.key]!, revision: 5 } } })));
+      await act(async () => { answer.resolve({ threadId: 7, accountId: 1 }); await answer.promise; });
+      gate.call.mockImplementation(async (method: string) => method === "drafts.sourceContext" ? { threadId: 7, accountId: 1 } : {});
+      await act(async () => h.drafts.useDrafts.setState((s) => ({ drafts: { ...s.drafts, [h.key]: { ...s.drafts[h.key]!, revision: 6 } } })));
+      for (let i = 0; i < 3; i++) await h.flush();
+      expect(state(h)).toBe("collapsed");
+    } finally { await h.cleanup(); }
+  });
+
+  it("the reader gone before the answer (Review drafts): the draft stays as it is, its focused editor with it", async () => {
+    const h = await setup("split", true), { useDraftRecovery } = await import("~/lib/draft-recovery-ui");
+    try {
+      await listed([7, 8]);
+      await act(async () => h.app.setApp({ selectedId: 8 }));
+      const answer = gated();
+      await act(async () => h.app.setApp({ selectedId: 7 }));
+      await act(async () => useDraftRecovery.setState({ open: true }));
+      await act(async () => { answer.resolve({ threadId: 7, accountId: 1 }); await answer.promise; });
+      for (let i = 0; i < 3; i++) await h.flush();
+      expect(h.drafts.useDrafts.getState().drafts[h.key]).toMatchObject({ uiState: "open", presentationExpired: true });
+    } finally { await act(async () => useDraftRecovery.setState({ open: false })); await h.cleanup(); }
+  });
+
+  it("the reader gone before the answer (a new message over it): the draft stays as it is", async () => {
+    const h = await setup("split", true), { newFields } = await import("~/lib/compose-fields");
+    try {
+      await listed([7, 8]);
+      await act(async () => h.app.setApp({ selectedId: 8 }));
+      const answer = gated();
+      await act(async () => h.app.setApp({ selectedId: 7 }));
+      const other = h.drafts.createDraft(newFields(1));
+      await act(async () => h.app.setApp({ compose: { key: other, seq: 1 }, readerOpen: false }));
+      await act(async () => { answer.resolve({ threadId: 7, accountId: 1 }); await answer.promise; await Promise.resolve(); });
+      for (let i = 0; i < 3; i++) await h.flush();
+      expect(h.drafts.useDrafts.getState().drafts[h.key]).toMatchObject({ uiState: "open", presentationExpired: true });
+    } finally { await h.cleanup(); }
+  });
+
+  it("a draft that turns up late (the stored ones still loading) is found by the reader already there", async () => {
+    const h = await setup("split", true);
+    try {
+      await listed([7, 8]);
+      const saved = h.drafts.useDrafts.getState().drafts[h.key]!;
+      await act(async () => h.drafts.forgetDraft(h.key));
+      expect(state(h)).toBe("bar");
+      await act(async () => h.drafts.useDrafts.setState((s) => ({ drafts: { ...s.drafts, [saved.key]: { ...saved, presentationExpired: true } } })));
+      for (let i = 0; i < 3; i++) await h.flush();
+      expect(state(h)).toBe("collapsed");
+    } finally { await h.cleanup(); }
+  });
+});
+
 describe("putting a draft away", () => {
   const press = (el: Element, key: string, meta = false) => act(async () => { el.dispatchEvent(new KeyboardEvent("keydown", { key, metaKey: meta, bubbles: true, cancelable: true })); });
 
@@ -138,6 +225,46 @@ describe("putting a draft away", () => {
       expect(h.drafts.useDrafts.getState().drafts[h.key]).toBeUndefined();
       expect(gate.call).toHaveBeenCalledWith("drafts.delete", { id: 81, generation: "stable" });
     } finally { await h.cleanup(); }
+  });
+
+  it("words typed while a save answers keep it: what looked empty is asked again, and nothing is deleted", async () => {
+    const h = await setup("split", true), save = deferred<void>();
+    try {
+      await act(async () => h.drafts.editDraft(h.key, { bodyText: "" }));
+      h.drafts.setDraftTransport(async (_method, p) => { await save.promise; return { ...(p as object), id: 81, generation: "stable", revision: 5, updatedAt: 0 }; });
+      await act(async () => { void h.drafts.flushDraft(h.key); });
+      await press(h.host.querySelector('[data-testid="composer"]')!, "Escape");
+      await act(async () => h.drafts.editDraft(h.key, { bodyText: "still here" }));
+      await act(async () => { save.resolve(); await save.promise; });
+      for (let i = 0; i < 4; i++) await h.flush();
+      expect(h.drafts.useDrafts.getState().drafts[h.key]?.bodyText).toBe("still here");
+      expect(gate.call.mock.calls.some(([method]) => method === "drafts.delete")).toBe(false);
+    } finally { save.resolve(); h.drafts.setDraftTransport((method, p) => gate.call(method, p)); await h.cleanup(); }
+  });
+
+  it("a file on its way is something written, on Esc in a reply and in a new message", async () => {
+    const h = await setup("split", true), { useAttachmentUploads } = await import("~/lib/attachments"), { openCompose, showNewDraft } = await import("~/lib/compose"), { newFields } = await import("~/lib/compose-fields");
+    try {
+      await act(async () => h.drafts.forgetDraft(h.key));
+      await act(async () => { await openCompose("reply", 7); });
+      for (let i = 0; i < 3; i++) await h.flush();
+      const reply = Object.keys(h.drafts.useDrafts.getState().drafts)[0]!;
+      useAttachmentUploads.setState({ keys: new Set([reply]) });
+      await press(h.host.querySelector('[data-testid="composer"]')!, "Escape");
+      for (let i = 0; i < 3; i++) await h.flush();
+      // put away as a draft, not left open waiting to be deleted
+      expect(state(h)).toBe("collapsed");
+      expect(h.drafts.useDrafts.getState().drafts[reply]).toBeDefined();
+      const fresh = h.drafts.createDraft({ ...newFields(1), toText: "ana@example.com" });
+      useAttachmentUploads.setState({ keys: new Set([fresh]) });
+      await act(async () => showNewDraft(fresh));
+      for (let i = 0; i < 3; i++) await h.flush();
+      // and Send says it's not ready, for that reason
+      expect(h.host.querySelector('[data-testid="compose-send"]')?.getAttribute("aria-disabled")).toBe("true");
+      await press(h.host.querySelector('[data-testid="compose-to"]')!, "Escape");
+      for (let i = 0; i < 3; i++) await h.flush();
+      expect(h.drafts.useDrafts.getState().drafts[fresh]).toBeDefined();
+    } finally { useAttachmentUploads.setState({ keys: new Set() }); await h.cleanup(); }
   });
 
   it("a refused send saves nothing, says so at the field and goes with the form", async () => {

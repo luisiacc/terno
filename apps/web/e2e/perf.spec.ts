@@ -463,7 +463,8 @@ test("inline reply: keypress → first frame showing the draft ≤ 50 ms; from t
     await page.keyboard.press("r");
     await page.waitForFunction((n) => (window as any).__reply.end.length >= n, i + 1, { polling: "raf" });
     await page.keyboard.press("Escape");
-    await expect(page.getByTestId("draft-collapsed")).toBeVisible();
+    // nothing written: it goes, and the next r opens a new one
+    await expect(page.locator("[data-testid=draft-slot][data-state=bar]")).toBeVisible();
     await page.waitForTimeout(150);
   }
   const r = await page.evaluate(() => (window as any).__reply as { first: number[]; end: number[]; expand: number[] });

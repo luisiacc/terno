@@ -17,7 +17,7 @@ import { answered, convertFields, forwardAccountMismatch, newFields, replyFields
 import { sentRefs, withSentImages } from "./inline-images";
 import { ensureForwardFiles, fetchForwardFiles, setForwardOpenProbe } from "./forward-files";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead, sealForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, draftHomeThread, draftIndex, invalidateDraftPresentation, loseDraftHome, returnDraftToThread, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, discardDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, nothingWrittenIn, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type DraftFields, type LocalDraft } from "./drafts";
+import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead, sealForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, comingHome, draftIndex, invalidateDraftPresentation, loseDraftHome, returnDraftToThread, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, discardIfEmpty, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, nothingWrittenIn, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type DraftFields, type LocalDraft } from "./drafts";
 import { focusPinned, pinnedKey, usePinned } from "./pinned-draft-state";
 import { prepareEarlyComposeInput, prepareInlineFocusMove, type ComposeFocusTarget, type EarlyComposeInput } from "./compose-focus-move";
 import { aiDraftHooks } from "./ai-draft-state";
@@ -321,27 +321,39 @@ export const useDraftsReturning = create<{ threadId: number | null }>(() => ({ t
  * does its text show; a draft the check turns away stays in the strip. An explicit open under way owns the draft and does
  * its own check. Focus stays where it is, and a conversation with no such draft costs one map read: this runs on j/k.
  */
-export function returnDraftsTo(threadId: number): void {
-  const candidates = (draftIndex(useDrafts.getState().drafts).expiredByThread.get(threadId) ?? []).filter((d) => draftHomeThread(d) === threadId && authored(d) && d.key !== pinnedKey() && !aiDraftHooks.working(d.key) && !openingStored.has(d.key) && !checking.has(d.key));
-  if (candidates.length === 0) return;
+export function returnDraftsTo(threadId: number): () => void {
+  const candidates = comingHome(useDrafts.getState().drafts, threadId).filter((d) => d.key !== pinnedKey() && !aiDraftHooks.working(d.key) && !openingStored.has(d.key));
+  if (candidates.length === 0) return () => {};
   const before = intent, owner = {};
+  let left = false;
   returning = owner;
   useDraftsReturning.setState({ threadId });
+  const settled = () => { if (returning === owner) { returning = null; useDraftsReturning.setState({ threadId: null }); } };
   void Promise.all(candidates.map(async (d) => {
-    checking.add(d.key);
-    try {
-      const source = activeSourceId(d);
-      const context = source === null ? null : await client.call("drafts.sourceContext", { messageId: source }).catch(() => null);
-      const now = useDrafts.getState().drafts[d.key];
-      if (!now?.presentationExpired || now.presentationEpoch !== d.presentationEpoch || intent !== before || openingStored.has(d.key) || draftEditsHeld()) return;
-      if (context?.threadId !== threadId) loseDraftHome(d.key);
-      else if (getApp().selectedId === threadId) returnDraftToThread(d.key, threadId);
-    } finally { checking.delete(d.key); }
-  })).finally(() => { if (returning === owner) useDraftsReturning.setState({ threadId: null }); });
+    const source = activeSourceId(d);
+    const context = source === null ? null : await sourceLookup(d.key, source);
+    if (left) return;
+    const now = useDrafts.getState().drafts[d.key];
+    if (!now?.presentationExpired || intent !== before || openingStored.has(d.key) || draftEditsHeld()) return;
+    // the answer is about the draft as it was asked for: anything else about it (a save's normalization) is asked again
+    if (now.presentationEpoch !== d.presentationEpoch || now.id !== d.id || now.generation !== d.generation || now.revision !== d.revision || now.accountId !== d.accountId || now.mode !== d.mode || activeSourceId(now) !== source || !now.showSourceContext || now.recovery) return;
+    if (context?.threadId !== threadId) loseDraftHome(d.key);
+    else if (getApp().selectedId === threadId) returnDraftToThread(d.key, threadId);
+  })).finally(settled);
+  return () => { left = true; settled(); };
 }
 let returning: object | null = null;
-/** drafts whose source is being looked up on the way back: asked once however often the reader arrives */
-const checking = new Set<string>();
+/** one question per draft and source, however often the reader arrives while it's out */
+const lookups = new Map<string, Promise<{ threadId: number; accountId: number } | null>>();
+function sourceLookup(key: string, source: number) {
+  const id = `${key}:${source}`;
+  let answer = lookups.get(id);
+  if (!answer) {
+    answer = client.call("drafts.sourceContext", { messageId: source }).catch(() => null).finally(() => lookups.delete(id));
+    lookups.set(id, answer);
+  }
+  return answer;
+}
 /** drafts `openStoredDraft` is opening: it checks them itself, and a change under it would call its open off */
 const openingStored = new Set<string>();
 
@@ -892,6 +904,9 @@ export function showNewDraft(key: string): void {
   setApp({ compose: { key, seq: ++seq }, checked: new Set(), scope: null, readerOpen: false });
 }
 
+/** Closing this draft leaves nothing to keep: nothing written, and no file on its way. */
+export const closesEmpty = (key: string): boolean => !attachmentUploading(key) && nothingWrittenIn(key);
+
 /**
  * The reader pane leaves the new message (Esc, a thread opened, sent, discarded).
  * What was written is kept (saved first); an untouched new draft just goes.
@@ -901,10 +916,10 @@ export function leaveNewDraft(): void {
   if (!key) return;
   setApp({ compose: null });
   const d = useDrafts.getState().drafts[key];
-  // plan 115: a pinned draft lives on in its card, untouched or not
-  if (d && !authored(d) && key !== pinnedKey()) forgetDraft(key);
-  // written and taken out again, or saved on the way: nothing to keep (plan 158)
-  else if (d && key !== pinnedKey() && nothingWrittenIn(key)) void discardDraft(key);
+  // plan 115: a pinned draft lives on in its card, untouched or not; a file on its way is something written
+  if (d && !authored(d) && key !== pinnedKey() && !attachmentUploading(key)) forgetDraft(key);
+  // written and taken out again, or saved on the way: nothing to keep (plan 158), unless it's opened again meanwhile
+  else if (d && key !== pinnedKey() && closesEmpty(key)) void discardIfEmpty(key, () => getApp().compose?.key !== key && !attachmentUploading(key));
   else void flushDraft(key);
 }
 

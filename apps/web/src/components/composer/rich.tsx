@@ -423,8 +423,9 @@ export function RichBody({ draftKey, placeholder, className, checkpoint }: { dra
     if (!at || !wrap) return setBubble((b) => (b ? null : b));
     const start = view.coordsAtPos(at.from);
     const box = wrap.getBoundingClientRect();
-    // under a draft's own scroller (plan 130) a bubble below the last visible line would be cut off: above it, if it fits there
-    const scroller = wrap.closest("[data-draft-scroll]")?.getBoundingClientRect();
+    // a bubble below the last visible line would be cut off under a draft's own scroller (plan 130), or sit on the foot
+    // that sticks in the reader (plan 158): above it, if it fits there
+    const scroller = bubbleBounds(wrap);
     const above = scroller && start.bottom + 4 + BUBBLE_HEIGHT > scroller.bottom && start.top - 4 - BUBBLE_HEIGHT >= scroller.top;
     const top = above ? start.top - box.top - 4 - BUBBLE_HEIGHT : start.bottom - box.top + 4;
     const left = Math.max(0, Math.min(start.left - box.left, box.width - 280));
@@ -434,7 +435,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint }: { dra
   // an open bubble follows the scroller: which side has room changes as the link moves (nothing runs while none is open)
   const bubbleOpen = bubble !== null;
   useEffect(() => {
-    const scroller = bubbleOpen ? wrapRef.current?.closest("[data-draft-scroll]") : null;
+    const scroller = bubbleOpen ? wrapRef.current?.closest("[data-draft-scroll], [data-reader-scroller]") : null;
     if (!scroller) return;
     const place = () => { if (viewRef.current) updateBubble(viewRef.current); };
     scroller.addEventListener("scroll", place, { passive: true });
@@ -511,6 +512,16 @@ function imageHooks(draftKey: string): ImageHooks {
  * the text (one undo step); the rest attach as chips. One staging at a time
  * per draft, as with the paperclip.
  */
+/** Where a link's bubble has room: its draft's own scroller, or the reader down to the composer's foot. */
+function bubbleBounds(wrap: HTMLElement): { top: number; bottom: number } | null {
+  const own = wrap.closest("[data-draft-scroll]");
+  if (own) return own.getBoundingClientRect();
+  const reader = wrap.closest("[data-reader-scroller]")?.getBoundingClientRect();
+  if (!reader) return null;
+  const foot = wrap.closest("form")?.querySelector("[data-draft-foot]")?.getBoundingClientRect();
+  return { top: reader.top, bottom: foot ? Math.min(reader.bottom, foot.top) : reader.bottom };
+}
+
 async function placeFiles(draftKey: string, view: EditorView, files: File[], coords: { x: number; y: number } | null, canMutate: () => boolean): Promise<void> {
   if (!canMutate() || !files.length) return;
   // a pasted screenshot is "image.png" each time: numbered, so the recipient can tell them apart

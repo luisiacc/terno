@@ -64,9 +64,10 @@ describe("standalone handoff", () => {
     const later = document.createElement("button"); document.body.append(later);
     let triggered = false;
     try {
+      // (the source first: the reader there looks again at what's expired under it, plan 158)
+      gate.call.mockImplementation(async (method: string) => method === "drafts.sourceContext" ? null : {});
       await act(async () => { h.drafts.expireDraftPresentation(7); });
       expect(h.drafts.useDrafts.getState().drafts[h.key]?.presentationExpired).toBe(true);
-      gate.call.mockImplementation(async (method: string) => method === "drafts.sourceContext" ? null : {});
       h.other.focus();
       const off = h.drafts.useDrafts.subscribe((state, previous) => {
         if (!triggered && (state.drafts[h.key]?.presentationEpoch ?? 0) > (previous.drafts[h.key]?.presentationEpoch ?? 0)) {

@@ -1154,6 +1154,27 @@ export async function discardDraft(key: string): Promise<LocalDraft | undefined>
 }
 
 /**
+ * What `discardDraft` does for a draft closed with nothing in it, except that it asks again after any save in flight has
+ * answered: words typed or a file added while that save was out keep it, with its autosave going on (plan 158).
+ */
+export async function discardIfEmpty(key: string, still: () => boolean = () => true): Promise<LocalDraft | undefined> {
+  if (draftEditsHeld() || get(key)?.sending || writers.get(key)?.stopping) return undefined;
+  const w = writer(key);
+  w.stopping = "discard";
+  let d: LocalDraft | undefined;
+  try { d = await settle(key); } catch { /* an editor that can't be read isn't empty */ d = undefined; }
+  if (!d || d.sending || !nothingWritten(d) || !still()) {
+    w.stopping = null;
+    const current = get(key);
+    if (current && authored(current) && current.savedRev !== current.localRev) schedule(key);
+    return undefined;
+  }
+  forgetDraft(key);
+  if (d.id !== null) await call("drafts.delete", { id: d.id, generation: d.generation ?? "" }).catch(() => {});
+  return d;
+}
+
+/**
  * The saved copy goes and the draft is as it was created, still open: a generation undone back to nothing shouldn't
  * leave a blank draft in the list. Anything written meanwhile keeps it.
  */
@@ -1229,7 +1250,16 @@ export const draftPresentationThread = (d: LocalDraft): number | null => d.prese
  * The conversation a draft belongs to for the list and the strip (plan 158): where it shows, or after leaving it, the one
  * it left, until the check on coming back says otherwise. A row's mark only: its text shows there after that check (plan 44).
  */
-export const draftHomeThread = (d: LocalDraft): number | null => draftPresentationThread(d) ?? (d.presentationExpired && d.showSourceContext && d.mode !== "new" && !d.homeLost ? d.departedThreadId ?? d.sourceContextThreadId ?? null : null);
+export const draftHomeThread = (d: LocalDraft): number | null => draftPresentationThread(d) ?? (d.presentationExpired && d.showSourceContext && d.mode !== "new" && !d.homeLost && !d.recovery ? d.departedThreadId ?? d.sourceContextThreadId ?? null : null);
+
+/** Written drafts that left this conversation and haven't been checked back into it. */
+export function comingHome(drafts: Record<string, LocalDraft>, threadId: number): LocalDraft[] {
+  return (draftIndex(drafts).expiredByThread.get(threadId) ?? []).filter((d) => d.presentationExpired && draftHomeThread(d) === threadId && authored(d));
+}
+
+/** The same, as a value that changes when one arrives (hydration) or changes under a check: the reader looks again. */
+export const comingHomeKey = (drafts: Record<string, LocalDraft>, threadId: number): string =>
+  comingHome(drafts, threadId).map((d) => [d.key, d.id, d.generation, d.revision, d.accountId, d.mode, d.inReplyToMessageId, d.forwardOfMessageId, d.presentationEpoch].join(":")).join();
 
 /** Leaving Reader retires cached placement, not the durable source intent or authored fields. */
 export function expireDraftPresentation(threadId: number): void {

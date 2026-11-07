@@ -524,6 +524,18 @@ test.describe("the composer at rest and at its limits (plan 158)", () => {
       await expect(send(page)).toBeInViewport({ ratio: 1 });
       await page.setViewportSize({ width: 1280, height: 800 });
     });
+    await scenario("a link on the line above the foot: its bubble opens above, never over Send", async () => {
+      await freshNoDrafts(page, server);
+      await reply(page);
+      for (let i = 0; i < 40; i++) { await page.keyboard.type(`línea ${i}`); await page.keyboard.press("Enter"); }
+      await page.keyboard.type("https://example.com ");
+      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("ArrowLeft");
+      const bubble = page.getByTestId("link-bubble");
+      await expect(bubble).toBeVisible();
+      const b = (await bubble.boundingBox())!, foot = (await page.locator("[data-draft-foot]").boundingBox())!;
+      expect(b.y + b.height).toBeLessThanOrEqual(foot.y);
+    });
     await scenario("a chip doesn't take the To row to a second line until it has to, and values share one line", async () => {
       await freshNoDrafts(page, server);
       await page.setViewportSize({ width: 1100, height: 700 });

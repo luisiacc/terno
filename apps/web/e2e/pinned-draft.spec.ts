@@ -226,3 +226,22 @@ test.describe("a pinned draft in the List layout", () => {
     await expect(page.getByTestId("list-page").getByTestId("compose-to")).toBeFocused();
   });
 });
+
+test("plan 158: another draft pinned, a long reply keeps Send and the line being typed above the card", async ({ app: page }) => {
+  await openRow(page, 0);
+  await focusList(page);
+  await page.keyboard.press("r");
+  await page.getByTestId("compose-body").pressSequentially("Fijado");
+  await page.getByTestId("compose-pin").click();
+  await openRow(page, 1);
+  await focusList(page);
+  await page.keyboard.press("r");
+  const body = page.getByTestId("reader").getByTestId("compose-body");
+  await expect(body).toBeFocused();
+  for (let i = 0; i < 40; i++) { await page.keyboard.type(`línea ${i}`); await page.keyboard.press("Enter"); }
+  const card = (await page.getByTestId("pinned-draft").boundingBox())!;
+  const foot = (await page.getByTestId("reader").locator("[data-draft-foot]").boundingBox())!;
+  const caret = await page.evaluate(() => { const node = getSelection()!.anchorNode!; return (node.nodeType === 1 ? node as Element : node.parentElement!).getBoundingClientRect().bottom; });
+  expect(foot.y + foot.height).toBeLessThanOrEqual(card.y);
+  expect(caret).toBeLessThanOrEqual(foot.y);
+});
