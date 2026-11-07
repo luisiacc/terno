@@ -273,8 +273,8 @@ export function HtmlBody({ html, messageId, remoteImages, spam = false, appearan
     <div>
       {!section && hasCid && !cidAllowed && <button type="button" data-testid="inline-load" className="mb-3 text-xs text-muted-foreground hover:text-foreground" onClick={() => setCidAllowed(true)}>{t("attachments.loadInline")}</button>}
       {!section && blocked && <RemoteBlocked onLoad={() => allowRemoteFor(messageId)} />}
-      {/* themed mail flows on the page with no box; mail with its own colors keeps a borderless paper surface */}
-      <div className={paper ? "overflow-hidden rounded-lg bg-[var(--mail-paper)]" : undefined}>
+      {/* themed mail flows on the page with no box; mail with its own colors keeps a paper surface, its edge drawn so its inset reads as the sheet's, on paper-white pages too */}
+      <div className={paper ? "hairline overflow-hidden rounded-lg bg-[var(--mail-paper)] [--hairline-color:var(--border)]" : undefined}>
         <iframe
           ref={ref}
           title={t("reader.mailContent")}
@@ -323,7 +323,7 @@ function RemoteBlocked({ onLoad }: { onLoad: () => void }) {
 /** Quoted history, folded: says what it holds and turns as it opens. The same in plain text and HTML mail. */
 function QuoteToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
-    <Button variant="link-secondary" size="xs" onClick={onToggle} aria-expanded={open} data-testid="quote-toggle" className="mt-3 flex h-6 gap-1 font-normal text-muted-foreground hover:text-foreground hover:no-underline">
+    <Button variant="link-secondary" size="xs" onClick={onToggle} aria-expanded={open} data-testid="quote-toggle" className="mt-2 -ml-1 flex h-6 gap-1 font-normal text-foreground/75 hover:text-foreground hover:no-underline">
       <ChevronRight className={cn("size-3.5 transition-transform duration-base ease-motion", open && "rotate-90")} />
       {t(open ? "reader.quote.hide" : "reader.quote.show")}
     </Button>
