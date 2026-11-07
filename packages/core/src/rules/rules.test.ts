@@ -160,15 +160,15 @@ describe("filterRuleSchema", () => {
       return r.success ? [] : r.error.issues;
     };
     const conflict = issues([{ type: "archive" }, { type: "trash" }]);
-    expect(conflict[0]?.message).toBe("A filter can only move mail to one place (archive, trash or spam).");
+    expect(conflict[0]?.message).toBe("A rule can only move mail to one place (archive, trash or spam).");
     expect(filterIssueKey(conflict)).toBe("filters.invalid.oneLocation");
     const dup = issues([{ type: "star" }, { type: "star" }]);
-    expect(dup[0]).toMatchObject({ path: ["actions", 1], message: "A filter can’t have the same action twice." });
+    expect(dup[0]).toMatchObject({ path: ["actions", 1], message: "A rule can’t have the same action twice." });
     expect(filterIssueKey(dup)).toBe("filters.invalid.duplicate");
     expect(filterIssueKey(issues([{ type: "star" }], " "))).toBe("filters.incomplete");
     expect(filterIssueKey(issues([]))).toBe("filters.incomplete");
     setLocale("es", es);
-    expect(t(filterIssueKey(conflict))).toBe("Un filtro solo puede mover el correo a un lugar (archivo, papelera o spam).");
+    expect(t(filterIssueKey(conflict))).toBe("Una regla solo puede mover el correo a un lugar (archivo, papelera o spam).");
     setLocale("en", en);
   });
 });

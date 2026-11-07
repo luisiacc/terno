@@ -66,6 +66,8 @@ function scan(): string[] {
 const FOCUS_PAINT: Record<string, string> = {
   // the resize handle's bar is its focus ring
   "apps/web/src/components/pane-handle.tsx": "the bar is the handle's focus ring",
+  // the ring goes on the hover shape, which is inset from the row's own box
+  "apps/web/src/components/drafts-strip.tsx": "the hover shape carries the ring",
 };
 
 function gatedReveals(): string[] {

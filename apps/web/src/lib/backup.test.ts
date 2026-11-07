@@ -24,20 +24,20 @@ describe("import summary", () => {
   afterEach(() => setLocale("en", en));
 
   it("counts what came in, one and many", () => {
-    expect(importSummary(result({ categories: 1 }))).toBe("Imported: 1 new category and 0 filters.");
-    expect(importSummary(result({ categories: 2, filters: 1, drafts: 3, settings: true }))).toBe("Imported: 2 new categories, 1 filter, 3 drafts, and your settings.");
+    expect(importSummary(result({ categories: 1 }))).toBe("Imported: 1 new category and 0 rules.");
+    expect(importSummary(result({ categories: 2, filters: 1, drafts: 3, settings: true }))).toBe("Imported: 2 new categories, 1 rule, 3 drafts, and your settings.");
   });
 
   it("says what waits for its account and what was left out", () => {
     expect(importSummary(result({ pending: { drafts: 1, filters: 2 }, skipped: ["Uber", "Bancos"] }))).toBe(
-      "Imported: 0 new categories and 0 filters. 1 draft and 2 filters will come in when you connect their accounts. Not imported (their category isn’t in the file): Uber and Bancos.",
+      "Imported: 0 new categories and 0 rules. 1 draft and 2 rules will come in when you connect their accounts. Not imported (their category isn’t in the file): Uber and Bancos.",
     );
   });
 
   it("in Spanish, with the wording it always had", () => {
     setLocale("es", es);
     expect(importSummary(result({ categories: 1, drafts: 2, settings: true, pending: { drafts: 2, filters: 1 } }))).toBe(
-      "Importado: 1 categoría nueva, 0 filtros, 2 borradores y tus ajustes. 2 borradores y 1 filtro entran cuando conectes sus cuentas.",
+      "Importado: 1 categoría nueva, 0 reglas, 2 borradores y tus ajustes. 2 borradores y 1 regla entran cuando conectes sus cuentas.",
     );
   });
 });

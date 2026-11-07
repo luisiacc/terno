@@ -257,7 +257,7 @@ describe("plan 80: always add — one undo for the filter and the batch", () => 
   it("the filter failing keeps the mail filed and says so; a failure partway still offers Undo for its batch", async () => {
     fake.handlers["categorize.apply"] = async () => ({ added: 2, batchId: 8, filter: null, filterFailed: true });
     await fileAlways(CAT, scope, 1, "x");
-    expect(useSnack.getState().current).toMatchObject({ message: "2 added to Facturas", description: "Couldn’t set up the filter for future mail. You can add it in Settings → Filters." });
+    expect(useSnack.getState().current).toMatchObject({ message: "2 added to Facturas", description: "Couldn’t set up the rule for future mail. You can add it in Settings → Rules." });
     fake.handlers["categorize.apply"] = async () => {
       throw Object.assign(new Error("boom"), { details: { batchId: 9 } });
     };

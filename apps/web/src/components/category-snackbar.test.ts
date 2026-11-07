@@ -24,7 +24,7 @@ describe("topicHelp: what 4 files, in words (plan 81)", () => {
   });
 
   it("says the More… text when there is some, the words when it is blank", () => {
-    expect(topicHelp("Facturas", ["api"], "  recibo from:x  ")).toBe("Adds every conversation that matches “recibo from:x” to Facturas, from the mail you have now (a search isn’t a filter: new mail isn’t included).");
+    expect(topicHelp("Facturas", ["api"], "  recibo from:x  ")).toBe("Adds every conversation that matches “recibo from:x” to Facturas, from the mail you have now (a search isn’t a rule: new mail isn’t included).");
     // a blank More… still files the checked words: the help says them
     expect(topicHelp("Facturas", ["api"], "   ")).toContain("mentions “api”");
   });
