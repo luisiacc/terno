@@ -12,7 +12,6 @@ import { matchesFilter, rowMatchOf, savesRuleOnly, tabRef, type ListFilter as Qu
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { Button } from "@terno/ui/components/button";
-import { CloseButton } from "@terno/ui/components/close-button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { openCompose } from "~/lib/actions";
