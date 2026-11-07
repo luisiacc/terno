@@ -237,8 +237,9 @@ test.describe("acting on a filtered mailbox", () => {
     const read = readInbox(server).slice(0, 150);
     await server.backend.server.invoke("threads.act", { threadIds: read, action: "markUnread" }, ctx);
     await filterOn(page);
-    // past the 450 ms dwell the open thread is read (⌘A inside it would leave it unread): count once it is, not racing it
+    // chosen and past the 450 ms dwell, the open thread is read (⌘A inside it would leave it unread): count once it is, not racing it
     const open = Number(await selectedRow(page).getAttribute("data-thread-id"));
+    await selectedRow(page).click();
     await expect.poll(() => db(server).get<{ u: number }>("SELECT unread_count AS u FROM threads WHERE id = ?", open)!.u).toBe(0);
     const unread = unreadInbox(server);
     expect(unread.length).toBeGreaterThan(100);

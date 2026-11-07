@@ -27,12 +27,12 @@ import { ForwardLine } from "./forward-line";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { replyName } from "~/lib/compose-fields";
 import { composeFocusPending, registerReaderFocusDestination, subscribeComposeFocus } from "~/lib/compose";
-import { act, cancelMarkRead, openCompose, scheduleMarkRead, toggleStar } from "~/lib/actions";
+import { act, cancelMarkRead, openCompose, readChosenThread, scheduleMarkRead, toggleStar } from "~/lib/actions";
 import { acceptSuggestion, answerReview, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { t } from "@terno/i18n";
 import { fullDate, listDate } from "~/lib/format";
 import { SenderAvatar } from "./sender-avatar";
-import { inSeparateTab, setApp, useApp } from "~/state/app";
+import { chooseOpenThread, inSeparateTab, onThreadChosen, openedByApp, setApp, useApp } from "~/state/app";
 import { hydrateSelectedThread, useThread, useThreadGone } from "~/state/threads";
 import { printCommand } from "~/lib/print-open";
 import { HtmlBody, TextBody } from "./mail-body";
@@ -581,9 +581,12 @@ function ReaderContent() {
     // the header renders from the cached row immediately; the body follows (debounced while holding j)
     let current = true;
     const t = setTimeout(() => void hydrateSelectedThread(selectedId, () => current), detail ? 0 : 40);
-    scheduleMarkRead(selectedId);
+    // plan 158: what the app opened by itself waits for the user to choose it
+    if (openedByApp(selectedId)) cancelMarkRead();
+    else scheduleMarkRead(selectedId);
     return () => { current = false; clearTimeout(t); };
   }, [selectedId]);
+  useEffect(() => onThreadChosen(readChosenThread), []);
 
   // a dwell only counts while the reader shows the thread
   useEffect(() => cancelMarkRead, []);
@@ -623,7 +626,7 @@ function ReaderContent() {
   const cardHeader = design.variants.readerHeader === "sender-card";
 
   return (
-    <section ref={sectionRef} tabIndex={page ? -1 : undefined} aria-labelledby={page && detail ? "reader-subject" : undefined} className="@container flex h-full min-h-0 flex-col bg-background outline-none" data-testid="reader">
+    <section ref={sectionRef} tabIndex={page ? -1 : undefined} aria-labelledby={page && detail ? "reader-subject" : undefined} onPointerDownCapture={chooseOpenThread} className="@container flex h-full min-h-0 flex-col bg-background outline-none" data-testid="reader">
       <div ref={toolbarRef} className="drag-region scroll-hairline flex h-[52px] shrink-0 items-center gap-3 px-3.5">
         {page && <BackButton />}
         <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.organize")}>

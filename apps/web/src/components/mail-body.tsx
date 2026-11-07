@@ -12,6 +12,7 @@ import { csp, hasOwnColors, hasRemoteContent } from "~/lib/mail";
 import { splitTextQuote } from "~/lib/quote";
 import { forwardPrintKey, wantsNativeMenu } from "~/lib/print-open";
 import { forwardMouseNav, forwardNavKey } from "~/lib/page";
+import { chooseOpenThread } from "~/state/app";
 import { allowRemoteFor, remoteAllowed, useRemoteConsent } from "~/lib/remote-consent";
 
 import { openLink } from "~/lib/open-link";
@@ -227,7 +228,10 @@ export function HtmlBody({ html, messageId, remoteImages, spam = false, appearan
         };
         d.addEventListener("keydown", onNavKey);
         d.addEventListener("mouseup", forwardMouseNav, true);
+        // a press in the mail is a press in the reader (its own capture never sees this document)
+        d.addEventListener("pointerdown", chooseOpenThread, true);
         detach = () => {
+          d.removeEventListener("pointerdown", chooseOpenThread, true);
           d.removeEventListener("load", measure, true);
           d.removeEventListener("click", onClick);
           d.removeEventListener("contextmenu", onMenu);

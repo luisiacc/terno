@@ -38,7 +38,53 @@ const WINDOW_PAGE = 500;
  * The list's first visible row, kept across a change of its rows (ThreadList
  * sets it): `capture` measures, the function it returns puts the row back.
  */
-export const listAnchor: { capture?: () => (() => void) | void; firstVisible?: () => number | null; scrolled?: () => boolean } = {};
+export const listAnchor: { capture?: () => (() => void) | void; firstVisible?: () => number | null; scrolled?: () => boolean; scrollAt?: () => ListScroll | null; scrollTo?: (at: ListScroll | null) => void } = {};
+/** Where the list was scrolled: a row and how far into it, in rows (heights differ between lists); null: at the very top. */
+export interface ListScroll {
+  id: number;
+  into: number;
+}
+
+/**
+ * Plan 158: where each mailbox was left, so coming back (from a search, from another mailbox) finds the same thread open
+ * and the same rows on screen. In memory, a few mailboxes.
+ */
+interface Place {
+  selectedId: number | null;
+  /** where it was in the list: what's nearest if that thread has gone since */
+  at: number;
+  scroll: ListScroll | null;
+  /** rows loaded: what the first page must bring back for those rows to be there */
+  rows: number;
+}
+const places = new Map<string, Place>();
+const PLACES_MAX = 24;
+
+/** A list's key, the same mailbox with or without its quick filter, or null for a search: results have no place to come back to. */
+function placeKey(key: string): string | null {
+  const parts = JSON.parse(key) as unknown[];
+  if (parts.at(-1) !== "") return null;
+  parts[4] = null;
+  return JSON.stringify(parts);
+}
+
+function rememberPlace(selectedId: number | null): void {
+  const st = useList.getState();
+  if (!st.key || st.itemsKey !== st.key || st.items.length === 0) return;
+  const key = placeKey(st.key);
+  if (key === null) return;
+  places.delete(key);
+  places.set(key, { selectedId, at: selectedId === null ? 0 : (st.index.get(selectedId) ?? 0), scroll: listAnchor.scrollAt?.() ?? null, rows: st.items.length });
+  if (places.size > PLACES_MAX) places.delete(places.keys().next().value!);
+}
+
+/** What a list's first page opens: where it was left, else its nearest row now, else the top. */
+function openedOn(place: Place | undefined, items: readonly ThreadSummary[]): number | null {
+  if (!place || place.selectedId === null) return items[0]?.id ?? null;
+  const id = place.selectedId;
+  return items.some((t) => t.id === id) ? id : (items[Math.min(place.at, items.length - 1)]?.id ?? null);
+}
+
 /** Does a same-list refresh keep the whole loaded window? List says yes (lib/page sets it); Split keeps its cap. */
 export const refreshPolicy: { keepWindow: () => boolean } = { keepWindow: () => false };
 /** how far past the loaded count a window refresh may read to find the rows that were on screen (new mail above them) */
@@ -242,7 +288,9 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     useList.setState({ key, loading: true, error: null, loadingMore: false, nextCursor: null });
   }
   // keep as many rows as are loaded so a background refresh doesn't shrink the list
-  const limit = sameView ? Math.min(Math.max(PAGE, current.items.length + (options.grow ? PAGE : 0)), WINDOW_PAGE) : PAGE;
+  const placeOf = placeKey(key);
+  const place = !sameView && !options.keepSelection && placeOf !== null ? places.get(placeOf) : undefined;
+  const limit = sameView ? Math.min(Math.max(PAGE, current.items.length + (options.grow ? PAGE : 0)), WINDOW_PAGE) : place?.scroll ? Math.min(Math.max(PAGE, place.rows), WINDOW_PAGE) : PAGE;
   const editsAtStart = edits;
   const scope = currentScope();
   // the filtered mailbox's unread count, alongside the page (a search shows its own result count)
@@ -274,7 +322,9 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     // the window refresh keeps the first visible row where it was (new mail above it doesn't push it down): always after a page
     // (Back finds what it left), and on the list unless it's at the very top (there, new mail shows as it arrives)
     const restore = windowed && (options.window || listAnchor.scrolled?.()) ? listAnchor.capture?.() : undefined;
-    const commit = (fn: () => void) => (restore ? flushSync(fn) : fn());
+    // another list starts where it was left, or at its top, in the commit that shows it
+    const arrives = !sameView && !options.keepSelection;
+    const commit = (fn: () => void) => (restore || arrives ? flushSync(fn) : fn());
     commit(() => useList.setState({
       key,
       itemsKey: key,
@@ -288,6 +338,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       ...(counting ? {} : { unreadTotal: null }),
     }));
     restore?.();
+    if (arrives) listAnchor.scrollTo?.(place?.scroll ?? null);
     if (counting)
       void counting.then((r) => {
         if (mine === seq && connection === client.connectionVersion && r) useList.setState({ unreadTotal: { key, n: r.count, capped: r.capped } });
@@ -296,7 +347,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     // the same for a first page that came back empty with more after it
     if (page.items.length === 0 && page.nextCursor) void loadMore();
     const s = getApp();
-    if (!options.keepSelection && !sameView && mine === seq && key === listKey() && selectionRevision === getSelectionWriteRevision()) setListAutoSelection(page.items[0]?.id ?? null);
+    if (!options.keepSelection && !sameView && mine === seq && key === listKey() && selectionRevision === getSelectionWriteRevision()) setListAutoSelection(openedOn(place, page.items));
     else if (s.selectedId !== null && !page.items.some((t) => t.id === s.selectedId)) {
       // selected thread left this view (archived elsewhere): keep reader stable by not auto-jumping
     }
@@ -465,6 +516,7 @@ useApp.subscribe((s, prev) => {
   } else if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.followups !== prev.followups || s.today !== prev.today || s.actionPreview !== prev.actionPreview || s.query !== prev.query || soloSearch(s) !== soloSearch(prev)) {
     // "all N of that list" means nothing in another one
     if (s.scope) setApp({ scope: null });
+    rememberPlace(prev.selectedId);
     void reloadList();
   } else if (activeFilter(s) !== activeFilter(prev)) {
     // the same mailbox, filtered or not: the open thread stays open (and in the list, read or not)

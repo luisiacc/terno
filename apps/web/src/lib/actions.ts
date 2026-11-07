@@ -449,6 +449,12 @@ export function toggleRead(ids?: number[]): void {
   void act(targetRows(ids).some((t) => t.unread) ? "markRead" : "markUnread", ids);
 }
 
+/** The row or, off the list, the open conversation's thread. */
+function rowOf(id: number) {
+  const st = useList.getState();
+  return st.items[st.index.get(id) ?? -1] ?? useThreads.getState().details.get(id)?.thread;
+}
+
 let readTimer: ReturnType<typeof setTimeout> | null = null;
 /** The reader went away (the bulk bar replaced it): nothing was read. */
 export function cancelMarkRead(): void {
@@ -461,10 +467,14 @@ export function scheduleMarkRead(id: number): void {
   if (id === 0) return;
   if (readTimer) clearTimeout(readTimer);
   readTimer = setTimeout(() => {
-    const st = useList.getState();
-    const row = st.items[st.index.get(id) ?? -1] ?? useThreads.getState().details.get(id)?.thread;
-    if (row?.unread && getApp().selectedId === id) void act("markRead", [id], { quiet: true });
+    if (rowOf(id)?.unread && getApp().selectedId === id) void act("markRead", [id], { quiet: true });
   }, 450);
+}
+
+/** Plan 158: the user chose the thread the app had opened by itself. Already read, it stays what they make of it (a press on Mark as unread starts here). */
+export function readChosenThread(): void {
+  const id = getApp().selectedId;
+  if (id !== null && rowOf(id)?.unread) scheduleMarkRead(id);
 }
 
 // ───────────────────────────── compose ─────────────────────────────

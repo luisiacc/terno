@@ -158,7 +158,24 @@ export const useApp = create<AppState>(() => ({
 let selectionWriteRevision = 0;
 let composeSelectionRetirement: { retire: () => void } | undefined;
 export const getSelectionWriteRevision = (): number => selectionWriteRevision;
-export const markSelectionIntent = (): void => { selectionWriteRevision++; composeSelectionRetirement?.retire(); };
+export const markSelectionIntent = (): void => { selectionWriteRevision++; composeSelectionRetirement?.retire(); chooseOpenThread(); };
+
+/**
+ * Plan 158: the thread the app opened by itself (a list's first page: the first load, another mailbox, a search's top
+ * hit). It shows, and stays as it is, until the user chooses it.
+ */
+const openedSelf: { id: number | null; chosen: (() => void) | null } = { id: null, chosen: null };
+export const openedByApp = (id: number): boolean => openedSelf.id === id;
+/** The user chose what's open (any selection write, a click in the reader): from here on it's an open like any other. */
+export function chooseOpenThread(): void {
+  if (openedSelf.id === null) return;
+  openedSelf.id = null;
+  openedSelf.chosen?.();
+}
+export function onThreadChosen(chosen: () => void): () => void {
+  openedSelf.chosen = chosen;
+  return () => { if (openedSelf.chosen === chosen) openedSelf.chosen = null; };
+}
 export function subscribeComposeSelectionIntent(retire: () => void): () => void {
   const registration = { retire };
   composeSelectionRetirement = registration;
@@ -233,6 +250,7 @@ function keepActionPreviewValid(state: AppState, next: AppState | Partial<AppSta
 
 /** First-page selection is passive; nested explicit writes still use setApp. */
 export function setListAutoSelection(selectedId: number | null): void {
+  openedSelf.id = selectedId;
   useApp.setState({ selectedId });
 }
 export const getApp = useApp.getState;

@@ -818,10 +818,24 @@ export function ThreadList() {
       const rows = useList.getState().items;
       return el && rows.length ? (rows[Math.min(rows.length - 1, Math.floor(el.scrollTop / measuredHeight.current))]?.id ?? null) : null;
     };
+    // plan 158: where a mailbox was left, and back there (or to the top) when it shows again
+    listAnchor.scrollAt = () => {
+      const el = parentRef.current;
+      const rows = useList.getState().items;
+      if (!el || rows.length === 0 || el.scrollTop <= 0) return null;
+      const h = measuredHeight.current;
+      const first = Math.min(rows.length - 1, Math.floor(el.scrollTop / h));
+      return { id: rows[first]!.id, into: el.scrollTop / h - first };
+    };
+    listAnchor.scrollTo = (at) => {
+      const i = at ? useList.getState().index.get(at.id) : undefined;
+      // through the virtualizer: a scrollToIndex of the last list's (j, then Esc) may still be settling, and this replaces it
+      virtualizer.scrollToOffset(at && i !== undefined ? (i + at.into) * measuredHeight.current : 0);
+    };
     const off = registerDesignAnchor(capture);
     return () => {
       off();
-      if (listAnchor.capture === capture) listAnchor.capture = listAnchor.firstVisible = listAnchor.scrolled = undefined;
+      if (listAnchor.capture === capture) listAnchor.capture = listAnchor.firstVisible = listAnchor.scrolled = listAnchor.scrollAt = listAnchor.scrollTo = undefined;
     };
   }, [virtualizer]);
 

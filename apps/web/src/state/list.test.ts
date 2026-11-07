@@ -179,3 +179,27 @@ it("scrolling while the next list's first page is on its way doesn't continue th
   expect(useList.getState().nextCursor).toEqual(cursor(302));
   setApp({ query: "" });
 });
+
+it("plan 158: a mailbox comes back with its open thread, or the row now nearest it, and what the app opens isn't the user's choice", async () => {
+  const { getApp, openedByApp } = await import("~/state/app");
+  answer = async (_p, method) => (method === "threads.search" ? { items: rows(900, 2), nextCursor: null, strategy: "fts", tookMs: 1, complete: true } : { items: rows(0, 8), nextCursor: null });
+  setApp({ query: "", view: "archive", accountId: null, categoryId: null, reviewCategoryId: null, selectedId: null, checked: new Set() });
+  await vi.waitFor(() => expect(useList.getState().itemsKey).toContain('"archive"'));
+  expect(openedByApp(0)).toBe(true);
+  setApp({ selectedId: 5 });
+  expect(openedByApp(5)).toBe(false);
+
+  setApp({ query: "pago" });
+  await vi.waitFor(() => expect(getApp().selectedId).toBe(900));
+  expect(openedByApp(900)).toBe(true);
+  setApp({ query: "" });
+  await vi.waitFor(() => expect(getApp().selectedId).toBe(5));
+  expect(openedByApp(5)).toBe(true);
+
+  // archived elsewhere while the search was on: the row that took its place
+  setApp({ query: "pago" });
+  await vi.waitFor(() => expect(getApp().selectedId).toBe(900));
+  answer = async () => ({ items: rows(0, 8).filter((t) => t.id !== 5), nextCursor: null });
+  setApp({ query: "" });
+  await vi.waitFor(() => expect(getApp().selectedId).toBe(6));
+});

@@ -8,7 +8,7 @@ import type { Page } from "@playwright/test";
 import type { ThreadDetail } from "@terno/core";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
-import { expect, ingestConversation, selectThread, test } from "./fixtures";
+import { expect, fresh, ingestConversation, navTo, rows, search, selectThread, test } from "./fixtures";
 
 type Probe = Window & { __probe?: { skeleton: boolean; nodes: Record<string, Element | null>; focus: Element | null } };
 
@@ -60,6 +60,52 @@ async function markedRead(page: Page, threadId: number, release: () => void): Pr
   // and has rendered it
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 }
+
+/** Past the read's dwell: what would have been marked has been. */
+const pastDwell = (page: Page) => page.waitForTimeout(650);
+
+test.describe("what the app opens by itself (plan 158)", () => {
+  test("stays unread through a first load, a mailbox switch and a search's top hit, until the user chooses it", async ({ app: page, server }) => {
+    const id = await ingestConversation(server, { subject: "Llega zzsolo", count: 1, unread: 1, now: E2E_NOW + 7_200_000 });
+    await fresh(page);
+    const row = page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
+    await expect(row).toHaveAttribute("data-cursor");
+    await expect(page.getByTestId("reader-subject")).toHaveText("Llega zzsolo");
+    await pastDwell(page);
+    await expect(row).toHaveAttribute("data-unread", "true");
+
+    await navTo(page, "sent");
+    await expect(rows(page).first()).not.toHaveAttribute("data-thread-id", String(id));
+    await navTo(page, "inbox");
+    await expect(row).toHaveAttribute("data-cursor");
+    await pastDwell(page);
+    await expect(row).toHaveAttribute("data-unread", "true");
+
+    await search(page, "zzsolo");
+    await expect(page.getByTestId("reader-subject")).toHaveText("Llega zzsolo");
+    await pastDwell(page);
+    await expect(row).toHaveAttribute("data-unread", "true");
+
+    // a press on the row already open is the user choosing it
+    await row.click();
+    await expect(row).not.toHaveAttribute("data-unread");
+  });
+
+  test("a press in the reader chooses it, and Enter from the search field does", async ({ app: page, server }) => {
+    const id = await ingestConversation(server, { subject: "Sigue zzsolo", count: 1, unread: 1, now: E2E_NOW + 7_200_000 });
+    await fresh(page);
+    const row = page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
+    await expect(page.getByTestId("reader-subject")).toHaveText("Sigue zzsolo");
+    await page.getByTestId("reader-subject").click();
+    await expect(row).not.toHaveAttribute("data-unread");
+
+    const other = await ingestConversation(server, { subject: "Otro zzsolo", count: 1, unread: 1, now: E2E_NOW + 7_300_000 });
+    await search(page, "Otro zzsolo");
+    await expect(page.getByTestId("reader-subject")).toHaveText("Otro zzsolo");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(`[data-testid=thread-row][data-thread-id="${other}"]`)).not.toHaveAttribute("data-unread");
+  });
+});
 
 test.describe("reader through the read-after-dwell", () => {
   test("a focused message toggle, the scroll and the open messages survive the mark-read", async ({ app: page, server }) => {
