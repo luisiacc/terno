@@ -48,8 +48,14 @@ export function wantExcerpts(query: string, match: RowMatch | null, rows: readon
     useExcerpts.setState({ match, byThread: new Map() });
   }
   if (!match) return;
-  // Spam and Trash aren't read for this: their rows keep their own line
-  work.wanted = rows.filter((t) => !work.asked.has(t.id) && !t.inSpam && !t.inTrash && !rowExplains(match, [t.fromName, t.subject, t.snippet])).map((t) => t.id);
+  work.wanted = [];
+  for (const t of rows) {
+    if (work.asked.has(t.id)) continue;
+    // a scroll asks about the same rows again: each is looked at once.
+    // Spam and Trash aren't read for this: their rows keep their own line
+    if (t.inSpam || t.inTrash || rowExplains(match, [t.fromName, t.subject, t.snippet])) work.asked.add(t.id);
+    else work.wanted.push(t.id);
+  }
   if (work.timer) clearTimeout(work.timer);
   work.timer = work.wanted.length ? setTimeout(() => ask(match), SETTLE_MS) : null;
 }

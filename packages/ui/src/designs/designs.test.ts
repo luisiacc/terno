@@ -49,7 +49,7 @@ describe("designs (plan 15)", () => {
     expect(m.fonts.sans).toMatch(/^-apple-system, BlinkMacSystemFont, "Geist Variable"/);
     expect(m.text.sm).toEqual(["0.8125rem", "1.125rem"]);
     expect(m.radius.md).toBe("0.375rem");
-    expect(m.rows).toEqual({ comfortable: 68, compact: 40, wide: 44 });
+    expect(m.rows).toEqual({ comfortable: 68, compact: 40, wide: 44, results: 56 });
     expect(m.avatar.row).toBe(0);
     expect(m.palette).toEqual({ light: "terno-light", dark: "terno-dark" });
   });
