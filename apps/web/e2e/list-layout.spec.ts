@@ -46,6 +46,79 @@ function rpcLog(page: Page): string[] {
   return calls;
 }
 
+test.describe("the table (plan 158)", () => {
+  test("one header line, columns that line up, a preview a step under the subject, a selection that moves nothing, and back exactly where it was", { tag: "@design" }, async ({ app: page, design }) => {
+    const box = async (l: Locator) => (await l.boundingBox())!;
+    const list = listbox(page);
+    await scenario("the columns: every row's subject and preview start on one line, the date ends on one, and the row is short", async () => {
+      await expect(rows(page).first()).toHaveAttribute("data-wide", "true");
+      const lefts = await rows(page).evaluateAll((els) => els.slice(0, 12).map((r) => ["row-subject", "row-snippet"].map((id) => r.querySelector(`[data-testid=${id}]`)!.getBoundingClientRect().left)));
+      expect(new Set(lefts.map((l) => l[0])).size).toBe(1);
+      expect(new Set(lefts.map((l) => l[1])).size).toBe(1);
+      const rights = await rows(page).evaluateAll((els) => els.slice(0, 12).map((r) => Math.round(r.querySelector("[data-testid=row-date]")!.getBoundingClientRect().right)));
+      expect(new Set(rights).size).toBe(1);
+      const row = rows(page).nth(1);
+      const size = (id: string) => row.getByTestId(id).evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+      expect(await size("row-snippet")).toBeLessThan(await size("row-subject"));
+      expect((await box(row)).height).toBeLessThanOrEqual(40);
+    });
+    await scenario("narrow, the same columns: the category's dot takes one fixed slot, so account and marks stay on one line", async () => {
+      await page.setViewportSize({ width: 1100, height: 700 });
+      await expect(rows(page).first()).toHaveAttribute("data-wide", "true");
+      const lefts = await rows(page).evaluateAll((els) => els.slice(0, 14).map((r) => Math.round(r.querySelector("[data-testid=row-marks]")!.getBoundingClientRect().left)));
+      expect(new Set(lefts).size).toBe(1);
+      await page.setViewportSize({ width: 1440, height: 900 });
+    });
+    await scenario("the header: with the filters in a menu, title, tabs, filter and search share one line", async () => {
+      test.skip(design === "lumen", "Lumen's chips have a line of their own");
+      const y = async (id: string) => {
+        const b = await box(page.getByTestId(id));
+        return b.y + b.height / 2;
+      };
+      const tabs = await y("list-tabs");
+      expect(Math.abs((await y("filter-menu")) - tabs)).toBeLessThanOrEqual(2);
+      expect(Math.abs((await y("search-input")) - tabs)).toBeLessThanOrEqual(2);
+      expect((await box(page.getByTestId("list-header"))).height).toBeLessThanOrEqual(64);
+    });
+    await scenario("selecting moves no row; the cursor isn't part of it; what's clicked is what's counted", async () => {
+      const a = rows(page).nth(4);
+      const b = rows(page).nth(6);
+      const before = await box(b);
+      await a.click({ modifiers: ["ControlOrMeta"] });
+      await expect(page.getByTestId("selection-bar")).toHaveAttribute("data-variant", "toolbar");
+      await expect(page.getByTestId("selection-count")).toHaveText("1 conversation selected");
+      expect((await box(b)).y).toBe(before.y);
+      await b.click({ modifiers: ["ControlOrMeta"] });
+      await expect(page.getByTestId("selection-count")).toHaveText("2 conversations selected");
+      expect((await box(b)).y).toBe(before.y);
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("selection-bar")).toHaveCount(0);
+      expect((await box(b)).y).toBe(before.y);
+    });
+    await scenario("the row opened comes back where it was, to the pixel, however the list is scrolled", async () => {
+      for (const at of [0, 300, 900]) {
+        await list.evaluate((el, top) => el.scrollTo(0, top), at);
+        await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBe(at);
+        // the banner gives way as the list scrolls: measured after, or a click would retry through its own scrollIntoView
+        if (at > 0) await expect(page.getByTestId("learned-banner")).toBeHidden();
+        await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+        // a row in the middle of the window, by where it is (the rendered rows include the overscan)
+        const id = await list.evaluate((el) => {
+          const { top, height } = el.getBoundingClientRect();
+          return [...el.querySelectorAll<HTMLElement>("[data-testid=thread-row]")].find((r) => r.getBoundingClientRect().top > top + height / 2)!.dataset.threadId!;
+        });
+        const before = await box(page.locator(`[data-thread-id="${id}"]`));
+        await page.locator(`[data-thread-id="${id}"]`).click();
+        await expect(listPage(page)).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(listPage(page)).toHaveCount(0);
+        await expect.poll(async () => (await box(page.locator(`[data-thread-id="${id}"]`))).y).toBe(before.y);
+        expect(await list.evaluate((el) => el.scrollTop)).toBe(at);
+      }
+    });
+  });
+});
+
 test.describe("the List layout", () => {
   test("the list is full width with tabs; a click opens the conversation as the page; Esc comes back to the same scroll, row and focus", { tag: "@design" }, async ({ app: page }) => {
     await expect(page.locator("html")).toHaveAttribute("data-layout", "list");
@@ -399,10 +472,11 @@ test.describe("category tabs", () => {
     if (variants.quickFilters === "chips") {
       await page.getByTestId("quick-filter-unread").click();
       await expect(page.getByTestId("quick-filter-unread")).toHaveAttribute("aria-pressed", "true");
-      await expect(page.getByTestId("unread-filter")).toHaveCount(0);
+      await expect(page.getByTestId("filter-menu")).toHaveCount(0);
     } else {
-      await page.getByTestId("unread-filter").click();
-      await expect(page.getByTestId("unread-filter")).toHaveAttribute("aria-pressed", "true");
+      await page.getByTestId("filter-menu").click();
+      await page.getByTestId("filter-option-unread").click();
+      await expect(page.getByTestId("filter-menu")).toHaveAttribute("data-active");
       await expect(page.getByTestId("quick-filters")).toHaveCount(0);
     }
     await expect(all).toHaveAttribute("aria-selected", "true");

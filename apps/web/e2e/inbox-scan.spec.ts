@@ -5,7 +5,7 @@
  */
 import type { Locator } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, fresh, freshNoDrafts, rows, scenario, test } from "./fixtures";
+import { expect, focusList, fresh, freshNoDrafts, pickFilter, rows, scenario, test } from "./fixtures";
 
 /** Whole rows at 1440x900 with a suggestion and no drafts, the plan's bar. */
 const WHOLE_ROWS = { lumen: 10, atelier: 10, macos: 11, graphite: 11, luma: 10 } as const;

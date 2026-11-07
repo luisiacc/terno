@@ -1089,7 +1089,7 @@ test("the unread filter: its button → the other list rendered within 100 ms; m
       // [view, account, category, review, filter, query]
       const shows = () => (JSON.parse(list.getAttribute("data-results-for") ?? "[]") as unknown[])[4] === want;
       const t0 = performance.now();
-      (document.querySelector("[data-testid=unread-filter]") as HTMLElement).click();
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: want === "unread" ? "U" : "A", code: want === "unread" ? "KeyU" : "KeyA", shiftKey: true, bubbles: true, cancelable: true }));
       await new Promise<void>((resolve) => {
         if (shows()) return resolve();
         const mo = new MutationObserver(() => {
@@ -1104,9 +1104,9 @@ test("the unread filter: its button → the other list rendered within 100 ms; m
     }, i % 2 === 0 ? "unread" : null);
     samples.push(ms);
   }
-  const s = stat("unread filter: button → list rendered (+1 frame)", 100, samples.slice(2));
+  const s = stat("unread filter: ⇧U or ⇧A → list rendered (+1 frame)", 100, samples.slice(2));
   // off again after 16 toggles; on, with the open thread read and kept: j moves off it and it leaves
-  await page.evaluate(() => (document.querySelector("[data-testid=unread-filter]") as HTMLElement).click());
+  await page.keyboard.press("Shift+U");
   await expect(page.locator("[data-testid=thread-row]:not([data-unread])")).toHaveCount(1);
   const mounted = await rows(page).count();
   const before = await renders(page, "ThreadRow");

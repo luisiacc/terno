@@ -42,7 +42,7 @@ function BarButton({ label, command, onClick, children, testId, disabled, bar, t
  * With two or more conversations selected (or "all N" of a view): what they
  * are and what to do with them. Split shows it in the reader pane, like
  * Apple Mail; List (plan 24), which has no side pane, as a toolbar over the
- * rows. The same actions, names, test ids and shortcuts in both.
+ * header's line, so no row moves under the pointer. The same actions, names, test ids and shortcuts in both.
  */
 export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
   const count = useApp((s) => s.scope?.count ?? s.checked.size);
@@ -139,7 +139,7 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
   const more = !scope && count < loaded;
   if (bar === "toolbar")
     return (
-      <div role="toolbar" aria-label={title} data-testid="selection-bar" data-variant="toolbar" className="hairline-b flex shrink-0 items-center gap-0.5 bg-tint px-3 py-1">
+      <div role="toolbar" aria-label={title} data-testid="selection-bar" data-variant="toolbar" className="no-drag hairline-b absolute inset-x-0 top-0 z-10 flex h-[52px] items-center gap-0.5 bg-pane pr-4 pl-5">
         <span className="mr-2 min-w-0 truncate text-xs font-medium text-foreground tabular" data-testid="selection-count">
           {title}
         </span>

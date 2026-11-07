@@ -6,7 +6,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Kbd } from "@terno/ui/components/kbd";
 import { cn } from "@terno/ui/lib/utils";
 import { Separator } from "@terno/ui/components/separator";
-import { Archive, ChevronDown, Inbox, ListFilter, Mail, OctagonAlert, Reply, Search, Send, SquarePen, Star, Tag, Trash2 } from "@terno/ui/icons";
+import { Archive, ChevronDown, Inbox, Mail, OctagonAlert, Reply, Search, Send, SquarePen, Star, Tag, Trash2 } from "@terno/ui/icons";
 import { formatNumber, t } from "@terno/i18n";
 import { useLayoutEffect, useRef, useState } from "react";
 import { listDate, viewLabel } from "~/lib/format";
@@ -110,8 +110,8 @@ function Sidebar({ design, sample }: { design: DesignDefinition; sample: SampleM
         ),
         "sidebar-row": (
           <div className="shrink-0 px-(--sidebar-pad)">
-            <div className="type-nav flex h-(--nav-h) w-full items-center gap-2.5 px-2 text-sidebar-foreground">
-              <span className="flex size-(--icon-nav) items-center justify-center text-sidebar-glyph">
+            <div className="type-nav-strong flex h-(--nav-h) w-full items-center gap-2.5 px-2 text-sidebar-accent-foreground">
+              <span className="flex size-(--icon-nav) items-center justify-center">
                 <SquarePen className="size-(--icon-nav)" />
               </span>
               <span className="min-w-0 flex-1 truncate">{t("compose.newMessage")}</span>
@@ -119,9 +119,11 @@ function Sidebar({ design, sample }: { design: DesignDefinition; sample: SampleM
           </div>
         ),
         "sidebar-pill": (
-          <div className="shrink-0 px-2.5 pb-4">
-            <div className="type-compose flex h-10 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-primary-foreground shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)]">
-              <SquarePen className="size-4" />
+          <div className="shrink-0 px-2 pb-3">
+            <div className="type-compose flex h-9 w-full items-center gap-2.5 rounded-full border border-border bg-card pr-3 pl-2 text-foreground shadow-xs">
+              <span className="flex size-(--icon-nav) items-center justify-center text-muted-foreground">
+                <SquarePen className="size-(--icon-nav)" />
+              </span>
               {t("list.compose")}
             </div>
           </div>
@@ -150,15 +152,51 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
   const icon = (glyph: React.ReactNode) => <span className="flex size-7 items-center justify-center rounded-md text-muted-foreground">{glyph}</span>;
   const actions = (
     <>
-      {quick === "menu" && icon(<ListFilter />)}
+      {quick === "menu" && (
+        <span className="flex h-7 shrink-0 items-center gap-1 px-2.5 text-[length:var(--ds-text-control)] font-medium text-muted-foreground">
+          {t("list.filter.trigger")}
+          <ChevronDown className="size-3" />
+        </span>
+      )}
       {behindButton && icon(<Search />)}
-      {v.compose === "list-header" && icon(<SquarePen />)}
+      {v.compose === "list-header" && (
+        <span className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-border bg-card px-2.5 text-[length:var(--ds-text-control)] font-medium shadow-xs">
+          <SquarePen className="size-[1.15em] text-muted-foreground" />
+          {t("compose.newMessage")}
+        </span>
+      )}
     </>
   );
+  const tabsRow = wide && (
+    <div data-testid="first-run-preview-tabs" data-kind={v.categoryTabs} className={cn("relative flex min-w-0 flex-1 items-center gap-1 overflow-hidden", v.categoryTabs === "underline" ? (quick === "menu" ? "-ml-2" : "hairline-b -mb-2 -ml-2") : "py-0.5")}>
+      <span aria-selected className={tabClass(v.categoryTabs)}>{viewLabel("inbox")}</span>
+      {sample.categories.map((c) => (
+        <span key={c.id} aria-selected={false} className={tabClass(v.categoryTabs)}>
+          <CategoryDot color={c.color} />
+          {c.name}
+        </span>
+      ))}
+    </div>
+  );
+  const field = !behindButton && (
+    <div className="relative flex h-[30px] items-center rounded-lg bg-tint pr-2 pl-8 text-sm text-muted-foreground">
+      <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
+      <span className="min-w-0 flex-1 truncate">{t("list.search.placeholder")}</span>
+      <Kbd>/</Kbd>
+    </div>
+  );
+  // List's full-width list keeps its chrome on one line where the design's filters are a menu (thread-list.tsx's Header)
+  const oneRow = wide && quick === "menu";
   return (
     <section className="flex h-full min-h-0 flex-col bg-pane">
       <div className="shrink-0 pr-4 pb-2 pl-2">
-        {kind === "title" ? (
+        {oneRow ? (
+          <div className="flex h-[52px] items-center gap-3 pr-1.5 pl-3">
+            {tabsRow}
+            {actions}
+            {field && <div className="w-64 shrink-0">{field}</div>}
+          </div>
+        ) : kind === "title" ? (
           <div className="flex h-[52px] items-center gap-2 pr-1.5 pl-3">
             <h1 className="min-w-0 flex-1 truncate text-md font-semibold tracking-tight">{viewLabel("inbox")}</h1>
             {actions}
@@ -174,26 +212,10 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
             </p>
           </>
         )}
-        {!behindButton && (
-          <div className="relative flex h-[30px] items-center rounded-lg bg-tint pr-2 pl-8 text-sm text-muted-foreground">
-            <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
-            <span className="min-w-0 flex-1 truncate">{t("list.search.placeholder")}</span>
-            <Kbd>/</Kbd>
-          </div>
-        )}
+        {!oneRow && field}
         <div className="mt-1 flex min-w-0 items-center gap-3 overflow-hidden pl-3 empty:hidden">
         {/* List: the inbox's tabs (list-tabs.tsx), the Inbox selected, in the design's tab variant */}
-        {wide && (
-          <div data-testid="first-run-preview-tabs" data-kind={v.categoryTabs} className={cn("relative flex min-w-0 flex-1 items-center gap-1 overflow-hidden", v.categoryTabs === "underline" ? "hairline-b -mb-2 -ml-2" : "py-0.5")}>
-            <span aria-selected className={tabClass(v.categoryTabs)}>{viewLabel("inbox")}</span>
-            {sample.categories.map((c) => (
-              <span key={c.id} aria-selected={false} className={tabClass(v.categoryTabs)}>
-                <CategoryDot color={c.color} />
-                {c.name}
-              </span>
-            ))}
-          </div>
-        )}
+        {!oneRow && tabsRow}
         {quick === "chips" && (
           <div data-testid="first-run-preview-chips" className="flex shrink-0 gap-1.5 overflow-hidden py-0.5">
             {(["all", "unread", "people", "attachments", "starred"] as const).map((f) => (
@@ -214,6 +236,7 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
             height={height}
             compact={compact}
             wide={wide}
+            quietCursor={wide}
             icons={false}
             layout={v.row}
             review={null}

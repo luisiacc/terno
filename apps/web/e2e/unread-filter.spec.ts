@@ -8,14 +8,13 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, selectedRow, stabilize, test, scenario } from "./fixtures";
+import { expect, focusList, selectedRow, stabilize, test, scenario, pickFilter } from "./fixtures";
 
 // baselines are at twice the pixels; everything else draws at one (plan 139)
 test.use({ deviceScaleFactor: 2 });
 
 const ctx = { clientId: "setup", origin: "dev" as const };
-const button = (page: Page) => page.getByTestId("unread-filter");
-const status = (page: Page) => page.getByTestId("unread-filter-status");
+const button = (page: Page) => page.getByTestId("filter-menu");
 const db = (server: DevServer) => sqlDb(server.backend.store);
 // plan 86: what the Inbox shows (Gmail's Promotions and Social live apart)
 const unreadInbox = (server: DevServer) => db(server).all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND tab = 0 AND unread_count > 0").map((r) => r.id);
@@ -34,8 +33,8 @@ async function emptyCategory(page: Page, server: DevServer) {
 }
 
 async function filterOn(page: Page) {
-  await button(page).click();
-  await expect(button(page)).toHaveAttribute("aria-pressed", "true");
+  await pickFilter(page, "unread");
+  await expect(button(page)).toHaveAttribute("data-active");
   await showing(page, true);
   await focusList(page);
 }
@@ -48,13 +47,13 @@ test.describe("the toggle", () => {
       await page.locator("[data-ready]").waitFor();
       await page.getByTestId("thread-row").first().waitFor();
     };
-    await scenario("the header button filters to unread and back: the accent, the subtitle with the unread count, only unread rows", async () => {
-      await expect(button(page)).toHaveAttribute("aria-pressed", "false");
-      await expect(status(page)).toHaveCount(0);
+    await scenario("the header's control filters to unread and back: the accent, its name, the unread count on hover, only unread rows", async () => {
+      await expect(button(page)).toHaveText("Filter");
       expect(await page.locator("[data-testid=thread-row]:not([data-unread])").count()).toBeGreaterThan(0);
       await filterOn(page);
       const n = unreadInbox(server).length;
-      await expect(status(page)).toHaveText(`Filtered by: Unread · ${n.toLocaleString("en-US")}`);
+      await expect(button(page)).toHaveText("Unread");
+      await expect(button(page)).toHaveAccessibleName("Filter: Unread");
       // the accent, not the muted grey
       const [on, muted] = await button(page).evaluate((b) => [getComputedStyle(b).color, getComputedStyle(document.querySelector("[data-testid=compose-button]")!).color]);
       expect(on).not.toBe(muted);
@@ -64,11 +63,11 @@ test.describe("the toggle", () => {
       expect((await loadedIds(page)).filter((id) => unread.has(id)).length).toBe(Math.min(n, 100));
       await page.mouse.move(0, 0);
       await button(page).hover();
-      await expect(page.locator("[data-slot=tooltip-content]")).toContainText("Show all");
-      await button(page).click();
-      await expect(button(page)).toHaveAttribute("aria-pressed", "false");
+      await expect(page.locator("[data-slot=tooltip-content]")).toHaveText(`Showing: Unread · ${n.toLocaleString("en-US")}`);
+      await page.getByTestId("filter-clear").click();
+      await expect(button(page)).not.toHaveAttribute("data-active");
       await showing(page, false);
-      await expect(status(page)).toHaveCount(0);
+      await expect(page.getByTestId("filter-clear")).toHaveCount(0);
     });
     await scenario("⌘L is not the filter's (it is the composer's link); the palette offers the other state, with no key", async () => {
       await fresh();
@@ -78,17 +77,20 @@ test.describe("the toggle", () => {
         document.dispatchEvent(new KeyboardEvent("keydown", { key: "l", metaKey: mac, ctrlKey: !mac, cancelable: true }));
       });
       await page.waitForTimeout(100);
-      await expect(button(page)).toHaveAttribute("aria-pressed", "false");
+      await expect(button(page)).not.toHaveAttribute("data-active");
       await button(page).hover();
-      await expect(page.locator("[data-slot=tooltip-content]")).toHaveText("Show unread only ⇧U");
+      await expect(page.locator("[data-slot=tooltip-content]")).toHaveText("Show only some of this list");
+      // the menu says ⇧U beside Unread
       await button(page).click();
-      await expect(button(page)).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByTestId("filter-option-unread")).toContainText("⇧U");
+      await page.getByTestId("filter-option-unread").click();
+      await expect(button(page)).toHaveAttribute("data-active");
 
       await page.keyboard.press("ControlOrMeta+k");
       await expect(page.getByTestId("palette-unread-filter").locator("[data-slot=command-shortcut]")).toHaveCount(0);
       await expect(page.getByTestId("palette-unread-filter")).toContainText("Show all");
       await page.getByTestId("palette-unread-filter").click();
-      await expect(button(page)).toHaveAttribute("aria-pressed", "false");
+      await expect(button(page)).not.toHaveAttribute("data-active");
       await page.keyboard.press("ControlOrMeta+k");
       await expect(page.getByTestId("palette-unread-filter")).toContainText("Show unread only");
       await page.keyboard.press("Escape");
@@ -99,27 +101,27 @@ test.describe("the toggle", () => {
       await page.keyboard.press("g");
       await page.keyboard.press("a");
       await expect(page.getByTestId("list-title")).toContainText("Archive");
-      await expect(button(page)).toHaveAttribute("aria-pressed", "false");
+      await expect(button(page)).not.toHaveAttribute("data-active");
       const cat = db(server).get<{ id: number; name: string }>("SELECT c.id, c.name FROM categories c JOIN thread_categories tc ON tc.category_id = c.id GROUP BY c.id ORDER BY count(*) DESC LIMIT 1")!;
       await page.locator(`[data-drop-target="${cat.id}"]`).click();
       await expect(page.getByTestId("list-title")).toContainText(cat.name);
-      await expect(button(page)).toHaveAttribute("aria-pressed", "false");
+      await expect(button(page)).not.toHaveAttribute("data-active");
       await filterOn(page);
       await expect(page.locator("[data-testid=thread-row]:not([data-unread]):not([data-cursor])")).toHaveCount(0);
 
       await page.reload();
       await page.locator("[data-ready]").waitFor();
-      await expect(button(page)).toHaveAttribute("aria-pressed", "true");
+      await expect(button(page)).toHaveAttribute("data-active");
       await page.keyboard.press("g");
       await page.keyboard.press("i");
       await expect(page.getByTestId("list-title")).toContainText("Inbox");
-      await expect(button(page)).toHaveAttribute("aria-pressed", "true");
+      await expect(button(page)).toHaveAttribute("data-active");
       await showing(page, true);
       await focusList(page);
       await page.keyboard.press("g");
       await page.keyboard.press("a");
       await expect(page.getByTestId("list-title")).toContainText("Archive");
-      await expect(button(page)).toHaveAttribute("aria-pressed", "false");
+      await expect(button(page)).not.toHaveAttribute("data-active");
     });
     await scenario("a search in a filtered mailbox is filtered too: unread results only, counted as such", async () => {
       await fresh();
@@ -127,7 +129,7 @@ test.describe("the toggle", () => {
       // the Inbox's search, compared with the Inbox's unread (a search everywhere is filtered the same way)
       await page.getByTestId("search-input").fill("in:inbox factura");
       await expect(page.getByTestId("search-stats")).toBeVisible();
-      await expect(status(page)).toHaveText("Filtered by: Unread");
+      await expect(button(page)).toHaveText("Unread");
       const shown = await loadedIds(page);
       expect(shown.length).toBeGreaterThan(0);
       // in:inbox is the server's Inbox: Gmail's tabs too (plan 86 keeps them out of the Inbox list only)
@@ -267,7 +269,7 @@ test.describe("nothing unread", () => {
       await page.locator("[data-ready]").waitFor();
       await page.getByTestId("thread-row").first().waitFor();
     };
-    await scenario("the empty state says so and “Clear filter” brings everything back, focus on the filter button", async () => {
+    await scenario("the empty state says so and “Clear filter” brings everything back, focus on the filter control", async () => {
       await emptyCategory(page, server);
       await filterOn(page);
       const empty = page.getByTestId("unread-empty");
@@ -275,7 +277,7 @@ test.describe("nothing unread", () => {
       // not inside the listbox: a button isn't an option
       expect(await empty.evaluate((e) => e.closest("[role=listbox]") === null)).toBe(true);
       await page.getByTestId("unread-empty-clear").click();
-      await expect(button(page)).toHaveAttribute("aria-pressed", "false");
+      await expect(button(page)).not.toHaveAttribute("data-active");
       await expect(button(page)).toBeFocused();
       await expect(empty).toHaveCount(0);
     });
@@ -313,7 +315,7 @@ test.describe("baselines", () => {
     test(`the filtered header and the empty state, ${scheme}`, async ({ app: page, server }) => {
       await page.emulateMedia({ colorScheme: scheme });
       await filterOn(page);
-      await expect(status(page)).toContainText("·");
+      await expect(button(page)).toHaveText("Unread");
       await stabilize(page);
       await expect(page.getByTestId("list-header")).toHaveScreenshot(`header-filtered-${scheme}.png`);
       await emptyCategory(page, server);

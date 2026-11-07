@@ -107,39 +107,8 @@ export function nextWide(wide: boolean, width: number): boolean {
   return wide ? width >= WIDE_MIN - 16 : width >= WIDE_MIN;
 }
 
-/** the header's filter button, where focus goes when the empty state's "Clear filter" disappears */
+/** the header's filter control, where focus goes when the empty state's "Clear filter" disappears */
 export const unreadFilterButton: { current: HTMLButtonElement | null } = { current: null };
-
-/** Mail's message filter: a quiet icon off, on the accent while any filter is on; a click turns it off, or on as Unread. */
-function UnreadFilterButton({ filter }: { filter: QuickFilter | undefined }) {
-  const active = filter !== undefined;
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            ref={(el) => {
-              unreadFilterButton.current = el;
-            }}
-            data-testid="unread-filter"
-            data-active={active || undefined}
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t("list.unreadFilter.label")}
-            aria-pressed={active}
-            className={cn("no-drag shrink-0 text-muted-foreground hover:text-foreground", active && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground")}
-            onClick={() => setListFilter(active ? undefined : "unread")}
-          >
-            <ListFilter />
-          </Button>
-        }
-      />
-      <TooltipContent>
-        {active ? t("list.unreadFilter.showAll") : t("list.unreadFilter.showUnread")} <Shortcut keys="shift+u" />
-      </TooltipContent>
-    </Tooltip>
-  );
-}
 
 const FILTER_NAME = {
   unread: "list.filter.unread",
@@ -161,61 +130,72 @@ function useOfferedFilters(): readonly QuickFilter[] {
   return useMemo(() => supported.filter((f) => !(f === "starred" && view === "starred")), [supported, view]);
 }
 
-/** The criterion's menu (Mail's): All and every filter, always there, so the choices don't wait behind turning one on. */
-function FilterMenu({ filter, testId, className, children }: { filter: QuickFilter | undefined; testId: string; className?: string; children: React.ReactNode }) {
-  const offered = useOfferedFilters();
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <button type="button" data-testid={testId} className={cn("no-drag inline-flex shrink-0 items-center gap-0.5 rounded-sm text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring", className)}>
-            {children}
-            <ChevronDown className="size-3 text-muted-foreground" aria-hidden />
-          </button>
-        }
-      />
-      <DropdownMenuContent align="start" className="min-w-44">
-        <DropdownMenuRadioGroup value={filter ?? "all"} onValueChange={(v) => setListFilter(v === "all" ? undefined : (v as QuickFilter))}>
-          <DropdownMenuRadioItem value="all" closeOnClick data-testid="filter-option-all">
-            {t("list.filter.all")}
-          </DropdownMenuRadioItem>
-          {offered.map((f) => (
-            <DropdownMenuRadioItem key={f} value={f} closeOnClick data-testid={`filter-option-${f}`}>
-              {filterName(f)}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 /**
- * The filter's state in the header's own row, so turning it on moves nothing: "All ▾" while off, a quiet way to the
- * other filters; "Filtered by: Unread ▾ · N ×" while on (N: the mailbox's unread threads; a search shows its own
- * count), its × one click from everything.
+ * Where a design keeps its filters in a menu, the one control for them: it says "Filter", or the filter that's on, and
+ * opens every choice (⇧U and ⇧A still work from anywhere). On, a × beside it clears in one click, and it grows away
+ * from the title: nothing else in the header moves. N: the mailbox's unread threads, said on hover.
  */
-function FilterStatus({ search, filter }: { search: boolean; filter: QuickFilter | undefined }) {
+function FilterControl({ filter, search }: { filter: QuickFilter | undefined; search: boolean }) {
+  const offered = useOfferedFilters();
   const total = useList((s) => (s.unreadTotal && s.unreadTotal.key === s.key ? s.unreadTotal : null));
-  if (!filter) return <span className="type-list-subtitle shrink-0 text-muted-foreground"><FilterMenu filter={filter} testId="filter-menu">{t("list.filter.all")}</FilterMenu></span>;
+  const name = filter ? filterName(filter) : t("list.filter.trigger");
   const n = filter === "unread" && !search && total && total.n > 0 ? `${formatNumber(total.n)}${total.capped ? "+" : ""}` : null;
   return (
-    <span data-testid="unread-filter-status" className="type-list-subtitle flex min-w-0 shrink-0 items-center text-muted-foreground tabular">
-      {t("list.filter.by")}{" "}
-      <FilterMenu filter={filter} testId="filter-criterion" className="ml-1">{filterName(filter)}</FilterMenu>
-      {n && <span className="whitespace-pre"> · {n}</span>}
-      <CloseButton
-        size="xs"
-        data-testid="filter-clear"
-        label={t("list.unreadEmpty.clear")}
-        className="no-drag ml-1"
-        onClick={() => {
-          setListFilter(undefined);
-          // the filter's control stays: the × goes with the filter
-          unreadFilterButton.current?.focus();
-        }}
-      />
-    </span>
+    <div data-testid="filter-control" className="no-drag flex min-w-0 shrink items-center gap-1">
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    ref={(el) => {
+                      unreadFilterButton.current = el;
+                    }}
+                    data-testid="filter-menu"
+                    data-active={filter ? true : undefined}
+                    variant="ghost"
+                    size="sm"
+                    aria-label={filter ? t("list.filter.triggerOn", { name }) : name}
+                    className={cn("min-w-0 shrink text-muted-foreground hover:text-foreground aria-expanded:text-foreground", filter && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground aria-expanded:bg-accent aria-expanded:text-accent-foreground")}
+                  />
+                }
+              />
+            }
+          >
+            <span className="min-w-0 truncate">{name}</span>
+            <ChevronDown aria-hidden className="size-3" />
+          </TooltipTrigger>
+          <TooltipContent>{filter ? (n ? t("list.filter.onCount", { name, n }) : t("list.filter.on", { name })) : t("list.filter.help")}</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="end" className="min-w-48">
+          <DropdownMenuRadioGroup value={filter ?? "all"} onValueChange={(v) => setListFilter(v === "all" ? undefined : (v as QuickFilter))}>
+            <DropdownMenuRadioItem value="all" closeOnClick data-testid="filter-option-all">
+              <span className="min-w-0 flex-1 truncate">{t("list.filter.all")}</span>
+              <Shortcut keys="shift+a" className="ms-auto" />
+            </DropdownMenuRadioItem>
+            {offered.map((f) => (
+              <DropdownMenuRadioItem key={f} value={f} closeOnClick data-testid={`filter-option-${f}`}>
+                <span className="min-w-0 flex-1 truncate">{filterName(f)}</span>
+                {f === "unread" && <Shortcut keys="shift+u" className="ms-auto" />}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {filter && (
+        <CloseButton
+          size="sm"
+          data-testid="filter-clear"
+          label={t("list.unreadEmpty.clear")}
+          onClick={() => {
+            setListFilter(undefined);
+            // the control stays: the × goes with the filter
+            unreadFilterButton.current?.focus();
+          }}
+        />
+      )}
+    </div>
   );
 }
 
@@ -478,10 +458,8 @@ function useWaitingCount(): number | null {
   });
 }
 
-/** Under a display title: what's unread here, and the menu's filter state; the greeting's adds its hello and what waits for your reply. */
-function Subtitle({ filter, search, greeting }: { filter: QuickFilter | undefined; search: boolean; greeting: boolean }) {
-  const design = useDesign();
-  const offersMenu = useApp((s) => s.reviewCategoryId === null && !s.reminders && !s.followups && !s.today) && design.variants.quickFilters === "menu";
+/** Under a display title: what's unread here; the greeting's adds its hello and what waits for your reply. */
+function Subtitle({ filter, greeting }: { filter: QuickFilter | undefined; greeting: boolean }) {
   const unread = useApp((s) =>
     s.reviewCategoryId !== null
       ? null
@@ -498,7 +476,6 @@ function Subtitle({ filter, search, greeting }: { filter: QuickFilter | undefine
   );
   const counted = useWaitingCount();
   const waiting = greeting && counted ? counted : 0;
-  if (offersMenu && (filter || unread === null)) return <FilterStatus search={search} filter={filter} />;
   if (unread === null) return null;
   return (
     <p data-testid="list-subtitle" className="type-list-subtitle flex min-w-0 items-center gap-1 text-muted-foreground tabular">
@@ -519,17 +496,11 @@ function Subtitle({ filter, search, greeting }: { filter: QuickFilter | undefine
       )}
       {unread === 0 && waiting === 0 && t("list.caughtUp")}
       </span>
-      {offersMenu && (
-        <>
-          <span aria-hidden>·</span>
-          <FilterStatus search={search} filter={undefined} />
-        </>
-      )}
     </p>
   );
 }
 
-function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
+function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement>; /** List's full-width list: everything that fits sits on the title's line */ oneRow: boolean }) {
   const view = useApp((s) => s.view);
   const category = useApp((s) => s.categories.find((c) => c.id === s.categoryId));
   const folder = useApp(folderName);
@@ -559,12 +530,15 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const list = useAppearance((s) => s.layout === "list");
   const tabs = useApp((s) => list && tabsShown(s));
   const showField = !behindButton || searchOpen || query !== "";
+  const inlineTabs = oneRow && tabs && quick === "menu";
   const results = more ? t("list.search.resultsMore", { count }) : t("list.search.results", { count });
   const stats = query && searchMs !== null && (
     <span data-testid="search-stats" role="status" className="shrink-0 text-2xs text-muted-foreground tabular">
       {complete ? results : t("list.search.statsIndexing", { results })}
     </span>
   );
+  // the one filter control sits with the header's actions, in every width and whatever the list holds
+  const filterControl = !review && !reminders && quick === "menu" && <FilterControl filter={filter} search={query.trim() !== ""} />;
   const actions = (
     <>
       {todayMore > 0 && (
@@ -573,7 +547,6 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
           setListFilter("waiting");
         }}>{t("today.showAll", { count: todayMore })}</Button>
       )}
-      {!review && !reminders && quick === "menu" && <UnreadFilterButton filter={filter} />}
       {behindButton && (
         <Tooltip>
           <TooltipTrigger
@@ -592,13 +565,15 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
         <Tooltip>
           <TooltipTrigger
             render={
-              <Button data-testid="compose-button" variant="ghost" size="icon-sm" aria-label={t("list.compose")} className="no-drag shrink-0 text-muted-foreground hover:text-foreground" onClick={() => openCompose("new")}>
+              // the mail's own action in words, where the row has them: a raised button, not a loud one; beside a search's count, the icon
+              <Button data-testid="compose-button" variant="outline" size="sm" aria-label={t("compose.newMessage")} className={cn("no-drag shrink-0", searching ? "aspect-square px-0" : "@max-[20rem]:aspect-square @max-[20rem]:px-0")} onClick={() => openCompose("new")}>
                 <SquarePen />
+                {!searching && <span className="@max-[20rem]:hidden">{t("compose.newMessage")}</span>}
               </Button>
             }
           />
           <TooltipContent>
-            {t("list.compose")} <Shortcut keys="c" />
+            {t("compose.newMessage")} <Shortcut keys="c" />
           </TooltipContent>
         </Tooltip>
       )}
@@ -621,18 +596,40 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   return (
     // every fill starts at 8 px, as a row's selection does; every line of text at 20 px, as a row's does
     <div ref={hairlineRef} data-testid="list-header" data-kind={kind} className="drag-region scroll-hairline @container shrink-0 pr-4 pb-2 pl-2">
-      {kind === "title" ? (
+      {oneRow ? (
+        <div className="flex h-[52px] min-w-0 items-center gap-3 pr-1.5 pl-3">
+          {/* tabs on this line: the selected one says this, and says what's unread */}
+          <h1 className={cn("shrink-0 truncate", inlineTabs && !account ? "sr-only" : kind === "title" ? "text-md font-semibold tracking-tight" : kind === "greeting" ? "type-greeting" : "type-list-title")} data-testid="list-title">
+            {title}
+            {accountSuffix}
+          </h1>
+          {query && (searchMs !== null || searchAll) ? (
+            <p className="flex shrink-0 items-center gap-2">
+              {stats}
+              {searchAll}
+            </p>
+          ) : (
+            kind !== "title" && !inlineTabs && <Subtitle filter={filter} greeting={kind === "greeting"} />
+          )}
+          {/* what the row leaves goes to the tabs, then to nothing: the controls keep the right edge */}
+          <div className="flex min-w-0 flex-1 items-center">{inlineTabs && <ListTabs inline />}</div>
+          {filterControl}
+          {showField && (
+            <div className="w-[clamp(14.5rem,24cqw,20rem)] shrink-0">
+              <ListSearch />
+            </div>
+          )}
+          <div className="flex shrink-0 items-center gap-2 empty:hidden">{actions}</div>
+        </div>
+      ) : kind === "title" ? (
         <div className="flex h-[52px] items-center gap-2 pr-1.5 pl-3">
-          {/* the filter's state on the title's own line: turning it on moves nothing */}
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <h1 className="min-w-0 truncate text-md font-semibold tracking-tight" data-testid="list-title">
-              {title}
-              {accountSuffix}
-            </h1>
-            {!review && !reminders && quick === "menu" && <FilterStatus search={query.trim() !== ""} filter={filter} />}
-          </div>
+          <h1 className="min-w-0 flex-1 truncate text-md font-semibold tracking-tight" data-testid="list-title">
+            {title}
+            {accountSuffix}
+          </h1>
           {stats}
           {searchAll}
+          {filterControl}
           {actions}
         </div>
       ) : (
@@ -643,47 +640,29 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
               {title}
               {accountSuffix}
             </h1>
-            <div className="flex shrink-0 items-center gap-0.5">{actions}</div>
+            {filterControl}
+            <div className="flex shrink-0 items-center gap-0.5 empty:hidden">{actions}</div>
           </div>
-          {/* gives way as the list scrolls (at once: moving through a list never animates), unless it says a filter is on or what a search found */}
+          {/* gives way as the list scrolls (at once: moving through a list never animates), unless it says what a search found */}
           <div
-            data-keep={filter || query ? true : undefined}
+            data-keep={query ? true : undefined}
             className="-mt-1.5 pb-2 pl-3 group-data-scrolled/list:not-data-keep:hidden"
           >
             {query && (searchMs !== null || searchAll) ? (
-              <>
-                <p className="flex items-center gap-2">
-                  {stats}
-                  {searchAll}
-                </p>
-                {/* plan 158: a search keeps the mailbox's filter: it says so, and it goes in one click */}
-                {filter && quick === "menu" && (
-                  <p data-testid="unread-filter-status" className="mt-1 flex min-w-0 items-center text-2xs leading-tight text-muted-foreground">
-                    {t("list.filter.by")}
-                    <FilterMenu filter={filter} testId="filter-criterion" className="ml-1">{filterName(filter)}</FilterMenu>
-                    <CloseButton
-                      size="2xs"
-                      data-testid="search-filter-clear"
-                      label={t("list.unreadEmpty.clear")}
-                      className="no-drag ml-1 shrink-0"
-                      onClick={() => {
-                        setListFilter(undefined);
-                        searchInputRef.current?.focus();
-                      }}
-                    />
-                  </p>
-                )}
-              </>
+              <p className="flex items-center gap-2">
+                {stats}
+                {searchAll}
+              </p>
             ) : (
-              <Subtitle filter={filter} search={query.trim() !== ""} greeting={kind === "greeting"} />
+              <Subtitle filter={filter} greeting={kind === "greeting"} />
             )}
           </div>
         </>
       )}
-      {showField && <ListSearch />}
-      {(tabs || (!review && !reminders && quick === "chips")) && (
+      {!oneRow && showField && <ListSearch />}
+      {((tabs && (!oneRow || quick === "chips")) || (!review && !reminders && quick === "chips")) && (
         <div className="mt-1 flex min-w-0 items-center gap-3 pl-3 empty:hidden">
-          {tabs && <ListTabs />}
+          {tabs && (!oneRow || quick === "chips") && <ListTabs />}
           {!review && !reminders && quick === "chips" && <QuickChips filter={filter} />}
         </div>
       )}
@@ -876,7 +855,8 @@ export function ThreadList() {
   const resultsOf = searchOfKey(itemsKey);
   const height = wide && !compact ? design.rows.wide : design.rows[compact ? "compact" : resultsOf ? "results" : "comfortable"];
   const layout = design.variants.row;
-  const many = useApp((s) => s.scope !== null || s.checked.size >= 2);
+  // List has no pane to say a row is checked: the toolbar comes with the first (one conversation, as with x)
+  const many = useApp((s) => s.scope !== null || s.checked.size >= (list ? 1 : 2));
   const previewing = useApp((s) => s.actionPreview !== null);
   // plan 80: a category's Review list, whose rows answer its suggestions
   const review = useApp((s) => s.reviewCategoryId);
@@ -1072,25 +1052,25 @@ export function ThreadList() {
   }, [last?.index, items.length, itemsKey]);
 
   return (
-    <section ref={sectionRef} className="group/list flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list" data-results-for={itemsKey} data-composing={composing || undefined}>
+    <section ref={sectionRef} className="group/list relative flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list" data-results-for={itemsKey} data-composing={composing || undefined}>
       {previewing ? (
         <ActionPreviewHeader />
       ) : (
         <>
-          <Header hairlineRef={headerRef} />
+          <Header hairlineRef={headerRef} oneRow={wide} />
           <ReportRow />
           <ForwardQuestion />
           <LearnedBanner />
           {DesktopBanner && <DesktopBanner />}
         </>
       )}
-      {/* List has no reader pane for a multi-selection: its actions are a toolbar over the rows (plan 24) */}
-      {list && many && <SelectionBar variant="toolbar" />}
+      {/* List has no reader pane for a multi-selection: its actions are a toolbar over the header's line (plan 24); no row moves for it (plan 158) */}
+      {list && many && !previewing && <SelectionBar variant="toolbar" />}
       {!previewing && <SelectAllBanner />}
       {/* under tabs the rows are what they control (tabpanel); the listbox is one Tab stop and restores focus when a page closes */}
       <div className="relative flex min-h-0 flex-1 flex-col" {...(tabs ? { role: "tabpanel", id: TAB_PANEL_ID, "aria-labelledby": `list-tab-${tab}` } : {})}>
       <ThreadMenu>
-      <div ref={parentRef} data-keep-scroll="list" role={items.length > 0 ? "listbox" : "group"} tabIndex={items.length > 0 ? 0 : -1} onFocus={(e) => empty && e.target === e.currentTarget && leaveEmptyList()} aria-label={t("list.label")} aria-multiselectable={items.length > 0 ? true : undefined} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [contain:strict]">
+      <div ref={parentRef} data-keep-scroll="list" role={items.length > 0 ? "listbox" : "group"} tabIndex={items.length > 0 ? 0 : -1} onFocus={(e) => empty && e.target === e.currentTarget && leaveEmptyList()} aria-label={t("list.label")} aria-multiselectable={items.length > 0 ? true : undefined} className="@container/rows relative min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [contain:strict]">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         {loading && items.length === 0 ? (
           <div className="space-y-3 p-4">
@@ -1118,7 +1098,7 @@ export function ThreadList() {
             ))}
             {virtualItems.map((v) => (
               items[v.index]!.id === DIGEST_ROW_ID ? <DigestListRow key={v.key} thread={items[v.index]!} top={v.start} height={height} /> :
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} reminderTop={v.index < top} reminderEnd={topGap > 0 && v.index === top - 1} match={match} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} quietCursor={list} showAccount={showAccount} icons={icons} layout={layout} review={review} reminderTop={v.index < top} reminderEnd={topGap > 0 && v.index === top - 1} match={match} />
             ))}
           </div>
         )}

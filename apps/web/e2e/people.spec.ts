@@ -26,8 +26,7 @@ async function chooseFilter(page: Page, design: DesignId | null, filter: ListFil
     await page.getByTestId(`quick-filter-${filter}`).click();
     return;
   }
-  if ((await page.getByTestId("unread-filter").getAttribute("aria-pressed")) !== "true") await page.getByTestId("unread-filter").click();
-  await page.getByTestId("filter-criterion").click();
+  await page.getByTestId("filter-menu").click();
   await page.getByTestId(`filter-option-${filter}`).click();
 }
 
@@ -90,10 +89,10 @@ test.describe("the People filter", () => {
     await page.keyboard.press("j");
     await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(0);
     if (design === "lumen" || design === null) await expect(page.getByTestId("quick-filter-people")).toHaveAttribute("aria-pressed", "true");
-    else await expect(page.getByTestId("filter-criterion")).toContainText("People");
+    else await expect(page.getByTestId("filter-menu")).toHaveText("People");
   });
 
-  test("macOS: the palette offers People and Waiting; the menu's Filtered by", async ({ app: page, server }) => {
+  test("macOS: the palette offers People and Waiting; the filter menu", async ({ app: page, server }) => {
     const fresh = async () => {
       await page.evaluate(() => localStorage.removeItem("terno:list-filter"));
       await page.reload();
@@ -112,14 +111,14 @@ test.describe("the People filter", () => {
       await page.getByTestId("palette-filter-all").click();
       await showing(page, null);
     });
-    await scenario("Filtered by → People, then Waiting for reply; the empty Waiting list says what it would hold", async () => {
+    await scenario("Filter → People, then Waiting for reply; the empty Waiting list says what it would hold", async () => {
       await fresh();
       await chooseFilter(page, "macos", "people");
       await showing(page, "people");
-      await expect(page.getByTestId("filter-criterion")).toContainText("People");
+      await expect(page.getByTestId("filter-menu")).toHaveText("People");
       await chooseFilter(page, "macos", "waiting");
       await showing(page, "waiting");
-      await expect(page.getByTestId("filter-criterion")).toContainText("Waiting for reply");
+      await expect(page.getByTestId("filter-menu")).toHaveText("Waiting for reply");
       const waiting = new Set(ids(server, "waiting_since >= ?", cutoff));
       expect((await loadedIds(page)).every((id) => waiting.has(id))).toBe(true);
       // a new, empty category: the empty state says what the filter would hold

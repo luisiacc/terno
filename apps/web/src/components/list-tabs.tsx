@@ -146,7 +146,7 @@ function NewCategory({ kind }: { kind: "underline" | "pill" }) {
  * copy of every tab, each observed, so a count, a name, a font arriving or a
  * design switch refits it (no polling).
  */
-export function ListTabs() {
+export function ListTabs({ inline = false }: { /** on the title's line (a wide list): no strip of its own to sit on */ inline?: boolean }) {
   const design = useDesign();
   const kind = design.variants.categoryTabs;
   const categories = useApp((s) => s.categories);
@@ -201,7 +201,7 @@ export function ListTabs() {
   };
 
   return (
-    <div data-testid="list-tabs" data-kind={kind} className={cn("relative flex min-w-0 flex-1 items-center gap-1", kind === "underline" ? "hairline-b -mb-2 -ml-2" : "py-0.5")}>
+    <div data-testid="list-tabs" data-kind={kind} className={cn("relative flex min-w-0 flex-1 items-center gap-1", kind === "underline" ? (inline ? "-ml-2" : "hairline-b -mb-2 -ml-2") : "py-0.5")}>
       <div ref={stripRef} data-drop-scroll className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
         <div role="tablist" aria-label={t("list.tabs.label")} className="flex items-center gap-1" onKeyDown={onKeyDown}>
           {visible.map(tabFor)}

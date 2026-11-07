@@ -46,7 +46,7 @@ test.describe("remind me", () => {
     await expect(rows(page).first()).toHaveAttribute("data-thread-id", id);
     await expect(rows(page).first().getByTestId("row-date")).toHaveText("Tomorrow 9:00 AM");
     // no quick filters in Reminders
-    await expect(page.getByTestId("unread-filter")).toHaveCount(0);
+    await expect(page.getByTestId("filter-menu")).toHaveCount(0);
     await expect(page.getByTestId("quick-filters")).toHaveCount(0);
 
     await focusList(page);
