@@ -6,7 +6,7 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
-import { menuPath, expect, focusList, selectThread, test, fresh, scenario } from "./fixtures";
+import { menuPath, expect, focusList, selectThread, test, fresh, scenario, openOffers } from "./fixtures";
 
 const wcag = (page: Page) => new AxeBuilder({ page }).setLegacyMode().include("[data-testid=snack-dock]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
 
@@ -41,6 +41,8 @@ test.describe("similar mail", () => {
       await page.keyboard.press("e");
 
       const snack = page.getByTestId("similar-snackbar");
+
+      await openOffers(page);
       await expect(snack.getByTestId("snack-message")).toHaveText("Archived");
       await expect(snack.getByTestId("similar-sender")).toContainText("Everything from");
       await expect(snack.getByTestId("similar-sender-count")).toHaveText(`${ids.length - 1}`);
@@ -111,6 +113,7 @@ test.describe("similar mail", () => {
     const { email, ids } = senderSetup(server);
     await selectThread(page, ids[0]!, `in:inbox from:${email}`);
     await page.keyboard.press("e");
+    await openOffers(page);
     await expect(page.getByTestId("similar-sender")).toBeVisible();
     for (const scheme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: scheme });

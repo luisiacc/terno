@@ -15,7 +15,7 @@ import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { reloadList } from "~/state/list";
 import { line, lineKey, OfferCount, OfferLine, OnlyLine, type Count } from "./offer-lines";
-import { SnackClose, SnackPill } from "./snack-dock";
+import { SnackClose, SnackMore, SnackPill } from "./snack-dock";
 
 export { formatCount } from "./offer-lines";
 
@@ -56,9 +56,9 @@ const DEFAULT_SOURCES = new Set<CategorizeSource>(["dnd", "picker"]);
 
 let filings = 0;
 /**
- * After any categorization (picker, accepted suggestion, drag and drop): the
- * offers it makes obvious, one per line. Its Undo and its z run `undo`, the
- * same token as the global z.
+ * After any categorization (picker, accepted suggestion, drag and drop): one
+ * line and Undo; the offers it makes obvious, one per line, behind Similar….
+ * Its Undo and its z run `undo`, the same token as the global z.
  */
 export function showCategorySnackbar(filed: Filed, undo: Undo, source: CategorizeSource = "picker"): void {
   const id = `filed-${++filings}`;
@@ -149,6 +149,9 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
   /** still the dock's snack (not fading out): only then do 1–5, 0, z and Esc drive it */
   const live = useSnack((s) => s.current?.id === id);
   const helpId = useId();
+  const offersId = useId();
+  /** plan 158: a success is one line; what could follow opens on asking */
+  const [offersOpen, setOffersOpen] = useState(false);
   const moreRef = useRef<HTMLButtonElement>(null);
   const refocusMore = useRef(false);
   /** z's undo for everything this snackbar stands for */
@@ -264,7 +267,8 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
   })();
   const topicKey = topic ? JSON.stringify(topic) : null;
   useEffect(() => {
-    if (!topic) {
+    // no counting for lines nobody opened
+    if (!topic || !offersOpen) {
       setTopicCount(undefined);
       return;
     }
@@ -280,7 +284,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
       alive = false;
       clearTimeout(timer);
     };
-  }, [topicKey]);
+  }, [topicKey, offersOpen]);
 
   // an undo in flight holds the countdown (and lets it go if the snackbar leaves first)
   useEffect(() => {
@@ -387,7 +391,8 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
 
   useEffect(() => {
     if (!live) return;
-    snackbarControls.current = { action: (n) => run(lines[n - 1]), only, undo: doUndo, close };
+    // a number with its lines closed opens them: nothing runs that the user can't read first
+    snackbarControls.current = { action: (n) => (offersOpen ? run(lines[n - 1]) : setOffersOpen(true)), only, undo: doUndo, close };
     setApp({ snackbar: true });
     return () => {
       snackbarControls.current = null;
@@ -407,6 +412,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
           ? t("offers.default.retargeted", { category: category.name, from: def.retargeted })
           : t("offers.default.future")
       : null;
+  const onlyShown = def?.status === "done" && def.undoable;
   return (
     <div data-testid="category-snackbar" data-failed={failed ? "" : undefined} data-default={def?.status}>
       <div className="flex min-h-9 items-center gap-2 py-1 pr-1.5 pl-3 text-sm">
@@ -415,6 +421,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
         <span className={cn("line-clamp-2 min-w-0 flex-1", failed ? "text-destructive-ink" : "font-medium")} data-testid="snackbar-title" title={title}>
           {title}
         </span>
+        {(lines.length > 0 || stops) && <SnackMore open={offersOpen} onToggle={() => setOffersOpen((o) => !o)} controls={offersId} />}
         {(filed.batchId !== null || def) && (
           <SnackPill
             testId="snackbar-undo"
@@ -432,9 +439,9 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
           {note}
         </p>
       )}
-      {(lines.length > 0 || stops || def?.status === "done") && (
-        <div data-testid="snackbar-offers" className="flex flex-col px-1.5 pb-1.5">
-          {lines.map((l, i) =>
+      {(offersOpen ? lines.length > 0 || stops || onlyShown : onlyShown) && (
+        <div id={offersId} data-testid="snackbar-offers" className="flex flex-col px-1.5 pb-1.5">
+          {offersOpen && lines.map((l, i) =>
             l.kind === "scope" ? (
               <OfferLine
                 key={l.offer.scope.kind}
@@ -564,7 +571,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
               )
             ),
           )}
-          {stops && (
+          {offersOpen && stops && (
             <button
               type="button"
               data-testid="snackbar-stop"
@@ -577,7 +584,8 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
               {t("filters.stop.line", { category: stops.name })}
             </button>
           )}
-          {def?.status === "done" && def.undoable && <OnlyLine label={t("offers.only.move", { count: filed.threadIds.length })} onClick={only} disabled={undoing} />}
+          {/* a default moved more than was asked: taking that back is never behind a fold */}
+          {onlyShown && <OnlyLine label={t("offers.only.move", { count: filed.threadIds.length })} onClick={only} disabled={undoing} />}
         </div>
       )}
     </div>

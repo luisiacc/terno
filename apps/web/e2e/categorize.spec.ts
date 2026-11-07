@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { termsQuery } from "@terno/core";
 import type { DevServer } from "../../backend-dev/src/server";
-import { menuPath, expect, focusList, scenario, selectRows, selectThread, test, searchBox } from "./fixtures";
+import { menuPath, expect, focusList, scenario, selectRows, selectThread, test, searchBox, openOffers } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 /** What the backend would add for a scope (the same RPC the chips call). */
@@ -57,6 +57,7 @@ test.describe("categorization snackbar", () => {
       await fileWithPicker(page, facturas);
 
       const snack = page.getByTestId("category-snackbar");
+      await openOffers(page);
       await expect(snack.getByTestId("snackbar-title")).toHaveText("Added to Facturas");
       await expect(snack.getByTestId("snackbar-sender")).toContainText("Everything from Uber Receipts");
       await expect(snack.getByTestId("snackbar-sender-count")).toHaveText(`${rest}`);
@@ -85,6 +86,7 @@ test.describe("categorization snackbar", () => {
       const rest = outside() - 1;
       await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
       await fileWithPicker(page, facturas);
+      await openOffers(page);
       await expect(page.getByTestId("snackbar-sender-count")).toHaveText(`${rest}`);
       await page.keyboard.press(await keyOf(page.getByTestId("snackbar-sender")));
       await expect(toast(page, "future mail too")).toBeVisible();
@@ -130,6 +132,7 @@ test.describe("categorization snackbar", () => {
       await selectRows(page, [a!.id, b!.id]);
       await fileWithPicker(page, lecturas);
       const snack = page.getByTestId("category-snackbar");
+      await openOffers(page);
       await expect(snack.getByTestId("snackbar-title")).toHaveText("2 conversations added to Lecturas");
       await expect(snack.getByTestId("snackbar-sender")).toContainText("Everything from GitHub");
       // @github.com has no mail beyond this sender: no second chip saying the same
@@ -160,6 +163,7 @@ test.describe("categorization snackbar", () => {
       await fileWithPicker(page, facturas);
       expect(outside()).toBe(0);
       const snack = page.getByTestId("category-snackbar");
+      await openOffers(page);
       await expect(snack.getByTestId("snackbar-sender")).toContainText("Everything from Uber Receipts");
       await expect(snack.getByTestId("snackbar-count-loading")).toHaveCount(0);
       await expect(snack.getByTestId("snackbar-sender-count")).toHaveCount(0);
@@ -179,6 +183,7 @@ test.describe("everything about X and Y", () => {
       await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
       await fileWithPicker(page, facturas);
       const snack = page.getByTestId("category-snackbar");
+      await openOffers(page);
       const chips = snack.getByTestId("snackbar-term");
       await expect(chips.first()).toBeVisible();
       const pressed = snack.locator("[data-testid=snackbar-term][aria-pressed=true]");
@@ -212,6 +217,7 @@ test.describe("everything about X and Y", () => {
       await (await searchBox(page)).fill("in:inbox from:uber.receipts@uber.com");
       await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
       await fileWithPicker(page, db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id);
+      await openOffers(page);
       await expect(page.getByTestId("snackbar-topic-count")).toBeVisible();
       // the words line's key is whatever number its line has (plan 91)
       await page.keyboard.press((await page.getByTestId("snackbar-topic-apply").locator("kbd").textContent())!);
@@ -232,6 +238,7 @@ test.describe("everything about X and Y", () => {
       await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
       await fileWithPicker(page, facturas);
       const snack = page.getByTestId("category-snackbar");
+      await openOffers(page);
       await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(/^\d/);
       const count = Number((await snack.getByTestId("snackbar-topic-count").textContent())!.replace(/\D/g, ""));
       await snack.getByTestId("snackbar-view").click();
@@ -252,6 +259,7 @@ test.describe("everything about X and Y", () => {
       await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
       await fileWithPicker(page, facturas);
       const snack = page.getByTestId("category-snackbar");
+      await openOffers(page);
       await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(/^\d/);
       // stacked: every line sits inside the bar, the sender's above the topic's, nothing clipped sideways
       const bar = (await snack.boundingBox())!;
@@ -312,6 +320,7 @@ test.describe("everything about X and Y", () => {
       await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
       await fileWithPicker(page, facturas);
       const snack = page.getByTestId("category-snackbar");
+      await openOffers(page);
       await snack.getByTestId("snackbar-more").click();
       await expect(snack.getByTestId("snackbar-query")).toBeFocused();
       await page.mouse.move(900, 100);
@@ -325,6 +334,7 @@ test.describe("everything about X and Y", () => {
       await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
       await fileWithPicker(page, facturas);
       const snack = page.getByTestId("category-snackbar");
+      await openOffers(page);
       await snack.getByTestId("snackbar-more").click();
       const field = snack.getByTestId("snackbar-query");
       await expect(field).toBeFocused();
@@ -342,6 +352,7 @@ test.describe("everything about X and Y", () => {
       await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
       await fileWithPicker(page, facturas);
       const snack = page.getByTestId("category-snackbar");
+      await openOffers(page);
       await snack.getByTestId("snackbar-topic-apply").hover();
       const help = page.getByTestId("snackbar-topic-help");
       await expect(help).toBeVisible();

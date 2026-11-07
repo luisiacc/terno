@@ -28,6 +28,7 @@ async function aiTabWithOllama(page: Page, ollamaUrl: string) {
 
 /** The snackbar with its counts loaded, nothing hovered or focused. Screenshots finish animations: the countdown ring is drawn run out (the snack itself expires by its timer, not by that). */
 async function snackbarReady(page: Page) {
+  await page.getByTestId("snackbar-similar").click();
   await expect(page.getByTestId("snackbar-sender-count")).toBeVisible();
   await expect(page.getByTestId("snackbar-count-loading")).toHaveCount(0);
   await expect(page.getByTestId("snackbar-topic-count")).toHaveText(/^\d/);
@@ -66,11 +67,11 @@ test.describe("chrome", () => {
       });
       expect(bg).not.toBe(primary);
     });
-    await scenario("compose is a quiet icon in the list header, named for assistive tech", async () => {
+    await scenario("compose says what it is in the list header, a raised button and not the primary's fill", async () => {
       await fresh(page);
-      const button = page.getByRole("button", { name: "Compose" });
-      await expect(button).toBeVisible();
-      await expect(page.getByTestId("sidebar").getByRole("button", { name: /Compose/ })).toHaveCount(0);
+      const button = page.getByTestId("thread-list").getByRole("button", { name: "New message" });
+      await expect(button).toHaveText("New message");
+      await expect(page.getByTestId("sidebar").getByRole("button", { name: /New message/ })).toHaveCount(0);
     });
   });
 

@@ -142,6 +142,8 @@ test.describe("axe", { tag: "@variant" }, () => {
     await page.keyboard.press("l");
     await page.getByTestId(`pick-category-${facturas}`).click();
     await expect(page.getByTestId("category-snackbar")).toBeVisible();
+    await page.getByTestId("snackbar-similar").click();
+    await expect(page.getByTestId("snackbar-offers")).toBeVisible();
     await clean(page, "the categorization snack", "[data-testid=snack-dock]");
     await page.keyboard.press("Escape");
 

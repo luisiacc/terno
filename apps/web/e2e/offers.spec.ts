@@ -10,7 +10,7 @@ import type { Locator, Page } from "@playwright/test";
 import { normalizeText, subjectKey } from "@terno/core";
 import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
-import { menuPath, expect, focusList, selectThread, test, fresh, scenario } from "./fixtures";
+import { menuPath, expect, focusList, selectThread, test, fresh, scenario, openOffers, rows } from "./fixtures";
 
 test.use({ reducedMotion: "no-preference" });
 
@@ -60,6 +60,30 @@ function group(server: DevServer, categoryId: number) {
 
 const catId = (server: DevServer, name: string) => sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = ?", name)!.id;
 
+test.describe("one line first (plan 158)", () => {
+  test("a filing is one line and Undo: its offers open on asking, a number opens them and runs nothing", async ({ app: page, server }) => {
+    const facturas = catId(server, "Facturas");
+    const db = sqlDb(server.backend.store);
+    const filters = () => db.get<{ c: number }>("SELECT count(*) c FROM filters")!.c;
+    const before = filters();
+    await rows(page).nth(2).dispatchEvent("mousedown");
+    await focusList(page);
+    await page.keyboard.press("l");
+    await page.getByTestId(`pick-category-${facturas}`).click();
+    await focusList(page);
+    const snack = page.getByTestId("category-snackbar");
+    const more = snack.getByTestId("snackbar-similar");
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+    await expect(snack.getByTestId("snackbar-offers")).toHaveCount(0);
+    expect((await snack.boundingBox())!.height).toBeLessThanOrEqual(48);
+    await page.keyboard.press("1");
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+    await expect(snack.getByTestId("snackbar-offers")).toBeVisible();
+    expect(filters()).toBe(before);
+    await page.keyboard.press("Escape");
+  });
+});
+
 test.describe("plan 91: defaults and the same offers everywhere", () => {
   test("defaults: a drag of bulk mail, Undo, a person's mail, spam, a filter that can't be saved, More…", async ({ app: page, server }) => {
     await scenario("a drag of bulk mail moves its sender + subject group and files their new mail; 0 keeps only the drag; z undoes the drag", async () => {
@@ -83,6 +107,7 @@ test.describe("plan 91: defaults and the same offers everywhere", () => {
       const made = g.db.get<{ rule_json: string }>("SELECT rule_json FROM filters WHERE auto = 1 ORDER BY id DESC LIMIT 1")!;
       expect(JSON.parse(made.rule_json).conditions).toContainEqual(expect.objectContaining({ field: "subject", op: "matches" }));
       // the default isn't offered again; everything from the sender is the first line
+      await openOffers(page);
       await expect(snack.getByTestId("snackbar-subject")).toHaveCount(0);
       await expect(snack.getByTestId("snackbar-offers").locator("kbd").first()).toHaveText("1");
       await expect(snack.getByTestId("snackbar-only")).toHaveText(/No, only move this email/);
@@ -130,6 +155,7 @@ test.describe("plan 91: defaults and the same offers everywhere", () => {
       const snack = page.getByTestId("category-snackbar");
       await expect(snack.getByTestId("snackbar-title")).toHaveText("Moved to Facturas");
       await expect(snack).not.toHaveAttribute("data-default");
+      await openOffers(page);
       await expect(snack.getByTestId("snackbar-sender")).toBeVisible();
       await expect(snack.getByTestId("snackbar-only")).toHaveCount(0);
       expect(db.get<{ c: number }>("SELECT count(*) c FROM filters")!.c).toBe(filtersBefore);
@@ -158,6 +184,7 @@ test.describe("plan 91: defaults and the same offers everywhere", () => {
     await focusList(page);
     await page.keyboard.press("!");
     const snack = page.getByTestId("similar-snackbar");
+    await openOffers(page);
     await expect(snack).toHaveAttribute("data-default", "done");
     await expect(snack.getByTestId("snack-message")).toHaveText(/^Marked \d+ emails? from .+ as spam$/);
     await expect.poll(spam).toBeGreaterThan(1);
@@ -195,6 +222,7 @@ test.describe("plan 91: defaults and the same offers everywhere", () => {
     const enabled = () => g.db.get<{ enabled: number }>("SELECT enabled FROM filters WHERE name = 'Them → Lecturas'")!.enabled;
     await selectThread(page, person.id, `from:${person.email}`);
     await drop(page, page.locator(`[data-testid=thread-row][data-thread-id="${person.id}"]`), page.getByTestId(`nav-category-${facturas}`));
+    await openOffers(page);
     const stop = snack.getByTestId("snackbar-stop");
     await expect(stop).toHaveText("Stop filing mail like this into Lecturas");
     await stop.click();
@@ -223,6 +251,7 @@ test.describe("plan 91: defaults and the same offers everywhere", () => {
     await drop(page, page.locator(`[data-testid=thread-row][data-thread-id="${g.target}"]`), page.getByTestId(`nav-category-${facturas}`));
     const snack = page.getByTestId("category-snackbar");
     await expect(snack).toHaveAttribute("data-default", "done");
+    await openOffers(page);
     await expect(snack.getByTestId("snackbar-offers").locator("[data-testid=snackbar-count-loading]")).toHaveCount(0);
     const ours = (since: number) => sent.filter((r) => r.at >= since && /^(offers|categorize|filters|similar)\./.test(r.method)).map((r) => r.method);
     const count = (list: string[], m: string) => list.filter((x) => x === m).length;
@@ -273,6 +302,7 @@ test.describe("plan 91: defaults and the same offers everywhere", () => {
     await drop(page, page.locator(`[data-testid=thread-row][data-thread-id="${a}"]`), page.getByTestId(`nav-category-${facturas}`));
     const snack = page.getByTestId("category-snackbar");
     await expect(snack.getByTestId("snackbar-title")).toHaveText("Moved to Facturas");
+    await openOffers(page);
     await snack.getByTestId("snackbar-more").click();
     await snack.getByTestId("snackbar-query").fill(`from:${email}`);
     // Enter right away, while the count may still be loading: it runs

@@ -4,7 +4,7 @@
  * while hovered, focused or covered by a dialog. The list keeps room for it.
  */
 import type { Page } from "@playwright/test";
-import { axeBothModes, expect, focusList, openRow, rows, search, selectedRow, test, searchBox, fresh, scenario } from "./fixtures";
+import { axeBothModes, expect, focusList, openRow, rows, search, selectedRow, test, searchBox, fresh, scenario, openOffers } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 const dock = (page: Page) => page.getByTestId("snack");
@@ -30,8 +30,11 @@ test.describe("the docked snackbar", () => {
     await scenario("archive: the bar sits inside the list column, compact, over neither the sidebar nor the reader", async () => {
       await page.mouse.move(1300, 100);
       await archiveOne(page);
-      // plan 63: the rest from the same sender etc. grow under it; plan 91: one compact line each, as the category snackbar's
+      // plan 63: one line, what could follow behind Similar… (plan 158); plan 91: open, one compact line each, as the category snackbar's
       await expect(dock(page).getByTestId("similar-snackbar")).toBeVisible();
+      expect((await dock(page).boundingBox())!.height).toBeLessThanOrEqual(40);
+      await openOffers(page);
+      await page.mouse.move(1300, 100);
       const bar = (await dock(page).boundingBox())!;
       const list = (await page.getByTestId("thread-list").boundingBox())!;
       const sidebar = (await page.getByTestId("sidebar").boundingBox())!;
@@ -125,6 +128,7 @@ test.describe("the docked snackbar", () => {
       await page.getByTestId(`pick-category-${facturas}`).click();
       const snack = page.getByTestId("snack-dock").getByTestId("category-snackbar");
       await expect(snack).toBeVisible();
+      await openOffers(page);
       const box = (await dock(page).boundingBox())!;
       const list = (await page.getByTestId("thread-list").boundingBox())!;
       // plan 81: a title row and one 28 px line per offer; the topic's words get up to two more lines under it
@@ -216,6 +220,7 @@ test.describe("the docked snackbar", () => {
       await page.keyboard.press("l");
       await page.getByTestId(`pick-category-${facturas}`).click();
       const snack = dock(page).getByTestId("category-snackbar");
+      await openOffers(page);
       await expect(snack.getByTestId("snackbar-count-loading")).toHaveCount(0);
       await dock(page).hover();
       const top = (await dock(page).boundingBox())!.y;
@@ -294,6 +299,7 @@ test.describe("the docked snackbar", () => {
     await focusList(page);
     await page.keyboard.press("l");
     await page.getByTestId(`pick-category-${facturas}`).click();
+    await openOffers(page);
     await expect(page.getByTestId("snackbar-sender-count")).toBeVisible();
     await focusList(page);
     await page.keyboard.press("1");
@@ -354,6 +360,7 @@ test.describe("the docked snackbar", () => {
     await focusList(page);
     await page.keyboard.press("l");
     await page.getByTestId(`pick-category-${facturas}`).click();
+    await openOffers(page);
     await expect(page.getByTestId("snackbar-sender-count")).toBeVisible();
     await check();
   });

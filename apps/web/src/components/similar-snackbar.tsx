@@ -1,7 +1,7 @@
 import { similarValue, subjectTemplate, type SimilarAction, type SimilarOffer, type SimilarOffers } from "@terno/core";
 import { t } from "@terno/i18n";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { said } from "~/lib/actions";
 import { chainUndo, isLatest, orderOffers, unchain } from "~/lib/offers";
 import { applySimilar, scopeLabel, shownCount, visibleOffers } from "~/lib/similar";
@@ -11,7 +11,7 @@ import { setApp } from "~/state/app";
 import { reloadList } from "~/state/list";
 import { snackbarControls } from "./category-snackbar";
 import { OfferLine, OnlyLine } from "./offer-lines";
-import { SnackClose, SnackPill } from "./snack-dock";
+import { SnackClose, SnackMore, SnackPill } from "./snack-dock";
 
 interface Shown {
   action: SimilarAction;
@@ -26,9 +26,9 @@ interface Shown {
 }
 
 /**
- * Plan 63: the plain "Archived · Undo" snack grows, in place (same entry, same
+ * Plan 63: the plain "Archived · Undo" snack gains, in place (same entry, same
  * countdown), the offers for the rest: the same lines and order as the
- * category snackbar (plan 91). Spam marks everything from the sender by
+ * category snackbar (plan 91), behind its Similar… (plan 158). Spam marks everything from the sender by
  * default, with "No, only …" last. Nothing worth offering leaves it as it is.
  */
 export function showSimilarSnackbar(snackId: string, shown: Shown): void {
@@ -62,6 +62,9 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
   const [busy, setBusy] = useState(false);
   /** "No, only …" ran: the title says so */
   const [onlyDone, setOnlyDone] = useState(false);
+  const offersId = useId();
+  /** plan 158: a success is one line; what could follow opens on asking */
+  const [offersOpen, setOffersOpen] = useState(false);
   // a failed default may have marked part of the sender: its chain still takes that back (Codex review)
   const token = def ? def.token : undo;
   const z = useSnack((s) => zHolds(s, token));
@@ -162,7 +165,8 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
 
   useEffect(() => {
     if (!live) return;
-    snackbarControls.current = { action: (n) => run(lines[n - 1]), only, undo: doUndo, close };
+    // a number with its lines closed opens them: nothing runs that the user can't read first
+    snackbarControls.current = { action: (n) => (offersOpen ? run(lines[n - 1]) : setOffersOpen(true)), only, undo: doUndo, close };
     setApp({ snackbar: true });
     return () => {
       snackbarControls.current = null;
@@ -178,6 +182,7 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
         <p className={cn("line-clamp-2 min-w-0 flex-1 text-sm", def && "font-medium")} data-testid="snack-message" title={title}>
           {title}
         </p>
+        {lines.length > 0 && <SnackMore open={offersOpen} onToggle={() => setOffersOpen((o) => !o)} controls={offersId} />}
         {token.state === "ready" && <SnackPill testId="snack-action" label={t("common.undo")} name={undoName} shortcut={z ? "z" : undefined} disabled={def?.status === "running" || busy} onClick={doUndo} />}
         <SnackClose onClick={close} />
       </div>
@@ -186,8 +191,9 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
           {note}
         </p>
       )}
-      <div data-testid="similar-offers" className="flex flex-col px-1.5 pb-1.5">
-        {lines.map((o, i) => (
+      {(offersOpen || def?.status === "done") && (
+      <div id={offersId} data-testid="similar-offers" className="flex flex-col px-1.5 pb-1.5">
+        {offersOpen && lines.map((o, i) => (
           <OfferLine
             key={o.scope.kind}
             n={i + 1}
@@ -201,8 +207,10 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
             onClick={() => run(o)}
           />
         ))}
+        {/* the sweep did more than was asked: taking that back is never behind a fold */}
         {def?.status === "done" && <OnlyLine label={t("offers.only.spam", { count: targets.length })} onClick={only} disabled={busy} />}
       </div>
+      )}
     </div>
   );
 }

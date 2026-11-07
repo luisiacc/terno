@@ -237,6 +237,20 @@ export const test = base.extend<Fixtures>({
  * One scenario of a test that merges several on one backend and page (plan 139): named in the report, and a failure is
  * recorded without stopping the scenarios after it, so a merge hides nothing. Steps that depend on each other use test.step.
  */
+/** Where a design keeps its filters in a menu: the header's one control, a choice in it. */
+export async function pickFilter(page: Page, filter: "all" | "unread" | "people" | "waiting" | "attachments" | "starred"): Promise<void> {
+  await page.getByTestId("filter-menu").click();
+  await page.getByTestId(`filter-option-${filter}`).click();
+}
+
+/** A filing's or an archive's snack is one line: what could follow from it opens here (the keys stay the list's). */
+export async function openOffers(page: Page): Promise<void> {
+  const more = page.getByTestId("snackbar-similar");
+  await more.click();
+  await expect(more).toHaveAttribute("aria-expanded", "true");
+  await focusList(page);
+}
+
 export async function scenario(name: string, body: () => Promise<void>): Promise<void> {
   try {
     await test.step(name, body);

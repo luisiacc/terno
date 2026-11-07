@@ -4,6 +4,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { motionOff } from "@terno/ui/themes/apply";
 import { CloseButton } from "@terno/ui/components/close-button";
 import { Spinner } from "@terno/ui/components/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { CircleCheck, OctagonX, TriangleAlert } from "@terno/ui/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAppearance } from "~/lib/appearance";
@@ -114,6 +115,9 @@ export function SnackPill({ label, name, onClick, shortcut, disabled, testId = "
   );
 }
 
+/** A quiet text button before the pill ("View"), on a snack's line. */
+export const SNACK_QUIET = "inline-flex h-6 shrink-0 items-center rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors duration-fast hover:bg-muted hover:text-foreground";
+
 const TONE_ICON = {
   success: <CircleCheck className="size-3.5 shrink-0 text-success-ink" aria-hidden />,
   warning: <TriangleAlert className="size-3.5 shrink-0 text-star" aria-hidden />,
@@ -125,9 +129,29 @@ const TONE_ICON = {
 /** "Undo" alone says nothing to a screen reader: it names what it takes back. */
 const nameOf = (a: SnackAction, s: Snack) => a.name ?? (a.label === t("common.undo") ? t("snack.undoName", { message: s.message }) : undefined);
 
-/** A close button for any snack body: BoardUI's round one, inside a 24 px slot. */
+/** A close button for any snack body: BoardUI's round one, a 24 px target. */
 export function SnackClose({ onClick = () => dismissSnack() }: { onClick?: () => void }) {
-  return <CloseButton data-testid="snack-close" label={t("snack.dismiss")} onClick={onClick} className="mx-0.5" />;
+  return <CloseButton size="sm" data-testid="snack-close" label={t("snack.dismiss")} onClick={onClick} />;
+}
+
+/**
+ * Plan 158: a success is one line. What could follow from it (the same for similar mail, a rule for new mail) waits
+ * behind this, and while it's open the countdown waits: those lines take reading. No mail is touched by opening it.
+ */
+export function SnackMore({ open, onToggle, controls }: { open: boolean; onToggle: () => void; controls: string }) {
+  useEffect(() => {
+    if (!open) return;
+    pause("expanded");
+    return () => resume("expanded");
+  }, [open]);
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<button type="button" data-testid="snackbar-similar" aria-expanded={open} aria-controls={open ? controls : undefined} onClick={onToggle} className={SNACK_QUIET} />}>
+        {t("offers.similar")}
+      </TooltipTrigger>
+      <TooltipContent>{t("offers.similarHelp")}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 function Row({ snack }: { snack: Snack }) {
@@ -152,7 +176,7 @@ function Row({ snack }: { snack: Snack }) {
           data-testid="snack-secondary"
           aria-label={snack.secondary.name}
           onClick={() => runAction("secondary")}
-          className="inline-flex h-6 shrink-0 items-center rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors duration-fast hover:bg-muted hover:text-foreground"
+          className={SNACK_QUIET}
         >
           {snack.secondary.label}
         </button>
