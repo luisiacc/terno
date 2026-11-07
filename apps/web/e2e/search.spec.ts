@@ -11,7 +11,7 @@ test.describe("search", () => {
     await scenario("shows results with timing and restores the inbox when cleared", async () => {
       const inboxFirst = await rows(page).first().getAttribute("data-thread-id");
       await search(page, "factura");
-      await expect(page.getByTestId("search-stats")).toHaveText(/^\d+\+? results? in saved mail$/);
+      await expect(page.getByTestId("search-stats")).toHaveText(/^\d+\+? conversations? in saved mail$/);
       // plan 64: a search looks everywhere, so the list is the search's
       await expect(page.getByTestId("list-title")).toHaveText("Search");
       const n = await rows(page).count();
@@ -161,13 +161,23 @@ test.describe("search", () => {
       await page.getByTestId("search-input").pressSequentially("mo");
       await expect(rows(page).first().getByTestId("row-from").getByTestId("row-match")).toBeVisible();
     });
-    await scenario("no results: the list says for what, the reader says what a search understands, no greeting", async () => {
+    await scenario("no results: under the field, for what and what a search understands, a row puts the words to use; the reader stays quiet", async () => {
       await fresh(page);
       await search(page, "zzqxjv");
-      await expect(page.getByTestId("list-empty")).toContainText("No results for “zzqxjv”");
-      const reader = page.getByTestId("reader-search-empty");
-      await expect(reader).toContainText("has:attachment");
+      const empty = page.getByTestId("list-empty");
+      await expect(empty).toContainText("No results for “zzqxjv”");
+      await expect(empty.getByTestId("search-help")).toContainText("has:attachment");
+      // said, not shown: the list says it
+      await expect(page.getByTestId("search-stats")).toHaveClass(/sr-only/);
+      await expect(page.getByTestId("reader-search-empty")).toHaveText("");
       await expect(page.getByTestId("reader-empty")).toHaveCount(0);
+      await empty.getByTestId("search-help-row").filter({ hasText: "from:ana" }).click();
+      await expect(page.getByTestId("search-input")).toHaveValue("from:zzqxjv");
+      await expect(page.getByTestId("search-input")).toBeFocused();
+      // a place or a date only takes its own values: the words go beside it
+      await search(page, "zzqxjv");
+      await empty.getByTestId("search-help-row").filter({ hasText: "in:archive" }).click();
+      await expect(page.getByTestId("search-input")).toHaveValue("zzqxjv in:archive ");
     });
   });
 
@@ -197,7 +207,7 @@ test.describe("search", () => {
     await scenario("an HTML mail: marked in its frame, the reader (not the frame) scrolled to the first, the count and the steps", async () => {
       await expect(page.getByTestId("reader-subject-match")).toHaveText("Zzhallazgo");
       const count = page.getByTestId("reader-matches-count");
-      await expect(count).toHaveText("1 of 2");
+      await expect(count).toHaveText("Match 1 of 2");
       const frame = page.getByTestId("reader").locator("iframe");
       const scroller = page.locator("[data-reader-scroller]");
       const shown = () => frame.evaluate((f: HTMLIFrameElement) => {
@@ -210,31 +220,31 @@ test.describe("search", () => {
       expect(await scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
       expect(await shown()).toMatchObject({ text: "zzhallazgo", frameScroll: 0 });
       await page.getByTestId("reader-match-next").click();
-      await expect(count).toHaveText("2 of 2");
+      await expect(count).toHaveText("Match 2 of 2");
       await page.getByTestId("reader-match-next").click();
-      await expect(count).toHaveText("1 of 2");
+      await expect(count).toHaveText("Match 1 of 2");
       await page.keyboard.press("ControlOrMeta+Shift+g");
-      await expect(count).toHaveText("2 of 2");
+      await expect(count).toHaveText("Match 2 of 2");
       // with focus in the mail too
       await frame.evaluate((f: HTMLIFrameElement) => f.contentDocument!.body.setAttribute("tabindex", "-1"));
       await frame.evaluate((f: HTMLIFrameElement) => f.contentDocument!.body.focus());
       await page.keyboard.press("ControlOrMeta+g");
-      await expect(count).toHaveText("1 of 2");
+      await expect(count).toHaveText("Match 1 of 2");
     });
     await scenario("past where a frame clips, a match can't be shown, so it isn't counted", async () => {
       await search(page, "zzrecortado");
       await rows(page).first().click();
-      await expect(page.getByTestId("reader-matches-count")).toHaveText("1 of 1");
+      await expect(page.getByTestId("reader-matches-count")).toHaveText("Match 1 of 1");
     });
     await scenario("folding the message before the one in hand: that one's still in hand, its number corrected; a link's text is marked, still a link", async () => {
       await search(page, "zzdoble");
       await rows(page).first().click();
       const count = page.getByTestId("reader-matches-count");
-      await expect(count).toHaveText("1 of 2");
+      await expect(count).toHaveText("Match 1 of 2");
       await page.getByTestId("reader-match-next").click();
-      await expect(count).toHaveText("2 of 2");
+      await expect(count).toHaveText("Match 2 of 2");
       await page.getByTestId("message").first().getByTestId("message-toggle").click();
-      await expect(count).toHaveText("1 of 1");
+      await expect(count).toHaveText("Match 1 of 1");
       await expect(page.locator("mark[data-reader-current]")).toHaveCount(1);
       await expect(page.locator("mark[data-reader-current]")).toHaveText("zzdoble");
       await search(page, "zzenlace");
@@ -245,12 +255,12 @@ test.describe("search", () => {
       await search(page, "zzplegado");
       await rows(page).first().click();
       await expect(page.getByTestId("reader-match")).toHaveText("zzplegado");
-      await expect(page.getByTestId("reader-matches-count")).toHaveText("1 of 1");
+      await expect(page.getByTestId("reader-matches-count")).toHaveText("Match 1 of 1");
       // folded away: its marks with it, and no steps to nothing
       await page.getByTestId("message").filter({ hasText: "zzplegado" }).getByTestId("message-toggle").click();
       await expect(page.getByTestId("reader-matches")).toHaveCount(0);
       await page.getByTestId("message").filter({ has: page.getByTestId("message-toggle") }).first().getByTestId("message-toggle").click();
-      await expect(page.getByTestId("reader-matches-count")).toHaveText("1 of 1");
+      await expect(page.getByTestId("reader-matches-count")).toHaveText("Match 1 of 1");
       await page.getByRole("button", { name: "Clear search" }).click();
       await expect(page.getByTestId("reader-matches")).toHaveCount(0);
       await expect(page.getByTestId("reader-match")).toHaveCount(0);

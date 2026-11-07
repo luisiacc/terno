@@ -81,13 +81,14 @@ test.describe("palette", () => {
     await scenario("Enter on the search row runs the search; Spam and Trash aren't offered", async () => {
       await fresh(page);
       // the filter the results will keep: read mail isn't offered with Unread on
-      await page.getByTestId("unread-filter").click();
       await focusList(page);
+      await page.keyboard.press("Shift+U");
       await palette(page, "zzisabel");
       await page.waitForTimeout(400);
       await expect(page.getByTestId("palette-mail")).toHaveCount(0);
       await page.keyboard.press("Escape");
-      await page.getByTestId("unread-filter").click();
+      await focusList(page);
+      await page.keyboard.press("Shift+A");
       const id = sqlDb(server.backend.store).get<{ id: number }>("SELECT thread_id id FROM messages WHERE from_email = 'zzisabel@else.example'")!.id;
       await server.backend.store.threads.act({ threadIds: [id], action: "spam", signal: null, now: 2 });
       await focusList(page);
@@ -148,13 +149,26 @@ test.describe("palette", () => {
       await expect(page.locator("[cmdk-empty]")).toHaveCount(0);
       await page.keyboard.press("Escape");
     });
+    await scenario("plan 158: a checked row beside another open one isn't named over the open one's actions", async () => {
+      await fresh(page);
+      await openRow(page, 0);
+      await rows(page).nth(1).click({ modifiers: ["Meta"] });
+      await rows(page).nth(0).click({ modifiers: ["Meta"] });
+      await focusList(page);
+      await palette(page);
+      await expect(page.getByTestId("palette-print")).toBeVisible();
+      await expect(page.getByTestId("palette-target")).toHaveCount(0);
+      await page.keyboard.press("Escape");
+    });
     await scenario("a synonym finds the command and says so", async () => {
       await fresh(page);
       const id = await rows(page).first().getAttribute("data-thread-id");
       await openRow(page, 0);
       await focusList(page);
       await palette(page, "done");
-      await expect(selected(page)).toContainText("Archive conversation");
+      await expect(selected(page)).toContainText("Archive");
+      // plan 158: the conversation it acts on heads the actions
+      await expect(page.getByTestId("palette-target")).toContainText((await rows(page).first().getByTestId("row-subject").textContent())!);
       await expect(selected(page).getByTestId("palette-alias")).toHaveText("(done)");
       await page.keyboard.press("Enter");
       await expect(page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`)).toHaveCount(0);
@@ -205,10 +219,10 @@ test.describe("palette", () => {
       await openRow(page, 0);
       await focusList(page);
       await palette(page, "listo");
-      await expect(selected(page)).toContainText("Archivar conversación");
+      await expect(selected(page)).toContainText("Archivar");
       await expect(selected(page).getByTestId("palette-alias")).toHaveText("(listo)");
       await input(page).fill("done");
-      await expect(selected(page)).toContainText("Archivar conversación");
+      await expect(selected(page)).toContainText("Archivar");
       // the commands' English names match too, new ones included
       await input(page).fill("forward");
       await expect(selected(page)).toHaveAttribute("data-testid", "palette-forward");

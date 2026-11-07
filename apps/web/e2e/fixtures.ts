@@ -430,7 +430,8 @@ export async function search(page: Page, query: string): Promise<void> {
   }
   const input = page.getByTestId("search-input");
   await input.fill(query);
-  await expect(page.getByTestId("search-stats")).toBeVisible();
+  // the count, said whatever was found (shown when something was, plan 158)
+  await expect(page.getByTestId("search-stats")).toHaveCount(1);
 }
 
 /** Brings a specific thread to the top of the list via search and selects it. */

@@ -5,7 +5,6 @@ import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { IconButton } from "@terno/ui/components/icon-button";
-import { Kbd } from "@terno/ui/components/kbd";
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronUp, Forward, PenLine, Pin, PinOff, Reply, ReplyAll, Trash2 } from "@terno/ui/icons";
 import { Shortcut } from "@terno/ui/components/shortcut";
@@ -526,7 +525,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
             <span aria-hidden className="flex size-6 shrink-0 items-center justify-center text-muted-foreground group-hover/qr:text-foreground"><Reply className="size-4" /></span>
             <span className="truncate">{t("compose.bar.reply", { name: replyTo })}</span>
             {me && accounts.length > 1 && <span data-testid="quick-reply-from" className="shrink-[3] truncate text-muted-foreground">{t("compose.fromLabel", { name: me })}</span>}
-            <Kbd aria-hidden className="@max-[560px]:hidden">R</Kbd>
+            <span aria-hidden className="inline-flex @max-[560px]:hidden"><Shortcut keys="r" /></span>
           </button>
           {replyAll && (
             <Button variant="ghost" size="sm" className="text-foreground-soft hover:text-foreground [&_svg]:text-muted-foreground hover:[&_svg]:text-foreground" onClick={() => void openCompose("replyAll", threadId)} data-testid="quick-reply-all">

@@ -6,7 +6,7 @@ import { Switch } from "@terno/ui/components/switch";
 import { useEffect, useState } from "react";
 import { draftingOffered, modelName, providerLabel, writingTarget } from "~/lib/ai";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
-import { isMac } from "~/lib/select";
+import { shortcutText } from "@terno/ui/components/shortcut";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
@@ -44,7 +44,7 @@ export function DraftingGroup({ settings, update }: { settings: AppSettings; upd
   const offered = useApp(draftingOffered);
   return (
     <SettingsGroup title={t("aiDraft.settings.title")} testId="ai-drafting">
-      <SettingsRow label={t("aiDraft.settings.enabled")} hint={t("aiDraft.settings.enabledHint", { key: isMac ? "⌘J" : "Ctrl+J" })}>
+      <SettingsRow label={t("aiDraft.settings.enabled")} hint={t("aiDraft.settings.enabledHint", { key: shortcutText("mod+j") })}>
         {(a) => <Switch {...a} checked={prefs?.global.enabled ?? true} data-testid="ai-drafting-enabled" onCheckedChange={(enabled) => void save({ global: { enabled } }).catch(failed)} />}
       </SettingsRow>
       {(prefs?.global.enabled ?? true) && (

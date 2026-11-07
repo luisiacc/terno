@@ -61,7 +61,9 @@ test.describe("the docked snackbar", () => {
       await expect(page.locator(`[data-thread-id="${first}"]`)).toHaveCount(0);
       await dock(page).getByTestId("snack-action").click();
       await expect(page.locator(`[data-thread-id="${first}"]`)).toHaveCount(1);
-      await expect(dock(page)).toHaveCount(0);
+      // plan 158: the offer goes, and a word says it worked, with nothing more to do
+      await expect(dock(page)).toHaveText(/Restored 1 conversation/);
+      await expect(dock(page).getByTestId("snack-action")).toHaveCount(0);
 
       const second = await openRow(page, 2);
       await focusList(page);
@@ -69,7 +71,7 @@ test.describe("the docked snackbar", () => {
       await expect(dock(page)).toContainText("Archived");
       await page.keyboard.press("z");
       await expect(page.locator(`[data-thread-id="${second}"]`)).toHaveCount(1);
-      await expect(dock(page)).toHaveCount(0);
+      await expect(dock(page)).toHaveText(/Restored 1 conversation/);
       // z again has nothing left: the undo ran once
       await page.keyboard.press("z");
       await expect(page.locator(`[data-thread-id="${second}"]`)).toHaveCount(1);

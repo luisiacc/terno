@@ -1,5 +1,6 @@
 import { remindPresets, separatesTabs, shortcutsFor, subjectTemplate, TAB_CODE, type Category, type CategoryColor, type ReminderKind, type Tab, type Command, type SimilarAction, type SimilarOffers, type SimilarScope, type ThreadAction, type ThreadSummary, type UnsubscribeOffer, type View } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
+import { Shortcut } from "@terno/ui/components/shortcut";
 import { cn } from "@terno/ui/lib/utils";
 import {
   ContextMenu,
@@ -93,22 +94,9 @@ function targetName(t: Pick<ThreadSummary, "fromName" | "fromEmail" | "subject">
 }
 const noSubject = () => t("common.noSubject");
 
-const GLYPH: Record<string, string> = { shift: "⇧", alt: "⌥", ctrl: "⌃", enter: "↵", escape: "esc", backspace: "⌫", delete: "⌦", arrowup: "↑", arrowdown: "↓" };
-/** "mod+shift+u" → "⌘⇧U" (Ctrl+Shift+U off Mac), "g i" → "G I". */
-function glyphs(keys: string): string {
-  return keys
-    .split(" ")
-    .map((chord) =>
-      chord
-        .split("+")
-        .map((k) => (k === "mod" ? (isMac ? "⌘" : "Ctrl+") : (GLYPH[k] ?? (isMac || k.length === 1 ? k.toUpperCase() : `${k[0]!.toUpperCase()}${k.slice(1)}+`))))
-        .join(""),
-    )
-    .join(" ");
-}
 const hint = (command: Command) => {
   const keys = shortcutsFor(command, undefined, isMac)[0];
-  return keys ? <ContextMenuShortcut>{glyphs(keys)}</ContextMenuShortcut> : null;
+  return keys ? <ContextMenuShortcut><Shortcut keys={keys} /></ContextMenuShortcut> : null;
 };
 
 /** Where the right-click landed: the selection when the row is part of it, else that row alone (the selection stays). */
@@ -619,7 +607,11 @@ function MenuItems() {
   const tabbable = !scope && rows.length > 0 && rows.every((r) => { const a = accounts.find((x) => x.id === r.accountId); return !!a && separatesTabs(a) && r.inInbox !== false && !r.inTrash && !r.inSpam; });
   const intoTab = (tab: Tab) => (scope ? gmailTab !== null && gmailTab !== tab : tabbable && rows.some((r) => r.tab !== TAB_CODE[tab]));
   const single = !scope && ids.length === 1 ? rows[0] : undefined;
-  const run = (action: ThreadAction) => void act(action, scope ? undefined : ids);
+  // plan 158: a row that isn't the one open says itself: the reader beside the menu shows another conversation
+  const openId = useApp((s) => s.selectedId);
+  const elsewhere = single !== undefined && single.id !== openId ? single : null;
+  // and what's done to it is said, as nothing beside the menu shows it (a star on a row the reader isn't on)
+  const run = (action: ThreadAction) => void act(action, scope ? undefined : ids, { announce: elsewhere !== null });
   const anyUnread = scope !== null || rows.some((t) => t.unread);
   const anyRead = scope !== null || rows.some((t) => !t.unread);
   const anyStarred = scope !== null || rows.some((t) => t.starred);
@@ -655,9 +647,6 @@ function MenuItems() {
   // plan 72: the keyboard's (and screen readers') way to the code a row's chip copies
   const code = single ? threadCode(single, Date.now()) : null;
   const replyAllOffered = useReplyAllOffered(single?.id);
-  // plan 158: a row that isn't the one open says itself: the reader beside the menu shows another conversation
-  const openId = useApp((s) => s.selectedId);
-  const caption = single && single.id !== openId ? targetName(single) : null;
 
   // what the view offers, sorted by where it goes; the way back leads only where it replaces Archive
   const placed: MenuEntry[] = searchPlaces ? searchPlaceItems(searchPlaces, (a) => run(a)) : placeItems(view, run);
@@ -674,15 +663,23 @@ function MenuItems() {
 
   return (
     <>
+      {/* what the menu acts on, above its actions: the sender in the ink, the whole subject under it (two lines at most) */}
       {count > 1 && (
-        <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground" data-testid="menu-count">
-          {scope ? t("selection.scope", { count, label: scope.label }) : t("common.conversations", { count })}
-        </div>
+        <>
+          <div className="px-2 pt-1 pb-1.5 text-xs font-semibold" data-testid="menu-count">
+            {scope ? t("selection.scope", { count, label: scope.label }) : t("common.conversations", { count })}
+          </div>
+          <ContextMenuSeparator />
+        </>
       )}
-      {caption && (
-        <div className="truncate px-2 py-1 text-xs font-medium text-muted-foreground" data-testid="menu-target" title={caption}>
-          {caption}
-        </div>
+      {elsewhere && (
+        <>
+          <div className="px-2 pt-1 pb-1.5 text-xs" data-testid="menu-target" title={targetName(elsewhere)}>
+            <p className="truncate font-semibold">{elsewhere.fromName || elsewhere.fromEmail}</p>
+            <p className="line-clamp-2 text-muted-foreground [overflow-wrap:anywhere]">{elsewhere.subject || noSubject()}</p>
+          </div>
+          <ContextMenuSeparator />
+        </>
       )}
       {single && <ReviewItems thread={single} />}
       {single && (

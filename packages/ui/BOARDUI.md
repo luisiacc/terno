@@ -82,6 +82,7 @@ Each item says what differs from BoardUI and why.
 - **Ghost button:** stays transparent with a `muted` hover. BoardUI's ghost is an accent wash and it has no transparent button, but Terno's toolbars are Apple Mail's quiet icons.
 - **Ghost and link when unavailable:** they fade with opacity. Their glyphs are muted at rest, so a muted colour alone would leave a disabled icon looking live.
 - **Danger:** it runs from the red to a darker shade, not to a lighter top. White on anything lighter than the red fails AA.
+- **Shortcuts are keycaps everywhere (plan 158):** a menu row's shortcut is `Shortcut`'s keycap, as in the palette, tooltips and buttons, not BoardUI's plain menu text: one chord is one keycap in Apple's modifier order (⌃⌥⇧⌘), so the same key never reads three ways.
 - **Context menu edges and columns:** at a window edge it shifts to fit instead of flipping, so its first rows stay by the pointer. A panel with a submenu keeps a chevron's column on every row, so shortcuts and chevrons form separate columns.
 - **Destructive menu rows:** they keep a red wash when highlighted. Red text on `muted` fails AA in six palettes.
 - **Kbd:** it sits on the field wash, not on `border`. Muted text on `border` fails AA in GitHub Light and Dark.

@@ -1,6 +1,7 @@
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Kbd } from "@terno/ui/components/kbd";
+import { chordLabel } from "@terno/ui/components/shortcut";
 import { cn } from "@terno/ui/lib/utils";
 import { motionOff } from "@terno/ui/themes/apply";
 import { CloseButton } from "@terno/ui/components/close-button";
@@ -111,7 +112,7 @@ export function SnackPill({ label, name, onClick, shortcut, disabled, testId = "
       <Ring size={size} />
       {label}
       {/* the key is aria-keyshortcuts; drawn as generated content so the button's text stays its label ("Undo" in "Undo archive") */}
-      {shortcut && <Kbd aria-hidden data-key={shortcut.toUpperCase()} className="h-4 min-w-4 rounded-full bg-tint px-1 text-2xs shadow-none after:content-[attr(data-key)]" />}
+      {shortcut && <Kbd aria-hidden data-key={chordLabel(shortcut)} className="h-4 min-w-4 rounded-full bg-tint px-1 text-2xs shadow-none after:content-[attr(data-key)]" />}
     </button>
   );
 }
@@ -281,14 +282,15 @@ export function SnackDock() {
   const spoken = current && !inert && hushed !== current.heard ? current.spoken : "";
   const alert = current?.tone === "error";
   return (
-    <section aria-label={t("snack.dock")} data-testid="snack-dock" style={{ "--dock-lift": `${lift}px` } as React.CSSProperties} className="pointer-events-none absolute inset-x-2 bottom-[calc(0.5rem+var(--dock-lift))] z-10 flex flex-col justify-end in-data-[layout=list]:right-auto in-data-[layout=list]:bottom-2 in-data-[layout=list]:w-[min(calc(100%-1rem),30rem)]">
+    <section aria-label={t("snack.dock")} data-testid="snack-dock" style={{ "--dock-lift": `${lift}px` } as React.CSSProperties} className="pointer-events-none absolute inset-x-2 bottom-[calc(0.5rem+var(--dock-lift))] z-10 flex flex-col justify-end in-data-[layout=list]:bottom-2">
       <div role="status" aria-live="polite" aria-atomic className="sr-only" data-testid="snack-live">
         {!alert && spoken && <span key={current?.heard}>{spoken}</span>}
       </div>
       <div role="alert" aria-live="assertive" aria-atomic className="sr-only" data-testid="snack-alert">
         {alert && spoken && <span key={current?.heard}>{spoken}</span>}
       </div>
-      {/* the rows dissolve into the pane under the dock: it reads as part of the list, not a card over it */}
+      {/* the rows dissolve into the pane under the dock: it reads as part of the list, not a card over it. In List, across
+          the whole width (plan 158): a band the rows end at, the card at its start where Split's column has it, never a card cut into one row */}
       <div aria-hidden className={cn("pointer-events-none absolute -inset-x-2 -top-6 -bottom-2 bg-linear-to-t from-pane from-40% to-transparent transition-opacity duration-slow", open ? "opacity-100" : "opacity-0")} />
       <div
         ref={(el) => {
@@ -322,7 +324,7 @@ export function SnackDock() {
           dismissSnack(current.id);
         }}
         className={cn(
-          "snack-surface relative overflow-hidden rounded-xl transition-[opacity,translate,visibility] duration-slow ease-motion",
+          "snack-surface relative overflow-hidden rounded-xl transition-[opacity,translate,visibility] duration-slow ease-motion in-data-[layout=list]:w-[min(100%,30rem)]",
           open ? "pointer-events-auto visible translate-y-0 opacity-100" : "invisible translate-y-1 opacity-0",
         )}
       >

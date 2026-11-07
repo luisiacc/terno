@@ -40,16 +40,13 @@ import { hydrateSelectedThread, useThread, useThreadGone } from "~/state/threads
 import { conversationKeys } from "~/lib/conversation-keys";
 import { copyThreadText } from "~/lib/copy-thread";
 import { openPrint } from "~/lib/print-open";
-import { isMac } from "~/lib/select";
 import { HtmlBody, TextBody } from "./mail-body";
 import { Marked } from "./match-mark";
-import { SearchHelp } from "./search-help";
 import { firstHolding, readerMarks, revealMark, useReaderMarks, useSearchMarks } from "~/lib/reader-marks";
 import { MailReaderView, useMailReaderView } from "./mail-reader-view";
 import { backgroundMenu, MessageActions, MessageMenu } from "./message-menu";
 import { reasonText } from "~/lib/reasons";
 import { useDesign, variant } from "~/lib/design";
-import { Kbd } from "@terno/ui/components/kbd";
 import { renderProbe } from "~/lib/render-probe";
 import { useAppearance } from "~/lib/appearance";
 import { goBack } from "~/lib/page";
@@ -148,12 +145,12 @@ function ToolbarMore({ threadId }: { threadId: number }) {
         <DropdownMenuItem data-testid="action-print" onClick={() => openPrint({ threadId, messageId: null, intent: "print" })}>
           <Printer />
           <span className="flex-1">{t("palette.print")}</span>
-          <DropdownMenuShortcut>{isMac ? "⌘P" : "Ctrl+P"}</DropdownMenuShortcut>
+          <DropdownMenuShortcut><Shortcut keys="mod+p" /></DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuItem data-testid="action-pdf" onClick={() => openPrint({ threadId, messageId: null, intent: "pdf" })}>
           <FileDown />
           <span className="flex-1">{t("palette.exportPdf")}</span>
-          <DropdownMenuShortcut>{isMac ? "⇧⌘P" : "Ctrl+Shift+P"}</DropdownMenuShortcut>
+          <DropdownMenuShortcut><Shortcut keys="mod+shift+p" /></DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem data-testid="action-copy-text" onClick={() => copyThreadText(threadId)}>
@@ -205,7 +202,7 @@ function ReplyGroup({ replyAll, page, crowded }: { replyAll: boolean; page: bool
               <Reply />
               {/* the name is the visible label (still read when a narrow reader shows the icon alone); the key is decoration */}
               <span className="@max-[420px]:sr-only">{t("actions.reply")}</span>
-              {pill && <Kbd aria-hidden className="@max-[560px]:hidden">R</Kbd>}
+              {pill && <span aria-hidden className="inline-flex @max-[560px]:hidden"><Shortcut keys="r" /></span>}
             </ButtonGroupItem>
           }
         />
@@ -606,18 +603,12 @@ function ReaderContext({ scroller, toolbar, subject, draftKey }: { scroller: Rea
 /** The context line's height: the scroller's scroll-padding-top too. */
 const CONTEXT_H = 32;
 
-/** Plan 158: nothing open while searching: no greeting. With no results, what a search understands; with some, which to do next. */
+/** Plan 158: nothing open while searching: no greeting. With results, which to do next; with none, nothing (the list says so, under the field). */
 function SearchReaderEmpty() {
   const none = useList((s) => !s.loading && s.items.length === 0 && s.itemsKey === listKey());
   return (
     <div className="flex h-full flex-col items-center justify-center p-10" data-testid="reader-search-empty" data-results={none ? undefined : true}>
-      {none ? (
-        <div className="w-full max-w-sm">
-          <SearchHelp />
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">{t("reader.search.pick")}</p>
-      )}
+      {!none && <p className="text-sm text-muted-foreground">{t("reader.search.pick")}</p>}
     </div>
   );
 }

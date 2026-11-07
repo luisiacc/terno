@@ -3,7 +3,7 @@ import { formatList, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Pencil, Plus, Trash2 } from "@terno/ui/icons";
 import { useEffect } from "react";
-import { isMac } from "~/lib/select";
+import { shortcutText } from "@terno/ui/components/shortcut";
 import { deleteSnippet, loadSnippets, newSnippetId, useSnippets, useUnsaved } from "~/lib/snippets";
 import { openSnippetEditor, setDeletedSnippet, useSnippetEditor } from "~/lib/snippet-editor-state";
 import { undoNow } from "~/lib/snack";
@@ -11,8 +11,8 @@ import { SettingsGroup } from "./parts";
 import SnippetEditor from "../composer/snippet-editor";
 
 
-export const snippetKeys = () => (isMac ? "⌘;" : "Ctrl+;");
-const paletteKeys = () => (isMac ? "⌘K" : "Ctrl+K");
+export const snippetKeys = () => shortcutText("mod+;");
+const paletteKeys = () => shortcutText("mod+k");
 
 /** What a snippet fills in besides its text ("Subject and To"). */
 function fillsOf(s: Snippet): string | null {

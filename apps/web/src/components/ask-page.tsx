@@ -11,7 +11,7 @@ import { askReady, errorHelp, modelName, providerLabel } from "~/lib/ai";
 import { askConfigChanged, askQuestion, atTurnLimit, declineConsent, deleteConversation, loadAskHistory, newQuestion, openConversation, openSource, restoreConversation, returning, searchOlder, stopAsking, useAsk } from "~/lib/ask";
 import { fullDate, listDate } from "~/lib/format";
 import { askFrom, paletteKeys, setPalettePage } from "~/lib/palette-open";
-import { isMac } from "~/lib/select";
+import { chordLabel } from "@terno/ui/components/shortcut";
 import { snack } from "~/lib/snack";
 import { useApp, setApp } from "~/state/app";
 
@@ -477,7 +477,7 @@ function AskHistoryPage({ value, setValue, onBack }: { value: string; setValue: 
             <Mail /> <span className="truncate">{c.title}</span>
             {c.followUps > 0 && <span className="shrink-0 text-xs text-muted-foreground" data-testid="ask-history-followups">{t("ask.history.followUps", { count: c.followUps })}</span>}
             <CommandDescription>{when(c.updatedAt)}</CommandDescription>
-            <CommandShortcut className="ms-3 hidden in-data-[selected=true]:inline">{isMac ? "⌘⌫" : "Ctrl+⌫"}</CommandShortcut>
+            <CommandShortcut className="ms-3 hidden in-data-[selected=true]:inline">{chordLabel("mod+backspace")}</CommandShortcut>
           </CommandItem>
         ))}
       </CommandList>

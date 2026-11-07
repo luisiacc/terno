@@ -29,6 +29,8 @@ export interface PaletteCommand {
   shortcut?: string;
   testId?: string;
   disabled?: boolean;
+  /** drawn as the menus draw Delete (plan 158) */
+  destructive?: boolean;
   /** shown only once the user types (a page's values reached from the root) */
   searchOnly?: boolean;
   /** weighs the match (Superhuman's "scale"): a page's value at the root is 0.5, so a bare name finds the thing, not an action on it */
@@ -152,7 +154,7 @@ export function arrange(commands: readonly PaletteCommand[], page: PalettePage, 
     const precise = matched.some((s) => s.raw >= STRONG);
     const kept = precise ? matched.filter((s) => s.raw >= STRONG) : matched;
     const shownIds = new Set(kept.map((s) => s.command.id));
-    const hits = kept.filter((s) => !s.command.sameAs || !shownIds.has(s.command.sameAs));
+    const hits = besideExact(kept.filter((s) => !s.command.sameAs || !shownIds.has(s.command.sameAs)));
     const out: (Arranged & { best: number; order: number })[] = [];
     for (const [order, group] of groups.entries()) {
       const list = hits.filter((s) => s.command.group === group).sort((a, b) => b.score - a.score);
@@ -180,6 +182,27 @@ export function arrange(commands: readonly PaletteCommand[], page: PalettePage, 
   return groups
     .map((group) => ({ group, commands: of(group).map((command) => ({ command, alias: null })) }))
     .filter((g) => g.commands.length > 0);
+}
+
+/** A page's values reached from the root, of one kind ("remind:noReply:…"): what a family of presets has in common. */
+const family = (c: PaletteCommand): string | null => (c.searchOnly && (c.scale ?? 1) < 1 ? c.id.slice(0, c.id.lastIndexOf(":") + 1) || null : null);
+
+/**
+ * Plan 158: a page's values only brushed by a query that names an action outright ("reply" names Reply, and every
+ * "Remind me if no reply" preset) don't crowd it: their family shows its best one. Named themselves ("remind
+ * tomorrow"), they all show.
+ */
+function besideExact<T extends { command: PaletteCommand; raw: number }>(hits: T[]): T[] {
+  const exact = Math.max(0, ...hits.filter((h) => family(h.command) === null).map((h) => h.raw));
+  const best = new Map<string, T>();
+  for (const h of hits) {
+    const f = family(h.command);
+    if (f !== null && h.raw < exact && (!best.has(f) || h.raw > best.get(f)!.raw)) best.set(f, h);
+  }
+  return hits.filter((h) => {
+    const f = family(h.command);
+    return f === null || h.raw >= exact || best.get(f) === h;
+  });
 }
 
 /** Does a query name a command outright (a word's start or better)? Then Enter runs that; if not, it's about mail. */

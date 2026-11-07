@@ -7,7 +7,6 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { Sun, Archive, ArrowLeft, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, OctagonAlert, Plus, Route, Send, Settings2, Sparkles, SquarePen, Star, Tag, Trash2, Users, ListChecks } from "@terno/ui/icons";
-import { Kbd } from "@terno/ui/components/kbd";
 import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
 import { formatNumber, t } from "@terno/i18n";
@@ -240,7 +239,7 @@ function ComposeOutline() {
       <button type="button" data-testid="compose-button" onClick={() => openCompose("new")} className="type-compose flex h-9 w-full items-center gap-2.5 rounded-lg bg-card px-3 text-left text-foreground shadow-raised transition-[background-color,box-shadow] hover:bg-muted">
         <SquarePen className="size-4 text-primary" />
         <span className="min-w-0 flex-1 truncate">{t("compose.newMessage")}</span>
-        <Kbd>C</Kbd>
+        <Shortcut keys="c" />
       </button>
     </div>
   );

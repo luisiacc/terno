@@ -1,4 +1,5 @@
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "@terno/ui/components/context-menu";
+import { Shortcut } from "@terno/ui/components/shortcut";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { IconButton } from "@terno/ui/components/icon-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
@@ -11,7 +12,6 @@ import { composeLanding } from "~/lib/compose";
 import { identitiesIn, reachesSeveral } from "~/lib/compose-fields";
 import { copyThreadText } from "~/lib/copy-thread";
 import { openPrint, wantsNativeMenu, type PrintIntent } from "~/lib/print-open";
-import { isMac } from "~/lib/select";
 import { snack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
 import { useThread } from "~/state/threads";
@@ -189,7 +189,7 @@ export function MessageMenu({ threadId, children }: { threadId: number; children
             <ContextMenuItem data-testid="message-menu-copy" onClick={() => void navigator.clipboard.writeText(selected).catch(() => snack.error(t("threadMenu.copyFailed")))}>
               <Copy />
               <span className="flex-1">{t("common.copy")}</span>
-              <ContextMenuShortcut>{isMac ? "⌘C" : "Ctrl+C"}</ContextMenuShortcut>
+              <ContextMenuShortcut><Shortcut keys="mod+c" /></ContextMenuShortcut>
             </ContextMenuItem>
             <ContextMenuSeparator />
           </>

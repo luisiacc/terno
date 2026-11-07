@@ -1,6 +1,5 @@
 import { folderName } from "~/lib/account-folders";
 import { SearchField } from "@terno/ui/components/search-field";
-import { Kbd } from "@terno/ui/components/kbd";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Bell, ChevronDown, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun, ListChecks } from "@terno/ui/icons";
@@ -374,7 +373,7 @@ function ListSearch() {
         aria-label={placeholder}
         aria-describedby={coverage ? "search-coverage" : undefined}
         clearLabel={t("list.search.clear")}
-        hint={<Kbd>/</Kbd>}
+        hint={<Shortcut keys="/" />}
         // the list's compact field, on the tint; its ring in the app's weight, not louder than the results it's for
         fieldClassName="h-[30px] bg-tint text-sm dark:bg-tint focus-visible:ring-2"
         onValueChange={(q) => {
@@ -572,8 +571,10 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
   // List's selection toolbar stands on this line: what's under it can't be reached until it goes
   const covered = useApp((s) => list && (s.scope !== null || s.checked.size >= 1));
   const results = t("list.search.inSaved", { results: more ? t("list.search.resultsMore", { count }) : t("list.search.results", { count }) });
+  // none found: the list says so under the field, with what to try; the count is still said, not shown (plan 158)
+  const found = count > 0 || more || !complete;
   const stats = query && searchMs !== null && (
-    <span data-testid="search-stats" role="status" className="shrink-0 text-2xs text-muted-foreground tabular">
+    <span data-testid="search-stats" data-found={found || undefined} role="status" className={found ? "shrink-0 text-xs text-muted-foreground tabular" : "sr-only"}>
       {complete ? results : t("list.search.statsIndexing", { results })}
     </span>
   );
@@ -605,10 +606,11 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
         <Tooltip>
           <TooltipTrigger
             render={
-              // the mail's own action in words, where the row has them: a raised button, not a loud one; beside a search's count, the icon
-              <Button data-testid="compose-button" variant="outline" size="sm" aria-label={t("compose.newMessage")} className={cn("no-drag shrink-0", searching ? "aspect-square px-0" : "@max-[20rem]:aspect-square @max-[20rem]:px-0")} onClick={() => openCompose("new")}>
+              // the mail's own action in words, where the row has them: a raised button, not a loud one
+              <Button data-testid="compose-button" variant="outline" size="sm" aria-label={t("compose.newMessage")} className="no-drag shrink-0 @max-[20rem]:aspect-square @max-[20rem]:px-0" onClick={() => openCompose("new")}>
                 <SquarePen />
-                {!searching && <span className="@max-[20rem]:hidden">{t("compose.newMessage")}</span>}
+                {/* plan 158: the same in a search: the header keeps its shape, only the title changes */}
+                <span className="@max-[20rem]:hidden">{t("compose.newMessage")}</span>
               </Button>
             }
           />
@@ -630,6 +632,8 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
       {t("list.search.allAccounts")}
     </Button>
   );
+  // the compact title row's count, under the field (plan 158)
+  const underField = !oneRow && kind === "title" && !!query && ((searchMs !== null && found) || !!searchAll);
   // (the compact title row leaves it to "Search all accounts": beside the stats it would only truncate)
   const accountSuffix = account && (!searching || (soloSearch && kind !== "title")) && <span className="ml-1.5 text-sm font-normal tracking-normal text-muted-foreground not-italic">· {account.displayName}</span>;
 
@@ -667,8 +671,8 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
             {title}
             {accountSuffix}
           </h1>
-          {stats}
-          {searchAll}
+          {/* none found: said here, shown by the list */}
+          {!underField && stats}
           {filterControl}
           {actions}
         </div>
@@ -700,6 +704,13 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
         </>
       )}
       {!oneRow && showField && <ListSearch />}
+      {/* plan 158: the compact title row keeps its title and controls in a search: what it found goes under the field, on its text's line */}
+      {underField && (
+        <p className="flex items-center gap-2 px-3 pt-1.5">
+          {stats}
+          {searchAll}
+        </p>
+      )}
       {((tabs && (!oneRow || quick === "chips")) || (!review && !reminders && quick === "chips")) && (
         <div className="mt-1 flex min-w-0 items-center gap-3 pl-3 empty:hidden">
           {tabs && (!oneRow || quick === "chips") && <ListTabs />}
@@ -785,18 +796,20 @@ function emptyCopy(filter: QuickFilter, search: boolean): [string, string] {
 }
 
 function UnreadEmptyState({ filter }: { filter: QuickFilter }) {
-  const search = useApp((s) => s.query.trim() !== "");
+  const query = useApp((s) => s.query.trim());
+  const search = query !== "";
   const [title, body] = emptyCopy(filter, search);
+  // a search answers under its field, as one with no filter does (plan 158): what to clear, then what a search understands
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-8 text-center" data-testid="unread-empty" data-filter={filter}>
-      <ListFilter className="mb-2 size-7 text-muted-foreground" aria-hidden />
-      <p className="text-lg font-semibold tracking-tight">{title}</p>
+    <div className={cn("absolute inset-0 flex flex-col gap-1", search ? "px-5 pt-3" : "items-center justify-center px-8 text-center")} data-testid="unread-empty" data-filter={filter}>
+      {!search && <ListFilter className="mb-2 size-7 text-muted-foreground" aria-hidden />}
+      <p className={search ? "text-md font-semibold tracking-tight" : "text-lg font-semibold tracking-tight"}>{title}</p>
       <p className="text-xs text-muted-foreground">{body}</p>
       <Button
         data-testid="unread-empty-clear"
         variant="secondary"
         size="sm"
-        className="mt-3"
+        className={cn("mt-3", search && "self-start")}
         onClick={() => {
           setListFilter(undefined);
           // the filter's control stays: the header button, or Lumen's "All" chip
@@ -805,6 +818,11 @@ function UnreadEmptyState({ filter }: { filter: QuickFilter }) {
       >
         {t("list.unreadEmpty.clear")}
       </Button>
+      {search && (
+        <div className="-mx-2 mt-4">
+          <SearchHelp around={query} onPick={(text) => { setApp({ query: text }); searchInputRef.current?.focus(); }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -858,14 +876,23 @@ function EmptyState() {
         <p className="text-xs text-muted-foreground">{t("remind.emptyHint")}</p>
       </div>
     );
+  // plan 158: a search that found nothing answers under its field, on the rows' line: what it understands (a row puts the
+  // words to use), and what it looks through. Nothing floats in the reader
+  if (query)
+    return (
+      <div className="flex flex-col px-3 pt-3" data-testid="list-empty">
+        <p className="px-2 text-md font-semibold tracking-tight [overflow-wrap:anywhere]">{t("list.empty.searchTitle", { query: query.trim() })}</p>
+        <div className="mt-3">
+          <SearchHelp around={query} onPick={(text) => { setApp({ query: text }); searchInputRef.current?.focus(); }} />
+        </div>
+        {coverage && <CoverageNote className="hairline-t mx-2 mt-2 pt-2" />}
+      </div>
+    );
   return (
     <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
-      {query ? <Search className="mb-2 size-7 text-muted-foreground" aria-hidden /> : <Inbox className="mb-2 size-7 text-muted-foreground" aria-hidden />}
-      <p className="text-lg font-semibold tracking-tight">{query ? t("list.empty.searchTitle", { query: query.trim() }) : view === "inbox" ? t("list.empty.inboxTitle") : t("list.empty.title")}</p>
-      <p className="text-xs text-muted-foreground">
-        {query ? t("list.empty.searchBody") : view === "inbox" ? t("list.empty.inboxBody") : t("list.empty.body")}
-      </p>
-      {coverage && <CoverageNote className="mt-3 max-w-72" />}
+      <Inbox className="mb-2 size-7 text-muted-foreground" aria-hidden />
+      <p className="text-lg font-semibold tracking-tight">{view === "inbox" ? t("list.empty.inboxTitle") : t("list.empty.title")}</p>
+      <p className="text-xs text-muted-foreground">{view === "inbox" ? t("list.empty.inboxBody") : t("list.empty.body")}</p>
     </div>
   );
 }

@@ -56,6 +56,24 @@ describe("palette matching", () => {
   });
 });
 
+describe("plan 158: presets beside an exact action", () => {
+  const presets = ["tomorrow", "laterToday", "weekend", "nextWeek"].map((p) =>
+    cmd(`remind:noReply:${p}`, "actions", { label: `Remind me if no reply: ${p}`, searchOnly: true, scale: 0.5 }),
+  );
+  const reply = cmd("compose.reply", "conversation", { label: "Reply" });
+  const shown = (q: string) => arrange([reply, ...presets], "root", q, new Map(), 0).flatMap((g) => g.commands.map((c) => c.command.id));
+
+  it("show one of their family when the query names an action outright", () => {
+    const ids = shown("reply");
+    expect(ids[0]).toBe("compose.reply");
+    expect(ids.filter((id) => id.startsWith("remind:"))).toHaveLength(1);
+  });
+
+  it("all show when they're what the query names", () => {
+    expect(shown("remind me if no").filter((id) => id.startsWith("remind:"))).toHaveLength(4);
+  });
+});
+
 describe("palette groups", () => {
   const all = [
     cmd("draft.send", "draft"),

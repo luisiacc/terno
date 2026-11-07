@@ -225,7 +225,7 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       // the menu put away with Esc and Reply clicked while it's still closing: the closing menu doesn't take focus back
       // from the draft, so every letter typed lands in it (plan 158: "Probe" lost its "Pr" to the trigger and to r)
       await page.emulateMedia({ reducedMotion: "no-preference" });
-      await page.getByTestId("action-reply-menu").click();
+      await page.getByTestId("action-more").click();
       await expect.poll(() => page.evaluate(() => document.activeElement?.closest("[role=menu]") != null)).toBe(true);
       await page.keyboard.press("Escape");
       await page.getByTestId("action-reply").click();

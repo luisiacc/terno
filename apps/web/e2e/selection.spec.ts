@@ -211,9 +211,9 @@ test.describe("context menu on one thread", () => {
       expect(top.slice(-4)).toEqual(["menu-remind-always", "menu-move", "menu-categories", "menu-more"]);
       for (const moved of ["menu-print", "menu-copy-text", "menu-spam", "menu-select-all", "menu-copy", "menu-filter", "menu-trash-similar"]) expect(top).not.toContain(moved);
       // a row that isn't the open one says itself, on screen and to a screen reader
-      const name = await menu(page).getByTestId("menu-target").textContent();
-      expect(name).toContain(":");
-      await expect(menu(page)).toHaveAttribute("aria-label", name!);
+      const target = menu(page).getByTestId("menu-target");
+      const [sender, subject] = await target.locator("p").allTextContents();
+      await expect(menu(page)).toHaveAttribute("aria-label", `${sender}: ${subject}`);
       // no scrolling, and its first rows stay by the pointer (shifted to fit, never flipped a panel away)
       await menu(page).evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
       const box = (await menu(page).boundingBox())!;
@@ -628,7 +628,7 @@ test.describe("multi-selection", () => {
       // no learned-filter signal from a sweep
       expect(db(server).get<{ c: number }>("SELECT count(*) AS c FROM user_actions")!.c).toBe(signalsBefore);
       await toast(page, "Archived").getByTestId("snack-action").click();
-      await expect(toast(page, /Undone/)).toBeVisible();
+      await expect(toast(page, /Restored/)).toBeVisible();
       await expect.poll(inboxCount).toBe(total);
       await expect(rows(page).first()).toBeVisible();
     });

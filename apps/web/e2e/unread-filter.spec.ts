@@ -135,7 +135,7 @@ test.describe("the toggle", () => {
       // in:inbox is the server's Inbox: Gmail's tabs too (plan 86 keeps them out of the Inbox list only)
       const unread = new Set(db(server).all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND unread_count > 0").map((r) => r.id));
       expect(shown.every((id) => unread.has(id))).toBe(true);
-      await expect(page.getByTestId("search-stats")).toContainText(`${shown.length.toLocaleString("en-US")} results`);
+      await expect(page.getByTestId("search-stats")).toContainText(`${shown.length.toLocaleString("en-US")} conversations`);
     });
   });
 

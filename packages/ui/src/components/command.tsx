@@ -15,7 +15,7 @@ import {
   InputGroupAddon,
 } from "@terno/ui/components/input-group"
 import { Kbd, KbdGroup } from "@terno/ui/components/kbd"
-import { keyLabel } from "@terno/ui/components/shortcut"
+import { keyLabel, Shortcut } from "@terno/ui/components/shortcut"
 import { Search as SearchIcon, Check as CheckIcon } from "@terno/ui/icons"
 
 /*
@@ -61,7 +61,8 @@ function CommandDialog({
     <Dialog {...props}>
       <DialogContent
         className={cn(
-          "top-[18%] translate-y-0 gap-0 overflow-hidden rounded-palette! p-0 sm:max-w-[640px]",
+          // in dark a scrim can't darken a near-black window much: the panel's own edge says where it ends (plan 158)
+          "top-[18%] translate-y-0 gap-0 overflow-hidden rounded-palette! p-0 sm:max-w-[640px] dark:shadow-[0_0_0_var(--hairline-w)_var(--control-edge-hover),0_24px_64px_-24px_var(--shadow-color)]",
           className
         )}
         showCloseButton={showCloseButton}
@@ -191,7 +192,10 @@ function CommandSeparator({
   )
 }
 
-/** The chosen row's fill is its own token, `--command-selected` (a palette's to set; the panel's --accent until then) */
+/**
+ * The chosen row's fill is its own token, `--command-selected` (a palette's to set; the panel's --accent until then).
+ * `data-variant="destructive"`: red, as a menu's Delete (MENU_ROW_DESTRUCTIVE), chosen on the red's wash.
+ */
 function CommandItem({
   className,
   children,
@@ -201,7 +205,7 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "group/command-item relative flex h-8 cursor-default items-center gap-2 rounded-(--command-radius) px-3 text-sm font-medium outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:text-muted-foreground data-selected:bg-[var(--command-selected,var(--accent))] data-selected:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground",
+        "group/command-item relative flex h-8 cursor-default items-center gap-2 rounded-(--command-radius) px-3 text-sm font-medium outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:text-muted-foreground data-selected:bg-[var(--command-selected,var(--accent))] data-selected:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:data-selected:bg-destructive/10 data-[variant=destructive]:data-selected:text-destructive dark:data-[variant=destructive]:data-selected:bg-destructive/20 data-[variant=destructive]:[&_svg:not([class*='text-'])]:text-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground",
         className
       )}
       {...props}
@@ -223,17 +227,22 @@ function CommandDescription({ className, ...props }: React.ComponentProps<"span"
   )
 }
 
-/** A row's shortcut, one keycap for the chord; on the chosen row, in full ink (contrast.ts) */
+/** A row's shortcut, drawn as every shortcut is (Shortcut: a keycap per press); on the chosen row, in full ink (contrast.ts) */
 function CommandShortcut({
+  keys,
   className,
+  children,
   ...props
-}: React.ComponentProps<"kbd">) {
+}: React.ComponentProps<"kbd"> & { keys?: string }) {
+  if (keys) return <span data-slot="command-shortcut" className={cn("ms-auto inline-flex group-data-selected/command-item:[&_kbd]:text-foreground", className)}><Shortcut keys={keys} /></span>
   return (
     <Kbd
       data-slot="command-shortcut"
       className={cn("ms-auto group-data-selected/command-item:text-foreground", className)}
       {...props}
-    />
+    >
+      {children}
+    </Kbd>
   )
 }
 

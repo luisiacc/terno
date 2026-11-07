@@ -61,6 +61,14 @@ describe("action snacks", () => {
     expect(s?.action?.name).toBe("Deshacer archivar");
   });
 
+  it("plan 158: one star says nothing, unless asked to where nothing else shows it", async () => {
+    fake.handlers["threads.act"] = async () => ({ undoId: 9 });
+    await act("star", [1]);
+    expect(useSnack.getState().current).toBeNull();
+    await act("star", [1], { announce: true });
+    expect(useSnack.getState().current?.message).toBe("Starred");
+  });
+
   it("a failure says it couldn't complete, with the reason", async () => {
     fake.handlers["threads.act"] = async () => {
       throw new Error("offline");
@@ -113,6 +121,45 @@ describe("Undo puts the selection back (plan 158)", () => {
     await new Promise((r) => setTimeout(r));
     expect(getApp().checked.size).toBe(0);
     expect(getApp().selectedId).toBe(4);
+  });
+
+  it("says it worked: a restore by how many came back, a mark by Undone", async () => {
+    acted();
+    await act("archive", [1, 2]);
+    await undo();
+    expect(useSnack.getState().current?.message).toBe("Restored 2 conversations");
+    await act("star", [1, 2]);
+    await undo();
+    expect(useSnack.getState().current?.message).toBe("Undone · 2 conversations");
+  });
+
+  it("a late Restored never pushes aside a later action's Undo", async () => {
+    acted();
+    let release!: () => void;
+    fake.handlers["threads.undo"] = () => new Promise((r) => (release = () => r({ restored: 1 })));
+    await act("archive", [1]);
+    const undoing = undo();
+    await act("trash", [2]);
+    expect(useSnack.getState().current?.message).toBe("Moved to Trash");
+    release();
+    await undoing;
+    expect(useSnack.getState().current?.message).toBe("Moved to Trash");
+    expect(useSnack.getState().current?.action).toBeDefined();
+  });
+
+  it("nor one asked for before its action had answered", async () => {
+    acted();
+    let answer!: () => void;
+    fake.handlers["threads.act"] = () => new Promise((r) => (answer = () => r({ undoId: 9 })));
+    const archiving = act("archive", [1]);
+    const undoing = undo();
+    fake.handlers["threads.act"] = async () => ({ undoId: 10 });
+    await act("trash", [2]);
+    expect(useSnack.getState().current?.message).toBe("Moved to Trash");
+    answer();
+    await archiving;
+    await undoing;
+    expect(useSnack.getState().current?.message).toBe("Moved to Trash");
   });
 
   it("not in another list", async () => {

@@ -243,7 +243,7 @@ test.describe("everything about X and Y", () => {
       const count = Number((await snack.getByTestId("snackbar-topic-count").textContent())!.replace(/\D/g, ""));
       await snack.getByTestId("snackbar-view").click();
       await expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", /^\["all",null,null,null,/);
-      if (count < 100) await expect(page.getByTestId("search-stats")).toContainText(`${count} results`);
+      if (count < 100) await expect(page.getByTestId("search-stats")).toContainText(`${count} conversations`);
     });
   });
 

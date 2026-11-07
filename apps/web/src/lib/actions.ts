@@ -4,7 +4,7 @@ import { t } from "@terno/i18n";
 import { reflowRemoval } from "~/lib/flash";
 import { client } from "~/rpc/connection";
 import { currentTargets, scopeRows } from "~/lib/select";
-import { dismissSnack, registerUndo, snack, withdrawSnack, type Undo } from "~/lib/snack";
+import { dismissSnack, registerUndo, snack, snackPublication, withdrawSnack, type Undo } from "~/lib/snack";
 import { activeFilter } from "~/lib/unread-filter";
 import type { ListFilter } from "@terno/core";
 import { getApp, inPlainInbox, inSeparateTab, setApp, type AppState, type ScopeSelection } from "~/state/app";
@@ -164,7 +164,7 @@ const DONE_READING = new Set<ThreadAction>(["archive", "trash", "spam", "markUnr
  * Without explicit ids it acts on the selection: a "select all N" scope, the
  * checked rows, or the open thread.
  */
-export async function act(action: ThreadAction, ids?: number[], options: { quiet?: boolean; automation?: "none" } = {}): Promise<void> {
+export async function act(action: ThreadAction, ids?: number[], options: { quiet?: boolean; automation?: "none"; /** plan 158: said even for one, where nothing else on screen shows it (the palette, a row the reader isn't on) */ announce?: boolean } = {}): Promise<void> {
   if (!ids) {
     const target = currentTargets();
     if ("scope" in target) return actScope(action, target.scope);
@@ -180,7 +180,8 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   // z right after the key: this action is the last one already, its undo waits for the backend's answer
   const connection = client.connectionVersion;
   const undoIds = deferred<number[]>();
-  const undo = options.quiet ? null : registerUndo(() => undoIds.promise.then((ids) => (ids.length ? undoActions(ids, targets.length, () => restoreSelection(before)) : undefined)));
+  // (what's been said is read when Undo is asked for, before the action's own answer is awaited)
+  const undo = options.quiet ? null : registerUndo(() => { const published = snackPublication(); return undoIds.promise.then((ids) => (ids.length ? undoActions(ids, targets.length, () => restoreSelection(before), RESTORES.has(action), published) : undefined)); });
   try {
     // the contract takes ≤ 5,000 ids a call (the backend slices each); each call can be undone exactly
     const ids: number[] = [];
@@ -195,7 +196,7 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
     if (options.quiet) return;
     // undone with z before the answer came: nothing to say
     if (!undo || undo.state !== "ready") return;
-    if (SNACK_ALWAYS.has(action) || targets.length > 1) {
+    if (SNACK_ALWAYS.has(action) || targets.length > 1 || options.announce) {
       const id = snack(said(action, targets.length), { action: ids.length ? undoAction(undo, t(UNDO_NAME[action])) : undefined });
       // plan 63: the same snack offers the rest from this sender, subject, domain or list
       if (ids.length && SIMILAR.has(action) && targets.length <= 200) void offerSimilar(id, action as SimilarAction, targets, undo, options.automation);
@@ -210,6 +211,10 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
 }
 
 const SIMILAR = new Set<ThreadAction>(["archive", "trash", "spam"]);
+/** What took conversations out of where they were: undoing it brings them back ("Restored"); anything else is "Undone" */
+const RESTORES = new Set<ThreadAction>(["archive", "trash", "spam", "notSpam", "moveToInbox", "toPrimary", "toPromotions", "toSocial"]);
+/** an undo's word that it worked: short, there's nothing to do with it */
+const UNDONE_MS = 2500;
 
 const FITS = { archive: "archive", trash: "trash", spam: "spam", notSpam: "notSpam", moveToInbox: "toInbox" } as const;
 
@@ -340,7 +345,7 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
   before.left = getApp().selectedId;
   const progress = trackJob(t(DOING[action], { count: sel.count }));
   const undoId = deferred<{ id: number | null; n: number }>();
-  const undo = registerUndo(() => undoId.promise.then((u) => (u.id === null ? undefined : undoActions([u.id], u.n, () => restoreSelection(before)))));
+  const undo = registerUndo(() => { const published = snackPublication(); return undoId.promise.then((u) => (u.id === null ? undefined : undoActions([u.id], u.n, () => restoreSelection(before), RESTORES.has(action), published))); });
   try {
     const r = await client.call("threads.actScope", { scope: sel.scope, action, jobId: progress.jobId });
     undoId.resolve({ id: r.undoId, n: r.affected });
@@ -382,7 +387,7 @@ export async function markAccountRead(accountId: number, count: number): Promise
   breadcrumb("action", "action.thread", { action: "markRead", count });
   const progress = trackJob(t(DOING.markRead, { count }));
   const undoId = deferred<{ id: number | null; n: number }>();
-  const undo = registerUndo(() => undoId.promise.then((u) => (u.id === null ? undefined : undoActions([u.id], u.n))));
+  const undo = registerUndo(() => undoId.promise.then((u) => (u.id === null ? undefined : undoActions([u.id], u.n, undefined, false))));
   try {
     const r = await client.call("threads.actScope", { scope: { kind: "view", view: "inbox", accountId, filter: "unread" }, action: "markRead", jobId: progress.jobId });
     undoId.resolve({ id: r.undoId, n: r.affected });
@@ -406,14 +411,16 @@ export async function markAccountRead(accountId: number, count: number): Promise
  * as it was (read, star, place). Large ones show their progress. `restored`
  * runs once the list holds those rows again.
  */
-export async function undoActions(undoIds: readonly number[], n: number, restored?: () => void): Promise<void> {
+/** `published`: what the dock had said when Undo was asked for; anything said since keeps the dock, and this waits behind it */
+export async function undoActions(undoIds: readonly number[], n: number, restored?: () => void, back = true, published = snackPublication()): Promise<void> {
   const progress = n > 200 ? trackJob(t("actions.undoing", { count: n })) : null;
   let undone = false;
   try {
-    let back = 0;
-    for (const undoId of undoIds) back += (await client.call("threads.undo", { undoId, jobId: progress?.jobId })).restored;
+    let count = 0;
+    for (const undoId of undoIds) count += (await client.call("threads.undo", { undoId, jobId: progress?.jobId })).restored;
     undone = true;
-    if (progress) snack.success(t("actions.undone", { count: back }), { id: progress.snackId, duration: 4000 });
+    // plan 158: an undo says it worked, briefly: the rows coming back alone could be anything
+    snack.success(t(back ? "actions.restored" : "actions.undone", { count }), { id: progress?.snackId, duration: UNDONE_MS, background: !progress && snackPublication() !== published });
   } catch (error) {
     // the undo token says so, with a retry (z points back at it too)
     if (progress) dismissSnack(progress.snackId);
@@ -439,9 +446,9 @@ export function targetRows(ids?: readonly number[]): ThreadSummary[] {
 }
 
 /** s / ⌘⇧L: stars the targets unless every one already is. */
-export function toggleStar(ids?: number[]): void {
+export function toggleStar(ids?: number[], options?: { announce?: boolean }): void {
   const rows = targetRows(ids);
-  void act(rows.length && rows.every((t) => t.starred) ? "unstar" : "star", ids);
+  void act(rows.length && rows.every((t) => t.starred) ? "unstar" : "star", ids, options);
 }
 
 /** ⌘⇧U: marks the targets read when any is unread, else unread. */

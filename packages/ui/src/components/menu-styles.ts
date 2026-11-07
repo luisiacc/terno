@@ -51,7 +51,7 @@ export const MENU_LABEL = "flex h-7 shrink-0 items-center px-2 text-sm font-medi
 /** A separator runs to the panel's edges (through its p-1.5) */
 export const MENU_SEPARATOR = "-mx-1.5 my-1 h-(--hairline-w) shrink-0 bg-hairline"
 
-/** A row's shortcut: plain muted text at its end */
+/** A row's end: its keys (a Shortcut, as every surface draws them, plan 158) or a muted value such as a time */
 export const MENU_SHORTCUT = "ms-auto ps-3 text-sm font-normal text-muted-foreground"
 
 /** The submenu opens 4 px from its panel (the row sits 6 px in), its first row level with the one that opened it */

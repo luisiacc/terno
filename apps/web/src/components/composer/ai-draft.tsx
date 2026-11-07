@@ -2,7 +2,7 @@ import { parseAddressList } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { CloseButton } from "@terno/ui/components/close-button";
-import { Kbd } from "@terno/ui/components/kbd";
+import { Shortcut } from "@terno/ui/components/shortcut";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { Spinner } from "@terno/ui/components/spinner";
 import { cn } from "@terno/ui/lib/utils";
@@ -202,7 +202,7 @@ function Question({ s }: { s: AiSession }) {
   const choice = (id: "forward" | "new" | "reply" | "add" | "justWrite", label: string, primary = false) => (
     <Button type="button" variant="outline" size="xs" className="font-normal" data-ai-default={primary || undefined} data-testid={`ai-choice-${id}`} onClick={() => void answer(s.key, id)}>
       {label}
-      {primary && <Kbd className="ml-0.5">↵</Kbd>}
+      {primary && <Shortcut keys="enter" className="ml-0.5" />}
     </Button>
   );
   return (
@@ -239,7 +239,7 @@ function Telling({ s }: { s: AiSession }) {
       <p className="w-full text-xs leading-relaxed">{t("aiDraft.telling", { provider })}</p>
       <Button type="button" variant="outline" size="xs" className="font-normal" data-ai-default data-testid="ai-telling-continue" onClick={() => acknowledgeTold(s.key)}>
         {t("common.continue")}
-        <Kbd className="ml-0.5">↵</Kbd>
+        <Shortcut keys="enter" className="ml-0.5" />
       </Button>
       <Button type="button" variant="ghost" size="xs" className={quiet} data-testid="ai-telling-settings" onClick={openSettings}>
         {t("common.settings")}
@@ -369,7 +369,7 @@ function Field({ s, id }: { s: AiSession; id: string }) {
           {t("aiDraft.whoWrite")}
         </Button>
       ) : (
-        <Kbd aria-hidden className="shrink-0">↵</Kbd>
+        <span aria-hidden className="shrink-0"><Shortcut keys="enter" /></span>
       )}
     </>
   );

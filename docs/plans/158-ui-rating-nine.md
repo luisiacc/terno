@@ -144,3 +144,21 @@ Decisions of the second pass in this area, and why:
 **The undo toast stays over the list:** the list already keeps room under its last row and brings the open row clear of the dock (`thread-list.tsx`), which is what was asked; docking it in the layout would resize the list on every action.
 
 **What the two Codex reviews changed:** a palette row opens among its own results, with nothing left selected, the composer stepping aside, Review left and the list's filter applied to what's offered; marks hold their bound inside one long text node and go with a folded message; ⌘G works with focus in the mail; nothing is counted past a frame's clip; the one in hand survives folding what's before it; entities and block boundaries are read as they're drawn; a link's text is marked; what's under List's toolbar can't take focus; Esc works from the help rows.
+
+## Third pass: shortcuts, the palette, search, the row menu and undo
+
+- **One notation.** `Shortcut` is the only drawing of a key: one keycap per press, modifiers in Apple's order (⇧⌘U, never ⌘⇧U or three caps), `Ctrl+Shift+U` off the Mac, "then" between two presses. Menus, the palette, tooltips, the selection pane, the reader's menus and the sheet all use it; the palette's keys come from the bindings table (`shortcutsFor`), not hand-written strings. BOARDUI.md records the deviation (menu shortcuts as keycaps, not plain text).
+- **Palette.** One conversation in hand heads its actions by subject and sender (sticky, so it stays while scrolling); Archive is "Archive" as everywhere; Delete is red as in the menus; Star and read marks from the palette say so in the dock; a family of presets a query only brushes ("reply" and the four "if no reply" times) shows its best one. In dark the panel has an edge (a scrim can't darken a near-black window).
+- **Search.** No results answer in the list, under the field: for what, the operators (a row puts the failed words to use: `from:pago`, `pago has:attachment`, `"pago"`), and what's looked through. The reader no longer floats a help sheet. New message keeps its words in a search; in the compact title row the count goes under the field at 12 px. The list counts conversations; the reader says "Match 1 of 3".
+- **No search on the server.** Plan 69 ruled provider-side search out, and it stays out. What the help says stays honest: only mail saved in Terno is searched, and the provider's website has the rest.
+- **Row menu.** A row the reader isn't on is named in two lines (sender, the whole subject up to two lines) under which a hairline starts the actions; what's done to that row is said in the dock.
+- **Undo.** It says it worked: "Restored 3 conversations" for what took mail out of a place, "Undone · 3 conversations" for a mark, 2.5 s. In List the dock's fade spans the list, the card where Split's column has it.
+
+### What the two Codex reviews changed (third pass)
+
+- A "Restored" that came late pushed a newer action's Undo out of the dock: it now waits behind anything said since Undo was asked for (read when it's asked, before the action's own answer).
+- A search with no results lost its spoken count: the count stays a status, hidden on screen where the list says it.
+- A place or date row typed the failed words after its colon (`in:pago`); several words, operators and quotes were dropped or doubled. Words a row can't hold go beside it, and a query with operators or quotes of its own is kept.
+- A filtered search with no results had lost the help: it shows under the Clear filter button.
+- The palette named a checked row over the open one's Print and Copy: it names only a conversation every action there acts on.
+- The last hand-drawn keys (Enter in the AI row, R, C, /, the dock's Z) go through `Shortcut` and its formatter.
