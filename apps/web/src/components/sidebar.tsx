@@ -246,15 +246,17 @@ function ComposeOutline() {
   );
 }
 
-/** Lumen: "Compose" as the one solid pill in the window. */
+/** Lumen: "Compose" as a soft raised pill, modest beside the mail: the solid fill is for the one action of the task at hand (Send, Archive). */
 function ComposePill() {
   return (
-    <div className="shrink-0 px-2.5 pb-4">
+    <div className="shrink-0 px-2 pb-3">
       <Tooltip>
         <TooltipTrigger
           render={
-            <button type="button" data-testid="compose-button" onClick={() => openCompose("new")} className="type-compose flex h-10 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-primary-foreground shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] transition-colors hover:bg-[color-mix(in_oklab,var(--primary)_88%,var(--background))]">
-              <SquarePen className="size-4" />
+            <button type="button" data-testid="compose-button" onClick={() => openCompose("new")} className="type-compose flex h-9 w-full items-center gap-2.5 rounded-full border border-border bg-card pr-3 pl-2 text-left text-foreground shadow-xs transition-colors outline-none hover:border-input hover:bg-muted focus-visible:ring-2 focus-visible:ring-sidebar-ring">
+              <span className="flex size-(--icon-nav) items-center justify-center text-muted-foreground">
+                <SquarePen className="size-(--icon-nav)" />
+              </span>
               {t("list.compose")}
             </button>
           }
@@ -274,15 +276,15 @@ function categoryHelp(unread: number, suggested: number): string | null {
   return u && s ? t("sidebar.categoryHelp.both", { unread: u, suggested: s }) : u ?? s;
 }
 
-/** Graphite: "New message" as the first row of the mailboxes, on their line and pitch; the calls to action are the only pills. */
+/** Graphite: "New message" as the first row of the mailboxes, on their line and pitch, a step stronger than them; the calls to action are the only pills. */
 function ComposeRow() {
   return (
     <div className="shrink-0 px-(--sidebar-pad)">
       <Tooltip>
         <TooltipTrigger
           render={
-            <button type="button" data-testid="compose-button" onClick={() => openCompose("new")} className={cn("type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-hover hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring", ROW_SEAM)}>
-              <span className="flex size-(--icon-nav) items-center justify-center text-sidebar-glyph">
+            <button type="button" data-testid="compose-button" onClick={() => openCompose("new")} className={cn("type-nav-strong flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-sidebar-accent-foreground transition-colors outline-none hover:bg-sidebar-hover focus-visible:ring-2 focus-visible:ring-sidebar-ring", ROW_SEAM)}>
+              <span className="flex size-(--icon-nav) items-center justify-center text-sidebar-accent-foreground">
                 <SquarePen className="size-(--icon-nav)" />
               </span>
               <span className="min-w-0 flex-1 truncate">{t("compose.newMessage")}</span>
@@ -315,9 +317,9 @@ function ReviewBadge({ id, name, n, active, unread }: { id: number; name: string
               type="button"
               data-testid={`nav-review-${id}`}
               data-active={active || undefined}
+              data-count={n}
               aria-label={label}
               onClick={() => navigate({ view: "all", reviewCategoryId: id, accountId: null })}
-              data-count={n}
               className={cn(REVIEW_BADGE, "pointer-events-auto text-muted-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground")}
             >
               <Sparkles className="size-3.5" />
