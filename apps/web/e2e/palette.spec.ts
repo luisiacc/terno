@@ -27,14 +27,14 @@ test.describe("palette", () => {
       await focusList(page);
       await palette(page);
       await expect(group(page, "recent")).toHaveCount(0);
-      await input(page).fill("star or");
+      await input(page).fill("star");
       await page.keyboard.press("Enter");
       await palette(page);
       const recent = group(page, "recent");
       await expect(recent.getByRole("option")).toHaveCount(1);
-      await expect(recent.getByRole("option").first()).toContainText("Star or unstar");
+      await expect(recent.getByRole("option").first()).toHaveAttribute("data-command", "thread.star");
       // not listed twice
-      await expect(page.getByRole("option", { name: /Star or unstar/ })).toHaveCount(1);
+      await expect(page.locator("[data-command=\"thread.star\"]")).toHaveCount(1);
       await input(page).fill("sta");
       await expect(group(page, "recent")).toHaveCount(0);
     });

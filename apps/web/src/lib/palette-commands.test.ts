@@ -2,7 +2,7 @@ import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { defaultFilter } from "cmdk";
 import { describe, expect, it } from "vitest";
-import { arrange, itemValue, words, match, ranked, RECENT, scoreOf, type PaletteCommand } from "./palette-commands";
+import { arrange, CONVERSATION_LEAD, itemValue, words, match, ranked, RECENT, scoreOf, type PaletteCommand } from "./palette-commands";
 import { recordUse, type Usage } from "./palette-usage";
 
 const cmd = (id: string, group: PaletteCommand["group"], extra: Partial<PaletteCommand> = {}): PaletteCommand => ({ id, group, label: id, icon: null, ...extra });
@@ -114,6 +114,43 @@ describe("palette groups", () => {
     expect(a[0]!.commands[0]).toEqual({ command: list[1], alias: "listo" });
   });
 
+  it("the open conversation's actions rank above going elsewhere, for a real match", () => {
+    const list = [
+      cmd("go.archive", "goTo", { label: "Archive" }),
+      cmd("thread.archive", "conversation", { label: "Archive conversation" }),
+      cmd("go.spam", "goTo", { label: "Spam" }),
+      cmd("thread.spam", "conversation", { label: "Mark as spam" }),
+    ];
+    const first = (q: string) => arrange(list, "root", q, new Map(), 0)[0]!.commands[0]!.command.id;
+    expect(first("arch")).toBe("thread.archive");
+    // an exact name of a place too, and however often the place is used
+    expect(first("spam")).toBe("thread.spam");
+    const heavy = new Map([["go.archive", { n: 10_000, at: 0 }]]);
+    expect(arrange(list, "root", "arch", heavy, 0)[0]!.group).toBe("conversation");
+    // no conversation open: nothing to lead with
+    expect(arrange(list.filter((c) => c.group === "goTo"), "root", "arch", new Map(), 0)[0]!.group).toBe("goTo");
+  });
+
+  it("a precise query isn't diluted by what it only brushes", () => {
+    const list = [cmd("go.starred", "goTo", { label: "Starred" }), cmd("design:a", "actions", { label: "Style: Atelier" }), cmd("updates", "actions", { label: "Restart to update" })];
+    expect(arrange(list, "root", "star", new Map(), 0).flatMap((g) => g.commands.map((c) => c.command.id))).toEqual(["go.starred"]);
+  });
+
+  it("two rows for one intent show as one, unless the query asks for the other", () => {
+    const list = [cmd("go.starred", "goTo", { label: "Starred" }), cmd("filter.starred", "actions", { label: "Show starred conversations", sameAs: "go.starred" })];
+    const ids = (q: string) => arrange(list, "root", q, new Map(), 0).flatMap((g) => g.commands.map((c) => c.command.id));
+    expect(ids("star")).toEqual(["go.starred"]);
+    expect(ids("show star")).toEqual(["filter.starred"]);
+  });
+
+  it("an empty root leads with a few of the conversation's actions; the rest wait under Actions", () => {
+    const list = [cmd("go.inbox", "goTo"), cmd("other", "actions"), ...Array.from({ length: CONVERSATION_LEAD + 2 }, (_, i) => cmd(`thread.${i}`, "conversation"))];
+    const a = arrange(list, "root", "", new Map(), 0);
+    expect(a.map((g) => g.group)).toEqual(["conversation", "goTo", "actions"]);
+    expect(a[0]!.commands).toHaveLength(CONVERSATION_LEAD);
+    expect(a[2]!.commands.map((c) => c.command.id)).toEqual([`thread.${CONVERSATION_LEAD}`, `thread.${CONVERSATION_LEAD + 1}`, "other"]);
+  });
+
   it("keeps a typo, leaves out letters scattered through a long label", () => {
     expect(arrange([archive], "root", "arhcive", new Map(), 0)).toHaveLength(1);
     const list = [cmd("filter.unread", "actions", { label: "Show unread only", search: "Show unread only unread filter" }), cmd("addTo:1", "actions", { label: "Add to Clientes", search: "add to Clientes", searchOnly: true }), archive];
@@ -134,7 +171,7 @@ describe("palette groups", () => {
     // each alias key, with the label it belongs to
     const own: Record<string, string> = {
       archive: "palette.archive", trash: "palette.trash", spam: "palette.spam", markRead: "palette.markRead", markUnread: "palette.markUnread",
-      star: "palette.star", move: "palette.move", remind: "palette.remind", compose: "palette.compose", reply: "palette.reply",
+      star: "actions.star", move: "palette.move", remind: "palette.remind", compose: "palette.compose", reply: "palette.reply",
       forward: "palette.forward", undo: "common.undo", theme: "palette.theme", shortcuts: "shortcuts.title", print: "palette.print",
       aiFilter: "palette.aiFilter", discard: "compose.discard", attach: "attachments.attach", send: "common.send", snippet: "palette.insertSnippet",
     };

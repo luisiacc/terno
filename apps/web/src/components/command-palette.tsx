@@ -7,7 +7,7 @@ import { Chip } from "@terno/ui/components/chip";
 import { Command, CommandDescription, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
 import { Archive, AtSign, Bell, BellOff, ListChecks, BookmarkPlus, CalendarClock, CheckCheck, Clock, Copy, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
+import { act, openCompose, targetRows, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory } from "~/lib/categorize";
 import { currentTargets, isMac, selectAll } from "~/lib/select";
 import { updateAppearance } from "~/lib/appearance";
@@ -23,7 +23,7 @@ import { openAiDraft } from "~/lib/ai-draft";
 import { checkForUpdates, installUpdate, useHasUpdates, useUpdates } from "~/lib/updates";
 import { englishWords as english } from "~/lib/palette-words";
 import { getApp, navigate, setApp, useApp } from "~/state/app";
-import { openRemind, presetLabel, reminderShort, setReminder, clearReminder, useReminders } from "~/lib/reminders";
+import { openRemind, presetLabel, presetWhen, setReminder, clearReminder, useReminders } from "~/lib/reminders";
 import { draftCommands, type DraftCommands } from "~/lib/draft-commands";
 import { askFrom, paletteFrom, paletteKeys, setPalettePage, usePalettePage } from "~/lib/palette-open";
 import { loadSnippets, newSnippetId, useSnippets } from "~/lib/snippets";
@@ -78,6 +78,7 @@ function runInDraft(key: string, fn: (c: DraftCommands) => void) {
 const HEADINGS: Record<PaletteGroup, (count: number) => string | undefined> = {
   draft: () => t("palette.group.draft"),
   recent: () => t("palette.group.recent"),
+  conversation: (count) => t("palette.group.conversation", { count }),
   goTo: () => t("palette.group.goTo"),
   actions: () => t("palette.group.actions"),
   settings: () => t("common.settings"),
@@ -253,26 +254,32 @@ export function CommandPalette() {
     add({ id: "compose.new", group: "actions", label: t("palette.compose"), icon: <PenLine />, shortcut: "C", ...synonyms("palette.alias.compose"), keywords: [...english("palette.compose"), ...english("palette.alias.compose").flatMap(words)], run: () => void openCompose("new") });
     // plan 133: from a conversation or the list, the draft §5.2 opens, with its row
     if (drafting && !draft) add({ id: "compose.ai", group: "actions", label: t("palette.aiDraft"), icon: <Sparkles />, shortcut: isMac ? "⌘J" : "Ctrl+J", testId: "palette-ai-draft", ...synonyms("palette.alias.aiDraft", english("palette.aiDraft")), run: () => requestAnimationFrame(() => requestAnimationFrame(() => openAiDraft())) }); // once the closing palette has given focus back: an open whose focus moves under it gives up
-    if (replyable) {
-      add({ id: "compose.reply", group: "actions", label: t("palette.reply"), icon: <Reply />, shortcut: "R", testId: "palette-reply", ...synonyms("palette.alias.reply", english("palette.reply")), run: () => reply("reply") });
-      add({ id: "compose.replyAll", group: "actions", label: t("palette.replyAll"), icon: <ReplyAll />, shortcut: "A", testId: "palette-reply-all", keywords: english("palette.replyAll"), run: () => reply("replyAll") });
-      add({ id: "compose.forward", group: "actions", label: t("palette.forward"), icon: <Forward />, shortcut: "F", testId: "palette-forward", ...synonyms("palette.alias.forward", english("palette.forward")), run: () => reply("forward") });
-    }
     if (targets > 0) {
       const withEnglish = (words: string[], alias: AliasKey) => {
         const s = synonyms(alias);
         return { aliases: s.aliases, keywords: [...words, ...s.keywords] };
       };
-      add({ id: "thread.archive", group: "actions", label: t("palette.archive", { count: targets }), icon: <Archive />, shortcut: "E", ...withEnglish(english("palette.archive", { count: targets }), "palette.alias.archive"), run: () => void act("archive") });
-      add({ id: "thread.trash", group: "actions", label: t("palette.trash"), icon: <Trash2 />, shortcut: "⌫", ...withEnglish(english("palette.trash"), "palette.alias.trash"), run: () => void act("trash") });
-      add({ id: "thread.spam", group: "actions", label: t("palette.spam"), icon: <OctagonAlert />, shortcut: "!", ...withEnglish(english("palette.spam"), "palette.alias.spam"), run: () => void act("spam") });
-      add({ id: "thread.markRead", group: "actions", label: t("palette.markRead"), icon: <MailOpen />, shortcut: "⇧I", ...withEnglish(english("palette.markRead"), "palette.alias.markRead"), run: () => void act("markRead") });
-      add({ id: "thread.markUnread", group: "actions", label: t("palette.markUnread"), icon: <Mail />, ...withEnglish(english("palette.markUnread"), "palette.alias.markUnread"), run: () => void act("markUnread") });
-      add({ id: "thread.star", group: "actions", label: t("palette.star"), icon: <Star />, shortcut: "S", ...withEnglish(english("palette.star"), "palette.alias.star"), run: () => toggleStar() });
+      // what would change something, as in the row menu ("select all N" holds rows it hasn't loaded: both read states)
+      const rows = targetRows();
+      const allStarred = rows.length > 0 && rows.every((r) => r.starred);
+      const starKey = allStarred ? "actions.unstar" : "actions.star";
+      const inHand: PaletteGroup = "conversation";
+      // in the order they lead an empty root (CONVERSATION_LEAD)
+      add({ id: "thread.archive", group: inHand, label: t("palette.archive", { count: targets }), icon: <Archive />, shortcut: "E", ...withEnglish(english("palette.archive", { count: targets }), "palette.alias.archive"), run: () => void act("archive") });
+      add({ id: "thread.trash", group: inHand, label: t("palette.trash"), icon: <Trash2 />, shortcut: "⌫", ...withEnglish(english("palette.trash"), "palette.alias.trash"), run: () => void act("trash") });
+      if (replyable) {
+        add({ id: "compose.reply", group: inHand, label: t("palette.reply"), icon: <Reply />, shortcut: "R", testId: "palette-reply", ...synonyms("palette.alias.reply", english("palette.reply")), run: () => reply("reply") });
+        add({ id: "compose.forward", group: inHand, label: t("palette.forward"), icon: <Forward />, shortcut: "F", testId: "palette-forward", ...synonyms("palette.alias.forward", english("palette.forward")), run: () => reply("forward") });
+      }
+      add({ id: "thread.star", group: inHand, label: t(starKey), icon: <Star />, shortcut: "S", ...withEnglish([...english("actions.star"), ...english("actions.unstar")], "palette.alias.star"), run: () => toggleStar() });
+      if (scoped || rows.some((r) => r.unread)) add({ id: "thread.markRead", group: inHand, label: t("palette.markRead"), icon: <MailOpen />, shortcut: "⇧I", ...withEnglish(english("palette.markRead"), "palette.alias.markRead"), run: () => void act("markRead") });
+      if (scoped || rows.some((r) => !r.unread)) add({ id: "thread.markUnread", group: inHand, label: t("palette.markUnread"), icon: <Mail />, ...withEnglish(english("palette.markUnread"), "palette.alias.markUnread"), run: () => void act("markUnread") });
+      if (!scoped) add({ id: "thread.remind", group: inHand, label: t("palette.remind"), icon: <Bell />, shortcut: "H", testId: "palette-remind", ...withEnglish(english("palette.remind"), "palette.alias.remind"), page: "remind" });
       // a "select all N" moves nothing in the palette: the picker says why (moves need selected conversations)
-      add({ id: "thread.move", group: "actions", label: t("palette.move"), icon: <FolderInput />, shortcut: "V", testId: "palette-move", ...withEnglish(english("palette.move"), "palette.alias.move"), ...(scoped ? { run: () => setApp({ dialog: "categoryPicker", pickerMode: "move" }) } : { page: "move" as const }) });
-      add({ id: "thread.addTo", group: "actions", label: t("palette.addToCategory"), icon: <Tag />, testId: "palette-add-to", keywords: english("palette.addToCategory"), page: "addTo" });
-      if (!scoped) add({ id: "thread.remind", group: "actions", label: t("palette.remind"), icon: <Bell />, shortcut: "H", testId: "palette-remind", ...withEnglish(english("palette.remind"), "palette.alias.remind"), page: "remind" });
+      add({ id: "thread.move", group: inHand, label: t("palette.move"), icon: <FolderInput />, shortcut: "V", testId: "palette-move", ...withEnglish(english("palette.move"), "palette.alias.move"), ...(scoped ? { run: () => setApp({ dialog: "categoryPicker", pickerMode: "move" }) } : { page: "move" as const }) });
+      add({ id: "thread.addTo", group: inHand, label: t("palette.addToCategory"), icon: <Tag />, testId: "palette-add-to", keywords: english("palette.addToCategory"), page: "addTo" });
+      add({ id: "thread.spam", group: inHand, label: t("palette.spam"), icon: <OctagonAlert />, shortcut: "!", ...withEnglish(english("palette.spam"), "palette.alias.spam"), run: () => void act("spam") });
+      if (replyable) add({ id: "compose.replyAll", group: inHand, label: t("palette.replyAll"), icon: <ReplyAll />, shortcut: "A", testId: "palette-reply-all", keywords: english("palette.replyAll"), run: () => reply("replyAll") });
 
       const targetIds = scoped ? [] : ids();
       for (const c of categories) {
@@ -298,7 +305,7 @@ export function CommandPalette() {
           for (const p of remindPresets(new Date(now), kind)) {
             const id = `remind:${kind}:${p.id}`;
             const set = () => void setReminder(ids(), p.at, kind);
-            const hint = reminderShort(p.at, now);
+            const hint = presetWhen(p, now);
             add({ id, group, label: presetLabel(p.id), icon: <Bell />, hint, testId: `palette-remind-${kind}-${p.id}`, run: set });
             add({ id, group: "actions", label: t("palette.remindAt", { kind: t(kindKey), preset: presetLabel(p.id) }), icon: <Bell />, hint, keywords: [...english(kindKey), ...english("palette.alias.remind").flatMap(words)], searchOnly: true, scale: 0.5, run: set });
           }
@@ -309,13 +316,13 @@ export function CommandPalette() {
     }
     // plan 132 §7: the open conversation, never in spam or trash; no shortcut of its own
     if (canSummarize && replyable && summarizable(openThread?.thread)) {
-      add({ id: "thread.summarize", group: "actions", label: t("palette.summarize"), icon: <Sparkles />, testId: "palette-summarize", ...synonyms("palette.alias.summarize", english("palette.summarize")), run: () => void summarize(openThread!.thread.id) });
+      add({ id: "thread.summarize", group: "conversation", label: t("palette.summarize"), icon: <Sparkles />, testId: "palette-summarize", ...synonyms("palette.alias.summarize", english("palette.summarize")), run: () => void summarize(openThread!.thread.id) });
     }
     if (printable) {
-      add({ id: "thread.print", group: "actions", label: t("palette.print"), icon: <Printer />, shortcut: isMac ? "⌘P" : "Ctrl+P", testId: "palette-print", ...synonyms("palette.alias.print"), keywords: english("palette.print"), run: () => printCommand("print") });
-      add({ id: "thread.exportPdf", group: "actions", label: t("palette.exportPdf"), icon: <FileDown />, shortcut: isMac ? "⇧⌘P" : "Ctrl+Shift+P", testId: "palette-pdf", keywords: english("palette.exportPdf"), run: () => printCommand("pdf") });
+      add({ id: "thread.print", group: "conversation", label: t("palette.print"), icon: <Printer />, shortcut: isMac ? "⌘P" : "Ctrl+P", testId: "palette-print", ...synonyms("palette.alias.print"), keywords: english("palette.print"), run: () => printCommand("print") });
+      add({ id: "thread.exportPdf", group: "conversation", label: t("palette.exportPdf"), icon: <FileDown />, shortcut: isMac ? "⇧⌘P" : "Ctrl+Shift+P", testId: "palette-pdf", keywords: english("palette.exportPdf"), run: () => printCommand("pdf") });
       // plan 149: the keyboard's way to the reader's menu; the digest's row isn't a conversation
-      if (!onDigest) add({ id: "thread.copyText", group: "actions", label: t("threadMenu.copyText"), icon: <Copy />, testId: "palette-copy-text", ...synonyms("palette.alias.copyText", english("threadMenu.copyText")), run: copyOpenThread });
+      if (!onDigest) add({ id: "thread.copyText", group: "conversation", label: t("threadMenu.copyText"), icon: <Copy />, testId: "palette-copy-text", ...synonyms("palette.alias.copyText", english("threadMenu.copyText")), run: copyOpenThread });
     }
     add({ id: "list.selectAll", group: "actions", label: t("palette.selectAll"), icon: <CheckCheck />, shortcut: "⌘A", keywords: english("palette.selectAll"), run: selectAll });
     if (filter) {
@@ -327,7 +334,7 @@ export function CommandPalette() {
       if (active !== "people" && supported.includes("people")) add({ id: "filter.people", group: "actions", label: t("palette.showPeople"), search: filterSearch("palette.showPeople"), icon: <Users />, testId: "palette-filter-people", keywords: filterWords("palette.showPeople"), run: () => setListFilter("people") });
       if (active !== "waiting" && supported.includes("waiting")) add({ id: "filter.waiting", group: "actions", label: t("palette.showWaiting"), search: filterSearch("palette.showWaiting"), icon: <Reply />, testId: "palette-filter-waiting", keywords: filterWords("palette.showWaiting"), run: () => setListFilter("waiting") });
       if (active !== "attachments") add({ id: "filter.attachments", group: "actions", label: t("palette.showAttachments"), search: filterSearch("palette.showAttachments"), icon: <Paperclip />, testId: "palette-filter-attachments", keywords: filterWords("palette.showAttachments"), run: () => setListFilter("attachments") });
-      if (active !== "starred") add({ id: "filter.starred", group: "actions", label: t("palette.showStarred"), search: filterSearch("palette.showStarred"), icon: <Star />, testId: "palette-filter-starred", keywords: filterWords("palette.showStarred"), run: () => setListFilter("starred") });
+      if (active !== "starred") add({ id: "filter.starred", group: "actions", label: t("palette.showStarred"), search: filterSearch("palette.showStarred"), icon: <Star />, testId: "palette-filter-starred", keywords: filterWords("palette.showStarred"), sameAs: "go.starred", run: () => setListFilter("starred") });
     }
     if (design) {
       for (const d of DESIGNS) {
@@ -466,8 +473,10 @@ export function CommandPalette() {
             )
           }
         />
-        <CommandList ref={listRef} label={t("palette.results")}>
-          <CommandEmpty>{t("palette.empty")}</CommandEmpty>
+        {/* one height, whatever matches: the footer stays where the eye left it */}
+        <CommandList ref={listRef} label={t("palette.results")} className="h-96">
+          {/* a row offered below says it already: the root's search while typing, a page's create */}
+          {!(page === "root" && query) && !create && <CommandEmpty>{t("palette.empty")}</CommandEmpty>}
           {groups.map(({ group, commands: list }) => (
             // an ASCII value: cmdk finds a group to sort it by its URL-encoded value (a heading with spaces never matched)
             <CommandGroup key={group} value={group} heading={group === "snippetsManage" && snippets.length === 0 && !query ? t("palette.snippets.empty") : HEADINGS[group](targets)} data-group={group}>
@@ -477,7 +486,13 @@ export function CommandPalette() {
                     {c.icon} <span className="truncate">{c.display ?? c.label}</span>
                     {alias && <span className="shrink-0 text-muted-foreground" data-testid="palette-alias">({alias})</span>}
                     {c.hint && <CommandDescription>{c.hint}</CommandDescription>}
-                    {c.shortcut && <CommandShortcut className={c.hint ? "ms-3" : undefined}>{c.shortcut}</CommandShortcut>}
+                    {c.shortcut && (
+                      <span className={c.hint ? "ms-3 flex gap-0.5" : "ms-auto flex gap-0.5"}>
+                        {c.shortcut.split(" ").map((key) => (
+                          <CommandShortcut key={key} className="ms-0">{key}</CommandShortcut>
+                        ))}
+                      </span>
+                    )}
                   </CommandItem>
                 );
               })}

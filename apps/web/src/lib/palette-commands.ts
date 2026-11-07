@@ -8,7 +8,7 @@ import { boost, recentIds, type Usage } from "./palette-usage";
  */
 
 export type PalettePage = "root" | "move" | "addTo" | "remind" | "snippets" | "ask" | "askHistory";
-export type PaletteGroup = "draft" | "recent" | "goTo" | "actions" | "settings" | "move" | "addTo" | "remindAlways" | "remindNoReply" | "remindClear" | "snippets" | "snippetsManage";
+export type PaletteGroup = "draft" | "recent" | "conversation" | "goTo" | "actions" | "settings" | "move" | "addTo" | "remindAlways" | "remindNoReply" | "remindClear" | "snippets" | "snippetsManage";
 
 export interface PaletteCommand {
   /** stable across opens and languages: what usage counts ("thread.archive", "move:12", "remind:always:tomorrow") */
@@ -33,6 +33,8 @@ export interface PaletteCommand {
   searchOnly?: boolean;
   /** weighs the match (Superhuman's "scale"): a page's value at the root is 0.5, so a bare name finds the thing, not an action on it */
   scale?: number;
+  /** another row that says the same when both match ("Show starred" and Starred): this one steps aside for it */
+  sameAs?: string;
   /** Enter opens this page instead of running */
   page?: PalettePage;
   /** runs in the composer once focus is back in it (a draft command) */
@@ -42,7 +44,7 @@ export interface PaletteCommand {
 
 /** the groups each page shows, in order */
 export const PAGE_GROUPS: Record<PalettePage, readonly PaletteGroup[]> = {
-  root: ["draft", "recent", "goTo", "actions", "settings"],
+  root: ["draft", "recent", "conversation", "goTo", "actions", "settings"],
   move: ["move"],
   addTo: ["addTo"],
   remind: ["remindAlways", "remindNoReply", "remindClear"],
@@ -59,6 +61,18 @@ export const PAGE_GROUPS: Record<PalettePage, readonly PaletteGroup[]> = {
  * ~0.003-0.03, which is noise).
  */
 export const FLOOR = 0.05;
+
+/**
+ * A match at a word's start or better (command-score: ~0.8-1). Once a query has one, it is precise: what it only
+ * brushes (letters mid-word, ~0.17 and under) stays out ("star" doesn't list Style: Atelier).
+ */
+export const STRONG = 0.5;
+
+/** how many of the open conversation's actions lead an empty root: the rest stay under Actions, so Go to stays in view */
+export const CONVERSATION_LEAD = 6;
+
+/** what's about the thing in hand ranks over going elsewhere: the open conversation, and a draft the palette came from */
+const IN_HAND: readonly PaletteGroup[] = ["draft", "conversation"];
 
 /** how many recent commands lead an empty root */
 export const RECENT = 4;
@@ -98,9 +112,9 @@ export function ranked(score: number, id: string, usage: Usage, now: number): nu
 }
 
 /** A command's match, weighed by its scale, then by use; and the alias that matched. */
-export function scored(c: PaletteCommand, query: string, usage: Usage, now: number): { score: number; alias: string | null } {
+export function scored(c: PaletteCommand, query: string, usage: Usage, now: number): { score: number; raw: number; alias: string | null } {
   const m = match(c, query);
-  return { score: ranked(m.score * (c.scale ?? 1), c.id, usage, now), alias: m.alias };
+  return { score: ranked(m.score * (c.scale ?? 1), c.id, usage, now), raw: m.score, alias: m.alias };
 }
 export const scoreOf = (c: PaletteCommand, query: string, usage: Usage, now: number): number => scored(c, query, usage, now).score;
 
@@ -121,21 +135,25 @@ export interface Arranged {
  * What the page shows, in order. With no query: the page's groups in their
  * order, without search-only commands; on the root, the recent commands lead
  * and leave their own groups. While typing: only what matches, best first
- * within each group and groups by their best (cmdk 1.1.1 can't reorder
- * groups: it looks them up by an id they don't carry), so many categories
- * render only their matches.
+ * within each group and groups by their best, with what's in hand ahead of the
+ * rest for a real match (cmdk 1.1.1 can't reorder groups: it looks them up by an
+ * id they don't carry), so many categories render only their matches.
  */
 export function arrange(commands: readonly PaletteCommand[], page: PalettePage, query: string, usage: Usage, now: number): Arranged[] {
   const groups = PAGE_GROUPS[page];
   const mine = commands.filter((c) => groups.includes(c.group));
   if (query.trim() !== "") {
-    const hits = mine
+    const matched = mine
       .map((command) => ({ command, ...scored(command, query, usage, now) }))
       .filter((s) => s.score >= FLOOR);
+    const precise = matched.some((s) => s.raw >= STRONG);
+    const kept = precise ? matched.filter((s) => s.raw >= STRONG) : matched;
+    const shownIds = new Set(kept.map((s) => s.command.id));
+    const hits = kept.filter((s) => !s.command.sameAs || !shownIds.has(s.command.sameAs));
     const out: (Arranged & { best: number; order: number })[] = [];
     for (const [order, group] of groups.entries()) {
       const list = hits.filter((s) => s.command.group === group).sort((a, b) => b.score - a.score);
-      if (list.length) out.push({ group, commands: list.map(({ command, alias }) => ({ command, alias })), best: list[0]!.score, order });
+      if (list.length) out.push({ group, commands: list.map(({ command, alias }) => ({ command, alias })), best: list[0]!.score + (precise && IN_HAND.includes(group) ? 1 : 0), order });
     }
     return out.sort((a, b) => b.best - a.best || a.order - b.order).map(({ group, commands }) => ({ group, commands }));
   }
@@ -149,8 +167,15 @@ export function arrange(commands: readonly PaletteCommand[], page: PalettePage, 
   }
   const taken = new Set(recent.map((c) => c.id));
   const shown = mine.filter((c) => !c.searchOnly && !taken.has(c.id));
+  const conversation = shown.filter((c) => c.group === "conversation");
+  const of = (group: PaletteGroup): PaletteCommand[] => {
+    if (group === "recent") return recent;
+    if (group === "conversation") return conversation.slice(0, CONVERSATION_LEAD);
+    const own = shown.filter((c) => c.group === group);
+    return group === "actions" ? [...conversation.slice(CONVERSATION_LEAD), ...own] : own;
+  };
   return groups
-    .map((group) => ({ group, commands: (group === "recent" ? recent : shown.filter((c) => c.group === group)).map((command) => ({ command, alias: null })) }))
+    .map((group) => ({ group, commands: of(group).map((command) => ({ command, alias: null })) }))
     .filter((g) => g.commands.length > 0);
 }
 

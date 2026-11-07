@@ -89,7 +89,7 @@ Each item says what differs from BoardUI and why.
 - **Calendar:**
   - Other months' days stay visible, muted, because a date chosen next week can fall in the next month.
   - Cells are 4 px apart, not 12, so the calendar fits the 320 px popover.
-- **Command palette:** stays 640 px wide at 18 % from the top, because long subjects need the room.
+- **Command palette:** stays 640 px wide at 18 % from the top, because long subjects need the room. Rows are 36 px, not 40, so more of them show; the list keeps one height so the hint row never moves, and a section's heading stays while its rows scroll.
 - **Skeleton and spinner:** the skeleton pulses without BoardUI's sheen, and the spinner has no glow layers. Both effects would repaint continuously.
 - **Radio card:** BoardUI's radio has no card variant, so Terno's is the radio drawn as a bordered card.
 - **Progress:** plain markup rather than Base UI's.
