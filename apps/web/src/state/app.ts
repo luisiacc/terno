@@ -272,25 +272,33 @@ export function navigate(to: { view?: View; accountId?: number | null; categoryI
   const ownList = reminders || followups || today;
   // plan 86: a Gmail tab likewise, its view "inbox"
   const gmailTab = folder || ownList ? null : (to.gmailTab ?? null);
-  setApp((s) => ({
-    reviewCategoryId: folder || ownList || gmailTab ? null : (to.reviewCategoryId ?? null),
-    reminders,
-    followups,
-    today,
-    actionPreview: null,
-    view: folder || ownList ? "all" : gmailTab ? "inbox" : (to.view ?? (to.categoryId ? "all" : s.view)),
-    accountId: ownList ? null : to.accountId === undefined ? s.accountId : to.accountId,
-    categoryId: folder || ownList || gmailTab || to.categoryId === undefined ? null : to.categoryId,
-    folder,
-    gmailTab,
-    query: "",
-    selectedId: null,
-    checked: new Set(),
-    anchorId: null,
-    scope: null,
-    // another mailbox is the list (List layout); Split ignores it
-    readerOpen: false,
-  }));
+  setApp((s) => {
+    const place = {
+      reviewCategoryId: folder || ownList || gmailTab ? null : (to.reviewCategoryId ?? null),
+      reminders,
+      followups,
+      today,
+      view: folder || ownList ? ("all" as const) : gmailTab ? ("inbox" as const) : (to.view ?? (to.categoryId ? ("all" as const) : s.view)),
+      accountId: ownList ? null : to.accountId === undefined ? s.accountId : to.accountId,
+      categoryId: folder || ownList || gmailTab || to.categoryId === undefined ? null : to.categoryId,
+      folder,
+      gmailTab,
+    };
+    // plan 158: already there (g i in the Inbox): the cursor, the conversation and the checks stay; List's page still closes
+    const here = !s.query && !s.actionPreview && (Object.keys(place) as (keyof typeof place)[]).every((k) => s[k] === place[k]);
+    if (here) return { readerOpen: false };
+    return {
+      ...place,
+      actionPreview: null,
+      query: "",
+      selectedId: null,
+      checked: new Set(),
+      anchorId: null,
+      scope: null,
+      // another mailbox is the list (List layout); Split ignores it
+      readerOpen: false,
+    };
+  });
 }
 
 /** plan 68: the folder list changed: a folder you're in that's gone sends you to its account's Inbox. */

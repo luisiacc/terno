@@ -79,6 +79,24 @@ test.describe("the inbox list", { tag: "@design" }, () => {
 });
 
 test.describe("the filters and the suggestions", () => {
+  test("a row a filter keeps only because it's open says so; g i in the Inbox keeps the cursor and the conversation", async ({ app: page }) => {
+    const first = rows(page).first();
+    const id = await first.getAttribute("data-thread-id");
+    await first.dispatchEvent("mousedown");
+    await page.getByTestId("reader-subject").waitFor();
+    await focusList(page);
+    await page.keyboard.press("g");
+    await page.keyboard.press("i");
+    await expect(page.locator("[data-testid=thread-row][data-cursor]")).toHaveAttribute("data-thread-id", id!);
+    await expect(page.getByTestId("reader-subject")).toBeVisible();
+    await pickFilter(page, "attachments");
+    const open = page.locator(`[data-thread-id="${id}"]`);
+    await expect(open.getByTestId("row-kept")).toHaveText("Opened");
+    await expect(page.locator("[data-testid=row-kept]")).toHaveCount(1);
+    await page.getByTestId("filter-clear").click();
+    await expect(page.locator("[data-testid=row-kept]")).toHaveCount(0);
+  });
+
   test("one filter control, a real target with its state in words: turning it on moves nothing but itself, every filter is in its menu, × clears it", { tag: "@design" }, async ({ app: page, design }) => {
     test.skip(design === "lumen", "Lumen's filters are chips");
     const title = page.getByTestId("list-title");
