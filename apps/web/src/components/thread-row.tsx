@@ -266,8 +266,10 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     ) : (
       <RowDate thread={thread} reminderTop={reminderTop} title={remindersList && reminder?.kind === "noReply" ? t("remind.noReplySuffix") : undefined} className={cn("text-xs tabular", thread.unread ? "text-foreground" : "text-muted-foreground")} fallback={remindersList && reminder ? reminderShort(reminder.dueAt) : listDate(thread.lastDate)} />
     );
-  const draft = hasDraft && <span className="shrink-0 font-medium text-draft-foreground">{t("list.draft")}</span>;
-  const subjectInk = thread.unread ? "type-row-subject-strong text-foreground" : cn("type-row-subject", readInk);
+  // a small tag at the row's own scale: its line box is no taller than the subject's, so no line moves for it
+  const draft = hasDraft && <span data-testid="row-draft" className="shrink-0 text-xs leading-none font-medium text-draft-foreground">{t("list.draft")}</span>;
+  // the subject leads a read row: the sender's quieter ink, the preview quieter still
+  const subjectInk = thread.unread ? "type-row-subject-strong text-foreground" : cn("type-row-subject", onAccent ? "text-accent-foreground" : "text-foreground");
   // its own line: only a very long subject truncates
   const subject = (
     <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>

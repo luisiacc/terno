@@ -46,6 +46,26 @@ test.describe("the inbox list", { tag: "@design" }, () => {
       const avatar = unread.getByTestId("sender-avatar");
       if (await avatar.count()) expect(dot.x + dot.width).toBeLessThanOrEqual((await box(avatar)).x);
     });
+    await scenario("a draft's tag is small, on the row's own scale, and its row's lines stay on the others' rhythm", async () => {
+      const list = page.getByRole("listbox");
+      const firstRow = rows(page).first();
+      await firstRow.dispatchEvent("mousedown");
+      await page.getByTestId("reader-subject").waitFor();
+      const [fromBefore, subjectBefore, snippetBefore] = await Promise.all(["row-from", "row-subject", "row-snippet"].map((id) => box(firstRow.getByTestId(id))));
+      await focusList(page);
+      await page.keyboard.press("r");
+      await page.getByTestId("compose-body").waitFor();
+      await page.keyboard.type("Hola");
+      await page.keyboard.press("Escape");
+      const tag = firstRow.getByTestId("row-draft");
+      await expect(tag).toHaveText("Draft");
+      const size = (l: Locator) => l.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+      expect(await size(tag)).toBeLessThanOrEqual(await size(firstRow.getByTestId("row-subject")));
+      const [from, subject, snippet] = await Promise.all(["row-from", "row-subject", "row-snippet"].map((id) => box(firstRow.getByTestId(id))));
+      expect([from.y, subject.y, snippet.y]).toEqual([fromBefore!.y, subjectBefore!.y, snippetBefore!.y]);
+      await list.evaluate((el) => el.scrollTo(0, 0));
+      await freshNoDrafts(page, server);
+    });
     await scenario("scrolled, the suggestion and the subtitle give way and the list has their room; at the top they come back", async () => {
       const top = (await box(list)).y;
       await list.evaluate((el) => el.scrollTo(0, 300));
