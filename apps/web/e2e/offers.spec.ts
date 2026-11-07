@@ -182,7 +182,7 @@ test.describe("plan 91: defaults and the same offers everywhere", () => {
     await drop(page, page.locator(`[data-testid=thread-row][data-thread-id="${g.target}"]`), page.getByTestId(`nav-category-${facturas}`));
     const snack = page.getByTestId("category-snackbar");
     await expect(snack).toHaveAttribute("data-default", "done");
-    await expect(snack.getByTestId("snackbar-note")).toHaveText("Couldn’t save the filter for new mail: only the mail you have now changed.");
+    await expect(snack.getByTestId("snackbar-note")).toHaveText("Couldn’t save the rule for new mail: only the mail you have now changed.");
     g.db.exec("DROP TRIGGER e2e_no_filters");
     await page.keyboard.press("Escape");
 

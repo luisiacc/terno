@@ -6,7 +6,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Sun, Archive, ArrowLeft, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, ListFilter, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Tag, Trash2, Users, ListChecks } from "@terno/ui/icons";
+import { Sun, Archive, ArrowLeft, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, OctagonAlert, Plus, Route, Send, Settings2, Sparkles, SquarePen, Star, Tag, Trash2, Users, ListChecks } from "@terno/ui/icons";
 import { Kbd } from "@terno/ui/components/kbd";
 import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
@@ -117,6 +117,7 @@ function NavItem({
   shortcut,
   note,
   hoverAction,
+  beforeCount,
 }: {
   active: boolean;
   onClick: () => void;
@@ -144,6 +145,8 @@ function NavItem({
   note?: React.ReactNode;
   /** plan 107: a control over the row's end on hover (a folder's "+"): the count steps aside meanwhile */
   hoverAction?: boolean;
+  /** room before the count for a control drawn over the row (its copy, invisible): the counts keep one column */
+  beforeCount?: React.ReactNode;
 }) {
   renderProbe("NavItem");
   // the perf gates tell the rows below More (which only slide when it toggles) from the folders
@@ -201,6 +204,7 @@ function NavItem({
         </span>
       )}
       {drop === "already" && <Check aria-label={t("sidebar.alreadyHere")} className="size-3.5 text-muted-foreground" />}
+      {beforeCount}
       {count ? (
         <span data-slot="nav-count" className={cn("inline-block text-xs tabular", countTone === "unread" ? "font-semibold text-unread-ink" : "text-muted-foreground", hoverAction && "group-hover/row:invisible")}>
           {formatNumber(count)}
@@ -293,21 +297,37 @@ function ComposeRow() {
   );
 }
 
-/** A category's pending suggestions as a badge in its row (Atelier, Lumen): its own control, drawn over the row's end. */
-function ReviewBadge({ id, name, n, active }: { id: number; name: string; n: number; active: boolean }) {
+const REVIEW_BADGE = "flex h-6 min-w-6 items-center justify-center gap-0.5 rounded-(--nav-radius) px-1 text-2xs tabular";
+
+/**
+ * A category's pending suggestions: a quiet mark beside its unread count, the same in every design; its meaning on
+ * hover and to a screen reader. Its own control, drawn over the row; an invisible copy of the count puts it left of
+ * that count, so the sidebar's counts keep one column.
+ */
+function ReviewBadge({ id, name, n, active, unread }: { id: number; name: string; n: number; active: boolean; unread: number }) {
+  const label = t("sidebar.reviewBadge", { count: n, name });
   return (
-    <button
-      type="button"
-      data-testid={`nav-review-${id}`}
-      data-active={active || undefined}
-      aria-label={t("sidebar.reviewBadge", { count: n, name })}
-      title={t("sidebar.reviewBadge", { count: n, name })}
-      onClick={() => navigate({ view: "all", reviewCategoryId: id, accountId: null })}
-      className="absolute top-1/2 right-1.5 flex h-5 -translate-y-1/2 items-center gap-0.5 rounded-full bg-(--review-badge-bg) px-1.5 text-2xs font-semibold text-(--review-badge-fg) tabular transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
-    >
-      <Sparkles className="size-3" />
-      {formatNumber(n)}
-    </button>
+    <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center gap-2.5">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              data-testid={`nav-review-${id}`}
+              data-active={active || undefined}
+              aria-label={label}
+              onClick={() => navigate({ view: "all", reviewCategoryId: id, accountId: null })}
+              className={cn(REVIEW_BADGE, "pointer-events-auto text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground")}
+            >
+              <Sparkles className="size-3" />
+              {formatNumber(n)}
+            </button>
+          }
+        />
+        <TooltipContent side="right">{label}</TooltipContent>
+      </Tooltip>
+      {unread > 0 && <span aria-hidden className="invisible text-xs tabular">{formatNumber(unread)}</span>}
+    </div>
   );
 }
 
@@ -1231,7 +1251,6 @@ export function Sidebar() {
   const categories = useApp((s) => s.categories);
   const counts = useApp((s) => s.counts);
   const design = useDesign();
-  const inlineReview = design.variants.categoryReview === "inline-badge";
 
   const openAccount = useOpenAccount((s) => s.id);
   const unreadByAccount = useFolderUnreadByAccount(counts.folderUnread);
@@ -1360,7 +1379,7 @@ export function Sidebar() {
       <div data-more-below className="will-change-transform">
         <SectionTitle
           action={
-            <button type="button" data-testid="new-category" aria-label={t("sidebar.newCategory")} onClick={() => setCreating(true)} className="rounded p-0.5 text-muted-foreground opacity-0 group-hover/section:opacity-100 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-reveal:opacity-100">
+            <button type="button" data-testid="new-category" aria-label={t("sidebar.newCategory")} onClick={() => setCreating(true)} className="-my-0.5 -mr-1 flex size-6 items-center justify-center rounded text-muted-foreground opacity-0 group-hover/section:opacity-100 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-reveal:opacity-100">
               <Plus className="size-3.5" />
             </button>
           }
@@ -1369,6 +1388,7 @@ export function Sidebar() {
         </SectionTitle>
         {categories.map((c) => {
           const help = categoryHelp(counts.categoryUnread[c.id] ?? 0, counts.categorySuggestions[c.id] ?? 0);
+          const suggested = counts.categorySuggestions[c.id] ?? 0;
           return (
             <CategoryMenu key={c.id} category={c}>
             <div className="relative">
@@ -1383,7 +1403,7 @@ export function Sidebar() {
                 label={c.name}
                 count={counts.categoryUnread[c.id] || undefined}
                 countHelp={help ? { id: `sidebar-count-category-${c.id}`, text: help } : undefined}
-                reserveEnd={inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0}
+                beforeCount={suggested > 0 ? <span aria-hidden className={cn(REVIEW_BADGE, "invisible")}><Sparkles className="size-3" />{formatNumber(suggested)}</span> : undefined}
                 note={
                   (!c.showInInbox || c.forward?.enabled) && (
                     <>
@@ -1408,22 +1428,7 @@ export function Sidebar() {
                   )
                 }
               />
-              {inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0 && (
-                <ReviewBadge id={c.id} name={c.name} n={counts.categorySuggestions[c.id]!} active={reviewCategoryId === c.id} />
-              )}
-              {!inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0 && (
-                <button
-                  type="button"
-                  data-testid={`nav-review-${c.id}`}
-                  data-active={reviewCategoryId === c.id || undefined}
-                  onClick={() => navigate({ view: "all", reviewCategoryId: c.id, accountId: null })}
-                  className={cn("flex h-6 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-xs text-muted-foreground tabular not-data-active:hover:bg-sidebar-hover hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground", ROW_SEAM)}
-                >
-                  <Sparkles className="size-3 text-sidebar-glyph" />
-                  <span className="flex-1">{t("sidebar.review")}</span>
-                  <span className="text-xs tabular">{formatNumber(counts.categorySuggestions[c.id]!)}</span>
-                </button>
-              )}
+              {suggested > 0 && <ReviewBadge id={c.id} name={c.name} n={suggested} active={reviewCategoryId === c.id} unread={counts.categoryUnread[c.id] ?? 0} />}
             </div>
             </CategoryMenu>
           );
@@ -1496,10 +1501,10 @@ export function Sidebar() {
         <FirstSyncPill />
         <UpdatePill />
       </div>
-      {/* the left stays put: a ghost button's own padding puts Filters' icon on the rows' icon line in the wider inset */}
+      {/* the left stays put: a ghost button's own padding puts Rules' icon on the rows' icon line in the wider inset */}
       <div className="hairline-t hairline-strong flex shrink-0 items-center gap-1 py-2 pr-(--sidebar-pad) pl-2">
         <Button data-testid="open-filters" variant="ghost" size="sm" className="flex-1 justify-start gap-2 text-sidebar-foreground" onClick={() => setApp({ dialog: "filters" })}>
-          <ListFilter className="text-sidebar-glyph" /> {t("sidebar.filters")}
+          <Route className="text-sidebar-glyph" /> {t("sidebar.filters")}
         </Button>
         <CloudAiPill />
         <Tooltip>

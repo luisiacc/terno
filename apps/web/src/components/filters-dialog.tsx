@@ -357,6 +357,7 @@ export function FiltersDialog() {
   const load = (d: Draft) => {
     setDraft(d);
     setLoads((n) => n + 1);
+    setAttempted(false);
   };
   // opened from Ajustes → Filtros: closing goes back there
   const [returnTo] = useState(() => getApp().filterPrefill?.returnTo ?? null);
@@ -369,6 +370,8 @@ export function FiltersDialog() {
   const [generating, setGenerating] = useState(false);
   const ai = useApp((s) => s.settings?.ai);
   const [saving, setSaving] = useState(false);
+  // what's wrong with a rule waits until the user tries to save it: a new one is simply not written yet
+  const [attempted, setAttempted] = useState(false);
 
   const refresh = async () => {
     setFilters(await client.call("filters.list", {}));
@@ -414,7 +417,7 @@ export function FiltersDialog() {
   };
 
   const save = async (applyExisting: boolean) => {
-    if (!valid.success) return;
+    if (!valid.success) return setAttempted(true);
     setSaving(true);
     try {
       const name = draft.name.trim() || describeCondition(rule.conditions[0]!);
@@ -636,7 +639,7 @@ export function FiltersDialog() {
               </div>
               <FolderAction action={folderAction} rule={rule} onChange={setFolder} />
               {forwardAction && <ForwardTo key={loads} to={forwardAction.to} onChange={(to) => setForward(to)} paused={Boolean(filters.find((f) => f.id === draft.id)?.forwardPaused)} />}
-              {!valid.success && <p className="text-xs text-destructive" data-testid="filter-invalid">{t(filterIssueKey(valid.error.issues))}</p>}
+              {attempted && !valid.success && <p role="alert" className="text-xs text-destructive-ink" data-testid="filter-invalid">{t(filterIssueKey(valid.error.issues))}</p>}
             </div>
 
             <Preview rule={rule} />
@@ -664,10 +667,10 @@ export function FiltersDialog() {
               </>
             )}
             <div className="ml-auto flex gap-2">
-              <Button variant="outline" data-testid="filter-save" disabled={!valid.success || saving} onClick={() => save(false)}>
+              <Button variant="outline" data-testid="filter-save" disabled={saving} onClick={() => save(false)}>
                 {t("common.save")}
               </Button>
-              <Button data-testid="filter-save-apply" disabled={!valid.success || saving} onClick={() => save(true)}>
+              <Button data-testid="filter-save-apply" disabled={saving} onClick={() => save(true)}>
                 {t("filters.saveApply")}
               </Button>
             </div>

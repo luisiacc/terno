@@ -28,7 +28,7 @@ test.describe("AI filters and learned filters", () => {
       await expect(preview).toHaveText(String(uberCount));
 
       await page.getByTestId("filter-save-apply").click();
-      await expect(page.locator("[data-testid=snack]").filter({ hasText: /Filter applied to \d+ conversations/ })).toBeVisible();
+      await expect(page.locator("[data-testid=snack]").filter({ hasText: /Rule applied to \d+ conversations/ })).toBeVisible();
       await expect(page.getByTestId("filter-item")).toContainText(["AI"]);
       await expect.poll(inboxUber).toBe(0);
       await page.keyboard.press("Escape");
@@ -51,11 +51,11 @@ test.describe("AI filters and learned filters", () => {
       const ctx = { clientId: "setup", origin: "dev" } as const;
       const aiCommand = async (count: number) => {
         await page.keyboard.press("ControlOrMeta+k");
-        await page.getByTestId("palette-input").fill("Create filter with AI");
+        await page.getByTestId("palette-input").fill("Create rule with AI");
         // the search row always answers, so a 0 isn't a palette not yet drawn
         const results = page.getByRole("listbox", { name: "Results" });
-        await expect(results.getByRole("option", { name: "Search for “Create filter with AI” in all accounts" })).toBeVisible();
-        await expect(results.getByRole("option", { name: "Create filter with AI", exact: true })).toHaveCount(count);
+        await expect(results.getByRole("option", { name: "Search for “Create rule with AI” in all accounts" })).toBeVisible();
+        await expect(results.getByRole("option", { name: "Create rule with AI", exact: true })).toHaveCount(count);
         await page.keyboard.press("Escape");
       };
       await server.backend.server.invoke("settings.update", { ai: { provider: "anthropic" } }, ctx);
@@ -75,15 +75,22 @@ test.describe("AI filters and learned filters", () => {
       await page.getByTestId("open-filters").click();
       await expect(page.getByTestId("ai-prompt")).toBeVisible();
     });
-    await scenario("invalid rules can't be saved", async () => {
+    await scenario("an invalid rule can't be saved, and says why only once you try: a new one is simply not written yet", async () => {
       await freshStart(page);
       await page.getByTestId("open-filters").click();
       await expect(page.getByTestId("condition-value")).toHaveValue("");
-      await expect(page.getByTestId("filter-save")).toBeDisabled();
+      await expect(page.getByTestId("filter-invalid")).toHaveCount(0);
+      const saved = await page.getByTestId("filter-item").count();
+      await page.getByTestId("filter-save").click();
+      await expect(page.getByTestId("filter-invalid")).toBeVisible();
+      await expect(page.getByTestId("filter-item")).toHaveCount(saved);
       await page.getByTestId("condition-value").fill("news@tienda.com");
-      await expect(page.getByTestId("filter-save")).toBeEnabled();
+      await expect(page.getByTestId("filter-invalid")).toHaveCount(0);
       await page.getByTestId("action-toggle-archive").click(); // remove the only action
-      await expect(page.getByTestId("filter-save")).toBeDisabled();
+      await expect(page.getByTestId("filter-invalid")).toBeVisible();
+      // another rule starts clean
+      await page.getByTestId("new-filter").click();
+      await expect(page.getByTestId("filter-invalid")).toHaveCount(0);
     });
     await scenario("plan 154: a rule on the start of mail is a pattern, with no \"not\"", async () => {
       await freshStart(page);
@@ -114,11 +121,12 @@ test.describe("AI filters and learned filters", () => {
       const value = page.getByTestId("condition-value");
       const help = page.getByTestId("condition-pattern-help");
       await expect(help).toContainText("[0-9]+ is any number");
-      // a lookahead isn't supported: said under the field, and the filter can't be saved
+      // a lookahead isn't supported: said under the field, and the rule can't be saved
       await value.fill("(?=uber)");
       await expect(value).toHaveAttribute("aria-invalid", "true");
       await expect(help).toHaveText("Patterns can’t look around (?=, ?!) or refer back to a group (\\1).");
-      await expect(page.getByTestId("filter-save")).toBeDisabled();
+      await page.getByTestId("filter-save").click();
+      await expect(page.getByTestId("filter-invalid")).toBeVisible();
       await value.fill("^uber\\.receipts@uber\\.(com|mx)$");
       await expect(value).not.toHaveAttribute("aria-invalid");
       await expect(page.getByTestId("preview-count")).toHaveText(/^[1-9]\d*$/);
@@ -127,11 +135,11 @@ test.describe("AI filters and learned filters", () => {
       await page.getByTestId("filter-save-apply").click();
       // the dialog is free at once; the snack follows the job to its end
       await expect(page.getByTestId("filter-save")).toBeEnabled();
-      await expect(page.locator("[data-testid=snack]").filter({ hasText: /Filter applied to \d+ conversations?/ })).toBeVisible();
+      await expect(page.locator("[data-testid=snack]").filter({ hasText: /Rule applied to \d+ conversations?/ })).toBeVisible();
       await expect.poll(read).toBeGreaterThan(0);
       await expect(page.getByTestId("filter-item").first()).toBeVisible();
     });
-    await scenario("the learned suggestion becomes a filter in one click", async () => {
+    await scenario("the learned suggestion becomes a rule in one click", async () => {
       await freshStart(page);
       const banner = page.getByTestId("learned-banner");
       await expect(banner).toContainText("daily.morningbrew.com");

@@ -18,7 +18,7 @@ const TABS = [
   ["appearance", "Appearance"],
   ["accounts", "Accounts"],
   ["categories", "Categories"],
-  ["filters", "Filters"],
+  ["filters", "Rules"],
   ["snippets", "Snippets"],
   ["ai", "AI"],
   ["agents", "Agents"],

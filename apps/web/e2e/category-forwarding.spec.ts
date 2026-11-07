@@ -106,13 +106,16 @@ test.describe("forwarding what lands in a category (plan 116)", () => {
       await page.getByTestId("action-toggle-archive").click();
       await page.getByTestId("action-toggle-forward").click();
       await expect(page.getByTestId("action-toggle-forward")).toHaveAttribute("aria-pressed", "true");
-      await expect(page.getByTestId("filter-forward")).toContainText("Applying the filter to existing mail never forwards.");
+      await expect(page.getByTestId("filter-forward")).toContainText("Applying the rule to existing mail never forwards.");
+      // no addresses yet: said when you try
+      await expect(page.getByTestId("filter-invalid")).toHaveCount(0);
+      await page.getByTestId("filter-save").click();
       await expect(page.getByTestId("filter-invalid")).toBeVisible();
       await page.getByTestId("filter-forward-to").pressSequentially("ana@books.test, bob@");
       // Codex code review #11: a wrong address is never dropped quietly: it's named, and Save waits for it
       await page.getByTestId("filter-forward-to").press("Tab");
       await expect(page.getByTestId("filter-forward").getByRole("alert")).toHaveText("Check the addresses: bob@ isn't valid.");
-      await expect(page.getByTestId("filter-save")).toBeDisabled();
+      await expect(page.getByTestId("filter-invalid")).toBeVisible();
       await page.getByTestId("filter-forward-to").click();
       // the chip before is selected, then removed (the selection holds focus)
       await page.keyboard.press("Backspace");

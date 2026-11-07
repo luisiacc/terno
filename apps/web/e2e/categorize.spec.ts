@@ -299,9 +299,9 @@ test.describe("everything about X and Y", () => {
       // More…: the description says the text; Esc brings More… back with focus on it
       await snack.getByTestId("snackbar-more").click();
       await snack.getByTestId("snackbar-query").fill("recibo");
-      await expect(apply).toHaveAccessibleDescription("Adds every conversation that matches “recibo” to Facturas, from the mail you have now (a search isn’t a filter: new mail isn’t included).");
+      await expect(apply).toHaveAccessibleDescription("Adds every conversation that matches “recibo” to Facturas, from the mail you have now (a search isn’t a rule: new mail isn’t included).");
       await apply.hover();
-      await expect(help).toHaveText("Adds every conversation that matches “recibo” to Facturas, from the mail you have now (a search isn’t a filter: new mail isn’t included).");
+      await expect(help).toHaveText("Adds every conversation that matches “recibo” to Facturas, from the mail you have now (a search isn’t a rule: new mail isn’t included).");
       await snack.getByTestId("snackbar-query").press("Escape");
       await expect(snack.getByTestId("snackbar-more")).toBeFocused();
       await expect(snack).toBeVisible();
@@ -488,7 +488,7 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
       const enabled = () => db.get<{ enabled: number }>("SELECT enabled FROM filters WHERE name = 'Uber → Facturas'")!.enabled;
       await selectThread(page, target, "from:uber.receipts@uber.com");
       await page.getByTestId("reader").getByRole("button", { name: "Remove Facturas" }).click();
-      const offer = toast(page, "Removed from Facturas. A filter Terno made files mail like this there.");
+      const offer = toast(page, "Removed from Facturas. A rule Terno made files mail like this there.");
       await expect(offer).toBeVisible();
       await offer.getByRole("button", { name: "Stop filing mail like this into Facturas" }).click();
       await expect.poll(enabled).toBe(0);

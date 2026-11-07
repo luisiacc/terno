@@ -108,14 +108,14 @@ test.describe("accounts, settings and command palette", () => {
       // Turn all off, then Undo: both back on
       await auto.getByTestId("settings-filters-auto-off").click();
       await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).filter((f) => f.auto && f.enabled).length).toBe(0);
-      await expect(page.locator("[data-testid=snack]").filter({ hasText: "Turned off 2 filters" })).toBeVisible();
+      await expect(page.locator("[data-testid=snack]").filter({ hasText: "Turned off 2 rules" })).toBeVisible();
       await auto.getByRole("button", { name: "Undo turning them off" }).click();
       await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).filter((f) => f.auto && f.enabled).length).toBe(2);
 
       // saved in the builder without a change: still Terno's (rules compare as rules, not as text)
       await auto.getByRole("button", { name: "Edit “Uber → Facturas”" }).click();
       await page.getByTestId("filter-save").click();
-      await expect(page.locator("[data-testid=snack]").filter({ hasText: "Filter saved" })).toBeVisible();
+      await expect(page.locator("[data-testid=snack]").filter({ hasText: "Rule saved" })).toBeVisible();
       expect((await server.backend.server.invoke("filters.list", {}, ctx)).find((f) => f.name === "Uber → Facturas")?.auto).toBe(true);
       // edited in the builder: the user's now
       await page.getByTestId("filter-name").fill("Uber receipts");

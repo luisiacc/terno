@@ -109,6 +109,8 @@ export const ICONS = {
   Redo2: "Redo02Icon",
   RefreshCw: "RefreshIcon",
   RemoveFormatting: "TextClearIcon",
+  // plan 158: a mail rule (if this, then that), never the quick filter's lines
+  Route: "Route01Icon",
   Reply: "ReplyIcon",
   ReplyAll: "ReplyAllIcon",
   RotateCw: "RotateClockwiseIcon",

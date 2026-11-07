@@ -383,6 +383,8 @@ export function CommandPalette() {
         icon: <Icon />,
         shortcut: tab === "general" ? (isMac ? "⌘," : "Ctrl+,") : undefined,
         testId: `palette-settings-${tab}`,
+        // Rules were Filters: the old word still finds them
+        ...(tab === "filters" ? { aliases: words(t("palette.alias.aiFilter")).map((w) => `${t("common.settings")} ${w}`) } : {}),
         keywords: english("common.settings"),
         run: () => setApp({ dialog: "settings", settingsTab: tab }),
       });

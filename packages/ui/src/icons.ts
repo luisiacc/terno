@@ -98,6 +98,7 @@ export { Repeat } from "./iconset/generated/Repeat";
 export { Reply } from "./iconset/generated/Reply";
 export { ReplyAll } from "./iconset/generated/ReplyAll";
 export { RotateCw } from "./iconset/generated/RotateCw";
+export { Route } from "./iconset/generated/Route";
 export { Rows3 } from "./iconset/generated/Rows3";
 export { Search } from "./iconset/generated/Search";
 export { Send } from "./iconset/generated/Send";
