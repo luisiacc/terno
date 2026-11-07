@@ -66,10 +66,11 @@ Each round is a whole rating on one commit, all four styles, Claude and Codex, i
 | r00 (baseline) | `91dcc803` | 6.5 (5) / 7 (5.5) | 7 (5.5) / 7 (6) | 7 (5.5) / 7 (6) | 6.5 (5.5) / 7 (6) | 883 of 888 |
 | r01 | `19a089d8` | 7 (6.5) / 7.5 (7) | 7.5 (7) / 7 (6) | 7 (6) / 7 (6.5) | 7 (6.5) / 7.5 (7) | 876 |
 | r02 | `90d8de33` | 7 (6) / 7.5 (7) | 7 (6.5) / 7.5 (7) | 7.5 (7.5) / 7.5 (6.5) | 6.5 (5.5) / 7.5 (7) | 858 |
+| r03 | `e48f0f30` | 7.5 (7) / 7.5 (7) | 7 (7) / 7.5 (7) | 7 (6.5) / 7.5 (7) | 7 (7) / 7.5 (7.5) | 825 |
 
 Claude / Codex in each cell. r00's brief didn't yet score a cell's weakest case, so later rounds are slightly stricter.
 
-What changed between them: r01 had the first pass (search, the row menu and selection, the composer and drafts, the list and sidebar, the reader, the palettes); r02 the second (Undo send, a shorter menu, the reader's per-message actions, one filter control, and an AI-draft data-loss fix). Round 2's Claude found regressions from the second pass, which pass three takes first.
+What changed between them: r01 had the first pass (search, the row menu and selection, the composer and drafts, the list and sidebar, the reader, the palettes); r02 the second (Undo send, a shorter menu, the reader's per-message actions, one filter control, and an AI-draft data-loss fix). Round 2's Claude found regressions from the second pass, which pass three takes first. r03 had pass three (the regressions, a full-page new message, a labeled toolbar Reply, one shortcut notation, a rail on the open row, All | Unread). Issues by severity, r00 to r03: high 26, 12, 5, 4; medium 72, 67, 53, 49. What's left is consistency and state.
 
 ## Tests
 

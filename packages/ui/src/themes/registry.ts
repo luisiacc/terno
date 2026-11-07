@@ -177,11 +177,13 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   // plan 158: the popover stepped toward the ink until the keyboard's place shows, while its text still reads
   def("menu-highlight", () => {
     const pop = formatOklch(opaquePopover());
-    const step = light ? 1.18 : 1.22;
-    let c = o("popover");
-    for (let t = 0.06; t <= 0.3; t = Math.round((t + 0.01) * 100) / 100) {
-      c = mixOklab(o("popover"), o("foreground"), t);
-      if (contrast(c, pop, bg) >= step) break;
+    const step = light ? 1.2 : 1.3;
+    let c = mixOklab(o("popover"), o("foreground"), 0.06);
+    for (let t = 0.07; t <= 0.3 && contrast(c, pop, bg) < step; t = Math.round((t + 0.01) * 100) / 100) {
+      const next = mixOklab(o("popover"), o("foreground"), t);
+      // never so far that the row's secondary text stops reading on it
+      if (contrast(o("muted-foreground"), formatOklch(next), bg) < 4.5) break;
+      c = next;
     }
     return c;
   });
@@ -557,10 +559,10 @@ export const THEMES: readonly Theme[] = [
       "primary-foreground": "1 0 0",
       destructive: "0.577 0.215 27",
       success: "0.54 0.13 150",
-      unread: "0.57 0.15 237",
+      unread: "0.55 0.15 237",
       star: "0.65 0.16 66",
-      "row-hover": "#F8F8F8",
-      "row-selected": "#E4E4E4",
+      "row-hover": "#F3F3F3",
+      "row-selected": "#DEDEDE",
       "row-selected-foreground": "#292929",
       "sidebar-accent": "#F4F4F4",
     },
@@ -939,7 +941,7 @@ export const THEMES: readonly Theme[] = [
       success: "0.75 0.13 150",
       unread: "0.74 0.13 237",
       star: "0.82 0.14 80",
-      "row-hover": "1 0 0 / 4%",
+      "row-hover": "1 0 0 / 6%",
       "row-selected": "#353535",
       "row-selected-foreground": "#EDEDED",
       "sidebar-accent": "#2A2A2A",
