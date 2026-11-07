@@ -196,7 +196,7 @@ test.describe("Lumen: waiting for your reply", () => {
       await server.backend.server.invoke("settings.update", { language: "es" }, ctx);
       await page.reload();
       await page.locator("[data-ready]").waitFor();
-      await expect(page.getByTestId("quick-filter-people")).toHaveText("Personas");
+      await expect(page.getByTestId("quick-filter-unread")).toHaveText("No leídos");
       const n = waitingInInbox(server).length;
       await expect(page.getByTestId("waiting-count")).toHaveText(`${n} ${n === 1 ? "espera" : "esperan"} tu respuesta`);
     });

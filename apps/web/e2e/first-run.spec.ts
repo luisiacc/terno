@@ -285,17 +285,18 @@ test.describe("first-run setup", () => {
     });
   });
 
-  // Codex code review #3: List's preview has the inbox's tabs, Split's chips the whole filter set
-  test("the preview's list header is the real one: Split's filter chips, List's tabs", async ({ app: page, server }) => {
+  // Codex code review #3: List's preview adds the inbox's tabs; the chips hold the whole filter set in both
+  test("the preview's list header is the real one: Split's filter chips, List's tabs beside them", async ({ app: page, server }) => {
     await open(page, server);
     await expect(preview(page).getByTestId("first-run-preview-chips")).toContainText("With attachments");
     await page.getByTestId("first-run-layout-list").click();
     const tabs = preview(page).getByTestId("first-run-preview-tabs");
     await expect(tabs).toHaveAttribute("data-kind", "pill");
-    await expect(tabs).toContainText("All");
-    await expect(tabs).toContainText("Unread");
+    await expect(tabs).toContainText("Inbox");
+    await expect(tabs).not.toContainText("Unread");
     await expect(tabs).toContainText("Travel");
-    await expect(preview(page).getByTestId("first-run-preview-chips")).toHaveCount(0);
+    // the filters are the design's own in both layouts
+    await expect(preview(page).getByTestId("first-run-preview-chips")).toContainText("Unread");
   });
 
   test("every step is axe-clean, light and dark", async ({ app: page, server }) => {

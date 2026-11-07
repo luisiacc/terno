@@ -8,6 +8,7 @@ import { formatNumber, t } from "@terno/i18n";
 import { Check, ChevronDown, Plus } from "@terno/ui/icons";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { useDesign, variant } from "~/lib/design";
+import { viewLabel } from "~/lib/format";
 import { renderProbe } from "~/lib/render-probe";
 import { createCategory, fitTabs, openTab, selectedTab, type Tab } from "~/lib/tabs";
 import { useApp } from "~/state/app";
@@ -29,7 +30,8 @@ export function tabClass(kind: "underline" | "pill") {
       // the indicator sits on the strip's hairline
       "after:pointer-events-none after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary after:opacity-0 after:transition-opacity after:duration-fast aria-selected:after:opacity-100",
     ),
-    pill: "flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-muted px-3 text-xs font-medium whitespace-nowrap text-foreground transition-colors hover:bg-accent hover:text-accent-foreground aria-selected:bg-primary aria-selected:text-primary-foreground",
+    // the selected place is quiet: what's strongest on the page is the mail
+    pill: "flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-selected:bg-muted aria-selected:text-foreground",
   });
 }
 
@@ -37,11 +39,12 @@ const DROP = "data-[drop-state=over]:bg-drop-target data-[drop-state=over]:text-
 
 /** The unread count of a tab: one selector each, so a count change renders that tab alone. */
 function useTabCount(tab: Tab): number {
-  return useApp((s) => (tab === "all" ? 0 : tab === "unread" ? (s.accountId !== null ? (s.counts.inboxUnreadByAccount[s.accountId] ?? 0) : s.counts.inboxUnread) : (s.counts.categoryUnread[tab] ?? 0)));
+  return useApp((s) => (tab === "all" ? 0 : (s.counts.categoryUnread[tab] ?? 0)));
 }
 
-function labelOf(tab: Tab, categories: readonly Category[]): string {
-  return tab === "all" ? t("list.filter.all") : tab === "unread" ? t("list.filter.unread") : (categories.find((c) => c.id === tab)?.name ?? "");
+/** The first tab is the place itself (the Inbox, or a Gmail tab's All): the words "All" and "Unread" are the quick filter's. */
+function labelOf(tab: Tab, categories: readonly Category[], gmailTab: unknown): string {
+  return tab === "all" ? (gmailTab ? t("list.filter.all") : viewLabel("inbox")) : (categories.find((c) => c.id === tab)?.name ?? "");
 }
 
 interface TabProps {
@@ -136,8 +139,9 @@ function NewCategory({ kind }: { kind: "underline" | "pill" }) {
 }
 
 /**
- * The List layout's category tabs (plan 24 §2.7): All, Unread, the
+ * The List layout's category tabs (plan 24 §2.7): the Inbox, the
  * categories with their unread counts, "More" for what doesn't fit, "+".
+ * Places only: Unread and the other filters are the design's quick filters, the same as in Split (plan 158).
  * One row; the selected category always shows. Widths come from a hidden
  * copy of every tab, each observed, so a count, a name, a font arriving or a
  * design switch refits it (no polling).
@@ -147,6 +151,7 @@ export function ListTabs() {
   const kind = design.variants.categoryTabs;
   const categories = useApp((s) => s.categories);
   const selected = useApp(selectedTab);
+  const gmailTab = useApp((s) => s.gmailTab);
   const counts = useApp((s) => s.counts.categoryUnread);
   const stripRef = useRef<HTMLDivElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null);
@@ -159,10 +164,10 @@ export function ListTabs() {
     const read = () => {
       const w = (sel: string) => [...mirror.querySelectorAll<HTMLElement>(sel)].map((el) => el.offsetWidth);
       const widths = w("[data-measure=category]");
-      const [all = 0, unread = 0] = w("[data-measure=pinned]");
+      const [all = 0] = w("[data-measure=pinned]");
       const [plus = 0] = w("[data-measure=plus]");
       const [more = 0] = w("[data-measure=more]");
-      const next = { available: strip.clientWidth, widths, pinned: all + unread + plus + 2 * GAP, more };
+      const next = { available: strip.clientWidth, widths, pinned: all + plus + GAP, more };
       setM((p) => (p.available === next.available && p.pinned === next.pinned && p.more === next.more && p.widths.join() === next.widths.join() ? p : next));
     };
     read();
@@ -170,11 +175,11 @@ export function ListTabs() {
     ro.observe(strip);
     for (const el of mirror.children) ro.observe(el);
     return () => ro.disconnect();
-  }, [categories, kind]);
+  }, [categories, kind, gmailTab]);
 
   const selectedIndex = typeof selected === "number" ? categories.findIndex((c) => c.id === selected) : -1;
   const fit = m.widths.length === categories.length ? fitTabs({ widths: m.widths, available: m.available, pinned: m.pinned, more: m.more, gap: GAP, selected: selectedIndex }) : { visible: categories.map((_, i) => i), overflow: [] };
-  const visible: Tab[] = ["all", "unread", ...fit.visible.map((i) => categories[i]!.id)];
+  const visible: Tab[] = ["all", ...fit.visible.map((i) => categories[i]!.id)];
   const overflow = fit.overflow.map((i) => categories[i]!);
   const focusable = selected !== null && visible.includes(selected) ? selected : "all";
 
@@ -192,11 +197,11 @@ export function ListTabs() {
 
   const tabFor = (tab: Tab) => {
     const c = typeof tab === "number" ? categories.find((x) => x.id === tab) : undefined;
-    return <TabButton key={String(tab)} tab={tab} label={labelOf(tab, categories)} color={c?.color as CategoryColor | undefined} selected={selected === tab} focusable={focusable === tab} kind={kind} />;
+    return <TabButton key={String(tab)} tab={tab} label={labelOf(tab, categories, gmailTab)} color={c?.color as CategoryColor | undefined} selected={selected === tab} focusable={focusable === tab} kind={kind} />;
   };
 
   return (
-    <div data-testid="list-tabs" data-kind={kind} className={cn("relative -mx-1 mt-1 flex items-center gap-1 px-1", kind === "underline" ? "hairline-b -mb-2" : "mb-2 py-0.5")}>
+    <div data-testid="list-tabs" data-kind={kind} className={cn("relative flex min-w-0 flex-1 items-center gap-1", kind === "underline" ? "hairline-b -mb-2 -ml-2" : "py-0.5")}>
       <div ref={stripRef} data-drop-scroll className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
         <div role="tablist" aria-label={t("list.tabs.label")} className="flex items-center gap-1" onKeyDown={onKeyDown}>
           {visible.map(tabFor)}
@@ -234,12 +239,9 @@ export function ListTabs() {
       {/* every tab, measured where nobody sees it (the strong weight: the widest a tab gets); in a box of no size, so it adds no overflow */}
       <div aria-hidden inert className="pointer-events-none invisible absolute top-0 left-0 size-0 overflow-hidden">
       <div ref={mirrorRef} className="flex w-max gap-1">
-        {(["all", "unread"] as const).map((tab) => (
-          <span key={tab} data-measure="pinned" className={cn(tabClass(kind), kind === "underline" && "type-nav-strong")}>
-            {labelOf(tab, categories)}
-            <span className="tabular">{formatNumber(9999)}</span>
-          </span>
-        ))}
+        <span data-measure="pinned" className={cn(tabClass(kind), kind === "underline" && "type-nav-strong")}>
+          {labelOf("all", categories, gmailTab)}
+        </span>
         {categories.map((c) => (
           <span key={c.id} data-measure="category" className={cn(tabClass(kind), kind === "underline" && "type-nav-strong")}>
             <CategoryDot color={c.color as CategoryColor} />

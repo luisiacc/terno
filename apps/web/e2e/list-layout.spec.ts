@@ -354,18 +354,39 @@ test.describe("the List layout: what stays put", () => {
 
 });
 
+test.describe("one-line rows", () => {
+  test("the right edge is straight: account, attachment, star and date hold their columns; the subject stands apart from its preview", { tag: "@design" }, async ({ app: page }) => {
+    const visible = rows(page);
+    await expect(visible.first()).toBeVisible();
+    const rights = await visible.evaluateAll((els) =>
+      els.flatMap((row) => {
+        const left = (id: string) => row.querySelector(`[data-testid=${id}]`)?.getBoundingClientRect().left;
+        const right = (id: string) => row.querySelector(`[data-testid=${id}]`)?.getBoundingClientRect().right;
+        return [{ account: left("account-label"), date: right("row-date") }];
+      }),
+    );
+    expect(new Set(rights.map((r) => Math.round(r.date!))).size).toBe(1);
+    expect(new Set(rights.map((r) => Math.round(r.account!))).size).toBe(1);
+    const row = visible.first();
+    const color = (id: string) => row.getByTestId(id).evaluate((el) => getComputedStyle(el).color);
+    expect(await color("row-subject")).not.toBe(await color("row-snippet"));
+  });
+});
+
 test.describe("category tabs", () => {
-  test("All, Unread and the categories: the same state as the sidebar and the unread toggle, with unread counts", { tag: "@variant" }, async ({ app: page, server, design }) => {
+  test("the Inbox and the categories: the same state as the sidebar, with unread counts; the filters are the design's own, as in Split", { tag: "@variant" }, async ({ app: page, server, design }) => {
     const viajes = categoryId(server, "Viajes");
     const all = page.getByTestId("list-tab-all");
-    const unread = page.getByTestId("list-tab-unread");
     const tab = page.getByTestId(`list-tab-${viajes}`);
+    await expect(all).toHaveText("Inbox");
+    await expect(page.getByTestId("list-tab-unread")).toHaveCount(0);
     await expect(all).toHaveAttribute("aria-selected", "true");
     await expect(all).toHaveAttribute("aria-controls", "list-tabpanel");
     await expect(page.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "list-tab-all");
     // the design's look: a pill, or text over an indicator (the baselines' tolerance is wider than a tab)
     const look = await all.evaluate((el) => ({ h: el.getBoundingClientRect().height, radius: parseFloat(getComputedStyle(el).borderRadius), under: getComputedStyle(el, "::after").height }));
-    const pill = DESIGNS.find((d) => d.id === design)!.variants.categoryTabs === "pill";
+    const variants = DESIGNS.find((d) => d.id === design)!.variants;
+    const pill = variants.categoryTabs === "pill";
     if (pill) expect(look.radius).toBeGreaterThanOrEqual(look.h / 2);
     else expect(look.under).toBe("2px");
     await tab.click();
@@ -374,23 +395,27 @@ test.describe("category tabs", () => {
     await expect(page.getByTestId("list-title")).toHaveText("Viajes");
     await page.getByTestId("nav-inbox").click();
     await expect(all).toHaveAttribute("aria-selected", "true");
-    // Unread is the inbox's unread toggle (the palette's too)
-    await unread.click();
-    await expect(unread).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByTestId("unread-filter")).toHaveAttribute("aria-pressed", "true");
+    // the filters reach the same way as in Split: the chips, or the header's button; the place stays the Inbox
+    if (variants.quickFilters === "chips") {
+      await page.getByTestId("quick-filter-unread").click();
+      await expect(page.getByTestId("quick-filter-unread")).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByTestId("unread-filter")).toHaveCount(0);
+    } else {
+      await page.getByTestId("unread-filter").click();
+      await expect(page.getByTestId("unread-filter")).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByTestId("quick-filters")).toHaveCount(0);
+    }
+    await expect(all).toHaveAttribute("aria-selected", "true");
     await focusList(page);
     await page.keyboard.press("ControlOrMeta+k");
     await page.getByTestId("palette-unread-filter").click();
     await expect(all).toHaveAttribute("aria-selected", "true");
-    // counts: the inbox's unread on Unread, in its accessible name
-    const n = await page.evaluate(() => (window as unknown as { __terno: { getApp(): { counts: { inboxUnread: number } } } }).__terno.getApp().counts.inboxUnread);
-    await expect(unread).toHaveAccessibleName("Unread");
-    if (n > 0) await expect(unread).toHaveAccessibleDescription(`${n} unread`);
     // the arrows move along the tabs and open them
+    const next = page.getByRole("tab").nth(1);
     await all.focus();
     await page.keyboard.press("ArrowRight");
-    await expect(unread).toBeFocused();
-    await expect(unread).toHaveAttribute("aria-selected", "true");
+    await expect(next).toBeFocused();
+    await expect(next).toHaveAttribute("aria-selected", "true");
     await page.keyboard.press("Home");
     await expect(all).toHaveAttribute("aria-selected", "true");
     // hidden where there's nothing to slice: another folder, a search

@@ -47,7 +47,7 @@ function Announcement({
       // a group or status is named by its title; a plain div can't carry a name
       aria-labelledby={role && title ? titleId : undefined}
       className={cn(
-        "mx-3 mt-1 mb-1 flex gap-2.5 rounded-[calc(var(--radius-lg)+2px)] bg-tint p-2.5 text-xs",
+        "mt-1 mr-4 mb-1 ml-2 flex gap-2.5 rounded-[calc(var(--radius-lg)+2px)] bg-tint p-2.5 text-xs",
         inline ? "items-center py-1.5" : "items-start",
         className
       )}

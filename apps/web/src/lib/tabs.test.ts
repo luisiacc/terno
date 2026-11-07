@@ -34,12 +34,9 @@ beforeEach(() => {
 });
 
 describe("which tab (plan 24)", () => {
-  it("All on the inbox, Unread when the inbox is filtered to unread, the category on its list", () => {
+  it("the inbox's on the inbox, whatever its filter (the quick filter says which), the category on its list", () => {
     expect(selectedTab(getApp())).toBe("all");
     at({ listFilters: new Map([["inbox||", "unread"]]) });
-    expect(selectedTab(getApp())).toBe("unread");
-    // another filter on the inbox is still All (the "Filtered by" line says which)
-    at({ listFilters: new Map([["inbox||", "attachments"]]) });
     expect(selectedTab(getApp())).toBe("all");
     at({ view: "all", categoryId: 3 });
     expect(selectedTab(getApp())).toBe(3);
@@ -71,18 +68,10 @@ describe("opening a tab", () => {
     c.off();
   });
 
-  it("Unread inside the inbox is the unread toggle: the filter, the cursor kept; All turns it off", () => {
-    openTab("unread");
-    expect(getApp().listFilters.get("inbox||")).toBe("unread");
-    expect(getApp().selectedId).toBe(4);
-    openTab("all");
-    expect(getApp().listFilters.get("inbox||")).toBeUndefined();
-  });
-
-  it("Unread from a category: the inbox, filtered, in one state change (one list load); the account kept", () => {
-    at({ view: "all", categoryId: 3, accountId: 2 });
+  it("the first tab from a category: the inbox, in one state change (one list load); the account and its filter kept", () => {
+    at({ view: "all", categoryId: 3, accountId: 2, listFilters: new Map([["inbox|2|", "unread"]]) });
     const c = changes();
-    openTab("unread");
+    openTab("all");
     expect(getApp()).toMatchObject({ view: "inbox", categoryId: null, accountId: 2 });
     expect(getApp().listFilters.get("inbox|2|")).toBe("unread");
     expect(c.n).toBe(1);
@@ -150,15 +139,10 @@ describe("what fits on the row", () => {
 });
 
 describe("in a Gmail tab (plan 86, Codex code review #5)", () => {
-  it("Unread and All filter that tab, never the account's Inbox", () => {
+  it("the first tab is that tab, never the account's Inbox", () => {
     at({ accountId: 2, gmailTab: "promotions" });
-    openTab("unread");
-    expect(getApp()).toMatchObject({ view: "inbox", accountId: 2, gmailTab: "promotions" });
-    expect([...getApp().listFilters]).toEqual([["inbox|2||~promotions", "unread"]]);
-    expect(selectedTab(getApp())).toBe("unread");
     openTab("all");
-    expect(getApp().gmailTab).toBe("promotions");
-    expect(getApp().listFilters.get("inbox|2|")).toBeUndefined();
+    expect(getApp()).toMatchObject({ view: "inbox", accountId: 2, gmailTab: "promotions" });
     expect(selectedTab(getApp())).toBe("all");
   });
 });

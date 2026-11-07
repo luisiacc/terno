@@ -80,7 +80,7 @@ test.describe("the toggle", () => {
       await page.waitForTimeout(100);
       await expect(button(page)).toHaveAttribute("aria-pressed", "false");
       await button(page).hover();
-      await expect(page.locator("[data-slot=tooltip-content]")).toHaveText("Show unread only");
+      await expect(page.locator("[data-slot=tooltip-content]")).toHaveText("Show unread only ⇧U");
       await button(page).click();
       await expect(button(page)).toHaveAttribute("aria-pressed", "true");
 

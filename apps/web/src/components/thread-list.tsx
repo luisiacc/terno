@@ -4,6 +4,7 @@ import { Kbd } from "@terno/ui/components/kbd";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Bell, ChevronDown, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun, ListChecks } from "@terno/ui/icons";
+import { CloseButton } from "@terno/ui/components/close-button";
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
@@ -45,7 +46,7 @@ import { ReportRow } from "./diag/report-row";
 import { DesktopBanner } from "~/lib/web-parts";
 import { iconsAllowed, iconsAllowedForList } from "~/lib/sender-icons";
 import { useAppearance } from "~/lib/appearance";
-import { selectedTab, tabsShown } from "~/lib/tabs";
+import { fitTabs, selectedTab, tabsShown } from "~/lib/tabs";
 import { listAnchor } from "~/state/list";
 import { ListTabs, TAB_PANEL_ID } from "./list-tabs";
 import { SelectionBar } from "./selection-bar";
@@ -101,13 +102,6 @@ function pointListCursor(el: HTMLElement | null, id: number | null) {
   else el.removeAttribute("aria-activedescendant");
 }
 
-/** The quick filters' control in effect: List's tabs carry All and Unread, so every design keeps the filter button there (plan 24 §2.7). */
-function useQuickFilters(): "menu" | "chips" {
-  const design = useDesign();
-  const list = useAppearance((s) => s.layout === "list");
-  return list ? "menu" : design.variants.quickFilters;
-}
-
 /** The scroller is wide enough for one-line rows (List only; 16 px of hysteresis so a width near the line doesn't flip back and forth). */
 export const WIDE_MIN = 720;
 export function nextWide(wide: boolean, width: number): boolean {
@@ -117,7 +111,7 @@ export function nextWide(wide: boolean, width: number): boolean {
 /** the header's filter button, where focus goes when the empty state's "Clear filter" disappears */
 export const unreadFilterButton: { current: HTMLButtonElement | null } = { current: null };
 
-/** Mail's message filter: a quiet icon off, the accent on (any filter); a click turns it off, or on as Unread. */
+/** Mail's message filter: a quiet icon off, on the accent while any filter is on; a click turns it off, or on as Unread. */
 function UnreadFilterButton({ filter }: { filter: QuickFilter | undefined }) {
   const active = filter !== undefined;
   return (
@@ -134,7 +128,7 @@ function UnreadFilterButton({ filter }: { filter: QuickFilter | undefined }) {
             size="icon-sm"
             aria-label={t("list.unreadFilter.label")}
             aria-pressed={active}
-            className={cn("no-drag shrink-0 text-muted-foreground hover:text-foreground", active && "text-primary hover:text-primary")}
+            className={cn("no-drag shrink-0 text-muted-foreground hover:text-foreground", active && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground")}
             onClick={() => setListFilter(active ? undefined : "unread")}
           >
             <ListFilter />
@@ -142,7 +136,7 @@ function UnreadFilterButton({ filter }: { filter: QuickFilter | undefined }) {
         }
       />
       <TooltipContent>
-        {active ? t("list.unreadFilter.showAll") : t("list.unreadFilter.showUnread")}
+        {active ? t("list.unreadFilter.showAll") : t("list.unreadFilter.showUnread")} <Shortcut keys="shift+u" />
       </TooltipContent>
     </Tooltip>
   );
@@ -161,86 +155,156 @@ function filterName(f: QuickFilter): string {
   return t(FILTER_NAME[f]);
 }
 
-/**
- * "Filtered by: Unread · N" under the title (N: the mailbox's unread threads;
- * a search shows its own count). Like Mail, the criterion is a menu: unread,
- * with attachments, starred.
- */
-function FilterStatus({ search, filter }: { search: boolean; filter: QuickFilter }) {
-  const total = useList((s) => (s.unreadTotal && s.unreadTotal.key === s.key ? s.unreadTotal : null));
+/** The filters this list offers (not Starred in Starred): one set, in the menu and the chips alike. */
+function useOfferedFilters(): readonly QuickFilter[] {
   const view = useApp((s) => s.view);
   const supported = useApp((s) => s.supportedFilters);
-  const n = filter === "unread" && !search && total && total.n > 0 ? `${formatNumber(total.n)}${total.capped ? "+" : ""}` : null;
+  return useMemo(() => supported.filter((f) => !(f === "starred" && view === "starred")), [supported, view]);
+}
+
+/** The criterion's menu (Mail's): All and every filter, always there, so the choices don't wait behind turning one on. */
+function FilterMenu({ filter, testId, className, children }: { filter: QuickFilter | undefined; testId: string; className?: string; children: React.ReactNode }) {
+  const offered = useOfferedFilters();
   return (
-    <p data-testid="unread-filter-status" className="flex min-w-0 items-center truncate text-2xs leading-tight text-muted-foreground tabular">
-      {t("list.filter.by")}{" "}
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <button type="button" data-testid="filter-criterion" className="no-drag ml-1 inline-flex items-center gap-0.5 rounded-sm text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring">
-              {filterName(filter)}
-              <ChevronDown className="size-3 text-muted-foreground" aria-hidden />
-            </button>
-          }
-        />
-        <DropdownMenuContent align="start" className="min-w-44">
-          <DropdownMenuRadioGroup value={filter} onValueChange={(v) => setListFilter(v as QuickFilter)}>
-            {supported.filter((f) => !(f === "starred" && view === "starred")).map((f) => (
-              <DropdownMenuRadioItem key={f} value={f} closeOnClick data-testid={`filter-option-${f}`}>
-                {filterName(f)}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {n && <span className="whitespace-pre"> · {n}</span>}
-      {/* plan 158: a search keeps the mailbox's filter: it says so, and it goes in one click */}
-      {search && (
-        <CloseButton
-          size="2xs"
-          data-testid="search-filter-clear"
-          label={t("list.unreadEmpty.clear")}
-          className="no-drag ml-1 shrink-0"
-          onClick={() => {
-            setListFilter(undefined);
-            searchInputRef.current?.focus();
-          }}
-        />
-      )}
-    </p>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <button type="button" data-testid={testId} className={cn("no-drag inline-flex shrink-0 items-center gap-0.5 rounded-sm text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring", className)}>
+            {children}
+            <ChevronDown className="size-3 text-muted-foreground" aria-hidden />
+          </button>
+        }
+      />
+      <DropdownMenuContent align="start" className="min-w-44">
+        <DropdownMenuRadioGroup value={filter ?? "all"} onValueChange={(v) => setListFilter(v === "all" ? undefined : (v as QuickFilter))}>
+          <DropdownMenuRadioItem value="all" closeOnClick data-testid="filter-option-all">
+            {t("list.filter.all")}
+          </DropdownMenuRadioItem>
+          {offered.map((f) => (
+            <DropdownMenuRadioItem key={f} value={f} closeOnClick data-testid={`filter-option-${f}`}>
+              {filterName(f)}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
 /**
- * Lumen: the filters as chips under the header (one choice; arrow keys move
- * between them). Waiting has a chip only while it is on: it is reached from
- * the greeting's count (or the palette), and the row stays five chips long.
+ * The filter's state in the header's own row, so turning it on moves nothing: "All ▾" while off, a quiet way to the
+ * other filters; "Filtered by: Unread ▾ · N ×" while on (N: the mailbox's unread threads; a search shows its own
+ * count), its × one click from everything.
+ */
+function FilterStatus({ search, filter }: { search: boolean; filter: QuickFilter | undefined }) {
+  const total = useList((s) => (s.unreadTotal && s.unreadTotal.key === s.key ? s.unreadTotal : null));
+  if (!filter) return <span className="type-list-subtitle shrink-0 text-muted-foreground"><FilterMenu filter={filter} testId="filter-menu">{t("list.filter.all")}</FilterMenu></span>;
+  const n = filter === "unread" && !search && total && total.n > 0 ? `${formatNumber(total.n)}${total.capped ? "+" : ""}` : null;
+  return (
+    <span data-testid="unread-filter-status" className="type-list-subtitle flex min-w-0 shrink-0 items-center text-muted-foreground tabular">
+      {t("list.filter.by")}{" "}
+      <FilterMenu filter={filter} testId="filter-criterion" className="ml-1">{filterName(filter)}</FilterMenu>
+      {n && <span className="whitespace-pre"> · {n}</span>}
+      <CloseButton
+        size="xs"
+        data-testid="filter-clear"
+        label={t("list.unreadEmpty.clear")}
+        className="no-drag ml-1"
+        onClick={() => {
+          setListFilter(undefined);
+          // the filter's control stays: the × goes with the filter
+          unreadFilterButton.current?.focus();
+        }}
+      />
+    </span>
+  );
+}
+
+const CHIP_GAP = 6;
+
+/**
+ * Lumen: the filters as chips under the header, in Split and List alike (one choice is always on; arrow keys move
+ * between them). All is quiet; a filter that hides mail is on the accent. What doesn't fit
+ * goes behind More, never a clipped label; the chip that's on always shows. Waiting has a chip only while it is on: it
+ * is reached from the subtitle's count (or the palette). Widths come from a hidden copy, each observed (no polling).
  */
 function QuickChips({ filter }: { filter: QuickFilter | undefined }) {
-  const view = useApp((s) => s.view);
-  const supported = useApp((s) => s.supportedFilters);
-  const chips = (["all", ...supported] as const).filter((f) => !(f === "starred" && view === "starred") && (f !== "waiting" || filter === "waiting"));
+  const offered = useOfferedFilters();
+  const rest = useMemo(() => offered.filter((f) => f !== "waiting" || filter === "waiting"), [offered, filter]);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const mirrorRef = useRef<HTMLDivElement>(null);
+  const [m, setM] = useState<{ available: number; widths: number[]; all: number; more: number }>({ available: Infinity, widths: [], all: 0, more: 0 });
+  useLayoutEffect(() => {
+    const strip = stripRef.current;
+    const mirror = mirrorRef.current;
+    if (!strip || !mirror) return;
+    const read = () => {
+      const w = [...mirror.children].map((el) => (el as HTMLElement).offsetWidth);
+      const next = { available: strip.clientWidth, all: w[0] ?? 0, widths: w.slice(1, -1), more: w.at(-1) ?? 0 };
+      setM((p) => (p.available === next.available && p.all === next.all && p.more === next.more && p.widths.join() === next.widths.join() ? p : next));
+    };
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(strip);
+    for (const el of mirror.children) ro.observe(el);
+    return () => ro.disconnect();
+  }, [rest]);
+  const fit = m.widths.length === rest.length ? fitTabs({ widths: m.widths, available: m.available, pinned: m.all, more: m.more, gap: CHIP_GAP, selected: filter ? rest.indexOf(filter) : -1 }) : { visible: rest.map((_, i) => i), overflow: [] };
+  const visible = ["all" as const, ...fit.visible.map((i) => rest[i]!)];
+  const overflow = fit.overflow.map((i) => rest[i]!);
+  const chip = "h-7 shrink-0 rounded-full px-2.5 text-xs font-medium whitespace-nowrap text-muted-foreground hover:bg-muted hover:text-foreground data-pressed:bg-muted data-pressed:text-foreground";
+  const label = (f: QuickFilter | "all") => (f === "all" ? t("list.filter.all") : filterName(f));
   return (
-    <ToggleGroup
-      data-testid="quick-filters"
-      aria-label={t("list.filter.label")}
-      value={[filter ?? "all"]}
-      onValueChange={(v: string[]) => v[0] && setListFilter(v[0] === "all" ? undefined : (v[0] as QuickFilter))}
-      spacing={1.5}
-      className="no-drag -mx-1 mt-1 mb-2 flex w-auto max-w-full overflow-x-auto px-1 py-0.5 [scrollbar-width:none]"
-    >
-      {chips.map((f) => (
-        <ToggleGroupItem
-          key={f}
-          value={f}
-          data-testid={`quick-filter-${f}`}
-          onFocus={(e) => e.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" })}
-          className="h-7 shrink-0 rounded-full bg-muted px-3 text-xs font-medium text-foreground hover:bg-accent hover:text-accent-foreground data-pressed:bg-primary data-pressed:text-primary-foreground"
-        >
-          {f === "all" ? t("list.filter.all") : filterName(f)}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
+    // grows to what its chips need and no further, so List's tabs beside it keep the rest
+    <div ref={stripRef} className="no-drag relative flex min-w-0 flex-1 items-center gap-1.5 py-0.5" style={{ maxWidth: m.widths.length ? m.all + m.widths.reduce((n, w) => n + w + CHIP_GAP, 0) : undefined }}>
+      <ToggleGroup
+        data-testid="quick-filters"
+        aria-label={t("list.filter.label")}
+        value={[filter ?? "all"]}
+        onValueChange={(v: string[]) => v[0] && setListFilter(v[0] === "all" ? undefined : (v[0] as QuickFilter))}
+        spacing={1.5}
+        className="flex w-auto"
+      >
+        {visible.map((f) => (
+          <ToggleGroupItem key={f} value={f} data-testid={`quick-filter-${f}`} className={cn(chip, f !== "all" && "data-pressed:bg-accent data-pressed:text-accent-foreground")}>
+            {label(f)}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+      {overflow.length > 0 && (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <button type="button" data-testid="quick-filter-more" aria-label={t("list.filter.moreLabel", { count: overflow.length })} className={cn(chip, "flex items-center gap-0.5")}>
+                {t("list.tabs.more")}
+                <ChevronDown aria-hidden className="size-3" />
+              </button>
+            }
+          />
+          <DropdownMenuContent align="end" className="min-w-44">
+            {/* the one that's on always shows above, so nothing here is on */}
+            <DropdownMenuRadioGroup value="" onValueChange={(v) => setListFilter(v as QuickFilter)}>
+              {overflow.map((f) => (
+                <DropdownMenuRadioItem key={f} value={f} closeOnClick data-testid={`quick-filter-${f}`}>
+                  {filterName(f)}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+      <div aria-hidden inert className="pointer-events-none invisible absolute top-0 left-0 size-0 overflow-hidden">
+        <div ref={mirrorRef} className="flex w-max">
+          {(["all", ...rest] as const).map((f) => (
+            <span key={f} className={cn(chip, "flex items-center")}>{label(f)}</span>
+          ))}
+          <span className={cn(chip, "flex items-center gap-0.5")}>
+            {t("list.tabs.more")}
+            <ChevronDown className="size-3" />
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -392,11 +456,15 @@ function useDayPart(): DayPart {
   return now;
 }
 
+/** Lumen's hello: the first words of the Inbox's subtitle; they go first when the column is narrow, so the counts stay whole. */
 function Greeting() {
   const part = useDayPart();
-  const first = useApp((s) => s.owner?.displayName.trim().split(/\s+/)[0] ?? "");
-  const key = part === "morning" ? "list.greeting.morning" : part === "afternoon" ? "list.greeting.afternoon" : "list.greeting.evening";
-  return <>{first ? t(key, { name: first }) : t(`${key}Plain` as const)}</>;
+  return (
+    <span data-testid="list-greeting" className="hidden @[22rem]:inline">
+      {t(part === "morning" ? "list.greeting.morningPlain" : part === "afternoon" ? "list.greeting.afternoonPlain" : "list.greeting.eveningPlain")}
+      <span aria-hidden> · </span>
+    </span>
+  );
 }
 
 /**
@@ -411,9 +479,10 @@ function useWaitingCount(): number | null {
   });
 }
 
-/** Under a display title or the greeting: what's unread here (the filter's status when it's on); the greeting adds what waits for your reply. */
+/** Under a display title: what's unread here, and the menu's filter state; the greeting's adds its hello and what waits for your reply. */
 function Subtitle({ filter, search, greeting }: { filter: QuickFilter | undefined; search: boolean; greeting: boolean }) {
-  const quick = useQuickFilters();
+  const design = useDesign();
+  const offersMenu = useApp((s) => s.reviewCategoryId === null && !s.reminders && !s.followups && !s.today) && design.variants.quickFilters === "menu";
   const unread = useApp((s) =>
     s.reviewCategoryId !== null
       ? null
@@ -430,15 +499,12 @@ function Subtitle({ filter, search, greeting }: { filter: QuickFilter | undefine
   );
   const counted = useWaitingCount();
   const waiting = greeting && counted ? counted : 0;
-  if (filter && quick === "menu")
-    return (
-      <div className="mt-1.5">
-        <FilterStatus search={search} filter={filter} />
-      </div>
-    );
+  if (offersMenu && (filter || unread === null)) return <FilterStatus search={search} filter={filter} />;
   if (unread === null) return null;
   return (
-    <p data-testid="list-subtitle" className="type-list-subtitle mt-1 truncate text-muted-foreground tabular">
+    <p data-testid="list-subtitle" className="type-list-subtitle flex min-w-0 items-center gap-1 text-muted-foreground tabular">
+      <span className="min-w-0 truncate">
+      {greeting && <Greeting />}
       {unread > 0 && <span className="type-list-subtitle-strong text-unread-ink">{t("list.unreadCount", { count: unread })}</span>}
       {unread > 0 && waiting > 0 && <span aria-hidden> · </span>}
       {waiting > 0 && (
@@ -446,13 +512,20 @@ function Subtitle({ filter, search, greeting }: { filter: QuickFilter | undefine
           type="button"
           data-testid="waiting-count"
           aria-pressed={filter === "waiting"}
-          className="no-drag rounded-sm text-foreground underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring aria-pressed:underline"
+          className="no-drag rounded-sm text-foreground underline decoration-border underline-offset-2 hover:decoration-current focus-visible:outline-2 focus-visible:outline-ring aria-pressed:decoration-current"
           onClick={() => setListFilter(filter === "waiting" ? undefined : "waiting")}
         >
           {t("list.waitingCount", { count: waiting })}
         </button>
       )}
       {unread === 0 && waiting === 0 && t("list.caughtUp")}
+      </span>
+      {offersMenu && (
+        <>
+          <span aria-hidden>·</span>
+          <FilterStatus search={search} filter={undefined} />
+        </>
+      )}
     </p>
   );
 }
@@ -480,10 +553,10 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   // plan 64: a search looks everywhere, so the list is the search's, not the sidebar mailbox's
   const searching = query.trim() !== "" && !review;
   const title = searching ? t("list.search.title") : review ? t("list.reviewTitle", { category: review.name }) : today ? t("today.title") : followups ? t("followups.title") : reminders ? t("view.reminders") : (folder ?? category?.name ?? viewLabel(view));
-  // the greeting is the inbox's title (any account; not a Gmail tab of it, plan 86); everywhere else a design that greets shows its display title
+  // the title names the mailbox; the greeting is the words under the inbox's (any account; not a Gmail tab of it, plan 86)
   const kind = design.variants.listHeader === "greeting" && view === "inbox" && !folder && !category && !review && !searching ? "greeting" : design.variants.listHeader === "title" ? "title" : "display";
   const behindButton = design.variants.search === "button";
-  const quick = useQuickFilters();
+  const quick = design.variants.quickFilters;
   const list = useAppearance((s) => s.layout === "list");
   const tabs = useApp((s) => list && tabsShown(s));
   const showField = !behindButton || searchOpen || query !== "";
@@ -547,45 +620,74 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const accountSuffix = account && (!searching || (soloSearch && kind !== "title")) && <span className="ml-1.5 text-sm font-normal tracking-normal text-muted-foreground not-italic">· {account.displayName}</span>;
 
   return (
-    <div ref={hairlineRef} data-testid="list-header" data-kind={kind} className="drag-region scroll-hairline shrink-0 px-3 pb-2">
+    // every fill starts at 8 px, as a row's selection does; every line of text at 20 px, as a row's does
+    <div ref={hairlineRef} data-testid="list-header" data-kind={kind} className="drag-region scroll-hairline @container shrink-0 pr-4 pb-2 pl-2">
       {kind === "title" ? (
-        <div className="flex h-[52px] items-center gap-2 pl-1">
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-md font-semibold tracking-tight" data-testid="list-title">
+        <div className="flex h-[52px] items-center gap-2 pr-1.5 pl-3">
+          {/* the filter's state on the title's own line: turning it on moves nothing */}
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <h1 className="min-w-0 truncate text-md font-semibold tracking-tight" data-testid="list-title">
               {title}
               {accountSuffix}
             </h1>
-            {filter && <FilterStatus search={query.trim() !== ""} filter={filter} />}
+            {!review && !reminders && quick === "menu" && <FilterStatus search={query.trim() !== ""} filter={filter} />}
           </div>
           {stats}
           {searchAll}
           {actions}
         </div>
       ) : (
-        <div className="flex items-start gap-2 pt-5 pb-3 pl-2">
-          <div className="min-w-0 flex-1">
-            <h1 className={cn("truncate", kind === "greeting" ? "type-greeting" : "type-list-title")} data-testid="list-title">
-              {kind === "greeting" ? <Greeting /> : title}
-              {kind !== "greeting" && accountSuffix}
+        <>
+          {/* on the reader toolbar's line */}
+          <div className="flex h-[52px] items-center gap-2 pr-1.5 pl-3">
+            <h1 className={cn("min-w-0 flex-1 truncate", kind === "greeting" ? "type-greeting" : "type-list-title")} data-testid="list-title">
+              {title}
+              {accountSuffix}
             </h1>
+            <div className="flex shrink-0 items-center gap-0.5">{actions}</div>
+          </div>
+          {/* gives way as the list scrolls (at once: moving through a list never animates), unless it says a filter is on or what a search found */}
+          <div
+            data-keep={filter || query ? true : undefined}
+            className="-mt-1.5 pb-2 pl-3 group-data-scrolled/list:not-data-keep:hidden"
+          >
             {query && (searchMs !== null || searchAll) ? (
               <>
-                <p className="mt-1 flex items-center gap-2">
+                <p className="flex items-center gap-2">
                   {stats}
                   {searchAll}
                 </p>
-                {filter && quick === "menu" && <div className="mt-1"><FilterStatus search filter={filter} /></div>}
+                {/* plan 158: a search keeps the mailbox's filter: it says so, and it goes in one click */}
+                {filter && quick === "menu" && (
+                  <p data-testid="unread-filter-status" className="mt-1 flex min-w-0 items-center text-2xs leading-tight text-muted-foreground">
+                    {t("list.filter.by")}
+                    <FilterMenu filter={filter} testId="filter-criterion" className="ml-1">{filterName(filter)}</FilterMenu>
+                    <CloseButton
+                      size="2xs"
+                      data-testid="search-filter-clear"
+                      label={t("list.unreadEmpty.clear")}
+                      className="no-drag ml-1 shrink-0"
+                      onClick={() => {
+                        setListFilter(undefined);
+                        searchInputRef.current?.focus();
+                      }}
+                    />
+                  </p>
+                )}
               </>
             ) : (
               <Subtitle filter={filter} search={query.trim() !== ""} greeting={kind === "greeting"} />
             )}
           </div>
-          <div className="flex shrink-0 items-center gap-0.5 pt-0.5">{actions}</div>
-        </div>
+        </>
       )}
       {showField && <ListSearch />}
-      {!review && !reminders && quick === "chips" && <QuickChips filter={filter} />}
-      {tabs && <ListTabs />}
+      {(tabs || (!review && !reminders && quick === "chips")) && (
+        <div className="mt-1 flex min-w-0 items-center gap-3 pl-3 empty:hidden">
+          {tabs && <ListTabs />}
+          {!review && !reminders && quick === "chips" && <QuickChips filter={filter} />}
+        </div>
+      )}
     </div>
   );
 }
@@ -790,6 +892,7 @@ export function ThreadList() {
   const anchorRef = useRef<(() => (() => void) | void) | null>(null);
   const wideRef = useRef(false);
   const headerRef = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   // the docked snackbar sits over the last rows: the list keeps room below them, and j/k stop above it;
@@ -922,8 +1025,11 @@ export function ThreadList() {
   }, [dock]);
 
   useEffect(() => {
-    const [root, sentinel, header] = [parentRef.current, sentinelRef.current, headerRef.current];
-    return root && sentinel && header ? installScrollHairline(root, sentinel, header) : undefined;
+    const [root, sentinel, header, section] = [parentRef.current, sentinelRef.current, headerRef.current, sectionRef.current];
+    if (!root || !sentinel) return;
+    // the header's hairline, and (on the section, for the header and the banner under it) what gives way to the list
+    const offs = [header && installScrollHairline(root, sentinel, header), section && installScrollHairline(root, sentinel, section)];
+    return () => offs.forEach((off) => off?.());
   }, []);
 
   // drag rows onto sidebar categories: one delegated listener on the listbox
@@ -967,7 +1073,7 @@ export function ThreadList() {
   }, [last?.index, items.length, itemsKey]);
 
   return (
-    <section className="flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list" data-results-for={itemsKey} data-composing={composing || undefined}>
+    <section ref={sectionRef} className="group/list flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list" data-results-for={itemsKey} data-composing={composing || undefined}>
       {previewing ? (
         <ActionPreviewHeader />
       ) : (

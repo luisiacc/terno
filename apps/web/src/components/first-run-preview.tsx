@@ -142,14 +142,11 @@ function Sidebar({ design, sample }: { design: DesignDefinition; sample: SampleM
 
 function List({ design, sample, wide, compact, selected }: { design: DesignDefinition; sample: SampleMailbox; wide: boolean; compact: boolean; selected: number | null }) {
   const v = design.variants;
-  // List's tabs carry All and Unread, so every design keeps the filter button there (thread-list.tsx useQuickFilters)
-  const quick = wide ? "menu" : v.quickFilters;
+  const quick = v.quickFilters;
   const kind = v.listHeader;
   const behindButton = v.search === "button";
   const unread = sample.threads.filter((x) => x.unread).length;
   const height = wide && !compact ? design.rows.wide : design.rows[compact ? "compact" : "comfortable"];
-  const hour = new Date().getHours();
-  const greeting = hour >= 5 && hour < 12 ? "list.greeting.morningPlain" : hour >= 12 && hour < 19 ? "list.greeting.afternoonPlain" : "list.greeting.eveningPlain";
   const icon = (glyph: React.ReactNode) => <span className="flex size-7 items-center justify-center rounded-md text-muted-foreground">{glyph}</span>;
   const actions = (
     <>
@@ -160,22 +157,22 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
   );
   return (
     <section className="flex h-full min-h-0 flex-col bg-pane">
-      <div className="shrink-0 px-3 pb-2">
+      <div className="shrink-0 pr-4 pb-2 pl-2">
         {kind === "title" ? (
-          <div className="flex h-[52px] items-center gap-2 pl-1">
+          <div className="flex h-[52px] items-center gap-2 pr-1.5 pl-3">
             <h1 className="min-w-0 flex-1 truncate text-md font-semibold tracking-tight">{viewLabel("inbox")}</h1>
             {actions}
           </div>
         ) : (
-          <div className="flex items-start gap-2 pt-5 pb-3 pl-2">
-            <div className="min-w-0 flex-1">
-              <h1 className={cn("truncate", kind === "greeting" ? "type-greeting" : "type-list-title")}>{kind === "greeting" ? t(greeting) : viewLabel("inbox")}</h1>
-              <p className="type-list-subtitle mt-1 truncate text-muted-foreground tabular">
-                <span className="type-list-subtitle-strong text-unread-ink">{t("list.unreadCount", { count: unread })}</span>
-              </p>
+          <>
+            <div className="flex h-[52px] items-center gap-2 pr-1.5 pl-3">
+              <h1 className={cn("min-w-0 flex-1 truncate", kind === "greeting" ? "type-greeting" : "type-list-title")}>{viewLabel("inbox")}</h1>
+              <div className="flex shrink-0 items-center gap-0.5">{actions}</div>
             </div>
-            <div className="flex shrink-0 items-center gap-0.5 pt-0.5">{actions}</div>
-          </div>
+            <p className="type-list-subtitle -mt-1.5 truncate pb-2 pl-3 text-muted-foreground tabular">
+              <span className="type-list-subtitle-strong text-unread-ink">{t("list.unreadCount", { count: unread })}</span>
+            </p>
+          </>
         )}
         {!behindButton && (
           <div className="relative flex h-[30px] items-center rounded-lg bg-tint pr-2 pl-8 text-sm text-muted-foreground">
@@ -184,23 +181,11 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
             <Kbd>/</Kbd>
           </div>
         )}
-        {quick === "chips" && (
-          <div data-testid="first-run-preview-chips" className="-mx-1 mt-1 mb-2 flex gap-1.5 overflow-hidden px-1 py-0.5">
-            {(["all", "unread", "people", "attachments", "starred"] as const).map((f) => (
-              <span key={f} className={cn("flex h-7 shrink-0 items-center rounded-full px-3 text-xs font-medium", f === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground")}>
-                {t(`list.filter.${f}`)}
-              </span>
-            ))}
-          </div>
-        )}
-        {/* List: the inbox's tabs (list-tabs.tsx), All selected, in the design's tab variant */}
+        <div className="mt-1 flex min-w-0 items-center gap-3 overflow-hidden pl-3 empty:hidden">
+        {/* List: the inbox's tabs (list-tabs.tsx), the Inbox selected, in the design's tab variant */}
         {wide && (
-          <div data-testid="first-run-preview-tabs" data-kind={v.categoryTabs} className={cn("relative -mx-1 mt-1 flex items-center gap-1 px-1", v.categoryTabs === "underline" ? "hairline-b -mb-2" : "mb-2 py-0.5")}>
-            <span aria-selected className={tabClass(v.categoryTabs)}>{t("list.filter.all")}</span>
-            <span aria-selected={false} className={tabClass(v.categoryTabs)}>
-              {t("list.filter.unread")}
-              <span className="tabular">{formatNumber(unread)}</span>
-            </span>
+          <div data-testid="first-run-preview-tabs" data-kind={v.categoryTabs} className={cn("relative flex min-w-0 flex-1 items-center gap-1 overflow-hidden", v.categoryTabs === "underline" ? "hairline-b -mb-2 -ml-2" : "py-0.5")}>
+            <span aria-selected className={tabClass(v.categoryTabs)}>{viewLabel("inbox")}</span>
             {sample.categories.map((c) => (
               <span key={c.id} aria-selected={false} className={tabClass(v.categoryTabs)}>
                 <CategoryDot color={c.color} />
@@ -209,6 +194,16 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
             ))}
           </div>
         )}
+        {quick === "chips" && (
+          <div data-testid="first-run-preview-chips" className="flex shrink-0 gap-1.5 overflow-hidden py-0.5">
+            {(["all", "unread", "people", "attachments", "starred"] as const).map((f) => (
+              <span key={f} className={cn("flex h-7 shrink-0 items-center rounded-full px-2.5 text-xs font-medium", f === "all" ? "bg-muted text-foreground" : "text-muted-foreground")}>
+                {t(`list.filter.${f}`)}
+              </span>
+            ))}
+          </div>
+        )}
+        </div>
       </div>
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {sample.threads.map((thread, i) => (
