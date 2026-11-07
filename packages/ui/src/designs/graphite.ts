@@ -50,7 +50,7 @@ export const graphite: DesignDefinition = {
   type: TYPE,
   icon: { stroke: 1.5, toolbar: 1.5, nav: 14 },
   layout: { sidebar: "216px", listMin: "340px", listMax: "min(400px, 32vw)", readerMin: 348, readerMax: "704px", readerPadX: "2rem", rowRadius: "0.5rem", navRadius: "0.5rem", navHeight: "1.75rem", sidebarPad: "0.75rem", navSectionGap: "1.25rem", navSectionHeight: "1.625rem", cardRadius: "1rem", commandRadius: "0.5rem" },
-  rows: { comfortable: 68, compact: 40, wide: 44, results: 60 },
+  rows: { comfortable: 64, compact: 32, wide: 36, results: 64 },
   avatar: { row: 0, rowCompact: 0, rowWide: 0, message: 28, collapsed: 28, senderCard: 0 },
   surfaces: { draft: "outline", inboxCount: "muted", cta: "pill", card: "outline" },
   variants: {

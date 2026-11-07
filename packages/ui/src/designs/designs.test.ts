@@ -44,12 +44,22 @@ describe("designs (plan 15)", () => {
     }
   });
 
-  it("macOS keeps the app as it was: SF, the dense scale, 68/40 px rows, no avatars in rows", () => {
+  it("a three-line row has room for its lines, in a list and in a search's results (plan 158)", () => {
+    for (const d of DESIGNS) {
+      const px = (leading: string) => parseFloat(leading) * 16;
+      const lines = px(d.type.rowFrom.leading) + px(d.type.rowSubject.leading) + px(d.type.rowSnippet.leading);
+      // 5 px above and below at least, or the text sits against the selection's edges
+      expect(d.rows.comfortable, d.id).toBeGreaterThanOrEqual(lines + 10);
+      expect(d.rows.results, d.id).toBeGreaterThanOrEqual(lines + 10);
+    }
+  });
+
+  it("macOS: SF, the dense scale, 64/32 px rows, no avatars in rows", () => {
     const m = designById("macos");
     expect(m.fonts.sans).toMatch(/^-apple-system, BlinkMacSystemFont, "Geist Variable"/);
     expect(m.text.sm).toEqual(["0.8125rem", "1.125rem"]);
     expect(m.radius.md).toBe("0.375rem");
-    expect(m.rows).toEqual({ comfortable: 68, compact: 40, wide: 44, results: 56 });
+    expect(m.rows).toEqual({ comfortable: 64, compact: 32, wide: 36, results: 64 });
     expect(m.avatar.row).toBe(0);
     expect(m.palette).toEqual({ light: "terno-light", dark: "terno-dark" });
   });

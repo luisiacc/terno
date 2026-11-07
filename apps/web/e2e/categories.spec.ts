@@ -84,7 +84,9 @@ test.describe("a category hidden from the Inbox (plan 83)", () => {
     // where the mail is now: the category's own list
     await page.getByTestId(`nav-category-${cat}`).click();
     await expect(page.getByTestId("list-title")).toHaveText(name);
-    await expect(inCat.first()).toBeVisible();
+    // (its rows don't repeat the category they're in)
+    await expect(rows(page).first()).toBeVisible();
+    await expect(inCat).toHaveCount(0);
     await page.getByTestId("nav-inbox").click();
     await expect(inCat).toHaveCount(0);
 

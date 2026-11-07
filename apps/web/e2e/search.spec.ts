@@ -2,7 +2,7 @@ import type { IncomingMessage } from "@terno/store";
 import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
 import type { Page } from "@playwright/test";
-import { expect, focusList, navTo, rows, search, selectedRow, test, fresh, scenario, ingestConversation } from "./fixtures";
+import { expect, focusList, navTo, rows, search, selectedRow, test, fresh, scenario, ingestConversation, pickFilter } from "./fixtures";
 
 const scrollerOf = (page: Page) => page.locator("[data-testid=thread-list] [data-keep-scroll=list]");
 
@@ -162,20 +162,21 @@ test.describe("search", () => {
     await ingestConversation(server, { subject: "zzfiltro leido", count: 1, now: E2E_NOW });
     await ingestConversation(server, { subject: "zzfiltro nuevo", count: 1, unread: 1, now: E2E_NOW });
     await fresh(page);
-    await page.getByTestId("unread-filter").click();
+    await pickFilter(page, "unread");
     await search(page, "zzfiltro");
     await expect(rows(page)).toHaveCount(1);
-    await expect(page.getByTestId("unread-filter-status")).toBeVisible();
+    await expect(page.getByTestId("filter-menu")).toHaveText("Unread");
     await page.getByRole("button", { name: "Clear filter" }).click();
     await expect(rows(page)).toHaveCount(2);
-    await expect(page.getByTestId("unread-filter-status")).toHaveCount(0);
-    await expect(page.getByTestId("search-input")).toBeFocused();
+    await expect(page.getByTestId("filter-menu")).toHaveText("Filter");
 
     // a draft that isn't one of the results steps aside for the search, and comes back after it
     await page.getByRole("button", { name: "Clear search" }).click();
     await focusList(page);
     await page.keyboard.press("c");
     await page.getByTestId("compose-subject").fill("Borrador aparte");
+    // left as Esc leaves it: open, it's on screen, not in the strip
+    await page.getByTestId("compose-subject").press("Escape");
     await focusList(page);
     await expect(page.getByTestId("drafts-strip")).toBeVisible();
     await search(page, "zzfiltro");

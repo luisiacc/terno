@@ -39,7 +39,7 @@ export const macos: DesignDefinition = {
   },
   icon: { stroke: 1.5, toolbar: 1.5, nav: 16 },
   layout: { sidebar: "232px", listMin: "340px", listMax: "min(400px, 32vw)", readerMin: 348, readerMax: "696px", readerPadX: "1.75rem", rowRadius: "0.375rem", navRadius: "0.375rem", navHeight: "1.75rem", sidebarPad: "0.5rem", navSectionGap: "1rem", navSectionHeight: "1.25rem", cardRadius: "calc(var(--ds-radius-lg) + 2px)", commandRadius: "var(--ds-radius-xl)" },
-  rows: { comfortable: 68, compact: 40, wide: 44, results: 56 },
+  rows: { comfortable: 64, compact: 32, wide: 36, results: 64 },
   avatar: { row: 0, rowCompact: 0, rowWide: 0, message: 28, collapsed: 28, senderCard: 0 },
   surfaces: { draft: "tint", inboxCount: "muted", cta: "control", card: "tint" },
   variants: {

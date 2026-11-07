@@ -992,6 +992,7 @@ const en = {
   "list.empty.inboxTitle": "Inbox is empty",
   "list.empty.inboxBody": "Enjoy the quiet.",
   "list.empty.title": "Nothing here",
+  "list.kept": "Opened",
   "list.empty.body": "Mail will show up here.",
   "list.draft": "Draft",
   "list.accountLabel.sr": ", to {account}",

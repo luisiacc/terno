@@ -983,6 +983,7 @@ const es = {
   "list.empty.inboxTitle": "Bandeja vacía",
   "list.empty.inboxBody": "Disfruta el silencio.",
   "list.empty.title": "Nada por aquí",
+  "list.kept": "Abierta",
   "list.empty.body": "Los correos aparecerán aquí.",
   "list.draft": "Borrador",
   "list.accountLabel.sr": ", para {account}",

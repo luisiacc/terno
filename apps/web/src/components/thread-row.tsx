@@ -5,11 +5,12 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
 import { Bell, Check, Paperclip, Star } from "@terno/ui/icons";
 import { memo } from "react";
-import { formatNumber, t } from "@terno/i18n";
+import { formatList, formatNumber, t } from "@terno/i18n";
 import { listDate } from "~/lib/format";
 import { renderProbe } from "~/lib/render-probe";
 import { useHasDraft } from "~/lib/drafts";
 import { pressRow, releaseRow } from "~/lib/select";
+import { activeFilter } from "~/lib/unread-filter";
 import { useApp, type AppState } from "~/state/app";
 import { accountLabels, type AccountLabel } from "~/lib/account-labels";
 import type { ReminderInfo } from "@terno/core/rpc";
@@ -31,6 +32,8 @@ interface Props {
   compact: boolean;
   /** plan 24: List's full-width list, one line with the senders in a column (Gmail's); compact density is one line already */
   wide?: boolean;
+  /** List: nothing is open while the rows show, so the cursor is a place, not the selection's fill */
+  quietCursor?: boolean;
   showAccount: boolean;
   /** plan 22: the sender's icon may be asked for (never in spam) */
   icons: boolean;
@@ -53,7 +56,7 @@ interface Props {
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, reminderTop = false, reminderEnd = false, match = null }: Props) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, quietCursor = false, showAccount, icons, layout, review = null, reminderTop = false, reminderEnd = false, match = null }: Props) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -66,6 +69,14 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   // one object per account, kept while it doesn't change (accountLabels): sync-state events re-render no row
   const account = useApp((s) => (showAccount ? accountLabels(s.accounts).get(thread.accountId) : undefined));
   const categories = useApp((s) => s.categories);
+  /** kept in a filtered list only because it's open: it says so, or it reads as the filter's mistake (only the open row looks) */
+  const kept = useApp((s) => {
+    if (s.selectedId !== thread.id) return false;
+    const filter = activeFilter(s);
+    return filter !== undefined && !matchesFilter(filter, thread);
+  });
+  /** the category this list is: its rows needn't say so */
+  const inCategory = useApp((s) => s.categoryId);
   /** a draft with something written in it (one boolean: only this row renders when it changes) */
   const hasDraft = useHasDraft(thread.id);
   /** plan 72: a verification code in fresh mail, one click from the clipboard */
@@ -86,6 +97,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       height={height}
       compact={compact}
       wide={wide}
+      quietCursor={quietCursor}
       icons={icons}
       layout={layout}
       reminderTop={reminderTop}
@@ -96,6 +108,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       inSelection={inSelection}
       account={account}
       categories={categories}
+      inCategory={inCategory}
+      kept={kept}
       hasDraft={hasDraft}
       code={code}
       reminder={reminder}
@@ -122,6 +136,8 @@ type ViewProps = Omit<Props, "showAccount" | "wide" | "review" | "reminderTop" |
   inSelection: boolean;
   account: AccountLabel | undefined;
   categories: AppState["categories"];
+  inCategory?: number | null;
+  kept?: boolean;
   hasDraft: boolean;
   code: string | null;
   reminder: ReminderInfo | undefined;
@@ -150,7 +166,7 @@ function useOwed(thread: Pick<ThreadSummary, "id">, reminderTop?: boolean) {
  * Plan 158: why a result is here. Weight as well as the tint (the tint alone would be color alone); on the cursor and
  * on a checked row, the row's own ink on a lighter tint (contrast.ts holds both).
  */
-const MARK = "rounded-xs bg-star/25 px-px font-semibold text-foreground group-data-cursor/row:bg-star/12 group-data-cursor/row:text-row-selected-foreground group-data-checked/row:bg-star/12 group-data-checked/row:text-accent-foreground";
+const MARK = "rounded-xs bg-star/25 px-px font-semibold text-foreground group-data-opened/row:bg-star/12 group-data-opened/row:text-row-selected-foreground group-data-checked/row:bg-star/12 group-data-checked/row:text-accent-foreground";
 
 function Marked({ text, needles }: { text: string; needles: readonly MatchNeedle[] | undefined }) {
   const parts = needles ? matchParts(text, needles) : null;
@@ -175,6 +191,16 @@ function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead }: {
   );
 }
 
+/** A wide row's preview: a column of its own, a step smaller than the subject and in the quiet ink, and the first thing cut. */
+function WideSnippet({ thread, reminderTop, ink, quiet, match, excerpt }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string }) {
+  const { line } = useOwed(thread, reminderTop);
+  return (
+    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("min-w-0 flex-1 truncate text-xs", line ? ink : quiet)}>
+      {line ?? matchLine(match, excerpt ?? thread.snippet, LEAD.wide)}
+    </span>
+  );
+}
+
 /** A one-line row's words after the subject: the same line, where it reads the same; apart from the subject by ink and space, no dash (subjects have their own). */
 function RowTail({ thread, reminderTop, ink, quiet, match, excerpt }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string }) {
   const { line } = useOwed(thread, reminderTop);
@@ -187,17 +213,19 @@ function RowDate({ thread, reminderTop, fallback, className, title }: { thread: 
   return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? reminderShort(dueAt) : fallback}</span>;
 }
 
-export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, reminderTop, reminderEnd, selected, checked, included, inSelection, account, categories, hasDraft, code, reminder, remindersList, interactive, match, excerpt }: ViewProps) {
-  const cats = thread.categoryIds.length ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
+export function ThreadRowView({ thread, top, height, compact, wide, quietCursor = false, icons, layout, review, reminderTop, reminderEnd, selected, checked, included, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt }: ViewProps) {
+  const cats = thread.categoryIds.length ? categories.filter((c) => c.id !== inCategory && thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
+  /** the open thread's fill and ink: not List's cursor, which only marks a place */
+  const opened = selected && !quietCursor;
   /** one line: compact density, or a wide list */
   const line = compact || wide;
   /** where it lives when that isn't where mail usually is (Trash wins: trashed spam is in the trash) */
   const place = thread.inTrash ? "trash" : thread.inSpam ? "spam" : null;
 
   // unread reads first: a stronger sender and subject, one dot. Read is quieter, and a checked row is on the accent, where only its own foreground holds
-  const onAccent = checked && !selected;
+  const onAccent = checked && !opened;
   const readInk = onAccent ? "text-accent-foreground" : "text-row-read";
   const quiet = onAccent ? "text-accent-foreground" : "text-muted-foreground";
   const from = (
@@ -208,31 +236,34 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   const count = thread.messageCount > 1 && <span className="text-xs text-muted-foreground tabular">{formatNumber(thread.messageCount)}</span>;
   const clip = thread.hasAttachments && <Paperclip className="size-3 text-muted-foreground" />;
   const star = thread.starred && <Star className="size-3 fill-star text-star" />;
+  const dots = cats.map((c) => <CategoryDot key={c.id} data-cat-dot={c.id} color={c.color as CategoryColor} title={c.name} />);
+  // plan 87: due, in the accent (the Inbox's top); set, quiet
+  const bell = reminder && <Bell aria-hidden data-testid="row-reminder" data-due={reminder.due || undefined} className={cn("size-3", opened ? "" : checked ? "text-accent-foreground" : reminder.due ? "text-primary" : "text-muted-foreground")} />;
+  // plan 64: a search looks everywhere, so a row in Spam or Trash says so (quiet, before the date; said once at the end)
+  const placeTag = place && (
+    <span aria-hidden data-testid="row-place" data-place={place} className={cn("text-2xs", onAccent ? "text-accent-foreground" : "text-muted-foreground")}>
+      {t(place === "spam" ? "list.place.spam" : "list.place.trash")}
+    </span>
+  );
+  const keptTag = kept && <span data-testid="row-kept" className="text-2xs text-muted-foreground">{t("list.kept")}</span>;
   const marks = (
     <>
-      {cats.map((c) => (
-        <CategoryDot key={c.id} data-cat-dot={c.id} color={c.color as CategoryColor} />
-      ))}
-      {!wide && clip}
-      {!wide && star}
-      {reminder && !reminderTop && (
-        // plan 87: due, in the accent (the Inbox's top); set, quiet
-        <Bell
-          aria-hidden
-          data-testid="row-reminder"
-          data-due={reminder.due || undefined}
-          className={cn("size-3", selected ? "" : checked ? "text-accent-foreground" : reminder.due ? "text-primary" : "text-muted-foreground")}
-        />
-      )}
-      {place && (
-        // plan 64: a search looks everywhere, so a row in Spam or Trash says so (quiet, before the date; said once at the end)
-        <span aria-hidden data-testid="row-place" data-place={place} className={cn("text-2xs", checked && !selected ? "text-accent-foreground" : "text-muted-foreground")}>
-          {t(place === "spam" ? "list.place.spam" : "list.place.trash")}
-        </span>
-      )}
+      {dots}
+      {clip}
+      {star}
+      {!reminderTop && bell}
+      {placeTag}
+      {keptTag}
     </>
   );
-  // Apple Mail's "to which account" (plan 23): quiet text, at the end of the preview's line (a column of its own in a wide list, before the date in
+  // a wide row has the room to name a category, not only to color it; narrower, its dot is the column
+  const wideCategory = wide && (
+    <span className="flex w-[5.5rem] items-center gap-1.5 @max-[58rem]/rows:w-5">
+      {dots}
+      {cats[0] && <span aria-hidden className={cn("min-w-0 truncate text-xs @max-[58rem]/rows:hidden", quiet)}>{cats[0].name}</span>}
+    </span>
+  );
+  // Apple Mail's "to which account" (plan 23): quiet text, at the end of the preview's line (a column of its own in a wide list, the first to go there when width is short, before the date in
   // compact), within a share of the line so the preview keeps the rest; an address truncates its local part first (shrink 100 to 1: a factor under 1 leaves overflow unresolved), then its @domain. Screen readers get it once, at the end.
   const accountTag = account && (
     <span
@@ -243,7 +274,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
         "flex min-w-0 shrink-0 items-center self-center text-xs",
         // a checked row is on the accent (muted text isn't checked there): its own foreground
         quiet,
-        wide ? "w-28" : line ? "max-w-[min(7rem,32%)]" : "ml-auto max-w-[min(8rem,40%)] pl-2",
+        wide ? "w-20 @max-[52rem]/rows:hidden" : line ? "max-w-[min(7rem,32%)]" : "ml-auto max-w-[min(8rem,40%)] pl-2",
       )}
     >
       {account.local !== undefined ? (
@@ -259,7 +290,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   const date =
     reminderTop && reminder?.due ? (
       // plan 87: on the Inbox's top, the time it came back, in the attention ink (the mail's own date would read as out of order)
-      <span data-testid="row-date" data-reminder className={cn("flex items-center gap-1 text-xs font-medium tabular", selected ? "" : checked ? "text-accent-foreground" : "text-unread-ink")}>
+      <span data-testid="row-date" data-reminder className={cn("flex items-center gap-1 text-xs font-medium tabular", opened ? "" : checked ? "text-accent-foreground" : "text-unread-ink")}>
         <Bell aria-hidden data-testid="row-reminder" data-due className="size-3" />
         {listDate(reminder.dueAt)}
       </span>
@@ -273,7 +304,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   // its own line: only a very long subject truncates
   const subject = (
     <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>
-      {thread.subject || t("common.noSubject")}
+      {thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}
     </span>
   );
   // plan 142: gated on the row's every state, as Draft's ink is (contrast.ts)
@@ -289,6 +320,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
         email={thread.fromEmail}
         // plan 22: never an icon for spam, whatever the view or the search (nor until the backend says a row stopped being spam)
         icon={icons && !thread.inSpam && !thread.hasSpam && !thread.spamHeld}
+        person={thread.person === true}
         className={
           compact
             ? "size-(--avatar-row-compact) text-[length:calc(var(--avatar-row-compact)*0.42)]"
@@ -320,7 +352,6 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     <>
       {firstLine}
       <div className="flex min-w-0 items-baseline gap-1.5">
-        person={thread.person === true}
         {subject}
         {draft}
       </div>
@@ -337,6 +368,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       id={`thread-${thread.id}`}
       aria-selected={included ?? inSelection}
       data-cursor={selected || undefined}
+      data-opened={opened || undefined}
       data-testid="thread-row"
       data-thread-id={thread.id}
       data-unread={thread.unread || undefined}
@@ -354,7 +386,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
         "before:absolute before:inset-x-2 before:inset-y-px before:rounded-(--row-radius)",
         // classic rows: one hairline separator, hidden under the selection and above it (rows render in list order, so the next sibling is the next row)
         classic && "after:absolute after:right-4 after:bottom-0 after:left-5 after:h-(--hairline-w) after:bg-hairline [&:has(+[data-checked])]:after:hidden [&:has(+[data-cursor])]:after:hidden",
-        selected ? "text-row-selected-foreground before:bg-row-selected after:hidden" : checked ? "before:bg-accent after:hidden" : "hover:before:bg-row-hover",
+        opened ? "text-row-selected-foreground before:bg-row-selected after:hidden" : checked ? "before:bg-accent after:hidden" : selected ? "before:bg-muted after:hidden" : "hover:before:bg-row-hover",
         reminderEnd && "after:hidden",
         // the check takes the gutter, and the content line moves over as one
         included !== undefined && "pl-10",
@@ -368,50 +400,53 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
         <CheckboxMark data-testid="row-include" checked={included} className="absolute top-1/2 left-5 -translate-y-1/2" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); toggleRow(thread.id); }} />
       )}
       {/* in the batch, not just open: a check in the gutter, in every row style, moving nothing (it takes the unread dot's place; the row's weight still says unread) */}
-      {checked && included === undefined && <Check aria-hidden data-testid="row-check" className={cn("absolute top-1/2 left-[7px] size-3 -translate-y-1/2 [--icon-line:1.5px]", selected ? "text-row-selected-foreground" : "text-accent-foreground")} />}
-      {line ? (
-        <div className={cn("relative flex min-w-0 items-center", classic ? "gap-2" : "gap-2.5", wide && !classic && "gap-3")}>
+      {checked && included === undefined && <Check aria-hidden data-testid="row-check" className={cn("absolute top-1/2 left-[7px] size-3 -translate-y-1/2 [--icon-line:1.5px]", opened ? "text-row-selected-foreground" : "text-accent-foreground")} />}
+      {wide ? (
+        // a table: sender, subject, preview, then fixed columns on the right edge (account, category, attachment, star,
+        // date), so the eye runs down each. What's narrow gives way from the left of them, the preview's width first
+        <div className="relative flex min-w-0 items-center gap-3">
           {dot}
           {avatar}
-          {wide ? (
-            // the senders line up in a column, so the subjects do too
-            // the full-width list's code sits with the sender, out of the subject's way (plan 72)
-            <span className="flex w-[clamp(9rem,18%,14rem)] shrink-0 items-center gap-1.5">
-              {from}
-              {count}
-              {chip}
-            </span>
-          ) : (
-            <>
-              {from}
-              {count}
-            </>
-          )}
+          {/* the full-width list's code sits with the sender, out of the subject's way (plan 72) */}
+          <span className="flex w-[clamp(8rem,15%,12rem)] shrink-0 items-center gap-1.5">
+            {from}
+            {count}
+            {chip}
+          </span>
+          <span className="flex w-[clamp(11rem,30%,24rem)] shrink-0 items-center gap-1.5">
+            <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
+            {draft}
+          </span>
+          {answer ? <span className="flex min-w-0 flex-1 justify-end">{answer}</span> : <WideSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} />}
+          {accountTag}
+          <span data-testid="row-marks" className="flex shrink-0 items-center justify-end gap-1.5">
+            {wideCategory}
+            {placeTag}
+            {keptTag}
+            {reminder && !reminderTop && bell}
+            <span className="flex w-3 justify-center">{clip}</span>
+            <span className="flex w-3 justify-center">{star}</span>
+          </span>
+          <span className="flex w-[3.75rem] shrink-0 justify-end">{date}</span>
+        </div>
+      ) : line ? (
+        <div className={cn("relative flex min-w-0 items-center", classic ? "gap-2" : "gap-2.5")}>
+          {dot}
+          {avatar}
+          {from}
+          {count}
           <span className="min-w-0 flex-1 truncate">
             <span data-testid="row-subject" className={subjectInk}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
             {draft && <span className="ml-1.5">{draft}</span>}
             <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} />
           </span>
           {answer}
-          {wide ? (
-            // fixed columns, so the eye runs down each and the right edge is straight: account, marks, attachment, star, date
-            <>
-              {accountTag}
-              <span className="flex min-w-8 shrink-0 items-center justify-end gap-1.5">{marks}</span>
-              <span className="flex w-3 shrink-0 justify-center">{clip}</span>
-              <span className="flex w-3 shrink-0 justify-center">{star}</span>
-              <span className="flex w-[4.25rem] shrink-0 justify-end">{date}</span>
-            </>
-          ) : (
-            <>
-              {accountTag}
-              {chip}
-              <span className={cn("flex shrink-0 items-center gap-1.5", !answer && "ml-auto")}>
-                {marks}
-                {date}
-              </span>
-            </>
-          )}
+          {accountTag}
+          {chip}
+          <span className={cn("flex shrink-0 items-center gap-1.5", !answer && "ml-auto")}>
+            {marks}
+            {date}
+          </span>
         </div>
       ) : classic ? (
         <div className="relative flex min-w-0 flex-col">
@@ -425,6 +460,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
           <div className="flex min-w-0 flex-1 flex-col">{lines}</div>
         </div>
       )}
+      {cats.length > 0 && <span className="sr-only">{formatList(cats.map((c) => c.name))}</span>}
       {place && <span className="sr-only">{t(place === "spam" ? "list.place.spam.sr" : "list.place.trash.sr")}</span>}
       {account && <span className="sr-only">{t("list.accountLabel.sr", { account: account.text })}</span>}
       {code && <span className="sr-only">{t("codes.sr", { code })}</span>}
