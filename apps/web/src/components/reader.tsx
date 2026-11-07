@@ -779,7 +779,7 @@ function ReaderContent() {
         {page && <StepButtons id={selectedId} />}
         </div>
       </div>
-      <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto" style={dock ? { paddingBottom: dock, scrollPaddingBottom: dock } : undefined} onContextMenu={backgroundMenu}>
+      <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]" style={dock ? { paddingBottom: dock, scrollPaddingBottom: dock, "--reader-dock": `${dock}px` } as React.CSSProperties : undefined} onContextMenu={backgroundMenu}>
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         <div data-reader-column className={cn(COLUMN, "pt-2 pb-16")}>
           {!detail && gone ? (

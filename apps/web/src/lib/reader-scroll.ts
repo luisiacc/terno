@@ -19,12 +19,22 @@ export function cancelReaderScroll(): void {
   cancel = null;
 }
 
-export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.closest<HTMLElement>("[data-reader-scroller]"), pad = 16): () => void {
+/** A key typed into a field or the editor writes there: it isn't the reader being scrolled. */
+const typing = (target: EventTarget | null): boolean => target instanceof Element && target.closest("input, textarea, select, [contenteditable=true]") !== null;
+
+/** `wanted`: how much of the element, from its top, has to show (all of it by default): a composer's foot sticks, so its first lines are enough. */
+export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.closest<HTMLElement>("[data-reader-scroller]"), pad = 16, wanted?: () => number): () => void {
   cancelReaderScroll();
   if (!scroller) return () => {};
   const { motionMs, reducedMotion } = useAppearance.getState();
   if (motionMs === 0 || reducedMotion) {
-    const id = requestAnimationFrame(() => el.scrollIntoView({ block: "nearest" }));
+    const id = requestAnimationFrame(() => {
+      if (!wanted) { el.scrollIntoView({ block: "nearest" }); return; }
+      const covered = parseFloat(getComputedStyle(scroller).scrollPaddingBottom) || 0;
+      const r = el.getBoundingClientRect(), s = scroller.getBoundingClientRect();
+      const overflow = r.top + Math.min(wanted(), r.height) - (s.bottom - pad - covered);
+      if (overflow > 0) scroller.scrollTop += Math.min(overflow, r.top - (s.top + pad));
+    });
     cancel = () => cancelAnimationFrame(id);
     return cancelReaderScroll;
   }
@@ -41,12 +51,12 @@ export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.cl
     window.removeEventListener("keydown", onKey, true);
     if (cancel === stop) cancel = null;
   };
-  const onKey = (e: KeyboardEvent) => SCROLL_KEYS.has(e.key) && stop();
+  const onKey = (e: KeyboardEvent) => SCROLL_KEYS.has(e.key) && !typing(e.target) && stop();
   const step = () => {
     // read
     const r = el.getBoundingClientRect();
     const s = scroller.getBoundingClientRect();
-    const overflow = r.bottom - (s.bottom - pad - covered);
+    const overflow = (wanted ? r.top + Math.min(wanted(), r.height) : r.bottom) - (s.bottom - pad - covered);
     const room = r.top - (s.top + pad);
     // write
     if (overflow > 0 && room > 0) scroller.scrollTop += Math.min(overflow, room);

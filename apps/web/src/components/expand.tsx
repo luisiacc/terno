@@ -69,7 +69,8 @@ export function Expand({ open, id, className, children, onOpening }: { open: boo
         className,
       )}
     >
-      <div className={cn("min-h-0 overflow-hidden transition-opacity", shown ? "opacity-100 duration-slow" : "opacity-0 duration-fast", shown && toggled.current && "starting:opacity-0")}>{children}</div>
+      {/* clip, not hidden: a hidden box is a scroller of its own, and a composer's foot has to stick to the reader's */}
+      <div className={cn("min-h-0 min-w-0 overflow-clip transition-opacity", shown ? "opacity-100 duration-slow" : "opacity-0 duration-fast", shown && toggled.current && "starting:opacity-0")}>{children}</div>
     </div>
   );
 }

@@ -278,6 +278,17 @@ export function Quote({ d }: { d: LocalDraft }) {
   );
 }
 
+/** The collapsed draft's words: all of them on the one line (the greeting alone says nothing). */
+const draftPreview = (text: string): string => text.slice(0, 300).replace(/\s+/g, " ").trim();
+
+/** How much of an opening composer has to show: down to its first lines of text, with room for its foot. */
+function composerWanted(el: HTMLElement): number {
+  const body = el.querySelector<HTMLElement>("[data-testid=compose-body]");
+  if (!body) return Infinity;
+  const foot = el.querySelector<HTMLElement>("[data-draft-foot]")?.offsetHeight ?? 0;
+  return body.getBoundingClientRect().top - el.getBoundingClientRect().top + 72 + foot;
+}
+
 /** The inline draft's accessible name: "Reply to Ana", "Forward" (nobody yet). Reply-all reads as a reply. */
 function formLabel(forward: boolean, who: string): string {
   if (forward) return who ? t("compose.form.forward", { name: who }) : t("compose.form.forwardEmpty");
@@ -437,7 +448,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
           </button>
         )}
       </Expand>
-      <Expand open={state === "open"} onOpening={(el) => keepInView(el)}>
+      {/* a composer's foot sticks to the reader's, so its fields and first lines are what has to come into view: the subject stays when it can */}
+      <Expand open={state === "open"} onOpening={(el) => keepInView(el, undefined, undefined, () => composerWanted(el))}>
         {d && (
           <form
             aria-label={label}
@@ -483,6 +495,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
             <DraftAttachments d={d} />
             <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
             <Quote d={d} />
+            {/* Send stays on screen however long the draft or the conversation is (plan 158); what's written fades under it */}
+            <div data-draft-foot className="sticky bottom-[var(--reader-dock,0px)] z-[1] rounded-b-xl bg-(--draft-bg) before:pointer-events-none before:absolute before:inset-x-0 before:-top-3 before:h-3 before:bg-linear-to-t before:from-(--draft-bg) before:to-transparent">
             <ComposerFormatBar draftKey={d.key} id={formatId} className="px-2 pt-1.5" />
             <div className="flex items-center gap-1 px-2.5 pt-2 pb-2.5">
               <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
@@ -501,6 +515,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
                   <ChevronDown />
                 </IconButton>
               </span>
+            </div>
             </div>
             {state === "open" && drop.layer}
             {state === "open" && <DraftCommandsHost draftKey={d.key} root={rootRef} send={(at) => void send(at)} discard={() => void discard()} close={collapse} sending={d.sending} />}

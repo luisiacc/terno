@@ -512,6 +512,11 @@ export interface RichEditor {
   destroy(): void;
 }
 
+const footClearance = (mount: HTMLElement): number => {
+  const foot = mount.closest("[data-reader-scroller]") ? mount.closest("form")?.querySelector<HTMLElement>("[data-draft-foot]") : null;
+  return foot ? foot.offsetHeight + 16 : 0;
+};
+
 export function createEditor(
   mount: HTMLElement,
   o: { state: EditorState; attributes: Record<string, string>; editable: () => boolean; hooks: EditorHooks },
@@ -522,6 +527,10 @@ export function createEditor(
     nodeViews: { paragraph: (node) => paragraphView(node), image: (node) => imageView(node, () => o.hooks.images) },
     attributes: o.attributes,
     editable: o.editable,
+    // the caret clears a composer's foot where it sticks over the text (a reply in the reader): the threshold is when
+    // ProseMirror scrolls, the margin how far; both read each time it does
+    scrollThreshold: { top: 0, left: 0, right: 0, get bottom() { return footClearance(mount) || 0; } },
+    scrollMargin: { top: 5, left: 5, right: 5, get bottom() { return footClearance(mount) || 5; } },
     dispatchTransaction(tr) {
       if (!o.editable()) return;
       const next = view.state.apply(tr);
