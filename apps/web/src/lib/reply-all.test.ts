@@ -5,7 +5,7 @@
  */
 import type { Account, Address, MessageDetail, ThreadDetail } from "@terno/core";
 import { describe, expect, it } from "vitest";
-import { answered, autoRecipients, identitiesIn, quoteFor, replyFields, replyName } from "./compose-fields";
+import { answered, autoRecipients, identitiesIn, quoteFor, reachesSeveral, replyFields, replyName } from "./compose-fields";
 
 const A = (name: string, email: string): Address => ({ name, email });
 const me = A("Luis", "luis@acme.studio");
@@ -17,6 +17,19 @@ let id = 1;
 const m = (o: Partial<MessageDetail>): MessageDetail => ({ id: id++, threadId: 1, accountId: 1, from: ana, replyTo: [], to: [me], cc: [], subject: "s", date: id, snippet: "", bodyText: `body ${id}`, bodyHtml: null, bodyState: "full", isRead: true, isStarred: false, isSent: false, hasAttachments: false, rfcMessageId: null, references: [], listId: null, attachments: [], ...o });
 const thread = (...messages: MessageDetail[]): ThreadDetail => ({ thread: { id: 1, subject: "s" }, messages }) as unknown as ThreadDetail;
 const emails = (list: Address[]) => list.map((a) => a.email);
+
+describe("Reply all is offered only when it reaches someone Reply doesn't", () => {
+  it.each<[string, MessageDetail[], boolean]>([
+    ["one other person", [m({ from: ana, to: [me] })], false],
+    ["the same person twice, and me in Cc", [m({ from: ana, to: [me, ana], cc: [me] })], false],
+    ["someone else in To", [m({ from: ana, to: [me, bob] })], true],
+    ["someone else in Cc", [m({ from: ana, to: [me], cc: [cara] })], true],
+    ["my own message to one person", [m({ from: me, isSent: true, to: [bob] })], false],
+    ["my own message to two", [m({ from: me, isSent: true, to: [bob, cara] })], true],
+  ])("%s", (_, messages, offered) => {
+    expect(reachesSeveral(thread(...messages), me.email)).toBe(offered);
+  });
+});
 
 describe("reply and reply-all recipients", () => {
   it.each<[string, MessageDetail[], { to: string[]; cc: string[] }]>([

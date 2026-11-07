@@ -749,7 +749,7 @@ test.describe("Part B: resizable panes", () => {
       overflow.forEach((extra, i) => expect(extra, ["document", "sidebar", "thread-list", "reader"][i]).toBeLessThanOrEqual(0));
       expect(await width(reader(page))).toBeGreaterThanOrEqual(d.layout.readerMin - 0.5);
       const r = (await reader(page).boundingBox())!;
-      for (const id of ["action-archive", "action-reply", "action-forward", "action-print"]) {
+      for (const id of ["action-archive", "action-reply", "action-reply-menu", "action-print"]) {
         const b = (await page.getByTestId(id).boundingBox())!;
         expect(b.x + b.width, id).toBeLessThanOrEqual(r.x + r.width + 0.5);
       }

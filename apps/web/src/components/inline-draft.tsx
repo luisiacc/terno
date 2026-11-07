@@ -291,7 +291,8 @@ function formLabel(forward: boolean, who: string): string {
  * keeps the draft in view; focus moves only on an explicit open or exit.
  */
 /** `icons`: the account's own picture may be asked for (plan 22; never in spam) */
-export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, checkpoint, onCheckpointReopen }: { threadId: number; draftKey: string | null; replyTo: string; account: Account | undefined; icons?: boolean; checkpoint?: BodyCheckpoint; onCheckpointReopen?: () => () => void }) {
+/** `replyAll`: offered in the bar only when it reaches someone Reply doesn't */
+export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, account, icons = true, checkpoint, onCheckpointReopen }: { threadId: number; draftKey: string | null; replyTo: string; replyAll?: boolean; account: Account | undefined; icons?: boolean; checkpoint?: BodyCheckpoint; onCheckpointReopen?: () => () => void }) {
   // plan 115: this conversation's draft is in the pinned card (kept so even after the conversation's placement expired)
   const pinned = usePinned((s) => s.key !== null && (s.key === draftKey || (draftKey === null && s.threadId === threadId)));
   const d = useDrafts((s) => (draftKey && !pinned ? s.drafts[draftKey] : undefined));
@@ -397,13 +398,15 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
     <div ref={rootRef} className={cn("mt-5", DRAFT_SURFACE)} data-testid="draft-slot" data-state={state} data-thread={threadId}>
       <Expand open={state === "bar"}>
         <div className="flex h-10 items-center gap-0.5 pr-1.5 pl-2.5" data-testid="reply-bar">
-          <button type="button" onClick={() => void openCompose("reply", threadId)} data-testid="quick-reply" className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground">
+          <button type="button" onClick={() => void openCompose("reply", threadId)} title={me ? t("compose.bar.from", { name: me }) : undefined} data-testid="quick-reply" className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground">
             <SenderAvatar name={me} email={account?.email ?? me} icon={icons} className="size-[22px] text-[9.5px]" />
             <span className="truncate">{t("compose.bar.reply", { name: replyTo })}</span>
           </button>
-          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => void openCompose("replyAll", threadId)} data-testid="quick-reply-all">
-            <ReplyAll /> {t("compose.bar.replyAll")}
-          </Button>
+          {replyAll && (
+            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => void openCompose("replyAll", threadId)} data-testid="quick-reply-all">
+              <ReplyAll /> {t("compose.bar.replyAll")}
+            </Button>
+          )}
           <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => void openCompose("forward", threadId)} data-testid="quick-forward">
             <Forward /> {t("compose.bar.forward")}
           </Button>

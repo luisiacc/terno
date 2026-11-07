@@ -1,6 +1,6 @@
 import { parseRaw } from "@terno/mail";
 import type { IncomingMessage } from "@terno/store";
-import { chipsOf, expect, recipientEmails, selectThread, stabilize, test } from "./fixtures";
+import { chipsOf, expect, recipientEmails, selectThread, stabilize, test, respond } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 
@@ -25,7 +25,8 @@ for (const mode of ["reply", "replyAll"] as const) {
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       await selectThread(page, touched[0]!, 'in:inbox subject:"Helpdesk session"');
-      await page.getByTestId(mode === "reply" ? "action-reply" : "action-reply-all").click();
+      if (mode === "reply") await page.getByTestId("action-reply").click();
+      else await respond(page, "reply-all");
       // as chips (plan 34): the quoted comma name is one recipient
       await expect(chipsOf(page, "compose-to")).toHaveText(["Support, Session", "List"]);
       expect(await recipientEmails(page, "compose-to")).toEqual(["session@help.test", "list@help.test"]);

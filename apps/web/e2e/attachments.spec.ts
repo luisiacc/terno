@@ -2,7 +2,7 @@ import { parseRaw } from "@terno/mail";
 import { msg } from "@terno/store/conformance";
 import type { IncomingMessage } from "@terno/store";
 import { readFileSync } from "node:fs";
-import { axeBothModes, expect, openRow, selectThread, stabilize, test } from "./fixtures";
+import { axeBothModes, expect, openRow, selectThread, stabilize, test, respond, respondByKeys } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 test.use({ backendOptions: { smtpCapture: true } });
@@ -105,7 +105,7 @@ test("offline CID consent and forwarding retain exact account-owned bytes", asyn
   await page.getByTestId("inline-load").click();
   await expect(image).toHaveAttribute("src", /^data:image\/png;base64,/);
   expect(remote).toEqual([]);
-  await page.getByTestId("action-forward").click();
+  await respond(page, "forward");
   await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
   await page.getByTestId("compose-to").fill("recipient@test.com");
   await page.getByTestId("compose-send").click();
@@ -149,12 +149,14 @@ test("attachment-only reply survives reload and mode conversion with exact Undo"
   const refs = JSON.parse(saved()!.attachments_json);
   await page.reload();
   await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
-  await page.getByTestId("action-reply-all").click();
+  // one other person, so the toolbar has no Reply all: a still converts
+  const replyAll = async () => { await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("a"); };
+  await replyAll();
   await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Undo convert to reply all" })).toBeVisible();
   await page.getByRole("button", { name: "Undo convert to reply all" }).click();
   await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "reply");
-  await page.getByTestId("action-reply-all").click();
+  await replyAll();
   await expect.poll(() => saved()?.mode).toBe("replyAll");
   expect(JSON.parse(saved()!.attachments_json)).toEqual(refs);
   await page.reload();
@@ -185,8 +187,7 @@ test("Forward refuses foreign account refs before changing authored work, with k
   await body.fill("work from the selected account");
   await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.body_text).toBe("work from the selected account");
   const before = (await server.backend.store.drafts.list())[0]!;
-  const forward = page.getByTestId("action-forward");
-  await forward.focus(); await page.keyboard.press("Enter");
+  await respondByKeys(page, "forward");
   await expect(page.getByTestId("draft-attachment")).toHaveCount(0);
   await expect(body).toHaveText("work from the selected account");
   await expect(from).toContainText(other.email);
@@ -204,7 +205,7 @@ test("Forward refuses foreign account refs before changing authored work, with k
   await from.focus(); await page.keyboard.press("Space");
   await page.getByRole("option", { name: `${source.displayName} · ${source.email}`, exact: true }).focus();
   await page.keyboard.press("Enter");
-  await forward.focus(); await page.keyboard.press("Enter");
+  await respondByKeys(page, "forward");
   await expect(page.getByTestId("draft-attachment")).toHaveCount(2);
   await expect(body).toHaveText("later text remains savable");
   await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.mode).toBe("forward");

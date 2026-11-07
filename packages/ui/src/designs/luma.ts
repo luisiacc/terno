@@ -43,9 +43,9 @@ export const luma: DesignDefinition = {
     compose: { family: "sans", size: "0.875rem", leading: "1.25rem", weight: 500, strong: 600, tracking: "-0.006em", style: "normal" },
   },
   icon: { stroke: 1.5, toolbar: 1.5, nav: 16 },
-  layout: { sidebar: "240px", listMin: "340px", listMax: "min(400px, 32vw)", readerMin: 360, readerMax: "800px", readerPadX: "2rem", rowRadius: "0.625rem", navRadius: "0.5rem", navHeight: "2rem", sidebarPad: "0.5rem", navSectionGap: "1rem", navSectionHeight: "1.25rem", cardRadius: "calc(var(--ds-radius-lg) + 2px)", commandRadius: "var(--ds-radius-xl)" },
+  layout: { sidebar: "240px", listMin: "340px", listMax: "min(400px, 32vw)", readerMin: 360, readerMax: "704px", readerPadX: "2rem", rowRadius: "0.625rem", navRadius: "0.5rem", navHeight: "2rem", sidebarPad: "0.5rem", navSectionGap: "1rem", navSectionHeight: "1.25rem", cardRadius: "calc(var(--ds-radius-lg) + 2px)", commandRadius: "var(--ds-radius-xl)" },
   rows: { comfortable: 76, compact: 44, wide: 48, results: 66 },
-  avatar: { row: 32, rowCompact: 20, rowWide: 24, message: 32, collapsed: 24, senderCard: 0 },
+  avatar: { row: 32, rowCompact: 20, rowWide: 24, message: 28, collapsed: 28, senderCard: 0 },
   surfaces: { draft: "outline", reviewBadge: "tinted", inboxCount: "muted", cta: "control", card: "tint" },
   variants: {
     compose: "sidebar-pill",
@@ -55,7 +55,7 @@ export const luma: DesignDefinition = {
     row: "avatar",
     categoryReview: "inline-badge",
     readerHeader: "classic",
-    replyAction: "icons",
+    replyAction: "control",
     categoryTabs: "pill",
   },
 };

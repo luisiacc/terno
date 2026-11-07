@@ -1,6 +1,6 @@
 import { parseRaw } from "@terno/mail";
 import type { IncomingMessage } from "@terno/store";
-import { addRecipients, chipsOf, expect, recipientEmails, selectThread, stabilize, test } from "./fixtures";
+import { addRecipients, chipsOf, expect, recipientEmails, selectThread, stabilize, test, respond } from "./fixtures";
 import { E2E_NOW } from "./constants";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
@@ -36,7 +36,8 @@ for (const mode of ["reply", "replyAll", "forward"] as const) {
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       await selectThread(page, touched[0]!, 'in:inbox subject:"W09 own follow-up"');
-      await page.getByTestId(mode === "replyAll" ? "action-reply-all" : `action-${mode}`).click();
+      if (mode === "reply") await page.getByTestId("action-reply").click();
+      else await respond(page, mode === "replyAll" ? "reply-all" : "forward");
       if (mode === "forward") {
         await expect(chipsOf(page, "compose-to")).toHaveCount(0);
         await addRecipients(page, "compose-to", "Forward recipient <forward@example.test>");

@@ -1,5 +1,5 @@
 import { msg } from "@terno/store/conformance";
-import { axeBothModes, expect, selectThread, test } from "./fixtures";
+import { axeBothModes, expect, respond, respondByKeys, selectThread, test } from "./fixtures";
 
 test("Forward refuses 101 files before mutation; continued typing and the 100-file boundary stay durable", async ({ app: page, server }) => {
   const store = server.backend.store, [account] = await store.accounts.list();
@@ -8,12 +8,13 @@ test("Forward refuses 101 files before mutation; continued typing and the 100-fi
   await page.getByTestId("quick-reply").click();
   await page.getByTestId("attachment-input").setInputFiles(Array.from({ length: 100 }, (_, i) => ({ name: `f${i}.txt`, mimeType: "text/plain", buffer: Buffer.alloc(0) })));
   await expect(page.getByTestId("draft-attachment")).toHaveCount(100);
-  const body = page.getByTestId("compose-body"), forward = page.getByTestId("action-forward");
+  const body = page.getByTestId("compose-body");
   await body.fill("Every file and this reply must stay saved");
   await expect.poll(async () => (await store.drafts.list())[0]?.body_text).toBe("Every file and this reply must stay saved");
   const before = (await store.drafts.list())[0]!;
-  await forward.focus(); await page.keyboard.press("Enter");
-  await expect(forward).toBeFocused();
+  await respondByKeys(page, "forward");
+  // refused: nothing took focus, so the menu's button keeps it
+  await expect(page.getByTestId("action-reply-menu")).toBeFocused();
   await expect(page.getByTestId("snack-message")).toContainText("This message is too large. Remove an attachment or shorten the message.");
   await expect(body).toHaveText(before.body_text);
   await expect(page.getByTestId("draft-attachment")).toHaveCount(100);
@@ -24,7 +25,7 @@ test("Forward refuses 101 files before mutation; continued typing and the 100-fi
   await page.getByTestId("language-select").click(); await page.getByTestId("language-es").click();
   await expect(page.locator("html")).toHaveAttribute("lang", "es-MX");
   await page.keyboard.press("Escape");
-  await forward.click();
+  await respond(page, "forward");
   await expect(page.getByTestId("snack-message")).toContainText("Este mensaje es demasiado grande.");
   await page.getByTestId("snack-dock").hover();
   await body.fill("Later body is still durably saved");
@@ -34,7 +35,7 @@ test("Forward refuses 101 files before mutation; continued typing and the 100-fi
   await expect(page.getByTestId("draft-attachment")).toHaveCount(100);
   await page.getByRole("button", { name: "Quitar f0.txt", exact: true }).click();
   await expect.poll(async () => JSON.parse((await store.drafts.list())[0]!.attachments_json).length).toBe(99);
-  await forward.click();
+  await respond(page, "forward");
   await expect(page.getByTestId("draft-attachment")).toHaveCount(100);
   await expect.poll(async () => (await store.drafts.list())[0]?.mode).toBe("forward");
   await page.getByTestId("snack-action").click();

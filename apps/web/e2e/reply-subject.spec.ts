@@ -4,7 +4,7 @@ import { createGmailApiProvider } from "../../../packages/mail/src/gmail-api";
 import { buildRaw } from "../../../packages/mail/src/compose";
 import type { SendPayload } from "../../../packages/mail/src/types";
 import type { IncomingMessage } from "@terno/store";
-import { addRecipients, chipsOf, expect, recipientEmails, selectThread, stabilize, test } from "./browser-forward-fixtures";
+import { addRecipients, chipsOf, expect, recipientEmails, selectThread, stabilize, test, respond } from "./browser-forward-fixtures";
 import { E2E_NOW } from "./constants";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
@@ -47,7 +47,8 @@ for (const [mode, scenario] of [["reply", "changed"], ["reply", "normalized"], [
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       await selectThread(page, touched[0]!, 'in:inbox subject:"W09 own follow-up"');
-      await page.getByTestId(mode === "replyAll" ? "action-reply-all" : `action-${mode}`).click();
+      if (mode === "reply") await page.getByTestId("action-reply").click();
+      else await respond(page, mode === "replyAll" ? "reply-all" : "forward");
       if (mode === "forward") {
         await expect(chipsOf(page, "compose-to")).toHaveCount(0);
         await addRecipients(page, "compose-to", "Forward recipient <forward@example.test>");
@@ -210,12 +211,12 @@ test("edited automatic recipient survives Undo, Forward conversion, reload and s
   await toInput.press("Meta+z"); await toInput.press("Meta+z");
   await expect(chipsOf(page, "compose-to")).toHaveCount(1);
   await page.getByTestId("compose-body").fill("Authored F2 body");
-  await page.getByTestId("action-forward").click();
+  await respond(page, "forward");
   await expect(chipsOf(page, "compose-to")).toHaveCount(1);
   await expect.poll(async () => (await server.backend.store.drafts.list()).some((d) => d.mode === "forward" && d.body_text === "Authored F2 body")).toBe(true);
   await page.reload(); await page.locator("[data-ready]").waitFor();
   await selectThread(page, result.touched[0]!, 'in:inbox subject:"F2 subject"');
-  await page.getByTestId("action-forward").click();
+  await respond(page, "forward");
   expect(await recipientEmails(page, "compose-to")).toEqual([client.email]);
   await expect(page.getByTestId("compose-body")).toContainText("Authored F2 body");
   await page.getByTestId("compose-send").click();
@@ -242,7 +243,7 @@ test("untouched Reply to Reply all keeps its original source when new mail arriv
   server.backend.notifyChanged(next.touched);
   await expect(page.getByTestId("reader").getByText("new source", { exact: true })).toBeVisible();
   await expect(page.getByTestId("row-snippet")).toHaveText("new source");
-  await page.getByTestId("action-reply-all").click();
+  await respond(page, "reply-all");
   await expect(chipsOf(page, "compose-to")).toHaveText([client.name]);
   expect(await recipientEmails(page, "compose-cc")).toEqual([teammate.email]);
   await page.getByTestId("compose-body").fill("Keep original source");

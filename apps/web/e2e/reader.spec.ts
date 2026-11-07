@@ -4,7 +4,8 @@
  * open, and runs of collapsed messages folded into "N more messages".
  */
 import { E2E_NOW } from "./constants";
-import { expect, focusList, ingestConversation, openRow, search, selectThread, test, fresh, scenario } from "./fixtures";
+import { expect, focusList, ingestConversation, openRow, respond, search, selectThread, test, fresh, scenario } from "./fixtures";
+import type { Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
 
 test.describe("reader conversation", () => {
@@ -130,6 +131,129 @@ test.describe("reader conversation", () => {
     });
   });
 
+});
+
+test.describe("plan 158: the reader's masthead, measure and reply controls", () => {
+  const ctx = { clientId: "setup", origin: "dev" as const };
+  /** Where the conversation's column has its content, and the toolbar's first glyph and last control. */
+  const geometry = (page: Page) => page.evaluate(() => {
+    const column = document.querySelector<HTMLElement>("[data-reader-column]")!;
+    const box = column.getBoundingClientRect(), style = getComputedStyle(column);
+    const bar = [...document.querySelectorAll("[data-reader-toolbar] button")].filter((b) => (b as HTMLElement).offsetParent !== null);
+    const body = [...document.querySelectorAll("[data-testid=message][data-expanded] .type-body")].at(-1) as HTMLElement;
+    const type = getComputedStyle(body);
+    const ctx2d = document.createElement("canvas").getContext("2d")!;
+    ctx2d.font = `${type.fontWeight} ${type.fontSize} ${type.fontFamily}`;
+    const sample = "the quick brown fox jumps over the lazy dog and keeps on running through the field ";
+    return {
+      left: box.left + parseFloat(style.paddingLeft),
+      right: box.right - parseFloat(style.paddingRight),
+      glyph: bar[0]!.querySelector("svg")!.getBoundingClientRect().left,
+      end: Math.max(...bar.map((b) => (b.closest("[data-slot=button-group]") ?? b.querySelector("svg")!).getBoundingClientRect().right)),
+      overflow: bar.some((b) => b.getBoundingClientRect().right > document.querySelector("[data-testid=reader]")!.getBoundingClientRect().right),
+      firstLine: body.getBoundingClientRect().top,
+      chars: body.getBoundingClientRect().width / (ctx2d.measureText(sample).width / sample.length),
+    };
+  });
+
+  test("in every design and layout, the toolbar is on the column, lines are readable and the mail starts in the upper third", { tag: "@design" }, async ({ app: page, server }) => {
+    const id = await ingestConversation(server, { subject: "Una conversación con un asunto de longitud bastante normal", count: 3, now: E2E_NOW });
+    const check = async (where: string) => {
+      await page.locator("[data-testid=message][data-expanded] .type-body").last().waitFor();
+      const g = await geometry(page);
+      expect(Math.abs(g.glyph - g.left), `${where}: first glyph on the column`).toBeLessThanOrEqual(1);
+      expect(Math.abs(g.end - g.right), `${where}: last control on the column`).toBeLessThanOrEqual(1.5);
+      expect(g.overflow, where).toBe(false);
+      expect(g.chars, `${where}: measure`).toBeLessThanOrEqual(84);
+      return g;
+    };
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await selectThread(page, id, 'subject:"Una conversación con un asunto"');
+    const wide = await check("split, 1440");
+    expect(wide.firstLine).toBeLessThan(300);
+    expect(wide.chars).toBeGreaterThanOrEqual(65);
+    await page.setViewportSize({ width: 1100, height: 700 });
+    await expect.poll(async () => (await geometry(page)).right - (await geometry(page)).left).toBeLessThan(600);
+    await check("split, 1100");
+
+    await server.backend.server.invoke("settings.update", { layout: "list" }, ctx);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await search(page, 'subject:"Una conversación con un asunto"');
+    await page.getByTestId("thread-row").first().click();
+    await page.getByTestId("reader-back").waitFor();
+    const list = await check("list, 1440");
+    expect(list.firstLine).toBeLessThan(300);
+    // New message is reachable from the reader, wherever this design keeps it
+    await page.getByTestId("reader-compose").or(page.getByTestId("compose-button")).locator("visible=true").first().click();
+    await expect(page.getByTestId("compose-title")).toBeVisible();
+  });
+
+  test("one way to reply: Reply in words, the rest in its menu; Reply all only with someone else on the message", async ({ app: page, server }) => {
+    const store = server.backend.store;
+    const id = await ingestConversation(server, { subject: "Solo con Yuki", count: 1, now: E2E_NOW });
+    await scenario("one other person: no Reply all, here or in the bar, and a still works", async () => {
+      await selectThread(page, id, 'subject:"Solo con Yuki"');
+      await expect(page.getByTestId("action-reply")).toContainText("Reply");
+      await expect(page.getByTestId("quick-reply-all")).toHaveCount(0);
+      await page.getByTestId("action-reply-menu").click();
+      await expect(page.getByTestId("action-forward")).toBeVisible();
+      await expect(page.getByTestId("action-reply-all")).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("action-reply-menu")).toBeFocused();
+      await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+      await page.keyboard.press("a");
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+      await page.getByTestId("compose-discard").click();
+    });
+    await scenario("someone else on it: both offer it, and the menu's row hands focus to the draft", async () => {
+      const account = (await store.accounts.list())[0]!;
+      const yuki = { name: "Yuki", email: "yuki@acme.studio" };
+      const { touched } = await store.sync.ingest([{ accountId: account.id, providerMsgId: "three-people", providerThreadId: "three-people", rfcMessageId: "<three-people@e2e.test>", inReplyTo: null, references: [], from: yuki, replyTo: [], to: [{ name: "", email: account.email }], cc: [{ name: "Ana", email: "ana@x.test" }], bcc: [], subject: "Con Ana también", date: E2E_NOW, snippet: "Hola a los dos", bodyText: "Hola a los dos", bodyHtml: null, bodyState: "full", listId: null, isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100 }], { applyFilters: false, now: E2E_NOW, classifier: null });
+      await selectThread(page, touched[0]!, 'subject:"Con Ana también"');
+      await expect(page.getByTestId("quick-reply-all")).toBeVisible();
+      await respond(page, "reply-all");
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+    });
+  });
+
+  test("older messages say they open, a Tab reaches them, and history folds the same in plain text and HTML", async ({ app: page, server }) => {
+    const store = server.backend.store;
+    const id = await ingestConversation(server, { subject: "Con mensajes viejos", count: 3, now: E2E_NOW });
+    await scenario("a collapsed header shows its disclosure, turned when open, and Tab reaches it with a ring", async () => {
+      await selectThread(page, id, 'subject:"Con mensajes viejos"');
+      const [closed, open] = [page.getByTestId("message-toggle").first(), page.getByTestId("message-toggle").last()];
+      await expect(closed).toHaveAttribute("aria-expanded", "false");
+      const turn = (el: typeof closed) => el.locator("svg").last().evaluate((svg) => getComputedStyle(svg).rotate);
+      expect(await turn(closed)).toBe("none");
+      expect(await turn(open)).toBe("90deg");
+      await page.getByTestId("action-reply-menu").focus();
+      for (let i = 0; i < 8 && !(await closed.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press("Tab");
+      await expect(closed).toBeFocused();
+      expect(await closed.evaluate((el) => getComputedStyle(el).boxShadow)).not.toBe("none");
+      await page.keyboard.press("Enter");
+      await expect(closed).toHaveAttribute("aria-expanded", "true");
+    });
+    await scenario("my own sent mail, as Terno writes it: the quote is behind the same toggle as plain text's", async () => {
+      const account = (await store.accounts.list())[0]!;
+      const me = { name: "Luis", email: account.email };
+      const yuki = { name: "Yuki", email: "yuki@acme.studio" };
+      const base = { accountId: account.id, providerThreadId: "own-quote", replyTo: [], cc: [], bcc: [], subject: "Mi cita", snippet: "Mi respuesta", bodyState: "full" as const, listId: null, isRead: true, isStarred: false, inInbox: true, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100 };
+      const { touched } = await store.sync.ingest([
+        { ...base, providerMsgId: "own-quote-1", rfcMessageId: "<own-quote-1@e2e.test>", inReplyTo: null, references: [], from: yuki, to: [me], date: E2E_NOW - 7_200_000, bodyText: "¿Va?", bodyHtml: null, isSent: false },
+        { ...base, providerMsgId: "own-quote-2", rfcMessageId: "<own-quote-2@e2e.test>", inReplyTo: "<own-quote-1@e2e.test>", references: ["<own-quote-1@e2e.test>"], from: me, to: [yuki], date: E2E_NOW, bodyText: "Mi respuesta\n\nOn Monday, Yuki wrote:\n> ¿Va?", bodyHtml: '<div>Mi respuesta</div><div><br></div><div>On Monday, Yuki wrote:</div><blockquote style="margin:0 0 0 0.8ex;border-left:2px solid #ccc;padding-left:1ex"><div>¿Va?</div></blockquote>', isSent: true },
+      ], { applyFilters: false, now: E2E_NOW, classifier: null });
+      await selectThread(page, touched[0]!, 'subject:"Mi cita"');
+      const frame = page.getByTestId("message").last().frameLocator("iframe");
+      await expect(frame.getByText("Mi respuesta")).toBeVisible();
+      await expect(frame.getByText("wrote:")).toHaveCount(0);
+      const toggle = page.getByTestId("message").last().getByRole("button", { name: "Show quoted text" });
+      await toggle.click();
+      await expect(frame.getByText("wrote:")).toBeVisible();
+      await expect(page.getByTestId("message").last().getByRole("button", { name: "Hide quoted text" })).toHaveAttribute("aria-expanded", "true");
+    });
+  });
 });
 
 test.describe("plan 37: “Load content” for every remote image the frame would block", () => {

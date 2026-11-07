@@ -6,7 +6,7 @@
  */
 import { msg } from "@terno/store/conformance";
 import { parseRaw } from "@terno/mail";
-import { axeBothModes, expect, selectThread, test } from "./fixtures";
+import { axeBothModes, expect, selectThread, test, respond, respondByKeys } from "./fixtures";
 
 test.use({ backendOptions: { smtpCapture: true } });
 
@@ -22,8 +22,7 @@ test("Forward opens while the original downloads; its files join when captured, 
   await body.fill("Keep my reply while the original downloads");
   await expect.poll(async () => (await store.drafts.list())[0]?.body_text).toBe("Keep my reply while the original downloads");
 
-  const forward = page.getByTestId("action-forward");
-  await forward.focus(); await page.keyboard.press("Enter");
+  await respondByKeys(page, "forward");
   // at once: a forward, focus in To, the text kept, and the draft says the files are coming
   await expect(page.getByTestId("compose-to")).toBeFocused();
   await expect(body).toHaveText("Keep my reply while the original downloads");
@@ -62,7 +61,7 @@ test("files that never come are named with Try again, and the forward sends with
   const { touched } = await store.sync.ingest([msg({ accountId: account!.id, providerMsgId: "lost-forward", subject: "Lost files fixture", bodyText: "The report is attached.", attachments: [{ filename: "report.pdf", mime: "application/pdf", size: 1200 }], hasAttachments: true })], { applyFilters: false, now: Date.now(), classifier: null });
   await page.reload();
   await selectThread(page, touched[0]!, 'subject:"Lost files fixture"');
-  await page.getByTestId("action-forward").click();
+  await respond(page, "forward");
   await expect(page.getByTestId("compose-to")).toBeFocused();
   const status = page.getByTestId("forward-files");
   await expect(status).toHaveText("Getting report.pdf from the original…");

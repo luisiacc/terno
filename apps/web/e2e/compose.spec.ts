@@ -7,7 +7,7 @@
  */
 import type { Page } from "@playwright/test";
 import { E2E_NOW } from "./constants";
-import { axeBothModes, addRecipients, chipsOf, expect, navTo, focusList, ingestConversation, openRow, recipientEmails, rows, selectThread, stabilize, test, scenario, freshNoDrafts } from "./fixtures";
+import { axeBothModes, addRecipients, chipsOf, expect, navTo, focusList, ingestConversation, openRow, recipientEmails, rows, selectThread, stabilize, test, scenario, freshNoDrafts, respond } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 const composer = (page: Page) => page.getByTestId("reader").getByTestId("composer");
@@ -265,11 +265,11 @@ test.describe("drafts are kept", () => {
       await page.keyboard.type("Escribiendo.");
       await expect(page.getByTestId("compose-cc")).toHaveCount(0);
       // no collapse in between: the toolbar converts the open draft
-      await page.getByTestId("action-reply-all").click();
+      await respond(page, "reply-all");
       await expect(composer(page)).toHaveAttribute("data-mode", "replyAll");
       await expect(page.getByTestId("compose-cc")).toBeVisible();
       expect((await recipientEmails(page, "compose-cc")).length).toBeGreaterThan(0);
-      await page.getByTestId("action-forward").click();
+      await respond(page, "forward");
       await expect(composer(page)).toHaveAttribute("data-mode", "forward");
       await expect(page.getByTestId("compose-subject")).toBeVisible();
       await expect(page.getByTestId("compose-subject")).toHaveValue(/^Fwd: /);

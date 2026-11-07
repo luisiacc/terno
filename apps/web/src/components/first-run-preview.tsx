@@ -5,7 +5,8 @@ import type { Theme } from "@terno/ui/themes/registry";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Kbd } from "@terno/ui/components/kbd";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Inbox, ListFilter, MailOpen, OctagonAlert, Reply, Search, Send, SquarePen, Star, Tag, Trash2 } from "@terno/ui/icons";
+import { Separator } from "@terno/ui/components/separator";
+import { Archive, ChevronDown, Inbox, ListFilter, Mail, OctagonAlert, Reply, Search, Send, SquarePen, Star, Tag, Trash2 } from "@terno/ui/icons";
 import { formatNumber, t } from "@terno/i18n";
 import { useLayoutEffect, useRef, useState } from "react";
 import { listDate, viewLabel } from "~/lib/format";
@@ -243,62 +244,59 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
 function Reader({ design, sample }: { design: DesignDefinition; sample: SampleMailbox }) {
   const { thread, to, body } = sample.open;
   const tool = (glyph: React.ReactNode, active = false) => <span className={cn("flex size-8 items-center justify-center rounded-md text-muted-foreground [&_svg]:[--icon-line:var(--icon-line-toolbar)]", active && "text-star")}>{glyph}</span>;
-  const recipients = (
-    <span className="block truncate text-xs text-muted-foreground">
-      <span className="font-medium text-foreground">{t("reader.to")}</span> {to}
-    </span>
-  );
-  const subject = <h2 className="type-reader-subject text-balance">{thread.subject}</h2>;
+  const recipients = <span className="block truncate text-xs text-muted-foreground">{t("reader.to")} {to}</span>;
+  const subject = <h2 className="type-reader-subject">{thread.subject}</h2>;
+  const column = "mx-auto w-full max-w-(--reader-max) px-(--reader-pad-x)";
   return (
     <section className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex h-[52px] shrink-0 items-center gap-3 px-3.5">
+      <div className={cn(column, "flex h-[52px] shrink-0 items-center gap-2 [&>:first-child]:-ml-2")}>
         <div className="flex items-center gap-0.5">
           {tool(<Archive />)}
           {tool(<Trash2 />)}
           {tool(<OctagonAlert />)}
         </div>
+        <Separator orientation="vertical" className="my-auto h-4" />
         <div className="flex items-center gap-0.5">
           {tool(<Tag />)}
-          {tool(<MailOpen />)}
+          {tool(<Mail />)}
           {tool(<Star />)}
         </div>
-        <div className="ml-auto flex items-center gap-0.5">
-          {design.variants.replyAction === "pill" ? (
-            <span className="mr-1 flex h-8 items-center gap-2 rounded-full border border-border px-3.5 text-sm font-semibold [&_svg]:[--icon-line:var(--icon-line-toolbar)]">
-              <Reply className="size-4" />
-              {t("actions.reply")}
-              <Kbd>R</Kbd>
-            </span>
-          ) : (
-            tool(<Reply />)
-          )}
-        </div>
+        <span className={cn("ml-auto flex h-8 items-center divide-x divide-border overflow-hidden rounded-[max(var(--cta-floor),var(--ds-radius-lg))] border border-border bg-card text-[length:var(--ds-text-control)] font-medium shadow-xs [&_svg]:[--icon-line:var(--icon-line-toolbar)]", design.variants.replyAction === "pill" && "rounded-full")}>
+          <span className="flex h-full items-center gap-1.5 px-2.5">
+            <Reply className="size-[1.15em] text-muted-foreground" />
+            {t("actions.reply")}
+            {design.variants.replyAction === "pill" && <Kbd>R</Kbd>}
+          </span>
+          <span className="flex h-full w-7 items-center justify-center">
+            <ChevronDown className="size-3.5 text-muted-foreground" />
+          </span>
+        </span>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        <div className="mx-auto max-w-(--reader-max) px-(--reader-pad-x) pt-5">
+        <div className={cn(column, "pt-2")}>
           {variant(design.variants.readerHeader, {
-            classic: <h2 className="mb-5 text-xl font-semibold tracking-display text-balance">{thread.subject}</h2>,
-            "chips-display": <div className="mt-4 mb-8">{subject}</div>,
+            classic: <div className="mb-3">{subject}</div>,
+            "chips-display": <div className="mb-3">{subject}</div>,
             "sender-card": (
-              <>
-                <div className="mt-2 flex items-center gap-4">
-                  <SenderAvatar name={thread.fromName} email={thread.fromEmail} className="size-(--avatar-sender) text-lg" />
+              <div className="mb-3">
+                {subject}
+                <div className="mt-1.5 flex items-start gap-2.5">
+                  <SenderAvatar name={thread.fromName} email={thread.fromEmail} className="size-(--avatar-sender) text-xs" />
                   <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="flex items-baseline gap-3">
+                    <span className="flex items-baseline gap-2">
                       <span className="type-sender-name min-w-0 truncate">{thread.fromName}</span>
-                      <span className="ml-auto shrink-0 text-sm text-muted-foreground tabular">{listDate(thread.lastDate)}</span>
+                      <span className="min-w-0 flex-1 basis-0 truncate text-xs text-muted-foreground">{thread.fromEmail}</span>
+                      <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{listDate(thread.lastDate)}</span>
                     </span>
-                    <span className="truncate text-sm text-muted-foreground">{thread.fromEmail}</span>
                     {recipients}
                   </div>
                 </div>
-                <div className="mt-8 mb-6">{subject}</div>
-              </>
+              </div>
             ),
           })}
           {design.variants.readerHeader !== "sender-card" && (
-            <div className="flex items-start gap-3 pt-[18px] pb-3">
-              <SenderAvatar name={thread.fromName} email={thread.fromEmail} className="size-(--avatar-message) text-xs" />
+            <div className="flex items-start gap-2.5 pt-2.5 pb-1.5">
+              <SenderAvatar name={thread.fromName} email={thread.fromEmail} className="size-(--avatar-message) text-2xs" />
               <span className="min-w-0 flex-1">
                 <span className="flex items-baseline gap-2">
                   <span className="type-sender-name truncate">{thread.fromName}</span>
@@ -308,7 +306,7 @@ function Reader({ design, sample }: { design: DesignDefinition; sample: SampleMa
               </span>
             </div>
           )}
-          <div className="type-body whitespace-pre-wrap text-foreground">{body}</div>
+          <div className="type-body max-w-[35em] whitespace-pre-wrap pt-1.5 text-foreground">{body}</div>
         </div>
       </div>
     </section>

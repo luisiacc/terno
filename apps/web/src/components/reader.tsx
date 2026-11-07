@@ -5,6 +5,9 @@ import { folderName } from "~/lib/account-folders";
 import { ReaderAttachments } from "./attachments";
 import type { Account, Category, CategoryColor, MessageDetail, Reason, ThreadDetail } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
+import { ButtonGroup, ButtonGroupItem } from "@terno/ui/components/button-group";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
+import { Separator } from "@terno/ui/components/separator";
 import { Chip } from "@terno/ui/components/chip";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { IconButton } from "@terno/ui/components/icon-button";
@@ -12,7 +15,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Bell, ChevronDown, ChevronLeft, ChevronUp, Forward, Inbox, Layers, MailOpen, OctagonAlert, Printer, Reply, ReplyAll, Sparkles, Star, Tag, Trash2 } from "@terno/ui/icons";
+import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Forward, Inbox, Layers, Mail, OctagonAlert, Printer, Reply, ReplyAll, Sparkles, SquarePen, Star, Tag, Trash2 } from "@terno/ui/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
@@ -25,12 +28,12 @@ import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
 import { ScheduledReplyLine } from "./scheduled-popover";
 import { ForwardLine } from "./forward-line";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
-import { replyName } from "~/lib/compose-fields";
-import { composeFocusPending, registerReaderFocusDestination, subscribeComposeFocus } from "~/lib/compose";
+import { reachesSeveral, replyName } from "~/lib/compose-fields";
+import { composeFocusPending, composeLanding, registerReaderFocusDestination, subscribeComposeFocus } from "~/lib/compose";
 import { act, cancelMarkRead, openCompose, readChosenThread, scheduleMarkRead, toggleStar } from "~/lib/actions";
 import { acceptSuggestion, answerReview, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { t } from "@terno/i18n";
-import { fullDate, listDate } from "~/lib/format";
+import { fullDate, messageDate } from "~/lib/format";
 import { SenderAvatar } from "./sender-avatar";
 import { chooseOpenThread, inSeparateTab, onThreadChosen, openedByApp, setApp, useApp } from "~/state/app";
 import { hydrateSelectedThread, useThread, useThreadGone } from "~/state/threads";
@@ -90,7 +93,7 @@ function RemindButton({ threadId }: { threadId: number }) {
                   aria-label={label}
                   data-testid="action-remind"
                   data-set={reminder ? true : undefined}
-                  className={cn("no-drag rounded-md text-muted-foreground hover:text-foreground [&_svg]:[--icon-line:var(--icon-line-toolbar)]", reminder && "text-primary hover:text-primary")}
+                  className={cn(tool, "text-muted-foreground hover:text-foreground", reminder && "text-primary hover:text-primary")}
                 />
               }
             />
@@ -110,8 +113,91 @@ function RemindButton({ threadId }: { threadId: number }) {
   );
 }
 
-// the reader's toolbar icons: out of the window's drag region, at the toolbar's line weight
-const tool = "no-drag rounded-md [&_svg]:[--icon-line:var(--icon-line-toolbar)]";
+// the reader's toolbar icons: out of the window's drag region, at the toolbar's line weight, a size down where the reader is narrow
+const tool = "no-drag size-8 rounded-md @max-[560px]:size-7 [&_svg]:[--icon-line:var(--icon-line-toolbar)]";
+
+// one column for the toolbar and the conversation, so their edges agree at every width (narrow: less margin, for the toolbar's icons)
+const COLUMN = "mx-auto w-full max-w-(--reader-max) px-(--reader-pad-x) @max-[420px]:px-4";
+
+/** Between the toolbar's groups; a narrow reader has no room for it. */
+const ToolbarDivider = () => <Separator orientation="vertical" className="my-auto h-4 @max-[420px]:hidden" />;
+
+/**
+ * One way to reply: Reply in words, and the others a click away beside it. Reply all only when it reaches someone Reply
+ * doesn't (`a` still works: it's the same as Reply then). The pill also shows its key.
+ */
+function ReplyGroup({ replyAll }: { replyAll: boolean }) {
+  const pill = useDesign().variants.replyAction === "pill";
+  const trigger = useRef<HTMLButtonElement>(null);
+  // a choice hands focus to the draft, and any focus moved meanwhile would cancel that; refused (a forward's files, say), the button takes it back
+  const chosen = useRef(false);
+  const choose = (mode: "replyAll" | "forward") => {
+    chosen.current = true;
+    void composeLanding(mode).then((landing) => {
+      if (landing.kind === "none" && document.activeElement === document.body) trigger.current?.focus();
+    });
+  };
+  return (
+    <ButtonGroup aria-label={t("reader.group.respond")} className={cn("no-drag [&_svg]:[--icon-line:var(--icon-line-toolbar)]", pill && "rounded-full")}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <ButtonGroupItem data-testid="action-reply" onClick={() => void openCompose("reply")} className="@max-[420px]:aspect-square @max-[420px]:px-0">
+              <Reply />
+              {/* the name is the visible label (still read when a narrow reader shows the icon alone); the key is decoration */}
+              <span className="@max-[420px]:sr-only">{t("actions.reply")}</span>
+              {pill && <Kbd aria-hidden className="@max-[560px]:hidden">R</Kbd>}
+            </ButtonGroupItem>
+          }
+        />
+        <TooltipContent className="flex items-center gap-2">
+          {t("actions.reply")}
+          <Shortcut keys="r" />
+        </TooltipContent>
+      </Tooltip>
+      <DropdownMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <DropdownMenuTrigger
+                render={<ButtonGroupItem ref={trigger} iconOnly aria-label={t("reader.replyMenu")} data-testid="action-reply-menu" className={cn("w-7", pill && "w-8 pr-0.5")} />}
+              />
+            }
+          >
+            <ChevronDown className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipContent>{t("reader.replyMenu")}</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent
+          align="end"
+          sideOffset={6}
+          className="w-48"
+          data-testid="reply-menu"
+          finalFocus={() => {
+            const handedOff = chosen.current;
+            chosen.current = false;
+            return !handedOff;
+          }}
+        >
+          <DropdownMenuGroup>
+            {replyAll && (
+              <DropdownMenuItem data-testid="action-reply-all" onClick={() => choose("replyAll")}>
+                <ReplyAll />
+                <span className="flex-1">{t("actions.replyAll")}</span>
+                <DropdownMenuShortcut>A</DropdownMenuShortcut>
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem data-testid="action-forward" onClick={() => choose("forward")}>
+              <Forward />
+              <span className="flex-1">{t("actions.forward")}</span>
+              <DropdownMenuShortcut>F</DropdownMenuShortcut>
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </ButtonGroup>
+  );
+}
 
 /** Why the engine did or suggests something: its reasons, in plain words. */
 function Reasons({ title, reasons, hint }: { title: string; reasons: Reason[]; hint?: string }) {
@@ -132,15 +218,15 @@ function Recipients({ m, className }: { m: MessageDetail; className?: string }) 
   const people = (list: typeof m.to) => list.map((a) => a.name || a.email).join(", ");
   return (
     <span data-testid="recipients" className={cn("block truncate text-xs text-muted-foreground", className)}>
-      <span className="font-medium text-foreground">{t("reader.to")}</span> {people(m.to)}
-      {m.cc.length > 0 && (
-        <>
-          {" · "}
-          <span className="font-medium text-foreground">{t("reader.cc")}</span> {people(m.cc)}
-        </>
-      )}
+      {t("reader.to")} {people(m.to)}
+      {m.cc.length > 0 && ` · ${t("reader.cc")} ${people(m.cc)}`}
     </span>
   );
+}
+
+/** A message header's state, at the column's edge: it turns as the message opens. */
+function Disclosure({ open }: { open: boolean }) {
+  return <ChevronRight aria-hidden className={cn("size-3.5 shrink-0 self-center text-muted-foreground transition-transform duration-base ease-motion group-hover/mh:text-foreground", open && "rotate-90 self-start mt-1")} />;
 }
 
 /**
@@ -166,28 +252,30 @@ function Message({ m, expanded, onToggle, icons, headless, knownEmail }: { m: Me
           onClick={onToggle}
           data-testid="message-toggle"
           className={cn(
-            "group/mh flex w-full text-left",
-            expanded ? "items-start gap-3 rounded-md pt-[18px] pb-3" : "-mx-2 my-0.5 h-11 w-[calc(100%+1rem)] items-center gap-2.5 rounded-lg px-2 text-sm transition-colors hover:bg-tint",
+            "group/mh -mx-2 flex w-[calc(100%+1rem)] gap-2.5 rounded-lg px-2 text-left outline-none transition-colors hover:bg-tint focus-visible:ring-2 focus-visible:ring-ring",
+            expanded ? "items-start pt-2.5 pb-1.5" : "h-9 items-center text-sm",
           )}
         >
           {expanded ? (
             <>
-              <SenderAvatar name={name} email={m.from.email} icon={icons} className="size-(--avatar-message) text-xs" />
+              <SenderAvatar name={name} email={m.from.email} icon={icons} className="mt-px size-(--avatar-message) text-2xs" />
               <span className="min-w-0 flex-1">
                 <span className="flex items-baseline gap-2">
-                  <span className="type-sender-name truncate">{name}</span>
-                  {m.from.name && m.from.email.toLowerCase() !== knownEmail?.toLowerCase() && <span className="truncate text-xs text-muted-foreground opacity-0 group-hover/mh:opacity-100 group-focus-reveal/mh:opacity-100">{m.from.email}</span>}
-                  <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{listDate(m.date)}</span>
+                  <span className="type-sender-name min-w-0 truncate">{name}</span>
+                  {m.from.name && m.from.email.toLowerCase() !== knownEmail?.toLowerCase() && <span className="min-w-0 flex-1 basis-0 truncate text-xs text-muted-foreground opacity-0 group-hover/mh:opacity-100 group-focus-reveal/mh:opacity-100">{m.from.email}</span>}
+                  <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{messageDate(m.date)}</span>
                 </span>
                 <Recipients m={m} className="mt-px" />
               </span>
+              <Disclosure open />
             </>
           ) : (
             <>
               <SenderAvatar name={name} email={m.from.email} icon={icons} className="size-(--avatar-collapsed) text-2xs" />
               <span className="shrink-0 font-medium">{name}</span>
               <span className="min-w-0 flex-1 truncate text-muted-foreground">{m.snippet}</span>
-              <span className="shrink-0 text-xs text-muted-foreground tabular">{listDate(m.date)}</span>
+              <span className="shrink-0 text-xs text-muted-foreground tabular">{messageDate(m.date)}</span>
+              <Disclosure open={false} />
             </>
           )}
         </button>
@@ -195,8 +283,7 @@ function Message({ m, expanded, onToggle, icons, headless, knownEmail }: { m: Me
       {/* the region is always there (aria-controls); its content is mounted only while open */}
       <div id={bodyId}>
         <Expand open={open} onOpening={(el) => keepInView(el.closest("article") ?? el)}>
-          {!headless && <div className="hairline-t ml-[calc(var(--avatar-message)+0.75rem)]" />}
-          <div className={cn("pb-5", headless ? "pt-5" : "pt-3.5")}>
+          <div className={cn("pb-5", headless ? "pt-4" : "pt-1.5")}>
             {m.bodyHtml ? (
               <HtmlBody html={m.bodyHtml} messageId={m.id} accountId={m.accountId} attachments={m.attachments} remoteImages={remoteImages} spam={!icons} appearance={mailAppearance} />
             ) : m.bodyText !== null ? (
@@ -284,10 +371,11 @@ function Conversation({ messages, icons, headless, knownEmail }: { messages: Mes
               aria-controls={`more-${it.ids[0]}`}
               onClick={() => reveal(it.ids)}
               data-testid="more-messages"
-              className="-mx-2 my-0.5 flex h-9 w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-tint hover:text-foreground"
+              className="group/mh -mx-2 flex h-9 w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 text-left text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-tint hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Layers className="size-3.5" />
-              {t("reader.moreMessages", { count: it.ids.length })}
+              <span className="min-w-0 flex-1 truncate">{t("reader.moreMessages", { count: it.ids.length })}</span>
+              <Disclosure open={false} />
             </button>
             <div id={`more-${it.ids[0]}`} />
           </div>
@@ -334,17 +422,20 @@ function Welcome() {
   );
 }
 
-/** The account a conversation is in, as a chip: its color and its address (or name). */
-function AccountChip({ account, full }: { account: Account; full: boolean }) {
+/** The account a conversation is in, as the list's row says it: its color and its name. Information, so no chip (those can be removed). */
+function AccountMark({ account }: { account: Account }) {
+  const label = t("reader.account", { name: account.displayName || account.email, email: account.email });
   return (
-    <Chip data-testid="reader-account" dot={<CategoryDot color={account.color as CategoryColor} />} className="font-normal text-muted-foreground">
-      <span className="truncate">{full ? account.email : account.displayName}</span>
-    </Chip>
+    <span data-testid="reader-account" title={label} className="inline-flex min-w-0 items-center gap-1.5">
+      <CategoryDot color={account.color as CategoryColor} />
+      <span className="sr-only">{label}</span>
+      <span aria-hidden className="truncate">{account.displayName || account.email}</span>
+    </span>
   );
 }
 
 /** The account, the categories (with why and how to undo) and the engine's suggestions (y / n): the same in every design. */
-function ThreadChips({ detail, account, cats, accountChip, className }: { detail: ThreadDetail; account: Account | undefined; cats: Category[]; accountChip: false | "address" | "name"; className?: string }) {
+function ThreadChips({ detail, account, cats, className }: { detail: ThreadDetail; account: Account | undefined; cats: Category[]; className?: string }) {
   const categories = useApp((s) => s.categories);
   /** plan 80: in a category's Review list, its chip is the one y and n answer, and an answer takes the row out of the list */
   const reviewing = useApp((s) => s.reviewCategoryId);
@@ -353,8 +444,8 @@ function ThreadChips({ detail, account, cats, accountChip, className }: { detail
   const keyed = (i: number, categoryId: number) => (reviewing !== null && detail.categorization?.suggestions.some((x) => x.categoryId === reviewing) ? categoryId === reviewing : i === 0);
   const thread = detail.thread;
   return (
-    <div data-testid="thread-chips" className={cn("flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground", className)}>
-      {account && (accountChip ? <AccountChip account={account} full={accountChip === "address"} /> : <span>{account.email}</span>)}
+    <div data-testid="thread-chips" className={cn("flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs text-muted-foreground", className)}>
+      {account && <AccountMark account={account} />}
       {cats.map((c) => {
         const auto = detail.categorization?.auto.find((a) => a.categoryId === c.id);
         return (
@@ -422,7 +513,7 @@ function MessageDate({ ms, className }: { ms: number; className?: string }) {
   const full = fullDate(ms);
   return (
     <time data-testid="message-date" dateTime={new Date(ms).toISOString()} title={full} className={cn("tabular", className)}>
-      <span aria-hidden>{listDate(ms)}</span>
+      <span aria-hidden>{messageDate(ms)}</span>
       <span className="sr-only">{full}</span>
     </time>
   );
@@ -434,50 +525,46 @@ function senderOf(detail: ThreadDetail): { name: string; email: string } {
   return last ? { name: last.from.name || last.from.email, email: last.from.email } : { name: detail.thread.fromName || detail.thread.fromEmail, email: detail.thread.fromEmail };
 }
 
-/** The subject, chips and (Lumen) sender above the conversation: the design arranges the same parts. */
+/** The subject, chips and (Lumen) sender above the conversation: the design arranges the same parts, and the mail starts soon after them. */
 function ReaderHeader({ detail, account, cats }: { detail: ThreadDetail; account: Account | undefined; cats: Category[] }) {
   const design = useDesign();
   const subject = detail.thread.subject || t("common.noSubject");
+  const heading = <h2 id="reader-subject" data-testid="reader-subject" className="type-reader-subject min-w-0">{subject}</h2>;
+  // on the subject's line, at the dates' edge, while they fit; on a line of their own when they don't
+  const titled = (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+      {heading}
+      <ThreadChips detail={detail} account={account} cats={cats} />
+    </div>
+  );
   return variant(design.variants.readerHeader, {
-    classic: (
-      <>
-        <h2 id="reader-subject" data-testid="reader-subject" className="text-xl font-semibold tracking-display text-balance">
-          {subject}
-        </h2>
-        <ThreadChips detail={detail} account={account} cats={cats} accountChip={false} className="mt-2 mb-5" />
-      </>
-    ),
+    classic: <div className="mb-3">{titled}</div>,
     "chips-display": (
-      <>
-        <ThreadChips detail={detail} account={account} cats={cats} accountChip="address" className="mt-4" />
-        <h2 id="reader-subject" data-testid="reader-subject" className="type-reader-subject mt-4 mb-8 text-balance">
-          {subject}
-        </h2>
-      </>
+      <div className="mb-3">
+        <ThreadChips detail={detail} account={account} cats={cats} className="mb-1.5" />
+        {heading}
+      </div>
     ),
     "sender-card": (() => {
       // one message: the card is its header (who wrote it, to whom, when), so the message shows no second one (plan 59)
       const one = detail.messages.length === 1 ? detail.messages[0]! : null;
       const who = one ? { name: one.from.name || one.from.email, email: one.from.email } : senderOf(detail);
       return (
-        <>
+        <div className="mb-3">
+          {titled}
           {/* the message's id: a right-click here is a right-click on the message (Print this message, Copy) */}
-          <div data-testid="sender-card" data-message-id={one?.id} className="mt-2 flex items-center gap-4">
-            <SenderAvatar name={who.name} email={who.email} icon={iconsFor(detail.thread)} className="size-(--avatar-sender) text-lg" />
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="flex items-baseline gap-3">
+          <div data-testid="sender-card" data-message-id={one?.id} className="mt-1.5 flex items-start gap-2.5">
+            <SenderAvatar name={who.name} email={who.email} icon={iconsFor(detail.thread)} className="size-(--avatar-sender) text-xs" />
+            <div className="flex min-h-(--avatar-sender) min-w-0 flex-1 flex-col justify-center">
+              <span className="flex items-baseline gap-2">
                 <span className="type-sender-name min-w-0 truncate">{who.name}</span>
-                {one && <MessageDate ms={one.date} className="ml-auto shrink-0 text-sm text-muted-foreground" />}
+                {who.name !== who.email && <span className="min-w-0 flex-1 basis-0 truncate text-xs text-muted-foreground">{who.email}</span>}
+                {one && <MessageDate ms={one.date} className="ml-auto shrink-0 text-xs text-muted-foreground" />}
               </span>
-              {who.name !== who.email && <span className="truncate text-sm text-muted-foreground">{who.email}</span>}
-              {one && <Recipients m={one} className="mt-0.5" />}
-              <ThreadChips detail={detail} account={account} cats={cats} accountChip="name" className="mt-1.5" />
+              {one && <Recipients m={one} className="mt-px" />}
             </div>
           </div>
-          <h2 id="reader-subject" data-testid="reader-subject" className="type-reader-subject mt-8 mb-6 text-balance">
-            {subject}
-          </h2>
-        </>
+        </div>
       );
     })(),
   });
@@ -510,7 +597,8 @@ function StepButtons({ id }: { id: number }) {
   const more = useList((s) => s.nextCursor !== null);
   const busy = useList((s) => s.loadingMore);
   return (
-    <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.navigate")}>
+    // the toolbar's last glyph, on the column's right edge
+    <div className="-mr-2 flex items-center gap-0.5 @max-[560px]:-mr-1.5" role="group" aria-label={t("reader.group.navigate")}>
       <IconButton className={tool} label={t("reader.newer")} shortcut="k" onClick={() => move(-1)} data-testid="reader-newer" disabled={at === undefined || at === 0}>
         <ChevronUp />
       </IconButton>
@@ -624,11 +712,22 @@ function ReaderContent() {
   const cats = thread ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
   const account = thread ? accounts.find((a) => a.id === thread.accountId) : undefined;
   const cardHeader = design.variants.readerHeader === "sender-card";
+  const myEmails = accounts.map((a) => a.email);
+  const replyAll = detail ? reachesSeveral(detail, myEmails) : false;
 
   return (
     <section ref={sectionRef} tabIndex={page ? -1 : undefined} aria-labelledby={page && detail ? "reader-subject" : undefined} onPointerDownCapture={chooseOpenThread} className="@container flex h-full min-h-0 flex-col bg-background outline-none" data-testid="reader">
-      <div ref={toolbarRef} className="drag-region scroll-hairline flex h-[52px] shrink-0 items-center gap-3 px-3.5">
+      <div ref={toolbarRef} className="drag-region scroll-hairline shrink-0">
+        {/* on the conversation's column: the first glyph on its left edge, the last control on its right, whatever the width */}
+        <div data-reader-toolbar className={cn(COLUMN, "flex h-[52px] items-center gap-2 @max-[420px]:gap-1 [&>:first-child]:-ml-2 @max-[560px]:[&>:first-child]:-ml-1.5")}>
         {page && <BackButton />}
+        {/* List's page hides the list, and with it the one place this design has New message */}
+        {page && design.variants.compose === "list-header" && (
+          <IconButton className={tool} label={t("list.compose")} shortcut="c" onClick={() => void openCompose("new")} data-testid="reader-compose">
+            <SquarePen />
+          </IconButton>
+        )}
+        {page && <ToolbarDivider />}
         <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.organize")}>
         {thread?.inTrash || thread?.inSpam ? (
           <IconButton className={tool} label={t("actions.moveToInbox")} onClick={() => act(thread.inSpam ? "notSpam" : "moveToInbox")} data-testid="action-inbox">
@@ -654,13 +753,14 @@ function ReaderContent() {
           <OctagonAlert />
         </IconButton>
         </div>
+        <ToolbarDivider />
         <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.mark")}>
         <IconButton className={tool} label={t("actions.category")} shortcut="l" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} data-testid="action-category">
           <Tag />
         </IconButton>
         {/* plan 87: a narrow reader (the minimum window) gives its place to the bell; the menu, the palette and ⌘⇧U keep it */}
-        <IconButton label={t("actions.markUnread")} onClick={() => act("markUnread")} data-testid="action-unread" className={cn(tool, "@max-[420px]:hidden")}>
-          <MailOpen />
+        <IconButton label={t("actions.markUnread")} shortcut="mod+shift+u" onClick={() => act("markUnread")} data-testid="action-unread" className={cn(tool, "@max-[420px]:hidden")}>
+          <Mail />
         </IconButton>
         {/* keyed by thread: moving to a starred thread swaps the button instead of fading its color (navigation never animates) */}
         <IconButton key={thread?.id ?? "none"} label={thread?.starred ? t("actions.unstar") : t("actions.star")} shortcut="s" onClick={() => toggleStar()} data-testid="action-star" className={cn(tool, thread?.starred && "text-star hover:text-star")}>
@@ -669,46 +769,19 @@ function ReaderContent() {
         <RemindButton key={`remind-${selectedId}`} threadId={selectedId} />
         {summarizable(thread) && <SummarizeButton threadId={selectedId} />}
         </div>
-        <div className="ml-auto flex items-center gap-0.5" role="group" aria-label={t("reader.group.respond")}>
-          {design.variants.replyAction === "pill" ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button variant="outline" size="sm" data-testid="action-reply" onClick={() => openCompose("reply")} className="no-drag mr-1 h-8 gap-2 rounded-full px-3.5 font-semibold shadow-none @max-[560px]:w-8 @max-[560px]:px-0 [&_svg]:[--icon-line:var(--icon-line-toolbar)]">
-                    <Reply />
-                    {/* the name is the visible label (still read when a narrow reader shows the icon alone); the key is decoration */}
-                    <span className="@max-[560px]:sr-only">{t("actions.reply")}</span>
-                    <Kbd aria-hidden className="@max-[560px]:hidden">R</Kbd>
-                  </Button>
-                }
-              />
-              <TooltipContent className="flex items-center gap-2">
-                {t("actions.reply")}
-                <Shortcut keys="r" />
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <IconButton className={tool} label={t("actions.reply")} shortcut="r" onClick={() => openCompose("reply")} data-testid="action-reply">
-              <Reply />
-            </IconButton>
-          )}
-          <IconButton className={tool} label={t("actions.replyAll")} shortcut="a" onClick={() => openCompose("replyAll")} data-testid="action-reply-all">
-            <ReplyAll />
-          </IconButton>
-          <IconButton className={tool} label={t("actions.forward")} shortcut="f" onClick={() => openCompose("forward")} data-testid="action-forward">
-            <Forward />
-          </IconButton>
-        </div>
-        <div className="flex items-center" role="group" aria-label={t("reader.group.print")}>
+        <div className="ml-auto flex items-center" role="group" aria-label={t("reader.group.print")}>
           <IconButton className={tool} label={t("actions.print")} shortcut="mod+p" onClick={() => printCommand("print")} data-testid="action-print">
             <Printer />
           </IconButton>
         </div>
+        <ReplyGroup replyAll={replyAll} />
+        {page && <ToolbarDivider />}
         {page && <StepButtons id={selectedId} />}
+        </div>
       </div>
       <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto" style={dock ? { paddingBottom: dock, scrollPaddingBottom: dock } : undefined} onContextMenu={backgroundMenu}>
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
-        <div data-reader-column className="mx-auto max-w-(--reader-max) px-(--reader-pad-x) pt-5 pb-16">
+        <div data-reader-column className={cn(COLUMN, "pt-2 pb-16")}>
           {!detail && gone ? (
             <p data-testid="reader-gone" role="status" className="pt-8 text-center text-sm text-muted-foreground">
               {t("errors.threadGone")}
@@ -733,7 +806,7 @@ function ReaderContent() {
               {/* plan 144: off, it never shows; a draft here means it's out of the way */}
               {repliesOn && !draftKey && <ReplyReady key={`r${detail.thread.id}`} threadId={detail.thread.id} />}
               <ScheduledReplyLine threadId={detail.thread.id} />
-              <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyName(detail, accounts.map((a) => a.email))} account={account} icons={iconsFor(detail.thread)} />
+              <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyName(detail, myEmails)} replyAll={replyAll} account={account} icons={iconsFor(detail.thread)} />
             </>
           )}
         </div>
