@@ -134,6 +134,7 @@
   --color-tint: var(--tint);
   --color-highlight: var(--highlight);
   --color-draft-foreground: var(--draft-foreground);
+  --color-menu-highlight: var(--menu-highlight);
   --color-destructive-ink: var(--destructive-ink);
   --color-success-ink: var(--success-ink);
   --color-sidebar-glyph: var(--sidebar-glyph);
@@ -142,7 +143,7 @@
   --color-popover-glass: var(--popover-glass);
   --color-drop-target: color-mix(in oklch, var(--primary) 16%, transparent);
   /* plan 118: the filled field, a wash of ink so it reads on white and on grey groups alike */
-  --color-field: color-mix(in oklab, var(--foreground) 5%, transparent);
+  --color-field: color-mix(in oklab, var(--foreground) 7%, transparent);
 
   /* shadows take the theme's shadow color (deeper in dark themes) */
   --shadow-2xs: 0 1px color-mix(in oklab, var(--shadow-color) 50%, transparent);
@@ -282,6 +283,11 @@
   :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="color"]), textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]):focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 1px;
+  }
+  /* plan 158: a field already has its border, so its ring is one line, not the heaviest thing on screen */
+  :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="color"]), textarea, select):focus-visible {
+    outline-width: 1.5px;
+    outline-offset: 0;
   }
   [role="option"]:focus-visible,
   [role="treeitem"]:focus-visible,

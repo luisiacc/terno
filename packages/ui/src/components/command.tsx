@@ -32,7 +32,7 @@ function Command({
     <CommandPrimitive
       data-slot="command"
       className={cn(
-        "flex size-full flex-col overflow-hidden rounded-palette! bg-popover text-popover-foreground [--accent:var(--muted)] [--accent-foreground:var(--foreground)]",
+        "flex size-full flex-col overflow-hidden rounded-palette! bg-popover text-popover-foreground [--accent:var(--menu-highlight)] [--accent-foreground:var(--foreground)]",
         className
       )}
       {...props}
@@ -118,7 +118,7 @@ function CommandInput({
         <CommandPrimitive.Input
           data-slot="command-input"
           className={cn(
-            "w-full text-sm font-medium outline-hidden disabled:cursor-not-allowed disabled:text-muted-foreground",
+            "w-full text-sm font-medium outline-hidden placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:text-muted-foreground",
             className
           )}
           {...props}

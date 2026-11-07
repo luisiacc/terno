@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { contrast, parseColor, withAlpha } from "./color";
-import { contrastFailures, CONTRAST_PAIRS, CONTROL_EDGES, FIELD_WASH, STAR_ON_ROWS } from "./contrast";
+import { contrastFailures, CONTRAST_PAIRS, CONTROL_EDGES, FIELD_WASH, RATED_PALETTES, STAR_ON_ROWS, SURFACE_STEPS, surfaceStep } from "./contrast";
 import { THEMES } from "./registry";
 
 describe("WCAG AA in every built-in theme", () => {
@@ -30,6 +30,11 @@ describe("WCAG AA in every built-in theme", () => {
     }
   });
 
+  it.each(RATED_PALETTES)("%s keeps its states apart (plan 158)", (id) => {
+    const theme = THEMES.find((t) => t.id === id)!;
+    for (const { a, b, min, why } of SURFACE_STEPS) expect(surfaceStep(theme, a, b), `${id} ${a} / ${b}: ${why}`).toBeGreaterThanOrEqual(min);
+  });
+
   it("checks the pairs the plan requires", () => {
     // 9 + 9 fg/muted-fg surfaces, 8 single text pairs + 2 on the mail paper, 8 badge inks, 5 UI pairs, 8 dots;
     // plan 07: fg + muted-fg on tint, the draft label on 4 surfaces, sidebar glyphs on 2, 3 menu texts over black and white
@@ -43,7 +48,8 @@ describe("WCAG AA in every built-in theme", () => {
     // plan 122: a past time's clock on the card
     // plan 125: the danger button's text on both stops of its fill; a key's text on its field wash over a highlighted row;
     // the link button on panes and cards
-    expect(CONTRAST_PAIRS).toHaveLength(49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2);
+    // plan 158: a menu's chosen row, its two inks
+    expect(CONTRAST_PAIRS).toHaveLength(49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2 + 2);
   });
 
   it("reports a failing pair with its ratio", () => {
@@ -58,6 +64,6 @@ describe("WCAG AA in every built-in theme", () => {
 describe("the field's wash (plan 118)", () => {
   it("is the amount globals.css mixes in", () => {
     const globals = readFileSync(join(import.meta.dirname, "../styles/globals.css"), "utf8");
-    expect(globals).toContain(`--color-field: color-mix(in oklab, var(--foreground) ${FIELD_WASH * 100}%, transparent);`);
+    expect(globals).toContain(`--color-field: color-mix(in oklab, var(--foreground) ${Math.round(FIELD_WASH * 100)}%, transparent);`);
   });
 });

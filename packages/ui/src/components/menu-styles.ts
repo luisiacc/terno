@@ -5,7 +5,7 @@
 
 /** The panel (plan 118): solid, a 1 px edge, rows highlighted in the neutral muted, not the accent; rows 2 px apart */
 export const MENU_PANEL =
-  "flex max-h-(--available-height) origin-(--transform-origin) flex-col gap-0.5 overflow-x-hidden overflow-y-auto rounded-menu bg-popover p-1.5 text-popover-foreground shadow-menu outline-none [--accent:var(--muted)] [--accent-foreground:var(--foreground)]"
+  "flex max-h-(--available-height) origin-(--transform-origin) flex-col gap-0.5 overflow-x-hidden overflow-y-auto rounded-menu bg-popover p-1.5 text-popover-foreground shadow-menu outline-none [--accent:var(--menu-highlight)] [--accent-foreground:var(--foreground)]"
 
 /** Opening and closing: a small spring in, a quick fade out */
 export const MENU_MOTION =

@@ -1,5 +1,5 @@
 import type { ThemeToken } from "@terno/core";
-import { composite, contrast, oklchToRgb, parseColor, withAlpha } from "./color";
+import { composite, contrast, formatOklch, oklchToRgb, parseColor, rgbToOklch, withAlpha } from "./color";
 import { CAT_NAMES, GLASS_BACKDROPS, GLASS_TEXT, type Theme } from "./registry";
 
 export interface ContrastPair {
@@ -17,7 +17,7 @@ export interface ContrastPair {
 }
 
 /** the filled field's wash of ink (plan 118): globals.css --color-field mixes this much foreground in; a test keeps them equal */
-export const FIELD_WASH = 0.05;
+export const FIELD_WASH = 0.07;
 
 const text = (fg: ThemeToken, bgs: ThemeToken[]): ContrastPair[] => bgs.map((bg) => ({ fg, bg, min: 4.5 }));
 const ui = (fg: ThemeToken, bgs: ThemeToken[]): ContrastPair[] => bgs.map((bg) => ({ fg, bg, min: 3 }));
@@ -80,7 +80,10 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   // plan 125: BoardUI's danger button, its text on both stops of its fill
   ...text("destructive-foreground", ["destructive", "destructive-shade"]),
   // plan 125: a key (Kbd) on the field wash, its text full ink on a highlighted row (the palette's chosen command)
-  { fg: "foreground", bg: "foreground", alpha: FIELD_WASH, min: 4.5, overToken: "muted" },
+  { fg: "foreground", bg: "foreground", alpha: FIELD_WASH, min: 4.5, overToken: "menu-highlight" },
+  // plan 158: a menu's and the palette's chosen row, its text and secondary text
+  ...text("popover-foreground", ["menu-highlight"]),
+  ...text("muted-foreground", ["menu-highlight"]),
   // translucent menus: their text over anything (black or white) behind them
   ...GLASS_TEXT.flatMap((fg) => GLASS_BACKDROPS.map((over): ContrastPair => ({ fg, bg: "popover-glass", min: 4.5, over: `oklch(${over})` }))),
 ];
@@ -98,6 +101,32 @@ export const STAR_ON_ROWS: readonly ContrastPair[] = ui("star", ["row-hover", "r
  * these in `input`, a faint wash well under 3:1, left as it is rather than repainting every design; Graphite's holds it.
  */
 export const CONTROL_EDGES: readonly ContrastPair[] = (["control-edge", "control-edge-hover"] as const).flatMap((edge) => ui(edge, ["background", "card", "popover"]));
+
+/**
+ * Plan 158: states that have to be told apart at a glance, in the palettes the UI rating covers. WCAG has no number for
+ * these; they're what held up when designers looked. Translucent surfaces are painted over the background first.
+ */
+export interface SurfaceStep {
+  a: ThemeToken;
+  b: ThemeToken;
+  min: number;
+  why: string;
+}
+export const RATED_PALETTES = ["lumen-light", "lumen-dark", "atelier-light", "atelier-dark", "terno-light", "terno-dark", "graphite-light", "graphite-dark"] as const;
+export const SURFACE_STEPS: readonly SurfaceStep[] = [
+  { a: "row-selected", b: "background", min: 1.18, why: "the open row stands out from the list" },
+  { a: "row-selected", b: "row-hover", min: 1.1, why: "a row under the pointer doesn't look open" },
+  { a: "menu-highlight", b: "popover", min: 1.18, why: "the keyboard's place in a menu or the palette" },
+  { a: "input", b: "background", min: 1.35, why: "a composer's and a field's edge" },
+  { a: "border", b: "background", min: 1.25, why: "a hairline that still separates" },
+];
+
+/** The contrast between two surfaces, each painted over the background when translucent. */
+export function surfaceStep(theme: Pick<Theme, "tokens">, a: ThemeToken, b: ThemeToken): number {
+  const t = theme.tokens;
+  const paint = (k: ThemeToken) => rgbToOklch(composite(oklchToRgb(parseColor(t[k])), { ...oklchToRgb(parseColor(t.background)), alpha: 1 }));
+  return contrast(paint(a), formatOklch(paint(b)), t.background);
+}
 
 export interface ContrastFailure {
   pair: string;
