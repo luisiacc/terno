@@ -43,6 +43,13 @@ export function listDate(ms: number, now = Date.now()): string {
   return f.style.stripPeriod ? out.replace(".", "") : out;
 }
 
+/** A message's own date: the list's, with the time added on an earlier day, so a conversation's messages can be told apart and put in order. */
+export function messageDate(ms: number, now = Date.now()): string {
+  const day = listDate(ms, now);
+  const time = formats().time.format(new Date(ms));
+  return day === time ? day : `${day}, ${time}`;
+}
+
 export function fullDate(ms: number): string {
   return formats().full.format(new Date(ms));
 }

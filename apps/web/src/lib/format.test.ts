@@ -2,7 +2,7 @@ import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { formatBytes, fullDate, listDate, viewLabel } from "./format";
+import { formatBytes, fullDate, listDate, messageDate, viewLabel } from "./format";
 
 afterEach(() => setLocale("en", en));
 
@@ -57,5 +57,14 @@ describe("labels and sizes", () => {
     expect(formatBytes(1536 * 1024)).toBe("1.5 MB");
     setLocale("es", es);
     expect(formatBytes(1536 * 1024)).toBe("1.5 MB");
+  });
+
+  it("a message's date tells the same day's messages apart: the time, on any earlier day too", () => {
+    const now = new Date(2026, 9, 22, 18, 0).getTime();
+    expect(messageDate(new Date(2026, 9, 22, 9, 27).getTime(), now)).toBe(listDate(new Date(2026, 9, 22, 9, 27).getTime(), now));
+    const a = messageDate(new Date(2026, 9, 12, 9, 27).getTime(), now);
+    const b = messageDate(new Date(2026, 9, 12, 15, 41).getTime(), now);
+    expect(a).toContain(listDate(new Date(2026, 9, 12, 9, 27).getTime(), now));
+    expect(a).not.toBe(b);
   });
 });
