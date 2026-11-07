@@ -6,7 +6,7 @@ import { act, openCompose, toggleRead, toggleStar, undoLast } from "~/lib/action
 import { focusDock } from "~/components/snack-dock";
 import { clearSelection, extendSelection, isMac, selectAll, selectWhere, toggleCurrent } from "~/lib/select";
 import { openFocusedMenu, openMenuForSelection } from "~/components/thread-menu";
-import { getApp, markSelectionIntent, navigate, setApp } from "~/state/app";
+import { chooseOpenThread, getApp, markSelectionIntent, navigate, setApp } from "~/state/app";
 import { loadMore, useList } from "~/state/list";
 import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, answerReview, rejectSuggestion } from "~/lib/categorize";
@@ -60,7 +60,7 @@ export function move(delta: number) {
   const id = items[next]!.id;
   // plan 87: the user stepped onto it (Split shows it; in List's list page the dwell finds no reader and nothing ends)
   noteOpen(id);
-  if (id === s.selectedId) { markSelectionIntent(); return; }
+  if (id === s.selectedId) { markSelectionIntent(); chooseOpenThread(); return; }
   // the cursor moves; in Split that opens it, in List's list page it's only the cursor (Enter opens)
   setApp({ selectedId: id });
   // where it is now: a read row the filter kept may have just left above it
@@ -79,6 +79,7 @@ function openCurrent() {
   if (!listLayout()) {
     if (id !== null) {
       markSelectionIntent();
+      chooseOpenThread();
       noteOpen(id);
     }
     return setApp({ readerOpen: true });

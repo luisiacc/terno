@@ -78,12 +78,18 @@ export interface AskPassageIo {
   text(messageId: number): Promise<string | BodyPartSource | null>;
 }
 
-/** Where a word starts in the raw text. NFKD can change a length, so a position through it is near enough for a window. */
+const NOT_WORD = /[^\p{L}\p{N}]+/u;
+
+/**
+ * Where a word starts in the raw text. NFKD can change a length, so a position through it is near enough for a window.
+ * A phrase is its words side by side as search reads them, whatever lies between ("door code" holds "door: code").
+ */
 function locate(text: string, words: readonly string[]): number {
   const normalized = normalizeText(text);
   let at = -1;
   for (const word of words) {
-    const i = normalized.indexOf(normalizeText(word));
+    const parts = normalizeText(word).split(NOT_WORD).filter(Boolean);
+    const i = parts.length > 1 ? normalized.search(new RegExp(parts.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[^\\p{L}\\p{N}]+"), "u")) : normalized.indexOf(parts[0] ?? normalizeText(word));
     if (i >= 0 && (at < 0 || i < at)) at = i;
   }
   if (at < 0) return -1;

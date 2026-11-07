@@ -8,7 +8,7 @@ import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
 import { revealSent } from "./sent-reveal";
-import { getApp, getSelectionWriteRevision, markSelectionIntent, setApp, subscribeComposeSelectionIntent, useApp } from "~/state/app";
+import { chooseOpenThread, getApp, getSelectionWriteRevision, markSelectionIntent, setApp, subscribeComposeSelectionIntent, useApp } from "~/state/app";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack, useSnack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
@@ -268,6 +268,7 @@ export function reopenInlineDraft(threadId: number, key: string, checkpoint?: Bo
   const finish = beginDraftWork();
   if (!finish) return;
   markSelectionIntent();
+  chooseOpenThread();
   const mine = ++intent;
   if (checkpoint) {
     try {
@@ -478,6 +479,8 @@ export async function composeLanding(mode: DraftMode = "new", threadId: number |
   const finish = beginDraftWork();
   if (!finish) return NOWHERE;
   markSelectionIntent();
+  // plan 158: answering what's open is choosing it; a new message says nothing about it
+  if (mode !== "new") chooseOpenThread();
   // plan 144: the person asked for something else, which proceeds as it always did
   if (threadId !== null) composeHooks.composing?.(threadId);
   const mine = ++intent;

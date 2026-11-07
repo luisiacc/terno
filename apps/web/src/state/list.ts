@@ -297,7 +297,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
   // keep as many rows as are loaded so a background refresh doesn't shrink the list
   const placeOf = placeKey(key);
   const place = !sameView && !options.keepSelection && placeOf !== null ? places.get(placeOf) : undefined;
-  const limit = sameView ? Math.min(Math.max(PAGE, current.items.length + (options.grow ? PAGE : 0)), WINDOW_PAGE) : place?.scroll ? Math.min(Math.max(PAGE, place.rows), WINDOW_PAGE) : PAGE;
+  const limit = sameView ? Math.min(Math.max(PAGE, current.items.length + (options.grow ? PAGE : 0)), WINDOW_PAGE) : place ? Math.min(Math.max(PAGE, place.rows), WINDOW_PAGE) : PAGE;
   const editsAtStart = edits;
   const scope = currentScope();
   // the filtered mailbox's unread count, alongside the page (a search shows its own result count)
@@ -315,6 +315,15 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       const missing = () => keep.some((id) => !page.items.some((t) => t.id === id));
       while ((page.items.length < want || missing()) && page.nextCursor && page.items.length < want + REACH) {
         const more = await fetchPage(page.nextCursor, page.items.length < want ? Math.min(WINDOW_PAGE, want - page.items.length) : WINDOW_PAGE);
+        if (mine !== seq || connection !== client.connectionVersion) return;
+        page = { ...page, items: [...page.items, ...more.items], nextCursor: more.nextCursor };
+      }
+    }
+    if (place) {
+      // a mailbox left deep in its rows: as far as they were, and a little past it for mail that arrived above them
+      const left = [place.scroll?.id, place.selectedId].filter((id): id is number => id != null);
+      while (left.some((id) => !page.items.some((t) => t.id === id)) && page.nextCursor && page.items.length < place.rows + REACH) {
+        const more = await fetchPage(page.nextCursor, WINDOW_PAGE);
         if (mine !== seq || connection !== client.connectionVersion) return;
         page = { ...page, items: [...page.items, ...more.items], nextCursor: more.nextCursor };
       }

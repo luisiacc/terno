@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readPassages, type AskPassageIo } from "./ask";
+import { passageOf, readPassages, type AskPassageIo } from "./ask";
 
 const io = (ids: number[]): AskPassageIo =>
   ({
@@ -22,5 +22,12 @@ describe("what a page of passages left out (plan 141)", () => {
     const r = await readPassages(request(10), io([3, 2, 1]));
     expect(r.messages.length).toBeLessThan(3);
     expect(r.omitted).toBe(true);
+  });
+});
+
+describe("plan 158: a phrase is found as search finds it", () => {
+  it("whatever lies between its words: punctuation, a line break, more than one space", () => {
+    const filler = "palabras de relleno ".repeat(60);
+    for (const between of [": ", "\n", "   "]) expect(passageOf(`${filler}the door${between}code is 4921`, ["door code"])).toContain("4921");
   });
 });

@@ -203,3 +203,31 @@ it("plan 158: a mailbox comes back with its open thread, or the row now nearest 
   setApp({ query: "" });
   await vi.waitFor(() => expect(getApp().selectedId).toBe(6));
 });
+
+it("plan 158: a mailbox left past its first window asks on until the thread and the row it was on are back", async () => {
+  const { getApp } = await import("~/state/app");
+  const window = (p: Params) => {
+    const from = (p.cursor as { id: number } | undefined)?.id ?? -1;
+    return { items: rows(from + 1, p.limit!), nextCursor: cursor(from + p.limit!) };
+  };
+  answer = async (p, method) => (method === "threads.search" ? { items: rows(9000, 1), nextCursor: null, strategy: "fts", tookMs: 1, complete: true } : window(p));
+  setApp({ query: "", view: "sent", selectedId: null, checked: new Set() });
+  await vi.waitFor(() => expect(useList.getState().itemsKey).toContain('"sent"'));
+  for (let i = 0; i < 7; i++) await loadMore();
+  expect(useList.getState().items).toHaveLength(8 * PAGE);
+  setApp({ selectedId: 750 });
+  setApp({ query: "pago" });
+  await vi.waitFor(() => expect(getApp().selectedId).toBe(9000));
+  calls.length = 0;
+  setApp({ query: "" });
+  await vi.waitFor(() => expect(getApp().selectedId).toBe(750));
+  expect(calls.filter((c) => c.method === "threads.list").map((c) => c.params.limit)).toEqual([500, 500]);
+  // the whole list isn't read for it: a row that's gone stops at what was loaded and a little past
+  setApp({ query: "pago" });
+  await vi.waitFor(() => expect(getApp().selectedId).toBe(9000));
+  calls.length = 0;
+  answer = async (p) => { const page = window(p); return { ...page, items: page.items.filter((t) => t.id !== 750) }; };
+  setApp({ query: "" });
+  await vi.waitFor(() => expect(getApp().selectedId).toBe(751));
+  expect(calls.filter((c) => c.method === "threads.list").length).toBeLessThanOrEqual(5);
+});

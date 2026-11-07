@@ -156,7 +156,7 @@ test("the full-message view: its own text gets the menu, its controls don't", as
   await page.getByRole("button", { name: "Show full message", exact: true }).click();
   const scroller = page.locator("[data-full-message-scroller]");
   await expect(scroller.locator("iframe")).toBeVisible();
-  await page.getByRole("region", { name: /./ }).locator("p").first().click({ button: "right" });
+  await page.getByRole("region", { name: /./ }).filter({ has: scroller }).locator("p").first().click({ button: "right" });
   await expect(menu(page)).toHaveCount(0);
   const box = (await scroller.locator("iframe").boundingBox())!;
   await page.mouse.click(box.x + 40, box.y + 12, { button: "right" });

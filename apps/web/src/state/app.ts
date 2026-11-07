@@ -158,7 +158,7 @@ export const useApp = create<AppState>(() => ({
 let selectionWriteRevision = 0;
 let composeSelectionRetirement: { retire: () => void } | undefined;
 export const getSelectionWriteRevision = (): number => selectionWriteRevision;
-export const markSelectionIntent = (): void => { selectionWriteRevision++; composeSelectionRetirement?.retire(); chooseOpenThread(); };
+export const markSelectionIntent = (): void => { selectionWriteRevision++; composeSelectionRetirement?.retire(); };
 
 /**
  * Plan 158: the thread the app opened by itself (a list's first page: the first load, another mailbox, a search's top
@@ -166,11 +166,17 @@ export const markSelectionIntent = (): void => { selectionWriteRevision++; compo
  */
 const openedSelf: { id: number | null; chosen: (() => void) | null } = { id: null, chosen: null };
 export const openedByApp = (id: number): boolean => openedSelf.id === id;
-/** The user chose what's open (any selection write, a click in the reader): from here on it's an open like any other. */
+/** The user chose what's open (the row, Enter, a reply, a press in the reader): from here on it's an open like any other. */
 export function chooseOpenThread(): void {
   if (openedSelf.id === null) return;
   openedSelf.id = null;
   openedSelf.chosen?.();
+}
+/** A selection write: on the same thread it chooses it; anywhere else what the app opened isn't open any more. */
+function noteSelectionWrite(selectedId: number | null | undefined): void {
+  markSelectionIntent();
+  if (selectedId === openedSelf.id) chooseOpenThread();
+  else openedSelf.id = null;
 }
 export function onThreadChosen(chosen: () => void): () => void {
   openedSelf.chosen = chosen;
@@ -187,10 +193,10 @@ export function setApp(partial: AppState | ((state: AppState) => AppState), repl
 export function setApp(partial: AppState | Partial<AppState> | ((state: AppState) => AppState | Partial<AppState>), replace?: boolean): void {
   const update = typeof partial === "function" ? (state: AppState) => {
     const next = partial(state);
-    if (!Object.is(next, useApp.getState()) && next != null && Object.hasOwn(next, "selectedId")) markSelectionIntent();
+    if (!Object.is(next, useApp.getState()) && next != null && Object.hasOwn(next, "selectedId")) noteSelectionWrite(next.selectedId);
     return next;
   } : partial;
-  if (typeof update !== "function" && !Object.is(update, useApp.getState()) && update != null && Object.hasOwn(update, "selectedId")) markSelectionIntent();
+  if (typeof update !== "function" && !Object.is(update, useApp.getState()) && update != null && Object.hasOwn(update, "selectedId")) noteSelectionWrite(update.selectedId);
   if (replace) useApp.setState(update as AppState | ((state: AppState) => AppState), true);
   else useApp.setState((state) => keepFolderValid(state, typeof update === "function" ? update(state) : update));
 }

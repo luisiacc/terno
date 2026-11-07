@@ -8,7 +8,7 @@ import type { Page } from "@playwright/test";
 import type { ThreadDetail } from "@terno/core";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
-import { expect, fresh, ingestConversation, navTo, rows, search, selectThread, test } from "./fixtures";
+import { expect, focusList, fresh, ingestConversation, navTo, rows, search, selectThread, test } from "./fixtures";
 
 type Probe = Window & { __probe?: { skeleton: boolean; nodes: Record<string, Element | null>; focus: Element | null } };
 
@@ -70,6 +70,15 @@ test.describe("what the app opens by itself (plan 158)", () => {
     await fresh(page);
     const row = page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
     await expect(row).toHaveAttribute("data-cursor");
+    await expect(page.getByTestId("reader-subject")).toHaveText("Llega zzsolo");
+    await pastDwell(page);
+    await expect(row).toHaveAttribute("data-unread", "true");
+
+    // a new message says nothing about what's open: leaving it, the thread is still as it was
+    await focusList(page);
+    await page.keyboard.press("c");
+    await expect(page.getByTestId("compose-to")).toBeVisible();
+    await page.keyboard.press("Escape");
     await expect(page.getByTestId("reader-subject")).toHaveText("Llega zzsolo");
     await pastDwell(page);
     await expect(row).toHaveAttribute("data-unread", "true");
