@@ -76,6 +76,8 @@ export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HT
     setLaid((was) => (JSON.stringify(was) === JSON.stringify(next) ? was : next));
   }, [tick, scroller]);
   const name = category?.name ?? "";
+  // only a row of the list on screen now: never one a layer not yet measured again kept from another list
+  const live = (id: number) => scroller.current?.querySelector(`[data-review-slot="${id}"]`) != null;
   const answered = (e: React.MouseEvent<HTMLButtonElement>) => {
     // answered from the keyboard: the row goes with its buttons, so the list takes focus back
     if (document.activeElement === e.currentTarget) requestAnimationFrame(() => listbox()?.focus({ preventScroll: true }));
@@ -95,6 +97,7 @@ export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HT
               // a press doesn't take focus from the list (j / k go on from there)
               onMouseDown={(e) => e.preventDefault()}
               onClick={(e) => {
+                if (!live(spot.id)) return;
                 answered(e);
                 void answerReview(spot.id, category.id, true);
               }}
@@ -112,7 +115,7 @@ export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HT
               aria-haspopup="menu"
               title={t("review.similar.title", { category: name })}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={(e) => useAlwaysMenu.setState({ threadId: spot.id, anchor: e.currentTarget })}
+              onClick={(e) => live(spot.id) && useAlwaysMenu.setState({ threadId: spot.id, anchor: e.currentTarget })}
               className={`${PILL} ${ALWAYS} pointer-events-auto absolute outline-none focus-visible:ring-2 focus-visible:ring-ring`}
               style={at(spot.always)}
             >

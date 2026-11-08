@@ -65,6 +65,23 @@ const row = (page: Page, id: number) => page.locator(`[data-testid=thread-row][d
 const answer = (page: Page, id: number, which: "accept" | "always") => page.locator(`[data-testid=row-review-${which}][data-thread-id="${id}"]`);
 
 test.describe("Review list: answering from the rows (plan 80)", () => {
+  test("another Review list of the same size: its buttons answer its own rows, never the last list's (plan 158)", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+    const other = db.get<{ id: number }>("SELECT id FROM categories WHERE id != ? ORDER BY id LIMIT 1", facturas)!.id;
+    db.run("DELETE FROM cls_decisions WHERE category_id = ? AND kind = 'suggest'", other);
+    const mine = db.all<{ id: number }>(
+      `SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND t.last_from_email != 'recibos@rappi.com'
+       AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 3`,
+    ).map((r) => r.id);
+    for (const t of mine) db.run("INSERT OR REPLACE INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.91, '[]', ?)", t, other, Date.now());
+    await reviewing(page, server);
+    await openReview(page, other);
+    await expect(page.getByTestId("thread-row")).toHaveCount(3);
+    const shown = await page.getByTestId("thread-row").evaluateAll((rows) => rows.map((r) => Number((r as HTMLElement).dataset.threadId)).sort());
+    await expect.poll(() => page.getByTestId("row-review-accept").evaluateAll((b) => b.map((x) => Number((x as HTMLElement).dataset.threadId)).sort())).toEqual(shown);
+  });
+
   test("the answers are real buttons: named, Tab reaches the open row's, Enter answers, y still does, axe-clean (plan 158)", async ({ app: page, server }) => {
     const { threads, filed } = await reviewing(page, server);
     await expect(page.getByRole("button", { name: "Add to Facturas" })).toHaveCount(3);
