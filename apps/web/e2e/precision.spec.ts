@@ -38,6 +38,8 @@ async function token(page: Page, name: string, fallback: number, at = "body"): P
 const settled = (l: Locator) => l.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).filter((a) => a.effect?.getTiming().iterations !== Infinity && a.id !== "snack-countdown").map((a) => a.finished))).catch(() => {});
 
 const near = (a: number, b: number, tolerance: number) => Math.abs(a - b) <= tolerance;
+/** What was measured, in the report (the plan's before and after) */
+const note = (what: string, value: string) => test.info().annotations.push({ type: "measured", description: `${what}: ${value}` });
 const fmt = (n: number) => Math.round(n * 10) / 10;
 
 /** The last row wholly inside the list's viewport that a pointer reaches (nothing floating over it), and where to click it */
@@ -147,6 +149,7 @@ async function toast(page: Page, design: string, where: string): Promise<void> {
       : 0;
     return { gap: pane.bottom - r.bottom, centre: (r.left + r.right) / 2, column: c ? (c.left + c.right) / 2 : null, covered, over: dock.dataset.over };
   });
+  note(`${where} toast (gap, centre vs column, rows under)`, `${fmt(m.gap)}, ${fmt(m.centre)} vs ${m.column === null ? "-" : fmt(m.column)}, ${m.covered}`);
   expect.soft(near(m.gap, inset, 1), `${design} ${where}: the toast sits --float-inset (${inset}px) above the pane's bottom: ${fmt(m.gap)}px`).toBe(true);
   if (m.column !== null) expect.soft(near(m.centre, m.column, 1), `${design} ${where}: over the reader, the toast is centred on its column: ${fmt(m.centre)} vs ${fmt(m.column)}`).toBe(true);
   expect.soft(m.covered, `${design} ${where}: no row the list shows is under the toast`).toBe(0);
@@ -189,6 +192,7 @@ async function menuOnItsRow(page: Page, id: string, design: string, where: strin
     const room = Math.max(innerHeight - b.bottom, b.top) - inset - 4 >= el.scrollHeight;
     return { over, fits, room, left: r.left, top: r.top, right: innerWidth - r.right, bottom: innerHeight - r.bottom };
   }, [id, inset] as const);
+  note(`${where} menu (over its row, edge gaps l/t/r/b)`, `${m.over}, ${[m.left, m.top, m.right, m.bottom].map(fmt).join("/")}`);
   expect.soft(m.fits, `${design} ${where}: the row menu shows every row`).toBe(true);
   // only a window too short for it on either side lets it cover the row (revision 4)
   if (m.room) expect.soft(m.over, `${design} ${where}: the row menu leaves its own row's text in view`).toBe(false);
@@ -211,6 +215,7 @@ async function measure(page: Page, design: string, where: string): Promise<void>
     };
     return { width: c.width, content, slot: at("[data-testid=draft-slot]"), body: at("[data-testid=message-text]"), toolbar: at("[data-reader-toolbar]") };
   });
+  note(`${where} column width (max ${readerMax})`, fmt(m.width));
   expect.soft(m.width <= readerMax + 0.5, `${design} ${where}: the reading column is at most --reader-max (${readerMax}px): ${fmt(m.width)}px`).toBe(true);
   if (m.slot) expect.soft(near(m.slot.left, m.content.left, 1) && near(m.slot.right, m.content.right, 1), `${design} ${where}: the reply card spans the column (${fmt(m.slot.left)}..${fmt(m.slot.right)} vs ${fmt(m.content.left)}..${fmt(m.content.right)})`).toBe(true);
   if (m.body) expect.soft(near(m.body.left, m.content.left, 1), `${design} ${where}: the text starts on the column's edge`).toBe(true);
@@ -286,6 +291,7 @@ test.describe("precision across screens (plan 160)", { tag: "@design" }, () => {
       await expect(title).toBeVisible();
       await settled(page.getByTestId("composer"));
       const compose = await line(title);
+      note("Split New message vs subject (x, baseline)", `${fmt(compose.x)},${fmt(compose.y)} vs ${fmt(subject.x)},${fmt(subject.y)}`);
       expect.soft(near(compose.x, subject.x, 0.5), `${design}: New message starts at the subject's x: ${fmt(compose.x)} vs ${fmt(subject.x)}`).toBe(true);
       expect.soft(near(compose.y, subject.y, 0.5), `${design}: New message sits on the subject's baseline: ${fmt(compose.y)} vs ${fmt(subject.y)}`).toBe(true);
       await scenario("New message's card: four edges drawn", () => edges(page, page.getByTestId("composer-card"), "New message's card", design));
@@ -296,6 +302,7 @@ test.describe("precision across screens (plan 160)", { tag: "@design" }, () => {
       const count = page.getByTestId("selection-count");
       await expect(count).toBeVisible();
       const selection = await line(count);
+      note("Split selection vs subject (x, baseline)", `${fmt(selection.x)},${fmt(selection.y)} vs ${fmt(subject.x)},${fmt(subject.y)}`);
       expect.soft(near(selection.x, subject.x, 0.5), `${design}: the selection's title starts at the subject's x: ${fmt(selection.x)} vs ${fmt(subject.x)}`).toBe(true);
       expect.soft(near(selection.y, subject.y, 0.5), `${design}: the selection's title sits on the subject's baseline: ${fmt(selection.y)} vs ${fmt(subject.y)}`).toBe(true);
       await page.keyboard.press("Escape");
@@ -405,6 +412,7 @@ test.describe("precision across screens: List (plan 160)", { tag: "@design" }, (
       const count = page.getByTestId("selection-count");
       await expect(count).toBeVisible();
       const selection = await line(count);
+      note("List header, toolbar and rows' start (x, baseline)", `${fmt(title.x)},${fmt(title.y)}; ${fmt(selection.x)},${fmt(selection.y)}; ${fmt(start)}`);
       expect.soft(near(selection.x, start, 0.5), `${design} List: the selection toolbar's title starts on the rows' content: ${fmt(selection.x)} vs ${fmt(start)}`).toBe(true);
       expect.soft(near(selection.y, title.y, 0.5), `${design} List: the selection toolbar's title sits on the header's baseline: ${fmt(selection.y)} vs ${fmt(title.y)}`).toBe(true);
       await page.keyboard.press("Escape");
@@ -414,6 +422,7 @@ test.describe("precision across screens: List (plan 160)", { tag: "@design" }, (
     await scenario("previews start on one x (a reserved subject column)", async () => {
       const lefts = await rows(page).evaluateAll((els) => els.slice(0, 14).map((r) => r.querySelector("[data-testid=row-snippet]")?.getBoundingClientRect().left).filter((x): x is number => x !== undefined));
       const spread = Math.max(...lefts) - Math.min(...lefts);
+      note("List preview x spread", fmt(spread));
       expect.soft(spread, `${design} List: every preview starts at one x (spread ${fmt(spread)}px)`).toBeLessThanOrEqual(0.5);
     });
 
@@ -444,6 +453,7 @@ test.describe("precision across screens: List (plan 160)", { tag: "@design" }, (
       await expect(title).toBeVisible();
       await settled(page.getByTestId("composer"));
       const compose = await line(title);
+      note("List New message vs subject (x, baseline)", `${fmt(compose.x)},${fmt(compose.y)} vs ${fmt(subject.x)},${fmt(subject.y)}`);
       expect.soft(near(compose.x, subject.x, 0.5), `${design} List: New message starts at the subject's x: ${fmt(compose.x)} vs ${fmt(subject.x)}`).toBe(true);
       expect.soft(near(compose.y, subject.y, 0.5), `${design} List: New message sits on the subject's baseline: ${fmt(compose.y)} vs ${fmt(subject.y)}`).toBe(true);
       await closeCompose(page);

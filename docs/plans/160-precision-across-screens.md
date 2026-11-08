@@ -181,3 +181,68 @@ These are the surfaces on the main screens (list, reader, compose, multi-select,
 2. The remote-content notice in a message (`mail-body.tsx`, a `bg-tint` pill): a line with its Load button. It loses the fill and keeps the button.
 
 The shared tokens (`card-group`, `surfaces.card`) don't change, so Settings and the snippet editor are untouched. The baselines that move are the reader's (summary and blocked mail) in each design that shows them.
+
+## What was built
+
+- **Tokens** (`globals.css`, `designs/generate.ts`; `apps/web/src/lib/pane-lines.ts` holds the classes, and `pane-lines.test.ts` refuses a copy anywhere else):
+  - `--pane-bar` (52 px): the reader's toolbar, the list's header line and List's selection toolbar.
+  - `--pane-title-gap` (0.5rem), plus the design's `--pane-title-lead`. That is Atelier's chips line, 20 px at rest plus 4 px under it, so 1.5rem; it is 0 elsewhere.
+  - `PANE_TITLE_TOP` puts a pane with no toolbar (New message, the selection) on the reader subject's line, and `PANE_TITLE` is that line's type.
+  - `READING_COLUMN`: one column in Split and List (`--reader-col` and List's `+12rem` are gone).
+  - `--read-max`, `calc(35 * var(--type-body-size))`: the message text, the draft and the quoted text share one px measure, even where the quote's type is smaller.
+  - `--float-inset` (12 px) and `FLOAT_INSET` (`@terno/ui/lib/float-inset`).
+  - `--scrollbar-w`: the gutter a toast over the reader keeps, so it centres where the column does.
+- **Toasts:** `dockReserve()` replaces `height + 16`. Over the reader the toast is centred on the column, `--float-inset` above the pane's foot. Over List's rows the list's viewport ends above the toast (its `margin-bottom`, not padding), so no row runs under it. The open row is kept in view, and the pinned draft keeps only its excess as scroll room. The fade band is the reader's alone now.
+- **Menus:**
+  - Every menu, popover and select keeps `--float-inset` from the window's edges.
+  - The thread menu stays one delegated trigger. On `contextmenu` it reads that row's rect once and anchors a virtual element at the pointer's x spanning the row, side `bottom`, flipping above, 4 px off the row. A resize or a scroll of the list closes it.
+  - Where neither side has room, it ends on a whole row (`fitWholeRows`).
+  - Deviation: the gap to the anchor is 4 px, not `--float-inset`. 12 px detached a menu from the button or row that opened it; the window-edge padding is the token.
+- **Palette:** `fitWholeRows` (`packages/ui/src/lib/whole-rows.ts`, unit-tested) runs when the list mounts, when what it holds changes (a ResizeObserver on cmdk's sizer) and on a window resize. It caps the list at the space left above `--float-inset`, ending before the next row's top, so none peeks into the padding. A 6 px fade marks a list that scrolls.
+- **New message:** its title is on the subject's line. The card reaches the pane's foot with its format bar and Send pinned there, and a press in the room under the text writes at its end. This reverses plan 158's card that hugged its text, which round 5 read as an empty pane; `composer.spec` changes with it.
+- **List's selection toolbar** names the selection in the list title's type (`list-title.ts`), so it sits on the header's baseline.
+- **Seam** (revision 9): one-line rows (List, and compact density) put the subject in `clamp(9rem, 42%, 26rem)`, with Draft, place and reminder at the column's end, so every preview starts at one x. This is CSS only. `list-layout.spec` now says "previews share one x".
+- **Restraint:** see the inventory above. The AI summary and the remote-content notice are hairline sections now.
+
+### The review header and plan 159
+
+Plan 159 hadn't landed when this was done (only its plan is on main). The category review's title already sat on the list header's line, at the rows' content x (the spec checks both). Plan 159 must keep it there: `precision.spec.ts` will fail if its header copy moves the line.
+
+### Atelier's chips line (revision 2)
+
+The engineer's call: the subject sits under a chips line that is 20 px at rest whatever it holds. A conversation whose chips include a category or a suggestion chip (24 px) puts its subject 4 px lower. The spec measures a conversation at rest. New message and the selection keep the resting line (`--pane-title-lead`).
+
+## Contrast: the floors and the ratios
+
+`BOUNDARY_STEPS` composites each boundary from its real layers (`composite()`), in every design's palettes, Luma's included. The floors:
+- 1.35:1 for a tint: the open row, the sidebar's selection, a field on the list, the segmented thumb on its track.
+- 1.15:1 for the hover. Deviation: a hover is under the pointer that made it, and must stay a step under the selection (SURFACE_STEPS' 1.1). At 1.35 it would push the selection past where its secondary text holds 4.5:1.
+- 1.5:1 for a hairline: a composer's ring on the reader, its field dividers on its card.
+
+Two derived tokens:
+- `field`: the ink from 7 % up, until the field stands 1.35:1 off the list, as far as its text and placeholder still read at 4.5:1 on every surface a field sits on.
+- `draft-edge`: the ink from 11 % up, to 1.5:1 on the background and on a card. The composer's ring is now a whole pixel in light too.
+
+The segmented thumb in dark is the field's wash: `muted` sat at about 1.2:1 there. Both deviations are in `BOARDUI.md`.
+
+Tuned inputs (lightness or alpha only, hue and chroma kept): `row-selected`, `row-hover`, `sidebar-accent` and `muted-foreground` where a field needed it, plus Lumen light's `unread` and `star` on the deeper selection.
+
+Graphite's blueprint (plan 137) fixes #5D5D5D and #9E9E9E. Its field stops where the placeholder still reads: 1.32 light and 1.20 dark, written into the suite as a named exception.
+
+| Palette | open row | hover | sidebar sel. | field | thumb | composer ring | dividers | muted on open row |
+|---|---|---|---|---|---|---|---|---|
+| lumen-light | 1.19 → 1.36 | 1.06 → 1.16 | 1.10 → 1.36 | 1.15 → 1.35 | 1.15 → 1.35 | 1.33 → 1.51 | 1.25 → 1.51 | 5.04 → 4.97 |
+| lumen-dark | 1.40 → 1.40 | 1.16 → 1.16 | 1.21 → 1.36 | 1.18 → 1.36 | 1.19 → 1.36 | 1.55 → 1.52 | 1.35 → 1.56 | 5.31 → 5.31 |
+| atelier-light | 1.23 → 1.36 | 1.06 → 1.16 | 1.11 → 1.35 | 1.15 → 1.36 | 1.15 → 1.36 | 1.36 → 1.50 | 1.25 → 1.50 | 4.88 → 5.02 |
+| atelier-dark | 1.33 → 1.36 | 1.17 → 1.17 | 1.18 → 1.36 | 1.18 → 1.36 | 1.18 → 1.36 | 1.56 → 1.52 | 1.32 → 1.52 | 5.49 → 5.38 |
+| terno-light (macOS) | 1.20 → 1.36 | 1.08 → 1.16 | 1.15 → 1.36 | 1.15 → 1.36 | 1.18 → 1.40 | 1.36 → 1.50 | 1.25 → 1.50 | 4.86 → 5.00 |
+| terno-dark (macOS) | 1.36 → 1.36 | 1.14 → 1.15 | 1.24 → 1.36 | 1.16 → 1.37 | 1.17 → 1.37 | 1.51 → 1.51 | 1.29 → 1.51 | 4.92 → 5.33 |
+| graphite-light | 1.37 → 1.37 | 1.16 → 1.16 | 1.10 → 1.36 | 1.14 → 1.32 | 1.14 → 1.32 | 1.38 → 1.51 | 1.23 → 1.51 | 4.80 → 4.80 |
+| graphite-dark | 1.38 → 1.38 | 1.18 → 1.18 | 1.21 → 1.36 | 1.19 → 1.21 | 1.21 → 1.21 | 1.59 → 1.52 | 1.34 → 1.52 | 4.71 → 4.71 |
+| luma-light | 1.14 → 1.37 | 1.07 → 1.15 | 1.14 → 1.36 | 1.16 → 1.36 | 1.16 → 1.36 | 1.20 → 1.52 | 1.27 → 1.52 | 5.26 → 5.09 |
+| luma-dark | 1.28 → 1.36 | 1.09 → 1.15 | 1.24 → 1.37 | 1.18 → 1.35 | 1.18 → 1.35 | 1.26 → 1.52 | 1.33 → 1.52 | 5.93 → 5.58 |
+
+Notes on the table:
+- In "before", the ring is `border` at a hairline's width and the dark thumb is `muted`.
+- Graphite's selected-row secondary text is 4.80:1 light and 4.71:1 dark (≥ 4.5). Round 5's 3.8:1 was measured on an earlier, darker selection (#C4C4C4); plan 158 had already moved it to #DCDCDC.
+- Every CONTRAST_PAIRS pair still holds in every theme.

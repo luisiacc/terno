@@ -49,7 +49,8 @@ import {
   Users,
 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
-import { useEffect, useState, type ReactElement, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactElement, type ReactNode } from "react";
+import { FLOAT_INSET } from "@terno/ui/lib/float-inset";
 import { snack } from "~/lib/snack";
 import { openLink } from "~/lib/open-link";
 import { create } from "zustand";
@@ -170,27 +171,25 @@ export function replyOpened(threadId: number, paneBefore: ReturnType<typeof getA
 /** Plan 160: the menu's gap to its row: the row's outline and the panel's edge apart, still read as one */
 const ROW_GAP = 4;
 
-/**
- * Plan 160: where a short window has room for it on neither side of its row, the menu scrolls ending on a whole row, never
- * cut mid-row. Read once it's placed (its height bounded by the window, --available-height), not per row.
- */
-function wholeRows(menu: HTMLDivElement | null): (() => void) | void {
-  if (!menu) return;
-  let frame = requestAnimationFrame(() => (frame = requestAnimationFrame(() => menu.scrollHeight > menu.clientHeight + 1 && fitWholeRows(menu, "[role=menuitem]", true))));
-  return () => cancelAnimationFrame(frame);
-}
+/** A place for the menu to stand by, as Base UI reads one (no element renders for it) */
+const virtual = (rect: DOMRect) => ({ getBoundingClientRect: () => rect });
 
 /**
- * What the row menu stands by: the right-clicked row's height at the pointer's x, read once when it opens (a virtual
- * element: no row renders for it), and the list it scrolls in. A property bag, not module lets (React Compiler).
+ * Plan 160: where its row leaves room on neither side, the menu still shows whole when the window can hold it: it stands
+ * at the window's foot, over its row (revision 4: only then may it cover it). A window too short for it lets it scroll,
+ * ending on a whole row. Read when it's placed (its height bounded by --available-height), never per row.
  */
-const rowAnchor: { rect: DOMRect; scroller: HTMLElement | null; getBoundingClientRect(): DOMRect } = {
-  rect: new DOMRect(),
-  scroller: null,
-  getBoundingClientRect() {
-    return this.rect;
-  },
-};
+function placeWhole(menu: HTMLElement, x: number, stand: (rect: DOMRect) => void): void {
+  const need = menu.scrollHeight;
+  if (need <= menu.clientHeight + 1) return;
+  // (2 px: the positioner's flip asks a pixel more than its padding)
+  const top = innerHeight - FLOAT_INSET - need - 2;
+  if (top >= FLOAT_INSET) stand(DOMRect.fromRect({ x, y: top - ROW_GAP, width: 0, height: 0 }));
+  else fitWholeRows(menu, "[role=menuitem]", true);
+}
+
+/** The list the menu's row scrolls in, set when it opens (a property bag, not a module let: React Compiler) */
+const rowList: { scroller: HTMLElement | null } = { scroller: null };
 
 /**
  * The thread context menu: one Base UI ContextMenu around the whole list (no
@@ -199,6 +198,19 @@ const rowAnchor: { rect: DOMRect; scroller: HTMLElement | null; getBoundingClien
  */
 export function ThreadMenu({ children }: { children: ReactElement }) {
   const [open, setOpen] = useState(false);
+  // plan 160: under (or over) the right-clicked row at the pointer's x, so the row it's about stays in view
+  const [anchor, setAnchor] = useState(() => virtual(new DOMRect()));
+  const pointerX = anchor.getBoundingClientRect().x;
+  const wholeRows = useCallback(
+    (menu: HTMLDivElement | null) => {
+      if (!menu) return;
+      // when it's placed and whenever its height changes (the window's bound arrives with its position): never per row
+      const ro = new ResizeObserver(() => placeWhole(menu, pointerX, (rect) => setAnchor(virtual(rect))));
+      ro.observe(menu);
+      return () => ro.disconnect();
+    },
+    [pointerX],
+  );
   const name = useMenuTarget((m) => (!m.scope && m.ids.length === 1 ? targetRows(m.ids)[0] : undefined));
   const change = (next: boolean) => {
     setOpen(next);
@@ -207,7 +219,7 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
   };
   // plan 160: a resize or a scroll moves the row out from under the menu: it goes rather than stay where the row was
   useEffect(() => {
-    const scroller = rowAnchor.scroller;
+    const scroller = rowList.scroller;
     if (!open) return;
     const close = () => change(false);
     window.addEventListener("resize", close);
@@ -229,10 +241,10 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
             return;
           }
           if (import.meta.env.VITE_RENDER_PROBE) performance.mark("menu:open");
-          // plan 160: under (or over) its row at the pointer's x, so the row it's about stays in view; one read, of this row
+          // plan 160: one read, of this row
           const r = el.getBoundingClientRect();
-          rowAnchor.rect = DOMRect.fromRect({ x: e.clientX, y: r.top, width: 0, height: r.height });
-          rowAnchor.scroller = e.currentTarget as HTMLElement;
+          setAnchor(virtual(DOMRect.fromRect({ x: e.clientX, y: r.top, width: 0, height: r.height })));
+          rowList.scroller = e.currentTarget as HTMLElement;
           const row = Number(el.dataset.threadId);
           const target = targetFor(row);
           useMenuTarget.setState(target);
@@ -245,7 +257,7 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
         ref={wholeRows}
         className="relative w-64"
         data-testid="thread-menu"
-        anchor={rowAnchor}
+        anchor={anchor}
         side="bottom"
         align="start"
         sideOffset={ROW_GAP}
