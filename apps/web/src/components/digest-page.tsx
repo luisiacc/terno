@@ -56,7 +56,7 @@ export default function DigestPage() {
   const [toggled, setToggled] = useState<ReadonlySet<number>>(() => digestPick(day).toggled);
   // pass 2: what this page archived (its rows leave, the header says it's done), held with the rest of the pick
   const batches = useToday((s) => (s.pick?.day === day ? (s.pick.done ?? null) : null));
-  const scroller = useRef<HTMLElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
   const scrollAt = useRef(digestPick(day).scroll);
   // back where it was left, once its rows are there: once a digest
   const restored = useRef<string | null>(null);
@@ -146,17 +146,24 @@ export default function DigestPage() {
   const done = batches?.length ? { count: batches.reduce((n, b) => n + b.ids.length, 0), undo: batches.at(-1)!.undo } : null;
   const finished = done !== null;
   return (
-    <section
+    // ai-r03: the pane scrolls, bounded to the reader's height, and the page is a column in it. The page itself scrolled
+    // with no height to scroll in, so it grew past the window and the parent clipped its last rows (every style, since
+    // plan 145); the wheel works anywhere over the pane, and the scrollbar sits at its edge
+    <div
       ref={scroller}
-      data-testid="digest-page"
-      data-finished={finished || undefined}
-      aria-label={t("today.digest.title")}
-      className="mx-auto w-full max-w-(--reader-max,48rem) space-y-3 overflow-y-auto px-8 pt-16 pb-8"
+      className="h-full min-h-0 overflow-y-auto"
+      data-testid="digest-scroller"
       onScroll={(e) => {
         if (restored.current !== day) return;
         scrollAt.current = e.currentTarget.scrollTop;
         keepDigestPick({ day, toggled, scroll: scrollAt.current });
       }}
+    >
+    <section
+      data-testid="digest-page"
+      data-finished={finished || undefined}
+      aria-label={t("today.digest.title")}
+      className="mx-auto w-full max-w-(--reader-max,48rem) space-y-3 px-8 pt-16 pb-8"
     >
       <header className="space-y-1">
         <div className="flex items-baseline justify-between gap-3">
@@ -254,5 +261,6 @@ export default function DigestPage() {
         </ul>
       )}
     </section>
+    </div>
   );
 }

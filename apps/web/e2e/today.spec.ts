@@ -172,6 +172,27 @@ test.describe("Today (plan 145)", () => {
     await expect(page.getByTestId("back-to-digest")).toHaveCount(0);
   });
 
+  test("ai-r03: the digest scrolls in its pane, so its last row and its box are reachable by the wheel in a short window", async ({ app: page, server }) => {
+    await withMail(server);
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, today: { digest: true, prepareAt: "00:00" } });
+    await page.setViewportSize({ width: 1100, height: 340 });
+    await page.getByTestId("nav-today").click();
+    await expect(page.getByTestId("digest-row")).toContainText("today's digest", { timeout: 15_000 });
+    await page.getByTestId("digest-row").click();
+    await expect(page.getByTestId("digest-title")).toHaveText("Today's digest");
+    const last = page.getByTestId("digest-item").last();
+    const below = async () => (await last.boundingBox())!.y + (await last.boundingBox())!.height - (await page.evaluate(() => innerHeight));
+    // the page is taller than the window: its last row starts below it
+    expect(await below()).toBeGreaterThan(0);
+    const pane = (await page.getByTestId("digest-scroller").boundingBox())!;
+    // over the pane's empty side, not only the column: the whole pane scrolls
+    await page.mouse.move(pane.x + pane.width - 20, pane.y + pane.height / 2);
+    for (let i = 0; i < 6; i++) await page.mouse.wheel(0, 300);
+    await expect.poll(below).toBeLessThanOrEqual(0);
+    await last.getByTestId("digest-tick").click();
+    await expect(last.getByTestId("digest-tick")).not.toBeChecked();
+  });
+
   test("the row's selection and keys stay on threads: Select All never takes the digest", async ({ app: page, server }) => {
     await withMail(server);
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" } });
