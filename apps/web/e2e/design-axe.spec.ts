@@ -323,6 +323,8 @@ test.describe("axe", { tag: "@variant" }, () => {
     await focusList(page);
     await page.keyboard.press("c");
     await addRecipients(page, "compose-to", "ana@example.com");
+    // (something written: a message with none asks first, plan 158)
+    await page.getByTestId("compose-body").fill("Mañana.");
     await page.getByTestId("compose-send-later").click();
     await page.getByTestId("send-later-popover").getByTestId("send-later-tomorrow").click();
     await page.getByTestId("strip-scheduled").click();
