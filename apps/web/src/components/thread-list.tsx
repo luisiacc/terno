@@ -1183,8 +1183,18 @@ export function ThreadList() {
   // drag rows onto sidebar categories: one delegated listener on the listbox
   useEffect(() => (parentRef.current ? installDragController(parentRef.current) : undefined), []);
 
+  // plan 158: the cursor moved by keys keeps a row of look-ahead each way, so the next row always shows (never the
+  // cursor pinned against the edge or the draft dock)
   useEffect(() => {
-    listScroller.scrollToIndex = (i) => virtualizer.scrollToIndex(i, { align: "auto" });
+    listScroller.scrollToIndex = (i) => {
+      const el = parentRef.current;
+      const rows = virtualizer.measurementsCache;
+      if (!el || !rows[i]) return virtualizer.scrollToIndex(i, { align: "auto" });
+      const after = rows[Math.min(i + 1, rows.length - 1)]!, before = rows[Math.max(i - 1, 0)]!;
+      const bottom = el.scrollTop + el.clientHeight - (virtualizer.options.scrollPaddingEnd ?? 0);
+      if (after.end > bottom) virtualizer.scrollToIndex(after.index, { align: "end" });
+      else if (before.start < el.scrollTop) virtualizer.scrollToIndex(before.index, { align: "start" });
+    };
   }, [virtualizer]);
 
   // Selection changes update the attribute directly without rendering the list.

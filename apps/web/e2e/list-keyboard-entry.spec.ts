@@ -122,3 +122,30 @@ for (const layout of ["list", "split"] as const) {
     }
   });
 }
+
+test("j and k keep a row of look-ahead: the next row always shows, down and back up (plan 158)", async ({ app: page }) => {
+  await page.setViewportSize({ width: 1100, height: 700 });
+  await rows(page).first().click();
+  const list = page.getByRole("listbox", { name: "Conversations", exact: true });
+  // the row after the cursor (or before it) wholly inside the list's box
+  const ahead = (by: number) => page.evaluate((by) => {
+    const box = document.querySelector("[data-testid=thread-list] [role=listbox]")!.getBoundingClientRect();
+    const cursor = document.querySelector<HTMLElement>("[data-testid=thread-row][data-cursor]")!;
+    const id = Number(cursor.dataset.threadId);
+    const all = [...document.querySelectorAll<HTMLElement>("[data-testid=thread-row]")].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+    const at = all.findIndex((r) => Number(r.dataset.threadId) === id);
+    const next = all[at + by];
+    if (!next) return true;
+    const r = next.getBoundingClientRect();
+    return r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5;
+  }, by);
+  await list.focus();
+  for (let i = 0; i < 14; i++) {
+    await page.keyboard.press("j");
+    await expect.poll(() => ahead(1), `after j #${i + 1}`).toBe(true);
+  }
+  for (let i = 0; i < 12; i++) {
+    await page.keyboard.press("k");
+    await expect.poll(() => ahead(-1), `after k #${i + 1}`).toBe(true);
+  }
+});
