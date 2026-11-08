@@ -298,3 +298,50 @@ Before any AI fix: plans 159, 160 and 144's card in, the AI set on the stub. All
 - **Contrast:** Graphite's hover and selection on AI surfaces near 1.2:1; dark AI surfaces losing their edges in macOS's settings.
 
 No finding goes against a product or AI rule; none goes to the owner this round.
+
+## Pass 1: Today, Writing style, the AI filter and contrast
+
+One of three parallel passes on `ai-r00`'s findings. This one takes `today` and `ai_settings`, and the contrast findings on any AI screen that the other two passes don't own (Graphite's states on AI surfaces, and dark cards in settings). ⌘J, the summary card, follow-ups, Reply ready, plain-English actions and Ask belong to the other two.
+
+### Today
+
+- **Exclusions survive a source.** The digest page's unticked set and its scroll position move from the page's own state to `useToday` (`digestPick: { day, toggled, scroll }`), so opening a newsletter and coming back with "Back to the digest" (or j/k back onto the row) finds the page as it was left. A new day's digest starts afresh. Opening a newsletter reads it, so it leaves the live set as before (plan 145: "what's read elsewhere stays listed, muted"); that's the existing rule, unchanged.
+- **The button says what it does.** "Archive 16" with everything ticked, "Archive selected (15)" once something is unticked; the count line says "15 of 16 selected" then, and a one-line hint under the title says what a tick means ("Ticked newsletters are archived; untick one to keep it.").
+- **A visible entry near the heading.** Today's header gets a line of its own under the title, in every header kind: "41 need you · Digest · 16 newsletters · All 165 waiting". The digest part is a link button that selects the digest row (as j/k would), so it's reachable at 1440x900 and 1100x700 without scrolling, while "Needs you" stays the list's first section. The old "Show 153 more waiting" header action becomes this line's last part.
+- **The counts explain themselves.** The sidebar's Today count gets plan 159's `countHelp` ("41 need you: conversations waiting for your reply, and promises that are due"). The header line repeats the 41 with "need you", and the Waiting link says "All 165 waiting", with a tooltip saying that Waiting holds every conversation in the Inbox that waits for a reply, services included, so it's larger.
+- **Why a row needs you, from signals Terno has.** A waiting row's second line starts with its reason, then the summary or snippet as now. `needsYou` (plan 145's rule) admits a row for one of two reasons, which `waitingPage` now returns with each id (`hasSent`, already read; no new query): "You're in this conversation" ("Your turn") for a conversation you've written in, and "New from someone you write to" for the single new conversation from a known correspondent. Promises, nudges and reminders already lead with theirs. No model call. "Asked you a question" isn't a signal Terno has without a model, so it isn't offered.
+- **The stale link.** "Back to the digest" holds the id it was opened for (`fromDigest: number | null`) and shows only on that conversation while Today is in view; leaving Today or opening another conversation clears it.
+- **Repeated issues told apart.** Each digest row shows the issue's subject under the sender, with the sender wrapping to two lines instead of truncating, and the row's date on the right.
+- **Reading as evident as archiving.** Each digest row is one button with a hover fill (`row-hover`) and an "Open" arrow at its end, focus-reveal on keyboard; the tick sits in its own 24 px target beside it.
+
+### Writing style
+
+- **A title.** On the Writing style page the settings header reads "Writing style", with a back button (chevron, named "Back to Drafting") on its line; the page no longer stacks AI, ‹ Drafting and a small grey label.
+- **Status and scope first.** Under the title: the status ("Learned from 181 messages, updated today."), then one line on precedence: "AI drafts start from You; an account's style, then a company's, then a person's take over where they say something different." (from `WritingService.voiceChain`: you → account → domain → person, the more specific last).
+- **One profile at a time.** Your own and your accounts' profiles are chosen in a `Select` (BoardUI's, "You · English", "Acme Studio · Spanish" with each one's message count); the chosen one shows its lines. Its phrases and notes are behind a disclosure ("Phrases you use (5)"), revealed second. Domains and People stay collapsed sections as now.
+- **The editor.** Greetings and sign-offs are edited as items: each a small textarea (a sign-off keeps its line break: "Cheers," and "Luis" are one), with remove and "Add". Phrases and notes stay one per line. Save and Cancel sit in a sticky footer at the scroller's bottom, as Rules has. Edit focuses the first field; Save and Cancel return focus to that profile's Edit button and scroll it into view.
+- **Reset is undoable.** `writing.profiles.reset` returns an undo token; the backend keeps the removed rows (a bounded few, in memory) and `writing.profiles.restore` puts them back exactly (both stores get `profiles.restore(rows)`). The page shows "Reset “You · English”" on the ordinary snack with Undo (and `z`). Its button's name says whose it is.
+
+### Create a filter with AI
+
+- **The explanation is the rule.** The AI box's line is built from the rule's fields, not the model's sentence: "Archives and marks as read mail whose domain is uber.com and that's older than 7 days." (`describeRule`, en and es through the catalog). The model's own explanation is no longer shown.
+- **Nonsense, said calmly.** A local check (`ruleGaps`, no model call) compares the request with the rule: an action the request names that the rule lacks (archive, delete, spam, read, star), an age the request gives that no condition holds, a sender the request names ("from my bank", an address or domain) with no sender condition, or a rule that acts when the request named no action. Any of these shows "I couldn't turn this into a clear rule — check it below." in place of the review line, in the destructive ink's quiet tone.
+- **Negation is an operator.** The "yes/not" button between the field and the operator goes. The operator `Select` holds both senses ("contains", "doesn't contain", "is", "isn't"…), as Gmail and Apple Mail do; Attachments gets "has attachments / has no attachments", Account "is / isn't". Fields that only ever turn true (Anywhere, Start of mail) keep their one operator.
+- **Esc asks first.** Closing the dialog (Esc, the ×, a click outside) with an unsaved rule that AI built asks "Discard this rule?" (Discard / Keep editing), on the existing `ConfirmDialog`.
+- **The preview in view.** Once a rule is built, the AI box folds to one line (its explanation and an "Edit request" link), so at 1100x700 the match count is visible without scrolling.
+- **The chosen action.** Each chosen "Then" chip shows a check in place of its glyph, a cue that doesn't depend on a fill (Graphite's fills sat at 1.2:1).
+
+### Contrast
+
+- **Graphite's keyboard place.** The palette's, Ask's and every menu's highlighted row is `menu-highlight`. Graphite light's moves to its selection grey, `#DCDCDC` (1.37:1 on white, the tint floor). Graphite dark's goes as far as `#9E9E9E` still reads at 4.5:1 on it: that's about 1.27:1, under the 1.35 floor, written into `BOUNDARY_STEPS` as a named exception beside `GRAPHITE_FIELD`, for the same reason (the blueprint fixes that ink). A new step holds every palette's highlight at the hover floor (1.15) at least, and Graphite's at the tint floor or its exception.
+- **Cards in dialogs keep their edges.** A tint card (`card-group`) sits on the popover in Settings and Rules, where the tint is 1.01 to 1.05:1 in dark. A derived token, `card-edge` (the ink from 11 % up, until 1.5:1 on the popover and the background), rings tint cards in dark dialogs; Graphite keeps its border. New `BOUNDARY_STEPS` entry: the ring on the popover, dark, 1.5.
+
+### Tests
+
+- Unit: `today.ts` (the pick survives the page unmounting, a new day resets it, `fromDigest` clears on leaving Today), `describeRule` and `ruleGaps` (en and es; uber.com passes, "make my inbox nicer" and the bank request are flagged), the operator's mapping to and from `negate`, the restore in both stores (conformance), `contrast.test.ts`'s new steps.
+- e2e: `today.spec.ts` (untick, open, Back: still unticked and "Archive selected (15)"; the header's digest link opens the digest without scrolling; the back link is gone after the Inbox; a waiting row's reason), `ai-draft.spec.ts`'s Writing style part (one profile in view, status first, the sticky footer at 1100x700, focus back on Edit, sign-off as one item, Reset with Undo), `filters.spec.ts` (the explanation from fields, the flag, the operator select, Esc asks).
+- Screenshots, light and dark, every design, 1440x900 and 1100x700, under `/tmp/terno-scratch/ai-pass1/today-settings/`.
+
+### Out of scope here
+
+The summary card's hover (another pass), the digest's Esc going back (the reader has no back stack; the link and j/k do it), the match preview's "2 ms" timing, and anything about the model's words.
