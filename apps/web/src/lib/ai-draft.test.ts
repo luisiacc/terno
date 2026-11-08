@@ -345,14 +345,25 @@ describe("§10.4: binding and races", () => {
     expect(c.text).toBe("");
   });
 
-  it("Esc mid-stream stops and discards, before the form's collapse; Esc on the strip is the form's", async () => {
+  it("plan 161, pass 3: Esc mid-stream stops and keeps what came, as a stopped write, before the form's collapse; Esc on the strip is the form's", async () => {
     const { key, c } = await writing();
+    store.setInstruction(key, "");
     delta(key, "Hi");
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    expect(aiDraftHooks.escape(key)).toBe(true);
+    expect(calls("ai.cancel")).toHaveLength(1);
+    // the words that came are the draft's now, said to be stopped, and Undo takes them back
+    expect(c.text).toBe("Hi");
+    expect(session(key)!.phase).toBe("strip");
+    expect(session(key)!.strip!.stopped).toBe(true);
+    expect(session(key)!.live).toBe("Stopped. What it wrote so far is in the draft.");
+    expect(aiDraftHooks.escape(key)).toBe(false);
+    store.undoCommit(key);
+    expect(c.text).toBe("");
+    // the field again, for Return: its instruction (none here) is the user's, not thrown away
+    expect(session(key)!.phase).toBe("input");
     expect(aiDraftHooks.escape(key)).toBe(true);
     expect(session(key)).toBeUndefined();
-    expect(calls("ai.cancel")).toHaveLength(1);
-    expect(c.text).toBe("");
-    expect(aiDraftHooks.escape(key)).toBe(false);
 
     await store.openRow({ key });
     await store.submit(key);
@@ -379,6 +390,49 @@ describe("§10.4: binding and races", () => {
     const shorter = calls("ai.compose").at(-1)!.params;
     expect(shorter.instruction).toBe("Shorter. Keep every fact and commitment.");
     expect(shorter.previousDraft).toBe("First.");
+  });
+
+  it("plan 161, pass 3: stopped before any words, the field holds the instruction again; Return asks it once more", async () => {
+    const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: "Ana Pérez <ana@example.test>", subject: "Re: Contract", bodyText: "" });
+    const { c } = editor(key, "");
+    await store.openRow({ key });
+    store.setInstruction(key, "ask her for the address");
+    void store.submit(key);
+    await tick();
+    last("ai.resolveIntent").resolve({ decision: { kind: "route", route: { type: "keep-draft" } }, fromAccountId: null, confirmFailed: false });
+    await tick();
+    store.stop(key);
+    expect(session(key)!.phase).toBe("input");
+    expect(session(key)!.instruction).toBe("ask her for the address");
+    expect(session(key)!.live).toBe("Stopped. Your instruction is still here.");
+    expect(c.text).toBe("");
+    void store.submit(key);
+    await tick();
+    last("ai.resolveIntent").resolve({ decision: { kind: "route", route: { type: "keep-draft" } }, fromAccountId: null, confirmFailed: false });
+    await tick();
+    expect(last("ai.compose").params.instruction).toBe("ask her for the address");
+  });
+
+  it("plan 161, pass 3: stopped over the user's notes, what came goes below them, and Undo leaves the notes and the instruction", async () => {
+    const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: "Ana Pérez <ana@example.test>", subject: "Re: Contract", bodyText: "my notes" });
+    const { c } = editor(key, "my notes");
+    await store.openRow({ key });
+    store.setInstruction(key, "make these a reply");
+    void store.submit(key);
+    await tick();
+    last("ai.resolveIntent").resolve({ decision: { kind: "route", route: { type: "keep-draft" } }, fromAccountId: null, confirmFailed: false });
+    await tick();
+    expect(session(key)!.phase).toBe("writing");
+    delta(key, "Dear Ana");
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    store.stop(key);
+    expect(c.text).toBe("my notes\n\nDear Ana");
+    expect(session(key)!.strip!.stopped).toBe(true);
+    expect(session(key)!.strip!.instruction).toBe("make these a reply");
+    store.undoCommit(key);
+    expect(c.text).toBe("my notes");
+    expect(session(key)!.phase).toBe("input");
+    expect(session(key)!.instruction).toBe("make these a reply");
   });
 });
 
@@ -602,10 +656,12 @@ describe("the subject: §10.3's compound undo", () => {
     await store.openRow({ key });
     await store.submit(key);
     store.stop(key);
-    expect(session(key)).toBeUndefined();
+    // pass 3: stopped with nothing written, the row's field is back (with its instruction), not gone
+    expect(session(key)!.phase).toBe("input");
     await runUndo(old);
     expect(c.text).toBe("");
-    expect(session(key)).toBeUndefined();
+    expect(session(key)!.phase).toBe("input");
+    expect(session(key)!.strip).toBeNull();
   });
 
   it("Codex review 2: going back to an earlier version brings back its own checks, and its gaps are guarded", async () => {

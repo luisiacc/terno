@@ -126,6 +126,8 @@ export interface AiStrip {
   prepared?: PreparedRef;
   /** plan 161: typed in since its last write: the strip stays, as "Edited after AI" */
   edited?: boolean;
+  /** plan 161, pass 3: its last write is what came before Esc or Stop: "Stopped part-way", and its use isn't known */
+  stopped?: boolean;
 }
 
 export interface AiChoice {
@@ -819,18 +821,35 @@ function priorStands(prior: AiStrip, run: Run | null | undefined, c: ReturnType<
   return token === prior.stack[prior.stack.length - 1]?.doc || (prior.edited === true && token === run?.binding.doc);
 }
 
-/** Esc and the row's Stop: it ends, nothing is written, the strip comes back if there was one. */
+/**
+ * Esc and the row's Stop: it ends, and the strip comes back if there was one. Plan 161, pass 3: nothing the user had is lost
+ * (Esc used to take the instruction and the words that had come): what came goes into the draft as a write of its own,
+ * "Stopped part-way", which Undo takes back; with nothing yet, the row's field holds the instruction again, for Return.
+ */
 export function stop(key: string) {
   const s = session(key);
   if (!s) return;
   cancel(s);
-  clearStream(key);
   stopWaiting(key);
   const prior = s.run?.prior;
   const c = controllerFor(key);
   if (prior && priorStands(prior, s.run, c)) {
+    clearStream(key);
     update(key, { phase: "strip", strip: prior, run: null, choice: null, error: null, guard: null, live: "" });
     return focusEditor(key);
+  }
+  const spec = s.run?.spec;
+  const text = previewText(key).trim();
+  // a rewrite keeps the text it rewrites where it is, and its own words aren't a draft: only a first write's are kept
+  if (spec && spec.kind !== "refine" && text && c && s.phase === "writing") {
+    // below the user's notes (or an image) as Insert puts what came before a failure; over an empty body, the draft
+    const result: Extract<AiComposeResult, { status: "done" }> = { status: "done", text, subject: null, stop: "end", used: emptyUsed(), checks: { specifics: [], placeholders: [] } };
+    if (commit(key, c.empty() ? "replace" : "below", result, spec, undefined, false, { stopped: true })) return focusEditor(key);
+  }
+  clearStream(key);
+  if (spec && spec.kind !== "refine") {
+    update(key, { phase: "input", instruction: spec.instruction, run: null, choice: null, error: null, guard: null, strip: null, rewrite: false, live: spec.instruction ? t("aiDraft.live.stoppedEmpty") : "", focus: s.focus + 1 });
+    return;
   }
   remove(key);
   focusEditor(key);
@@ -846,7 +865,7 @@ function cancel(s: AiSession) {
 
 // ── commit
 
-function commit(key: string, how: "replace" | "below", result: Extract<AiComposeResult, { status: "done" }>, spec: RunSpec, prior: AiStrip | undefined, needsSubject: boolean): boolean {
+function commit(key: string, how: "replace" | "below", result: Extract<AiComposeResult, { status: "done" }>, spec: RunSpec, prior: AiStrip | undefined, needsSubject: boolean, o: { stopped?: boolean } = {}): boolean {
   const c = controllerFor(key);
   if (!c) {
     // pinning, collapsing or another thread took the editor: it goes in when one is there
@@ -873,8 +892,8 @@ function commit(key: string, how: "replace" | "below", result: Extract<AiCompose
   // what the draft holds now, as a send will compare it: a replace is all of the text, an insert only what it wrote
   recordProvenance(key, how === "replace" ? c.snapshot().text : result.text);
   clearStream(key);
-  const strip: AiStrip = { used: result.used, checks: result.checks, cutOff: result.stop === "length", oneTap: refined ? prior.oneTap : !spec.instruction && spec.kind === "draft", instruction, ...(spec.prepared ?? prior?.prepared ? { prepared: (spec.prepared ?? prior?.prepared)! } : {}), ...(notes !== undefined ? { notes } : {}), stack };
-  update(key, { phase: "strip", strip, run: null, choice: null, held: null, error: null, guard: null, instruction: "", live: t("aiDraft.live.ready", { count: wordCount(result.text) }) });
+  const strip: AiStrip = { used: result.used, checks: result.checks, cutOff: result.stop === "length", oneTap: refined ? prior.oneTap : !spec.instruction && spec.kind === "draft", instruction, ...(spec.prepared ?? prior?.prepared ? { prepared: (spec.prepared ?? prior?.prepared)! } : {}), ...(notes !== undefined ? { notes } : {}), ...(o.stopped ? { stopped: true } : {}), stack };
+  update(key, { phase: "strip", strip, run: null, choice: null, held: null, error: null, guard: null, instruction: "", live: o.stopped ? t("aiDraft.live.stopped") : t("aiDraft.live.ready", { count: wordCount(result.text) }) });
   return true;
 }
 
@@ -1056,6 +1075,11 @@ export function undoCommit(key: string) {
     recordProvenance(key, bodyNow(key));
     return focusEditor(key);
   }
+  // plan 161, pass 3: a stopped write taken back gives the field its instruction again (it's the user's too), for Return
+  if (s.strip.stopped && !preparedDrafts.has(key)) {
+    update(key, { phase: "input", instruction: s.strip.instruction, strip: null, rewrite: false, live: "", focus: s.focus + 1 });
+    return;
+  }
   remove(key);
   if (preparedDrafts.has(key)) return backToNothing(key);
   focusEditor(key);
@@ -1091,6 +1115,9 @@ function undoEdited(key: string, s: AiSession & { strip: AiStrip }, top: AiCommi
     left = { ...was, stack, ...versionOf(under), edited: !c.sameDoc(under.doc) };
     update(key, { strip: left });
     recordProvenance(key, bodyNow(key));
+  } else if (was.stopped && !preparedDrafts.has(key)) {
+    // plan 161, pass 3: a stopped write gives the field its instruction back, as its unedited Undo does
+    update(key, { phase: "input", instruction: was.instruction, strip: null, rewrite: false, live: "" });
   } else {
     remove(key);
     // the draft stays, even blank: what was typed is one Undo away (the unedited Undo forgets a blank one)

@@ -3,7 +3,7 @@ import { getLocale, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { CloseButton } from "@terno/ui/components/close-button";
 import { Shortcut } from "@terno/ui/components/shortcut";
-import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Spinner } from "@terno/ui/components/spinner";
 import { ChevronDown, Undo2 } from "@terno/ui/icons";
@@ -12,7 +12,7 @@ import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import { modelName, providerLabel, writingTarget } from "~/lib/ai";
 import { acknowledgeTold, answer, closeRow, commitHeld, confirmReplace, discard, discardAndSend, editInstruction, includeEveryone, keepEdits, keepWriting, noteBody, place, placePartial, previewMode, previewText, recallInstruction, refine, retry, setInstruction, stop, submit, subscribePreview, takeFocusRequest, undoCommit, useAiDraft, type AiSession, type AiStrip } from "~/lib/ai-draft";
 import { keepInView } from "~/lib/reader-scroll";
-import { AiErrorNotice, aiErrorCopy, aiWritten, errorTarget } from "../ai-card";
+import { AiErrorNotice, AiProvenance, aiErrorCopy, aiWritten, errorTarget } from "../ai-card";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { useDrafts } from "~/lib/drafts";
 import { setApp, useApp } from "~/state/app";
@@ -99,55 +99,57 @@ function voiceLines(strip: AiStrip, who: string, domain: string): string[] {
 }
 
 /**
- * Plan 161, pass 2: the strip's status is the one way into what the AI used: "Written with AI ▾" opens the voice ("In your
- * voice with Arjun"), what it read, the model and the instruction. The voice had a trigger of its own, which took the row's room.
+ * Plan 161, pass 2: the strip's status is the one way into what the AI used. Pass 3: it is the one provenance control every AI
+ * surface has (`AiProvenance`), at the command line's end: "Written with AI ▾" opens the voice ("In your voice with Arjun"),
+ * what it read, and the model; the instruction has its own line now, so the popover doesn't hold it.
  */
-function StatusPopover({ s, strip, toText }: { s: AiSession; strip: AiStrip; toText: string }) {
+function StatusPopover({ strip, toText }: { strip: AiStrip; toText: string }) {
   const ai = useApp((state) => state.settings?.ai);
   const who = whoOf(toText);
-  const lines = voiceLines(strip, who, domainOf(toText));
+  // a stopped write's use was never reported: it says that, not a voice it may not have used
+  const lines = strip.stopped ? [] : voiceLines(strip, who, domainOf(toText));
   return (
-    <Popover>
-      {/* a menu's chevron, since it opens one: quiet at rest (no shape), so it reads as the status, and the commands as commands */}
-      <PopoverTrigger render={<Button type="button" variant="ghost" size="sm" className={cn(quiet, "-ms-1.5 shrink-0 px-1.5 text-xs")} data-testid="ai-strip-voice" />}>
-        <span data-testid="ai-strip-written">{aiWritten(strip.edited === true)}</span>
-        <ChevronDown aria-hidden />
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 text-sm" data-testid="ai-voice-popover">
-        <p className="mb-1 font-medium" data-testid="ai-voice-label">{voiceLabel(strip, who)}</p>
-        <ul className="flex flex-col gap-1">
-          {lines.map((text) => (
-            <li key={text}>{text}</li>
-          ))}
-        </ul>
-        {strip.instruction && (
-          <div className="mt-2 flex flex-col items-start gap-1">
-            <p className="text-xs text-muted-foreground" data-testid="ai-voice-instruction">{t("aiDraft.instruction.asked", { instruction: strip.instruction })}</p>
-            <Button type="button" variant="link-secondary" className="text-xs" data-testid="ai-voice-edit-instruction" onClick={() => editInstruction(s.key)}>
-              {t("aiDraft.instruction.edit")}
-            </Button>
-          </div>
-        )}
-        <p className="mt-2 text-xs text-muted-foreground">{t("aiDraft.language.change")}</p>
-        <p className="mt-2 text-xs text-muted-foreground">{t("aiDraft.used.model", { model: modelName(strip.used.model), provider: ai ? providerLabel(strip.used.provider, ai) : strip.used.provider })}</p>
-        <Button
-          type="button"
-          variant="link-secondary"
-          className="mt-2 self-start text-xs"
-          data-testid="ai-voice-style"
-          onClick={() => {
-            useAiDraftUi.setState({ stylePage: true });
-            openSettings();
-          }}
-        >
-          {t("aiDraft.style.title")}
-        </Button>
-      </PopoverContent>
-    </Popover>
+    <AiProvenance
+      model={strip.used.model}
+      at={0}
+      label={aiWritten(strip.edited === true, strip.stopped === true)}
+      detail={t("aiDraft.used.model", { model: modelName(strip.used.model), provider: ai ? providerLabel(strip.used.provider, ai) : strip.used.provider })}
+      testId="ai-strip-voice"
+      labelTestId="ai-strip-written"
+      popoverTestId="ai-voice-popover"
+      className="-me-1.5 ms-auto"
+    >
+      {strip.stopped ? (
+        <p data-testid="ai-voice-label">{t("aiDraft.stoppedDetail")}</p>
+      ) : (
+        <div>
+          <p className="mb-1 font-medium" data-testid="ai-voice-label">{voiceLabel(strip, who)}</p>
+          <ul className="flex flex-col gap-1">
+            {lines.map((text) => (
+              <li key={text}>{text}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {strip.oneTap && <p className="text-xs text-muted-foreground" data-testid="ai-voice-content">{t("aiDraft.content.alone")}</p>}
+      <p className="text-xs text-muted-foreground">{t("aiDraft.language.change")}</p>
+      <Button
+        type="button"
+        variant="link-secondary"
+        className="self-start text-xs"
+        data-testid="ai-voice-style"
+        onClick={() => {
+          useAiDraftUi.setState({ stylePage: true });
+          openSettings();
+        }}
+      >
+        {t("aiDraft.style.title")}
+      </Button>
+    </AiProvenance>
   );
 }
 
-/** The strip's Undo: the AI's last write taken back. Set apart from the rewrites, with its glyph; also on the row's field over a strip. */
+/** The strip's Undo: the AI's last write taken back. First on its line, BoardUI's secondary with its glyph and its word at every width; also on the row's field over a strip. */
 function UndoButton({ s, className }: { s: AiSession; className?: string }) {
   return (
     <Tooltip>
@@ -157,7 +159,7 @@ function UndoButton({ s, className }: { s: AiSession; className?: string }) {
             type="button"
             variant="outline"
             size="sm"
-            className={cn("px-2 text-foreground @max-[30rem]/strip:px-1.5", className)}
+            className={cn("text-foreground", className)}
             data-testid="ai-strip-undo"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
@@ -169,11 +171,64 @@ function UndoButton({ s, className }: { s: AiSession; className?: string }) {
         }
       >
         <Undo2 aria-hidden />
-        {/* a narrow strip keeps it on the status's line as its glyph; its name stays */}
-        <span className="@max-[30rem]/strip:sr-only">{t("common.undo")}</span>
+        {t("common.undo")}
       </TooltipTrigger>
       <TooltipContent>{t("aiDraft.undoTip")}</TooltipContent>
     </Tooltip>
+  );
+}
+
+/**
+ * Plan 161, pass 3: what was asked, in the user's words, whole (it wraps), on its own line above the commands: where it was
+ * typed, while it's written, and after. Edit (on the strip) opens the field holding it, to write the draft again from new words.
+ */
+function InstructionLine({ text, onEdit }: { text: string; onEdit: (() => void) | null }) {
+  return (
+    <p className="min-h-[38px] py-[9px] text-sm leading-5 wrap-anywhere text-foreground" data-testid="ai-strip-instruction">
+      <span data-testid="ai-strip-instruction-text">{t("aiDraft.instruction.quoted", { instruction: text })}</span>
+      {/* its 24 px reach 2 px past the 20 px line each way, so the line is as tall with it as without (writing, then written) */}
+      {/* while it writes, its place is held (nothing to edit yet), so the line is the same height before and after the commit */}
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        className={cn(quiet, "-my-0.5 ms-1.5 align-baseline", !onEdit && "invisible")}
+        aria-label={t("aiDraft.instruction.edit")}
+        aria-hidden={onEdit ? undefined : true}
+        tabIndex={onEdit ? undefined : -1}
+        data-testid={onEdit ? "ai-strip-edit-instruction" : undefined}
+        onClick={onEdit ?? undefined}
+      >
+        {t("aiDraft.instruction.editShort")}
+      </Button>
+    </p>
+  );
+}
+
+/** The instruction a run is writing from, as its strip will show it: a rewrite keeps the strip's own (Shorter isn't the user's words). */
+function runInstruction(s: AiSession): string {
+  const spec = s.run?.spec ?? s.lastSpec;
+  if (!spec) return "";
+  if (spec.kind === "refine" && !spec.regenerate) return s.run?.prior?.instruction ?? "";
+  return spec.instruction;
+}
+
+/** Regenerate, Shorter and Warmer, folded into one menu where the line can't hold them beside Undo and the status. */
+function RewriteMenu({ s }: { s: AiSession }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="sm" className="hidden px-2 text-foreground @max-[30rem]/strip:inline-flex" data-testid="ai-strip-rewrite" />}>
+        {t("aiDraft.rewrite")}
+        <ChevronDown aria-hidden />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-max" data-testid="ai-strip-rewrite-menu">
+        {(["regenerate", "shorter", "warmer"] as const).map((how) => (
+          <DropdownMenuItem key={how} data-testid={`ai-strip-rewrite-${how}`} onClick={() => refine(s.key, how)}>
+            <span className="whitespace-nowrap">{t(`aiDraft.${how}`)}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -181,46 +236,26 @@ function Strip({ s }: { s: AiSession & { strip: AiStrip } }) {
   const toText = useDrafts((state) => state.drafts[s.key]?.toText ?? "");
   const { strip } = s;
   return (
-    // one line where it fits (plan 161, pass 2): the status and the instruction on the left, the commands on the right; it
-    // wraps only when even the commands can't sit beside the status
-    <div className={cn(line, "@container/strip py-[5px]")} data-testid="ai-strip" data-edited={strip.edited || undefined}>
-      <span className="flex min-w-0 flex-1 items-center gap-x-1">
-        {/* the row's label already says AI: no glyph to say it again */}
-        <StatusPopover s={s} strip={strip} toText={toText} />
-        {/* what was asked, quietly, and a way to ask again in other words; a narrow row has it in the popover */}
-        {strip.instruction && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className={cn(quiet, "min-w-0 shrink justify-start px-1.5 text-xs @max-[34rem]/strip:hidden")}
-            data-testid="ai-strip-instruction"
-            onClick={() => editInstruction(s.key)}
-          >
-            {/* its name is its visible words with what it does before them (axe's label-content-name-mismatch) */}
-            <span className="sr-only">{t("aiDraft.instruction.editPrefix")}</span>
-            <span className="truncate">{t("aiDraft.instruction.quoted", { instruction: strip.instruction })}</span>
-          </Button>
-        )}
-      </span>
-      {/* the commands: BoardUI's secondary buttons in the ink (the row's grey is the status's), ending on the line Cc, Bcc
-          and Subject end on; Undo set apart, with its glyph */}
-      <span className="ml-auto flex shrink-0 items-center gap-1 text-foreground" data-testid="ai-strip-commands">
-        <Button type="button" variant="outline" size="sm" className="px-2 @max-[30rem]/strip:px-1.5" data-testid="ai-strip-regenerate" onClick={() => refine(s.key, "regenerate")}>
-          {t("aiDraft.regenerate")}
-        </Button>
-        <Button type="button" variant="outline" size="sm" className="px-2 @max-[30rem]/strip:px-1.5" data-testid="ai-strip-shorter" onClick={() => refine(s.key, "shorter")}>
-          {t("aiDraft.shorter")}
-        </Button>
-        <Button type="button" variant="outline" size="sm" className="px-2 @max-[30rem]/strip:px-1.5" data-testid="ai-strip-warmer" onClick={() => refine(s.key, "warmer")}>
-          {t("aiDraft.warmer")}
-        </Button>
-        <UndoButton s={s} className="ml-1" />
-      </span>
+    // plan 161, pass 3: the instruction on its own line, then the commands: Undo first (recovery leads), the rewrites quieter
+    // than it, and the provenance at the line's end, as on every AI surface. Narrow, the rewrites fold into Rewrite ▾
+    <div className="@container/strip flex min-w-0 flex-1 flex-col" data-testid="ai-strip" data-edited={strip.edited || undefined} data-stopped={strip.stopped || undefined}>
+      {strip.instruction && <InstructionLine text={strip.instruction} onEdit={() => editInstruction(s.key)} />}
+      <div className={cn(line, "flex-nowrap py-[5px]")}>
+        <span className="flex shrink-0 items-center gap-1 text-foreground" data-testid="ai-strip-commands">
+          <UndoButton s={s} className="-ms-0.5 me-1" />
+          {(["regenerate", "shorter", "warmer"] as const).map((how) => (
+            <Button key={how} type="button" variant="ghost" size="sm" className="px-2 text-foreground @max-[30rem]/strip:hidden" data-testid={`ai-strip-${how}`} onClick={() => refine(s.key, how)}>
+              {t(`aiDraft.${how}`)}
+            </Button>
+          ))}
+          <RewriteMenu s={s} />
+        </span>
+        <StatusPopover strip={strip} toText={toText} />
+      </div>
       {/* the same notes the Status had, in the same place: the row keeps its height across the commit */}
-      {s.confirmFailed && <p className="w-full text-xs">{t("aiDraft.confirmFailed")}</p>}
+      {s.confirmFailed && <p className="w-full pb-1.5 text-xs text-muted-foreground">{t("aiDraft.confirmFailed")}</p>}
       {s.everyone > 0 && (
-        <Button type="button" variant="link-secondary" className="w-fit text-xs" data-testid="ai-include-everyone" onClick={() => void includeEveryone(s.key)}>
+        <Button type="button" variant="link-secondary" className="mb-1.5 w-fit text-xs" data-testid="ai-include-everyone" onClick={() => void includeEveryone(s.key)}>
           {t("aiDraft.includeEveryone", { count: s.everyone })}
         </Button>
       )}
@@ -243,19 +278,24 @@ function Status({ s }: { s: AiSession }) {
   // plan 161, pass 2: a rewrite says so, over the text it keeps in place until the new one is in
   const rewriting = run?.spec.kind === "refine";
   const text = run?.slow ? (local && !run.streaming ? t("aiDraft.loadingModel") : t("aiDraft.stillWriting")) : rewriting ? t("aiDraft.rewriting") : t("aiDraft.writing");
+  const instruction = runInstruction(s);
   return (
-    <div className={line} data-testid="ai-row-status" data-state={s.phase}>
-      <Spinner aria-hidden className="size-[1.15em] text-muted-foreground" />
-      <span data-testid="ai-row-status-text">{s.phase === "waitingBody" ? t("aiDraft.downloading") : text}</span>
-      <Button type="button" variant="ghost" size="xs" className={cn(quiet, "-mr-0.5 ml-auto")} data-testid="ai-row-stop" onClick={() => stop(s.key)}>
-        {t("aiDraft.stop")}
-      </Button>
-      {s.confirmFailed && <p className="w-full text-xs">{t("aiDraft.confirmFailed")}</p>}
-      {s.everyone > 0 && (
-        <Button type="button" variant="link-secondary" className="w-fit text-xs" data-testid="ai-include-everyone" onClick={() => void includeEveryone(s.key)}>
-          {t("aiDraft.includeEveryone", { count: s.everyone })}
+    // plan 161, pass 3: the instruction stays where it was typed, above what's happening, as the strip will have it
+    <div className="flex min-w-0 flex-1 flex-col">
+      {instruction && <InstructionLine text={instruction} onEdit={null} />}
+      <div className={line} data-testid="ai-row-status" data-state={s.phase}>
+        <Spinner aria-hidden className="size-[1.15em] text-muted-foreground" />
+        <span data-testid="ai-row-status-text">{s.phase === "waitingBody" ? t("aiDraft.downloading") : text}</span>
+        <Button type="button" variant="ghost" size="xs" className={cn(quiet, "-mr-0.5 ml-auto")} data-testid="ai-row-stop" onClick={() => stop(s.key)}>
+          {t("aiDraft.stop")}
         </Button>
-      )}
+        {s.confirmFailed && <p className="w-full text-xs">{t("aiDraft.confirmFailed")}</p>}
+        {s.everyone > 0 && (
+          <Button type="button" variant="link-secondary" className="w-fit text-xs" data-testid="ai-include-everyone" onClick={() => void includeEveryone(s.key)}>
+            {t("aiDraft.includeEveryone", { count: s.everyone })}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

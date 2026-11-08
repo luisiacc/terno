@@ -11,6 +11,7 @@ import type { IncomingMessage } from "@terno/store";
 import { E2E_NOW } from "./constants";
 import { sqlDb } from "../../backend-dev/src/server";
 import { addRecipients, expect, recipientEmails, rows, scenario, stabilize, test, type DevServerFixture } from "./fixtures";
+import { unclipped } from "./helpers/unclipped";
 
 const SHOTS = process.env.AI_DRAFT_SHOTS ?? "/tmp/terno-scratch/ai-draft";
 const dev = { clientId: "setup", origin: "dev" as const };
@@ -225,7 +226,7 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(strip(page)).toBeVisible();
       const seen = await commit();
       for (const [i, line] of seen.preview.entries()) expect(seen.body[i]!.top, line.text).toBe(line.top);
-      await expect(page.getByTestId("ai-strip-check")).toContainText("Written from the conversation alone");
+      await expect(page.getByTestId("ai-strip-check")).toContainText("From the conversation alone, with no instruction from you");
       const checkTop = (await page.getByTestId("ai-strip-check").boundingBox())!.y;
       expect(checkTop).toBeGreaterThan((await body(page).boundingBox())!.y);
     });
@@ -267,7 +268,10 @@ test.describe("drafting with AI (plan 133)", () => {
     // at once, for the same reason: a longer wait would pass a slower timer
     await expect(page.getByTestId("ai-row-status-text")).toHaveText("Loading the model…", { timeout: 600 });
     await page.getByTestId("ai-row-stop").click();
-    await expect(row(page)).toHaveCount(0);
+    // plan 161, pass 3: stopped before any words, the row's field is back, as it was asked from, for Return
+    await expect(field(page)).toBeVisible();
+    await expect(field(page)).toHaveValue("");
+    await expect(page.getByTestId("ai-row-status")).toHaveCount(0);
   });
 
   test("the row with an instant model: its ways in and out, your notes, a question, a send, a failure", async ({ app: page, server }) => {
@@ -302,7 +306,7 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(card.getByTestId("ai-strip")).toBeVisible();
       await expect(card.getByTestId("ai-strip-written")).toBeVisible();
       await expect(card.getByTestId("ai-strip-written")).toHaveText("Written with AI");
-      // two lines at most: the status, then the commands
+      // two lines at most: the instruction, then the commands and the status (pass 3)
       expect((await card.getByTestId("ai-row").boundingBox())!.height).toBeLessThanOrEqual(80);
     });
     await scenario("Enter with nothing typed is the one-tap draft; ↑ recalls the last instruction; Esc closes and the empty reply goes", async () => {
@@ -312,7 +316,7 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(field(page)).toBeFocused();
       await page.keyboard.press("Enter");
       await expect(strip(page)).toBeVisible();
-      await expect(page.getByTestId("ai-strip-check")).toContainText("Written from the conversation alone");
+      await expect(page.getByTestId("ai-strip-check")).toContainText("From the conversation alone, with no instruction from you");
 
       await page.getByTestId("ai-strip-undo").click();
       await openField(page);
@@ -575,21 +579,52 @@ test.describe("drafting with AI (plan 133)", () => {
   });
 
   test("during the stream: Esc, typing, collapsing, switching", async ({ app: page, server }) => {
-    await scenario("Esc mid-stream stops and discards, handled before the form's collapse; a second Esc puts the empty draft away", async () => {
+    await scenario("plan 161, pass 3: Esc mid-stream stops and keeps what came, Stopped part-way, under its instruction; Undo takes the words back and leaves the instruction in the field", async () => {
       await ready(page, server);
       await openThread(page, /Contract review/);
       await openField(page);
       await field(page).fill("say that this is just fine");
       await page.keyboard.press("Enter");
+      // while it writes, the instruction stays where it was typed
+      await expect(page.getByTestId("ai-strip-instruction-text")).toHaveText("“say that this is just fine”");
       await streaming(page);
       await page.keyboard.press("Escape");
-      await expect(row(page)).toHaveCount(0);
+      // ai-r02: Esc took the instruction and the words that had come, without a word
+      await expect(strip(page)).toHaveAttribute("data-stopped", "true");
+      await expect(page.getByTestId("ai-strip-written")).toHaveText("Stopped part-way");
+      await expect(page.getByTestId("ai-strip-instruction-text")).toHaveText("“say that this is just fine”");
+      await expect(body(page)).toContainText("Hi To");
+      await expect(page.getByTestId("ai-live")).toHaveText("Stopped. What it wrote so far is in the draft.");
       await expect(preview(page)).toHaveCount(0);
       await expect(page.getByTestId("composer")).toBeVisible();
+      // its popover says it stopped, not a voice it may not have used
+      await page.getByTestId("ai-strip-voice").click();
+      await expect(page.getByTestId("ai-voice-label")).toHaveText(/stopped it before it finished/);
+      await page.keyboard.press("Escape");
+      // Undo: the words go, and the instruction is the field's again, for Return
+      await page.getByTestId("ai-strip-undo").click();
       await expect(body(page)).toHaveText("");
+      await expect(field(page)).toHaveValue("say that this is just fine");
+      await expect(field(page)).toBeFocused();
+      // then Esc closes the row, and the empty draft's own Esc puts it away
+      await page.keyboard.press("Escape");
+      await expect(row(page)).toHaveCount(0);
       await expect(body(page)).toBeFocused();
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("draft-slot")).toHaveAttribute("data-state", "bar");
+    });
+    await scenario("plan 161, pass 3: Esc before any words keeps the instruction in the field", async () => {
+      await fresh(page, server);
+      fakeDraft.firstTokenMs = 60_000;
+      await openThread(page, /Contract review/);
+      await openField(page);
+      await field(page).fill("say that this is just fine");
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("ai-row-status-text")).toHaveText("Writing…");
+      await page.keyboard.press("Escape");
+      await expect(field(page)).toHaveValue("say that this is just fine");
+      await expect(page.getByTestId("ai-live")).toHaveText("Stopped. Your instruction is still here.");
+      fakeDraft.firstTokenMs = 250;
     });
     await scenario("typing during the stream: it goes on, and ends as a suggestion; a change of recipients says who it was for", async () => {
       await fresh(page, server);
@@ -1214,30 +1249,55 @@ test.describe("drafting with AI (plan 133)", () => {
     });
   });
 
-  test("plan 161, pass 2: the strip is one line at 1440x900 and 1100x700, its commands in the ink", { tag: "@design" }, async ({ app: page, server }) => {
+  test("plan 161, pass 3: the instruction whole on its own line, Undo first and named at every width, the rewrites quieter, folded when narrow; nothing in its menus clipped", { tag: "@design" }, async ({ app: page, server }) => {
     await ready(page, server);
     instant();
     await openThread(page, /Contract review/);
     await openField(page);
-    await field(page).fill("echo: Friday works for me.");
+    const words = "echo: Friday works for me, ask him to send the address of the flat";
+    await field(page).fill(words);
     await page.keyboard.press("Enter");
     await expect(strip(page)).toBeVisible();
-    const line = async () => {
-      const status = (await page.getByTestId("ai-strip-voice").boundingBox())!;
-      const undo = (await page.getByTestId("ai-strip-undo").boundingBox())!;
-      return Math.abs(status.y + status.height / 2 - (undo.y + undo.height / 2));
-    };
-    for (const size of [{ width: 1440, height: 900 }, { width: 1100, height: 700 }]) {
-      await page.setViewportSize(size);
-      await expect.poll(line, `${size.width}`).toBeLessThanOrEqual(1);
-      expect((await strip(page).boundingBox())!.height, `${size.width}`).toBeLessThanOrEqual(40);
+    const middle = async (id: string) => { const b = (await page.getByTestId(id).boundingBox())!; return b.y + b.height / 2; };
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      for (const size of [{ width: 1440, height: 900 }, { width: 1100, height: 700 }]) {
+        await page.setViewportSize(size);
+        const where = `${scheme} ${size.width}`;
+        // ai-r02: the instruction was cut to about 20 characters at 1440 and gone at 1100
+        const instruction = page.getByTestId("ai-strip-instruction-text");
+        await expect(instruction, where).toHaveText(`“${words}”`);
+        await expect(instruction, where).toBeVisible();
+        expect(await page.getByTestId("ai-strip-instruction").evaluate((el) => el.scrollWidth <= el.clientWidth), where).toBe(true);
+        // ai-r02: Undo became an unnamed glyph at 1100 while the rewrites kept their words
+        await expect(page.getByTestId("ai-strip-undo"), where).toHaveText("Undo");
+        await expect.poll(async () => Math.abs((await middle("ai-strip-undo")) - (await middle("ai-strip-voice"))), where).toBeLessThanOrEqual(1);
+        const wide = size.width === 1440;
+        await expect(page.getByTestId("ai-strip-regenerate"), where).toBeVisible({ visible: wide });
+        await expect(page.getByTestId("ai-strip-rewrite"), where).toBeVisible({ visible: !wide });
+        if (!wide) {
+          await page.getByTestId("ai-strip-rewrite").click();
+          await expect(page.getByTestId("ai-strip-rewrite-menu").getByRole("menuitem")).toHaveText(["Regenerate", "Shorter", "Warmer"]);
+          expect(await unclipped(page.getByTestId("ai-strip-rewrite-menu")), where).toEqual([]);
+          await page.keyboard.press("Escape");
+        }
+        await page.getByTestId("ai-strip-voice").click();
+        expect(await unclipped(page.getByTestId("ai-voice-popover")), where).toEqual([]);
+        await page.keyboard.press("Escape");
+      }
     }
-    // an enabled command is the ink, not the status's grey
-    const color = (id: string) => page.getByTestId(id).evaluate((el) => getComputedStyle(el).color);
-    expect(await color("ai-strip-regenerate")).not.toBe(await color("ai-strip-written"));
-    expect(await color("ai-strip-regenerate")).toBe(await page.getByTestId("reader-subject").evaluate((el) => getComputedStyle(el).color));
-    // narrow, Undo is its glyph, and keeps its name
-    await expect(page.getByTestId("ai-strip-undo")).toHaveAccessibleName("Undo");
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    // the rewrites are enabled-looking (the ink) and quieter than Undo: no edge of their own; Undo is BoardUI's secondary
+    const style = (id: string) => page.getByTestId(id).evaluate((el) => { const s = getComputedStyle(el); return { color: s.color, edge: s.borderTopWidth !== "0px" && s.borderTopStyle !== "none" ? s.borderTopColor : s.boxShadow }; });
+    // (polled: a theme change eases its colors in)
+    await expect.poll(async () => (await style("ai-strip-regenerate")).color === (await page.getByTestId("reader-subject").evaluate((el) => getComputedStyle(el).color))).toBe(true);
+    expect((await style("ai-strip-regenerate")).edge).toMatch(/^(none|rgba\(0, 0, 0, 0\))$/);
+    expect((await style("ai-strip-undo")).edge).not.toMatch(/^(none|rgba\(0, 0, 0, 0\))$/);
+    // Edit is named for what it does, and opens the field holding the instruction
+    await expect(page.getByTestId("ai-strip-edit-instruction")).toHaveAccessibleName("Edit instruction");
+    await page.getByTestId("ai-strip-edit-instruction").click();
+    await expect(field(page)).toHaveValue(words);
   });
 
   test("plan 161, pass 2: nothing the user wrote is lost, the instruction stays", async ({ app: page, server }) => {
@@ -1253,19 +1313,18 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(body(page)).toBeFocused();
       await expect(page.getByTestId("snack")).toHaveCount(0);
     });
-    await scenario("the instruction shows in the strip, and the popover holds it with the voice", async () => {
+    await scenario("the instruction shows in the strip, and the popover holds the voice", async () => {
       await openField(page);
       await field(page).fill("echo: Friday works for me.");
       await page.keyboard.press("Enter");
       await expect(strip(page)).toBeVisible();
-      await expect(page.getByTestId("ai-strip-instruction")).toHaveText(/“echo: Friday works for me\.”/);
+      await expect(page.getByTestId("ai-strip-instruction-text")).toHaveText("“echo: Friday works for me.”");
       await page.getByTestId("ai-strip-voice").click();
       await expect(page.getByTestId("ai-voice-label")).toHaveText(/^In your /);
-      await expect(page.getByTestId("ai-voice-instruction")).toContainText("echo: Friday works for me.");
       await page.keyboard.press("Escape");
     });
     await scenario("the instruction, edited, writes the draft again from the new words", async () => {
-      await page.getByTestId("ai-strip-instruction").click();
+      await page.getByTestId("ai-strip-edit-instruction").click();
       await expect(field(page)).toBeFocused();
       await expect(field(page)).toHaveValue("echo: Friday works for me.");
       await field(page).fill("echo: Saturday works better.");
