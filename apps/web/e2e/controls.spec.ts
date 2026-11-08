@@ -299,7 +299,8 @@ for (const design of DESIGN_IDS) for (const mode of ["light", "dark"] as const) 
 async function segmented(page: Page, track: string, on: string, off: string, mode: "light" | "dark", expect: typeof softExpect = baseExpect) {
   const light = mode === "light";
   expect(await css(page, track, "background-color"), "the track").toBe(await css(page, light ? "probe-field" : "probe-background", "background-color"));
-  expect(await css(page, on, "background-color"), "the thumb").toBe(await css(page, light ? "probe-card" : "probe-muted", "background-color"));
+  // plan 160: in dark the thumb is the field's wash (muted sat under the tint floor on the track)
+  expect(await css(page, on, "background-color"), "the thumb").toBe(await css(page, light ? "probe-card" : "probe-field", "background-color"));
   expect(await css(page, off, "background-color"), "no thumb").toBe("rgba(0, 0, 0, 0)");
   const r = await page.getByTestId(track).evaluate((el) => {
     const item = el.querySelector("[data-slot=toggle-group-item]")!;

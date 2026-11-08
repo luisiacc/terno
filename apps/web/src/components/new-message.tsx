@@ -134,11 +134,17 @@ export function NewMessage() {
               short card), the format bar and Send pinned there; a long message scrolls inside it */}
           <div className={cn("relative flex min-h-60 flex-1 flex-col", DRAFT_SURFACE)} data-testid="composer-card">
             {/* pt-0.5: the first row's text field keeps its whole focus ring */}
-            {/* a press in the room under the text puts the caret back in it */}
+            {/* a press in the room under the text writes at its end */}
             <div className="min-h-0 flex-1 cursor-text overflow-y-auto pt-0.5" data-draft-scroll onMouseDown={(e) => {
               if (e.target !== e.currentTarget || e.button !== 0) return;
               e.preventDefault();
-              e.currentTarget.querySelector<HTMLElement>("[data-testid=compose-body]")?.focus();
+              const text = e.currentTarget.querySelector<HTMLElement>("[data-testid=compose-body]");
+              if (!text) return;
+              text.focus();
+              // at the end of what's written, as a press under the last line of a page puts it
+              const at = getSelection();
+              at?.selectAllChildren(text);
+              at?.collapseToEnd();
             }}>
               <DraftFieldsForm d={d} accounts={accounts} showSubject />
               <RichBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="rt-measure block min-h-[max(132px,34vh)] w-full px-3.5 pt-3 pb-3" />

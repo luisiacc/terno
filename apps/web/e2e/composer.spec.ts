@@ -650,15 +650,15 @@ test.describe("the new message", () => {
     });
   });
 
-  test("plan 158: a card that holds its text: Send just under a short message, a click below the words writes at their end", { tag: "@variant" }, async ({ app: page }) => {
+  test("plan 160: a card to the pane's foot: Send pinned there, a click below the words writes at their end", { tag: "@variant" }, async ({ app: page }) => {
     await compose(page);
     await body(page).click();
     await page.keyboard.type("Hola");
     const bar = await box(page.getByTestId("format-bar")), c = await box(card(page)), pane = await box(page.getByTestId("composer")), text = await box(body(page));
-    // room to write (a third of the window), and no further: the foot follows the text, not the pane's bottom
+    // room to write (a third of the window); plan 160: the card reaches the pane's foot (--float-inset under it), its foot
+    // pinned there (plan 158's card that hugged its text left half the pane empty under it)
     expect(text.height).toBeGreaterThanOrEqual(0.3 * page.viewportSize()!.height);
-    expect(pane.y + pane.height - (c.y + c.height), "a short message leaves the pane's foot free").toBeGreaterThan(120);
-    expect(bar.y - (text.y + text.height)).toBeLessThan(80);
+    expect(pane.y + pane.height - (c.y + c.height), "the card reaches the pane's foot").toBeLessThanOrEqual(13);
     expect(c.y + c.height - (bar.y + bar.height)).toBeLessThan(60);
     // a click in the empty text below the words goes on writing where they end
     await page.getByTestId("compose-to").click();
@@ -666,6 +666,14 @@ test.describe("the new message", () => {
     await expect(body(page)).toBeFocused();
     await page.keyboard.type(" mundo");
     await expect(body(page)).toHaveText("Hola mundo");
+    // and so does a click in the card's room under the text, above its foot
+    if (bar.y - (text.y + text.height) > 24) {
+      await page.getByTestId("compose-to").click();
+      await page.mouse.click(c.x + 40, (text.y + text.height + bar.y) / 2);
+      await expect(body(page)).toBeFocused();
+      await page.keyboard.type("!");
+      await expect(body(page)).toHaveText("Hola mundo!");
+    }
     for (const id of ["compose-send", "compose-send-later", "compose-pin", "compose-discard", "compose-collapse", "format-toggle", "compose-link"]) await expect(card(page).getByTestId(id)).toBeVisible();
     // nothing left in the strip above it: the only controls are the card's
     expect(await page.getByTestId("composer").locator("button").count()).toBe(await card(page).locator("button").count());
