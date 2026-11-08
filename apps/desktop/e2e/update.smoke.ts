@@ -281,7 +281,7 @@ test("unsaved recovery holds a packaged update restart and a deliberate copy kee
     await expect.poll(() => logLines().some((l) => l.code === "shutdown.done" && l.fields?.outcome === "unsaved")).toBe(true);
     await page.keyboard.press("Escape");
     await page.getByTestId("draft-save-copy").focus(); await page.keyboard.press("Enter");
-    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
     const copy = db.prepare("SELECT id, body_text FROM drafts LIMIT 1").get()!;
     expect(copy.id).not.toBe(original); expect(copy.body_text).toBe("packaged exact work latest");
   } finally { db.close(); }
@@ -307,7 +307,7 @@ test("saved renderer ACK holds editing throughout a real active-send drain, then
     const body = page.getByTestId("compose-body"); await body.fill("synthetic active send"); await body.press("Meta+Enter");
     await expect.poll(() => received, { timeout: 20_000 }).toBe(true);
     await page.getByRole("button", { name: "Compose", exact: true }).click(); await body.fill("exact retained work");
-    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
     await page.getByTestId("update-pill").click(); await page.getByTestId("update-restart").click();
     await expect(page.getByTestId("draft-status")).toHaveText("Preparing to restart. Draft editing is paused.");
     await body.focus(); await page.keyboard.type(" must not replace work");
@@ -315,9 +315,9 @@ test("saved renderer ACK holds editing throughout a real active-send drain, then
     expect((await app!.evaluate(({ app: a }) => a.getAppMetrics())).some((m) => m.type === "Utility")).toBe(true);
     await releaseShutdown();
     await expect.poll(async () => (await state()).status, { timeout: 15_000 }).toBe("ready");
-    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
     await page.keyboard.press("Escape"); await body.focus(); await body.press("End"); await page.keyboard.type(" editing restored");
-    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
     const db = new DatabaseSync(join(profile(), "terno.db"));
     try { expect(db.prepare("SELECT body_text FROM drafts LIMIT 1").get()?.body_text).toBe("exact retained work editing restored"); } finally { db.close(); }
     const closing = app!.waitForEvent("close", { timeout: 180_000 }); releaseSmtp(); await closing; app = null;
@@ -341,7 +341,7 @@ test("unexpected backend exit after a saved ACK restores editing without install
     const body = page.getByTestId("compose-body"); await body.fill("synthetic send awaiting ACK"); await body.press("Meta+Enter");
     await expect.poll(() => received, { timeout: 20_000 }).toBe(true);
     await page.getByRole("button", { name: "Compose", exact: true }).click(); await body.fill("retained after backend exit");
-    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
     await page.getByTestId("update-pill").click(); await page.getByTestId("update-restart").click();
     await expect(page.getByTestId("draft-status")).toHaveText("Preparing to restart. Draft editing is paused.");
     const metrics = await app!.evaluate(({ app: a }) => a.getAppMetrics().map(({ pid, type, name }) => ({ pid, type, name })));
@@ -354,7 +354,7 @@ test("unexpected backend exit after a saved ACK restores editing without install
     expect(bundleVersion()).toBe("0.1.0");
     await page.keyboard.press("Escape"); await body.click(); await body.press("Meta+ArrowRight"); await page.keyboard.type(" editing restored");
     await expect(body).toHaveText("retained after backend exit editing restored");
-    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved", { timeout: 20_000 });
+    await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved", { timeout: 20_000 });
     expect((await state()).status).toBe("ready");
     const db = new DatabaseSync(join(profile(), "terno.db"));
     try { expect(db.prepare("SELECT body_text FROM drafts LIMIT 1").get()?.body_text).toBe("retained after backend exit editing restored"); } finally { db.close(); }

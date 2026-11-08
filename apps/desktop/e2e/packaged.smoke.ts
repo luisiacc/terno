@@ -94,7 +94,7 @@ test("the window follows the design and the theme: Lumen by default (opaque, its
 test("searches, opens and archives with the keyboard", async () => {
   await page.keyboard.press("/");
   await page.keyboard.type("factura");
-  await expect(page.getByTestId("search-stats")).toContainText("results");
+  await expect(page.getByTestId("search-stats")).toContainText("conversations");
   await page.keyboard.press("Escape"); // leave the input, keep the query
   const first = page.locator("[data-testid=thread-row]").first();
   await first.click();
@@ -123,6 +123,8 @@ test("plan 16: a formatted reply is sent as multipart/alternative through the pa
   await page.keyboard.press("Meta+b");
   await page.keyboard.type("negrita");
   await page.keyboard.press("Meta+b");
+  // the format bar is closed until asked for (plan 158)
+  if ((await page.getByTestId("format-toggle").getAttribute("aria-expanded")) === "false") await page.getByTestId("format-toggle").click();
   await page.getByTestId("format-bulleted").click();
   await expect(body.locator("ul li b")).toHaveText("negrita");
   await page.keyboard.press("Meta+Enter");

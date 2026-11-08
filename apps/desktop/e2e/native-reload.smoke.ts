@@ -74,17 +74,23 @@ test.beforeAll(() => {
   }
 });
 
+/** The format bar is closed until asked for (plan 158), and remembered once opened */
+async function formatBar(): Promise<void> {
+  const toggle = page.getByTestId("format-toggle");
+  if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+}
+
 // Which recovery state and which modal: main refuses alike whatever the draft's state (draftsSaved is false for each), and
 // the notice reads neither. native-reload.test.ts holds both states and native-reload-healthy-modal.test.tsx every state in
 // every modal. Here is what only the real app has, each once: the stopped engine, both healthy modals, the commit whose answer is lost.
 test("real stopped-engine modal permits keyboard Review of missing work", async () => {
   await page.getByTestId("open-settings").click(); await page.getByTestId("tab-appearance").click();
   await page.getByTestId("design-card-lumen").click(); await page.getByTestId("mode-system").click(); await page.keyboard.press("Escape");
-  await page.getByTestId("compose-button").click(); const body = page.getByTestId("compose-body");
+  await page.getByTestId("compose-button").click(); const body = page.getByTestId("compose-body"); await formatBar();
   await body.click(); await body.press("Meta+b"); await page.keyboard.type("stopped exact work");
   await page.getByTestId("compose-to").fill('"Pérez, Ana" <ana@example.test>, bob@');
   await page.getByTestId("attachment-input").setInputFiles({ name: "stopped.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 255, 128]) });
-  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   const original = (await store((s) => s.drafts.list()))[0]!; await store((s) => s.drafts.delete(original.id, original.generation));
   await endOfBody(body); await page.keyboard.type(" latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
   await endOfBody(body); await body.press("ArrowLeft"); await page.getByTestId("format-italic").click();
@@ -196,11 +202,11 @@ test.afterEach(async () => {
 test.afterAll(() => { nativeLifecycle("afterAll-remove-work", { work }); if (work) rmSync(work, { recursive: true, force: true }); });
 
 test("healthy settings and shortcuts expose native Review and preserve intent", async () => {
-  await page.getByTestId("compose-button").click(); const body = page.getByTestId("compose-body");
+  await page.getByTestId("compose-button").click(); const body = page.getByTestId("compose-body"); await formatBar();
   await body.click(); await body.press("Meta+b"); await page.keyboard.type("healthy exact work");
   await page.getByTestId("compose-to").fill('"Pérez, Ana" <ana@example.test>, bob@');
   await page.getByTestId("attachment-input").setInputFiles({ name: "healthy.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 255, 128]) });
-  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   const original = (await store((s) => s.drafts.list()))[0]!; await store((s) => s.drafts.delete(original.id, original.generation));
   await endOfBody(body); await page.keyboard.type(" latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
   await endOfBody(body); await body.press("ArrowLeft"); await page.getByTestId("format-italic").click();
@@ -232,11 +238,11 @@ test("healthy settings and shortcuts expose native Review and preserve intent", 
 });
 
 test("native menu and CmdR/CmdShiftR retain unknown work, and only disclosed override discards it", async () => {
-  await page.getByTestId("compose-button").click(); const body = page.getByTestId("compose-body");
+  await page.getByTestId("compose-button").click(); const body = page.getByTestId("compose-body"); await formatBar();
   await body.click(); await body.press("Meta+b"); await page.keyboard.type("native exact work");
   await page.getByTestId("compose-to").fill('"Pérez, Ana" <ana@example.test>, bob@');
   await page.getByTestId("attachment-input").setInputFiles({ name: "native.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 255, 128]) });
-  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   const original = (await store((s) => s.drafts.list()))[0]!; await store((s) => s.drafts.delete(original.id, original.generation));
   await endOfBody(body); await page.keyboard.type(" latest");
   await expect(body).toHaveText("native exact work latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
@@ -270,14 +276,14 @@ test("native menu and CmdR/CmdShiftR retain unknown work, and only disclosed ove
   await page.clock.setFixedTime(new Date((await page.evaluate(() => Date.now())) + 1000));
   await page.keyboard.type("X"); await body.press("Meta+z"); expect(await body.innerHTML()).toBe(html);
   const priorIds = (await store((s) => s.drafts.list())).map((d) => d.id);
-  await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   const copy = (await store((s) => s.drafts.list())).find((d) => !priorIds.includes(d.id))!;
   expect(copy.body_text).toBe("native exact work latest"); expect(copy.body_html).toBe("<div><b>native exact work latest</b></div>");
   expect(JSON.parse(copy.to_json)).toEqual([{ name: "Pérez, Ana", email: "ana@example.test" }, { name: "", email: "bob@" }]);
   const ref = JSON.parse(copy.attachments_json)[0]; expect(await store((s) => s.attachments.read(copy.account_id, ref.assetId, 0))).toBe("AP+A");
   await Promise.all([page.waitForEvent("framenavigated", { predicate: (f) => f === page.mainFrame() }), menu()]); await page.getByTestId("thread-row").first().waitFor(); expect(navigations).toBe(1);
   await page.getByTestId("compose-button").click(); await body.fill("explicitly discard only");
-  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   const target = (await store((s) => s.drafts.list())).find((d) => d.body_text === "explicitly discard only")!; await store((s) => s.drafts.delete(target.id, target.generation));
   await body.click(); await body.press("ArrowRight"); await page.keyboard.type(" latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
   await menu(); await expect(page.getByTestId("native-reload-anyway")).toHaveAccessibleName("Reload anyway and discard unsaved changes and pending files");
@@ -311,7 +317,7 @@ test("native reload holds the exact saved ACK through changed focus and document
 
 test("the exact owned detached DevTools frontend reload admits its inspected page", async () => {
   await page.getByTestId("compose-button").click(); const body = page.getByTestId("compose-body");
-  await body.fill("DevTools retained"); await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await body.fill("DevTools retained"); await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   const old = (await store((s) => s.drafts.list()))[0]!; await store((s) => s.drafts.delete(old.id, old.generation));
   await endOfBody(body); await page.keyboard.type(" latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
   let navigations = 0; page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) navigations++; });
@@ -337,7 +343,7 @@ test("the exact owned detached DevTools frontend reload admits its inspected pag
   finally { console.info("DevTools trace", await app.evaluate(({ BrowserWindow }) => Reflect.get(BrowserWindow.getAllWindows().find((w) => w.webContents.getURL() === "app://terno/")!, "nativeTrace")), "renderer", await page.evaluate(() => ({ nonce: window.nativeReloadProbe.nonce, pagehides: window.nativeReloadProbe.pagehides })), "navigations", navigations); }
   expect(navigations).toBe(0); await expect(body).toHaveText("DevTools retained latest");
   expect(await page.evaluate(() => ({ nonce: window.nativeReloadProbe.nonce, pagehides: window.nativeReloadProbe.pagehides }))).toEqual({ nonce, pagehides: 0 });
-  await page.getByTestId("native-reload-review").click(); await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.getByTestId("native-reload-review").click(); await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   await app.evaluate(async ({ BrowserWindow }) => {
     const tools = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL() === "app://terno/")!.webContents.devToolsWebContents!;
     await tools.executeJavaScript('InspectorFrontendHost.sendMessageToBackend(JSON.stringify({id:1000002,method:"Page.reload",params:{ignoreCache:true}}))');
@@ -352,7 +358,7 @@ if (DEV) for (const theme of ["light", "dark"] as const) test(`a real React fata
   await page.getByTestId("open-settings").click(); await page.getByTestId("tab-appearance").click(); await page.getByTestId(`mode-${theme}`).click(); await page.keyboard.press("Escape");
   await expect(page.locator("html")).toHaveAttribute("data-theme", `lumen-${theme}`);
   await page.getByTestId("compose-button").click(); const body = page.getByTestId("compose-body"); await body.fill("fatal retained");
-  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved"); const old = (await store((s) => s.drafts.list()))[0]!; await store((s) => s.drafts.delete(old.id, old.generation));
+  await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved"); const old = (await store((s) => s.drafts.list()))[0]!; await store((s) => s.drafts.delete(old.id, old.generation));
   await body.click(); await body.press("ArrowRight"); await page.keyboard.type(" latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
   await page.evaluate("window.__terno.throwIn('app')"); await expect(page.getByTestId("app-boundary")).toBeVisible(); await menu();
   await expect(page.getByTestId("native-reload-notice")).toBeVisible(); await axe(); await page.screenshot({ path: join(shots, `native-fatal-${theme}.png`) });
