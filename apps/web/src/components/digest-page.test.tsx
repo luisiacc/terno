@@ -40,6 +40,8 @@ document.body.append(host);
 const root = createRoot(host);
 const ticks = () => [...host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")].map((b) => b.getAttribute("aria-checked") === "true" || b.hasAttribute("data-checked"));
 const page = () => host.querySelector<HTMLElement>("[data-testid=digest-page]")!;
+/** ai-r03: the pane scrolls, not the page in it (the page had no height to scroll in) */
+const scroller = () => host.querySelector<HTMLElement>("[data-testid=digest-scroller]")!;
 async function show(row: DigestRow) {
   served = row;
   await act(async () => useToday.setState({ digest: row }));
@@ -55,13 +57,13 @@ it("plan 161: what was unticked, and where it was scrolled, survive opening a so
   await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[1]!.click());
   expect(ticks()).toEqual([true, false, true]);
   await act(async () => {
-    page().scrollTop = 140;
-    page().dispatchEvent(new Event("scroll"));
+    scroller().scrollTop = 140;
+    scroller().dispatchEvent(new Event("scroll"));
   });
   await unmount();
   await show(digestOf("2026-10-22"));
   expect(ticks()).toEqual([true, false, true]);
-  expect(page().scrollTop).toBe(140);
+  expect(scroller().scrollTop).toBe(140);
   // pass 2: the button says what goes, the line what stays
   expect(host.querySelector("[data-testid=digest-archive]")!.textContent).toBe("Archive 2");
   expect(host.querySelector("[data-testid=digest-count]")!.textContent).toContain("2 to archive · 1 stays in Inbox");
@@ -71,14 +73,14 @@ it("plan 161 (Codex review): a new day starts afresh, its scroll too; automated 
   await show(digestOf("2026-10-22"));
   await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[0]!.click());
   await act(async () => {
-    page().scrollTop = 200;
-    page().dispatchEvent(new Event("scroll"));
+    scroller().scrollTop = 200;
+    scroller().dispatchEvent(new Event("scroll"));
   });
   // the next day's arrives while the page is open
   served = digestOf("2026-10-23");
   await act(async () => useToday.setState({ digest: served }));
   expect(ticks()).toEqual([true, true, true]);
-  expect(page().scrollTop).toBe(0);
+  expect(scroller().scrollTop).toBe(0);
   // automated mail picked (ticked) one; the same day as a digest isn't the inverse of that
   await unmount();
   await show(digestOf("2026-10-24", true));
