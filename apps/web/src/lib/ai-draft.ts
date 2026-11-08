@@ -1383,8 +1383,18 @@ export function discardAndSend(key: string) {
 /** Try again: what it was asked, with no automatic retry. */
 export function retry(key: string) {
   const s = session(key);
-  // a rewrite that failed, over a strip typed in since: Try again asks first, as the rewrite did (Codex review)
-  if (s?.lastSpec?.kind === "refine" && s.strip) return replacing(key, { how: "retry", spec: s.lastSpec });
+  // a rewrite that failed, over text typed in since: Try again asks first, as the rewrite did (Codex review). A failure
+  // part-way keeps its strip in the run (what came is offered with Insert); Try again sets that aside and asks the same
+  if (s?.lastSpec?.kind === "refine") {
+    const strip = s.strip ?? s.run?.prior ?? null;
+    const top = strip?.stack[strip.stack.length - 1];
+    const c = controllerFor(key);
+    if (strip && (strip.edited === true || (c && top ? !c.sameDoc(top.doc) : false))) {
+      clearStream(key);
+      update(key, { strip: { ...strip, edited: true }, run: null, error: null });
+      return replacing(key, { how: "retry", spec: s.lastSpec });
+    }
+  }
   if (s?.lastSpec) startRun(key, s.lastSpec);
   else if (s) void submit(key);
 }

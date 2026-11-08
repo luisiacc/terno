@@ -715,3 +715,5 @@ Eight points, all taken, each with a regression test that fails without the fix:
 6. **No credit read as a bad key.** `errors.ai.noCredit` (and the daily and monthly limits, and a draft too large) are the app's own words with no address, shown as they are (`ai-error.test.ts`).
 7. **Addresses still reachable.** A blocked redirect's bare host was shown, and the row's live region announced the raw message. `blocked` is said by its kind, a domain on a common TLD counts as an address, and the live region says the shown title (`ai-error.test.ts`, `ai-draft.test.ts`).
 8. **The one-line check ran in one design.** It's its own `@design` test now.
+
+A second, narrower Codex pass on those fixes found one more, taken with a test: **Try again after a rewrite that failed part-way** still replaced an edit, since that strip waits in the run (what came is offered with Insert), not on the session. Try again reads either, sets the partial text aside, and asks (`ai-draft.test.ts`, a delta before the failure). Review rounds stop here.

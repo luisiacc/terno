@@ -1385,6 +1385,30 @@ describe("plan 161, pass 2: what the Codex review found", () => {
     expect(c.text).toBe("First. Mine.");
   });
 
+  it("1 (second pass): a rewrite that failed part-way, then typed in: Try again asks first too", async () => {
+    const { key, c } = await writing();
+    last("ai.compose").resolve(done("First."));
+    await tick();
+    store.refine(key, "regenerate");
+    delta(key, "Fir");
+    last("ai.compose").reject({ code: "AI", message: "x", details: { aiErrorKind: "unavailable" } });
+    await tick();
+    expect(session(key)!.error!.partial).toBe(true);
+    c.type(" Mine.");
+    const before = calls("ai.compose").length;
+    store.retry(key);
+    expect(session(key)!.confirm).toMatchObject({ how: "retry" });
+    expect(session(key)!.phase).toBe("strip");
+    expect(calls("ai.compose")).toHaveLength(before);
+    store.confirmReplace(key);
+    expect(calls("ai.compose")).toHaveLength(before + 1);
+    last("ai.compose").resolve(done("Again."));
+    await tick();
+    expect(c.text).toBe("Again.");
+    store.undoCommit(key);
+    expect(c.text).toBe("First. Mine.");
+  });
+
   it("7: a screen reader hears the error as shown, never the provider's address", async () => {
     const { key } = await writing();
     last("ai.compose").reject({ code: "AI", message: "Couldn’t find Ollama at 127.0.0.1:60512. Is it open?", details: { aiErrorKind: "unavailable" } });
