@@ -14,6 +14,8 @@ type AnnouncementProps = Omit<React.ComponentProps<"div">, "title"> & {
   actions?: React.ReactNode
   /** one line: the text truncates and the actions sit before the close */
   inline?: boolean
+  /** with `inline`: the title wraps instead of truncating (plan 159: a rule's condition is read whole before it's accepted) */
+  wrap?: boolean
   /** shows a CloseButton at the end; `closeLabel` names what it does ("Dismiss", "Hide for a week") */
   onClose?: () => void
   closeLabel?: string
@@ -32,6 +34,7 @@ function Announcement({
   description,
   actions,
   inline = false,
+  wrap = false,
   onClose,
   closeLabel,
   closeProps,
@@ -60,7 +63,7 @@ function Announcement({
       )}
       <div className={cn("min-w-0 flex-1", inline && "flex items-center gap-2")}>
         {title && (
-          <p id={titleId} {...titleProps} className={cn("font-medium text-foreground", inline && "min-w-0 flex-1 truncate", titleProps?.className)}>
+          <p id={titleId} {...titleProps} className={cn("font-medium text-foreground", inline && "min-w-0 flex-1", inline && (wrap ? "wrap-anywhere" : "truncate"), titleProps?.className)}>
             {title}
           </p>
         )}

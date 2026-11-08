@@ -50,4 +50,14 @@ describe("Announcement (plan 125)", () => {
     expect(group.getAttribute("aria-labelledby")).toBe(title.id);
     expect(plain.hasAttribute("aria-labelledby")).toBe(false);
   });
+
+  it("inline truncates its title to one line; with wrap (plan 159) it wraps, never cut", async () => {
+    const one = await render(<Announcement inline title="Always archive mail from anyone at daily.morningbrew.com?" />);
+    expect(one.querySelector("p")!.className).toContain("truncate");
+    cleanup?.();
+    const wrapped = await render(<Announcement inline wrap title="Always archive mail from anyone at daily.morningbrew.com?" />);
+    const p = wrapped.querySelector("p")!;
+    expect(p.className).not.toContain("truncate");
+    expect(p.className).toContain("wrap-anywhere");
+  });
 });

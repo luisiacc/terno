@@ -130,6 +130,8 @@ export const ICONS = {
   Sun: "Sun01Icon",
   Sunrise: "SunriseIcon",
   Tag: "Tag01Icon",
+  // plan 159: the sidebar's Sort into categories
+  Tags: "TagsIcon",
   // plan 146: Settings → Dev mode
   Terminal: "ComputerTerminal01Icon",
   TextAlignCenter: "TextAlignCenterIcon",
