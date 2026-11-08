@@ -9,7 +9,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { errorHelp, modelName } from "~/lib/ai";
 import { listDate } from "~/lib/format";
 import { deferred, trackJob, undoAction, undoActions } from "~/lib/actions";
-import { registerUndo, runUndo, snack } from "~/lib/snack";
+import { registerUndo, snack, undoNow } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { reloadList } from "~/state/list";
@@ -54,7 +54,7 @@ export default function DigestPage() {
   const day = row ? `${row.day}|${automated ? "automated" : "digest"}` : "";
   const [toggled, setToggled] = useState<ReadonlySet<number>>(() => digestPick(day).toggled);
   // pass 2: what this page archived (its rows leave, the header says it's done), held with the rest of the pick
-  const done = useToday((s) => (s.pick?.day === day ? (s.pick.done ?? null) : null));
+  const batches = useToday((s) => (s.pick?.day === day ? (s.pick.done ?? null) : null));
   const scroller = useRef<HTMLElement>(null);
   const scrollAt = useRef(digestPick(day).scroll);
   // back where it was left, once its rows are there: once a digest
@@ -92,7 +92,7 @@ export default function DigestPage() {
   const live = (i: DigestItem) => liveIds === null || liveIds.has(i.threadId);
   const stateOf = (i: DigestItem): DigestRowState => (live(i) ? (ticked(i) ? "archive" : "keep") : readIds.has(i.threadId) ? "opened" : "archived");
   // pass 2: what this page archived leaves it; what was archived elsewhere stays, muted and said so (plan 145)
-  const archivedHere = new Set(done?.ids ?? []);
+  const archivedHere = new Set((batches ?? []).flatMap((b) => b.ids));
   const shown = items.filter((i) => !(archivedHere.has(i.threadId) && stateOf(i) === "archived"));
   const chosen = items.filter((i) => stateOf(i) === "archive");
   const staying = shown.filter((i) => stateOf(i) === "keep" || stateOf(i) === "opened").length;
@@ -118,8 +118,9 @@ export default function DigestPage() {
       undoId.promise.then(async (u) => {
         if (u.id === null) return;
         await undoActions([u.id], u.n);
+        // only this Archive's rows come back (Codex review): an earlier one stays done
         const pick = digestPick(pickDay);
-        if (pick.done?.undo === undo) keepDigestPick({ ...pick, done: null });
+        keepDigestPick({ ...pick, done: (pick.done ?? []).filter((b) => b.undo !== undo) });
       }),
     );
     try {
@@ -128,8 +129,9 @@ export default function DigestPage() {
       const notes = r.changed + r.spared > 0 ? t("today.digest.leftAlone", { count: r.changed + r.spared }) : undefined;
       snack.success(t(automated ? "today.digest.archivedSelected" : "today.digest.archived", { count: r.archived }), { id: job.snackId, duration: 8000, description: notes, action: r.undoId !== null ? undoAction(undo, t("today.digest.undoName")) : undefined });
       setLive((held) => new Set([...(held ?? items.map((i) => i.threadId))].filter((id) => !chosen.some((i) => i.threadId === id))));
+      // what the backend really archived: one archived or changed elsewhere meanwhile stays listed, said so (Codex review)
       const pick = digestPick(pickDay);
-      keepDigestPick({ ...pick, done: { ids: [...new Set([...(pick.done?.ids ?? []), ...chosen.map((i) => i.threadId)])], count: r.archived, undo: r.undoId !== null ? undo : null } });
+      if (r.archivedIds.length) keepDigestPick({ ...pick, done: [...(pick.done ?? []), { ids: r.archivedIds, undo: r.undoId !== null ? undo : null }] });
     } catch (error) {
       undoId.resolve({ id: null, n: 0 });
       snack.error(error instanceof Error ? error.message : String(error), { id: job.snackId });
@@ -139,7 +141,8 @@ export default function DigestPage() {
     }
   };
   if (!row) return <div className="p-8 text-sm text-muted-foreground" data-testid="digest-page">{t("today.digest.none")}</div>;
-  const finished = done !== null && done.count > 0;
+  const done = batches?.length ? { count: batches.reduce((n, b) => n + b.ids.length, 0), undo: batches.at(-1)!.undo } : null;
+  const finished = done !== null;
   return (
     <section
       ref={scroller}
@@ -163,7 +166,7 @@ export default function DigestPage() {
             // pass 2: done, said as done, with its Undo here (the snack's runs the same one)
             <p role="status" className="text-sm" data-testid="digest-done">
               {t(automated ? "today.digest.archivedSelected" : "today.digest.archived", { count: done.count })}.
-              {staying === 0 && <span className="ml-1 text-muted-foreground" data-testid="digest-all-done">{t("today.digest.allDone")}</span>}
+              {shown.every((i) => stateOf(i) === "archived") && <span className="ml-1 text-muted-foreground" data-testid="digest-all-done">{t("today.digest.allDone")}</span>}
             </p>
           ) : (
             <p className="text-xs text-muted-foreground" data-testid="digest-count">
@@ -181,7 +184,7 @@ export default function DigestPage() {
           )}
           <div className="flex shrink-0 items-center gap-2">
             {finished && done.undo && (
-              <Button size="sm" variant="secondary" data-testid="digest-undo" aria-label={t("today.digest.undoName")} onClick={() => void runUndo(done.undo!).catch(() => {})}>
+              <Button size="sm" variant="secondary" data-testid="digest-undo" aria-label={t("today.digest.undoName")} onClick={() => undoNow(done.undo!)}>
                 {t("common.undo")}
               </Button>
             )}

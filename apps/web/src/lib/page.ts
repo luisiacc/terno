@@ -15,6 +15,7 @@ import { getApp, markSelectionIntent, setApp, useApp, type AppState } from "~/st
 import { flushDeferredRefresh, followedRename, listKey, refreshPolicy, soloSearch } from "~/state/list";
 import { noteOpen } from "~/lib/reminders";
 import { closePreviewRow } from "~/state/action-preview";
+import { backToDigest } from "~/state/today";
 
 export type { Page };
 
@@ -219,6 +220,8 @@ export function forwardNavKey(e: KeyboardEvent): void {
   const back = (e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) || (e.key === "[" && mod && !e.altKey && !e.shiftKey);
   if (!back) return;
   if (returnFromMailReaderView()) { e.preventDefault(); return; }
+  // plan 161, pass 2 (Codex review): from inside a newsletter's own document too, Esc goes back to the digest that opened it
+  if (e.key === "Escape" && backToDigest()) { e.preventDefault(); return; }
   if (!listLayout() || currentPage() === "list") {
     // plan 161, pass 2: a preview's matched conversation closes back to its rule from inside its mail too (Split)
     if (e.key === "Escape" && !listLayout() && closePreviewRow()) {

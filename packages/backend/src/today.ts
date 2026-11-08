@@ -493,13 +493,14 @@ export class TodayService {
   }
 
   /** Only what the page listed, each only if it's still as the page saw it: a new message or a star since keeps it (revisions 1, 2). */
-  async archive(p: { items: readonly { threadId: number; lastDate: number; messageCount: number }[]; jobId?: string }): Promise<{ undoId: number | null; archived: number; changed: number; spared: number }> {
+  async archive(p: { items: readonly { threadId: number; lastDate: number; messageCount: number }[]; jobId?: string }): Promise<{ undoId: number | null; archived: number; archivedIds: number[]; changed: number; spared: number }> {
     const { store } = this.b;
     const listed = new Map(p.items.map((i) => [i.threadId, i]));
     const targets = [...listed.keys()];
     let changed = 0;
     let spared = 0;
     let archived = 0;
+    const archivedIds: number[] = [];
     const narrow = async (chunk: number[]) => {
       const facts = new Map((await store.filters.actionFacts(chunk)).map((f) => [f.id, f]));
       const out: number[] = [];
@@ -512,13 +513,14 @@ export class TodayService {
         else out.push(id);
       }
       archived += out.length;
+      archivedIds.push(...out);
       return out;
     };
     const progress = progressReporter(this.b, p.jobId, targets.length);
     progress(0);
     const r = await this.ops!.archive(targets, narrow, progress);
     progress(targets.length);
-    return { undoId: r.undoId, archived, changed, spared };
+    return { undoId: r.undoId, archived, archivedIds, changed, spared };
   }
 
   /** The sidebar's number: threads, each once. Null during plan 17's backfill (revision 12). */

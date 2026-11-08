@@ -390,6 +390,8 @@ describe("the digest", () => {
     const asListed = row.items.map((i) => ({ threadId: i.threadId, lastDate: i.lastDate, messageCount: i.messageCount }));
     const r = await t.client.call("today.digestArchive", { items: asListed });
     expect(r).toMatchObject({ archived: 2, spared: 1, changed: 0 });
+    // Codex review: exactly which went, so the page hides only those
+    expect(r.archivedIds.sort()).toEqual([fresh, old].sort());
     expect((await t.backend.store.filters.actionFacts([mid]))[0]!.inInbox).toBe(true);
   });
 

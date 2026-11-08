@@ -386,8 +386,12 @@ function Preview({ rule, note, onCount }: { rule: FilterRule; note?: string | nu
  * Plan 161: an unsaved rule AI built isn't lost to Esc, the × or a click outside: closing keeps it, and Rules opens on it
  * again, request and all, until it's saved or New starts another. In memory only: a model's rule, never a setting.
  */
-type Unsaved = { draft: Draft; prompt: string; built: string };
-const kept: { current: Unsaved | null } = { current: null };
+type Unsaved = { key: number; draft: Draft; prompt: string; built: string };
+/** Pass 2 (Codex review): every unsaved AI rule, each its own row, and the one the builder showed when Rules closed. */
+const kept: { current: { list: Unsaved[]; open: number | null } | null } = { current: null };
+let unsavedKeys = 0;
+
+const keptOpen = (): Unsaved | null => kept.current?.list.find((u) => u.key === kept.current?.open) ?? null;
 
 export function FiltersDialog() {
   const open = useApp((s) => s.dialog === "filters");
@@ -397,8 +401,9 @@ export function FiltersDialog() {
   // "Crear filtro desde este remitente…" opens the builder with its rule
   const [draft, setDraft] = useState<Draft>(() => {
     const prefill = getApp().filterPrefill;
-    if (prefill) kept.current = null;
-    return prefill ? draftOf({ ...prefill, enabled: prefill.enabled ?? true, source: prefill.source ?? "manual" }) : (kept.current?.draft ?? emptyDraft());
+    // a rule prefilled from elsewhere opens; the unsaved ones stay as their rows
+    if (prefill && kept.current) kept.current = { ...kept.current, open: null };
+    return prefill ? draftOf({ ...prefill, enabled: prefill.enabled ?? true, source: prefill.source ?? "manual" }) : (keptOpen()?.draft ?? emptyDraft());
   });
   // a filter (or a new one) loaded into the builder: fields that keep text of their own (Forward to) start again from it
   const [loads, setLoads] = useState(0);
@@ -414,16 +419,18 @@ export function FiltersDialog() {
   useEffect(() => {
     if (getApp().filterPrefill) setApp({ filterPrefill: null });
   }, []);
-  const [prompt, setPrompt] = useState(() => kept.current?.prompt ?? "");
-  // pass 2: the unsaved AI rule, shown as a draft row at the list's top while another rule is open, until it's saved or discarded
-  const [unsaved, setUnsaved] = useState<Unsaved | null>(() => kept.current);
+  const [prompt, setPrompt] = useState(() => keptOpen()?.prompt ?? "");
+  // pass 2: unsaved AI rules not in the builder, each a row at the list's top until it's saved or discarded; and which one
+  // the builder holds now
+  const [parked, setParked] = useState<Unsaved[]>(() => (kept.current?.list ?? []).filter((u) => u.key !== kept.current?.open));
+  const [aiKey, setAiKey] = useState<number | null>(() => keptOpen()?.key ?? null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const [focusPrompt, setFocusPrompt] = useState(false);
   const [matches, setMatches] = useState<number | null>(null);
   // the request the rule on screen was built from: its words are checked against the rule (plan 161), not shown back
-  const [built, setBuilt] = useState<string | null>(() => kept.current?.built ?? null);
+  const [built, setBuilt] = useState<string | null>(() => keptOpen()?.built ?? null);
   // once a rule is built, the box is one line, so the rule and its matches fit a small window; Edit request opens it
-  const [folded, setFolded] = useState(() => kept.current !== null);
+  const [folded, setFolded] = useState(() => keptOpen() !== null);
   const [generating, setGenerating] = useState(false);
   const setExplanation = (none: null) => {
     setBuilt(none);
@@ -463,27 +470,32 @@ export function FiltersDialog() {
   }) : null;
   const misses = said !== null && built !== null && valid.success && ruleMisses(built, valid.data);
   // the rule AI built, not saved yet, in the builder now
-  const aiDraft: Unsaved | null = draft.source === "ai" && draft.id === undefined && built !== null ? { draft, prompt, built } : null;
+  const aiDraft: Unsaved | null = draft.source === "ai" && draft.id === undefined && built !== null && aiKey !== null ? { key: aiKey, draft, prompt, built } : null;
   /** what's in the builder makes way for another rule: an unsaved AI rule is kept, as a draft row (pass 2) */
   const leaving = () => {
-    if (aiDraft) setUnsaved(aiDraft);
+    if (aiDraft) setParked((held) => [...held.filter((u) => u.key !== aiDraft.key), aiDraft]);
+    setAiKey(null);
   };
   const openUnsaved = (u: Unsaved) => {
+    leaving();
+    setParked((held) => held.filter((x) => x.key !== u.key));
     load(u.draft);
     setPrompt(u.prompt);
     setBuilt(u.built);
     setFolded(true);
+    setAiKey(u.key);
   };
-  const discardUnsaved = () => {
-    setUnsaved(null);
-    kept.current = null;
-    if (aiDraft) {
+  const discardUnsaved = (u: Unsaved) => {
+    setParked((held) => held.filter((x) => x.key !== u.key));
+    if (aiDraft?.key === u.key) {
+      setAiKey(null);
       load(emptyDraft());
       setExplanation(null);
       setPrompt("");
     }
   };
-  const shownUnsaved = aiDraft ?? unsaved;
+  // in the order they were made
+  const unsavedRows = [...parked, ...(aiDraft ? [aiDraft] : [])].sort((a, b) => a.key - b.key);
   const setRule = (r: FilterRule) => setDraft((d) => ({ ...d, rule: r }));
   const hasAction = (type: string) => rule.actions.some((a) => a.type === type);
   const toggleAction = (type: Exclude<FilterAction["type"], "addCategory" | "forward" | "moveToFolder">) => {
@@ -505,8 +517,8 @@ export function FiltersDialog() {
       setDraft({ id: undefined, name: out.name, enabled: true, source: "ai", rule: out.rule });
       setBuilt(prompt);
       setFolded(true);
-      // one unsaved AI rule at a time: the new one is it
-      setUnsaved(null);
+      // asked again from the same request, it's the same unsaved rule; otherwise a new one beside the others (Codex review)
+      setAiKey((held) => (aiDraft && held === aiDraft.key ? held : ++unsavedKeys));
     } catch (error) {
       const kind = (error as { details?: { aiErrorKind?: Parameters<typeof errorHelp>[0] } }).details?.aiErrorKind;
       if (kind === "cancelled") return;
@@ -530,8 +542,8 @@ export function FiltersDialog() {
       const adopted = draft.auto && (draft.auto.name !== name || !sameRule(draft.auto.rule, valid.data));
       const f = await client.call("filters.save", { id: draft.id, name, enabled: draft.enabled, source: draft.source, rule: valid.data, ...(adopted ? { auto: false } : {}) });
       // plan 89: applying runs in the background (its own progress snack); the dialog is free at once
-      kept.current = null;
-      if (aiDraft) setUnsaved(null);
+      // saved, it's an ordinary rule: its unsaved row goes, the others stay
+      setAiKey(null);
       if (applyExisting) void applyFilter(f.id, f.name);
       else snack.success(t("filters.saved"));
       load(draftOf(f));
@@ -548,7 +560,8 @@ export function FiltersDialog() {
       open={open}
       onOpenChange={(o) => {
         if (o) return;
-        kept.current = aiDraft ?? unsaved;
+        const list = [...parked, ...(aiDraft ? [aiDraft] : [])];
+        kept.current = list.length ? { list, open: aiDraft?.key ?? null } : null;
         setApp(returnTo === "settings" ? { dialog: "settings", settingsTab: "filters" } : { dialog: null });
       }}
     >
@@ -573,15 +586,15 @@ export function FiltersDialog() {
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
             {/* pass 2: an AI rule not saved yet is a row of its own, so Esc, New or another rule never loses it */}
-            {shownUnsaved && (
-              <div data-testid="filter-unsaved" data-open={aiDraft ? true : undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", aiDraft && "bg-muted")}>
-                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => !aiDraft && unsaved && openUnsaved(unsaved)}>
-                  <span className="block truncate">{shownUnsaved.draft.name.trim() || describeCondition(shownUnsaved.draft.rule.conditions[0]!)}</span>
+            {unsavedRows.map((u) => (
+              <div key={u.key} data-testid="filter-unsaved" data-open={u.key === aiDraft?.key ? true : undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", u.key === aiDraft?.key && "bg-muted")}>
+                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => u.key !== aiDraft?.key && openUnsaved(u)}>
+                  <span className="block truncate">{u.draft.name.trim() || describeCondition(u.draft.rule.conditions[0]!)}</span>
                   <span className="text-2xs text-muted-foreground">{t("filters.unsaved")}</span>
                 </button>
-                <CloseButton label={t("filters.unsavedDiscard")} data-testid="filter-unsaved-discard" onClick={discardUnsaved} />
+                <CloseButton label={t("filters.unsavedDiscard")} data-testid="filter-unsaved-discard" onClick={() => discardUnsaved(u)} />
               </div>
-            )}
+            ))}
             {/* plan 90: the user's, then Terno's under a heading of their own */}
             {[...filters.filter((f) => !f.auto), ...filters.filter((f) => f.auto)].map((f, i, all) => (
               <Fragment key={f.id}>

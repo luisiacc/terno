@@ -1188,7 +1188,7 @@ export const contract = {
   /** a person's try again */
   "today.digestRetry": m<{ ok: true }>()(empty),
   /** only the rows named, and each only if it's still as the page listed it. Undo is `threads.undo`. */
-  "today.digestArchive": m<{ undoId: number | null; archived: number; changed: number; spared: number }>()(z.object({ items: z.array(z.object({ threadId: id, lastDate: z.number(), messageCount: z.number().int() })).max(200), jobId: z.string().min(1).max(64).optional() }), { timeoutMs: 120_000 }),
+  "today.digestArchive": m<{ undoId: number | null; archived: number; /** plan 161, pass 2: exactly which, so the page hides only these */ archivedIds: number[]; changed: number; spared: number }>()(z.object({ items: z.array(z.object({ threadId: id, lastDate: z.number(), messageCount: z.number().int() })).max(200), jobId: z.string().min(1).max(64).optional() }), { timeoutMs: 120_000 }),
   /**
    * Plan 144: a conversation that waits for an answer stayed open. It reads the switch, the thread and what's stored
    * again, whatever the window thought, and goes on in `aiReply`. Never MCP. Nothing is ever sent from here.

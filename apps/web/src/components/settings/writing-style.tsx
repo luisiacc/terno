@@ -184,8 +184,8 @@ function Profile({ initial, onChanged, onEditing, onReset, total, picked, compac
   total: number | null;
   /** under the picker, which already names it: the card doesn't again */
   picked?: boolean;
-  /** Companies and People: one line, opened one at a time */
-  compact?: { open: boolean; onOpenChange: (open: boolean) => void };
+  /** Companies and People: one line, opened one at a time; `locked` while a profile is being edited (switching would lose it) */
+  compact?: { open: boolean; onOpenChange: (open: boolean) => void; locked: boolean };
 }) {
   const [p, setP] = useState(initial);
   const [editing, setEditingState] = useState(false);
@@ -217,9 +217,20 @@ function Profile({ initial, onChanged, onEditing, onReset, total, picked, compac
   const examples = p.phrases.length + (p.judgment?.notes.length ?? 0);
   const from = total !== null && total >= p.samples ? t("aiDraft.style.fromOf", { count: p.samples, total }) : t("aiDraft.style.from", { count: p.samples });
   const [allExamples, setAllExamples] = useState(false);
-  // pass 2: a learned phrase or note that's wrong goes, as an edit does (the profile reads Edited after)
-  const removeExample = (kind: "phrase" | "note", text: string) =>
-    void editProfile(p, kind === "phrase" ? { phrases: p.phrases.filter((x) => x !== text) } : { notes: (p.judgment?.notes ?? []).filter((x) => x !== text) }).then(setP, failed);
+  // pass 2: a learned phrase or note that's wrong goes, as an edit does (the profile reads Edited after). Codex review: one
+  // at a time, each from what the last left (two quick removals would otherwise put the first back), and the page's lists follow
+  const latest = useRef(p);
+  latest.current = p;
+  const removals = useRef<Promise<unknown>>(Promise.resolve());
+  const removeExample = (kind: "phrase" | "note", text: string) => {
+    removals.current = removals.current.then(async () => {
+      const now = latest.current;
+      const next = await editProfile(now, kind === "phrase" ? { phrases: now.phrases.filter((x) => x !== text) } : { notes: (now.judgment?.notes ?? []).filter((x) => x !== text) });
+      latest.current = next;
+      setP(next);
+      onChanged();
+    }).catch(failed);
+  };
   const exampleItems = [...p.phrases.map((text) => ({ kind: "phrase" as const, text })), ...(p.judgment?.notes ?? []).map((text) => ({ kind: "note" as const, text }))];
   const shownExamples = allExamples ? exampleItems : exampleItems.slice(0, PHRASES_SHOWN);
   const reset = () => {
@@ -277,7 +288,7 @@ function Profile({ initial, onChanged, onEditing, onReset, total, picked, compac
     return (
       <div ref={card} className="scroll-my-12" data-testid="style-profile" data-compact>
         <Collapsible open={compact.open} onOpenChange={compact.onOpenChange}>
-          <CollapsibleTrigger className="-mx-2 my-1 w-[calc(100%+1rem)] gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-row-hover" data-testid="style-profile-toggle">
+          <CollapsibleTrigger disabled={compact.locked} className="-mx-2 my-1 w-[calc(100%+1rem)] gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-row-hover disabled:hover:bg-transparent" data-testid="style-profile-toggle">
             <span className="flex min-w-0 flex-1 items-center gap-1.5 text-left font-medium" data-testid="style-profile-title">
               <span className="truncate">{title}</span>
               {edited}
@@ -346,12 +357,13 @@ function OwnProfiles({ items, onChanged, onReset, total }: { items: WritingProfi
 const PAGE = 50;
 
 /** Domains and people, read when they're opened: there can be many. */
-function Section({ scope, title, testId, version, onChanged, onReset }: { scope: "domain" | "person"; title: string; testId: string; version: number; onChanged: () => void; onReset: (done: ResetDone) => void }) {
+/** Pass 2: which profile in Companies and People is open (one in both, Codex review), and which is being edited. */
+type OpenProfile = { open: string | null; setOpen: (key: string | null) => void; editing: string | null; setEditing: (key: string | null) => void };
+
+function Section({ scope, title, testId, version, onChanged, onReset, shared }: { scope: "domain" | "person"; title: string; testId: string; version: number; onChanged: () => void; onReset: (done: ResetDone) => void; shared: OpenProfile }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<WritingProfileView[] | null>(null);
   const [next, setNext] = useState<{ scopeKey: string; language: string } | null>(null);
-  // pass 2: one profile open at a time
-  const [openKey, setOpenKey] = useState<string | null>(null);
   const read = useCallback(async (after: { scopeKey: string; language: string } | null) => {
     const page = await client.call("writing.profiles.list", { scope, limit: PAGE, ...(after ? { after } : {}) });
     setItems((held) => (after ? [...(held ?? []), ...page.items] : page.items));
@@ -362,13 +374,13 @@ function Section({ scope, title, testId, version, onChanged, onReset }: { scope:
   }, [open, read, version]);
   return (
     <section className="mb-1 last:mb-0" data-testid={testId}>
-      <Collapsible open={open} onOpenChange={setOpen}>
+      <Collapsible open={open} onOpenChange={(o) => !(shared.editing?.startsWith(`${scope}:`) ?? false) && setOpen(o)}>
         <CollapsibleTrigger className="-mx-2 mb-1.5 h-7 w-[calc(100%+1rem)] rounded-lg px-3 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground" data-testid={`${testId}-toggle`}>
           {title}
         </CollapsibleTrigger>
         <CollapsiblePanel>
           <div className="hairline-divide card-group px-4">
-            {items === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : items.length === 0 ? <SettingsNote testId={`${testId}-empty`}>{t(scope === "domain" ? "aiDraft.style.noDomains" : "aiDraft.style.noPeople")}</SettingsNote> : oncePerScope(items).map((p) => <Profile key={profileKey(p)} initial={p} onChanged={onChanged} onReset={onReset} total={null} compact={{ open: openKey === profileKey(p), onOpenChange: (open) => setOpenKey(open ? profileKey(p) : null) }} />)}
+            {items === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : items.length === 0 ? <SettingsNote testId={`${testId}-empty`}>{t(scope === "domain" ? "aiDraft.style.noDomains" : "aiDraft.style.noPeople")}</SettingsNote> : oncePerScope(items).map((p) => <Profile key={profileKey(p)} initial={p} onChanged={onChanged} onReset={onReset} total={null} onEditing={(on) => shared.setEditing(on ? profileKey(p) : null)} compact={{ open: shared.open === profileKey(p), onOpenChange: (open) => shared.setOpen(open ? profileKey(p) : null), locked: shared.editing !== null }} />)}
           </div>
           {next && (
             <Button variant="link-secondary" className="mt-1.5 ml-1 text-xs" data-testid={`${testId}-more`} onClick={() => void read(next).catch(failed)}>
@@ -470,6 +482,9 @@ export default function WritingStyle() {
   const [version, setVersion] = useState(0);
   const [clearing, setClearing] = useState(false);
   const [reset, setReset] = useState<ResetDone | null>(null);
+  const [openProfile, setOpenProfile] = useState<string | null>(null);
+  const [editingProfile, setEditingProfile] = useState<string | null>(null);
+  const shared: OpenProfile = { open: openProfile, setOpen: setOpenProfile, editing: editingProfile, setEditing: setEditingProfile };
   const changed = useCallback(() => setVersion((v) => v + 1), []);
   useEffect(() => {
     let current = true;
@@ -521,8 +536,8 @@ export default function WritingStyle() {
       </SettingsGroup>
       {/* pass 2: two collapsed rows together, not two bands */}
       <div className="mb-6">
-        <Section scope="domain" title={t("aiDraft.style.domains")} testId="style-domains" version={version} onChanged={changed} onReset={setReset} />
-        <Section scope="person" title={t("aiDraft.style.people")} testId="style-people" version={version} onChanged={changed} onReset={setReset} />
+        <Section scope="domain" title={t("aiDraft.style.domains")} testId="style-domains" version={version} onChanged={changed} onReset={setReset} shared={shared} />
+        <Section scope="person" title={t("aiDraft.style.people")} testId="style-people" version={version} onChanged={changed} onReset={setReset} shared={shared} />
       </div>
       {/* pass 2: the two ways it learns side by side, each saying what it does: counted here, and the optional AI notes */}
       <SettingsGroup title={t("aiDraft.study.title")} testId="style-actions">

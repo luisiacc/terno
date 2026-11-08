@@ -84,10 +84,23 @@ describe("plan 161, pass 2: the digest first", () => {
     expect(getApp().selectedId).toBe(DIGEST_ROW_ID);
   });
   it("the pick keeps what the page archived when the rest of it moves on", () => {
-    keepDigestPick({ day: "d", toggled: new Set(), scroll: 0, done: { ids: [1], count: 1, undo: null } });
+    keepDigestPick({ day: "d", toggled: new Set(), scroll: 0, done: [{ ids: [1], undo: null }] });
     keepDigestPick({ day: "d", toggled: new Set([2]), scroll: 40 });
-    expect(digestPick("d").done?.ids).toEqual([1]);
+    expect(digestPick("d").done?.[0]!.ids).toEqual([1]);
     keepDigestPick({ day: "e", toggled: new Set(), scroll: 0 });
     expect(digestPick("e").done ?? null).toBe(null);
+  });
+});
+
+describe("plan 161, pass 2 (Codex review): Esc from inside a newsletter's own document", () => {
+  it("goes back to the digest that opened it, as Esc in the window does", async () => {
+    const { forwardNavKey } = await import("~/lib/page");
+    setApp({ devAi: { anthropic: true, openai: false, jev: false }, settings: { ai, devAi: true, today: { show: true } } as never, view: "all", today: true, selectedId: 7 });
+    useToday.setState({ fromDigest: 7 });
+    const e = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
+    forwardNavKey(e);
+    expect(e.defaultPrevented).toBe(true);
+    const { getApp } = await import("./app");
+    expect(getApp().selectedId).toBe(DIGEST_ROW_ID);
   });
 });

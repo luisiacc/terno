@@ -981,10 +981,25 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(profile.getByTestId("style-profile-edit")).toBeFocused();
     await profile.getByTestId("style-profile-examples-toggle").click();
     await expect(profile.getByTestId("style-profile-examples")).toContainText("“all the best”");
-    // pass 2: a learned phrase can be removed where it's listed
-    await profile.getByTestId("style-profile-phrase").filter({ hasText: "“let me know”" }).getByTestId("style-profile-example-remove").click();
-    await expect(profile.getByTestId("style-profile-phrase").filter({ hasText: "“let me know”" })).toHaveCount(0);
-    await expect(profile.getByTestId("style-profile-phrase").filter({ hasText: "“all the best”" })).toHaveCount(1);
+    // pass 2: a learned phrase can be removed where it's listed. Codex review: two quick removals both stick, and the page's
+    // lists follow, so leaving and coming back doesn't bring one back
+    const phrase = (text: string) => profile.getByTestId("style-profile-phrase").filter({ hasText: `“${text}”` });
+    await phrase("let me know").getByTestId("style-profile-example-remove").click();
+    await phrase("all the best").getByTestId("style-profile-example-remove").click();
+    await expect(phrase("let me know")).toHaveCount(0);
+    await expect(phrase("all the best")).toHaveCount(0);
+    // another profile in the picker, then back: what was removed stays removed
+    if (await page.getByTestId("style-scope").count()) {
+      await page.getByTestId("style-scope").click();
+      await page.getByRole("option").nth(1).click();
+      await page.getByTestId("style-scope").click();
+      await page.getByRole("option").first().click();
+    }
+    // the edit had left only those two: none left, so nothing to open
+    await expect(profile.getByTestId("style-profile-lines")).toBeVisible();
+    await expect(profile.getByTestId("style-profile-examples-toggle")).toHaveCount(0);
+    await expect(phrase("let me know")).toHaveCount(0);
+    await expect(phrase("all the best")).toHaveCount(0);
     await profile.getByTestId("style-profile-edit").click();
     await expect(page.getByTestId("style-edit-signoffs-field").last()).toHaveValue("Cheers,\nLuis");
     await page.getByTestId("style-edit-cancel").click();
@@ -1010,7 +1025,21 @@ test.describe("drafting with AI (plan 133)", () => {
       await companies.nth(1).click();
       await expect(page.getByTestId("style-domains").getByTestId("style-profile-lines")).toHaveCount(1);
       await expect(companies.nth(0)).toHaveAttribute("aria-expanded", "false");
+      // Codex review: while one is edited, another can't open over it and lose the edit
+      await page.getByTestId("style-domains").getByTestId("style-profile-edit").click();
+      await expect(companies.nth(0)).toBeDisabled();
+      await page.getByTestId("style-edit-cancel").click();
+      await expect(companies.nth(0)).toBeEnabled();
     }
+    // Codex review: one open across Companies and People
+    await page.getByTestId("style-people-toggle").click();
+    const people = page.getByTestId("style-people").getByTestId("style-profile-toggle");
+    if (await people.first().isVisible({ timeout: 10_000 }).catch(() => false)) {
+      await people.first().click();
+      await expect(page.getByTestId("style-domains").getByTestId("style-profile-lines")).toHaveCount(0);
+      await expect(page.getByTestId("style-people").getByTestId("style-profile-lines")).toHaveCount(1);
+    }
+    await page.getByTestId("style-people-toggle").click();
     await page.getByTestId("style-domains-toggle").click();
 
     // the study on a local model asks nothing, and is running, not done, when it starts (Codex review 12)

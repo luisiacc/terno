@@ -79,7 +79,19 @@ test.describe("AI filters and learned filters", () => {
       await expect(page.getByTestId("filter-unsaved")).not.toHaveAttribute("data-open");
       await page.getByTestId("filter-unsaved").getByRole("button").first().click();
       await expect(page.getByTestId("ai-explanation")).toContainText("doesn’t contain “nicer”");
-      // discarding it is a choice of its own; then closing keeps nothing
+      // Codex review: another rule built from New is a second row; the first isn't replaced
+      await page.getByTestId("new-filter").click();
+      await page.getByTestId("ai-prompt").fill("archiva los correos de uber.com y ponlos en Facturas");
+      await page.getByTestId("ai-generate").click();
+      await expect(page.getByTestId("ai-explanation")).toContainText("uber.com");
+      await expect(page.getByTestId("filter-unsaved")).toHaveCount(2);
+      await page.keyboard.press("Escape");
+      await page.getByTestId("open-filters").click();
+      await expect(page.getByTestId("filter-unsaved")).toHaveCount(2);
+      await expect(page.getByTestId("filter-unsaved").nth(1)).toHaveAttribute("data-open", "true");
+      // discarding is a choice of its own, a row at a time; then closing keeps nothing
+      await page.getByTestId("filter-unsaved").nth(1).getByTestId("filter-unsaved-discard").click();
+      await expect(page.getByTestId("ai-explanation")).toHaveCount(0);
       await page.getByTestId("filter-unsaved-discard").click();
       await expect(page.getByTestId("filter-unsaved")).toHaveCount(0);
       await expect(page.getByTestId("ai-explanation")).toHaveCount(0);

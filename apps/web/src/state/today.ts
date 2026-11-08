@@ -26,17 +26,15 @@ export interface DigestPick {
   day: string;
   toggled: ReadonlySet<number>;
   scroll: number;
-  /** what this page archived, by its own Archive: those rows leave it, and its header says it's done (plan 161, pass 2) */
-  done?: DigestDone | null;
+  /** what this page archived, an entry per Archive: those rows leave it, and its header says it's done (plan 161, pass 2) */
+  done?: readonly DigestDone[] | null;
   /** the row a newsletter was opened from: it takes focus again on the way back */
   opened?: number | null;
 }
 
+/** One Archive from the page: the ids it really archived (they stay out of its list until its Undo), and that Undo (the snack's runs the same one). */
 export interface DigestDone {
-  /** every id the page archived today: they stay out of its list until an Undo brings them back */
   ids: readonly number[];
-  /** the last Archive's count, and its Undo (the snack's runs the same one) */
-  count: number;
   undo: Undo | null;
 }
 
