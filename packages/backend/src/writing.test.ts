@@ -542,6 +542,51 @@ describe("clearing what was learned (plan 133 review)", () => {
   });
 });
 
+describe("a reset undone (plan 161)", () => {
+  const studied = async () => {
+    const t = await setup();
+    await t.sentMany(30);
+    await t.learned();
+    await t.client.call("writing.studyStyle", { requestId: "st", confirm: { provider: "fake", accountIds: [t.account.id] } });
+    await vi.waitFor(async () => expect((await t.client.call("writing.profiles.list", { scope: "you" })).items[0]?.judgment).toBeTruthy());
+    await t.backend.writing.learner.idle();
+    return t;
+  };
+  const yours = async (t: Awaited<ReturnType<typeof setup>>) => (await t.client.call("writing.profiles.list", { scope: "you" })).items.map(({ updatedAt: _u, ...p }) => p);
+
+  it("puts back exactly what went, the study's judgment too, after the rebuild the reset started (Codex review)", async () => {
+    const t = await studied();
+    const before = await yours(t);
+    const [p] = before;
+    // the rebuild the reset starts is held at its commit, so the Undo comes before it lands
+    const real = t.backend.store.writing.profiles.commit.bind(t.backend.store.writing.profiles);
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    vi.spyOn(t.backend.store.writing.profiles, "commit").mockImplementation(async (c) => {
+      await held;
+      return real(c);
+    });
+    const { undo } = await t.client.call("writing.profiles.reset", { scopeKey: p!.scopeKey, language: p!.language });
+    const restoring = t.client.call("writing.profiles.restore", { undo });
+    await new Promise((r) => setTimeout(r, 20));
+    release();
+    expect((await restoring).restored).toBe(true);
+    await t.backend.writing.learner.idle();
+    expect(await yours(t)).toEqual(before);
+    // once
+    expect((await t.client.call("writing.profiles.restore", { undo })).restored).toBe(false);
+  });
+
+  it("Clear all takes a reset's copy with it: its Undo brings nothing back (Codex review)", async () => {
+    const t = await studied();
+    const [p] = await yours(t);
+    const { undo } = await t.client.call("writing.profiles.reset", { scopeKey: p!.scopeKey, language: p!.language });
+    await t.client.call("writing.profiles.clear", {});
+    expect((await t.client.call("writing.profiles.restore", { undo })).restored).toBe(false);
+    expect(await yours(t)).toEqual([]);
+  });
+});
+
 describe("ai.resolveIntent", () => {
   const ask = (t: Awaited<ReturnType<typeof setup>>, instruction: string, surface: unknown, over = {}) => t.client.call("ai.resolveIntent", { requestId: t.requestId(), instruction, surface: surface as never, waitForContacts: true, ...over });
 

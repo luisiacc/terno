@@ -40,26 +40,28 @@ export default function DigestPage() {
   }, []);
   const items = useMemo(() => row?.items ?? [], [row]);
   const automated = row?.automated === true;
-  // plan 161: what was unticked, and where the page was, outlive it: opening a newsletter and coming back finds them
-  const day = row?.day ?? "";
+  // plan 161: what was unticked, and where the page was, outlive it: opening a newsletter and coming back finds them.
+  // Kept by digest: its day and what kind it is (a set means the unticked in one, the ticked in automated mail)
+  const day = row ? `${row.day}|${automated ? "automated" : "digest"}` : "";
   const [toggled, setToggled] = useState<ReadonlySet<number>>(() => digestPick(day).toggled);
-  const [toggledDay, setToggledDay] = useState(day);
-  if (toggledDay !== day) {
-    setToggledDay(day);
-    setToggled(digestPick(day).toggled);
-  }
   const scroller = useRef<HTMLElement>(null);
   const scrollAt = useRef(digestPick(day).scroll);
-  useEffect(() => {
-    if (day) keepDigestPick({ day, toggled, scroll: scrollAt.current });
-  }, [day, toggled]);
-  // back where it was left, once its rows are there
-  const restored = useRef(false);
+  // back where it was left, once its rows are there: once a digest
+  const restored = useRef<string | null>(null);
+  const [pickOf, setPickOf] = useState(day);
+  if (pickOf !== day) {
+    setPickOf(day);
+    setToggled(digestPick(day).toggled);
+  }
   useLayoutEffect(() => {
-    if (restored.current || !scroller.current || !row?.items.length) return;
-    restored.current = true;
+    if (restored.current === day || !scroller.current || !row?.items.length) return;
+    restored.current = day;
+    scrollAt.current = digestPick(day).scroll;
     scroller.current.scrollTop = scrollAt.current;
-  }, [row]);
+  }, [row, day]);
+  useEffect(() => {
+    if (day && restored.current === day) keepDigestPick({ day, toggled, scroll: scrollAt.current });
+  }, [day, toggled]);
   const ticked = (i: DigestItem) => (automated ? toggled.has(i.threadId) : !toggled.has(i.threadId));
   // the list's refresh brings what changed anywhere: an Undo, a read in another window
   useEffect(() => {
@@ -79,7 +81,7 @@ export default function DigestPage() {
       return next;
     });
   const open = (threadId: number) => {
-    if (day) keepDigestPick({ day, toggled, scroll: scroller.current?.scrollTop ?? 0 });
+    if (day && restored.current === day) keepDigestPick({ day, toggled, scroll: scroller.current?.scrollTop ?? 0 });
     useToday.setState({ fromDigest: threadId });
     setApp({ selectedId: threadId });
   };
@@ -114,8 +116,9 @@ export default function DigestPage() {
       aria-label={t("today.digest.title")}
       className="mx-auto w-full max-w-(--reader-max,48rem) space-y-3 overflow-y-auto px-8 pt-16 pb-8"
       onScroll={(e) => {
+        if (restored.current !== day) return;
         scrollAt.current = e.currentTarget.scrollTop;
-        if (day) keepDigestPick({ day, toggled, scroll: scrollAt.current });
+        keepDigestPick({ day, toggled, scroll: scrollAt.current });
       }}
     >
       <header className="space-y-1">

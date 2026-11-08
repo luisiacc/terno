@@ -33,12 +33,12 @@ function actionWords(a: FilterAction, names: Names): string {
 const lowerFirst = (s: string) => s.charAt(0).toLocaleLowerCase(getLocale()) + s.slice(1);
 const upperFirst = (s: string) => s.charAt(0).toLocaleUpperCase(getLocale()) + s.slice(1);
 
-/** "Archives and marks as read mail that matches: domain is “uber.com” and older than 7 days." */
+/** "Domain is “uber.com” and older than 7 days → archive and mark as read.": the builder's order, its rows then its Then */
 export function describeRule(rule: FilterRule, names: Names): string {
   const locale = getLocale();
   const actions = new Intl.ListFormat(locale, { type: "conjunction" }).format(rule.actions.map((a) => actionWords(a, names)));
   const conditions = new Intl.ListFormat(locale, { type: rule.match === "any" ? "disjunction" : "conjunction" }).format(rule.conditions.map((c) => lowerFirst(conditionText(c, names.accountEmail))));
-  return upperFirst(t(rule.match === "any" && rule.conditions.length > 1 ? "filters.say.ruleAny" : "filters.say.rule", { actions, conditions }));
+  return upperFirst(t("filters.say.rule", { actions, conditions }));
 }
 
 /** What a request names, by what a rule would need for it: English and Spanish, as the AI box takes both. */
@@ -70,10 +70,15 @@ export function ruleMisses(prompt: string, rule: FilterRule): boolean {
 
 /** A condition's operator with its sense, as the operator menu holds both (plan 161: no separate "not" toggle). */
 export type SensedOp = `${"" | "not:"}${string}`;
-export const sensedOp = (c: Condition): SensedOp => `${c.negate ? "not:" : ""}${c.field === "hasAttachment" || c.field === "account" ? "is" : c.op}`;
+export function sensedOp(c: Condition): SensedOp {
+  // an attachment condition can say "no" twice (a false value, and not): what it matches is the one sense
+  if (c.field === "hasAttachment") return c.value !== Boolean(c.negate) ? "is" : "not:is";
+  return `${c.negate ? "not:" : ""}${c.field === "account" ? "is" : c.op}`;
+}
 export function withSensedOp(c: Condition, value: SensedOp): Condition {
   const negate = value.startsWith("not:");
   const op = negate ? value.slice(4) : value;
-  if (c.field === "hasAttachment" || c.field === "account") return { ...c, negate: negate || undefined } as Condition;
+  if (c.field === "hasAttachment") return { ...c, value: true, negate: negate || undefined };
+  if (c.field === "account") return { ...c, negate: negate || undefined };
   return { ...c, op, negate: negate || undefined } as Condition;
 }

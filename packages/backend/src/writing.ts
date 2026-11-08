@@ -247,6 +247,8 @@ export class WritingService {
 
   /** Clear all, from any window: no draft goes on with a copy of what was just cleared. */
   async clearProfiles(): Promise<void> {
+    // plan 161 (Codex review): what a reset took goes too: Clear all is everything
+    this.resets.clear();
     this.forgetSnapshots();
     await this.learner.clear();
     // what assembled while that ran read what it was clearing
@@ -335,7 +337,11 @@ export class WritingService {
 
   /** A reset undone: what it took, exactly, over whatever the rebuild made since. False when it's no longer held. */
   async restoreProfile(undo: string): Promise<boolean> {
+    if (!this.resets.has(undo)) return false;
+    // the rebuild the reset started commits first, so it can't write over what comes back (Codex review)
+    await this.learner.idle();
     const rows = this.resets.get(undo);
+    // cleared, or undone, meanwhile
     if (!rows) return false;
     this.resets.delete(undo);
     this.forgetSnapshots();

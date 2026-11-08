@@ -950,26 +950,30 @@ test.describe("drafting with AI (plan 133)", () => {
     // the editor: its first field focused, a sign-off kept whole, Save in view in a small window, focus back on Edit
     await page.setViewportSize({ width: 1100, height: 700 });
     await profile.getByTestId("style-profile-edit").click();
-    await expect(page.getByTestId("style-edit-greetings-field").first().or(page.getByTestId("style-edit-phrases"))).toBeFocused();
+    await expect(page.getByTestId("style-editor").locator("textarea").first()).toBeFocused();
     await page.getByTestId("style-edit-signoffs-add").click();
     await page.getByTestId("style-edit-signoffs-field").last().fill("Cheers,\nLuis");
     await page.getByTestId("style-edit-phrases").fill("all the best\nlet me know");
     await expect(page.getByTestId("style-edit-save")).toBeInViewport();
+    // the picker waits while a profile is edited (Codex review): switching would lose the edit
+    if (await page.getByTestId("style-scope").count()) await expect(page.getByTestId("style-scope")).toBeDisabled();
     await page.getByTestId("style-edit-save").click();
     await expect(profile.getByTestId("style-profile-edited")).toBeVisible();
     await expect(profile.getByTestId("style-profile-edit")).toBeFocused();
     await profile.getByTestId("style-profile-examples-toggle").click();
     await expect(profile.getByTestId("style-profile-examples")).toContainText("“all the best”");
     await profile.getByTestId("style-profile-edit").click();
-    await expect(page.getByTestId("style-edit-signoffs-field").filter({ hasText: "Cheers," })).toHaveValue("Cheers,\nLuis");
+    await expect(page.getByTestId("style-edit-signoffs-field").last()).toHaveValue("Cheers,\nLuis");
     await page.getByTestId("style-edit-cancel").click();
     await page.setViewportSize({ width: 1440, height: 900 });
     // Reset says so, and Undo puts back exactly what was there, the edit too
     await profile.getByTestId("style-profile-reset").click();
-    await expect(page.getByTestId("snack")).toContainText("Reset");
+    await expect(page.getByTestId("style-reset-done")).toContainText("Reset “You");
     await expect(page.getByTestId("style-profile-edited")).toHaveCount(0);
-    await page.getByTestId("snack-action").click();
+    // in the page, not a snack behind Settings (Codex review)
+    await page.getByTestId("style-reset-undo").click();
     await expect(page.getByTestId("style-profile-edited")).toBeVisible();
+    await expect(page.getByTestId("style-reset-done")).toHaveCount(0);
     await page.getByTestId("style-profile-reset").click();
     await expect(page.getByTestId("style-profile-edited")).toHaveCount(0);
 

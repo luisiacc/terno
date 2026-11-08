@@ -10,8 +10,7 @@ import { Textarea } from "@terno/ui/components/textarea";
 import { Plus } from "@terno/ui/icons";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { providerLabel } from "~/lib/ai";
-import { undoAction } from "~/lib/actions";
-import { registerUndo, snack } from "~/lib/snack";
+import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
 import { ConfirmDialog, SettingsGroup, SettingsNote, SettingsRow } from "./parts";
@@ -80,7 +79,7 @@ function ItemsField({ label, add, item, remove, items, onChange, testId, first }
       <p id={id} className="text-xs font-medium text-muted-foreground">{label}</p>
       {items.map((value, i) => (
         <div key={i} className="flex items-start gap-1" data-testid={`${testId}-item`}>
-          <Textarea ref={i === 0 ? first : undefined} aria-label={item(i + 1)} data-testid={`${testId}-field`} value={value} rows={1} onChange={(e) => onChange(items.map((x, j) => (j === i ? e.target.value : x)))} className="min-h-9 py-1.5 bg-background dark:bg-input/30" />
+          <Textarea ref={i === 0 ? first : undefined} aria-label={item(i + 1)} data-testid={`${testId}-field`} value={value} rows={1} onChange={(e) => onChange(items.map((x, j) => (j === i ? e.target.value : x)))} className="min-h-9 resize-none py-1.5" />
           <CloseButton label={remove(i + 1)} className="mt-1.5" data-testid={`${testId}-remove`} onClick={() => onChange(items.filter((_, j) => j !== i))} />
         </div>
       ))}
@@ -124,7 +123,7 @@ function ProfileEditor({ p, title, onDone }: { p: WritingProfileView; title: str
   const field = (id: string, label: string, value: string, set: (v: string) => void, testId: string, ref?: React.Ref<HTMLTextAreaElement>) => (
     <div className="flex flex-col gap-1">
       <label htmlFor={`${ids}-${id}`} className="text-xs font-medium text-muted-foreground">{label}</label>
-      <Textarea ref={ref} id={`${ids}-${id}`} data-testid={testId} value={value} onChange={(e) => set(e.target.value)} className="min-h-14 bg-background dark:bg-input/30" />
+      <Textarea ref={ref} id={`${ids}-${id}`} data-testid={testId} value={value} onChange={(e) => set(e.target.value)} className="min-h-14" />
     </div>
   );
   return (
@@ -134,7 +133,7 @@ function ProfileEditor({ p, title, onDone }: { p: WritingProfileView; title: str
       {field("phrases", t("aiDraft.style.editPhrases"), phrases, setPhrases, "style-edit-phrases", greetings.length ? undefined : phrasesRef)}
       {p.judgment && field("notes", t("aiDraft.style.editNotes"), notes, setNotes, "style-edit-notes")}
       {/* plan 161: as Rules' footer, Save and Cancel stay in view however tall the form is */}
-      <div className="sticky bottom-0 z-10 -mx-4 -mb-3 flex gap-1.5 border-t border-hairline bg-popover bg-linear-to-b from-(--card-bg) to-(--card-bg) px-4 py-2.5" data-testid="style-edit-footer">
+      <div className="sticky -bottom-4 z-10 -mx-4 -mb-3 flex gap-1.5 border-t border-hairline bg-popover bg-linear-to-b from-(--card-bg) to-(--card-bg) px-4 pt-2.5 pb-6.5" data-testid="style-edit-footer">
         <Button size="sm" data-testid="style-edit-save" onClick={() => void save()}>{t("common.save")}</Button>
         <Button size="sm" variant="ghost" data-testid="style-edit-cancel" onClick={() => onDone(null)}>{t("common.cancel")}</Button>
       </div>
@@ -155,9 +154,16 @@ function useProfileTitle(p: WritingProfileView): string {
   return language ? `${scopeTitle(p, accounts)} · ${language}` : scopeTitle(p, accounts);
 }
 
-function Profile({ initial, onChanged }: { initial: WritingProfileView; onChanged: () => void }) {
+/** Plan 161: a reset, undoable where it happened (a snack would sit behind Settings, out of reach: Codex review) */
+type ResetDone = { name: string; undo: string };
+
+function Profile({ initial, onChanged, onEditing, onReset }: { initial: WritingProfileView; onChanged: () => void; /** plan 161 (Codex review): the picker waits while it's edited */ onEditing?: (editing: boolean) => void; onReset: (done: ResetDone) => void }) {
   const [p, setP] = useState(initial);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditingState] = useState(false);
+  const setEditing = (on: boolean) => {
+    setEditingState(on);
+    onEditing?.(on);
+  };
   const editButton = useRef<HTMLButtonElement>(null);
   const card = useRef<HTMLDivElement>(null);
   // after Save or Cancel, back where the edit began (plan 161): its Edit button, in view
@@ -180,9 +186,8 @@ function Profile({ initial, onChanged }: { initial: WritingProfileView; onChange
   const reset = () => {
     void client.call("writing.profiles.reset", { scopeKey: p.scopeKey, language: p.language }).then((r) => {
       onChanged();
-      // plan 161: as other removals, said, and undone with Undo or z
-      const undo = registerUndo(() => client.call("writing.profiles.restore", { undo: r.undo }).then(onChanged));
-      snack.success(t("aiDraft.style.resetDone", { name: title }), { duration: 8000, action: undoAction(undo, t("aiDraft.style.undoReset", { name: title })) });
+      // plan 161: as other removals, said, with its Undo
+      onReset({ name: title, undo: r.undo });
     }, failed);
   };
   return (
@@ -235,10 +240,11 @@ function Profile({ initial, onChanged }: { initial: WritingProfileView; onChange
 const profileKey = (p: Pick<WritingProfileView, "scopeKey" | "language">) => `${p.scopeKey}|${p.language}`;
 
 /** Plan 161: your own and your accounts' profiles, one at a time, picked by whose and which language. */
-function OwnProfiles({ items, onChanged }: { items: WritingProfileView[]; onChanged: () => void }) {
+function OwnProfiles({ items, onChanged, onReset }: { items: WritingProfileView[]; onChanged: () => void; onReset: (done: ResetDone) => void }) {
   const accounts = useApp((s) => s.accounts);
   const list = oncePerScope(items);
   const [chosen, setChosen] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
   const current = list.find((p) => profileKey(p) === chosen) ?? list[0]!;
   const label = (p: WritingProfileView) => {
     const language = p.language ? new Intl.DisplayNames([getLocale()], { type: "language" }).of(p.language) : null;
@@ -250,7 +256,7 @@ function OwnProfiles({ items, onChanged }: { items: WritingProfileView[]; onChan
       {list.length > 1 && (
         <div className="flex items-center justify-between gap-6 py-2.5">
           <label id="style-scope-label" className="text-sm font-medium">{t("aiDraft.style.showing")}</label>
-          <Select value={profileKey(current)} onValueChange={(v) => setChosen(v as string)} items={options}>
+          <Select value={profileKey(current)} onValueChange={(v) => setChosen(v as string)} items={options} disabled={editing}>
             <SelectTrigger size="sm" className="w-64" aria-labelledby="style-scope-label" data-testid="style-scope">
               <SelectValue />
             </SelectTrigger>
@@ -264,7 +270,7 @@ function OwnProfiles({ items, onChanged }: { items: WritingProfileView[]; onChan
           </Select>
         </div>
       )}
-      <Profile key={profileKey(current)} initial={current} onChanged={onChanged} />
+      <Profile key={profileKey(current)} initial={current} onChanged={onChanged} onEditing={setEditing} onReset={onReset} />
     </>
   );
 }
@@ -272,7 +278,7 @@ function OwnProfiles({ items, onChanged }: { items: WritingProfileView[]; onChan
 const PAGE = 50;
 
 /** Domains and people, read when they're opened: there can be many. */
-function Section({ scope, title, testId, version, onChanged }: { scope: "domain" | "person"; title: string; testId: string; version: number; onChanged: () => void }) {
+function Section({ scope, title, testId, version, onChanged, onReset }: { scope: "domain" | "person"; title: string; testId: string; version: number; onChanged: () => void; onReset: (done: ResetDone) => void }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<WritingProfileView[] | null>(null);
   const [next, setNext] = useState<{ scopeKey: string; language: string } | null>(null);
@@ -292,7 +298,7 @@ function Section({ scope, title, testId, version, onChanged }: { scope: "domain"
         </CollapsibleTrigger>
         <CollapsiblePanel>
           <div className="hairline-divide rounded-[calc(var(--radius-lg)+2px)] bg-tint px-4">
-            {items === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : items.length === 0 ? <SettingsNote testId={`${testId}-empty`}>{t(scope === "domain" ? "aiDraft.style.noDomains" : "aiDraft.style.noPeople")}</SettingsNote> : oncePerScope(items).map((p) => <Profile key={`${p.scopeKey}|${p.language}`} initial={p} onChanged={onChanged} />)}
+            {items === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : items.length === 0 ? <SettingsNote testId={`${testId}-empty`}>{t(scope === "domain" ? "aiDraft.style.noDomains" : "aiDraft.style.noPeople")}</SettingsNote> : oncePerScope(items).map((p) => <Profile key={`${p.scopeKey}|${p.language}`} initial={p} onChanged={onChanged} onReset={onReset} />)}
           </div>
           {next && (
             <Button variant="link-secondary" className="mt-1.5 ml-1 text-xs" data-testid={`${testId}-more`} onClick={() => void read(next).catch(failed)}>
@@ -393,6 +399,7 @@ export default function WritingStyle() {
   const [status, setStatus] = useState<WritingStatus | null>(null);
   const [version, setVersion] = useState(0);
   const [clearing, setClearing] = useState(false);
+  const [reset, setReset] = useState<ResetDone | null>(null);
   const changed = useCallback(() => setVersion((v) => v + 1), []);
   useEffect(() => {
     let current = true;
@@ -418,12 +425,32 @@ export default function WritingStyle() {
       <div className="mb-4 px-1" data-testid="style-overview">
         <p className="text-sm" data-testid="style-status">{line}</p>
         <p className="mt-1 text-xs text-muted-foreground" data-testid="style-precedence">{t("aiDraft.style.precedence")}</p>
+        {reset && (
+          <p role="status" className="mt-2 flex items-center gap-2 text-sm" data-testid="style-reset-done">
+            {t("aiDraft.style.resetDone", { name: reset.name })}
+            <Button
+              variant="link-secondary"
+              size="xs"
+              data-testid="style-reset-undo"
+              aria-label={t("aiDraft.style.undoReset", { name: reset.name })}
+              onClick={() => {
+                setReset(null);
+                void client.call("writing.profiles.restore", { undo: reset.undo }).then((r) => {
+                  changed();
+                  if (!r.restored) snack.error(t("aiDraft.style.undoGone"));
+                }, failed);
+              }}
+            >
+              {t("common.undo")}
+            </Button>
+          </p>
+        )}
       </div>
       <SettingsGroup title={t("aiDraft.style.yours")} testId="style-own">
-        {own === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : own.length === 0 ? <SettingsNote testId="style-empty">{t("aiDraft.style.empty")}</SettingsNote> : <OwnProfiles items={own} onChanged={changed} />}
+        {own === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : own.length === 0 ? <SettingsNote testId="style-empty">{t("aiDraft.style.empty")}</SettingsNote> : <OwnProfiles items={own} onChanged={changed} onReset={setReset} />}
       </SettingsGroup>
-      <Section scope="domain" title={t("aiDraft.style.domains")} testId="style-domains" version={version} onChanged={changed} />
-      <Section scope="person" title={t("aiDraft.style.people")} testId="style-people" version={version} onChanged={changed} />
+      <Section scope="domain" title={t("aiDraft.style.domains")} testId="style-domains" version={version} onChanged={changed} onReset={setReset} />
+      <Section scope="person" title={t("aiDraft.style.people")} testId="style-people" version={version} onChanged={changed} onReset={setReset} />
       <Study status={status} onChanged={changed} />
       <SettingsGroup testId="style-actions">
         <SettingsRow label={t("aiDraft.style.rebuild")} hint={t("aiDraft.style.rebuildHint")}>
@@ -441,7 +468,7 @@ export default function WritingStyle() {
           )}
         </SettingsRow>
       </SettingsGroup>
-      <ConfirmDialog open={clearing} onOpenChange={setClearing} title={t("aiDraft.style.clearTitle")} description={t("aiDraft.style.clearHint")} confirm={t("aiDraft.style.clearButton")} testId="style-clear-dialog" onConfirm={() => client.call("writing.profiles.clear", {}).then(changed, failed)} />
+      <ConfirmDialog open={clearing} onOpenChange={setClearing} title={t("aiDraft.style.clearTitle")} description={t("aiDraft.style.clearHint")} confirm={t("aiDraft.style.clearButton")} testId="style-clear-dialog" onConfirm={() => client.call("writing.profiles.clear", {}).then(() => { setReset(null); changed(); }, failed)} />
     </div>
   );
 }

@@ -16,7 +16,7 @@ test.describe("AI filters and learned filters", () => {
       await expect(page.getByTestId("action-toggle-archive")).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByTestId("action-category-select")).toContainText("Facturas");
       // plan 161: the line says what the rule does, from its fields; the chosen action shows a check
-      await expect(page.getByTestId("ai-explanation")).toHaveText("Archives and files in Facturas mail that matches: domain is “uber.com”.");
+      await expect(page.getByTestId("ai-explanation")).toHaveText("Domain is “uber.com” → archive and file in Facturas.");
       await expect(page.getByTestId("ai-unclear")).toHaveCount(0);
       await expect(page.getByTestId("action-toggle-archive").getByTestId("action-chosen")).toBeVisible();
 
@@ -45,7 +45,7 @@ test.describe("AI filters and learned filters", () => {
       await page.getByTestId("open-filters").click();
       await page.getByTestId("ai-prompt").fill("make my inbox nicer");
       await page.getByTestId("ai-generate").click();
-      await expect(page.getByTestId("ai-explanation")).toHaveText("Archives mail that matches: subject contains “nicer”.");
+      await expect(page.getByTestId("ai-explanation")).toHaveText("Subject contains “nicer” → archive.");
       await expect(page.getByTestId("ai-unclear")).toHaveText("I couldn't turn this into a clear rule — check it below.");
       // built, the box is a line: the matches are in view in a small window
       await page.setViewportSize({ width: 1100, height: 700 });
@@ -54,7 +54,7 @@ test.describe("AI filters and learned filters", () => {
       // "not" is an operator, in words; the line follows the edit
       await page.getByTestId("condition-op").click();
       await page.getByRole("option", { name: "doesn’t contain" }).click();
-      await expect(page.getByTestId("ai-explanation")).toContainText("subject doesn’t contain “nicer”");
+      await expect(page.getByTestId("ai-explanation")).toContainText("Subject doesn’t contain “nicer”");
       await expect(page.getByTestId("condition-row").getByRole("button", { name: /^(yes|not)$/ })).toHaveCount(0);
       // Esc doesn't lose it: Rules opens on it again, and its request
       await page.keyboard.press("Escape");

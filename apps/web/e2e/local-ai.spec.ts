@@ -46,7 +46,7 @@ test.describe("local mode and AI providers", () => {
       await page.getByTestId("ai-prompt").fill("archiva los recibos de uber.com");
       await page.getByTestId("ai-generate").click();
       // plan 161: what the rule does, from its fields, not the request said back
-      await expect(page.getByTestId("ai-explanation")).toHaveText("Archives mail that matches: domain is “uber.com”.");
+      await expect(page.getByTestId("ai-explanation")).toHaveText("Domain is “uber.com” → archive.");
     } finally {
       await ollama.close();
     }

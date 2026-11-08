@@ -14,16 +14,16 @@ afterEach(() => setLocale("en", en));
 
 describe("a rule in words (plan 161)", () => {
   it("says what the rule does from its fields, not what was asked", () => {
-    expect(describeRule(uber, names)).toBe("Archives mail that matches: domain is “uber.com”.");
+    expect(describeRule(uber, names)).toBe("Domain is “uber.com” → archive.");
     const two: FilterRule = { match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "uber.com" }, { field: "ageDays", op: "gt", value: 7 }], actions: [{ type: "archive" }, { type: "markRead" }, { type: "addCategory", categoryId: 3 }] };
-    expect(describeRule(two, names)).toBe("Archives, marks as read, and files in Invoices mail that matches: domain is “uber.com” and older than 7 days.");
-    expect(describeRule({ ...two, match: "any" }, names)).toContain("matches any of: domain is “uber.com” or older than 7 days.");
-    expect(describeRule({ ...uber, conditions: [{ field: "subject", op: "contains", value: "x", negate: true }] }, names)).toContain("subject doesn’t contain “x”");
+    expect(describeRule(two, names)).toBe("Domain is “uber.com” and older than 7 days → archive, mark as read, and file in Invoices.");
+    expect(describeRule({ ...two, match: "any" }, names)).toBe("Domain is “uber.com” or older than 7 days → archive, mark as read, and file in Invoices.");
+    expect(describeRule({ ...uber, conditions: [{ field: "subject", op: "contains", value: "x", negate: true }] }, names)).toBe("Subject doesn’t contain “x” → archive.");
   });
 
   it("in Spanish too", () => {
     setLocale("es", es);
-    expect(describeRule(uber, names)).toBe("Archiva el correo que cumple: dominio es «uber.com».");
+    expect(describeRule(uber, names)).toBe("Dominio es «uber.com» → archivar.");
   });
 });
 
@@ -49,6 +49,12 @@ describe("the operator menu holds both senses (plan 161: no yes/not toggle)", ()
     expect(withSensedOp({ field: "subject", op: "contains", value: "x" }, "not:equals")).toEqual({ field: "subject", op: "equals", value: "x", negate: true });
     expect(withSensedOp({ field: "subject", op: "equals", value: "x", negate: true }, "startsWith")).toEqual({ field: "subject", op: "startsWith", value: "x", negate: undefined });
     expect(sensedOp({ field: "hasAttachment", op: "is", value: true, negate: true })).toBe("not:is");
+    // Codex review: a false value is a "no" too, in all four combinations, and a choice writes one plain sense
+    expect(sensedOp({ field: "hasAttachment", op: "is", value: true })).toBe("is");
+    expect(sensedOp({ field: "hasAttachment", op: "is", value: false })).toBe("not:is");
+    expect(sensedOp({ field: "hasAttachment", op: "is", value: false, negate: true })).toBe("is");
+    expect(withSensedOp({ field: "hasAttachment", op: "is", value: false }, "not:is")).toEqual({ field: "hasAttachment", op: "is", value: true, negate: true });
+    expect(withSensedOp({ field: "hasAttachment", op: "is", value: false, negate: true }, "is")).toEqual({ field: "hasAttachment", op: "is", value: true, negate: undefined });
     expect(withSensedOp({ field: "account", op: "is", value: 2 }, "not:is")).toEqual({ field: "account", op: "is", value: 2, negate: true });
   });
 });

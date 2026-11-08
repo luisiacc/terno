@@ -107,7 +107,7 @@ test.describe("Today (plan 145)", () => {
     await expect(page.getByTestId("back-to-digest")).toBeVisible();
     await page.getByTestId("back-to-digest").click();
     await expect(page.getByTestId("digest-page")).toBeVisible();
-    await expect(page.getByTestId("digest-item").filter({ hasText: "Morning Brew" }).getByTestId("digest-tick")).toBeChecked();
+    await expect(page.getByTestId("digest-item").filter({ hasText: "Morning Brew digest" }).getByTestId("digest-tick")).toBeChecked();
     await expect(page.getByTestId("digest-item").filter({ hasText: "Stratechery" }).getByTestId("digest-tick")).not.toBeChecked();
     await expect(page.getByTestId("digest-archive")).toHaveText("Archive selected (1)");
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/digest-on.png` });
