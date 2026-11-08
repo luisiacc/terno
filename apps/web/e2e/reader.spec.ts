@@ -262,12 +262,19 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       await expect(page.getByTestId("quick-reply-all")).toBeVisible();
       expect(await order()).toEqual(["action-reply", "action-forward"]);
       const words = (id: string) => page.getByTestId(id).locator("span").first().evaluate((el) => el.getBoundingClientRect().width);
-      // a full column: Reply, Archive and Delete in words
-      for (const id of ["action-reply", "action-archive", "action-trash"]) expect(await words(id), id).toBeGreaterThan(20);
+      // a full column: Reply and Forward in words; triage is icons at every width, named for screen readers and in tooltips
+      for (const id of ["action-reply", "action-forward"]) expect(await words(id), id).toBeGreaterThan(20);
+      for (const [id, name] of [["action-archive", "Archive"], ["action-trash", "Delete"]] as const) {
+        await expect(page.getByTestId(id)).toHaveAccessibleName(name);
+        await expect(page.getByTestId(id)).not.toContainText(name);
+      }
       expect(Math.abs((await replyAt()) - solo)).toBeLessThanOrEqual(0.5);
       // a narrower reader lets words go by priority (Forward's first, Reply's last), never a control off the column;
       // a word that goes keeps its name for screen readers
       await page.setViewportSize({ width: 1100, height: 700 });
+      // a wider list leaves the reader too little for both words
+      await page.getByTestId("pane-handle-list").focus();
+      for (let i = 0; i < 40 && (await words("action-forward")) > 1; i++) await page.keyboard.press("ArrowRight");
       await expect.poll(() => words("action-forward")).toBeLessThanOrEqual(1);
       await expect(page.getByTestId("action-forward")).toHaveAccessibleName("Forward");
       expect(await words("action-reply")).toBeGreaterThan(20);

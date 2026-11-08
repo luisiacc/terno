@@ -182,7 +182,7 @@ function ReplyGroup() {
       if (landing.kind === "none" && document.activeElement === document.body && button.isConnected) button.focus();
     });
   };
-  const item = (tier: 1 | 4, pad?: string) => cn("px-2.5", pad, SQUARE_ITEM[tier]);
+  const item = (tier: 1 | 3, pad?: string) => cn("px-2.5", pad, SQUARE_ITEM[tier]);
   return (
     <ButtonGroup aria-label={t("reader.group.respond")} className={cn("no-drag ml-auto shrink-0 [&_svg]:[--icon-line:var(--icon-line-toolbar)]", pill && "rounded-full")}>
       <Tooltip>
@@ -204,9 +204,9 @@ function ReplyGroup() {
       <Tooltip>
         <TooltipTrigger
           render={
-            <ButtonGroupItem data-testid="action-forward" onClick={(e) => choose("forward", e.currentTarget)} className={item(4, pill ? "pr-3" : undefined)}>
+            <ButtonGroupItem data-testid="action-forward" onClick={(e) => choose("forward", e.currentTarget)} className={item(3, pill ? "pr-3" : undefined)}>
               <Forward />
-              <span className={WORDS[4]}>{t("actions.forward")}</span>
+              <span className={WORDS[3]}>{t("actions.forward")}</span>
             </ButtonGroupItem>
           }
         />
@@ -220,36 +220,33 @@ function ReplyGroup() {
 }
 
 /**
- * The toolbar's words, by priority (plan 158): 1 Reply, 2 Back's mailbox, 3 Archive and Delete, 4 Forward.
+ * The toolbar's words, by priority (plan 158): 1 Reply, 2 Back's mailbox, 3 Forward. Triage stays icons, its names in tooltips:
+ * words belong to the reply group alone (the owner's call).
  * As many tiers show as the column holds in this language, measured (`fitWords`), so no word is cut and no button leaves
  * the column; one that doesn't show keeps its icon, and its name in the tooltip and for screen readers. The row says how
  * many tiers fit in `data-words`, which only `fitWords` writes.
  */
-type Tier = 1 | 2 | 3 | 4;
+type Tier = 1 | 2 | 3;
 const WORDS: Record<Tier, string> = {
   1: "group-data-[words=0]/tb:sr-only",
   2: "group-data-[words=0]/tb:sr-only group-data-[words=1]/tb:sr-only",
   3: "group-data-[words=0]/tb:sr-only group-data-[words=1]/tb:sr-only group-data-[words=2]/tb:sr-only",
-  4: "group-data-[words=0]/tb:sr-only group-data-[words=1]/tb:sr-only group-data-[words=2]/tb:sr-only group-data-[words=3]/tb:sr-only",
 };
 /** What goes with a tier's words (a key on the pill) */
 const HIDE: Record<1, string> = { 1: "group-data-[words=0]/tb:hidden" };
-/** A button whose word doesn't show is its icon's square */
-const SQUARE: Record<Tier, string> = {
-  1: "group-data-[words=0]/tb:aspect-square group-data-[words=0]/tb:px-0",
+/** A button whose word doesn't show is its icon's square (Back's mailbox, tier 2) */
+const SQUARE: Record<2, string> = {
   2: "group-data-[words=0]/tb:aspect-square group-data-[words=0]/tb:px-0 group-data-[words=1]/tb:aspect-square group-data-[words=1]/tb:px-0",
-  3: "group-data-[words=0]/tb:aspect-square group-data-[words=0]/tb:px-0 group-data-[words=1]/tb:aspect-square group-data-[words=1]/tb:px-0 group-data-[words=2]/tb:aspect-square group-data-[words=2]/tb:px-0",
-  4: "group-data-[words=0]/tb:aspect-square group-data-[words=0]/tb:px-0 group-data-[words=1]/tb:aspect-square group-data-[words=1]/tb:px-0 group-data-[words=2]/tb:aspect-square group-data-[words=2]/tb:px-0 group-data-[words=3]/tb:aspect-square group-data-[words=3]/tb:px-0",
 };
 /**
  * The same for the reply group's items: a set width, since an item's height is the group's stretch, which an aspect ratio
  * can't size from (the item would be counted at its icon's width and drawn wider, past the toolbar's end)
  */
-const SQUARE_ITEM: Record<1 | 4, string> = {
+const SQUARE_ITEM: Record<1 | 3, string> = {
   1: "group-data-[words=0]/tb:w-8 group-data-[words=0]/tb:px-0",
-  4: "group-data-[words=0]/tb:w-8 group-data-[words=0]/tb:px-0 group-data-[words=1]/tb:w-8 group-data-[words=1]/tb:px-0 group-data-[words=2]/tb:w-8 group-data-[words=2]/tb:px-0 group-data-[words=3]/tb:w-8 group-data-[words=3]/tb:px-0",
+  3: "group-data-[words=0]/tb:w-8 group-data-[words=0]/tb:px-0 group-data-[words=1]/tb:w-8 group-data-[words=1]/tb:px-0 group-data-[words=2]/tb:w-8 group-data-[words=2]/tb:px-0",
 };
-const TIERS = 4;
+const TIERS = 3;
 
 /**
  * Shows the most tiers of words the row holds: its last control's edge (margin included: the last glyph sits on the
@@ -274,26 +271,6 @@ export function fitWords(row: HTMLElement): number {
   // and the palette still reach them
   if (!fits()) row.dataset.tight = "";
   return 0;
-}
-
-/** A triage action in words where they fit, its icon alone where they don't (its name in the tooltip then). */
-function ToolButton({ label, shortcut, tier, className, children, ...props }: { label: string; shortcut?: string; tier: Tier; className?: string; children: React.ReactNode; onClick: () => void; "data-testid": string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button variant="ghost" size="sm" aria-label={label} className={cn(tool, "w-auto gap-1.5 px-2 @max-[560px]:w-auto @max-[560px]:px-1.5", SQUARE[tier], className)} {...props}>
-            {children}
-            <span aria-hidden className={cn("text-[length:var(--ds-text-control)]", WORDS[tier])}>{label}</span>
-          </Button>
-        }
-      />
-      <TooltipContent className="flex items-center gap-2">
-        {label}
-        {shortcut && <Shortcut keys={shortcut} />}
-      </TooltipContent>
-    </Tooltip>
-  );
 }
 
 /** Why the engine did or suggests something: its reasons, in plain words. */
@@ -1135,14 +1112,14 @@ function ReaderContent() {
                 <Inbox />
               </IconButton>
             )}
-            <ToolButton tier={3} label={t("actions.archive")} shortcut="e" onClick={() => act("archive")} data-testid="action-archive">
+            <IconButton className={tool} label={t("actions.archive")} shortcut="e" onClick={() => act("archive")} data-testid="action-archive">
               <Archive />
-            </ToolButton>
+            </IconButton>
           </>
         )}
-        <ToolButton tier={3} label={t("actions.trash")} shortcut="#" onClick={() => act("trash")} data-testid="action-trash">
+        <IconButton className={tool} label={t("actions.trash")} shortcut="#" onClick={() => act("trash")} data-testid="action-trash">
           <Trash2 />
-        </ToolButton>
+        </IconButton>
         <IconButton className={tool} label={t("reader.markSpam")} shortcut="!" onClick={() => act("spam")} data-testid="action-spam">
           <OctagonAlert />
         </IconButton>
