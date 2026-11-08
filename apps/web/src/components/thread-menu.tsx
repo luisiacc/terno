@@ -80,6 +80,7 @@ import { useAlwaysOffers } from "./review-actions";
 import { clearReminder, openRemind, presetLabel, presetWhen, reminderWhen, setReminder, useReminders } from "~/lib/reminders";
 import { reachesSeveral } from "~/lib/compose-fields";
 import { loadThread, useThreads } from "~/state/threads";
+import { fitWholeRows } from "@terno/ui/lib/whole-rows";
 
 /** What the open menu acts on: explicit threads, or a "select all N" scope. Set at right-click; rows never read it. */
 interface MenuTarget {
@@ -170,6 +171,16 @@ export function replyOpened(threadId: number, paneBefore: ReturnType<typeof getA
 const ROW_GAP = 4;
 
 /**
+ * Plan 160: where a short window has room for it on neither side of its row, the menu scrolls ending on a whole row, never
+ * cut mid-row. Read once it's placed (its height bounded by the window, --available-height), not per row.
+ */
+function wholeRows(menu: HTMLDivElement | null): (() => void) | void {
+  if (!menu) return;
+  let frame = requestAnimationFrame(() => (frame = requestAnimationFrame(() => menu.scrollHeight > menu.clientHeight + 1 && fitWholeRows(menu, "[role=menuitem]", true))));
+  return () => cancelAnimationFrame(frame);
+}
+
+/**
  * What the row menu stands by: the right-clicked row's height at the pointer's x, read once when it opens (a virtual
  * element: no row renders for it), and the list it scrolls in. A property bag, not module lets (React Compiler).
  */
@@ -231,7 +242,8 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
         }}
       />
       <ContextMenuContent
-        className="w-64"
+        ref={wholeRows}
+        className="relative w-64"
         data-testid="thread-menu"
         anchor={rowAnchor}
         side="bottom"

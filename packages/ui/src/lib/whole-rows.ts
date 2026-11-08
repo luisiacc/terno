@@ -28,15 +28,16 @@ function offsetWithin(el: HTMLElement, to: HTMLElement): number {
 /**
  * Fits a list in a fixed panel (the palette): no taller than its own maximum, nor than leaves --float-inset under the
  * panel, and ending on a whole row; `data-more` while rows wait below (the list must be its rows' offset parent).
+ * `own`: only its own maximum bounds it (a menu, whose positioner already keeps it inside the window).
  */
-export function fitWholeRows(list: HTMLElement, rows: string): void {
+export function fitWholeRows(list: HTMLElement, rows: string, own = false): void {
   list.style.maxHeight = ""
-  const panel = list.closest<HTMLElement>("[role=dialog]")
+  const panel = own ? null : list.closest<HTMLElement>("[role=dialog]")
   const style = getComputedStyle(list)
   const cap = parseFloat(style.maxHeight) || Infinity
   const top = panel ? parseFloat(getComputedStyle(panel).top) + list.offsetTop : list.getBoundingClientRect().top
   const below = panel ? panel.offsetHeight - list.offsetTop - list.offsetHeight : 0
-  const limit = Math.min(cap, innerHeight - FLOAT_INSET - below - top)
+  const limit = own ? cap : Math.min(cap, innerHeight - FLOAT_INSET - below - top)
   const spans = [...list.querySelectorAll<HTMLElement>(rows)].map((r) => {
     const top = offsetWithin(r, list)
     return { top, bottom: top + r.offsetHeight }
