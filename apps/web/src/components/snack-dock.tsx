@@ -10,9 +10,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { CircleCheck, OctagonX, TriangleAlert } from "@terno/ui/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAppearance } from "~/lib/appearance";
-import { clock, dismissSnack, elapsedAt, pause, resume, runAction, staleOnMove, useSnack, zHolds, type Snack, type SnackAction } from "~/lib/snack";
+import { clock, dockReserve, dismissSnack, elapsedAt, pause, resume, runAction, staleOnMove, useSnack, zHolds, type Snack, type SnackAction } from "~/lib/snack";
 import { useApp } from "~/state/app";
 import { listKey } from "~/state/list";
+import { READING_COLUMN } from "~/lib/pane-lines";
 
 /** The dock's card, for F6. */
 const dockRef: { current: HTMLDivElement | null } = { current: null };
@@ -262,7 +263,7 @@ export function SnackDock({ over }: { /** what it stands over: List's rows, or a
   useLayoutEffect(() => {
     const el = cardRef.current;
     if (!el) return;
-    const set = () => useSnack.setState({ inset: open ? Math.ceil(el.offsetHeight) + 16 : 0 });
+    const set = () => useSnack.setState({ inset: open ? dockReserve(el.offsetHeight) : 0 });
     set();
     if (!open) return;
     const ro = new ResizeObserver(set);
@@ -300,7 +301,7 @@ export function SnackDock({ over }: { /** what it stands over: List's rows, or a
   const spoken = current && !inert && hushed !== current.heard ? current.spoken : "";
   const alert = current?.tone === "error";
   return (
-    <section aria-label={t("snack.dock")} data-testid="snack-dock" data-over={overReader ? "reader" : "list"} style={{ "--dock-lift": `${lift}px` } as React.CSSProperties} className={cn("pointer-events-none absolute bottom-[calc(0.5rem+var(--dock-lift))] z-10 flex flex-col justify-end", overReader ? "@container inset-x-0" : "inset-x-2")}>
+    <section aria-label={t("snack.dock")} data-testid="snack-dock" data-over={overReader ? "reader" : "list"} style={{ "--dock-lift": `${lift}px` } as React.CSSProperties} className={cn("pointer-events-none absolute bottom-[calc(var(--float-inset)+var(--dock-lift))] z-10 flex flex-col justify-end", overReader ? "@container inset-x-0 pe-(--scrollbar-w)" : "inset-x-(--float-inset) items-center")}>
       <div role="status" aria-live="polite" aria-atomic className="sr-only" data-testid="snack-live">
         {!alert && spoken && <span key={current?.heard}>{spoken}</span>}
       </div>
@@ -308,10 +309,12 @@ export function SnackDock({ over }: { /** what it stands over: List's rows, or a
         {alert && spoken && <span key={current?.heard}>{spoken}</span>}
       </div>
       {/* what's under the dock dissolves into its pane: it reads as the pane's foot, not a card over it, across the whole
-          width (plan 158): a band the content ends at (and scrolls clear of), the card at its start */}
-      <div aria-hidden className={cn("pointer-events-none absolute -top-6 -bottom-2 bg-linear-to-t from-40% to-transparent transition-opacity duration-slow", overReader ? "inset-x-0 from-background" : "-inset-x-2 from-pane", open ? "opacity-100" : "opacity-0")} />
-      {/* over a conversation: on the reader's column, where its text starts (plan 158) */}
-      <div className={overReader ? "mx-auto w-full max-w-(--reader-max) px-(--reader-pad-x) @max-[420px]:px-4" : "contents"}>
+          width (plan 158): a band the conversation ends at (and scrolls clear of). Plan 160: List's rows end above the dock
+          (the list's viewport stops there), so nothing is under it to fade */}
+      {overReader && <div aria-hidden className={cn("pointer-events-none absolute -top-6 -bottom-(--float-inset) inset-x-0 bg-linear-to-t from-background from-40% to-transparent transition-opacity duration-slow", open ? "opacity-100" : "opacity-0")} />}
+      {/* over a conversation: centred on the reader's column (plan 160: the section keeps the scroller's gutter, as the
+          column's pane does); over List's rows, centred on the pane */}
+      <div className={overReader ? cn(READING_COLUMN, "flex justify-center") : "contents"}>
       <div
         ref={(el) => {
           cardRef.current = el;

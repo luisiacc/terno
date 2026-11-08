@@ -1,3 +1,4 @@
+import { FLOAT_INSET } from "@terno/ui/lib/float-inset";
 import { t } from "@terno/i18n";
 import type { ReactNode } from "react";
 import { create } from "zustand";
@@ -89,11 +90,14 @@ interface SnackState {
   paused: readonly PauseReason[];
   /** z's undo, until another replaces it */
   undo: Undo | null;
-  /** the dock's height plus its gaps while it shows: the list keeps that much room below its last row */
+  /** what the dock takes while it shows (dockReserve): the reader pads its scroll end by it, List's rows end above it */
   inset: number;
   /** what stands at the list's foot under the dock (the drafts strip) */
   lift: number;
 }
+
+/** Plan 160: the room a toast of this height takes at a pane's foot: the card and --float-inset on each side of it */
+export const dockReserve = (height: number): number => (height > 0 ? Math.ceil(height) + 2 * FLOAT_INSET : 0);
 
 export const useSnack = create<SnackState>(() => ({ current: null, last: null, countdown: { elapsed: 0, since: null }, paused: [], undo: null, inset: 0, lift: 0 }));
 

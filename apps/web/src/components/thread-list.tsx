@@ -51,10 +51,16 @@ import { listAnchor } from "~/state/list";
 import { SelectionBar } from "./selection-bar";
 import ActionPreviewHeader from "./action-preview-header";
 import { renderProbe } from "~/lib/render-probe";
+import { LIST_TITLE } from "~/lib/list-title";
+import { listCovered, usePage } from "~/lib/page";
 
 /** plan 87: the Inbox top's label and the gap after it (px; a row's height comes from the design) */
-/** What covers the list's last rows now: List's snack dock or pinned draft (Split's are over the reader, plan 158). */
-const listInset = (): number => (useAppearance.getState().layout === "list" ? bottomInset(useSnack.getState().inset, usePinned.getState().inset) : 0);
+/**
+ * What covers the list's last rows now: List's pinned draft (Split's is over the reader, plan 158). Plan 160: List's
+ * toast covers none, the list's viewport ends above it; the draft covers only what reaches past the toast's room.
+ */
+const pinnedOver = (snack: number, pinned: number): number => Math.max(0, bottomInset(snack, pinned) - snack);
+const listInset = (): number => (useAppearance.getState().layout === "list" ? pinnedOver(listCovered() ? 0 : useSnack.getState().inset, usePinned.getState().inset) : 0);
 
 const TOP_LABEL = 28;
 const EMPTY_GROUPS: readonly TodayGroup[] = [];
@@ -715,8 +721,8 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
     // every fill starts at 8 px, as a row's selection does; every line of text at 20 px, as a row's does
     <div ref={hairlineRef} data-testid="list-header" data-kind={kind} className="drag-region scroll-hairline @container shrink-0 pr-4 pb-1.5 pl-2">
       {oneRow ? (
-        <div inert={covered} className="flex h-[52px] min-w-0 items-center gap-3 pr-1.5 pl-3">
-          <h1 className={cn("min-w-0 max-w-[40cqw] truncate", kind === "title" ?"text-md font-semibold tracking-tight" : kind === "greeting" ? "type-greeting" : "type-list-title")} data-testid="list-title">
+        <div inert={covered} className="flex h-(--pane-bar) min-w-0 items-center gap-3 pr-1.5 pl-3">
+          <h1 className={cn("min-w-0 max-w-[40cqw] truncate", LIST_TITLE[kind])} data-testid="list-title">
             {title}
             {accountSuffix}
             {filterSuffix}
@@ -742,8 +748,8 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
           <div className="flex shrink-0 items-center gap-2 empty:hidden">{actions}</div>
         </div>
       ) : kind === "title" ? (
-        <div inert={covered} className="flex h-[52px] items-center gap-2 pr-1.5 pl-3">
-          <h1 className="min-w-0 flex-1 truncate text-md font-semibold tracking-tight" data-testid="list-title">
+        <div inert={covered} className="flex h-(--pane-bar) items-center gap-2 pr-1.5 pl-3">
+          <h1 className={cn("min-w-0 flex-1 truncate", LIST_TITLE.title)} data-testid="list-title">
             {title}
             {accountSuffix}
             {filterSuffix}
@@ -756,8 +762,8 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
       ) : (
         <>
           {/* on the reader toolbar's line */}
-          <div inert={covered} className="flex h-[52px] items-center gap-2 pr-1.5 pl-3">
-            <h1 className={cn("min-w-0 flex-1 truncate", kind === "greeting" ? "type-greeting" : "type-list-title")} data-testid="list-title">
+          <div inert={covered} className="flex h-(--pane-bar) items-center gap-2 pr-1.5 pl-3">
+            <h1 className={cn("min-w-0 flex-1 truncate", LIST_TITLE[kind])} data-testid="list-title">
               {title}
               {accountSuffix}
               {filterSuffix}
@@ -1041,7 +1047,11 @@ export function ThreadList() {
   // List's docked snackbar sits over the last rows: the list keeps room below them (scroll room, no row moves), and j/k
   // stop above it; so does List's pinned draft (plan 115). Split's are over the reader, never the rows (plan 158)
   const over = useAppearance((s) => s.layout === "list");
-  const dock = bottomInset(useSnack((s) => (over ? s.inset : 0)), usePinned((s) => (over ? s.inset : 0)));
+  // (a page over List's rows has the toast: the rows keep their viewport under it)
+  const page = usePage();
+  const toastOver = over && page === "list";
+  const toastRoom = useSnack((s) => (toastOver ? s.inset : 0));
+  const dock = pinnedOver(toastRoom, usePinned((s) => (over ? s.inset : 0)));
   const getItemKey = useCallback((i: number) => items[i]!.id, [items]);
   // plan 87: the Inbox's top (due reminders) under a "Reminders" label, a hairline gap before the rest
   const top = useMemo(() => {
@@ -1185,16 +1195,17 @@ export function ThreadList() {
     return () => ro.disconnect();
   }, []);
 
-  // the dock came up over the open thread's row: it moves up into view, once (after the padded spacer is in)
+  // the dock came up over the open thread's row, or the toast's room took it out of the viewport: it moves up into view,
+  // once (after the padded spacer is in)
   useEffect(() => {
     const el = parentRef.current;
     const id = getApp().selectedId;
     const i = id === null ? undefined : useList.getState().index.get(id);
-    if (!dock || !el || i === undefined) return;
+    if ((!dock && !toastRoom) || !el || i === undefined) return;
     const row = virtualizer.measurementsCache[i];
     const bottom = el.scrollTop + el.clientHeight;
-    if (row && row.end > bottom - dock && row.start < bottom) virtualizer.scrollToIndex(i, { align: "auto" });
-  }, [dock]);
+    if (row && row.end > bottom - dock && row.start < bottom + toastRoom) virtualizer.scrollToIndex(i, { align: "auto" });
+  }, [dock, toastRoom]);
 
   useEffect(() => {
     const [root, sentinel, header, section] = [parentRef.current, sentinelRef.current, headerRef.current, sectionRef.current];
@@ -1287,7 +1298,7 @@ export function ThreadList() {
       <LearnedSource />
       {learned.proposal && lead > 0 && <LearnedBanner proposal={learned.proposal} scroller={parentRef} />}
       <ThreadMenu>
-      <div ref={parentRef} data-keep-scroll="list" role={items.length > 0 ? "listbox" : "group"} tabIndex={items.length > 0 ? 0 : -1} onFocus={(e) => empty && e.target === e.currentTarget && leaveEmptyList()} aria-label={t("list.label")} aria-multiselectable={items.length > 0 ? true : undefined} className="@container/rows relative min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [contain:strict]">
+      <div ref={parentRef} data-keep-scroll="list" role={items.length > 0 ? "listbox" : "group"} tabIndex={items.length > 0 ? 0 : -1} onFocus={(e) => empty && e.target === e.currentTarget && leaveEmptyList()} aria-label={t("list.label")} aria-multiselectable={items.length > 0 ? true : undefined} className="@container/rows relative min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [contain:strict]" style={toastRoom ? { marginBottom: toastRoom } : undefined}>
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         {loading && items.length === 0 ? (
           <div className="space-y-3 p-4" style={lead ? { marginTop: lead } : undefined}>
