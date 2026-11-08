@@ -1,4 +1,5 @@
 import { savesRuleOnly } from "@terno/core";
+import type { ThreadSummary } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Checkbox } from "@terno/ui/components/checkbox";
@@ -11,6 +12,7 @@ import { AiProvenance } from "./ai-provenance";
 import { AiErrorNotice, aiErrorCopy, errorTarget } from "./ai-error";
 import { useEffect, type ReactNode } from "react";
 import { askTarget } from "~/lib/ai";
+import { listDate } from "~/lib/format";
 import { applyPreview, check, inboxOnly, includeSkipped, isDestructive, previewConsequence, previewCount, previewTitle, previewWaiting, showLeftOut, stopApplying, useActionPreview, verbOf } from "~/lib/action-preview";
 import { useAppearance } from "~/lib/appearance";
 import { LIST_TITLE } from "~/lib/list-title";
@@ -28,6 +30,29 @@ const Line = ({ children, testId }: { children: ReactNode; testId?: string }) =>
 );
 
 const Dot = () => <span aria-hidden>·</span>;
+
+/**
+ * Plan 162 (after ai162-r01): what the search found, from its rows, no model: who sent them (with how many), their dates and
+ * the accounts, so the batch can be checked at a glance before Apply. Only when every match is a row here.
+ */
+export function foundSummary(rows: readonly Pick<ThreadSummary, "fromName" | "fromEmail" | "lastDate" | "accountId">[], accountName: (id: number) => string, now = Date.now()): { from: string; dates: string | null; accounts: string | null } | null {
+  if (!rows.length) return null;
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const who = r.fromName || r.fromEmail;
+    counts.set(who, (counts.get(who) ?? 0) + 1);
+  }
+  const senders = [...counts].sort((a, b) => b[1] - a[1]);
+  const named = senders.slice(0, 4).map(([who, n]) => (n > 1 ? `${who} (${n})` : who));
+  const rest = senders.length - named.length;
+  const list = new Intl.ListFormat(getLocale(), { type: "conjunction" });
+  const from = list.format(rest > 0 ? [...named, t("action.found.more", { count: rest })] : named);
+  const dates = rows.map((r) => r.lastDate).filter((d) => d > 0);
+  const lo = dates.length ? listDate(Math.min(...dates), now) : null;
+  const hi = dates.length ? listDate(Math.max(...dates), now) : null;
+  const accounts = [...new Set(rows.map((r) => r.accountId))].map(accountName).filter(Boolean);
+  return { from, dates: lo && hi ? (lo === hi ? lo : t("action.found.range", { from: lo, to: hi })) : null, accounts: accounts.length > 1 ? list.format(accounts) : null };
+}
 
 /** "shipped, delivery or tracking", in the user's language: the words, and what joins them */
 const termParts = (terms: readonly string[]) => new Intl.ListFormat(getLocale(), { type: "disjunction" }).formatToParts(terms);
@@ -179,6 +204,7 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
   const accounts = useApp((s) => s.accounts);
   const folderName = useFolderName();
   const shown = useList((s) => s.items.length);
+  const items = useList((s) => s.items);
   if (!preview) return null;
   const { plan, count } = preview;
   const verb = verbOf(preview);
@@ -283,6 +309,24 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
           {provenance}
         </div>
       )}
+      {variant === "reader" && !waiting && !ruleOnly && items.length === count && count > 0 && (() => {
+        const found = foundSummary(items, (id) => { const a = accounts.find((x) => x.id === id); return a ? a.displayName || a.email : ""; });
+        if (!found) return null;
+        const lines = [{ label: t("action.found.from"), text: found.from }, ...(found.dates ? [{ label: t("action.found.dates"), text: found.dates }] : []), ...(found.accounts ? [{ label: t("action.found.accounts"), text: found.accounts }] : [])];
+        return (
+          <div data-testid="action-found">
+            <h3 className="text-sm font-medium text-foreground">{t("action.found.title")}</h3>
+            <dl className="mt-1.5 grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4 gap-y-2">
+              {lines.map((l) => (
+                <div key={l.label} className="contents">
+                  <dt className="text-muted-foreground">{l.label}</dt>
+                  <dd className="min-w-0 text-pretty wrap-anywhere" data-testid="action-found-line">{l.text}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        );
+      })()}
       {(plan.action.type === "createCategory" || preview.hidden || preview.forwards || preview.skipped > 0 || checking || checkError || preview.leftOut + preview.unchecked > 0 || (preview.keep.kind !== "hidden" && !ruleOnly)) && (
         <div className="hairline-t flex flex-col gap-1.5 pt-3">
           {plan.action.type === "createCategory" && <Line testId="action-creates">{t("action.creates", { name: plan.action.name })}</Line>}

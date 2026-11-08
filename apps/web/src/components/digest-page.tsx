@@ -259,7 +259,7 @@ export default function DigestPage() {
       )}
       {/* plan 162 (after ai162-r01): the decision, sticky at the pane's foot: what Archive will do, the reset, then Archive
           last, so the page reads, then acts (Archive led the page, darkest, before anything was read) */}
-      <footer className="sticky bottom-0 z-10 -mx-8 mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-hairline bg-background px-8 pt-3 pb-4" data-testid="digest-actions">
+      <footer className="sticky bottom-0 z-10 mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-hairline bg-background pt-3 pb-4" data-testid="digest-actions">
         {finished ? (
           <p role="status" className="me-auto text-sm" data-testid="digest-done">
             {t(automated ? "today.digest.archivedSelected" : "today.digest.archived", { count: done.count })}.

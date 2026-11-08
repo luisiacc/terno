@@ -154,6 +154,9 @@ test.describe("actions in plain English (plan 143)", () => {
       // the pattern is never in the rows, and a list of words has no exact search to show: it says nothing more
       await expect(rule.getByTestId("action-conditions")).not.toContainText("|");
       await expect(rule.getByTestId("action-details-toggle")).toHaveCount(0);
+      // and what it found, from the rows, to check before Apply: who sent them, and when
+      await expect(rule.getByTestId("action-found")).toContainText("What it found");
+      await expect(rule.getByTestId("action-found-line").first()).not.toBeEmpty();
       // checkboxes to assistive tech: the column's check, and the row's checked state (the cursor stays aria-selected)
       await expect(page.getByRole("checkbox", { name: /^Include / })).toHaveCount(2);
       await expect(page.getByRole("checkbox", { name: /^Include / }).first()).toHaveAttribute("aria-checked", "true");

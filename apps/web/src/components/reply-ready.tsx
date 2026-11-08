@@ -145,7 +145,8 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
           <>
             {/* the one R on screen (plan 161, pass 2). Plan 162 (after ai162-r01): its keycap in the button it presses; the
                 sentence beside it ("Press R to reply with this draft") said the button again */}
-            <Button size="sm" data-testid="reply-ready-use" aria-keyshortcuts="r" onClick={() => void useReply(threadId)}>
+            {/* the keycap in the button's own ink, outlined: the field's wash vanished on the primary's fill */}
+            <Button size="sm" data-testid="reply-ready-use" aria-keyshortcuts="r" className="[&_kbd]:bg-transparent [&_kbd]:text-current [&_kbd]:shadow-[inset_0_0_0_1px_color-mix(in_oklab,currentColor_45%,transparent)]" onClick={() => void useReply(threadId)}>
               {t("replies.use")}
               <Shortcut keys="r" className="ml-0.5" />
             </Button>
