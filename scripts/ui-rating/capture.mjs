@@ -207,8 +207,8 @@ async function aiPass(design, mode, dir) {
     await visible("compose-to");
     // a person the demo knows, picked from the suggestions as a person does: the line names them
     await page.keyboard.type(AI_INPUTS.followup.to);
-    await page.getByRole("option").filter({ hasText: AI_INPUTS.followup.to }).first().waitFor();
-    await page.keyboard.press("Enter");
+    await page.getByTestId("recipient-suggestion").filter({ hasText: AI_INPUTS.followup.to }).first().click();
+    await page.getByTestId("recipient-chip").filter({ hasText: AI_INPUTS.followup.to }).waitFor();
     await page.getByTestId("compose-subject").fill(AI_INPUTS.followup.subject);
     await page.getByTestId("compose-body").click();
     await page.keyboard.type(AI_INPUTS.followup.body);
@@ -249,6 +249,10 @@ async function aiPass(design, mode, dir) {
     if (net.problems.length) throw new Error(`requests outside the stub: ${net.problems.join("; ")}`);
     if (stub.unknown.length) throw new Error(`the stub was asked tasks it doesn't know: ${stub.unknown.join("; ")}`);
     console.log(`${design} ${mode}: ${net.ai} AI requests, all to the stub (${[...new Set(stub.tasks)].join(", ")})`);
+  } catch (error) {
+    // what the window showed when a state wasn't reached, beside the shots, for whoever reads the failure
+    await page.screenshot({ path: join(dir, `FAILED-${mode}.png`) }).catch(() => {});
+    throw error;
   } finally { await close(); }
 }
 
