@@ -176,8 +176,16 @@ test.describe("focus on one account", () => {
     expect((await rowIds(page)).every((id) => accountOfThread(server, id) === a)).toBe(true);
     if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/search-${test.info().project.name}.png` });
     await expect(page.getByTestId("solo-back")).toBeVisible();
+    // plan 158 (Codex review): another list, if only by its scope, makes a plain confirmation stale
+    await focusList(page);
+    await page.keyboard.press("e");
+    await expect(page.getByTestId("snack")).toContainText("Archived");
+    await page.keyboard.press("z");
+    await expect(page.getByTestId("snack")).toContainText("Restored");
 
     await page.getByTestId("solo-search-all").click();
+    // (well inside its own 2.5 s)
+    await expect(page.getByTestId("snack")).toHaveCount(0, { timeout: 1000 });
     await expect.poll(() => listFor(page)).toEqual(["inbox", a, null, null, null, word]);
     await expect.poll(async () => (await rowIds(page)).some((id) => accountOfThread(server, id) === b)).toBe(true);
     await expect(page.getByTestId("solo-back")).toHaveCount(0);

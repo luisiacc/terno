@@ -17,8 +17,29 @@ const CREATED = { archive: "list.learned.created.archive", trash: "list.learned.
 /** Its height: one line in every window, so the rows under it start where they always do (the list's first item) */
 export const LEARNED_H = 32;
 
-/** The offer shown, kept while the backend says the same one (counts change often: the list renders only when the offer does) */
-const useOffer = create<{ proposal: LearnedProposal | null }>(() => ({ proposal: null }));
+/**
+ * The offer shown, kept while the backend says the same one (counts change often: the list renders only when the offer
+ * does). Plan 158: `hushed` once it's been answered (×, or a rule made): no offer takes its place until the next launch
+ */
+const HUSH_KEY = "terno:learned-hushed";
+const useOffer = create<{ proposal: LearnedProposal | null; hushed: boolean }>(() => ({ proposal: null, hushed: readHush() }));
+function readHush(): boolean {
+  try {
+    return sessionStorage.getItem(HUSH_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+/** Answered, or not any more (Undo): kept for the session, a reload of the window included */
+function hush(on: boolean, proposal: LearnedProposal | null = null): void {
+  useOffer.setState({ proposal, hushed: on });
+  try {
+    if (on) sessionStorage.setItem(HUSH_KEY, "1");
+    else sessionStorage.removeItem(HUSH_KEY);
+  } catch {
+    // private mode: this window only
+  }
+}
 const setProposal = (p: LearnedProposal | null) => useOffer.setState((s) => (s.proposal?.key === p?.key && s.proposal?.support === p?.support ? s : { proposal: p }));
 
 /** Asks for the inbox's first learned-rule offer whenever the counts change; renders nothing (its own renders stay its own). */
@@ -26,21 +47,22 @@ export function LearnedSource() {
   const view = useApp((s) => s.view);
   const query = useApp((s) => s.query);
   const counts = useApp((s) => s.counts);
+  const hushed = useOffer((s) => s.hushed);
   useEffect(() => {
-    if (view !== "inbox" || query) return;
+    if (view !== "inbox" || query || hushed) return;
     let alive = true;
     void client.call("learning.proposals", {}).then((ps) => alive && setProposal(ps[0] ?? null)).catch(() => {});
     return () => {
       alive = false;
     };
-  }, [view, query, counts]);
+  }, [view, query, counts, hushed]);
   return null;
 }
 
 /** The offer to show: none in a search or another mailbox. */
 export function useLearnedProposal() {
   const here = useApp((s) => s.view === "inbox" && !s.query);
-  const proposal = useOffer((s) => s.proposal);
+  const proposal = useOffer((s) => (s.hushed ? null : s.proposal));
   return { proposal: here ? proposal : null, setProposal };
 }
 
@@ -49,9 +71,10 @@ export function useLearnedProposal() {
  * the rows as they scroll, its reason on hover. It lies over the room the list leaves above its first row, outside the
  * listbox (which holds only options), and follows the scroller's offset: a plain transform, not an animation, so it
  * holds with motion off. Its button says what it does: a rule for new mail, no mail touched, and Undo (or z) takes the
- * rule back and brings the offer back. The × is "not now": the offer doesn't come back.
+ * rule back and brings the offer back. The × is "not now", for the session (plan 158): one click and the line is gone,
+ * no other offer taking its place until the next launch; the same once a rule is made.
  */
-export function LearnedBanner({ proposal, setProposal, scroller }: { proposal: LearnedProposal; setProposal: (p: LearnedProposal | null) => void; scroller: RefObject<HTMLElement | null> }) {
+export function LearnedBanner({ proposal, scroller }: { proposal: LearnedProposal; scroller: RefObject<HTMLElement | null> }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -100,10 +123,7 @@ export function LearnedBanner({ proposal, setProposal, scroller }: { proposal: L
       titleProps={{ className: "font-normal text-muted-foreground" }}
       closeLabel={t("list.learned.notNow")}
       closeProps={{ "data-testid": "learned-dismiss" }}
-      onClose={() => {
-        setProposal(null);
-        void client.call("learning.dismiss", { key: proposal.key }).catch(() => {});
-      }}
+      onClose={() => hush(true)}
       actions={
         <>
           {/* a suggestion, not the screen's main action: the quiet button, its words in the ink */}
@@ -121,10 +141,10 @@ export function LearnedBanner({ proposal, setProposal, scroller }: { proposal: L
                 snack.error(error instanceof Error ? error.message : String(error));
                 return;
               }
-              setProposal(null);
+              hush(true);
               const undo = registerUndo(async () => {
                 await client.call("filters.delete", { id });
-                setProposal(proposal);
+                hush(false, proposal);
               });
               snack.success(t("list.learned.created"), { description: t(CREATED[proposal.action], { who: proposal.value }), action: { label: t("common.undo"), name: t("list.learned.undo", { who: proposal.value }), undo } });
             }}

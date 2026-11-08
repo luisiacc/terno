@@ -33,8 +33,6 @@ interface Props {
   compact: boolean;
   /** plan 24: List's full-width list, one line with the senders in a column (Gmail's); compact density is one line already */
   wide?: boolean;
-  /** List: nothing is open while the rows show, so the cursor is a place, not the selection's fill */
-  quietCursor?: boolean;
   showAccount: boolean;
   /** plan 22: the sender's icon may be asked for (never in spam) */
   icons: boolean;
@@ -57,7 +55,7 @@ interface Props {
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, quietCursor = false, showAccount, icons, layout, review = null, reminderTop = false, reminderEnd = false, match = null }: Props) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, reminderTop = false, reminderEnd = false, match = null }: Props) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -98,7 +96,6 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       height={height}
       compact={compact}
       wide={wide}
-      quietCursor={quietCursor}
       icons={icons}
       layout={layout}
       reminderTop={reminderTop}
@@ -163,11 +160,16 @@ function useOwed(thread: Pick<ThreadSummary, "id">, reminderTop?: boolean) {
   return { line: shows ? rowLine(owed) : null, dueAt: shows ? (mostUrgent(owed)?.dueAt ?? null) : null };
 }
 
-/** A cursor that marks a place, not a selection: an outline in the quiet ink (3:1 on every pane), the hover's fill inside */
-const CURSOR = "before:shadow-[inset_0_0_0_1.5px_var(--muted-foreground)]";
-
-/** The open row's rail: 2 px at the selection shape's leading edge, inset by its radius so it stays straight */
-export const RAIL = "pointer-events-none absolute top-[min(calc(var(--row-radius)+1px),30%)] bottom-[min(calc(var(--row-radius)+1px),30%)] left-2 w-0.5 rounded-full bg-row-rail group-data-many/list:hidden";
+/**
+ * Plan 158, one selection language. Every chosen row has the same fill (`ROW_SHAPE`, from 4 px: the gutter it leaves
+ * before the 20 px text line is the marks' column). The marks share that column, centred 12 px in: the open row's rail,
+ * the unread dot, a checked row's check, never two at once. What keys or a menu act on is outlined in the focus ring.
+ */
+export const ROW_SHAPE = "before:absolute before:inset-y-px before:right-2 before:left-1 before:rounded-(--row-radius)";
+/** j/k's place among several checked rows, and the row a menu is for: the focus ring, inside the shape */
+export const ROW_OUTLINE = "inset 0 0 0 2px var(--ring)";
+/** The open row's rail: 2 px on the marks' column, inset by the shape's radius so it stays straight */
+export const RAIL = "pointer-events-none absolute top-[min(calc(var(--row-radius)+1px),30%)] bottom-[min(calc(var(--row-radius)+1px),30%)] left-[11px] w-0.5 rounded-full bg-row-rail group-data-many/list:hidden";
 
 /** How far into its line a match may stand: near the start, so it shows whole on the narrowest row (a 1100 px window, an account beside it). */
 const LEAD = { own: 12, wide: 40 };
@@ -208,19 +210,20 @@ function RowDate({ thread, reminderTop, fallback, className, title }: { thread: 
   return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? reminderShort(dueAt) : fallback}</span>;
 }
 
-export function ThreadRowView({ thread, top, height, compact, wide, quietCursor = false, icons, layout, review, reminderTop, reminderEnd, selected, checked, included, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt }: ViewProps) {
+export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, reminderTop, reminderEnd, selected, checked, included, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt }: ViewProps) {
   const cats = thread.categoryIds.length ? categories.filter((c) => c.id !== inCategory && thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
-  /** the open thread's fill and ink: not List's cursor, which only marks a place */
-  const opened = selected && !quietCursor;
+  /** the open thread's fill, ink and rail: List's cursor too, the row Enter opens (plan 158: one look in both layouts) */
+  const opened = selected;
   /** one line: compact density, or a wide list */
   const line = compact || wide;
   /** where it lives when that isn't where mail usually is (Trash wins: trashed spam is in the trash) */
   const place = thread.inTrash ? "trash" : thread.inSpam ? "spam" : null;
 
   // plan 158: who, then what, then how it starts: sender and subject in the row's ink (the sender a step heavier), the
-  // preview and meta quiet. Unread reads first: a stronger sender and subject, and one dot
+  // preview and meta quiet. Unread reads first, by more than one cue: a stronger sender and subject, the dot (8 px), and
+  // its date in the ink at medium where a read row's is quiet
   const quiet = "text-muted-foreground";
   const from = (
     <span data-testid="row-from" className={cn("min-w-0 truncate", thread.unread ? "type-row-from-strong" : "type-row-from")}>
@@ -250,12 +253,13 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
       {keptTag}
     </>
   );
-  // a wide row has the room to name a category, not only to color it; narrower, its dot is the column
+  // a wide row names its category, never only colors it (plan 158): narrower, the account column goes first, and on the
+  // narrowest the name is shorter, not gone
   const wideCategory = wide && (
-    <span title={cats.map((c) => c.name).join(", ") || undefined} className="flex w-[5.5rem] items-center gap-1.5 @max-[58rem]/rows:w-[1.375rem]">
+    <span title={cats.map((c) => c.name).join(", ") || undefined} className="flex w-[5.5rem] items-center gap-1.5 @max-[46rem]/rows:w-16">
       {/* two at most in this slot: every name is in the title and said to a screen reader */}
       {dots.slice(0, 2)}
-      {cats[0] && <span aria-hidden className={cn("min-w-0 truncate text-xs @max-[58rem]/rows:hidden", quiet)}>{cats[0].name}</span>}
+      {cats[0] && <span aria-hidden data-testid="row-category" className={cn("min-w-0 truncate text-xs", quiet)}>{cats[0].name}</span>}
     </span>
   );
   // Apple Mail's "to which account" (plan 23): quiet text, at the end of the preview's line (a column of its own in a wide list, the first to go there when width is short, before the date in
@@ -268,7 +272,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
       className={cn(
         "flex min-w-0 shrink-0 items-center self-center text-xs",
         quiet,
-        wide ? "w-20 @max-[52rem]/rows:hidden" : line ? "max-w-[min(7rem,32%)]" : "ml-auto max-w-[min(8rem,40%)] pl-2",
+        wide ? "w-20 @max-[58rem]/rows:hidden" : line ? "max-w-[min(7rem,32%)]" : "ml-auto max-w-[min(8rem,40%)] pl-2",
       )}
     >
       {account.local !== undefined ? (
@@ -289,7 +293,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
         {listDate(reminder.dueAt)}
       </span>
     ) : (
-      <RowDate thread={thread} reminderTop={reminderTop} title={remindersList && reminder?.kind === "noReply" ? t("remind.noReplySuffix") : undefined} className={cn("text-xs tabular", thread.unread ? "text-foreground" : "text-muted-foreground")} fallback={remindersList && reminder ? reminderShort(reminder.dueAt) : listDate(thread.lastDate)} />
+      <RowDate thread={thread} reminderTop={reminderTop} title={remindersList && reminder?.kind === "noReply" ? t("remind.noReplySuffix") : undefined} className={cn("text-xs tabular", thread.unread ? "font-medium text-foreground" : "text-muted-foreground")} fallback={remindersList && reminder ? reminderShort(reminder.dueAt) : listDate(thread.lastDate)} />
     );
   // a small tag at the row's own scale: its line box is no taller than the subject's, so no line moves for it
   const draft = hasDraft && <span data-testid="row-draft" className="shrink-0 text-xs leading-none font-medium text-draft-foreground">{t("list.draft")}</span>;
@@ -325,14 +329,15 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
       />
     </span>
   );
-  // one mark in every design and layout: in the gutter, on the sender's line, never on an avatar. In the batch, a check
-  // takes the unread dot's place, centered where it is, moving nothing (the row's weight still says unread)
+  // one mark in every design and layout: on the marks' column (12 px into the row, 8 before the text), on the sender's
+  // line, never on an avatar. A check takes the dot's place, moving nothing (the row's weight still says unread); the open
+  // row's rail is its mark, so it has no dot (its weight says unread)
   const onSenderLine = line ? "top-1/2" : "top-[calc(var(--type-row-from-leading)/2)]";
   const dot =
     checked && included === undefined ? (
-      <Check aria-hidden data-testid="row-check" className={cn("absolute -left-[13px] size-[11px] -translate-y-1/2 text-row-selected-foreground [--icon-line:1.5px]", onSenderLine)} />
+      <Check aria-hidden data-testid="row-check" className={cn("absolute -left-[14px] size-3 -translate-y-1/2 text-row-selected-foreground [--icon-line:1.5px]", onSenderLine)} />
     ) : (
-      thread.unread && included === undefined && <span data-testid="row-unread-dot" className={cn("absolute -left-[11px] size-[7px] -translate-y-1/2 rounded-full bg-unread", onSenderLine)} />
+      thread.unread && included === undefined && <span data-testid="row-unread-dot" className={cn("absolute -left-[12px] size-2 -translate-y-1/2 rounded-full bg-unread", opened && "hidden group-data-many/list:block", onSenderLine)} />
     );
   // a three-line row's first line: its marks and date hold the right edge
   const firstLine = (
@@ -381,17 +386,17 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
       className={cn(
         "group/row absolute left-0 w-full cursor-default px-5 select-none",
         "flex flex-col justify-center",
-        // the selection is an inset, rounded shape (the design's radius)
-        "before:absolute before:inset-x-2 before:inset-y-px before:rounded-(--row-radius)",
+        // the selection is an inset, rounded shape (the design's radius), wider at the start for the marks' column
+        ROW_SHAPE,
         // classic rows: one hairline separator, hidden under the selection and above it (rows render in list order, so the next sibling is the next row)
         classic && "after:absolute after:right-4 after:bottom-0 after:left-5 after:h-(--hairline-w) after:bg-hairline [&:has(+[data-checked])]:after:hidden [&:has(+[data-cursor])]:after:hidden",
-        // plan 158: four states, four looks. Checked and open share the selection's fill; the open row alone has a rail at
-        // its leading edge (none while several are checked: the reader shows them, not it); the check marks the rest. A
-        // cursor that isn't either (List's, or outside several) is a place: the hover's fill inside an outline
-        opened || checked ? "text-row-selected-foreground before:bg-row-selected after:hidden" : selected ? cn("text-foreground before:bg-row-hover after:hidden", CURSOR) : "text-foreground hover:before:bg-row-hover",
+        // plan 158: one family. Open (List's cursor too) and checked share the selection's fill; the open row's mark is its
+        // rail (none while several are checked: the reader shows them, not it), a checked row's its check. Among several,
+        // a cursor outside them is only a place: the hover's fill, outlined once j/k moved it
+        opened || checked ? "text-row-selected-foreground before:bg-row-selected after:hidden" : "text-foreground hover:before:bg-row-hover",
         selected && !checked && "group-data-many/list:text-foreground group-data-many/list:before:bg-row-hover",
-        // among several, j/k's cursor is outlined too (the list says when; a click needs none)
-        selected && "group-data-keyed/list:before:shadow-[inset_0_0_0_1.5px_var(--muted-foreground)]",
+        // (ROW_OUTLINE, written out for the class scanner)
+        selected && "group-data-keyed/list:before:shadow-[inset_0_0_0_2px_var(--ring)]",
         reminderEnd && "after:hidden",
         // the check takes the gutter, and the content line moves over as one
         included !== undefined && "pl-10",
@@ -401,7 +406,8 @@ export function ThreadRowView({ thread, top, height, compact, wide, quietCursor 
       style={{ transform: `translateY(${top}px)`, height }}
     >
       {/* plan 158: the open row's mark, straight inside the selection's rounded edge; none while several are checked */}
-      {opened && <span aria-hidden data-testid="row-rail" className={RAIL} />}
+      {/* (a checked row's mark is its check, on the same column) */}
+      {opened && !checked && <span aria-hidden data-testid="row-rail" className={RAIL} />}
       {included !== undefined && (
         // the row is the option and `x` its key: this is for the pointer, and says nothing the row doesn't
         <CheckboxMark data-testid="row-include" checked={included} className="absolute top-1/2 left-5 -translate-y-1/2" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); toggleRow(thread.id); }} />

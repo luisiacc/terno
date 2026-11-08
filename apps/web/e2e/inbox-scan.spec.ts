@@ -5,7 +5,7 @@
  */
 import type { Locator } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, fresh, freshNoDrafts, pickFilter, rows, scenario, test, expectFilter } from "./fixtures";
+import { expect, focusList, fresh, freshNoDrafts, pickFilter, rows, scenario, searchBox, test, expectFilter } from "./fixtures";
 
 /** Whole rows at 1440x900 with a suggestion and no drafts, the plan's bar. */
 const WHOLE_ROWS = { lumen: 10, atelier: 10, macos: 12, graphite: 12, luma: 10 } as const;
@@ -191,8 +191,11 @@ test.describe("the filters and the suggestions", () => {
     await page.getByTestId("filter-option-attachments").click();
     await expectFilter(page, "attachments", "With attachments");
     expect(await shape()).toBe(before);
+    // plan 158: named where the place is, not only by the icon's fill
+    await expect(page.getByTestId("list-title-filter")).toHaveText("· With attachments");
     await page.getByTestId("filter-segment-all").click();
     await expectFilter(page, "all");
+    await expect(page.getByTestId("list-title-filter")).toHaveCount(0);
     expect(await shape()).toBe(before);
     expect((await box(header)).height).toBeGreaterThan(0);
   });
@@ -229,10 +232,16 @@ test.describe("the filters and the suggestions", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
   });
 
-  test("the rule offer: one quiet ×, and what it dismisses doesn't come back", async ({ app: page }) => {
+  test("the rule offer: one quiet ×, and the line is gone for the session, no other offer taking its place (plan 158)", async ({ app: page }) => {
     const banner = page.getByTestId("learned-banner");
     await expect(banner).toContainText("daily.morningbrew.com");
     await page.getByTestId("learned-dismiss").click();
+    await expect(banner).toHaveCount(0);
+    // the list changing (what asks for offers again) brings none back
+    await focusList(page);
+    await page.keyboard.press("e");
+    await expect(page.getByTestId("snack")).toContainText("Archived");
+    await page.waitForTimeout(500);
     await expect(banner).toHaveCount(0);
     await fresh(page);
     await expect(rows(page).first()).toBeVisible();
@@ -262,6 +271,38 @@ test.describe("the filters and the suggestions", () => {
     await expect(page.getByTestId("category-menu-review")).toHaveText(/^Review \d+ suggestions?$/);
     await page.getByTestId("category-menu-review").click();
     await expect(page.getByTestId("list-title")).toHaveText("Review · Facturas");
+    // plan 158: where you are is always shown. The line is a place like the rows under it: a target, highlighted while in it
+    expect((await box(line)).height).toBeGreaterThanOrEqual(24);
+    await expect(line).toHaveAttribute("aria-current", "page");
+    const current = page.locator("#app-sidebar [aria-current=page]");
+    await expect(current).toHaveCount(1);
+    // a search from Review is a search, of everything: nothing in the sidebar is where you are
+    await (await searchBox(page)).focus();
+    await page.keyboard.type("pago");
+    await expect(page.getByTestId("list-title")).toHaveText("Search");
+    await expect(page.getByTestId("search-stats")).toHaveCount(1);
+    await expect(current).toHaveCount(0);
+    // Esc back to the Review it was typed in; Esc again leaves Review for its category
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("list-title")).toHaveText("Review · Facturas");
+    await expect(line).toHaveAttribute("aria-current", "page");
+    // the field's help rows search too, and Esc comes back the same way (Codex review)
+    await (await searchBox(page)).focus();
+    await page.getByTestId("search-help-row").first().click();
+    await expect(page.getByTestId("list-title")).toHaveText("Search");
+    await page.getByTestId("search-input").press("Escape");
+    await expect(page.getByTestId("list-title")).toHaveText("Review · Facturas");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("list-title")).toContainText("Facturas");
+    await expect(page.getByTestId("list-title")).not.toContainText("Review");
+    await expect(page.getByTestId(`nav-category-${facturas}`)).toHaveAttribute("aria-current", "page");
+    // and a search from the Inbox: the Inbox isn't highlighted as if you were in it
+    await page.getByTestId("nav-inbox").click();
+    await expect(page.getByTestId("nav-inbox")).toHaveAttribute("aria-current", "page");
+    await (await searchBox(page)).focus();
+    await page.keyboard.type("pago");
+    await expect(page.getByTestId("list-title")).toHaveText("Search");
+    await expect(current).toHaveCount(0);
   });
 
   test.describe("Atelier's display title", () => {
@@ -299,9 +340,16 @@ test.describe("the filters and the suggestions", () => {
       await expect(page.getByTestId("quick-filter-all")).toHaveAttribute("aria-pressed", "true");
       await page.setViewportSize({ width: 1440, height: 900 });
     });
-    test("the title names the mailbox; the hello is the subtitle's first, quiet words", async ({ app: page }) => {
+    test("the title names the mailbox; the line under it says only what acts, each count its filter (plan 158)", async ({ app: page }) => {
       await expect(page.getByTestId("list-title")).toHaveText("Inbox");
-      await expect(page.getByTestId("list-subtitle")).toContainText(/^Good (morning|afternoon|evening) · /);
+      await expect(page.getByTestId("list-subtitle")).not.toContainText(/Good (morning|afternoon|evening)/);
+      const unread = page.getByTestId("unread-count");
+      await expect(unread).toHaveText(/^\d+ unread$/);
+      await unread.click();
+      await expect(unread).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByTestId("quick-filter-unread")).toHaveAttribute("aria-pressed", "true");
+      await unread.click();
+      await expect(page.getByTestId("quick-filter-all")).toHaveAttribute("aria-pressed", "true");
     });
   });
 });

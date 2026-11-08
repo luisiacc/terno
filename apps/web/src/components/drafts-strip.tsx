@@ -76,8 +76,10 @@ function DraftRow({ d }: { d: LocalDraft }) {
   const invalid = firstInvalid(d.toText) ?? firstInvalid(d.ccText) ?? firstInvalid(d.bccText);
   return (
     <button type="button" data-testid="strip-item" data-key={d.key} onClick={() => void openStoredDraft(d.key)} className={cn(ROW, "hover:before:bg-row-hover")}>
-      <PenLine className="relative size-3.5 shrink-0 text-muted-foreground" />
+      {/* plan 158: said as a row says it, the pen and a Draft tag in the draft ink: found at a glance, no louder than a row */}
+      <PenLine className="relative size-3.5 shrink-0 text-draft-foreground" />
       <span className="relative min-w-0 shrink truncate font-medium">{d.subject || t(d.mode === "new" ? "compose.untitled" : "common.noSubject")}</span>
+      <span aria-hidden data-testid="strip-item-tag" className="relative shrink-0 text-xs leading-none font-medium text-draft-foreground">{t("list.draft")}</span>
       <span className={cn("relative min-w-0 flex-1 truncate", invalid !== null ? "text-destructive-ink" : "text-muted-foreground")} data-testid="strip-item-recipients">
         {invalid !== null ? t("compose.strip.invalid", { entry: invalid }) : recipientsLine(d)}
       </span>

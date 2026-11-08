@@ -10,8 +10,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { CircleCheck, OctagonX, TriangleAlert } from "@terno/ui/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAppearance } from "~/lib/appearance";
-import { clock, dismissSnack, elapsedAt, pause, resume, runAction, useSnack, zHolds, type Snack, type SnackAction } from "~/lib/snack";
+import { clock, dismissSnack, elapsedAt, pause, resume, runAction, staleOnMove, useSnack, zHolds, type Snack, type SnackAction } from "~/lib/snack";
 import { useApp } from "~/state/app";
+import { listKey } from "~/state/list";
 
 /** The dock's card, for F6. */
 const dockRef: { current: HTMLDivElement | null } = { current: null };
@@ -185,7 +186,7 @@ function Row({ snack }: { snack: Snack }) {
 
 /** Is the dock out of reach: the web's blocking screen (#root inert), or a modal (Base UI hides everything outside it but live regions)? */
 function covered(card: HTMLElement | null): boolean {
-  return !!document.getElementById("root")?.inert || card?.getAttribute("aria-hidden") === "true";
+  return !!document.getElementById("root")?.inert || !!card?.closest("[aria-hidden=true]");
 }
 
 /**
@@ -205,12 +206,13 @@ function useWatchers(card: React.RefObject<HTMLDivElement | null>): boolean {
     const root = document.getElementById("root");
     const read = () => {
       setInert(!!root?.inert);
-      setModal(card.current?.getAttribute("aria-hidden") === "true");
+      // (the mark lands on the card's wrapper, its column, or on the card)
+      setModal(!!card.current?.closest("[aria-hidden=true]"));
     };
     read();
     const mo = new MutationObserver(read);
     if (root) mo.observe(root, { attributes: true, attributeFilter: ["inert"] });
-    if (card.current) mo.observe(card.current, { attributes: true, attributeFilter: ["aria-hidden"] });
+    if (card.current) for (const el of [card.current, card.current.parentElement]) if (el) mo.observe(el, { attributes: true, attributeFilter: ["aria-hidden"] });
     return () => {
       document.removeEventListener("visibilitychange", visibility);
       mo.disconnect();
@@ -222,13 +224,13 @@ function useWatchers(card: React.RefObject<HTMLDivElement | null>): boolean {
 }
 
 /**
- * The docked snackbar (plan 13): one snack at a time, embedded at the bottom
- * of the thread list, under menus and dialogs. Always mounted, so its live
+ * The docked snackbar (plan 13): one snack at a time, at the bottom of the
+ * pane that isn't being worked in (plan 158: Split's reader, List's one pane), under menus and dialogs. Always mounted, so its live
  * regions exist before any text arrives (and a modal's aria-hidden sweep
  * spares them: Base UI keeps [aria-live]). It never takes focus; F6 goes to
  * it, Esc there closes it.
  */
-export function SnackDock() {
+export function SnackDock({ over }: { /** what it stands over: List's rows, or a conversation (Split's reader, List's page) */ over: "list" | "reader" }) {
   const current = useSnack((s) => s.current);
   const last = useSnack((s) => s.last);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -236,8 +238,24 @@ export function SnackDock() {
   /** the snack focus came into */
   const focusedSeq = useRef<number | undefined>(undefined);
   const inert = useWatchers(cardRef);
-  // Split only: List's dock is narrower than the line, and a page over the list covers the strip anyway
-  const lift = useSnack((s) => s.lift);
+  // plan 158: Split's dock is over the reader; List's over its one pane, standing on the drafts strip while the list
+  // shows (a page over the list covers the strip)
+  // (List's rows: standing on the drafts strip at their foot)
+  const lift = useSnack((s) => (over === "list" ? s.lift : 0));
+  /** over a conversation or a new message (Split's reader, List's page): on its column, its background */
+  const overReader = over === "reader";
+  // a confirmation with nothing to offer is about the list it was said in: another one makes it stale (plan 158). The
+  // list's own identity, so every way to another list counts (a search's scope, a preview, a filter)
+  useEffect(() => {
+    let shownFor = listKey();
+    return useApp.subscribe(() => {
+      const key = listKey();
+      if (key === shownFor) return;
+      shownFor = key;
+      const c = useSnack.getState().current;
+      if (c && staleOnMove(c)) dismissSnack(c.id);
+    });
+  }, []);
 
   // the list keeps room for the dock below its last row
   const open = current !== null;
@@ -282,25 +300,30 @@ export function SnackDock() {
   const spoken = current && !inert && hushed !== current.heard ? current.spoken : "";
   const alert = current?.tone === "error";
   return (
-    <section aria-label={t("snack.dock")} data-testid="snack-dock" style={{ "--dock-lift": `${lift}px` } as React.CSSProperties} className="pointer-events-none absolute inset-x-2 bottom-[calc(0.5rem+var(--dock-lift))] z-10 flex flex-col justify-end in-data-[layout=list]:bottom-2">
+    <section aria-label={t("snack.dock")} data-testid="snack-dock" data-over={overReader ? "reader" : "list"} style={{ "--dock-lift": `${lift}px` } as React.CSSProperties} className={cn("pointer-events-none absolute bottom-[calc(0.5rem+var(--dock-lift))] z-10 flex flex-col justify-end", overReader ? "@container inset-x-0" : "inset-x-2")}>
       <div role="status" aria-live="polite" aria-atomic className="sr-only" data-testid="snack-live">
         {!alert && spoken && <span key={current?.heard}>{spoken}</span>}
       </div>
       <div role="alert" aria-live="assertive" aria-atomic className="sr-only" data-testid="snack-alert">
         {alert && spoken && <span key={current?.heard}>{spoken}</span>}
       </div>
-      {/* the rows dissolve into the pane under the dock: it reads as part of the list, not a card over it. In List, across
-          the whole width (plan 158): a band the rows end at, the card at its start where Split's column has it, never a card cut into one row */}
-      <div aria-hidden className={cn("pointer-events-none absolute -inset-x-2 -top-6 -bottom-2 bg-linear-to-t from-pane from-40% to-transparent transition-opacity duration-slow", open ? "opacity-100" : "opacity-0")} />
+      {/* what's under the dock dissolves into its pane: it reads as the pane's foot, not a card over it, across the whole
+          width (plan 158): a band the content ends at (and scrolls clear of), the card at its start */}
+      <div aria-hidden className={cn("pointer-events-none absolute -top-6 -bottom-2 bg-linear-to-t from-40% to-transparent transition-opacity duration-slow", overReader ? "inset-x-0 from-background" : "-inset-x-2 from-pane", open ? "opacity-100" : "opacity-0")} />
+      {/* over a conversation: on the reader's column, where its text starts (plan 158) */}
+      <div className={overReader ? "mx-auto w-full max-w-(--reader-max) px-(--reader-pad-x) @max-[420px]:px-4" : "contents"}>
       <div
         ref={(el) => {
           cardRef.current = el;
           dockRef.current = el;
         }}
+        data-snack-card
         data-testid={current ? "snack" : undefined}
         data-state={open ? "open" : "closed"}
         data-tone={shown?.tone}
+        // a new snack under a resting pointer runs (show() drops the old hover): moving over it holds it again
         onPointerEnter={() => current && pause("hover")}
+        onPointerMove={() => current && pause("hover")}
         onPointerLeave={() => resume("hover")}
         onFocus={(e) => {
           if (!focused.current) returnFocus = e.relatedTarget instanceof HTMLElement && !e.currentTarget.contains(e.relatedTarget) ? e.relatedTarget : null;
@@ -324,7 +347,7 @@ export function SnackDock() {
           dismissSnack(current.id);
         }}
         className={cn(
-          "snack-surface relative overflow-hidden rounded-xl transition-[opacity,translate,visibility] duration-slow ease-motion in-data-[layout=list]:w-[min(100%,30rem)]",
+          "snack-surface relative w-[min(100%,30rem)] overflow-hidden rounded-xl transition-[opacity,translate,visibility] duration-slow ease-motion",
           open ? "pointer-events-auto visible translate-y-0 opacity-100" : "invisible translate-y-1 opacity-0",
         )}
       >
@@ -333,6 +356,7 @@ export function SnackDock() {
             {shown.render ? shown.render() : <Row snack={shown} />}
           </div>
         )}
+      </div>
       </div>
     </section>
   );

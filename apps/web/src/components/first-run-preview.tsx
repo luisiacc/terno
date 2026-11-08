@@ -240,7 +240,6 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
             height={height}
             compact={compact}
             wide={wide}
-            quietCursor={wide}
             icons={false}
             layout={v.row}
             review={null}

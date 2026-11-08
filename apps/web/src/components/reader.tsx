@@ -903,9 +903,9 @@ function Thread({ detail, account, cats, summaryShown }: { detail: ThreadDetail;
 function ReaderContent() {
   const selectedId = useApp((s) => s.selectedId);
   const page = useAppearance((s) => s.layout === "list");
-  // List's page: the dock sits over the conversation's foot, so its end (the reply bar) scrolls clear of it
+  // the dock sits over the conversation's foot in either layout (plan 158: Split's too), so its end (the reply bar) scrolls clear of it
   // plan 115: and the pinned draft sits over its foot in either layout: the last message scrolls clear of the taller one
-  const dock = bottomInset(useSnack((s) => (page ? s.inset : 0)), usePinned((s) => s.inset));
+  const dock = bottomInset(useSnack((s) => s.inset), usePinned((s) => s.inset));
   const sectionRef = useRef<HTMLElement>(null);
   const destination = useRef({});
   useLayoutEffect(() => selectedId === null ? undefined : registerReaderFocusDestination(selectedId, destination.current), [selectedId]);

@@ -117,8 +117,8 @@ export function App() {
   const list = useAppearance((s) => s.layout) === "list";
   // keyed by draft: another pinned draft never inherits the last one's form state (revealed rows, recipient undo)
   const pinned = usePinned((s) => s.key);
-  // Split: a new message keeps its foot (the format bar) clear of the pinned draft
-  const composeInset = usePinned((s) => (!list && composing ? s.inset : 0));
+  // Split: a new message keeps its foot (the format bar) clear of the pinned draft, and of the dock (plan 158: it's over this pane)
+  const composeInset = bottomInset(useSnack((s) => (!list && composing ? s.inset : 0)), usePinned((s) => (!list && composing ? s.inset : 0)));
   const page = usePage();
   const covered = page !== "list";
   useEffect(() => installKeyboard(), []);
@@ -174,8 +174,9 @@ export function App() {
           </div>
           {list && page !== "list" && <PageLayer page={page} />}
           {/* plan 115: the pinned draft, over the list or its page, kept while other mail is read */}
-          {list && pinned && <PinnedDraft key={pinned} list />}
-          <SnackDock />
+          {list && pinned && <PinnedDraft key={pinned} overList={page === "list"} />}
+          {/* plan 158: toasts sit over the pane that isn't being worked in: List's one pane keeps room under its rows for it */}
+          {list && <SnackDock over={page === "list" ? "list" : "reader"} />}
         </section>
         {!list && (
           <main className="relative min-h-0" style={composeInset ? { paddingBottom: composeInset } : undefined}>
@@ -183,7 +184,9 @@ export function App() {
             <PaneBoundary area="reader" resetKey={selectedId} readerThreadId={!many && !composing ? selectedId : null}>
               {many ? <SelectionBar /> : composing ? <NewMessage /> : <Reader />}
             </PaneBoundary>
-            {pinned && <PinnedDraft key={pinned} list={false} />}
+            {pinned && <PinnedDraft key={pinned} overList={false} />}
+            {/* Split: over the reader's foot, never over the rows being triaged (the reader's end scrolls clear of it) */}
+            <SnackDock over="reader" />
           </main>
         )}
         {/* plan 21: the panes' edges, over the hairlines; List has no list|reader edge (its width is Split's, kept for it).

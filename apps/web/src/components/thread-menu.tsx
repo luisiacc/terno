@@ -61,6 +61,7 @@ import { renderProbe } from "~/lib/render-probe";
 import { isMac, scopeRows, selectAll } from "~/lib/select";
 import { openThread } from "~/lib/page";
 import { menuTargets } from "~/lib/selection";
+import { ROW_OUTLINE } from "./thread-row";
 import { openPrint } from "~/lib/print-open";
 import { useFolderRows } from "~/lib/account-folders";
 import { moveToFolder } from "~/lib/folder-move";
@@ -196,10 +197,9 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
           const row = Number(el.dataset.threadId);
           const target = targetFor(row);
           useMenuTarget.setState(target);
-          // the ring follows the row's inset, rounded selection shape. Plan 158: one row looks chosen at a time, so the open
-          // row, when it isn't what the menu is for, gives up its fill while the menu is up and keeps only its rail
-          const elsewhere = `[data-testid=thread-row][data-opened]:not([data-checked]):not([data-thread-id="${Math.trunc(row)}"])`;
-          setRule("menu-target", `${rowSelector([row], "::before")}{box-shadow:inset 0 0 0 2px var(--ring)}${elsewhere}{color:var(--foreground)}${elsewhere}::before{background:transparent}`);
+          // the ring follows the row's inset, rounded selection shape. Plan 158: what the menu is for is outlined in the focus
+          // ring, as j/k's place among several is; the open row keeps its fill and rail (it's still what the reader shows)
+          setRule("menu-target", `${rowSelector([row], "::before")}{box-shadow:${ROW_OUTLINE}}`);
         }}
       />
       <ContextMenuContent

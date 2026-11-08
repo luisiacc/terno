@@ -342,12 +342,16 @@
 :root[data-dragging] [role="listbox"] [data-thread-id]:not([aria-selected="true"], [data-checked]):hover {
   background-color: transparent;
 }
-/* a new message in the reader pane is what's open: the list's last open row is a row again (a tint still read as a second open item, plan 158); it answers the pointer as any row does */
+/* a new message in the reader pane is what's open: the list's last open row is a row again, fill and rail (half of the
+   open look read as a second open item, plan 158); it answers the pointer as any row does */
 [data-composing] [data-thread-id][data-cursor]:not(:hover)::before {
   background-color: transparent;
 }
 [data-composing] [data-thread-id][data-cursor] {
   color: var(--foreground);
+}
+[data-composing] [data-thread-id][data-cursor] [data-testid="row-rail"] {
+  display: none;
 }
 /* a removal's window: the remaining rows slide up into place */
 [data-reflow] [data-thread-id] {

@@ -120,6 +120,8 @@ function escape() {
   else if (s.actionPreview) leavePreview();
   else if (s.checked.size || s.scope) clearSelection();
   else if (s.query) focusSearch();
+  // plan 158: a category's Review is a place Esc leaves, for the category itself
+  else if (s.reviewCategoryId !== null) navigate({ categoryId: s.reviewCategoryId, accountId: null });
   else closeEmptySearch();
 }
 

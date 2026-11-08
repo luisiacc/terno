@@ -68,7 +68,7 @@ test.describe("the table (plan 158)", () => {
       expect(await size("row-snippet")).toBeLessThan(await size("row-subject"));
       expect((await box(row)).height).toBeLessThanOrEqual(40);
     });
-    await scenario("narrow, the same columns: the category's dot takes one fixed slot, so account and marks stay on one line", async () => {
+    await scenario("narrow, the same columns: the category's slot keeps its name (never a color alone), the account column gives way first", async () => {
       const row = rows(page).nth(3);
       const id = Number(await row.getAttribute("data-thread-id"));
       const all = sqlDb(server.backend.store).all<{ id: number }>("SELECT id FROM categories").map((c) => c.id);
@@ -82,6 +82,9 @@ test.describe("the table (plan 158)", () => {
       const dots = await row.locator("[data-cat-dot]").last().boundingBox();
       const marks = await row.getByTestId("row-marks").evaluate((el) => (el.children[0] as HTMLElement).getBoundingClientRect().right);
       expect(dots!.x + dots!.width).toBeLessThanOrEqual(marks + 0.5);
+      // plan 158: the name stays, the account goes
+      await expect(row.getByTestId("row-category")).toBeVisible();
+      await expect(row.getByTestId("account-label")).toBeHidden();
       await page.setViewportSize({ width: 1440, height: 900 });
     });
     await scenario("the header: with the filters in a menu, title, tabs, filter and search share one line", async () => {
@@ -107,14 +110,14 @@ test.describe("the table (plan 158)", () => {
       await b.click({ modifiers: ["ControlOrMeta"] });
       await expect(page.getByTestId("selection-count")).toHaveText("2 conversations selected");
       expect((await box(b)).y).toBe(before.y);
-      // plan 158: the cursor is a place, never mistaken for what's checked: outlined, on another fill, and no open row's rail
+      // plan 158: as in Split, a cursor outside what's checked is a place, never mistaken for it: another fill, no rail
+      // (outlined once j/k move it)
       await page.mouse.move(0, 0);
       const look = (l: Locator) => l.evaluate((el) => ({ fill: getComputedStyle(el, "::before").backgroundColor, ring: getComputedStyle(el, "::before").boxShadow }));
       const cursor = page.locator("[data-testid=thread-row][data-cursor]:not([data-checked])");
       const [c, k] = [await look(cursor), await look(b)];
-      expect(c.ring).not.toBe("none");
       expect(c.fill).not.toBe(k.fill);
-      await expect(page.getByTestId("row-rail")).toHaveCount(0);
+      await expect(page.getByTestId("row-rail")).toBeHidden();
       // what's under the toolbar can't be reached; a search ends the selection and takes the keys (the field behind a button opens)
       const covered = page.getByTestId("list-title").locator("xpath=ancestor::*[@inert]");
       await expect(covered).toHaveCount(1);

@@ -36,7 +36,7 @@ import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
 import { ThreadMenu } from "./thread-menu";
 import { DraftsStrip } from "./drafts-strip";
 import { ReviewAlwaysMenu } from "./review-actions";
-import { RAIL, ThreadRow } from "./thread-row";
+import { RAIL, ROW_SHAPE, ThreadRow } from "./thread-row";
 import { registerDesignAnchor, useDesign } from "~/lib/design";
 import { LEARNED_H, LearnedBanner, LearnedSource, useLearnedProposal } from "./learned-banner";
 import { ForwardQuestion } from "./forward-question";
@@ -52,8 +52,8 @@ import ActionPreviewHeader from "./action-preview-header";
 import { renderProbe } from "~/lib/render-probe";
 
 /** plan 87: the Inbox top's label and the gap after it (px; a row's height comes from the design) */
-/** What covers the list's last rows now: the snack dock, or List's pinned draft. */
-const listInset = (): number => bottomInset(useSnack.getState().inset, useAppearance.getState().layout === "list" ? usePinned.getState().inset : 0);
+/** What covers the list's last rows now: List's snack dock or pinned draft (Split's are over the reader, plan 158). */
+const listInset = (): number => (useAppearance.getState().layout === "list" ? bottomInset(useSnack.getState().inset, usePinned.getState().inset) : 0);
 
 const TOP_LABEL = 28;
 const EMPTY_GROUPS: readonly TodayGroup[] = [];
@@ -79,7 +79,7 @@ function DigestListRow({ thread, top, height }: { thread: ThreadSummary; top: nu
       data-testid="digest-row"
       onMouseDown={(e) => e.button === 0 && pressRow(DIGEST_ROW_ID, { meta: false, ctrl: false, shift: false })}
       onClick={() => releaseRow(DIGEST_ROW_ID)}
-      className={cn("group/row absolute left-0 flex w-full cursor-default items-center gap-2.5 px-5 select-none before:absolute before:inset-x-2 before:inset-y-px before:rounded-(--row-radius)", selected ? "text-row-selected-foreground before:bg-row-selected" : "hover:before:bg-row-hover")}
+      className={cn("group/row absolute left-0 flex w-full cursor-default items-center gap-2.5 px-5 select-none", ROW_SHAPE, selected ? "text-row-selected-foreground before:bg-row-selected" : "hover:before:bg-row-hover")}
       style={{ transform: `translateY(${top}px)`, height }}
     >
       {selected && <span aria-hidden className={RAIL} />}
@@ -319,6 +319,26 @@ useApp.subscribe((s, prev) => {
   if (useSearchOpen.getState().open && !s.query && (s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.followups !== prev.followups || s.today !== prev.today)) useSearchOpen.setState({ open: false });
 });
 
+/**
+ * Plan 158: a search typed in a category's Review is a search, of everything (as the palette's and the row menu's are);
+ * Esc out of it comes back to the Review it was typed in. Forgotten once the search ends or goes elsewhere.
+ */
+const searchFrom: { review: number | null } = { review: null };
+useApp.subscribe((s, prev) => {
+  if (searchFrom.review !== null && (!s.query.trim() || s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || s.reminders || s.followups || s.today)) searchFrom.review = null;
+});
+
+/** What the field types into the app: from a Review, a search of everything. */
+function typeQuery(q: string): void {
+  const review = getApp().reviewCategoryId;
+  const back = searchFrom.review;
+  if (review !== null && q.trim()) {
+    setApp({ query: q, reviewCategoryId: null });
+    searchFrom.review = review;
+  } else if (back !== null && !q.trim() && getApp().categories.some((c) => c.id === back)) setApp({ query: q, reviewCategoryId: back });
+  else setApp({ query: q });
+}
+
 /** "/" and ⌘F: the search field, opened first where the design keeps it behind a button. */
 export function focusSearch(): void {
   if (!searchInputRef.current) flushSync(() => useSearchOpen.setState({ open: true }));
@@ -330,7 +350,7 @@ export function focusSearch(): void {
 /** The search button: opens the field, or, while it shows, clears the query and closes it. */
 function toggleSearch(): void {
   if (!searchInputRef.current) return focusSearch();
-  if (getApp().query) setApp({ query: "" });
+  if (getApp().query) typeQuery("");
   useSearchOpen.setState({ open: false });
 }
 
@@ -363,7 +383,7 @@ export function skipToList(): void {
  */
 function leaveSearch(field: HTMLInputElement): void {
   field.blur();
-  if (getApp().query) setApp({ query: "" });
+  if (getApp().query) typeQuery("");
   closeEmptySearch();
   focusRows();
 }
@@ -405,7 +425,7 @@ function ListSearch() {
         fieldClassName="h-[30px] bg-tint text-sm dark:bg-tint focus-visible:ring-2"
         onValueChange={(q) => {
           setHelp(false);
-          setApp({ query: q });
+          typeQuery(q);
         }}
         clearOnEscape={false}
         onKeyDown={(e) => {
@@ -435,7 +455,7 @@ function ListSearch() {
             leaveSearch(searchInputRef.current);
           }}
         >
-          <SearchHelp onPick={(text) => { setHelp(false); setApp({ query: text }); searchInputRef.current?.focus(); }} scope={soloName === null ? t("search.help.scope") : t("search.help.scopeIn", { account: soloName })} />
+          <SearchHelp onPick={(text) => { setHelp(false); typeQuery(text); searchInputRef.current?.focus(); }} scope={soloName === null ? t("search.help.scope") : t("search.help.scopeIn", { account: soloName })} />
         </div>
       )}
     </div>
@@ -499,15 +519,10 @@ function useDayPart(): DayPart {
   return now;
 }
 
-/** Lumen's hello: the first words of the Inbox's subtitle; they go first when the column is narrow, so the counts stay whole. */
-function Greeting() {
-  const part = useDayPart();
-  return (
-    <span data-testid="list-greeting" className="hidden @[22rem]:inline">
-      {t(part === "morning" ? "list.greeting.morningPlain" : part === "afternoon" ? "list.greeting.afternoonPlain" : "list.greeting.eveningPlain")}
-      <span aria-hidden> · </span>
-    </span>
-  );
+/** The waiting count's window follows the clock (its day-part boundaries, the window coming back); nothing drawn. */
+function CountsClock() {
+  useDayPart();
+  return null;
 }
 
 /**
@@ -522,7 +537,10 @@ function useWaitingCount(): number | null {
   });
 }
 
-/** Under a display title: what's unread here; the greeting's adds its hello and what waits for your reply. */
+/** A count under the title that is also its filter: BoardUI's secondary link button, at the line's own size. */
+const COUNT_LINK = "no-drag align-baseline text-[length:inherit] leading-[inherit] font-normal text-muted-foreground hover:text-foreground aria-pressed:text-foreground aria-pressed:underline";
+
+/** Under a display title: what's unread here; the greeting's adds what waits for your reply. */
 function Subtitle({ filter, greeting }: { filter: QuickFilter | undefined; greeting: boolean }) {
   const unread = useApp((s) =>
     s.reviewCategoryId !== null
@@ -544,9 +562,20 @@ function Subtitle({ filter, greeting }: { filter: QuickFilter | undefined; greet
   return (
     <p data-testid="list-subtitle" className="type-list-subtitle flex min-w-0 items-center gap-1 text-muted-foreground tabular">
       <span className="min-w-0 truncate">
-      {greeting && <Greeting />}
-      {/* plan 158: the mail leads, not a count about it: the same quiet ink as the rest of the line */}
-      {unread > 0 && <span>{t("list.unreadCount", { count: unread })}</span>}
+      {greeting && <CountsClock />}
+      {/* plan 158: the line says only what can be acted on, and each count does it: what's unread shows it (Unread), what
+          waits for you shows that (Waiting). The same quiet ink as the rest; on, underlined in the ink */}
+      {unread > 0 && (
+        <Button
+          variant="link-secondary"
+          data-testid="unread-count"
+          aria-pressed={filter === "unread"}
+          className={COUNT_LINK}
+          onClick={() => setListFilter(filter === "unread" ? undefined : "unread")}
+        >
+          {t("list.unreadCount", { count: unread })}
+        </Button>
+      )}
       {unread > 0 && waiting > 0 && <span aria-hidden> · </span>}
       {waiting > 0 && (
         // a link button (BoardUI's secondary link) that shows what it says: on, it stays underlined in the ink, its chip beside
@@ -554,7 +583,7 @@ function Subtitle({ filter, greeting }: { filter: QuickFilter | undefined; greet
           variant="link-secondary"
           data-testid="waiting-count"
           aria-pressed={filter === "waiting"}
-          className="no-drag align-baseline text-[length:inherit] leading-[inherit] font-normal text-muted-foreground hover:text-foreground aria-pressed:text-foreground aria-pressed:underline"
+          className={COUNT_LINK}
           onClick={() => setListFilter(filter === "waiting" ? undefined : "waiting")}
         >
           {t("list.waitingCount", { count: waiting })}
@@ -636,10 +665,11 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
           <TooltipTrigger
             render={
               // the mail's own action in words, where the row has them: a raised button, not a loud one
-              <Button data-testid="compose-button" variant="outline" size="sm" aria-label={t("compose.newMessage")} className="no-drag shrink-0 @max-[20rem]:aspect-square @max-[20rem]:px-0" onClick={() => openCompose("new")}>
+              // plan 158: under 25rem (a 1100 px window) its words go first, so the title is never what's cut ("In…")
+              <Button data-testid="compose-button" variant="outline" size="sm" aria-label={t("compose.newMessage")} className="no-drag shrink-0 @max-[25rem]:aspect-square @max-[25rem]:px-0" onClick={() => openCompose("new")}>
                 <SquarePen />
                 {/* plan 158: the same in a search: the header keeps its shape, only the title changes */}
-                <span className="@max-[20rem]:hidden">{t("compose.newMessage")}</span>
+                <span className="@max-[25rem]:hidden">{t("compose.newMessage")}</span>
               </Button>
             }
           />
@@ -665,6 +695,11 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
   const underField = !oneRow && kind === "title" && !!query && ((searchMs !== null && found) || !!searchAll);
   // (the compact title row leaves it to "Search all accounts": beside the stats it would only truncate)
   const accountSuffix = account && (!searching || (soloSearch && kind !== "title")) && <span className="ml-1.5 text-sm font-normal tracking-normal text-muted-foreground not-italic">· {account.displayName}</span>;
+  // plan 158: a filter behind More filters is named where the place is, as an account is (Unread says so on its segment,
+  // and in a display title's count): the title keeps its own words, the name is what truncates
+  const filterSuffix = filter && filter !== "unread" && quick === "menu" && !review && !reminders && (
+    <span data-testid="list-title-filter" className="ml-1.5 text-sm font-normal tracking-normal text-muted-foreground not-italic">· {filterName(filter)}</span>
+  );
 
   return (
     // every fill starts at 8 px, as a row's selection does; every line of text at 20 px, as a row's does
@@ -675,6 +710,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
           <h1 className={cn("min-w-0 max-w-[40cqw] truncate", inlineTabs && !account ? "sr-only" : kind === "title" ? "text-md font-semibold tracking-tight" : kind === "greeting" ? "type-greeting" : "type-list-title")} data-testid="list-title">
             {title}
             {accountSuffix}
+            {filterSuffix}
           </h1>
           {query && (searchMs !== null || searchAll) ? (
             <p className="flex shrink-0 items-center gap-2">
@@ -686,6 +722,8 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
           )}
           {/* what the row leaves goes to the tabs, then to nothing: the controls keep the right edge */}
           <div className="flex min-w-0 flex-1 items-center">{inlineTabs && <ListTabs inline />}</div>
+          {/* the tabs name the place, so the filter is named beside its control */}
+          {inlineTabs && !account && filter && filter !== "unread" && <span data-testid="list-filter-name" className="shrink-0 truncate text-xs text-muted-foreground">{filterName(filter)}</span>}
           {filterControl}
           {showField && (
             <div className="w-[clamp(14.5rem,24cqw,20rem)] shrink-0">
@@ -699,6 +737,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
           <h1 className="min-w-0 flex-1 truncate text-md font-semibold tracking-tight" data-testid="list-title">
             {title}
             {accountSuffix}
+            {filterSuffix}
           </h1>
           {/* none found: said here, shown by the list */}
           {!underField && stats}
@@ -712,6 +751,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
             <h1 className={cn("min-w-0 flex-1 truncate", kind === "greeting" ? "type-greeting" : "type-list-title")} data-testid="list-title">
               {title}
               {accountSuffix}
+              {filterSuffix}
             </h1>
             {filterControl}
             <div className="flex shrink-0 items-center gap-0.5 empty:hidden">{actions}</div>
@@ -850,7 +890,7 @@ function UnreadEmptyState({ filter }: { filter: QuickFilter }) {
       </Button>
       {search && (
         <div className="-mx-2 mt-4">
-          <SearchHelp around={query} onPick={(text) => { setApp({ query: text }); searchInputRef.current?.focus(); }} />
+          <SearchHelp around={query} onPick={(text) => { typeQuery(text); searchInputRef.current?.focus(); }} />
         </div>
       )}
     </div>
@@ -913,7 +953,7 @@ function EmptyState() {
       <div className="flex flex-col px-3 pt-3" data-testid="list-empty">
         <p className="px-2 text-md font-semibold tracking-tight [overflow-wrap:anywhere]">{t("list.empty.searchTitle", { query: query.trim() })}</p>
         <div className="mt-3">
-          <SearchHelp around={query} onPick={(text) => { setApp({ query: text }); searchInputRef.current?.focus(); }} />
+          <SearchHelp around={query} onPick={(text) => { typeQuery(text); searchInputRef.current?.focus(); }} />
         </div>
         {coverage && <CoverageNote className="hairline-t mx-2 mt-2 pt-2" />}
       </div>
@@ -972,10 +1012,10 @@ export function ThreadList() {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const pressing = useRef(false);
 
-  // the docked snackbar sits over the last rows: the list keeps room below them, and j/k stop above it;
-  // so does List's pinned draft (plan 115; Split's is over the reader, not the list)
-  const pinnedOver = useAppearance((s) => s.layout === "list");
-  const dock = bottomInset(useSnack((s) => s.inset), usePinned((s) => (pinnedOver ? s.inset : 0)));
+  // List's docked snackbar sits over the last rows: the list keeps room below them (scroll room, no row moves), and j/k
+  // stop above it; so does List's pinned draft (plan 115). Split's are over the reader, never the rows (plan 158)
+  const over = useAppearance((s) => s.layout === "list");
+  const dock = bottomInset(useSnack((s) => (over ? s.inset : 0)), usePinned((s) => (over ? s.inset : 0)));
   const getItemKey = useCallback((i: number) => items[i]!.id, [items]);
   // plan 87: the Inbox's top (due reminders) under a "Reminders" label, a hairline gap before the rest
   const top = useMemo(() => {
@@ -1206,7 +1246,7 @@ export function ThreadList() {
       {/* under tabs the rows are what they control (tabpanel); the listbox is one Tab stop and restores focus when a page closes */}
       <div className="relative flex min-h-0 flex-1 flex-col" {...(tabs ? { role: "tabpanel", id: TAB_PANEL_ID, "aria-labelledby": `list-tab-${tab}` } : {})}>
       <LearnedSource />
-      {learned.proposal && lead > 0 && <LearnedBanner proposal={learned.proposal} setProposal={learned.setProposal} scroller={parentRef} />}
+      {learned.proposal && lead > 0 && <LearnedBanner proposal={learned.proposal} scroller={parentRef} />}
       <ThreadMenu>
       <div ref={parentRef} data-keep-scroll="list" role={items.length > 0 ? "listbox" : "group"} tabIndex={items.length > 0 ? 0 : -1} onFocus={(e) => empty && e.target === e.currentTarget && leaveEmptyList()} aria-label={t("list.label")} aria-multiselectable={items.length > 0 ? true : undefined} className="@container/rows relative min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [contain:strict]">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
@@ -1236,7 +1276,7 @@ export function ThreadList() {
             ))}
             {virtualItems.map((v) => (
               items[v.index]!.id === DIGEST_ROW_ID ? <DigestListRow key={v.key} thread={items[v.index]!} top={v.start} height={height} /> :
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} quietCursor={list} showAccount={showAccount} icons={icons} layout={layout} review={review} reminderTop={v.index < top} reminderEnd={topGap > 0 && v.index === top - 1} match={match} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} reminderTop={v.index < top} reminderEnd={topGap > 0 && v.index === top - 1} match={match} />
             ))}
           </div>
         )}

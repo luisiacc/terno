@@ -314,8 +314,11 @@ function ReviewLine({ categories, suggestions, reviewing }: { categories: readon
       data-testid="nav-review"
       data-count={total}
       data-active={reviewing || undefined}
+      aria-current={reviewing ? "page" : undefined}
       onClick={() => navigate({ view: "all", reviewCategoryId: to, accountId: null })}
-      className="-mt-0.5 mb-1 flex max-w-full items-center rounded-sm px-2 text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring data-active:text-foreground"
+      // plan 158: a place like the rows under it (a 24 px target, their hover, their highlight while you're in it), set
+      // quieter as their heading's line
+      className="-mt-0.5 mb-0.5 flex h-6 w-full items-center rounded-(--nav-radius) px-2 text-left text-xs text-muted-foreground outline-none hover:bg-sidebar-hover hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground"
     >
       <span className="min-w-0 truncate">{t("sidebar.reviewAll", { count: total })}</span>
     </button>
@@ -346,7 +349,8 @@ function FavoriteRows() {
   const folders = useApp((s) => s.folders);
   const counts = useApp((s) => s.counts);
   // where you are, as primitives (an object would re-render this on every change of the store)
-  const plain = useApp((s) => s.accountId !== null && s.reviewCategoryId === null && s.categoryId === null && s.gmailTab === null && !s.reminders && !s.followups && !s.today && !s.followups);
+  // (plan 158: a search is nowhere in the sidebar: it looks everywhere)
+  const plain = useApp((s) => s.accountId !== null && s.reviewCategoryId === null && s.categoryId === null && s.gmailTab === null && !s.reminders && !s.followups && !s.today && s.query.trim() === "");
   const hereAccount = useApp((s) => s.accountId);
   const hereFolder = useApp((s) => s.folder);
   const hereView = useApp((s) => s.view);
@@ -1134,6 +1138,7 @@ const AccountEntry = memo(function AccountEntry({
  */
 function SoloSidebar({ account: a, countTone }: { account: Account; countTone: "muted" | "unread" }) {
   const view = useApp((s) => s.view);
+  const searching = useApp((s) => s.query.trim() !== "");
   const categoryId = useApp((s) => s.categoryId);
   const ownFolder = useApp((s) => s.folder);
   const gmailTab = useApp((s) => s.gmailTab);
@@ -1146,9 +1151,9 @@ function SoloSidebar({ account: a, countTone }: { account: Account; countTone: "
   const tabUnread = useMemo(() => ({ promotions: counts.tabUnread?.[tabRef(a.id, "promotions")] ?? 0, social: counts.tabUnread?.[tabRef(a.id, "social")] ?? 0 }), [counts.tabUnread, a.id]);
   const viewUnread = useMemo(() => ({ archive: counts.viewUnread?.[viewRef(a.id, "archive")] ?? 0, spam: counts.viewUnread?.[viewRef(a.id, "spam")] ?? 0 }), [counts.viewUnread, a.id]);
   const [renaming, setRenaming] = useState(false);
-  const ownActive = ownFolder !== null && rows.some((r) => r.key === ownFolder);
-  // a category in the account is its list there: no row of its own, so none is selected
-  const active = ownFolder === null && gmailTab === null && categoryId === null ? view : null;
+  const ownActive = ownFolder !== null && rows.some((r) => r.key === ownFolder) && !searching;
+  // a category in the account is its list there: no row of its own, so none is selected; nor is one during a search
+  const active = ownFolder === null && gmailTab === null && categoryId === null && !searching ? view : null;
   return (
     <>
       {/* the back row and the title share the account's menu: ⇧F10 on the back row opens it */}
@@ -1202,7 +1207,7 @@ function SoloSidebar({ account: a, countTone }: { account: Account; countTone: "
         unread={unread}
         countTone={countTone}
         tabs={tabs}
-        activeTab={tabs ? gmailTab : null}
+        activeTab={tabs && !searching ? gmailTab : null}
         tabUnread={tabUnread}
         viewUnread={viewUnread}
       />
@@ -1219,6 +1224,8 @@ export function Sidebar() {
   const dueReminders = useReminders((s) => s.due);
   const inFollowups = useApp((s) => s.followups);
   const inToday = useApp((s) => s.today);
+  // plan 158: a search is the list's, across every place: nothing here is where you are while it shows
+  const searching = useApp((s) => s.query.trim() !== "");
   // plan 145: no provider, no row, no list and no work; and never for an app that's still reading its settings
   const todayShown = useApp(todayOffered);
   const todayTip = usePendingTip("today-first") !== null;
@@ -1286,7 +1293,7 @@ export function Sidebar() {
   };
 
   // the folder you're in at the top: none in a category or its suggestions (both are "all" underneath), none inside an account (plan 67)
-  const folderView = accountId === null && categoryId === null && reviewCategoryId === null && !inReminders && !inToday ? view : null;
+  const folderView = accountId === null && categoryId === null && reviewCategoryId === null && !inReminders && !inToday && !searching ? view : null;
   const folder = ({ view: v, icon: Icon, keys }: (typeof VIEWS)[number]) => (
     <NavItem
       key={v}
@@ -1325,7 +1332,7 @@ export function Sidebar() {
       {todayShown && (
         <NavItem
           testId="nav-today"
-          active={inToday}
+          active={inToday && !searching}
           onClick={() => navigate({ today: true })}
           icon={<Sun className="size-(--icon-nav)" />}
           label={t("today.title")}
@@ -1342,7 +1349,7 @@ export function Sidebar() {
         reminders={
           <NavItem
             testId="nav-reminders"
-            active={inReminders}
+            active={inReminders && !searching}
             onClick={() => navigate({ reminders: true })}
             icon={<Bell className="size-(--icon-nav)" />}
             label={t("view.reminders")}
@@ -1355,7 +1362,7 @@ export function Sidebar() {
           followupsOn ? (
             <NavItem
               testId="nav-followups"
-              active={inFollowups}
+              active={inFollowups && !searching}
               onClick={() => navigate({ followups: true })}
               icon={<ListChecks className="size-(--icon-nav)" />}
               label={t("followups.title")}
@@ -1389,7 +1396,7 @@ export function Sidebar() {
                 testId={`nav-category-${c.id}`}
                 dropTarget={c.id}
                 // categories are cross-account: inside an account, a category tab is a filter of its Inbox (plan 67)
-                active={categoryId === c.id && reviewCategoryId === null && accountId === null}
+                active={categoryId === c.id && reviewCategoryId === null && accountId === null && !searching}
                 onClick={() => navigate({ categoryId: c.id, accountId: null })}
                 icon={<CategoryDot color={c.color as CategoryColor} />}
                 label={c.name}
@@ -1447,16 +1454,16 @@ export function Sidebar() {
               account={a}
               open={openAccount === a.id}
               // where you are, only for the account it's in: the others' props stay the same, so they don't render
-              here={accountId === a.id && reviewCategoryId === null && !favoriteHere}
-              view={accountId === a.id ? view : null}
+              here={accountId === a.id && reviewCategoryId === null && !favoriteHere && !searching}
+              view={accountId === a.id && !searching ? view : null}
               inCategory={accountId === a.id && categoryId !== null}
-              ownFolder={accountId === a.id ? ownFolder : null}
+              ownFolder={accountId === a.id && !searching ? ownFolder : null}
               folders={folders}
               unread={counts.inboxUnreadByAccount[a.id]}
               // only the open account's folders show counts; its own slice, the same object while nothing in it moved
               folderUnread={openAccount === a.id ? unreadByAccount.get(a.id) : undefined}
               countTone={design.surfaces.inboxCount}
-              gmailTab={accountId === a.id ? gmailTab : null}
+              gmailTab={accountId === a.id && !searching ? gmailTab : null}
               promotionsUnread={counts.tabUnread?.[tabRef(a.id, "promotions")] ?? 0}
               socialUnread={counts.tabUnread?.[tabRef(a.id, "social")] ?? 0}
               archiveUnread={counts.viewUnread?.[viewRef(a.id, "archive")] ?? 0}

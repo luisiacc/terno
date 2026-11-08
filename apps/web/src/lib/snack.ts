@@ -170,12 +170,23 @@ function show(input: SnackInput & { render?: () => ReactNode }): string {
   // (one with a lifetime has no result coming under its id)
   if (s.current?.tone === "loading" && s.current.duration === Infinity) displaced.add(s.current.id);
   const current: Snack = { ...rest, id, seq: ++seq, tone, duration: durationOf(input), spoken: spokenOf(input), heard: ++heard, news };
-  useSnack.setState({ current, last: current, countdown: fresh(s.paused) });
+  // plan 158: a hover held the snack it was over, not the next: one that comes under a resting pointer (Undo's
+  // "Restored", after a click on Undo) runs out, and the pointer moving over it holds it again (the dock's pointermove)
+  const paused = s.paused.filter((r) => r !== "hover");
+  useSnack.setState({ current, last: current, paused, countdown: fresh(paused) });
   schedule();
   return id;
 }
 
 type Options = Omit<SnackInput, "message" | "tone">;
+
+/**
+ * Plan 158: a snack that only says something happened (no action, no body of its own, nothing in progress or wrong)
+ * is about the list it was said in; moving to another list makes it stale. One with Undo keeps its time (z runs it anyway).
+ */
+export function staleOnMove(c: Snack): boolean {
+  return !c.action && !c.secondary && !c.render && (c.tone === "success" || c.tone === "neutral");
+}
 
 /** Shows a snack in the dock, replacing whatever is there; returns its id. */
 export const snack = Object.assign((input: SnackInput | string, options?: Options): string => show(typeof input === "string" ? { ...options, message: input } : input), {

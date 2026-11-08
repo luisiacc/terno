@@ -27,8 +27,10 @@ function handlers(server: { backend: { server: unknown } }) {
 
 test.describe("the docked snackbar", () => {
   test("the bar: where it sits, Undo and z, one at a time, F6, an error, the categorization offers", async ({ app: page, server }) => {
-    await scenario("archive: the bar sits inside the list column, compact, over neither the sidebar nor the reader", async () => {
+    await scenario("archive: in Split the bar sits at the reader's foot, compact, over neither the rows nor the sidebar (plan 158)", async () => {
       await page.mouse.move(1300, 100);
+      const listbox = page.getByRole("listbox", { name: "Conversations" });
+      const room = await listbox.evaluate((el) => el.scrollHeight);
       await archiveOne(page);
       // plan 63: one line, what could follow behind Similar… (plan 158); plan 91: open, one compact line each, as the category snackbar's
       await expect(dock(page).getByTestId("similar-snackbar")).toBeVisible();
@@ -37,16 +39,18 @@ test.describe("the docked snackbar", () => {
       await page.mouse.move(1300, 100);
       const bar = (await dock(page).boundingBox())!;
       const list = (await page.getByTestId("thread-list").boundingBox())!;
-      const sidebar = (await page.getByTestId("sidebar").boundingBox())!;
+      const reader = (await page.locator("main").boundingBox())!;
       const offers = (await dock(page).getByTestId("similar-offers").boundingBox())!;
       const lines = await dock(page).getByTestId("similar-offers").locator("button").count();
       expect(bar.height - offers.height).toBeLessThanOrEqual(40);
       expect(offers.height).toBeLessThanOrEqual(lines * 28 + 8);
-      expect(bar.x).toBeGreaterThan(list.x);
-      expect(bar.x + bar.width).toBeLessThan(list.x + list.width);
-      expect(bar.x).toBeGreaterThanOrEqual(sidebar.x + sidebar.width);
-      expect(bar.y + bar.height).toBeLessThanOrEqual(list.y + list.height);
-      expect(bar.y + bar.height).toBeGreaterThan(list.y + list.height - 16);
+      expect(bar.x).toBeGreaterThanOrEqual(list.x + list.width);
+      expect(bar.x + bar.width).toBeLessThanOrEqual(reader.x + reader.width);
+      expect(bar.y + bar.height).toBeLessThanOrEqual(reader.y + reader.height);
+      expect(bar.y + bar.height).toBeGreaterThan(reader.y + reader.height - 16);
+      // the rows keep their room (the reader's end scrolls clear of the bar instead)
+      expect(await listbox.evaluate((el) => el.scrollHeight)).toBeLessThanOrEqual(room);
+      await expect.poll(() => page.locator("[data-reader-scroller]").evaluate((el) => parseFloat(getComputedStyle(el).paddingBottom))).toBeGreaterThanOrEqual(bar.height);
       // the action says what it takes back, and z is its key while it is
       const undo = dock(page).getByTestId("snack-action");
       await expect(undo).toHaveAccessibleName("Undo archive");
@@ -64,6 +68,11 @@ test.describe("the docked snackbar", () => {
       // plan 158: the offer goes, and a word says it worked, with nothing more to do
       await expect(dock(page)).toHaveText(/Restored 1 conversation/);
       await expect(dock(page).getByTestId("snack-action")).toHaveCount(0);
+      // plan 158: the pointer still on it after the click doesn't hold it; another list makes it stale at once
+      await page.keyboard.press("Shift+U");
+      // (well inside its own 2.5 s)
+      await expect(dock(page)).toHaveCount(0, { timeout: 1000 });
+      await page.keyboard.press("Shift+A");
 
       const second = await openRow(page, 2);
       await focusList(page);
@@ -132,13 +141,14 @@ test.describe("the docked snackbar", () => {
       await expect(snack).toBeVisible();
       await openOffers(page);
       const box = (await dock(page).boundingBox())!;
-      const list = (await page.getByTestId("thread-list").boundingBox())!;
+      const reader = (await page.locator("main").boundingBox())!;
       // plan 81: a title row and one 28 px line per offer; the topic's words get up to two more lines under it
       await expect(snack.getByTestId("snackbar-offers")).toBeVisible();
       const lines = await snack.getByTestId("snackbar-offers").evaluate((el) => el.children.length);
       expect(box.height).toBeLessThanOrEqual(40 + lines * 28 + 2 * 24 + 8);
-      expect(box.x + box.width).toBeLessThan(list.x + list.width);
-      expect(box.y + box.height).toBeLessThanOrEqual(list.y + list.height);
+      expect(box.x).toBeGreaterThanOrEqual(reader.x);
+      expect(box.x + box.width).toBeLessThan(reader.x + reader.width);
+      expect(box.y + box.height).toBeLessThanOrEqual(reader.y + reader.height);
       await expect(snack.getByTestId("snackbar-undo")).toHaveAccessibleName(/^Undo: Added to Facturas/);
       await page.keyboard.press("z");
       await expect(snack).toHaveCount(0);
@@ -174,6 +184,9 @@ test.describe("the docked snackbar", () => {
     await expect(dock(page)).toHaveCount(0);
   });
 
+  test.describe("List: the bar over the one pane", () => {
+  // plan 158: Split's bar is over the reader; List's is over its rows, which keep room under them for it
+  test.use({ layout: "list" });
   test("the last row and the keyboard's row stay above the bar, and above the taller categorization bar", async ({ app: page, server }) => {
     await scenario("the last row and the keyboard's row stay above the bar", async () => {
       // a sender with a few screens of mail: the list has an end
@@ -181,7 +194,11 @@ test.describe("the docked snackbar", () => {
         "SELECT last_from_email AS email FROM threads WHERE in_inbox = 1 GROUP BY 1 HAVING count(*) BETWEEN 20 AND 90 ORDER BY count(*) DESC LIMIT 1",
       )!;
       await search(page, `in:inbox from:${email}`);
-      await archiveOne(page);
+      // List: the cursor is placed, not opened (a click would open its page)
+      await rows(page).nth(1).dispatchEvent("mousedown");
+      await focusList(page);
+      await page.keyboard.press("e");
+      await expect(dock(page)).toContainText("Archived");
       // the pointer over the bar keeps it up for as long as this takes
       await dock(page).hover();
       const top = (await dock(page).boundingBox())!.y;
@@ -249,6 +266,7 @@ test.describe("the docked snackbar", () => {
       expect(sel.y + sel.height).toBeLessThanOrEqual(top + 0.5);
     });
   });
+  });
 
   test("the countdown waits under a dialog, and under any modal", async ({ app: page }) => {
     await scenario("a dialog over the app holds the countdown; the bar is still there after it closes", async () => {
@@ -270,10 +288,12 @@ test.describe("the docked snackbar", () => {
       await page.mouse.move(1300, 100);
       await archiveOne(page);
       // a modal marks the bar hidden (the first run and a report preview aren't app dialogs)
+      const hidden = () => dock(page).evaluate((el) => el.closest("[aria-hidden=true]") !== null);
       await page.getByTestId("open-settings").click();
-      await expect(dock(page)).toHaveAttribute("aria-hidden", "true");
+      // (on the card, or on the reader column that holds it)
+      await expect.poll(hidden).toBe(true);
       await page.keyboard.press("Escape");
-      await expect(dock(page)).not.toHaveAttribute("aria-hidden", "true");
+      await expect.poll(hidden).toBe(false);
       // the same mark without an app dialog behind it holds the countdown and keeps F6 out
       await dock(page).evaluate((el) => el.setAttribute("aria-hidden", "true"));
       await expect.poll(() => ringState(page)).toBe("paused");

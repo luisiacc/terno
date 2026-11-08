@@ -211,6 +211,61 @@ test.describe("a pinned draft in the List layout", () => {
     await expect(cardBody(page)).toContainText("From the list layout");
   });
 
+  test("plan 158: a conversation opened under the card moves the dock onto its column: a snack there stands clear of the card", async ({ app: page }) => {
+    await rows(page).nth(1).click();
+    await focusList(page);
+    await page.keyboard.press("r");
+    await page.keyboard.type("Beside the dock");
+    await page.getByTestId("reader").getByTestId("compose-pin").click();
+    await page.keyboard.press("Escape");
+    await page.getByTestId("reader").getByRole("button", { name: /back/i }).first().click();
+    await expect(card(page)).toBeVisible();
+    await rows(page).nth(0).click();
+    await expect(page.getByTestId("reader-subject")).toBeVisible();
+    await focusList(page);
+    await page.keyboard.press("l");
+    await page.locator("[data-testid^=pick-category-]").first().click();
+    const snack = page.getByTestId("snack");
+    await expect(snack).toBeVisible();
+    await page.mouse.move(0, 0);
+    await expect.poll(async () => {
+      const [a, b] = [(await snack.boundingBox())!, (await card(page).boundingBox())!];
+      const apart = a.x + a.width <= b.x || b.y + b.height <= a.y;
+      return apart;
+    }).toBe(true);
+  });
+
+  test("plan 158: in a narrow window the card stands on the dock and on the drafts strip under it (Codex review)", async ({ app: page }) => {
+    await page.setViewportSize({ width: 1100, height: 760 });
+    // a draft parked in the strip
+    await focusList(page);
+    await page.keyboard.press("c");
+    await page.getByTestId("compose-subject").fill("Parked in the strip");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("drafts-strip")).toBeVisible();
+    await page.getByTestId("reader").getByRole("button", { name: /back/i }).first().click().catch(() => {});
+    // a reply pinned, back on the list
+    await rows(page).nth(1).click();
+    await focusList(page);
+    await page.keyboard.press("r");
+    await page.keyboard.type("Pinned over the strip");
+    await page.getByTestId("reader").getByTestId("compose-pin").click();
+    await page.keyboard.press("Escape");
+    await page.getByTestId("reader").getByRole("button", { name: /back/i }).first().click();
+    await expect(page.getByTestId("drafts-strip")).toBeVisible();
+    // a snack over the list
+    await rows(page).nth(3).dispatchEvent("mousedown");
+    await focusList(page);
+    await page.keyboard.press("e");
+    const snack = page.getByTestId("snack");
+    await expect(snack).toContainText("Archived");
+    await page.mouse.move(0, 0);
+    await expect.poll(async () => {
+      const [a, b] = [(await snack.boundingBox())!, (await card(page).boundingBox())!];
+      return a.x + a.width <= b.x || b.y + b.height <= a.y;
+    }).toBe(true);
+  });
+
   test("Esc in the card over a new message goes to that message, not the hidden list (Codex code review 3)", async ({ app: page }) => {
     await rows(page).nth(1).click();
     await focusList(page);

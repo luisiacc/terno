@@ -631,11 +631,11 @@ test.describe("the composer at rest and at its limits (plan 158)", () => {
       await page.getByTestId("strip-more").click();
       await expect(page.getByTestId("strip-item")).toHaveCount(1);
     });
-    await scenario("a snack stands on the strip, not over it", async () => {
+    await scenario("a snack never covers the strip (plan 158: Split's is over the reader)", async () => {
       await page.getByTestId("strip-item").first().click();
       await page.getByTestId("compose-discard").click();
       const strip = (await page.getByTestId("drafts-strip").boundingBox())!, snack = (await page.getByTestId("snack").boundingBox())!;
-      expect(snack.y + snack.height).toBeLessThanOrEqual(strip.y);
+      expect(snack.x).toBeGreaterThanOrEqual(strip.x + strip.width);
     });
   });
 

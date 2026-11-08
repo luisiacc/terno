@@ -30,7 +30,9 @@ const strays = (page: Page) =>
       // words only: the quote toggle's ••• is a drawn mark
       if (!text || !/[\p{L}\p{N}]/u.test(text) || !el || el.closest(exempt) || el.closest("script, style") || !el.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue;
       const s = getComputedStyle(el);
-      if (![...micro, "12px", "13px", "14px", "24px"].includes(s.fontSize) || !["400", "500"].includes(s.fontWeight) || s.letterSpacing !== "-0.15px") {
+      // (an unread sender's 600 aside, plan 158: designs.test holds the same exception)
+      const weights = el.closest("[data-unread] [data-testid=row-from]") ? ["600"] : ["400", "500"];
+      if (![...micro, "12px", "13px", "14px", "24px"].includes(s.fontSize) || !weights.includes(s.fontWeight) || s.letterSpacing !== "-0.15px") {
         out.add(`${s.fontSize} ${s.fontWeight} ${s.letterSpacing} ${el.tagName.toLowerCase()} '${text.slice(0, 30)}'`);
       }
     }

@@ -7,7 +7,7 @@ import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ACTION_MS, clock, DEFAULT_MS, dismissSnack, elapsedAt, pause, registerUndo, remaining, resetSnacks, resume, runAction, runUndo, snack, undoLast, useSnack, zHolds } from "./snack";
+import { ACTION_MS, clock, DEFAULT_MS, dismissSnack, elapsedAt, pause, registerUndo, remaining, resetSnacks, resume, runAction, runUndo, snack, staleOnMove, undoLast, useSnack, zHolds } from "./snack";
 
 const current = () => useSnack.getState().current;
 const message = () => current()?.message ?? null;
@@ -85,14 +85,38 @@ describe("pausing", () => {
     expect(current()).toBeNull();
   });
 
-  it("a snack shown while paused starts paused (the pointer is still over the dock)", () => {
-    pause("hover");
+  it("a snack shown while paused starts paused (focus is still in the dock)", () => {
+    pause("focus");
     snack("Archivado");
     vi.advanceTimersByTime(10_000);
     expect(useSnack.getState().countdown).toEqual({ elapsed: 0, since: null });
-    resume("hover");
+    resume("focus");
     vi.advanceTimersByTime(DEFAULT_MS);
     expect(current()).toBeNull();
+  });
+
+  it("plan 158: a hover held the snack it was over, not the next (Undo's answer under a resting pointer runs out)", () => {
+    snack("Archivado", { action: { label: "Deshacer", onClick: () => {} } });
+    pause("hover");
+    snack("Restaurado");
+    expect(useSnack.getState().paused).not.toContain("hover");
+    vi.advanceTimersByTime(DEFAULT_MS);
+    expect(current()).toBeNull();
+    // an update in place is the same snack: the hover still holds it
+    snack({ id: "job", message: "Uno", tone: "loading", duration: 1000 });
+    pause("hover");
+    snack({ id: "job", message: "Dos", tone: "success" });
+    vi.advanceTimersByTime(10_000);
+    expect(current()?.message).toBe("Dos");
+  });
+
+  it("plan 158: only a plain confirmation goes stale when the list changes", () => {
+    const shown = (input: Parameters<typeof snack>[0]) => (snack(input), current()!);
+    expect(staleOnMove(shown({ message: "Restaurado", tone: "success" }))).toBe(true);
+    expect(staleOnMove(shown("Hecho"))).toBe(true);
+    expect(staleOnMove(shown({ message: "Archivado", action: { label: "Deshacer", onClick: () => {} } }))).toBe(false);
+    expect(staleOnMove(shown({ message: "Falló", tone: "error" }))).toBe(false);
+    expect(staleOnMove(shown({ message: "Enviando", tone: "loading" }))).toBe(false);
   });
 
   it("the elapsed time follows pauses (what the ring draws)", () => {

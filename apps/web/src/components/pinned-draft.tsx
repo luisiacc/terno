@@ -38,13 +38,14 @@ const answered = { focus: 0 };
  * attachments, format bar), in a card that floats over the pane; it publishes
  * its height so the reader's end scrolls clear of it.
  */
-export function PinnedDraft({ list }: { list: boolean }) {
+export function PinnedDraft({ overList }: { /** List's rows show under it (its dock stands on the drafts strip) */ overList: boolean }) {
   const key = usePinned((s) => s.key);
   const focusSeq = usePinned((s) => s.focus);
   const d = useDrafts((s) => (key ? s.drafts[key] : undefined));
   const accounts = useApp((s) => s.accounts);
   const draftFocus = useApp((s) => (key && s.draftFocus?.key === key ? s.draftFocus : null));
-  const snackInset = useSnack((s) => (list ? s.inset : 0));
+  // the dock is in the card's pane in either layout (plan 158)
+  const snackInset = useSnack((s) => s.inset);
   const cardRef = useRef<HTMLElement>(null);
   const rootRef = useRef<HTMLFormElement>(null);
   const move = useRef<InlineFocusMove | null>(null);
@@ -55,8 +56,11 @@ export function PinnedDraft({ list }: { list: boolean }) {
   useEffect(warmAutocomplete, []);
   useEffect(() => () => move.current?.cancel(), []);
 
-  // List: the snack dock is at the bottom left; where the pane is too narrow for both, the card stands on it
-  const lift = list && narrow ? snackInset : 0;
+  // the snack dock is at the bottom left; where the pane is too narrow for both, the card stands on it, and on what the
+  // dock stands on (List's drafts strip, while the list shows: snack-dock)
+  const stripLift = useSnack((s) => s.lift);
+  const dockLift = overList ? stripLift : 0;
+  const lift = narrow ? snackInset + dockLift : 0;
   // the card's height (and its lift) is the scroll end's buffer for whatever reads under it
   useLayoutEffect(() => {
     const card = cardRef.current;
@@ -64,14 +68,18 @@ export function PinnedDraft({ list }: { list: boolean }) {
     const pane = card.parentElement;
     const measure = () => {
       usePinned.setState({ inset: Math.ceil(card.offsetHeight) + GAP * 2 + lift });
-      if (pane) setNarrow(pane.clientWidth < DOCK_WIDTH + card.offsetWidth + GAP * 3);
+      // where the dock's card is (on the reader's column in Split, plan 158), else where it would be
+      const dock = pane?.querySelector<HTMLElement>(":scope > [data-testid=snack-dock] [data-snack-card]")?.getBoundingClientRect();
+      if (dock && dock.width) setNarrow(dock.right + GAP > card.getBoundingClientRect().left);
+      else if (pane) setNarrow(pane.clientWidth < DOCK_WIDTH + card.offsetWidth + GAP * 3);
     };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(card);
     if (pane) ro.observe(pane);
     return () => ro.disconnect();
-  }, [key, lift, !!d]);
+  // (and when List's page comes or goes: the dock moves onto the reader's column and back, its size unchanged)
+  }, [key, lift, !!d, overList]);
   useEffect(() => () => usePinned.setState({ inset: 0 }), []);
 
   // pinned, or asked for (its conversation's reply bar, r/a/f there, the strip): the body takes focus, once per request
