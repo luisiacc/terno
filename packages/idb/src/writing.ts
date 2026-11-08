@@ -233,6 +233,16 @@ export function resetProfile(c: Ctx, scopeKey: string, language?: string): void 
   for (const r of Array.from(table.all())) if (r.scope_key === scopeKey && (language === undefined || r.language === language)) table.deleteRow(r);
 }
 
+export function restoreProfiles(c: Ctx, rows: readonly WritingProfileRow[]): void {
+  const table = T(c, "writing_profiles");
+  for (const r of rows) {
+    if (r.accountId !== null && !T(c, "accounts").get(r.accountId)) continue;
+    const held = identityOf(c, r.scopeKey, r.language);
+    if (held) table.deleteRow(held);
+    table.insert({ scope: r.scope, scope_key: r.scopeKey, language: r.language, account_id: r.accountId, habits_json: r.habitsJson, phrases_json: r.phrasesJson, judgment_json: r.judgmentJson, samples: r.samples, new_since: r.newSince, sample_hash: r.sampleHash, edited: r.edited ? 1 : 0, model: r.model, provider: r.provider, prompt_version: r.promptVersion, updated_at: r.updatedAt });
+  }
+}
+
 export function clearJudgments(c: Ctx, accountId?: number): void {
   const table = T(c, "writing_profiles");
   for (const r of Array.from(table.all())) {

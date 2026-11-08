@@ -182,7 +182,7 @@ import type { Key, MemDb } from "./mem";
 import { idbCachedPage, IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, PartialCommit, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
 import { UncertainWriteError } from "./uncertainty";
-import { clearJudgments, clearWriting, commitGeneration, commitProfiles, corpusHeaders, corpusUsable, editProfile, everWrittenTo, exactInSlice, fromAddress, generationForDraft, generationForMessage, generationPairs, hasBody, judgeProfile, listProfiles, liveThreads, readProfiles, resetProfile, sentIds, sentNeedles, threadRecipients, transferGeneration, type ExactProgress } from "./writing";
+import { clearJudgments, clearWriting, commitGeneration, commitProfiles, corpusHeaders, corpusUsable, editProfile, everWrittenTo, exactInSlice, fromAddress, generationForDraft, generationForMessage, generationPairs, hasBody, judgeProfile, listProfiles, liveThreads, readProfiles, resetProfile, restoreProfiles, sentIds, sentNeedles, threadRecipients, transferGeneration, type ExactProgress } from "./writing";
 import { attemptSummary, clearNewMail, clearSummaries, consumeNewMail, dropPendingSummaries, dropSummary, failSummary, finishSummary, getSummary, lastSummaryFailure, markNewMail, newMailPage, pendingSummaries, pendingSummaryCount, pruneNewMail, pruneSummaries, summarySources } from "./ai-summaries";
 import { cancelWaiting, filesReady, waitingCount, forwardRuleGone, forwardWork, approveRule, cancelForwards, claimForward, eligiblePage, failForward, forwardHolds, forwardSendOpen, forwardsActive, getForward, linkForwardSend, listForwards, markEligible, nextForwardDue, planForwards, pruneForwards, retryForward, setCategoryForward, stopRule, waitForFiles } from "./forwards";
 import { deleteScheduled, failScheduled, getScheduled, listScheduled, putScheduled, rescheduleScheduled, stillScheduled } from "./scheduled";
@@ -2212,6 +2212,7 @@ export class IdbMailStore implements MailStore {
       judge: (w) => this.command(() => judgeProfile(this.c, w)),
       edit: (e) => this.command(() => editProfile(this.c, e)),
       reset: (scopeKey, language) => this.command(() => resetProfile(this.c, scopeKey, language)),
+      restore: (rows) => this.command(() => restoreProfiles(this.c, rows)),
       clearJudgments: (accountId) => this.command(() => clearJudgments(this.c, accountId)),
       clear: (stateKeys) => this.command(() => clearWriting(this.c, stateKeys)),
     },

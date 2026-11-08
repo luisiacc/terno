@@ -77,6 +77,8 @@ export interface TodayWhy {
   dueAt?: number;
   personName?: string | null;
   sentAt?: number;
+  /** a waiting row: you've written in this conversation (else it's new, from someone you write to: `needsYou`'s two reasons) */
+  wrote?: boolean;
 }
 
 export interface TodayItem {

@@ -69,6 +69,8 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       const waiting = (await store.threads.summaries([a.thread, b.thread])).filter((t) => t.waitingSince != null).map((t) => t.id);
       expect(waiting).toHaveLength(2);
       expect(page.map((p) => p.id)).toEqual([b.thread]);
+      // plan 161: why it's there, for the row's reason: a conversation they've written in
+      expect(page[0]!.hasSent).toBe(true);
       const next = await store.today.waitingPage({ now: NOW, after: page[0]!, limit: 5 });
       expect(next.map((p) => p.id)).toEqual([a.thread]);
       expect(new Set(await store.today.waitingAmong([a.thread, b.thread, notice.thread, calendar.thread, 999_999], NOW))).toEqual(new Set(waiting));
@@ -76,7 +78,11 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       // someone they've written to, from a tagged address: their one new conversation counts, in both stores
       await store.sync.ingest([msg({ date: NOW - 700, providerMsgId: "to-dia", providerThreadId: "to-dia", from: me, to: [{ name: "Dia", email: "dia@people.test" }], isSent: true, subject: "Hello", accountId: accountId_(), listId: null })], { applyFilters: false, now: NOW, classifier: null });
       const dia = await put({ listId: null, from: { name: "Dia", email: "dia+work@people.test" }, date: NOW - 600, subject: "Something new" });
-      if ((await store.threads.summaries([dia.thread]))[0]!.waitingSince != null) expect(await store.today.needsCount(NOW)).toBe(3);
+      if ((await store.threads.summaries([dia.thread]))[0]!.waitingSince != null) {
+        expect(await store.today.needsCount(NOW)).toBe(3);
+        // plan 161: and the other reason, new from someone they write to
+        expect((await store.today.waitingPage({ now: NOW, after: null, limit: 5 })).find((p) => p.id === dia.thread)?.hasSent).toBe(false);
+      }
     });
 
     it("digestLive: only what's in the Inbox and unread", async () => {

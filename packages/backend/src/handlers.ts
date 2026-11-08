@@ -1519,10 +1519,8 @@ export function createHandlers(b: Backend): Handlers {
     "writing.prefs.set": (patch) => b.writing.setPrefs(patch),
     "writing.profiles.list": (p) => b.writing.listProfiles(p),
     "writing.profiles.edit": (p) => b.writing.editProfile(p),
-    "writing.profiles.reset": async ({ scopeKey, language }) => {
-      await b.writing.resetProfile(scopeKey, language);
-      return { ok: true };
-    },
+    "writing.profiles.reset": async ({ scopeKey, language }) => ({ ok: true, undo: await b.writing.resetProfile(scopeKey, language) }),
+    "writing.profiles.restore": async ({ undo }) => ({ ok: true, restored: await b.writing.restoreProfile(undo) }),
     "writing.profiles.rebuild": async ({ accountId }) => {
       await b.writing.learner.rebuild(accountId);
       return { ok: true };

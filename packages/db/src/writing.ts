@@ -297,6 +297,20 @@ export function resetProfile(db: Db, scopeKey: string, language?: string): void 
   else db.run("DELETE FROM writing_profiles WHERE scope_key = ? AND language = ?", scopeKey, language);
 }
 
+export function restoreProfiles(db: Db, rows: readonly WritingProfileRow[]): void {
+  db.tx(() => {
+    for (const r of rows) {
+      if (r.accountId !== null && !db.get("SELECT 1 FROM accounts WHERE id = ?", r.accountId)) continue;
+      db.run("DELETE FROM writing_profiles WHERE scope_key = ? AND language = ?", r.scopeKey, r.language);
+      db.run(
+        `INSERT INTO writing_profiles (scope, scope_key, language, account_id, habits_json, phrases_json, judgment_json, samples, new_since, sample_hash, edited, model, provider, prompt_version, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        r.scope, r.scopeKey, r.language, r.accountId, r.habitsJson, r.phrasesJson, r.judgmentJson, r.samples, r.newSince, r.sampleHash, r.edited ? 1 : 0, r.model, r.provider, r.promptVersion, r.updatedAt,
+      );
+    }
+  });
+}
+
 export function clearJudgments(db: Db, accountId?: number): void {
   const where = accountId === undefined ? "" : " AND account_id = ?";
   db.run(`UPDATE writing_profiles SET judgment_json = NULL, sample_hash = NULL, model = NULL, provider = NULL, prompt_version = NULL WHERE judgment_json IS NOT NULL AND edited = 0${where}`, ...(accountId === undefined ? [] : [accountId]));

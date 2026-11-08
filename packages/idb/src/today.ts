@@ -21,12 +21,12 @@ function needsRows(c: Ctx, now: number): WaitingRow[] {
   return needsYou(rows, (key) => correspondents.get(key) as { written: number; own: number } | undefined);
 }
 
-export function waitingPage(c: Ctx, o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): { id: number; lastDate: number }[] {
+export function waitingPage(c: Ctx, o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): { id: number; lastDate: number; hasSent: boolean }[] {
   const { after } = o;
   return needsRows(c, o.now)
     .filter((r) => !after || r.lastDate < after.lastDate || (r.lastDate === after.lastDate && r.id < after.id))
     .slice(0, o.limit)
-    .map((r) => ({ id: r.id, lastDate: r.lastDate }));
+    .map((r) => ({ id: r.id, lastDate: r.lastDate, hasSent: r.hasSent }));
 }
 
 export function waitingAmong(c: Ctx, threadIds: readonly number[], now: number): number[] {

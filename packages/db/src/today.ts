@@ -24,12 +24,12 @@ function needsRows(db: Db, now: number): WaitingRow[] {
   );
 }
 
-export function waitingPage(db: Db, o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): { id: number; lastDate: number }[] {
+export function waitingPage(db: Db, o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): { id: number; lastDate: number; hasSent: boolean }[] {
   const { after } = o;
   return needsRows(db, o.now)
     .filter((r) => !after || r.lastDate < after.lastDate || (r.lastDate === after.lastDate && r.id < after.id))
     .slice(0, o.limit)
-    .map((r) => ({ id: r.id, lastDate: r.lastDate }));
+    .map((r) => ({ id: r.id, lastDate: r.lastDate, hasSent: r.hasSent }));
 }
 
 export function waitingAmong(db: Db, threadIds: readonly number[], now: number): number[] {

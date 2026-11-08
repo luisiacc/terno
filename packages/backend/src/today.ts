@@ -396,7 +396,7 @@ export class TodayService {
     let waitingShown = 0;
     let after: { lastDate: number; id: number } | null = null;
     while (needs.length < TODAY_NEEDS_MAX) {
-      const page: { id: number; lastDate: number }[] = await store.today.waitingPage({ now, after, limit: TODAY_NEEDS_MAX });
+      const page: { id: number; lastDate: number; hasSent: boolean }[] = await store.today.waitingPage({ now, after, limit: TODAY_NEEDS_MAX });
       if (!page.length) break;
       const fresh = page.filter((p) => !taken.has(p.id)).slice(0, TODAY_NEEDS_MAX - needs.length);
       const summaries = new Map((await store.threads.summaries(fresh.map((p) => p.id))).map((t) => [t.id, t]));
@@ -405,7 +405,7 @@ export class TodayService {
         if (!thread) continue;
         taken.add(p.id);
         waitingShown++;
-        needs.push({ thread, why: { kind: "waiting" }, ...(await this.summaryLine(p.id)) });
+        needs.push({ thread, why: { kind: "waiting", wrote: p.hasSent }, ...(await this.summaryLine(p.id)) });
       }
       after = page[page.length - 1]!;
       if (page.length < TODAY_NEEDS_MAX) break;

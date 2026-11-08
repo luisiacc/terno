@@ -68,7 +68,7 @@ export function needsYou(rows: readonly WaitingRow[], known: (key: string) => { 
 
 export interface TodayStore {
   /** What needs you (`needsYou`), newest first, among the newest `NEEDS_WALK` waiting: plan 17's "a person" holds any plain address, and on real mail most of it was a bank's and a service's notices. `after` is the last id of the page before */
-  waitingPage(o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): Promise<{ id: number; lastDate: number }[]>;
+  waitingPage(o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): Promise<{ id: number; lastDate: number; /** why `needsYou` let it in: you've written in it (else: new, from someone you write to) */ hasSent: boolean }[]>;
   /** which of these threads the Inbox holds as waiting (a due follow-up may be one too: it counts once) */
   waitingAmong(threadIds: readonly number[], now: number): Promise<number[]>;
   /** how many `waitingPage` would walk: the sidebar's number, on every count */

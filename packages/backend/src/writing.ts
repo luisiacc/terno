@@ -47,7 +47,7 @@ import {
 import { captureError } from "@terno/core/diag";
 import { RpcError, type ParsedParamsOf } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { GENERATIONS_MAX_ROWS, SearchCancelledError, summaryBlocked, type MailStore, type SummarySourceMessage, type ThreadContextMessage, type WritingProfileRow } from "@terno/store";
+import { GENERATIONS_MAX_ROWS, PROFILES_MAX_ROWS, SearchCancelledError, summaryBlocked, type MailStore, type SummarySourceMessage, type ThreadContextMessage, type WritingProfileRow } from "@terno/store";
 import type { BackendCore as Backend } from "./core";
 import { aiAllowed, readSettings } from "./settings";
 import { toRpcError } from "./ai-service";
@@ -91,6 +91,8 @@ const namesAddress = (address: string): RegExp => new RegExp(`(?<![\\p{L}\\p{N}.
 const CLOUD_ASSUMED_CAPACITY = 200_000;
 /** §6.1: a session's snapshot, in memory: released with the session, or the oldest past this. */
 const SNAPSHOTS_MAX = 8;
+/** plan 161: resets that can still be undone */
+const RESETS_KEPT = 5;
 const SNAPSHOT_MAX_CHARS = 512 * 1024;
 const RECENT_THREAD_MS = 30 * 86_400_000;
 const STREAM_EVERY_MS = 30;
@@ -315,11 +317,31 @@ export class WritingService {
     return toView(edited!)!;
   }
 
-  async resetProfile(scopeKey: string, language: string | undefined): Promise<void> {
+  /** Plan 161: the rows a reset took, by its undo token: the newest few, in memory (a profile is at most a few KB). */
+  private readonly resets = new Map<string, WritingProfileRow[]>();
+
+  async resetProfile(scopeKey: string, language: string | undefined): Promise<string> {
+    const { store } = this.b;
+    const taken = language === undefined ? (await store.writing.profiles.list({ limit: PROFILES_MAX_ROWS })).filter((r) => r.scopeKey === scopeKey) : await store.writing.profiles.read([{ scopeKey, language }]);
+    const undo = globalThis.crypto.randomUUID();
+    this.resets.set(undo, taken);
+    while (this.resets.size > RESETS_KEPT) this.resets.delete(this.resets.keys().next().value!);
     this.forgetSnapshots();
-    await this.b.store.writing.profiles.reset(scopeKey, language);
+    await store.writing.profiles.reset(scopeKey, language);
     this.forgetSnapshots();
     await this.learner.rebuild(accountOfKey(scopeKey) ?? undefined);
+    return undo;
+  }
+
+  /** A reset undone: what it took, exactly, over whatever the rebuild made since. False when it's no longer held. */
+  async restoreProfile(undo: string): Promise<boolean> {
+    const rows = this.resets.get(undo);
+    if (!rows) return false;
+    this.resets.delete(undo);
+    this.forgetSnapshots();
+    await this.b.store.writing.profiles.restore(rows);
+    this.forgetSnapshots();
+    return true;
   }
 
   // ─── provenance ──────────────────────────────────────────────────────────

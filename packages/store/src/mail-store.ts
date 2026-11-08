@@ -613,6 +613,8 @@ export interface MailStore {
       edit(e: import("./writing").ProfileEdit): Promise<boolean>;
       /** Unpins and removes it: the next pass builds it again. */
       reset(scopeKey: string, language?: string): Promise<void>;
+      /** Plan 161: a reset undone: these rows back as they were, replacing what a pass built since (an account gone since: skipped). */
+      restore(rows: readonly import("./writing").WritingProfileRow[]): Promise<void>;
       /** "Learn from my sent mail" off: judgments go, counts stay until cleared. All of them, or one account's. */
       clearJudgments(accountId?: number): Promise<void>;
       /** Every profile and generation, and these settings, in one commit. */

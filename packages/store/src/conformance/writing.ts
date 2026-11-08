@@ -320,6 +320,26 @@ export function defineWritingConformance(fresh: () => Promise<MailStore>, reopen
         expect(await store.writing.profiles.edit({ scopeKey: a.scopeKey, language: "", phrasesJson: "[]", now: NOW })).toBe(false);
       });
 
+      it("plan 161: a reset undone puts back exactly what went, over what a pass built since; an account gone since is skipped", async () => {
+        const { store, accountId } = await setup();
+        const a = upsert({ accountId, scopeKey: `person:${accountId}:tom@acme.com` });
+        const you = upsert({ accountId: null, scope: "you", scopeKey: "you", language: "en" });
+        await store.writing.profiles.commit({ upserts: [a, you], state: {}, now: NOW });
+        await store.writing.profiles.edit({ scopeKey: a.scopeKey, language: "", habitsJson: '{"mine":1}', now: NOW + 1 });
+        await store.writing.profiles.judge({ scopeKey: "you", language: "en", judgmentJson: '{"notes":["model"]}', sampleHash: "h", model: "m", provider: "p", promptVersion: 2, now: NOW + 2 });
+        const before = await store.writing.profiles.read([{ scopeKey: a.scopeKey, language: "" }, { scopeKey: "you", language: "en" }]);
+        await store.writing.profiles.reset(a.scopeKey, "");
+        await store.writing.profiles.reset("you", "en");
+        // the rebuild after a reset: plain counts, no edit, no judgment
+        await store.writing.profiles.commit({ upserts: [{ ...a, samples: 2 }, { ...you, samples: 2 }], state: {}, now: NOW + 3 });
+        await store.writing.profiles.restore(before);
+        const after = await store.writing.profiles.read([{ scopeKey: a.scopeKey, language: "" }, { scopeKey: "you", language: "en" }]);
+        const strip = (rows: typeof before) => rows.map(({ id: _id, ...r }) => r);
+        expect(strip(after)).toEqual(strip(before));
+        await store.writing.profiles.restore([{ ...before[0]!, scopeKey: "person:999999:x@y.test", accountId: 999_999 }]);
+        expect(await store.writing.profiles.read([{ scopeKey: "person:999999:x@y.test", language: "" }])).toEqual([]);
+      });
+
       it("a judgment is kept through a pass, resets what's new since, and clearing removes it but not the counts", async () => {
         const { store, accountId, other } = await setup();
         const a = upsert({ accountId, scopeKey: `person:${accountId}:tom@acme.com` });

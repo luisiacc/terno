@@ -1292,8 +1292,9 @@ export const contract = {
       judgment: z.object({ traits: z.object({ formality: z.number().int().min(1).max(5), warmth: z.number().int().min(1).max(5), directness: z.number().int().min(1).max(5), detail: z.number().int().min(1).max(5), humor: z.number().int().min(0).max(2) }), notes: z.array(z.string().max(200)).max(8) }).nullable().optional(),
     }),
   ),
-  /** Unpins and rebuilds it from mail. */
-  "writing.profiles.reset": m<{ ok: true }>()(z.object({ scopeKey: scopeKeyParam, language: profileLanguage.optional() })),
+  /** Unpins and rebuilds it from mail. Plan 161: `undo` puts back exactly what went, through `writing.profiles.restore`, while this backend runs (a bounded few) */
+  "writing.profiles.reset": m<{ ok: true; undo: string }>()(z.object({ scopeKey: scopeKeyParam, language: profileLanguage.optional() })),
+  "writing.profiles.restore": m<{ ok: true; restored: boolean }>()(z.object({ undo: z.string().max(64) })),
   /** Counts again from mail, one account or all; nothing is overwritten that's pinned. */
   "writing.profiles.rebuild": m<{ ok: true }>()(z.object({ accountId: id.optional() })),
   /** Clear all: every profile, generation, consent and checkpoint; it sleeps until the feature is used again. */

@@ -94,7 +94,7 @@ import {
   type ClassifyResult,
 } from "./categorize";
 import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
-import { clearJudgments, clearWriting, commitGeneration, commitProfiles, corpusHeaders, corpusUsable, editProfile, generationForDraft, generationForMessage, generationPairs, judgeProfile, listProfiles, readProfiles, resetProfile, sentTo as writingSentTo, threadRecipients, threadsWith as writingThreadsWith, transferGeneration } from "./writing";
+import { clearJudgments, clearWriting, commitGeneration, commitProfiles, corpusHeaders, corpusUsable, editProfile, generationForDraft, generationForMessage, generationPairs, judgeProfile, listProfiles, readProfiles, resetProfile, restoreProfiles, sentTo as writingSentTo, threadRecipients, threadsWith as writingThreadsWith, transferGeneration } from "./writing";
 import { attemptSummary, clearNewMail, clearSummaries, consumeNewMail, dropPendingSummaries, dropSummary, failSummary, finishSummary, getSummary, lastSummaryFailure, markNewMail, newMailPage, pendingSummaries, pendingSummaryCount, pruneNewMail, pruneSummaries, summarySources } from "./ai-summaries";
 import { cancelWaiting, filesReady, waitingCount, forwardRuleGone, forwardWork, approveRule, cancelForwards, claimForward, eligiblePage, failForward, forwardHolds, forwardSendOpen, forwardsActive, getForward, linkForwardSend, listForwards, markEligible, nextForwardDue, planForwards, pruneForwards, retryForward, setCategoryForward, stopRule, waitForFiles } from "./forwards";
 import { deleteScheduled, failScheduled, getScheduled, listScheduled, putScheduled, rescheduleScheduled, stillScheduled } from "./scheduled";
@@ -1244,6 +1244,7 @@ export class SqlMailStore implements MailStore {
       judge: async (w) => judgeProfile(this.db, w),
       edit: async (e) => editProfile(this.db, e),
       reset: async (scopeKey, language) => resetProfile(this.db, scopeKey, language),
+      restore: async (rows) => restoreProfiles(this.db, rows),
       clearJudgments: async (accountId) => clearJudgments(this.db, accountId),
       clear: async (stateKeys) => clearWriting(this.db, stateKeys),
     },
