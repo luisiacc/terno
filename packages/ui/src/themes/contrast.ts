@@ -217,6 +217,14 @@ export const BOUNDARY_STEPS: readonly BoundaryStep[] = [
   { edge: ["popover", "menu-highlight"], behind: ["popover"], min: TINT_FLOOR, why: "Graphite: the keyboard's place, at the selection's floor", only: ["graphite-light", "graphite-dark"], except: { "graphite-dark": { min: 1.26, why: "the blueprint's #9E9E9E on it at 4.5:1" } } },
   // plan 161: a tint card in a dialog (Settings) is ringed in dark, where its tint is 1.01 to 1.05:1 off the popover
   { edge: ["popover", "card-edge"], behind: ["popover"], min: HAIRLINE_FLOOR, why: "a tint card's ring in a dialog (dark)", mode: "dark" },
+  // plan 161, pass 2: an AI card (the summary, Reply ready) ringed inside in card-edge, so it never reads as part of the
+  // mail (ai-r01 measured its fill alone at 1.08 to 1.13:1): the ring against the fill inside it, and against the reader
+  // outside it (its background, or Lumen's card); where a design outlines its cards, the ring on the reader itself
+  { edge: ["tint", "card-edge"], behind: ["tint"], min: HAIRLINE_FLOOR, why: "an AI card's ring against its tint fill" },
+  { edge: ["tint", "card-edge"], behind: ["background"], min: HAIRLINE_FLOOR, why: "an AI card's ring against the reader" },
+  { edge: ["tint", "card-edge"], behind: ["card"], min: HAIRLINE_FLOOR, why: "an AI card's ring against Lumen's reader card" },
+  { edge: ["background", "card-edge"], behind: ["background"], min: HAIRLINE_FLOOR, why: "an outlined AI card's ring on the reader" },
+  { edge: ["card", "card-edge"], behind: ["card"], min: HAIRLINE_FLOOR, why: "an outlined AI card's ring on a reader card" },
 ];
 
 /** The contrast across a boundary as drawn. */
