@@ -415,3 +415,85 @@ The redesign as built, rated blind. All eight reports valid; 656 cells under 9 (
 **High:** the action preview's checkboxes are the loudest thing on the screen (Lumen, Claude); a model's HTTP 500 reads "Couldn't reach Ollama" while Reply ready works on the same screen (macOS, Claude).
 
 **Themes:** Today's header ("Showing 12 of 41 · See all in To reply to") reads as a broken sentence and the digest outranks the people waiting; reasons still merge into truncated snippets. Writing style is dense and its learning explanations are fine print. The action preview leaves half the reader empty, its hints don't match the state, a failed action clears what you typed. Small, grey secondary text across AI surfaces, worst in dark. The summary's suggested action opens a blank reply and is lost when you act. At 1100 the ⌘J instruction can't be read in full (all four Codex reports). Reply ready appears without warning on top of the reply bar.
+
+## Pass after ai162-r01
+
+Written before any code. All eight reports, their 656 below-9 reasons, the 96 issues, the probes and ai-r03 were read. Two rated rounds are left, so this pass changes structure where the raters scored structure, not only polish. Each change names what it answers (reports as `style/rater`).
+
+### What the reports agree on
+
+1. **Today ranks newsletters over people** and explains neither its 12 nor its reasons (every report; Claude 6 to 6.5). ai-r00 put the digest at the list's end and scored it 5 (below the fold), so the digest stays first: it gets quieter, not later.
+2. **Writing style does five jobs at one weight** and describes learning without showing it (every Codex report, Claude 6.5 to 7).
+3. **The action preview's ticks, chips and keys are the loudest things on it**, and its decision moves when a match is read (Lumen claude high; Graphite and macOS codex).
+4. **Errors say "Couldn't reach" when the server answered** (macOS claude high).
+5. **The small type is three sizes within 1.5 px**, card headers come in three sizes, hints are 11 px (Atelier claude, every Claude report on accessibility).
+6. **⌘J's instruction is cut at 1100** (all four Codex reports) and its rewrites hide behind one menu.
+7. **Two reply surfaces stacked** at the end of a conversation with Reply ready (Atelier, Graphite and Lumen claude).
+8. **The summary's next step is lost**: Reply opens a blank reply; the item has a second left edge.
+
+### Changes
+
+**Shared**
+- AI card headers are one style on the summary, the follow-up and Reply ready: `text-sm`, the title medium in the ink, facts in the secondary (Atelier claude: 12, 13.5 and 16 px). Hints and meta on AI surfaces are `text-xs` (12 px), never the 11 px `2xs`.
+- **Errors by what happened.** A provider that answered with an HTTP error now says so: "Ollama answered with an error (500)", with "It's running, but this request failed. Try again, or choose another model in AI settings." Unreachable stays "Couldn't reach Ollama". The backend keeps the kind (`unavailable`, so nothing else changes) and gives the message its own catalog key (`errors.ai.providerError`), which `aiErrorCopy` words (macOS claude, high).
+- **One tick for picking mail for a batch:** the action preview's row mark uses the digest's quiet outlined box (Lumen claude high, Graphite claude).
+
+**Summary (`a01`)**
+- One left edge: an item is a line at the paragraph's edge, its kind a muted label before the words ("To do · Tell Arjun what you think", the words medium), its controls under it at the same edge (Graphite claude 6.5, macOS claude, Codex low ×3). "Action" becomes "To do" (Graphite, Atelier, Lumen claude: whose action?).
+- The paragraph and items use the card's width (the measure left a 140 px dead column: four reports).
+- **Reply on an item drafts from it:** it opens the reply with ⌘J's row holding the item as the instruction, ready for Return; nothing is written until the user asks, so no model call is added (Lumen, macOS, Graphite claude). The label stays Reply.
+- The source names the time when two messages from that person share a day ("Arjun's message, Yesterday, 9:41 PM") (Atelier codex).
+- The toolbar's Summarize gets its own glyph; the sparkle stays the mark on AI cards (Graphite claude). The toolbar is already in the Tab order; nothing else is added (owner: no new shortcuts).
+
+**⌘J (`a02`, `a03`)**
+- The instruction shows up to two lines, then an ellipsis with the whole text in its tooltip; Edit stays after it, now a 28 px quiet button named "Edit instruction" (all four Codex reports, Graphite and macOS claude).
+- Narrow, the group is **Undo | Regenerate | Rewrite ▾** (Shorter, Warmer): the most-used rewrite stays direct (Lumen, macOS, Graphite codex).
+
+**Ask (`a04`)**
+- The header shows the question being answered now, not the conversation's first (Lumen claude medium, Atelier claude).
+- A failed request keeps its words in the field, selected; a request that finds nothing says what to try: "Nothing in your mail matches that. Name a sender, a subject or a category." (Lumen claude medium, Atelier claude medium, macOS claude).
+- The live region says the error, never "Answer ready" after a failure (Graphite claude).
+- "Search older mail on your servers" is one control in both places, a quiet button with its glyph (Atelier, macOS claude).
+- Citations sit a thin space from their word, the mark a step larger in the same 24 px target (Graphite claude, every Codex report low).
+- "Answer again" becomes **Regenerate**, ⌘J's word (Lumen claude, Atelier codex).
+
+**Actions (`a05`, `a06`)**
+- **The decision has one place:** the list header's Cancel and Archive 6, in both states (the rule shown, a match being read). The reader's rule panel no longer holds buttons, so nothing moves when a match opens (Graphite codex medium, macOS codex). Their keys are in their tooltips and names; the keys' line that repeated them goes (Atelier, macOS claude).
+- **x is said only where it works:** "x Leave this one out" beside "Show the rule" while a match is open; the rule panel's help says "Untick any you want to keep. Click one to read it." (Lumen, Atelier, Graphite claude: a hint for a state that doesn't exist).
+- **The rule reads as words:** "Terno read it as" is a section heading in the ink; the terms are words in the ink, "shipped, delivery, tracking … or enviado", not chips that look removable (Lumen, Graphite, macOS claude). The exact pattern is offered only when it says more than those words ("Show the exact search"); for a plain list of words it said nothing new and read as a regex (macOS claude medium).
+- One AI primary size: the header's `sm` Archive is the only Archive.
+
+**Today (`a07`, `a08`)**
+- **Header:** "The newest 12 of 41 that need you" and, apart from it, **See all in Inbox →**, a 24 px button that opens the Inbox's To reply to filter (its tooltip says so). "To reply to" isn't in the sentence any more (every report).
+- **Sections:** "Newsletters" over the digest row and "Needs you" over the people, both real headings in the ink at `text-sm`. The digest row loses its ring, its glyph sits in the avatar column and its words on the names' edge, muted: a way in, quieter than any person (every Claude report; Lumen claude placement).
+- **Reasons** are a tag of their own (BoardUI's Badge, secondary) before the snippet, so they never read as its first words. "New from a contact" becomes "Unanswered" (it showed on five-message threads the user never wrote in) (every report).
+- **The digest page:** the title on the shared page-title line (it sat 15 px low), the coverage and Written with AI under it; the list; and the decision at the pane's foot, sticky: "16 to archive · 1 stays in Inbox", Untick all (a secondary), Archive 16 (primary, last). Read, then act (Atelier, Graphite, macOS, Lumen claude). The hint says that opening one keeps it (Lumen, Atelier codex, Graphite claude).
+- Undo says the same noun: "Moved 14 newsletters back to the Inbox" (Lumen, Graphite claude).
+
+**Reply ready (`a10`) and the follow-up (`a09`)**
+- **Reply ready takes the reply bar's place** while it shows; Dismiss brings the bar back. The toolbar's Reply and Forward are still there (Atelier, Graphite, Lumen claude: two reply surfaces).
+- Use as draft carries its R keycap; the "Press R…" sentence goes (Graphite, macOS, Lumen claude).
+- "1 gap to fill" is marked in the gap's own tint, so the header points at what's missing (all four Codex reports, low).
+- The follow-up stays at the conversation's top: it's the conversation's status, as the summary is; Reply ready is the reply, so it sits where the reply goes.
+
+**AI settings (`a11`, `a12`)**
+- **Writing style, one job per group, in this order:** your style (the picker, grouped by account; the profile; Edit and **Reset this style**), Companies and People, How it learns (two rows, one plain line each), then **Start over** with Clear all on its own (every Codex report; Claude 6.5 to 7).
+- **The profile shows its effect:** "A draft starts and ends like this": its greeting and sign-off around "…about 21 words…", from the counted habits, no model (macOS codex medium ×2).
+- The count says what it counts: "From the 64 you wrote in English" (Graphite, macOS, Lumen claude).
+- **Study finishes with a way to its result:** "Done. Its notes are with your style." and **Show the notes**, which opens Phrases and notes and moves the keys there (Graphite codex medium, Lumen and Atelier claude).
+- The precedence and hints at `text-sm`/`text-xs`, each one line where it can be.
+- **The AI filter:** Create with AI uses the sparkle (Atelier claude); "Not saved · written with AI" (Graphite claude); the list's headings in sentence case, not capitals; a chosen action is outlined in the ink (it was 1.1:1 in Graphite); placeholders say what goes there ("Name this rule", "an address") instead of looking like values (Atelier, macOS claude).
+
+### Not in this pass, and why
+- **A keyboard shortcut or palette command for Summarize:** the owner's rule. The toolbar button is in the Tab order. A palette command isn't a shortcut, but the lead's brief says to use the existing controls; it's a question for the owner.
+- **Opening the first match in the reader** to fill the preview's empty half: opening a conversation marks it read; a preview mustn't change mail.
+- **Edit request in the action preview:** the palette has no way to open Ask with text in its field; Edit as a rule stays the way to change it.
+- **Rows of the AI filter's sample that open, "View all 66":** a backend change (plan 162 already says).
+- **A card before Reply ready's needs-reply check:** the check is a model call that may say no; a card for every conversation opened would flash and go.
+- **Claim-level citations in the summary:** a new model output (owner).
+- **Grouping the digest by sender, an overview paragraph:** the digest is normal emails, a line each (owner).
+
+### Tests this pass adds
+- Unit: `aiErrorCopy` for `errors.ai.providerError`; `mapSdkError` for a 500; the summary item's reply instruction; `ruleTerms` words; the source's time when ambiguous; Today's reason copy; the style sample.
+- e2e (macOS): `summaries` (one edge; Reply opens ⌘J with the item); `ai-draft` (two lines, Edit instruction, narrow group); `ask` (header follows the turn; a miss keeps the text); `plain-actions` (the decision stays in the header while reading; no keys line; x only while reading; plain words); `today` (header, link, headings, tag, the digest's foot bar); `replies-ready` (the bar steps aside and returns on Dismiss; R in the button); `filters` and `ai-draft`'s Writing style part (order, sample, Show the notes).
+- The clip and wheel tests stay, with the digest's foot bar in view at 1100x700.
