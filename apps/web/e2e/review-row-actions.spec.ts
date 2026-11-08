@@ -136,7 +136,10 @@ test.describe("Review list: answering from the rows (plan 80)", () => {
     await expect(row(page, threads[0]!)).toHaveCount(0);
     await expect(row(page, threads[1]!)).toHaveAttribute("data-cursor", "true");
     await expect.poll(() => filed(threads[0]!)).toBe("suggestion");
+    // Esc puts the snackbar away once it's up; without it, Esc leaves Review for the category (plan 158)
+    await expect(page.getByTestId("category-snackbar")).toBeVisible();
     await page.keyboard.press("Escape");
+    await expect(page.getByTestId("category-snackbar")).toHaveCount(0);
     await page.keyboard.press("n");
     await expect(row(page, threads[1]!)).toHaveCount(0);
     await expect.poll(() => db.get("SELECT label, source FROM cls_examples WHERE thread_id = ?", threads[1]!)).toEqual({ label: -1, source: "reject" });
