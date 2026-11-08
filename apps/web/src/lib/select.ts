@@ -109,7 +109,9 @@ export function toggleCurrent(): void {
 export function pickRow(id: number, shift: boolean): void {
   const s = getApp();
   if (s.actionPreview || id === 0 || listCovered()) return;
-  const checked = shift && s.checked.size ? addRange(s.checked, listOrder(), s.anchorId, id) : toggle(s.checked, id);
+  // "all N" shows every loaded row of it checked, those paged in since too: what's shown is what a click starts from
+  const shown = s.scope ? new Set([...s.checked, ...scopeRows(useList.getState().items, s.scope.scope).map((t) => t.id)]) : s.checked;
+  const checked = shift && shown.size ? addRange(shown, listOrder(), s.anchorId, id) : toggle(shown, id);
   setApp({ checked, anchorId: id, scope: null });
 }
 

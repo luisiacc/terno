@@ -323,10 +323,12 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       data-row-control
       checked={checked}
       className={cn("invisible group-data-many/list:visible", className)}
-      // no row press (no cursor move, no drag), no focus move, no text selected by ⇧
+      // no row press (no cursor move, no drag), no text selected by ⇧; the keys go to the list, as a row's press sends
+      // them (x and Esc act on what was checked, not on a search field), without scrolling it
       onMouseDown={(e) => {
         e.stopPropagation();
         e.preventDefault();
+        e.currentTarget.closest<HTMLElement>("[role=listbox]")?.focus({ preventScroll: true });
       }}
       onClick={(e) => {
         e.stopPropagation();

@@ -274,9 +274,17 @@ test.describe("the pointer's checkbox (2026-11-07)", () => {
     await scenario("a search's results in List: the same box", async () => {
       await search(page, "design");
       const hit = rows(page).nth(1);
+      await expect(page.getByTestId("search-input")).toBeFocused();
       await pick(hit);
       await expect(hit).toHaveAttribute("data-checked", "true");
       await expect(listPage(page)).toHaveCount(0);
+      // (Codex review) the keys go to the list, as after a row's press: x checks the cursor's row, Esc ends the selection
+      await expect(listbox(page)).toBeFocused();
+      await page.keyboard.press("x");
+      await expect.poll(checkedCount).toBe(2);
+      await page.keyboard.press("Escape");
+      await expect.poll(checkedCount).toBe(0);
+      await expect(page.getByTestId("search-input")).toHaveValue("design");
     });
   });
 });

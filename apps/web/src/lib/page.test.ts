@@ -98,6 +98,10 @@ describe("the page (plan 24)", () => {
     pickRow(3, false);
     expect(getApp().scope).toBeNull();
     expect([...getApp().checked].sort()).toEqual([1, 2, 4]);
+    // (Codex review) "all N", rows paged in after it: they show checked, so a click unchecks the one clicked and keeps the rest
+    setApp({ checked: new Set([1, 2]), scope: { key: listKey(), scope: { kind: "view" }, label: "", count: 9 } as never });
+    pickRow(3, false);
+    expect([...getApp().checked].sort()).toEqual([1, 2, 4]);
     // ⇧ with nothing checked is one row: a range needs a start the user can see
     setApp({ checked: new Set(), anchorId: 1 });
     pickRow(3, true);
