@@ -1036,6 +1036,7 @@ function ReaderContent() {
   const draftShown = useApp((s) => s.draftShown);
   const draftKey = useDrafts((s) => (selectedId === null ? null : shownDraftKey(s.drafts, selectedId, draftShown)));
   const repliesOn = useApp(repliesOffered);
+  const readyHere = useReplies((r) => r.shown?.phase === "ready" && r.shown.threadId === selectedId);
   const summarizeOffered = useApp(summariesOffered);
   // plan 147: Dev mode's switch off, what's stored stays out of sight too; elsewhere reading is never gated (plan 132)
   const summaryShown = useApp(aiAllowed);
@@ -1183,7 +1184,9 @@ function ReaderContent() {
               {/* plan 144: off, it never shows; a draft here means it's out of the way */}
               {repliesOn && !draftKey && <ReplyReady key={`r${detail.thread.id}`} threadId={detail.thread.id} />}
               <ScheduledReplyLine threadId={detail.thread.id} />
-              <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyName(detail, myEmails)} replyAll={replyAll} account={account} />
+              {/* plan 162 (after ai162-r01): Reply ready is the reply, in the reply bar's place while it shows (two reply surfaces
+                  were stacked); Dismiss brings the bar back, and the toolbar keeps Reply and Forward */}
+              <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyName(detail, myEmails)} replyAll={replyAll} account={account} stepAside={repliesOn && readyHere} />
             </>
           )}
         </div>

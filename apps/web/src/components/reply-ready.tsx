@@ -51,17 +51,6 @@ export function replyAllTo(detail: ThreadDetail, mine: readonly string[]): strin
 }
 
 /** "Press R to reply with this draft", the key a keycap in the sentence, wherever the language puts it. */
-function Hint() {
-  const [before, after] = t("replies.hint", { key: "\u0000" }).split("\u0000");
-  return (
-    <span data-testid="reply-ready-hint" className="text-xs text-muted-foreground">
-      {before}
-      <Shortcut keys="r" className="mx-0.5" />
-      {after}
-    </span>
-  );
-}
-
 /** Plan 161, pass 2: the model's gaps still in the text, so the header says the draft isn't whole before Use. */
 export function gapsToFill(text: string, gaps: readonly string[]): number {
   return [...new Set(gaps.filter(Boolean))].filter((g) => text.includes(g)).length;
@@ -98,7 +87,8 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
       {writing ? <Spinner className={AI_GLYPH} /> : <Sparkles aria-hidden className={AI_GLYPH} />}
       <span data-testid="reply-ready-title" className={AI_TITLE}>{writing ? t("replies.writing") : t("replies.title")}</span>
       {/* what's left for the user, said before Use, in the ink */}
-      {toFill > 0 && <><span aria-hidden>·</span><span data-testid="reply-ready-gaps" className="font-medium text-foreground">{t("replies.gaps", { count: toFill })}</span></>}
+      {/* plan 162 (after ai162-r01): in the gap's own mark, so the header points at what's missing in the draft */}
+      {toFill > 0 && <><span aria-hidden>·</span><span data-testid="reply-ready-gaps" className={cn(AI_GAP, "px-1 font-medium")}>{t("replies.gaps", { count: toFill })}</span></>}
       {/* each "·" its own item, so the gaps either side are the same; the voice is the provenance's to explain (pass 3) */}
       {!writing && to ? <><span aria-hidden>·</span><span data-testid="reply-ready-to" className="min-w-0">{to}</span></> : null}
     </>
@@ -153,10 +143,13 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
           <Button variant="outline" size="sm" className="text-foreground" data-testid="reply-ready-stop" onClick={() => stopReply(threadId)}>{t("replies.stop")}</Button>
         ) : (
           <>
-            <Button size="sm" data-testid="reply-ready-use" aria-keyshortcuts="r" onClick={() => void useReply(threadId)}>{t("replies.use")}</Button>
+            {/* the one R on screen (plan 161, pass 2). Plan 162 (after ai162-r01): its keycap in the button it presses; the
+                sentence beside it ("Press R to reply with this draft") said the button again */}
+            <Button size="sm" data-testid="reply-ready-use" aria-keyshortcuts="r" onClick={() => void useReply(threadId)}>
+              {t("replies.use")}
+              <Shortcut keys="r" className="ml-0.5" />
+            </Button>
             <Button size="sm" variant="outline" className="text-foreground" data-testid="reply-ready-dismiss" onClick={() => void dismissReply(threadId)}>{t("replies.dismiss")}</Button>
-            {/* the one R on screen: the reply bar's keycap steps aside while this shows (plan 161, pass 2) */}
-            <Hint />
             {shown.row && <AiProvenance model={shown.row.model ?? ""} at={shown.row.generatedAt} lines={replyVoice(shown.row)} testId="reply-ready-provenance" className="-me-1.5 ms-auto" />}
           </>
         )}

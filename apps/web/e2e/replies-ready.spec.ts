@@ -56,12 +56,13 @@ test.describe("replies ready (plan 144)", () => {
       await expect(block(page)).toHaveAttribute("data-phase", "writing");
       fakeDraft.firstTokenMs = 0;
       await expect(block(page)).toHaveAttribute("data-phase", "ready", { timeout: 15_000 });
-      // one R on screen: the card's; the reply bar's keycap steps aside
-      await expect(page.getByTestId("reply-ready-hint")).toBeVisible();
+      // one R on screen: the card's, in Use as draft. Plan 162 (after ai162-r01): the card takes the reply bar's place
+      await expect(page.getByTestId("reply-ready-use").locator("[data-slot=shortcut]")).toBeVisible();
       // one-to-one (owner's decisions 2): no Reply | Reply all, as the reply bar offers none
       await expect(page.getByTestId("reply-ready-mode")).toHaveCount(0);
       await expect(page.getByTestId("reply-ready-to")).toHaveText("To Yuki Gutiérrez");
       await expect(page.getByTestId("quick-reply-key")).toHaveCount(0);
+      await expect(page.getByTestId("draft-slot")).toBeHidden();
       await expect(page.getByTestId("reply-ready-text")).not.toBeEmpty();
       expect(state()).toBe("ready");
       expect(await page.evaluate(() => document.activeElement?.closest('[data-testid="reply-ready"]') === null)).toBe(true);
@@ -91,6 +92,8 @@ test.describe("replies ready (plan 144)", () => {
       await page.getByTestId("reply-ready-dismiss").click();
       await expect(block(page)).toHaveCount(0);
       expect(state()).toBe("dismissed");
+      // plan 162 (after ai162-r01): the reply bar comes back to its place
+      await expect(page.getByTestId("reply-bar")).toBeVisible();
       await page.getByTestId("snack-action").click();
       await expect(block(page)).toBeVisible();
       await expect.poll(state).toBe("ready");
@@ -211,8 +214,8 @@ test.describe("replies ready (plan 144)", () => {
       await scenario("the card: who it's to, the gap marked, Use as draft at 28 px, the R hint in words", async () => {
         await expect(page.getByTestId("reply-ready-to")).toContainText("To ");
         await expect(page.getByTestId("reply-ready-gap")).toHaveText("[Whether the 19th works.]");
-        await expect(page.getByTestId("reply-ready-use")).toHaveText("Use as draft");
-        await expect(page.getByTestId("reply-ready-hint")).toHaveText("Press R to reply with this draft");
+        await expect(page.getByTestId("reply-ready-use")).toHaveText(/^Use as draft/);
+        await expect(page.getByTestId("reply-ready-use")).toHaveAccessibleName(/^Use as draft/);
         // plan 161, pass 2: what's left to fill, said before Use
         await expect(page.getByTestId("reply-ready-gaps")).toHaveText("1 gap to fill");
         for (const id of ["reply-ready-use", "reply-ready-dismiss"]) expect((await page.getByTestId(id).boundingBox())!.height, id).toBeGreaterThanOrEqual(28);
@@ -295,9 +298,9 @@ test.describe("replies ready (plan 144)", () => {
         expect(mine!.ring, `${mode}`).not.toContain(NONE);
       } else expect(mine!.fill, `${mode}`).not.toBe(NONE);
 
-      // one column: the summary above and the reply bar below share the card's ends
+      // one column: the summary above shares the card's ends (plan 162: the reply bar steps aside while it shows)
       const box = (await card.boundingBox())!;
-      for (const other of [page.getByTestId("draft-slot"), page.getByTestId("summary-block")]) {
+      for (const other of [page.getByTestId("summary-block")]) {
         const o = (await other.boundingBox())!;
         expect(Math.abs(o.x - box.x), `${info.project.name} ${width} ${mode} left`).toBeLessThanOrEqual(1);
         expect(Math.abs(o.x + o.width - (box.x + box.width)), `${info.project.name} ${width} ${mode} right`).toBeLessThanOrEqual(1);

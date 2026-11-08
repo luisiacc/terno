@@ -429,7 +429,7 @@ export function draftTitle(d: LocalDraft): string {
  * keeps the draft in view; focus moves only on an explicit open or exit.
  */
 /** `replyAll`: offered in the bar only when it reaches someone Reply doesn't */
-export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, account, checkpoint, onCheckpointReopen }: { threadId: number; draftKey: string | null; replyTo: string; replyAll?: boolean; account: Account | undefined; checkpoint?: BodyCheckpoint; onCheckpointReopen?: () => () => void }) {
+export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, account, checkpoint, onCheckpointReopen, stepAside = false }: { threadId: number; draftKey: string | null; replyTo: string; replyAll?: boolean; account: Account | undefined; checkpoint?: BodyCheckpoint; onCheckpointReopen?: () => () => void; /** plan 162: a prepared reply takes the bar's place while it shows */ stepAside?: boolean }) {
   // plan 115: this conversation's draft is in the pinned card (kept so even after the conversation's placement expired)
   const pinned = usePinned((s) => s.key !== null && (s.key === draftKey || (draftKey === null && s.threadId === threadId)));
   const d = useDrafts((s) => (draftKey && !pinned ? s.drafts[draftKey] : undefined));
@@ -540,7 +540,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
 
   return (
     // short of the composer, it's an invitation: a full line around it in every style, however faint the style's own fill or ring, and it answers the pointer
-    <div ref={rootRef} className={cn("mt-4", DRAFT_SURFACE, "not-data-[state=open]:[box-shadow:0_0_0_1px_var(--border),var(--draft-shadow)] data-[state=bar]:has-[[data-testid=quick-reply]:hover]:bg-muted", state === "returning" && "min-h-10")} data-testid="draft-slot" data-state={state} data-thread={threadId}>
+    <div ref={rootRef} className={cn("mt-4", DRAFT_SURFACE, "not-data-[state=open]:[box-shadow:0_0_0_1px_var(--border),var(--draft-shadow)] data-[state=bar]:has-[[data-testid=quick-reply]:hover]:bg-muted", state === "returning" && "min-h-10")} data-testid="draft-slot" data-state={state} data-thread={threadId} hidden={stepAside && state === "bar"}>
       <Expand open={state === "bar"}>
         <div className="flex h-10 items-center gap-0.5 pr-1.5" data-testid="reply-bar">
           {/* its words on the messages' name column, the reply glyph in the avatars'; the account it answers from in words, and only when there's a choice (initials read as a person) */}

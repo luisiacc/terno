@@ -55,12 +55,14 @@ it("plan 144's addendum: ready, it's the summary's card, the label its header, t
   expect(text.textContent).toBe("Hey Liam!\nThanks, Luis");
   expect(footer.contains(q("reply-ready-use"))).toBe(true);
   expect(footer.contains(q("reply-ready-dismiss"))).toBe(true);
-  expect(footer.textContent).toContain("Press R to reply with this draft");
+  // plan 162 (after ai162-r01): R is the button's own keycap, not a sentence beside it
+  expect(footer.textContent).not.toContain("Press R");
+  expect(q("reply-ready-use")!.querySelector("[data-slot=shortcut]")).not.toBeNull();
   // pass 3: who wrote it, the one control every AI surface ends its row with
   expect(footer.lastElementChild).toBe(q("reply-ready-provenance"));
   expect(q("reply-ready-provenance")!.tagName.toLowerCase()).toBe("button");
   expect(q("reply-ready-provenance-label")!.textContent).toBe("Written with AI");
-  expect(q("reply-ready-use")!.textContent).toBe("Use as draft");
+  expect(q("reply-ready-use")!.textContent).toMatch(/^Use as draft/);
   // plan 161: the standard height, not 24 px
   expect(q("reply-ready-use")!.className).toContain("h-7");
   expect(q("reply-ready-dismiss")!.className).toContain("h-7");
