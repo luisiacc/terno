@@ -152,10 +152,16 @@ export function ruleRow(c: Condition, accountEmail: (id: number) => string): Rul
   return { label, text: upperFirst(t("action.rule.value", { op: op ? t(op[not ? 1 : 0]) : c.op, value: c.value })) };
 }
 
-/** Details: every condition as the rule builder writes it, a pattern verbatim. */
-export function ruleDetails(conditions: readonly Condition[], accountEmail: (id: number) => string): string[] {
-  return conditions.map((c) => (c.field !== "hasAttachment" && c.field !== "account" && c.field !== "ageDays" && c.op === "matches" ? t("filters.cond.text", { field: t(FIELD[c.field]), op: t(c.negate ? "filters.op.notMatches" : "filters.op.matches"), value: c.value }) : conditionText(c, accountEmail)));
+/** A condition that holds a pattern: what Details shows verbatim. */
+const hasPattern = (c: Condition): boolean => c.field !== "hasAttachment" && c.field !== "account" && c.field !== "ageDays" && c.op === "matches";
+
+/**
+ * Details (plan 161, pass 2: "Exact pattern"): each condition with a pattern, by its field, the pattern verbatim (a
+ * "not" said before it). The rows say everything else already.
+ */
+export function ruleDetails(conditions: readonly Condition[]): { field: string; negate: boolean; pattern: string }[] {
+  return conditions.filter(hasPattern).map((c) => ({ field: t(FIELD[c.field]), negate: Boolean(c.negate), pattern: String(c.value) }));
 }
 
 /** Whether Details says more than the rows: a pattern shown as words, a template or "a pattern". */
-export const hasDetails = (conditions: readonly Condition[]): boolean => conditions.some((c) => c.field !== "hasAttachment" && c.field !== "account" && c.field !== "ageDays" && c.op === "matches");
+export const hasDetails = (conditions: readonly Condition[]): boolean => conditions.some(hasPattern);

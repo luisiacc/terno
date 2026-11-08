@@ -108,6 +108,20 @@ export function focusWhenReady(previewId: string): void {
   watch.observe(document.body, { childList: true, subtree: true });
 }
 
+/**
+ * Plan 161, pass 2: back from a matched conversation to the rule, everything kept (the ticks, the request, the count).
+ * Esc does this first, while one is open; only an Esc with none open cancels. Whether it closed one.
+ */
+export function closePreviewRow(): boolean {
+  const s = getApp();
+  // (Split's: List's conversation is a page, which Esc closes on its own, and its cursor isn't an open conversation)
+  if (!s.actionPreview || (s.selectedId === null && !s.readerOpen)) return false;
+  setApp({ selectedId: null, readerOpen: false });
+  // the keys stay the list's (x, j/k, ⌘↩), wherever the conversation had them; programmatic, so no ring
+  listEl()?.focus({ preventScroll: true });
+  return true;
+}
+
 /** Back to the list and scroll position you left, with no trace. */
 export function leavePreview(): void {
   const { from } = useActionRows.getState();

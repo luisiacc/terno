@@ -1,5 +1,5 @@
 import { replyReady, useReply } from "~/lib/replies";
-import { leavePreview } from "~/state/action-preview";
+import { closePreviewRow, leavePreview } from "~/state/action-preview";
 import { goToFolder } from "~/lib/account-folders";
 import { resolveKey, type Command } from "@terno/core";
 import { act, openCompose, toggleRead, toggleStar, undoLast } from "~/lib/actions";
@@ -114,11 +114,12 @@ function filterList(filter: "unread" | undefined) {
   setListFilter(filter);
 }
 
-/** Esc: Back from a page (List), else the multi-selection ends, else from a search's results to its field (plan 158: the query kept, the field's own Esc leaves). */
+/** Esc: Back from a page (List), else a preview's open conversation, else the preview, else the multi-selection ends, else from a search's results to its field (plan 158: the query kept, the field's own Esc leaves). */
 function escape() {
   const s = getApp();
   if (listLayout() && currentPage() !== "list") { markSelectionIntent(); closePage({ focus: true }); }
-  else if (s.actionPreview) leavePreview();
+  // plan 161, pass 2: a matched conversation open in the reader closes first, back to the rule; then the preview ends
+  else if (s.actionPreview) { if (listLayout() || !closePreviewRow()) leavePreview(); }
   else if (s.checked.size || s.scope) clearSelection();
   else if (s.query) focusSearch();
   // plan 159: Review is a place Esc leaves, for where it was entered from

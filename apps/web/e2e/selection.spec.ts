@@ -6,7 +6,7 @@
 import type { Locator, Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
 import { expect, menuPath, navTo, focusList, rows, search, selectedRow, selectRows, stabilize, test, searchBox, fresh, scenario } from "./fixtures";
-import { E2E_NOW } from "./constants";
+import { E2E_NOW, UNDO_KEYS } from "./constants";
 import { sqlDb } from "../../backend-dev/src/server";
 
 // baselines are at twice the pixels; everything else draws at one (plan 139)
@@ -110,7 +110,7 @@ test("a batch: every row shows it's in, Delete reads as the menu's, Undo puts th
   // from the pane's button, then the snack's: the button that had focus is gone, focus isn't lost
   await page.getByTestId("bar-archive").click();
   await expect(checked(page)).toHaveCount(0);
-  await expect(toast(page, "Archived · 3 conversations").getByTestId("snack-action")).toHaveAttribute("aria-keyshortcuts", "z");
+  await expect(toast(page, "Archived · 3 conversations").getByTestId("snack-action")).toHaveAttribute("aria-keyshortcuts", UNDO_KEYS);
   await page.getByTestId("snack-action").click();
   await expect(checked(page)).toHaveCount(3);
   expect(await idsOf(checked(page))).toEqual(ids);
@@ -191,7 +191,7 @@ test.describe("context menu on one thread", () => {
       await expect(row(page, b!)).toHaveCount(0);
       await expect.poll(() => flags(server, b!).in_spam).toBe(1);
       // z is the undo of what the snack offers: the row goes at once, but the snack (and z with it) waits for the backend's answer
-      await expect(toast(page, "Spam").getByTestId("snack-action")).toHaveAttribute("aria-keyshortcuts", "z");
+      await expect(toast(page, "Spam").getByTestId("snack-action")).toHaveAttribute("aria-keyshortcuts", UNDO_KEYS);
       await focusList(page);
       await page.keyboard.press("z");
       await expect(row(page, b!)).toHaveCount(1);

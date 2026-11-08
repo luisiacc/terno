@@ -4,7 +4,7 @@ vi.stubGlobal("document", { querySelector: () => null });
 vi.stubGlobal("requestAnimationFrame", (run: () => void) => run());
 const call = vi.fn(async (..._a: unknown[]) => ({ items: [], nextCursor: null, total: 0, unticked: [] }));
 vi.mock("~/rpc/connection", () => ({ client: { call, on: () => () => {}, connectionVersion: 1 } }));
-const { enterPreview, focusWhenReady, leavePreview, useActionRows } = await import("./action-preview");
+const { closePreviewRow, enterPreview, focusWhenReady, leavePreview, useActionRows } = await import("./action-preview");
 const { focusIntent } = await import("~/lib/focus-intent");
 const { navigate, getApp, setApp, useApp } = await import("./app");
 const { useList } = await import("./list");
@@ -22,6 +22,20 @@ describe("what a preview keeps to come back to (plan 143)", () => {
     expect(getApp().actionPreview).toBeNull();
     expect(useActionRows.getState().from).toBeNull();
     expect(call).toHaveBeenCalledWith("ai.actionCancel", { previewId: "p1" });
+  });
+
+  it("an open conversation closes back to the rule, everything kept; only then does the preview end (plan 161, pass 2)", () => {
+    enterPreview("p8", "inbox");
+    useActionRows.setState({ unticked: new Set([5]) });
+    setApp({ selectedId: 4, readerOpen: true });
+    expect(closePreviewRow()).toBe(true);
+    expect(getApp()).toMatchObject({ actionPreview: "p8", selectedId: null, readerOpen: false });
+    expect([...useActionRows.getState().unticked]).toEqual([5]);
+    expect(call).not.toHaveBeenCalledWith("ai.actionCancel", expect.anything());
+    // nothing open: Esc's next step is the preview's end
+    expect(closePreviewRow()).toBe(false);
+    leavePreview();
+    expect(closePreviewRow()).toBe(false);
   });
 
   it("Cancel goes back where it was", () => {

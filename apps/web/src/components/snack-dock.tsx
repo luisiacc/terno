@@ -80,8 +80,16 @@ function Ring({ size }: { size: { w: number; h: number } }) {
 }
 
 /**
+ * Plan 161, pass 2: every snack's z is the last undo (`undoLast`), as ⌘Z (Ctrl+Z) is: the keycap shows the platform's
+ * undo, and `aria-keyshortcuts` names both.
+ */
+const UNDO_CHORD = "mod+z";
+// (the shortcut's own test of the platform: lib/select's would pull the list's state into every snack)
+const undoAria = () => `${typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "Meta" : "Control"}+Z Z`;
+
+/**
  * The primary action: a pill whose border drains over the snack's lifetime,
- * with z as a quiet keycap while z runs the same thing.
+ * with its key as a quiet keycap while that key runs the same thing (z, the undo, shown as ⌘Z).
  */
 export function SnackPill({ label, name, onClick, shortcut, disabled, testId = "snack-action" }: { label: string; name?: string; onClick: () => void; shortcut?: string; disabled?: boolean; testId?: string }) {
   const ref = useRef<HTMLButtonElement>(null);
@@ -102,7 +110,7 @@ export function SnackPill({ label, name, onClick, shortcut, disabled, testId = "
       data-testid={testId}
       data-snack-primary
       aria-label={name}
-      aria-keyshortcuts={shortcut}
+      aria-keyshortcuts={shortcut === "z" ? undoAria() : shortcut}
       disabled={disabled}
       onClick={onClick}
       className={cn(
@@ -114,7 +122,7 @@ export function SnackPill({ label, name, onClick, shortcut, disabled, testId = "
       <Ring size={size} />
       {label}
       {/* the key is aria-keyshortcuts; drawn as generated content so the button's text stays its label ("Undo" in "Undo archive") */}
-      {shortcut && <Kbd aria-hidden data-key={chordLabel(shortcut)} className="h-4 min-w-4 rounded-full bg-tint px-1 text-2xs shadow-none after:content-[attr(data-key)]" />}
+      {shortcut && <Kbd aria-hidden data-key={chordLabel(shortcut === "z" ? UNDO_CHORD : shortcut)} className="h-4 min-w-4 rounded-full bg-tint px-1 text-2xs shadow-none after:content-[attr(data-key)]" />}
     </button>
   );
 }

@@ -26,6 +26,15 @@ export function previewTitle(preview: ActionPreviewInfo, shown: number, folderNa
   return t(`action.title.${verbOf(preview)}`, { count: preview.count, category: preview.categoryName ?? "", folder: folderName });
 }
 
+/**
+ * Plan 161, pass 2: Split's list header, too narrow at 1100 px for the outcome beside its buttons: only the count (the
+ * verb is the button's, the outcome the reader's title). The same wait for a final number as `previewTitle`.
+ */
+export function previewCount(preview: ActionPreviewInfo, shown: number): string {
+  if (savesRuleOnly(preview) || preview.scanning) return previewTitle(preview, shown, "");
+  return t("action.count", { count: preview.count });
+}
+
 /** plan 161: waiting on the search or the check, Apply can't run yet, and no count is final */
 export const previewWaiting = (p: Pick<ActionPreviewInfo, "scanning" | "check">, checking: boolean): boolean => p.scanning || p.check === "needed" || checking;
 

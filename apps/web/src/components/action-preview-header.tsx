@@ -9,13 +9,13 @@ import { Spinner } from "@terno/ui/components/spinner";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, type ReactNode } from "react";
 import { providerLabel } from "~/lib/ai";
-import { applyPreview, check, inboxOnly, includeSkipped, previewTitle, previewWaiting, showLeftOut, stopApplying, useActionPreview, verbOf } from "~/lib/action-preview";
+import { applyPreview, check, inboxOnly, includeSkipped, previewCount, previewTitle, previewWaiting, showLeftOut, stopApplying, useActionPreview, verbOf } from "~/lib/action-preview";
 import { useAppearance } from "~/lib/appearance";
 import { LIST_TITLE } from "~/lib/list-title";
 import { PANE_TITLE, PANE_TITLE_TOP, READING_COLUMN } from "~/lib/pane-lines";
 import { hasDetails, ruleDetails, ruleRow } from "~/lib/rule-words";
 import { isMac } from "~/lib/select";
-import { focusWhenReady, leavePreview, useActionRows } from "~/state/action-preview";
+import { closePreviewRow, focusWhenReady, leavePreview, useActionRows } from "~/state/action-preview";
 import { getApp, setApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
 
@@ -26,6 +26,12 @@ const Line = ({ children, testId }: { children: ReactNode; testId?: string }) =>
 );
 
 const Dot = () => <span aria-hidden>·</span>;
+
+/** "a|b|c" with a break allowed after each "|" only: a long pattern wraps between its words, never inside one */
+const breakAtBars = (pattern: string): ReactNode[] => {
+  const parts = pattern.split("|");
+  return parts.flatMap((part, i) => (i < parts.length - 1 ? [`${part}|`, <wbr key={i} />] : [part]));
+};
 
 
 /** The folder a move goes to, by its last name. */
@@ -82,20 +88,25 @@ export default function ActionPreviewHeader() {
   const ruleOnly = savesRuleOnly(preview);
   const waiting = previewWaiting(preview, checking);
   const title = previewTitle(preview, shown, folderName);
+  // plan 161, pass 2: Split's header holds the count on one line; List's, the window's width and no reader, the outcome
+  const heading = list ? title : previewCount(preview, shown);
   const button = ruleOnly ? t("action.rule.save") : waiting ? t(`action.button.${verb}`) : t(`action.apply.${verb}`, { count });
   return (
     <section data-testid="action-preview" aria-label={t("action.region", { summary: plan.summary })} className="drag-region shrink-0 space-y-1 border-b border-hairline px-5 pt-3 pb-2.5">
       <div className="flex min-h-7 items-center gap-2">
         <h1 data-testid="action-title" className={cn("flex min-w-0 flex-1 items-center gap-2", LIST_TITLE.title)} aria-live="polite">
-          {preview.scanning && <Spinner data-testid="action-finding" className="size-3.5 shrink-0 text-muted-foreground" />}
-          <span className="min-w-0">{title}</span>
+          <span className={cn("min-w-0", !list && "truncate")} title={heading === title ? undefined : title}>{heading}</span>
         </h1>
         {applying ? (
           <Button size="sm" variant="secondary" className="no-drag" data-testid="action-stop" onClick={stopApplying}>{t("action.stop")}</Button>
         ) : (
           <Button size="sm" variant="secondary" className="no-drag" data-testid="action-cancel" onClick={leavePreview}>{t("common.cancel")}</Button>
         )}
-        <Button size="sm" className="no-drag tabular" data-testid="action-apply" disabled={waiting || applying || (count === 0 && !ruleOnly)} onClick={() => void applyPreview()}>{button}</Button>
+        {/* plan 161, pass 2: waiting reads as waiting (a spinner on a quiet button), not as a faded primary */}
+        <Button size="sm" variant={waiting && !applying ? "secondary" : "default"} className="no-drag tabular" data-testid="action-apply" data-waiting={waiting || undefined} disabled={waiting || applying || (count === 0 && !ruleOnly)} onClick={() => void applyPreview()}>
+          {waiting && <Spinner data-testid="action-finding" className="size-3.5" />}
+          {button}
+        </Button>
       </div>
       {/* the words typed, when the rule (which they head) isn't on screen */}
       {!ruleInReader && sentence && (
@@ -104,7 +115,7 @@ export default function ActionPreviewHeader() {
           {!list && (
             <>
               <Dot />
-              <Button variant="link-secondary" size="xs" className="no-drag shrink-0" data-testid="action-show-rule" onClick={() => setApp({ selectedId: null, readerOpen: false })}>{t("action.rule.show")}</Button>
+              <Button variant="link-secondary" size="xs" className="no-drag shrink-0" data-testid="action-show-rule" onClick={() => closePreviewRow()}>{t("action.rule.show")}</Button>
             </>
           )}
         </p>
@@ -154,8 +165,9 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
     <div className={cn("flex flex-col gap-3", reader ? "text-sm" : "no-drag pt-1.5 text-xs")}>
       {reader ? (
         <div>
-          <h2 className={cn(PANE_TITLE, "text-pretty")} data-testid="action-rule-title">{sentence ? `“${sentence}”` : plan.summary}</h2>
-          <p className="mt-1 text-sm text-muted-foreground" data-testid="action-rule-count">{previewTitle(preview, shown, folderName)}</p>
+          {/* plan 161, pass 2: what Apply does is the title; what was asked, the quieter line under it */}
+          <h2 className={cn(PANE_TITLE, "text-pretty")} data-testid="action-rule-title">{previewTitle(preview, shown, folderName)}</h2>
+          {sentence && <p className="mt-1 text-sm text-pretty text-muted-foreground" data-testid="action-rule-request">“{sentence}”</p>}
         </div>
       ) : null}
       <div>
@@ -176,15 +188,23 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
       </div>
       {hasDetails(conditions) && (
         <Collapsible data-testid="action-details">
-          <CollapsibleTrigger className="w-auto gap-1 text-xs font-medium text-muted-foreground hover:text-foreground [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5" data-testid="action-details-toggle">
+          {/* plan 161, pass 2: named for what it holds, a 24 px target */}
+          <CollapsibleTrigger className="h-6 w-auto gap-1 text-xs font-medium text-muted-foreground hover:text-foreground [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5" data-testid="action-details-toggle">
             {t("action.rule.details")}
           </CollapsibleTrigger>
           <CollapsiblePanel>
-            <ul className="mt-1 space-y-0.5 font-mono text-xs break-all text-muted-foreground" data-testid="action-details-text">
-              {ruleDetails(conditions, accountEmail).map((d, i) => (
-                <li key={i}>{d}</li>
+            {/* the UI's type, not code's: a pattern breaks only after a "|", never inside a word */}
+            <dl className="mt-1 grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4 gap-y-1 text-xs" data-testid="action-details-text">
+              {ruleDetails(conditions).map((d, i) => (
+                <div key={i} className="contents">
+                  <dt className="text-muted-foreground">{d.field}</dt>
+                  <dd className="min-w-0 break-words text-foreground" data-testid="action-details-pattern">
+                    {d.negate && <span className="text-muted-foreground">{t("filters.op.notMatches")} </span>}
+                    {breakAtBars(d.pattern)}
+                  </dd>
+                </div>
               ))}
-            </ul>
+            </dl>
           </CollapsiblePanel>
         </Collapsible>
       )}
@@ -247,11 +267,15 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
       )}
       {/* the keys, said where the eye is: ⌘↩ and Esc are the header's buttons, x a row's check */}
       {!ruleOnly && (
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground" data-testid="action-keys">
-          <span className="inline-flex items-center gap-1.5"><Shortcut keys="mod+enter" /> {waiting ? t(`action.button.${verb}`) : t(`action.apply.${verb}`, { count })}</span>
-          <span className="inline-flex items-center gap-1.5"><Shortcut keys="escape" /> {t("common.cancel")}</span>
-          {reader && <span>{t("action.rule.keys")}</span>}
-        </p>
+        // plan 161, pass 2: the keys as keycaps on one line, the help on its own
+        <div className="space-y-1.5 text-xs text-muted-foreground">
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1" data-testid="action-keys">
+            <span className="inline-flex items-center gap-1.5"><Shortcut keys="mod+enter" /> {waiting ? t(`action.button.${verb}`) : t(`action.apply.${verb}`, { count })}</span>
+            <span className="inline-flex items-center gap-1.5"><Shortcut keys="escape" /> {t("common.cancel")}</span>
+            <span className="inline-flex items-center gap-1.5"><Shortcut keys="x" /> {t("action.rule.leaveOut")}</span>
+          </p>
+          {reader && <p className="text-pretty" data-testid="action-help">{t("action.rule.keys")}</p>}
+        </div>
       )}
     </div>
   );

@@ -427,7 +427,9 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     <div
       role="option"
       id={`thread-${thread.id}`}
-      aria-selected={included ?? inSelection}
+      aria-selected={inSelection}
+      // plan 161, pass 2: in a preview, whether the row is in it: checked, as its check shows (the cursor is aria-selected)
+      aria-checked={included}
       data-cursor={selected || undefined}
       data-opened={opened || undefined}
       data-testid="thread-row"
@@ -467,7 +469,8 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       {included !== undefined && (
         // the row is the option and `x` its key: this is for the pointer, and says nothing the row doesn't. Plan 161: the
         // whole check column at the row's height is the target (the body opens the mail, to check it before Apply)
-        <span data-testid="row-include" data-row-control data-checked={included || undefined} className="absolute inset-y-0 left-0 w-10" onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.closest<HTMLElement>("[role=listbox]")?.focus({ preventScroll: true }); }} onClick={(e) => { e.stopPropagation(); toggleRow(thread.id); }}>
+        // (a checkbox to assistive tech, for the pointer: not in the Tab order, the row and x are the keyboard's way)
+        <span role="checkbox" aria-checked={included} aria-label={t("action.row.include", { subject: thread.subject || t("common.noSubject") })} data-testid="row-include" data-row-control data-checked={included || undefined} className="absolute inset-y-0 left-0 w-10" onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.closest<HTMLElement>("[role=listbox]")?.focus({ preventScroll: true }); }} onClick={(e) => { e.stopPropagation(); toggleRow(thread.id); }}>
           <CheckboxMark checked={included} className="absolute top-1/2 left-5 -translate-y-1/2" />
         </span>
       )}

@@ -73,7 +73,7 @@ describe("a sentence's rule in words (plan 161)", () => {
 
   it("each condition a row: where it looks, and what it asks", () => {
     const opening: Condition = { field: "opening", op: "matches", value: "shipped|delivery", negate: false };
-    expect(ruleRow(opening, email)).toEqual({ label: "Start of mail", text: "mentions any of", terms: ["shipped", "delivery"] });
+    expect(ruleRow(opening, email)).toEqual({ label: "Subject and first lines", text: "mentions any of", terms: ["shipped", "delivery"] });
     expect(ruleRow({ ...opening, negate: true }, email)).toMatchObject({ text: "mentions none of" });
     expect(ruleRow({ field: "ageDays", op: "gt", value: 30, negate: false } as Condition, email)).toEqual({ label: "Age", text: "Older than 30 days" });
     expect(ruleRow({ field: "fromDomain", op: "equals", value: "amazon.com", negate: true }, email)).toEqual({ label: "Domain", text: "Isn’t “amazon.com”" });
@@ -81,14 +81,18 @@ describe("a sentence's rule in words (plan 161)", () => {
     // a generated template reads as its template; any other pattern doesn't print its syntax
     expect(ruleRow({ field: "subject", op: "matches", value: "^Tu pedido [0-9]+ está en camino$", negate: false }, email).text).toMatch(/is like “Tu pedido # está en camino”/);
     const other = ruleRow({ field: "subject", op: "matches", value: "ship.*ped", negate: false }, email);
-    expect(other.text).toBe("matches a pattern (in Details)");
+    expect(other.text).toBe("matches a pattern (see Exact pattern)");
     expect(other.terms).toBeUndefined();
   });
 
-  it("Details holds the exact rule, pattern and all, and only when a pattern needs it", () => {
-    const conditions: Condition[] = [{ field: "opening", op: "matches", value: "shipped|delivery", negate: false }, { field: "ageDays", op: "gt", value: 30, negate: false } as Condition];
+  it("Exact pattern holds each pattern verbatim by its field, and only when a pattern needs it (pass 2)", () => {
+    const conditions: Condition[] = [{ field: "opening", op: "matches", value: "shipped|delivery", negate: false }, { field: "ageDays", op: "gt", value: 30, negate: false } as Condition, { field: "subject", op: "matches", value: "^Re:", negate: true }];
     expect(hasDetails(conditions)).toBe(true);
-    expect(ruleDetails(conditions, email)).toEqual(["Start of mail matches pattern “shipped|delivery”", "older than 30 days"]);
+    // the rows already say the age: only the patterns, by the field's plain name, a "not" kept
+    expect(ruleDetails(conditions)).toEqual([
+      { field: "Subject and first lines", negate: false, pattern: "shipped|delivery" },
+      { field: "Subject", negate: true, pattern: "^Re:" },
+    ]);
     expect(hasDetails([{ field: "fromDomain", op: "equals", value: "ups.com", negate: false }])).toBe(false);
   });
 });

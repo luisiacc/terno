@@ -6,6 +6,7 @@
 import type { Page } from "@playwright/test";
 import { axeBothModes, expect, focusList, openRow, rows, search, selectedRow, test, searchBox, fresh, scenario, openOffers } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
+import { UNDO_KEYS } from "./constants";
 
 const dock = (page: Page) => page.getByTestId("snack");
 /** How much of the ring has drained (0–100; the dash moves from 0 to −100). */
@@ -54,7 +55,7 @@ test.describe("the docked snackbar", () => {
       // the action says what it takes back, and z is its key while it is
       const undo = dock(page).getByTestId("snack-action");
       await expect(undo).toHaveAccessibleName("Undo archive");
-      await expect(undo).toHaveAttribute("aria-keyshortcuts", "z");
+      await expect(undo).toHaveAttribute("aria-keyshortcuts", UNDO_KEYS);
       await expect(page.getByTestId("snack-live")).toHaveText("Archived");
     });
     await scenario("Undo restores the row; z does too and takes the bar with it", async () => {

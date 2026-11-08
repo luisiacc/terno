@@ -5,7 +5,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { SettingsPatch } from "@terno/core/rpc";
-import { E2E_NOW } from "./constants";
+import { E2E_NOW, UNDO_KEYS } from "./constants";
 import { sqlDb } from "../../backend-dev/src/server";
 import { expect, fresh, focusList, ingestConversation, scenario, test, type DevServerFixture } from "./fixtures";
 
@@ -90,7 +90,7 @@ test.describe("actions in plain English (plan 143)", () => {
       await say(page, "Archive shipping notices older than a month");
       await expect(page.getByTestId("action-preview")).toBeVisible();
       // the rule found three; the check took out the one that isn't about shipping, and says so
-      await expect(page.getByTestId("action-title")).toHaveText("Archive 2 conversations");
+      await expect(page.getByTestId("action-title")).toHaveText("2 conversations");
       await expect(page.getByTestId("action-conditions")).toContainText("Inbox");
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(rows(page)).toHaveCount(2);
@@ -106,13 +106,25 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("nav-inbox")).toHaveAttribute("data-active");
       await expect(page.locator("#app-sidebar [data-active]")).toHaveCount(1);
       const rule = page.getByTestId("action-rule");
-      await expect(rule.getByTestId("action-rule-title")).toHaveText("“Archive shipping notices older than a month”");
+      // plan 161, pass 2: what Apply does is the title, what was asked the line under it
+      await expect(rule.getByTestId("action-rule-title")).toHaveText("Archive 2 conversations");
+      await expect(rule.getByTestId("action-rule-request")).toHaveText("“Archive shipping notices older than a month”");
+      expect(await rule.getByTestId("action-rule-title").evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThan(await rule.getByTestId("action-rule-request").evaluate((el) => parseFloat(getComputedStyle(el).fontSize)));
       await expect(rule.getByTestId("action-conditions")).toContainText("Older than 30 days");
       await expect(rule.getByTestId("action-rule-term")).toHaveText(["shipping", "delivery", "tracking"]);
       // the pattern itself is only in Details, never in the rows
       await expect(rule.getByTestId("action-conditions")).not.toContainText("|");
+      // the field said plainly; the exact pattern in the UI's type, not code's, a 24 px target to open it
+      await expect(rule.getByTestId("action-details-toggle")).toHaveText("Exact pattern");
+      expect((await rule.getByTestId("action-details-toggle").boundingBox())!.height).toBeGreaterThanOrEqual(24);
       await rule.getByTestId("action-details-toggle").click();
-      await expect(rule.getByTestId("action-details-text")).toContainText("matches pattern “shipping|delivery|tracking”");
+      await expect(rule.getByTestId("action-details-pattern")).toHaveText("shipping|delivery|tracking");
+      const fonts = await page.evaluate(() => [getComputedStyle(document.querySelector("[data-testid=action-details-pattern]")!).fontFamily, getComputedStyle(document.querySelector("[data-testid=action-rule-title]")!).fontFamily]);
+      expect(fonts[0]).toBe(fonts[1]);
+      // checkboxes to assistive tech: the column's check, and the row's checked state (the cursor stays aria-selected)
+      await expect(page.getByRole("checkbox", { name: /^Include / })).toHaveCount(2);
+      await expect(page.getByRole("checkbox", { name: /^Include / }).first()).toHaveAttribute("aria-checked", "true");
+      await expect(rows(page).first()).toHaveAttribute("aria-checked", "true");
       // the body opens the mail to check it; the rule comes back from the header
       await rows(page).first().getByTestId("row-subject").click();
       await expect(page.getByTestId("reader-subject")).toBeVisible();
@@ -137,7 +149,29 @@ test.describe("actions in plain English (plan 143)", () => {
       await page.emulateMedia({ colorScheme: "light" });
     }
 
-    await scenario("Esc goes back with no trace", async () => {
+    await scenario("Esc while reading a matched conversation closes it, back to the rule with everything kept (plan 161, pass 2)", async () => {
+      await rows(page).last().getByTestId("row-include").click();
+      await expect(page.getByTestId("action-apply")).toHaveText("Archive 1");
+      await rows(page).first().getByTestId("row-subject").click();
+      await expect(page.getByTestId("reader-subject")).toBeVisible();
+      await page.keyboard.press("Escape");
+      // the preview, its request, its ticks and its count: all still here, the rule back in the reader, the keys the list's
+      await expect(page.getByTestId("action-preview")).toBeVisible();
+      await expect(page.getByTestId("action-rule")).toBeVisible();
+      await expect(page.getByTestId("action-rule-request")).toContainText("Archive shipping notices older than a month");
+      await expect(rows(page).last()).toHaveAttribute("data-included", "false");
+      await expect(page.getByTestId("action-apply")).toHaveText("Archive 1");
+      await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-keep-scroll"))).toBe("list");
+      // j/k open one too; Esc closes that first as well
+      await page.keyboard.press("j");
+      await expect(page.getByTestId("action-rule")).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("action-rule")).toBeVisible();
+      await rows(page).last().getByTestId("row-include").click();
+      await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
+    });
+
+    await scenario("Esc with nothing open goes back with no trace", async () => {
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("action-preview")).toHaveCount(0);
       await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBe(place);
@@ -149,7 +183,7 @@ test.describe("actions in plain English (plan 143)", () => {
       await page.getByTestId("nav-all").click();
       await expect.poll(() => rows(page).count()).toBeGreaterThan(3);
       await say(page, "Archive shipping notices older than a month");
-      await expect(page.getByTestId("action-title")).toHaveText("Archive 2 conversations");
+      await expect(page.getByTestId("action-title")).toHaveText("2 conversations");
       await page.getByTestId("action-cancel").click();
       await expect(page.getByTestId("action-preview")).toHaveCount(0);
       await expect.poll(() => rows(page).count()).toBeGreaterThan(3);
@@ -158,15 +192,15 @@ test.describe("actions in plain English (plan 143)", () => {
 
     await scenario("a row out with x, Apply, and the snack's Undo brings them all back", async () => {
       await say(page, "Archive shipping notices older than a month");
-      await expect(page.getByTestId("action-title")).toHaveText("Archive 2 conversations");
+      await expect(page.getByTestId("action-title")).toHaveText("2 conversations");
       await page.getByTestId("action-show-left-out").click();
       await expect(rows(page)).toHaveCount(3);
       await expect(rows(page).last()).toHaveAttribute("data-included", "false");
       await rows(page).last().getByTestId("row-include").click();
-      await expect(page.getByTestId("action-title")).toHaveText("Archive 3 conversations");
+      await expect(page.getByTestId("action-title")).toHaveText("3 conversations");
       await rows(page).first().click();
       await page.keyboard.press("x");
-      await expect(page.getByTestId("action-title")).toHaveText("Archive 2 conversations");
+      await expect(page.getByTestId("action-title")).toHaveText("2 conversations");
       await expect(rows(page).first()).toHaveAttribute("data-included", "false");
       await page.getByTestId("action-apply").click();
       await expect(page.getByTestId("action-preview")).toHaveCount(0);
@@ -185,7 +219,7 @@ test.describe("actions in plain English (plan 143)", () => {
 
     await scenario("⌘↩ in a reply sends the reply; it doesn't apply the preview", async () => {
       await say(page, "Archive shipping notices older than a month");
-      await expect(page.getByTestId("action-title")).toHaveText("Archive 2 conversations");
+      await expect(page.getByTestId("action-title")).toHaveText("2 conversations");
       await rows(page).first().click();
       await page.keyboard.press("r");
       const editor = page.locator("[contenteditable=true]").first();
@@ -200,7 +234,8 @@ test.describe("actions in plain English (plan 143)", () => {
   test("a new category says so, and Undo removes it empty", async ({ app: page, server }) => {
     await withMail(page, server);
     await say(page, "Send recruiters to a Recruiting category");
-    await expect(page.getByTestId("action-title")).toHaveText("Move 2 conversations to Recruiting");
+    await expect(page.getByTestId("action-title")).toHaveText("2 conversations");
+    await expect(page.getByTestId("action-rule-title")).toHaveText("Move 2 conversations to Recruiting");
     await expect(page.getByTestId("action-creates")).toContainText("Recruiting");
     await expect(page.getByTestId("action-hidden")).toBeVisible();
     await expect(page.getByTestId("action-future-box")).toHaveAttribute("data-checked");
@@ -219,11 +254,13 @@ test.describe("actions in plain English (plan 143)", () => {
   test("history shows what a command came to, and Run again plans afresh; Spanish too", async ({ app: page, server }) => {
     await withMail(page, server);
     await say(page, "Archive shipping notices older than a month");
-    await expect(page.getByTestId("action-title")).toHaveText("Archive 2 conversations");
+    await expect(page.getByTestId("action-title")).toHaveText("2 conversations");
     await page.keyboard.press("ControlOrMeta+Enter");
     await expect(page.getByTestId("snack")).toContainText("Archived 2 conversations");
-    // the snack's keycap is z, and z is what undoes (⌘Z too, in the flow before)
-    await expect(page.getByTestId("snack-action")).toHaveAttribute("aria-keyshortcuts", "z");
+    // z undoes (⌘Z too, in the flow before)
+    await expect(page.getByTestId("snack-action")).toHaveAttribute("aria-keyshortcuts", UNDO_KEYS);
+    // plan 161, pass 2: the keycap is the platform's undo; bare z still works
+    await expect(page.getByTestId("snack-action").locator("[data-key]")).toHaveAttribute("data-key", /^(⌘Z|Ctrl\+Z)$/);
     await page.keyboard.press("z");
     await expect(page.getByTestId("snack").filter({ hasText: "Moved 2 conversations back to the Inbox" })).toBeVisible();
     await focusList(page);
@@ -238,7 +275,8 @@ test.describe("actions in plain English (plan 143)", () => {
     await server.backend.server.invoke("settings.update", { language: "es" }, dev);
     await fresh(page);
     await say(page, "Archive recruiters");
-    await expect(page.getByTestId("action-title")).toHaveText("Archivar 2 conversaciones");
+    await expect(page.getByTestId("action-title")).toHaveText("2 conversaciones");
+    await expect(page.getByTestId("action-rule-title")).toHaveText("Archivar 2 conversaciones");
     await expect(page.getByTestId("action-apply")).toHaveText("Archivar 2");
     await expect(page.getByTestId("action-conditions")).toContainText("Recibidos");
   });
@@ -246,7 +284,8 @@ test.describe("actions in plain English (plan 143)", () => {
   test("the header sits on the list's content line, in every design, light and dark", { tag: "@design" }, async ({ app: page, server }) => {
     await withMail(page, server);
     await say(page, "Send recruiters to a Recruiting category");
-    await expect(page.getByTestId("action-title")).toHaveText("Move 2 conversations to Recruiting");
+    await expect(page.getByTestId("action-title")).toHaveText("2 conversations");
+    await expect(page.getByTestId("action-rule-title")).toHaveText("Move 2 conversations to Recruiting");
     const left = async (testId: string) => page.getByTestId(testId).first().evaluate((el) => el.getBoundingClientRect().left);
     const box = await page.getByTestId("row-include").first().locator("[data-slot=checkbox]").evaluate((el) => el.getBoundingClientRect().left);
     expect(Math.abs((await left("action-title")) - box)).toBeLessThanOrEqual(1);
@@ -272,6 +311,23 @@ test.describe("actions in plain English (plan 143)", () => {
 test.describe("actions in plain English, List layout (plan 161)", () => {
   test.use({ layout: "list", viewport: { width: 1100, height: 700 } });
 
+  test("Esc from a matched conversation's page comes back to the preview; a second Esc cancels (plan 161, pass 2)", async ({ app: page, server }) => {
+    await withMail(page, server);
+    await say(page, "Archive shipping notices older than a month");
+    await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
+    // List's header has the window's width: the whole outcome, on one line
+    await expect(page.getByTestId("action-title")).toHaveText("Archive 2 conversations");
+    await rows(page).first().getByTestId("row-include").click();
+    await rows(page).last().getByTestId("row-subject").click();
+    await expect(page.getByTestId("reader-subject")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("action-preview")).toBeVisible();
+    await expect(rows(page).first()).toHaveAttribute("data-included", "false");
+    await expect(page.getByTestId("action-apply")).toHaveText("Archive 1");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("action-preview")).toHaveCount(0);
+  });
+
   test("the rule sits under the header, bounded: Details open, the rows keep their room (Codex review #1)", async ({ app: page, server }) => {
     await withMail(page, server);
     await say(page, "Archive shipping notices older than a month");
@@ -287,5 +343,22 @@ test.describe("actions in plain English, List layout (plan 161)", () => {
     const list = (await page.locator('[data-keep-scroll="list"]').boundingBox())!;
     expect(list.height).toBeGreaterThanOrEqual(200);
     await expect(rows(page).first()).toBeInViewport();
+  });
+});
+
+test.describe("actions in plain English at 1100 × 700 (plan 161, pass 2)", () => {
+  test.use({ viewport: { width: 1100, height: 700 } });
+
+  test("Split's header is one line beside its buttons, and the outcome reads whole in the reader", async ({ app: page, server }) => {
+    await withMail(page, server);
+    await say(page, "Archive shipping notices older than a month");
+    await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
+    // lines a text box holds: its height over its line height (the title's text is the span inside its heading)
+    const lines = (testId: string) => page.getByTestId(testId).evaluate((el) => { const box = el.firstElementChild ?? el; const lh = parseFloat(getComputedStyle(box).lineHeight); return Math.round(box.getBoundingClientRect().height / lh); });
+    expect(await lines("action-title")).toBe(1);
+    expect(await lines("action-rule-title")).toBe(1);
+    // the help is its own line, whole: no word left alone under it
+    await expect(page.getByTestId("action-help")).toHaveText("Click a conversation to read it. Esc brings you back here.");
+    expect(await lines("action-help")).toBe(1);
   });
 });

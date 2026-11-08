@@ -131,7 +131,7 @@ test.describe("AI filters and learned filters", () => {
       await freshStart(page);
       await page.getByTestId("open-filters").click();
       await page.getByTestId("condition-field").click();
-      await page.getByRole("option", { name: "Start of mail" }).click();
+      await page.getByRole("option", { name: "Subject and first lines" }).click();
       await expect(page.getByTestId("condition-pattern-help")).toBeVisible();
       await page.getByTestId("condition-value").fill("uber|receipt");
       await expect(page.getByTestId("preview-count")).toHaveText(/^[1-9]\d*$/);
