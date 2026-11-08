@@ -454,10 +454,10 @@ From `ai-r00`'s `ai_draft`, `summary` and `followups_replies` (every issue and e
 
 ### ⌘J drafting (plan 133)
 
-- **Status and commands.** The strip's left is a status: Sparkles and "Written with AI" in the secondary type, not a control; the voice stays a ghost button but gets a chevron, since it opens a popover. Regenerate, Shorter and Warmer are secondary (`outline`) buttons at 28 px; **Undo** is the same with `Undo2` before it and a gap of its own, so it's found first.
+- **Status and commands.** The strip's left is a status: "Written with AI" in the secondary type, not a control, and no glyph (the row's label already says AI); the voice stays a ghost button but gets a chevron, since it opens a popover. Regenerate, Shorter and Warmer are secondary (`outline`) buttons at 28 px; **Undo** is the same with `Undo2` before it and a gap of its own, so it's found first.
 - **The strip stays after an edit.** Plan 133 §10.5 ended the strip at the next keystroke; now an edit relabels it "Edited after AI" and everything stays until the draft is sent, discarded or undone. The status phrase is one helper (`aiWritten(edited)` in `ai-card.ts`), the only place that wording lives.
-- **What Undo restores, exactly.** Undo always takes back the AI's last write. Unedited, it's the editor's own undo step, as before (one version back under a refinement). **Edited after AI, it restores the document exactly as it was just before that write** (before ⌘J for a first draft, before Shorter, Warmer or Regenerate for a later version), as one editor step: the edits made since go with it, and "Back to before the AI draft" offers Undo (the same as ⌘Z), which brings the edited text back exactly. The document before each write is kept with the commit (`AiCommit.beforeDoc`); nothing is re-parsed.
-- **1100x700.** The strip wraps: the status line never truncates or hides (the pinned card's `@max-[28rem]:hidden` goes), and the commands go to a second line, still ending on the Cc/Bcc line. The instruction is a one-line field that grows to show all it holds (`field-sizing: content`, Return still drafts). When a draft goes in, the composer is brought into view whole (`keepInView`), so the draft and Send are on screen without a scroll.
+- **What Undo restores, exactly.** Undo always takes back the AI's last write. Unedited, it's the editor's own undo step, as before (one version back under a refinement). **Edited after AI, it restores the document exactly as it was just before that write** (before ⌘J for a first draft, before Shorter, Warmer or Regenerate for a later version), as one editor step: the edits made since go with it, and "Back to before the AI draft" offers Undo (the same as ⌘Z), which brings the edited text back exactly, with its strip, its generated subject and its gaps' guard. The document before each write is kept with the commit (`AiCommit.beforeDoc`); nothing is re-parsed. "Edited" is the document, not its words: bold or an image counts. ⌘Z that takes a write back whole is not an edit: the strip goes with it, as its own Undo would (`controller.sameDoc`). The draft stays even when the restore leaves it blank, so the edit is one Undo away (plan 133's unedited Undo still forgets a blank draft it made).
+- **1100x700.** The strip wraps: the status line never truncates or hides (the pinned card's `@max-[28rem]:hidden` goes), and the commands go to a second line, still ending on the Cc/Bcc line. The instruction is a one-line field that grows to show all it holds (`field-sizing: content`, Return still drafts). When a draft goes in, the composer is brought into view whole (`keepInView`), so the draft and Send are on screen without a scroll; while the strip is up, a window that shrinks under it keeps it there, if its top is on screen. Where the row fits (1440 wide) the strip stays one line, so plan 133's "the commit moves nothing" holds; it wraps only where it must.
 - **The prompt.** "What should it say? Enter drafts from the conversation." read as "enter drafts": it becomes "Describe the reply, or press Return to draft from the conversation." The notes placeholder says nothing is replaced without asking. The bare ↵ glyph becomes a named button, "Write" with its keycap.
 
 ### Placeholders
@@ -466,11 +466,11 @@ The model's `[gaps]` are already found on the text (`findPlaceholders`, no model
 
 - **In Reply ready's card** each one is a `mark` on the search match's wash (the star's gold at 25 % under the ink, a pair added to `CONTRAST_PAIRS` over the card's surfaces).
 - **In the composer,** after Use or ⌘J, a decoration plugin marks them the same way while they're in the text. The first one is selected on Use (already true; now it can be seen).
-- **On Send,** if any of them is still in the text, the AI row turns into an inline confirm, like plan 133's send guard: "1 gap the AI left is still in the draft: “[What you think.]”" with **Fill it in** (selects the first gap; the default) and **Send anyway**. No modal; Esc is Fill it in.
+- **On Send,** if any of them is still in the text, the AI row turns into an inline confirm, like plan 133's send guard: "A gap the AI left is still in the draft: [What you think.]" with **Fill it in** (selects the first gap; the default) and **Send anyway**. No modal; Esc is Fill it in. The guard knows every version's gaps, so an undo to an earlier version is still guarded. It lasts as long as the AI session: a draft reopened after a restart has no record of which brackets were the model's, so it isn't asked about.
 
 ### Summary (plans 132, 148)
 
-The item row reads as going to a message: its kind label sits tight to the text (no fixed column), and the row ends in "Open message" with the arrow. The row's accessible name is the item, then "Open the message it comes from". Hovering it says whose message and when ("Arjun Ramírez · Yesterday, 9:41 PM"), from the thread already in the reader.
+The item row reads as going to a message: its kind label sits tight to the text (no fixed column), and the row ends in "Open message" with the arrow. The row's accessible name is its visible words in order ("Action Tell Arjun what you think Open message"): a separate label failed axe's label-content-name-mismatch. Hovering it says whose message and when ("Arjun Ramírez · Yesterday, 9:41 PM"), from the thread already in the reader. The card's own state buttons (Stop, Settings, Continue, Try again) are 28 px too.
 
 ### Follow-ups (plan 142)
 
@@ -494,3 +494,27 @@ The item row reads as going to a message: its kind label sits tight to the text 
 ### Tests
 
 Unit: `followupLine` (minutes, a day, five days, es), the follow-up header copy, `aiWritten`, the gaps plugin (marks only the given strings, follows edits, none when empty), the edited strip's Undo (restores the before-document exactly; the snack's Undo brings the edit back), the send guard on gaps, Reply ready's header and marks. e2e: `ai-draft.spec.ts` (an edit keeps the strip relabelled; Undo after an edit; Write button; the strip wraps at 1100x700 with its status), `replies-ready.spec.ts` (marks, Use as draft, the gap guard on Send), `followups.spec.ts` (fresh wait copy, buttons at 28 px, the awaiting tip), `summaries.spec.ts` (Open message). Design-axe for these surfaces.
+
+### What building it changed
+
+- **The strip's status first squeezed instead of wrapping:** with a 0 flex basis it fit beside the commands at 1100x700 by cutting itself to "Writte". It takes its own width now, so the commands wrap under it (`ai-draft.spec.ts`, 1100x700).
+- **At 1440 the new strip took two lines,** which moved the body at commit and broke plan 133's "the commit moves nothing" (its e2e caught it). The status lost its glyph and the commands their extra padding, and it holds one line again.
+- **⌘Z past a write left "Edited after AI" over text the AI no longer wrote** (the notes flow's e2e). The strip now ends when the document is back to what the write found.
+- **The rating's small shot is taken after a resize** (`capture.mjs` shoots 1440, then shrinks the window), so a scroll at commit alone left the draft's end under the composer's foot at 1100x700. The composer is kept in view on a resize while the strip is up.
+- **The follow-up's e2e asserted "hasn't replied in"** on a message sent moments before: it said "in 1 day", the bug the raters found. It now asserts "yet".
+- **A test of plan 133 changed meaning:** "6: if the words aren't what it wrote, nothing is overwritten and the strip just goes" is now an edit like any other: Undo restores the document as the write found it, and the snack brings the edit back.
+- **Provenance copy** ("Written with AI", "Edited after AI") is one helper, `aiWritten()` in `components/ai-card.ts`; nothing else in this pass words provenance.
+
+### What the Codex review of pass 1 changed
+
+Seven points, all taken, each with a regression test that fails without the fix:
+
+1. **⌘Z after an edited Undo** brought the text back without its strip, subject or gaps' guard (only the snack's Undo did). Both now run one `reinstate()` (`ai-draft.test.ts`).
+2. **Going back to an earlier version kept the newer one's checks,** so its gaps were neither marked nor guarded. Each commit keeps its checks, the guard reads every version's gaps, and the editor marks every write's gaps (`ai-draft.test.ts`, `gaps.test.ts`).
+3. **A refinement stopped or discarded over an edited strip dropped the strip,** since the text no longer matched the version it wrote. The strip stays when nothing changed since the refinement began (`ai-draft.test.ts`).
+4. **An old snack's Undo could put an old strip into a newer session** mid-stream. It does nothing once newer work has begun (`ai-draft.test.ts`).
+5. **A resize pulled back a reader who had scrolled the composer below the window.** Only a composer whose top is on screen is followed (`ai-draft.spec.ts`).
+6. **A formatting-only or image-only edit got no snack** to bring it back (the check compared words). It compares the document (`ai-draft.test.ts`).
+7. **The ⌘J field is a textarea outside BoardUI's Textarea.** Like To and Subject, it's a bare field on the composer's row; that's now written down in `BOARDUI.md`'s deviations.
+
+Also from the review: the summary card's state buttons were still 24 px; they're 28 px with the rest.
