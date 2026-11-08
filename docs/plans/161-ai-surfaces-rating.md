@@ -717,3 +717,11 @@ Eight points, all taken, each with a regression test that fails without the fix:
 8. **The one-line check ran in one design.** It's its own `@design` test now.
 
 A second, narrower Codex pass on those fixes found one more, taken with a test: **Try again after a rewrite that failed part-way** still replaced an edit, since that strip waits in the run (what came is offered with Insert), not on the session. Try again reads either, sets the partial text aside, and asks (`ai-draft.test.ts`, a delta before the failure). Review rounds stop here.
+
+### Where pass 2 stands
+
+- **Run:** typecheck and lint, clean. Unit: the touched files and the cross-cutting ones (`ai-draft`, `ai-error`, `reply-ready`, `followups-copy`, `followup-nudge`, `replies`, `provenance`, the composer's, `packages/i18n`, `packages/ui` with `contrast.test.ts`): 54 files, 572 tests. e2e in macOS: `ai-draft`, `summaries`, `followups`, `replies-ready`, `design-axe`: 43 passed (3 skipped: the frames that run only when looking). Their `@design` and `@variant` flows in Lumen, Atelier, Graphite and Luma, `design-axe` included: 28 passed. `visual`, `designs` and `controls` in all five designs: 46 passed, no baseline moved. `pnpm test:ui-perf`: 45 passed. `pnpm test:all` is left for the landing batch.
+- **Each losing-work fix's e2e fails without it**, checked by reverting the fix: Regenerate over an edit (`ai-draft.spec`), Esc in the ⌘J row (`ai-draft.spec`, three scenarios), Use then Discard (`replies-ready.spec`); and the two Reply ready review fixes (`replies-ready.spec`).
+- **The frozen capture** reaches every AI state in all five designs, light and dark, unchanged: nothing it waits on moved (`followup-nudge`, `reply-ready[data-phase=ready]`, `reply-ready-use`, `ai-strip`, `summary-item`). No change to `scripts/ui-rating/`.
+- **Shots:** `/tmp/terno-scratch/ai-pass2/draft-followups/after/<design>/` (final build), at 1440x900 and the `-small` 1100x700 copies; before is ai-r01's `/tmp/terno-scratch/ui9/rounds/ai-r01/<design>/shots/`.
+- **Left as it was:** at 1100x700 some designs' composer foot wraps "Save and close" under the toolbar (the composer's, outside this pass).
