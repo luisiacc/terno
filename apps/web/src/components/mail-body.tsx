@@ -348,10 +348,10 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
   );
 }
 
-/** The remote-content row: a full-width tinted row with a pill on the right. */
+/** The remote-content row: a line over the mail with a pill on the right (plan 160: a hairline under it, no card: it neither floats nor goes away by itself). */
 function RemoteBlocked({ onLoad }: { onLoad: () => void }) {
   return (
-    <div className="mb-3 flex h-9 items-center gap-2.5 rounded-lg bg-tint pr-1.5 pl-3 text-xs text-muted-foreground" data-testid="remote-blocked">
+    <div className="hairline-b mb-3 flex h-9 items-center gap-2.5 text-xs text-muted-foreground" data-testid="remote-blocked">
       <ImageOff className="size-3.5 shrink-0" />
       <span className="min-w-0 truncate">{t("reader.remote.blocked")}</span>
       <button type="button" className="ml-auto h-[22px] shrink-0 rounded-full bg-accent px-2.5 text-[11.5px] font-medium text-accent-foreground transition-colors hover:text-foreground" onClick={onLoad} data-testid="remote-load">
