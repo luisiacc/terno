@@ -1,5 +1,7 @@
 # Plan 24: the List layout (Gmail-style, with category tabs)
 
+> **2026-11-07: the category tabs are gone.** The owner decided to remove them: they duplicated the sidebar's Categories exactly (the same lists, the same counts, a drop target each, a "+" to create one). List now shows categories only in the sidebar, as Split does, and its header is the title, the filter control and search on one line. `list-tabs.tsx`, `lib/tabs.ts`'s tab state, the `categoryTabs` design variant, the tabpanel around the rows, the tabs' strings and the first-run preview's tabs went with them; the sidebar's "+" lives in `lib/new-category.ts`, and Lumen's chips fit their row with `lib/fit-strip.ts`. The Codex review of the removal had one finding, not taken: it called the sidebar's account-scoped category handling (`inCategory`, `account-folders.ts`'s `inside`) tabs-only, but the categorization snack's View (`navigate({ categoryId })`, which keeps the account) still reaches a category inside an account. What follows is the plan as it was built.
+
 - **Status:** implemented (see "Implementation notes" and "What the Codex code review changed" at the end).
 - **Builds on:** `6f4be35` (main with plans 20–23: network resilience, sidebar "More" and resizable panes, sender icons, the account label). Section 2.4 describes how List uses plan 21's panes.
 - **Numbering:** 17 and 21–23 are taken by running work, so this is 24.
