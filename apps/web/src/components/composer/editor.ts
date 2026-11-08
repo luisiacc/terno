@@ -10,6 +10,7 @@ import { EditorView } from "prosemirror-view";
 import { autolinkRule, liveLinks, textSlice, withAutolink } from "./autolink";
 import type { FormatCommand, FormatState } from "./controller";
 import { keepEditorBody, keptEditorBody, forgetEditorBody, type KeptEditorBody } from "~/lib/drafts";
+import { focusers } from "~/lib/compose-focus-move";
 import { ghostPlugin, type GhostHooks } from "./ghost";
 import { draggingInPage } from "../composer-drop";
 import { imageView, knownImagesOnly, placeholderPlugin, type ImageHooks } from "./images";
@@ -550,6 +551,8 @@ export function createEditor(
     },
   });
   viewHooks.set(view, o.hooks);
+  // focused from elsewhere (a draft opened again), the caret it kept is in the page at once (it doesn't scroll)
+  focusers.set(view.dom, () => view.focus());
   return { view, destroy: () => view.destroy() };
 }
 

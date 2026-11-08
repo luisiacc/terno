@@ -79,8 +79,17 @@ export interface InlineFocusMove {
 const target = (selector: string, root: HTMLElement | null) => (root ?? document).querySelector<HTMLElement>(selector);
 const focusable = (el: HTMLElement | null): el is HTMLElement => el !== null && el.isConnected && !el.closest("[inert]");
 
+/**
+ * What takes focus through its own code: a rich body's view puts the caret it kept into the page as it takes focus. A
+ * plain focus() leaves that to ProseMirror's handler a moment later, and what's typed meanwhile lands at the browser's
+ * caret, not where the draft was left (plan 158: opened again, a draft resumes where the caret was).
+ */
+export const focusers = new WeakMap<HTMLElement, () => void>();
+
 function place(el: HTMLElement, input: EarlyText | undefined = undefined, current: () => boolean = () => true) {
-  el.focus({ preventScroll: true });
+  const own = focusers.get(el);
+  if (own) own();
+  else el.focus({ preventScroll: true });
   if (el instanceof HTMLTextAreaElement) el.setSelectionRange(el.value.length, el.value.length);
   if (!input?.text) return;
   const field = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;

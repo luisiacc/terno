@@ -685,8 +685,16 @@ test.describe("the new message", () => {
     await page.keyboard.press("ArrowLeft");
     await read;
     await page.keyboard.press("Escape");
+    // where a key would land the moment the body has focus, not once ProseMirror's own focus handler catches up
+    await page.evaluate(() => document.addEventListener("focusin", (e) => {
+      const w = window as unknown as { __caret?: string };
+      if ((e.target as HTMLElement).dataset.testid !== "compose-body" || w.__caret !== undefined) return;
+      w.__caret = "";
+      queueMicrotask(() => { const s = getSelection()!; w.__caret = `${s.anchorNode?.textContent}@${s.anchorOffset}`; });
+    }, true));
     await page.getByTestId("strip-item").click();
     await expect(body(page)).toBeFocused();
+    expect(await page.evaluate(() => (window as unknown as { __caret?: string }).__caret)).toBe("Hola Marta, nos vemos@19");
     await page.keyboard.type("_");
     await expect(body(page)).toHaveText("Hola Marta, nos vem_os");
     // nobody to send to yet: that's what needs attention
