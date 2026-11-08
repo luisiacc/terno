@@ -9,6 +9,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { t } from "@terno/i18n";
 import { useId, useState } from "react";
 import { COLOR_LABEL } from "~/lib/color-labels";
+import { setApp, type SettingsTab } from "~/state/app";
 
 export { COLOR_LABEL };
 
@@ -102,6 +103,12 @@ export function SettingsRow({
       <div className="flex shrink-0 items-center gap-2">{children(a11y)}</div>
     </div>
   );
+}
+
+/** Opens another section from a button in this one. Focus goes to that section's tab, which stays while the button's pane unmounts. */
+export function openSettingsTab(tab: SettingsTab) {
+  setApp({ settingsTab: tab });
+  document.querySelector<HTMLElement>(`[data-settings-tab="${tab}"]`)?.focus();
 }
 
 /** A row that is only text (an explanation, a status) inside a group. */

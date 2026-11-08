@@ -105,6 +105,7 @@ export function SettingsDialog() {
                   key={value}
                   value={value}
                   data-testid={`tab-${value}`}
+                  data-settings-tab={value}
                   className="h-auto justify-start gap-2.5 rounded-md border border-transparent px-2 py-0.5 font-normal text-sidebar-foreground after:hidden not-data-active:hover:bg-sidebar-hover hover:text-sidebar-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-sidebar-accent dark:data-active:shadow-none"
                 >
                   <Icon className="size-4 text-sidebar-glyph" />

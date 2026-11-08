@@ -94,7 +94,10 @@ test("Plan 147: the switch off, no AI feature shows, whatever the profile has sa
   await page.getByTestId("open-settings").click();
   await page.getByTestId("tab-general").click();
   await expect(page.getByTestId("today-pro-note")).toContainText("Today is a Pro feature");
-  await page.getByTestId("today-dev-open").click();
+  // from the keyboard, focus lands on Dev mode's tab rather than falling to the page as the button goes
+  await page.getByTestId("today-dev-open").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("tab-dev")).toBeFocused();
   await page.getByTestId("dev-ai-switch").click();
   await page.getByTestId("tab-general").click();
   await expect(page.getByTestId("today-show")).toBeVisible();

@@ -5,7 +5,7 @@ import { aiFeaturesAvailable } from "@terno/core";
 import { AiUseGroup, AskGroup, DigestGroup, FollowupsGroup, SummariesGroup } from "./ai-summaries";
 import { DraftingGroup } from "./ai-drafting";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
-import { SettingsGroup, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
+import { openSettingsTab, SettingsGroup, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
 import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@terno/ui/components/select";
@@ -194,7 +194,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
         <SettingsGroup>
           <SettingsRow label={t("settings.dev.aiNote")} hint={t("settings.dev.aiNote.hint")} testId="ai-dev-note">
             {() => (
-              <Button variant="outline" size="sm" data-testid="ai-dev-open" onClick={() => setApp({ settingsTab: "dev" })}>
+              <Button variant="outline" size="sm" data-testid="ai-dev-open" onClick={() => openSettingsTab("dev")}>
                 {t("settings.dev.open")}
               </Button>
             )}

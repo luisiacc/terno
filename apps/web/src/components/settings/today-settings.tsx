@@ -4,8 +4,8 @@ import { Button } from "@terno/ui/components/button";
 import { Switch } from "@terno/ui/components/switch";
 import { Time, TimeField } from "@terno/ui/components/time-field";
 import { aiAllowed } from "~/lib/ai";
-import { setApp, useApp } from "~/state/app";
-import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
+import { useApp } from "~/state/app";
+import { openSettingsTab, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
 /** Plan 145 §5: Settings → General → Today. */
 export default function TodaySettings({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
@@ -18,7 +18,7 @@ export default function TodaySettings({ settings, update }: { settings: AppSetti
       {proOff && (
         <SettingsRow label={t("today.settings.pro")} hint={t("today.settings.proHint")} testId="today-pro-note">
           {() => (
-            <Button variant="outline" size="sm" data-testid="today-dev-open" onClick={() => setApp({ settingsTab: "dev" })}>
+            <Button variant="outline" size="sm" data-testid="today-dev-open" onClick={() => openSettingsTab("dev")}>
               {t("settings.dev.open")}
             </Button>
           )}
