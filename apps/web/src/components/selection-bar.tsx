@@ -190,8 +190,10 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
     );
   return (
     // where the reader's column starts, so the actions sit where the eye was, not across an empty pane
-    // plan 160: its title on the reader subject's line and column
-    <section data-testid="selection-bar" className="@container h-full min-h-0 overflow-y-auto bg-background [scrollbar-gutter:stable]">
+    // plan 160: its title on the reader subject's line and column; the container is the pane, not its scroller (whose
+    // gutter would make the narrow steps start 8 px early, as the reader's and New message's don't)
+    <section data-testid="selection-bar" className="@container h-full min-h-0 bg-background">
+      <div className="h-full overflow-y-auto [scrollbar-gutter:stable]">
       <div data-reader-column className={cn(READING_COLUMN, PANE_TITLE_TOP, "flex flex-col items-start gap-5 pb-16")}>
         <div>
           <h2 className={cn(PANE_TITLE, "tabular")} data-testid="selection-count">
@@ -223,6 +225,7 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
             {rows.length > SHOWN_ROWS && <li className="text-muted-foreground">{t("selection.andMore", { count: rows.length - SHOWN_ROWS })}</li>}
           </ul>
         )}
+      </div>
       </div>
     </section>
   );
