@@ -20,6 +20,15 @@
 
 **How the last one reads in the design:** Today appears for anyone with an AI provider set up (their own key or a local model today, Pro once it exists). Without one, there is no row, no list and no work, even though most of the list wouldn't need a model. **The digest stays its own opt-in inside Today,** because it sends mail with no click, and plan 132's rule is that such a feature is never on by default.
 
+## Owner's decisions (2026-11-08)
+
+After plan 161's rating rounds, on the questions they left open:
+
+- **A newsletter opened from the digest is a normal email, nothing more, nothing less.** It opens in the reader like any email; Today's list doesn't gain it or pin it (revision 9's held rows keep a row you're on, never add one). "Back to the digest" and Esc back to it stay.
+- **An opened newsletter is read,** so it stays in the Inbox and out of the batch ("the first question is fine").
+- **Every newsletter starts ticked,** and Needs you keeps its **12-row cap.**
+- In plan 161 too: the Undo ring's drained part is a faint track; a sender check on plain-English actions only without AI; no new AI shortcuts; the action preview keeps its split; the follow-up stays on the AI card.
+
 ## What exists
 
 - **Inputs, all local:** `waiting_since` and `inboxWaiting` (plan 17), due reminders (`reminders.threads`), and follow-ups (plan 142). Stored summaries (`ai_summaries`, plan 132) when that's on.

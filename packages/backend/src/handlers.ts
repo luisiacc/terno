@@ -1126,12 +1126,12 @@ export function createHandlers(b: Backend): Handlers {
     "senders.named": async ({ phrases }) => {
       // a preview's check, off its list: the index restores or builds once (as a draft's would), and a cold one waits a
       // little, then names nobody (a name is only said when the mailbox has it)
-      let r = b.autocomplete.sendersNamed(phrases);
+      let r = await b.autocomplete.sendersNamed(phrases);
       if (r.state === "cold") {
         let timer: ReturnType<typeof setTimeout> | undefined;
         await Promise.race([b.warmAutocomplete().catch(() => {}), new Promise((resolve) => (timer = setTimeout(resolve, SENDERS_WAIT_MS)))]);
         clearTimeout(timer);
-        r = b.autocomplete.sendersNamed(phrases);
+        r = await b.autocomplete.sendersNamed(phrases);
       }
       return { named: r.named, ready: r.state === "ready" };
     },

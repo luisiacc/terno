@@ -288,6 +288,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
   const mine = ++seq;
   const connection = client.connectionVersion;
   const selectionRevision = getSelectionWriteRevision();
+  const openAtStart = getApp().selectedId;
   const current = useList.getState();
   const sameView = current.key === key;
   if (!sameView) {
@@ -336,6 +337,13 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       // an optimistic edit landed meanwhile: this answer may predate it (an archived row back, a read one unread)
       void reloadList({ ...options, keepSelection: true });
       if (sameView) return;
+    }
+    // Today holds the open row only while it's one of the list's rows: one opened while this page was on its way wasn't
+    // held by it, and would leave and never come back. Ask again, holding it (Codex review, plan 161)
+    const open = getApp().selectedId;
+    if (sameView && getApp().today && open !== openAtStart && open !== null && open !== 0 && current.index.has(open) && !page.items.some((t) => t.id === open)) {
+      void reloadList({ ...options, keepSelection: true });
+      return;
     }
     if (scope?.kind === "search" && scope.filter && (sameView || options.keepSelection)) page = keepSearchRows(page, current.items);
     if (scope?.filter) page = { ...page, items: heldOnly(page.items) };

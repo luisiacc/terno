@@ -69,6 +69,8 @@ const AUTOMATED = 2;
 const DEAD = 4;
 /** a sender whose mail was marked as spam after it was counted (not suggested unless written to) */
 const SPAM = 8;
+/** plan 161: someone mail you received was from (not only a co-recipient of it): a sentence's "from Uber" can name them */
+const SENDER = 16;
 
 const AUTOMATED_LOCAL = /^(no-?reply|do-?not-?reply|donotreply|mailer-daemon|postmaster|notifications?|bounces?|bounce[-+.].*|noreply[-+.].*)$/;
 const COMMON_DOMAINS = new Set(["gmail", "googlemail", "outlook", "hotmail", "live", "msn", "yahoo", "ymail", "icloud", "me", "mac", "aol", "proton", "protonmail", "pm", "gmx", "mail", "zoho", "yandex", "fastmail", "hey", "qq", "163", "126", "naver", "web", "orange", "free", "libero"]);
@@ -123,7 +125,7 @@ export function nameTokens(name: string, out: Tokens = new Map()): Tokens {
   return out;
 }
 
-/** An address's tokens: the local part, its pieces, the domain's first label (unless a mail provider's). */
+/** An address's tokens: the local part, its pieces, the domain's first label and its own label (unless a mail provider's). */
 export function addressTokens(email: string, out: Tokens = new Map()): Tokens {
   const at = email.lastIndexOf("@");
   const local = email.slice(0, at);
@@ -132,7 +134,21 @@ export function addressTokens(email: string, out: Tokens = new Map()): Tokens {
   for (let i = 1; i < pieces.length; i++) addToken(out, pieces[i]!, 2);
   const label = email.slice(at + 1).split(".")[0] ?? "";
   if (label && !COMMON_DOMAINS.has(label)) addToken(out, label, 1);
+  // plan 161: and the domain's own label, so "Netflix" finds info@account.netflix.com
+  const own = domainLabel(email);
+  if (own && own !== label && !COMMON_DOMAINS.has(own)) addToken(out, own, 1);
   return out;
+}
+
+/** a second level that's the registry's, not the sender's (mercadolibre.com.mx, bbc.co.uk) */
+const REGISTRY = new Set(["co", "com", "net", "org", "gob", "gov", "edu", "ac"]);
+
+/** An address's domain, its own label: netflix of account.netflix.com, mercadolibre of mercadolibre.com.mx; never a subdomain's. */
+export function domainLabel(email: string): string {
+  const labels = fold(email.slice(email.lastIndexOf("@") + 1)).split(".").filter(Boolean);
+  labels.pop();
+  if (labels.length > 1 && REGISTRY.has(labels.at(-1)!)) labels.pop();
+  return labels.at(-1) ?? "";
 }
 
 export function contactTokens(email: string, names: readonly string[]): Tokens {
@@ -340,7 +356,8 @@ async function unpackStrings(s: SectionReader, name: string, clock: SliceClock):
 }
 
 // format 4: names cleaned as plan 34 reads them (older snapshots rebuild once)
-export const CONTACTS_SNAPSHOT: Omit<SnapshotKind, "identity"> = { tokenizer: 1, format: 4 };
+// plan 161: tokenizer 2 indexes a domain's own label (netflix of account.netflix.com); format 5 holds SENDER
+export const CONTACTS_SNAPSHOT: Omit<SnapshotKind, "identity"> = { tokenizer: 2, format: 5 };
 
 export interface ContactIndexOptions {
   caps?: ContactCaps;
@@ -569,6 +586,8 @@ export class ContactIndex {
       const known = from === null ? undefined : this.byEmail.get(from);
       if (known !== undefined) this.flags[known]! &= ~SPAM;
       this.touch(m.from, w, t, bit, false, 1);
+      const sender = from === null ? undefined : this.byEmail.get(from);
+      if (sender !== undefined) this.flags[sender]! |= SENDER;
       for (const list of [m.to, m.cc]) for (const a of list) this.touch(a, w, t, bit, false, CO_RECIPIENT);
     }
   }
@@ -852,7 +871,7 @@ export class ContactIndex {
    * sentence ("tom") either is someone's token or isn't, and `suggest` would answer "tomorrow" with Tomás. Entries are
    * sorted, so the exact ones open each range and the walk stops there.
    */
-  resolveExact(token: string, o: { accountId?: number; limit?: number; received?: boolean } = {}): ContactHit[] {
+  resolveExact(token: string, o: { accountId?: number; limit?: number } = {}): ContactHit[] {
     const limit = Math.max(1, Math.min(o.limit ?? 8, 20));
     // "jean-luc" is two tokens here: the first says who
     const t = fold(token.trim()).split(TERM_SPLIT).find(Boolean)?.slice(0, MAX_TOKEN);
@@ -863,8 +882,6 @@ export class ContactIndex {
     const take = (id: number) => {
       const f = this.flags[id]!;
       if (f & DEAD || f & OWN || (f & SPAM && !(this.sent[id]! > 0))) return;
-      // plan 161: someone in mail you received (a sender check), not only someone you wrote to
-      if (o.received && !(this.recv[id]! > 0)) return;
       found.add(id);
     };
     const m = this.main;
@@ -879,6 +896,36 @@ export class ContactIndex {
       .sort((a, b) => b.score - a.score || this.last[b.id]! - this.last[a.id]! || a.id - b.id)
       .slice(0, limit)
       .map((x) => this.hit(x.id));
+  }
+
+  /**
+   * Plan 161: the best `score` among senders (someone mail you received was from) with this exact token, read as they
+   * come, no ranking: at most `scan` of them, and done at `enough`. Never the user, nor someone only seen in spam.
+   */
+  bestSender(token: string, score: (hit: ContactHit) => number, o: { scan: number; enough: number }): number {
+    const t = fold(token.trim()).split(TERM_SPLIT).find(Boolean)?.slice(0, MAX_TOKEN);
+    if (!t) return 0;
+    let best = 0;
+    let read = 0;
+    const seen = new Set<number>();
+    // false: stop
+    const take = (id: number): boolean => {
+      if (seen.has(id)) return true;
+      seen.add(id);
+      const f = this.flags[id]!;
+      if (f & DEAD || f & OWN || f & SPAM || !(f & SENDER)) return true;
+      best = Math.max(best, score(this.hit(id)));
+      return ++read < o.scan && best < o.enough;
+    };
+    const bytes = encodeString(t);
+    const m = this.main;
+    const [from, to] = segmentRange(m, bytes);
+    for (let i = from; i < to && m.len[i] === bytes.length; i++) if (!take(m.ids[i]!)) return best;
+    for (const d of this.merging ? [this.merging, this.delta] : [this.delta]) {
+      const [lo, hi] = deltaRange(d, t);
+      for (let i = lo; i < hi; i++) if (d.tok[i]!.length === t.length && !take(d.id[i]!)) return best;
+    }
+    return best;
   }
 
   /** A candidate's score, matched through a token of class `cls`; `whole`: a term is one of its whole tokens. */

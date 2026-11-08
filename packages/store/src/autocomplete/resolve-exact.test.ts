@@ -65,19 +65,41 @@ describe("a sender a sentence names (plan 161)", () => {
   const brew = { name: "Morning Brew", email: "crew@morningbrew.test" };
   const browser = { name: "The Browser", email: "hello@thebrowser.test" };
   const netflix = { name: "Netflix", email: "info@account.netflix.com" };
+  const best = (c: ContactIndex, phrase: string) => c.bestSender(phrase.split(" ")[0]!, (h) => namesSender(phrase, h), { scan: 2000, enough: phrase.split(" ").length });
 
-  it("received: only someone who has written to you, not someone you only wrote to", async () => {
+  it("only someone mail you received was from: not someone you only wrote to, nor a co-recipient, nor spam (Codex review)", async () => {
     const ana = { name: "Ana Ruiz", email: "ana@ruiz.test" };
-    const c = await built([received(uber), sent([ana])]);
+    const bea = { name: "Bea Lima", email: "bea@lima.test" };
+    const spammer = { name: "Prize Office", email: "prize@x.test" };
+    const c = await built([received(uber, { cc: [bea] }), sent([ana]), received(spammer, { spam: true })]);
+    c.markSpam([spammer.email]);
     expect(c.resolveExact("ana").map((h) => h.email)).toEqual([ana.email]);
-    expect(c.resolveExact("ana", { received: true })).toEqual([]);
-    expect(c.resolveExact("uber", { received: true }).map((h) => h.email)).toEqual([uber.email]);
+    expect(best(c, "Ana")).toBe(0);
+    expect(c.resolveExact("bea").map((h) => h.email)).toEqual([bea.email]);
+    expect(best(c, "Bea")).toBe(0);
+    expect(best(c, "Prize")).toBe(0);
+    expect(best(c, "Uber")).toBe(1);
   });
 
-  it("is the start of their name, word for word, or a label of their domain; never a word inside a name", () => {
+  it("finds a sender by their domain's own label, a nameless one too (Codex review)", async () => {
+    const c = await built([received({ name: "", email: netflix.email })]);
+    expect(best(c, "Netflix")).toBe(1);
+    expect(best(c, "account")).toBe(0);
+  });
+
+  it("qualifies every sender with the token before it stops, so a crowd of others doesn't hide the one that's named (Codex review)", async () => {
+    const crowd = Array.from({ length: 40 }, (_, i) => received({ name: `Morning Brew ${i}`, email: `brew${i}@crowd.test` }, { date: NOW - DAY + i }));
+    const c = await built([...crowd, received({ name: "Brew Logistics", email: "ops@logistics.test" }, { date: NOW - 30 * DAY })]);
+    expect(c.resolveExact("brew", { limit: 20 }).some((h) => h.name === "Brew Logistics")).toBe(false);
+    expect(best(c, "Brew")).toBe(1);
+    // and the walk is bounded
+    expect(c.bestSender("brew", (h) => namesSender("Brew", h), { scan: 5, enough: 1 })).toBe(0);
+  });
+
+  it("their name and the phrase agree until one ends, or the phrase starts with their domain's own label; never a word inside a name", () => {
     expect(namesSender("Uber", uber)).toBe(1);
-    expect(namesSender("uber older", uber)).toBe(1);
     expect(namesSender("Uber Receipts", uber)).toBe(2);
+    expect(namesSender("Morning Brew team", brew)).toBe(2);
     expect(namesSender("receipts", uber)).toBe(0);
     expect(namesSender("Netflix", netflix)).toBe(1);
     expect(namesSender("netflix", { name: "", email: netflix.email })).toBe(1);
@@ -89,5 +111,8 @@ describe("a sender a sentence names (plan 161)", () => {
     expect(namesSender("Browser", browser)).toBe(1);
     expect(namesSender("BRÓWSER", browser)).toBe(1);
     expect(namesSender("", uber)).toBe(0);
+    // Codex review: a shared first name isn't the person
+    expect(namesSender("John Smith", { name: "John Doe", email: "john@doe.test" })).toBe(0);
+    expect(namesSender("María José", { name: "María Fernanda López", email: "mf@lopez.test" })).toBe(0);
   });
 });

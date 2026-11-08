@@ -151,6 +151,11 @@ describe("the sender a sentence names, without a model (plan 161, the owner)", (
     expect(phrases("De ahora en adelante, archiva las promociones")).toEqual([]);
     expect(phrases("archive invoices from 2023")).toEqual([]);
     expect(phrases("archive receipts from uber.com")).toEqual([]);
+    // a date is never a sender (Codex review)
+    expect(phrases("Archive receipts from May 2024")).toEqual([]);
+    expect(phrases("Archiva facturas de mayo de 2024")).toEqual([]);
+    expect(phrases("archive what came from Monday on")).toEqual([]);
+    expect(phrases("borra lo del lunes")).toEqual([]);
   });
 
   it("at most four phrases, each at most three words, said once", () => {

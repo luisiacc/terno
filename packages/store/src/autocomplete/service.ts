@@ -9,6 +9,8 @@ import { namesSender } from "./senders";
 const MiB = 1024 * 1024;
 /** plan 161: the phrases one sentence may ask about (each one exact-token lookup) */
 export const SENDER_PHRASES = 4;
+/** plan 161: senders read for one phrase's token, at most (a common first name's range is cut here, not the event loop) */
+export const SENDER_SCAN = 2000;
 
 /** Both models together, transient copies included (a snapshot, a merge, a prune). */
 export const DESKTOP_AUTOCOMPLETE_PEAK = 160 * MiB;
@@ -136,17 +138,20 @@ export class Autocomplete {
   }
 
   /**
-   * Plan 161: which of these phrases (each up to a few words, after "from" or "de" in a sentence) name someone who has
-   * written to you, as their words that do ("Uber" of "Uber older"). Exact tokens, in memory; `cold` names nobody.
+   * Plan 161: which of these phrases (each up to a few words, after "from" or "de" in a sentence) name someone mail you
+   * received was from, as their words that do ("Morning Brew" of "Morning Brew team"). Exact tokens, in memory, each
+   * phrase's walk bounded and a turn of the event loop between them; `cold` names nobody.
    */
-  sendersNamed(phrases: readonly string[]): { state: "ready" | "cold"; named: string[] } {
-    const c = this.contacts;
-    if (!c) return { state: "cold", named: [] };
+  async sendersNamed(phrases: readonly string[]): Promise<{ state: "ready" | "cold"; named: string[] }> {
+    if (!this.contacts) return { state: "cold", named: [] };
     const named: string[] = [];
-    for (const phrase of phrases.slice(0, SENDER_PHRASES)) {
+    for (const [i, phrase] of phrases.slice(0, SENDER_PHRASES).entries()) {
+      if (i) await new Promise((r) => setTimeout(r, 0));
+      const c = this.contacts;
+      if (!c) return { state: "cold", named: [] };
       const said = phrase.trim().split(/\s+/).filter(Boolean);
       if (!said.length) continue;
-      const n = Math.max(0, ...c.resolveExact(said[0]!, { received: true, limit: 20 }).map((h) => namesSender(phrase, h)));
+      const n = c.bestSender(said[0]!, (h) => namesSender(phrase, h), { scan: SENDER_SCAN, enough: said.length });
       if (n > 0) named.push(said.slice(0, n).join(" "));
     }
     return { state: "ready", named };

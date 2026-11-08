@@ -88,6 +88,14 @@ const STOP = new Set([
   "and", "or", "but", "nor", "older", "newer", "than", "that", "which", "who", "with", "without", "in", "into", "to", "on", "at", "about", "before", "after", "since", "until", "more", "less", "over", "under", "if", "when", "unless", "except", "excluding", "not", "is", "are", "was", "were", "be", "been", "all", "any", "every", "each", "some", "now", "today", "yesterday", "tomorrow", "tonight", "last", "this", "these", "those", "next", "past", "ago", "earlier", "later", "recent", "recently", "old", "new", "day", "days", "week", "weeks", "month", "months", "year", "years", "hour", "hours", "weekend", "too", "also", "only", "just", "as", "so", "for", "by", "of",
   "y", "e", "o", "u", "ni", "pero", "con", "sin", "en", "a", "al", "para", "por", "que", "cuando", "si", "hace", "más", "mas", "menos", "antes", "después", "despues", "desde", "hasta", "excepto", "salvo", "no", "todo", "todos", "toda", "todas", "cada", "algún", "algunos", "hoy", "ayer", "mañana", "anoche", "este", "esta", "esto", "estos", "estas", "ese", "esa", "esos", "esas", "último", "últimos", "última", "últimas", "ultimo", "ultimos", "pasado", "pasados", "pasada", "pasadas", "próximo", "próxima", "proximo", "ahora", "adelante", "antiguos", "antiguas", "nuevo", "nuevos", "nueva", "nuevas", "día", "días", "dia", "dias", "semana", "semanas", "mes", "meses", "año", "años", "hora", "horas", "también", "solo", "sólo", "como",
 ]);
+/** a month or a weekday is a date, never a sender ("from May 2024", "de mayo"), however someone in the mailbox is named (Codex review) */
+const CALENDAR = new Set([
+  "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december",
+  "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+  "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "setiembre", "octubre", "noviembre", "diciembre",
+  "ene", "abr", "ago", "dic", "lunes", "martes", "miércoles", "miercoles", "jueves", "viernes", "sábado", "sabado", "domingo",
+]);
 /** a phrase is at most this many words; at most this many phrases are looked up (the store's SENDER_PHRASES) */
 const PHRASE_WORDS = 3;
 const PHRASES = 4;
@@ -116,7 +124,7 @@ export function sendersInSentence(sentence: string): { sure: string[]; phrases: 
       const w = tokens[j]!;
       const low = w.toLowerCase();
       // punctuation, another "from", a word of time or a connective, a number, an address or a domain: the name ends
-      if (!/[\p{L}]/u.test(w) || FROM.has(low) || STOP.has(low) || /[@.]/.test(w)) break;
+      if (!/[\p{L}]/u.test(w) || FROM.has(low) || STOP.has(low) || CALENDAR.has(low) || /[@.]/.test(w)) break;
       words.push(w);
     }
     if (words.length) add(phrases, words.join(" "));
