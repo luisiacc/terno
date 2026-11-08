@@ -10,6 +10,7 @@ import { chooseOpenThread, getApp, markSelectionIntent, navigate, setApp } from 
 import { loadMore, useList } from "~/state/list";
 import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, answerReview, rejectSuggestion } from "~/lib/categorize";
+import { leaveReview } from "~/lib/review";
 import { conversationKeys } from "~/lib/conversation-keys";
 import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
@@ -120,8 +121,8 @@ function escape() {
   else if (s.actionPreview) leavePreview();
   else if (s.checked.size || s.scope) clearSelection();
   else if (s.query) focusSearch();
-  // plan 158: a category's Review is a place Esc leaves, for the category itself
-  else if (s.reviewCategoryId !== null) navigate({ categoryId: s.reviewCategoryId, accountId: null });
+  // plan 159: Review is a place Esc leaves, for where it was entered from
+  else if (s.reviewCategoryId !== null) leaveReview();
   else closeEmptySearch();
 }
 

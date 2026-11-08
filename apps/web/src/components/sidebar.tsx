@@ -6,7 +6,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Sun, Archive, ArrowLeft, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, OctagonAlert, Plus, Route, Send, Settings2, SquarePen, Star, Tag, Trash2, Users, ListChecks } from "@terno/ui/icons";
+import { Sun, Archive, ArrowLeft, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, OctagonAlert, Plus, Route, Send, Settings2, SquarePen, Star, Tag, Tags, Trash2, Users, ListChecks } from "@terno/ui/icons";
 import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
 import { formatNumber, t } from "@terno/i18n";
@@ -19,6 +19,7 @@ import { createCategory as createNamedCategory } from "~/lib/new-category";
 import { offerTip, usePendingTip } from "~/lib/tips";
 import { ACCOUNT_VIEWS, SOLO_VIEWS, listedByAccount, useFolderRows, toggleAccount, useOpenAccount, type FolderRow } from "~/lib/account-folders";
 import { renderProbe } from "~/lib/render-probe";
+import { enterReview, reviewTotals } from "~/lib/review";
 import type { DropId } from "~/lib/drag";
 import { useDropState } from "~/state/drag";
 import { CloudAiPill } from "./cloud-ai-pill";
@@ -116,6 +117,7 @@ function NavItem({
   shortcut,
   note,
   hoverAction,
+  tip,
 }: {
   active: boolean;
   onClick: () => void;
@@ -143,6 +145,9 @@ function NavItem({
   note?: React.ReactNode;
   /** plan 107: a control over the row's end on hover (a folder's "+"): the count steps aside meanwhile */
   hoverAction?: boolean;
+  /** plan 159: the row's whole sentence as its tooltip, where the label and count say it in parts (its name stays the
+   * label and count, as the other rows': a name that doesn't start with what's shown is one a voice user can't say) */
+  tip?: string;
 }) {
   renderProbe("NavItem");
   // the perf gates tell the rows below More (which only slide when it toggles) from the folders
@@ -207,12 +212,12 @@ function NavItem({
       ) : null}
     </button>
   );
-  if (!countHelp && !shortcut) return button;
+  if (!countHelp && !shortcut && !tip) return button;
   return (
     <Tooltip>
       <TooltipTrigger render={button} />
       <TooltipContent side="right">
-        {countHelp?.text}
+        {tip ?? countHelp?.text}
         {shortcut && <Shortcut keys={shortcut} />}
       </TooltipContent>
     </Tooltip>
@@ -295,33 +300,26 @@ function ComposeRow() {
 }
 
 /**
- * Plan 158: the categories' suggestions as one quiet line under their heading, in words: how many in all, and a click
- * opens the review of the category with the most. Each category's own is in its menu; its count is in its row's tooltip.
+ * Plan 159: the categories' suggestions as a row like the others, first under their heading: "Sort into categories",
+ * how many in all as its count, the sentence whole as its tooltip. A click opens the Review of the category with
+ * the most, whose header switches between them; each category's own is in its menu, its count in its row's tooltip.
  */
-function ReviewLine({ categories, suggestions, reviewing }: { categories: readonly Category[]; suggestions: Readonly<Record<number, number>>; reviewing: boolean }) {
-  let total = 0;
-  let most: Category | undefined;
-  for (const c of categories) {
-    const n = suggestions[c.id] ?? 0;
-    total += n;
-    if (n > 0 && (!most || n > (suggestions[most.id] ?? 0))) most = c;
-  }
-  if (!most) return null;
-  const to = most.id;
+function ReviewRow({ categories, suggestions, reviewing }: { categories: readonly Category[]; suggestions: Readonly<Record<number, number>>; reviewing: boolean }) {
+  const { total, pending } = reviewTotals(categories, suggestions);
+  const most = pending[0];
+  // shown with something to sort, and while you're sorting (its last one answered, it's still where you are)
+  if (!most && !reviewing) return null;
+  const to = most?.category.id;
   return (
-    <button
-      type="button"
-      data-testid="nav-review"
-      data-count={total}
-      data-active={reviewing || undefined}
-      aria-current={reviewing ? "page" : undefined}
-      onClick={() => navigate({ view: "all", reviewCategoryId: to, accountId: null })}
-      // plan 158: a place like the rows under it (a 24 px target, their hover, their highlight while you're in it), set
-      // quieter as their heading's line
-      className="-mt-0.5 mb-0.5 flex h-6 w-full items-center rounded-(--nav-radius) px-2 text-left text-xs text-muted-foreground outline-none hover:bg-sidebar-hover hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground"
-    >
-      <span className="min-w-0 truncate">{t("sidebar.reviewAll", { count: total })}</span>
-    </button>
+    <NavItem
+      testId="nav-review"
+      active={reviewing}
+      onClick={() => to !== undefined && enterReview(to)}
+      icon={<Tags className="size-(--icon-nav)" />}
+      label={t("sidebar.sort")}
+      count={total}
+      tip={total ? t("sidebar.reviewAll", { count: total }) : undefined}
+    />
   );
 }
 
@@ -1383,7 +1381,7 @@ export function Sidebar() {
         >
           {t("sidebar.categories")}
         </SectionTitle>
-        <ReviewLine categories={categories} suggestions={counts.categorySuggestions} reviewing={reviewCategoryId !== null} />
+        <ReviewRow categories={categories} suggestions={counts.categorySuggestions} reviewing={reviewCategoryId !== null && !searching} />
         {categories.map((c) => {
           const help = categoryHelp(counts.categoryUnread[c.id] ?? 0, counts.categorySuggestions[c.id] ?? 0);
           const suggested = counts.categorySuggestions[c.id] ?? 0;

@@ -2,7 +2,7 @@ import { folderName } from "~/lib/account-folders";
 import { SearchField } from "@terno/ui/components/search-field";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Bell, ChevronDown, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun, ListChecks } from "@terno/ui/icons";
+import { Bell, ChevronDown, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun, ListChecks, Tags } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
@@ -36,6 +36,8 @@ import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
 import { ThreadMenu } from "./thread-menu";
 import { DraftsStrip } from "./drafts-strip";
 import { ReviewAlwaysMenu, ReviewButtons } from "./review-actions";
+import { ReviewSwitcher } from "./review-switcher";
+import { reviewTotals } from "~/lib/review";
 import { ROW_SHAPE, ThreadRow } from "./thread-row";
 import { registerDesignAnchor, useDesign } from "~/lib/design";
 import { LEARNED_H, LearnedBanner, LearnedSource, useLearnedProposal } from "./learned-banner";
@@ -624,7 +626,8 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
   const count = useList((s) => (filter ? s.items.reduce((n, t) => n + (matchesFilter(filter, t) ? 1 : 0), 0) : s.items.length));
   // plan 64: a search looks everywhere, so the list is the search's, not the sidebar mailbox's
   const searching = query.trim() !== "" && !review;
-  const title = searching ? t("list.search.title") : review ? t("list.reviewTitle", { category: review.name }) : today ? t("today.title") : followups ? t("followups.title") : reminders ? t("view.reminders") : (folder ?? category?.name ?? viewLabel(view));
+  // plan 159: Review says what it's for; the category in view is its switcher's, under the title
+  const title = searching ? t("list.search.title") : review ? t("sidebar.sort") : today ? t("today.title") : followups ? t("followups.title") : reminders ? t("view.reminders") : (folder ?? category?.name ?? viewLabel(view));
   // the title names the mailbox; the greeting is the words under the inbox's (any account; not a Gmail tab of it, plan 86)
   const kind = design.variants.listHeader === "greeting" && view === "inbox" && !folder && !category && !review && !searching ? "greeting" : design.variants.listHeader === "title" ? "title" : "display";
   const behindButton = design.variants.search === "button";
@@ -723,6 +726,8 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
               {stats}
               {searchAll}
             </p>
+          ) : review ? (
+            <ReviewSwitcher />
           ) : (
             kind !== "title" && <Subtitle filter={filter} greeting={kind === "greeting"} />
           )}
@@ -761,7 +766,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
             <div className="flex shrink-0 items-center gap-0.5 empty:hidden">{actions}</div>
           </div>
           {/* gives way as the list scrolls (at once: moving through a list never animates), unless it says what a search found */}
-          <div
+          {!review && <div
             data-keep={query ? true : undefined}
             // on a short window it gives its room to the rows (the counts are the sidebar's too), unless it says what a search found
             className="-mt-1.5 pb-2 pl-3 group-data-scrolled/list:not-data-keep:hidden [@media(max-height:760px)]:not-data-keep:hidden"
@@ -774,8 +779,14 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
             ) : (
               <Subtitle filter={filter} greeting={kind === "greeting"} />
             )}
-          </div>
+          </div>}
         </>
+      )}
+      {/* plan 159: Review's switcher on a line of its own under the title, in every header (it never gives way: it's where you are) */}
+      {!oneRow && review && !searching && (
+        <div className="-mt-1.5 pb-2 pl-3">
+          <ReviewSwitcher />
+        </div>
       )}
       {!oneRow && showField && <ListSearch />}
       {/* plan 158: the compact title row keeps its title and controls in a search: what it found goes under the field, on its text's line */}
@@ -919,6 +930,8 @@ function EmptyState() {
   const reminders = useApp((s) => s.reminders);
   const followups = useApp((s) => s.followups);
   const today = useApp((s) => s.today);
+  const review = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
+  const reviewLeft = useApp((s) => (s.reviewCategoryId === null ? 0 : reviewTotals(s.categories, s.counts.categorySuggestions).total));
   const previewing = useApp((s) => s.actionPreview !== null);
   const ruleOnly = useActionPreview((s) => s.preview !== null && savesRuleOnly(s.preview));
   const coverage = useCoverageNote();
@@ -927,6 +940,15 @@ function EmptyState() {
       <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
         <p className="text-lg font-semibold tracking-tight">{t("action.rule.emptyTitle")}</p>
         <p className="text-xs text-muted-foreground">{t("action.rule.emptyBody")}</p>
+      </div>
+    );
+  // plan 159: Review's last one answered: it stays (Undo brings the rows back here), and says where to go on
+  if (review)
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
+        <Tags className="mb-2 size-7 text-muted-foreground" aria-hidden />
+        <p className="text-lg font-semibold tracking-tight">{t("review.empty.title")}</p>
+        <p className="text-xs text-muted-foreground">{reviewLeft > 0 ? t("review.empty.more", { category: review.name }) : t("review.empty.none")}</p>
       </div>
     );
   if (today)

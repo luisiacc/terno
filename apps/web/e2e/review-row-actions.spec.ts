@@ -52,7 +52,8 @@ async function reviewing(page: Page, server: DevServer) {
   await page.reload();
   await page.locator("[data-ready]").waitFor();
   await openReview(page, facturas);
-  await expect(page.getByTestId("list-title")).toHaveText("Review · Facturas");
+  await expect(page.getByTestId("list-title")).toHaveText("Sort into categories");
+  await expect(page.getByTestId("review-category")).toContainText("Facturas");
   await expect(page.getByTestId("thread-row")).toHaveCount(3);
   return { db, facturas, threads, sameSubject, fromRappi, filed, filters };
 }

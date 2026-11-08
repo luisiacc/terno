@@ -408,7 +408,8 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
     const { db, facturas, threads } = await withSuggestions(page, server);
     expect(await suggestedIn(page, facturas)).toBe(2);
     await openReview(page, facturas);
-    await expect(page.getByTestId("list-title")).toHaveText("Review · Facturas");
+    await expect(page.getByTestId("list-title")).toHaveText("Sort into categories");
+    await expect(page.getByTestId("review-category")).toContainText("Facturas");
     await expect(page.getByTestId("thread-row")).toHaveCount(2);
 
     await page.locator(`[data-testid=thread-row][data-thread-id="${threads[0]}"]`).dispatchEvent("mousedown");
@@ -431,6 +432,9 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
     await expect.poll(() => db.get("SELECT label, weight, source FROM cls_examples WHERE thread_id = ?", threads[1]!)).toEqual({ label: -1, weight: 1, source: "reject" });
     await expect(page.getByTestId("reader").getByTestId("suggestion-chip")).toHaveCount(0);
     await expect.poll(() => suggestedIn(page, facturas)).toBe(0);
+    // plan 159: its last one answered, Review stays (an Undo brings the row back here) and says what's next
+    await expect(page.getByTestId("review-category")).toContainText("Facturas");
+    await expect(page.getByTestId("list-empty")).toContainText("All sorted");
   });
 
   test("out of a category, by hand and by the engine; Settings → Categories", async ({ app: page, server }) => {

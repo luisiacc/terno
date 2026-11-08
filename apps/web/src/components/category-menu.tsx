@@ -4,7 +4,8 @@ import { t } from "@terno/i18n";
 import { Forward, Inbox, Sparkles, Trash2 } from "@terno/ui/icons";
 import { useState, type ReactElement } from "react";
 import { setShowInInbox } from "~/lib/categorize";
-import { navigate, setApp } from "~/state/app";
+import { enterReview } from "~/lib/review";
+import { setApp } from "~/state/app";
 import { CategoryDeleteDialog } from "./category-delete-dialog";
 import { CategoryForwardDialog } from "./category-forward-dialog";
 
@@ -26,9 +27,9 @@ export function CategoryMenu({ category, suggested = 0, children }: { category: 
         <ContextMenuContent className="w-52" data-testid={`category-menu-${category.id}`}>
           {suggested > 0 && (
             <>
-              <ContextMenuItem data-testid="category-menu-review" onClick={() => navigate({ view: "all", reviewCategoryId: category.id, accountId: null })}>
+              <ContextMenuItem data-testid="category-menu-review" onClick={() => enterReview(category.id)}>
                 <Sparkles />
-                <span className="flex-1">{t("sidebar.reviewAll", { count: suggested })}</span>
+                <span className="flex-1">{t("category.review", { count: suggested })}</span>
               </ContextMenuItem>
               <ContextMenuSeparator />
             </>

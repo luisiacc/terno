@@ -180,6 +180,12 @@ test.describe("axe", { tag: "@variant" }, () => {
     await expect(page.getByTestId("review-always-subject-count")).toBeVisible();
     await clean(page, "Review, a row's answers", ["[data-testid=review-always-menu]", "[data-testid=thread-list]"]);
     await page.keyboard.press("Escape");
+    // plan 159: its header's switcher, open, and the sidebar's row for it
+    await page.getByTestId("review-category").click();
+    await expect(page.getByTestId(`review-category-${facturas}`)).toBeVisible();
+    await clean(page, "Review's category switcher", ["[data-testid=list-header]", "[role=listbox]:not([data-keep-scroll])"]);
+    await page.keyboard.press("Escape");
+    await clean(page, "the sidebar's Sort into categories", "#app-sidebar");
   });
 
   test("the sidebar: its places, menus and fields", async ({ app: page, server }) => {

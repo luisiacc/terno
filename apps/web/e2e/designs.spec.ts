@@ -141,14 +141,14 @@ test.describe("in every design", { tag: "@design" }, () => {
       db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.8, '[]', ?)", t, facturas, Date.now());
       await page.reload();
       await page.locator("[data-ready]").waitFor();
-      // plan 158: one line under the heading, in words, to the category with the most; each one's own in its menu
+      // plan 159: a row under the heading, to the category with the most; each one's own in its menu
       const review = page.getByTestId("nav-review");
-      await expect(review).toHaveText(/^Review \d+ suggestions?$/);
+      await expect(review).toHaveText(/^Sort into categories\d+$/);
       await review.click();
-      await expect(page.getByTestId("list-title")).toContainText("Review ·");
+      await expect(page.getByTestId("list-title")).toHaveText("Sort into categories");
       await expect(review).toHaveAttribute("data-active");
       await openReview(page, facturas);
-      await expect(page.getByTestId("list-title")).toContainText("Facturas");
+      await expect(page.getByTestId("review-category")).toContainText("Facturas");
     });
   });
 

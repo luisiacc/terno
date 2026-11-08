@@ -9,6 +9,17 @@ afterEach(() => setLocale("en", en));
 const placeholders = (m: string | object): string[] =>
   [...new Set((typeof m === "string" ? [m] : Object.values(m)).flatMap((s: string) => [...s.matchAll(/\{(\w+)\}|<(\w+)>/g)].map((x) => x[1] ?? `<${x[2]}>`)))].sort();
 
+describe("plan 159: one phrase for what waits for your reply", () => {
+  it("the count, its filter and its palette command say \"to reply to\", for one and many, in en and es", () => {
+    expect([t("list.waitingCount", { count: 1 }), t("list.waitingCount", { count: 128 }), t("list.filter.waiting"), t("palette.showWaiting")]).toEqual(["1 to reply to", "128 to reply to", "To reply to", "Show conversations to reply to"]);
+    expect(t("list.waitingCount.tip")).toContain("last 30 days");
+    expect(t("sidebar.reviewAll", { count: 79 })).toBe("Sort 79 into categories");
+    setLocale("es", es);
+    expect([t("list.waitingCount", { count: 1 }), t("list.waitingCount", { count: 128 }), t("list.filter.waiting"), t("palette.showWaiting")]).toEqual(["1 por responder", "128 por responder", "Por responder", "Mostrar conversaciones por responder"]);
+    expect(t("sidebar.reviewAll", { count: 79 })).toBe("Ordenar 79 en categorías");
+  });
+});
+
 describe("t", () => {
   it("returns plain messages as they are", () => {
     expect(t("common.cancel")).toBe("Cancel");
