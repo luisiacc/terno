@@ -225,23 +225,35 @@ export async function openConversation(conversationId: number): Promise<boolean>
 }
 
 /**
- * Enter on a source, or its inline number: the palette closes and the thread opens at that message, in the thread it's
- * in now. One now in Spam or Trash needs asking twice; one that's gone doesn't open.
+ * What a source is now, from the backend (another window may have moved it, or a merge taken its thread), and whether
+ * it may be shown: not when it's gone, nor in Spam or Trash until it's asked for twice. The thread it's in now, or null.
  */
-export async function openSource(source: AskSourceRef): Promise<void> {
-  // what it is now, not when it was shown: another window may have moved it, or a merge taken its thread
+export async function sourceThread(source: AskSourceRef): Promise<number | null> {
   const fresh = await client.call("ai.askSources", { messageIds: [source.messageId] }).catch(() => null);
   if (fresh) useAsk.setState((s) => ({ sources: { ...s.sources, ...fresh } }));
   const s = useAsk.getState();
   const view = s.sources[source.messageId];
-  if (view?.state === "gone") return;
-  if ((view?.state === "spam" || view?.state === "trash") && s.armedSource !== source.messageId) return useAsk.setState({ armedSource: source.messageId });
+  if (view?.state === "gone") return null;
+  if ((view?.state === "spam" || view?.state === "trash") && s.armedSource !== source.messageId) {
+    useAsk.setState({ armedSource: source.messageId });
+    return null;
+  }
   useAsk.setState({ armedSource: null });
-  const threadId = view?.threadId ?? source.threadId;
+  return view?.threadId ?? source.threadId;
+}
+
+/**
+ * Open a source in the reader: the palette closes and the thread opens at that message, in the thread it's in now, with
+ * Back to the answer. Plan 161, pass 3: a citation and a source row first show the message in Ask (`ask-peek.ts`); its
+ * Open message comes here with the thread `sourceThread` already let through.
+ */
+export async function openSource(source: AskSourceRef, threadId?: number): Promise<void> {
+  const thread = threadId ?? (await sourceThread(source));
+  if (thread === null) return;
   setApp({ dialog: null });
-  openThread(threadId);
+  openThread(thread);
   revealSummaryMessage(source.messageId);
-  useAsk.setState({ returnTo: { threadId, messageId: source.messageId, conversationId: useAsk.getState().conversationId } });
+  useAsk.setState({ returnTo: { threadId: thread, messageId: source.messageId, conversationId: useAsk.getState().conversationId } });
   focusMessage(source.messageId);
 }
 

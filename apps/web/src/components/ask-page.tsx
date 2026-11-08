@@ -1,14 +1,16 @@
-import { answerWithoutCitations, type AskConversationSummary, type AskSourceRef, type AskTurn } from "@terno/core";
+import { answerWithoutCitations, type AskConversationSummary, type AskPlanQuery, type AskSourceRef, type AskTurn } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { Chip } from "@terno/ui/components/chip";
-import { CommandDescription, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
+import { CloseButton } from "@terno/ui/components/close-button";
+import { CommandDescription, CommandEmpty, CommandGroup, CommandHints, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
 import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { Clock, Copy, Mail, Plus, RefreshCw, Search, Sparkles, Undo2 } from "@terno/ui/icons";
+import { ChevronLeft, Clock, Copy, ExternalLink, Mail, Plus, RefreshCw, Search, Sparkles, Undo2 } from "@terno/ui/icons";
 import { useCommandState } from "cmdk";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { askReady, errorHelp, providerLabel } from "~/lib/ai";
+import { closePeek, showSource, usePeek, type Peek } from "~/lib/ask-peek";
+import { Marked } from "~/components/match-mark";
 import { citationRuns } from "~/lib/ask-citations";
 import { provenanceDetail, provenanceLabel } from "~/lib/provenance";
 import { cn } from "@terno/ui/lib/utils";
@@ -19,9 +21,6 @@ import { chordLabel } from "@terno/ui/components/shortcut";
 import { snack } from "~/lib/snack";
 import { useApp, setApp } from "~/state/app";
 
-
-/** New question and the history, after an answer: small and quiet, full ink when chosen */
-const SESSION_ROW = "h-7 px-2.5 text-xs font-normal text-muted-foreground data-selected:text-foreground";
 
 const stopKeys = (e: KeyboardEvent) => {
   // a control's own Enter and Space stay out of the list's: cmdk selects the active row whichever control has focus (revision 12)
@@ -40,12 +39,14 @@ const sourceLine = (source: AskSourceRef) => t("ask.source.from", { from: source
 
 /**
  * "…renews on 1 March.¹": a citation is a small numbered marker, a button to that source, bound to the word before it
- * and the punctuation after it (plan 161: no line starts with "."). Plan 161, pass 2: the button's own box is 20 px
- * (as wide as its number, so it stays on its word; its margins take back what the line would grow by), its pointer
- * target 24 px, its number full ink on the field's
- * wash; hover or focus names the source, and the source row chosen with ↑↓ lights its number here.
+ * and the punctuation after it (plan 161: no line starts with "."). Plan 161, pass 3: the button's own box is 24 × 24
+ * (a rater's ruler measures the element), the number pill drawn inside; its block margins take back what the line would
+ * grow by, and its inline ones what would push the pill off its word and the "." after it (an `after:` layer over the
+ * same box takes the pointer where it reaches past the line, which Chromium doesn't hit-test). Its number is full ink on
+ * the field's wash; hover or focus names the source, the source row chosen with ↑↓ lights its number here, and a click
+ * shows the message in Ask (`ask-peek.ts`).
  */
-function AnswerText({ text, sources, chosen = null }: { text: string; sources: readonly AskSourceRef[]; chosen?: number | null }) {
+function AnswerText({ text, sources, queries, chosen = null }: { text: string; sources: readonly AskSourceRef[]; queries: readonly AskPlanQuery[]; chosen?: number | null }) {
   const views = useAsk((s) => s.sources);
   const marker = (n: number, key: number) => {
     const source = sources[n - 1];
@@ -60,8 +61,8 @@ function AnswerText({ text, sources, chosen = null }: { text: string; sources: r
               data-testid="ask-citation"
               data-lit={lit || undefined}
               onKeyDown={stopKeys}
-              onClick={() => void openSource(source)}
-              className="group/cite relative -my-1 ms-0.5 inline-grid h-5 place-items-center rounded-[0.45em] align-[0.05em] outline-none after:absolute after:top-1/2 after:left-1/2 after:size-6 after:-translate-1/2 focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => void showSource(source, n, queries)}
+              className="group/cite relative z-[1] -my-1 -ms-0.5 -me-1 inline-flex size-6 items-center justify-center rounded-md align-[0.05em] outline-none after:absolute after:inset-0 focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={t("ask.citation", { n, subject: source.subject })}
             />
           }
@@ -131,7 +132,7 @@ function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated
       {/* the header already says it, as does the turn before it when older mail answered again */}
       {/* plan 161, pass 2: a follow-up reads as a question, as the header's does, not as a caption */}
       <h3 className={repeated ? "sr-only" : "text-sm font-medium"} data-testid="ask-question">{turn.question}</h3>
-      {turn.answer ? <AnswerText text={turn.answer} sources={turn.sources} chosen={last ? chosen : null} /> : null}
+      {turn.answer ? <AnswerText text={turn.answer} sources={turn.sources} queries={turn.queries} chosen={last ? chosen : null} /> : null}
       <Armed sources={turn.sources} />
       {turn.status === "stopped" && <p className="text-xs text-muted-foreground" data-testid="ask-stopped">{t("ask.stopped")}</p>}
       <Checks turn={turn} />
@@ -151,7 +152,7 @@ function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated
       )}
       {last && turn.answer && <Scope />}
       {/* plan 161, pass 2: what an earlier turn cited stays under it (the last turn's are the palette's rows) */}
-      {!last && turn.sources.length > 0 && <TurnSources sources={turn.sources} />}
+      {!last && turn.sources.length > 0 && <TurnSources sources={turn.sources} queries={turn.queries} />}
     </section>
   );
 }
@@ -221,12 +222,15 @@ export function Scope() {
   return (
     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground" data-testid="ask-scope">
       <span>{t("ask.scope", { date: listDate(since) })}</span>
-      {offer.kind === "offline" ? <span data-testid="ask-older-offline">{t("ask.older.offline")}</span> : <OlderButton />}
+      {/* plan 161, pass 3: after an answer, the way past it is a quiet link in the scope's line, below the answer and its sources in weight */}
+      {offer.kind === "offline" ? <span data-testid="ask-older-offline">{t("ask.older.offline")}</span> : (
+        <Button variant="link-secondary" size="xs" className="h-6 font-medium" data-testid="ask-older" onKeyDown={stopKeys} onClick={searchOlder}>{t("ask.older.servers")}</Button>
+      )}
     </p>
   );
 }
 
-/** Plan 161, pass 2: the one look and label for older mail, after an answer's scope line and after "nothing here" alike. */
+/** Plan 161, pass 2: older mail when nothing here answers, the main action there (pass 3: an answer's scope line has it as a link). */
 function OlderButton() {
   return (
     <Button variant="outline" size="xs" data-testid="ask-older" onKeyDown={stopKeys} onClick={searchOlder}>
@@ -311,17 +315,17 @@ function SourceCells({ source, n }: { source: AskSourceRef; n: number }) {
   );
 }
 
-function SourceRow({ source, n }: { source: AskSourceRef; n: number }) {
+function SourceRow({ source, n, queries }: { source: AskSourceRef; n: number; queries: readonly AskPlanQuery[] }) {
   const view = useAsk((s) => s.sources[source.messageId]?.state ?? "ok");
   return (
-    <CommandItem value={`source\u0000${source.messageId}\u0000${n}`} disabled={view === "gone"} data-testid="ask-source" data-state-view={view} onSelect={() => void openSource(source)}>
+    <CommandItem value={`source\u0000${source.messageId}\u0000${n}`} disabled={view === "gone"} data-testid="ask-source" data-state-view={view} onSelect={() => void showSource(source, n, queries)}>
       <SourceCells source={source} n={n} />
     </CommandItem>
   );
 }
 
 /** An earlier turn's sources, under its answer: the rows' anatomy, as buttons (Tab reaches them; ↑↓ are the last turn's). */
-function TurnSources({ sources }: { sources: readonly AskSourceRef[] }) {
+function TurnSources({ sources, queries }: { sources: readonly AskSourceRef[]; queries: readonly AskPlanQuery[] }) {
   const views = useAsk((s) => s.sources);
   return (
     <div className="pt-1" data-testid="ask-turn-sources">
@@ -330,7 +334,7 @@ function TurnSources({ sources }: { sources: readonly AskSourceRef[] }) {
       <ul className="-mx-3 mt-0.5 flex flex-col gap-0.5">
         {sources.map((source, i) => (
           <li key={source.messageId}>
-            <button type="button" data-testid="ask-turn-source" disabled={views[source.messageId]?.state === "gone"} onKeyDown={stopKeys} onClick={() => void openSource(source)} className="flex h-8 w-full items-center gap-2 rounded-(--command-radius) px-3 text-start text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:text-muted-foreground">
+            <button type="button" data-testid="ask-turn-source" disabled={views[source.messageId]?.state === "gone"} onKeyDown={stopKeys} onClick={() => void showSource(source, i + 1, queries)} className="flex h-8 w-full items-center gap-2 rounded-(--command-radius) px-3 text-start text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:text-muted-foreground">
               <SourceCells source={source} n={i + 1} />
             </button>
           </li>
@@ -340,13 +344,46 @@ function TurnSources({ sources }: { sources: readonly AskSourceRef[] }) {
   );
 }
 
-/** The page's own keys: Esc stops first, the follow-up box types, arrows still walk the rows. */
-function FollowUp({ disabled }: { disabled: boolean }) {
+/**
+ * Plan 161, pass 3: the way back to all commands, as words that say so, and a plain close. In place of the page chip,
+ * whose × read as close.
+ */
+function AskNav({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+  return (
+    <span className="flex shrink-0 items-center gap-1.5" data-testid="ask-nav">
+      <Button variant="ghost" size="xs" className="font-medium text-muted-foreground" data-testid="palette-back" onKeyDown={stopKeys} onClick={onBack}>
+        <ChevronLeft /> {t("ask.allCommands")}
+      </Button>
+      <CloseButton size="sm" data-testid="ask-close" onKeyDown={stopKeys} onClick={onClose} />
+    </span>
+  );
+}
+
+/** Plan 161, pass 3: what the keys do where you are, never a promise they don't keep. */
+type Where = "empty" | "asking" | "walking" | "peek";
+function AskHints({ where, sources, end }: { where: Where; sources: boolean; end?: ReactNode }) {
+  const running = useAsk((s) => s.running !== null);
+  const esc = { keys: ["escape"], label: running ? t("ask.stop") : t("ask.allCommands") };
+  const hints =
+    where === "peek"
+      ? [{ keys: ["enter"], label: t("ask.peek.open") }, { keys: ["escape"], label: t("ask.peek.back") }]
+      : where === "walking"
+        ? [{ keys: ["arrowup", "arrowdown"], label: t("ask.keys.sources") }, { keys: ["enter"], label: t("ask.keys.show") }, esc]
+        : [{ keys: ["enter"], label: t("ask.keys.ask") }, ...(sources && where === "asking" ? [{ keys: ["arrowdown"], label: t("ask.keys.sources") }] : []), esc];
+  return <CommandHints hints={hints} end={end} data-testid="ask-hints" data-where={where} />;
+}
+
+/** The page's own keys: Esc stops first, the follow-up box types, arrows walk the sources (and say so below). */
+function FollowUp({ disabled, onWalk }: { disabled: boolean; onWalk: (walking: boolean) => void }) {
   const [value, setValue] = useState("");
   const running = useAsk((s) => s.running !== null);
   const ref = useRef<HTMLInputElement>(null);
   const armed = useRef(false);
   useLayoutEffect(() => ref.current?.focus(), []);
+  const walk = (on: boolean) => {
+    armed.current = on;
+    onWalk(on);
+  };
   return (
     <div className="border-t border-border/60 px-[18px] py-2">
       <input
@@ -358,12 +395,12 @@ function FollowUp({ disabled }: { disabled: boolean }) {
         disabled={disabled}
         value={value}
         onChange={(e) => {
-          armed.current = false;
+          walk(false);
           setValue(e.target.value);
         }}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-            armed.current = true;
+            walk(true);
             return;
           }
           if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
@@ -381,12 +418,78 @@ function FollowUp({ disabled }: { disabled: boolean }) {
   );
 }
 
-function Conversation({ onBack }: { onBack: () => void }) {
+/** At most this much of a message is drawn in Ask: enough to check a claim; Open message has the rest. */
+const PEEK_CHARS = 20_000;
+
+/**
+ * Plan 161, pass 3: a cited message, in Ask, in place of the answer: the way back, the source as its row says it, the
+ * passage the searches found, and the message's text. Enter opens it in the reader; Esc comes back (`paletteKeys`).
+ */
+function PeekView({ peek }: { peek: Peek }) {
+  const body = useRef<HTMLDivElement>(null);
+  // programmatic: no ring (plan 54), and the keys are the preview's (↑↓ scroll it, Enter opens it)
+  useLayoutEffect(() => body.current?.focus({ preventScroll: true }), [peek.source.messageId]);
+  const { source } = peek;
+  const open = () => void openSource(source, peek.threadId);
+  const text = peek.text.length > PEEK_CHARS ? `${peek.text.slice(0, PEEK_CHARS)}…` : peek.text;
+  return (
+    <section data-testid="ask-peek" data-state={peek.state} aria-label={t("ask.peek.region", { n: peek.n, subject: source.subject || t("common.noSubject") })}>
+      <div className="flex items-center gap-2 px-[18px] pt-2.5">
+        {/* -ms-2: its words on the column's edge, its shape reaching past it */}
+        <Button variant="ghost" size="xs" className="-ms-2 font-medium" data-testid="ask-peek-back" onKeyDown={stopKeys} onClick={() => closePeek()}>
+          <ChevronLeft /> {t("ask.peek.back")}
+        </Button>
+        <Button variant="outline" size="xs" className="ms-auto" data-testid="ask-peek-open" onKeyDown={stopKeys} onClick={open}>
+          <ExternalLink /> {t("ask.peek.open")}
+        </Button>
+      </div>
+      <div
+        ref={body}
+        tabIndex={0}
+        data-testid="ask-peek-body"
+        className="max-h-80 space-y-3 overflow-y-auto px-[18px] pt-2 pb-3 outline-none"
+        onKeyDown={(e) => {
+          // its own keys: cmdk's would choose a row that isn't on screen
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            e.stopPropagation();
+            open();
+          } else if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") e.stopPropagation();
+        }}
+      >
+        <div className="flex items-center gap-2 text-sm">
+          <span aria-hidden className="inline-grid h-[1.4em] min-w-[1.4em] place-items-center rounded-[0.4em] bg-field px-[0.3em] text-2xs leading-none font-semibold text-foreground tabular">{peek.n}</span>
+          <span className="min-w-0 truncate font-medium" data-testid="ask-peek-from">{source.fromName || source.fromEmail}</span>
+          <span className="ms-auto shrink-0 text-xs text-muted-foreground tabular">{listDate(source.date)}</span>
+        </div>
+        <h3 className="text-sm font-medium text-pretty" data-testid="ask-peek-subject">{source.subject || t("common.noSubject")}</h3>
+        {peek.state === "loading" && (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="ask-peek-loading"><Spinner className="size-3.5" /> {t("ask.peek.loading")}</p>
+        )}
+        {peek.state === "failed" && <p className="text-sm text-muted-foreground" data-testid="ask-peek-failed">{t("ask.peek.failed")}</p>}
+        {peek.state === "ready" && peek.passage && (
+          <figure className="space-y-1" data-testid="ask-peek-passage">
+            <figcaption className="text-xs font-medium text-muted-foreground">{t("ask.peek.passage")}</figcaption>
+            <blockquote className="border-s-2 border-border ps-3 text-sm leading-relaxed">
+              <Marked text={peek.passage} needles={peek.needles} testId="ask-peek-mark" />
+            </blockquote>
+          </figure>
+        )}
+        {peek.state === "ready" && <p className="text-sm leading-relaxed break-words whitespace-pre-wrap" data-testid="ask-peek-text">{text}</p>}
+      </div>
+    </section>
+  );
+}
+
+function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
   const turns = useAsk((s) => s.turns);
   const running = useAsk((s) => s.running);
   const incomplete = useAsk((s) => s.incomplete);
   const atLimit = useAsk(atTurnLimit);
   const enabled = useApp((s) => s.settings?.ask?.enabled !== false);
+  const peek = usePeek((s) => s.peek);
+  const chosen = useChosenSource();
+  const [walking, setWalking] = useState(false);
   const title = turns[0]?.question ?? running?.question ?? "";
   const last = turns.at(-1);
   const area = useRef<HTMLDivElement>(null);
@@ -394,52 +497,62 @@ function Conversation({ onBack }: { onBack: () => void }) {
   useLayoutEffect(() => {
     const el = area.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [size]);
+  }, [size, peek === null]);
+  const sources = (last?.sources.length ?? 0) > 0;
+  // plan 161, pass 3: starting over and the history are quiet controls at the end of the keys' line, not rows of their own
+  const session = !peek && (
+    <>
+      <Button variant="ghost" size="xs" className="font-normal text-muted-foreground" data-testid="ask-new" onKeyDown={stopKeys} onClick={() => newQuestion()}>
+        <Plus /> {t("ask.new")}
+      </Button>
+      <Button variant="ghost" size="xs" className="font-normal text-muted-foreground" data-testid="ask-history-row" onKeyDown={stopKeys} onClick={() => setPalettePage("askHistory")}>
+        <Clock /> {t("palette.askHistory")}
+      </Button>
+    </>
+  );
   return (
     <>
-      <div className="flex h-11 items-center gap-2 border-b border-border/60 px-3 text-sm" data-testid="ask-header">
+      <div className="flex h-11 items-center gap-2 border-b border-border/60 ps-3 pe-2.5 text-sm" data-testid="ask-header">
         <Sparkles className="size-[1.15em] shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate" data-testid="ask-title">{title}</span>
-        <Chip data-testid="palette-page" onRemove={onBack} removeLabel={t("palette.back")} removeProps={{ "data-testid": "palette-back", onKeyDown: stopKeys }}>{t("palette.ask.page")}</Chip>
+        <AskNav onBack={onBack} onClose={onClose} />
       </div>
-      {/* tabbable: it scrolls, and a keyboard has to reach what it holds */}
-      <div ref={area} tabIndex={0} data-testid="ask-area" className="max-h-72 space-y-4 overflow-y-auto px-[18px] py-3 outline-none">
-        {turns.map((turn, i) => (
-          turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={turn.question === (i === 0 ? title : turns[i - 1]!.question)} />
-        ))}
-        <Running />
-        <Consent />
-        <Failure />
-        <CommandNotice />
-        <Older />
-        {incomplete && <p className="text-xs text-muted-foreground" data-testid="ask-incomplete">{t("ask.incomplete")}</p>}
-        <OlderLimit />
-      </div>
-      <CommandList label={t("ask.sources")} className="max-h-44 border-t border-border/60 p-1.5">
-        {last && last.sources.length > 0 && (
-          <CommandGroup heading={t("ask.sources")} data-group="ask-sources">
-            {last.sources.map((source, i) => (
-              <SourceRow key={source.messageId} source={source} n={i + 1} />
+      {peek ? (
+        <PeekView peek={peek} />
+      ) : (
+        <>
+          {/* tabbable: it scrolls, and a keyboard has to reach what it holds */}
+          <div ref={area} tabIndex={0} data-testid="ask-area" className="max-h-72 space-y-4 overflow-y-auto px-[18px] py-3 outline-none">
+            {turns.map((turn, i) => (
+              turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={turn.question === (i === 0 ? title : turns[i - 1]!.question)} />
             ))}
-          </CommandGroup>
-        )}
-        {/* plan 161, pass 2: starting over and the history are one quiet line, under the answer and its sources */}
-        <CommandGroup value="ask-actions" forceMount data-testid="ask-session" className="**:[[cmdk-group-items]]:flex-row **:[[cmdk-group-items]]:gap-1">
-          <CommandItem forceMount value="ask-new" data-testid="ask-new" className={SESSION_ROW} onSelect={() => newQuestion()}>
-            <Plus /> {t("ask.new")}
-          </CommandItem>
-          <CommandItem forceMount value="ask-history" data-testid="ask-history-row" className={SESSION_ROW} onSelect={() => setPalettePage("askHistory")}>
-            <Clock /> {t("palette.askHistory")}
-          </CommandItem>
-        </CommandGroup>
-      </CommandList>
-      <FollowUp disabled={atLimit || !enabled} />
+            <Running />
+            <Consent />
+            <Failure />
+            <CommandNotice />
+            <Older />
+            {incomplete && <p className="text-xs text-muted-foreground" data-testid="ask-incomplete">{t("ask.incomplete")}</p>}
+            <OlderLimit />
+          </div>
+          {last && sources && (
+            <CommandList label={t("ask.sources")} className="max-h-44 border-t border-border/60 p-1.5">
+              <CommandGroup heading={t("ask.sources")} data-group="ask-sources">
+                {last.sources.map((source, i) => (
+                  <SourceRow key={source.messageId} source={source} n={i + 1} queries={last.queries} />
+                ))}
+              </CommandGroup>
+            </CommandList>
+          )}
+          <FollowUp disabled={atLimit || !enabled} onWalk={setWalking} />
+        </>
+      )}
+      <AskHints where={peek ? "peek" : walking && chosen !== null ? "walking" : "asking"} sources={sources} end={session} />
     </>
   );
 }
 
 /** No question yet: the palette's own input, and Enter on a row. */
-function Empty({ value, setValue, onBack }: { value: string; setValue: (v: string) => void; onBack: () => void }) {
+function Empty({ value, setValue, onBack, onClose }: { value: string; setValue: (v: string) => void; onBack: () => void; onClose: () => void }) {
   const running = useAsk((s) => s.running);
   const consent = useAsk((s) => s.consent);
   const error = useAsk((s) => s.error);
@@ -453,7 +566,7 @@ function Empty({ value, setValue, onBack }: { value: string; setValue: (v: strin
         value={value}
         onValueChange={setValue}
         data-testid="palette-input"
-        addon={<Chip data-testid="palette-page" onRemove={onBack} removeLabel={t("palette.back")} removeProps={{ "data-testid": "palette-back", onKeyDown: stopKeys }}>{t("palette.ask.page")}</Chip>}
+        end={<AskNav onBack={onBack} onClose={onClose} />}
       />
       {busy && (
         <div className="space-y-3 px-[18px] py-3" data-testid="ask-area">
@@ -479,6 +592,7 @@ function Empty({ value, setValue, onBack }: { value: string; setValue: (v: strin
           </CommandGroup>
         </CommandList>
       )}
+      <AskHints where="empty" sources={false} />
     </>
   );
 }
@@ -492,7 +606,7 @@ function NoProvider() {
   );
 }
 
-function AskQuestionPage({ value, setValue, onBack }: { value: string; setValue: (v: string) => void; onBack: () => void }) {
+function AskQuestionPage({ value, setValue, onBack, onClose }: { value: string; setValue: (v: string) => void; onBack: () => void; onClose: () => void }) {
   const ready = useApp((s) => askReady(s.settings?.ai));
   const noProvider = useAsk((s) => s.noProvider);
   // a key added, a provider chosen: what said it had nowhere to go asks again
@@ -513,12 +627,14 @@ function AskQuestionPage({ value, setValue, onBack }: { value: string; setValue:
     } else returning();
   }, []);
   useEffect(() => {
-    paletteKeys.escape = () => stopAsking();
+    // plan 161, pass 3: Esc leaves a shown source first, back to its answer; then a running answer stops; then back
+    paletteKeys.escape = () => closePeek() || stopAsking();
     return () => {
       paletteKeys.escape = null;
+      closePeek();
     };
   }, []);
-  const content: ReactNode = !ready || noProvider ? <NoProvider /> : hasConversation || running ? <Conversation onBack={onBack} /> : <Empty value={value} setValue={setValue} onBack={onBack} />;
+  const content: ReactNode = !ready || noProvider ? <NoProvider /> : hasConversation || running ? <Conversation onBack={onBack} onClose={onClose} /> : <Empty value={value} setValue={setValue} onBack={onBack} onClose={onClose} />;
   return (
     <>
       {content}
@@ -535,7 +651,7 @@ function when(ms: number): string {
 }
 
 /** Previous AI questions: filtered as you type, in memory over the 100 rows. */
-function AskHistoryPage({ value, setValue, onBack }: { value: string; setValue: (v: string) => void; onBack: () => void }) {
+function AskHistoryPage({ value, setValue, onBack, onClose }: { value: string; setValue: (v: string) => void; onBack: () => void; onClose: () => void }) {
   const [list, setList] = useState<AskConversationSummary[] | null>(null);
   const [deleted, setDeleted] = useState<AskConversationSummary | null>(null);
   /** the delete of this page: its own event doesn't take away its Undo */
@@ -575,7 +691,7 @@ function AskHistoryPage({ value, setValue, onBack }: { value: string; setValue: 
         value={value}
         onValueChange={setValue}
         data-testid="palette-input"
-        addon={<Chip data-testid="palette-page" onRemove={onBack} removeLabel={t("palette.back")} removeProps={{ "data-testid": "palette-back", onKeyDown: stopKeys }}>{t("palette.askHistory")}</Chip>}
+        end={<AskNav onBack={onBack} onClose={onClose} />}
       />
       <CommandList label={t("palette.askHistory")}>
         {list !== null && !deleted && <CommandEmpty>{query ? t("palette.empty") : t("palette.askHistoryEmpty")}</CommandEmpty>}
@@ -600,8 +716,8 @@ function AskHistoryPage({ value, setValue, onBack }: { value: string; setValue: 
   );
 }
 
-export default function AskPages({ page, value, setValue, onBack }: { page: "ask" | "askHistory"; value: string; setValue: (v: string) => void; onBack: () => void }) {
-  return page === "ask" ? <AskQuestionPage value={value} setValue={setValue} onBack={onBack} /> : <AskHistoryPage value={value} setValue={setValue} onBack={onBack} />;
+export default function AskPages({ page, value, setValue, onBack, onClose }: { page: "ask" | "askHistory"; value: string; setValue: (v: string) => void; onBack: () => void; onClose: () => void }) {
+  return page === "ask" ? <AskQuestionPage value={value} setValue={setValue} onBack={onBack} onClose={onClose} /> : <AskHistoryPage value={value} setValue={setValue} onBack={onBack} onClose={onClose} />;
 }
 
 

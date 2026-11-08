@@ -121,6 +121,29 @@ test.describe("axe", { tag: "@variant" }, () => {
     await clean(page, "a sentence's preview and its rule", ["[data-testid=action-preview]", "[data-testid=action-rule]"]);
     await page.getByTestId("action-cancel").click();
     await expect(page.getByTestId("action-preview")).toHaveCount(0);
+    // plan 161, pass 3: a Trash preview (the destructive Apply in the rule, and what it'll do); Ask's answer, and a source
+    // shown inside Ask
+    await focusList(page);
+    await page.keyboard.press("ControlOrMeta+Shift+k");
+    await page.getByTestId("palette-input").fill("Delete shipping notices older than a month");
+    await page.getByTestId("ask-submit").waitFor();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("action-consequence")).toBeVisible();
+    await clean(page, "a Trash preview, its Apply and what it'll do", ["[data-testid=action-preview]", "[data-testid=action-rule]"]);
+    await page.getByTestId("action-cancel").click();
+    await expect(page.getByTestId("action-preview")).toHaveCount(0);
+    await focusList(page);
+    await page.keyboard.press("ControlOrMeta+Shift+k");
+    await page.getByTestId("palette-input").fill("¿qué pasó con el pago?");
+    await page.getByTestId("ask-submit").waitFor();
+    await page.keyboard.press("Enter");
+    await page.getByTestId("ask-source").first().waitFor();
+    await clean(page, "Ask's answer", "[role=dialog]");
+    await page.getByTestId("ask-citation").first().click();
+    await expect(page.getByTestId("ask-peek")).toHaveAttribute("data-state", "ready");
+    await clean(page, "a source shown in Ask", "[role=dialog]");
+    await page.getByTestId("ask-close").click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
 
     await page.getByTestId("open-settings").click();
     for (const tab of ["general", "appearance", "accounts", "categories", "filters", "ai", "agents", "data"]) {

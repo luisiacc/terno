@@ -28,6 +28,7 @@ import { englishWords as english } from "~/lib/palette-words";
 import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { openRemind, presetLabel, presetWhen, setReminder, clearReminder, useReminders } from "~/lib/reminders";
 import { draftCommands, type DraftCommands } from "~/lib/draft-commands";
+import { isInstruction } from "~/lib/imperative";
 import { askFrom, paletteFrom, paletteKeys, setPalettePage, usePalettePage } from "~/lib/palette-open";
 import { loadSnippets, newSnippetId, useSnippets } from "~/lib/snippets";
 import { insertSnippetInto, newMessageFromSnippet, saveDraftAsSnippet } from "~/lib/snippet-insert";
@@ -496,6 +497,9 @@ export function CommandPalette() {
   const drafted = useDrafts((s) => (mail ? draftIndex(s.drafts).written : NO_IDS));
   // plan 158: nothing named outright, so it's about mail: the search leads, and Enter runs it
   const aboutMail = page === "root" && query !== "" && !namesCommand(groups, value);
+  // plan 161, pass 3: a sentence that's plainly an instruction ("Archive shipping notices older than a month") is AI's
+  // first, and says what it does; any other text keeps the search first, as before
+  const instruction = aboutMail && canAsk && isInstruction(query);
   // the search that found it, whatever's typed by now: the row opens among its own results, and is what acts on next
   const openFound = (id: number, query: string) => {
     close();
@@ -550,6 +554,14 @@ export function CommandPalette() {
     else void addToCategory(id, target.ids, { source: "picker" });
   };
 
+  const askRow = (
+    <CommandGroup value="ask" forceMount>
+      <CommandItem forceMount value={`ask\u0000${value}`} data-testid="palette-ask-row" data-instruction={instruction || undefined} onSelect={() => { askFrom.question = value; goTo("ask"); }}>
+        <Sparkles /> {t(instruction ? "palette.doRow" : "palette.askRow", { query: value })}
+      </CommandItem>
+    </CommandGroup>
+  );
+
   const back = () => goTo("root");
   const pageName: Record<Exclude<PalettePage, "root">, string> = {
     move: t("category.picker.moveTitle"),
@@ -562,7 +574,7 @@ export function CommandPalette() {
   const placeholder = page === "root" ? t("palette.placeholder") : page === "remind" ? t("palette.remindPlaceholder") : page === "snippets" ? t("palette.snippetsPlaceholder") : t("category.picker.placeholder");
 
   return (
-    <CommandDialog open={open} onOpenChange={(o) => !o && close()} finalFocus={() => { const own = tookFocus.current; tookFocus.current = false; return !own; }} title={t("palette.title")} description={t("palette.description")}>
+    <CommandDialog open={open} onOpenChange={(o) => !o && close()} finalFocus={() => { const own = tookFocus.current; tookFocus.current = false; return !own; }} title={page === "ask" ? t("ask.dialog.title") : page === "askHistory" ? t("palette.askHistory") : t("palette.title")} description={page === "ask" || page === "askHistory" ? t("ask.dialog.description") : t("palette.description")} hints={page !== "ask"}>
       {/* CommandDialog (base-nova) doesn't provide the cmdk root itself */}
       <Command
         // cmdk's Ctrl+J/K/N/P: off the Mac Ctrl+K is the palette's own chord (it closes it)
@@ -590,7 +602,7 @@ export function CommandPalette() {
         }}
       >
         {page === "ask" || page === "askHistory" ? (
-          <AskPages page={page} value={value} setValue={setValue} onBack={back} />
+          <AskPages page={page} value={value} setValue={setValue} onBack={back} onClose={close} />
         ) : (
         <>
         <CommandInput
@@ -617,6 +629,7 @@ export function CommandPalette() {
         <CommandList ref={wholeRows} label={t("palette.results")} className="relative max-h-[min(30rem,55vh)] data-more:[mask-image:linear-gradient(to_top,transparent,black_0.375rem)]">
           {/* a row offered below says it already: the root's search while typing, a page's create */}
           {!(page === "root" && query) && !create && <CommandEmpty>{t("palette.empty")}</CommandEmpty>}
+          {instruction && askRow}
           {aboutMail && mailRows}
           {groups.map(({ group, commands: list }) => (
             // an ASCII value: cmdk finds a group to sort it by its URL-encoded value (a heading with spaces never matched)
@@ -642,13 +655,7 @@ export function CommandPalette() {
           )}
           {!aboutMail && mailRows}
           {/* plan 141: last, like search: Enter on a command that matches still wins */}
-          {page === "root" && query && canAsk && (
-            <CommandGroup value="ask" forceMount>
-              <CommandItem forceMount value={`ask\u0000${value}`} data-testid="palette-ask-row" onSelect={() => { askFrom.question = value; goTo("ask"); }}>
-                <Sparkles /> {t("palette.askRow", { query: value })}
-              </CommandItem>
-            </CommandGroup>
-          )}
+          {page === "root" && query && canAsk && !instruction && askRow}
         </CommandList>
         </>
         )}

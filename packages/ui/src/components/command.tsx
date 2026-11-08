@@ -82,29 +82,38 @@ function CommandDialog({
   )
 }
 
-/** BoardUI's hint row: how to move, choose and leave, in muted text with the keys as keycaps */
-function CommandHints({ className, ...props }: React.ComponentProps<"div">) {
+/** One hint: its keys (`keyLabel` names) and what they do here. */
+type CommandHint = { keys: readonly string[]; label: string }
+
+/**
+ * BoardUI's hint row: how to move, choose and leave, in muted text with the keys as keycaps. A page whose keys differ
+ * says its own (`hints`), and may end the row with a few quiet controls of its own (`end`).
+ */
+function CommandHints({ className, hints, end, ...props }: React.ComponentProps<"div"> & { hints?: readonly CommandHint[]; end?: React.ReactNode }) {
+  const shown = hints ?? [
+    { keys: ["arrowup", "arrowdown"], label: t("ui.command.navigate") },
+    { keys: ["enter"], label: t("ui.command.select") },
+    { keys: ["escape"], label: t("ui.command.close") },
+  ]
   return (
     <div
       data-slot="command-hints"
       className={cn("hairline-t flex shrink-0 items-center gap-4 px-5 py-2 text-sm text-muted-foreground", className)}
       {...props}
     >
-      <span className="flex items-center gap-1.5">
-        <KbdGroup>
-          <Kbd>{keyLabel("arrowup")}</Kbd>
-          <Kbd>{keyLabel("arrowdown")}</Kbd>
-        </KbdGroup>
-        {t("ui.command.navigate")}
-      </span>
-      <span className="flex items-center gap-1.5">
-        <Kbd>{keyLabel("enter")}</Kbd>
-        {t("ui.command.select")}
-      </span>
-      <span className="flex items-center gap-1.5">
-        <Kbd>{keyLabel("escape")}</Kbd>
-        {t("ui.command.close")}
-      </span>
+      {shown.map((h) => (
+        <span key={h.label} data-slot="command-hint" className="flex items-center gap-1.5">
+          {h.keys.length > 1 ? (
+            <KbdGroup>
+              {h.keys.map((k) => <Kbd key={k}>{keyLabel(k)}</Kbd>)}
+            </KbdGroup>
+          ) : (
+            <Kbd>{keyLabel(h.keys[0]!)}</Kbd>
+          )}
+          {h.label}
+        </span>
+      ))}
+      {end && <span className="ms-auto flex items-center gap-1">{end}</span>}
     </div>
   )
 }
@@ -112,10 +121,13 @@ function CommandHints({ className, ...props }: React.ComponentProps<"div">) {
 function CommandInput({
   className,
   addon,
+  end,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.Input> & {
   /** before the text, after the search icon (a page's name in the palette) */
   addon?: React.ReactNode
+  /** after the text: a page's own way back and close */
+  end?: React.ReactNode
 }) {
   return (
     <div data-slot="command-input-wrapper" className="hairline-b px-2">
@@ -132,6 +144,7 @@ function CommandInput({
           <SearchIcon className="size-5 shrink-0 text-muted-foreground" />
           {addon}
         </InputGroupAddon>
+        {end && <InputGroupAddon align="inline-end">{end}</InputGroupAddon>}
       </InputGroup>
     </div>
   )
