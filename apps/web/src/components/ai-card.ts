@@ -1,6 +1,6 @@
 import type { MessageDetail } from "@terno/core";
 import { t } from "@terno/i18n";
-import { listDate } from "../lib/format";
+import { listDate, messageDate } from "../lib/format";
 import { provenanceLabel } from "../lib/provenance";
 
 /**
@@ -14,8 +14,11 @@ import { provenanceLabel } from "../lib/provenance";
 export const AI_CARD = "ai-card";
 /** The header's glyph (Sparkles, or the spinner while it works), the size of the header's text. */
 export const AI_GLYPH = "size-[1.15em] shrink-0 text-muted-foreground";
-/** The header: one line of the secondary type, its glyph on the first line. */
-export const AI_HEADER = "flex min-h-10 items-center gap-1.5 py-2.5 text-xs text-muted-foreground";
+/**
+ * The header: one line of the secondary type, its glyph on the first line. Plan 162: at the body's size on every card (the
+ * summary's was 12 px, the follow-up's 13.5, Reply ready's larger again), the facts in the secondary.
+ */
+export const AI_HEADER = "flex min-h-10 items-center gap-1.5 py-2.5 text-sm text-muted-foreground";
 /** The header's title: in the ink, so a card's name isn't its quietest word. */
 export const AI_TITLE = "font-medium text-foreground";
 /** The button row: the same gaps on every surface. Its buttons are `size="sm"` (28 px). */
@@ -55,7 +58,10 @@ export function messageSource(messages: readonly Pick<MessageDetail, "id" | "fro
   if (messages.length <= 1) return null;
   const m = messages.find((x) => x.id === messageId);
   if (!m) return t("summary.open");
-  const date = listDate(m.date, now);
+  // plan 162: two of this person's messages on one day ("Yesterday" twice) are told apart by the time
+  const day = listDate(m.date, now);
+  const twin = messages.some((x) => x.id !== m.id && x.from.email.toLowerCase() === m.from.email.toLowerCase() && listDate(x.date, now) === day);
+  const date = twin ? messageDate(m.date, now) : day;
   if (mine.some((e) => e.toLowerCase() === m.from.email.toLowerCase())) return t("ai.source.yours", { date });
   return t("ai.source.label", { who: (m.from.name || m.from.email.split("@")[0] || m.from.email).split(/\s+/)[0]!, date });
 }

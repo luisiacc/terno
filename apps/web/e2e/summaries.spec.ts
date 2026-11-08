@@ -107,7 +107,7 @@ test.describe("summaries (plan 132)", () => {
     await expect(block).toBeVisible();
     await expect(block).toHaveAttribute("data-state", "ready");
     await expect(page.getByTestId("summary-text")).toContainText("Ana can't make the 12th and proposes the 19th instead.");
-    await expect(page.getByTestId("summary-item").first()).toContainText("Action");
+    await expect(page.getByTestId("summary-item").first()).toContainText("To do");
     await expect(page.getByTestId("summary-item").first()).toContainText("Please send the signed contract by Friday");
     // plan 161, pass 2: a conversation of one message is that message, on screen: the item is its words, with nowhere to go
     await expect(page.getByTestId("summary-item-open")).toHaveCount(0);
@@ -159,10 +159,16 @@ test.describe("summaries (plan 132)", () => {
     // plan 161, pass 3: three Sparkles, three names, each with its key where it has one
     await expect(page.getByTestId("action-summarize")).toHaveAccessibleName("Summarize this conversation");
     await expect(page.getByTestId("quick-ai")).toHaveAccessibleName("Reply with AI");
-    // the item's Reply is the conversation's ordinary reply, as R opens it: the inline composer, the caret in it
+    // plan 162 (after ai162-r01): the item's Reply drafts from it: the conversation's reply, with ⌘J's row holding the
+    // item as its instruction and the keys in it, ready for Return. Nothing is written until asked
+    const itemText = (await page.getByTestId("summary-item").first().locator("span.font-medium").innerText()).trim();
     await page.getByTestId("summary-item-reply").first().click();
     await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "reply");
-    await expect(page.getByTestId("compose-body")).toBeFocused();
+    await expect(page.getByTestId("ai-row-input")).toBeFocused();
+    await expect(page.getByTestId("ai-row-input")).toHaveValue(itemText);
+    await expect(page.getByTestId("ai-strip")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("ai-row-input")).toHaveCount(0);
     await expect(page.getByTestId("compose-ai")).toHaveAccessibleName("Write with AI");
     await page.getByTestId("compose-ai").hover();
     await expect(page.locator("[data-slot=tooltip-content]")).toContainText("Write with AI");
@@ -212,6 +218,13 @@ test.describe("summaries (plan 132)", () => {
       expect(right.x + right.width).toBeLessThanOrEqual(card.x + card.width);
     }
 
+    // plan 162 (after ai162-r01): one left edge in the card: the item starts where the paragraph does
+    for (const width of [1100, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      const item = page.getByTestId("summary-item-text").first();
+      if (!(await item.count())) break;
+      expect(Math.abs((await item.boundingBox())!.x - (await page.getByTestId("summary-text").boundingBox())!.x)).toBeLessThanOrEqual(1);
+    }
     // plan 162: an item's controls are a line of their own under its words at every width, starting at the words' edge;
     // Reply is the card's one secondary (bordered), Copy a quiet utility
     for (const width of [980, 1100, 1440]) {
@@ -408,7 +421,7 @@ test.describe("summaries (plan 132)", () => {
       const block = page.getByTestId("summary-block");
       await expect(block).toHaveAttribute("data-state", "ready");
       await expect(page.getByTestId("summary-toggle")).toContainText("Resumen");
-      await expect(page.getByTestId("summary-item").first()).toContainText("Acción");
+      await expect(page.getByTestId("summary-item").first()).toContainText("Por hacer");
       await expect(page.getByTestId("action-summarize")).toHaveAttribute("aria-label", "Resumir esta conversación");
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-ai").click();

@@ -88,4 +88,10 @@ describe("plan 161, pass 2: where an AI line points", () => {
     expect(messageSource(messages, 1, ["ME@x.test"], NOW)).toMatch(/^Mensaje de Arjun, /);
     expect(messageSource(messages, 2, ["ME@x.test"], NOW)).toMatch(/^Tu mensaje, /);
   });
+
+  it("plan 162: two of one person's messages on one day are told apart by the time", () => {
+    const two = [m(1, "Arjun Ramírez", "arjun@x.test", new Date(2026, 9, 21, 8, 24).getTime()), m(2, "Arjun Ramírez", "ARJUN@x.test", new Date(2026, 9, 21, 21, 41).getTime()), m(3, "Luis", "me@x.test", NOW)];
+    expect(messageSource(two, 2, ["me@x.test"], NOW)).toBe("Arjun’s message, Yesterday, 9:41 PM");
+    expect(messageSource([two[0]!, two[2]!], 1, ["me@x.test"], NOW)).toBe("Arjun’s message, Yesterday");
+  });
 });

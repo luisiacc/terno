@@ -16,7 +16,7 @@ import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { useReplies } from "~/lib/replies";
-import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Printer, Reply, Sparkles, SquarePen, Star, Tag, Trash2 } from "@terno/ui/icons";
+import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Printer, Reply, SquarePen, Star, SummaryDoc, Tag, Trash2 } from "@terno/ui/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
@@ -76,7 +76,8 @@ function SummarizeButton({ threadId }: { threadId: number }) {
   return (
     // a narrow reader (the minimum window) gives its place to the bell, as Mark as unread does; the palette keeps it
     <IconButton className={cn(tool, "@max-[420px]:hidden")} label={updates ? t("actions.updateSummary") : t("actions.summarize")} onClick={() => void summarize(threadId)} data-summarize data-testid="action-summarize" aria-busy={kind === "running" || undefined}>
-      <Sparkles />
+      {/* plan 162: its own glyph; the sparkle is the mark on AI cards and ⌘J's (one sparkle stood for three actions) */}
+      <SummaryDoc />
     </IconButton>
   );
 }

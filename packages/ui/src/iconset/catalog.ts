@@ -122,6 +122,8 @@ export const ICONS = {
   ShieldCheck: "SecurityCheckIcon",
   SlidersHorizontal: "SlidersHorizontalIcon",
   Sparkles: "SparklesIcon",
+  /** plan 162: Summarize, apart from the sparkle that marks AI cards and ⌘J */
+  SummaryDoc: "AiContentGenerator01Icon",
   SquarePen: "PencilEdit02Icon",
   Star: "StarIcon",
   StarOff: "StarOffIcon",
