@@ -17,7 +17,7 @@ import { forwardPrintKey, wantsNativeMenu } from "~/lib/print-open";
 import { forwardMouseNav, forwardNavKey } from "~/lib/page";
 import { chooseOpenThread } from "~/state/app";
 import { allowRemoteFor, remoteAllowed, useRemoteConsent } from "~/lib/remote-consent";
-import { FRAME_MAX_HEIGHT, htmlHolds, markDocument, marksChanged, textHolds } from "~/lib/reader-marks";
+import { FRAME_MAX_HEIGHT, htmlHolds, markDocument, markTextParts, marksChanged, textHolds } from "~/lib/reader-marks";
 import { Marked } from "./match-mark";
 
 import { openLink } from "~/lib/open-link";
@@ -381,24 +381,31 @@ export function TextBody({ text, marks }: { text: string; /** plan 158: a search
   }, [marks, showQuoted, text]);
   // a message folded away takes its marks with it
   useEffect(() => () => marksChanged(), []);
-  const render = (s: string) =>
-    s.split(URL_RE).map((part, i) =>
+  // the whole body, links and the history shown included, is marked under one budget: a long mail repeating the words is
+  // a few hundred marks, not one each (Codex series review)
+  const pieces = useMemo(() => {
+    const mainPieces = main.split(URL_RE), quotedPieces = quoted && showQuoted ? quoted.split(URL_RE) : [];
+    const parts = markTextParts([...mainPieces, ...quotedPieces], marks);
+    return { main: mainPieces.map((text, i) => ({ text, parts: parts[i] })), quoted: quotedPieces.map((text, i) => ({ text, parts: parts[mainPieces.length + i] })) };
+  }, [main, quoted, showQuoted, marks]);
+  const render = (list: readonly { text: string; parts: ReturnType<typeof markTextParts>[number] | undefined }[]) =>
+    list.map(({ text: part, parts }, i) =>
       i % 2 ? (
         <a key={i} href={part} className="text-primary underline-offset-2 hover:underline" onClick={(e) => (e.preventDefault(), openLink(part))}>
-          <Marked text={part} needles={marks} testId="reader-match" body />
+          <Marked text={part} needles={marks} parts={parts ?? null} testId="reader-match" body />
         </a>
       ) : (
-        <Marked key={i} text={part} needles={marks} testId="reader-match" body />
+        <Marked key={i} text={part} needles={marks} parts={parts ?? null} testId="reader-match" body />
       ),
     );
   return (
     // the measure: about 75 characters a line, in every style's body type
     <div className="type-body max-w-[35em] whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">
-      {render(main)}
+      {render(pieces.main)}
       {quoted && (
         <>
           <QuoteToggle open={showQuoted} onToggle={() => setShowQuoted((v) => !v)} />
-          {showQuoted && <div className="mt-2 border-l-2 border-border pl-3 text-muted-foreground">{render(quoted)}</div>}
+          {showQuoted && <div className="mt-2 border-l-2 border-border pl-3 text-muted-foreground">{render(pieces.quoted)}</div>}
         </>
       )}
     </div>

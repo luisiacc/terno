@@ -1,4 +1,4 @@
-import { matchParts, rowMatchOf, type MatchNeedle, type MessageDetail, type RowMatch } from "@terno/core";
+import { matchParts, rowMatchOf, type MatchNeedle, type MatchPart, type MessageDetail, type RowMatch } from "@terno/core";
 import { create } from "zustand";
 import { searchOfKey, useList } from "~/state/list";
 import { topCover } from "./reader-scroll";
@@ -76,6 +76,33 @@ export function markDocument(root: HTMLElement, needles: readonly MatchNeedle[] 
     if (rest) out.append(rest);
     node.replaceWith(out);
   }
+}
+
+/**
+ * A plain-text body's pieces (its text between links, and the links), in reading order, marked under the same bound as an
+ * HTML mail's: one budget of characters read and marks made for the whole body, the rest left as it is, unmarked. Null
+ * for a piece with nothing marked.
+ */
+export function markTextParts(pieces: readonly string[], needles: readonly MatchNeedle[] | undefined): (MatchPart[] | null)[] {
+  let chars = MAX_CHARS, marks = MAX_MARKS;
+  return pieces.map((piece) => {
+    if (!needles?.length || chars <= 0 || marks <= 0) return null;
+    const read = piece.slice(0, chars);
+    chars -= read.length;
+    const found = matchParts(read, needles);
+    if (!found) return null;
+    const out: MatchPart[] = [];
+    const plain = (text: string) => {
+      const last = out[out.length - 1];
+      if (last && !last.hit) out[out.length - 1] = { text: last.text + text, hit: false };
+      else out.push({ text, hit: false });
+    };
+    for (const part of found) {
+      if (part.hit && marks > 0) { marks--; out.push(part); } else plain(part.text);
+    }
+    if (read.length < piece.length) plain(piece.slice(read.length));
+    return out;
+  });
 }
 
 /** An HTML mail's text as it reads (&#233; is é), bounded. A parsed document runs nothing and loads nothing. */
