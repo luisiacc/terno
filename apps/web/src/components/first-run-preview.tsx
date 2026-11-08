@@ -6,7 +6,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Kbd } from "@terno/ui/components/kbd";
 import { cn } from "@terno/ui/lib/utils";
 import { Separator } from "@terno/ui/components/separator";
-import { Archive, ChevronDown, Inbox, ListFilter, Mail, OctagonAlert, Reply, Search, Send, SquarePen, Star, Tag, Trash2 } from "@terno/ui/icons";
+import { Archive, Forward, Inbox, ListFilter, Mail, OctagonAlert, Reply, Search, Send, SquarePen, Star, Tag, Trash2 } from "@terno/ui/icons";
 import { formatNumber, t } from "@terno/i18n";
 import { useLayoutEffect, useRef, useState } from "react";
 import { listDate, viewLabel } from "~/lib/format";
@@ -288,8 +288,9 @@ function Reader({ design, sample }: { design: DesignDefinition; sample: SampleMa
             {t("actions.reply")}
             {design.variants.replyAction === "pill" && <Kbd>R</Kbd>}
           </span>
-          <span className="flex h-full w-7 items-center justify-center">
-            <ChevronDown className="size-3.5 text-muted-foreground" />
+          {/* the reader's reply group as it is: Reply, then Forward (plan 158: no menu) */}
+          <span className="flex h-full w-8 items-center justify-center">
+            <Forward className="size-[1.15em] text-muted-foreground" />
           </span>
         </span>
       </div>
