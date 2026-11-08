@@ -51,9 +51,10 @@ export function AiProvenance({
         <span data-testid={labelTestId}>{label}</span>
         <ChevronDown aria-hidden />
       </PopoverTrigger>
-      {/* Esc closes only this: the popup is portalled, but its keys still bubble through React to whatever holds it (a reply's
-          composer would close on the same Esc); Base UI's own dismissal listens on the document, so it still closes the popup */}
-      <PopoverContent align="end" className="w-72 gap-2 text-sm" data-testid={popoverTestId} aria-label={t("ai.provenance.details")} onKeyDown={(e) => { if (e.key === "Escape") e.stopPropagation(); }}>
+      {/* its keys are its own: the popup is portalled, but its keys still bubble through React to whatever holds it (Enter and
+          the arrows chose Ask's sources behind it; a reply's composer would close on its Esc). Base UI's own handlers sit on
+          the popup and the document, so it still moves focus and closes (Codex review) */}
+      <PopoverContent align="end" className="w-72 gap-2 text-sm" data-testid={popoverTestId} aria-label={t("ai.provenance.details")} onKeyDown={(e) => e.stopPropagation()}>
         {lines.length > 0 && (
           <ul className="flex flex-col gap-1">
             {lines.map((text) => (

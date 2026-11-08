@@ -78,6 +78,16 @@ test.describe("ask your mail (plan 141)", () => {
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("ask-provenance-detail")).toHaveCount(0);
       await expect(page.getByTestId("ask-answer").last()).toBeVisible();
+      // its keys are its own (Codex review): opened from the keyboard, Enter doesn't also choose the source behind it, and
+      // Esc closes it, not Ask
+      await page.getByTestId("ask-provenance").focus();
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("ask-provenance-detail")).toBeVisible();
+      await expect(page.getByTestId("ask-peek")).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("ask-provenance-detail")).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "Ask your mail" })).toBeVisible();
+      await expect(page.getByTestId("ask-answer").last()).toBeVisible();
       // how far back it looked, beside the way past it
       await expect(page.getByTestId("ask-scope")).toContainText("Searched mail on this Mac back to");
       await expect(page.getByTestId("ask-scope").getByTestId("ask-older")).toHaveText("Search older mail on your servers");

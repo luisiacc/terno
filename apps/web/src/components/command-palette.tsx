@@ -586,6 +586,8 @@ export function CommandPalette() {
           // a popup a page opened (Ask's "Written with AI ▾") is portalled out of the palette: its keys are its own, so its
           // Esc closes it and not the page under it (plan 161, pass 3)
           if (!e.currentTarget.contains(e.target as Node)) return;
+          // and while it's open, its trigger's Esc is the popup's too: it closes it, not the page (Codex review)
+          if (e.key === "Escape" && (e.target as Element | null)?.closest?.("[data-popup-open]")) return;
           // a page: Esc, or Backspace with nothing typed, goes back to all commands (Esc at the root closes)
           // (not while an input method composes, nor a held Backspace that just emptied the text)
           if (e.nativeEvent.isComposing) return;
