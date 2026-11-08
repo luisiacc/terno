@@ -109,10 +109,12 @@ test.describe("follow-ups (plan 142)", () => {
       await fresh(page);
       await page.locator(`[data-thread-id="${threadId}"]`).first().click();
       await expect(page.getByTestId("followup-header")).toContainText("Follow-up");
-      await expect(page.getByTestId("followup-due")).toContainText("back on top of your Inbox");
-      await expect(page.getByTestId("followup-due")).toContainText("if Tom doesn’t reply");
+      // pass 2: said once (the line under it says nobody has replied), with its day
+      await expect(page.getByTestId("followup-due")).toHaveText(/^Back on top of your Inbox (Tomorrow|Today) \d/);
+      await expect(page.getByTestId("followup-due")).not.toContainText("reply");
       await expect(page.getByTestId("followup-nudge")).toHaveText("Draft a nudge");
-      await expect(page.getByTestId("followup-go")).toHaveText(/Open message/);
+      // pass 2: whose message, and when
+      await expect(page.getByTestId("followup-go")).toHaveText(/^\S+ · /);
       for (const id of ["followup-nudge", "followup-later", "followup-dismiss", "followup-go"]) {
         expect((await page.getByTestId(id).boundingBox())!.height, id).toBeGreaterThanOrEqual(28);
       }
@@ -129,6 +131,35 @@ test.describe("follow-ups (plan 142)", () => {
       await page.getByTestId("tip-done").click();
       // one hairline under the section at most: the message's own
       expect(await page.getByTestId("thread-followups").evaluate((el) => getComputedStyle(el).borderBottomWidth)).toBe("0px");
+    });
+  });
+
+  test("plan 161, pass 2: Later shows its times, and a drafted nudge is offered rather than another", async ({ app: page, server }) => {
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true, scanAnswered: true } });
+    const threadId = await tracked(server, "Lunch on Friday", "awaiting", false);
+    await fresh(page);
+    await scenario("Later's choices each say when they resolve to", async () => {
+      await page.locator(`[data-thread-id="${threadId}"]`).first().click();
+      await page.getByTestId("followup-later").click();
+      const items = page.locator("[data-testid^=followup-later-]:not([data-testid=followup-later-when])").filter({ has: page.getByTestId("followup-later-when") });
+      await expect(items.first()).toBeVisible();
+      for (const when of await page.getByTestId("followup-later-when").all()) await expect(when).toHaveText(/\d{1,2}:\d{2}/);
+      expect(await page.getByTestId("followup-later-when").count()).toBe(await items.count());
+      await page.keyboard.press("Escape");
+    });
+    await scenario("Draft a nudge, then the line offers that nudge; discarded, it's Draft a nudge again", async () => {
+      await page.getByTestId("followup-nudge").click();
+      await expect(page.getByTestId("composer")).toBeVisible();
+      await expect(page.getByTestId("ai-strip")).toBeVisible();
+      await expect(page.getByTestId("followup-nudge")).toHaveCount(0);
+      await expect(page.getByTestId("followup-open-nudge")).toHaveText("Open your nudge");
+      await page.locator("[data-reader-scroller]").evaluate((el) => { el.scrollTop = 0; });
+      await page.getByTestId("followup-open-nudge").click();
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+      await expect(page.getByTestId("composer")).toBeInViewport();
+      await page.getByTestId("compose-discard").click();
+      await expect(page.getByTestId("composer")).toHaveCount(0);
+      await expect(page.getByTestId("followup-nudge")).toHaveText("Draft a nudge");
     });
   });
 

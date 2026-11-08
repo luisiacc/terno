@@ -1142,6 +1142,12 @@ export function forgetScheduledDrafts(): string[] {
 }
 
 /** Deletes a draft; returns what it was, for "Undo". */
+/** Plan 161, pass 2: told as a draft is discarded (never sent), just before it goes: Reply ready gives back the reply it was made from. */
+export const discardListeners = new Set<(key: string) => void>();
+function discarding(key: string): void {
+  for (const listener of discardListeners) listener(key);
+}
+
 export async function discardDraft(key: string): Promise<LocalDraft | undefined> {
   // a send in flight decides: sent, it is gone; failed, it stays for another try
   if (draftEditsHeld() || get(key)?.sending || writers.get(key)?.stopping) return undefined;
@@ -1153,6 +1159,7 @@ export async function discardDraft(key: string): Promise<LocalDraft | undefined>
     throw error;
   }
   if (!d || d.sending) return undefined;
+  discarding(key);
   forgetDraft(key);
   if (d.id !== null) await call("drafts.delete", { id: d.id, generation: d.generation ?? "" }).catch(() => {});
   return d;
@@ -1175,6 +1182,7 @@ export async function discardIfEmpty(key: string, still: () => boolean = () => t
     if (current && authored(current) && current.savedRev !== current.localRev) schedule(key);
     return undefined;
   }
+  discarding(key);
   forgetDraft(key);
   if (d.id !== null) await call("drafts.delete", { id: d.id, generation: d.generation ?? "" }).catch(() => {});
   return d;

@@ -319,6 +319,17 @@ test.describe("axe", { tag: "@variant" }, () => {
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("ai-strip")).toBeVisible();
     await clean(page, "what the model wrote, and its strip", "[data-testid=composer]");
+    // plan 161, pass 2: what the AI used (the status's popover), and the strip asking before it replaces an edit
+    await page.getByTestId("ai-strip-voice").click();
+    await expect(page.getByTestId("ai-voice-popover")).toBeVisible();
+    await clean(page, "what the AI used", "[data-testid=ai-voice-popover]");
+    await page.keyboard.press("Escape");
+    await page.getByTestId("compose-body").first().click();
+    await page.keyboard.type(" Mine.");
+    await page.getByTestId("ai-strip-regenerate").click();
+    await expect(page.getByTestId("ai-confirm")).toBeVisible();
+    await clean(page, "the strip asking before it replaces an edit", "[data-testid=composer]");
+    await page.getByTestId("ai-confirm-keep").click();
 
     // a new message: chips (an invalid one, a selected one), the list of suggestions, many collapsed
     await focusList(page);

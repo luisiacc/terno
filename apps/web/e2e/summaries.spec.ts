@@ -89,23 +89,27 @@ test.describe("summaries (plan 132)", () => {
     await expect(page.getByTestId("summary-text")).toContainText("Ana can't make the 12th and proposes the 19th instead.");
     await expect(page.getByTestId("summary-item").first()).toContainText("Action");
     await expect(page.getByTestId("summary-item").first()).toContainText("Please send the signed contract by Friday");
-    // plan 161: it says it opens a message (it doesn't do the task), and its name is what it shows: the item, then where it goes
-    await expect(page.getByTestId("summary-item-open").first()).toHaveText("Open message");
-    await expect(page.getByTestId("summary-item").first()).toHaveAccessibleName(/^Action\s*Please send the signed contract by Friday.*Open message$/);
-    await page.getByTestId("summary-item").first().hover();
-    await expect(page.getByTestId("summary-item-source")).toContainText("Ana");
-    await page.mouse.move(0, 0);
+    // plan 161, pass 2: a conversation of one message is that message, on screen: the item is its words, with nowhere to go
+    await expect(page.getByTestId("summary-item-open")).toHaveCount(0);
+    expect(await page.getByTestId("summary-item").first().evaluate((el) => el.tagName)).toBe("LI");
+    await expect(page.getByTestId("summary-item").first().locator("button")).toHaveCount(0);
 
     // it stands above the conversation
     const blockBox = (await block.boundingBox())!;
     const messageBox = (await page.getByTestId("message").first().boundingBox())!;
     expect(blockBox.y + blockBox.height).toBeLessThanOrEqual(messageBox.y + 1);
 
-    // the label's tooltip says who wrote it, and that it can be wrong
-    await page.getByTestId("summary-toggle").hover();
+    // plan 161, pass 2: it says it was written with AI, as Ask and ⌘J do; who and when, and that it can be wrong, in its tooltip
+    await expect(page.getByTestId("summary-provenance-label")).toHaveText("Written with AI");
+    await page.getByTestId("summary-provenance-label").hover();
     await expect(page.getByTestId("summary-provenance")).toContainText(/Written by demo, .*It can make mistakes\./);
     await page.mouse.move(0, 0);
     await expect(page.getByTestId("summary-provenance")).toHaveCount(0);
+    // and Copy, as Ask has: the summary and its items, as text
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.getByTestId("summary-copy").click();
+    await expect(page.getByTestId("snack")).toContainText("Summary copied");
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/Ana can't make the 12th[\s\S]*\nAction: Please send the signed contract by Friday/);
 
     expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=summary-block]").analyze()).violations).toEqual([]);
     await page.emulateMedia({ colorScheme: "dark" });
@@ -141,11 +145,12 @@ test.describe("summaries (plan 132)", () => {
     const NONE = "rgba(0, 0, 0, 0)";
     if (info.project.name === "e2e-graphite") {
       expect(surface.fill).toBe(NONE);
-      expect(surface.ring).not.toBe("none");
-      expect(surface.ring).not.toContain(NONE);
     } else {
       expect(surface.fill).not.toBe(NONE);
     }
+    // plan 161, pass 2: ringed in every design, inside its fill (its floor is contrast.test.ts's), so it never reads as mail
+    expect(surface.ring).toContain("inset");
+    expect(surface.ring).not.toContain(NONE);
 
     // on the column: the subject's line and the conversation's ends. The label's icon and the text share the inset
     const box = (await block.boundingBox())!;
@@ -226,6 +231,9 @@ test.describe("summaries (plan 132)", () => {
       expect({ x: ready.x, y: ready.y, width: ready.width }).toEqual({ x: running.x, y: running.y, width: running.width });
       expect((await page.getByTestId("summary-toggle").boundingBox())!.height).toBe(running.height);
 
+      // plan 161, pass 2: the row says whose message it goes to, and when; its name is what it shows
+      await expect(page.getByTestId("summary-item-open")).toHaveText(/^Yuki · /);
+      await expect(page.getByTestId("summary-item")).toHaveAccessibleName(/Yuki · /);
       // the arrow unfolds and goes to the message it names, and the toolbar's button stays where it is
       await page.getByTestId("summary-item").click();
       // its item cites the question in Yuki's last message, m7 of 8: the one before the user's reply
@@ -405,7 +413,7 @@ test.describe("summaries (plan 132)", () => {
       await page.getByTestId("summary-continue").click();
       await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "ready");
       expect(stub.summaries).toHaveLength(1);
-      await page.getByTestId("summary-toggle").hover();
+      await page.getByTestId("summary-provenance-label").hover();
       await expect(page.getByTestId("summary-provenance")).toContainText("Written by GPT Luna");
       await page.mouse.move(0, 0);
 
@@ -433,6 +441,39 @@ test.describe("summaries (plan 132)", () => {
     } finally {
       await stub.close();
     }
+  });
+
+  test("plan 161, pass 2: one AI error, in plain words and never an address, on the summary and ⌘J", async ({ app: page, server }) => {
+    const accountId = await firstAccount(server);
+    const stub = await startOllamaStub();
+    await settingUp(page, server, { ai: { provider: "ollama", baseURL: `${stub.url}/v1`, model: "qwen3:8b" } });
+    const host = new URL(stub.url).host;
+    // Ollama goes away: the provider's own message names its address
+    await stub.close();
+    await deliver(page, server, incoming(accountId, "Nobody home"));
+    await openSubject(page, "Nobody home");
+    await page.getByTestId("action-summarize").click();
+    await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "error");
+    const error = page.getByTestId("summary-error");
+    await expect(error).toContainText("Couldn’t reach Ollama");
+    await expect(error).toContainText("Open Ollama, then try again.");
+    for (const text of [await page.getByTestId("summary-block").innerText()]) {
+      expect(text).not.toContain(host);
+      expect(text).not.toMatch(/127\.0\.0\.1|localhost|:\d{4,5}\b/);
+    }
+    await expect(page.getByTestId("summary-retry")).toBeVisible();
+    await expect(page.getByTestId("summary-error-settings")).toHaveText("AI settings");
+    expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=summary-block]").analyze()).violations).toEqual([]);
+    // ⌘J says it the same way
+    await page.keyboard.press("ControlOrMeta+j");
+    await page.getByTestId("ai-row-input").fill("say thanks");
+    await page.keyboard.press("Enter");
+    const row = page.getByTestId("ai-error");
+    await expect(row).toBeVisible();
+    await expect(page.getByTestId("ai-error-text")).toContainText("Couldn’t reach Ollama");
+    expect(await row.innerText()).not.toContain(host);
+    await expect(page.getByTestId("ai-error-retry")).toBeVisible();
+    await expect(page.getByTestId("ai-error-settings")).toBeVisible();
   });
 
   test("Settings → AI: use this month and the monthly limit; a bad key is findable there", async ({ app: page, server }) => {

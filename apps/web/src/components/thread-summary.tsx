@@ -7,19 +7,29 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { ArrowRight, Sparkles } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { errorHelp, modelName, providerLabel } from "~/lib/ai";
-import { fullDate, messageDate } from "~/lib/format";
+import { providerLabel } from "~/lib/ai";
+import { messageDate } from "~/lib/format";
+import { provenanceDetail, provenanceLabel } from "~/lib/provenance";
+import { snack } from "~/lib/snack";
 import { bodyArrivedForSummary, dismissSummary, loadSummary, revealSummaryMessage, setSummaryOpen, stopSummary, summarizable, summarize, useSummaries } from "~/lib/summaries";
 import { setApp, useApp } from "~/state/app";
-import { AI_CARD, AI_GLYPH, AI_TITLE } from "./ai-card";
+import { AI_CARD, AI_GLYPH, AI_TITLE, AiErrorNotice, aiErrorCopy, messageSource } from "./ai-card";
 
 /**
- * "Action · Send the signed contract      Open message →": the row goes to the message that says it, and says so (plan 161:
- * it read as doing the task). The label sits on the text's line; hovering names whose message and when. Its name is its
- * visible words, in order, so what's read is what's seen (axe's label-content-name-mismatch).
+ * "Action · Send the signed contract      Arjun · Oct 21 →": the row goes to the message that says it, and says whose and
+ * when (plan 161, pass 2: "Open message" didn't say which). On a conversation of one message, that message is the one on
+ * screen: the row is plain text. Its name is its visible words, in order (axe's label-content-name-mismatch).
  */
-function Item({ item, from }: { item: AiSummaryItem; from: MessageDetail | undefined }) {
+function Item({ item, from, source }: { item: AiSummaryItem; from: MessageDetail | undefined; source: string | null }) {
   const kind = t(`summary.kind.${item.kind}`);
+  if (source === null) {
+    return (
+      <li data-testid="summary-item" data-kind={item.kind} data-message-id={item.messageId} className="flex min-h-8 items-baseline gap-2 py-1.5 text-sm">
+        <span className="shrink-0 text-xs text-muted-foreground">{kind}</span>
+        <span className="min-w-0 flex-1 wrap-anywhere">{item.text}</span>
+      </li>
+    );
+  }
   const button = (
     <button
       type="button"
@@ -33,7 +43,7 @@ function Item({ item, from }: { item: AiSummaryItem; from: MessageDetail | undef
       <span className="min-w-0 flex-1 wrap-anywhere">{item.text}</span>
       {/* on the first line, however many the text takes */}
       <span data-testid="summary-item-open" className="flex h-[1lh] shrink-0 items-center gap-1 self-start text-xs text-muted-foreground transition-colors group-hover/item:text-foreground">
-        {t("summary.open")}
+        {source}
         <ArrowRight aria-hidden className="size-[1.15em]" />
       </span>
     </button>
@@ -53,24 +63,29 @@ function Item({ item, from }: { item: AiSummaryItem; from: MessageDetail | undef
 const CARD = `${AI_CARD} mb-4`;
 const GLYPH = AI_GLYPH;
 
+/** The summary as one text, its items under it, for Copy. */
+export function summaryText(summary: Pick<AiSummary, "summary" | "items">): string {
+  return [summary.summary.trim(), ...summary.items.map((i) => `${t(`summary.kind.${i.kind}`)}: ${i.text}`)].join("\n");
+}
+
+async function copySummary(summary: AiSummary): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(summaryText(summary));
+    snack.success(t("summary.copied"));
+  } catch {
+    snack.error(t("summary.copyFailed"));
+  }
+}
+
 function Ready({ summary, messages }: { summary: AiSummary; messages: readonly MessageDetail[] }) {
   const open = useSummaries((s) => s.open);
-  const provenance = t("summary.provenance", { model: modelName(summary.model), date: fullDate(summary.generatedAt) });
+  const mine = useApp((s) => s.accounts).map((a) => a.email);
   return (
     <Collapsible open={open} onOpenChange={setSummaryOpen} data-testid="summary-block" data-state="ready" className={CARD}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <CollapsibleTrigger data-testid="summary-toggle" className="h-10 gap-1.5 rounded-[inherit] px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
-              <Sparkles aria-hidden className={GLYPH} />
-              <span className={AI_TITLE}>{t("summary.label")}</span>
-            </CollapsibleTrigger>
-          }
-        />
-        <TooltipContent data-testid="summary-provenance" side="top" align="start">
-          {provenance}
-        </TooltipContent>
-      </Tooltip>
+      <CollapsibleTrigger data-testid="summary-toggle" className="h-10 gap-1.5 rounded-[inherit] px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+        <Sparkles aria-hidden className={GLYPH} />
+        <span className={AI_TITLE}>{t("summary.label")}</span>
+      </CollapsibleTrigger>
       <CollapsiblePanel className="mx-0 px-0">
         {/* the padding inside the panel: a padded panel can't ease down to 0 */}
         <div className="px-3.5 pb-3">
@@ -78,7 +93,19 @@ function Ready({ summary, messages }: { summary: AiSummary; messages: readonly M
           <p data-testid="summary-text" className="text-sm wrap-anywhere whitespace-pre-line text-pretty">
             {summary.summary}
           </p>
-          {summary.items.length > 0 && <ul className="mt-1.5" data-testid="summary-items">{summary.items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} from={messages.find((m) => m.id === item.messageId)} />)}</ul>}
+          {summary.items.length > 0 && <ul className="mt-1.5" data-testid="summary-items">{summary.items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} from={messages.find((m) => m.id === item.messageId)} source={messageSource(messages, item.messageId, mine)} />)}</ul>}
+          {/* plan 161, pass 2: Ask's row: Copy, and who wrote it at the end, the model and when in its tooltip */}
+          <div className="-ms-2 mt-1.5 flex items-center gap-0.5 text-xs text-muted-foreground" data-testid="summary-actions">
+            <Button variant="ghost" size="xs" className="font-medium text-muted-foreground hover:text-foreground" data-testid="summary-copy" onClick={() => void copySummary(summary)}>
+              {t("summary.copy")}
+            </Button>
+            <Tooltip>
+              <TooltipTrigger render={<span tabIndex={0} data-testid="summary-provenance-label" className="ml-auto rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" />}>{provenanceLabel()}</TooltipTrigger>
+              <TooltipContent data-testid="summary-provenance" side="top" align="end">
+                {provenanceDetail(summary.model, summary.generatedAt)}
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
       </CollapsiblePanel>
     </Collapsible>
@@ -95,7 +122,7 @@ function Line({ state, status, icon, actions, children }: { state: string; statu
         {/* its own width: a short status keeps its action on the row, and a long one sends it below */}
         <span className="min-w-0 flex-auto wrap-anywhere">{children}</span>
         {/* the 28 px buttons (plan 161: the AI suggestions' one height) reach 4 px past the 20 px line, as the header's height holds them */}
-        {actions && <span className="-my-1 ms-auto flex shrink-0 items-center gap-1.5">{actions}</span>}
+        {actions && <span className="-my-1 ms-auto flex shrink-0 items-center gap-1.5 text-foreground">{actions}</span>}
       </div>
     </div>
   );
@@ -196,21 +223,27 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
           </Line>
         );
       case "error": {
-        const help = ai ? errorHelp(ui.errorKind, ai) : null;
+        // plan 161, pass 2: the one AI error (ai-card): plain words, never an address, Try again and AI settings
+        const copy = aiErrorCopy({ message: ui.message, kind: ui.errorKind }, ai);
         return (
-          <Line
-            state="error"
-            actions={
-              <Button size="sm" variant="ghost" data-testid="summary-retry" onClick={() => { dismissSummary(threadId); void summarize(threadId); }}>
-                {t("summary.tryAgain")}
-              </Button>
-            }
-          >
-            <span role="alert" data-testid="summary-error">
-              <span className="text-foreground">{ui.message}</span>
-              {help ? ` ${help}` : ""}
-            </span>
-          </Line>
+          <div data-testid="summary-block" data-state="error" className={cn(CARD, "flex min-h-10 px-3.5 py-2.5")}>
+            <AiErrorNotice
+              copy={copy}
+              textTestId="summary-error"
+              actions={
+                <span className="-my-1 flex items-center gap-1.5">
+                  <Button size="sm" variant="outline" data-testid="summary-retry" onClick={() => { dismissSummary(threadId); void summarize(threadId); }}>
+                    {t("summary.tryAgain")}
+                  </Button>
+                  {copy.settings && (
+                    <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground" data-testid="summary-error-settings" onClick={() => { dismissSummary(threadId); openSettings(); }}>
+                      {t("ai.error.settings")}
+                    </Button>
+                  )}
+                </span>
+              }
+            />
+          </div>
         );
       }
       default:

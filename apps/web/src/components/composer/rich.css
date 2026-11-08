@@ -101,12 +101,13 @@
   content: none;
 }
 [data-ai-overlay="overlay"] .rt-body,
-[data-ai-overlay="refine"] .rt-body {
+[data-ai-overlay="rewriting"] .rt-body {
   caret-color: transparent;
 }
-/* refining: the new text takes the old one's place as it comes, and the height holds until it's in */
-[data-ai-overlay="refine"] > [data-editor-mount] {
-  opacity: 0;
+/* plan 161, pass 2: rewriting (Regenerate, Shorter, Warmer): the old text stays where it is, dimmed, until the new one
+   replaces it in one step; nothing streams over it */
+[data-ai-overlay="rewriting"] > [data-editor-mount] {
+  opacity: 0.55;
 }
 /* a suggestion under what's there: no empty stretch between the words and it */
 [data-ai-overlay="below"] .rt-body {

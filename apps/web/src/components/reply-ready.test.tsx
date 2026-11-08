@@ -102,3 +102,31 @@ it("plan 161: several people: the header names them all", async () => {
   expect(replyTo({ ...row, to: [{ name: "Liam Baker", email: "l@x.test" }, { name: "", email: "ana@x.test" }] } as never)).toBe("To Liam Baker and ana@x.test");
   expect(replyTo({ ...row, to: [] } as never)).toBeNull();
 });
+
+it("plan 161, pass 2: the header counts the gaps still to fill, in the ink, before Use", async () => {
+  await act(async () => root.render(<ReplyReady threadId={7} />));
+  const gappy = { ...row, checks: { specifics: [], placeholders: ["[What you think.]", "[When.]", "[Gone.]"] } };
+  act(() => useReplies.setState({ shown: { threadId: 7, phase: "ready", text: "Thanks. [What you think.] [When.] [What you think.]", row: gappy } }));
+  // each gap once, and only those still in the text
+  expect(q("reply-ready-gaps")!.textContent).toBe("2 gaps to fill");
+  expect(q("reply-ready-gaps")!.className).toContain("text-foreground");
+  expect(q("reply-ready-header")!.textContent).toBe("Reply ready·2 gaps to fill·To Liam Baker·In your voice with Liam");
+  act(() => useReplies.setState({ shown: { threadId: 7, phase: "ready", text: "Thanks. [What you think.]", row: gappy } }));
+  expect(q("reply-ready-gaps")!.textContent).toBe("1 gap to fill");
+  act(() => useReplies.setState({ shown: { threadId: 7, phase: "ready", text: "Thanks.", row: gappy } }));
+  expect(q("reply-ready-gaps")).toBeNull();
+});
+
+it("plan 161, pass 2: preparing holds its place: skeleton lines until words come, then the text clamped as when it's ready", async () => {
+  await act(async () => root.render(<ReplyReady threadId={7} />));
+  act(() => useReplies.setState({ shown: { threadId: 7, phase: "writing", text: "", row: null } }));
+  expect(q("reply-ready-skeleton")).not.toBeNull();
+  expect(q("reply-ready-skeleton")!.children).toHaveLength(3);
+  expect(q("reply-ready-text")).toBeNull();
+  expect(q("reply-ready-stop")).not.toBeNull();
+  act(() => useReplies.setState({ shown: { threadId: 7, phase: "writing", text: "Hey Liam", row: null } }));
+  expect(q("reply-ready-skeleton")).toBeNull();
+  expect(q("reply-ready-text")!.className).toContain("line-clamp-6");
+  // it fades in within --motion, never more
+  expect(q("reply-ready")!.className).toContain("duration-base");
+});

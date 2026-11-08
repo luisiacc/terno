@@ -2,11 +2,14 @@ import type { PreparedReply } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Shortcut } from "@terno/ui/components/shortcut";
+import { SkeletonText } from "@terno/ui/components/skeleton";
 import { Spinner } from "@terno/ui/components/spinner";
 import { Sparkles } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useState } from "react";
+import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { dismissReply, stopReply, useReplies, useReply } from "~/lib/replies";
+import { useApp } from "~/state/app";
 import { AI_ACTIONS, AI_CARD, AI_GAP, AI_GLYPH, AI_HEADER, AI_TITLE, gapPieces } from "./ai-card";
 
 /** "In your voice with Ana": only what was really used, as the strip says it. */
@@ -36,21 +39,33 @@ function Hint() {
   );
 }
 
+/** Plan 161, pass 2: the model's gaps still in the text, so the header says the draft isn't whole before Use. */
+export function gapsToFill(text: string, gaps: readonly string[]): number {
+  return [...new Set(gaps.filter(Boolean))].filter((g) => text.includes(g)).length;
+}
+
 /**
  * Plan 144 §5: below the last message, in the conversation's column, on the summary's card (the addendum), so words a model
  * wrote never read as the mail's: the label is its header, the draft is inset, and Use and Dismiss are its footer. Focus never moves.
+ *
+ * Plan 161, pass 2: it shows from the moment the backend starts writing (never for a reply that won't come), holding its
+ * place with skeleton lines until words arrive, and the text is clamped at six lines while it writes as once it's ready,
+ * so the page under it moves once, a bounded step, faded in within --motion.
  */
 export default function ReplyReady({ threadId }: { threadId: number }) {
   const shown = useReplies((s) => (s.shown?.threadId === threadId ? s.shown : null));
+  // a draft open here is the reply (the discard snack's Undo brings one back while the reply is offered again)
+  const drafted = useDrafts((s) => shownDraftKey(s.drafts, threadId, useApp.getState().draftShown) !== null);
   const [all, setAll] = useState(false);
-  if (!shown) return null;
+  if (!shown || drafted) return null;
   const writing = shown.phase === "writing";
   const lines = shown.text.split("\n").length;
   const long = lines > 6 || shown.text.length > 480;
   const to = shown.row ? replyTo(shown.row) : null;
   const gaps = shown.row?.checks?.placeholders ?? [];
+  const toFill = writing ? 0 : gapsToFill(shown.text, gaps);
   return (
-    <section data-testid="reply-ready" data-phase={shown.phase} aria-label={t("replies.title")} className={cn(AI_CARD, "mt-4 px-3.5 pb-3")}>
+    <section data-testid="reply-ready" data-phase={shown.phase} aria-label={t("replies.title")} className={cn(AI_CARD, "mt-4 px-3.5 pb-3 animate-in fade-in-0 duration-base ease-motion")}>
       {/* once, never the deltas */}
       <div role="status" aria-live="polite" className="sr-only" data-testid="reply-ready-live">{writing ? "" : t("replies.title")}</div>
       {/* the summary's header: its height, its glyph, its type */}
@@ -58,24 +73,32 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
         {/* the spinner keeps its status and name, as before the card */}
         {writing ? <Spinner className={AI_GLYPH} /> : <Sparkles aria-hidden className={AI_GLYPH} />}
         <span data-testid="reply-ready-title" className={AI_TITLE}>{writing ? t("replies.writing") : t("replies.title")}</span>
+        {/* what's left for the user, said before Use, in the ink */}
+        {toFill > 0 && <><span aria-hidden>·</span><span data-testid="reply-ready-gaps" className="font-medium text-foreground">{t("replies.gaps", { count: toFill })}</span></>}
         {/* each "·" its own item, so the gaps either side are the same */}
         {!writing && to ? <><span aria-hidden>·</span><span data-testid="reply-ready-to" className="min-w-0">{to}</span></> : null}
         {!writing && shown.row?.used ? <><span aria-hidden>·</span><span data-testid="reply-ready-voice" className="min-w-0 truncate">{voice(shown.row)}</span></> : null}
       </p>
-      <p data-testid="reply-ready-text" className={cn("text-sm leading-relaxed wrap-anywhere whitespace-pre-wrap", long && !all && !writing && "line-clamp-6")}>
-        {/* the gaps the model left, marked so they can't be missed (plan 161); while it writes, the words as they come */}
-        {writing ? shown.text : gapPieces(shown.text, gaps).map((p, i) => (p.gap ? <mark key={i} data-testid="reply-ready-gap" className={AI_GAP}>{p.text}</mark> : p.text))}
-      </p>
+      {writing && !shown.text.trim() ? (
+        // its place held until the first words: three lines of the text's height
+        <SkeletonText data-testid="reply-ready-skeleton" lines={3} className="py-1.5" lineClassName="h-3" />
+      ) : (
+        <p data-testid="reply-ready-text" className={cn("text-sm leading-relaxed wrap-anywhere whitespace-pre-wrap", (writing || (long && !all)) && "line-clamp-6")}>
+          {/* the gaps the model left, marked so they can't be missed (plan 161); while it writes, the words as they come */}
+          {writing ? shown.text : gapPieces(shown.text, gaps).map((p, i) => (p.gap ? <mark key={i} data-testid="reply-ready-gap" className={AI_GAP}>{p.text}</mark> : p.text))}
+        </p>
+      )}
       {long && !writing && (
         <Button variant="link-secondary" size="xs" className="mt-1" data-testid="reply-ready-all" aria-expanded={all} onClick={() => setAll(!all)}>{t(all ? "replies.showLess" : "replies.showAll")}</Button>
       )}
       <div data-testid="reply-ready-footer" className={cn(AI_ACTIONS, "mt-3")}>
         {writing ? (
-          <Button variant="outline" size="sm" data-testid="reply-ready-stop" onClick={() => stopReply(threadId)}>{t("replies.stop")}</Button>
+          <Button variant="outline" size="sm" className="text-foreground" data-testid="reply-ready-stop" onClick={() => stopReply(threadId)}>{t("replies.stop")}</Button>
         ) : (
           <>
-            <Button size="sm" data-testid="reply-ready-use" onClick={() => void useReply(threadId)}>{t("replies.use")}</Button>
-            <Button size="sm" variant="outline" data-testid="reply-ready-dismiss" onClick={() => void dismissReply(threadId)}>{t("replies.dismiss")}</Button>
+            <Button size="sm" data-testid="reply-ready-use" aria-keyshortcuts="r" onClick={() => void useReply(threadId)}>{t("replies.use")}</Button>
+            <Button size="sm" variant="outline" className="text-foreground" data-testid="reply-ready-dismiss" onClick={() => void dismissReply(threadId)}>{t("replies.dismiss")}</Button>
+            {/* the one R on screen: the reply bar's keycap steps aside while this shows (plan 161, pass 2) */}
             <Hint />
           </>
         )}

@@ -8,8 +8,7 @@ import { client } from "~/rpc/connection";
 import { getApp, inPlainInbox, navigate, useApp } from "~/state/app";
 import { useFollowups } from "~/state/followups";
 import { inboxTop, reloadList, useList } from "~/state/list";
-import { listDate } from "~/lib/format";
-import { reminderShort } from "~/lib/when";
+import { reminderDated } from "~/lib/when";
 
 /**
  * Plan 142: what the windows know of follow-ups (the backend's snapshot, at startup and on its `followups` event), and
@@ -52,16 +51,12 @@ export function followupLine(row: FollowupRow, now = Date.now()): string {
 }
 
 /**
- * Plan 161: the line's header after "Follow-up": when it comes back and what does ("Sent today · back on top of your Inbox
- * Wed 9:00 AM if Ana doesn't reply"), or that it's due.
+ * Plan 161: the line's header after "Follow-up": when it comes back ("Back on top of your Inbox Wed, Oct 28, 9:00 AM"), or
+ * that it's due. Pass 2: said once (the line under it says nobody has replied), and never a bare weekday.
  */
 export function followupWhen(row: FollowupRow, now = Date.now()): string {
-  const date = reminderShort(row.dueAt, now);
-  if (row.state === "due") return t("followup.dueNow", { date });
-  if (row.kind !== "awaiting") return t("followup.dueOn", { date });
-  const sent = new Date(row.sentAt).toDateString() === new Date(now).toDateString() ? t("followup.sentToday") : t("followup.sentOn", { date: listDate(row.sentAt, now) });
-  const first = (personOf(row) ?? t("followup.someone")).split(/\s+/)[0]!;
-  return `${sent} · ${t("followup.backIfNoReply", { date, name: first })}`;
+  const date = reminderDated(row.dueAt, now);
+  return row.state === "due" ? t("followup.dueNow", { date }) : t("followup.dueOn", { date });
 }
 
 /** What a row says: its most urgent, and how many more. */
@@ -76,7 +71,7 @@ export async function actOnFollowup(row: FollowupRow, action: "done" | "dismiss"
   try {
     const { undoId } = await client.call("followups.act", { id: row.id, revision: row.revision, action, ...(dueAt !== undefined ? { dueAt } : {}) });
     const undo = undoId === null ? null : registerUndo(() => client.call("followups.undo", { undoId }).then(() => undefined));
-    const said = action === "done" ? t("followup.snack.done") : action === "dismiss" ? t("followup.snack.dismissed") : t("followup.snack.later", { date: reminderShort(dueAt ?? row.dueAt) });
+    const said = action === "done" ? t("followup.snack.done") : action === "dismiss" ? t("followup.snack.dismissed") : t("followup.snack.later", { date: reminderDated(dueAt ?? row.dueAt) });
     snack.success(said, undo ? { action: { label: t("common.undo"), name: t("followup.undo"), undo } } : {});
   } catch (error) {
     const e = error as { message?: string };

@@ -34,6 +34,7 @@ import { pinDraft, unpinDraft } from "~/lib/pinned-draft";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { AiDraftButton, AiRowSlot } from "./composer/ai-slot";
 import { aiDraftHooks, useAiDraftUi } from "~/lib/ai-draft-state";
+import { useReplies } from "~/lib/replies";
 
 export { focusSoon } from "~/lib/compose-focus-move";
 import { focusSelector, focusSoon, focusMoveGeneration, type InlineFocusMove } from "~/lib/compose-focus-move";
@@ -533,6 +534,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
   };
 
   const me = account?.displayName || account?.email || "";
+  const replyWaiting = useReplies((r) => r.shown?.threadId === threadId && r.shown.phase === "ready");
   const label = d ? draftTitle(d) : "";
   const drop = useComposerDrop(d?.key ?? "", d?.sending ?? false);
 
@@ -546,7 +548,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
             <span aria-hidden className="flex size-6 shrink-0 items-center justify-center text-muted-foreground group-hover/qr:text-foreground"><Reply className="size-4" /></span>
             <span className="truncate">{t("compose.bar.reply", { name: replyTo })}</span>
             {me && accounts.length > 1 && <span data-testid="quick-reply-from" className="shrink-[3] truncate text-muted-foreground">{t("compose.fromLabel", { name: me })}</span>}
-            <span aria-hidden className="inline-flex @max-[560px]:hidden"><Shortcut keys="r" /></span>
+            {/* plan 161, pass 2: while a reply is ready, R uses it, and the card says so: one R on screen */}
+            {!replyWaiting && <span aria-hidden data-testid="quick-reply-key" className="inline-flex @max-[560px]:hidden"><Shortcut keys="r" /></span>}
           </button>
           {replyAll && (
             <Button variant="ghost" size="sm" className="text-foreground-soft hover:text-foreground [&_svg]:text-muted-foreground hover:[&_svg]:text-foreground" onClick={() => void openCompose("replyAll", threadId)} data-testid="quick-reply-all">

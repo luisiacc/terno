@@ -369,9 +369,10 @@ describe("§10.4: binding and races", () => {
     await tick();
     store.refine(key, "shorter");
     expect(session(key)!.phase).toBe("writing");
-    expect(store.previewMode(session(key))).toBeNull();
+    // plan 161, pass 2: the text it rewrites stays in place, dimmed, before and while the new one streams
+    expect(store.previewMode(session(key))).toBe("rewriting");
     delta(key, "Sho");
-    expect(store.previewMode(session(key))).toBe("refine");
+    expect(store.previewMode(session(key))).toBe("rewriting");
     expect(aiDraftHooks.escape(key)).toBe(true);
     expect(session(key)!.phase).toBe("strip");
     expect(c.text).toBe("First.");
@@ -634,12 +635,15 @@ describe("the subject: §10.3's compound undo", () => {
     await tick();
     c.type(" Mine.");
     store.refine(key, "shorter");
+    // plan 161, pass 2: over an edit it asks first
+    store.confirmReplace(key);
     expect(session(key)!.phase).toBe("writing");
     store.stop(key);
     expect(session(key)!.phase).toBe("strip");
     expect(session(key)!.strip!.edited).toBe(true);
     // and Discard of a suggestion the same
     store.refine(key, "shorter");
+    store.confirmReplace(key);
     store.discard(key);
     expect(session(key)!.phase).toBe("strip");
   });
@@ -1192,5 +1196,173 @@ describe("the row", () => {
     await tick();
     expect(session(key)).toBeUndefined();
     expect(getApp().dialog).toBeNull();
+  });
+});
+
+describe("plan 161, pass 2: never losing the user's work", () => {
+  const written = async (text = "First.") => {
+    const view = await writing();
+    last("ai.compose").resolve(done(text));
+    await tick();
+    expect(session(view.key)!.phase).toBe("strip");
+    return view;
+  };
+
+  it.each(["regenerate", "shorter", "warmer"] as const)("%s over an edited strip asks first; Keep editing runs nothing and leaves the text", async (how) => {
+    const { key, c } = await written();
+    c.type(" Mine.");
+    const before = calls("ai.compose").length;
+    store.refine(key, how);
+    expect(session(key)!.confirm).toEqual({ how });
+    expect(session(key)!.phase).toBe("strip");
+    expect(calls("ai.compose")).toHaveLength(before);
+    store.keepEdits(key);
+    expect(session(key)!.confirm).toBeNull();
+    expect(c.text).toBe("First. Mine.");
+    expect(calls("ai.compose")).toHaveLength(before);
+  });
+
+  it("Replace runs it from the text as it is then, and the strip's Undo brings the edits back exactly", async () => {
+    const { key, c } = await written();
+    c.type(" Mine.");
+    store.refine(key, "shorter");
+    c.type(" More.");
+    store.confirmReplace(key);
+    expect(session(key)!.phase).toBe("writing");
+    expect(last("ai.compose").params.previousDraft).toBe("First. Mine. More.");
+    last("ai.compose").resolve(done("Short."));
+    await tick();
+    expect(c.text).toBe("Short.");
+    store.undoCommit(key);
+    expect(c.text).toBe("First. Mine. More.");
+  });
+
+  it("an unedited strip runs at once; Esc on the question is Keep editing", async () => {
+    const { key, c } = await written();
+    store.refine(key, "regenerate");
+    expect(session(key)!.confirm).toBeNull();
+    expect(session(key)!.phase).toBe("writing");
+    last("ai.compose").resolve(done("Again."));
+    await tick();
+    c.type(" Mine.");
+    store.refine(key, "warmer");
+    expect(aiDraftHooks.escape(key)).toBe(true);
+    expect(session(key)!.confirm).toBeNull();
+    expect(session(key)!.phase).toBe("strip");
+    expect(c.text).toBe("Again. Mine.");
+  });
+
+  it("⌘J's free-form refinement over an edit asks too", async () => {
+    const { key, c } = await written();
+    c.type(" Mine.");
+    await store.openRow({ key });
+    store.setInstruction(key, "more formal");
+    await store.submit(key);
+    expect(session(key)!.confirm).toEqual({ how: "refine", instruction: "more formal" });
+    store.confirmReplace(key);
+    expect(last("ai.compose").params.instruction).toBe("more formal");
+    expect(last("ai.compose").params.previousDraft).toBe("First. Mine.");
+  });
+
+  it("Esc in a row ⌘J opened on an empty reply closes the row and keeps the reply; ⌘J again still takes both", async () => {
+    const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: "Ana <ana@example.test>", subject: "Re: Contract" });
+    editor(key);
+    await store.openRow({ key });
+    store.useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: { ...sessions[key]!, opened: true } } }));
+    expect(aiDraftHooks.escape(key)).toBe(true);
+    expect(session(key)).toBeUndefined();
+    expect(useDrafts.getState().drafts[key]).toBeDefined();
+    await store.openRow({ key });
+    store.useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: { ...sessions[key]!, opened: true } } }));
+    store.closeRow(key);
+    expect(useDrafts.getState().drafts[key]).toBeUndefined();
+  });
+});
+
+describe("plan 161, pass 2: the instruction stays, and can be asked again", () => {
+  it("a refinement keeps the strip's instruction; editing it writes the draft again from the new words", async () => {
+    const view = await writing();
+    const { key } = view;
+    // the first draft was asked with no words; ask with some
+    store.setInstruction(key, "");
+    last("ai.compose").resolve(done("First."));
+    await tick();
+    store.editInstruction(key);
+    expect(session(key)!.phase).toBe("input");
+    expect(session(key)!.rewrite).toBe(true);
+    store.setInstruction(key, "say friday works");
+    await store.submit(key);
+    const asked = last("ai.compose").params;
+    expect(asked.instruction).toBe("say friday works");
+    expect(asked.previousDraft).toBeUndefined();
+    last("ai.compose").resolve(done("Friday works."));
+    await tick();
+    expect(session(key)!.strip!.instruction).toBe("say friday works");
+    // Shorter rewrites the text, not what was asked
+    store.refine(key, "shorter");
+    last("ai.compose").resolve(done("Friday."));
+    await tick();
+    expect(session(key)!.strip!.instruction).toBe("say friday works");
+    store.refine(key, "regenerate");
+    expect(last("ai.compose").params.instruction).toBe("say friday works");
+  });
+
+  it("Undo of a rewrite brings back the earlier version's instruction, so Regenerate asks what that version was asked", async () => {
+    const { key } = await writing();
+    last("ai.compose").resolve(done("First."));
+    await tick();
+    store.editInstruction(key);
+    store.setInstruction(key, "say saturday");
+    await store.submit(key);
+    last("ai.compose").resolve(done("Saturday."));
+    await tick();
+    expect(session(key)!.strip!.instruction).toBe("say saturday");
+    store.undoCommit(key);
+    expect(session(key)!.strip!.instruction).toBe("");
+    store.refine(key, "regenerate");
+    expect(last("ai.compose").params.instruction).toBe("");
+  });
+
+  it("Undo from the field opened over a strip acts on the strip", async () => {
+    const { key, c } = await writing();
+    last("ai.compose").resolve(done("First."));
+    await tick();
+    await store.openRow({ key });
+    expect(session(key)!.phase).toBe("input");
+    store.closeRow(key);
+    store.undoCommit(key);
+    expect(c.text).toBe("");
+  });
+});
+
+describe("plan 161, pass 2: a prepared reply, discarded", () => {
+  const row = (): PreparedReply => ({ rowId: "r9", threadId: 7, sourceStamp: "s", generationKey: "k", answeringMessageId: 3, state: "used", body: "Hola Ana", used: null, checks: null, to: [{ name: "Ana", email: "ana@example.test" }], cc: [], model: "m", provider: "p", promptVersion: 1, generatedAt: 1, revision: 4 });
+  const back: unknown[] = [];
+  beforeEach(() => {
+    back.length = 0;
+    store.preparedHooks.back = (p) => back.push(p);
+  });
+
+  it("its Discard gives the reply back, typed in or not", async () => {
+    const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: "Ana <ana@example.test>" });
+    const { c } = editor(key);
+    store.commitPrepared(key, row(), true);
+    c.type(" y más");
+    editDraft(key, { bodyHtml: "<p>Hola Ana y más</p>", bodyText: "Hola Ana y más" });
+    const gone = drafts.discardDraft(key);
+    await vi.waitFor(() => expect(back).toEqual([{ threadId: 7, rowId: "r9", revision: 4 }]));
+    await vi.waitFor(() => expect(calls("drafts.delete").length).toBeGreaterThan(0));
+    last("drafts.delete").resolve({ ok: true });
+    await gone;
+  });
+
+  it("a send gives nothing back", async () => {
+    const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: "Ana <ana@example.test>", subject: "Re: x" });
+    editor(key);
+    store.commitPrepared(key, row(), true);
+    editDraft(key, { bodyHtml: "<p>Hola Ana</p>", bodyText: "Hola Ana" });
+    await sendDraft(key);
+    await tick();
+    expect(back).toEqual([]);
   });
 });

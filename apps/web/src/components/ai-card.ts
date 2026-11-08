@@ -1,4 +1,6 @@
+import type { MessageDetail } from "@terno/core";
 import { t } from "@terno/i18n";
+import { listDate } from "../lib/format";
 import { provenanceLabel } from "../lib/provenance";
 
 /**
@@ -8,7 +10,8 @@ import { provenanceLabel } from "../lib/provenance";
  * Plan 161: one anatomy for every suggestion (the summary, Reply ready, the follow-up line, ⌘J's strip): a header (glyph,
  * a title in the ink, then what it's about), the body, and a row of BoardUI buttons at one height.
  */
-export const AI_CARD = "card-group";
+/** Plan 161, pass 2: ringed inside in card-edge (globals.css `ai-card`), so it never reads as part of the mail in any palette. */
+export const AI_CARD = "ai-card";
 /** The header's glyph (Sparkles, or the spinner while it works), the size of the header's text. */
 export const AI_GLYPH = "size-[1.15em] shrink-0 text-muted-foreground";
 /** The header: one line of the secondary type, its glyph on the first line. */
@@ -18,7 +21,6 @@ export const AI_TITLE = "font-medium text-foreground";
 /** The button row: the same gaps on every surface. Its buttons are `size="sm"` (28 px). */
 export const AI_ACTIONS = "flex flex-wrap items-center gap-2";
 
-/** "Written with AI", or "Edited after AI" once the user has typed in it: the strip's status, said one way. */
 /** The ⌘J strip's status: the one provenance label (lib/provenance), or that it was edited since. */
 export const aiWritten = (edited: boolean): string => (edited ? t("aiDraft.edited") : provenanceLabel());
 
@@ -43,3 +45,19 @@ export function gapPieces(text: string, gaps: readonly string[]): { text: string
   if (at < text.length || !out.length) out.push({ text: text.slice(at), gap: false });
   return out;
 }
+
+/**
+ * Plan 161, pass 2: where an AI line points, said ("Arjun · Oct 21", "You · 3:02 PM"), or nothing when the conversation is
+ * that one message, already on screen. The summary's items and the follow-up line both go to a message.
+ */
+export function messageSource(messages: readonly Pick<MessageDetail, "id" | "from" | "date">[], messageId: number, mine: readonly string[], now = Date.now()): string | null {
+  if (messages.length <= 1) return null;
+  const m = messages.find((x) => x.id === messageId);
+  if (!m) return t("summary.open");
+  const own = mine.some((e) => e.toLowerCase() === m.from.email.toLowerCase());
+  const who = own ? t("ai.source.you") : (m.from.name || m.from.email.split("@")[0] || m.from.email).split(/\s+/)[0]!;
+  return t("ai.source.label", { who, date: listDate(m.date, now) });
+}
+
+/** Plan 161, pass 2: the one AI error, for every AI surface (the summary, ⌘J, Ask). */
+export { AiErrorNotice, aiErrorCopy, hasAddress, type AiErrorCopy, type AiErrorInput } from "./ai-error";

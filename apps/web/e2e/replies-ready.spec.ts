@@ -49,8 +49,16 @@ test.describe("replies ready (plan 144)", () => {
     const state = () => sqlDb(server.backend.store).get<{ state: string }>("SELECT state FROM ai_prepared_replies WHERE thread_id = ?", thread)?.state;
 
     await scenario("opened and stayed on: it's written below the last message, and focus stays", async () => {
+      // plan 161, pass 2: while it's being written its place is held, before the first word
+      fakeDraft.firstTokenMs = 1500;
       await row(page).click();
+      await expect(page.getByTestId("reply-ready-skeleton")).toBeVisible({ timeout: 15_000 });
+      await expect(block(page)).toHaveAttribute("data-phase", "writing");
+      fakeDraft.firstTokenMs = 0;
       await expect(block(page)).toHaveAttribute("data-phase", "ready", { timeout: 15_000 });
+      // one R on screen: the card's; the reply bar's keycap steps aside
+      await expect(page.getByTestId("reply-ready-hint")).toBeVisible();
+      await expect(page.getByTestId("quick-reply-key")).toHaveCount(0);
       await expect(page.getByTestId("reply-ready-text")).not.toBeEmpty();
       expect(state()).toBe("ready");
       expect(await page.evaluate(() => document.activeElement?.closest('[data-testid="reply-ready"]') === null)).toBe(true);
@@ -111,6 +119,18 @@ test.describe("replies ready (plan 144)", () => {
       await expect(block(page)).toHaveCount(0);
       await expect.poll(state).toBe("used");
     });
+
+    await scenario("plan 161, pass 2: Use, then Discard the draft (typed in or not): the reply is offered again", async () => {
+      await page.keyboard.type(" And thanks.");
+      await page.getByTestId("compose-discard").click();
+      await expect(page.getByTestId("composer")).toHaveCount(0);
+      await expect.poll(state).toBe("ready");
+      await expect(block(page)).toHaveAttribute("data-phase", "ready");
+      // the discard's own Undo brings the draft back, and the card steps aside for it
+      await page.getByTestId("snack-action").click();
+      await expect(page.getByTestId("composer")).toBeVisible();
+      await expect(block(page)).toHaveCount(0);
+    });
   });
 
   test("plan 161: the model's gaps are marked in the card and the composer, Use selects the first, and Send asks once, inline", async ({ app: page, server }) => {
@@ -124,6 +144,8 @@ test.describe("replies ready (plan 144)", () => {
         await expect(page.getByTestId("reply-ready-gap")).toHaveText("[Whether the 19th works.]");
         await expect(page.getByTestId("reply-ready-use")).toHaveText("Use as draft");
         await expect(page.getByTestId("reply-ready-hint")).toHaveText("Press R to reply with this draft");
+        // plan 161, pass 2: what's left to fill, said before Use
+        await expect(page.getByTestId("reply-ready-gaps")).toHaveText("1 gap to fill");
         for (const id of ["reply-ready-use", "reply-ready-dismiss"]) expect((await page.getByTestId(id).boundingBox())!.height, id).toBeGreaterThanOrEqual(28);
       });
       await scenario("Use: the gap marked in the composer, and selected to type over", async () => {

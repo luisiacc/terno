@@ -3,7 +3,7 @@ import { getLocale, t } from "@terno/i18n";
 /** Plan 87's moments in words (plan 94's scheduled sends say theirs the same way); no imports of the app. */
 
 const DAY = 86_400_000;
-const formats = new Map<string, { time: Intl.DateTimeFormat; weekday: Intl.DateTimeFormat; day: Intl.DateTimeFormat; year: Intl.DateTimeFormat }>();
+const formats = new Map<string, { time: Intl.DateTimeFormat; weekday: Intl.DateTimeFormat; day: Intl.DateTimeFormat; year: Intl.DateTimeFormat; dated: Intl.DateTimeFormat; datedYear: Intl.DateTimeFormat }>();
 function fmt() {
   const id = getLocale();
   let f = formats.get(id);
@@ -15,6 +15,8 @@ function fmt() {
       weekday: new Intl.DateTimeFormat(tag, { weekday: "short" }),
       day: new Intl.DateTimeFormat(tag, { day: "numeric", month: "short" }),
       year: new Intl.DateTimeFormat(tag, { day: "numeric", month: "short", year: "numeric" }),
+      dated: new Intl.DateTimeFormat(tag, { weekday: "short", day: "numeric", month: "short" }),
+      datedYear: new Intl.DateTimeFormat(tag, { weekday: "short", day: "numeric", month: "short", year: "numeric" }),
     };
     formats.set(id, f);
   }
@@ -59,4 +61,18 @@ export function reminderShort(ms: number, now = Date.now()): string {
   if (days === 1) return t("remind.short.tomorrow", { time });
   if (days > 1 && days < 7) return `${f.weekday.format(ms).replace(".", "")} ${time}`;
   return `${dayOf(ms, now)} ${time}`;
+}
+
+/**
+ * Plan 161, pass 2: a moment a line promises, never a bare weekday: "Today 5:00 PM", "Tomorrow 9:00 AM", and from the day
+ * after, its date: "Wed, Oct 28, 9:00 AM" ("mié, 28 oct, 09:00").
+ */
+export function reminderDated(ms: number, now = Date.now()): string {
+  const f = fmt();
+  const time = f.time.format(ms);
+  const days = daysAway(ms, now);
+  if (days === 0) return t("remind.short.today", { time });
+  if (days === 1) return t("remind.short.tomorrow", { time });
+  const date = (new Date(ms).getFullYear() === new Date(now).getFullYear() ? f.dated : f.datedYear).format(ms);
+  return `${date}, ${time}`;
 }

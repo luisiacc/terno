@@ -26,16 +26,18 @@ describe("the follow-up's line (plan 161)", () => {
     expect(followupLine(row({ sentAt: NOW - 5 * DAY - 3 * 3_600_000 }), NOW)).toBe("Arjun Ramírez hasn’t replied in 5 days");
   });
 
-  it("the header says when it was sent and what comes back when, and a due one says it's due", () => {
-    expect(followupWhen(row(), NOW)).toBe("Sent today · back on top of your Inbox Tue 9:00 AM if Arjun doesn’t reply");
-    expect(followupWhen(row({ sentAt: NOW - DAY }), NOW)).toMatch(/^Sent Yesterday · back on top of your Inbox/);
-    expect(followupWhen(row({ kind: "promise", text: "send the contract" }), NOW)).toBe("Back on top of your Inbox Tue 9:00 AM");
-    expect(followupWhen(row({ state: "due", dueAt: NOW - MIN }), NOW)).toMatch(/^Due /);
+  it("the header says when it comes back, once, with its date; a due one says it's due (pass 2)", () => {
+    // the condition isn't said twice: the line under it already says nobody has replied
+    expect(followupWhen(row(), NOW)).toBe("Back on top of your Inbox Tue, Oct 27, 9:00 AM");
+    expect(followupWhen(row(), NOW)).not.toMatch(/reply/);
+    expect(followupWhen(row({ kind: "promise", text: "send the contract" }), NOW)).toBe("Back on top of your Inbox Tue, Oct 27, 9:00 AM");
+    expect(followupWhen(row({ dueAt: new Date(2026, 9, 23, 9, 0).getTime() }), NOW)).toBe("Back on top of your Inbox Tomorrow 9:00 AM");
+    expect(followupWhen(row({ state: "due", dueAt: NOW - MIN }), NOW)).toMatch(/^Due Today /);
   });
 
   it("in Spanish too", () => {
     setLocale("es", es as never);
     expect(followupLine(row(), NOW)).toBe("Arjun Ramírez aún no ha respondido");
-    expect(followupWhen(row(), NOW)).toMatch(/^Enviado hoy · vuelve arriba de Entrada .* si Arjun no responde$/);
+    expect(followupWhen(row(), NOW)).toMatch(/^Vuelve arriba de Entrada mar, 27 oct, 09:00$/);
   });
 });

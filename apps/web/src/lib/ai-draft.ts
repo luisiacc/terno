@@ -10,7 +10,7 @@ import { aiDraftHooks, canDraft, useAiDraftUi, type AiDraftBadge } from "./ai-dr
 import { addressReply, composeLanding, composeOpening, leaveNewDraft, sendDraft } from "./compose";
 import { focusSoon } from "./compose-focus-move";
 import { draftCommands, draftKeyOf } from "./draft-commands";
-import { discardDraft, authored, draftPresentationThread, editDraft, editDraftRecipients, flushDraft, forgetDraft, loseDraftHome, materialize, NO_AUTO, shownDraftKey, unsaveDraft, useDrafts, validateDraftPresentation, validRecipients, type LocalDraft } from "./drafts";
+import { discardDraft, discardListeners, authored, draftPresentationThread, editDraft, editDraftRecipients, flushDraft, forgetDraft, loseDraftHome, materialize, NO_AUTO, shownDraftKey, unsaveDraft, useDrafts, validateDraftPresentation, validRecipients, type LocalDraft } from "./drafts";
 import { localized } from "./i18n";
 import { currentPage, listLayout, openThread } from "./page";
 import { registerUndo, snack } from "./snack";
@@ -106,6 +106,9 @@ export interface AiCommit {
   beforeDoc: unknown;
   /** plan 161: this version's own checks: going back to it brings them back (its gaps, its check line) */
   checks: AiStrip["checks"];
+  /** plan 161, pass 2: what this version was asked (the strip shows it, Regenerate asks it again), and its notes */
+  instruction?: string;
+  notes?: string;
   text: string;
 }
 
@@ -170,7 +173,14 @@ export interface AiSession {
   guard: { sendAt: number | undefined; gaps?: string[] } | null;
   /** what a screen reader hears: never the deltas */
   live: string;
+  /** plan 161, pass 2: a run that would replace text typed since the AI wrote it, waiting for "Replace your edits?" */
+  confirm: Replacement | null;
+  /** plan 161, pass 2: the row's field holds the strip's own instruction, to write the draft again from new words */
+  rewrite: boolean;
 }
+
+/** What replaces an edited draft, built when it's answered, from the text as it is then. */
+export type Replacement = { how: "regenerate" | "shorter" | "warmer" } | { how: "refine" | "rewrite"; instruction: string };
 
 export const useAiDraft = create<{ sessions: Readonly<Record<string, AiSession>> }>(() => ({ sessions: {} }));
 
@@ -236,12 +246,14 @@ function listen() {
 }
 
 /** Where the preview stands, if it shows at all: over the empty body, over the text it will replace, or under what's there. */
-export function previewMode(s: AiSession | undefined): "overlay" | "refine" | "below" | null {
+export function previewMode(s: AiSession | undefined): "overlay" | "rewriting" | "below" | null {
   if (!s?.run) return null;
   const showing = s.phase === "writing" || s.phase === "waitingBody" || s.phase === "choice" || (s.phase === "error" && s.error?.partial === true);
   if (!showing) return null;
   if (s.run.typed || s.run.spec.kind === "notes" || s.phase === "choice") return "below";
-  if (s.run.spec.kind === "refine") return s.run.streaming ? "refine" : null;
+  // plan 161, pass 2: a rewrite leaves the text it rewrites in place, dimmed, until the new one replaces it whole; what
+  // came before a failure is offered under it
+  if (s.run.spec.kind === "refine") return s.phase === "error" ? "below" : "rewriting";
   return "overlay";
 }
 
@@ -290,7 +302,7 @@ async function quietly(call: () => Promise<unknown>): Promise<void> {
 }
 
 function newSession(key: string, o: { opened: boolean; phase: AiPhase }): AiSession {
-  return { key, phase: o.phase, instruction: "", focus: 1, opened: o.opened, who: false, question: null, fromAccountId: null, confirmFailed: false, lookingUp: false, intentRequest: null, everyone: 0, run: null, lastSpec: null, choice: null, held: null, error: null, strip: null, guard: null, live: "" };
+  return { key, phase: o.phase, instruction: "", focus: 1, opened: o.opened, who: false, question: null, fromAccountId: null, confirmFailed: false, lookingUp: false, intentRequest: null, everyone: 0, run: null, lastSpec: null, choice: null, held: null, error: null, strip: null, guard: null, live: "", confirm: null, rewrite: false };
 }
 
 // ── the row opens
@@ -318,7 +330,7 @@ function showRow(key: string, opened: boolean) {
   }
   // ⌘J again in the field: it closes, as it opened
   if (s.phase === "input" && !s.strip && !s.instruction && rowFieldFocused(key)) return closeRow(key);
-  if (s.phase === "strip") return update(key, { phase: "input", instruction: "", focus: s.focus + 1, who: false });
+  if (s.phase === "strip") return update(key, { phase: "input", instruction: "", focus: s.focus + 1, who: false, rewrite: false, confirm: null });
   update(key, { focus: s.focus + 1 });
 }
 
@@ -374,17 +386,21 @@ function focusEditor(key: string) {
 }
 const rowOwns = (el: Element, key: string) => el.closest(`[data-ai-row="${CSS.escape(key)}"]`) !== null;
 
-/** The row goes; the strip comes back if it was opened over one; the caret goes back to the text. */
-export function closeRow(key: string) {
+/**
+ * The row goes; the strip comes back if it was opened over one; the caret goes back to the text. ⌘J again takes an empty
+ * draft it opened with it, as it opened both; Esc (`keepDraft`, plan 161 pass 2) closes only the row, and the empty reply
+ * stays open for the composer's own Esc.
+ */
+export function closeRow(key: string, o: { keepDraft?: boolean } = {}) {
   const s = session(key);
   if (!s) return;
   cancel(s);
   const d = draftOf(key);
   if (s.strip) {
-    update(key, { phase: "strip", instruction: "", question: null, error: null, who: false, confirmFailed: false, lookingUp: false, intentRequest: null });
+    update(key, { phase: "strip", instruction: "", question: null, error: null, who: false, confirmFailed: false, lookingUp: false, intentRequest: null, rewrite: false, confirm: null });
     return focusEditor(key);
   }
-  const untouched = s.opened && d !== undefined && !authored(d);
+  const untouched = !o.keepDraft && s.opened && d !== undefined && !authored(d);
   remove(key);
   if (untouched) {
     if (d.mode === "new") draftCommands(key)?.close?.();
@@ -442,8 +458,10 @@ export async function submit(key: string): Promise<void> {
   if (instruction) memory.last = instruction;
   if (telling()) return update(key, { phase: "telling", focus: s.focus + 1 });
   update(key, { error: null, confirmFailed: false, question: null, who: false });
+  // the strip's own instruction, edited: the draft written again from the new words (plan 161, pass 2)
+  if (s.strip && s.rewrite) return replacing(key, { how: "rewrite", instruction });
   // ⌘J over the strip: free-form refining, instant to assemble and cheap
-  if (s.strip) return instruction ? startRun(key, { kind: "refine", instruction, previous: bodyNow(key) }) : refine(key, "regenerate");
+  if (s.strip) return instruction ? replacing(key, { how: "refine", instruction }) : refine(key, "regenerate");
   if (!instruction) {
     if (d.mode === "new" && !validRecipients(d.toText).length) return askWho(key);
     return startRun(key, runFor(key, ""));
@@ -662,6 +680,8 @@ function startRun(key: string, spec: RunSpec): void {
     error: null,
     who: false,
     guard: null,
+    confirm: null,
+    rewrite: false,
     strip: null,
     lastSpec: spec,
     live: t("aiDraft.live.writing"),
@@ -838,14 +858,24 @@ function commit(key: string, how: "replace" | "below", result: Extract<AiCompose
   // never over a subject the user wrote (§10.3)
   let subject: string | null = null;
   if (needsSubject && result.subject && d && !d.subject.trim() && editDraft(key, { subject: result.subject, subjectEdited: true })) subject = result.subject;
-  const stack = [...(prior?.stack ?? []), { doc: inserted.doc, subject, before, beforeDoc: inserted.before, checks: result.checks, text: c.snapshot().text }];
+  // a refinement (Shorter, Warmer, "make it formal") rewrites the text, not what was asked: the strip keeps the words a
+  // Regenerate asks again and the row shows (plan 161, pass 2)
+  const refined = spec.kind === "refine" && !spec.regenerate && prior !== undefined;
+  const instruction = refined ? prior.instruction : spec.instruction;
+  const notes = refined ? prior.notes : spec.notes;
+  const stack = [...(prior?.stack ?? []), { doc: inserted.doc, subject, before, beforeDoc: inserted.before, checks: result.checks, text: c.snapshot().text, instruction, ...(notes !== undefined ? { notes } : {}) }];
   restores.delete(key);
   // what the draft holds now, as a send will compare it: a replace is all of the text, an insert only what it wrote
   recordProvenance(key, how === "replace" ? c.snapshot().text : result.text);
   clearStream(key);
-  const strip: AiStrip = { used: result.used, checks: result.checks, cutOff: result.stop === "length", oneTap: !spec.instruction && spec.kind === "draft", instruction: spec.instruction, ...(spec.prepared ? { prepared: spec.prepared } : {}), ...(spec.notes !== undefined ? { notes: spec.notes } : {}), stack };
+  const strip: AiStrip = { used: result.used, checks: result.checks, cutOff: result.stop === "length", oneTap: refined ? prior.oneTap : !spec.instruction && spec.kind === "draft", instruction, ...(spec.prepared ?? prior?.prepared ? { prepared: (spec.prepared ?? prior?.prepared)! } : {}), ...(notes !== undefined ? { notes } : {}), stack };
   update(key, { phase: "strip", strip, run: null, choice: null, held: null, error: null, guard: null, instruction: "", live: t("aiDraft.live.ready", { count: wordCount(result.text) }) });
   return true;
+}
+
+/** What going back to a version brings with it: its checks, and what it was asked (plan 161, pass 2). */
+function versionOf(v: AiCommit): Pick<AiStrip, "checks"> & Partial<Pick<AiStrip, "instruction" | "notes">> {
+  return { checks: v.checks, ...(v.instruction !== undefined ? { instruction: v.instruction } : {}), ...(v.notes !== undefined ? { notes: v.notes } : {}) };
 }
 
 /** Replace, Insert below, Insert: the suggestion goes in, one undo step. */
@@ -929,13 +959,59 @@ export const SHORTER = "Shorter. Keep every fact and commitment.";
 export const WARMER = "Warmer, the way this person would be. Keep every fact and commitment.";
 
 export function refine(key: string, how: "regenerate" | "shorter" | "warmer") {
+  replacing(key, { how });
+}
+
+/** What a replacement asks, from the strip and the text as they are now. */
+function specOf(strip: AiStrip, r: Replacement, key: string): RunSpec {
+  switch (r.how) {
+    case "regenerate":
+    case "rewrite": {
+      const instruction = r.how === "rewrite" ? r.instruction : strip.instruction;
+      return strip.notes !== undefined ? { kind: "refine", instruction, notes: strip.notes, regenerate: true } : { kind: "refine", instruction, regenerate: true };
+    }
+    case "shorter":
+    case "warmer":
+      return { kind: "refine", instruction: r.how === "shorter" ? SHORTER : WARMER, previous: bodyNow(key) };
+    case "refine":
+      return { kind: "refine", instruction: r.instruction, previous: bodyNow(key) };
+  }
+}
+
+/**
+ * Plan 161, pass 2: anything that replaces the strip's text. Over text typed since the AI wrote it ("Edited after AI"),
+ * the strip asks first, inline: "Replace your edits?". Untouched, it runs at once.
+ */
+function replacing(key: string, r: Replacement): void {
   const s = session(key);
   if (!s?.strip) return;
-  if (how === "regenerate") {
-    const spec: RunSpec = s.strip.notes !== undefined ? { kind: "refine", instruction: s.strip.instruction, notes: s.strip.notes, regenerate: true } : { kind: "refine", instruction: s.strip.instruction, regenerate: true };
-    return startRun(key, spec);
+  if (s.strip.edited) {
+    update(key, { phase: "strip", confirm: r, instruction: "", rewrite: false, live: t("aiDraft.confirm.title"), focus: s.focus + 1 });
+    return;
   }
-  startRun(key, { kind: "refine", instruction: how === "shorter" ? SHORTER : WARMER, previous: bodyNow(key) });
+  startRun(key, specOf(s.strip, r, key));
+}
+
+/** "Replace": the run that was asked, from the text as it is now. Undo still brings the edits back exactly. */
+export function confirmReplace(key: string): void {
+  const s = session(key);
+  if (!s?.strip || !s.confirm) return;
+  startRun(key, specOf(s.strip, s.confirm, key));
+}
+
+/** "Keep editing", and Esc: nothing runs, and the caret is back in the text. */
+export function keepEdits(key: string): void {
+  const s = session(key);
+  if (!s?.confirm) return;
+  update(key, { confirm: null, live: "" });
+  focusEditor(key);
+}
+
+/** The strip's instruction, to write the draft again from new words: the row's field, holding it. */
+export function editInstruction(key: string): void {
+  const s = session(key);
+  if (!s?.strip) return;
+  update(key, { phase: "input", instruction: s.strip.instruction, rewrite: true, confirm: null, who: false, focus: s.focus + 1 });
 }
 
 const undoing: { key: string | null } = { key: null };
@@ -968,7 +1044,7 @@ export function undoCommit(key: string) {
   const under = stack[stack.length - 1];
   if (under && undone) {
     stack[stack.length - 1] = { ...under, doc: undone.doc };
-    update(key, { strip: { ...s.strip, stack, checks: under.checks } });
+    update(key, { strip: { ...s.strip, stack, ...versionOf(under) } });
     recordProvenance(key, bodyNow(key));
     return focusEditor(key);
   }
@@ -1004,7 +1080,7 @@ function undoEdited(key: string, s: AiSession & { strip: AiStrip }, top: AiCommi
   if (under) {
     // the version under it is back as it was written, or as it was typed over before this write. Its Undo restores too
     // from here: the editor's last step is now this restore, not its write
-    left = { ...was, stack, checks: under.checks, edited: !c.sameDoc(under.doc) };
+    left = { ...was, stack, ...versionOf(under), edited: !c.sameDoc(under.doc) };
     update(key, { strip: left });
     recordProvenance(key, bodyNow(key));
   } else {
@@ -1089,6 +1165,14 @@ useDrafts.subscribe((state) => {
   }
 });
 export const preparedHooks: { back: ((prepared: PreparedRef) => void) | null } = { back: null };
+// plan 161, pass 2: a draft made from a prepared reply, discarded (its Discard, or closed empty): the reply is offered again,
+// as Undo after Use offers it. Sent, nothing comes back
+discardListeners.add((key) => {
+  const held = preparedDrafts.get(key);
+  if (!held) return;
+  preparedDrafts.delete(key);
+  preparedHooks.back?.(held.ref);
+});
 
 function backToNothing(key: string): void {
   const held = preparedDrafts.get(key);
@@ -1176,7 +1260,7 @@ export function noteBody(key: string) {
       else update(key, { strip: null });
       return;
     }
-    return update(key, { strip: { ...s.strip, stack, checks: under.checks, edited: !c.sameDoc(under.doc) } });
+    return update(key, { strip: { ...s.strip, stack, ...versionOf(under), edited: !c.sameDoc(under.doc) } });
   }
   // plan 161: an edit no longer ends the strip; it says so, and Undo stays until the draft is sent
   if (!s.strip.edited) update(key, { strip: { ...s.strip, edited: true } });
@@ -1239,6 +1323,10 @@ aiDraftHooks.escape = (key) => {
     keepWriting(key);
     return true;
   }
+  if (s.confirm) {
+    keepEdits(key);
+    return true;
+  }
   switch (s.phase) {
     case "writing":
     case "waitingBody":
@@ -1258,7 +1346,8 @@ aiDraftHooks.escape = (key) => {
     case "error":
     case "noProvider":
       if (s.error?.partial) discard(key);
-      else closeRow(key);
+      // plan 161, pass 2: only the row: an empty reply ⌘J opened stays, for the composer's own Esc
+      else closeRow(key, { keepDraft: true });
       return true;
   }
 };
