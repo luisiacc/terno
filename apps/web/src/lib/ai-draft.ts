@@ -644,6 +644,8 @@ function startRun(key: string, spec: RunSpec): void {
   const s = session(key);
   const d = materialize(key);
   if (!s || !d) return;
+  // newer work: an edited Undo's way back is over, even if this run ends with nothing written
+  restores.delete(key);
   // plan 147: every way to run comes here (Shorter, Try again, an answered question). The strip stays, with its Undo
   if (!draftingOffered(getApp())) return update(key, { phase: "noProvider" });
   listen();
@@ -1013,17 +1015,26 @@ function undoEdited(key: string, s: AiSession & { strip: AiStrip }, top: AiCommi
   focusEditor(key);
   // nothing typed (an editor rebuilt without its history, or ⌘Z already past it): nothing to bring back
   if (!typed) return;
-  const r: Restore = { edited, restored: restored.doc, strip: { ...was, edited: true }, left, subject, opened: s.opened, lastSpec: s.lastSpec };
+  const r: Restore = { edited, restored: restored.doc, strip: { ...was, edited: true }, left, subject, opened: s.opened, lastSpec: s.lastSpec, back: false };
   restores.set(key, r);
   const undo = registerUndo(() => {
-    // newer work since (another write, a refinement running): this old Undo does nothing
-    if (!stillOurs(key, r)) return;
+    // newer work since (another write, a refinement running), or it's back already: this old Undo does nothing
+    if (r.back || !stillOurs(key, r)) return;
     undoing.key = key;
     const back = controllerFor(key)?.undoGenerated(r.restored) ?? null;
     undoing.key = null;
     if (back) reinstate(key, r);
   });
   snack.success(t("aiDraft.undone"), { action: { label: t("common.undo"), name: t("aiDraft.undoneUndo"), undo } });
+}
+
+/** ⌘⇧Z after the edited text came back: the draft as the edited Undo left it, its strip (or none) and its subject. */
+function retake(key: string, r: Restore): void {
+  r.back = false;
+  if (r.subject !== null && draftOf(key)?.subject === r.subject) editDraft(key, { subject: "", subjectEdited: false });
+  if (r.left) update(key, { phase: "strip", strip: r.left });
+  else remove(key);
+  recordProvenance(key, bodyNow(key));
 }
 
 /**
@@ -1039,16 +1050,20 @@ interface Restore {
   subject: string | null;
   opened: boolean;
   lastSpec: RunSpec | null;
+  /** brought back (by ⌘Z or the snack): ⌘⇧Z takes it away again, and ⌘Z brings it back again */
+  back: boolean;
 }
 const restores = new Map<string, Restore>();
 
 function stillOurs(key: string, r: Restore): boolean {
   const s = session(key);
-  return restores.get(key) === r && (s ? s.phase === "strip" && !s.run && s.strip === r.left : r.left === null);
+  if (restores.get(key) !== r) return false;
+  const shown = r.back ? r.strip : r.left;
+  return s ? s.phase === "strip" && !s.run && s.strip === shown : shown === null;
 }
 
 function reinstate(key: string, r: Restore): void {
-  restores.delete(key);
+  r.back = true;
   if (r.subject !== null && draftOf(key)?.subject === "") editDraft(key, { subject: r.subject, subjectEdited: true });
   if (!session(key)) useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: { ...newSession(key, { opened: r.opened, phase: "strip" }), lastSpec: r.lastSpec } } }));
   update(key, { phase: "strip", strip: r.strip });
@@ -1139,7 +1154,11 @@ export function noteBody(key: string) {
   const c = c0;
   // ⌘Z right after an edited Undo: the edited text is back, and so is everything that went with it
   const r = restores.get(key);
-  if (r && c && stillOurs(key, r) && c.sameDoc(r.edited)) return reinstate(key, r);
+  if (r && c && stillOurs(key, r)) {
+    if (!r.back && c.sameDoc(r.edited)) return reinstate(key, r);
+    // ⌘⇧Z: the Undo again, as it was
+    if (r.back && c.sameDoc(r.restored)) return retake(key, r);
+  }
   if (!s || !c) return;
   if (s.run && (s.phase === "writing" || s.phase === "waitingBody" || s.phase === "error")) {
     const typed = s.run.spec.kind === "draft" ? !c.empty() : c.docToken() !== s.run.binding.doc;

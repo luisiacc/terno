@@ -44,6 +44,7 @@ if (!globalThis.CSS) (globalThis as unknown as { CSS: { escape: (s: string) => s
 
 function editor(key: string, initial = "") {
   const history: { text: string; doc: object }[] = [];
+  const future: { text: string; doc: object }[] = [];
   const listeners = new Set<() => void>();
   const c = {
     text: initial,
@@ -81,6 +82,7 @@ function editor(key: string, initial = "") {
     },
     undoGenerated(doc: unknown) {
       if (c.doc !== doc) return null;
+      future.push({ text: c.text, doc: c.doc });
       c.text = history.pop()!.text;
       c.doc = { text: c.text };
       for (const l of listeners) l();
@@ -93,6 +95,8 @@ function editor(key: string, initial = "") {
     snapshot: () => ({ html: "", text: c.text }),
     focus() { c.focused++; },
     type(text: string) { c.text += text; c.doc = { text: c.text }; for (const l of listeners) l(); },
+    // ⌘⇧Z: the step undo took back
+    redo() { history.push({ text: c.text, doc: c.doc }); c.text = future.pop()!.text; c.doc = { text: c.text }; for (const l of listeners) l(); },
     dom: document.createElement("div"),
     getState: () => ({}),
     subscribe: () => () => {},
@@ -565,6 +569,42 @@ describe("the subject: §10.3's compound undo", () => {
     expect(useDrafts.getState().drafts[key]!.subject).toBe("Generated subject");
     expect(store.gapsLeft(key)).toEqual(["[date]"]);
     expect(aiDraftHooks.blocksSend(key, undefined)).toBe(true);
+  });
+
+  it("Codex review, second pass: ⌘⇧Z takes the edited text away again as the Undo left it, and ⌘Z brings it back again", async () => {
+    const { key, c } = await writing({ mode: "new" });
+    last("ai.compose").resolve(done("On [date].", { subject: "Generated subject", checks: { specifics: [], placeholders: ["[date]"] } }));
+    await tick();
+    c.type(" Mine.");
+    store.undoCommit(key);
+    c.undoGenerated(c.doc);
+    expect(session(key)!.strip!.edited).toBe(true);
+    c.redo();
+    expect(c.text).toBe("");
+    expect(session(key)).toBeUndefined();
+    expect(useDrafts.getState().drafts[key]!.subject).toBe("");
+    c.undoGenerated(c.doc);
+    expect(c.text).toBe("On [date]. Mine.");
+    expect(session(key)!.strip!.edited).toBe(true);
+    expect(useDrafts.getState().drafts[key]!.subject).toBe("Generated subject");
+    expect(store.gapsLeft(key)).toEqual(["[date]"]);
+  });
+
+  it("Codex review, second pass: a newer run retires the old snack's Undo, even when it's stopped with nothing written", async () => {
+    const { key, c } = await writing();
+    last("ai.compose").resolve(done("First."));
+    await tick();
+    c.type(" Mine.");
+    store.undoCommit(key);
+    const { useSnack, runUndo } = await import("./snack");
+    const old = useSnack.getState().undo!;
+    await store.openRow({ key });
+    await store.submit(key);
+    store.stop(key);
+    expect(session(key)).toBeUndefined();
+    await runUndo(old);
+    expect(c.text).toBe("");
+    expect(session(key)).toBeUndefined();
   });
 
   it("Codex review 2: going back to an earlier version brings back its own checks, and its gaps are guarded", async () => {

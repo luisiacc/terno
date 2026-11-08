@@ -518,3 +518,5 @@ Seven points, all taken, each with a regression test that fails without the fix:
 7. **The ⌘J field is a textarea outside BoardUI's Textarea.** Like To and Subject, it's a bare field on the composer's row; that's now written down in `BOARDUI.md`'s deviations.
 
 Also from the review: the summary card's state buttons were still 24 px; they're 28 px with the rest.
+
+A second, narrower pass on those fixes found two more, both taken with a test each: ⌘⇧Z then ⌘Z after an edited Undo lost the strip and the gaps' guard the second time (the way back is now kept, and ⌘⇧Z puts the draft back as the Undo left it); and an old snack's Undo came alive again after a newer ⌘J was stopped with nothing written (any new run now retires it). Review rounds stop here.
