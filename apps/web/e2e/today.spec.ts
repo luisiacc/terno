@@ -51,11 +51,19 @@ test.describe("Today (plan 145)", () => {
     await page.getByTestId("nav-today").click();
     await expect(page.getByTestId("today-heading").first()).toHaveAttribute("data-kind", "needsYou");
     await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" })).toBeVisible();
-    // plan 161: the row says why it needs you (they've written in it), and the header names the numbers and the digest
-    await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" })).toContainText("Your turn ·");
-    await expect(page.getByTestId("today-needs")).toHaveText(/^\d+ (of \d+ )?needs? you$/);
-    await expect(page.getByTestId("today-digest-link")).toContainText("automated");
+    // plan 161: the row says why it needs you (they've written in it). Pass 2: as a label of its own, not the snippet's first words
+    await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why")).toHaveText("Your turn");
+    // the header says what each number is: the sidebar's count, then how many of them the list shows if it's capped
+    await expect(page.getByTestId("today-needs")).toHaveText(/^\d+ needs? you$/);
+    const sidebar = (await page.getByTestId("nav-today").innerText()).match(/\d+/)?.[0];
+    if (sidebar) await expect(page.getByTestId("today-needs")).toHaveText(new RegExp(`^${sidebar} needs? you$`));
+    // pass 2: the digest is the list's first row, in view, a real target; Today still opens on a conversation
     await expect(page.getByTestId("digest-row")).toContainText("automated");
+    await expect(page.locator('[data-keep-scroll="list"] [role=option]').first()).toHaveAttribute("data-testid", "digest-row");
+    await expect(page.getByTestId("digest-row")).toBeInViewport();
+    expect((await page.getByTestId("digest-row").boundingBox())!.height).toBeGreaterThanOrEqual(24);
+    await expect(page.getByTestId("digest-row")).toHaveCSS("cursor", "pointer");
+    await expect(page.getByTestId("digest-row")).toHaveAttribute("aria-selected", "false");
     if (SHOTS) {
       await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-light.png` });
       await page.emulateMedia({ colorScheme: "dark" });
@@ -69,8 +77,7 @@ test.describe("Today (plan 145)", () => {
     // a heading sits on the rows' own line
     const left = async (testId: string) => page.getByTestId(testId).first().evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
     expect(Math.abs((await left("today-heading")) - (await left("thread-row")))).toBeLessThanOrEqual(1);
-    // plan 161: the header's way in, with no scrolling past Needs you
-    await page.getByTestId("today-digest-link").click();
+    await page.getByTestId("digest-row").click();
     await expect(page.getByTestId("digest-row")).toHaveAttribute("aria-selected", "true");
     await expect(page.getByTestId("digest-page")).toBeVisible();
     await expect(page.getByTestId("digest-title")).toHaveText("Automated mail");
@@ -94,33 +101,53 @@ test.describe("Today (plan 145)", () => {
     for (const item of await page.getByTestId("digest-item").all()) {
       if (!/Morning Brew digest/.test(await item.innerText())) await item.getByTestId("digest-tick").click();
     }
-    await expect(page.getByTestId("digest-archive")).toHaveText("Archive selected (1)");
-    await expect(page.getByTestId("digest-count")).toContainText(`1 of ${count} selected`);
+    // pass 2: the button's number is what goes, and the line says what stays
+    await expect(page.getByTestId("digest-archive")).toHaveText("Archive 1");
+    await expect(page.getByTestId("digest-count")).toContainText(`1 to archive · ${count - 1} ${count - 1 === 1 ? "stays" : "stay"} in Inbox`);
+    await expect(page.getByTestId("digest-tick-hint")).toHaveText("Archive moves the ticked newsletters out of your Inbox. Untick any you want to keep.");
+    await expect(page.getByTestId("digest-item").filter({ hasText: "Stratechery" }).getByTestId("digest-state")).toHaveText("Stays in Inbox");
+    // a 24 px box of its own
+    const box = (await page.getByTestId("digest-tick").first().boundingBox())!;
+    expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(24);
     // by keyboard too: a named control, and it's what's kept
     await page.getByTestId("digest-tick").last().focus();
     await page.keyboard.press("Space");
-    await expect(page.getByTestId("digest-archive")).not.toHaveText("Archive selected (1)");
+    await expect(page.getByTestId("digest-archive")).not.toHaveText("Archive 1");
     await page.keyboard.press("Space");
-    await expect(page.getByTestId("digest-archive")).toHaveText("Archive selected (1)");
-    // plan 161: opening a source and coming back keeps what was unticked; the way back is only on that newsletter
+    await expect(page.getByTestId("digest-archive")).toHaveText("Archive 1");
+    // plan 161: opening a source and coming back keeps what was unticked. Pass 2: Esc is the way back, and the row
+    // opened says it stays (it's read: plan 145 archives only unread mail)
     await page.getByTestId("digest-item").filter({ hasText: "Stratechery" }).getByTestId("digest-open").click();
     await expect(page.getByTestId("back-to-digest")).toBeVisible();
-    await page.getByTestId("back-to-digest").click();
+    await expect(page.getByTestId("reader-subject")).toHaveText("Stratechery weekly");
+    // read after the reader's dwell, as a person reading it would
+    await expect.poll(() => db.get<{ u: number }>("SELECT unread_count u FROM threads WHERE subject = ?", "Stratechery weekly")!.u).toBe(0);
+    await page.keyboard.press("Escape");
     await expect(page.getByTestId("digest-page")).toBeVisible();
+    await expect(page.getByTestId("digest-item").filter({ hasText: "Stratechery" }).getByTestId("digest-open")).toBeFocused();
     await expect(page.getByTestId("digest-item").filter({ hasText: "Morning Brew digest" }).getByTestId("digest-tick")).toBeChecked();
-    await expect(page.getByTestId("digest-item").filter({ hasText: "Stratechery" }).getByTestId("digest-tick")).not.toBeChecked();
-    await expect(page.getByTestId("digest-archive")).toHaveText("Archive selected (1)");
+    await expect(page.getByTestId("digest-item").filter({ hasText: "Stratechery" }).getByTestId("digest-state")).toHaveText("Opened · stays in Inbox");
+    await expect(page.getByTestId("digest-archive")).toHaveText("Archive 1");
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/digest-on.png` });
     await page.getByTestId("digest-archive").click();
     await expect(page.getByTestId("snack")).toContainText("Archived 1 newsletter");
+    // pass 2: what it archived leaves the page, which says it's done; the rest stays, each saying why
+    await expect(page.getByTestId("digest-done")).toHaveText("Archived 1 newsletter.");
+    await expect(page.getByTestId("digest-item").filter({ hasText: "Morning Brew digest" })).toHaveCount(0);
+    await expect(page.getByTestId("digest-item")).toHaveCount(count - 1);
+    await expect(page.getByTestId("digest-still-here")).toHaveText("Still in your Inbox");
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/digest-done.png` });
     const inbox = (subject: string) => db.get<{ in_inbox: number }>("SELECT in_inbox FROM threads WHERE subject = ?", subject)!.in_inbox;
     await expect.poll(() => inbox("Morning Brew digest")).toBe(0);
     expect(inbox("Stratechery weekly")).toBe(1);
     expect(inbox("Sale ends tonight")).toBe(1);
-    await page.getByTestId("snack-action").click();
+    // its Undo, in the page as in the snack
+    await page.getByTestId("digest-undo").click();
     await expect.poll(() => inbox("Morning Brew digest")).toBe(1);
-    // the open page hears it: back in the count
+    // the open page hears it: back in the list and the count, and done no more
     await expect(page.getByTestId("digest-item").filter({ hasText: "Morning Brew digest" })).toHaveAttribute("data-live", "true");
+    await expect(page.getByTestId("digest-done")).toHaveCount(0);
+    await expect(page.getByTestId("digest-archive")).toHaveText("Archive 1");
     // plan 161: leaving Today takes the way back with it
     await page.getByTestId("digest-item").filter({ hasText: "Stratechery" }).getByTestId("digest-open").click();
     await expect(page.getByTestId("back-to-digest")).toBeVisible();
