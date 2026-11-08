@@ -182,8 +182,9 @@ function matchLine(match: RowMatch | null | undefined, text: string, lead: numbe
 }
 
 /**
- * Plan 161, pass 2: why Today lists a waiting row ("Your turn"), a label of its own before the row's words: medium weight
- * in the row's own ink (the open row's on its fill), so it doesn't read as the mail's first words. One Map read.
+ * Plan 161, pass 2: why Today lists a waiting row ("Your turn"), a label of its own before the row's words, so it doesn't
+ * read as the mail's first words. Pass 3: in the row's secondary ink at medium weight, apart from the words by weight and
+ * under the subject in strength (the ink at medium read louder than the subject). One Map read.
  */
 function useReason(thread: Pick<ThreadSummary, "id">): string | undefined {
   const inToday = useApp((s) => s.today);
@@ -195,7 +196,7 @@ function withReason(reason: string | undefined, quiet: string, words: React.Reac
   if (!reason) return words;
   return (
     <>
-      <span data-testid="row-why" className="font-medium">{reason}</span>
+      <span data-testid="row-why" className={cn("font-medium", quiet)}>{reason}</span>
       <span aria-hidden className={quiet}> · </span>
       <span className={quiet}>{words}</span>
     </>

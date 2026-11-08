@@ -79,7 +79,7 @@ const DIGEST_ROW_MAX = 44;
 
 /**
  * The digest in the list: it takes the cursor as a row does, and nothing else a thread can. Plan 161, pass 2: first in
- * Today, compact, and plainly a way in: a pointer, the row's hover, and an arrow at its end.
+ * Today, compact, and plainly a way in: a pointer, the row's hover, and an arrow at its end. Pass 3: and a ring at rest.
  */
 function DigestListRow({ thread, top, height }: { thread: ThreadSummary; top: number; height: number }) {
   const selected = useApp((s) => s.selectedId === DIGEST_ROW_ID);
@@ -92,7 +92,9 @@ function DigestListRow({ thread, top, height }: { thread: ThreadSummary; top: nu
       data-testid="digest-row"
       onMouseDown={(e) => e.button === 0 && pressRow(DIGEST_ROW_ID, { meta: false, ctrl: false, shift: false })}
       onClick={() => releaseRow(DIGEST_ROW_ID)}
-      className={cn("group/row absolute left-0 flex w-full cursor-pointer items-center gap-2.5 px-5 select-none", ROW_SHAPE, selected ? "text-row-selected-foreground before:bg-row-selected" : "hover:before:bg-row-hover")}
+      // pass 3: ringed at rest in the AI card's edge, so it reads as a row to open, not a section's label (Lumen has no fill
+      // until it's chosen); hover and the selection fill it as any row
+      className={cn("group/row absolute left-0 flex w-full cursor-pointer items-center gap-2.5 px-5 select-none", ROW_SHAPE, selected ? "text-row-selected-foreground before:bg-row-selected" : "before:shadow-[inset_0_0_0_1px_var(--card-edge)] hover:before:bg-row-hover")}
       style={{ transform: `translateY(${top}px)`, height }}
     >
       <Newspaper aria-hidden className={cn("relative size-4 shrink-0", selected ? "" : "text-muted-foreground")} />
@@ -617,26 +619,20 @@ function Subtitle({ filter, greeting }: { filter: QuickFilter | undefined; greet
 }
 
 /**
- * Plan 161: Today's numbers in words, under its title in every header. Pass 2: what each one is: how many need you (the
- * sidebar's count, in the ink), how many of them the list shows when it's capped, and Waiting, which holds more. The
- * digest's way in is the list's first row.
+ * Plan 161: Today's numbers in words, under its title in every header. Pass 3: one sentence, never a second total to read
+ * against the Inbox's: what the list is ("The newest 12 of 41 that need you", 41 being the sidebar's count) and, when it's
+ * capped, the way to the rest by the Inbox filter's own name. The digest's way in is the list's first row.
  */
-function TodayLine() {
+export function TodayLine() {
   const needs = useApp((s) => s.counts.today ?? null);
   const shown = useToday((s) => s.needsShown);
   const more = useToday((s) => s.more);
-  const waiting = useApp((s) => s.counts.inboxWaiting ?? null);
   const count = needs ?? shown;
+  const capped = needs !== null && needs > shown && shown > 0;
   return (
     <p data-testid="today-line" className="type-list-subtitle flex min-w-0 flex-wrap items-center gap-x-1 text-muted-foreground tabular">
-      {count > 0 && <span data-testid="today-needs" className="font-medium text-foreground">{t("today.line.needs", { count })}</span>}
-      {needs !== null && needs > shown && shown > 0 && (
-        <>
-          <span aria-hidden>·</span>
-          <span data-testid="today-shown">{t("today.line.shown", { count: shown })}</span>
-        </>
-      )}
-      {more > 0 && waiting !== null && (
+      {count > 0 && <span data-testid="today-needs" className="font-medium text-foreground">{capped ? t("today.line.newest", { count, shown }) : t("today.line.needs", { count })}</span>}
+      {more > 0 && (
         <>
           {count > 0 && <span aria-hidden>·</span>}
           <Tooltip>
@@ -645,18 +641,18 @@ function TodayLine() {
                 <Button
                   variant="link-secondary"
                   data-testid="today-more"
-                  aria-description={t("today.line.waitingTip")}
+                  aria-description={t("today.line.moreTip", { filter: t("list.filter.waiting") })}
                   className={COUNT_LINK}
                   onClick={() => {
                     navigate({ view: "inbox" });
                     setListFilter("waiting");
                   }}
                 >
-                  {t("today.line.waiting", { count: waiting })}
+                  {t("today.line.more", { filter: t("list.filter.waiting") })}
                 </Button>
               }
             />
-            <TooltipContent className="max-w-72">{t("today.line.waitingTip")}</TooltipContent>
+            <TooltipContent className="max-w-72">{t("today.line.moreTip", { filter: t("list.filter.waiting") })}</TooltipContent>
           </Tooltip>
         </>
       )}

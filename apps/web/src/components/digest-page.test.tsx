@@ -193,3 +193,16 @@ it("Codex review, round 2: an older day's Undo leaves today's page as it was lef
   expect([...useToday.getState().pick!.toggled]).toEqual([1]);
   expect(ticks()).toEqual([false, true, true]);
 });
+
+it("pass 3: who wrote the lines is said in the header, before the list, and not at its foot; the ticks are the quiet ones", async () => {
+  await show(digestOf("2026-10-22"));
+  const said = host.querySelector<HTMLElement>("[data-testid=digest-provenance]")!;
+  expect(said.textContent).toBe("Written with AI");
+  expect(said.closest("header")).not.toBeNull();
+  expect(said.compareDocumentPosition(host.querySelector("[data-testid=digest-item]")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(page().textContent).not.toContain("It can make mistakes");
+  expect([...host.querySelectorAll("[data-testid=digest-tick]")].every((b) => b.hasAttribute("data-quiet"))).toBe(true);
+  // automated mail wasn't written by a model: nothing to attribute
+  await show(digestOf("2026-10-22", true));
+  expect(host.querySelector("[data-testid=digest-provenance]")).toBeNull();
+});

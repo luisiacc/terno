@@ -19,15 +19,26 @@ const TARGET_BOX = [
   "group-data-checked/checkbox:border-primary group-data-checked/checkbox:bg-primary group-data-checked/checkbox:bg-linear-to-b group-data-checked/checkbox:from-highlight group-data-checked/checkbox:to-transparent group-data-checked/checkbox:text-primary-foreground group-data-checked/checkbox:shadow-[inset_0_1px_var(--highlight)] dark:group-data-checked/checkbox:bg-primary",
 ].join(" ")
 
-function Checkbox({ className, target, ...props }: CheckboxPrimitive.Root.Props & { /** a 24 px target of its own, its hover a fill the target's size (plan 161) */ target?: boolean }) {
+/**
+ * Plan 161, pass 3: the same target, quiet, for a long column of boxes that start ticked (the digest), where sixteen solid
+ * squares outshouted what they're beside. Outlined in both states, at the hover's firmer edge so an unticked one doesn't
+ * fade; ticked is the ink's mark on the card.
+ */
+const QUIET_BOX = [
+  "relative flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-control-edge-hover bg-card text-foreground shadow-xs transition-colors",
+  "group-focus-visible/checkbox:border-ring group-focus-visible/checkbox:ring-3 group-focus-visible/checkbox:ring-ring group-disabled/checkbox:opacity-50",
+].join(" ")
+
+function Checkbox({ className, target, ...props }: CheckboxPrimitive.Root.Props & { /** a 24 px target of its own, its hover a fill the target's size (plan 161); `quiet`, outlined when ticked (pass 3) */ target?: boolean | "quiet" }) {
   if (target)
     return (
       <CheckboxPrimitive.Root
         data-slot="checkbox-target"
+        data-quiet={target === "quiet" || undefined}
         className={cn("group/checkbox grid size-6 shrink-0 place-items-center rounded-md outline-none transition-colors hover:not-disabled:bg-row-hover disabled:cursor-not-allowed", className)}
         {...props}
       >
-        <span data-slot="checkbox" className={TARGET_BOX}>
+        <span data-slot="checkbox" className={target === "quiet" ? QUIET_BOX : TARGET_BOX}>
           <CheckboxPrimitive.Indicator data-slot="checkbox-indicator" className="grid place-content-center text-current transition-none [&>svg]:size-4 [&>svg]:[--icon-line:2px]">
             <CheckIcon />
           </CheckboxPrimitive.Indicator>

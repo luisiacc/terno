@@ -31,7 +31,7 @@ Terno's shared controls (`src/components/`) are BoardUI's free **Base** componen
 | Button | `button.tsx` | primary, `outline` (BoardUI's secondary), `destructive` (danger), `link`, `link-secondary`, `loading` |
 | Button Group | `button-group.tsx` | the reader's Reply and its menu (plan 158). Send's filled split button is still a one-off (`send-button.tsx`) |
 | Carousel | port on first use | |
-| Checkbox | `checkbox.tsx` | with `indeterminate`; `CheckboxMark` is the same box as a picture, for a row that is itself the control (an option's children can't be focusable, plan 143). Deviation: `target` draws the 16 px box inside a 24 px control of its own, with a hover fill its size, for a box beside a larger button (the digest, plan 161), where a near miss would hit the button |
+| Checkbox | `checkbox.tsx` | with `indeterminate`; `CheckboxMark` is the same box as a picture, for a row that is itself the control (an option's children can't be focusable, plan 143). Deviation: `target` draws the 16 px box inside a 24 px control of its own, with a hover fill its size, for a box beside a larger button (the digest, plan 161), where a near miss would hit the button; `target="quiet"` outlines the box when ticked too (the ink's mark on the card, the edge at the hover's), for a long column that starts ticked, where solid squares outshout the rows (plan 161, pass 3) |
 | Chip | `chip.tsx` | an optional named remove |
 | Close Button | `close-button.tsx` | |
 | Color Picker | `color-swatches.tsx` | only the preset row, on RadioGroup |

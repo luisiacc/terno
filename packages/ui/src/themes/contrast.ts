@@ -225,6 +225,8 @@ export const BOUNDARY_STEPS: readonly BoundaryStep[] = [
   { edge: ["tint", "card-edge"], behind: ["card"], min: HAIRLINE_FLOOR, why: "an AI card's ring against Lumen's reader card" },
   { edge: ["background", "card-edge"], behind: ["background"], min: HAIRLINE_FLOOR, why: "an outlined AI card's ring on the reader" },
   { edge: ["card", "card-edge"], behind: ["card"], min: HAIRLINE_FLOOR, why: "an outlined AI card's ring on a reader card" },
+  // pass 3: Today's digest row, ringed at rest in the same edge so it reads as a row to open, on the list
+  { edge: ["pane", "card-edge"], behind: ["pane"], min: HAIRLINE_FLOOR, why: "the digest's row, ringed on Today's list" },
 ];
 
 /** The contrast across a boundary as drawn. */

@@ -3,11 +3,14 @@ import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Checkbox } from "@terno/ui/components/checkbox";
 import { Spinner } from "@terno/ui/components/spinner";
-import { ChevronRight } from "@terno/ui/icons";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
+import { ChevronRight, Sparkles } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { errorHelp, modelName } from "~/lib/ai";
 import { listDate } from "~/lib/format";
+import { provenanceLabel } from "~/lib/provenance";
+import { AI_GLYPH } from "./ai-card";
 import { deferred, trackJob, undoAction, undoActions } from "~/lib/actions";
 import { registerUndo, snack, undoNow } from "~/lib/snack";
 import { client } from "~/rpc/connection";
@@ -160,7 +163,23 @@ export default function DigestPage() {
       <header className="space-y-1">
         <div className="flex items-baseline justify-between gap-3">
           <h1 className="text-xl font-semibold tracking-tight" data-testid="digest-title">{t(automated ? "today.digest.automatedTitle" : "today.digest.title")}</h1>
-          <span className="shrink-0 text-xs text-muted-foreground">{dayLong(row.day)}</span>
+          <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+            {/* pass 3: who wrote the lines, at the top as every AI result says it (it was under the list); the model and
+                its caution behind it. Becomes ai-card's AiProvenance when that lands (plan 161, pass 3) */}
+            {!automated && row.model && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger render={<span tabIndex={0} data-testid="digest-provenance" className="flex items-center gap-1 rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" />}>
+                    <Sparkles aria-hidden className={AI_GLYPH} />
+                    {provenanceLabel()}
+                  </TooltipTrigger>
+                  <TooltipContent data-testid="digest-provenance-detail" side="bottom" align="end">{t("today.digest.writtenBy", { model: modelName(row.model) })}</TooltipContent>
+                </Tooltip>
+                <span aria-hidden>·</span>
+              </>
+            )}
+            {dayLong(row.day)}
+          </span>
         </div>
         <div className="flex items-center justify-between gap-3">
           {finished ? (
@@ -222,7 +241,7 @@ export default function DigestPage() {
             return (
               <li key={i.threadId} data-testid="digest-item" data-live={live(i)} data-state={state} className="flex items-start gap-1 border-b border-hairline py-1">
                 {/* pass 2: a 24 px box of its own, so a near miss doesn't open the newsletter beside it */}
-                <Checkbox target data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={state === "archive"} disabled={!live(i)} className="mt-1.5" onCheckedChange={() => toggle(i.threadId)} />
+                <Checkbox target="quiet" data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={state === "archive"} disabled={!live(i)} className="mt-1.5" onCheckedChange={() => toggle(i.threadId)} />
                 {/* plan 161: reading is as plain as archiving: the whole row opens the newsletter, and says so on hover */}
                 <button type="button" data-digest-open={i.threadId} className="group/open -mr-2 flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" data-testid="digest-open" onClick={() => open(i.threadId)}>
                   <span className="min-w-0 flex-1">
@@ -234,14 +253,14 @@ export default function DigestPage() {
                     </span>
                     {i.line !== null && <span className={cn("mt-0.5 block text-sm", quiet ? "text-muted-foreground" : "text-foreground")} data-testid="digest-line">{i.line}</span>}
                   </span>
-                  <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/open:opacity-100 group-focus-reveal/open:opacity-100" />
+                  {/* pass 3: at rest, so opening one is as visible as ticking it, its edge the Archive button's */}
+                  <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground transition-colors group-hover/open:text-foreground" />
                 </button>
               </li>
             );
           })}
         </ul>
       )}
-      {!automated && row.model && <p className="text-xs text-muted-foreground" data-testid="digest-provenance">{t("today.digest.writtenBy", { model: modelName(row.model) })}</p>}
     </section>
   );
 }

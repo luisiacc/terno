@@ -54,9 +54,16 @@ test.describe("Today (plan 145)", () => {
     // plan 161: the row says why it needs you (they've written in it). Pass 2: as a label of its own, not the snippet's first words
     await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why")).toHaveText("Your turn");
     // the header says what each number is: the sidebar's count, then how many of them the list shows if it's capped
-    await expect(page.getByTestId("today-needs")).toHaveText(/^\d+ needs? you$/);
+    // pass 3: one sentence, never a second total to read against the Inbox's: "9 need you", or when capped "The newest 12 of 41 that need you"
+    await expect(page.getByTestId("today-needs")).toHaveText(/^(The newest \d+ of )?\d+ (that )?needs? you$/);
     const sidebar = (await page.getByTestId("nav-today").innerText()).match(/\d+/)?.[0];
-    if (sidebar) await expect(page.getByTestId("today-needs")).toHaveText(new RegExp(`^${sidebar} needs? you$`));
+    if (sidebar) await expect(page.getByTestId("today-needs")).toHaveText(new RegExp(`(^| of )${sidebar} (that )?needs? you$`));
+    await expect(page.getByTestId("today-line")).not.toContainText(/waiting|\d+ to reply/);
+    // the reason is quiet: the snippet's ink, not the subject's, at medium weight
+    const why = page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why");
+    const ink = async (el: typeof why) => el.evaluate((e) => getComputedStyle(e).color);
+    expect(await ink(why)).toBe(await ink(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-snippet").locator("span").last()));
+    await expect(why).toHaveCSS("font-weight", "500");
     // pass 2: the digest is the list's first row, in view, a real target; Today still opens on a conversation
     await expect(page.getByTestId("digest-row")).toContainText("automated");
     await expect(page.locator('[data-keep-scroll="list"] [role=option]').first()).toHaveAttribute("data-testid", "digest-row");
@@ -91,6 +98,12 @@ test.describe("Today (plan 145)", () => {
     await expect(page.getByTestId("digest-row")).toContainText("today's digest", { timeout: 15_000 });
     await page.getByTestId("digest-row").click();
     await expect(page.getByTestId("digest-title")).toHaveText("Today's digest");
+    // pass 3: who wrote the lines, at the top, as every AI result says it; the model is its detail, and the foot holds none
+    await expect(page.getByTestId("digest-provenance")).toHaveText("Written with AI");
+    expect((await page.getByTestId("digest-provenance").boundingBox())!.y).toBeLessThan((await page.getByTestId("digest-item").first().boundingBox())!.y);
+    await page.getByTestId("digest-provenance").hover();
+    await expect(page.getByTestId("digest-provenance-detail")).toContainText(/Written by .+\. It can make mistakes\./);
+    await page.mouse.move(0, 0);
     // the sale isn't a newsletter, so it isn't here or in Archive all
     await expect(page.getByTestId("digest-item").filter({ hasText: "Stratechery" })).toHaveCount(1);
     await expect(page.getByTestId("digest-item").filter({ hasText: "Acme Store" })).toHaveCount(0);
