@@ -13,7 +13,7 @@ import { registerUndo, runUndo, snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { reloadList } from "~/state/list";
-import { digestPick, keepDigestPick, useToday, type DigestDone } from "~/state/today";
+import { digestPick, keepDigestPick, useToday } from "~/state/today";
 
 const dayLong = (day: string) => {
   const [y, m, d] = day.split("-").map(Number);
@@ -108,7 +108,6 @@ export default function DigestPage() {
     useToday.setState({ fromDigest: threadId });
     setApp({ selectedId: threadId });
   };
-  const setDone = (next: DigestDone | null) => keepDigestPick({ ...digestPick(day), done: next });
   const archive = async () => {
     if (!row || !chosen.length) return;
     const job = trackJob(t("today.digest.archiving"));
