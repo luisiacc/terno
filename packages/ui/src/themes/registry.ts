@@ -109,6 +109,21 @@ export function glassAlpha(popover: Oklch, texts: Oklch[]): number {
   return 1;
 }
 
+/** the filled field's least wash of ink (plan 118); plan 160 deepens it per palette until the field stands off the list */
+export const FIELD_WASH = 0.07;
+/**
+ * Plan 160's floors for boundaries that repeat a cue shown another way (contrast.ts BOUNDARY_STEPS): a tint (a
+ * selection, a field, a thumb) and a hairline (a composer's ring and dividers)
+ */
+export const TINT_FLOOR = 1.35;
+export const HAIRLINE_FLOOR = 1.5;
+
+/** The least alpha in [from, to] (0.005 steps) at which `ok` holds for the ink at that alpha; `to` if none. */
+function inkAlpha(ink: Oklch, from: number, to: number, ok: (c: Oklch) => boolean): Oklch {
+  for (let a = from; a < to; a = Math.round((a + 0.005) * 1000) / 1000) if (ok(withAlpha(ink, a))) return withAlpha(ink, a);
+  return withAlpha(ink, to);
+}
+
 /** Fills in every token a theme doesn't declare. */
 export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "overrides">): Record<ThemeToken, string> {
   const t = input.tokens;
@@ -163,6 +178,17 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
     }
     return o("background");
   });
+  // plan 160: a field's wash of ink, from plan 118's 7% until it stands off the list (TINT_FLOOR), as far as the text in it
+  // still reads on every surface a field sits on
+  def("field", () => {
+    const over = (c: Oklch, k: ThemeToken) => formatOklch(rgbToOklch(composite(oklchToRgb(c), { ...oklchToRgb(o(k)), alpha: 1 })));
+    // (a hair over 4.5: the suite reads the layers unrounded)
+    const reads = (c: Oklch) => (["background", "card", "popover", "tint"] as const).every((k) => (["foreground", "muted-foreground"] as const).every((fg) => contrast(o(fg), over(c, k), bg) >= 4.52));
+    return inkAlpha(o("foreground"), FIELD_WASH, 0.2, (c) => contrast(c, formatOklch(o("pane")), bg) >= TINT_FLOOR || !reads(withAlpha(c, c.alpha + 0.005)));
+  });
+  // plan 160: a composer's ring and its field dividers: the hairline's ink, deep enough to separate the form from the reader
+  // (and Lumen's card) at HAIRLINE_FLOOR
+  def("draft-edge", () => inkAlpha(o("foreground"), 0.11, 0.3, (c) => (["background", "card"] as const).every((k) => contrast(c, formatOklch(o(k)), bg) >= HAIRLINE_FLOOR)));
   def("draft-foreground", () =>
     stepUntil(o("destructive"), ["background", "row-hover", "row-selected", "accent"].map((k) => formatOklch(o(k as ThemeToken))), 4.5, bg, o("foreground"), light),
   );
@@ -262,7 +288,7 @@ export const THEMES: readonly Theme[] = [
       popover: "1 0 0",
       sidebar: "0.965 0.004 85",
       muted: "0.955 0.004 85",
-      "muted-foreground": "0.5 0.012 265",
+      "muted-foreground": "0.464 0.012 265",
       accent: "0.945 0.012 268",
       "accent-foreground": "0.3 0.06 268",
       border: "0.22 0.01 265 / 15%",
@@ -273,10 +299,10 @@ export const THEMES: readonly Theme[] = [
       success: "0.54 0.13 160",
       unread: "0.56 0.19 268",
       star: "0.665 0.16 80",
-      "row-hover": "0.965 0.004 85",
-      "row-selected": "0.93 0.04 268",
+      "row-hover": "0.941 0.004 85",
+      "row-selected": "0.888 0.04 268",
       "row-selected-foreground": "0.22 0.04 268",
-      "sidebar-accent": "0.22 0.01 265 / 7%",
+      "sidebar-accent": "0.22 0.01 265 / 0.15",
     },
     cats: cats(".645 .12 10 | .635 .12 75 | .62 .12 130 | .615 .12 165 | .62 .1 215 | .59 .13 268 | .61 .13 300 | .59 .02 265"),
     overrides: { "draft-foreground": "0.42 0.17 268" },
@@ -450,7 +476,7 @@ export const THEMES: readonly Theme[] = [
       popover: "1 0 0",
       sidebar: "0.986 0.002 68",
       muted: "0.967 0.003 85",
-      "muted-foreground": "0.5 0.012 72",
+      "muted-foreground": "0.473 0.012 72",
       accent: "0.96 0.016 83",
       "accent-foreground": "0.5 0.1 74",
       border: "0.3 0.01 70 / 15%",
@@ -459,12 +485,12 @@ export const THEMES: readonly Theme[] = [
       "primary-foreground": "1 0 0",
       destructive: "0.56 0.19 30",
       success: "0.53 0.11 150",
-      unread: "0.62 0.13 76",
-      star: "0.61 0.135 74",
-      "row-hover": "0.98 0.004 80",
-      "row-selected": "0.94 0.03 83",
+      unread: "0.596 0.13 76",
+      star: "0.595 0.135 74",
+      "row-hover": "0.95 0.004 80",
+      "row-selected": "0.898 0.03 83",
       "row-selected-foreground": "0.211 0.005 68",
-      "sidebar-accent": "0.953 0.006 75",
+      "sidebar-accent": "0.884 0.006 75",
     },
     cats: cats(".6 .14 25 | .6 .16 42 | .62 .11 125 | .58 .095 149 | .589 .079 208 | .55 .1 265 | .589 .109 306 | .58 .015 70"),
     overrides: { ring: "0.6 0.12 76", "draft-foreground": "0.47 0.1 74" },
@@ -483,7 +509,7 @@ export const THEMES: readonly Theme[] = [
       popover: "1 0 0",
       sidebar: "0.97 0.004 91",
       muted: "0.961 0.004 91",
-      "muted-foreground": "0.5 0.013 90",
+      "muted-foreground": "0.47 0.013 90",
       accent: "0.954 0.006 255",
       "accent-foreground": "0.326 0.061 256",
       border: "0.227 0.004 85 / 15%",
@@ -494,10 +520,10 @@ export const THEMES: readonly Theme[] = [
       success: "0.52 0.08 145",
       unread: "0.326 0.061 256",
       star: "0.588 0.119 47",
-      "row-hover": "0.98 0.003 91",
-      "row-selected": "0.93 0.018 255",
+      "row-hover": "0.95 0.003 91",
+      "row-selected": "0.897 0.018 255",
       "row-selected-foreground": "0.227 0.004 85",
-      "sidebar-accent": "0.934 0.007 89",
+      "sidebar-accent": "0.871 0.007 89",
     },
     cats: cats(".57 .12 15 | .6 .11 65 | .58 .08 125 | .559 .069 144 | .554 .055 209 | .496 .079 258 | .557 .065 306 | .56 .012 90"),
     overrides: { "draft-foreground": "0.326 0.061 256" },
@@ -516,7 +542,7 @@ export const THEMES: readonly Theme[] = [
       popover: "1 0 0",
       sidebar: "0.975 0 0",
       muted: "0.97 0 0",
-      "muted-foreground": "0.5 0 0",
+      "muted-foreground": "0.465 0 0",
       accent: "0.97 0.014 255",
       "accent-foreground": "0.488 0.243 264",
       border: "0 0 0 / 8%",
@@ -527,10 +553,10 @@ export const THEMES: readonly Theme[] = [
       success: "0.54 0.15 145",
       unread: "0.546 0.245 263",
       star: "0.65 0.16 66",
-      "row-hover": "0.975 0 0",
-      "row-selected": "0.955 0.025 255",
+      "row-hover": "0.951 0 0",
+      "row-selected": "0.894 0.025 255",
       "row-selected-foreground": "0.2 0.03 262",
-      "sidebar-accent": "0 0 0 / 6%",
+      "sidebar-accent": "0 0 0 / 0.135",
     },
     cats: cats(".645 .2 16 | .64 .15 66 | .62 .16 131 | .61 .13 163 | .61 .11 215 | .585 .2 277 | .606 .21 293 | .554 .046 257"),
   }),
@@ -539,7 +565,7 @@ export const THEMES: readonly Theme[] = [
     name: "Graphite",
     mode: "light",
     vibrancy: false,
-    // Graphite (plan 137): white panes, #292929 ink, #5D5D5D for everything secondary, #F4F4F4 selections; a sky blue is the
+    // Graphite (plan 137): white panes, #292929 ink, #5D5D5D for everything secondary, #F4F4F4 selections (plan 160: the sidebar's deeper, at the tint floor); a sky blue is the
     // one color. #9E9E9E is 2.7:1 on white, below AA for text and for marks, so unchecked boxes and off switches take #949494,
     // the nearest grey that holds 3:1
     tokens: {
@@ -564,7 +590,7 @@ export const THEMES: readonly Theme[] = [
       "row-hover": "#EEEEEE",
       "row-selected": "#DCDCDC",
       "row-selected-foreground": "#292929",
-      "sidebar-accent": "#F4F4F4",
+      "sidebar-accent": "0.898 0 0",
     },
     cats: cats(".645 .17 16 | .64 .13 66 | .62 .13 131 | .61 .11 163 | .61 .1 205 | .54 .15 262 | .6 .17 322 | .56 .01 257"),
     overrides: { "sidebar-foreground": "#5D5D5D", "sidebar-glyph": "#5D5D5D", "sidebar-accent-foreground": "#292929", "control-edge": "#949494", "control-edge-hover": "#5D5D5D", "draft-foreground": "#292929" },
@@ -582,7 +608,7 @@ export const THEMES: readonly Theme[] = [
       popover: "0.215 0.007 265",
       sidebar: "0.2 0.006 265",
       muted: "0.24 0.007 265",
-      "muted-foreground": "0.68 0.01 265",
+      "muted-foreground": "0.701 0.01 265",
       accent: "0.27 0.03 268",
       "accent-foreground": "0.92 0.03 268",
       border: "1 0 0 / 15%",
@@ -593,10 +619,10 @@ export const THEMES: readonly Theme[] = [
       success: "0.72 0.13 160",
       unread: "0.72 0.15 268",
       star: "0.82 0.15 85",
-      "row-hover": "1 0 0 / 6%",
+      "row-hover": "1 0 0 / 0.065",
       "row-selected": "0.29 0.05 268",
       "row-selected-foreground": "0.97 0.01 268",
-      "sidebar-accent": "1 0 0 / 8%",
+      "sidebar-accent": "1 0 0 / 0.11",
     },
     cats: cats(".72 .12 10 | .78 .12 75 | .78 .12 130 | .74 .12 165 | .76 .1 215 | .7 .13 268 | .72 .13 300 | .7 .02 265"),
     overrides: { "draft-foreground": "0.82 0.09 268" },
@@ -847,7 +873,7 @@ export const THEMES: readonly Theme[] = [
       "row-hover": "1 0 0 / 6%",
       "row-selected": "0.31 0.022 80",
       "row-selected-foreground": "0.96 0.01 85",
-      "sidebar-accent": "1 0 0 / 7%",
+      "sidebar-accent": "1 0 0 / 0.105",
     },
     cats: cats(".72 .13 20 | .74 .15 45 | .78 .12 130 | .74 .1 150 | .76 .08 208 | .72 .1 265 | .74 .1 306 | .72 .015 75"),
     overrides: { ring: "0.8 0.13 82 / 80%", "draft-foreground": "0.87 0.09 85" },
@@ -877,9 +903,9 @@ export const THEMES: readonly Theme[] = [
       unread: "0.76 0.07 255",
       star: "0.74 0.12 50",
       "row-hover": "1 0 0 / 6%",
-      "row-selected": "0.3 0.035 255",
+      "row-selected": "0.306 0.035 255",
       "row-selected-foreground": "0.96 0.006 85",
-      "sidebar-accent": "1 0 0 / 7%",
+      "sidebar-accent": "1 0 0 / 0.115",
     },
     cats: cats(".72 .11 15 | .76 .1 70 | .76 .08 125 | .74 .07 144 | .75 .06 209 | .72 .08 258 | .74 .07 306 | .7 .012 90"),
     overrides: { "draft-foreground": "0.82 0.06 255" },
@@ -909,10 +935,10 @@ export const THEMES: readonly Theme[] = [
       success: "0.75 0.15 150",
       unread: "0.72 0.15 256",
       star: "0.82 0.15 80",
-      "row-hover": "1 0 0 / 4%",
-      "row-selected": "0.28 0.07 265",
+      "row-hover": "1 0 0 / 0.06",
+      "row-selected": "0.298 0.07 265",
       "row-selected-foreground": "0.97 0.01 255",
-      "sidebar-accent": "1 0 0 / 8%",
+      "sidebar-accent": "1 0 0 / 0.11",
     },
     cats: cats(".72 .15 16 | .8 .14 75 | .78 .16 131 | .74 .13 163 | .76 .1 215 | .7 .15 277 | .72 .15 293 | .7 .03 257"),
   }),
@@ -944,7 +970,7 @@ export const THEMES: readonly Theme[] = [
       "row-hover": "1 0 0 / 6%",
       "row-selected": "#333333",
       "row-selected-foreground": "#EDEDED",
-      "sidebar-accent": "#2A2A2A",
+      "sidebar-accent": "0.318 0 0",
     },
     cats: cats(".72 .13 16 | .8 .12 75 | .78 .13 131 | .74 .11 163 | .76 .09 205 | .68 .13 262 | .72 .14 322 | .7 .01 257"),
     overrides: { "sidebar-foreground": "#9E9E9E", "sidebar-glyph": "#9E9E9E", "sidebar-accent-foreground": "#EDEDED", "control-edge": "#808080", "control-edge-hover": "#9E9E9E", "draft-foreground": "#EDEDED" },

@@ -145,7 +145,8 @@
   --color-popover-glass: var(--popover-glass);
   --color-drop-target: color-mix(in oklch, var(--primary) 16%, transparent);
   /* plan 118: the filled field, a wash of ink so it reads on white and on grey groups alike */
-  --color-field: color-mix(in oklab, var(--foreground) 7%, transparent);
+  /* plan 118's filled field: a wash of ink; plan 160: the palette's `field`, deep enough to stand off the list */
+  --color-field: var(--field);
 
   /* shadows take the theme's shadow color (deeper in dark themes) */
   --shadow-2xs: 0 1px color-mix(in oklab, var(--shadow-color) 50%, transparent);

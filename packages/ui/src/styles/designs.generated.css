@@ -148,7 +148,7 @@
   --avatar-collapsed: 28px;
   --avatar-sender: 28px;
   --draft-bg: var(--card);
-  --draft-ring: var(--border);
+  --draft-ring: var(--draft-edge);
   --format-bg: color-mix(in oklab, var(--foreground) 4.5%, transparent);
   --format-ring: none;
   --draft-shadow: 0 1px 2px color-mix(in oklab, var(--shadow-color) 40%, transparent), 0 8px 24px -12px var(--shadow-color);
@@ -301,7 +301,7 @@
   --avatar-collapsed: 28px;
   --avatar-sender: 0px;
   --draft-bg: var(--background);
-  --draft-ring: var(--border);
+  --draft-ring: var(--draft-edge);
   --format-bg: transparent;
   --format-ring: 0 0 0 var(--hairline-w) var(--border);
   --draft-shadow: 0 0 transparent;
@@ -454,7 +454,7 @@
   --avatar-collapsed: 28px;
   --avatar-sender: 0px;
   --draft-bg: var(--background);
-  --draft-ring: var(--border);
+  --draft-ring: var(--draft-edge);
   --format-bg: transparent;
   --format-ring: 0 0 0 var(--hairline-w) var(--border);
   --draft-shadow: 0 0 transparent;
@@ -607,7 +607,7 @@
   --avatar-collapsed: 28px;
   --avatar-sender: 0px;
   --draft-bg: var(--background);
-  --draft-ring: var(--border);
+  --draft-ring: var(--draft-edge);
   --format-bg: transparent;
   --format-ring: 0 0 0 var(--hairline-w) var(--border);
   --draft-shadow: 0 0 transparent;
@@ -760,7 +760,7 @@
   --avatar-collapsed: 28px;
   --avatar-sender: 0px;
   --draft-bg: var(--background);
-  --draft-ring: var(--border);
+  --draft-ring: var(--draft-edge);
   --format-bg: transparent;
   --format-ring: 0 0 0 var(--hairline-w) var(--border);
   --draft-shadow: 0 0 transparent;

@@ -95,6 +95,9 @@ export const THEME_TOKENS = [
   // plan 125: BoardUI's danger button, solid: its text, and the lower stop of its top light
   "destructive-foreground",
   "destructive-shade",
+  // plan 160: a filled field's wash of ink, deep enough to stand off the list; a composer's ring and dividers
+  "field",
+  "draft-edge",
   // HTML mail
   "mail-paper",
   "mail-ink",

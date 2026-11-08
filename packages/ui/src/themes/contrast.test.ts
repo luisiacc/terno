@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { contrast, parseColor, withAlpha } from "./color";
-import { contrastFailures, CONTRAST_PAIRS, CONTROL_EDGES, FIELD_WASH, RATED_PALETTES, STAR_ON_ROWS, SURFACE_STEPS, surfaceStep } from "./contrast";
+import { BOUNDARY_STEPS, boundaryStep, composite, contrastFailures, CONTRAST_PAIRS, CONTROL_EDGES, FIELD_WASH, RATED_PALETTES, STAR_ON_ROWS, SURFACE_STEPS, surfaceStep } from "./contrast";
+import { DESIGNS } from "../designs/index";
 import { THEMES } from "./registry";
 
 describe("WCAG AA in every built-in theme", () => {
@@ -61,9 +62,39 @@ describe("WCAG AA in every built-in theme", () => {
   });
 });
 
-describe("the field's wash (plan 118)", () => {
-  it("is the amount globals.css mixes in", () => {
+describe("the field's wash (plans 118, 160)", () => {
+  it("is the palette's field token, the ink at 7% or deeper", () => {
     const globals = readFileSync(join(import.meta.dirname, "../styles/globals.css"), "utf8");
-    expect(globals).toContain(`--color-field: color-mix(in oklab, var(--foreground) ${Math.round(FIELD_WASH * 100)}%, transparent);`);
+    expect(globals).toContain("--color-field: var(--field);");
+    for (const theme of THEMES) {
+      const field = parseColor(theme.tokens.field);
+      expect(field.alpha, theme.id).toBeGreaterThanOrEqual(FIELD_WASH);
+      expect({ ...field, alpha: 1 }, theme.id).toEqual({ ...parseColor(theme.tokens.foreground), alpha: 1 });
+    }
+  });
+});
+
+describe("boundaries as drawn (plan 160)", () => {
+  // every design's palettes, Luma's included, with the design's own draft surface under a composer's dividers
+  const cases = DESIGNS.flatMap((d) => (["light", "dark"] as const).map((mode) => [`${d.palette[mode]}`, mode, d.surfaces.draft === "card" ? "card" : d.surfaces.draft === "tint" ? "tint" : "background"] as const));
+  it.each(cases)("%s holds every boundary's floor", (id, mode, draft) => {
+    const theme = THEMES.find((t) => t.id === id)!;
+    for (const step of BOUNDARY_STEPS.filter((s) => !s.mode || s.mode === mode)) expect(boundaryStep(theme, step, draft), `${id}: ${step.why}`).toBeGreaterThanOrEqual(step.except?.[id]?.min ?? step.min);
+  });
+
+  it("composites translucent layers in order, over the background", () => {
+    const theme = { tokens: { ...THEMES[0]!.tokens, background: "oklch(1 0 0)", foreground: "oklch(0 0 0)", pane: "oklch(1 0 0)" } };
+    // the ink at 50% over white, then nothing: a mid grey; at 50% twice: darker still
+    const once = composite(theme, ["pane", { token: "foreground", alpha: 0.5 }]);
+    const twice = composite(theme, ["pane", { token: "foreground", alpha: 0.5 }, { token: "foreground", alpha: 0.5 }]);
+    expect(once.l).toBeLessThan(1);
+    expect(twice.l).toBeLessThan(once.l);
+    expect(contrast(once, "oklch(1 0 0)")).toBeGreaterThan(2);
+  });
+
+  it("a broken palette fails its floor with the ratio", () => {
+    const theme = { tokens: { ...THEMES.find((t) => t.id === "graphite-light")!.tokens, "row-selected": "oklch(0.98 0 0)" } };
+    const step = BOUNDARY_STEPS.find((s) => s.why.startsWith("the open row"))!;
+    expect(boundaryStep(theme, step)).toBeLessThan(step.min);
   });
 });

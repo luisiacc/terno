@@ -20,9 +20,9 @@ describe("generated theme CSS", () => {
     expect(css.match(/color-scheme: dark;/g)).toHaveLength(12);
   });
 
-  // plan 137: 10 KB with Graphite's pair (about 400 bytes a pair)
-  it("stays small: ≤ 10 KB gzip", () => {
-    expect(gzipSync(readFileSync(file)).length).toBeLessThanOrEqual(10 * 1024);
+  // plan 137: 10 KB with Graphite's pair (about 400 bytes a pair); plan 160's field and draft-edge, about 15 bytes a theme
+  it("stays small: ≤ 10.5 KB gzip", () => {
+    expect(gzipSync(readFileSync(file)).length).toBeLessThanOrEqual(10.5 * 1024);
   });
 
   it("is imported by globals.css, which no longer hard-codes theme values", () => {

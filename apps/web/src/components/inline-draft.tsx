@@ -71,7 +71,8 @@ function FieldProblem({ id, message }: { id: string; message: string }) {
  * The card a draft is written in: a conversation's, and a new message's (plan 130). Its edge is the border token; in
  * dark a device pixel of it vanished against the pane (plan 158), so there it's a whole point.
  */
-export const DRAFT_SURFACE = "rounded-xl bg-(--draft-bg) [box-shadow:0_0_0_var(--hairline-w)_var(--draft-ring),var(--draft-shadow)] dark:[box-shadow:0_0_0_1px_var(--draft-ring),var(--draft-shadow)]";
+/** Plan 160: a composer's card: its ring a whole pixel in both modes, ring and dividers in draft-edge (a half-pixel hairline left the white form on the white reader) */
+export const DRAFT_SURFACE = "rounded-xl bg-(--draft-bg) [box-shadow:0_0_0_1px_var(--draft-ring),var(--draft-shadow)] [--hairline-color:var(--draft-ring)]";
 
 const input = "h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground";
 

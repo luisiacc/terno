@@ -1,6 +1,8 @@
 import type { ThemeToken } from "@terno/core";
-import { composite, contrast, formatOklch, oklchToRgb, parseColor, rgbToOklch, withAlpha } from "./color";
-import { CAT_NAMES, GLASS_BACKDROPS, GLASS_TEXT, type Theme } from "./registry";
+import { composite as compositeRgb, contrast, formatOklch, oklchToRgb, parseColor, rgbToOklch, withAlpha, type Oklch, type Rgb } from "./color";
+import { CAT_NAMES, FIELD_WASH, GLASS_BACKDROPS, GLASS_TEXT, HAIRLINE_FLOOR, TINT_FLOOR, type Theme } from "./registry";
+
+export { FIELD_WASH, HAIRLINE_FLOOR, TINT_FLOOR };
 
 export interface ContrastPair {
   fg: ThemeToken;
@@ -16,8 +18,6 @@ export interface ContrastPair {
   overToken?: ThemeToken;
 }
 
-/** the filled field's wash of ink (plan 118): globals.css --color-field mixes this much foreground in; a test keeps them equal */
-export const FIELD_WASH = 0.07;
 
 const text = (fg: ThemeToken, bgs: ThemeToken[]): ContrastPair[] => bgs.map((bg) => ({ fg, bg, min: 4.5 }));
 const ui = (fg: ThemeToken, bgs: ThemeToken[]): ContrastPair[] => bgs.map((bg) => ({ fg, bg, min: 3 }));
@@ -71,15 +71,15 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...ui("destructive", ["card"]),
   // plan 120: the date picker's chosen day, its text on the primary's 15% wash in the popover
   { fg: "foreground", bg: "primary", tint: true, min: 4.5, overToken: "popover" },
-  // plan 118: a field's text and placeholder on its wash of ink (globals.css --color-field, 5%), on the surfaces fields sit on
-  // (panes, cards, menus and dialogs, Settings' tint groups)
+  // plan 118: a field's text and placeholder on its wash of ink (globals.css --color-field: the `field` token, plan 160), on
+  // the surfaces fields sit on (panes, cards, menus and dialogs, Settings' tint groups)
   ...(["foreground", "muted-foreground"] as const).flatMap((fg) =>
-    (["background", "card", "popover", "tint"] as const).map((over): ContrastPair => ({ fg, bg: "foreground", alpha: FIELD_WASH, min: 4.5, overToken: over })),
+    (["background", "card", "popover", "tint"] as const).map((over): ContrastPair => ({ fg, bg: "field", min: 4.5, overToken: over })),
   ),
   // plan 125: BoardUI's danger button, its text on both stops of its fill
   ...text("destructive-foreground", ["destructive", "destructive-shade"]),
   // plan 125: a key (Kbd) on the field wash, its text full ink on a highlighted row (the palette's chosen command)
-  { fg: "foreground", bg: "foreground", alpha: FIELD_WASH, min: 4.5, overToken: "menu-highlight" },
+  { fg: "foreground", bg: "field", min: 4.5, overToken: "menu-highlight" },
   // plan 158: a menu's and the palette's chosen row, its text and secondary text
   ...text("popover-foreground", ["menu-highlight"]),
   ...text("muted-foreground", ["menu-highlight"]),
@@ -128,7 +128,7 @@ export const SURFACE_STEPS: readonly SurfaceStep[] = [
 /** The contrast between two surfaces, each painted over the background when translucent. */
 export function surfaceStep(theme: Pick<Theme, "tokens">, a: ThemeToken, b: ThemeToken): number {
   const t = theme.tokens;
-  const paint = (k: ThemeToken) => rgbToOklch(composite(oklchToRgb(parseColor(t[k])), { ...oklchToRgb(parseColor(t.background)), alpha: 1 }));
+  const paint = (k: ThemeToken) => rgbToOklch(compositeRgb(oklchToRgb(parseColor(t[k])), { ...oklchToRgb(parseColor(t.background)), alpha: 1 }));
   return contrast(paint(a), formatOklch(paint(b)), t.background);
 }
 
@@ -146,10 +146,70 @@ export function contrastFailures(theme: Pick<Theme, "tokens">, pairs: readonly C
     const alpha = p.tint ? 0.15 : p.alpha;
     const bg = alpha !== undefined ? withAlpha(parseColor(t[p.bg]), alpha) : parseColor(t[p.bg]);
     // a token backdrop that is itself translucent is painted over the theme background
-    const under = p.overToken ? composite(oklchToRgb(parseColor(t[p.overToken])), { ...oklchToRgb(parseColor(t.background)), alpha: 1 }) : (p.over ?? t.background);
+    const under = p.overToken ? compositeRgb(oklchToRgb(parseColor(t[p.overToken])), { ...oklchToRgb(parseColor(t.background)), alpha: 1 }) : (p.over ?? t.background);
     const ratio = contrast(parseColor(t[p.fg]), bg, under);
     const over = p.over ?? p.overToken;
     if (ratio < p.min) out.push({ pair: `${p.fg} / ${p.bg}${alpha !== undefined ? ` ${Math.round(alpha * 100)}%` : ""}${over ? ` over ${over}` : ""}`, ratio: Math.round(ratio * 100) / 100, min: p.min });
   }
   return out;
+}
+
+/**
+ * Plan 160: one layer of what's drawn, from the bottom up: a token as it is (translucent ones keep their alpha), or a
+ * token at an alpha (the field's wash of ink). "$draft" is the design's draft surface (card, tint or the background).
+ */
+export type Layer = ThemeToken | "$draft" | { token: ThemeToken; alpha: number };
+
+/** What the eye sees where these layers are painted, bottom first, over the theme's background. */
+export function composite(theme: Pick<Theme, "tokens">, layers: readonly Layer[], draft: ThemeToken = "background"): Oklch {
+  const t = theme.tokens;
+  let rgb: Rgb = { ...oklchToRgb(parseColor(t.background)), alpha: 1 };
+  for (const layer of layers) {
+    const c = typeof layer === "string" ? parseColor(t[layer === "$draft" ? draft : layer]) : withAlpha(parseColor(t[layer.token]), layer.alpha);
+    rgb = compositeRgb(oklchToRgb(c), rgb);
+  }
+  return rgbToOklch(rgb);
+}
+
+/**
+ * Plan 160: boundaries that repeat a cue shown another way (WCAG 1.4.11 asks 3:1 only of what nothing else marks): the
+ * selected row is also what the reader shows, the segmented thumb's label changes too, a field has its placeholder and
+ * glyph, a card its content. Each is checked as drawn (its layers over what's behind it), against a floor written down
+ * from what the eye needed in the rating's screenshots: 1.35:1 for a tint, 1.5:1 for a hairline. What carries
+ * information nothing else gives (a checkbox's edge) stays at 3:1 (CONTROL_EDGES).
+ */
+export interface BoundaryStep {
+  /** the boundary's side that's drawn, and what's behind it, bottom first */
+  edge: readonly Layer[];
+  behind: readonly Layer[];
+  min: number;
+  why: string;
+  /** a mode where it's drawn this way (the segmented control's thumb differs) */
+  mode?: "light" | "dark";
+  /** a palette held lower, and why (a design's blueprint fixes the ink that bounds it) */
+  except?: Partial<Record<string, { min: number; why: string }>>;
+}
+
+/**
+ * Graphite's blueprint (plan 137) fixes its secondary ink at #5D5D5D and #9E9E9E: a field's placeholder in it reads at 4.5:1
+ * on the field (over menus and dialogs too) only up to this wash, so its field, and the thumb drawn in it, stop there
+ */
+const GRAPHITE_FIELD = { "graphite-light": { min: 1.32, why: "the blueprint's #5D5D5D on the field" }, "graphite-dark": { min: 1.2, why: "the blueprint's #9E9E9E on the field over a menu" } };
+/** Plan 160: the row under the pointer; the selection a step above it */
+export const HOVER_FLOOR = 1.15;
+export const BOUNDARY_STEPS: readonly BoundaryStep[] = [
+  { edge: ["pane", "row-selected"], behind: ["pane"], min: TINT_FLOOR, why: "the open row, on the list" },
+  // a hover is under the pointer that made it, and must stay a step under the selection (SURFACE_STEPS): a lower floor
+  { edge: ["pane", "row-hover"], behind: ["pane"], min: HOVER_FLOOR, why: "the row under the pointer, on the list" },
+  { edge: ["sidebar", "sidebar-accent"], behind: ["sidebar"], min: TINT_FLOOR, why: "the sidebar's selection" },
+  { edge: ["pane", "field"], behind: ["pane"], min: TINT_FLOOR, why: "the search field on the list's header", except: GRAPHITE_FIELD },
+  { edge: ["pane", "field", "card"], behind: ["pane", "field"], min: TINT_FLOOR, why: "the chosen segment's thumb on its track (light)", mode: "light", except: GRAPHITE_FIELD },
+  { edge: ["pane", "background", "field"], behind: ["pane", "background"], min: TINT_FLOOR, why: "the chosen segment's thumb on its track (dark)", mode: "dark", except: GRAPHITE_FIELD },
+  { edge: ["background", "draft-edge"], behind: ["background"], min: HAIRLINE_FLOOR, why: "a composer card's ring on the reader" },
+  { edge: ["$draft", "draft-edge"], behind: ["$draft"], min: HAIRLINE_FLOOR, why: "a composer's field dividers on its card" },
+];
+
+/** The contrast across a boundary as drawn. */
+export function boundaryStep(theme: Pick<Theme, "tokens">, step: Pick<BoundaryStep, "edge" | "behind">, draft: ThemeToken = "background"): number {
+  return contrast(composite(theme, step.edge, draft), composite(theme, step.behind, draft));
 }

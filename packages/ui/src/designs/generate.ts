@@ -72,7 +72,8 @@ export function designVars(d: DesignDefinition): [string, string][] {
     ["--avatar-sender", `${d.avatar.senderCard}px`],
     // token references only: the colors stay the palette's (and their pairs are in CONTRAST_PAIRS)
     ["--draft-bg", d.surfaces.draft === "tint" ? "var(--tint)" : d.surfaces.draft === "outline" ? "var(--background)" : "var(--card)"],
-    ["--draft-ring", "var(--border)"],
+    // plan 160: the palette's draft-edge, a composer's ring and dividers at the hairline floor (contrast.ts BOUNDARY_STEPS)
+    ["--draft-ring", "var(--draft-edge)"],
     // plan 16: the composer's format bar, a quieter strip of the draft's own surface
     // (a mix of the ink, not --tint: in dark, tint and card are the same color and the well is gone)
     ["--format-bg", d.surfaces.draft === "outline" ? "transparent" : "color-mix(in oklab, var(--foreground) 4.5%, transparent)"],
