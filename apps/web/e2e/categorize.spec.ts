@@ -411,7 +411,7 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
     await expect(page.getByTestId("list-title")).toHaveText("Review · Facturas");
     await expect(page.getByTestId("thread-row")).toHaveCount(2);
 
-    await page.locator(`[data-thread-id="${threads[0]}"]`).dispatchEvent("mousedown");
+    await page.locator(`[data-testid=thread-row][data-thread-id="${threads[0]}"]`).dispatchEvent("mousedown");
     const chip = page.getByTestId("reader").getByTestId("suggestion-chip");
     await expect(chip).toContainText("Facturas?");
     await settled(server, threads[0]!);
@@ -424,7 +424,7 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
     expect(db.get("SELECT outcome FROM cls_decisions WHERE thread_id = ?", threads[0]!)).toEqual({ outcome: "accepted" });
 
     await page.keyboard.press("Escape");
-    await page.locator(`[data-thread-id="${threads[1]}"]`).dispatchEvent("mousedown");
+    await page.locator(`[data-testid=thread-row][data-thread-id="${threads[1]}"]`).dispatchEvent("mousedown");
     await expect(page.getByTestId("reader").getByTestId("suggestion-chip")).toBeVisible();
     await focusList(page);
     await page.keyboard.press("n");

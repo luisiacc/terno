@@ -386,8 +386,8 @@ export async function openRow(page: Page, index: number): Promise<string> {
  */
 export async function selectRows(page: Page, ids: readonly (string | number)[]): Promise<void> {
   const [first, ...rest] = ids;
-  await page.locator(`[data-thread-id="${first}"]`).dispatchEvent("mousedown", { button: 0 });
-  for (const id of rest) await page.locator(`[data-thread-id="${id}"]`).click({ modifiers: ["ControlOrMeta"] });
+  await page.locator(`[data-testid=thread-row][data-thread-id="${first}"]`).dispatchEvent("mousedown", { button: 0 });
+  for (const id of rest) await page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`).click({ modifiers: ["ControlOrMeta"] });
   await expect(page.locator("[data-testid=thread-row][data-checked]")).toHaveCount(ids.length > 1 ? ids.length : 0);
   await focusList(page);
 }
