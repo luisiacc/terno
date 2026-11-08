@@ -18,8 +18,8 @@ const MIN_WORDS = 4;
 export function isInstruction(text: string): boolean {
   const s = text.trim();
   if (/[:"“”«»]/.test(s)) return false;
-  // a quoted phrase in single quotes is a search's too (Codex review, pass 3, #9); an apostrophe inside a word isn't one
-  if (/(?:^|\s)['‘][^'‘’]*['’](?=\s|$)/.test(s)) return false;
+  // a phrase in single quotes is a search's too (Codex review, pass 3): a quote opening a word; an apostrophe inside one isn't
+  if (/(?:^|[\s(])['‘’]/.test(s)) return false;
   if (s.split(/\s+/).length < MIN_WORDS) return false;
   return VERB.some((re) => re.test(s));
 }

@@ -62,7 +62,7 @@ export async function showSource(source: AskSourceRef, n: number, queries: reado
   // Codex review (pass 3) #2: an answer from before another conversation began is that conversation's no longer
   const conversation = useAsk.getState().conversationId;
   const current = () => mine === seq && useAsk.getState().conversationId === conversation;
-  const at = await sourceThread(source);
+  const at = await sourceThread(source, undefined, current);
   if (at === null || !current()) return;
   const needles = needlesOf(queries);
   const base = { source, n, threadId: at.threadId, approved: at.state, needles };

@@ -73,5 +73,26 @@ describe("a source shown in Ask stays its conversation's, and Open message asks 
     expect(useAsk.getState().returnTo).toMatchObject({ threadId: 9, messageId: 41 });
     expect(getApp().dialog).toBeNull();
   });
+
+  it("round 2: a late answer for a source left meanwhile arms nothing, records nothing and opens nothing", async () => {
+    useAsk.setState({ conversationId: 5, sources: {}, armedSource: null, returnTo: null });
+    const sources = deferred<unknown>();
+    rpc.call.mockImplementation(async (method: string) => (method === "ai.askSources" ? sources.promise : {}));
+    const shown = showSource(source, 1, []);
+    useAsk.setState({ conversationId: null });
+    sources.resolve({ 41: { state: "trash", threadId: 9 } });
+    await shown;
+    expect(useAsk.getState()).toMatchObject({ armedSource: null, sources: {} });
+    // Open message, then the preview closed before the answer came: the reader isn't taken
+    useAsk.setState({ conversationId: 5 });
+    const later = deferred<unknown>();
+    rpc.call.mockImplementation(async (method: string) => (method === "ai.askSources" ? later.promise : {}));
+    let still = true;
+    const opening = openSource(source, "ok", () => still);
+    still = false;
+    later.resolve({ 41: { state: "ok", threadId: 9 } });
+    await opening;
+    expect(useAsk.getState().returnTo).toBeNull();
+  });
 });
 

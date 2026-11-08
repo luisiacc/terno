@@ -230,8 +230,10 @@ export async function openConversation(conversationId: number): Promise<boolean>
  * was last let through (a source shown in Ask), which still counts while it hasn't moved since. Where it is now, or null.
  */
 type Shown = Exclude<AskSourceView["state"], "gone">;
-export async function sourceThread(source: AskSourceRef, approved?: Shown): Promise<{ threadId: number; state: Shown } | null> {
+export async function sourceThread(source: AskSourceRef, approved?: Shown, current: () => boolean = () => true): Promise<{ threadId: number; state: Shown } | null> {
   const fresh = await client.call("ai.askSources", { messageIds: [source.messageId] }).catch(() => null);
+  // an answer for what was left meanwhile (another conversation, the preview closed) changes nothing (Codex review, pass 3, round 2)
+  if (!current()) return null;
   if (fresh) useAsk.setState((s) => ({ sources: { ...s.sources, ...fresh } }));
   const s = useAsk.getState();
   const view = s.sources[source.messageId];
@@ -250,9 +252,9 @@ export async function sourceThread(source: AskSourceRef, approved?: Shown): Prom
  * Back to the answer. Plan 161, pass 3: a citation and a source row first show the message in Ask (`ask-peek.ts`); its
  * Open message comes here with where the message was when it was shown, checked again (Codex review #3).
  */
-export async function openSource(source: AskSourceRef, approved?: Shown): Promise<void> {
-  const at = await sourceThread(source, approved);
-  if (at === null) return;
+export async function openSource(source: AskSourceRef, approved?: Shown, current: () => boolean = () => true): Promise<void> {
+  const at = await sourceThread(source, approved, current);
+  if (at === null || !current()) return;
   setApp({ dialog: null });
   openThread(at.threadId);
   revealSummaryMessage(source.messageId);

@@ -9,6 +9,7 @@ import { fakeDraft } from "../../../packages/ai/src/fake";
 import { E2E_NOW } from "./constants";
 import { expect, fresh, focusList, ingestConversation, scenario, test, type DevServerFixture } from "./fixtures";
 import { englishLeaks } from "./i18n-leaks";
+import { sqlDb } from "../../backend-dev/src/server";
 
 test.use({ backendOptions: { network: true } });
 
@@ -132,6 +133,13 @@ test.describe("ask your mail (plan 141)", () => {
       // pass 2: ↑↓ walk the source rows, and the chosen row's number lights in the answer
       const chosen = await page.locator("[data-testid=ask-source][data-selected=true] [data-testid=ask-source-n]").textContent();
       await expect(page.locator("[data-testid=ask-citation][data-lit]").first()).toHaveText(chosen!);
+      await page.keyboard.press("Enter");
+      // the preview's keys never move the rows under it (Codex review, pass 3, round 2): the same row is chosen after Esc
+      await expect(page.getByTestId("ask-peek-body")).toBeFocused();
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Control+n");
+      await page.keyboard.press("Escape");
+      await expect(page.locator("[data-testid=ask-source][data-selected=true] [data-testid=ask-source-n]")).toHaveText(chosen!);
       await page.keyboard.press("Enter");
       // the message, inside Ask: the answer is a step back, never lost
       const peek = page.getByTestId("ask-peek");
@@ -287,6 +295,22 @@ test.describe("ask your mail (plan 141)", () => {
     await expect(page.getByTestId("ask-peek-subject")).toHaveText("Your lease renewal");
     await page.getByTestId("ask-peek-open").click();
     await expect(page.getByTestId("reader-subject")).toHaveText("Your lease renewal");
+  });
+
+  test("a source moved to Trash while it's shown says so in the preview, and the second press opens it (Codex review, pass 3, round 2)", async ({ app: page, server }) => {
+    await withMail(page, server);
+    await open(page);
+    await question(page, `what about ${WORD}?`);
+    await page.getByTestId("ask-citation").first().click();
+    await expect(page.getByTestId("ask-peek")).toHaveAttribute("data-state", "ready");
+    const id = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM threads WHERE subject LIKE ? LIMIT 1", `%${WORD} policy%`)!.id;
+    await server.backend.server.invoke("threads.act", { threadIds: [id], action: "trash" }, dev);
+    await page.getByTestId("ask-peek-open").click();
+    await expect(page.getByTestId("ask-peek-armed")).toContainText("Trash");
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.getByTestId("ask-peek-open").click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByTestId("reader-subject")).toContainText(`${WORD} policy`);
   });
 
   test("Esc stops a running answer first, then goes back; Backspace in the follow-up box only types", async ({ app: page, server }) => {

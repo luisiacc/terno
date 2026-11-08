@@ -429,10 +429,23 @@ function PeekView({ peek }: { peek: Peek }) {
   // programmatic: no ring (plan 54), and the keys are the preview's (↑↓ scroll it, Enter opens it)
   useLayoutEffect(() => body.current?.focus({ preventScroll: true }), [peek.source.messageId]);
   const { source } = peek;
-  const open = () => void openSource(source, peek.approved);
+  const armed = useAsk((s) => s.armedSource === source.messageId);
+  const view = useAsk((s) => s.sources[source.messageId]?.state);
+  // still this preview, in this conversation: a late answer opens nothing (Codex review, pass 3, round 2)
+  const conversation = useAsk((s) => s.conversationId);
+  const open = () => void openSource(source, peek.approved, () => usePeek.getState().peek?.source.messageId === source.messageId && useAsk.getState().conversationId === conversation);
   const text = peek.text.length > PEEK_CHARS ? `${peek.text.slice(0, PEEK_CHARS)}…` : peek.text;
   return (
-    <section data-testid="ask-peek" data-state={peek.state} aria-label={t("ask.peek.region", { n: peek.n, subject: source.subject || t("common.noSubject") })}>
+    <section
+      data-testid="ask-peek"
+      data-state={peek.state}
+      aria-label={t("ask.peek.region", { n: peek.n, subject: source.subject || t("common.noSubject") })}
+      onKeyDown={(e) => {
+        // the rows under it keep their chosen one: cmdk's keys (↑↓, Home, End, Enter, and Ctrl+N/P/J/K) never reach them
+        // from here (Codex review, pass 3, round 2). Esc is the palette's, in its capture phase.
+        if (["ArrowDown", "ArrowUp", "Home", "End", "PageUp", "PageDown", "Enter"].includes(e.key) || (e.ctrlKey && ["n", "p", "j", "k"].includes(e.key.toLowerCase()))) e.stopPropagation();
+      }}
+    >
       <div className="flex items-center gap-2 px-[18px] pt-2.5">
         {/* -ms-2: its words on the column's edge, its shape reaching past it */}
         <Button variant="ghost" size="xs" className="-ms-2 font-medium" data-testid="ask-peek-back" onKeyDown={stopKeys} onClick={() => closePeek()}>
@@ -448,12 +461,11 @@ function PeekView({ peek }: { peek: Peek }) {
         data-testid="ask-peek-body"
         className="max-h-80 space-y-3 overflow-y-auto px-[18px] pt-2 pb-3 outline-none"
         onKeyDown={(e) => {
-          // its own keys: cmdk's would choose a row that isn't on screen
+          // Enter here opens it (the section keeps every navigation key from cmdk)
           if (e.key === "Enter" && !e.nativeEvent.isComposing) {
             e.preventDefault();
-            e.stopPropagation();
             open();
-          } else if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") e.stopPropagation();
+          }
         }}
       >
         <div className="flex items-center gap-2 text-sm">
@@ -462,6 +474,10 @@ function PeekView({ peek }: { peek: Peek }) {
           <span className="ms-auto shrink-0 text-xs text-muted-foreground tabular">{listDate(source.date)}</span>
         </div>
         <h3 className="text-sm font-medium text-pretty" data-testid="ask-peek-subject">{source.subject || t("common.noSubject")}</h3>
+        {/* moved to Spam or Trash since it was shown: Open message asks once more, said here (round 2) */}
+        <p role="status" className="text-xs text-muted-foreground empty:hidden" data-testid="ask-peek-armed">
+          {armed && (view === "spam" || view === "trash") ? `${t(view === "spam" ? "ask.source.spam" : "ask.source.trash")}. ${t("ask.source.pressAgain")}` : null}
+        </p>
         {peek.state === "loading" && (
           <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="ask-peek-loading"><Spinner className="size-3.5" /> {t("ask.peek.loading")}</p>
         )}
