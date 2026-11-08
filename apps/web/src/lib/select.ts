@@ -102,6 +102,17 @@ export function toggleCurrent(): void {
   setApp({ checked: toggle(s.checked, s.selectedId), anchorId: s.selectedId, scope: null });
 }
 
+/**
+ * List's checkbox, a row's avatar or gutter under the pointer: checks or unchecks the row without opening it or moving
+ * the cursor. With ⇧, and something already checked, the range from the last one clicked joins it (Gmail's, Finder's).
+ */
+export function pickRow(id: number, shift: boolean): void {
+  const s = getApp();
+  if (s.actionPreview || id === 0 || listCovered()) return;
+  const checked = shift && s.checked.size ? addRange(s.checked, listOrder(), s.anchorId, id) : toggle(s.checked, id);
+  setApp({ checked, anchorId: id, scope: null });
+}
+
 /** ⌘A / `* a`: every loaded row (more may exist: the banner offers the whole view). */
 export function selectAll(): void {
   const { items } = useList.getState();

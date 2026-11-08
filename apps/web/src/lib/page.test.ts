@@ -26,7 +26,7 @@ vi.mock("~/rpc/connection", () => ({
 const { useAppearance } = await import("~/lib/appearance");
 const { closePage, currentPage, openThread, pageOf } = await import("./page");
 const { act, scheduleMarkRead, toggleStar } = await import("./actions");
-const { extendSelection, pressRow, releaseRow, selectAll, selectWhere, toggleCurrent } = await import("./select");
+const { extendSelection, pickRow, pressRow, releaseRow, selectAll, selectWhere, toggleCurrent } = await import("./select");
 const { loadThread, useThreads } = await import("~/state/threads");
 const { openCompose } = await import("./compose");
 const { useDrafts } = await import("./drafts");
@@ -80,6 +80,32 @@ describe("the page (plan 24)", () => {
     setApp({ readerOpen: false });
     pressRow(2, { meta: false, ctrl: false, shift: false });
     expect(getApp()).toMatchObject({ selectedId: 2, readerOpen: true });
+  });
+
+  it("List's checkbox checks a row without opening it or moving the cursor; ⇧ checks the range from the last one clicked", () => {
+    setApp({ selectedId: 1, anchorId: null });
+    pickRow(2, false);
+    expect(getApp()).toMatchObject({ selectedId: 1, readerOpen: false, anchorId: 2 });
+    expect([...getApp().checked]).toEqual([2]);
+    expect(currentPage()).toBe("list");
+    // ⇧ from the last one clicked, both ways
+    pickRow(4, true);
+    expect([...getApp().checked].sort()).toEqual([2, 3, 4]);
+    pickRow(1, true);
+    expect([...getApp().checked].sort()).toEqual([1, 2, 3, 4]);
+    // a second click unchecks, as x does; ends "all N" too
+    setApp({ scope: { key: listKey(), scope: { kind: "view" }, label: "", count: 9 } as never });
+    pickRow(3, false);
+    expect(getApp().scope).toBeNull();
+    expect([...getApp().checked].sort()).toEqual([1, 2, 4]);
+    // ⇧ with nothing checked is one row: a range needs a start the user can see
+    setApp({ checked: new Set(), anchorId: 1 });
+    pickRow(3, true);
+    expect([...getApp().checked]).toEqual([3]);
+    // never under a page
+    setApp({ checked: new Set(), readerOpen: true });
+    pickRow(2, false);
+    expect(getApp().checked.size).toBe(0);
   });
 
   it("navigating to another list closes the page", async () => {
