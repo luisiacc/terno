@@ -345,3 +345,34 @@ One of three parallel passes on `ai-r00`'s findings. This one takes `today` and 
 ### Out of scope here
 
 The summary card's hover (another pass), the digest's Esc going back (the reader has no back stack; the link and j/k do it), the match preview's "2 ms" timing, and anything about the model's words.
+
+### Pass 1 as built
+
+Where it differs from the design above:
+- **The filter's line** reads in the builder's own order, its rows then its Then: "Domain is “uber.com” → archive and file in Facturas." The first wording ("Archives and files in Facturas mail that matches: …") read badly in the screenshots.
+- **The Today header** says "12 of 41 need you · Digest (16) · 165 waiting". The longer "16 newsletters · today's digest" wrapped to a second line at 1440. A digest that's preparing, failed or automated keeps the row's own words there.
+- **The "new" reason** is "New from a contact" ("Nuevo de un contacto"). "New from someone you write to" left no room for the snippet in a two-line row.
+- **Esc keeps the rule.** The frozen capture presses Escape on Rules and waits for the AI box to go (`capture.mjs`, which a round can't change), so a confirmation would break every later round's evidence. "Keep it" was the other choice the findings offered: closing keeps an unsaved rule AI built, in memory, and Rules opens on it again with its request until it's saved or New starts another.
+- **The match preview's "2 ms"** stays: the frozen capture waits on it (`preview-ms`).
+- **The digest ticks** already had a 40 by 32 px hit area (the checkbox's `after:` inset). The raters measured the 16 px box.
+
+### What the Codex review changed
+
+Round 1 made seven findings; all seven are fixed, each with a regression test.
+1. **Clear all left a reset's copy recoverable.** Clear now drops every held reset (`writing.test.ts` "Clear all takes a reset's copy with it"; it fails without the fix).
+2. **The attachment operator could reverse a rule.** A condition with `value: false` read as "has attachments", and choosing "has no attachments" kept the false and added `negate`, so it matched mail with attachments. The operator now reads both, and a choice writes `value: true` with one sense (`rule-words.test.ts`, all four combinations).
+3. **Reset's Undo was out of reach.** The snack sits behind Settings' modal, and `z` doesn't run in a dialog. The Undo is now in the page, under the status ("Reset “You · English” to what your mail shows. Undo"), as Snippets does (`ai-draft.spec.ts`).
+4. **The rebuild could land after an Undo.** Restore now waits for the learner (`learner.idle()`) and checks the copy is still held. The test holds the rebuild's commit until after the Undo. On the demo fixture the rebuild re-derives the same rows, so this test also passes without the fix: it holds the order, not a visible loss.
+5. **Switching profiles lost an edit in progress.** The picker is disabled while a profile is being edited (`ai-draft.spec.ts`).
+6. **Automated mail's picks would turn into the digest's.** A set means ticked in one and unticked in the other. The pick is now kept by day and kind (`digest-page.test.tsx`; it fails without the fix).
+7. **A new day kept the old scroll.** Scroll is now restored once per digest, and saved only after it has been restored (same test).
+
+Round 2 found nothing: the seven fixes are complete, and the capture still reaches every state.
+
+### Results
+
+- **Unit:** the whole `unit` project, 671 files and 11,818 tests, passed before the review fixes. After them: the touched files (rule words, Today's state, the digest page, the settings components, `contrast.test.ts`), the store conformance tests for `waitingPage`'s reason and the exact restore in both stores, and `writing.test.ts`'s reset tests.
+- **e2e** (`E2E_PORT=5391`): `today.spec`, `filters.spec`, `ai-draft.spec`, `local-ai.spec` and `visual.spec` in `e2e`, plus `today.spec`, `design-axe.spec`, `designs.spec`, `controls.spec` and `menu-corners.spec` in all five designs: all pass. Three `visual.spec` baselines moved, each for a reason in this pass: `filters-ai` and `filters-ai-dark` (the folded AI box and its line), and `settings-ai-local-dark` (the cards' new edges in dark).
+- **Perf:** `workloads.perf` "Today's waiting walk and the digest's walk hold" passes in both stores; the walk only returns a field it already read.
+- **Typecheck and lint:** clean.
+- **Screenshots:** `/tmp/terno-scratch/ai-pass1/today-settings/<design>/`, every design, light and dark. The AI set is at 1440x900, and `-small` shots of Today, the digest (unticked, a source, back), the AI filter (and a request it can't turn into a rule) and Writing style (and its editor) are at 1100x700. The frozen capture reached every AI state in all five designs, both modes.
