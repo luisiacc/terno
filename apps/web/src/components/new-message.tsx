@@ -132,27 +132,27 @@ export function NewMessage() {
         <div className={cn(READING_COLUMN, "flex h-full flex-col pt-0.5 pb-(--float-inset)")}>
           {/* plan 158: a card that holds its text, Send just under it. Plan 160: it reaches the pane's foot (no empty pane under a
               short card), the format bar and Send pinned there; a long message scrolls inside it */}
-          <div className={cn("relative flex min-h-60 flex-1 flex-col", DRAFT_SURFACE)} data-testid="composer-card">
+          {/* a press in the room under the text (the card's own, between it and the foot) writes at its end */}
+          <div className={cn("relative flex min-h-60 flex-1 cursor-text flex-col", DRAFT_SURFACE)} data-testid="composer-card" onMouseDown={(e) => {
+            if (e.target !== e.currentTarget || e.button !== 0) return;
+            e.preventDefault();
+            const text = e.currentTarget.querySelector<HTMLElement>("[data-testid=compose-body]");
+            if (!text) return;
+            text.focus();
+            // at the end of what's written, as a press under the last line of a page puts it
+            const at = getSelection();
+            at?.selectAllChildren(text);
+            at?.collapseToEnd();
+          }}>
             {/* pt-0.5: the first row's text field keeps its whole focus ring */}
-            {/* a press in the room under the text writes at its end */}
-            <div className="min-h-0 flex-1 cursor-text overflow-y-auto pt-0.5" data-draft-scroll onMouseDown={(e) => {
-              if (e.target !== e.currentTarget || e.button !== 0) return;
-              e.preventDefault();
-              const text = e.currentTarget.querySelector<HTMLElement>("[data-testid=compose-body]");
-              if (!text) return;
-              text.focus();
-              // at the end of what's written, as a press under the last line of a page puts it
-              const at = getSelection();
-              at?.selectAllChildren(text);
-              at?.collapseToEnd();
-            }}>
+            <div className="min-h-0 overflow-y-auto pt-0.5" data-draft-scroll>
               <DraftFieldsForm d={d} accounts={accounts} showSubject />
               <RichBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="rt-measure block min-h-[max(132px,34vh)] w-full px-3.5 pt-3 pb-3" />
               <DraftAttachments d={d} />
               <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
               <Quote d={d} />
             </div>
-            <div className="shrink-0">
+            <div className="mt-auto shrink-0">
               <ComposerFormatBar draftKey={key} id={formatId} className="px-2 pt-1.5" />
               {/* wraps: the status can hold a recovery action, and a narrow pane still reaches Discard */}
               <div className="flex flex-wrap items-center gap-1 px-2.5 pt-2 pb-2.5">
