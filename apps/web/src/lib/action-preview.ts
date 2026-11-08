@@ -17,6 +17,28 @@ export const inboxOnly = (p: Pick<ActionPreviewInfo, "plan">): boolean => p.plan
 export const verbOf = (p: Pick<ActionPreviewInfo, "plan">) => (p.plan.action.type === "createCategory" ? "moveToCategory" : p.plan.action.type);
 
 /**
+ * Plan 161, pass 3: the verbs that take mail out of view where a later look won't find it (Trash, Spam). Their Apply is
+ * BoardUI's destructive button, and their preview always says what happens.
+ */
+export const isDestructive = (p: Pick<ActionPreviewInfo, "plan">): boolean => p.plan.action.type === "trash" || p.plan.action.type === "spam";
+
+/** At this many, any verb says what it will do in words, under the request. */
+export const LARGE_BATCH = 100;
+
+/**
+ * Plan 161, pass 3: a large or destructive batch, said plainly: what happens to how many, and from where ("838
+ * conversations go to Trash, from all your mail except Spam and Trash."). Null for a small, harmless one, a rule that
+ * only saves, and while no count is final.
+ */
+export function previewConsequence(preview: ActionPreviewInfo, folderName: string): { text: string; destructive: boolean } | null {
+  if (savesRuleOnly(preview) || preview.scanning || preview.count === 0) return null;
+  const destructive = isDestructive(preview);
+  if (!destructive && preview.count < LARGE_BATCH) return null;
+  const where = t(inboxOnly(preview) ? "action.where.inbox" : "action.where.everywhere");
+  return { text: t(`action.consequence.${verbOf(preview)}`, { count: preview.count, where, category: preview.categoryName ?? "", folder: folderName }), destructive };
+}
+
+/**
  * Plan 161: no count is said until it's final: "Finding… 4 so far" over the 4 rows there are, then the one number the
  * title, the button and the snack all use. The header and the reader say it alike.
  */

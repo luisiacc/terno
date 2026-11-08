@@ -142,6 +142,8 @@ export function ruleRow(c: Condition, accountEmail: (id: number) => string): Rul
   if (c.field === "hasAttachment" || c.field === "account" || c.field === "ageDays") return { label, text: upperFirst(conditionText(c, accountEmail)) };
   if (c.field === "text") return { label, text: t(not ? "action.rule.noneOf" : "action.rule.anyOf", { count: 1 }), terms: [c.value] };
   if (c.op === "matches") {
+    // plan 161, pass 3: a pattern every value matches says so ("Any mailing list"), not "matches a pattern"
+    if (matchesAnything(c.value)) return { label, text: t(c.field === "listId" ? (not ? "action.rule.noList" : "action.rule.anyList") : not ? "action.rule.nothing" : "action.rule.anything") };
     const terms = patternTerms(c.value);
     if (terms) return { label, text: t(not ? "action.rule.noneOf" : "action.rule.anyOf", { count: terms.length }), terms };
     const template = patternTemplate(c.value);
@@ -152,8 +154,15 @@ export function ruleRow(c: Condition, accountEmail: (id: number) => string): Rul
   return { label, text: upperFirst(t("action.rule.value", { op: op ? t(op[not ? 1 : 0]) : c.op, value: c.value })) };
 }
 
-/** A condition that holds a pattern: what Details shows verbatim. */
-const hasPattern = (c: Condition): boolean => c.field !== "hasAttachment" && c.field !== "account" && c.field !== "ageDays" && c.op === "matches";
+/**
+ * Plan 161, pass 3: a pattern every value of one character or more matches (".", ".+"): the row says it whole. Not ".*",
+ * which an empty value matches too, so it can't be read as "any mailing list".
+ */
+const ANYTHING = new Set([".", ".+", "^.", "^.+", "(.+)", "(?:.+)"]);
+export const matchesAnything = (pattern: string): boolean => ANYTHING.has(pattern.trim());
+
+/** A condition that holds a pattern: what Details shows verbatim (one for anything says nothing more than its row). */
+const hasPattern = (c: Condition): boolean => c.field !== "hasAttachment" && c.field !== "account" && c.field !== "ageDays" && c.op === "matches" && !matchesAnything(String(c.value));
 
 /**
  * Details (plan 161, pass 2: "Exact pattern"): each condition with a pattern, by its field, the pattern verbatim (a

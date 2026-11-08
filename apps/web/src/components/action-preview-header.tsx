@@ -9,7 +9,7 @@ import { Spinner } from "@terno/ui/components/spinner";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, type ReactNode } from "react";
 import { providerLabel } from "~/lib/ai";
-import { applyPreview, check, inboxOnly, includeSkipped, previewCount, previewTitle, previewWaiting, showLeftOut, stopApplying, useActionPreview, verbOf } from "~/lib/action-preview";
+import { applyPreview, check, inboxOnly, includeSkipped, isDestructive, previewConsequence, previewCount, previewTitle, previewWaiting, showLeftOut, stopApplying, useActionPreview, verbOf } from "~/lib/action-preview";
 import { useAppearance } from "~/lib/appearance";
 import { LIST_TITLE } from "~/lib/list-title";
 import { PANE_TITLE, PANE_TITLE_TOP, READING_COLUMN } from "~/lib/pane-lines";
@@ -59,7 +59,6 @@ export default function ActionPreviewHeader() {
   const preview = useActionPreview((s) => s.preview);
   const sentence = useActionPreview((s) => s.sentence);
   const checking = useActionPreview((s) => s.checking);
-  const applying = useActionPreview((s) => s.applying);
   const list = useAppearance((s) => s.layout === "list");
   const ruleInReader = useRuleInReader();
   // while finding, the rows on screen: the count the title can stand behind until the search is done
@@ -86,30 +85,18 @@ export default function ActionPreviewHeader() {
   }, [ready, preview?.previewId]);
 
   if (!preview) return null;
-  const { plan, count } = preview;
-  const verb = verbOf(preview);
-  const ruleOnly = savesRuleOnly(preview);
-  const waiting = previewWaiting(preview, checking);
+  const { plan } = preview;
   const title = previewTitle(preview, shown, folderName);
   // plan 161, pass 2: Split's header holds the count on one line; List's, the window's width and no reader, the outcome
   const heading = list ? title : previewCount(preview, shown);
-  const button = ruleOnly ? t("action.rule.save") : waiting ? t(`action.button.${verb}`) : t(`action.apply.${verb}`, { count });
   return (
     <section data-testid="action-preview" aria-label={t("action.region", { summary: plan.summary })} className="drag-region shrink-0 space-y-1 border-b border-hairline px-5 pt-3 pb-2.5">
       <div className="flex min-h-7 items-center gap-2">
         <h1 data-testid="action-title" className={cn("flex min-w-0 flex-1 items-center gap-2", LIST_TITLE.title)} aria-live="polite">
           <span className={cn("min-w-0", !list && "truncate")} title={heading === title ? undefined : title}>{heading}</span>
         </h1>
-        {applying ? (
-          <Button size="sm" variant="secondary" className="no-drag" data-testid="action-stop" onClick={stopApplying}>{t("action.stop")}</Button>
-        ) : (
-          <Button size="sm" variant="secondary" className="no-drag" data-testid="action-cancel" onClick={leavePreview}>{t("common.cancel")}</Button>
-        )}
-        {/* plan 161, pass 2: waiting reads as waiting (a spinner on a quiet button), not as a faded primary */}
-        <Button size="sm" variant={waiting && !applying ? "secondary" : "default"} className="no-drag tabular" data-testid="action-apply" data-waiting={waiting || undefined} disabled={waiting || applying || (count === 0 && !ruleOnly)} onClick={() => void applyPreview()}>
-          {waiting && <Spinner data-testid="action-finding" className="size-3.5" />}
-          {button}
-        </Button>
+        {/* plan 161, pass 3: Apply sits with the rule it applies; here only while the rule isn't on screen */}
+        {!ruleInReader && <ActionButtons size="sm" className="no-drag" />}
       </div>
       {/* the words typed, when the rule (which they head) isn't on screen */}
       {!ruleInReader && sentence && (
@@ -126,6 +113,36 @@ export default function ActionPreviewHeader() {
       {list && <ActionRule variant="list" />}
     </section>
   );
+}
+
+/**
+ * Plan 161, pass 3: Cancel (Stop while applying) and Apply, in one place at a time: the reader's rule while it shows,
+ * the header otherwise. Apply waits as a quiet button with a spinner (pass 2), and Trash and Spam are BoardUI's
+ * destructive button: a batch that takes mail out of view never looks like an Archive.
+ */
+function ActionButtons({ size, className, order = "cancel-first" }: { size: "sm" | "default"; className?: string; order?: "cancel-first" | "apply-first" }) {
+  const preview = useActionPreview((s) => s.preview);
+  const checking = useActionPreview((s) => s.checking);
+  const applying = useActionPreview((s) => s.applying);
+  if (!preview) return null;
+  const { count } = preview;
+  const verb = verbOf(preview);
+  const ruleOnly = savesRuleOnly(preview);
+  const waiting = previewWaiting(preview, checking);
+  const label = ruleOnly ? t("action.rule.save") : waiting ? t(`action.button.${verb}`) : t(`action.apply.${verb}`, { count });
+  const variant = waiting && !applying ? "secondary" : isDestructive(preview) && !ruleOnly ? "destructive" : "default";
+  const cancel = applying ? (
+    <Button key="cancel" size={size} variant="secondary" className={className} data-testid="action-stop" onClick={stopApplying}>{t("action.stop")}</Button>
+  ) : (
+    <Button key="cancel" size={size} variant="secondary" className={className} data-testid="action-cancel" aria-keyshortcuts="Escape" onClick={leavePreview}>{t("common.cancel")}</Button>
+  );
+  const apply = (
+    <Button key="apply" size={size} variant={variant} className={cn(className, "tabular")} data-testid="action-apply" data-variant={variant} data-waiting={waiting || undefined} aria-keyshortcuts={isMac ? "Meta+Enter" : "Control+Enter"} disabled={waiting || applying || (count === 0 && !ruleOnly)} onClick={() => void applyPreview()}>
+      {waiting && <Spinner data-testid="action-finding" className="size-3.5" />}
+      {label}
+    </Button>
+  );
+  return order === "apply-first" ? [apply, cancel] : [cancel, apply];
 }
 
 /**
@@ -163,6 +180,16 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
     setApp({ dialog: "filters", filterPrefill: { name: plan.summary, rule: { match: "all", conditions: preview.keepConditions, actions: [act] }, source: "ai", note: waiting ? undefined : t("filters.preview.fromAction", { count, where }) } });
   };
   const reader = variant === "reader";
+  // plan 161, pass 3: a large or destructive batch says what it'll do, in words, before anything else about the rule
+  const said = waiting ? null : previewConsequence(preview, folderName);
+  const consequence = said && (
+    <p data-testid="action-consequence" data-destructive={said.destructive || undefined} className={cn("text-pretty", reader ? "mt-2 text-sm" : "text-xs", said.destructive ? "font-medium text-destructive-ink" : "text-foreground")}>
+      {said.text}
+    </p>
+  );
+  const editLink = plan.action.type !== "createCategory" && (
+    <Button variant="link-secondary" size="xs" className="no-drag h-6 font-medium" data-testid="action-edit-filter" onClick={editAsFilter}>{t("action.editAsFilter")}</Button>
+  );
   const body = (
     // (the list's header is a window drag area: what's in it takes clicks)
     <div className={cn("flex flex-col gap-3", reader ? "text-sm" : "no-drag pt-1.5 text-xs")}>
@@ -171,8 +198,11 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
           {/* plan 161, pass 2: what Apply does is the title; what was asked, the quieter line under it */}
           <h2 className={cn(PANE_TITLE, "text-pretty")} data-testid="action-rule-title">{previewTitle(preview, shown, folderName)}</h2>
           {sentence && <p className="mt-1 text-sm text-pretty text-muted-foreground" data-testid="action-rule-request">“{sentence}”</p>}
+          {consequence}
         </div>
-      ) : null}
+      ) : (
+        consequence
+      )}
       <div>
         <h3 className="text-xs font-medium text-muted-foreground">{t("action.rule.readAs")}</h3>
         <dl data-testid="action-conditions" className={cn("mt-1.5 grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4", reader ? "gap-y-2" : "gap-y-1")}>
@@ -189,12 +219,16 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
           ))}
         </dl>
       </div>
-      {hasDetails(conditions) && (
+      {hasDetails(conditions) ? (
         <Collapsible data-testid="action-details">
-          {/* plan 161, pass 2: named for what it holds, a 24 px target */}
-          <CollapsibleTrigger className="h-6 w-auto gap-1 text-xs font-medium text-muted-foreground hover:text-foreground [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5" data-testid="action-details-toggle">
-            {t("action.rule.details")}
-          </CollapsibleTrigger>
+          {/* plan 161, pass 3: Edit as a rule is a quiet link on this line, so the only buttons near the rule are the decision */}
+          <div className="flex flex-wrap items-center gap-x-4">
+            {/* plan 161, pass 2: named for what it holds, a 24 px target */}
+            <CollapsibleTrigger className="h-6 w-auto gap-1 text-xs font-medium text-muted-foreground hover:text-foreground [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5" data-testid="action-details-toggle">
+              {t("action.rule.details")}
+            </CollapsibleTrigger>
+            {editLink}
+          </div>
           <CollapsiblePanel>
             {/* the UI's type, not code's: a pattern breaks only after a "|", never inside a word */}
             <dl className="mt-1 grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4 gap-y-1 text-xs" data-testid="action-details-text">
@@ -210,11 +244,8 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
             </dl>
           </CollapsiblePanel>
         </Collapsible>
-      )}
-      {plan.action.type !== "createCategory" && (
-        <div>
-          <Button variant="secondary" size="xs" className="no-drag" data-testid="action-edit-filter" onClick={editAsFilter}>{t("action.editAsFilter")}</Button>
-        </div>
+      ) : (
+        editLink && <div>{editLink}</div>
       )}
       {(plan.action.type === "createCategory" || preview.hidden || preview.forwards || preview.skipped > 0 || checking || consent || checkError || preview.leftOut + preview.unchecked > 0 || (preview.keep.kind !== "hidden" && !ruleOnly)) && (
         <div className="hairline-t flex flex-col gap-1.5 pt-3">
@@ -269,6 +300,12 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
         </div>
       )}
       {/* the keys, said where the eye is: ⌘↩ and Esc are the header's buttons, x a row's check */}
+      {/* plan 161, pass 3: the decision, where the review ends (Split's reader; List's header is right above the rule) */}
+      {reader && (
+        <div className="flex flex-wrap items-center gap-2 pt-1" data-testid="action-decision">
+          <ActionButtons size="default" order="apply-first" />
+        </div>
+      )}
       {!ruleOnly && (
         // plan 161, pass 2: the keys as keycaps on one line, the help on its own
         <div className="space-y-1.5 text-xs text-muted-foreground">

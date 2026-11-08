@@ -3,7 +3,7 @@ import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { describeRule, hasDetails, patternTerms, ruleDetails, ruleMisses, ruleRow, sensedOp, withSensedOp } from "./rule-words";
+import { describeRule, hasDetails, matchesAnything, patternTerms, ruleDetails, ruleMisses, ruleRow, sensedOp, withSensedOp } from "./rule-words";
 
 const names = { accountEmail: (id: number) => `a${id}@x.test`, category: () => "Invoices", folder: (_: number, f: string) => f };
 const uber: FilterRule = { match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "uber.com" }], actions: [{ type: "archive" }] };
@@ -94,5 +94,18 @@ describe("a sentence's rule in words (plan 161)", () => {
       { field: "Subject", negate: true, pattern: "^Re:" },
     ]);
     expect(hasDetails([{ field: "fromDomain", op: "equals", value: "ups.com", negate: false }])).toBe(false);
+  });
+
+  it("a pattern for anything says what it means, and needs no Exact pattern (pass 3)", () => {
+    // the macOS rater's "Delete all newsletters from Netflix": the rule the stand-in model wrote was "any list at all"
+    const anyList: Condition = { field: "listId", op: "matches", value: ".", negate: false };
+    expect(ruleRow(anyList, email)).toEqual({ label: "List", text: "Any mailing list" });
+    expect(ruleRow({ ...anyList, negate: true }, email).text).toBe("Not from a mailing list");
+    expect(ruleRow({ field: "subject", op: "matches", value: ".+", negate: false }, email).text).toBe("Anything");
+    expect(hasDetails([anyList])).toBe(false);
+    expect(ruleDetails([anyList])).toEqual([]);
+    for (const p of [".", ".+", " ^.+ ", "(.+)"]) expect(matchesAnything(p)).toBe(true);
+    // an empty value matches these too, or they ask for more than one character: still "a pattern"
+    for (const p of [".*", "", "^", "..", ".{2}", "\\."]) expect(matchesAnything(p)).toBe(false);
   });
 });

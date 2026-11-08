@@ -106,6 +106,13 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("nav-inbox")).toHaveAttribute("data-active");
       await expect(page.locator("#app-sidebar [data-active]")).toHaveCount(1);
       const rule = page.getByTestId("action-rule");
+      // pass 3: Apply and Cancel sit with the rule they apply, the header only the count; an Archive is the primary
+      await expect(rule.getByTestId("action-decision").getByTestId("action-apply")).toHaveAttribute("data-variant", "default");
+      await expect(rule.getByTestId("action-decision").getByTestId("action-cancel")).toBeVisible();
+      await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toHaveCount(0);
+      await expect(page.getByTestId("action-preview").getByTestId("action-cancel")).toHaveCount(0);
+      // a small archive needs no words about what it'll do
+      await expect(rule.getByTestId("action-consequence")).toHaveCount(0);
       // plan 161, pass 2: what Apply does is the title, what was asked the line under it
       await expect(rule.getByTestId("action-rule-title")).toHaveText("Archive 2 conversations");
       await expect(rule.getByTestId("action-rule-request")).toHaveText("“Archive shipping notices older than a month”");
@@ -130,6 +137,9 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("reader-subject")).toBeVisible();
       await expect(rows(page).first()).toHaveAttribute("data-included", "true");
       await expect(page.getByTestId("action-sentence")).toContainText("Archive shipping notices older than a month");
+      // the rule isn't on screen: the header has Apply again, so it's always there exactly once
+      await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toHaveText("Archive 2");
+      await expect(page.getByTestId("action-apply")).toHaveCount(1);
       await page.getByTestId("action-show-rule").click();
       await expect(page.getByTestId("action-rule")).toBeVisible();
       // the check column, at the row's height, toggles
@@ -310,6 +320,35 @@ test.describe("actions in plain English (plan 143)", () => {
     }
   });
 
+  test("Trash is the destructive button and says what it does, in every design, light and dark (plan 161, pass 3)", { tag: "@design" }, async ({ app: page, server }) => {
+    await withMail(page, server);
+    await say(page, "Delete recruiters");
+    const rule = page.getByTestId("action-rule");
+    const apply = rule.getByTestId("action-decision").getByTestId("action-apply");
+    await expect(apply).toHaveText("Move 2 to Trash");
+    await expect(apply).toHaveAttribute("data-variant", "destructive");
+    await expect(rule.getByTestId("action-consequence")).toHaveText("2 conversations go to Trash, from all your mail except Spam and Trash.");
+    await expect(rule.getByTestId("action-consequence")).toHaveAttribute("data-destructive", "true");
+    // the danger's fill, not the primary's (a design can't turn it back into an Archive's)
+    const fills = await page.evaluate(() => {
+      const probe = document.createElement("div");
+      document.body.append(probe);
+      const of = (v: string) => { probe.style.color = `var(${v})`; return getComputedStyle(probe).color; };
+      const out = { destructive: of("--destructive"), primary: of("--primary") };
+      probe.remove();
+      return out;
+    });
+    const bg = await apply.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(bg).toBe(fills.destructive);
+    expect(bg).not.toBe(fills.primary);
+    for (const mode of ["light", "dark"]) {
+      await page.emulateMedia({ colorScheme: mode as "light" | "dark" });
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-trash-${mode}.png` });
+      const results = await new AxeBuilder({ page }).include('[data-testid="action-rule"]').include('[data-testid="action-preview"]').analyze();
+      expect(results.violations.map((v) => `${mode} ${v.id}: ${v.nodes[0]?.html.slice(0, 140)}`)).toEqual([]);
+    }
+  });
+
   test("what can't be done, and what nothing matches, stay on the page", async ({ app: page, server }) => {
     await withMail(page, server);
     await say(page, "Forward recruiters to my boss");
@@ -328,6 +367,9 @@ test.describe("actions in plain English, List layout (plan 161)", () => {
     await withMail(page, server);
     await say(page, "Archive shipping notices older than a month");
     await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
+    // pass 3: List's rule is right under its header, so Apply stays there, beside the outcome
+    await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toBeVisible();
+    await expect(page.getByTestId("action-decision")).toHaveCount(0);
     // List's header has the window's width: the whole outcome, on one line
     await expect(page.getByTestId("action-title")).toHaveText("Archive 2 conversations");
     await rows(page).first().getByTestId("row-include").click();

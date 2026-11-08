@@ -31,7 +31,8 @@ describe("Split's header says only the count, on one line; List's the outcome (p
     const { useActionPreview } = await import("./action-preview");
     const { default: ActionPreviewHeader } = await import("~/components/action-preview-header");
     const { setApp } = await import("~/state/app");
-    setApp({ actionPreview: "p" });
+    // a matched row open: the rule isn't on screen, so the header holds the buttons (pass 3)
+    setApp({ actionPreview: "p", selectedId: 7 });
     useActionPreview.setState({ preview: preview({ scanning: true }), sentence: "Archive shipping", checking: false, applying: false });
     const host = document.body.appendChild(document.createElement("div"));
     const root = createRoot(host);
@@ -52,3 +53,51 @@ describe("Split's header says only the count, on one line; List's the outcome (p
     await act(async () => root.unmount());
   });
 });
+
+describe("Apply sits with the rule, destructive where it takes mail away, and says what a large batch does (plan 161, pass 3)", () => {
+  it("the consequence: Trash and Spam at any count, any verb at 100 or more, nothing while finding or for a small archive", async () => {
+    const { previewConsequence } = await import("./action-preview");
+    const trash = preview({ plan: { ...preview({}).plan, action: { type: "trash" }, lookIn: "everywhere" }, count: 838 });
+    expect(previewConsequence(trash, "")).toEqual({ text: "838 conversations go to Trash, from all your mail except Spam and Trash.", destructive: true });
+    expect(previewConsequence({ ...trash, count: 1 }, "")!.text).toBe("1 conversation goes to Trash, from all your mail except Spam and Trash.");
+    expect(previewConsequence(preview({ plan: { ...preview({}).plan, action: { type: "spam" } }, count: 2 }), "")).toEqual({ text: "2 conversations go to Spam, from the Inbox.", destructive: true });
+    expect(previewConsequence(preview({ count: 120 }), "")).toEqual({ text: "This archives 120 conversations, from the Inbox.", destructive: false });
+    expect(previewConsequence(preview({ count: 99 }), "")).toBeNull();
+    expect(previewConsequence({ ...trash, scanning: true }, "")).toBeNull();
+    expect(previewConsequence({ ...trash, count: 0 }, "")).toBeNull();
+  });
+
+  it("in Split the rule holds Apply and Cancel and the header only the count; Trash is the destructive button", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const { act, createElement, Fragment } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { useActionPreview } = await import("./action-preview");
+    const { default: ActionPreviewHeader, ActionRule } = await import("~/components/action-preview-header");
+    const { setApp } = await import("~/state/app");
+    setApp({ actionPreview: "p", selectedId: null, compose: null });
+    const trash = preview({ plan: { ...preview({}).plan, action: { type: "trash" }, lookIn: "everywhere" }, count: 838 });
+    useActionPreview.setState({ preview: trash, sentence: "Delete all newsletters", checking: false, applying: false });
+    const host = document.body.appendChild(document.createElement("div"));
+    const root = createRoot(host);
+    await act(async () => root.render(createElement(Fragment, null, createElement(ActionPreviewHeader), createElement(ActionRule, { variant: "reader" }))));
+    const header = host.querySelector("[data-testid=action-preview]")!;
+    const rule = host.querySelector("[data-testid=action-rule]")!;
+    expect(header.querySelector("[data-testid=action-apply]")).toBeNull();
+    expect(header.querySelector("[data-testid=action-cancel]")).toBeNull();
+    expect(host.querySelectorAll("[data-testid=action-apply]")).toHaveLength(1);
+    const apply = rule.querySelector<HTMLButtonElement>("[data-testid=action-decision] [data-testid=action-apply]")!;
+    expect(apply.textContent).toBe("Move 838 to Trash");
+    expect(apply.dataset.variant).toBe("destructive");
+    expect(rule.querySelector("[data-testid=action-decision] [data-testid=action-cancel]")).not.toBeNull();
+    expect(rule.querySelector("[data-testid=action-consequence]")!.textContent).toBe("838 conversations go to Trash, from all your mail except Spam and Trash.");
+    // an archive is the primary, with no consequence line at six
+    await act(async () => useActionPreview.setState({ preview: preview({ count: 6 }) }));
+    expect(host.querySelector<HTMLButtonElement>("[data-testid=action-apply]")!.dataset.variant).toBe("default");
+    expect(host.querySelector("[data-testid=action-consequence]")).toBeNull();
+    // a row opened: the rule leaves the reader (its owner unmounts it), and the header has the buttons again
+    await act(async () => setApp({ selectedId: 3 }));
+    expect(header.querySelector("[data-testid=action-apply]")).not.toBeNull();
+    await act(async () => root.unmount());
+  });
+});
+
