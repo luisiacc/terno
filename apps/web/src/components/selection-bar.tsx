@@ -11,6 +11,9 @@ import { actionView, placeActions } from "~/lib/places";
 import { clearSelection, isMac, selectAll } from "~/lib/select";
 import { setApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
+import { PANE_TITLE, PANE_TITLE_TOP, READING_COLUMN } from "~/lib/pane-lines";
+import { LIST_TITLE } from "~/lib/list-title";
+import { useDesign } from "~/lib/design";
 
 type Variant = "pane" | "toolbar";
 
@@ -82,6 +85,7 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
   useApp((s) => s.checked);
   const runOn = (a: ThreadAction, _fits: number[]) => () => void act(a);
   const bar = variant;
+  const listHeader = useDesign().variants.listHeader;
   // only what would change something, as in the row menu ("select all N" holds rows it hasn't loaded: both);
   // read again when a row changes under the selection (mail read elsewhere)
   useList((s) => s.items);
@@ -166,8 +170,9 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
   if (bar === "toolbar")
     return (
       // over the list's title line: nothing moves under the pointer of whoever is ⌘-clicking rows (plan 158)
-      <div role="toolbar" aria-label={title} data-testid="selection-bar" data-variant="toolbar" className="no-drag hairline-b @container/bar absolute inset-x-0 top-0 z-20 flex h-[52px] items-center gap-1 bg-pane pr-4 pl-5">
-        <span className="mr-2 min-w-0 shrink truncate text-xs font-medium text-foreground tabular" data-testid="selection-count">
+      <div role="toolbar" aria-label={title} data-testid="selection-bar" data-variant="toolbar" className="no-drag hairline-b @container/bar absolute inset-x-0 top-0 z-20 flex h-(--pane-bar) items-center gap-1 bg-pane pr-4 pl-5">
+        {/* plan 160: the header's title, replaced: its type and line (a smaller count would sit on its own baseline) */}
+        <span className={cn("mr-2 min-w-0 shrink truncate text-foreground tabular", LIST_TITLE[listHeader === "title" ? "title" : "display"])} data-testid="selection-count">
           {title}
         </span>
         {actions}
@@ -185,10 +190,11 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
     );
   return (
     // where the reader's column starts, so the actions sit where the eye was, not across an empty pane
-    <section data-testid="selection-bar" className="h-full min-h-0 overflow-y-auto bg-background">
-      <div data-reader-column className="mx-auto flex max-w-(--reader-max) flex-col items-start gap-5 px-(--reader-pad-x) pt-18 pb-16">
+    // plan 160: its title on the reader subject's line and column
+    <section data-testid="selection-bar" className="@container h-full min-h-0 overflow-y-auto bg-background [scrollbar-gutter:stable]">
+      <div data-reader-column className={cn(READING_COLUMN, PANE_TITLE_TOP, "flex flex-col items-start gap-5 pb-16")}>
         <div>
-          <h2 className="text-xl font-semibold tracking-display tabular" data-testid="selection-count">
+          <h2 className={cn(PANE_TITLE, "tabular")} data-testid="selection-count">
             {title}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">{t("selection.hint")}</p>

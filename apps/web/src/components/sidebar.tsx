@@ -1483,7 +1483,7 @@ export function Sidebar() {
 
   return (
     <aside id="app-sidebar" data-testid="sidebar" className="flex h-full min-h-0 w-full flex-col bg-sidebar text-sidebar-foreground">
-      <div className="drag-region h-[52px] shrink-0" />
+      <div className="drag-region h-(--pane-bar) shrink-0" />
       {variant(design.variants.compose, { "list-header": null, "sidebar-outline": <ComposeOutline />, "sidebar-pill": <ComposePill />, "sidebar-row": <ComposeRow /> })}
       <nav ref={navRef} data-drop-scroll aria-label={soloAccount ? t("sidebar.solo.nav", { account: soloAccount.displayName }) : undefined} className="min-h-0 flex-1 overflow-y-auto px-(--sidebar-pad) pb-3">
         {/* keyed: another account focused is another sidebar (Codex code review #1: never the last one's rows) */}

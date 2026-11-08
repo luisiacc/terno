@@ -198,6 +198,22 @@
 
   /* one device pixel on retina */
   --hairline-w: 1px;
+
+  /* plan 160: the shared lines, written once and used by name (apps/web/src/lib/pane-lines.ts) */
+  /* a pane's top row: the reader's toolbar, the list's header line, List's selection toolbar */
+  --pane-bar: 52px;
+  /* from that row to a reader-pane title's first line (the subject, New message, the selection); the design adds
+     --pane-title-lead where its subject sits under a line of chips */
+  --pane-title-gap: 0.5rem;
+  /* the text measure, about 75 characters a line in the body type: a message's text, a draft's and the text it quotes
+     (a smaller quote keeps the same width, not the same count) */
+  --read-max: calc(35 * var(--type-body-size));
+  /* what floats (toasts, the palette, menus) keeps this far from the window or pane edge it rests on: the spacing
+     scale's 3, in px so script can read it (FLOAT_INSET in menu-styles.ts is the same number) */
+  --float-inset: 12px;
+  /* a scroller's bar, and the gutter a pane keeps for it (scrollbar-gutter: stable): what centres over a pane's column
+     without scrolling (a toast) keeps it too */
+  --scrollbar-w: 8px;
 }
 @media (min-resolution: 2dppx) {
   :root {
@@ -252,8 +268,8 @@
     --scrollbar-thumb: color-mix(in oklab, var(--foreground) 14%, transparent);
   }
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: var(--scrollbar-w);
+    height: var(--scrollbar-w);
     background: transparent;
   }
   ::-webkit-scrollbar-corner {

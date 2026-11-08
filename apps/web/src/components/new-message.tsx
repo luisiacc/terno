@@ -21,6 +21,7 @@ import { AiDraftButton } from "./composer/ai-slot";
 import { aiDraftHooks } from "~/lib/ai-draft-state";
 import { focusSelector } from "~/lib/compose-focus-move";
 import { cancelEmptySend } from "~/lib/send-problem";
+import { PANE_TITLE, PANE_TITLE_AFTER, PANE_TITLE_TOP, READING_COLUMN } from "~/lib/pane-lines";
 
 /** Esc, Collapse and sending leave the new message; focus goes to its strip item (kept) or back to the list. */
 function leave(key: string) {
@@ -91,7 +92,7 @@ export function NewMessage() {
       data-testid="composer"
       data-draft-key={key}
       data-mode="new"
-      className="flex h-full min-h-0 flex-col bg-background animate-in fade-in-0 slide-in-from-bottom-1 duration-base"
+      className="@container flex h-full min-h-0 flex-col bg-background animate-in fade-in-0 slide-in-from-bottom-1 duration-base"
       {...drop.handlers}
       onSubmit={(e) => {
         e.preventDefault();
@@ -115,24 +116,30 @@ export function NewMessage() {
         }
       }}
     >
-      {/* the window's drag strip, and what this is: the subject is in its field, once (plan 158) */}
-      <div className="drag-region h-[60px] shrink-0 [scrollbar-gutter:stable] overflow-y-hidden">
-        <div className="mx-auto flex h-full max-w-(--reader-max) items-end px-(--reader-pad-x) pb-3">
-          {/* the pane's heading, as a conversation's subject is: what the pane is doing now, on the reader's column (plan 158) */}
-          <h2 className="type-reader-subject truncate" data-testid="compose-title">
+      {/* the window's drag strip, and what this is: the subject is in its field, once (plan 158). Plan 160: the title on the
+          reader subject's line (the toolbar's row, the gap), on the same column */}
+      <div className="drag-region shrink-0 [scrollbar-gutter:stable] overflow-y-hidden">
+        <div className={cn(READING_COLUMN, PANE_TITLE_TOP)}>
+          {/* the pane's heading, as a conversation's subject is: what the pane is doing now (plan 158) */}
+          <h2 className={cn(PANE_TITLE, PANE_TITLE_AFTER, "truncate")} data-testid="compose-title">
             {t("compose.untitled")}
           </h2>
         </div>
       </div>
       {/* scrolls only where the card's minimum doesn't fit (a short window under a tall pinned card) */}
       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
-        {/* pt-0.5: the card's ring is drawn outside it, so the scroller's top edge would cut it (plan 158) */}
-        <div className="mx-auto flex h-full max-w-(--reader-max) flex-col px-(--reader-pad-x) pt-0.5 pb-5">
-          {/* plan 158: a card that holds its text, Send just under it. The text starts a third of the window tall (room to
-              write, no half-empty pane) and grows with what's written up to the pane; then it scrolls under a fixed foot */}
-          <div className={cn("relative flex min-h-60 flex-col", DRAFT_SURFACE)} data-testid="composer-card">
+        {/* pt-0.5: the card's ring is drawn outside it, so the scroller's top edge would cut it (plan 158); pb: its foot keeps the floating inset */}
+        <div className={cn(READING_COLUMN, "flex h-full flex-col pt-0.5 pb-(--float-inset)")}>
+          {/* plan 158: a card that holds its text, Send just under it. Plan 160: it reaches the pane's foot (no empty pane under a
+              short card), the format bar and Send pinned there; a long message scrolls inside it */}
+          <div className={cn("relative flex min-h-60 flex-1 flex-col", DRAFT_SURFACE)} data-testid="composer-card">
             {/* pt-0.5: the first row's text field keeps its whole focus ring */}
-            <div className="min-h-0 overflow-y-auto pt-0.5" data-draft-scroll>
+            {/* a press in the room under the text puts the caret back in it */}
+            <div className="min-h-0 flex-1 cursor-text overflow-y-auto pt-0.5" data-draft-scroll onMouseDown={(e) => {
+              if (e.target !== e.currentTarget || e.button !== 0) return;
+              e.preventDefault();
+              e.currentTarget.querySelector<HTMLElement>("[data-testid=compose-body]")?.focus();
+            }}>
               <DraftFieldsForm d={d} accounts={accounts} showSubject />
               <RichBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="rt-measure block min-h-[max(132px,34vh)] w-full px-3.5 pt-3 pb-3" />
               <DraftAttachments d={d} />

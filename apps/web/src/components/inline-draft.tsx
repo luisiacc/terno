@@ -6,6 +6,7 @@ import { Button } from "@terno/ui/components/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { IconButton } from "@terno/ui/components/icon-button";
 import { cn } from "@terno/ui/lib/utils";
+import { READ_MEASURE } from "~/lib/pane-lines";
 import { ChevronUp, Forward, PenLine, Pin, PinOff, Reply, ReplyAll, Trash2 } from "@terno/ui/icons";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
@@ -330,7 +331,7 @@ export function Quote({ d }: { d: LocalDraft }) {
       <QuoteToggle open={show} onToggle={() => setShow((v) => !v)} controls={id} testId="compose-quote" className="mt-0" />
       <div id={id}>
         {show && (
-          <div data-testid="compose-quote-text" className="mt-2 border-l-2 border-hairline pl-3 text-sm whitespace-pre-wrap text-muted-foreground">
+          <div data-testid="compose-quote-text" className={cn("mt-2 border-l-2 border-hairline pl-3 text-sm whitespace-pre-wrap text-muted-foreground", READ_MEASURE)}>
             {d.quotedText}
             <Button variant="link-secondary" className="mt-2 flex text-xs" onClick={() => editDraft(d.key, { includeQuote: false })} data-testid="compose-quote-remove">
               {t("compose.quote.remove")}

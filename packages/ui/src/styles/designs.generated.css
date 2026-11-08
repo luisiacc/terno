@@ -127,6 +127,7 @@
   --reader-min: 380px;
   --reader-max: 704px;
   --reader-pad-x: 2rem;
+  --pane-title-lead: 0px;
   --row-radius: 1rem;
   --nav-radius: 0.75rem;
   --nav-h: 2.125rem;
@@ -279,6 +280,7 @@
   --reader-min: 380px;
   --reader-max: 704px;
   --reader-pad-x: 2rem;
+  --pane-title-lead: 1.875rem;
   --row-radius: 0.75rem;
   --nav-radius: 0.625rem;
   --nav-h: 2rem;
@@ -431,6 +433,7 @@
   --reader-min: 348px;
   --reader-max: 696px;
   --reader-pad-x: 1.75rem;
+  --pane-title-lead: 0px;
   --row-radius: 0.375rem;
   --nav-radius: 0.375rem;
   --nav-h: 1.75rem;
@@ -583,6 +586,7 @@
   --reader-min: 360px;
   --reader-max: 704px;
   --reader-pad-x: 2rem;
+  --pane-title-lead: 0px;
   --row-radius: 0.625rem;
   --nav-radius: 0.5rem;
   --nav-h: 2rem;
@@ -735,6 +739,7 @@
   --reader-min: 348px;
   --reader-max: 704px;
   --reader-pad-x: 2rem;
+  --pane-title-lead: 0px;
   --row-radius: 0.5rem;
   --nav-radius: 0.5rem;
   --nav-h: 1.75rem;

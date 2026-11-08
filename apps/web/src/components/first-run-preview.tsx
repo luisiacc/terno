@@ -5,6 +5,7 @@ import type { Theme } from "@terno/ui/themes/registry";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Kbd } from "@terno/ui/components/kbd";
 import { cn } from "@terno/ui/lib/utils";
+import { READ_MEASURE, READING_COLUMN } from "~/lib/pane-lines";
 import { Separator } from "@terno/ui/components/separator";
 import { Archive, Forward, Inbox, ListFilter, Mail, OctagonAlert, Reply, Search, Send, SquarePen, Star, Tag, Trash2 } from "@terno/ui/icons";
 import { formatNumber, t } from "@terno/i18n";
@@ -95,7 +96,7 @@ function Sidebar({ design, sample }: { design: DesignDefinition; sample: SampleM
   );
   return (
     <aside className="flex h-full min-h-0 flex-col bg-sidebar text-sidebar-foreground">
-      <div className="h-[52px] shrink-0" />
+      <div className="h-(--pane-bar) shrink-0" />
       {variant(design.variants.compose, {
         "list-header": null,
         "sidebar-outline": (
@@ -190,7 +191,7 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
       <div className="shrink-0 pr-4 pb-2 pl-2">
         {oneRow ? (
           // the title, then what the row leaves empty: the controls keep the right edge
-          <div className="flex h-[52px] min-w-0 items-center gap-3 pr-1.5 pl-3">
+          <div className="flex h-(--pane-bar) min-w-0 items-center gap-3 pr-1.5 pl-3">
             <h1 className={cn("min-w-0 truncate", kind === "title" ? "text-md font-semibold tracking-tight" : kind === "greeting" ? "type-greeting" : "type-list-title")}>{viewLabel("inbox")}</h1>
             {kind !== "title" && subtitle("shrink-0")}
             <div className="min-w-0 flex-1" />
@@ -199,14 +200,14 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
             {actions}
           </div>
         ) : kind === "title" ? (
-          <div className="flex h-[52px] items-center gap-2 pr-1.5 pl-3">
+          <div className="flex h-(--pane-bar) items-center gap-2 pr-1.5 pl-3">
             <h1 className="min-w-0 flex-1 truncate text-md font-semibold tracking-tight">{viewLabel("inbox")}</h1>
             {filters}
             {actions}
           </div>
         ) : (
           <>
-            <div className="flex h-[52px] items-center gap-2 pr-1.5 pl-3">
+            <div className="flex h-(--pane-bar) items-center gap-2 pr-1.5 pl-3">
               <h1 className={cn("min-w-0 flex-1 truncate", kind === "greeting" ? "type-greeting" : "type-list-title")}>{viewLabel("inbox")}</h1>
               {filters}
               <div className="flex shrink-0 items-center gap-0.5 empty:hidden">{actions}</div>
@@ -263,10 +264,10 @@ function Reader({ design, sample }: { design: DesignDefinition; sample: SampleMa
   const tool = (glyph: React.ReactNode, active = false) => <span className={cn("flex size-8 items-center justify-center rounded-md text-muted-foreground [&_svg]:[--icon-line:var(--icon-line-toolbar)]", active && "text-star")}>{glyph}</span>;
   const recipients = <span className="block truncate text-xs text-muted-foreground">{t("reader.to")} {to}</span>;
   const subject = <h2 className="type-reader-subject">{thread.subject}</h2>;
-  const column = "mx-auto w-full max-w-(--reader-max) px-(--reader-pad-x)";
+  const column = READING_COLUMN;
   return (
     <section className="flex h-full min-h-0 flex-col bg-background">
-      <div className={cn(column, "flex h-[52px] shrink-0 items-center gap-2 [&>:first-child]:-ml-2")}>
+      <div className={cn(column, "flex h-(--pane-bar) shrink-0 items-center gap-2 [&>:first-child]:-ml-2")}>
         <div className="flex items-center gap-0.5">
           {tool(<Archive />)}
           {tool(<Trash2 />)}
@@ -324,7 +325,7 @@ function Reader({ design, sample }: { design: DesignDefinition; sample: SampleMa
               </span>
             </div>
           )}
-          <div className="type-body max-w-[35em] whitespace-pre-wrap pt-1.5 text-foreground">{body}</div>
+          <div className={cn("type-body whitespace-pre-wrap pt-1.5 text-foreground", READ_MEASURE)}>{body}</div>
         </div>
       </div>
     </section>

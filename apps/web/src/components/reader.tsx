@@ -25,6 +25,7 @@ import { takeHeldSent, takeSent } from "~/lib/sent-reveal";
 import { Expand } from "./expand";
 import { DraftSlot, draftTitle } from "./inline-draft";
 import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
+import { PANE_TITLE, PANE_TITLE_AFTER, PANE_TITLE_GAP, READING_COLUMN } from "~/lib/pane-lines";
 import { ScheduledReplyLine } from "./scheduled-popover";
 import { ForwardLine } from "./forward-line";
 import { comingHomeKey, shownDraftKey, useDrafts } from "~/lib/drafts";
@@ -120,8 +121,8 @@ function RemindButton({ threadId }: { threadId: number }) {
 const tool = "no-drag size-8 rounded-md text-foreground-soft hover:text-foreground @max-[560px]:size-7 [&_svg]:[--icon-line:var(--icon-line-toolbar)]";
 
 // one column for the toolbar and the conversation, so their edges agree at every width (narrow: less margin, for the toolbar's icons).
-// Its width is the section's --reader-col: the design's, wider on List's page (below), where the pane is the window.
-const COLUMN = "mx-auto w-full max-w-(--reader-col) px-(--reader-pad-x) @max-[420px]:px-4";
+// Plan 160: one width in Split and on List's page, shared with New message, the selection and a toast over the reader
+const COLUMN = READING_COLUMN;
 
 /** Between the toolbar's groups; a narrow reader has no room for it. */
 const ToolbarDivider = ({ className }: { className?: string }) => <Separator orientation="vertical" className={cn("my-auto h-4 @max-[420px]:hidden", className)} />;
@@ -820,8 +821,8 @@ function MessageDate({ ms, className }: { ms: number; className?: string }) {
   );
 }
 
-// a narrow reader keeps the mail's first line high: less around a smaller subject
-const HEADER = "mb-3 @max-[560px]:mb-2";
+// a narrow reader keeps the mail's first line high: less around a smaller subject (plan 160: every pane title's gap)
+const HEADER = PANE_TITLE_AFTER;
 
 /** The subject, chips and (Lumen, one message) sender above the conversation: the design arranges the same parts, and the mail starts soon after them. */
 function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; account: Account | undefined; cats: Category[]; fold: Fold }) {
@@ -829,7 +830,7 @@ function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; a
   const subject = detail.thread.subject || t("common.noSubject");
   const marks = useSearchMarks()?.subject;
   // its top edge marked: the context line watches that, not the whole heading (a wrapped subject taller than the view is never wholly in it)
-  const heading = <h2 id="reader-subject" data-testid="reader-subject" className="relative type-reader-subject min-w-0 @max-[560px]:text-xl @max-[560px]:tracking-[-0.01em]"><span aria-hidden data-subject-top className="pointer-events-none absolute top-0 left-0 h-px w-px" /><Marked text={subject} needles={marks} testId="reader-subject-match" /></h2>;
+  const heading = <h2 id="reader-subject" data-testid="reader-subject" className={cn("relative min-w-0", PANE_TITLE)}><span aria-hidden data-subject-top className="pointer-events-none absolute top-0 left-0 h-px w-px" /><Marked text={subject} needles={marks} testId="reader-subject-match" /></h2>;
   // on the subject's line, at the dates' edge, while they fit; on a line of their own when they don't
   const titled = (
     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -841,7 +842,8 @@ function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; a
     classic: <div className={HEADER}>{titled}</div>,
     "chips-display": (
       <div className={HEADER}>
-        <ThreadChips detail={detail} account={account} cats={cats} fold={fold} className="mb-1.5 @max-[560px]:mb-1" />
+        {/* plan 160: one chips line tall at rest (a chip's h-6), so the titles of panes without chips keep the subject's line (--pane-title-lead) */}
+        <ThreadChips detail={detail} account={account} cats={cats} fold={fold} className="mb-1.5 min-h-6" />
         {heading}
       </div>
     ),
@@ -1082,11 +1084,11 @@ function ReaderContent() {
   const summarize = summarizeOffered && summarizable(thread);
 
   return (
-    <section ref={sectionRef} tabIndex={page ? -1 : undefined} aria-labelledby={page && detail ? "reader-subject" : undefined} onPointerDownCapture={chooseOpenThread} className={cn("@container flex h-full min-h-0 flex-col bg-background outline-none", page ? "[--reader-col:calc(var(--reader-max)+12rem)]" : "[--reader-col:var(--reader-max)]")} data-testid="reader">
+    <section ref={sectionRef} tabIndex={page ? -1 : undefined} aria-labelledby={page && detail ? "reader-subject" : undefined} onPointerDownCapture={chooseOpenThread} className="@container flex h-full min-h-0 flex-col bg-background outline-none" data-testid="reader">
       {/* the same gutter as the conversation below, so the two columns share their edges */}
       <div ref={toolbarRef} className="drag-region scroll-hairline data-context:after:opacity-0! relative shrink-0 overflow-hidden [scrollbar-gutter:stable]">
         {/* on the conversation's column: the first glyph on its left edge, the last control on its right, whatever the width; words as they fit */}
-        <div ref={toolbarRowRef} data-reader-toolbar className={cn(COLUMN, "group/tb relative flex h-[52px] items-center gap-2 @max-[420px]:gap-1 [&>*]:shrink-0 [&>:first-child]:-ml-2 @max-[560px]:[&>:first-child]:-ml-1.5")}>
+        <div ref={toolbarRowRef} data-reader-toolbar className={cn(COLUMN, "group/tb relative flex h-(--pane-bar) items-center gap-2 @max-[420px]:gap-1 [&>*]:shrink-0 [&>:first-child]:-ml-2 @max-[560px]:[&>:first-child]:-ml-1.5")}>
         {page && (
           <div className="flex items-center gap-2 @max-[420px]:gap-1">
             <BackButton />
@@ -1147,7 +1149,7 @@ function ReaderContent() {
       <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]" style={{ scrollPaddingTop: CONTEXT_H, ...(dock ? { paddingBottom: dock, scrollPaddingBottom: dock } : {}) }} onContextMenu={backgroundMenu}>
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         {detail && <ReaderContext key={`c${detail.thread.id}:${design.variants.readerHeader}`} scroller={scrollerRef} toolbar={toolbarRef} subject={detail.thread.subject || t("common.noSubject")} draftKey={draftKey} />}
-        <div data-reader-column className={cn(COLUMN, "pt-2 pb-16 @max-[560px]:pt-0")}>
+        <div data-reader-column className={cn(COLUMN, PANE_TITLE_GAP, "pb-16")}>
           {!detail && gone ? (
             <p data-testid="reader-gone" role="status" className="pt-8 text-center text-sm text-muted-foreground">
               {t("errors.threadGone")}
