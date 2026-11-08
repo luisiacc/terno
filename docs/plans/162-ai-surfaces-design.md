@@ -364,3 +364,54 @@ Six findings, all taken, each with a test that fails without its fix:
 - **The frozen capture** reached every AI state in Lumen, Atelier, macOS and Graphite, light and dark (136 shots, 56 AI requests each, all to the stub), with no change to `scripts/ui-rating/`.
 - **`pnpm test:all`** (`E2E_PORT=7550`, `WEB_PORT=7560`), 1,346 s: lint, build, typecheck, web, e2e, ui-perf, perf and startup passed. `unit` and `db-wasm` failed only on the crowded first pass and passed alone (flaky: timing tests under load, such as "scheduling with thousands of location ops… stays fast", a 40 MB attachment stream, SQLite abrupt restarts; none touches the AI surfaces). **`smoke` failed twice** on `native-reload.smoke.ts:293`. That test waits for macOS to move focus to a second native window (`getFocusedWebContents()`); nothing in this branch touches window focus, drafts or reload. It wasn't run on main to compare.
 - **Shots:** `/tmp/terno-scratch/ai-redesign/round0/<design>/`; before and after sheets in `/tmp/terno-scratch/ai-redesign/sheets/`.
+
+## Rated rounds (on this branch)
+
+### ai162-r01 (branch at `fedfd1eea`, 2026-11-08)
+
+The redesign as built, rated blind. All eight reports valid; 656 cells under 9 (main's ai-r03: 664), 96 issues (2 high; ai-r03: 101 and 1). The numbers as `gate.mjs` wrote them:
+
+| Style | Rater | Overall | UI | UX | Lowest | Cells below |
+|---|---|---:|---:|---:|---:|---:|
+| atelier | claude | 7.5 | 7 | 8 | 5.5 | 84/84 |
+| atelier | codex | 7.5 | 7.5 | 8 | 6.5 | 74/84 |
+| graphite | claude | 7 | 6.5 | 7.5 | 6 | 84/84 |
+| graphite | codex | 7.5 | 7.5 | 8 | 6.5 | 80/84 |
+| lumen | claude | 7.5 | 7 | 7.5 | 6 | 84/84 |
+| lumen | codex | 7.5 | 7.5 | 8 | 6.5 | 75/84 |
+| macos | claude | 7 | 7 | 7.5 | 5.5 | 84/84 |
+| macos | codex | 8 | 8 | 8 | 6.5 | 67/84 |
+
+#### Screens, each rater's overall
+
+| Screen | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| summary | 7.5 | 7.5 | 7 | 7.5 | 7.5 | 8 | 7 | 8 |
+| ai_draft | 8 | 8 | 8 | 7.5 | 8 | 7.5 | 7.5 | 8 |
+| ask | 8 | 8.5 | 7.5 | 8 | 7.5 | 8 | 7 | 8.5 |
+| actions | 7.5 | 8.5 | 7.5 | 8 | 6.5 | 8.5 | 7 | 8.5 |
+| today | 6.5 | 7.5 | 6.5 | 7 | 7 | 7 | 6.5 | 7.5 |
+| followups_replies | 7.5 | 8 | 7.5 | 8 | 7.5 | 8 | 7.5 | 8.5 |
+| ai_settings | 7 | 7 | 6.5 | 7 | 7 | 7.5 | 7 | 8 |
+
+#### Facets, mean across screens
+
+| Facet | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| typography | 7.14 | 7.79 | 7.14 | 7.71 | 7.21 | 7.71 | 6.86 | 7.79 |
+| contrast | 8.14 | 8.57 | 7.71 | 7.86 | 6.93 | 7.71 | 7.79 | 8.64 |
+| placement | 7.50 | 8.14 | 6.71 | 7.93 | 7.14 | 8.21 | 6.86 | 8.21 |
+| hierarchy | 7.21 | 7.64 | 6.93 | 7.50 | 7.21 | 7.86 | 6.50 | 7.93 |
+| controls | 7.43 | 8.21 | 7.07 | 8.07 | 7.07 | 8.21 | 6.86 | 8.36 |
+| density | 7.71 | 7.64 | 7.14 | 7.64 | 7.29 | 7.64 | 7.00 | 8.14 |
+| efficiency | 8.00 | 8.14 | 7.64 | 8.43 | 7.79 | 8.71 | 7.50 | 8.64 |
+| clarity | 7.86 | 7.71 | 7.36 | 7.86 | 7.14 | 8.07 | 7.07 | 8.07 |
+| feedback | 7.50 | 8.79 | 7.93 | 8.29 | 7.71 | 8.50 | 7.29 | 8.93 |
+| consistency | 7.57 | 7.93 | 7.14 | 7.86 | 6.93 | 8.21 | 7.07 | 8.36 |
+| accessibility | 7.50 | 8.00 | 6.93 | 7.57 | 6.43 | 7.57 | 6.36 | 8.14 |
+
+**Against ai-r03:** overall 7 to 8 (was 7 to 7.5); ⌘J 7.5 to 8 (was 7 to 7.5), follow-ups 7.5 to 8.5, Today 6.5 to 7.5 (was 4.5 to 7). Still lowest: Today and AI settings (6.5 to 8), accessibility and hierarchy from Claude (6.4 to 7.2).
+
+**High:** the action preview's checkboxes are the loudest thing on the screen (Lumen, Claude); a model's HTTP 500 reads "Couldn't reach Ollama" while Reply ready works on the same screen (macOS, Claude).
+
+**Themes:** Today's header ("Showing 12 of 41 · See all in To reply to") reads as a broken sentence and the digest outranks the people waiting; reasons still merge into truncated snippets. Writing style is dense and its learning explanations are fine print. The action preview leaves half the reader empty, its hints don't match the state, a failed action clears what you typed. Small, grey secondary text across AI surfaces, worst in dark. The summary's suggested action opens a blank reply and is lost when you act. At 1100 the ⌘J instruction can't be read in full (all four Codex reports). Reply ready appears without warning on top of the reply bar.
