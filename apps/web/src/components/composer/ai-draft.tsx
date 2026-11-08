@@ -182,27 +182,27 @@ function UndoButton({ s, alone }: { s: AiSession; alone?: boolean }) {
 
 /**
  * Plan 161, pass 3: what was asked, in the user's words, on its own line above the commands: where it was typed, while
- * it's written, and after. Plan 162: one line, cut with an ellipsis when it's long (all of it in its tooltip and its
- * name), so Edit stays right after it at every width: it wrapped onto a line of its own at 1100.
+ * it's written, and after. Plan 162 (after ai162-r01): up to two lines, then an ellipsis (all of it in its tooltip and its
+ * name), so a long request can be checked against the draft at 1100 (one line cut it mid-word); "Edit instruction" stays
+ * right after its words at every width, a 28 px target.
  */
 function InstructionLine({ text, onEdit }: { text: string; onEdit: (() => void) | null }) {
   const quoted = t("aiDraft.instruction.quoted", { instruction: text });
   return (
-    <p className="flex min-h-[38px] min-w-0 items-center gap-1.5 text-sm leading-5 text-foreground" data-testid="ai-strip-instruction">
-      <span className="min-w-0 truncate" title={quoted} data-testid="ai-strip-instruction-text">{quoted}</span>
+    <p className="flex min-h-[38px] min-w-0 items-start gap-1.5 py-[9px] text-sm leading-5 text-foreground" data-testid="ai-strip-instruction">
+      <span className="line-clamp-2 min-w-0 wrap-anywhere" title={quoted} data-testid="ai-strip-instruction-text">{quoted}</span>
       {/* while it writes, its place is held (nothing to edit yet), so the line is the same before and after the commit */}
       <Button
         type="button"
         variant="ghost"
-        size="xs"
-        className={cn(quiet, "-my-0.5 shrink-0", !onEdit && "invisible")}
-        aria-label={t("aiDraft.instruction.edit")}
+        size="sm"
+        className={cn(quiet, "-my-1 shrink-0 px-2", !onEdit && "invisible")}
         aria-hidden={onEdit ? undefined : true}
         tabIndex={onEdit ? undefined : -1}
         data-testid={onEdit ? "ai-strip-edit-instruction" : undefined}
         onClick={onEdit ?? undefined}
       >
-        {t("aiDraft.instruction.editShort")}
+        {t("aiDraft.instruction.edit")}
       </Button>
     </p>
   );
@@ -216,7 +216,10 @@ function runInstruction(s: AiSession): string {
   return spec.instruction;
 }
 
-/** Regenerate, Shorter and Warmer, folded into one menu where the line can't hold them beside Undo and the status. */
+/**
+ * Shorter and Warmer, folded into one menu where the line can't hold them beside Undo, Regenerate and the status. Plan 162
+ * (after ai162-r01): Regenerate, the rewrite most asked for, stays a button of its own at every width.
+ */
 function RewriteMenu({ s }: { s: AiSession }) {
   return (
     <DropdownMenu>
@@ -226,7 +229,7 @@ function RewriteMenu({ s }: { s: AiSession }) {
         <ChevronDown aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-max" data-testid="ai-strip-rewrite-menu">
-        {(["regenerate", "shorter", "warmer"] as const).map((how) => (
+        {(["shorter", "warmer"] as const).map((how) => (
           <DropdownMenuItem key={how} data-testid={`ai-strip-rewrite-${how}`} onClick={() => refine(s.key, how)}>
             <span className="whitespace-nowrap">{t(`aiDraft.${how}`)}</span>
           </DropdownMenuItem>
@@ -247,12 +250,12 @@ function Strip({ s }: { s: AiSession & { strip: AiStrip } }) {
       <div className={cn(line, "flex-nowrap py-[5px]")}>
         <ButtonGroup className="h-7" aria-label={t("aiDraft.commands")} data-testid="ai-strip-commands">
           <UndoButton s={s} />
-          <RewriteMenu s={s} />
           {(["regenerate", "shorter", "warmer"] as const).map((how) => (
-            <ButtonGroupItem key={how} className="text-foreground @max-[30rem]/strip:hidden" data-testid={`ai-strip-${how}`} onClick={() => refine(s.key, how)}>
+            <ButtonGroupItem key={how} className={cn("text-foreground", how !== "regenerate" && "@max-[30rem]/strip:hidden", how === "warmer" && "border-e-0")} data-testid={`ai-strip-${how}`} onClick={() => refine(s.key, how)}>
               {t(`aiDraft.${how}`)}
             </ButtonGroupItem>
           ))}
+          <RewriteMenu s={s} />
         </ButtonGroup>
         <StatusPopover strip={strip} toText={toText} />
       </div>

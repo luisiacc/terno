@@ -407,9 +407,14 @@ test.describe("actions in plain English (plan 143)", () => {
     await say(page, "Forward recruiters to my boss");
     await expect(page.getByTestId("ask-command-notice")).toContainText("can't do that from a sentence");
     await expect(page.getByTestId("action-preview")).toHaveCount(0);
+    // plan 162 (after ai162-r01): the words stay in the field, selected, to change or send again
+    await expect(page.getByTestId("palette-input")).toHaveValue("Forward recruiters to my boss");
+    await expect.poll(() => page.getByTestId("palette-input").evaluate((el: HTMLInputElement) => el.selectionEnd! - el.selectionStart!)).toBe("Forward recruiters to my boss".length);
     await page.keyboard.press("Escape");
     await say(page, "Archive zebras");
-    await expect(page.getByTestId("ask-command-notice")).toContainText("No mail matches");
+    // and a miss says what to try, not only "different words"
+    await expect(page.getByTestId("ask-command-notice")).toContainText("Nothing in your mail matches that. Name a sender");
+    await expect(page.getByTestId("palette-input")).toHaveValue("Archive zebras");
   });
 });
 

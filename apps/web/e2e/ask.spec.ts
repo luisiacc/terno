@@ -142,7 +142,7 @@ test.describe("ask your mail (plan 141)", () => {
       await expect(page.getByTestId("ask-citation-preview")).toContainText(`${WORD} policy`);
       await page.mouse.move(0, 0);
       // Answer again says what it does; Copy and it are buttons, not grey words
-      await expect(page.getByTestId("ask-again")).toHaveText("Answer again");
+      await expect(page.getByTestId("ask-again")).toHaveText("Regenerate");
       // New question and the history: on the keys' line under the sources (pass 3), and smaller than them
       await expect(page.getByTestId("ask-hints").getByTestId("ask-session").getByTestId("ask-new")).toBeVisible();
       const source = (await page.getByTestId("ask-source").last().boundingBox())!;
@@ -247,6 +247,10 @@ test.describe("ask your mail (plan 141)", () => {
       await expect(asked).toHaveText(`and ${word} again?`);
       expect(await asked.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(await page.getByTestId("ask-answer").first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize)));
       const first = page.getByTestId("ask-turn").first();
+      // plan 162 (after ai162-r01): the header is the question being answered now; the first one heads its own turn
+      await expect(page.getByTestId("ask-title")).toHaveText(`and ${word} again?`);
+      await expect(first.getByTestId("ask-question")).toBeVisible();
+      await expect(first.getByTestId("ask-question")).not.toHaveText(`and ${word} again?`);
       await expect(first.getByTestId("ask-turn-source")).toHaveCount(cited);
       // only the last answer offers to answer again
       await expect(first.getByTestId("ask-again")).toHaveCount(0);

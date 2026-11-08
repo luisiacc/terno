@@ -137,7 +137,7 @@ test.describe("summaries (plan 132)", () => {
     await expect(page.getByTestId("summary-copy")).toHaveAttribute("data-copied", "true");
     await expect(page.getByTestId("summary-copy-status")).toHaveText("Copied");
     await expect(page.getByTestId("summary-copy")).not.toHaveAttribute("data-copied", "true");
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/Ana can't make the 12th[\s\S]*\nAction: Please send the signed contract by Friday/);
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/Ana can't make the 12th[\s\S]*\nTo do: Please send the signed contract by Friday/);
 
     expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=summary-block]").analyze()).violations).toEqual([]);
     await page.emulateMedia({ colorScheme: "dark" });

@@ -64,12 +64,12 @@ function AnswerText({ text, sources, queries, chosen = null }: { text: string; s
               data-lit={lit || undefined}
               onKeyDown={stopKeys}
               onClick={() => void showSource(source, n, queries)}
-              className="group/cite relative z-[1] -my-1 -ms-0.5 -me-1 inline-flex size-6 items-center justify-center rounded-md align-[0.05em] outline-none after:absolute after:inset-0 focus-visible:ring-2 focus-visible:ring-ring"
+              className="group/cite relative z-[1] -my-1 ms-px -me-1 inline-flex size-6 items-center justify-center rounded-md align-[0.05em] outline-none after:absolute after:inset-0 focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={t("ask.citation", { n, subject: source.subject })}
             />
           }
         >
-          <span aria-hidden className={cn("inline-grid h-[1.4em] min-w-[1.4em] place-items-center rounded-[0.4em] px-[0.3em] text-2xs leading-none font-semibold text-foreground tabular transition-colors duration-fast", lit ? "bg-primary/15" : "bg-field group-hover/cite:bg-muted")}>{n}</span>
+          <span aria-hidden className={cn("inline-grid h-[1.5em] min-w-[1.5em] place-items-center rounded-[0.4em] px-[0.3em] text-2xs leading-none font-semibold text-foreground tabular transition-colors duration-fast", lit ? "bg-primary/15" : "bg-field group-hover/cite:bg-muted")}>{n}</span>
         </TooltipTrigger>
         <TooltipContent data-testid="ask-citation-preview">
           <span className="block font-medium">{source.subject || t("common.noSubject")}</span>
@@ -217,16 +217,19 @@ export function Scope() {
       <span>{t("ask.scope", { date: boundaryDay(since) })}</span>
       {/* plan 161, pass 3: after an answer, the way past it is a quiet link in the scope's line, below the answer and its sources in weight */}
       {offer.kind === "offline" ? <span data-testid="ask-older-offline">{t("ask.older.offline")}</span> : (
-        <Button variant="link-secondary" size="xs" className="h-6 font-medium" data-testid="ask-older" onKeyDown={stopKeys} onClick={searchOlder}>{t("ask.older.servers")}</Button>
+        <OlderButton />
       )}
     </p>
   );
 }
 
-/** Plan 161, pass 2: older mail when nothing here answers, the main action there (pass 3: an answer's scope line has it as a link). */
+/**
+ * Plan 161, pass 2: older mail when nothing here answers. Plan 162 (after ai162-r01): one control wherever it shows, a quiet
+ * button with its glyph (it was bold text under an answer and an outlined button under a miss).
+ */
 function OlderButton() {
   return (
-    <Button variant="outline" size="xs" data-testid="ask-older" onKeyDown={stopKeys} onClick={searchOlder}>
+    <Button variant="ghost" size="xs" className="-ms-1.5 font-medium text-muted-foreground hover:text-foreground" data-testid="ask-older" onKeyDown={stopKeys} onClick={searchOlder}>
       <Search /> {t("ask.older.servers")}
     </Button>
   );
@@ -240,7 +243,7 @@ function OlderLimit() {
 
 function Running() {
   const running = useAsk((s) => s.running);
-  const shownTitle = useAsk((s) => s.turns.at(-1)?.question ?? s.turns[0]?.question ?? s.running?.question);
+  const shownTitle = useAsk((s) => s.running?.question ?? s.turns.at(-1)?.question);
   if (!running) return null;
   const { older, searchingOlder, text, question } = running;
   const looking = searchingOlder && !text ? (older ? t("ask.older.progress", { done: older.done, total: older.total }) : t("ask.older.looking")) : t("ask.looking");
@@ -502,7 +505,8 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
   const peek = usePeek((s) => s.peek);
   const chosen = useChosenSource();
   const [walking, setWalking] = useState(false);
-  const title = turns[0]?.question ?? running?.question ?? "";
+  // plan 162 (after ai162-r01): the question being answered now, not the conversation's first (a follow-up kept the old one)
+  const title = running?.question ?? turns.at(-1)?.question ?? "";
   const last = turns.at(-1);
   const area = useRef<HTMLDivElement>(null);
   const followUp = useRef<HTMLInputElement>(null);
@@ -547,7 +551,7 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
           {/* tabbable: it scrolls, and a keyboard has to reach what it holds */}
           <div ref={area} tabIndex={0} data-testid="ask-area" className="max-h-72 space-y-4 overflow-y-auto px-[18px] py-3 outline-none">
             {turns.map((turn, i) => (
-              turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={turn.question === (i === 0 ? title : turns[i - 1]!.question)} />
+              turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={(turn === last && !running && turn.question === title) || (i > 0 && turn.question === turns[i - 1]!.question)} />
             ))}
             <Running />
             <Failure />
@@ -576,8 +580,17 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
 function Empty({ value, setValue, onBack, onClose }: { value: string; setValue: (v: string) => void; onBack: () => void; onClose: () => void }) {
   const running = useAsk((s) => s.running);
   const error = useAsk((s) => s.error);
+  const notice = useAsk((s) => s.notice);
   const query = value.trim();
   const busy = running !== null || error !== null;
+  // plan 162 (after ai162-r01): a request that found nothing, or failed, keeps its words in the field, selected, to change
+  // or send again (they were cleared, so the user retyped them)
+  const missed = notice?.question ?? error?.question ?? null;
+  useEffect(() => {
+    if (missed === null || value !== "") return;
+    setValue(missed);
+    requestAnimationFrame(() => document.querySelector<HTMLInputElement>("[data-testid=palette-input]")?.select());
+  }, [missed]);
   return (
     <>
       <CommandInput
@@ -634,6 +647,7 @@ function AskQuestionPage({ value, setValue, onBack, onClose }: { value: string; 
   const hasConversation = useAsk((s) => s.conversationId !== null || s.turns.length > 0);
   const running = useAsk((s) => s.running);
   const announced = useAsk((s) => s.ready);
+  const failed = useAsk((s) => s.error !== null);
   const announcedAtOpen = useRef(announced);
   // what the palette's last row asked, and where ⌘⇧K returns
   useEffect(() => {
@@ -659,7 +673,8 @@ function AskQuestionPage({ value, setValue, onBack, onClose }: { value: string; 
       {content}
       {/* never the deltas: what's underway, and that it's done */}
       <div role="status" aria-live="polite" className="sr-only" data-testid="ask-live">
-        {running ? t("ask.lookingShort") : announced !== announcedAtOpen.current ? t("ask.ready") : ""}
+        {/* plan 162: a failure is the alert's to say, never "Answer ready" */}
+        {running ? t("ask.lookingShort") : failed ? "" : announced !== announcedAtOpen.current ? t("ask.ready") : ""}
       </div>
     </>
   );

@@ -1275,26 +1275,31 @@ test.describe("drafting with AI (plan 133)", () => {
       for (const size of [{ width: 1440, height: 900 }, { width: 1100, height: 700 }]) {
         await page.setViewportSize(size);
         const where = `${scheme} ${size.width}`;
-        // ai-r03: Edit wrapped onto a line of its own at 1100: now the instruction is one line, cut with an ellipsis when
-        // it's long, its whole text in its tooltip, and Edit is on that line right after it
+        // ai-r03: Edit wrapped onto a line of its own at 1100. Plan 162 (after ai162-r01): the instruction takes up to two
+        // lines, so this one is whole at 1100 too (one line cut it), its text in its tooltip; Edit instruction is right after
+        // it, on its first line
         const instruction = page.getByTestId("ai-strip-instruction-text");
         await expect(instruction, where).toHaveAttribute("title", `“${words}”`);
-        expect((await box("ai-strip-instruction")).height, where).toBeLessThanOrEqual(40);
-        expect(Math.abs((await middle("ai-strip-edit-instruction")) - (await middle("ai-strip-instruction-text"))), where).toBeLessThanOrEqual(1);
+        expect(await instruction.evaluate((el) => el.scrollHeight <= el.clientHeight + 1), where).toBe(true);
+        expect((await box("ai-strip-instruction")).height, where).toBeLessThanOrEqual(60);
         const text = await box("ai-strip-instruction-text");
+        expect(Math.abs((await middle("ai-strip-edit-instruction")) - (text.y + 10)), where).toBeLessThanOrEqual(1.5);
         expect((await box("ai-strip-edit-instruction")).x, where).toBeGreaterThanOrEqual(text.x + text.width - 1);
+        expect((await box("ai-strip-edit-instruction")).height, where).toBeGreaterThanOrEqual(28);
         // the four commands are one group (one chrome, none heavier), on the provenance's line
         await expect(page.getByTestId("ai-strip-commands"), where).toHaveAttribute("data-slot", "button-group");
         await expect(page.getByTestId("ai-strip-undo"), where).toHaveText("Undo");
         await expect.poll(async () => Math.abs((await middle("ai-strip-undo")) - (await middle("ai-strip-voice"))), where).toBeLessThanOrEqual(1);
-        // two lines, the instruction and the commands (it was about 100 px at 1100)
-        expect((await box("ai-row")).height, where).toBeLessThanOrEqual(80);
+        // the instruction and the commands, nothing on a line of its own
+        expect((await box("ai-row")).height, where).toBeLessThanOrEqual(100);
         const wide = size.width === 1440;
-        await expect(page.getByTestId("ai-strip-regenerate"), where).toBeVisible({ visible: wide });
+        // plan 162 (after ai162-r01): Regenerate stays direct at every width; narrow, Shorter and Warmer fold into Rewrite ▾
+        await expect(page.getByTestId("ai-strip-regenerate"), where).toBeVisible();
+        await expect(page.getByTestId("ai-strip-shorter"), where).toBeVisible({ visible: wide });
         await expect(page.getByTestId("ai-strip-rewrite"), where).toBeVisible({ visible: !wide });
         if (!wide) {
           await page.getByTestId("ai-strip-rewrite").click();
-          await expect(page.getByTestId("ai-strip-rewrite-menu").getByRole("menuitem")).toHaveText(["Regenerate", "Shorter", "Warmer"]);
+          await expect(page.getByTestId("ai-strip-rewrite-menu").getByRole("menuitem")).toHaveText(["Shorter", "Warmer"]);
           expect(await unclipped(page.getByTestId("ai-strip-rewrite-menu")), where).toEqual([]);
           await page.keyboard.press("Escape");
         }
