@@ -182,8 +182,9 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   // still reads on every surface a field sits on
   def("field", () => {
     const over = (c: Oklch, k: ThemeToken) => formatOklch(rgbToOklch(composite(oklchToRgb(c), { ...oklchToRgb(o(k)), alpha: 1 })));
-    // (a hair over 4.5: the suite reads the layers unrounded)
-    const reads = (c: Oklch) => (["background", "pane", "card", "popover", "tint"] as const).every((k) => (["foreground", "muted-foreground"] as const).every((fg) => contrast(o(fg), over(c, k), bg) >= 4.52));
+    // (a margin over 4.5: the page blends a translucent wash a step off this math, 8 bits a channel; most on a menu or dialog,
+    // where a key's muted text sits on it and axe read 4.49 on Luma's)
+    const reads = (c: Oklch) => (["background", "pane", "card", "popover", "tint"] as const).every((k) => (["foreground", "muted-foreground"] as const).every((fg) => contrast(o(fg), over(c, k), bg) >= (k === "popover" ? 4.62 : 4.52)));
     return inkAlpha(o("foreground"), FIELD_WASH, 0.2, (c) => contrast(c, formatOklch(o("pane")), bg) >= TINT_FLOOR || !reads(withAlpha(c, c.alpha + 0.005)));
   });
   // plan 160: a composer's ring and its field dividers: the hairline's ink, deep enough to separate the form from the reader
@@ -609,7 +610,7 @@ export const THEMES: readonly Theme[] = [
       popover: "0.215 0.007 265",
       sidebar: "0.2 0.006 265",
       muted: "0.24 0.007 265",
-      "muted-foreground": "0.701 0.01 265",
+      "muted-foreground": "0.704 0.01 265",
       accent: "0.27 0.03 268",
       "accent-foreground": "0.92 0.03 268",
       border: "1 0 0 / 15%",
@@ -641,7 +642,7 @@ export const THEMES: readonly Theme[] = [
       popover: "0.34 0.027 276",
       sidebar: "0.255 0.019 280",
       muted: "0.34 0.027 276",
-      "muted-foreground": "0.792 0.08 270",
+      "muted-foreground": "0.798 0.08 270",
       accent: "0.403 0.032 278",
       "accent-foreground": "0.977 0.008 107",
       border: "0.362 0.031 280",
@@ -734,7 +735,7 @@ export const THEMES: readonly Theme[] = [
       popover: "0.344 0.007 49",
       sidebar: "0.241 0.005 220",
       muted: "0.344 0.007 49",
-      "muted-foreground": "0.799 0.035 76",
+      "muted-foreground": "0.805 0.035 76",
       accent: "0.344 0.007 49",
       "accent-foreground": "0.894 0.057 89",
       border: "0.344 0.007 49",
@@ -765,7 +766,7 @@ export const THEMES: readonly Theme[] = [
       popover: "0.379 0.029 266",
       sidebar: "0.301 0.021 266",
       muted: "0.379 0.029 266",
-      "muted-foreground": "0.836 0.04 264",
+      "muted-foreground": "0.842 0.04 264",
       accent: "0.416 0.032 264",
       "accent-foreground": "0.951 0.007 261",
       border: "0.379 0.029 266",
@@ -829,7 +830,7 @@ export const THEMES: readonly Theme[] = [
       popover: "0.324 0.032 282",
       sidebar: "0.216 0.025 284",
       muted: "0.324 0.032 282",
-      "muted-foreground": "0.781 0.04 274",
+      "muted-foreground": "0.784 0.04 274",
       accent: "0.324 0.032 282",
       "accent-foreground": "0.879 0.043 272",
       border: "0.324 0.032 282",
@@ -925,7 +926,7 @@ export const THEMES: readonly Theme[] = [
       popover: "0.25 0 0",
       sidebar: "0.205 0 0",
       muted: "0.25 0 0",
-      "muted-foreground": "0.72 0 0",
+      "muted-foreground": "0.726 0 0",
       accent: "0.28 0.07 265",
       "accent-foreground": "0.86 0.07 252",
       border: "1 0 0 / 9%",

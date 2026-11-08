@@ -104,9 +104,9 @@ test("drops into a new message and past the text", async ({ app: page, server })
     await page.getByTestId("compose-to").fill("ana@example.com");
     const form = page.getByTestId("composer"), card = page.getByTestId("composer-card");
     const pdf = await transfer(page, [{ name: "notes.pdf", type: "application/pdf" }]);
-    // the empty pane under the card
+    // the pane outside the card (plan 160: the card reaches the pane's foot, --float-inset above it): the inset under it
     const c = (await card.boundingBox())!, f = (await form.boundingBox())!;
-    const blank = { x: f.x + f.width / 2, y: f.y + f.height - 12 };
+    const blank = { x: f.x + f.width / 2, y: f.y + f.height - 4 };
     expect(blank.y).toBeGreaterThan(c.y + c.height);
     // the form really is what's under that point: a drop there reaches it
     expect(await form.evaluate((el, p) => el.contains(document.elementFromPoint(p.x, p.y)), blank)).toBe(true);
