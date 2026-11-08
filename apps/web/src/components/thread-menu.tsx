@@ -166,6 +166,21 @@ export function replyOpened(threadId: number, paneBefore: ReturnType<typeof getA
   return (key !== null && useDrafts.getState().drafts[key]?.uiState === "open") || getApp().compose !== paneBefore;
 }
 
+/** Plan 160: the menu's gap to its row: the row's outline and the panel's edge apart, still read as one */
+const ROW_GAP = 4;
+
+/**
+ * What the row menu stands by: the right-clicked row's height at the pointer's x, read once when it opens (a virtual
+ * element: no row renders for it), and the list it scrolls in. A property bag, not module lets (React Compiler).
+ */
+const rowAnchor: { rect: DOMRect; scroller: HTMLElement | null; getBoundingClientRect(): DOMRect } = {
+  rect: new DOMRect(),
+  scroller: null,
+  getBoundingClientRect() {
+    return this.rect;
+  },
+};
+
 /**
  * The thread context menu: one Base UI ContextMenu around the whole list (no
  * per-row trigger, so opening it renders no row). The clicked row gets a
@@ -174,15 +189,25 @@ export function replyOpened(threadId: number, paneBefore: ReturnType<typeof getA
 export function ThreadMenu({ children }: { children: ReactElement }) {
   const [open, setOpen] = useState(false);
   const name = useMenuTarget((m) => (!m.scope && m.ids.length === 1 ? targetRows(m.ids)[0] : undefined));
+  const change = (next: boolean) => {
+    setOpen(next);
+    setApp({ menuOpen: next });
+    if (!next) setRule("menu-target", null);
+  };
+  // plan 160: a resize or a scroll moves the row out from under the menu: it goes rather than stay where the row was
+  useEffect(() => {
+    const scroller = rowAnchor.scroller;
+    if (!open) return;
+    const close = () => change(false);
+    window.addEventListener("resize", close);
+    scroller?.addEventListener("scroll", close, { passive: true });
+    return () => {
+      window.removeEventListener("resize", close);
+      scroller?.removeEventListener("scroll", close);
+    };
+  }, [open]);
   return (
-    <ContextMenu
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        setApp({ menuOpen: next });
-        if (!next) setRule("menu-target", null);
-      }}
-    >
+    <ContextMenu open={open} onOpenChange={change}>
       <ContextMenuTrigger
         render={children}
         onContextMenu={(e) => {
@@ -193,6 +218,10 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
             return;
           }
           if (import.meta.env.VITE_RENDER_PROBE) performance.mark("menu:open");
+          // plan 160: under (or over) its row at the pointer's x, so the row it's about stays in view; one read, of this row
+          const r = el.getBoundingClientRect();
+          rowAnchor.rect = DOMRect.fromRect({ x: e.clientX, y: r.top, width: 0, height: r.height });
+          rowAnchor.scroller = e.currentTarget as HTMLElement;
           const row = Number(el.dataset.threadId);
           const target = targetFor(row);
           useMenuTarget.setState(target);
@@ -204,6 +233,12 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
       <ContextMenuContent
         className="w-64"
         data-testid="thread-menu"
+        anchor={rowAnchor}
+        side="bottom"
+        align="start"
+        sideOffset={ROW_GAP}
+        // below the row, else above it; only a window too short for either lets it cover the row
+        collisionAvoidance={{ side: "flip", align: "shift" }}
         aria-label={name ? targetName(name) : undefined}
         finalFocus={() => {
           const handedOff = handOff.pending;

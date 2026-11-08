@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
 import { cn } from "cn"
+import { FLOAT_INSET } from "../lib/float-inset"
 
 function Popover({ ...props }: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
@@ -33,6 +34,8 @@ function PopoverContent({
         side={side}
         sideOffset={sideOffset}
         anchor={anchor}
+        // plan 160: what floats keeps --float-inset from the window's edges
+        collisionPadding={FLOAT_INSET}
         className="isolate z-50"
       >
         <PopoverPrimitive.Popup

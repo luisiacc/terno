@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Menu as MenuPrimitive } from "@base-ui/react/menu"
 import { cn } from "cn"
+import { FLOAT_INSET } from "../lib/float-inset"
 import { ChevronRight as ChevronRightIcon, Check as CheckIcon } from "@terno/ui/icons"
 import {
   MENU_GROUP,
@@ -56,6 +57,8 @@ function DropdownMenuContent({
         alignOffset={alignOffset}
         side={side}
         sideOffset={sideOffset}
+        // plan 160: what floats keeps --float-inset from the window's edges
+        collisionPadding={FLOAT_INSET}
       >
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"

@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "cn"
+import { FLOAT_INSET } from "../lib/float-inset"
 import { ChevronDown as ChevronDownIcon, ChevronUp as ChevronUpIcon } from "@terno/ui/icons"
 import { MENU_GROUP, MENU_LABEL, MENU_MOTION, MENU_PANEL, MENU_ROW, MENU_SEPARATOR } from "./menu-styles"
 
@@ -81,6 +82,8 @@ function SelectContent({
         align={align}
         alignOffset={alignOffset}
         alignItemWithTrigger={alignItemWithTrigger}
+        // plan 160: what floats keeps --float-inset from the window's edges
+        collisionPadding={FLOAT_INSET}
         className="isolate z-50"
       >
         <SelectPrimitive.Popup

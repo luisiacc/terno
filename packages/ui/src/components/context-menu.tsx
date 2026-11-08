@@ -20,6 +20,7 @@ import {
   SUBMENU_SIDE_OFFSET,
   menuFinalFocus,
 } from "./menu-styles"
+import { FLOAT_INSET } from "../lib/float-inset"
 
 function ContextMenu({ ...props }: ContextMenuPrimitive.Root.Props) {
   return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} />
@@ -50,12 +51,14 @@ function ContextMenuContent({
   alignOffset = 4,
   side = "right",
   sideOffset = 0,
+  anchor,
+  collisionAvoidance = { align: "shift" },
   finalFocus,
   ...props
 }: ContextMenuPrimitive.Popup.Props &
   Pick<
     ContextMenuPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "side" | "sideOffset"
+    "align" | "alignOffset" | "side" | "sideOffset" | "anchor" | "collisionAvoidance"
   >) {
   return (
     <ContextMenuPrimitive.Portal>
@@ -65,8 +68,12 @@ function ContextMenuContent({
         alignOffset={alignOffset}
         side={side}
         sideOffset={sideOffset}
+        // the pointer's place, or what the menu is about (a row, plan 160)
+        anchor={anchor}
         // near a window edge it slides just enough to fit, its first rows still by the pointer (flipping would put them a panel away)
-        collisionAvoidance={{ align: "shift" }}
+        collisionAvoidance={collisionAvoidance}
+        // plan 160: what floats keeps --float-inset from the window's edges
+        collisionPadding={FLOAT_INSET}
       >
         <ContextMenuPrimitive.Popup
           data-slot="context-menu-content"
