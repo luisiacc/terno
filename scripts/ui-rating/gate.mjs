@@ -1,11 +1,14 @@
-// What a round scored against the bar (plan 158): every score from every rater on every screen of every style.
+// What a round scored against the bar (plan 158): every score from every rater on every screen of every style. The
+// screens are the round's own, frozen in its round.json when it started (plan 161), never a report's.
 //   node scripts/ui-rating/gate.mjs <roundDir>     writes summary.md there; exit 1 below the bar
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SETS } from "./sets.mjs";
 
 export const BAR = 9;
-export const SCREENS = ["split_inbox", "conversation", "reply_draft", "new_message", "list_layout_inbox", "search", "command_palette", "multi_select", "row_menu"];
+/** The everyday set's screens (plan 158), the default for a round from before sets */
+export const SCREENS = SETS.everyday.screens;
 export const UI_FACETS = ["typography", "contrast", "placement", "hierarchy", "controls", "density"];
 export const UX_FACETS = ["efficiency", "clarity", "feedback", "consistency", "accessibility"];
 export const FACETS = [...UI_FACETS, ...UX_FACETS];
@@ -15,7 +18,7 @@ export const DESIGNS = ["lumen", "atelier", "macos", "graphite"];
 const isScore = (n) => typeof n === "number" && n >= 1 && n <= 10;
 
 /** What's wrong with a report's shape: a rater that skipped a cell mustn't pass by omission. */
-export function reportProblems(report) {
+export function reportProblems(report, screens = SCREENS) {
   const problems = [];
   if (report.viewed_all_images !== true) problems.push("did not view all the images");
   if (!report.hands_on?.length) problems.push("did not try the app");
@@ -24,7 +27,7 @@ export function reportProblems(report) {
     if (!isScore(report[k]?.score)) problems.push(`no ${k} score`);
     else if (!report[k].why?.trim()) problems.push(`no ${k} reason`);
   }
-  for (const s of SCREENS) {
+  for (const s of screens) {
     const screen = report.screens?.[s];
     if (!screen) { problems.push(`no screen ${s}`); continue; }
     if (!isScore(screen.overall)) problems.push(`${s}: no overall`);
@@ -34,15 +37,17 @@ export function reportProblems(report) {
       else if (facet.score < 10 && !facet.improve?.trim()) problems.push(`${s}.${f}: no improve`);
     }
   }
+  // a screen the round didn't rate can't stand in for one it did, or count toward it
+  for (const s of Object.keys(report.screens ?? {})) if (!screens.includes(s)) problems.push(`${s}: not a screen of this round`);
   return problems;
 }
 
 /** Every score under the bar, lowest first. */
-export function belowBar(reports, bar = BAR) {
+export function belowBar(reports, bar = BAR, screens = SCREENS) {
   const out = [];
   for (const { design, rater, report } of reports) {
     for (const k of ["overall", "ui", "ux"]) if (report[k].score < bar) out.push({ design, rater, screen: "app", facet: k, score: report[k].score, improve: report[k].why });
-    for (const s of SCREENS) {
+    for (const s of screens) {
       if (report.screens[s].overall < bar) out.push({ design, rater, screen: s, facet: "overall", score: report.screens[s].overall, improve: "" });
       for (const f of FACETS) {
         const { score, improve } = report.screens[s].facets[f];
@@ -54,11 +59,30 @@ export function belowBar(reports, bar = BAR) {
 }
 
 /** The round's verdict: passed only with every report there, whole, and nothing under the bar. */
-export function verdict(found, { designs = DESIGNS, raters = RATERS, bar = BAR } = {}) {
+export function verdict(found, { designs = DESIGNS, raters = RATERS, bar = BAR, screens = SCREENS } = {}) {
   const missing = designs.flatMap((design) => raters.filter((rater) => !found.some((r) => r.design === design && r.rater === rater)).map((rater) => `${design}/${rater}`));
-  const invalid = found.flatMap((r) => reportProblems(r.report).map((p) => `${r.design}/${r.rater}: ${p}`));
-  const below = invalid.length ? [] : belowBar(found, bar);
+  const invalid = found.flatMap((r) => reportProblems(r.report, screens).map((p) => `${r.design}/${r.rater}: ${p}`));
+  const below = invalid.length ? [] : belowBar(found, bar, screens);
   return { pass: !missing.length && !invalid.length && !below.length, missing, invalid, below };
+}
+
+/**
+ * What a round was frozen to rate: its set, screens and shots, from round.json. A round from before sets (plan 158) is
+ * the everyday set. A round.json that disagrees with its set's definition was edited after the round began.
+ */
+export function roundSet(round) {
+  const set = round.set ?? "everyday";
+  if (!SETS[set]) throw new Error(`round.json names an unknown set: ${set}`);
+  const screens = round.screens ?? SETS[set].screens;
+  if (screens.join() !== SETS[set].screens.join()) throw new Error(`round.json's screens aren't the ${set} set's`);
+  return { set, screens, shots: round.shots ?? null };
+}
+
+/** Every shot round.json froze, for every style it rated: the evidence is whole, or the round is. */
+export function missingShots(dir, round) {
+  const { shots } = roundSet(round);
+  if (!shots) return [];
+  return round.designs.flatMap((design) => shots.filter((f) => !existsSync(join(dir, design, "shots", f))).map((f) => `${design}/${f}`));
 }
 
 function readRound(dir) {
@@ -70,7 +94,7 @@ function readRound(dir) {
   return found;
 }
 
-function summary(found, result) {
+function summary(found, result, SCREENS) {
   const lines = [`# ${result.pass ? "PASS" : "BELOW THE BAR"}: every score at least ${BAR}\n`];
   if (result.missing.length) lines.push(`Missing: ${result.missing.join(", ")}\n`);
   if (result.invalid.length) lines.push(`Invalid:\n${result.invalid.map((p) => `- ${p}`).join("\n")}\n`);
@@ -93,12 +117,20 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const dir = process.argv[2];
   if (!dir) throw new Error("usage: gate.mjs <roundDir>");
   if (!existsSync(join(dir, "round.json"))) throw new Error(`${dir} isn't a round`);
-  const { designs, raters } = JSON.parse(readFileSync(join(dir, "round.json"), "utf8"));
+  const round = JSON.parse(readFileSync(join(dir, "round.json"), "utf8"));
+  const { designs, raters } = round;
+  const { set, screens } = roundSet(round);
   const found = readRound(dir);
   // a narrowed round reports its numbers and can't pass the rule
-  const result = verdict(found);
+  const result = verdict(found, { screens });
+  const shotsMissing = missingShots(dir, round);
+  if (shotsMissing.length) {
+    result.pass = false;
+    result.invalid.push(...shotsMissing.map((f) => `missing evidence: ${f}`));
+  }
   if (designs.length !== DESIGNS.length || raters.length !== RATERS.length) console.log("a narrowed round: it can't pass the rule");
-  writeFileSync(join(dir, "summary.md"), summary(found, result));
+  console.log(`set: ${set} (${screens.length} screens)`);
+  writeFileSync(join(dir, "summary.md"), summary(found, result, screens));
   console.log(`${result.pass ? "PASS" : "below the bar"}: ${result.below.length} cells under ${BAR}, ${result.missing.length} reports missing, ${result.invalid.length} problems. ${join(dir, "summary.md")}`);
   process.exit(result.pass ? 0 : 1);
 }
