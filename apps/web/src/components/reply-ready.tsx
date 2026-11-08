@@ -58,8 +58,9 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
         {/* the spinner keeps its status and name, as before the card */}
         {writing ? <Spinner className={AI_GLYPH} /> : <Sparkles aria-hidden className={AI_GLYPH} />}
         <span data-testid="reply-ready-title" className={AI_TITLE}>{writing ? t("replies.writing") : t("replies.title")}</span>
-        {!writing && to ? <span data-testid="reply-ready-to" className="min-w-0"><span aria-hidden>·</span> {to}</span> : null}
-        {!writing && shown.row?.used ? <span data-testid="reply-ready-voice" className="min-w-0 truncate"><span aria-hidden>·</span> {voice(shown.row)}</span> : null}
+        {/* each "·" its own item, so the gaps either side are the same */}
+        {!writing && to ? <><span aria-hidden>·</span><span data-testid="reply-ready-to" className="min-w-0">{to}</span></> : null}
+        {!writing && shown.row?.used ? <><span aria-hidden>·</span><span data-testid="reply-ready-voice" className="min-w-0 truncate">{voice(shown.row)}</span></> : null}
       </p>
       <p data-testid="reply-ready-text" className={cn("text-sm leading-relaxed wrap-anywhere whitespace-pre-wrap", long && !all && !writing && "line-clamp-6")}>
         {/* the gaps the model left, marked so they can't be missed (plan 161); while it writes, the words as they come */}

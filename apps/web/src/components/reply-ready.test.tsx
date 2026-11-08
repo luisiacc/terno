@@ -39,7 +39,9 @@ it("plan 144's addendum: ready, it's the summary's card, the label its header, t
   expect(header.firstElementChild?.tagName.toLowerCase()).toBe("svg");
   expect(header.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
   // plan 161: who Use writes to, then the voice
-  expect(header.textContent).toBe("Reply ready· To Liam Baker· In your voice with Liam");
+  expect(header.textContent).toBe("Reply ready·To Liam Baker·In your voice with Liam");
+  // the separators are items of their own: the same gap either side
+  expect([...header.children].filter((c) => c.textContent === "·" && c.getAttribute("aria-hidden") === "true")).toHaveLength(2);
   // then the draft, then the footer: all inside the card, in that order
   const text = q("reply-ready-text")!;
   const footer = q("reply-ready-footer")!;
