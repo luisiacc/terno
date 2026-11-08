@@ -4,8 +4,21 @@ import { askOffered } from "./ai";
 import { draftKeyOf } from "./draft-commands";
 import type { PalettePage } from "./palette-commands";
 
-/** Plan 88: the draft the palette was opened from (an object property: the React Compiler note on module lets). */
-export const paletteFrom: { draftKey: string | null } = { draftKey: null };
+/**
+ * Plan 88: the draft the palette was opened from (an object property: the React Compiler note on module lets). Plan 162:
+ * and what had the keys, for them to go back to when it closes and nothing else took them.
+ */
+export const paletteFrom: { draftKey: string | null; focus: HTMLElement | null } = { draftKey: null, focus: null };
+
+/** Plan 162: closed, the keys go back where they were when it opened, unless something since took them (a source opened). */
+export function returnPaletteFocus(): void {
+  const to = paletteFrom.focus;
+  paletteFrom.focus = null;
+  requestAnimationFrame(() => {
+    const at = document.activeElement;
+    if (to?.isConnected && (!at || at === document.body)) to.focus({ preventScroll: true });
+  });
+}
 
 /** Plan 141: what the root's last row asked, for the page to take up when it's there. Esc on the page stops an answer first. */
 export const askFrom: { question: string | null } = { question: null };
@@ -27,6 +40,7 @@ export function paletteBack(page: PalettePage, entry: PalettePage): PalettePage 
 
 function open(page: PalettePage): void {
   paletteFrom.draftKey = draftKeyOf(document.activeElement);
+  paletteFrom.focus = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
   usePalettePage.setState({ page, entry: page });
   setApp({ dialog: "palette" });
 }

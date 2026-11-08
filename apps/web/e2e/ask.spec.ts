@@ -97,7 +97,8 @@ test.describe("ask your mail (plan 141)", () => {
     await scenario("a citation is bound to its words, and the line's height unchanged (plan 161); the dialog is Ask's (pass 3)", async () => {
       // pass 3: the dialog says what it is, and its way back and its close say what they do
       await expect(page.getByRole("dialog", { name: "Ask your mail" })).toBeVisible();
-      await expect(page.getByTestId("palette-back")).toHaveText("All commands");
+      // plan 162: opened with ⌘⇧K, the mail is the only thing behind it: the × alone
+      await expect(page.getByTestId("palette-back")).toHaveCount(0);
       await expect(page.getByTestId("ask-close")).toHaveAccessibleName("Close");
       await expect(page.getByTestId("palette-page")).toHaveCount(0);
       const cited = page.getByTestId("ask-cited").first();
@@ -123,7 +124,7 @@ test.describe("ask your mail (plan 141)", () => {
       // Answer again says what it does; Copy and it are buttons, not grey words
       await expect(page.getByTestId("ask-again")).toHaveText("Answer again");
       // New question and the history: on the keys' line under the sources (pass 3), and smaller than them
-      await expect(page.getByTestId("ask-hints").getByTestId("ask-new")).toBeVisible();
+      await expect(page.getByTestId("ask-hints").getByTestId("ask-session").getByTestId("ask-new")).toBeVisible();
       const source = (await page.getByTestId("ask-source").last().boundingBox())!;
       const session = (await page.getByTestId("ask-new").boundingBox())!;
       expect(session.y).toBeGreaterThanOrEqual(source.y + source.height - 1);
@@ -135,12 +136,12 @@ test.describe("ask your mail (plan 141)", () => {
     await scenario("the source row and the inline number show the message in Ask; Open message opens the thread (plan 161, pass 3)", async () => {
       const source = page.getByTestId("ask-source").first();
       await expect(source).toBeVisible();
-      // the keys' line says what the keys do here: Enter asks, ↓ reaches the sources, Esc goes back to all commands
+      // the keys' line says what the keys do here: Enter asks, ↓ reaches the sources, Esc closes (opened with ⌘⇧K)
       const hints = page.getByTestId("ask-hints");
       await expect(hints).toHaveAttribute("data-where", "asking");
       await expect(hints).toContainText("Ask");
       await expect(hints).toContainText("Sources");
-      await expect(hints).toContainText("All commands");
+      await expect(hints).toContainText("Close");
       await expect(hints).not.toContainText("Navigate");
       await followUp(page).press("ArrowDown");
       await expect(hints).toHaveAttribute("data-where", "walking");
@@ -249,9 +250,10 @@ test.describe("ask your mail (plan 141)", () => {
       await page.getByTestId("ask-new").click();
       await expect(ask(page)).toBeFocused();
       await page.getByTestId("ask-history-row").click();
-      // pass 3: no chip whose × reads as close: All commands and a Close, clear of the field's placeholder
+      // pass 3: no chip whose × reads as close: a way back and a Close, clear of the field's placeholder. Plan 162: one
+      // step back, to Ask, where it came from (Ask was opened with ⌘⇧K)
       await expect(page.getByRole("dialog", { name: "Previous AI questions" })).toBeVisible();
-      await expect(page.getByTestId("palette-back")).toHaveText("All commands");
+      await expect(page.getByTestId("palette-back")).toHaveText("Ask");
       expect((await page.getByTestId("ask-nav").boundingBox())!.x).toBeGreaterThanOrEqual((await ask(page).boundingBox())!.x + (await ask(page).boundingBox())!.width - 1);
       const item = page.getByTestId("ask-history-item");
       await expect(item).toHaveCount(1);
@@ -328,7 +330,7 @@ test.describe("ask your mail (plan 141)", () => {
     await expect(page.getByTestId("reader-subject")).toContainText(`${WORD} policy`);
   });
 
-  test("Esc stops a running answer first, then goes back; Backspace in the follow-up box only types", async ({ app: page, server }) => {
+  test("Esc stops a running answer first, then steps back one level: from ⌘⇧K it closes, focus back on the list (plan 162); Backspace in the follow-up box only types", async ({ app: page, server }) => {
     await withMail(page, server);
     const word = WORD;
     await open(page);
@@ -351,11 +353,13 @@ test.describe("ask your mail (plan 141)", () => {
     await followUp(page).press("Backspace");
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(followUp(page)).toBeFocused();
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("palette-input")).toBeVisible();
-    await expect(page.getByTestId("palette-page")).toHaveCount(0);
+    // plan 162: opened with ⌘⇧K, there's no All commands behind it: no way back but the ×, and one Esc closes it
+    await expect(page.getByTestId("palette-back")).toHaveCount(0);
+    await expect(page.getByTestId("ask-hints")).toContainText("Close");
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.locator(":focus")).toHaveCount(1);
+    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
   });
 
   test("the palette's last row asks; Enter on a command that matches still wins", async ({ app: page, server }) => {
@@ -373,7 +377,10 @@ test.describe("ask your mail (plan 141)", () => {
     await expect(page.getByRole("option", { selected: true })).toHaveAttribute("data-testid", "palette-ask-row");
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("ask-command-notice").or(page.getByTestId("action-preview")).first()).toBeVisible();
-    // Esc in Ask goes back to all commands
+    // Esc in Ask opened from the palette goes back to all commands, the one way back on screen (plan 162: the keys'
+    // line doesn't repeat the header's link)
+    await expect(page.getByTestId("palette-back")).toHaveText("All commands");
+    await expect(page.getByTestId("ask-hints")).not.toContainText("All commands");
     await page.keyboard.press("Escape");
     await ask(page).fill("zzzqqq nothing like it");
     await expect(page.getByTestId("palette-ask-row")).toBeVisible();

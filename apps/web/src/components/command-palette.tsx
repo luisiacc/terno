@@ -29,7 +29,7 @@ import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { openRemind, presetLabel, presetWhen, setReminder, clearReminder, useReminders } from "~/lib/reminders";
 import { draftCommands, type DraftCommands } from "~/lib/draft-commands";
 import { isInstruction } from "~/lib/imperative";
-import { askFrom, paletteBack, paletteFrom, paletteKeys, setPalettePage, usePalettePage } from "~/lib/palette-open";
+import { askFrom, paletteBack, paletteFrom, paletteKeys, returnPaletteFocus, setPalettePage, usePalettePage } from "~/lib/palette-open";
 import { loadSnippets, newSnippetId, useSnippets } from "~/lib/snippets";
 import { insertSnippetInto, newMessageFromSnippet, saveDraftAsSnippet } from "~/lib/snippet-insert";
 import { openSnippetEditor } from "~/lib/snippet-editor-state";
@@ -214,6 +214,7 @@ export function CommandPalette() {
   const close = () => {
     setApp({ dialog: null });
     reset();
+    returnPaletteFocus();
   };
   const listRef = useRef<HTMLDivElement>(null);
   const goTo = (next: PalettePage) => {

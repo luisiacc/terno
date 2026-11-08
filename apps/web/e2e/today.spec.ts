@@ -57,13 +57,14 @@ test.describe("Today (plan 145)", () => {
     // pass 3: one sentence, never a second total to read against the Inbox's: "9 need you", or when capped (plan 162) "Showing 12 of 41"
     await expect(page.getByTestId("today-needs")).toHaveText(/^(Showing \d+ of \d+|\d+ needs? you)$/);
     const sidebar = (await page.getByTestId("nav-today").innerText()).match(/\d+/)?.[0];
-    if (sidebar) await expect(page.getByTestId("today-needs")).toHaveText(new RegExp(`(^| of )${sidebar} (that )?needs? you$`));
+    if (sidebar) await expect(page.getByTestId("today-needs")).toHaveText(new RegExp(`^(Showing \\d+ of ${sidebar}|${sidebar} needs? you)$`));
     await expect(page.getByTestId("today-line")).not.toContainText(/waiting|\d+ to reply/);
-    // the reason is quiet: the snippet's ink, not the subject's, at medium weight
+    // plan 162: the reason is a label of its own: the ink, at the row's own weight (under the subject's medium), and the
+    // words after it the secondary's (it was the snippet's grey, and read as the mail's first words)
     const why = page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why");
     const ink = async (el: typeof why) => el.evaluate((e) => getComputedStyle(e).color);
-    expect(await ink(why)).toBe(await ink(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-snippet").locator("span").last()));
-    await expect(why).toHaveCSS("font-weight", "500");
+    expect(await ink(why)).not.toBe(await ink(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-snippet").locator("span").last()));
+    await expect(why).toHaveCSS("font-weight", "400");
     // pass 2: the digest is the list's first row, in view, a real target; Today still opens on a conversation
     await expect(page.getByTestId("digest-row")).toContainText("automated");
     await expect(page.locator('[data-keep-scroll="list"] [role=option]').first()).toHaveAttribute("data-testid", "digest-row");

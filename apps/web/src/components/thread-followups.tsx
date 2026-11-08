@@ -1,4 +1,4 @@
-import { remindPresets, type FollowupRow, type MessageDetail, type ThreadDetail } from "@terno/core";
+import { defaultRemindAt, remindPresets, type FollowupRow, type MessageDetail, type ThreadDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
@@ -42,8 +42,8 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
   const formRef = useRef<HTMLFormElement>(null);
   const pastId = useId();
   const [picking, setPicking] = useState(false);
-  // it starts on the moment the line comes back now
-  const when = useWhen(row.dueAt);
+  // it starts where the reminder's own picker does (plan 87): the next sensible moment, never one already past
+  const when = useWhen(defaultRemindAt(new Date()));
   return (
     <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} className={cn(AI_CARD, "px-3.5 pb-3")}>
       {/* the news first, at the text's size: it's what the card is */}

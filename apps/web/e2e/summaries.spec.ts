@@ -192,14 +192,24 @@ test.describe("summaries (plan 132)", () => {
       expect(right.x + right.width).toBeLessThanOrEqual(card.x + card.width);
     }
 
-    // plan 161, pass 3: an item's Reply, wrapped under its words, has its glyph on the words' line
-    const reply = page.getByTestId("summary-item-reply").first();
-    if (await reply.count()) {
+    // plan 162: an item's controls are a line of their own under its words at every width, starting at the words' edge;
+    // Reply is the card's one secondary (bordered), Copy a quiet utility
+    for (const width of [980, 1100, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      const controls = page.getByTestId("summary-item-controls").first();
+      if (!(await controls.count())) break;
       const words = (await page.getByTestId("summary-item-text").first().boundingBox())!;
-      const glyph = (await reply.locator("svg").boundingBox())!;
-      if (glyph.y > words.y + words.height - 2) expect(Math.abs(glyph.x - words.x)).toBeLessThanOrEqual(1);
-      else expect(glyph.x - (words.x + words.width)).toBeGreaterThanOrEqual(8);
+      const row = (await controls.boundingBox())!;
+      expect(row.y).toBeGreaterThanOrEqual(words.y + words.height - 1);
+      expect(Math.abs(row.x - words.x)).toBeLessThanOrEqual(1);
+      const reply = page.getByTestId("summary-item-reply").first();
+      if (await reply.count()) expect(Math.abs((await reply.boundingBox())!.x - words.x)).toBeLessThanOrEqual(1);
     }
+    // every button keeps a 1 px border; a quiet one's is clear
+    const edge = (testId: string) => page.getByTestId(testId).first().evaluate((el) => getComputedStyle(el).borderTopColor);
+    if (await page.getByTestId("summary-item-reply").count()) expect(await edge("summary-item-reply")).not.toBe("rgba(0, 0, 0, 0)");
+    expect(await edge("summary-copy")).toBe("rgba(0, 0, 0, 0)");
+    await page.setViewportSize({ width: 980, height: 600 });
 
     // closed, the card is its one row
     await page.getByTestId("summary-toggle").click();
@@ -499,6 +509,19 @@ test.describe("summaries (plan 132)", () => {
     expect(await row.innerText()).not.toContain(host);
     await expect(page.getByTestId("ai-error-retry")).toBeVisible();
     await expect(page.getByTestId("ai-error-settings")).toBeVisible();
+    // plan 162: and Ask too, in the same notice (it was a red sentence of the provider's, with its address)
+    await page.getByTestId("ai-error-close").click();
+    await page.keyboard.press("Escape");
+    await page.getByTestId("reader-subject").click();
+    await page.keyboard.press("ControlOrMeta+Shift+k");
+    await page.getByTestId("palette-input").fill("who wrote about the payment?");
+    await page.keyboard.press("Enter");
+    const asked = page.getByTestId("ask-error");
+    await expect(page.getByTestId("ask-error-text")).toContainText("Couldn’t reach Ollama");
+    await expect(page.getByTestId("ask-error-text")).toContainText("Open Ollama, then try again.");
+    expect(await asked.innerText()).not.toContain(host);
+    await expect(page.getByTestId("ask-retry")).toBeVisible();
+    await expect(page.getByTestId("ask-error-settings")).toHaveText("AI settings");
   });
 
   test("Settings → AI: use this month and the monthly limit; a bad key is findable there", async ({ app: page, server }) => {

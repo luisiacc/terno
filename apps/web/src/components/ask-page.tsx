@@ -16,7 +16,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { askConfigChanged, askQuestion, atTurnLimit, deleteConversation, loadAskHistory, newQuestion, openConversation, openSource, restoreConversation, returning, searchOlder, stopAsking, useAsk } from "~/lib/ask";
 import { listDate } from "~/lib/format";
 import { boundaryDay } from "~/lib/when";
-import { askFrom, paletteKeys, setPalettePage, usePalettePage } from "~/lib/palette-open";
+import { askFrom, paletteBack, paletteKeys, setPalettePage, usePalettePage } from "~/lib/palette-open";
 import { chordLabel } from "@terno/ui/components/shortcut";
 import { useApp, setApp } from "~/state/app";
 import { AiCopyButton, AiProvenance } from "~/components/ai-provenance";
@@ -333,12 +333,13 @@ function TurnSources({ sources, queries }: { sources: readonly AskSourceRef[]; q
  */
 /** Plan 162: the way back is All commands only when Ask was opened from them; from ⌘⇧K there's nothing behind it but the mail. */
 function AskNav({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
-  const back = usePalettePage((s) => s.entry !== "ask");
+  // where one step back goes from here: All commands, Ask (from its history), or nowhere but the mail (the ×)
+  const to = usePalettePage((s) => paletteBack(s.page, s.entry));
   return (
     <span className="flex shrink-0 items-center gap-1.5" data-testid="ask-nav">
-      {back && (
+      {to !== null && (
         <Button variant="ghost" size="xs" className="font-medium text-muted-foreground" data-testid="palette-back" onKeyDown={stopKeys} onClick={onBack}>
-          <ChevronLeft /> {t("ask.allCommands")}
+          <ChevronLeft /> {to === "root" ? t("ask.allCommands") : t("palette.ask.page")}
         </Button>
       )}
       <CloseButton size="sm" data-testid="ask-close" onKeyDown={stopKeys} onClick={onClose} />

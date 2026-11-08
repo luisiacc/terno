@@ -154,6 +154,19 @@ test.describe("follow-ups (plan 142)", () => {
       expect(await page.getByTestId("followup-later-when").count()).toBe(await items.count());
       await page.keyboard.press("Escape");
     });
+    await scenario("plan 162: Reschedule to any moment, through the reminder's own date and time", async () => {
+      await page.getByTestId("followup-later").click();
+      await page.getByTestId("followup-later-pick").click();
+      await expect(page.getByTestId("followup-later-custom")).toBeVisible();
+      await expect(page.getByTestId("followup-later-date")).toBeVisible();
+      await expect(page.getByTestId("followup-later-time")).toBeVisible();
+      const before = (await server.backend.server.invoke("followups.list", {}, dev)) as { rows: { threadId: number; dueAt: number }[] };
+      const was = before.rows.find((r) => r.threadId === threadId)!.dueAt;
+      await page.getByTestId("followup-later-set").click();
+      await expect(page.getByTestId("followup-later-custom")).toHaveCount(0);
+      await expect(page.locator("[data-testid=snack]").filter({ hasText: /^Back on top of your Inbox/ })).toBeVisible();
+      await expect.poll(async () => ((await server.backend.server.invoke("followups.list", {}, dev)) as { rows: { threadId: number; dueAt: number }[] }).rows.find((r) => r.threadId === threadId)?.dueAt).not.toBe(was);
+    });
     await scenario("Write a follow-up, then the line offers that draft; discarded, it's Write a follow-up again", async () => {
       await page.getByTestId("followup-nudge").click();
       await expect(page.getByTestId("composer")).toBeVisible();
@@ -233,8 +246,18 @@ test.describe("follow-ups (plan 142)", () => {
         await page.getByTestId("followup-later").click();
         const menu = page.getByTestId("followup-later-menu");
         await expect(menu).toBeVisible();
-        await expect(menu.getByRole("menuitem")).toHaveText([/^Later today/, /^Tomorrow/, /^This weekend/, /^Next week/]);
+        // plan 162: and any moment, with the reminder's own fields
+        await expect(menu.getByRole("menuitem")).toHaveText([/^Later today/, /^Tomorrow/, /^This weekend/, /^Next week/, "Pick date & time…"]);
         expect(await unclipped(menu), where).toEqual([]);
+        await page.getByTestId("followup-later-pick").click();
+        const custom = page.getByTestId("followup-later-custom");
+        await expect(custom).toBeVisible();
+        expect(await unclipped(custom), where).toEqual([]);
+        // its Esc closes it alone, and the keys go back to Reschedule
+        await page.keyboard.press("Escape");
+        await expect(custom).toHaveCount(0);
+        await expect(page.getByTestId("followup-later")).toBeFocused();
+        await page.getByTestId("followup-later").click();
         if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-later-${scheme}-${size.width}.png` });
         await page.keyboard.press("Escape");
         await page.getByTestId("followup-provenance").click();

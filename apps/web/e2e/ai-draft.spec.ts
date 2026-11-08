@@ -964,7 +964,8 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(page.getByTestId("settings-title")).toHaveText("Writing style");
     // pass 2: plain words that agree: the closest style wins, and a profile's count is part of the page's
     // pass 3: as your writing, never the recipient's voice
-    await expect(page.getByTestId("style-precedence")).toHaveText("Drafts follow your style with that person, else with their company, else in that account, else your usual one.");
+    // plan 162: a sequence, not an algorithm
+    await expect(page.getByTestId("style-precedence")).toHaveText("A draft uses the closest style it has: the person, then their company, then the account, then yours.");
     // pass 3: How it learns, all of it, in the first view (it was under the fold), before the optional overrides
     await expect(page.getByTestId("style-clear")).toBeInViewport();
     expect(await above("style-actions", "style-domains")).toBe(true);
@@ -1228,7 +1229,7 @@ test.describe("drafting with AI (plan 133)", () => {
     });
   });
 
-  test("plan 161, pass 3: the instruction whole on its own line, Undo first and named at every width, the rewrites quieter, folded when narrow; nothing in its menus clipped", { tag: "@design" }, async ({ app: page, server }) => {
+  test("plan 162: the instruction on one line with Edit right after it, the four commands one group at every width, folded when narrow; nothing in its menus clipped", { tag: "@design" }, async ({ app: page, server }) => {
     await ready(page, server);
     instant();
     await openThread(page, /Contract review/);
@@ -1237,20 +1238,27 @@ test.describe("drafting with AI (plan 133)", () => {
     await field(page).fill(words);
     await page.keyboard.press("Enter");
     await expect(strip(page)).toBeVisible();
-    const middle = async (id: string) => { const b = (await page.getByTestId(id).boundingBox())!; return b.y + b.height / 2; };
+    const box = async (id: string) => (await page.getByTestId(id).boundingBox())!;
+    const middle = async (id: string) => { const b = await box(id); return b.y + b.height / 2; };
     for (const scheme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: scheme });
       for (const size of [{ width: 1440, height: 900 }, { width: 1100, height: 700 }]) {
         await page.setViewportSize(size);
         const where = `${scheme} ${size.width}`;
-        // ai-r02: the instruction was cut to about 20 characters at 1440 and gone at 1100
+        // ai-r03: Edit wrapped onto a line of its own at 1100: now the instruction is one line, cut with an ellipsis when
+        // it's long, its whole text in its tooltip, and Edit is on that line right after it
         const instruction = page.getByTestId("ai-strip-instruction-text");
-        await expect(instruction, where).toHaveText(`“${words}”`);
-        await expect(instruction, where).toBeVisible();
-        expect(await page.getByTestId("ai-strip-instruction").evaluate((el) => el.scrollWidth <= el.clientWidth), where).toBe(true);
-        // ai-r02: Undo became an unnamed glyph at 1100 while the rewrites kept their words
+        await expect(instruction, where).toHaveAttribute("title", `“${words}”`);
+        expect((await box("ai-strip-instruction")).height, where).toBeLessThanOrEqual(40);
+        expect(Math.abs((await middle("ai-strip-edit-instruction")) - (await middle("ai-strip-instruction-text"))), where).toBeLessThanOrEqual(1);
+        const text = await box("ai-strip-instruction-text");
+        expect((await box("ai-strip-edit-instruction")).x, where).toBeGreaterThanOrEqual(text.x + text.width - 1);
+        // the four commands are one group (one chrome, none heavier), on the provenance's line
+        await expect(page.getByTestId("ai-strip-commands"), where).toHaveAttribute("data-slot", "button-group");
         await expect(page.getByTestId("ai-strip-undo"), where).toHaveText("Undo");
         await expect.poll(async () => Math.abs((await middle("ai-strip-undo")) - (await middle("ai-strip-voice"))), where).toBeLessThanOrEqual(1);
+        // two lines, the instruction and the commands (it was about 100 px at 1100)
+        expect((await box("ai-row")).height, where).toBeLessThanOrEqual(80);
         const wide = size.width === 1440;
         await expect(page.getByTestId("ai-strip-regenerate"), where).toBeVisible({ visible: wide });
         await expect(page.getByTestId("ai-strip-rewrite"), where).toBeVisible({ visible: !wide });
@@ -1267,12 +1275,9 @@ test.describe("drafting with AI (plan 133)", () => {
     }
     await page.emulateMedia({ colorScheme: "light" });
     await page.setViewportSize({ width: 1440, height: 900 });
-    // the rewrites are enabled-looking (the ink) and quieter than Undo: no edge of their own; Undo is BoardUI's secondary
-    const style = (id: string) => page.getByTestId(id).evaluate((el) => { const s = getComputedStyle(el); return { color: s.color, edge: s.borderTopWidth !== "0px" && s.borderTopStyle !== "none" ? s.borderTopColor : s.boxShadow }; });
-    // (polled: a theme change eases its colors in)
-    await expect.poll(async () => (await style("ai-strip-regenerate")).color === (await page.getByTestId("reader-subject").evaluate((el) => getComputedStyle(el).color))).toBe(true);
-    expect((await style("ai-strip-regenerate")).edge).toMatch(/^(none|rgba\(0, 0, 0, 0\))$/);
-    expect((await style("ai-strip-undo")).edge).not.toMatch(/^(none|rgba\(0, 0, 0, 0\))$/);
+    // the group's items share one look: the same ink and no edge of their own (the group draws it)
+    const style = (id: string) => page.getByTestId(id).evaluate((el) => { const s = getComputedStyle(el); return { color: s.color, weight: s.fontWeight, height: el.getBoundingClientRect().height }; });
+    expect(await style("ai-strip-regenerate")).toEqual(await style("ai-strip-undo"));
     // Edit is named for what it does, and opens the field holding the instruction
     await expect(page.getByTestId("ai-strip-edit-instruction")).toHaveAccessibleName("Edit instruction");
     await page.getByTestId("ai-strip-edit-instruction").click();

@@ -42,10 +42,13 @@ test.describe("AI filters and learned filters", () => {
       await expect(page.getByTestId("filter-preview")).not.toContainText(/\d\s?ms\b/);
       await expect(page.getByTestId("filter-preview")).toHaveAttribute("data-ready", "true");
       await expect(page.getByTestId("filter-save-apply")).toHaveText(`Save and apply to ${uberCount} conversations`);
-      // the owner's call: Save is the main button, applying to mail already here the second, before it
-      await expect(page.getByTestId("filter-save")).toHaveClass(/\bbg-primary\b/);
-      await expect(page.getByTestId("filter-save-apply")).not.toHaveClass(/\bbg-primary\b/);
+      // plan 162: Save is the primary; what also changes the mail already there is the secondary before it, and the
+      // sample says it's a sample; the request is quoted above the rule it made
+      await expect(page.getByTestId("filter-save")).not.toHaveCSS("background-image", "none");
+      await expect(page.getByTestId("filter-save-apply")).toHaveCSS("background-image", "none");
       expect((await page.getByTestId("filter-save-apply").boundingBox())!.x).toBeLessThan((await page.getByTestId("filter-save").boundingBox())!.x);
+      if (uberCount > 6) await expect(page.getByTestId("preview-shown")).toHaveText(" · the newest 6 shown");
+      await expect(page.getByTestId("ai-request")).toHaveText("From your request“archiva los correos de uber.com y ponlos en Facturas”");
       await page.getByTestId("filter-save-apply").click();
       await expect(page.locator("[data-testid=snack]").filter({ hasText: /Rule applied to \d+ conversations/ })).toBeVisible();
       await expect(page.getByTestId("filter-item")).toContainText(["AI"]);
@@ -75,8 +78,14 @@ test.describe("AI filters and learned filters", () => {
       await page.getByRole("option", { name: "doesn’t contain" }).click();
       await expect(page.getByTestId("ai-explanation")).toContainText("Subject doesn’t contain “nicer”");
       await expect(page.getByTestId("condition-row").getByRole("button", { name: /^(yes|not)$/ })).toHaveCount(0);
-      // pass 2: the card says who wrote it once; Edit request puts the caret in the request
-      await expect(page.getByTestId("ai-provenance")).toHaveText("Written with AI");
+      // pass 2: the card says who wrote it once. Plan 162: as every AI surface does, the one control at its line's end,
+      // opening what it did and how to check it, closed by its own Esc; Edit request puts the caret in the request
+      await expect(page.getByTestId("ai-provenance-label")).toHaveText("Written with AI");
+      await page.getByTestId("ai-provenance").click();
+      await expect(page.getByTestId("ai-provenance-popover")).toContainText("Check the conditions and the matches before you save.");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("ai-provenance-popover")).toHaveCount(0);
+      await expect(page.getByTestId("filters-dialog")).toBeVisible();
       await page.getByTestId("ai-edit-request").click();
       await expect(page.getByTestId("ai-prompt")).toBeFocused();
       // pass 3: Esc steps back a level first: the request folds back to the rule, focus on Edit request, Rules open
