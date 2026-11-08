@@ -63,7 +63,11 @@ it("while it writes: the same card, the spinner in the glyph's place, Stop in th
   expect(card.dataset.phase).toBe("writing");
   expect(card.className.split(" ")).toContain(AI_CARD);
   expect(q("reply-ready-title")!.textContent).toBe("Writing a reply…");
-  expect(q("reply-ready-header")!.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
+  // the spinner is still a status with its name, as it was before the card (review 3)
+  const spinner = q("reply-ready-header")!.firstElementChild!;
+  expect(spinner.getAttribute("role")).toBe("status");
+  expect(spinner.getAttribute("aria-label")).toBe("Loading");
+  expect(spinner.getAttribute("aria-hidden")).toBeNull();
   expect(q("reply-ready-voice")).toBeNull();
   expect(q("reply-ready-footer")!.contains(q("reply-ready-stop"))).toBe(true);
   expect(q("reply-ready-use")).toBeNull();

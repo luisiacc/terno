@@ -132,8 +132,11 @@ test.describe("replies ready (plan 144)", () => {
       }
       await page.emulateMedia({ colorScheme: "light" });
     }
-    for (const [width, height] of SIZES) {
+    // in light and dark: the card's fill and ring are the palette's (review 1)
+    for (const [[width, height], mode] of SIZES.flatMap((size) => (["light", "dark"] as const).map((mode) => [size, mode] as const))) {
       await page.setViewportSize({ width, height });
+      await page.emulateMedia({ colorScheme: mode });
+      await page.waitForFunction((dark) => document.documentElement.classList.contains("dark") === dark, mode === "dark");
       await block(page).scrollIntoViewIfNeeded();
 
       // the summary's own surface: tinted, or in Graphite outlined on no fill
@@ -141,15 +144,19 @@ test.describe("replies ready (plan 144)", () => {
       const [mine, summary] = await Promise.all([card, page.getByTestId("summary-block")].map((el) => el.evaluate((n) => { const s = getComputedStyle(n); return { fill: s.backgroundColor, ring: s.boxShadow, radius: s.borderTopLeftRadius }; })));
       expect(mine).toEqual(summary);
       const NONE = "rgba(0, 0, 0, 0)";
-      if (info.project.name === "e2e-graphite") expect(mine!.ring).not.toContain(NONE);
-      else expect(mine!.fill).not.toBe(NONE);
+      // an outline that is really drawn, never "none" on both (review 2)
+      if (info.project.name === "e2e-graphite") {
+        expect(mine!.fill, `${mode}`).toBe(NONE);
+        expect(mine!.ring, `${mode}`).not.toBe("none");
+        expect(mine!.ring, `${mode}`).not.toContain(NONE);
+      } else expect(mine!.fill, `${mode}`).not.toBe(NONE);
 
       // one column: the summary above and the reply bar below share the card's ends
       const box = (await card.boundingBox())!;
       for (const other of [page.getByTestId("draft-slot"), page.getByTestId("summary-block")]) {
         const o = (await other.boundingBox())!;
-        expect(Math.abs(o.x - box.x), `${info.project.name} ${width} left`).toBeLessThanOrEqual(1);
-        expect(Math.abs(o.x + o.width - (box.x + box.width)), `${info.project.name} ${width} right`).toBeLessThanOrEqual(1);
+        expect(Math.abs(o.x - box.x), `${info.project.name} ${width} ${mode} left`).toBeLessThanOrEqual(1);
+        expect(Math.abs(o.x + o.width - (box.x + box.width)), `${info.project.name} ${width} ${mode} right`).toBeLessThanOrEqual(1);
       }
 
       // the label is the header, the draft and the actions sit inside the card's padding, on the header's inset

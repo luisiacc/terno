@@ -34,7 +34,8 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
       <div role="status" aria-live="polite" className="sr-only" data-testid="reply-ready-live">{writing ? "" : t("replies.title")}</div>
       {/* the summary's header: its height, its glyph, its type */}
       <p data-testid="reply-ready-header" className="flex min-h-10 items-center gap-1.5 py-2.5 text-xs text-muted-foreground">
-        {writing ? <Spinner aria-hidden className={AI_GLYPH} /> : <Sparkles aria-hidden className={AI_GLYPH} />}
+        {/* the spinner keeps its status and name, as before the card */}
+        {writing ? <Spinner className={AI_GLYPH} /> : <Sparkles aria-hidden className={AI_GLYPH} />}
         <span data-testid="reply-ready-title" className="font-medium">{writing ? t("replies.writing") : t("replies.title")}</span>
         {!writing && shown.row?.used ? <span data-testid="reply-ready-voice" className="min-w-0 truncate"><span aria-hidden>·</span> {voice(shown.row)}</span> : null}
       </p>
