@@ -161,3 +161,70 @@ Written before the stub (revision 4), from `createAi()` in `packages/ai/src/task
 | `classification` | json `{ results[] }` | smart categories (`aiCategorize`, off by default) | not on a rated screen | one result per item id |
 
 The stub answers all fourteen; an unknown task is a 500 that names it, so a new task can't pass silently.
+
+## How the tooling was built
+
+The tooling only; the rounds run after other work lands.
+
+### The stub
+
+`scripts/ui-rating/model-stub.mjs` is the one source: the rating's harness starts it, and `apps/web/e2e/ollama-stub.ts` is now a wrapper over it (its hooks for holding, delaying and failing requests moved with it). It answers the fourteen tasks above from the request, and it streams compose, Ask's answer and Reply ready's draft as SSE pieces of a dozen characters (20 ms apart for the rating, at once for e2e), stopping when the client goes.
+
+The demo's mail is made of a fixed bank of sentences (`packages/mock-data/src/banks.ts`), so the stub knows each one as a reader would put it: what the sender did, in the third person, what it asks of the reader, and how a reply answers it without deciding anything for them. Relative days are written as dates from the message's own date ("before Friday 23 October"), so the summary validator never sends an answer back. A sentence it doesn't know is quoted as written, its relative days anchored. Two limits are deliberate: the stub can't translate, so a draft is in the language the task names (or the instruction's), and its words are frozen with the round (the brief puts them out of scope).
+
+`summaries.spec.ts` asserted the old stub's fixed sentence; it now asserts the shared stub's own answer to what was sent, and the arrow goes to the message the item cites (Yuki's question, m7).
+
+### The clock
+
+The backend reads time only through `BackendCore.now()`, and the e2e dev server already passes it a fixed `now`. The desktop had no such seam, so `apps/desktop/src/test-hooks.ts` adds one: `TERNO_TEST_NOW` (an epoch in ms) starts the backend's clock there and runs it on at the real pace. Main passes it to the backend only for the demo mailbox (`testClock(env, demo)`), as the IMAP and SMTP test seams are, so a normal launch never reads it (`test-hooks.test.ts`).
+
+The AI set runs at `AI_NOW`, 22 October 2026 16:00 UTC: half an hour after the demo mailbox's newest mail (`seedDemo`'s fixed now). The window reads the same instant through Playwright's `clock.setFixedTime` (as e2e does), and the app runs with `TZ=UTC`. So the digest's three days, a reply's 30-day wait, Today, "hasn't replied in 1 day" and every date on the AI screens are the same in every round, on any Mac. The digest is prepared on its own at launch against the stub; the capture waits for the Today row to say "today's digest".
+
+### Nothing leaves loopback
+
+`createNetworkPolicy` takes an `observe` callback that hears every decision, allowed or refused, before any socket opens; `BackendCoreOptions.onNet` passes it in. `TERNO_TEST_NET_LOG` (demo mailbox only) writes those decisions as JSON lines, bounded at 10,000. The harness clears the log after the setup launch and, after the capture, fails on any allowed request off loopback, any AI request not to the stub's port, any request the window's fence refused, and any task the stub didn't know. Sender icons and automatic updates are off in the rating profile. A capture of Lumen made 52 AI requests, all to the stub (probe, digest, summary, compose, Ask's plan and answer, the action's plan and check, needs-reply, sent mail, filter), and nothing else.
+
+One thing on the setup launch, outside what's rated: choosing Ollama in Settings fills in its default endpoint, `127.0.0.1:11434`, for a moment before the stub's URL is typed, so the AI tab may ask that loopback address for its model list. It's on this Mac and carries no mail.
+
+### Settings, and the relaunch
+
+`setUpAi` drives Settings exactly as a person does, so every switch goes through `settings.update`: AI → Ollama, the stub's endpoint, its model, Test (which saves the structured-output capability), Summarize new mail, Keep track of what I promise ("Not now" to reading old sent mail), Prepare a reply, Prepare a digest each day; Appearance → sender icons off; General → automatic updates off. The design's own launch does this too, so the rated launch is the second. `checkAi` reads them back after the relaunch and throws if any didn't survive. `apps/desktop/e2e/ai-rating.smoke.ts` holds it: with `ai`, the settings survive, the AI entry points show (Today, ⌘J's row, Ask) and the network check passes; without it, the same demo shows no Today and no Summarize.
+
+### The screens, and why each conversation
+
+| Shot | How it's reached | Its ready state |
+|---|---|---|
+| `a07-today` | Today in the sidebar | `today-heading`, and the digest row saying "today's digest" |
+| `a08-today-digest` | the digest row | `digest-page` with its items |
+| `a01-summary` | "Recomendaciones de libros" (Arjun, three messages), Summarize in its toolbar | `summary-block[data-state=ready]` with an item |
+| `a02-draft-prompt` | "departamento en la Roma", ⌘J, the instruction typed | the AI row's input holds it |
+| `a03-draft-written` | Enter | `ai-strip`, and the body holds the draft |
+| `a04-ask-answer` | ⇧⌘K, "What did Isabella say about the payment?" | `ask-turn[data-status=answered]` and its sources |
+| `a05-actions-preview` | New question, "Archive shipping notices older than a month" | `action-preview` with Apply |
+| `a06-actions-undo` | Apply | the "Archived 6 conversations" snack with Undo (then undone, so nothing later moves) |
+| `a10-reply-ready` | "Blockers for sistema de diseño" (Liam, waiting on the user) | `reply-ready[data-phase=ready]` with Use |
+| `a09-followup` | a new message to Arjun Ramírez asking for the flat's address, sent, then opened in Sent | `followup-line` with Nudge |
+| `a11-filter-ai` | Rules, "archive receipts from uber.com", Create with AI | `ai-explanation`, before Save |
+| `a12-writing-style` | Settings → AI → Writing style | "Learned from …" |
+
+Reply ready starts only on a conversation opened by the user that waits on them, so ⌘J and the follow-up use conversations the user wrote last, and the capture fails if a Reply ready shows on either (`noReplyReady`). The follow-up comes from a new message rather than a reply, so no Reply ready can start on its thread and `r` can't pick one up; its first-time tip (plan 113) is closed before the shot, since the screen is the line. The ⌘J draft is discarded after its shots, and snacks a step leaves behind ("Draft discarded", "Undone") are closed, so no screen carries another's state. Each shot waits for animations to end and the stub to be idle; there's no fixed sleep. A state the app can't reach throws, and the capture leaves `FAILED-<mode>.png` beside the shots.
+
+`a11` and `a12` are both in the set (revision 9). Writing style's learned state needs no model call; the "Let AI study my style" flow isn't shot.
+
+### Demo additions: none
+
+Every AI screen reaches its state on the demo mailbox as the everyday set already rates it. With the clock at the demo's own instant, its newsletters are inside the digest's three days, Liam's conversation waits for a reply, "Recomendaciones de libros" has enough to summarize, and the follow-up comes from mail sent in the window. So the everyday evidence can't have changed. To prove it, Lumen's everyday set was captured on the base commit (`8afc2afac`) and on this branch, and image-diffed. Every shot has the same rows and counts; the pixels that differ are the same ones that differ between two captures of this branch's own build:
+
+| Shot | base vs branch | branch vs a second branch capture | What it is |
+|---|---:|---:|---|
+| `03-split-draft-open` dark | 602 px | 602 px | the text caret's blink |
+| `03-split-draft-open` light | 0 | 603 px | the caret |
+| `06-new-message-filled` light, dark | 603, 602 px | 602, 602 px | the caret |
+| `07-search-results` light | 4,163 px | 4,161 px | Platzi's website icon: fetched before the shot in one run, the letter in the other |
+| `14-archive-undo` light, dark | 8, 8 px | 6, 6 px | the undo snack's countdown ring |
+| `01`, `02`, `04`, `05`, `09`, `10` light | 0 to 2 px | 1 to 2 px | antialiasing |
+| the other 21 | 0 | 0 | |
+
+### `round.json` and the gate (revision 11)
+
+`scripts/ui-rating/sets.mjs` defines both sets: their screens, their shots and their brief. `rate.mjs --screens ai` writes `round.json` with the set, its screens, every shot the capture must write, and the hashes of the brief, the capture (capture, harness, sets), the stub and the demo's generator and seed; it refuses a capture that's missing a shot. `gate.mjs` reads the screens from `round.json` (a round from before sets is everyday), refuses a `round.json` whose screens aren't its set's, fails a report that scores a screen the round doesn't have, and fails the round if any frozen shot is missing. The frozen runtime and each rater's room get the harness, the stub and `sets.mjs`; `brief()` picks the set's brief and only that set's hands-on text.

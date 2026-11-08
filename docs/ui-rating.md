@@ -1,6 +1,6 @@
 # The UI rating
 
-How Terno's everyday screens are scored, and the bar they have to hold (plan 158).
+How Terno's everyday screens are scored, and the bar they have to hold (plan 158); the AI screens are a set of their own (plan 161).
 
 ## The rule
 
@@ -13,6 +13,37 @@ Styles: Lumen, Atelier, macOS and Graphite.
 Screens: `split_inbox`, `conversation`, `reply_draft`, `new_message`, `list_layout_inbox`, `search`, `command_palette`, `multi_select`, `row_menu`. `scripts/ui-rating/capture.mjs` holds exactly which states are shot, in light and dark, including a 1100x700 window.
 
 Most flows are shared between styles, so raters don't repeat them. Lumen, the default, gets the full hands-on pass. The other styles are rated hands-on only on what they change (where new message lives, the list header, search, the quick filters, the row, category suggestions, the reader's header, the reply controls), with particular care on contrast.
+
+## The AI set (plan 161)
+
+A second set rates the AI features on their own, with AI on a local model stand-in (`scripts/ui-rating/model-stub.mjs`): no keys, no cloud, the same answers every round, nothing leaving the Mac. Rounds of this set run only these screens, and raters score only the AI part of each (the brief names the region); the rest of the window is context. The model's words are fixed and out of scope: what's rated is how the app presents them and lets you act on them.
+
+| Screen | Shots | Rated region |
+|---|---|---|
+| `summary` | `a01-summary` ◆ | the summary card |
+| `ai_draft` | `a02-draft-prompt` ◆, `a03-draft-written` ◆ | ⌘J's row, its strip and the draft it wrote |
+| `ask` | `a04-ask-answer` ◆ | the Ask panel: answer, citations, sources |
+| `actions` | `a05-actions-preview` ◆, `a06-actions-undo` | an action's preview, then its undo |
+| `today` | `a07-today`, `a08-today-digest` | Today and the newsletter digest |
+| `followups_replies` | `a09-followup`, `a10-reply-ready` | the follow-up line with Nudge; Reply ready with Use |
+| `ai_settings` | `a11-filter-ai`, `a12-writing-style` | Create a filter with AI; Writing style |
+
+◆ also at 1100x700 (`-small`). `scripts/ui-rating/capture.mjs` (`aiPass`) holds the states; each waits for its real ready state, and a state the app can't reach fails the capture.
+
+How it runs:
+
+- `launch({ ai: true })` starts the stub on a free loopback port. Its first launch sets AI up in Settings as a person would (Ollama at the stub, its model, Test, Summarize new mail, follow-ups, Prepare a reply, the daily digest), and turns sender icons and automatic updates off; the rated launch checks those settings survived.
+- The clock: the backend starts at the demo's own instant, 22 October 2026 16:00 UTC, and runs on (`TERNO_TEST_NOW`, honored only in the demo mailbox); the window reads the same fixed instant, in UTC. Every round sees the same days.
+- Nothing leaves loopback: the backend logs every network decision (`TERNO_TEST_NET_LOG`, demo mailbox only), and the capture fails on any request off loopback, any AI request not to the stub, any request the window's fence refused, or a task the stub doesn't know.
+- The demo mailbox is unchanged: every AI screen reaches its state on the mail the everyday set already rates.
+
+```sh
+pnpm ui:rate --screens ai --out /tmp/terno-scratch/rating/ai-r00   # the AI set, with brief-ai.md
+pnpm ui:gate /tmp/terno-scratch/rating/ai-r00
+node scripts/ui-rating/capture.mjs lumen /tmp/shots --screens ai   # the shots alone
+```
+
+Without `--screens`, everything is the everyday set, as before. A round's `round.json` freezes its set, screens, shots and the hashes of its brief, capture, stub and demo; the gate checks reports and evidence against it, never against a report's own list. AI scores compare only with AI scores.
 
 ## What's scored
 
