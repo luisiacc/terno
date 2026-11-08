@@ -1190,10 +1190,12 @@ export function ThreadList() {
       const el = parentRef.current;
       const rows = virtualizer.measurementsCache;
       if (!el || !rows[i]) return virtualizer.scrollToIndex(i, { align: "auto" });
-      const after = rows[Math.min(i + 1, rows.length - 1)]!, before = rows[Math.max(i - 1, 0)]!;
-      const bottom = el.scrollTop + el.clientHeight - (virtualizer.options.scrollPaddingEnd ?? 0);
-      if (after.end > bottom) virtualizer.scrollToIndex(after.index, { align: "end" });
-      else if (before.start < el.scrollTop) virtualizer.scrollToIndex(before.index, { align: "start" });
+      const at = rows[i]!, after = rows[Math.min(i + 1, rows.length - 1)]!, before = rows[Math.max(i - 1, 0)]!;
+      const room = el.clientHeight - (virtualizer.options.scrollPaddingEnd ?? 0);
+      const bottom = el.scrollTop + room;
+      // the cursor's own row first: where a row of look-ahead doesn't fit with it (a tall pinned card), only it shows whole
+      if (after.end > bottom) virtualizer.scrollToIndex(after.end - at.start <= room ? after.index : i, { align: "end" });
+      else if (before.start < el.scrollTop) virtualizer.scrollToIndex(at.end - before.start <= room ? before.index : i, { align: "start" });
     };
   }, [virtualizer]);
 

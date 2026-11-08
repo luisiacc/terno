@@ -149,3 +149,25 @@ test("j and k keep a row of look-ahead: the next row always shows, down and back
     await expect.poll(() => ahead(-1), `after k #${i + 1}`).toBe(true);
   }
 });
+
+test("with room for less than two rows, j and k keep the cursor's own row whole (plan 158)", async ({ app: page }) => {
+  await rows(page).first().click();
+  const list = page.getByRole("listbox", { name: "Conversations", exact: true });
+  const height = (await rows(page).first().boundingBox())!.height;
+  // the list's room: one row and a half
+  await list.evaluate((el, h) => { el.style.flex = "none"; el.style.height = `${Math.round(h * 1.5)}px`; }, height);
+  const whole = () => page.evaluate(() => {
+    const box = document.querySelector("[data-testid=thread-list] [role=listbox]")!.getBoundingClientRect();
+    const r = document.querySelector("[data-testid=thread-row][data-cursor]")!.getBoundingClientRect();
+    return r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5;
+  });
+  await list.focus();
+  for (let i = 0; i < 6; i++) {
+    await page.keyboard.press("j");
+    await expect.poll(whole, `after j #${i + 1}`).toBe(true);
+  }
+  for (let i = 0; i < 5; i++) {
+    await page.keyboard.press("k");
+    await expect.poll(whole, `after k #${i + 1}`).toBe(true);
+  }
+});
