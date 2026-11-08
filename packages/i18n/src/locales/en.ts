@@ -1263,7 +1263,6 @@ const en = {
   "aiDraft.guard.stopSend": "Stop and send what’s here",
   "aiDraft.guard.discardSend": "Discard it and send what’s here",
   "aiDraft.guard.keep": "Keep it",
-  "aiDraft.written": "Written with AI",
   "aiDraft.edited": "Edited after AI",
   "aiDraft.submit": "Write",
   "aiDraft.undone": "Back to before the AI draft",

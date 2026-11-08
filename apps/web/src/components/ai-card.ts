@@ -1,4 +1,5 @@
 import { t } from "@terno/i18n";
+import { provenanceLabel } from "../lib/provenance";
 
 /**
  * A model's words, not the sender's (plans 148 and 144): the design's card, so every AI suggestion in the reader looks one
@@ -18,7 +19,8 @@ export const AI_TITLE = "font-medium text-foreground";
 export const AI_ACTIONS = "flex flex-wrap items-center gap-2";
 
 /** "Written with AI", or "Edited after AI" once the user has typed in it: the strip's status, said one way. */
-export const aiWritten = (edited: boolean): string => t(edited ? "aiDraft.edited" : "aiDraft.written");
+/** The ⌘J strip's status: the one provenance label (lib/provenance), or that it was edited since. */
+export const aiWritten = (edited: boolean): string => (edited ? t("aiDraft.edited") : provenanceLabel());
 
 /**
  * Plan 161: a gap the model left (`[What you think.]`), marked wherever its words are shown, in the card and in the

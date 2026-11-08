@@ -1254,7 +1254,6 @@ const es = {
   "aiDraft.guard.stopSend": "Detener y enviar lo que hay",
   "aiDraft.guard.discardSend": "Descartarla y enviar lo que hay",
   "aiDraft.guard.keep": "Conservarla",
-  "aiDraft.written": "Escrito con IA",
   "aiDraft.edited": "Editado después de la IA",
   "aiDraft.submit": "Escribir",
   "aiDraft.undone": "Como estaba antes del borrador de la IA",
