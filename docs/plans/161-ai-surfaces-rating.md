@@ -520,3 +520,60 @@ Seven points, all taken, each with a regression test that fails without the fix:
 Also from the review: the summary card's state buttons were still 24 px; they're 28 px with the rest.
 
 A second, narrower pass on those fixes found two more, both taken with a test each: ⌘⇧Z then ⌘Z after an edited Undo lost the strip and the gaps' guard the second time (the way back is now kept, and ⌘⇧Z puts the draft back as the Undo left it); and an old snack's Undo came alive again after a newer ⌘J was stopped with nothing written (any new run now retires it). Review rounds stop here.
+
+### ai-r01 (main at `31052e83f`, 2026-11-08)
+
+After pass 1 (the three areas above, landed together, full suite green). All eight reports valid; 683 cells under 9 as the gate counts them (ai-r00: 695), 112 issues (6 high; ai-r00: 114, 17 high). The numbers as `gate.mjs` wrote them:
+
+| Style | Rater | Overall | UI | UX | Lowest | Cells below |
+|---|---|---:|---:|---:|---:|---:|
+| atelier | claude | 6.5 | 6.5 | 7 | 5 | 84/84 |
+| atelier | codex | 7.5 | 7.5 | 8 | 6.5 | 83/84 |
+| graphite | claude | 7 | 7 | 7 | 5.5 | 84/84 |
+| graphite | codex | 7 | 7.5 | 7 | 5.5 | 84/84 |
+| lumen | claude | 7 | 7 | 7 | 5.5 | 84/84 |
+| lumen | codex | 7.5 | 7.5 | 7.5 | 5.5 | 80/84 |
+| macos | claude | 6.5 | 6 | 7 | 5.5 | 84/84 |
+| macos | codex | 7.5 | 7.5 | 7.5 | 5.5 | 76/84 |
+
+#### Screens, each rater's overall
+
+| Screen | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| summary | 6.5 | 7.5 | 7 | 7.5 | 7 | 7.5 | 6.5 | 7.5 |
+| ai_draft | 7 | 7.5 | 7.5 | 7.5 | 7.5 | 7 | 7 | 7.5 |
+| ask | 7 | 7.5 | 7 | 7 | 7 | 8 | 6.5 | 8 |
+| actions | 7 | 8 | 7 | 8 | 7.5 | 8 | 7 | 8 |
+| today | 5.5 | 7 | 6.5 | 6.5 | 6.5 | 6.5 | 6 | 7 |
+| followups_replies | 6.5 | 7.5 | 7 | 7.5 | 7 | 8 | 7 | 8 |
+| ai_settings | 6 | 7.5 | 6.5 | 6.5 | 6 | 7 | 6 | 6.5 |
+
+#### Facets, mean across screens
+
+| Facet | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| typography | 6.93 | 7.86 | 7.21 | 7.64 | 7.29 | 7.79 | 6.86 | 7.86 |
+| contrast | 6.71 | 8.00 | 6.93 | 7.57 | 6.93 | 7.71 | 6.79 | 8.07 |
+| placement | 6.36 | 7.50 | 7.00 | 7.36 | 6.79 | 7.79 | 6.43 | 7.64 |
+| hierarchy | 6.36 | 7.36 | 6.50 | 6.86 | 7.07 | 7.43 | 6.64 | 7.57 |
+| controls | 6.43 | 7.71 | 6.71 | 7.43 | 7.00 | 7.79 | 6.50 | 7.64 |
+| density | 6.57 | 7.50 | 6.93 | 7.29 | 7.21 | 7.29 | 7.07 | 7.57 |
+| efficiency | 7.07 | 8.07 | 7.29 | 7.93 | 7.29 | 8.07 | 7.36 | 8.43 |
+| clarity | 6.50 | 7.29 | 7.29 | 6.86 | 7.00 | 7.07 | 6.64 | 7.14 |
+| feedback | 6.64 | 8.29 | 6.79 | 8.00 | 7.00 | 8.36 | 6.64 | 8.71 |
+| consistency | 6.07 | 7.79 | 7.14 | 7.43 | 7.00 | 7.86 | 6.50 | 7.86 |
+| accessibility | 6.43 | 7.71 | 6.71 | 7.71 | 6.86 | 7.79 | 6.43 | 7.64 |
+
+**Moved most:** actions (Claude 5 to 5.5 → 7 to 7.5; Codex 7 → 8), follow-ups and Reply ready (+0.5 to +1), ⌘J (+0.5 to +1). **Still lowest:** Today (5.5 to 7) and AI settings (6 to 7.5).
+
+**The themes** (all 112 issues in `/tmp/terno-scratch/ui9/rounds/ai-r01`):
+- **Losing work** (3 high): Esc while reading a matched conversation throws away the whole action preview; Regenerate replaces hand edits without asking; Esc in the ⌘J row discards the whole reply; Esc in Rules drops an unsaved AI rule; a prepared reply is gone after Use and a discarded draft.
+- **Today** (3 high): after archiving, the digest still lists all rows under "0 newsletters"; the button said 15 and the snack 14 (the opened one quietly kept); every newsletter starts ticked and the hint "Ticked newsletters are archived" reads as done; the reason ("Your turn", "New from a contact") is the weakest text in the row; the digest is still below the fold, reached only by a 12 px "Digest (16)"; three scopes (12 of 41, Digest, 165 waiting) unexplained; 16 px checkboxes.
+- **AI cards:** the summary and Reply ready cards measure 1.08 to 1.13:1 against the page; every AI surface has its own container and attribution (the summary has no "Written with AI", the filter's box has its own cream gradient).
+- **⌘J:** the instruction disappears once written; a second ⌘J hides Undo; the strip takes two rows for four buttons; enabled commands look like metadata in dark; a rewrite blanks the draft while streaming; three error designs, one showing an internal address.
+- **Ask:** the first answer's sources vanish after a follow-up; citation buttons measure 14 px; New question and Previous AI questions compete with the answer; "Ask again" vs "New question" vs "Ask a follow-up"; "Search older mail" has two looks; the history chip wraps over its field.
+- **Actions:** the quoted request is the title and the outcome a grey subtitle; Details is a monospace regex; "Start of mail" unclear; rows are options, not checkboxes, to a screen reader; Undo's key cap says Z; disabled Archive at 1.7:1.
+- **Follow-ups and Reply ready:** a bare weekday with no date, Later's choices without their times; the line repeats itself and offers "Open message" for the open message; "Draft a nudge" while a nudge is drafted; "Reply ready" over a gap still to fill; nothing shows while it's being prepared, then the card pushes the page.
+- **AI settings:** the AI filter's preview shows "2 ms" and monospace dates (four styles, both raters); Writing style's copy contradicts itself (181 messages over a card saying 64; "Yours and your accounts'"), learned versus "Let AI study my style" unclear, the editor opens with focus above the view, learned phrases can't be removed; Save and apply doesn't repeat its count.
+
+No finding goes against a product or AI rule. Two touch the owner's open questions (an opened newsletter left out of the archive; every newsletter ticked by default, plan 145).
