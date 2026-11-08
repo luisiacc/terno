@@ -150,7 +150,14 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
               {t("replies.use")}
               <Shortcut keys="r" className="ml-0.5" />
             </Button>
-            <Button size="sm" variant="outline" className="text-foreground" data-testid="reply-ready-dismiss" onClick={() => void dismissReply(threadId)}>{t("replies.dismiss")}</Button>
+            <Button size="sm" variant="outline" className="text-foreground" data-testid="reply-ready-dismiss" onClick={() => {
+              void dismissReply(threadId);
+              // plan 162 (after ai162-r01): the keys go to the reply bar coming back in its place, never to the page
+              requestAnimationFrame(() => {
+                const at = document.activeElement;
+                if (!at || at === document.body) document.querySelector<HTMLElement>("[data-testid=quick-reply]")?.focus({ preventScroll: true });
+              });
+            }}>{t("replies.dismiss")}</Button>
             {shown.row && <AiProvenance model={shown.row.model ?? ""} at={shown.row.generatedAt} lines={replyVoice(shown.row)} testId="reply-ready-provenance" className="-me-1.5 ms-auto" />}
           </>
         )}

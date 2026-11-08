@@ -136,10 +136,9 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(rule.getByTestId("action-apply")).toHaveCount(0);
       await expect(page.getByTestId("action-decision")).toHaveCount(0);
       const decided = (await page.getByTestId("action-apply").boundingBox())!;
-      // the keys are the buttons' own: no line under the rule repeats them, and x is said only while a match is read
+      // the keys are the buttons' own: no line under the rule repeats them; x is said as what it does, on the one being read
       await expect(page.getByTestId("action-keys")).toHaveCount(0);
-      await expect(page.getByTestId("action-leave-out-hint")).toHaveCount(0);
-      await expect(rule.getByTestId("action-help")).toHaveText("Untick any you want to keep. Click one to read it.");
+      await expect(rule.getByTestId("action-help")).toHaveText("Untick any you want to keep, or press X on the one you’re reading. Click one to read it.");
       // a small archive needs no words about what it'll do
       await expect(rule.getByTestId("action-consequence")).toHaveCount(0);
       // plan 161, pass 2: what Apply does is the title, what was asked the line under it
@@ -166,9 +165,8 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("reader-subject")).toBeVisible();
       await expect(rows(page).first()).toHaveAttribute("data-included", "true");
       await expect(page.getByTestId("action-sentence")).toContainText("Archive shipping notices older than a month");
-      // the decision didn't move, and x is said now that it works
+      // the decision didn't move
       expect((await page.getByTestId("action-apply").boundingBox())!).toEqual(decided);
-      await expect(page.getByTestId("action-leave-out-hint")).toContainText("Leave this one out");
       // the rule isn't on screen: the header has Apply again, so it's always there exactly once
       await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toHaveText("Archive 2");
       await expect(page.getByTestId("action-apply")).toHaveCount(1);
@@ -511,8 +509,8 @@ test.describe("actions in plain English at 1100 × 700 (plan 161, pass 2)", () =
     expect(await lines("action-title")).toBe(1);
     expect(await lines("action-rule-title")).toBe(1);
     // the help is its own line, whole. Plan 162 (after ai162-r01): the keys are the header buttons' own; no line repeats them
-    await expect(page.getByTestId("action-help")).toHaveText("Untick any you want to keep. Click one to read it.");
-    expect(await lines("action-help")).toBe(1);
+    await expect(page.getByTestId("action-help")).toHaveText("Untick any you want to keep, or press X on the one you’re reading. Click one to read it.");
+    expect(await lines("action-help")).toBeLessThanOrEqual(2);
     await expect(page.getByTestId("action-keys")).toHaveCount(0);
     await expect(page.getByTestId("action-rule")).not.toContainText("brings you back");
     // the one provenance control every AI result has, at the rule's line's end: what it did and how to check it

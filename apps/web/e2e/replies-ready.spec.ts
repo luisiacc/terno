@@ -92,8 +92,9 @@ test.describe("replies ready (plan 144)", () => {
       await page.getByTestId("reply-ready-dismiss").click();
       await expect(block(page)).toHaveCount(0);
       expect(state()).toBe("dismissed");
-      // plan 162 (after ai162-r01): the reply bar comes back to its place
+      // plan 162 (after ai162-r01): the reply bar comes back to its place, with the keys
       await expect(page.getByTestId("reply-bar")).toBeVisible();
+      await expect(page.getByTestId("quick-reply")).toBeFocused();
       await page.getByTestId("snack-action").click();
       await expect(block(page)).toBeVisible();
       await expect.poll(state).toBe("ready");

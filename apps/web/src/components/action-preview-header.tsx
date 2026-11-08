@@ -138,9 +138,6 @@ export default function ActionPreviewHeader() {
               <Dot />
               {/* plan 162: Esc said once, where it applies: here, while a conversation covers the rule */}
               <Button variant="link-secondary" size="xs" className="no-drag shrink-0 gap-1.5" data-testid="action-show-rule" aria-keyshortcuts="Escape" onClick={() => closePreviewRow()}>{t("action.rule.show")} <Shortcut keys="escape" /></Button>
-              {/* plan 162 (after ai162-r01): x said only where it works, while a match is being read */}
-              <Dot />
-              <span className="inline-flex shrink-0 items-center gap-1.5" data-testid="action-leave-out-hint"><Shortcut keys="x" /> {t("action.rule.leaveOut")}</span>
             </>
           )}
         </p>

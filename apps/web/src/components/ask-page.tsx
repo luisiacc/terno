@@ -162,12 +162,12 @@ function CommandTurn({ turn, last }: { turn: AskTurn; last: boolean }) {
   );
 }
 
-function CommandNotice() {
+function CommandNotice({ echo = true }: { /** plan 162: not under the field that holds the same words */ echo?: boolean }) {
   const notice = useAsk((s) => s.notice);
   if (!notice) return null;
   return (
     <section className="space-y-1" data-testid="ask-command-notice">
-      <h3 className="text-xs font-medium text-muted-foreground" data-testid="ask-question">{notice.question}</h3>
+      <h3 className={echo ? "text-xs font-medium text-muted-foreground" : "sr-only"} data-testid="ask-question">{notice.question}</h3>
       <p className="text-sm">{notice.text}</p>
     </section>
   );
@@ -609,7 +609,7 @@ function Empty({ value, setValue, onBack, onClose }: { value: string; setValue: 
       )}
       {!busy && (
         <CommandList label={t("palette.results")}>
-          <div className="px-[18px] py-2 empty:hidden"><CommandNotice /></div>
+          <div className="px-[18px] py-2 empty:hidden"><CommandNotice echo={false} /></div>
           {query && (
             <CommandGroup value="ask-go" forceMount>
               <CommandItem forceMount value={`ask\u0000${value}`} data-testid="ask-submit" onSelect={() => { askQuestion(value); setValue(""); }}>
