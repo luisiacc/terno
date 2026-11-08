@@ -84,6 +84,11 @@ test.describe("axe", { tag: "@variant" }, () => {
     await page.getByTestId("action-summarize").click();
     await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "ready");
     await clean(page, "a summary", "[data-testid=summary-block]");
+    // plan 161, pass 3: who wrote it, the provenance every AI surface ends its row with
+    await page.getByTestId("summary-provenance").click();
+    await expect(page.getByTestId("summary-provenance-popover")).toBeVisible();
+    await clean(page, "who wrote the summary", "[data-testid=summary-provenance-popover]");
+    await page.keyboard.press("Escape");
 
     await page.getByTestId("action-remind").click();
     await page.getByTestId("remind-pick").click();

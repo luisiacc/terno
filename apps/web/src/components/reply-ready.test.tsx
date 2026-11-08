@@ -33,15 +33,15 @@ it("plan 144's addendum: ready, it's the summary's card, the label its header, t
   expect(card.getAttribute("aria-label")).toBe("Reply ready");
   // the summary's surface: the one class both use, so an AI suggestion looks one way in every style
   expect(card.className.split(" ")).toContain(AI_CARD);
-  // the header: the summary's glyph, then the label and the voice
+  // the header: the summary's glyph, then the label and who it's to
   const header = q("reply-ready-header")!;
   expect(header.parentElement).toBe(card);
   expect(header.firstElementChild?.tagName.toLowerCase()).toBe("svg");
   expect(header.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
-  // plan 161: who Use writes to, then the voice
-  expect(header.textContent).toBe("Reply ready·To Liam Baker·In your voice with Liam");
+  // plan 161: who Use writes to; pass 3: the voice is the provenance's, which explains it
+  expect(header.textContent).toBe("Reply ready·To Liam Baker");
   // the separators are items of their own: the same gap either side
-  expect([...header.children].filter((c) => c.textContent === "·" && c.getAttribute("aria-hidden") === "true")).toHaveLength(2);
+  expect([...header.children].filter((c) => c.textContent === "·" && c.getAttribute("aria-hidden") === "true")).toHaveLength(1);
   // then the draft, then the footer: all inside the card, in that order
   const text = q("reply-ready-text")!;
   const footer = q("reply-ready-footer")!;
@@ -50,6 +50,10 @@ it("plan 144's addendum: ready, it's the summary's card, the label its header, t
   expect(footer.contains(q("reply-ready-use"))).toBe(true);
   expect(footer.contains(q("reply-ready-dismiss"))).toBe(true);
   expect(footer.textContent).toContain("Press R to reply with this draft");
+  // pass 3: who wrote it, the one control every AI surface ends its row with
+  expect(footer.lastElementChild).toBe(q("reply-ready-provenance"));
+  expect(q("reply-ready-provenance")!.tagName.toLowerCase()).toBe("button");
+  expect(q("reply-ready-provenance-label")!.textContent).toBe("Written with AI");
   expect(q("reply-ready-use")!.textContent).toBe("Use as draft");
   // plan 161: the standard height, not 24 px
   expect(q("reply-ready-use")!.className).toContain("h-7");
@@ -97,6 +101,13 @@ it("plan 161: the gaps the model left are marked, exactly those, and never while
   expect(q("reply-ready-text")!.textContent).toBe("Thanks. [What you think.] See [this] too. [What you think.]");
 });
 
+it("plan 161, pass 3: the voice, said with why, and where its words came from, as the composer says them", async () => {
+  const { replyVoice } = await import("./reply-ready");
+  expect(replyVoice(row as never)).toEqual(["In your voice with Liam: it learned from how you write to Liam.", "What it says comes from this conversation alone: you gave no instruction."]);
+  expect(replyVoice({ ...row, used: { learning: false, levels: ["you"], examples: 0 } } as never)[0]).toBe("In your general voice: it hasn’t seen how you write to this person.");
+  expect(replyVoice({ ...row, used: { learning: true, levels: [], examples: 0 } } as never)[0]).toBe("Still learning how you write: this used what’s known so far.");
+});
+
 it("plan 161: several people: the header names them all", async () => {
   const { replyTo } = await import("./reply-ready");
   expect(replyTo({ ...row, to: [{ name: "Liam Baker", email: "l@x.test" }, { name: "", email: "ana@x.test" }] } as never)).toBe("To Liam Baker and ana@x.test");
@@ -110,7 +121,7 @@ it("plan 161, pass 2: the header counts the gaps still to fill, in the ink, befo
   // each gap once, and only those still in the text
   expect(q("reply-ready-gaps")!.textContent).toBe("2 gaps to fill");
   expect(q("reply-ready-gaps")!.className).toContain("text-foreground");
-  expect(q("reply-ready-header")!.textContent).toBe("Reply ready·2 gaps to fill·To Liam Baker·In your voice with Liam");
+  expect(q("reply-ready-header")!.textContent).toBe("Reply ready·2 gaps to fill·To Liam Baker");
   act(() => useReplies.setState({ shown: { threadId: 7, phase: "ready", text: "Thanks. [What you think.]", row: gappy } }));
   expect(q("reply-ready-gaps")!.textContent).toBe("1 gap to fill");
   act(() => useReplies.setState({ shown: { threadId: 7, phase: "ready", text: "Thanks.", row: gappy } }));

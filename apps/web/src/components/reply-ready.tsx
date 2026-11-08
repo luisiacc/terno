@@ -10,14 +10,23 @@ import { useState } from "react";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { dismissReply, stopReply, useReplies, useReply } from "~/lib/replies";
 import { useApp } from "~/state/app";
-import { AI_ACTIONS, AI_CARD, AI_GAP, AI_GLYPH, AI_HEADER, AI_TITLE, gapPieces } from "./ai-card";
+import { AI_ACTIONS, AI_CARD, AI_GAP, AI_GLYPH, AI_HEADER, AI_TITLE, AiProvenance, gapPieces } from "./ai-card";
 
-/** "In your voice with Ana": only what was really used, as the strip says it. */
-function voice(row: PreparedReply): string {
-  const used = row.used!;
-  if (used.learning) return t("aiDraft.voice.learning");
+/**
+ * Plan 161, pass 3: what the provenance says it used, the two facts the composer says too: the style ("In your voice with
+ * Ana: it learned from how you write to Ana"), only what was really used, and where its words came from (no instruction:
+ * this conversation alone).
+ */
+export function replyVoice(row: Pick<PreparedReply, "used" | "to">): string[] {
+  const used = row.used;
+  if (!used) return [t("aiDraft.content.alone")];
   const who = row.to[0]?.name?.split(/\s+/)[0] ?? "";
-  return who && (used.levels.includes("person") || used.examples > 0) ? t("aiDraft.voice.with", { name: who }) : t("aiDraft.voice.general");
+  const style = used.learning
+    ? t("aiDraft.voice.stillLearning")
+    : who && (used.levels.includes("person") || used.examples > 0)
+      ? t("aiDraft.voice.withWhy", { name: who })
+      : t("aiDraft.voice.generalWhy");
+  return [style, t("aiDraft.content.alone")];
 }
 
 /** Plan 161: who Use writes to, as the composer will have them: "To Liam Taylor", "To Liam Taylor and Ana Ruiz". */
@@ -75,9 +84,8 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
         <span data-testid="reply-ready-title" className={AI_TITLE}>{writing ? t("replies.writing") : t("replies.title")}</span>
         {/* what's left for the user, said before Use, in the ink */}
         {toFill > 0 && <><span aria-hidden>·</span><span data-testid="reply-ready-gaps" className="font-medium text-foreground">{t("replies.gaps", { count: toFill })}</span></>}
-        {/* each "·" its own item, so the gaps either side are the same */}
+        {/* each "·" its own item, so the gaps either side are the same; the voice is the provenance's to explain (pass 3) */}
         {!writing && to ? <><span aria-hidden>·</span><span data-testid="reply-ready-to" className="min-w-0">{to}</span></> : null}
-        {!writing && shown.row?.used ? <><span aria-hidden>·</span><span data-testid="reply-ready-voice" className="min-w-0 truncate">{voice(shown.row)}</span></> : null}
       </p>
       {writing && !shown.text.trim() ? (
         // its place held until the first words: three lines of the text's height
@@ -100,6 +108,7 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
             <Button size="sm" variant="outline" className="text-foreground" data-testid="reply-ready-dismiss" onClick={() => void dismissReply(threadId)}>{t("replies.dismiss")}</Button>
             {/* the one R on screen: the reply bar's keycap steps aside while this shows (plan 161, pass 2) */}
             <Hint />
+            {shown.row && <AiProvenance model={shown.row.model ?? ""} at={shown.row.generatedAt} lines={replyVoice(shown.row)} testId="reply-ready-provenance" className="-me-1.5 ms-auto" />}
           </>
         )}
       </div>

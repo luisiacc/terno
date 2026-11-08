@@ -25,12 +25,15 @@ export function AiPreviewSlot({ draftKey, className }: { draftKey: string; class
 // a click here mustn't take the caret away from the text the row will come back to
 const keepSelection = (e: React.MouseEvent) => e.preventDefault();
 
-/** The quiet Sparkles in a draft's footer and on the reply bar. */
+/**
+ * The quiet Sparkles in a draft's footer and on the reply bar. Plan 161, pass 3: each says what it does, beside the reader's
+ * own Sparkles (Summarize this conversation): the reply bar's starts a reply ("Reply with AI"), a draft's writes in it.
+ */
 export function AiDraftButton({ draftKey, threadId, disabled, testId }: { draftKey?: string; threadId?: number; disabled?: boolean; testId: string }) {
   const offered = useCanDraft();
   if (!offered) return null;
   return (
-    <IconButton label={t("aiDraft.button")} shortcut="mod+j" disabled={disabled} onMouseDown={keepSelection} onClick={() => openAiDraft({ ...(draftKey ? { key: draftKey } : {}), ...(threadId !== undefined ? { threadId } : {}) })} data-testid={testId} className="[&_svg]:[--icon-line:var(--icon-line-toolbar)]">
+    <IconButton label={draftKey === undefined && threadId !== undefined ? t("aiDraft.buttonReply") : t("aiDraft.button")} shortcut="mod+j" disabled={disabled} onMouseDown={keepSelection} onClick={() => openAiDraft({ ...(draftKey ? { key: draftKey } : {}), ...(threadId !== undefined ? { threadId } : {}) })} data-testid={testId} className="[&_svg]:[--icon-line:var(--icon-line-toolbar)]">
       <Sparkles />
     </IconButton>
   );

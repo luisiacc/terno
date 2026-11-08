@@ -92,23 +92,31 @@ test.describe("summaries (plan 132)", () => {
     // plan 161, pass 2: a conversation of one message is that message, on screen: the item is its words, with nowhere to go
     await expect(page.getByTestId("summary-item-open")).toHaveCount(0);
     expect(await page.getByTestId("summary-item").first().evaluate((el) => el.tagName)).toBe("LI");
-    await expect(page.getByTestId("summary-item").first().locator("button")).toHaveCount(0);
+    // pass 3: an Action is answered with the ordinary reply, said so: Reply, which opens it as R does
+    await expect(page.getByTestId("summary-item").first().locator("button")).toHaveCount(1);
+    await expect(page.getByTestId("summary-item").first().getByTestId("summary-item-reply")).toBeVisible();
+    await expect(page.getByTestId("summary-item-reply").first()).toHaveAccessibleName("Reply");
 
     // it stands above the conversation
     const blockBox = (await block.boundingBox())!;
     const messageBox = (await page.getByTestId("message").first().boundingBox())!;
     expect(blockBox.y + blockBox.height).toBeLessThanOrEqual(messageBox.y + 1);
 
-    // plan 161, pass 2: it says it was written with AI, as Ask and ⌘J do; who and when, and that it can be wrong, in its tooltip
+    // plan 161, pass 3: who wrote it is a button at the row's end (a label that took focus did nothing), its popover who and
+    // when, and that it can be wrong
     await expect(page.getByTestId("summary-provenance-label")).toHaveText("Written with AI");
-    await page.getByTestId("summary-provenance-label").hover();
-    await expect(page.getByTestId("summary-provenance")).toContainText(/Written by demo, .*It can make mistakes\./);
-    await page.mouse.move(0, 0);
-    await expect(page.getByTestId("summary-provenance")).toHaveCount(0);
-    // and Copy, as Ask has: the summary and its items, as text
+    await expect(page.getByTestId("summary-provenance")).toHaveRole("button");
+    await page.getByTestId("summary-provenance").click();
+    await expect(page.getByTestId("summary-provenance-popover")).toContainText(/Written by demo, .*It can make mistakes\./);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("summary-provenance-popover")).toHaveCount(0);
+    // and Copy, the one Copy every AI surface has, 28 px: Copied in place, then Copy again
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    expect((await page.getByTestId("summary-copy").boundingBox())!.height).toBeGreaterThanOrEqual(28);
     await page.getByTestId("summary-copy").click();
-    await expect(page.getByTestId("snack")).toContainText("Summary copied");
+    await expect(page.getByTestId("summary-copy")).toHaveAttribute("data-copied", "true");
+    await expect(page.getByTestId("summary-copy-status")).toHaveText("Copied");
+    await expect(page.getByTestId("summary-copy")).not.toHaveAttribute("data-copied", "true");
     expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/Ana can't make the 12th[\s\S]*\nAction: Please send the signed contract by Friday/);
 
     expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=summary-block]").analyze()).violations).toEqual([]);
@@ -127,6 +135,18 @@ test.describe("summaries (plan 132)", () => {
     await expect(page.getByTestId("summary-toggle")).toHaveAttribute("aria-expanded", "false");
     await page.getByTestId("summary-toggle").click();
     await expect(page.getByTestId("summary-text")).toBeVisible();
+
+    // plan 161, pass 3: three Sparkles, three names, each with its key where it has one
+    await expect(page.getByTestId("action-summarize")).toHaveAccessibleName("Summarize this conversation");
+    await expect(page.getByTestId("quick-ai")).toHaveAccessibleName("Reply with AI");
+    // the item's Reply is the conversation's ordinary reply, as R opens it: the inline composer, the caret in it
+    await page.getByTestId("summary-item-reply").first().click();
+    await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "reply");
+    await expect(page.getByTestId("compose-body")).toBeFocused();
+    await expect(page.getByTestId("compose-ai")).toHaveAccessibleName("Write with AI");
+    await page.getByTestId("compose-ai").hover();
+    await expect(page.locator("[data-slot=tooltip-content]")).toContainText("Write with AI");
+    await expect(page.locator("[data-slot=tooltip-content]")).toContainText(/⌘\s*J/);
   });
 
   test("plan 148: a card in every design, its edges on the column and its text inset; nothing spills out of it", { tag: "@design" }, async ({ app: page, server }, info) => {
@@ -164,7 +184,7 @@ test.describe("summaries (plan 132)", () => {
 
     // the minimum window: a long link wraps, inside the card
     await page.setViewportSize({ width: 980, height: 600 });
-    for (const text of [page.getByTestId("summary-text"), page.getByTestId("summary-item").first().locator("span").nth(1)]) {
+    for (const text of [page.getByTestId("summary-text"), page.getByTestId("summary-item-text").first()]) {
       const fits = await text.evaluate((el) => el.scrollWidth <= el.clientWidth);
       expect(fits).toBe(true);
       const right = (await text.boundingBox())!;
@@ -196,7 +216,7 @@ test.describe("summaries (plan 132)", () => {
 
       // stopped: nothing written, the block gone
       const summarize = page.getByTestId("action-summarize");
-      await expect(summarize).toHaveAttribute("aria-label", "Summarize");
+      await expect(summarize).toHaveAttribute("aria-label", "Summarize this conversation");
       await summarize.click();
       const block = page.getByTestId("summary-block");
       await expect(block).toHaveAttribute("data-state", "running");
@@ -231,11 +251,11 @@ test.describe("summaries (plan 132)", () => {
       expect({ x: ready.x, y: ready.y, width: ready.width }).toEqual({ x: running.x, y: running.y, width: running.width });
       expect((await page.getByTestId("summary-toggle").boundingBox())!.height).toBe(running.height);
 
-      // plan 161, pass 2: the row says whose message it goes to, and when; its name is what it shows
-      await expect(page.getByTestId("summary-item-open")).toHaveText(/^Yuki · /);
-      await expect(page.getByTestId("summary-item")).toHaveAccessibleName(/Yuki · /);
-      // the arrow unfolds and goes to the message it names, and the toolbar's button stays where it is
-      await page.getByTestId("summary-item").click();
+      // plan 161, pass 3: the source is named for where it goes, whose message and when; its name is what it shows
+      await expect(page.getByTestId("summary-item-open")).toHaveText(/^Yuki’s message, /);
+      await expect(page.getByTestId("summary-item-open")).toHaveAccessibleName(/^Yuki’s message, /);
+      // it unfolds and goes to the message it names, and the toolbar's button stays where it is
+      await page.getByTestId("summary-item-open").click();
       // its item cites the question in Yuki's last message, m7 of 8: the one before the user's reply
       expect(written.items[0]!.message).toBe("m7");
       const target = page.locator(`[data-reader-scroller] article[data-message-id]`).nth(-2);
@@ -321,7 +341,7 @@ test.describe("summaries (plan 132)", () => {
       await expect(button).toHaveAttribute("aria-label", "Update summary");
       await button.click();
       await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "ready");
-      await expect(button).toHaveAttribute("aria-label", "Summarize");
+      await expect(button).toHaveAttribute("aria-label", "Summarize this conversation");
     });
     await scenario("Settings → Storage: Clear AI data", async () => {
       await fresh(page);
@@ -350,7 +370,7 @@ test.describe("summaries (plan 132)", () => {
       await expect(block).toHaveAttribute("data-state", "ready");
       await expect(page.getByTestId("summary-toggle")).toContainText("Resumen");
       await expect(page.getByTestId("summary-item").first()).toContainText("Acción");
-      await expect(page.getByTestId("action-summarize")).toHaveAttribute("aria-label", "Resumir");
+      await expect(page.getByTestId("action-summarize")).toHaveAttribute("aria-label", "Resumir esta conversación");
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-ai").click();
       await page.getByTestId("ai-summaries").scrollIntoViewIfNeeded();
@@ -413,9 +433,9 @@ test.describe("summaries (plan 132)", () => {
       await page.getByTestId("summary-continue").click();
       await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "ready");
       expect(stub.summaries).toHaveLength(1);
-      await page.getByTestId("summary-provenance-label").hover();
-      await expect(page.getByTestId("summary-provenance")).toContainText("Written by GPT Luna");
-      await page.mouse.move(0, 0);
+      await page.getByTestId("summary-provenance").click();
+      await expect(page.getByTestId("summary-provenance-popover")).toContainText("Written by GPT Luna");
+      await page.keyboard.press("Escape");
 
       // a second thread isn't asked again; and when it fails, the block says so and can try again
       await deliver(page, server, incoming(accountId, "Next one"));

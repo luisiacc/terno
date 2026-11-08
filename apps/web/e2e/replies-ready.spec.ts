@@ -147,9 +147,18 @@ test.describe("replies ready (plan 144)", () => {
         // plan 161, pass 2: what's left to fill, said before Use
         await expect(page.getByTestId("reply-ready-gaps")).toHaveText("1 gap to fill");
         for (const id of ["reply-ready-use", "reply-ready-dismiss"]) expect((await page.getByTestId(id).boundingBox())!.height, id).toBeGreaterThanOrEqual(28);
+        // plan 161, pass 3: the voice leaves the header for the provenance at the row's end, which says it with why, and where
+        // the words came from, as the composer says it after Use
+        await expect(page.getByTestId("reply-ready-header")).not.toContainText("voice");
+        await page.getByTestId("reply-ready-provenance").click();
+        const why = page.getByTestId("reply-ready-provenance-popover");
+        await expect(why).toContainText(/In your (general )?voice/);
+        await expect(why).toContainText("What it says comes from this conversation alone: you gave no instruction.");
+        await page.keyboard.press("Escape");
       });
       await scenario("Use: the gap marked in the composer, and selected to type over", async () => {
         await page.getByTestId("reply-ready-use").click();
+        await expect(page.getByTestId("ai-strip-check")).toContainText("From the conversation alone, with no instruction from you");
         await expect(page.getByTestId("compose-gap")).toHaveText("[Whether the 19th works.]");
         await expect.poll(() => page.evaluate(() => getSelection()?.toString())).toBe("[Whether the 19th works.]");
       });

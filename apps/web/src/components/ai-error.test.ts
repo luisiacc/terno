@@ -72,10 +72,14 @@ describe("plan 161, pass 2: what the Codex review found", () => {
 describe("plan 161, pass 2: where an AI line points", () => {
   const NOW = new Date(2026, 9, 22, 16, 0).getTime();
   const m = (id: number, name: string, email: string, date: number) => ({ id, from: { name, email }, date });
-  it("whose and when; nothing on a conversation of one message, which is on screen", () => {
+  it("named for where it goes, whose and when; nothing on a conversation of one message, which is on screen", () => {
     const messages = [m(1, "Arjun Ramírez", "arjun@x.test", new Date(2026, 9, 20, 9).getTime()), m(2, "Luis", "me@x.test", new Date(2026, 9, 22, 15).getTime())];
-    expect(messageSource(messages, 1, ["ME@x.test"], NOW)).toBe("Arjun · Oct 20");
-    expect(messageSource(messages, 2, ["ME@x.test"], NOW)).toBe("You · 3:00 PM");
+    // pass 3: "Arjun · Oct 20 →" read as a date, not as the message it opens
+    expect(messageSource(messages, 1, ["ME@x.test"], NOW)).toBe("Arjun’s message, Oct 20");
+    expect(messageSource(messages, 2, ["ME@x.test"], NOW)).toBe("Your message, 3:00 PM");
     expect(messageSource([messages[0]!], 1, [], NOW)).toBeNull();
+    setLocale("es", es as never);
+    expect(messageSource(messages, 1, ["ME@x.test"], NOW)).toMatch(/^Mensaje de Arjun, /);
+    expect(messageSource(messages, 2, ["ME@x.test"], NOW)).toMatch(/^Tu mensaje, /);
   });
 });
