@@ -31,6 +31,8 @@ export interface PaletteCommand {
   disabled?: boolean;
   /** drawn as the menus draw Delete (plan 158) */
   destructive?: boolean;
+  /** it puts focus where it goes (a reply, in its draft): the palette closes without handing focus back, which would cancel it */
+  takesFocus?: boolean;
   /** shown only once the user types (a page's values reached from the root) */
   searchOnly?: boolean;
   /** weighs the match (Superhuman's "scale"): a page's value at the root is 0.5, so a bare name finds the thing, not an action on it */

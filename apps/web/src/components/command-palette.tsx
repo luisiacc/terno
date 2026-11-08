@@ -220,9 +220,12 @@ export function CommandPalette() {
     // a page starts at its top, wherever the list it came from was scrolled
     listRef.current?.scrollTo({ top: 0 });
   };
+  // a reply chosen here puts focus in its draft itself: handed back on closing, focus would cancel it (converting the open draft)
+  const tookFocus = useRef(false);
   const select = (c: PaletteCommand) => {
     if (c.page) return goTo(c.page);
     noteUse(c.id);
+    tookFocus.current = !!c.takesFocus;
     close();
     c.run?.();
   };
@@ -329,12 +332,12 @@ export function CommandPalette() {
       add({ id: "thread.archive", group: inHand, label: t("actions.archive"), icon: <Archive />, shortcut: keysOf("thread.archive"), ...withEnglish(english("palette.archive", { count: targets }), "palette.alias.archive"), run: () => void act("archive") });
       add({ id: "thread.trash", group: inHand, label: t("palette.trash"), icon: <Trash2 />, destructive: true, shortcut: keysOf("thread.trash"), ...withEnglish(english("palette.trash"), "palette.alias.trash"), run: () => void act("trash") });
       // Reply all: beside Reply where it reaches several people, as in the row menu and the toolbar (plan 158), else further down
-      const replyAll = () => add({ id: "compose.replyAll", group: inHand, label: t("palette.replyAll"), icon: <ReplyAll />, shortcut: keysOf("compose.replyAll"), testId: "palette-reply-all", keywords: english("palette.replyAll"), run: () => reply("replyAll") });
+      const replyAll = () => add({ id: "compose.replyAll", group: inHand, label: t("palette.replyAll"), icon: <ReplyAll />, shortcut: keysOf("compose.replyAll"), testId: "palette-reply-all", keywords: english("palette.replyAll"), takesFocus: true, run: () => reply("replyAll") });
       const several = replyable && openThread !== undefined && reachesSeveral(openThread, accounts.map((a) => a.email));
       if (replyable) {
-        add({ id: "compose.reply", group: inHand, label: t("palette.reply"), icon: <Reply />, shortcut: keysOf("compose.reply"), testId: "palette-reply", ...synonyms("palette.alias.reply", english("palette.reply")), run: () => reply("reply") });
+        add({ id: "compose.reply", group: inHand, label: t("palette.reply"), icon: <Reply />, shortcut: keysOf("compose.reply"), testId: "palette-reply", ...synonyms("palette.alias.reply", english("palette.reply")), takesFocus: true, run: () => reply("reply") });
         if (several) replyAll();
-        add({ id: "compose.forward", group: inHand, label: t("palette.forward"), icon: <Forward />, shortcut: keysOf("compose.forward"), testId: "palette-forward", ...synonyms("palette.alias.forward", english("palette.forward")), run: () => reply("forward") });
+        add({ id: "compose.forward", group: inHand, label: t("palette.forward"), icon: <Forward />, shortcut: keysOf("compose.forward"), testId: "palette-forward", ...synonyms("palette.alias.forward", english("palette.forward")), takesFocus: true, run: () => reply("forward") });
       }
       add({ id: "thread.star", group: inHand, label: t(starKey), icon: <Star />, shortcut: keysOf("thread.star"), ...withEnglish([t("actions.star"), t("actions.unstar"), ...english("actions.star"), ...english("actions.unstar")], "palette.alias.star"), run: () => toggleStar(undefined, { announce: true }) });
       if (scoped || rows.some((r) => r.unread)) add({ id: "thread.markRead", group: inHand, label: t("palette.markRead"), icon: <MailOpen />, shortcut: keysOf("thread.markRead"), ...withEnglish(english("palette.markRead"), "palette.alias.markRead"), run: () => void act("markRead", undefined, { announce: true }) });
@@ -535,7 +538,7 @@ export function CommandPalette() {
   const placeholder = page === "root" ? t("palette.placeholder") : page === "remind" ? t("palette.remindPlaceholder") : page === "snippets" ? t("palette.snippetsPlaceholder") : t("category.picker.placeholder");
 
   return (
-    <CommandDialog open={open} onOpenChange={(o) => !o && close()} title={t("palette.title")} description={t("palette.description")}>
+    <CommandDialog open={open} onOpenChange={(o) => !o && close()} finalFocus={() => { const own = tookFocus.current; tookFocus.current = false; return !own; }} title={t("palette.title")} description={t("palette.description")}>
       {/* CommandDialog (base-nova) doesn't provide the cmdk root itself */}
       <Command
         // cmdk's Ctrl+J/K/N/P: off the Mac Ctrl+K is the palette's own chord (it closes it)

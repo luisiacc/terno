@@ -269,9 +269,10 @@ test.describe("drafts are kept", () => {
       await page.getByTestId("compose-body").focus();
       await page.keyboard.type("Escribiendo.");
       await expect(page.getByTestId("compose-cc")).toHaveCount(0);
-      // no collapse in between: the toolbar converts the open draft
+      // no collapse in between: the palette converts the open draft (Reply all isn't in the toolbar, plan 158), focus kept in it
       await respond(page, "reply-all");
       await expect(composer(page)).toHaveAttribute("data-mode", "replyAll");
+      await expect(page.getByTestId("compose-body")).toBeFocused();
       await expect(page.getByTestId("compose-cc")).toBeVisible();
       expect((await recipientEmails(page, "compose-cc")).length).toBeGreaterThan(0);
       await respond(page, "forward");

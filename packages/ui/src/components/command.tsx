@@ -47,8 +47,11 @@ function CommandDialog({
   className,
   showCloseButton = false,
   hints = true,
+  finalFocus,
   ...props
 }: Omit<React.ComponentProps<typeof Dialog>, "children"> & {
+  /** where focus goes on closing (the popup's own option): by default, back where it was */
+  finalFocus?: React.ComponentProps<typeof DialogContent>["finalFocus"]
   title?: string
   description?: string
   className?: string
@@ -66,6 +69,7 @@ function CommandDialog({
           className
         )}
         showCloseButton={showCloseButton}
+        finalFocus={finalFocus}
       >
         <DialogHeader className="sr-only">
           <DialogTitle>{title}</DialogTitle>
