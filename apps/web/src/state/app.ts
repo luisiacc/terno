@@ -263,6 +263,15 @@ function keepActionPreviewValid(state: AppState, next: AppState | Partial<AppSta
   return other ? { ...next, actionPreview: null } : next;
 }
 
+/**
+ * Plan 158: the app moves the selection itself (Archive or Delete going on to the next conversation, an Undo putting back
+ * one it had opened): that one is opened by the app, as a first load's is, and isn't read until the user chooses it.
+ */
+export function setAppOpened(selectedId: number | null): void {
+  setApp({ selectedId });
+  openedSelf.id = selectedId;
+}
+
 /** First-page selection is passive; nested explicit writes still use setApp. */
 export function setListAutoSelection(selectedId: number | null): void {
   openedSelf.id = selectedId;

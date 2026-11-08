@@ -100,6 +100,38 @@ test.describe("what the app opens by itself (plan 158)", () => {
     await expect(row).not.toHaveAttribute("data-unread");
   });
 
+  test("Archive's next stays unread until chosen, and Undo puts back exactly what was there", async ({ app: page, server }) => {
+    const unread = await ingestConversation(server, { subject: "Debajo zzsolo", count: 1, unread: 1, now: E2E_NOW + 7_200_000 });
+    const top = await ingestConversation(server, { subject: "Encima zzsolo", count: 1, unread: 1, now: E2E_NOW + 7_300_000 });
+    await fresh(page);
+    const row = (id: number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
+    await expect(row(top)).toHaveAttribute("data-cursor");
+    // archived unread and unchosen (the app opened it): the next opens, by the app too
+    await focusList(page);
+    await page.keyboard.press("e");
+    await expect(row(top)).toHaveCount(0);
+    await expect(row(unread)).toHaveAttribute("data-cursor");
+    await pastDwell(page);
+    await expect(row(unread)).toHaveAttribute("data-unread", "true");
+    // Undo: both as they were, unread, the first open again and still not read
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(row(top)).toHaveAttribute("data-cursor");
+    await pastDwell(page);
+    await expect(row(top)).toHaveAttribute("data-unread", "true");
+    await expect(row(unread)).toHaveAttribute("data-unread", "true");
+    // read by choice, then archived: its next is still the app's to show, not read
+    await row(top).click();
+    await expect(row(top)).not.toHaveAttribute("data-unread");
+    await focusList(page);
+    await page.keyboard.press("e");
+    await expect(row(unread)).toHaveAttribute("data-cursor");
+    await pastDwell(page);
+    await expect(row(unread)).toHaveAttribute("data-unread", "true");
+    // a press in the reader is reading it
+    await page.getByTestId("reader-subject").click();
+    await expect(row(unread)).not.toHaveAttribute("data-unread");
+  });
+
   test("a press in the reader chooses it, and Enter from the search field does", async ({ app: page, server }) => {
     const id = await ingestConversation(server, { subject: "Sigue zzsolo", count: 1, unread: 1, now: E2E_NOW + 7_200_000 });
     await fresh(page);

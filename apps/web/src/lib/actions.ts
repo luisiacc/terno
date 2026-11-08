@@ -7,7 +7,7 @@ import { currentTargets, scopeRows } from "~/lib/select";
 import { dismissSnack, registerUndo, snack, snackPublication, withdrawSnack, type Undo } from "~/lib/snack";
 import { activeFilter } from "~/lib/unread-filter";
 import type { ListFilter } from "@terno/core";
-import { getApp, inPlainInbox, inSeparateTab, setApp, type AppState, type ScopeSelection } from "~/state/app";
+import { getApp, inPlainInbox, inSeparateTab, openedByApp, setApp, setAppOpened, type AppState, type ScopeSelection } from "~/state/app";
 import { listKey, onlyOnTop, patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, useThreads } from "~/state/threads";
 import { closePage, currentPage, listLayout } from "~/lib/page";
@@ -234,11 +234,13 @@ interface SelectionBefore {
   selectedId: number | null;
   anchorId: number | null;
   left: number | null;
+  /** the open row was the app's (plan 158): Undo puts it back as it was, unread until chosen */
+  byApp: boolean;
 }
 
 const selectionBefore = (): SelectionBefore => {
   const s = getApp();
-  return { key: listKey(), checked: s.checked, scope: s.scope, selectedId: s.selectedId, anchorId: s.anchorId, left: s.selectedId };
+  return { key: listKey(), checked: s.checked, scope: s.scope, selectedId: s.selectedId, anchorId: s.anchorId, left: s.selectedId, byApp: s.selectedId !== null && openedByApp(s.selectedId) };
 };
 
 /**
@@ -250,7 +252,11 @@ const selectionBefore = (): SelectionBefore => {
 function restoreSelection(before: SelectionBefore): void {
   const s = getApp();
   if (listKey() !== before.key) return;
-  if (s.checked.size === 0 && s.scope === null && s.selectedId === before.left) setApp({ checked: before.checked, scope: before.scope, selectedId: before.selectedId, anchorId: before.anchorId });
+  if (s.checked.size === 0 && s.scope === null && s.selectedId === before.left) {
+    setApp({ checked: before.checked, scope: before.scope, anchorId: before.anchorId });
+    if (before.byApp) setAppOpened(before.selectedId);
+    else setApp({ selectedId: before.selectedId });
+  }
   if (document.activeElement?.closest("input, textarea, select, [contenteditable=true], [role=dialog]")) return;
   document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]")?.focus({ preventScroll: true });
 }
@@ -290,11 +296,12 @@ export function leaveList(action: ThreadAction, targets: readonly number[], opti
   // back on the list first (focus with it), then the cursor moves: the page closes even when no thread is left to move to
   if (backToList) closePage({ focus: true });
   if (leaving && !reading && s.selectedId !== null && targets.includes(s.selectedId)) {
-    // Superhuman-style: move to the next thread that isn't being removed
+    // Superhuman-style: move to the next thread that isn't being removed. The app opened it, not the user: it isn't
+    // read until they choose it (plan 158), so an Undo finds it as it was
     const start = index.get(s.selectedId) ?? 0;
     const removed = new Set(targets);
     const next = items.slice(start + 1).find((t) => !removed.has(t.id)) ?? items.slice(0, start).reverse().find((t) => !removed.has(t.id));
-    setApp({ selectedId: next?.id ?? null });
+    setAppOpened(next?.id ?? null);
   }
   if (leaving) reflowRemoval(targets.filter((id) => id !== stays));
   patchRows(targets, (t): ThreadSummary | null => (leaving && t.id !== stays ? null : patched(t, action)));
