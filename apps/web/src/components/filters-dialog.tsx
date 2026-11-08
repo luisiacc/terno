@@ -314,7 +314,21 @@ function ForwardTo({ to, onChange, paused }: { to: readonly Address[]; onChange:
 }
 
 /** What the AI's rule does, and a calm word when it plainly isn't what was asked (plan 161). */
-function AiSaid({ said, misses }: { said: string; misses: boolean }) {
+/**
+ * The rule AI built, in a line. Pass 3: folded, it's the heading that names what was built (focus goes there when it
+ * arrives), and the review hint runs on after it rather than taking a line of its own, so the matches fit a small window.
+ */
+function AiSaid({ said, misses, heading }: { said: string; misses: boolean; heading?: React.Ref<HTMLHeadingElement> }) {
+  if (heading)
+    return (
+      <>
+        <div>
+          <h3 ref={heading} tabIndex={-1} className="inline font-normal text-foreground outline-none" data-testid="ai-explanation">{said}</h3>
+          {!misses && <span className="text-muted-foreground"> {t("filters.ai.review")}</span>}
+        </div>
+        {misses && <p role="status" className="mt-1 text-destructive-ink" data-testid="ai-unclear">{t("filters.ai.unclear")}</p>}
+      </>
+    );
   return (
     <>
       <p className="text-foreground" data-testid="ai-explanation">{said}</p>
@@ -428,6 +442,12 @@ export function FiltersDialog() {
   const [aiKey, setAiKey] = useState<number | null>(() => keptOpen()?.key ?? null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const [focusPrompt, setFocusPrompt] = useState(false);
+  // pass 3: where focus goes when a rule arrives (its line, a heading), and back to when Esc folds the request again
+  const builtRef = useRef<HTMLHeadingElement>(null);
+  const editRequestRef = useRef<HTMLButtonElement>(null);
+  const [focusBuilt, setFocusBuilt] = useState<"rule" | "edit" | null>(null);
+  const form = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
   const [matches, setMatches] = useState<number | null>(null);
   // the request the rule on screen was built from: its words are checked against the rule (plan 161), not shown back
   const [built, setBuilt] = useState<string | null>(() => keptOpen()?.built ?? null);
@@ -448,6 +468,11 @@ export function FiltersDialog() {
     el.focus();
     el.setSelectionRange(el.value.length, el.value.length);
   }, [focusPrompt, folded]);
+  useEffect(() => {
+    if (!focusBuilt || !folded) return;
+    setFocusBuilt(null);
+    (focusBuilt === "rule" ? builtRef.current : editRequestRef.current)?.focus({ preventScroll: focusBuilt === "edit" });
+  }, [focusBuilt, folded]);
   const [saving, setSaving] = useState(false);
   // what's wrong with a rule waits until the user tries to save it: a new one is simply not written yet
   const [attempted, setAttempted] = useState(false);
@@ -496,6 +521,21 @@ export function FiltersDialog() {
       setPrompt("");
     }
   };
+  /**
+   * Pass 3: Esc steps back a level before it closes, as in Ask and the actions: the request opened again over a built rule
+   * folds back to the rule; the caret in one of the rule's text fields goes to the rule's row in the list (New, for one
+   * not in it yet). Anywhere else Esc closes, keeping an unsaved AI rule (the capture's one Esc after a11 is that).
+   */
+  const escapeStep = (target: Element | null): (() => void) | null => {
+    if (!folded && said !== null)
+      return () => {
+        setFolded(true);
+        setFocusBuilt("edit");
+      };
+    if (target && form.current?.contains(target) && target.matches("input, textarea, [contenteditable=true]"))
+      return () => (list.current?.querySelector<HTMLElement>(":scope [data-current] > button") ?? list.current?.querySelector<HTMLElement>("[data-testid=new-filter]"))?.focus();
+    return null;
+  };
   // in the order they were made
   const unsavedRows = [...parked, ...(aiDraft ? [aiDraft] : [])].sort((a, b) => a.key - b.key);
   const setRule = (r: FilterRule) => setDraft((d) => ({ ...d, rule: r }));
@@ -521,6 +561,8 @@ export function FiltersDialog() {
       setDraft({ id: undefined, name: out.name, enabled: true, source: "ai", rule: out.rule });
       setBuilt(prompt);
       setFolded(true);
+      // pass 3: focus on what was built, not left on the dialog (a program's focus: no ring)
+      setFocusBuilt("rule");
       // asked again from the same request, it's the same unsaved rule; otherwise a new one beside the others (Codex review)
       setAiKey((held) => (aiDraft && held === aiDraft.key ? held : ++unsavedKeys));
     } catch (error) {
@@ -575,9 +617,23 @@ export function FiltersDialog() {
         setApp(returnTo === "settings" ? { dialog: "settings", settingsTab: "filters" } : { dialog: null });
       }}
     >
-      <DialogContent movable="filters" className="flex h-[min(760px,88vh)] max-w-[min(1040px,94vw)] gap-0 overflow-hidden p-0 sm:max-w-[min(1040px,94vw)]" data-testid="filters-dialog" closeClassName="top-4 end-4">
+      <DialogContent
+        movable="filters"
+        onKeyDown={(e) => {
+          // a field's own Esc (a suggestion list) and an input method's go first; a portal's (a select, a confirm) bubbles
+          // here through React and is its own
+          if (e.key !== "Escape" || e.defaultPrevented || e.nativeEvent.isComposing || !e.currentTarget.contains(e.target as Node)) return;
+          const step = escapeStep(e.target as Element);
+          if (!step) return;
+          // the popup's own Esc (merged after this one) and the document's both stand down
+          (e as unknown as { preventBaseUIHandler(): void }).preventBaseUIHandler();
+          e.preventDefault();
+          e.stopPropagation();
+          step();
+        }}
+        className="flex h-[min(760px,92vh)] max-w-[min(1040px,94vw)] gap-0 overflow-hidden p-0 sm:max-w-[min(1040px,94vw)]" data-testid="filters-dialog" closeClassName="top-4 end-4">
         <DialogTitle className="sr-only">{t("settings.tab.filters")}</DialogTitle>
-        <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-muted/30">
+        <aside ref={list} className="flex w-64 shrink-0 flex-col border-r border-border bg-muted/30">
           <div data-dialog-handle className="flex items-center justify-between px-4 pt-4 pb-2">
             <h2 className="text-sm font-semibold">{t("settings.tab.filters")}</h2>
             <Button
@@ -597,7 +653,7 @@ export function FiltersDialog() {
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
             {/* pass 2: an AI rule not saved yet is a row of its own, so Esc, New or another rule never loses it */}
             {unsavedRows.map((u) => (
-              <div key={u.key} data-testid="filter-unsaved" data-open={u.key === aiDraft?.key ? true : undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", u.key === aiDraft?.key && "bg-muted")}>
+              <div key={u.key} data-testid="filter-unsaved" data-open={u.key === aiDraft?.key ? true : undefined} data-current={u.key === aiDraft?.key || undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", u.key === aiDraft?.key && "bg-muted")}>
                 <button type="button" className="min-w-0 flex-1 text-left" onClick={() => u.key !== aiDraft?.key && openUnsaved(u)}>
                   <span className="block truncate">{u.draft.name.trim() || describeCondition(u.draft.rule.conditions[0]!)}</span>
                   <span className="text-2xs text-muted-foreground">{t("filters.unsaved")}</span>
@@ -609,7 +665,7 @@ export function FiltersDialog() {
             {[...filters.filter((f) => !f.auto), ...filters.filter((f) => f.auto)].map((f, i, all) => (
               <Fragment key={f.id}>
               {f.auto && !all[i - 1]?.auto && <p data-testid="filters-auto-heading" className="mt-4 mb-1 px-2 text-2xs font-medium tracking-wide text-muted-foreground uppercase">{t("filters.group.auto")}</p>}
-              <div data-testid="filter-item" data-auto={f.auto || undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", draft.id === f.id && "bg-muted")}>
+              <div data-testid="filter-item" data-auto={f.auto || undefined} data-current={draft.id === f.id || undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", draft.id === f.id && "bg-muted")}>
                 <button type="button" className="min-w-0 flex-1 text-left" onClick={() => (leaving(), load(draftOf(f)), setExplanation(null))}>
                   <span className="block truncate">{f.name}</span>
                   <span className="text-2xs text-muted-foreground">
@@ -662,7 +718,8 @@ export function FiltersDialog() {
         <div className="flex min-w-0 flex-1 flex-col">
           {/* the form starts below the close, on the sidebar list's first line (the close sits on its header's); the 4 px left over keeps a first control's focus ring from clipping */}
           <div data-dialog-handle className="h-11 shrink-0" />
-          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6 pt-1">
+          {/* pass 3: 16 px between sections, not 20, so at 1100x700 the matches show under a built rule */}
+          <div ref={form} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-6 pt-1">
             {/* only offered once an AI can really run (a model, and its key when it needs one); otherwise it could only fail */}
             {aiReady(ai) && (
               // pass 2: the shared AI card (ai-card.ts), its one attribution in the header, not a look of its own
@@ -673,10 +730,10 @@ export function FiltersDialog() {
                     <div className={AI_HEADER}>
                       <Sparkles aria-hidden className={AI_GLYPH} />
                       <span className={AI_TITLE} data-testid="ai-provenance">{provenanceLabel()}</span>
-                      <Button variant="link-secondary" size="xs" className="ml-auto shrink-0" data-testid="ai-edit-request" onClick={() => (setFolded(false), setFocusPrompt(true))}>{t("filters.ai.editRequest")}</Button>
+                      <Button ref={editRequestRef} variant="link-secondary" size="xs" className="ml-auto shrink-0" data-testid="ai-edit-request" onClick={() => (setFolded(false), setFocusPrompt(true))}>{t("filters.ai.editRequest")}</Button>
                     </div>
                     <div className="text-sm">
-                      <AiSaid said={said} misses={misses} />
+                      <AiSaid said={said} misses={misses} heading={builtRef} />
                     </div>
                   </>
                 ) : (
@@ -715,8 +772,9 @@ export function FiltersDialog() {
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground" htmlFor="filter-name">
+            {/* pass 3: the name's label beside its field, a line less above the matches */}
+            <div className="flex items-center gap-3">
+              <label className="shrink-0 text-xs font-medium text-muted-foreground" htmlFor="filter-name">
                 {t("filters.name")}
               </label>
               <Input id="filter-name" data-testid="filter-name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={t("filters.name.placeholder")} />

@@ -24,6 +24,13 @@ test.describe("AI filters and learned filters", () => {
       await expect(preview).toHaveText(/^[1-9]\d*$/);
       const uberCount = Number(await preview.textContent());
       expect(await page.getByTestId("filter-preview").locator("li").count()).toBeGreaterThan(0);
+      // pass 3: at 1100x700 the count and at least three matches are above the footer, unscrolled
+      await page.setViewportSize({ width: 1100, height: 700 });
+      const footer = (await page.getByTestId("filter-save-apply").boundingBox())!.y;
+      const third = (await page.getByTestId("filter-preview").locator("li").nth(2).boundingBox())!;
+      // the footer band starts 12 px above its button (py-3)
+      expect(third.y + third.height).toBeLessThanOrEqual(footer - 12);
+      await page.setViewportSize({ width: 1440, height: 900 });
 
       // live preview: editing the condition changes the matches
       await page.getByTestId("condition-value").fill("rappi.com");
@@ -51,10 +58,14 @@ test.describe("AI filters and learned filters", () => {
       await page.getByTestId("ai-generate").click();
       await expect(page.getByTestId("ai-explanation")).toHaveText("Subject contains “nicer” → archive.");
       await expect(page.getByTestId("ai-unclear")).toHaveText("I couldn't turn this into a clear rule — check it below.");
+      // pass 3: focus on what was built (its line, a heading), not left on the dialog
+      await expect(page.getByTestId("ai-explanation")).toBeFocused();
+      await expect(page.getByRole("heading", { name: /Subject contains “nicer”/ })).toBeVisible();
       // built, the box is a line: the matches are in view in a small window
       await page.setViewportSize({ width: 1100, height: 700 });
       await expect(page.getByTestId("ai-prompt")).toHaveCount(0);
       await expect(page.getByTestId("filter-preview")).toBeInViewport({ ratio: 0.3 });
+
       // "not" is an operator, in words; the line follows the edit
       await page.getByTestId("condition-op").click();
       await page.getByRole("option", { name: "doesn’t contain" }).click();
@@ -64,6 +75,16 @@ test.describe("AI filters and learned filters", () => {
       await expect(page.getByTestId("ai-provenance")).toHaveText("Written with AI");
       await page.getByTestId("ai-edit-request").click();
       await expect(page.getByTestId("ai-prompt")).toBeFocused();
+      // pass 3: Esc steps back a level first: the request folds back to the rule, focus on Edit request, Rules open
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("filters-dialog")).toBeVisible();
+      await expect(page.getByTestId("ai-box")).toHaveAttribute("data-folded", "true");
+      await expect(page.getByTestId("ai-edit-request")).toBeFocused();
+      // the caret in one of the rule's fields: Esc goes to its row in the list, and the next one closes
+      await page.getByTestId("filter-name").click();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("filters-dialog")).toBeVisible();
+      await expect(page.getByTestId("filter-unsaved").getByRole("button").first()).toBeFocused();
       // Esc doesn't lose it: Rules opens on it again, shown as an unsaved row, with its request
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("filters-dialog")).toHaveCount(0);

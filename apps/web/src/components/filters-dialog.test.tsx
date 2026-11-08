@@ -43,9 +43,11 @@ const open = () => act(async () => {
   setApp({ dialog: "filters" });
   root.render(<FiltersDialog key={Math.random()} />);
 });
-// as a person closes it: Esc, through the dialog's own onOpenChange; then Rules goes, as app.tsx unmounts it
+// as a person closes it: Esc, through the dialog's own onOpenChange (pass 3: again, while Esc steps back a level); then
+// Rules goes, as app.tsx unmounts it
 const close = async () => {
-  await act(async () => document.querySelector('[role="dialog"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  for (let i = 0; i < 3 && document.querySelector('[role="dialog"]'); i++)
+    await act(async () => document.querySelector('[role="dialog"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
   await act(async () => root.render(<></>));
 };
 async function ask(text: string) {
@@ -100,4 +102,46 @@ it("saving one while another is opened saves only that one: the other stays unsa
   expect(names()).toEqual(["a.com"]);
   expect($("filter-unsaved")!.dataset.open).toBe("true");
   expect(($("filter-name") as HTMLInputElement).value).toBe("a.com");
+});
+
+/** Plan 161, pass 3: Esc steps back a level before Rules closes, as in Ask and the actions. */
+const esc = (el: Element) => act(async () => el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+const isOpen = () => $("filters-dialog") !== null;
+
+it("a rule AI built takes the focus on its line, a heading that says what was built", async () => {
+  await ask("archive mail from a.com");
+  await answer("filters.generate", rule("a.com"));
+  expect(document.activeElement).toBe($("ai-explanation"));
+  expect(document.activeElement!.tagName).toBe("H3");
+  expect(document.activeElement!.textContent).toContain("a.com");
+});
+
+it("Esc with the request open again folds it back to the rule, and Rules stays", async () => {
+  await ask("archive mail from a.com");
+  await answer("filters.generate", rule("a.com"));
+  await click($("ai-edit-request"));
+  expect($("ai-prompt")).not.toBeNull();
+  await esc($("ai-prompt")!);
+  expect(isOpen()).toBe(true);
+  expect($("ai-prompt")).toBeNull();
+  expect($("ai-box")!.dataset.folded).toBe("true");
+  expect(document.activeElement).toBe($("ai-edit-request"));
+});
+
+it("Esc in a field of the rule goes to its row in the list; Esc there closes", async () => {
+  await ask("archive mail from a.com");
+  await answer("filters.generate", rule("a.com"));
+  $("filter-name")!.focus();
+  await esc($("filter-name")!);
+  expect(isOpen()).toBe(true);
+  expect(document.activeElement?.closest("[data-testid=filter-unsaved]")).not.toBeNull();
+  await esc(document.activeElement!);
+  expect(isOpen()).toBe(false);
+});
+
+it("Esc in a new rule's name goes to New", async () => {
+  $("filter-name")!.focus();
+  await esc($("filter-name")!);
+  expect(isOpen()).toBe(true);
+  expect(document.activeElement).toBe($("new-filter"));
 });
