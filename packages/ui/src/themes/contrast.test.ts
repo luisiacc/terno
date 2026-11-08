@@ -80,7 +80,7 @@ describe("boundaries as drawn (plan 160)", () => {
   const drafts = [...new Set(DESIGNS.map((d) => (d.surfaces.draft === "card" ? "card" : d.surfaces.draft === "tint" ? "tint" : "background")))];
   it.each(THEMES.map((t) => [t.id, t] as const))("%s holds every boundary's floor", (id, theme) => {
     for (const draft of drafts)
-      for (const step of BOUNDARY_STEPS.filter((s) => !s.mode || s.mode === theme.mode)) expect(boundaryStep(theme, step, draft), `${id} (draft on ${draft}): ${step.why}`).toBeGreaterThanOrEqual(step.except?.[id]?.min ?? step.min);
+      for (const step of BOUNDARY_STEPS.filter((s) => (!s.mode || s.mode === theme.mode) && (!s.only || s.only.includes(id)))) expect(boundaryStep(theme, step, draft), `${id} (draft on ${draft}): ${step.why}`).toBeGreaterThanOrEqual(step.except?.[id]?.min ?? step.min);
   });
 
   it("composites translucent layers in order, over the background", () => {

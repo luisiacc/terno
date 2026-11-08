@@ -188,6 +188,8 @@ export interface BoundaryStep {
   mode?: "light" | "dark";
   /** a palette held lower, and why (a design's blueprint fixes the ink that bounds it) */
   except?: Partial<Record<string, { min: number; why: string }>>;
+  /** checked only in these palettes */
+  only?: readonly string[];
 }
 
 /**
@@ -207,6 +209,12 @@ export const BOUNDARY_STEPS: readonly BoundaryStep[] = [
   { edge: ["pane", "background", "field"], behind: ["pane", "background"], min: TINT_FLOOR, why: "the chosen segment's thumb on its track (dark)", mode: "dark", except: GRAPHITE_FIELD },
   { edge: ["background", "draft-edge"], behind: ["background"], min: HAIRLINE_FLOOR, why: "a composer card's ring on the reader" },
   { edge: ["$draft", "draft-edge"], behind: ["$draft"], min: HAIRLINE_FLOOR, why: "a composer's field dividers on its card" },
+  // plan 161: the keyboard's place in a menu, the palette and Ask's sources: a hover's step everywhere, and in Graphite,
+  // where a state is only ever grey, the selection's (its dark one as far as its fixed #9E9E9E still reads on it)
+  { edge: ["popover", "menu-highlight"], behind: ["popover"], min: HOVER_FLOOR, why: "the keyboard's place in a menu or the palette" },
+  { edge: ["popover", "menu-highlight"], behind: ["popover"], min: TINT_FLOOR, why: "Graphite: the keyboard's place, at the selection's floor", only: ["graphite-light", "graphite-dark"], except: { "graphite-dark": { min: 1.26, why: "the blueprint's #9E9E9E on it at 4.5:1" } } },
+  // plan 161: a tint card in a dialog (Settings) is ringed in dark, where its tint is 1.01 to 1.05:1 off the popover
+  { edge: ["popover", "card-edge"], behind: ["popover"], min: HAIRLINE_FLOOR, why: "a tint card's ring in a dialog (dark)", mode: "dark" },
 ];
 
 /** The contrast across a boundary as drawn. */

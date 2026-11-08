@@ -82,6 +82,7 @@
   --destructive-shade: oklch(0.5 0.19 30);
   --field: oklch(0.211 0.005 68 / 0.145);
   --draft-edge: oklch(0.211 0.005 68 / 0.195);
+  --card-edge: oklch(0.211 0.005 68 / 0.195);
   --mail-paper: oklch(1 0 0);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -168,6 +169,7 @@
   --destructive-shade: oklch(0.52 0.21 25);
   --field: oklch(0.22 0.01 265 / 0.15);
   --draft-edge: oklch(0.22 0.01 265 / 0.195);
+  --card-edge: oklch(0.22 0.01 265 / 0.2);
   --mail-paper: oklch(0.99 0.002 85);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -254,6 +256,7 @@
   --destructive-shade: oklch(0.534 0.232 29);
   --field: oklch(0.232 0.004 286 / 0.15);
   --draft-edge: oklch(0.232 0.004 286 / 0.2);
+  --card-edge: oklch(0.232 0.004 286 / 0.2);
   --mail-paper: oklch(1 0 0);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -340,6 +343,7 @@
   --destructive-shade: oklch(0.511 0.206 27);
   --field: oklch(0.309 0.052 220 / 0.165);
   --draft-edge: oklch(0.309 0.052 220 / 0.215);
+  --card-edge: oklch(0.309 0.052 220 / 0.22);
   --mail-paper: oklch(0.974 0.026 90);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -426,6 +430,7 @@
   --destructive-shade: oklch(0.377 0.179 28);
   --field: oklch(0.344 0.007 49 / 0.175);
   --draft-edge: oklch(0.344 0.007 49 / 0.23);
+  --card-edge: oklch(0.344 0.007 49 / 0.235);
   --mail-paper: oklch(0.956 0.055 96);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -512,6 +517,7 @@
   --destructive-shade: oklch(0.497 0.206 25);
   --field: oklch(0.254 0.011 254 / 0.155);
   --draft-edge: oklch(0.254 0.011 254 / 0.205);
+  --card-edge: oklch(0.254 0.011 254 / 0.205);
   --mail-paper: oklch(1 0 0);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -598,6 +604,7 @@
   --destructive-shade: oklch(0.49 0.216 20);
   --field: oklch(0.435 0.043 279 / 0.2);
   --draft-edge: oklch(0.435 0.043 279 / 0.265);
+  --card-edge: oklch(0.435 0.043 279 / 0.27);
   --mail-paper: oklch(0.958 0.006 265);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -684,6 +691,7 @@
   --destructive-shade: oklch(0.49 0.17 30);
   --field: oklch(0.227 0.004 85 / 0.15);
   --draft-edge: oklch(0.227 0.004 85 / 0.195);
+  --card-edge: oklch(0.227 0.004 85 / 0.2);
   --mail-paper: oklch(1 0 0);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -770,6 +778,7 @@
   --destructive-shade: oklch(0.517 0.245 27);
   --field: oklch(0.145 0 0 / 0.14);
   --draft-edge: oklch(0.145 0 0 / 0.185);
+  --card-edge: oklch(0.145 0 0 / 0.185);
   --mail-paper: oklch(1 0 0);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -836,7 +845,7 @@
   --tint: oklch(0.968 0 0);
   --highlight: oklch(1 0 0 / 0.16);
   --draft-foreground: oklch(0.281 0 0);
-  --menu-highlight: oklch(0.935 0 0);
+  --menu-highlight: oklch(0.894 0 0);
   --foreground-soft: oklch(0.461 0 0);
   --sidebar-glyph: oklch(0.478 0 0);
   --control-edge: oklch(0.667 0 0);
@@ -856,6 +865,7 @@
   --destructive-shade: oklch(0.517 0.215 27);
   --field: oklch(0.281 0 0 / 0.145);
   --draft-edge: oklch(0.281 0 0 / 0.21);
+  --card-edge: oklch(0.281 0 0 / 0.21);
   --mail-paper: oklch(1 0 0);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -942,6 +952,7 @@
   --destructive-shade: oklch(0.62 0.19 22);
   --field: oklch(0.95 0.004 85 / 0.13);
   --draft-edge: oklch(0.95 0.004 85 / 0.16);
+  --card-edge: oklch(0.95 0.004 85 / 0.15);
   --mail-paper: oklch(0.9 0.004 85);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -1028,6 +1039,7 @@
   --destructive-shade: oklch(0.717 0.206 24);
   --field: oklch(0.977 0.008 107 / 0.1);
   --draft-edge: oklch(0.977 0.008 107 / 0.135);
+  --card-edge: oklch(0.977 0.008 107 / 0.14);
   --mail-paper: oklch(0.9 0.004 85);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -1114,6 +1126,7 @@
   --destructive-shade: oklch(0.712 0.24 7);
   --field: oklch(0.977 0.008 107 / 0.1);
   --draft-edge: oklch(0.977 0.008 107 / 0.135);
+  --card-edge: oklch(0.977 0.008 107 / 0.135);
   --mail-paper: oklch(0.9 0.004 85);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -1200,6 +1213,7 @@
   --destructive-shade: oklch(0.663 0.159 10);
   --field: oklch(0.846 0.061 275 / 0.135);
   --draft-edge: oklch(0.846 0.061 275 / 0.175);
+  --card-edge: oklch(0.846 0.061 275 / 0.17);
   --mail-paper: oklch(0.9 0.004 85);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -1286,6 +1300,7 @@
   --destructive-shade: oklch(0.74 0.218 30);
   --field: oklch(0.894 0.057 89 / 0.12);
   --draft-edge: oklch(0.894 0.057 89 / 0.155);
+  --card-edge: oklch(0.894 0.057 89 / 0.16);
   --mail-paper: oklch(0.9 0.004 85);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -1372,6 +1387,7 @@
   --destructive-shade: oklch(0.706 0.121 15);
   --field: oklch(0.933 0.01 262 / 0.11);
   --draft-edge: oklch(0.933 0.01 262 / 0.16);
+  --card-edge: oklch(0.933 0.01 262 / 0.16);
   --mail-paper: oklch(0.9 0.004 85);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -1458,6 +1474,7 @@
   --destructive-shade: oklch(0.615 0.205 27);
   --field: oklch(0.943 0.011 244 / 0.125);
   --draft-edge: oklch(0.943 0.011 244 / 0.16);
+  --card-edge: oklch(0.943 0.011 244 / 0.15);
   --mail-paper: oklch(0.9 0.004 85);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -1544,6 +1561,7 @@
   --destructive-shade: oklch(0.696 0.13 3);
   --field: oklch(0.879 0.043 272 / 0.125);
   --draft-edge: oklch(0.879 0.043 272 / 0.16);
+  --card-edge: oklch(0.879 0.043 272 / 0.165);
   --mail-paper: oklch(0.9 0.004 85);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -1630,6 +1648,7 @@
   --destructive-shade: oklch(0.62 0.19 22);
   --field: oklch(0.95 0.005 85 / 0.12);
   --draft-edge: oklch(0.95 0.005 85 / 0.155);
+  --card-edge: oklch(0.95 0.005 85 / 0.145);
   --mail-paper: oklch(0.9 0.004 85);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -1716,6 +1735,7 @@
   --destructive-shade: oklch(0.62 0.16 30);
   --field: oklch(0.94 0.006 85 / 0.12);
   --draft-edge: oklch(0.94 0.006 85 / 0.155);
+  --card-edge: oklch(0.94 0.006 85 / 0.145);
   --mail-paper: oklch(0.9 0.004 85);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -1802,6 +1822,7 @@
   --destructive-shade: oklch(0.644 0.191 22);
   --field: oklch(0.985 0 0 / 0.115);
   --draft-edge: oklch(0.985 0 0 / 0.15);
+  --card-edge: oklch(0.985 0 0 / 0.135);
   --mail-paper: oklch(0.9 0.004 85);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);
@@ -1888,6 +1909,7 @@
   --destructive-shade: oklch(0.644 0.17 22);
   --field: oklch(0.946 0 0 / 0.075);
   --draft-edge: oklch(0.946 0 0 / 0.15);
+  --card-edge: oklch(0.946 0 0 / 0.14);
   --mail-paper: oklch(0.9 0.004 85);
   --mail-ink: oklch(0.24 0.01 265);
   --mail-link: oklch(0.5 0.18 265);

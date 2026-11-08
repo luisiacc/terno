@@ -190,6 +190,8 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   // plan 160: a composer's ring and its field dividers: the hairline's ink, deep enough to separate the form from the reader
   // (and Lumen's card) at HAIRLINE_FLOOR
   def("draft-edge", () => inkAlpha(o("foreground"), 0.11, 0.3, (c) => (["background", "card"] as const).every((k) => contrast(c, formatOklch(o(k)), bg) >= HAIRLINE_FLOOR)));
+  // plan 161: the same hairline for a tint card in a dialog, where the tint is a step off the popover at most (dark)
+  def("card-edge", () => inkAlpha(o("foreground"), 0.11, 0.3, (c) => [formatOklch(opaquePopover()), formatOklch(o("tint"))].every((k) => contrast(c, k, bg) >= HAIRLINE_FLOOR)));
   def("draft-foreground", () =>
     stepUntil(o("destructive"), ["background", "row-hover", "row-selected", "accent"].map((k) => formatOklch(o(k as ThemeToken))), 4.5, bg, o("foreground"), light),
   );
@@ -595,7 +597,8 @@ export const THEMES: readonly Theme[] = [
       "sidebar-accent": "0.898 0 0",
     },
     cats: cats(".645 .17 16 | .64 .13 66 | .62 .13 131 | .61 .11 163 | .61 .1 205 | .54 .15 262 | .6 .17 322 | .56 .01 257"),
-    overrides: { "sidebar-foreground": "#5D5D5D", "sidebar-glyph": "#5D5D5D", "sidebar-accent-foreground": "#292929", "control-edge": "#949494", "control-edge-hover": "#5D5D5D", "draft-foreground": "#292929" },
+    // plan 161: a state is only ever grey here, so the keyboard's place in a menu, the palette and Ask is the selection's grey
+    overrides: { "sidebar-foreground": "#5D5D5D", "sidebar-glyph": "#5D5D5D", "sidebar-accent-foreground": "#292929", "control-edge": "#949494", "control-edge-hover": "#5D5D5D", "draft-foreground": "#292929", "menu-highlight": "#DCDCDC" },
   }),
   defineTheme({
     id: "terno-dark",
@@ -975,7 +978,8 @@ export const THEMES: readonly Theme[] = [
       "sidebar-accent": "0.318 0 0",
     },
     cats: cats(".72 .13 16 | .8 .12 75 | .78 .13 131 | .74 .11 163 | .76 .09 205 | .68 .13 262 | .72 .14 322 | .7 .01 257"),
-    overrides: { "sidebar-foreground": "#9E9E9E", "sidebar-glyph": "#9E9E9E", "sidebar-accent-foreground": "#EDEDED", "control-edge": "#808080", "control-edge-hover": "#9E9E9E", "draft-foreground": "#EDEDED" },
+    // plan 161: the keyboard's place as far toward the selection as #9E9E9E still reads on it (4.58:1): 1.27:1, BOUNDARY_STEPS' exception
+    overrides: { "sidebar-foreground": "#9E9E9E", "sidebar-glyph": "#9E9E9E", "sidebar-accent-foreground": "#EDEDED", "control-edge": "#808080", "control-edge-hover": "#9E9E9E", "draft-foreground": "#EDEDED", "menu-highlight": "#353535" },
   }),
 ];
 

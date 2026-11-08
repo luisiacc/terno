@@ -139,6 +139,7 @@
   --cta-floor: 0px;
   --card-bg: var(--tint);
   --card-ring: transparent;
+  --card-ring-dialog: var(--card-edge);
   --row-h: 76px;
   --row-h-compact: 36px;
   --avatar-row: 36px;
@@ -292,6 +293,7 @@
   --cta-floor: 0px;
   --card-bg: var(--tint);
   --card-ring: transparent;
+  --card-ring-dialog: var(--card-edge);
   --row-h: 76px;
   --row-h-compact: 34px;
   --avatar-row: 32px;
@@ -445,6 +447,7 @@
   --cta-floor: 0px;
   --card-bg: var(--tint);
   --card-ring: transparent;
+  --card-ring-dialog: var(--card-edge);
   --row-h: 64px;
   --row-h-compact: 32px;
   --avatar-row: 0px;
@@ -598,6 +601,7 @@
   --cta-floor: 0px;
   --card-bg: var(--tint);
   --card-ring: transparent;
+  --card-ring-dialog: var(--card-edge);
   --row-h: 68px;
   --row-h-compact: 32px;
   --avatar-row: 32px;
@@ -751,6 +755,7 @@
   --cta-floor: 9999px;
   --card-bg: transparent;
   --card-ring: var(--border);
+  --card-ring-dialog: var(--border);
   --row-h: 64px;
   --row-h-compact: 32px;
   --avatar-row: 0px;

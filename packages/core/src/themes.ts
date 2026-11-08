@@ -98,6 +98,8 @@ export const THEME_TOKENS = [
   // plan 160: a filled field's wash of ink, deep enough to stand off the list; a composer's ring and dividers
   "field",
   "draft-edge",
+  // plan 161: a tint card's edge where its tint doesn't stand off what it sits on (a dialog, in dark)
+  "card-edge",
   // HTML mail
   "mail-paper",
   "mail-ink",
