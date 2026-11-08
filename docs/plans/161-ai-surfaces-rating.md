@@ -913,3 +913,34 @@ One of three parallel passes on `ai-r02`'s findings. This one takes `today` and 
 - Unit: `TodayLine` capped and not (no second total, the link's name), the reason's ink, the digest page's provenance in the header (and none at the foot), the quiet checkbox's look, `contrast.test.ts`'s new step.
 - e2e: `filters.spec.ts`: Edit request then Esc folds and Rules stays open; Esc in the name field moves focus to the list and Rules stays; Esc again closes; focus on the rule's line after the AI fills it; the match count and three matches in view at 1100x700. `ai-draft.spec.ts`'s Writing style part: Esc in the unchanged editor cancels with focus on Edit and Settings open; Esc with a change asks, Keep editing keeps the text; Esc on the page goes back to Drafting, a second closes Settings; How it learns in view at 1440x900. `today.spec.ts`: the header line. Each Esc test fails without the fix.
 - `design-axe.spec.ts` for Today, the digest, Rules and Writing style; screenshots in every design, light and dark, 1440x900 and 1100x700, under `/tmp/terno-scratch/ai-pass3/today-settings/`.
+
+### Pass 3 as built
+
+Where it differs from the design above:
+- **Rules' Esc** needed `preventBaseUIHandler()`: Base UI's dismissal is merged into the popup's own `onKeyDown` after ours, so stopping propagation alone still closed it. The rule's row is marked `data-current` (the popup itself carries `data-open`, which a `[data-open] button` selector matched first). The built rule's heading names only the rule; the review hint sits beside it, outside the heading.
+- **The digest's provenance** is a focusable span with a tooltip, `provenanceLabel()` and the sparkle (`AI_GLYPH`), on the date's line: `digest-page.tsx`, `data-testid="digest-provenance"`. That's where `AiProvenance` goes when it lands in `ai-card.ts`.
+- **The capture.** `capture.mjs` is unchanged. After `a11`, focus is on the built rule's heading, which isn't a field, so its one Esc still closes Rules; after `a12`, its one Esc now goes back to Drafting, and nothing is shot after it.
+
+### What the Codex review of pass 3 changed
+
+Round 1 (`git diff 668fc97ab..2bae63c19`) made two findings; both are fixed, each with a test that fails without it.
+1. **A changed style editor was dropped by Esc from elsewhere on the page, or by the back button.** Esc anywhere on Writing style steps out of an open editor first (asking when it changed), and the back button asks before a change goes (`ai-draft.spec`).
+2. **An input method's Esc stepped back.** Safari sends `compositionend` before the Esc that dismissed its candidates, so `isComposing` is false on it. The new handlers use `imeKey` (`lib/ime-escape.ts`), which holds a composition until 5 ms after it ends, as Base UI's own dismissal does (`filters-dialog.test`).
+
+Round 2 (the fix commit) found one gap, fixed with a test that fails without it.
+3. **Two editors open at once** (Your style and a company): closing one cleared the single registration, so the other, changed, could still be dropped. The page keeps a list; Esc steps out of the last opened, and leaving asks each changed one in turn (`ai-draft.spec`).
+
+Review rounds stop here.
+
+### Pass 3 results
+
+- **Unit:** `filters-dialog.test` (7, four new: focus on the built rule, Esc folds the request, Esc from a field to the list then closes, Esc in a new rule to New, and the IME Esc), `digest-page.test` (9, one new: provenance in the header, quiet ticks), `today-line.test` (new, 2), the settings components, Today's state, the rows and list, `packages/ui`'s themes (with the new step) and components, i18n: 36 files, 333 tests.
+- **e2e** (`E2E_PORT=7300`): `today.spec`, `design-axe.spec`, `filters.spec`, `visual.spec`, `ai-draft.spec`, `controls.spec`, `menu-corners.spec` and `local-ai.spec`, in every project that runs them: 78 passed, 3 skipped (the specs' own skips). The Esc tests for Rules and Writing style fail without the fix (checked with the handlers off). Two `visual.spec` baselines moved, both looked at: `filters-ai` and `filters-ai-dark` (the compact form).
+- **Perf:** not run. No query changed.
+- **Typecheck and lint:** clean.
+- **Screenshots:** `/tmp/terno-scratch/ai-pass3/today-settings/v3/<design>/`, every design, light and dark: the frozen AI set (`a01` to `a12`) and pass 3's states at 1440x900 and 1100x700 (`c07` Today, `c08` the digest, `c08b` one unticked with the provenance tooltip, `c11` the AI rule, `c11b` Edit request, `c12` Writing style, `c12b` the editor, `c12c` asking before a discard, `c12d` back on Drafting). At 1100x700 Rules shows the match count and four matches above the footer in every design. The frozen capture reached every AI state in all five designs, both modes, and again on the final build (`final/`, Lumen light and Graphite dark).
+
+### For the owner
+
+- **Show all 41 in Today.** Seven raters asked for a way to see every conversation that needs you. Needs you holds the newest 12 (plan 145), and no list holds exactly the 41: the header's link goes to the Inbox's To reply to, which holds them and services' mail too. A real "Show all 41" means lifting the 12-row cap, on demand or always. That's your call.
+- **Plan 145's other rules stand:** only unread newsletters are archived, and every one starts ticked. Codex asked for Select all / Select none on the digest in all four styles; it's a small addition if you want it.
