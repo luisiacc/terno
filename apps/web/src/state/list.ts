@@ -210,8 +210,11 @@ async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE
   }
   if (s.today) {
     if (cursor) return { items: [], nextCursor: null };
-    // the digest's row is the cursor's, not a thread's: nothing to keep, and no id the backend takes
-    const held = new Set([...s.checked, ...(s.selectedId !== null && s.selectedId !== 0 ? [s.selectedId] : [])]);
+    // the digest's row is the cursor's, not a thread's: nothing to keep, and no id the backend takes. The open one is held
+    // only when it's one of these rows: holding keeps a row you're on, never adds one (a newsletter opened from the
+    // digest is read as any mail is, and isn't Today's: the owner, plan 161)
+    const open = s.selectedId !== null && s.selectedId !== 0 && useList.getState().index.has(s.selectedId) ? [s.selectedId] : [];
+    const held = new Set([...s.checked, ...open]);
     const list = await client.call("today.list", { heldIds: [...held].slice(0, 500) });
     return { items: flattenToday(list, useList.getState().items), nextCursor: null };
   }
