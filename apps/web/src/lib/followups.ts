@@ -51,12 +51,13 @@ export function followupLine(row: FollowupRow, now = Date.now()): string {
 }
 
 /**
- * Plan 161: the line's header after "Follow-up": when it comes back ("Back on top of your Inbox Wed, Oct 28, 9:00 AM"), or
- * that it's due. Pass 2: said once (the line under it says nobody has replied), and never a bare weekday.
+ * Plan 161: when the line comes back, never a bare weekday. Pass 3: under the fact (the title), so it says what happens and
+ * on what: "Comes back to your Inbox Wed, Oct 28, 9:00 AM if there's no reply", or that it's due.
  */
 export function followupWhen(row: FollowupRow, now = Date.now()): string {
   const date = reminderDated(row.dueAt, now);
-  return row.state === "due" ? t("followup.dueNow", { date }) : t("followup.dueOn", { date });
+  if (row.state === "due") return t("followup.dueNow", { date });
+  return t(row.kind === "awaiting" ? "followup.dueOnAwaiting" : "followup.dueOn", { date });
 }
 
 /** What a row says: its most urgent, and how many more. */

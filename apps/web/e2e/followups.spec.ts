@@ -7,6 +7,7 @@ import type { Page } from "@playwright/test";
 import type { SettingsPatch } from "@terno/core/rpc";
 import { expect, fresh, focusList, ingestConversation, rows, scenario, test, type DevServerFixture } from "./fixtures";
 import { E2E_NOW } from "./constants";
+import { unclipped } from "./helpers/unclipped";
 
 test.use({ backendOptions: { network: true } });
 
@@ -55,8 +56,10 @@ test.describe("follow-ups (plan 142)", () => {
       const line = page.getByTestId("followup-line");
       await expect(line).toBeVisible();
       await expect(page.getByTestId("followup-due")).toContainText("Due");
+      // plan 161, pass 3: on the AI card, as Reply ready is: its edge on the subject's line, its text inset
       const left = async (id: string) => (await page.getByTestId(id).first().boundingBox())!.x;
-      expect(Math.abs((await left("followup-text")) - (await left("reader-subject")))).toBeLessThanOrEqual(1);
+      expect(Math.abs((await left("followup-line")) - (await left("reader-subject")))).toBeLessThanOrEqual(1);
+      expect((await left("followup-text")) - (await left("followup-line"))).toBeGreaterThanOrEqual(12);
       await page.getByTestId("followup-go").hover();
       await expect(page.getByTestId("followup-quote")).toContainText("I'll send the contract");
       await page.mouse.move(0, 0);
@@ -108,13 +111,13 @@ test.describe("follow-ups (plan 142)", () => {
       const threadId = await tracked(server, "Coffee next week", "awaiting", false);
       await fresh(page);
       await page.locator(`[data-thread-id="${threadId}"]`).first().click();
-      await expect(page.getByTestId("followup-header")).toContainText("Follow-up");
-      // pass 2: said once (the line under it says nobody has replied), with its day
-      await expect(page.getByTestId("followup-due")).toHaveText(/^Back on top of your Inbox (Tomorrow|Today) \d/);
-      await expect(page.getByTestId("followup-due")).not.toContainText("reply");
+      // pass 3: the fact first, as the card's title; when it comes back, and on what, under it
+      await expect(page.getByTestId("followup-header")).toHaveText("Tom Reed hasn’t replied yet");
+      await expect(page.getByTestId("followup-due")).toHaveText(/^Comes back to your Inbox (Tomorrow|Today) \d.* if there’s no reply$/);
+      expect((await page.getByTestId("followup-header").boundingBox())!.y).toBeLessThan((await page.getByTestId("followup-due").boundingBox())!.y);
       await expect(page.getByTestId("followup-nudge")).toHaveText("Draft a nudge");
-      // pass 2: whose message, and when
-      await expect(page.getByTestId("followup-go")).toHaveText(/^\S+ · /);
+      // pass 3: the source named for where it goes, whose message and when
+      await expect(page.getByTestId("followup-go")).toHaveText(/^Your message, /);
       for (const id of ["followup-nudge", "followup-later", "followup-dismiss", "followup-go"]) {
         expect((await page.getByTestId(id).boundingBox())!.height, id).toBeGreaterThanOrEqual(28);
       }
@@ -129,6 +132,10 @@ test.describe("follow-ups (plan 142)", () => {
       expect(box.y).toBeGreaterThan(line.y);
       expect(box.x).toBeGreaterThanOrEqual(line.x - 24);
       await page.getByTestId("tip-done").click();
+      // who found it, at the row's end: the one provenance control, its popover the model and when
+      await page.getByTestId("followup-provenance").click();
+      await expect(page.getByTestId("followup-provenance-popover")).toContainText(/^Found by demo in mail you sent, .*It can make mistakes\.$/);
+      await page.keyboard.press("Escape");
       // one hairline under the section at most: the message's own
       expect(await page.getByTestId("thread-followups").evaluate((el) => getComputedStyle(el).borderBottomWidth)).toBe("0px");
     });
@@ -141,7 +148,7 @@ test.describe("follow-ups (plan 142)", () => {
     await scenario("Later's choices each say when they resolve to", async () => {
       await page.locator(`[data-thread-id="${threadId}"]`).first().click();
       await page.getByTestId("followup-later").click();
-      const items = page.locator("[data-testid^=followup-later-]:not([data-testid=followup-later-when])").filter({ has: page.getByTestId("followup-later-when") });
+      const items = page.getByTestId("followup-later-menu").getByRole("menuitem").filter({ has: page.getByTestId("followup-later-when") });
       await expect(items.first()).toBeVisible();
       for (const when of await page.getByTestId("followup-later-when").all()) await expect(when).toHaveText(/\d{1,2}:\d{2}/);
       expect(await page.getByTestId("followup-later-when").count()).toBe(await items.count());
@@ -211,12 +218,31 @@ test.describe("follow-ups (plan 142)", () => {
     await expect(page.getByTestId("nav-followups")).toContainText("Seguimientos");
   });
 
-  test("the line beside its neighbours in every design", { tag: "@design" }, async ({ app: page, server }) => {
+  test("the line beside its neighbours in every design; plan 161, pass 3: nothing in its menu or popover is clipped, light and dark, 1440 and 1100", { tag: "@design" }, async ({ app: page, server }) => {
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true, scanAnswered: true } });
     await tracked(server, "The contract", "promise", true);
     await fresh(page);
     await rows(page).first().click();
     await expect(page.getByTestId("followup-line")).toBeVisible();
+    // ai-r02: Reschedule's menu was its trigger's 128 px, and cut "Later today" to "Lat…" and Next week to nothing
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      for (const size of [{ width: 1440, height: 900 }, { width: 1100, height: 700 }]) {
+        await page.setViewportSize(size);
+        const where = `${scheme} ${size.width}`;
+        await page.getByTestId("followup-later").click();
+        const menu = page.getByTestId("followup-later-menu");
+        await expect(menu).toBeVisible();
+        await expect(menu.getByRole("menuitem")).toHaveText([/^Later today/, /^Tomorrow/, /^This weekend/, /^Next week/]);
+        expect(await unclipped(menu), where).toEqual([]);
+        await page.keyboard.press("Escape");
+        await page.getByTestId("followup-provenance").click();
+        expect(await unclipped(page.getByTestId("followup-provenance-popover")), where).toEqual([]);
+        await page.keyboard.press("Escape");
+      }
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.setViewportSize({ width: 1440, height: 900 });
     if (SHOTS) {
       await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-light.png` });
       await page.emulateMedia({ colorScheme: "dark" });
