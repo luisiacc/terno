@@ -42,6 +42,8 @@ process.stdout.write(
       h("i", { "data-testid": "probe-primary-hover", className: "bg-primary-hover" }),
       h("i", { "data-testid": "probe-primary", className: "bg-primary" }),
       h("i", { "data-testid": "probe-muted", className: "bg-muted" }),
+      // (no utility in the app uses bg-menu-highlight, so Tailwind has no class for it)
+      h("i", { "data-testid": "probe-menu-highlight", style: { backgroundColor: "var(--menu-highlight)" } }),
       // plan 120: the segmented control, both kinds of tabs, an avatar and a divider; the tokens they should show
       h(ToggleGroup, { variant: "segmented", value: ["a"], "aria-label": "Segmented", "data-testid": "segmented" }, h(ToggleGroupItem, { value: "a", "data-testid": "segmented-on" }, "One"), h(ToggleGroupItem, { value: "b", "data-testid": "segmented-off" }, "Two")),
       h(Tabs, { defaultValue: "a" }, h(TabsList, { "data-testid": "tabs" }, h(TabsTrigger, { value: "a", "data-testid": "tab-on" }, "One"), h(TabsTrigger, { value: "b" }, "Two"))),

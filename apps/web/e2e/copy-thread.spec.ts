@@ -69,8 +69,9 @@ test("copying a conversation as text: from the thread, the list and the palette"
   });
 
   await scenario("on the background and the header: only the text", async () => {
+    // past the list's resize handle, which reaches 4 px into the reader
     const box = (await scroller.boundingBox())!;
-    await page.mouse.click(box.x + 3, box.y + box.height - 12, { button: "right" });
+    await page.mouse.click(box.x + 12, box.y + box.height - 12, { button: "right" });
     await expect(menu(page).getByRole("menuitem")).toHaveText(["Copy conversation as text"]);
     await close(page);
     await scroller.evaluate((el) => el.scrollTo(0, 0));
@@ -142,7 +143,7 @@ test("copying loads nothing the mail points at: a pixel, a frame and a styleshee
   });
   await blank(page);
   const box = (await page.locator("[data-reader-scroller]").boundingBox())!;
-  await page.mouse.click(box.x + 3, box.y + box.height - 12, { button: "right" });
+  await page.mouse.click(box.x + 12, box.y + box.height - 12, { button: "right" });
   await page.getByTestId("message-menu-copy-text").click();
   expect(await copied(page)).toContain("Tracked words");
   await page.waitForTimeout(200);

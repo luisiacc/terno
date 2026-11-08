@@ -359,6 +359,8 @@ for (const mode of ["light", "dark"] as const) {
         await focusList(page);
         await page.keyboard.press("c");
         await addRecipients(page, "compose-to", "ana@example.com");
+        // something written: an empty message asks first (plan 158), which isn't this control's
+        await page.getByTestId("compose-body").fill("Hello");
         await page.getByTestId("compose-send-later").click();
         const popover = page.getByTestId("send-later-popover");
         await popover.getByTestId("send-later-custom").click();
@@ -581,7 +583,8 @@ for (const mode of ["light", "dark"] as const) {
         baseExpect(pop.width).toBeGreaterThanOrEqual(tr.width - 0.5);
         const chosen = popup.locator("[role=option][aria-selected=true]");
         await page.mouse.move(1, 1);
-        baseExpect(await chosen.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await css(page, "probe-muted", "background-color"));
+        // plan 158: a floating panel's rows are highlighted in --menu-highlight, a step clear of the popover in every palette
+        baseExpect(await chosen.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await css(page, "probe-menu-highlight", "background-color"));
         await baseExpect(chosen.locator("svg")).toHaveCount(0);
         const turned = await trigger.locator("svg").last().evaluate((el) => getComputedStyle(el).rotate);
         baseExpect(turned).toBe("180deg");
