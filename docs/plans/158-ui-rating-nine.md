@@ -67,6 +67,8 @@ Each round is a whole rating on one commit, all four styles, Claude and Codex, i
 | r01 | `19a089d8` | 7 (6.5) / 7.5 (7) | 7.5 (7) / 7 (6) | 7 (6) / 7 (6.5) | 7 (6.5) / 7.5 (7) | 876 |
 | r02 | `90d8de33` | 7 (6) / 7.5 (7) | 7 (6.5) / 7.5 (7) | 7.5 (7.5) / 7.5 (6.5) | 6.5 (5.5) / 7.5 (7) | 858 |
 | r03 | `e48f0f30` | 7.5 (7) / 7.5 (7) | 7 (7) / 7.5 (7) | 7 (6.5) / 7.5 (7) | 7 (7) / 7.5 (7.5) | 825 |
+| r04 | `9a2ba1a8` | 7 (6.5) / 7.5 (7) | 7 (6.5) / 7.5 (7) | 7 (6.5) / 7.5 (7) | 7 (6) / 7.5 (7) | 856 |
+| r05 (landing) | `01812414` | 7 (6.5) / 7.5 (7) | 7 (6.5) / 7.5 (7) | 7 (6.5) / 7.5 (7) | 7 (6.5) / 7.5 (7) | 842 |
 
 Claude / Codex in each cell. r00's brief didn't yet score a cell's weakest case, so later rounds are slightly stricter.
 
@@ -217,3 +219,18 @@ Codex reviewed the whole series before it landed (seven findings, all fixed, eac
 - **A plain-text body's marks** had no budget: every match was a React `<mark>` (100,000 in a long mail). One budget of characters and marks (the HTML frame's, 400,000 and 300) now covers the whole body, links and shown history included; the rest reads unmarked. `text-body-marks.test.tsx`.
 - **A hand inside an HTML mail** (a wheel, a key, a press) never reached `ReaderMatches`, so a later count scrolled back to the first match. The frame tells the reader with its own event. `search.spec.ts`.
 - **A wheel over the Review buttons** didn't move the list under them. They forward it, pixels, lines and pages in the list's own measure (`lib/wheel.ts`, which the learned offer now uses too). `review-buttons-wheel.test.tsx`.
+
+## Where it stopped
+
+The owner stopped the climb after round 4 and chose to land: four passes had moved the average facet score from 6.93 to 7.75 (r03), and r04 fell back to 7.61. What the raters still found was mostly consistency between engineers' fixes, which patching findings one by one wasn't moving.
+
+| | r00 | r05 |
+|---|---:|---:|
+| Mean facet score (792 per round) | 6.93 | 7.66 |
+| Facets at 9 or more | 5 | 46 |
+| Facets at 8 or more | 153 | 370 |
+| High-severity issues | 26 | 2 |
+
+**The bar (every cell at 9 from both raters) isn't met.** Claude rates every style about 7, Codex about 7.5. The rule in `docs/ui-rating.md` stands for future work. After r05, Graphite's open row was made lighter: its secondary text measured 3.8:1 on it (round 5's only high finding about this branch's own code). The other high finding, Reply and Forward in both the toolbar and the bar at the end, is a design choice left to the owner.
+
+The demo mailbox's account colors had been made neutral during pass two; that changed the raters' evidence, so it was reverted before r05 (new accounts still start neutral).
