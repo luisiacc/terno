@@ -354,3 +354,13 @@ Six findings, all taken, each with a test that fails without its fix:
 4. **Reschedule's own moment could expire while open** and do nothing. Set checks the clock again and says "Pick a time in the future.", as the reminder's picker does (`followups.spec.ts`, the page clock moved on while it's open).
 5. **The digest's failure offered only Try again** when the fix is in Settings. It offers AI settings when the error says so (`digest-page.test.tsx`).
 6. **The wheel test trusted the window, not the pane.** `wheelsTo` now needs the target whole inside every ancestor that clips it, top and bottom.
+
+## Results
+
+- **Rebased** onto main at `8db2bfa3d` (the owner's answers: newsletters opened from the digest aren't pinned in Today, the Undo ring's faint track, the no-AI sender check in the action preview). No conflict; the AI specs pass on top of it.
+- **Typecheck and lint:** clean.
+- **Touched specs, `e2e` (macOS):** `ask`, `summaries`, `ai-draft`, `followups`, `filters`, `today`, `plain-actions`, `replies-ready`, `snack`: 80 passed. **In Lumen, Atelier, Graphite and Luma** (their `@design` and `@variant` flows of the same specs and `design-axe`): 70 passed. `design-axe`, `visual`, `designs`, `controls`, `menu-corners`, `palette`, `i18n` in all five: passed after the two AI filter baselines moved.
+- **`pnpm test:ui-perf`:** 45 passed.
+- **The frozen capture** reached every AI state in Lumen, Atelier, macOS and Graphite, light and dark (136 shots, 56 AI requests each, all to the stub), with no change to `scripts/ui-rating/`.
+- **`pnpm test:all`** (`E2E_PORT=7550`, `WEB_PORT=7560`), 1,346 s: lint, build, typecheck, web, e2e, ui-perf, perf and startup passed. `unit` and `db-wasm` failed only on the crowded first pass and passed alone (flaky: timing tests under load, such as "scheduling with thousands of location ops… stays fast", a 40 MB attachment stream, SQLite abrupt restarts; none touches the AI surfaces). **`smoke` failed twice** on `native-reload.smoke.ts:293`. That test waits for macOS to move focus to a second native window (`getFocusedWebContents()`); nothing in this branch touches window focus, drafts or reload. It wasn't run on main to compare.
+- **Shots:** `/tmp/terno-scratch/ai-redesign/round0/<design>/`; before and after sheets in `/tmp/terno-scratch/ai-redesign/sheets/`.
