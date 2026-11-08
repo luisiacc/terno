@@ -7,35 +7,54 @@ import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Clock, Mail, Plus, Search, Sparkles, Undo2 } from "@terno/ui/icons";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { askReady, errorHelp, modelName, providerLabel } from "~/lib/ai";
+import { askReady, errorHelp, providerLabel } from "~/lib/ai";
+import { citationRuns } from "~/lib/ask-citations";
+import { provenanceDetail, provenanceLabel } from "~/lib/provenance";
+import { cn } from "@terno/ui/lib/utils";
 import { askConfigChanged, askQuestion, atTurnLimit, declineConsent, deleteConversation, loadAskHistory, newQuestion, openConversation, openSource, restoreConversation, returning, searchOlder, stopAsking, useAsk } from "~/lib/ask";
-import { fullDate, listDate } from "~/lib/format";
+import { listDate } from "~/lib/format";
 import { askFrom, paletteKeys, setPalettePage } from "~/lib/palette-open";
 import { chordLabel } from "@terno/ui/components/shortcut";
 import { snack } from "~/lib/snack";
 import { useApp, setApp } from "~/state/app";
+
+/** an answer's own buttons: quiet text in a 24 px shape, full ink on hover */
+const QUIET = "font-medium text-muted-foreground hover:text-foreground";
 
 const stopKeys = (e: KeyboardEvent) => {
   // a control's own Enter and Space stay out of the list's: cmdk selects the active row whichever control has focus (revision 12)
   if (e.key === "Enter" || e.key === " ") e.stopPropagation();
 };
 
-/** "…renews on 1 March. [1]": an inline [1] is a button to that source; everything else stays plain text, never a link. */
+/**
+ * "…renews on 1 March.¹": a citation is a small numbered marker, a button to that source, bound to the word before it
+ * and the punctuation after it (plan 161: no line starts with "."). Its pointer target is 24 px, drawn around it, so the
+ * line keeps its rhythm. Everything else stays plain text, never a link.
+ */
 function AnswerText({ text, sources }: { text: string; sources: readonly AskSourceRef[] }) {
   const views = useAsk((s) => s.sources);
-  const parts = text.split(/(\[\d+\])/);
+  const marker = (n: number, key: number) => {
+    const source = sources[n - 1];
+    if (!source || views[source.messageId]?.state === "gone") return <span key={key}>[{n}]</span>;
+    return (
+      <button key={key} type="button" data-testid="ask-citation" onKeyDown={stopKeys} onClick={() => void openSource(source)} className="relative ms-0.5 inline-grid h-[1.3em] min-w-[1.3em] place-items-center rounded-[0.4em] bg-field px-[0.3em] align-[0.15em] text-2xs leading-none font-semibold text-muted-foreground tabular transition-colors after:absolute after:top-1/2 after:left-1/2 after:size-6 after:-translate-1/2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" aria-label={t("ask.citation", { n, subject: source.subject })}>
+        {n}
+      </button>
+    );
+  };
   return (
     <p className="whitespace-pre-wrap break-words text-sm leading-relaxed" data-testid="ask-answer">
-      {parts.map((part, i) => {
-        const cited = /^\[(\d+)\]$/.exec(part);
-        const source = cited ? sources[Number(cited[1]) - 1] : undefined;
-        if (!source || views[source.messageId]?.state === "gone") return <span key={i}>{part}</span>;
-        return (
-          <button key={i} type="button" data-testid="ask-citation" onKeyDown={stopKeys} onClick={() => void openSource(source)} className="mx-px rounded-sm px-0.5 text-xs text-muted-foreground tabular underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" aria-label={t("ask.citation", { n: cited![1]!, subject: source.subject })}>
-            {part}
-          </button>
-        );
-      })}
+      {citationRuns(text).map((run, i) =>
+        "text" in run ? (
+          <span key={i}>{run.text}</span>
+        ) : (
+          <span key={i} className="whitespace-nowrap" data-testid="ask-cited">
+            {run.lead}
+            {run.cites.map((n, j) => marker(n, j))}
+            {run.trail}
+          </span>
+        ),
+      )}
     </p>
   );
 }
@@ -82,21 +101,19 @@ function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated
       {turn.status === "stopped" && <p className="text-xs text-muted-foreground" data-testid="ask-stopped">{t("ask.stopped")}</p>}
       <Checks turn={turn} />
       {turn.answer && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Button variant="link-secondary" size="xs" data-testid="ask-copy" onKeyDown={stopKeys} onClick={() => void copy()}>{t("ask.copy")}</Button>
-          <span aria-hidden>·</span>
-          <Tooltip>
-            <TooltipTrigger render={<span tabIndex={0} data-testid="ask-provenance" className="rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" />}>{t("ask.writtenBy", { model: modelName(turn.model ?? "") })}</TooltipTrigger>
-            <TooltipContent>{t("ask.provenance", { model: modelName(turn.model ?? ""), date: fullDate(turn.createdAt) })}</TooltipContent>
-          </Tooltip>
+        // -ml-2: the buttons' words on the answer's edge; their 24 px shapes reach past it
+        <div className="-ml-2 flex items-center gap-0.5 text-xs text-muted-foreground" data-testid="ask-turn-actions">
+          <Button variant="ghost" size="xs" className={QUIET} data-testid="ask-copy" onKeyDown={stopKeys} onClick={() => void copy()}>{t("ask.copy")}</Button>
           {last && !running && (
-            <>
-              <span aria-hidden>·</span>
-              <Button variant="link-secondary" size="xs" data-testid="ask-again" onKeyDown={stopKeys} onClick={() => askQuestion(turn.question)}>{t("ask.again")}</Button>
-            </>
+            <Button variant="ghost" size="xs" className={QUIET} data-testid="ask-again" onKeyDown={stopKeys} onClick={() => askQuestion(turn.question)}>{t("ask.again")}</Button>
           )}
+          <Tooltip>
+            <TooltipTrigger render={<span tabIndex={0} data-testid="ask-provenance" className="ml-auto rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" />}>{provenanceLabel()}</TooltipTrigger>
+            <TooltipContent data-testid="ask-provenance-detail">{provenanceDetail(turn.model ?? "", turn.createdAt)}</TooltipContent>
+          </Tooltip>
         </div>
       )}
+      {last && turn.answer && <Scope />}
     </section>
   );
 }
@@ -124,7 +141,7 @@ function CommandNotice() {
   );
 }
 
-/** Older mail, on a click: the main action when nothing here answers, a quiet link otherwise. */
+/** Older mail, on a click, when nothing here answers: the main action. An answer has it quietly, in its scope line. */
 function Older() {
   const offer = useAsk((s) => s.older);
   const last = useAsk((s) => s.turns.at(-1));
@@ -135,19 +152,42 @@ function Older() {
   if (found === 0) return <p className="text-sm text-muted-foreground" data-testid="ask-older-nothing">{t("ask.older.nothing")}</p>;
   if (running || !last) return null;
   const main = last.status === "not_found" || last.status === "partial";
-  if (offer.kind === "none") return main && last.status === "not_found" ? <p className="text-sm text-muted-foreground" data-testid="ask-not-found">{t("ask.notFound")}</p> : null;
-  const lead = main && last.status === "not_found" && <p className="text-sm text-muted-foreground" data-testid="ask-not-found">{"since" in offer && offer.since ? t("ask.notFoundSince", { date: listDate(offer.since) }) : t("ask.notFound")}</p>;
+  if (!main) return null;
+  if (offer.kind === "none") return last.status === "not_found" ? <p className="text-sm text-muted-foreground" data-testid="ask-not-found">{t("ask.notFound")}</p> : null;
+  const lead = last.status === "not_found" && <p className="text-sm text-muted-foreground" data-testid="ask-not-found">{"since" in offer && offer.since ? t("ask.notFoundSince", { date: listDate(offer.since) }) : t("ask.notFound")}</p>;
   if (offer.kind === "downloading") return <div className="space-y-1">{lead}<p className="text-xs text-muted-foreground" data-testid="ask-older-downloading">{t("ask.older.downloading")}</p></div>;
   if (offer.kind === "offline") return <div className="space-y-1">{lead}<p className="text-xs text-muted-foreground" data-testid="ask-older-offline">{t("ask.older.offline")}</p></div>;
   return (
     <div className="space-y-1.5">
       {lead}
-      {main ? (
-        <Button size="sm" variant="secondary" data-testid="ask-older" onKeyDown={stopKeys} onClick={searchOlder}>{t("ask.older.button")}</Button>
-      ) : (
-        <Button variant="link-secondary" size="xs" data-testid="ask-older" onKeyDown={stopKeys} onClick={searchOlder}>{t("ask.older.button")}</Button>
-      )}
+      <Button size="sm" variant="secondary" data-testid="ask-older" onKeyDown={stopKeys} onClick={searchOlder}>{t("ask.older.button")}</Button>
     </div>
+  );
+}
+
+/**
+ * Plan 161: under an answer, how far back it looked, and the way past that, on one line: what Search older mail adds is
+ * said by what it's next to.
+ */
+function Scope() {
+  const offer = useAsk((s) => s.older);
+  const last = useAsk((s) => s.turns.at(-1));
+  const found = useAsk((s) => s.olderFound);
+  const running = useAsk((s) => s.running !== null);
+  const enabled = useApp((s) => s.settings?.ask?.enabled !== false);
+  if (!enabled || running || !last || last.status === "not_found" || last.status === "partial" || found === 0) return null;
+  const since = "since" in offer && offer.since ? offer.since : null;
+  if (offer.kind === "none" || offer.kind === "downloading" || !since) return null;
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground" data-testid="ask-scope">
+      <span>{t("ask.scope", { date: listDate(since) })}</span>
+      {offer.kind === "offline" ? (
+        <span data-testid="ask-older-offline">{t("ask.older.offline")}</span>
+      ) : (
+        // -ml-2 under the gap: its word sits one space after the scope's, its shape reaching back
+        <Button variant="ghost" size="xs" className={cn(QUIET, "-ml-2")} data-testid="ask-older" onKeyDown={stopKeys} onClick={searchOlder}>{t("ask.older.servers")}</Button>
+      )}
+    </p>
   );
 }
 
