@@ -38,15 +38,15 @@ const row = (id: number) => {
   return items[index.get(id) ?? -1];
 };
 const scroller = () => document.querySelector<HTMLElement>("[data-drop-scroll]");
-/** every container targets scroll in (the sidebar's nav; the List layout's tab strip when it scrolls) */
+/** every container targets scroll in (the sidebar's nav) */
 const scrollers = () => document.querySelectorAll<HTMLElement>("[data-drop-scroll]");
 
 /** the elements measured at drag start, by TargetRect.at (the drop flies to the one it landed on) */
 let measured: HTMLElement[] = [];
 
 /**
- * The targets, each clipped to its own scrolling container (plan 24: a tab
- * above the sidebar's nav isn't clipped by the nav), skipping what's
+ * The targets, each clipped to its own scrolling container (what sits
+ * outside the sidebar's nav isn't clipped by the nav), skipping what's
  * scrolled out of view or inside something hidden (an inert page cover).
  */
 export function measureTargets(): TargetRect[] {
@@ -119,7 +119,7 @@ function fadeGhost() {
   setTimeout(() => g.querySelector("[data-ghost-body]")?.hasAttribute("data-leaving") && hideGhost(), Math.round(ms * 0.66) + 20);
 }
 
-/** Drop: the ghost flies into the dot (a folder: the icon) of the target it landed on (the sidebar's item or the tab) and fades. */
+/** Drop: the ghost flies into the dot (a folder: the icon) of the target it landed on and fades. */
 function flyGhost(id: DropId, at?: number) {
   if (!ghost) return;
   const ms = motionMs();

@@ -44,9 +44,8 @@ import { ReportRow } from "./diag/report-row";
 import { DesktopBanner } from "~/lib/web-parts";
 import { iconsAllowed, iconsAllowedForList } from "~/lib/sender-icons";
 import { useAppearance } from "~/lib/appearance";
-import { fitTabs, selectedTab, tabsShown } from "~/lib/tabs";
+import { fitStrip } from "~/lib/fit-strip";
 import { listAnchor } from "~/state/list";
-import { ListTabs, TAB_PANEL_ID } from "./list-tabs";
 import { SelectionBar } from "./selection-bar";
 import ActionPreviewHeader from "./action-preview-header";
 import { renderProbe } from "~/lib/render-probe";
@@ -248,14 +247,13 @@ function QuickChips({ filter }: { filter: QuickFilter | undefined }) {
     for (const el of mirror.children) ro.observe(el);
     return () => ro.disconnect();
   }, [rest]);
-  const fit = m.widths.length === rest.length ? fitTabs({ widths: m.widths, available: m.available, pinned: m.all, more: m.more, gap: CHIP_GAP, selected: filter ? rest.indexOf(filter) : -1 }) : { visible: rest.map((_, i) => i), overflow: [] };
+  const fit = m.widths.length === rest.length ? fitStrip({ widths: m.widths, available: m.available, pinned: m.all, more: m.more, gap: CHIP_GAP, selected: filter ? rest.indexOf(filter) : -1 }) : { visible: rest.map((_, i) => i), overflow: [] };
   const visible = ["all" as const, ...fit.visible.map((i) => rest[i]!)];
   const overflow = fit.overflow.map((i) => rest[i]!);
   const chip = "h-7 shrink-0 rounded-full px-2.5 text-xs font-medium whitespace-nowrap text-muted-foreground hover:bg-muted hover:text-foreground data-pressed:bg-muted data-pressed:text-foreground";
   const label = (f: QuickFilter | "all") => (f === "all" ? t("list.filter.all") : filterName(f));
   return (
-    // grows to what its chips need and no further, so List's tabs beside it keep the rest
-    <div ref={stripRef} className="no-drag relative flex min-w-0 flex-1 items-center gap-1.5 py-0.5" style={{ maxWidth: m.widths.length ? m.all + m.widths.reduce((n, w) => n + w + CHIP_GAP, 0) : undefined }}>
+    <div ref={stripRef} className="no-drag relative flex min-w-0 flex-1 items-center gap-1.5 py-0.5">
       <ToggleGroup
         data-testid="quick-filters"
         aria-label={t("list.filter.label")}
@@ -275,7 +273,7 @@ function QuickChips({ filter }: { filter: QuickFilter | undefined }) {
           <DropdownMenuTrigger
             render={
               <button type="button" data-testid="quick-filter-more" aria-label={t("list.filter.moreLabel", { count: overflow.length })} className={cn(chip, "flex items-center gap-0.5")}>
-                {t("list.tabs.more")}
+                {t("list.filter.overflow")}
                 <ChevronDown aria-hidden className="size-3" />
               </button>
             }
@@ -298,7 +296,7 @@ function QuickChips({ filter }: { filter: QuickFilter | undefined }) {
             <span key={f} className={cn(chip, "flex items-center")}>{label(f)}</span>
           ))}
           <span className={cn(chip, "flex items-center gap-0.5")}>
-            {t("list.tabs.more")}
+            {t("list.filter.overflow")}
             <ChevronDown className="size-3" />
           </span>
         </div>
@@ -623,9 +621,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
   const behindButton = design.variants.search === "button";
   const quick = design.variants.quickFilters;
   const list = useAppearance((s) => s.layout === "list");
-  const tabs = useApp((s) => list && tabsShown(s));
   const showField = !behindButton || searchOpen || query !== "";
-  const inlineTabs = oneRow && tabs && quick === "menu";
   // List's selection toolbar stands on this line: what's under it can't be reached until it goes
   const covered = useApp((s) => list && (s.scope !== null || s.checked.size >= 1));
   // in the field's own words (plan 158: "in saved mail" was a term nobody knew); the few-results note says what's looked through
@@ -708,8 +704,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
     <div ref={hairlineRef} data-testid="list-header" data-kind={kind} className="drag-region scroll-hairline @container shrink-0 pr-4 pb-1.5 pl-2">
       {oneRow ? (
         <div inert={covered} className="flex h-[52px] min-w-0 items-center gap-3 pr-1.5 pl-3">
-          {/* tabs on this line: the selected one says this, and says what's unread */}
-          <h1 className={cn("min-w-0 max-w-[40cqw] truncate", inlineTabs && !account ? "sr-only" : kind === "title" ? "text-md font-semibold tracking-tight" : kind === "greeting" ? "type-greeting" : "type-list-title")} data-testid="list-title">
+          <h1 className={cn("min-w-0 max-w-[40cqw] truncate", kind === "title" ?"text-md font-semibold tracking-tight" : kind === "greeting" ? "type-greeting" : "type-list-title")} data-testid="list-title">
             {title}
             {accountSuffix}
             {filterSuffix}
@@ -720,12 +715,10 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
               {searchAll}
             </p>
           ) : (
-            kind !== "title" && !inlineTabs && <Subtitle filter={filter} greeting={kind === "greeting"} />
+            kind !== "title" && <Subtitle filter={filter} greeting={kind === "greeting"} />
           )}
-          {/* what the row leaves goes to the tabs, then to nothing: the controls keep the right edge */}
-          <div className="flex min-w-0 flex-1 items-center">{inlineTabs && <ListTabs inline />}</div>
-          {/* the tabs name the place, so the filter is named beside its control */}
-          {inlineTabs && !account && filter && filter !== "unread" && <span data-testid="list-filter-name" className="shrink-0 truncate text-xs text-muted-foreground">{filterName(filter)}</span>}
+          {/* what the row leaves stays empty: the controls keep the right edge */}
+          <div className="min-w-0 flex-1" />
           {filterControl}
           {showField && (
             <div className="w-[clamp(14.5rem,24cqw,20rem)] shrink-0">
@@ -783,10 +776,9 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
           {searchAll}
         </p>
       )}
-      {((tabs && (!oneRow || quick === "chips")) || (!review && !reminders && quick === "chips")) && (
-        <div className="mt-1 flex min-w-0 items-center gap-3 pl-3 empty:hidden">
-          {tabs && (!oneRow || quick === "chips") && <ListTabs />}
-          {!review && !reminders && quick === "chips" && <QuickChips filter={filter} />}
+      {!review && !reminders && quick === "chips" && (
+        <div className="mt-1 flex min-w-0 items-center pl-3">
+          <QuickChips filter={filter} />
         </div>
       )}
     </div>
@@ -1002,8 +994,6 @@ export function ThreadList() {
   const previewing = useApp((s) => s.actionPreview !== null);
   // plan 80: a category's Review list, whose rows answer its suggestions
   const review = useApp((s) => s.reviewCategoryId);
-  const tabs = useApp((s) => list && tabsShown(s));
-  const tab = useApp(selectedTab);
   const parentRef = useRef<HTMLDivElement>(null);
   // a Tab stop only with rows to carry the focus (a loading skeleton has none); handed on only once truly empty
   const empty = !loading && items.length === 0;
@@ -1260,8 +1250,8 @@ export function ThreadList() {
       {/* List has no reader pane for a multi-selection: its actions are a toolbar over the header's line (plan 24); no row moves for it (plan 158) */}
       {list && many && !previewing && <SelectionBar variant="toolbar" />}
       {!previewing && <SelectAllBanner />}
-      {/* under tabs the rows are what they control (tabpanel); the listbox is one Tab stop and restores focus when a page closes */}
-      <div className="relative flex min-h-0 flex-1 flex-col" {...(tabs ? { role: "tabpanel", id: TAB_PANEL_ID, "aria-labelledby": `list-tab-${tab}` } : {})}>
+      {/* the listbox is one Tab stop and restores focus when a page closes */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
       <LearnedSource />
       {learned.proposal && lead > 0 && <LearnedBanner proposal={learned.proposal} scroller={parentRef} />}
       <ThreadMenu>

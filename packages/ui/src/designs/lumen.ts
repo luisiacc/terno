@@ -49,6 +49,5 @@ export const lumen: DesignDefinition = {
     row: "large-avatar",
     readerHeader: "sender-card",
     replyAction: "pill",
-    categoryTabs: "pill",
   },
 };

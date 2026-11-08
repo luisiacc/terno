@@ -142,6 +142,4 @@ export interface DesignVariants {
   readerHeader: "classic" | "chips-display" | "sender-card";
   /** the reader toolbar's Reply: on the control's corners, or a pill with its key */
   replyAction: "control" | "pill";
-  /** the List layout's category tabs (plan 24): text with an indicator under it, or pills */
-  categoryTabs: "underline" | "pill";
 }

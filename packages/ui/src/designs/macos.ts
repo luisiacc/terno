@@ -51,6 +51,5 @@ export const macos: DesignDefinition = {
     row: "classic",
     readerHeader: "classic",
     replyAction: "control",
-    categoryTabs: "underline",
   },
 };

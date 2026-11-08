@@ -26,7 +26,7 @@ export type DropId = number | string;
 
 export interface TargetRect {
   id: DropId;
-  /** which measured element it is (a category can be a target twice: its sidebar item and its tab, plan 24) */
+  /** which measured element it is (the drop flies to the one it landed on) */
   at?: number;
   left: number;
   top: number;
@@ -158,7 +158,7 @@ export class DragController {
     const p = this.phase;
     this.phase = { kind: "idle" };
     if (p.kind !== "dragging") return;
-    // measured again for the drop itself: a target may have moved since the drag started (a tab widened by a new count, into More)
+    // measured again for the drop itself: a target may have moved since the drag started (the sidebar scrolled, More's folders let go)
     const hit = hitRect(this.env.targets(), e.x, e.y);
     const state = hit && this.stateOf(hit.id, p.ids);
     if (hit && state === "over") return this.env.drop(hit.id, p.ids, hit.at);

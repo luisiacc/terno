@@ -56,6 +56,5 @@ export const luma: DesignDefinition = {
     row: "avatar",
     readerHeader: "classic",
     replyAction: "control",
-    categoryTabs: "pill",
   },
 };

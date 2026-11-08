@@ -50,6 +50,5 @@ export const atelier: DesignDefinition = {
     row: "avatar",
     readerHeader: "chips-display",
     replyAction: "control",
-    categoryTabs: "underline",
   },
 };

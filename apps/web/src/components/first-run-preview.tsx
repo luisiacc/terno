@@ -12,7 +12,6 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { listDate, viewLabel } from "~/lib/format";
 import { variant } from "~/lib/design";
 import { ThreadRowView } from "./thread-row";
-import { tabClass } from "./list-tabs";
 import { SenderAvatar } from "./sender-avatar";
 import type { SampleMailbox } from "./first-run-sample";
 
@@ -150,18 +149,19 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
   const unread = sample.threads.filter((x) => x.unread).length;
   const height = wide && !compact ? design.rows.wide : design.rows[compact ? "compact" : "comfortable"];
   const icon = (glyph: React.ReactNode) => <span className="flex size-7 items-center justify-center rounded-md text-muted-foreground">{glyph}</span>;
+  const filters = quick === "menu" && (
+    // the header's All | Unread and its More filters (plan 158), drawn
+    <span className="flex shrink-0 items-center gap-1">
+      <span className="flex items-center gap-0.5 rounded-[calc(var(--radius-md)+var(--spacing)*0.5)] bg-field p-0.5 text-xs dark:bg-background">
+        <span className="flex h-6 items-center rounded-md bg-card px-2.5 font-medium shadow-xs dark:bg-muted">{t("list.filter.all")}</span>
+        <span className="flex h-6 items-center px-2.5 text-muted-foreground">{t("list.filter.unread")}</span>
+      </span>
+      {icon(<ListFilter />)}
+    </span>
+  );
+  // as thread-list.tsx's Header: the filter control, then the header's actions
   const actions = (
     <>
-      {quick === "menu" && (
-        // the header's All | Unread and its More filters (plan 158), drawn
-        <span className="flex shrink-0 items-center gap-1">
-          <span className="flex items-center gap-0.5 rounded-[calc(var(--radius-md)+var(--spacing)*0.5)] bg-field p-0.5 text-xs dark:bg-background">
-            <span className="flex h-6 items-center rounded-md bg-card px-2.5 font-medium shadow-xs dark:bg-muted">{t("list.filter.all")}</span>
-            <span className="flex h-6 items-center px-2.5 text-muted-foreground">{t("list.filter.unread")}</span>
-          </span>
-          {icon(<ListFilter />)}
-        </span>
-      )}
       {behindButton && icon(<Search />)}
       {v.compose === "list-header" && (
         <span className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-border bg-card px-2.5 text-[length:var(--ds-text-control)] font-medium shadow-xs">
@@ -171,17 +171,6 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
       )}
     </>
   );
-  const tabsRow = wide && (
-    <div data-testid="first-run-preview-tabs" data-kind={v.categoryTabs} className={cn("relative flex min-w-0 flex-1 items-center gap-1 overflow-hidden", v.categoryTabs === "underline" ? (quick === "menu" ? "-ml-2" : "hairline-b -mb-2 -ml-2") : "py-0.5")}>
-      <span aria-selected className={tabClass(v.categoryTabs)}>{viewLabel("inbox")}</span>
-      {sample.categories.map((c) => (
-        <span key={c.id} aria-selected={false} className={tabClass(v.categoryTabs)}>
-          <CategoryDot color={c.color} />
-          {c.name}
-        </span>
-      ))}
-    </div>
-  );
   const field = !behindButton && (
     <div className="relative flex h-[30px] items-center rounded-lg bg-tint pr-2 pl-8 text-sm text-muted-foreground">
       <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
@@ -189,37 +178,44 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
       <Kbd>/</Kbd>
     </div>
   );
+  const subtitle = (at: string) => (
+    <p className={cn("type-list-subtitle truncate text-muted-foreground tabular", at)}>
+      <span className="type-list-subtitle-strong text-unread-ink">{t("list.unreadCount", { count: unread })}</span>
+    </p>
+  );
   // List's full-width list keeps its chrome on one line where the design's filters are a menu (thread-list.tsx's Header)
   const oneRow = wide && quick === "menu";
   return (
     <section className="flex h-full min-h-0 flex-col bg-pane">
       <div className="shrink-0 pr-4 pb-2 pl-2">
         {oneRow ? (
-          <div className="flex h-[52px] items-center gap-3 pr-1.5 pl-3">
-            {tabsRow}
-            {actions}
+          // the title, then what the row leaves empty: the controls keep the right edge
+          <div className="flex h-[52px] min-w-0 items-center gap-3 pr-1.5 pl-3">
+            <h1 className={cn("min-w-0 truncate", kind === "title" ? "text-md font-semibold tracking-tight" : kind === "greeting" ? "type-greeting" : "type-list-title")}>{viewLabel("inbox")}</h1>
+            {kind !== "title" && subtitle("shrink-0")}
+            <div className="min-w-0 flex-1" />
+            {filters}
             {field && <div className="w-64 shrink-0">{field}</div>}
+            {actions}
           </div>
         ) : kind === "title" ? (
           <div className="flex h-[52px] items-center gap-2 pr-1.5 pl-3">
             <h1 className="min-w-0 flex-1 truncate text-md font-semibold tracking-tight">{viewLabel("inbox")}</h1>
+            {filters}
             {actions}
           </div>
         ) : (
           <>
             <div className="flex h-[52px] items-center gap-2 pr-1.5 pl-3">
               <h1 className={cn("min-w-0 flex-1 truncate", kind === "greeting" ? "type-greeting" : "type-list-title")}>{viewLabel("inbox")}</h1>
-              <div className="flex shrink-0 items-center gap-0.5">{actions}</div>
+              {filters}
+              <div className="flex shrink-0 items-center gap-0.5 empty:hidden">{actions}</div>
             </div>
-            <p className="type-list-subtitle -mt-1.5 truncate pb-2 pl-3 text-muted-foreground tabular">
-              <span className="type-list-subtitle-strong text-unread-ink">{t("list.unreadCount", { count: unread })}</span>
-            </p>
+            {subtitle("-mt-1.5 pb-2 pl-3")}
           </>
         )}
         {!oneRow && field}
         <div className="mt-1 flex min-w-0 items-center gap-3 overflow-hidden pl-3 empty:hidden">
-        {/* List: the inbox's tabs (list-tabs.tsx), the Inbox selected, in the design's tab variant */}
-        {!oneRow && tabsRow}
         {quick === "chips" && (
           <div data-testid="first-run-preview-chips" className="flex shrink-0 gap-1.5 overflow-hidden py-0.5">
             {(["all", "unread", "people", "attachments", "starred"] as const).map((f) => (

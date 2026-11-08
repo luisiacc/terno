@@ -15,7 +15,7 @@ import { getApp, navigate, setApp, useApp, type AppState } from "~/state/app";
 import { useReminders } from "~/lib/reminders";
 import { followupsOffered, todayOffered } from "~/lib/ai";
 import { useFollowups } from "~/state/followups";
-import { createCategory as createNamedCategory } from "~/lib/tabs";
+import { createCategory as createNamedCategory } from "~/lib/new-category";
 import { offerTip, usePendingTip } from "~/lib/tips";
 import { ACCOUNT_VIEWS, SOLO_VIEWS, listedByAccount, useFolderRows, toggleAccount, useOpenAccount, type FolderRow } from "~/lib/account-folders";
 import { renderProbe } from "~/lib/render-probe";
@@ -1286,10 +1286,9 @@ export function Sidebar() {
   }, [accounts]);
 
   const [creating, setCreating] = useState(false);
-  // the same creation as the List layout's tab "+" (lib/tabs)
   const createCategory = async (name: string) => {
     setCreating(false);
-    await createNamedCategory(name, { allAccounts: true });
+    await createNamedCategory(name);
   };
 
   // the folder you're in at the top: none in a category or its suggestions (both are "all" underneath), none inside an account (plan 67)

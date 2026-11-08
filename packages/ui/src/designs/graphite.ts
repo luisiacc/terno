@@ -62,6 +62,5 @@ export const graphite: DesignDefinition = {
     row: "classic",
     readerHeader: "classic",
     replyAction: "control",
-    categoryTabs: "pill",
   },
 };
