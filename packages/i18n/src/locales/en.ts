@@ -929,6 +929,7 @@ const en = {
   "sidebar.moreFolders": "More folders",
   "panes.resizeSidebar": "Resize sidebar",
   "panes.resizeList": "Resize message list",
+  "panes.sizes": "Pane sizes",
   "sidebar.filters": "Rules",
   "sidebar.cloudAi": "AI: {provider} (cloud)",
   "sidebar.cloudTip": "Your AI runs in the cloud: what you ask it about is sent to it.",

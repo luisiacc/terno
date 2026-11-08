@@ -190,9 +190,12 @@ export function App() {
           </main>
         )}
         {/* plan 21: the panes' edges, over the hairlines; List has no list|reader edge (its width is Split's, kept for it).
-            Plan 158: last in the page, so Tab goes sidebar, list, reader and only then to them */}
-        <PaneHandle pane="sidebar" />
-        {!list && <PaneHandle pane="list" />}
+            Plan 158: last in the page, so Tab goes sidebar, list, reader and only then to them; in a landmark of their own, as
+            all content is (a box-less one: they're still placed on the grid) */}
+        <div role="region" aria-label={t("panes.sizes")} className="contents">
+          <PaneHandle pane="sidebar" />
+          {!list && <PaneHandle pane="list" />}
+        </div>
       </div>
       <CommandPalette />
       <CategoryPicker />

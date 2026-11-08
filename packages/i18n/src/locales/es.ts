@@ -920,6 +920,7 @@ const es = {
   "sidebar.moreFolders": "Más carpetas",
   "panes.resizeSidebar": "Cambiar el ancho de la barra lateral",
   "panes.resizeList": "Cambiar el ancho de la lista de mensajes",
+  "panes.sizes": "Ancho de los paneles",
   "sidebar.filters": "Reglas",
   "sidebar.cloudAi": "IA: {provider} (nube)",
   "sidebar.cloudTip": "Tu IA funciona en la nube: lo que le preguntas se le envía.",
