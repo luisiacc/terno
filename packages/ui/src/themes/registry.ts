@@ -146,7 +146,7 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("shadow-color", () => (light ? "0 0 0 / 10%" : "0 0 0 / 40%"));
   def("ink-anchor", () => (light ? "0.2 0.01 265" : "0.98 0 0"));
   // plan 158: in dark, a sheet of paper in low light rather than the brightest thing on screen
-  def("mail-paper", () => (light ? o("background") : "0.92 0.004 85"));
+  def("mail-paper", () => (light ? o("background") : "0.9 0.004 85"));
   def("mail-ink", () => "0.24 0.01 265");
   def("mail-link", () => "0.5 0.18 265");
   def("sidebar-translucent", () => withAlpha(o("sidebar"), light ? 0.72 : 0.62));
@@ -549,7 +549,7 @@ export const THEMES: readonly Theme[] = [
       card: "1 0 0",
       popover: "1 0 0",
       sidebar: "1 0 0",
-      muted: "#F4F4F4",
+      muted: "#EDEDED",
       "muted-foreground": "#5D5D5D",
       accent: "#F4F4F4",
       "accent-foreground": "#292929",
@@ -561,8 +561,8 @@ export const THEMES: readonly Theme[] = [
       success: "0.54 0.13 150",
       unread: "0.55 0.15 237",
       star: "0.65 0.16 66",
-      "row-hover": "#F3F3F3",
-      "row-selected": "#DEDEDE",
+      "row-hover": "#EEEEEE",
+      "row-selected": "#D6D6D6",
       "row-selected-foreground": "#292929",
       "sidebar-accent": "#F4F4F4",
     },

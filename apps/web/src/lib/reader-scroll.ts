@@ -60,7 +60,7 @@ export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.cl
       const r = el.getBoundingClientRect(), s = scroller.getBoundingClientRect();
       const overflow = r.top + Math.min(wanted(), r.height) - (s.bottom - pad - covered);
       const room = r.top - (s.top + pad + coveredTop);
-      if (overflow > 0) scroller.scrollTop += wanted ? keepSubjectWhole(scroller, Math.min(overflow, room), room) : Math.min(overflow, room);
+      if (overflow > 0) scroller.scrollTop += keepSubjectWhole(scroller, Math.min(overflow, room), room);
     });
     cancel = () => cancelAnimationFrame(id);
     return cancelReaderScroll;

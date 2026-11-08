@@ -68,6 +68,8 @@ const FOCUS_PAINT: Record<string, string> = {
   "apps/web/src/components/pane-handle.tsx": "the bar is the handle's focus ring",
   // the ring goes on the hover shape, which is inset from the row's own box
   "apps/web/src/components/drafts-strip.tsx": "the hover shape carries the ring",
+  // a list moved through with the arrows: the focused option's fill is where the keyboard is, as a menu's is
+  "apps/web/src/components/search-help.tsx": "the focused option's fill is the focus",
 };
 
 function gatedReveals(): string[] {
