@@ -177,7 +177,7 @@ These are the surfaces on the main screens (list, reader, compose, multi-select,
 - The selection panel's list of rows (`hairline-t`) and List's selection toolbar (`hairline-b`).
 
 **Static containers, so they become hairline sections**
-1. The AI summary over a conversation (`thread-summary.tsx`, `card-group`): a block of the model's words, neither floating nor dismissable. It becomes a section with a hairline above and below, on the column's edges; its glyph still says whose words they are.
+1. The AI summary over a conversation (`thread-summary.tsx`, `card-group`): a block of the model's words, neither floating nor dismissable. It was to become a section with a hairline above and below. **Withdrawn after the rebase:** plan 144's "The block is a card" (2026-11-08, the owner's request) makes the summary and Reply ready one `AI_CARD`, so a model's words never read as the mail. The owner's later, specific request wins, and the summary keeps its card.
 2. The remote-content notice in a message (`mail-body.tsx`, a `bg-tint` pill): a line with its Load button. It loses the fill and keeps the button.
 
 The shared tokens (`card-group`, `surfaces.card`) don't change, so Settings and the snippet editor are untouched. The baselines that move are the reader's (summary and blocked mail) in each design that shows them.
@@ -202,11 +202,11 @@ The shared tokens (`card-group`, `surfaces.card`) don't change, so Settings and 
 - **New message:** its title is on the subject's line. The card reaches the pane's foot with its format bar and Send pinned there, and a press in the room under the text writes at its end. This reverses plan 158's card that hugged its text, which round 5 read as an empty pane; `composer.spec` changes with it.
 - **List's selection toolbar** names the selection in the list title's type (`list-title.ts`), so it sits on the header's baseline.
 - **Seam** (revision 9): one-line rows (List, and compact density) put the subject in `clamp(9rem, 42%, 26rem)`, with Draft, place and reminder at the column's end, so every preview starts at one x. This is CSS only. `list-layout.spec` now says "previews share one x".
-- **Restraint:** see the inventory above. The AI summary and the remote-content notice are hairline sections now.
+- **Restraint:** see the inventory above. The remote-content notice is a hairline section now. The AI summary keeps plan 144's card, at the owner's request.
 
 ### The review header and plan 159
 
-Plan 159 hadn't landed when this was done (only its plan is on main). The category review's title already sat on the list header's line, at the rows' content x (the spec checks both). Plan 159 must keep it there: `precision.spec.ts` will fail if its header copy moves the line.
+When this work started, only plan 159's plan doc was on main. The category review's title already sat on the list header's line, at the rows' content x, and the spec checks both. Plan 159 landed before the final rebase. Its review title ("Sort into categories", the category in a switcher) still holds that line: the spec passes on it in every design. `precision.spec.ts` keeps it there.
 
 ### Atelier's chips line (revision 2)
 
