@@ -193,6 +193,44 @@ describe("Undo puts the selection back (plan 158)", () => {
     expect(getApp().checked.size).toBe(0);
   });
 
+  it("the keyboard goes back to the list, but never from a recipient chip or anywhere focus went since Undo was asked (series review)", async () => {
+    document.body.innerHTML = `<div data-testid="thread-list"><div data-keep-scroll="list" tabindex="0"></div></div><button data-testid="other">x</button><div data-draft-key="k"><div data-recipient-field="compose-to"><span role="option" tabindex="-1" data-testid="chip">ana@example.com</span></div></div>`;
+    const list = document.querySelector<HTMLElement>("[data-keep-scroll=list]")!, chip = document.querySelector<HTMLElement>("[data-testid=chip]")!, other = document.querySelector<HTMLElement>("[data-testid=other]")!;
+    try {
+      const archiveWhile = async (meanwhile: () => void) => {
+        acted();
+        let release: (() => void) | undefined;
+        fake.handlers["threads.undo"] = () => new Promise((r) => (release = () => r({ restored: 2 })));
+        setApp({ selectedId: 1, checked: new Set([1, 2]) });
+        await act("archive");
+        const undoing = undo();
+        await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+        meanwhile();
+        release!();
+        await undoing;
+        await vi.waitFor(() => expect(fake.handlers["threads.list"]).toHaveBeenCalled());
+        await new Promise((r) => setTimeout(r));
+      };
+      // as it was: from nowhere, back to the list
+      (document.activeElement as HTMLElement | null)?.blur();
+      await archiveWhile(() => {});
+      expect(document.activeElement).toBe(list);
+      // a chip focused meanwhile keeps the keyboard (an `e` there would archive mail)
+      await archiveWhile(() => chip.focus());
+      expect([...getApp().checked]).toEqual([1, 2]);
+      expect(document.activeElement).toBe(chip);
+      // focus anywhere else since is the user's too
+      await archiveWhile(() => other.focus());
+      expect(document.activeElement).toBe(other);
+      // a refused restore moves nothing
+      other.blur();
+      await archiveWhile(() => setApp({ selectedId: 2 }));
+      expect(document.activeElement).toBe(document.body);
+    } finally {
+      document.body.innerHTML = "";
+    }
+  });
+
   it("not in another list", async () => {
     acted();
     setApp({ selectedId: 1, checked: new Set([1, 2]) });

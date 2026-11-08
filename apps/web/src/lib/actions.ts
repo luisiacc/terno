@@ -181,7 +181,7 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   const connection = client.connectionVersion;
   const undoIds = deferred<number[]>();
   // (what's been said is read when Undo is asked for, before the action's own answer is awaited)
-  const undo = options.quiet ? null : registerUndo(() => { const published = snackPublication(); return undoIds.promise.then((ids) => (ids.length ? undoActions(ids, targets.length, () => restoreSelection(before), RESTORES.has(action), published) : undefined)); });
+  const undo = options.quiet ? null : registerUndo(() => { const published = snackPublication(), focus = focusAtUndo(); return undoIds.promise.then((ids) => (ids.length ? undoActions(ids, targets.length, () => restoreSelection(before, focus), RESTORES.has(action), published) : undefined)); });
   try {
     // the contract takes ≤ 5,000 ids a call (the backend slices each); each call can be undone exactly
     const ids: number[] = [];
@@ -253,25 +253,28 @@ function settled(before: SelectionBefore): void {
   Object.assign(before, { left: s.selectedId, revision: getSelectionWriteRevision(), leftChecked: s.checked, leftScope: s.scope });
 }
 
+/** Where the keyboard was when Undo was asked for: focus that has moved on by its end is the user's newer choice. */
+const focusAtUndo = (): Element | null => (typeof document === "undefined" ? null : document.activeElement);
+
 /**
  * Undo puts the selection back so a cleanup can resume: what was checked, the row that was open, where a range grows
  * from, and the keyboard in the list. Not over what the user has chosen since (another list, a new selection, another
  * row: the next action would hit the old batch), and focus only from where nothing is being typed. After the rows are
  * back: a reload drops checks on rows it doesn't hold.
  */
-function restoreSelection(before: SelectionBefore): void {
+function restoreSelection(before: SelectionBefore, focusAtStart: Element | null = null): void {
   const s = getApp();
   if (listKey() !== before.key) return;
   // a row opened since and the cursor back on the same one is still a newer choice, as is a check made and taken off
-  if (getSelectionWriteRevision() !== before.revision || s.checked !== before.leftChecked || s.scope !== before.leftScope || s.selectedId !== before.left) {
-    if (document.activeElement?.closest("input, textarea, select, [contenteditable=true], [role=dialog]")) return;
-    document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]")?.focus({ preventScroll: true });
-    return;
-  }
+  if (getSelectionWriteRevision() !== before.revision || s.checked !== before.leftChecked || s.scope !== before.leftScope || s.selectedId !== before.left) return;
   setApp({ checked: before.checked, scope: before.scope, anchorId: before.anchorId });
   if (before.byApp) setAppOpened(before.selectedId);
   else setApp({ selectedId: before.selectedId });
-  if (document.activeElement?.closest("input, textarea, select, [contenteditable=true], [role=dialog]")) return;
+  // the keyboard goes back to the list only from where Undo was asked (or from nowhere, the snack's button gone), never
+  // out of a draft, its recipients, or anything being typed in
+  const active = document.activeElement;
+  if (active && active !== focusAtStart && active !== document.body) return;
+  if (active?.closest("input, textarea, select, [contenteditable=true], [role=dialog], [data-draft-key], [data-recipient-field]")) return;
   document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]")?.focus({ preventScroll: true });
 }
 
@@ -366,7 +369,7 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
   settled(before);
   const progress = trackJob(t(DOING[action], { count: sel.count }));
   const undoId = deferred<{ id: number | null; n: number }>();
-  const undo = registerUndo(() => { const published = snackPublication(); return undoId.promise.then((u) => (u.id === null ? undefined : undoActions([u.id], u.n, () => restoreSelection(before), RESTORES.has(action), published))); });
+  const undo = registerUndo(() => { const published = snackPublication(), focus = focusAtUndo(); return undoId.promise.then((u) => (u.id === null ? undefined : undoActions([u.id], u.n, () => restoreSelection(before, focus), RESTORES.has(action), published))); });
   try {
     const r = await client.call("threads.actScope", { scope: sel.scope, action, jobId: progress.jobId });
     undoId.resolve({ id: r.undoId, n: r.affected });
