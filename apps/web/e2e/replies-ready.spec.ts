@@ -5,6 +5,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { SettingsPatch } from "@terno/core/rpc";
+import { fakeDraft } from "../../../packages/ai/src/fake";
 import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
 import { expect, fresh, ingestConversation, scenario, test, type DevServerFixture } from "./fixtures";
@@ -110,6 +111,49 @@ test.describe("replies ready (plan 144)", () => {
       await expect(block(page)).toHaveCount(0);
       await expect.poll(state).toBe("used");
     });
+  });
+
+  test("plan 161: the model's gaps are marked in the card and the composer, Use selects the first, and Send asks once, inline", async ({ app: page, server }) => {
+    fakeDraft.text = () => "Thanks for asking. [Whether the 19th works.]\n\nLuis";
+    try {
+      const thread = await withMail(page, server, { replies: { enabled: true } });
+      await row(page).click();
+      await expect(block(page)).toHaveAttribute("data-phase", "ready", { timeout: 15_000 });
+      await scenario("the card: who it's to, the gap marked, Use as draft at 28 px, the R hint in words", async () => {
+        await expect(page.getByTestId("reply-ready-to")).toContainText("To ");
+        await expect(page.getByTestId("reply-ready-gap")).toHaveText("[Whether the 19th works.]");
+        await expect(page.getByTestId("reply-ready-use")).toHaveText("Use as draft");
+        await expect(page.getByTestId("reply-ready-hint")).toHaveText("Press R to reply with this draft");
+        for (const id of ["reply-ready-use", "reply-ready-dismiss"]) expect((await page.getByTestId(id).boundingBox())!.height, id).toBeGreaterThanOrEqual(28);
+      });
+      await scenario("Use: the gap marked in the composer, and selected to type over", async () => {
+        await page.getByTestId("reply-ready-use").click();
+        await expect(page.getByTestId("compose-gap")).toHaveText("[Whether the 19th works.]");
+        await expect.poll(() => page.evaluate(() => getSelection()?.toString())).toBe("[Whether the 19th works.]");
+      });
+      const sent = () => sqlDb(server.backend.store).get<{ n: number }>("SELECT count(*) n FROM messages WHERE is_sent = 1 AND thread_id = ?", thread)!.n;
+      await scenario("Send with the gap still there: an inline question, nothing sent; Fill it in selects it again", async () => {
+        await page.locator("[contenteditable=true]").first().press("ArrowRight");
+        await page.keyboard.press("ControlOrMeta+Enter");
+        await expect(page.getByTestId("ai-gaps")).toContainText("[Whether the 19th works.]");
+        await expect(page.getByTestId("ai-gaps-fill")).toBeFocused();
+        expect(sent()).toBe(0);
+        // calm and in place: no dialog
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+        await page.getByTestId("ai-gaps-fill").click();
+        await expect(page.getByTestId("ai-gaps")).toHaveCount(0);
+        await expect.poll(() => page.evaluate(() => getSelection()?.toString())).toBe("[Whether the 19th works.]");
+      });
+      await scenario("filled in, the mark goes and Send sends", async () => {
+        await page.keyboard.type("The 19th works for me.");
+        await expect(page.getByTestId("compose-gap")).toHaveCount(0);
+        await page.keyboard.press("ControlOrMeta+Enter");
+        await expect(page.getByTestId("ai-gaps")).toHaveCount(0);
+        await expect.poll(sent).toBe(1);
+      });
+    } finally {
+      fakeDraft.text = null;
+    }
   });
 
   test("a card in every design: the summary's surface, the label as its header, the draft inset, the actions below; its edges on the reply bar's and the summary's", { tag: "@design" }, async ({ app: page, server }, info) => {

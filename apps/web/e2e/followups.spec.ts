@@ -91,12 +91,45 @@ test.describe("follow-ups (plan 142)", () => {
     await tracked(server, "Are you in", "awaiting", true);
     await fresh(page);
     await rows(page).first().click();
-    await expect(page.getByTestId("followup-text")).toContainText("Tom Reed hasn’t replied in");
+    // sent moments ago in this conversation: "yet", never "in 1 day" (plan 161; whole days are a unit test)
+    await expect(page.getByTestId("followup-text")).toHaveText("Tom Reed hasn’t replied yet");
     const sends = (await server.backend.store.debug.snapshot()).messages.filter((m) => m.isSent).length;
+    await expect(page.getByTestId("followup-nudge")).toHaveText("Draft a nudge");
     await page.getByTestId("followup-nudge").click();
     await expect(page.getByTestId("composer")).toBeVisible();
     await expect(page.getByTestId("composer")).toContainText("Tom Reed");
     expect((await server.backend.store.debug.snapshot()).messages.filter((m) => m.isSent).length).toBe(sends);
+  });
+
+  test.describe("plan 161: the line's anatomy", () => {
+    test.use({ tips: true });
+    test("a fresh wait: when it comes back and what does, buttons at 28 px, Open message named, and a tip for a wait under the line", async ({ app: page, server }) => {
+      await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true, scanAnswered: true } });
+      const threadId = await tracked(server, "Coffee next week", "awaiting", false);
+      await fresh(page);
+      await page.locator(`[data-thread-id="${threadId}"]`).first().click();
+      await expect(page.getByTestId("followup-header")).toContainText("Follow-up");
+      await expect(page.getByTestId("followup-due")).toContainText("back on top of your Inbox");
+      await expect(page.getByTestId("followup-due")).toContainText("if Tom doesn’t reply");
+      await expect(page.getByTestId("followup-nudge")).toHaveText("Draft a nudge");
+      await expect(page.getByTestId("followup-go")).toHaveText(/Open message/);
+      for (const id of ["followup-nudge", "followup-later", "followup-dismiss", "followup-go"]) {
+        expect((await page.getByTestId(id).boundingBox())!.height, id).toBeGreaterThanOrEqual(28);
+      }
+      // the tip teaches this kind (no Done on a wait) and sits under the line, not over the list
+      const tip = page.getByTestId("tip-followups-first");
+      await expect(tip).toBeVisible();
+      await expect(tip).toContainText("Terno watches for replies");
+      await expect(tip).toContainText("Draft a nudge");
+      await expect(tip).not.toContainText("Done");
+      const line = (await page.getByTestId("followup-line").boundingBox())!;
+      const box = (await tip.boundingBox())!;
+      expect(box.y).toBeGreaterThan(line.y);
+      expect(box.x).toBeGreaterThanOrEqual(line.x - 24);
+      await page.getByTestId("tip-done").click();
+      // one hairline under the section at most: the message's own
+      expect(await page.getByTestId("thread-followups").evaluate((el) => getComputedStyle(el).borderBottomWidth)).toBe("0px");
+    });
   });
 
   test("on: Settings offers the last 30 days once; Not now sends nothing; off hides the row, the list and the lines", async ({ app: page, server }) => {

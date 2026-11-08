@@ -286,7 +286,7 @@ test.describe("drafting with AI (plan 133)", () => {
       await page.getByTestId("palette-draft-ai").click();
       await expect(field(page)).toBeFocused();
     });
-    await scenario("the strip holds one line in the pinned card's width", async () => {
+    await scenario("plan 161: in the pinned card's width the strip keeps its status, and its commands wrap under it", async () => {
       await fresh(page, server);
       await openThread(page, /Contract review/);
       await openField(page);
@@ -296,8 +296,10 @@ test.describe("drafting with AI (plan 133)", () => {
       await page.getByTestId("compose-pin").click();
       const card = page.getByTestId("pinned-draft");
       await expect(card.getByTestId("ai-strip")).toBeVisible();
-      await expect(card.getByTestId("ai-strip-written")).toBeHidden();
-      expect((await card.getByTestId("ai-row").boundingBox())!.height).toBeLessThanOrEqual(40);
+      await expect(card.getByTestId("ai-strip-written")).toBeVisible();
+      await expect(card.getByTestId("ai-strip-written")).toHaveText("Written with AI");
+      // two lines at most: the status, then the commands
+      expect((await card.getByTestId("ai-row").boundingBox())!.height).toBeLessThanOrEqual(80);
     });
     await scenario("Enter with nothing typed is the one-tap draft; ↑ recalls the last instruction; Esc closes and the empty reply goes", async () => {
       await fresh(page, server);
@@ -683,9 +685,11 @@ test.describe("drafting with AI (plan 133)", () => {
       await page.getByTestId("ai-guard-keep").click();
       await page.getByTestId("ai-choice").or(strip(page)).first().waitFor();
 
-      // finished and committed: nothing to decide, it sends
+      // finished and committed: nothing undecided; the gap it left ([date]) is asked about once, inline (plan 161), and it sends
       await expect(strip(page)).toBeVisible();
       await page.keyboard.press("ControlOrMeta+Enter");
+      await expect(page.getByTestId("ai-gaps")).toContainText("[date]");
+      await page.getByTestId("ai-gaps-send").click();
       await expect(page.getByTestId("composer")).toHaveCount(0);
     });
     await scenario("axe with the stream on its way, light and dark (the row and the strip: the sweep)", async () => {
@@ -1001,6 +1005,66 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect.poll(async () => ((await server.backend.server.invoke("writing.prefs.get", {}, dev)) as { accounts: Record<string, { useGeneral?: boolean; instructions?: string }> }).accounts[String(accountId)]).toEqual({ instructions: "Exclamation marks are fine here.", useGeneral: false });
   });
 
+  test("plan 161: the strip after an edit, its exact Undo, the Write button, and a small window", async ({ app: page, server }) => {
+    await scenario("the prompt says what Return does, and Write does the same", async () => {
+      await ready(page, server);
+      instant();
+      await openThread(page, /Contract review/);
+      await openField(page);
+      await expect(field(page)).toHaveAttribute("placeholder", "Describe the reply, or press Return to draft from the conversation.");
+      await expect(page.getByTestId("ai-row-write")).toHaveText(/Write/);
+      await field(page).fill("echo: Thanks, that works.");
+      await page.getByTestId("ai-row-write").click();
+      await expect(strip(page)).toBeVisible();
+      await expect(body(page)).toHaveText("Thanks, that works.");
+    });
+    await scenario("a status and four buttons: the commands have a resting shape at 28 px; the status isn't a control", async () => {
+      await expect(page.getByTestId("ai-strip-written")).toHaveText("Written with AI");
+      expect(await page.getByTestId("ai-strip-written").evaluate((el) => el.closest("button"))).toBeNull();
+      for (const id of ["ai-strip-regenerate", "ai-strip-shorter", "ai-strip-warmer", "ai-strip-undo"]) {
+        const button = page.getByTestId(id);
+        expect((await button.boundingBox())!.height, id).toBeGreaterThanOrEqual(28);
+        // a 1 px edge at rest, not only on hover
+        expect(await button.evaluate((el) => getComputedStyle(el).borderTopWidth), id).toBe("1px");
+      }
+    });
+    await scenario("an edit keeps the strip, as Edited after AI, with no jump", async () => {
+      const before = (await body(page).boundingBox())!.y;
+      await body(page).click();
+      await page.keyboard.press("ControlOrMeta+ArrowDown");
+      await page.keyboard.type(" Mine.");
+      await expect(page.getByTestId("ai-strip-written")).toHaveText("Edited after AI");
+      await expect(page.getByTestId("ai-strip-undo")).toBeVisible();
+      expect((await body(page).boundingBox())!.y).toBe(before);
+    });
+    await scenario("Undo then restores the draft exactly as it was before ⌘J; the snack's Undo brings the edit back", async () => {
+      await page.getByTestId("ai-strip-undo").click();
+      await expect(body(page)).toHaveText("");
+      await expect(strip(page)).toHaveCount(0);
+      await expect(page.getByTestId("snack")).toContainText("Back to before the AI draft");
+      await page.getByTestId("snack-action").click();
+      await expect(body(page)).toHaveText("Thanks, that works. Mine.");
+      await expect(page.getByTestId("ai-strip-written")).toHaveText("Edited after AI");
+    });
+    await scenario("1100x700: a long instruction shows whole, the strip keeps its status, and the written draft and Send are in view", async () => {
+      await fresh(page, server);
+      await page.setViewportSize({ width: 1100, height: 700 });
+      await openThread(page, /Contract review/);
+      await openField(page);
+      const words = "echo: Friday works for me. Could you send the address of the flat, and say whether parking is near?";
+      await field(page).fill(words);
+      // the field grows rather than cutting the words: everything it holds is on screen
+      expect(await field(page).evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+      await page.keyboard.press("Enter");
+      await expect(strip(page)).toBeVisible();
+      await expect(page.getByTestId("ai-strip-written")).toBeVisible();
+      expect(await page.getByTestId("ai-strip-voice").evaluate((el) => { const s = el.querySelector("span")!; return s.scrollWidth <= s.clientWidth; })).toBe(true);
+      const view = page.viewportSize()!;
+      await expect.poll(async () => { const b = (await body(page).boundingBox())!; return b.y + b.height <= view.height; }).toBe(true);
+      await expect(page.getByTestId("compose-send")).toBeInViewport();
+    });
+  });
+
   test("en and es: the row, status and strip follow the language", async ({ app: page, server }) => {
     await ready(page, server);
     await server.backend.server.invoke("settings.update", { language: "es" }, dev);
@@ -1009,7 +1073,7 @@ test.describe("drafting with AI (plan 133)", () => {
     await rows(page).first().waitFor();
     await openThread(page, /Contract review/);
     await openField(page);
-    await expect(field(page)).toHaveAttribute("placeholder", "¿Qué debe decir? Intro redacta a partir de la conversación.");
+    await expect(field(page)).toHaveAttribute("placeholder", "Describe la respuesta, o pulsa Intro para redactarla a partir de la conversación.");
     await expect(row(page).locator("label")).toHaveText("IA");
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("ai-row-status-text")).toHaveText("Escribiendo…");

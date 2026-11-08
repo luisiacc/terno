@@ -89,6 +89,12 @@ test.describe("summaries (plan 132)", () => {
     await expect(page.getByTestId("summary-text")).toContainText("Ana can't make the 12th and proposes the 19th instead.");
     await expect(page.getByTestId("summary-item").first()).toContainText("Action");
     await expect(page.getByTestId("summary-item").first()).toContainText("Please send the signed contract by Friday");
+    // plan 161: it says it opens a message (it doesn't do the task), and its name is what it shows: the item, then where it goes
+    await expect(page.getByTestId("summary-item-open").first()).toHaveText("Open message");
+    await expect(page.getByTestId("summary-item").first()).toHaveAccessibleName(/^Action\s*Please send the signed contract by Friday.*Open message$/);
+    await page.getByTestId("summary-item").first().hover();
+    await expect(page.getByTestId("summary-item-source")).toContainText("Ana");
+    await page.mouse.move(0, 0);
 
     // it stands above the conversation
     const blockBox = (await block.boundingBox())!;
