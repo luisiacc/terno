@@ -1,6 +1,6 @@
 # Plan 161: rate and polish the AI surfaces
 
-- **Status:** planned.
+- **Status:** tooling built (stub, harness, AI capture, brief, round.json and gate); the rounds `ai-r00` onward are still to run.
 - **Builds on:** plan 158 (the UI rating), plans 131 to 157 (the AI features), 146, 147 and 150 (Dev mode and the one gate), plan 160 (runs after it lands).
 
 ## The request
