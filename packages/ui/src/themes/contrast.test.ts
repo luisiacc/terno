@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { contrast, parseColor, withAlpha } from "./color";
 import { BOUNDARY_STEPS, boundaryStep, composite, contrastFailures, CONTRAST_PAIRS, CONTROL_EDGES, FIELD_WASH, RATED_PALETTES, STAR_ON_ROWS, SURFACE_STEPS, surfaceStep } from "./contrast";
 import { DESIGNS } from "../designs/index";
-import { THEMES } from "./registry";
+import { resolveCustomTheme, THEMES } from "./registry";
 
 describe("WCAG AA in every built-in theme", () => {
   it.each(THEMES.map((t) => [t.id, t] as const))("%s passes every pair", (_id, theme) => {
@@ -50,7 +50,8 @@ describe("WCAG AA in every built-in theme", () => {
     // plan 125: the danger button's text on both stops of its fill; a key's text on its field wash over a highlighted row;
     // the link button on panes and cards
     // plan 158: a menu's chosen row, its two inks; a search's match on a row, in each of a row's states
-    expect(CONTRAST_PAIRS).toHaveLength(2 + 4 + 49 + 2 + 4 + 2 + 6 + 4 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2 + 2);
+    // plan 160: a field's two inks on the list's own surface (pane) too
+    expect(CONTRAST_PAIRS).toHaveLength(2 + 4 + 49 + 2 + 4 + 2 + 6 + 4 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2 + 2 + 2);
   });
 
   it("reports a failing pair with its ratio", () => {
@@ -90,6 +91,15 @@ describe("boundaries as drawn (plan 160)", () => {
     expect(once.l).toBeLessThan(1);
     expect(twice.l).toBeLessThan(once.l);
     expect(contrast(once, "oklch(1 0 0)")).toBeGreaterThan(2);
+  });
+
+  it("a custom theme's field keeps its text readable on the list's own surface (Codex review)", () => {
+    // a list a step off white: the field's wash stops where its placeholder still reads on it
+    const custom = resolveCustomTheme({ id: "custom-x", name: "x", extends: "github-light", mode: "light", tokens: { pane: "oklch(0.96 0 0)" } } as never);
+    const t = custom.tokens;
+    const fieldOnPane = composite(custom, ["pane", "field"]);
+    expect(contrast(t["muted-foreground"], fieldOnPane, t.background)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastFailures(custom)).toEqual([]);
   });
 
   it("a broken palette fails its floor with the ratio", () => {

@@ -183,7 +183,7 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("field", () => {
     const over = (c: Oklch, k: ThemeToken) => formatOklch(rgbToOklch(composite(oklchToRgb(c), { ...oklchToRgb(o(k)), alpha: 1 })));
     // (a hair over 4.5: the suite reads the layers unrounded)
-    const reads = (c: Oklch) => (["background", "card", "popover", "tint"] as const).every((k) => (["foreground", "muted-foreground"] as const).every((fg) => contrast(o(fg), over(c, k), bg) >= 4.52));
+    const reads = (c: Oklch) => (["background", "pane", "card", "popover", "tint"] as const).every((k) => (["foreground", "muted-foreground"] as const).every((fg) => contrast(o(fg), over(c, k), bg) >= 4.52));
     return inkAlpha(o("foreground"), FIELD_WASH, 0.2, (c) => contrast(c, formatOklch(o("pane")), bg) >= TINT_FLOOR || !reads(withAlpha(c, c.alpha + 0.005)));
   });
   // plan 160: a composer's ring and its field dividers: the hairline's ink, deep enough to separate the form from the reader

@@ -72,9 +72,9 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   // plan 120: the date picker's chosen day, its text on the primary's 15% wash in the popover
   { fg: "foreground", bg: "primary", tint: true, min: 4.5, overToken: "popover" },
   // plan 118: a field's text and placeholder on its wash of ink (globals.css --color-field: the `field` token, plan 160), on
-  // the surfaces fields sit on (panes, cards, menus and dialogs, Settings' tint groups)
+  // the surfaces fields sit on (panes, the list's header, cards, menus and dialogs, Settings' tint groups)
   ...(["foreground", "muted-foreground"] as const).flatMap((fg) =>
-    (["background", "card", "popover", "tint"] as const).map((over): ContrastPair => ({ fg, bg: "field", min: 4.5, overToken: over })),
+    (["background", "pane", "card", "popover", "tint"] as const).map((over): ContrastPair => ({ fg, bg: "field", min: 4.5, overToken: over })),
   ),
   // plan 125: BoardUI's danger button, its text on both stops of its fill
   ...text("destructive-foreground", ["destructive", "destructive-shade"]),
