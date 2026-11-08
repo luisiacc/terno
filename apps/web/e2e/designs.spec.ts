@@ -143,7 +143,7 @@ test.describe("in every design", { tag: "@design" }, () => {
       await page.locator("[data-ready]").waitFor();
       // plan 159: a row under the heading, to the category with the most; each one's own in its menu
       const review = page.getByTestId("nav-review");
-      await expect(review).toHaveText(/^Sort into categories\d+$/);
+      await expect(review).toHaveText(/^To sort\d+$/);
       await review.click();
       await expect(page.getByTestId("list-title")).toHaveText("Sort into categories");
       await expect(review).toHaveAttribute("data-active");

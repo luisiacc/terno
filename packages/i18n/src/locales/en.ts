@@ -869,6 +869,7 @@ const en = {
   "sidebar.categoriesEmpty": "Group mail from all your accounts.",
   "sidebar.reviewAll": { one: "Sort # into categories", other: "Sort # into categories" },
   "sidebar.sort": "Sort into categories",
+  "sidebar.toSort": "To sort",
   "category.review": { one: "Review # suggestion", other: "Review # suggestions" },
   "design.macos": "macOS",
   "design.atelier": "Atelier",

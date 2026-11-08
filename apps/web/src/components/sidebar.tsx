@@ -300,7 +300,7 @@ function ComposeRow() {
 }
 
 /**
- * Plan 159: the categories' suggestions as a row like the others, first under their heading: "Sort into categories",
+ * Plan 159: the categories' suggestions as a row like the others, first under their heading: "To sort",
  * how many in all as its count, the sentence whole as its tooltip. A click opens the Review of the category with
  * the most, whose header switches between them; each category's own is in its menu, its count in its row's tooltip.
  */
@@ -316,7 +316,8 @@ function ReviewRow({ categories, suggestions, reviewing }: { categories: readonl
       active={reviewing}
       onClick={() => to !== undefined && enterReview(to)}
       icon={<Tags className="size-(--icon-nav)" />}
-      label={t("sidebar.sort")}
+      // (a place's name, short enough for every sidebar's width: "Sort into categories" truncated at 1100 px in Lumen)
+      label={t("sidebar.toSort")}
       count={total}
       tip={total ? t("sidebar.reviewAll", { count: total }) : undefined}
     />

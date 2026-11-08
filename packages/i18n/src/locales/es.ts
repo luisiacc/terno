@@ -861,6 +861,7 @@ const es = {
   "sidebar.categoriesEmpty": "Agrupa correos de todas tus cuentas.",
   "sidebar.reviewAll": { one: "Ordenar # en categorías", other: "Ordenar # en categorías" },
   "sidebar.sort": "Ordenar en categorías",
+  "sidebar.toSort": "Por ordenar",
   "category.review": { one: "Revisar # sugerencia", other: "Revisar # sugerencias" },
   "design.macos": "macOS",
   "design.atelier": "Atelier",

@@ -300,7 +300,7 @@ test.describe("the filters and the suggestions", () => {
     const total = suggested.reduce((n, c) => n + c.n, 0);
     const most = suggested.reduce((a, c) => (c.n > a.n ? c : a));
     // plan 159: a row like Inbox: the same height and inset, an icon, the label in words and the count in the count's place
-    await expect(row).toHaveText(`Sort into categories${total}`);
+    await expect(row).toHaveText(`To sort${total}`);
     await expect(row.locator("[data-slot=nav-count]")).toHaveText(String(total));
     await expect(row.locator("[data-slot=nav-icon] svg")).toHaveCount(1);
     expect((await box(row)).height).toBe((await box(inbox)).height);
