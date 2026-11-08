@@ -95,3 +95,4 @@ Each item says what differs from BoardUI and why.
 - **Radio card:** BoardUI's radio has no card variant, so Terno's is the radio drawn as a bordered card.
 - **Progress:** plain markup rather than Base UI's.
 - **Search clear:** out of the tab order, as BoardUI's.
+- **Announcement's `wrap` (plan 159):** an inline announcement may wrap its title instead of truncating it, so a learned rule's condition is read whole before it's accepted. BoardUI's inline announcement truncates.

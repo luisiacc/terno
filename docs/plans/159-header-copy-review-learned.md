@@ -1,6 +1,6 @@
 # Plan 159: "to reply to", "Sort into categories", and a rule offer shown once
 
-- **Status:** planned.
+- **Status:** built (2026-11-08): commits 95755d6fb to 86b733625; rating round pending (the lead's).
 - **Builds on:** plan 17 (people and waiting), plan 63 and 80 (category suggestions and Review), plans 91 and 143 (learned rules), plan 158 (the UI rating; rounds 4 and 5 raised all three).
 
 ## The request
@@ -91,3 +91,27 @@ The critique's twelve points, all taken. Where they change the design:
 10. **Wrapping is measured, not assumed.** The banner's natural height is measured and shared with the list's `lead` (virtualizer padding, headings, scroll restoration), replacing the fixed `LEARNED_H` for that, and kept stable through width, locale and design changes. `Announcement`'s fixed height and nested truncation give way for this use; long addresses and list IDs wrap.
 11. **The condition is the rule's.** One shared, localized description ("from x@y.com", "from anyone at y.com", "from the list y") built from the proposal's field, used in the banner and in Rules.
 12. **Done means the rule too:** BoardUI's `ToggleGroup variant="segmented"` or `Select` for the switcher, `Tooltip`, `Announcement`, `Button variant="link-secondary"`; keyboard and axe checks for the switcher and tooltip; Tab-only focus rings; then the Codex code review, `pnpm test:all`, and a rating round (raters told nothing, per the owner).
+
+## As built
+
+Where the build departs from the design and the revisions above, and why:
+
+- **The sidebar row reads "To sort", not "Sort into categories".** At 1100 px in Lumen the longer label truncated ("Sort into catego…"). The row is a place with its count ("To sort 79"), as Review's header says "79 to sort"; its tooltip keeps the sentence, "Sort 79 into categories" (es "Por ordenar", "Ordenar 79 en categorías"), and Review's title is "Sort into categories". Its accessible name is the label and count, like every other row: axe's `label-content-name-mismatch` (WCAG 2.5.3) refuses a name that doesn't start with what's shown, so the sentence is the tooltip only.
+- **The switcher is BoardUI's `Select`, always.** Five categories with counts don't fit a segmented control in the list's column; one control at every width. It sits on its own line under the title in every header kind (it never gives way on scroll or a short window), and in List's one-row header where the subtitle goes.
+- **The last suggestion answered keeps Review** (revision 6 said it leaves). Leaving moved you away from the rows an Undo brings back (e2e caught it: "Always" on the last rows, then z). Review stays, its list says "All sorted" and where to go on (another category above, or Esc); Esc, or the category deleted, still leave for where Review was entered from.
+- **The seeded offer is a mailing-list rule.** The shared description says the rule's own field: "Always archive mail from the list daily.morningbrew.com?" (before, "Always archive daily.morningbrew.com?" hid that it was a list). It wraps to two lines in the split list at 1440 too; the banner's vertical padding went so that one or two lines take the 32 px one line took, and plan 158's whole-row bars hold in every design at both sizes.
+- **One offer per launch.** An offer shown is seen for good; once it's been shown, no other is offered until the next launch (a reload of the window included), so a mailbox with several proposals doesn't show one per visit.
+- **Rules' line** reads "Archive mail from the list daily.morningbrew.com", whole, from the same description.
+
+Tests: `lib/review.test.ts`, `lib/learned.test.ts`, `announcement.test.tsx`, `i18n.test.ts` (the phrase in en and es); e2e in `inbox-scan.spec.ts` (the row, the switcher, Esc's way back, the offer once and whole at 1100x700, the count's tooltip in `people.spec.ts`), `design-axe.spec.ts` (the switcher open, the sidebar row), and the Luma and Graphite 980-px baselines (the offer's two lines), each looked at first.
+
+## What the code review changed
+
+Codex code review, two rounds (`codex exec -s read-only`), every finding fixed with a test that fails without the fix:
+
+1. **The switcher unmounted while open kept the shortcuts off.** Base UI doesn't call `onOpenChange(false)` on unmount, so a category deleted in another window while its switcher was open left `menuOpen` on: Esc, / and every key did nothing. It lets go on unmount (e2e, `inbox-scan.spec.ts`).
+2. **Review entered from a search came back to the query on its first result.** The way back keeps a search's rows, cursor and offset (as a sentence's preview does) and refreshes them in place (`review.test.ts`).
+3. **The way back checked nothing.** A category, account or folder gone meanwhile sends you to the Inbox (`review.test.ts`).
+4. **The whole-condition e2e passed with a truncating span** (it measured the span's box). It measures the laid-out text against the span and the paragraph.
+5. Round 2: **a sentence's preview opened from Review forgot the way back**, so Cancel then Esc went to the Inbox. Kept through a preview (`review.test.ts`).
+6. Round 2: **a reload rotated the offers** within one launch. Showing one marks the launch (sessionStorage); the one on screen stays for its visit (`learned.test.ts`).
