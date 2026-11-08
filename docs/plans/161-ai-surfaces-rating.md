@@ -1110,3 +1110,36 @@ The ring holds its 1.5:1 floor, but raters still read the dark card as a hairlin
 
 - e2e: `followups.spec.ts` (`@design`: Reschedule's menu and the other menus and popovers unclipped, every design, light and dark, 1440 and 1100; the fact first; the card's anatomy; provenance), `ai-draft.spec.ts` (**Esc while writing keeps the instruction and the partial text, Stopped part-way, and Undo**; Stop with nothing yet keeps the instruction; the instruction line whole at 1440 and wrapped at 1100; Undo labelled at 1100; Rewrite ▾ at 1100; the commit moves nothing), `summaries.spec.ts` (Reply opens the reply; the source named; Copy's Copied; provenance popover), `replies-ready.spec.ts` (the header without the voice; provenance popover with the voice), the sparkles' names, `design-axe.spec.ts` for these surfaces.
 - Unit: `stop()` (partial kept as a stopped write, nothing yet back to the field, a rewrite's strip kept), Undo of a stopped write, `messageSource`'s new words (en, es), `followupWhen`'s sentence, `AiProvenance` and `AiCopyButton`, `contrast.test.ts`'s new steps.
+
+### Pass 3 as built
+
+Where it differs from the design above:
+- **The follow-up's title is at the text's size** (`text-sm`, medium, in the ink), not the header's `text-xs`: it's the news the card exists to say. Its glyph follows. Everything else is the shared anatomy.
+- **The summary item's controls follow its words**, with the buttons' padding reached back (`-ms-2.5`, `gap-x-5`), so wrapped under the words at 1100 the Reply glyph is on the words' line, and beside them the visible gap is the row's (`summaries.spec.ts`, `@design`).
+- **The instruction line's Edit holds its place while it writes** (the same button, invisible and out of the tab order and the accessibility tree), so "writing" and "written" are the same height and the commit still moves nothing (plan 133's e2e caught a 1 px step).
+- **A stopped write with nothing yet** says "Stopped. Your instruction is still here." only when there was an instruction; a one-tap draft stopped early is just its field again.
+- **Lumen's reader card** holds the washed fill at 1.1:1, except Nord (1.05), whose tint sits a step under its card; its 1.5:1 ring bounds the card there.
+- **No change to `scripts/ui-rating/`.** Every capture wait still holds (`summary-block[data-state=ready]`, `summary-item`, `ai-row-input`, `ai-strip`, `reply-ready[data-phase=ready]`, `reply-ready-use`, `followup-line`, `followup-nudge`); all ten captures (five designs, light and dark) ran unchanged.
+- **For the other two engineers:** `AiCopyButton` is `size="sm"` (28 px); Ask's Answer again should move to `size="sm"` with it. `AiProvenance` takes `model=""` when the surface doesn't know it, and then shows only its `lines`.
+
+### What the Codex review of pass 3 changed
+
+Four points, all taken, each with a regression test that fails without the fix (`ai-draft.test.ts`, `contrast.test.ts`):
+1. **An edited stopped write's Undo couldn't be brought back.** Its Undo gives the field back, and the snack's Undo (and ⌘Z) only knew a session on a strip or none. The way back now knows the field it left (`stillOurs`), and ⌘⇧Z leaves the field again (`retake`).
+2. **A stopped version forgot it was stopped** after a rewrite and its Undo, so the strip claimed a finished write and a second Undo closed the row. Each version keeps `stopped` (`AiCommit.stopped`, `versionOf`).
+3. **A stopped write named Settings' first model**, not the writing task's. It names the model drafts run on, through one helper the backend's choice mirrors (`writingModel` in `lib/ai.ts`, now also Settings → Drafting's).
+4. **Lumen's floor was 1.05, not the plan's 1.1.** It's 1.1, with Nord written down as the exception.
+
+A second, narrower pass on those fixes found two more, both taken with a test: an old snack's Undo after a new instruction was typed in the field replaced the new instruction (the way back now needs the field to hold what the Undo left there); and on Claude with no task choice, a stopped write named Opus while drafts run on Sonnet (point 3's helper). Review rounds stop here.
+
+### Where pass 3 stands
+
+- **Run:** typecheck and lint, clean. Unit (`vitest --project unit` over `apps/web`, `packages/ui`, `packages/i18n`): 253 files, 2651 passed. e2e, `ai-draft`, `summaries`, `replies-ready`, `followups` and `design-axe` in all five projects (macOS, Lumen, Atelier, Luma, Graphite; their `@design` and `@variant` flows): 74 passed (3 skipped: the frames that run only when looking). `visual`, `designs`, `controls`, `menu-corners`, `palette`, `i18n` in all five: 58 passed, no baseline moved. `pnpm test:ui-perf`: 44 of 45 on the first pass, under a load average of 11 from other sessions; the one that failed (Lumen's sustained `j`) passed alone, 16.7 ms frames. `pnpm test:all` is left for the landing batch.
+- **The required tests fail without their fixes**, checked by putting the old code back: Reschedule's clipping (`followups.spec`, `@design`: "Later today (70 > 27)", "This weekend (85 > 4)", "Next week (64 > 0)") and Esc while ⌘J writes (`ai-draft.spec`, both scenarios), and each Codex finding's unit test.
+- **The frozen capture** reaches every AI state in all five designs, light and dark, with no change to `scripts/ui-rating/`.
+- **Shots:** `/tmp/terno-scratch/ai-pass3/draft-followups/after/<design>/` (1440x900 and the `-small` 1100x700 copies), and Reschedule's menu open in every design, light and dark, at both sizes, in `/tmp/terno-scratch/ai-pass3/draft-followups/later/`. Before is ai-r02's `/tmp/terno-scratch/ui9/rounds/ai-r02/<design>/shots/`.
+
+### For the owner
+
+- **A key for Summarize** (and for Shorter, Warmer, Draft a nudge): raters asked in every round; each is a new binding in the shortcut list, so it's yours. The tooltips now name each sparkle, with ⌘J where it applies.
+- **The follow-up is now on the AI card.** Plan 148 left that out of its scope (the line is the user's own to act on); both raters and the lead asked for one system with Reply ready. If plan 148's reason should stand, the anatomy works without the card (drop `AI_CARD` from the line).
