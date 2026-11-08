@@ -185,7 +185,7 @@ export default function DigestPage() {
       {/* plan 162: the header stays at the pane's top as the list scrolls under it, so the count and Archive are there when
           the review ends (they scrolled away), with the list's hairline under it; it starts where the page's title did */}
       <div aria-hidden className="h-12" />
-      <header className="sticky top-0 z-10 -mx-8 mt-0! space-y-1.5 border-b border-hairline bg-background px-8 pt-4 pb-3" data-testid="digest-header">
+      <header className="sticky top-0 z-10 mt-0! space-y-1.5 border-b border-hairline bg-background pt-4 pb-3" data-testid="digest-header">
         <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold tracking-tight outline-none" data-testid="digest-title">{t(automated ? "today.digest.automatedTitle" : "today.digest.title")}</h1>
         {/* plan 162: what the batch is, said once, under the title (the day and a stray "·" sat beside the provenance) */}
         {!automated && items.length > 0 && (
