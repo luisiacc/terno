@@ -229,12 +229,16 @@ export function CommandPalette() {
     if (!list) return;
     const fit = () => fitWholeRows(list, "[data-slot=command-item]");
     const more = () => markMore(list);
+    // what it holds (cmdk's sizer), and its own box (the dialog's layout settling after it mounts); once more a frame on
     const ro = new ResizeObserver(fit);
     ro.observe(list.firstElementChild ?? list);
+    ro.observe(list);
+    const frame = requestAnimationFrame(fit);
     window.addEventListener("resize", fit);
     list.addEventListener("scroll", more, { passive: true });
     return () => {
       ro.disconnect();
+      cancelAnimationFrame(frame);
       window.removeEventListener("resize", fit);
       list.removeEventListener("scroll", more);
       if (listRef.current === list) listRef.current = null;
