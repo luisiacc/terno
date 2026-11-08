@@ -285,17 +285,14 @@ test.describe("first-run setup", () => {
     });
   });
 
-  // Codex code review #3: List's preview adds the inbox's tabs; the chips hold the whole filter set in both
-  test("the preview's list header is the real one: Split's filter chips, List's tabs beside them", async ({ app: page, server }) => {
+  // Codex code review #3: the chips hold the whole filter set in both layouts; List has no category tabs (categories are the sidebar's)
+  test("the preview's list header is the real one: the design's filter chips in Split and List, the title, no tabs", async ({ app: page, server }) => {
     await open(page, server);
     await expect(preview(page).getByTestId("first-run-preview-chips")).toContainText("With attachments");
     await page.getByTestId("first-run-layout-list").click();
-    const tabs = preview(page).getByTestId("first-run-preview-tabs");
-    await expect(tabs).toHaveAttribute("data-kind", "pill");
-    await expect(tabs).toContainText("Inbox");
-    await expect(tabs).not.toContainText("Unread");
-    await expect(tabs).toContainText("Travel");
-    // the filters are the design's own in both layouts
+    await expect(preview(page)).toHaveAttribute("data-layout", "list");
+    await expect(preview(page).locator("section h1")).toHaveText("Inbox");
+    await expect(preview(page).getByTestId("first-run-preview-tabs")).toHaveCount(0);
     await expect(preview(page).getByTestId("first-run-preview-chips")).toContainText("Unread");
   });
 

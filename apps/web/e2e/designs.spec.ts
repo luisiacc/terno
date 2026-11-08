@@ -5,7 +5,7 @@
  *   minimum window, row heights, keyboard and scroll, the parts every variant keeps, a baseline of each key screen), other
  *   baselines, the icon line, corners, and the List layout's round trip.
  * - **@variant, Lumen and Atelier:** a flow that goes through a structural variant macOS doesn't hold (designs/types.ts:
- *   compose, listHeader, search, quickFilters, row, readerHeader, replyAction, categoryTabs), or a part only
+ *   compose, listHeader, search, quickFilters, row, readerHeader, replyAction), or a part only
  *   those rows have (an avatar's icon); and the axe sweep (design-axe.spec.ts) and motion, which change only with a structure.
  * - **@variant-graphite, also Graphite:** a flow through its own value, the sidebar's compose row. Luma adds no value.
  *

@@ -1,9 +1,9 @@
 /**
- * Plan 24: the List layout. The list takes the full width with category tabs
- * on top; opening a thread makes the conversation the page, and Esc, ⌘[,
+ * Plan 24: the List layout. The list takes the full width (its categories are
+ * the sidebar's, as in Split); opening a thread makes the conversation the page, and Esc, ⌘[,
  * the menu's Back and the browser's Back return to the list exactly as it
  * was (scroll, cursor, focus). The round trip and the look run in every design (@design): row
- * height, scroll and focus depend on it; the category tabs go through a variant (@variant).
+ * height, scroll and focus depend on it; the filters go through a variant (@variant).
  */
 import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
@@ -11,7 +11,7 @@ import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import { E2E_NOW } from "./constants";
-import { expect, focusList, ingestConversation, navTo, rows, selectedRow, stabilize, test, fresh, scenario } from "./fixtures";
+import { expect, focusList, ingestConversation, rows, selectedRow, stabilize, test, fresh, scenario } from "./fixtures";
 
 // baselines are at twice the pixels; everything else draws at one (plan 139)
 test.use({ deviceScaleFactor: 2 });
@@ -87,16 +87,21 @@ test.describe("the table (plan 158)", () => {
       await expect(row.getByTestId("account-label")).toBeHidden();
       await page.setViewportSize({ width: 1440, height: 900 });
     });
-    await scenario("the header: with the filters in a menu, title, tabs, filter and search share one line", async () => {
+    await scenario("the header: no category tabs (they're the sidebar's); the title starts on the rows' content line; with the filters in a menu, title, filter and search share one line", async () => {
+      await expect(page.getByRole("tablist")).toHaveCount(0);
+      const content = await rows(page).first().evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
+      expect(Math.abs((await box(page.getByTestId("list-title"))).x - content)).toBeLessThanOrEqual(1);
       // (Lumen's chips have a line of their own)
       if (design === "lumen") return;
       const y = async (id: string) => {
         const b = await box(page.getByTestId(id));
         return b.y + b.height / 2;
       };
-      const tabs = await y("list-tabs");
-      expect(Math.abs((await y("filter-menu")) - tabs)).toBeLessThanOrEqual(2);
-      expect(Math.abs((await y("search-input")) - tabs)).toBeLessThanOrEqual(2);
+      const title = await y("list-title");
+      expect(Math.abs((await y("filter-menu")) - title)).toBeLessThanOrEqual(2);
+      expect(Math.abs((await y("search-input")) - title)).toBeLessThanOrEqual(2);
+      // the controls keep the right edge, the title the left
+      expect((await box(page.getByTestId("filter-menu"))).x).toBeGreaterThan((await box(page.getByTestId("list-title"))).x + (await box(page.getByTestId("list-title"))).width);
       expect((await box(page.getByTestId("list-header"))).height).toBeLessThanOrEqual(64);
     });
     await scenario("selecting moves no row; the cursor isn't part of it; what's clicked is what's counted", async () => {
@@ -168,12 +173,11 @@ test.describe("the table (plan 158)", () => {
 });
 
 test.describe("the List layout", () => {
-  test("the list is full width with tabs; a click opens the conversation as the page; Esc comes back to the same scroll, row and focus", { tag: "@design" }, async ({ app: page }) => {
+  test("the list is full width; a click opens the conversation as the page; Esc comes back to the same scroll, row and focus", { tag: "@design" }, async ({ app: page }) => {
     await expect(page.locator("html")).toHaveAttribute("data-layout", "list");
     await expect(page.locator("main")).toHaveCount(0);
     await expect(page.getByTestId("pane-handle-list")).toHaveCount(0);
     await expect(page.getByTestId("pane-handle-sidebar")).toBeVisible();
-    await expect(page.getByRole("tablist", { name: "Inbox sections" })).toBeVisible();
     // nothing opens by itself (R7)
     await expect(listPage(page)).toHaveCount(0);
 
@@ -386,7 +390,7 @@ test.describe("the List layout: what stays put", () => {
       await fresh();
       await openRow(page, rows(page).first());
       await page.keyboard.press("Escape");
-      await page.getByTestId(`list-tab-${categoryId(server, "Viajes")}`).click();
+      await page.getByTestId(`nav-category-${categoryId(server, "Viajes")}`).click();
       await page.goForward();
       await page.waitForTimeout(300);
       await expect(listPage(page)).toHaveCount(0);
@@ -496,79 +500,50 @@ test.describe("one-line rows", () => {
   });
 });
 
-test.describe("category tabs", () => {
-  test("the Inbox and the categories: the same state as the sidebar, with unread counts; the filters are the design's own, as in Split", { tag: "@variant" }, async ({ app: page, server, design }) => {
+test.describe("categories in List are the sidebar's", () => {
+  test("a category opens from the sidebar; the filters are the design's own, as in Split", { tag: "@variant" }, async ({ app: page, server, design }) => {
     const viajes = categoryId(server, "Viajes");
-    const all = page.getByTestId("list-tab-all");
-    const tab = page.getByTestId(`list-tab-${viajes}`);
-    await expect(all).toHaveText("Inbox");
-    await expect(page.getByTestId("list-tab-unread")).toHaveCount(0);
-    await expect(all).toHaveAttribute("aria-selected", "true");
-    await expect(all).toHaveAttribute("aria-controls", "list-tabpanel");
-    await expect(page.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "list-tab-all");
-    // the design's look: a pill, or text over an indicator (the baselines' tolerance is wider than a tab)
-    const look = await all.evaluate((el) => ({ h: el.getBoundingClientRect().height, radius: parseFloat(getComputedStyle(el).borderRadius), under: getComputedStyle(el, "::after").height }));
     const variants = DESIGNS.find((d) => d.id === design)!.variants;
-    const pill = variants.categoryTabs === "pill";
-    if (pill) expect(look.radius).toBeGreaterThanOrEqual(look.h / 2);
-    else expect(look.under).toBe("2px");
-    await tab.click();
-    await expect(tab).toHaveAttribute("aria-selected", "true");
+    await page.getByTestId(`nav-category-${viajes}`).click();
     await expect(page.getByTestId(`nav-category-${viajes}`)).toHaveAttribute("data-active", "true");
     await expect(page.getByTestId("list-title")).toHaveText("Viajes");
+    await expect(page.getByRole("tablist")).toHaveCount(0);
     await page.getByTestId("nav-inbox").click();
-    await expect(all).toHaveAttribute("aria-selected", "true");
-    // the filters reach the same way as in Split: the chips, or the header's button; the place stays the Inbox
-    if (variants.quickFilters === "chips") {
-      await page.getByTestId("quick-filter-unread").click();
-      await expect(page.getByTestId("quick-filter-unread")).toHaveAttribute("aria-pressed", "true");
-      await expect(page.getByTestId("filter-menu")).toHaveCount(0);
-    } else {
-      await page.getByTestId("filter-segment-unread").click();
-      await expect(page.getByTestId("filter-segment-unread")).toHaveAttribute("aria-pressed", "true");
-      await expect(page.getByTestId("quick-filters")).toHaveCount(0);
-    }
-    await expect(all).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("nav-inbox")).toHaveAttribute("data-active", "true");
+    // the filters reach the same way as in Split: the chips, or the header's control
+    const chips = variants.quickFilters === "chips";
+    const unread = page.getByTestId(chips ? "quick-filter-unread" : "filter-segment-unread");
+    await unread.click();
+    await expect(unread).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId(chips ? "filter-menu" : "quick-filters")).toHaveCount(0);
     await focusList(page);
     await page.keyboard.press("ControlOrMeta+k");
     await page.getByTestId("palette-unread-filter").click();
-    await expect(all).toHaveAttribute("aria-selected", "true");
-    // the arrows move along the tabs and open them
-    const next = page.getByRole("tab").nth(1);
-    await all.focus();
-    await page.keyboard.press("ArrowRight");
-    await expect(next).toBeFocused();
-    await expect(next).toHaveAttribute("aria-selected", "true");
-    await page.keyboard.press("Home");
-    await expect(all).toHaveAttribute("aria-selected", "true");
-    // hidden where there's nothing to slice: another folder, a search
-    await navTo(page, "sent");
-    await expect(page.getByTestId("list-tabs")).toHaveCount(0);
+    await expect(unread).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("nav-inbox")).toHaveAttribute("data-active", "true");
   });
 
-  test("category tabs: + creates and opens one, a drag moves there, narrow widths", async ({ app: page, server }) => {
-    await scenario("+ creates a category and opens its tab", async () => {
-      await page.getByTestId("list-tabs-new").click();
-      await page.getByTestId("list-tabs-new-input").fill("Recibos");
+  test("the sidebar's + creates and opens one; a drag onto a sidebar category moves there", async ({ app: page, server }) => {
+    await scenario("+ creates a category and opens its list", async () => {
+      await page.getByTestId("new-category").click();
+      await page.getByTestId("new-category-input").fill("Recibos");
       await page.keyboard.press("Enter");
       await expect(page.getByTestId("list-title")).toHaveText("Recibos");
-      await expect(page.locator("[role=tab][aria-selected=true]")).toHaveAccessibleName("Recibos");
+      await expect(page.getByTestId(`nav-category-${categoryId(server, "Recibos")}`)).toHaveAttribute("data-active", "true");
     });
-    await scenario("dragging rows onto a tab moves them there and only there; the ghost flies to the tab", async () => {
+    await scenario("dragging rows onto a sidebar category moves them there and only there; nothing opens", async () => {
       await fresh(page);
       const viajes = categoryId(server, "Viajes");
-      const tab = page.getByTestId(`list-tab-${viajes}`);
+      const target = page.getByTestId(`nav-category-${viajes}`);
       const row = page.locator(`[data-testid=thread-row]:not(:has([data-cat-dot="${viajes}"]))`).first();
       const id = (await row.getAttribute("data-thread-id"))!;
       const from = (await row.boundingBox())!;
-      const to = (await tab.boundingBox())!;
+      const to = (await target.boundingBox())!;
       await page.mouse.move(from.x + 40, from.y + from.height / 2);
       await page.mouse.down();
       await page.mouse.move(from.x + 46, from.y + from.height / 2 + 2, { steps: 2 });
       await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 });
-      await expect(tab).toHaveAttribute("data-drop-state", "over");
-      // the sidebar's item for the same category shows it too
-      await expect(page.getByTestId(`nav-category-${viajes}`)).toHaveAttribute("data-drop-state", "over");
+      await expect(target).toHaveAttribute("data-drop-state", "over");
       await page.mouse.up();
       await expect(page.getByTestId("category-snackbar")).toBeVisible();
       const dropped = page.locator(`[data-thread-id="${id}"]`);
@@ -576,30 +551,13 @@ test.describe("category tabs", () => {
       await expect(dropped.locator("[data-cat-dot]")).toHaveCount(1);
       await expect(listPage(page)).toHaveCount(0);
     });
-    await scenario("what doesn't fit goes behind More; a category picked there takes a visible place", async () => {
-      await fresh(page);
-      for (const name of ["Proyectos", "Familia", "Suscripciones", "Bancos", "Colegio", "Seguros"]) await server.backend.server.invoke("categories.create", { name, color: "slate" }, ctx).catch(() => {});
-      await page.setViewportSize({ width: 1000, height: 800 });
-      const more = page.getByTestId("list-tabs-more");
-      await expect(more).toBeVisible();
-      // the strip never overflows its row
-      const strip = page.locator("[data-testid=list-tabs] [data-drop-scroll]");
-      expect(await strip.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
-      await more.click();
-      const item = page.locator("[data-testid^=list-tabs-more-]").last();
-      const picked = (await item.getAttribute("data-testid"))!.replace("list-tabs-more-", "");
-      await item.click();
-      await expect(page.getByTestId(`list-tab-${picked}`)).toBeVisible();
-      await expect(page.getByTestId(`list-tab-${picked}`)).toHaveAttribute("aria-selected", "true");
-    });
   });
-
 });
 
 
 test.describe("List layout: accessibility and look", { tag: "@design" }, () => {
   for (const mode of ["light", "dark"] as const) {
-    test(`axe-clean and on baseline (${mode}): the list with tabs, a conversation, a new message`, async ({ app: page }) => {
+    test(`axe-clean and on baseline (${mode}): the list, a conversation, a new message`, async ({ app: page }) => {
       await page.emulateMedia({ colorScheme: mode });
       await stabilize(page);
       // names, roles and structure don't change with the mode: dark reads contrast alone

@@ -1578,25 +1578,24 @@ for (const { design: id, density } of [{ design: "lumen", density: "comfortable"
   });
 }
 
-test.describe("List layout: dragging onto the tabs", () => {
+test.describe("List layout: dragging onto the sidebar", () => {
   test.use({ design: "macos", layout: "list" });
-  test("dragging rows over the tabs and the sidebar: no row renders, at most four target items per target change", async ({ app: page, server }) => {
+  test("dragging rows over the sidebar's categories: no row renders, at most four target items per target change", async ({ app: page, server }) => {
     const cats = sqlDb(server.backend.store).all<{ id: number }>("SELECT id FROM categories ORDER BY position");
     const row = rows(page).nth(2);
     const b = (await row.boundingBox())!;
     const from = { x: b.x + 60, y: b.y + b.height / 2 };
     const targets: { x: number; y: number }[] = [];
-    for (const c of cats)
-      for (const id of [`list-tab-${c.id}`, `nav-category-${c.id}`]) {
-        const t = await page.getByTestId(id).boundingBox();
-        if (t) targets.push({ x: t.x + t.width / 2, y: t.y + t.height / 2 });
-      }
+    for (const c of cats) {
+      const t = await page.getByTestId(`nav-category-${c.id}`).boundingBox();
+      if (t) targets.push({ x: t.x + t.width / 2, y: t.y + t.height / 2 });
+    }
     // a press moves the cursor (two rows render, as with j): press it first so the window below is the drag alone
     await row.dispatchEvent("mousedown");
     await expect(row).toHaveAttribute("data-cursor", "true");
     await page.waitForTimeout(100);
     const rows0 = await renders(page, "ThreadRow");
-    const items0 = (await renders(page, "NavItem")) + (await renders(page, "ListTab"));
+    const items0 = await renders(page, "NavItem");
     const DRAGS = 3;
     let changes = 0;
     for (let i = 0; i < DRAGS; i++) {
@@ -1616,7 +1615,7 @@ test.describe("List layout: dragging onto the tabs", () => {
     }
     await page.waitForTimeout(200);
     const rowRenders = (await renders(page, "ThreadRow")) - rows0;
-    const items = (await renders(page, "NavItem")) + (await renders(page, "ListTab")) - items0;
+    const items = (await renders(page, "NavItem")) - items0;
     stats.push({ name: `List: ThreadRow renders during ${DRAGS} drags: ${rowRenders}; target items per change ${(items / changes).toFixed(2)}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
     expect(rowRenders).toBe(0);
     expect(items / changes).toBeLessThanOrEqual(4);
