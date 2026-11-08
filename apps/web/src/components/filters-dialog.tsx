@@ -12,7 +12,7 @@ import { Switch } from "@terno/ui/components/switch";
 import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
 import { Archive, Check, Folder as FolderIcon, Forward, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2 } from "@terno/ui/icons";
-import { Fragment, useEffect, useId, useMemo, useState } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import { t, type TextKey } from "@terno/i18n";
 import { richT } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
@@ -24,6 +24,8 @@ import { learnedRule } from "~/lib/learned";
 import { describeRule, ruleMisses, sensedOp, withSensedOp, type SensedOp } from "~/lib/rule-words";
 import { getApp, setApp, useApp } from "~/state/app";
 import { ConfirmDialog } from "./settings/parts";
+import { AI_CARD, AI_GLYPH, AI_HEADER, AI_TITLE } from "./ai-card";
+import { provenanceLabel } from "~/lib/provenance";
 import { RecipientInput } from "./recipient-input";
 
 type Field = Condition["field"];
@@ -315,7 +317,7 @@ function ForwardTo({ to, onChange, paused }: { to: readonly Address[]; onChange:
 function AiSaid({ said, misses }: { said: string; misses: boolean }) {
   return (
     <>
-      <p className="text-accent-foreground" data-testid="ai-explanation">{said}</p>
+      <p className="text-foreground" data-testid="ai-explanation">{said}</p>
       {misses ? (
         <p role="status" className="mt-1 text-destructive-ink" data-testid="ai-unclear">{t("filters.ai.unclear")}</p>
       ) : (
@@ -325,10 +327,13 @@ function AiSaid({ said, misses }: { said: string; misses: boolean }) {
   );
 }
 
-/** `note`: plan 161, what a sentence's preview found and where, beside a count that looks everywhere */
-function Preview({ rule, note }: { rule: FilterRule; note?: string | null }) {
+/**
+ * `note`: plan 161, what a sentence's preview found and where, beside a count that looks everywhere. `onCount`: pass 2,
+ * the count as it stands (null while it isn't known), for Save and apply to repeat.
+ */
+function Preview({ rule, note, onCount }: { rule: FilterRule; note?: string | null; onCount?: (count: number | null) => void }) {
   const parsed = useMemo(() => filterRuleSchema.safeParse(rule), [rule]);
-  const [state, setState] = useState<{ count: number; sample: ThreadSummary[]; ms: number } | null>(null);
+  const [state, setState] = useState<{ count: number; sample: ThreadSummary[] } | null>(null);
   const [loading, setLoading] = useState(false);
   useEffect(() => {
     if (!parsed.success) {
@@ -337,19 +342,21 @@ function Preview({ rule, note }: { rule: FilterRule; note?: string | null }) {
     }
     setLoading(true);
     const timer = setTimeout(async () => {
-      const started = performance.now();
       try {
         const r = await client.call("filters.preview", { rule: parsed.data, limit: 6 });
-        setState({ ...r, ms: performance.now() - started });
+        setState(r);
       } finally {
         setLoading(false);
       }
     }, 120);
     return () => clearTimeout(timer);
   }, [parsed.success ? JSON.stringify(parsed.data) : null]);
+  const ready = !loading && state !== null && parsed.success;
+  useEffect(() => onCount?.(ready ? state.count : null), [ready, state, onCount]);
 
   return (
-    <div className="rounded-lg border border-border bg-muted/30" data-testid="filter-preview">
+    // pass 2: no timing on show (the capture's "counted" is data-ready, set exactly when "2 ms" used to be)
+    <div className="rounded-lg border border-border bg-muted/30" data-testid="filter-preview" data-ready={ready || undefined}>
       <div className="flex items-center justify-between border-b border-border px-3 py-2 text-xs">
         <span className="font-medium">
           {!parsed.success
@@ -358,7 +365,7 @@ function Preview({ rule, note }: { rule: FilterRule; note?: string | null }) {
               ? richT("filters.preview.matches", { count: state.count, n: (n) => <span data-testid="preview-count">{n}</span> })
               : t("filters.preview.calculating")}
         </span>
-        {loading ? <Spinner className="size-3.5 text-muted-foreground" aria-hidden /> : state && <span data-testid="preview-ms" className="font-mono text-2xs text-muted-foreground">{Math.round(state.ms)} ms</span>}
+        {loading && <Spinner className="size-3.5 text-muted-foreground" aria-hidden />}
       </div>
       {note && <p className="border-b border-border px-3 py-2 text-xs text-muted-foreground" data-testid="filter-preview-note">{note}</p>}
       <ul className="divide-y divide-border/60">
@@ -366,7 +373,7 @@ function Preview({ rule, note }: { rule: FilterRule; note?: string | null }) {
           <li key={th.id} className="flex items-baseline gap-2 px-3 py-1.5 text-xs">
             <span className="w-32 shrink-0 truncate font-medium">{th.fromName}</span>
             <span className="min-w-0 flex-1 truncate text-muted-foreground">{th.subject}</span>
-            <span className="font-mono text-2xs text-muted-foreground">{listDate(th.lastDate)}</span>
+            <span className="shrink-0 text-muted-foreground tabular">{listDate(th.lastDate)}</span>
           </li>
         ))}
         {state && state.count === 0 && <li className="px-3 py-3 text-center text-xs text-muted-foreground">{t("filters.preview.none")}</li>}
@@ -379,7 +386,8 @@ function Preview({ rule, note }: { rule: FilterRule; note?: string | null }) {
  * Plan 161: an unsaved rule AI built isn't lost to Esc, the × or a click outside: closing keeps it, and Rules opens on it
  * again, request and all, until it's saved or New starts another. In memory only: a model's rule, never a setting.
  */
-const kept: { current: { draft: Draft; prompt: string; built: string } | null } = { current: null };
+type Unsaved = { draft: Draft; prompt: string; built: string };
+const kept: { current: Unsaved | null } = { current: null };
 
 export function FiltersDialog() {
   const open = useApp((s) => s.dialog === "filters");
@@ -407,16 +415,30 @@ export function FiltersDialog() {
     if (getApp().filterPrefill) setApp({ filterPrefill: null });
   }, []);
   const [prompt, setPrompt] = useState(() => kept.current?.prompt ?? "");
+  // pass 2: the unsaved AI rule, shown as a draft row at the list's top while another rule is open, until it's saved or discarded
+  const [unsaved, setUnsaved] = useState<Unsaved | null>(() => kept.current);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const [focusPrompt, setFocusPrompt] = useState(false);
+  const [matches, setMatches] = useState<number | null>(null);
   // the request the rule on screen was built from: its words are checked against the rule (plan 161), not shown back
   const [built, setBuilt] = useState<string | null>(() => kept.current?.built ?? null);
   // once a rule is built, the box is one line, so the rule and its matches fit a small window; Edit request opens it
-  const [folded, setFolded] = useState(false);
+  const [folded, setFolded] = useState(() => kept.current !== null);
   const [generating, setGenerating] = useState(false);
   const setExplanation = (none: null) => {
     setBuilt(none);
     setFolded(false);
   };
   const ai = useApp((s) => s.settings?.ai);
+  // pass 2: Edit request puts the caret at the end of the request, once the box is open
+  useEffect(() => {
+    if (!focusPrompt || folded) return;
+    setFocusPrompt(false);
+    const el = promptRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [focusPrompt, folded]);
   const [saving, setSaving] = useState(false);
   // what's wrong with a rule waits until the user tries to save it: a new one is simply not written yet
   const [attempted, setAttempted] = useState(false);
@@ -440,6 +462,28 @@ export function FiltersDialog() {
     folder: (accountId, folder) => folders.find((f) => f.accountId === accountId && f.key === folder)?.path.join(" / ") ?? folder,
   }) : null;
   const misses = said !== null && built !== null && valid.success && ruleMisses(built, valid.data);
+  // the rule AI built, not saved yet, in the builder now
+  const aiDraft: Unsaved | null = draft.source === "ai" && draft.id === undefined && built !== null ? { draft, prompt, built } : null;
+  /** what's in the builder makes way for another rule: an unsaved AI rule is kept, as a draft row (pass 2) */
+  const leaving = () => {
+    if (aiDraft) setUnsaved(aiDraft);
+  };
+  const openUnsaved = (u: Unsaved) => {
+    load(u.draft);
+    setPrompt(u.prompt);
+    setBuilt(u.built);
+    setFolded(true);
+  };
+  const discardUnsaved = () => {
+    setUnsaved(null);
+    kept.current = null;
+    if (aiDraft) {
+      load(emptyDraft());
+      setExplanation(null);
+      setPrompt("");
+    }
+  };
+  const shownUnsaved = aiDraft ?? unsaved;
   const setRule = (r: FilterRule) => setDraft((d) => ({ ...d, rule: r }));
   const hasAction = (type: string) => rule.actions.some((a) => a.type === type);
   const toggleAction = (type: Exclude<FilterAction["type"], "addCategory" | "forward" | "moveToFolder">) => {
@@ -461,6 +505,8 @@ export function FiltersDialog() {
       setDraft({ id: undefined, name: out.name, enabled: true, source: "ai", rule: out.rule });
       setBuilt(prompt);
       setFolded(true);
+      // one unsaved AI rule at a time: the new one is it
+      setUnsaved(null);
     } catch (error) {
       const kind = (error as { details?: { aiErrorKind?: Parameters<typeof errorHelp>[0] } }).details?.aiErrorKind;
       if (kind === "cancelled") return;
@@ -485,6 +531,7 @@ export function FiltersDialog() {
       const f = await client.call("filters.save", { id: draft.id, name, enabled: draft.enabled, source: draft.source, rule: valid.data, ...(adopted ? { auto: false } : {}) });
       // plan 89: applying runs in the background (its own progress snack); the dialog is free at once
       kept.current = null;
+      if (aiDraft) setUnsaved(null);
       if (applyExisting) void applyFilter(f.id, f.name);
       else snack.success(t("filters.saved"));
       load(draftOf(f));
@@ -501,7 +548,7 @@ export function FiltersDialog() {
       open={open}
       onOpenChange={(o) => {
         if (o) return;
-        kept.current = draft.source === "ai" && draft.id === undefined && built !== null ? { draft, prompt, built } : null;
+        kept.current = aiDraft ?? unsaved;
         setApp(returnTo === "settings" ? { dialog: "settings", settingsTab: "filters" } : { dialog: null });
       }}
     >
@@ -515,6 +562,7 @@ export function FiltersDialog() {
               variant="outline"
               data-testid="new-filter"
               onClick={() => {
+                leaving();
                 load(emptyDraft());
                 setExplanation(null);
                 setPrompt("");
@@ -524,12 +572,22 @@ export function FiltersDialog() {
             </Button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+            {/* pass 2: an AI rule not saved yet is a row of its own, so Esc, New or another rule never loses it */}
+            {shownUnsaved && (
+              <div data-testid="filter-unsaved" data-open={aiDraft ? true : undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", aiDraft && "bg-muted")}>
+                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => !aiDraft && unsaved && openUnsaved(unsaved)}>
+                  <span className="block truncate">{shownUnsaved.draft.name.trim() || describeCondition(shownUnsaved.draft.rule.conditions[0]!)}</span>
+                  <span className="text-2xs text-muted-foreground">{t("filters.unsaved")}</span>
+                </button>
+                <CloseButton label={t("filters.unsavedDiscard")} data-testid="filter-unsaved-discard" onClick={discardUnsaved} />
+              </div>
+            )}
             {/* plan 90: the user's, then Terno's under a heading of their own */}
             {[...filters.filter((f) => !f.auto), ...filters.filter((f) => f.auto)].map((f, i, all) => (
               <Fragment key={f.id}>
               {f.auto && !all[i - 1]?.auto && <p data-testid="filters-auto-heading" className="mt-4 mb-1 px-2 text-2xs font-medium tracking-wide text-muted-foreground uppercase">{t("filters.group.auto")}</p>}
               <div data-testid="filter-item" data-auto={f.auto || undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", draft.id === f.id && "bg-muted")}>
-                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => (load(draftOf(f)), setExplanation(null))}>
+                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => (leaving(), load(draftOf(f)), setExplanation(null))}>
                   <span className="block truncate">{f.name}</span>
                   <span className="text-2xs text-muted-foreground">
                     {f.auto ? t("filters.source.auto") : f.source === "ai" ? t("filters.source.aiShort") : f.source === "learned" ? t("filters.source.learned") : t("filters.source.manual")} · {t("filters.hits", { count: f.hits })}
@@ -584,23 +642,29 @@ export function FiltersDialog() {
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6 pt-1">
             {/* only offered once an AI can really run (a model, and its key when it needs one); otherwise it could only fail */}
             {aiReady(ai) && (
-              <div className="rounded-xl border border-primary/25 bg-gradient-to-br from-accent/80 to-transparent p-4" data-testid="ai-box" data-folded={folded && said !== null ? true : undefined}>
+              // pass 2: the shared AI card (ai-card.ts), its one attribution in the header, not a look of its own
+              <div className={cn(AI_CARD, "px-4 pb-3.5")} data-testid="ai-box" data-folded={folded && said !== null ? true : undefined}>
                 {folded && said !== null ? (
                   // plan 161: built, the box is the rule in a line: what it does, said from its fields
-                  <div className="flex items-start gap-2">
-                    <Sparkles aria-hidden className="mt-0.5 size-4 shrink-0 text-primary" />
-                    <div className="min-w-0 flex-1 text-sm">
+                  <>
+                    <div className={AI_HEADER}>
+                      <Sparkles aria-hidden className={AI_GLYPH} />
+                      <span className={AI_TITLE} data-testid="ai-provenance">{provenanceLabel()}</span>
+                      <Button variant="link-secondary" size="xs" className="ml-auto shrink-0" data-testid="ai-edit-request" onClick={() => (setFolded(false), setFocusPrompt(true))}>{t("filters.ai.editRequest")}</Button>
+                    </div>
+                    <div className="text-sm">
                       <AiSaid said={said} misses={misses} />
                     </div>
-                    <Button variant="link-secondary" size="xs" className="shrink-0" data-testid="ai-edit-request" onClick={() => setFolded(false)}>{t("filters.ai.editRequest")}</Button>
-                  </div>
+                  </>
                 ) : (
                   <>
-                    <label className="mb-2 flex items-center gap-1.5 text-sm font-medium" htmlFor="ai-prompt">
-                      <Sparkles className="size-4 text-primary" /> {t("filters.ai.label")}
+                    <label className={AI_HEADER} htmlFor="ai-prompt">
+                      <Sparkles aria-hidden className={AI_GLYPH} />
+                      <span className={AI_TITLE}>{t("filters.ai.label")}</span>
                     </label>
                     <div className="flex gap-2">
                       <Textarea
+                        ref={promptRef}
                         id="ai-prompt"
                         data-testid="ai-prompt"
                         value={prompt}
@@ -721,10 +785,11 @@ export function FiltersDialog() {
               {attempted && !valid.success && <p role="alert" className="text-xs text-destructive-ink" data-testid="filter-invalid">{t(filterIssueKey(valid.error.issues))}</p>}
             </div>
 
-            <Preview rule={rule} note={note} />
+            <Preview rule={rule} note={note} onCount={setMatches} />
           </div>
           <div className="flex shrink-0 items-center gap-2 border-t border-border px-6 py-3">
-            {draft.source !== "manual" && <Badge variant="secondary">{draft.source === "ai" ? t("filters.source.ai") : t("filters.source.learned")}</Badge>}
+            {/* the AI card says who wrote it while it shows the rule; a saved AI rule says it here */}
+            {draft.source !== "manual" && !(draft.source === "ai" && said !== null) && <Badge variant="secondary">{draft.source === "ai" ? t("filters.source.ai") : t("filters.source.learned")}</Badge>}
             {draft.id && (
               <>
                 <Button variant="ghost" size="sm" className="text-destructive" data-testid="filter-delete" onClick={() => setDeleting(true)}>
@@ -750,7 +815,8 @@ export function FiltersDialog() {
                 {t("common.save")}
               </Button>
               <Button data-testid="filter-save-apply" disabled={saving} onClick={() => save(true)}>
-                {t("filters.saveApply")}
+                {/* pass 2: the consequence in its words: how many it will touch, once counted */}
+                {matches ? t("filters.saveApplyCount", { count: matches }) : t("filters.saveApply")}
               </Button>
             </div>
           </div>

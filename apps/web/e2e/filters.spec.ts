@@ -31,6 +31,10 @@ test.describe("AI filters and learned filters", () => {
       await page.getByTestId("condition-value").fill("uber.com");
       await expect(preview).toHaveText(String(uberCount));
 
+      // plan 161, pass 2: the preview shows no timing, and Save and apply repeats the count it will touch
+      await expect(page.getByTestId("filter-preview")).not.toContainText(/\d\s?ms\b/);
+      await expect(page.getByTestId("filter-preview")).toHaveAttribute("data-ready", "true");
+      await expect(page.getByTestId("filter-save-apply")).toHaveText(`Save and apply to ${uberCount} conversations`);
       await page.getByTestId("filter-save-apply").click();
       await expect(page.locator("[data-testid=snack]").filter({ hasText: /Rule applied to \d+ conversations/ })).toBeVisible();
       await expect(page.getByTestId("filter-item")).toContainText(["AI"]);
@@ -56,18 +60,33 @@ test.describe("AI filters and learned filters", () => {
       await page.getByRole("option", { name: "doesn’t contain" }).click();
       await expect(page.getByTestId("ai-explanation")).toContainText("Subject doesn’t contain “nicer”");
       await expect(page.getByTestId("condition-row").getByRole("button", { name: /^(yes|not)$/ })).toHaveCount(0);
-      // Esc doesn't lose it: Rules opens on it again, and its request
+      // pass 2: the card says who wrote it once; Edit request puts the caret in the request
+      await expect(page.getByTestId("ai-provenance")).toHaveText("Written with AI");
+      await page.getByTestId("ai-edit-request").click();
+      await expect(page.getByTestId("ai-prompt")).toBeFocused();
+      // Esc doesn't lose it: Rules opens on it again, shown as an unsaved row, with its request
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("filters-dialog")).toHaveCount(0);
       await page.getByTestId("open-filters").click();
+      await expect(page.getByTestId("filter-unsaved")).toContainText("Not saved · made with AI");
+      await expect(page.getByTestId("filter-unsaved")).toHaveAttribute("data-open", "true");
       await expect(page.getByTestId("ai-explanation")).toContainText("doesn’t contain “nicer”");
+      await page.getByTestId("ai-edit-request").click();
       await expect(page.getByTestId("ai-prompt")).toHaveValue("make my inbox nicer");
-      // New starts another; then closing keeps nothing
+      // New starts another beside it: the unsaved row stays, and opens it again
       await page.getByTestId("new-filter").click();
+      await expect(page.getByTestId("ai-explanation")).toHaveCount(0);
+      await expect(page.getByTestId("filter-unsaved")).not.toHaveAttribute("data-open");
+      await page.getByTestId("filter-unsaved").getByRole("button").first().click();
+      await expect(page.getByTestId("ai-explanation")).toContainText("doesn’t contain “nicer”");
+      // discarding it is a choice of its own; then closing keeps nothing
+      await page.getByTestId("filter-unsaved-discard").click();
+      await expect(page.getByTestId("filter-unsaved")).toHaveCount(0);
       await expect(page.getByTestId("ai-explanation")).toHaveCount(0);
       await page.keyboard.press("Escape");
       await page.getByTestId("open-filters").click();
       await expect(page.getByTestId("ai-prompt")).toHaveValue("");
+      await expect(page.getByTestId("filter-unsaved")).toHaveCount(0);
       await page.keyboard.press("Escape");
       await page.setViewportSize({ width: 1440, height: 900 });
     });

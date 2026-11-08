@@ -116,8 +116,9 @@ test.describe("light", () => {
       await page.getByTestId("ai-prompt").fill("archiva los correos de uber.com y ponlos en Facturas");
       await page.getByTestId("ai-generate").click();
       await expect(page.getByTestId("preview-count")).toHaveText(/^\d+$/);
+      await expect(page.getByTestId("filter-save-apply")).toHaveText(/Save and apply to \d+ conversations?/);
       await stabilize(page);
-      await expect(page).toHaveScreenshot("filters-ai.png", { mask: [page.getByTestId("preview-ms")] });
+      await expect(page).toHaveScreenshot("filters-ai.png");
     });
     await scenario("HTML newsletter with remote content blocked", async () => {
       await forgetOffer(page);
@@ -245,8 +246,9 @@ test.describe("dark", () => {
       await page.getByTestId("ai-prompt").fill("archiva los correos de uber.com y ponlos en Facturas");
       await page.getByTestId("ai-generate").click();
       await expect(page.getByTestId("preview-count")).toHaveText(/^\d+$/);
+      await expect(page.getByTestId("filter-save-apply")).toHaveText(/Save and apply to \d+ conversations?/);
       await stabilize(page);
-      await expect(page).toHaveScreenshot("filters-ai-dark.png", { mask: [page.getByTestId("preview-ms")] });
+      await expect(page).toHaveScreenshot("filters-ai-dark.png");
     });
     await scenario("settings: AI on a local model", async () => {
       await forgetOffer(page);

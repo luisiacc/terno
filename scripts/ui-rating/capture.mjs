@@ -245,8 +245,8 @@ async function aiPass(design, mode, dir) {
     await page.getByTestId("ai-prompt").fill(AI_INPUTS.filter);
     await page.getByTestId("ai-generate").click();
     await visible("ai-explanation");
-    // the rule's matches counted, not "Calculating…"
-    await visible("preview-ms");
+    // the rule's matches counted, not "Calculating…" (plan 161, pass 2: the timing it waited on is no longer shown; data-ready is set exactly when it was)
+    await page.locator("[data-testid=filter-preview][data-ready]").first().waitFor({ timeout: 30_000 });
     await s("a11-filter-ai");
     await page.keyboard.press("Escape");
     await page.getByTestId("ai-prompt").waitFor({ state: "detached" });
