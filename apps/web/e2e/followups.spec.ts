@@ -235,6 +235,7 @@ test.describe("follow-ups (plan 142)", () => {
         await expect(menu).toBeVisible();
         await expect(menu.getByRole("menuitem")).toHaveText([/^Later today/, /^Tomorrow/, /^This weekend/, /^Next week/]);
         expect(await unclipped(menu), where).toEqual([]);
+        if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-later-${scheme}-${size.width}.png` });
         await page.keyboard.press("Escape");
         await page.getByTestId("followup-provenance").click();
         expect(await unclipped(page.getByTestId("followup-provenance-popover")), where).toEqual([]);
