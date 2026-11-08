@@ -67,6 +67,10 @@ export function digestLive(db: Db, threadIds: readonly number[]): number[] {
   return db.all<{ id: number }>("SELECT id FROM threads WHERE id IN (SELECT value FROM json_each(?)) AND in_inbox = 1 AND unread_count > 0", JSON.stringify(threadIds)).map((r) => r.id);
 }
 
+export function digestRead(db: Db, threadIds: readonly number[]): number[] {
+  return db.all<{ id: number }>("SELECT id FROM threads WHERE id IN (SELECT value FROM json_each(?)) AND in_inbox = 1 AND unread_count = 0", JSON.stringify(threadIds)).map((r) => r.id);
+}
+
 interface Raw {
   day: string;
   state: DigestStored["state"];

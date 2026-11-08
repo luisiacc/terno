@@ -112,6 +112,8 @@ export interface DigestRow {
   automated: boolean;
   /** of `items`, those still in the Inbox and unread: the rest stay listed, muted */
   liveIds: number[];
+  /** of `items`, those still in the Inbox but read (opened): plan 145 archives only unread mail, so they stay, and say so (plan 161) */
+  readIds?: number[];
   /** the failure's kind, for its help line */
   errorKind?: string | null;
   model?: string | null;

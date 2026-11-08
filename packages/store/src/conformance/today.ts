@@ -93,6 +93,8 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       await store.threads.act({ threadIds: [b.thread], action: "archive", signal: null, now: NOW });
       await store.threads.act({ threadIds: [c.thread], action: "markRead", signal: null, now: NOW });
       expect(await store.today.digestLive([a.thread, b.thread, c.thread])).toEqual([a.thread]);
+      // plan 161: the read one is still in the Inbox, kept: the page says so on its row
+      expect(await store.today.digestRead([a.thread, b.thread, c.thread])).toEqual([c.thread]);
     });
 
     describe("the digest's row", () => {

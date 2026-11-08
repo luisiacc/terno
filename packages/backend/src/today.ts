@@ -57,6 +57,9 @@ const dayBefore = (day: string, days: number): string => {
 
 const firstSentence = (text: string): string => (/^.*?[.!?](?:\s|$)/su.exec(text)?.[0] ?? text).trim().slice(0, SUMMARY_LINE_CHARS);
 
+/** Plan 161: the page in time order, newest first, as its dates read: not the order the model's batches came back in. */
+const newestFirst = (items: readonly DigestItem[]): DigestItem[] => [...items].sort((a, b) => b.lastDate - a.lastDate || b.threadId - a.threadId);
+
 export class TodayService {
   private ops: TodayOps | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -454,7 +457,7 @@ export class TodayService {
       if (!this.automated || this.b.now() - this.automated.at > AUTOMATED_FRESH_MS) this.refreshAutomated();
       const items = this.automated?.candidates.items ?? [];
       if (!items.length) return null;
-      return { day, state: "ready", items, automated: true, liveIds: await store.today.digestLive(items.map((i) => i.threadId)) };
+      return { day, state: "ready", items: newestFirst(items), automated: true, ...(await this.states(items)) };
     }
     const row = await store.today.digest.get(day);
     const shown = row && (row.state !== "pending" || row.items.length) ? row : await store.today.digest.latest(day);
@@ -464,7 +467,14 @@ export class TodayService {
     const items = shown.items.filter((i) => here.has(i.messageId));
     if (items.length !== shown.items.length) void this.purgeGone().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
     const paused = row?.state === "pending" && row.errorKind !== null && this.paused;
-    return { day: row?.state === "pending" ? day : shown.day, state: paused ? "failed" : (row?.state ?? shown.state), items, automated: false, liveIds: await store.today.digestLive(items.map((i) => i.threadId)), errorKind: paused ? row!.errorKind : shown.errorKind, model: shown.model, provider: shown.provider };
+    return { day: row?.state === "pending" ? day : shown.day, state: paused ? "failed" : (row?.state ?? shown.state), items: newestFirst(items), automated: false, ...(await this.states(items)), errorKind: paused ? row!.errorKind : shown.errorKind, model: shown.model, provider: shown.provider };
+  }
+
+  /** which listed threads are still to archive (in the Inbox, unread), and which were opened (in the Inbox, read) */
+  private async states(items: readonly DigestItem[]): Promise<{ liveIds: number[]; readIds: number[] }> {
+    const ids = items.map((i) => i.threadId);
+    const [liveIds, readIds] = await Promise.all([this.b.store.today.digestLive(ids), this.b.store.today.digestRead(ids)]);
+    return { liveIds, readIds };
   }
 
   private refreshAutomated(): void {
@@ -497,7 +507,8 @@ export class TodayService {
         const f = facts.get(id);
         const item = listed.get(id)!;
         if (!f || !f.inInbox || f.lastDate !== item.lastDate || f.messageCount !== item.messageCount) changed++;
-        else if (f.starred || f.replied) spared++;
+        // plan 145 archives only unread mail: one read since the page was drawn stays, and is counted as left alone (plan 161)
+        else if (f.starred || f.replied || !f.unread) spared++;
         else out.push(id);
       }
       archived += out.length;

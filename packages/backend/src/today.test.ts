@@ -372,6 +372,27 @@ describe("the digest", () => {
     expect(await inbox(a)).toBe(true);
   });
 
+  it("plan 161: the page is newest first by date; an opened one is kept and said so, and Archive leaves one read since", async () => {
+    const t = await setup();
+    const old = await t.letter("Old", { date: NOW - 3 * 3_600_000 });
+    const fresh = await t.letter("Fresh", { date: NOW - 3_600_000 });
+    const mid = await t.letter("Mid", { date: NOW - 2 * 3_600_000 });
+    await on(t);
+    await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(day()))?.state).toBe("ready"));
+    const row = (await t.client.call("today.digest", {}))!;
+    expect(row.items.map((i) => i.threadId)).toEqual([fresh, mid, old]);
+    expect(row.readIds).toEqual([]);
+    // opened from the page: read, still in the Inbox
+    await t.backend.store.threads.act({ threadIds: [mid], action: "markRead", signal: null, now: NOW });
+    const after = (await t.client.call("today.digest", {}))!;
+    expect([after.liveIds.sort(), after.readIds]).toEqual([[fresh, old].sort(), [mid]]);
+    // a page drawn before the read still asks for it: it stays, counted as left alone
+    const asListed = row.items.map((i) => ({ threadId: i.threadId, lastDate: i.lastDate, messageCount: i.messageCount }));
+    const r = await t.client.call("today.digestArchive", { items: asListed });
+    expect(r).toMatchObject({ archived: 2, spared: 1, changed: 0 });
+    expect((await t.backend.store.filters.actionFacts([mid]))[0]!.inInbox).toBe(true);
+  });
+
   it("the digest off shows what's automated, unticked and unsorted, and sends nothing", async () => {
     const t = await setup();
     await t.letter("Acme Store");

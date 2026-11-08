@@ -77,6 +77,8 @@ export interface TodayStore {
   digestFacts(messageIds: readonly number[]): Promise<{ facts: DigestFact[]; oldest: number | null }>;
   /** of these listed threads, how many are still as a digest would act on them: in the Inbox and unread */
   digestLive(threadIds: readonly number[]): Promise<number[]>;
+  /** of these listed threads, those still in the Inbox but read: opened, so a digest leaves them (plan 161) */
+  digestRead(threadIds: readonly number[]): Promise<number[]>;
   /** of these messages, those still stored */
   messagesHere(messageIds: readonly number[]): Promise<number[]>;
   digest: {

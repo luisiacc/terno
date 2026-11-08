@@ -67,6 +67,14 @@ export function digestLive(c: Ctx, threadIds: readonly number[]): number[] {
   });
 }
 
+export function digestRead(c: Ctx, threadIds: readonly number[]): number[] {
+  const threads = T(c, "threads");
+  return threadIds.filter((id) => {
+    const t = threads.get(id);
+    return !!t && t.in_inbox === 1 && t.unread_count === 0;
+  });
+}
+
 const stored = (r: R): DigestStored => {
   const body = r.body_json ? (JSON.parse(r.body_json) as { items: DigestItem[]; pending: DigestItem[] }) : { items: [], pending: [] };
   return { day: r.day, state: r.state, items: body.items, pending: body.pending, attempts: r.attempts ?? 0, errorKind: r.error_kind ?? null, watermark: { at: r.watermark_at ?? 0, id: r.watermark_id ?? 0 }, model: r.model ?? null, provider: r.provider ?? null, promptVersion: r.prompt_version ?? null, generatedAt: r.generated_at ?? null };
