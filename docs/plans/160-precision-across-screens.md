@@ -259,3 +259,16 @@ Round 1 made six findings; all six are fixed, each with a regression test that f
 6. **The edge check could pass a missing outline.** It now reads each side's border or ring from the computed style, samples the stroke's own pixel (a border's inside the box, a ring's just outside), and proves itself: with the composer card's ring removed it reports all four sides.
 
 The spec also waits for a menu's box to be still before measuring, because a menu re-anchored at the window's foot moves a frame after it opens.
+
+Round 2 made three findings; all three are fixed, each with a test that fails without the fix.
+1. **A growing toast scrolled a list the user had scrolled away from its open row.** Expanding "Similar…" did it. Now only a row that was in view before the toast's room grew comes back up. The spec scrolls the open row 50 px out of view in List and expands the toast; every design failed before.
+2. **A field's text wasn't protected on the list's own surface (`pane`).** A custom theme with a list a step off white derived a wash its placeholder read on at 4.46:1. `pane` is now among the field's surfaces in the derivation and in CONTRAST_PAIRS, with a custom-theme unit test.
+3. **A menu already capped to whole rows missed rows added later.** Its box keeps its size, so the ResizeObserver never ran. A MutationObserver on its rows refits it. The spec adds a 1100x420 window where every design's menu scrolls; all five failed without it.
+
+The review stopped after two rounds (the round cap). Round 2's findings were narrower than round 1's, and none was about a new area.
+
+## Not done, and known flakes
+
+- **composer.spec "opened again from the strip … where the caret was"** flakes under load on main too: 2 of 48 runs at a load of 14 to 23. While checking whether the card reaching the pane's foot caused it, the pinned-foot version failed 0 of 48 under the same load. It's named flaky, not fixed.
+- **perf.spec "scrolling 2,000 threads deep"** timed out once ("next page never loaded") while the machine was loaded. Alone it passes 3 of 3, at about 33 ms against a 150 ms budget.
+- **A menu re-anchored to the window's foot** (its row has room on neither side) moves a frame after it opens. It happens only in a window too short for the menu on either side of its row, and during the open animation.
