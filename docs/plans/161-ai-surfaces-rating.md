@@ -692,3 +692,26 @@ From `ai-r01`'s `ai_draft`, `summary` and `followups_replies` (every issue and e
 
 - Unit: `aiErrorCopy` (no host, URL or port in any kind's words, en and es; a message without an address passes through), `reminderDated`, `followupWhen`/`followupLine`, the strip's confirm (a run over an edited strip waits for Replace; Keep runs nothing; unedited runs at once), Esc's close keeping the draft, the prepared reply given back on discard and not on send, the Reply ready header's gap count, the skeleton while writing, `contrast.test.ts`'s new steps.
 - e2e: `ai-draft.spec.ts` (Regenerate over an edit asks, Keep leaves the text, Replace replaces and Undo brings the edit back; Esc in the row leaves the reply open; the instruction shows and its edit rewrites; a second ⌘J keeps Undo; the strip is one line at 1440x900 and 1100x700; the old text stays during Shorter; the error shows no host), `replies-ready.spec.ts` (Use, Discard: the card is back; the gap count; one R), `followups.spec.ts` (the dated header, Later's times, Open your nudge, no Open message on one message), `summaries.spec.ts` (provenance and Copy; the item names its source; the error pattern), `design-axe.spec.ts` for these surfaces.
+
+### Pass 2 as built
+
+Where it differs from the design above:
+- **The strip at 1100x700.** Measured, the strip has 381 px there and the status plus the four commands need about 420. Below 30 rem of strip, Undo is its glyph (its name and a tooltip, "Undo the AI's last change", stay) and the commands' padding tightens; the instruction hides below 34 rem and is in the status's popover. One line at both sizes in all five designs (`ai-draft.spec.ts`, `@design`). In Spanish, whose words are longer, it may still wrap at 1100.
+- **The follow-up's line** keeps "Arjun Ramírez hasn't replied yet"; the repetition was the header's "if Arjun doesn't reply", which goes, with "Sent today".
+- **One R**: the card keeps its sentence, and the reply bar's keycap steps aside (see Reply ready above).
+- **Each version keeps what it was asked.** Undo of a rewrite brought the newer instruction back with the older text, so Regenerate asked the wrong thing. A version now carries its instruction and notes, and going back to it brings them (`ai-draft.test.ts`).
+- **Plan 133's Esc tests changed meaning.** "Esc closes and the empty reply goes" is now: Esc closes the row, the empty reply stays with the caret, and the composer's own Esc closes it.
+- **Not an e2e:** "no Open message on a one-message conversation". The harness's one-message fixture never gets a follow-up row; the rule is `messageSource`'s unit test, and `a09` (a one-message sent conversation) shows it.
+
+### What the Codex review of pass 2 changed
+
+Eight points, all taken, each with a regression test that fails without the fix:
+
+1. **Try again over an edit.** A rewrite failed, the user typed, and Try again replaced the text without asking. Retry of a rewrite goes through the same question (`ai-draft.test.ts`).
+2. **A stale reply given back.** Discarding a draft made from a prepared reply, after a new message came, showed the old reply. The card is shown again only while it answers the conversation's newest message (any message since, the user's own too, makes it out of date, as while it's shown) (`replies-ready.spec.ts`).
+3. **Discard, Undo, then Send** left the reply offered. A draft on that conversation that goes any way but Discard (sent, scheduled) takes the shown reply off screen (`replies-ready.spec.ts`).
+4. **Open your nudge opened another draft** when the conversation showed a different one. It opens the nudge's own draft by its key (`openStoredDraft`, `followup-nudge.test.ts`).
+5. **The wrong provider named.** With a task override (writing on Claude, Settings' first row Ollama) the error said "Couldn't reach Ollama". The error names the task's own provider: ⌘J's `writingTarget`, the summary's `summaryTarget` (`ai-error.test.ts`).
+6. **No credit read as a bad key.** `errors.ai.noCredit` (and the daily and monthly limits, and a draft too large) are the app's own words with no address, shown as they are (`ai-error.test.ts`).
+7. **Addresses still reachable.** A blocked redirect's bare host was shown, and the row's live region announced the raw message. `blocked` is said by its kind, a domain on a common TLD counts as an address, and the live region says the shown title (`ai-error.test.ts`, `ai-draft.test.ts`).
+8. **The one-line check ran in one design.** It's its own `@design` test now.

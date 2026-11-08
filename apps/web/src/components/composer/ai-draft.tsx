@@ -12,7 +12,7 @@ import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import { modelName, providerLabel, writingTarget } from "~/lib/ai";
 import { acknowledgeTold, answer, closeRow, commitHeld, confirmReplace, discard, discardAndSend, editInstruction, includeEveryone, keepEdits, keepWriting, noteBody, place, placePartial, previewMode, previewText, recallInstruction, refine, retry, setInstruction, stop, submit, subscribePreview, takeFocusRequest, undoCommit, useAiDraft, type AiSession, type AiStrip } from "~/lib/ai-draft";
 import { keepInView } from "~/lib/reader-scroll";
-import { AiErrorNotice, aiErrorCopy, aiWritten } from "../ai-card";
+import { AiErrorNotice, aiErrorCopy, aiWritten, errorTarget } from "../ai-card";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { useDrafts } from "~/lib/drafts";
 import { setApp, useApp } from "~/state/app";
@@ -330,7 +330,8 @@ function ErrorLine({ s }: { s: AiSession }) {
   const ai = useApp((state) => state.settings?.ai);
   const e = s.error;
   if (!e) return null;
-  const copy = aiErrorCopy({ message: e.message, kind: e.kind }, ai);
+  // the task's own provider, which can differ from Settings' first row (Codex review)
+  const copy = aiErrorCopy({ message: e.message, kind: e.kind, key: e.key }, errorTarget(writingTarget(ai).provider, ai));
   return (
     <div className={cn(line, "text-foreground")} data-testid="ai-error" data-kind={e.kind}>
       <AiErrorNotice

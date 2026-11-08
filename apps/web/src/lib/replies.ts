@@ -6,7 +6,7 @@ import { undoAction } from "~/lib/actions";
 import { commitPrepared, preparedHooks } from "~/lib/ai-draft";
 import { autoRecipients } from "~/lib/compose-fields";
 import { composeHooks, composeLanding } from "~/lib/compose";
-import { shownDraftKey, useDrafts } from "~/lib/drafts";
+import { discardListeners, draftHomeThread, shownDraftKey, useDrafts } from "~/lib/drafts";
 import { onExplicitOpen } from "~/lib/open-dwell";
 import { readerShown } from "~/lib/page";
 import { registerUndo, snack } from "~/lib/snack";
@@ -155,6 +155,22 @@ export function installReplies(): void {
   };
 }
 
+/**
+ * Plan 161, pass 2 (Codex review): a draft on a conversation that went any way but Discard (sent, scheduled, Undo Send) is
+ * the reply: a prepared one shown there goes, so a draft brought back by Discard's Undo and then sent doesn't leave it.
+ */
+const discarded = new Set<string>();
+discardListeners.add((key) => discarded.add(key));
+useDrafts.subscribe((state, previous) => {
+  if (state.drafts === previous.drafts) return;
+  const { shown } = useReplies.getState();
+  for (const [key, d] of Object.entries(previous.drafts)) {
+    if (state.drafts[key]) continue;
+    const was = discarded.delete(key);
+    if (!was && shown && (d.threadId === shown.threadId || draftHomeThread(d) === shown.threadId)) useReplies.setState({ shown: null });
+  }
+});
+
 export const replyReady = (threadId: number): boolean => {
   const { shown } = useReplies.getState();
   return on() && shown?.threadId === threadId && shown.phase === "ready" && shown.row !== null;
@@ -177,10 +193,19 @@ export async function useReply(threadId: number, mode: Exclude<Parameters<typeof
   commitPrepared(landing.key, used, landing.kind === "created");
 }
 
-/** Undo after Use: the block again, only if the row is still what Use left. */
+/**
+ * Undo after Use, or the draft made from it discarded: the block again, only if the row is still what Use left, and only
+ * on screen while it still answers the conversation's newest message (any message since, the user's own too, makes it
+ * out of date, Codex review): the next open prepares again.
+ */
 async function giveBack({ threadId, rowId, revision }: { threadId: number; rowId: string; revision: number }): Promise<void> {
   const row = await client.call("ai.replyAct", { threadId, rowId, revision, action: "restore" }).catch(() => null);
-  if (row && getApp().selectedId === threadId) {
+  if (!row) return;
+  // any message since (theirs or the user's own) and it answers what's no longer the last word, as while it's shown
+  const detail = await loadThread(threadId).catch(() => null);
+  const newest = detail?.messages.at(-1)?.id;
+  if (newest !== undefined && row.answeringMessageId && newest !== row.answeringMessageId) return;
+  if (getApp().selectedId === threadId) {
     reading = threadId;
     composedOn = null;
     useReplies.setState({ shown: { threadId, phase: "ready", text: row.body ?? "", row } });

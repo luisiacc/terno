@@ -1,6 +1,6 @@
 import type { FollowupRow } from "@terno/core";
 import { openRow, rowKeyOf, setInstruction, submit } from "~/lib/ai-draft";
-import { composeLanding } from "~/lib/compose";
+import { openStoredDraft } from "~/lib/compose";
 import { editDraftRecipients, useDrafts } from "~/lib/drafts";
 import { snack } from "~/lib/snack";
 
@@ -35,9 +35,8 @@ export function nudgeDraft(threadId: number, drafts = useDrafts.getState().draft
   return null;
 }
 
-/** "Open your nudge": the draft, in view, with the caret in it. */
+/** "Open your nudge": that draft (not whichever the conversation shows), in view, with the caret in it. */
 export async function openNudge(threadId: number): Promise<void> {
   const key = nudgeDraft(threadId);
-  const d = key ? useDrafts.getState().drafts[key] : undefined;
-  if (d) await composeLanding(d.mode, threadId);
+  if (key) await openStoredDraft(key);
 }

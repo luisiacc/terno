@@ -45,6 +45,30 @@ describe("plan 161, pass 2: one AI error, in plain words, never an address", () 
   });
 });
 
+describe("plan 161, pass 2: what the Codex review found", () => {
+  it("6: no credit left is said as it is, not as a bad key", () => {
+    const copy = aiErrorCopy({ message: "OpenAI says this account has no credit left. Add credit with OpenAI, or choose another provider in Settings → AI.", kind: "auth", key: "errors.ai.noCredit" }, cloud);
+    expect(copy.title).toMatch(/no credit left/);
+    expect(copy.help).toBeNull();
+    expect(copy.settings).toBe(true);
+  });
+
+  it("7: a blocked redirect's host is never shown", () => {
+    expect(hasAddress("Terno stopped a redirect to login.example.com")).toBe(true);
+    const copy = aiErrorCopy({ message: "Terno stopped a redirect to login.example.com", kind: "blocked" }, cloud);
+    expect(`${copy.title} ${copy.help}`).not.toContain("example.com");
+  });
+
+  it("5: it names the provider the task ran on, not Settings' first row", async () => {
+    const { errorTarget } = await import("./ai-error");
+    const settings = { provider: "ollama", preset: null, local: true } as never;
+    const copy = aiErrorCopy({ message: "x", kind: "unavailable" }, errorTarget("anthropic", settings));
+    expect(copy.title).toBe("Couldn’t reach Claude (Anthropic)");
+    expect(copy.help).toBe("Check your connection, then try again.");
+    expect(aiErrorCopy({ message: "x", kind: "unavailable" }, errorTarget("ollama", settings)).help).toBe("Open Ollama, then try again.");
+  });
+});
+
 describe("plan 161, pass 2: where an AI line points", () => {
   const NOW = new Date(2026, 9, 22, 16, 0).getTime();
   const m = (id: number, name: string, email: string, date: number) => ({ id, from: { name, email }, date });

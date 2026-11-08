@@ -137,6 +137,8 @@ export function summaryReady(ai: AiSettings | null | undefined): boolean {
 }
 
 const LOCAL_PROVIDERS: readonly AiProviderId[] = ["ollama", "lmstudio", "fake"];
+/** A provider that runs on this Mac (plan 161, pass 2: what an error tells the user to do differs). */
+export const localProvider = (provider: AiProviderId): boolean => LOCAL_PROVIDERS.includes(provider);
 
 /**
  * Plan 133: what drafts run on, by the backend's rule (`AiService.targetFor`): the task's own choice, else the

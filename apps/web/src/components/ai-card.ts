@@ -60,4 +60,4 @@ export function messageSource(messages: readonly Pick<MessageDetail, "id" | "fro
 }
 
 /** Plan 161, pass 2: the one AI error, for every AI surface (the summary, ⌘J, Ask). */
-export { AiErrorNotice, aiErrorCopy, hasAddress, type AiErrorCopy, type AiErrorInput } from "./ai-error";
+export { AiErrorNotice, aiErrorCopy, errorTarget, hasAddress, type AiErrorCopy, type AiErrorInput, type AiErrorTarget } from "./ai-error";

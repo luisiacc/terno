@@ -7,13 +7,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { ArrowRight, Sparkles } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { providerLabel } from "~/lib/ai";
+import { providerLabel, summaryTarget } from "~/lib/ai";
 import { messageDate } from "~/lib/format";
 import { provenanceDetail, provenanceLabel } from "~/lib/provenance";
 import { snack } from "~/lib/snack";
 import { bodyArrivedForSummary, dismissSummary, loadSummary, revealSummaryMessage, setSummaryOpen, stopSummary, summarizable, summarize, useSummaries } from "~/lib/summaries";
 import { setApp, useApp } from "~/state/app";
-import { AI_CARD, AI_GLYPH, AI_TITLE, AiErrorNotice, aiErrorCopy, messageSource } from "./ai-card";
+import { AI_CARD, AI_GLYPH, AI_TITLE, AiErrorNotice, aiErrorCopy, errorTarget, messageSource } from "./ai-card";
 
 /**
  * "Action · Send the signed contract      Arjun · Oct 21 →": the row goes to the message that says it, and says whose and
@@ -224,7 +224,9 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
         );
       case "error": {
         // plan 161, pass 2: the one AI error (ai-card): plain words, never an address, Try again and AI settings
-        const copy = aiErrorCopy({ message: ui.message, kind: ui.errorKind }, ai);
+        // the summary's own provider (a task choice, or OpenAI's default), not always Settings' first row (Codex review)
+        const target = ai ? summaryTarget(ai) : null;
+        const copy = aiErrorCopy({ message: ui.message, kind: ui.errorKind, key: ui.key }, target && target.state !== "none" ? errorTarget(target.provider, ai) : null);
         return (
           <div data-testid="summary-block" data-state="error" className={cn(CARD, "flex min-h-10 px-3.5 py-2.5")}>
             <AiErrorNotice

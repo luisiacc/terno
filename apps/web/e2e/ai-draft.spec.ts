@@ -1099,7 +1099,33 @@ test.describe("drafting with AI (plan 133)", () => {
     });
   });
 
-  test("plan 161, pass 2: nothing the user wrote is lost, the instruction stays, and the strip is one line", async ({ app: page, server }) => {
+  test("plan 161, pass 2: the strip is one line at 1440x900 and 1100x700, its commands in the ink", { tag: "@design" }, async ({ app: page, server }) => {
+    await ready(page, server);
+    instant();
+    await openThread(page, /Contract review/);
+    await openField(page);
+    await field(page).fill("echo: Friday works for me.");
+    await page.keyboard.press("Enter");
+    await expect(strip(page)).toBeVisible();
+    const line = async () => {
+      const status = (await page.getByTestId("ai-strip-voice").boundingBox())!;
+      const undo = (await page.getByTestId("ai-strip-undo").boundingBox())!;
+      return Math.abs(status.y + status.height / 2 - (undo.y + undo.height / 2));
+    };
+    for (const size of [{ width: 1440, height: 900 }, { width: 1100, height: 700 }]) {
+      await page.setViewportSize(size);
+      await expect.poll(line, `${size.width}`).toBeLessThanOrEqual(1);
+      expect((await strip(page).boundingBox())!.height, `${size.width}`).toBeLessThanOrEqual(40);
+    }
+    // an enabled command is the ink, not the status's grey
+    const color = (id: string) => page.getByTestId(id).evaluate((el) => getComputedStyle(el).color);
+    expect(await color("ai-strip-regenerate")).not.toBe(await color("ai-strip-written"));
+    expect(await color("ai-strip-regenerate")).toBe(await page.getByTestId("reader-subject").evaluate((el) => getComputedStyle(el).color));
+    // narrow, Undo is its glyph, and keeps its name
+    await expect(page.getByTestId("ai-strip-undo")).toHaveAccessibleName("Undo");
+  });
+
+  test("plan 161, pass 2: nothing the user wrote is lost, the instruction stays", async ({ app: page, server }) => {
     await scenario("Esc in the ⌘J row closes the row, never the reply ⌘J opened with it", async () => {
       await ready(page, server);
       instant();
@@ -1112,28 +1138,12 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(body(page)).toBeFocused();
       await expect(page.getByTestId("snack")).toHaveCount(0);
     });
-    await scenario("one line at 1440x900, the commands in the ink, and the instruction shown", async () => {
+    await scenario("the instruction shows in the strip, and the popover holds it with the voice", async () => {
       await openField(page);
       await field(page).fill("echo: Friday works for me.");
       await page.keyboard.press("Enter");
       await expect(strip(page)).toBeVisible();
       await expect(page.getByTestId("ai-strip-instruction")).toHaveText(/“echo: Friday works for me\.”/);
-      const line = async () => {
-        const status = (await page.getByTestId("ai-strip-voice").boundingBox())!;
-        const undo = (await page.getByTestId("ai-strip-undo").boundingBox())!;
-        return Math.abs(status.y + status.height / 2 - (undo.y + undo.height / 2));
-      };
-      expect(await line()).toBeLessThanOrEqual(1);
-      expect((await strip(page).boundingBox())!.height).toBeLessThanOrEqual(40);
-      // an enabled command isn't the status's grey
-      const color = (id: string) => page.getByTestId(id).evaluate((el) => getComputedStyle(el).color);
-      expect(await color("ai-strip-regenerate")).not.toBe(await color("ai-strip-written"));
-      expect(await color("ai-strip-regenerate")).toBe(await page.getByTestId("reader-subject").evaluate((el) => getComputedStyle(el).color));
-      await page.setViewportSize({ width: 1100, height: 700 });
-      await expect.poll(line).toBeLessThanOrEqual(1);
-      expect((await strip(page).boundingBox())!.height).toBeLessThanOrEqual(40);
-      await page.setViewportSize({ width: 1440, height: 900 });
-      // the popover holds the voice, and the instruction, with a way to edit it
       await page.getByTestId("ai-strip-voice").click();
       await expect(page.getByTestId("ai-voice-label")).toHaveText(/^In your /);
       await expect(page.getByTestId("ai-voice-instruction")).toContainText("echo: Friday works for me.");

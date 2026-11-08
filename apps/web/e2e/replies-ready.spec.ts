@@ -241,6 +241,44 @@ test.describe("replies ready (plan 144)", () => {
     }
   });
 
+  test("plan 161, pass 2 (Codex review): a discarded draft doesn't bring back a reply that's out of date, and one scheduled after Undo takes it for good", async ({ app: page, server }) => {
+    const thread = await withMail(page, server, { replies: { enabled: true } });
+    const state = () => sqlDb(server.backend.store).get<{ state: string }>("SELECT state FROM ai_prepared_replies WHERE thread_id = ?", thread)?.state;
+    await row(page).click();
+    await expect(block(page)).toHaveAttribute("data-phase", "ready", { timeout: 15_000 });
+    await scenario("Discard's Undo, then Send later: the reply isn't offered again", async () => {
+      await page.getByTestId("reply-ready-use").click();
+      await expect.poll(state).toBe("used");
+      await page.getByTestId("compose-discard").click();
+      await expect(block(page)).toBeVisible();
+      await page.getByTestId("snack-action").click();
+      await expect(page.getByTestId("composer")).toBeVisible();
+      await expect(block(page)).toHaveCount(0);
+      // scheduled: no message arrives to take it off screen, so the draft going is what must
+      await page.getByTestId("compose-send-later").first().click();
+      await page.getByTestId("send-later-popover").getByTestId("send-later-tomorrow").click();
+      await expect(page.getByTestId("composer")).toHaveCount(0);
+      await page.waitForTimeout(500);
+      await expect(block(page)).toHaveCount(0);
+    });
+  });
+
+  test("plan 161, pass 2 (Codex review): a message that came after Use makes the reply out of date: Discard doesn't show it", async ({ app: page, server }) => {
+    const thread = await withMail(page, server, { replies: { enabled: true } });
+    const state = () => sqlDb(server.backend.store).get<{ state: string }>("SELECT state FROM ai_prepared_replies WHERE thread_id = ?", thread)?.state;
+    await row(page).click();
+    await expect(block(page)).toHaveAttribute("data-phase", "ready", { timeout: 15_000 });
+    await page.getByTestId("reply-ready-use").click();
+    await expect.poll(state).toBe("used");
+    await ingestConversation(server, { subject: SUBJECT, count: 2, now: E2E_NOW + 1000 });
+    server.backend.notifyChanged([thread]);
+    await expect(page.getByTestId("message").or(page.locator("[data-message-id]"))).not.toHaveCount(1);
+    await page.getByTestId("compose-discard").click();
+    await expect(page.getByTestId("composer")).toHaveCount(0);
+    await page.waitForTimeout(800);
+    await expect(block(page)).toHaveCount(0);
+  });
+
   test("r before the dwell ends: they're writing, so nothing is prepared; new mail hides what was shown; Clear takes it off screen", async ({ app: page, server }) => {
     const thread = await withMail(page, server, { replies: { enabled: true } });
     const db = sqlDb(server.backend.store);

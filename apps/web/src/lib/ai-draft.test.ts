@@ -1366,3 +1366,30 @@ describe("plan 161, pass 2: a prepared reply, discarded", () => {
     expect(back).toEqual([]);
   });
 });
+
+describe("plan 161, pass 2: what the Codex review found", () => {
+  it("1: Try again after a failed rewrite, over text typed since, asks first too", async () => {
+    const { key, c } = await writing();
+    last("ai.compose").resolve(done("First."));
+    await tick();
+    store.refine(key, "regenerate");
+    last("ai.compose").reject({ code: "AI", message: "x", details: { aiErrorKind: "timeout" } });
+    await tick();
+    expect(session(key)!.phase).toBe("error");
+    c.type(" Mine.");
+    const before = calls("ai.compose").length;
+    store.retry(key);
+    expect(session(key)!.confirm).toMatchObject({ how: "retry" });
+    expect(calls("ai.compose")).toHaveLength(before);
+    store.keepEdits(key);
+    expect(c.text).toBe("First. Mine.");
+  });
+
+  it("7: a screen reader hears the error as shown, never the provider's address", async () => {
+    const { key } = await writing();
+    last("ai.compose").reject({ code: "AI", message: "Couldn’t find Ollama at 127.0.0.1:60512. Is it open?", details: { aiErrorKind: "unavailable" } });
+    await tick();
+    expect(session(key)!.live).not.toMatch(/127\.0\.0\.1|60512/);
+    expect(session(key)!.live).toMatch(/^Couldn’t reach /);
+  });
+});

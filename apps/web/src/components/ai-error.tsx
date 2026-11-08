@@ -1,9 +1,9 @@
-import type { AiErrorKind } from "@terno/core";
+import type { AiErrorKind, AiProviderId } from "@terno/core";
 import type { AiSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { CircleAlert } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
-import { providerName } from "~/lib/ai";
+import { localProvider, providerLabel, providerName } from "~/lib/ai";
 
 /**
  * Plan 161, pass 2: one AI error on every surface (the summary, ⌘J, Ask), in plain English: what happened in the ink, one
@@ -14,7 +14,12 @@ import { providerName } from "~/lib/ai";
 export interface AiErrorInput {
   message: string;
   kind?: AiErrorKind | "other" | undefined;
+  /** the message's catalog key, when the backend sent one: a few are said as they are (no credit isn't a bad key) */
+  key?: string | undefined;
 }
+
+/** Messages that are the app's own words, with no address, whatever their kind: shown as they are. */
+const OWN_KEYS = new Set(["errors.ai.noCredit", "errors.ai.dailyLimit", "errors.ai.monthlyLimit", "errors.ai.draftTooLarge"]);
 
 export interface AiErrorCopy {
   title: string;
@@ -23,8 +28,11 @@ export interface AiErrorCopy {
   settings: boolean;
 }
 
-/** A URL, an IP address, localhost, a host with a port (not a time: "3:00"), or a local network name. */
-const ADDRESS = /\b[a-z][a-z0-9+.-]*:\/\/|\b(?:\d{1,3}\.){3}\d{1,3}\b|\blocalhost\b|\[[0-9a-f:]+\]|\b[\w-]+(?:\.[\w-]+)+:\d{2,5}\b|\b[a-z][\w-]*:\d{2,5}\b|\b[\w-]+\.(?:local|lan|internal|home)\b|\bOLLAMA_ORIGINS\b/i;
+/**
+ * A URL, an IP address, localhost, a host with a port (not a time: "3:00"), a local network name, or a domain on a common
+ * top-level domain (a redirect's host).
+ */
+const ADDRESS = /\b[a-z][a-z0-9+.-]*:\/\/|\b(?:\d{1,3}\.){3}\d{1,3}\b|\blocalhost\b|\[[0-9a-f:]+\]|\b[\w-]+(?:\.[\w-]+)+:\d{2,5}\b|\b[a-z][\w-]*:\d{2,5}\b|\b[\w-]+\.(?:local|lan|internal|home)\b|\b(?:[\w-]+\.)+(?:com|net|org|io|ai|dev|app|cloud|co|us|eu|uk|de|es|mx)\b|\bOLLAMA_ORIGINS\b/i;
 
 export const hasAddress = (text: string): boolean => ADDRESS.test(text);
 
@@ -40,7 +48,22 @@ const BY_KIND: Partial<Record<AiErrorKind | "other", string>> = {
   unsupported: "ai.error.unsupported",
 };
 
-type Ai = Pick<AiSettings, "provider" | "preset" | "local"> | null | undefined;
+/**
+ * Which provider failed: the task's own (⌘J's writing target, the summary's), not always the one in Settings' first row.
+ * `ai` names it as Settings does.
+ */
+export interface AiErrorTarget {
+  provider: AiProviderId;
+  local: boolean;
+  ai?: Pick<AiSettings, "provider" | "preset" | "local"> | null | undefined;
+}
+
+/** The target for a task that runs on `provider`, under these settings. */
+export function errorTarget(provider: AiProviderId, ai: Pick<AiSettings, "provider" | "preset" | "local"> | null | undefined): AiErrorTarget {
+  return { provider, local: ai && provider === ai.provider ? ai.local : localProvider(provider), ai };
+}
+
+type Ai = AiErrorTarget | null | undefined;
 
 function helpOf(kind: AiErrorKind | "other" | undefined, ai: Ai, provider: string): string | null {
   switch (kind) {
@@ -65,12 +88,15 @@ function helpOf(kind: AiErrorKind | "other" | undefined, ai: Ai, provider: strin
 
 /** What an AI error says, from its kind and its message; the message only when it's the app's own words, with no address. */
 export function aiErrorCopy(error: AiErrorInput, ai: Ai): AiErrorCopy {
-  const provider = ai ? providerName(ai) : t("ai.error.provider");
+  const provider = !ai || ai.provider === "none" ? t("ai.error.provider") : ai.ai && ai.provider === ai.ai.provider ? providerName(ai.ai) : providerLabel(ai.provider, ai.ai ?? undefined);
   const kind = error.kind;
   const message = error.message.trim();
   const byKind = kind ? BY_KIND[kind] : undefined;
-  // the app's own sentence (a refusal, "This conversation keeps changing…") reads better than a generic one
-  const own = message !== "" && !hasAddress(message) && kind !== "unavailable" && kind !== "timeout" && kind !== "auth" && kind !== "rate_limited";
+  // the app's own sentence (a refusal, "This conversation keeps changing…", no credit left) reads better than a generic
+  // one; never for the kinds whose words are the provider's, often with its address
+  const ownKey = error.key !== undefined && OWN_KEYS.has(error.key);
+  const own = message !== "" && !hasAddress(message) && (ownKey || (kind !== "unavailable" && kind !== "timeout" && kind !== "auth" && kind !== "rate_limited" && kind !== "blocked"));
+  if (own && ownKey) return { title: message.replace(/[.。]$/, ""), help: null, settings: true };
   const title = own ? message.replace(/[.。]$/, "") : byKind ? t(byKind as "ai.error.unavailable", { provider }) : t("ai.error.other");
   const help = helpOf(kind, ai, provider) ?? (own ? null : t("ai.error.help.other"));
   return { title, help, settings: kind === "auth" || kind === "unavailable" || kind === "invalid_output" || kind === "unsupported" || kind === "not_configured" };

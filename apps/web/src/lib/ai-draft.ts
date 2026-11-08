@@ -2,6 +2,7 @@ import { formatAddressList, parseAddressList, WRITING_ONE_OFF_MAX, type AiCompos
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { controllerFor, focusBody } from "~/components/composer/controller";
+import { aiErrorCopy, errorTarget } from "~/components/ai-error";
 import { client } from "~/rpc/connection";
 import { getApp, useApp } from "~/state/app";
 import { loadThread, useThreads } from "~/state/threads";
@@ -136,6 +137,8 @@ export interface AiChoice {
 
 export interface AiError {
   message: string;
+  /** the message's catalog key, if it came with one (plan 161, pass 2: a few are said as they are) */
+  key?: string;
   help: string | null;
   kind: AiErrorKind | "other";
   retry: boolean;
@@ -180,7 +183,7 @@ export interface AiSession {
 }
 
 /** What replaces an edited draft, built when it's answered, from the text as it is then. */
-export type Replacement = { how: "regenerate" | "shorter" | "warmer" } | { how: "refine" | "rewrite"; instruction: string };
+export type Replacement = { how: "regenerate" | "shorter" | "warmer" } | { how: "refine" | "rewrite"; instruction: string } | { how: "retry"; spec: RunSpec };
 
 export const useAiDraft = create<{ sessions: Readonly<Record<string, AiSession>> }>(() => ({ sessions: {} }));
 
@@ -774,7 +777,9 @@ function failed(key: string, error: unknown) {
   if (!partial) clearStream(key);
   const ai = aiSettings();
   const help = !refused && ai ? errorHelp(kind, ai) : null;
-  update(key, { phase: "error", error: { message, help, kind: kind ?? "other", retry: e.code !== "NOT_FOUND" && kind !== "unsupported", partial }, live: message, strip: partial ? s.strip : prior, run: partial ? s.run : null });
+  // what a screen reader hears is what's shown: never the provider's address (plan 161, pass 2)
+  const said = aiErrorCopy({ message, kind, key: e.i18n?.key }, errorTarget(writingTarget(ai).provider, ai)).title;
+  update(key, { phase: "error", error: { message, help, kind: kind ?? "other", retry: e.code !== "NOT_FOUND" && kind !== "unsupported", partial, ...(e.i18n?.key ? { key: e.i18n.key } : {}) }, live: said, strip: partial ? s.strip : prior, run: partial ? s.run : null });
 }
 
 // §6.2: never a real answer from a snippet: it waits for the text
@@ -975,6 +980,9 @@ function specOf(strip: AiStrip, r: Replacement, key: string): RunSpec {
       return { kind: "refine", instruction: r.how === "shorter" ? SHORTER : WARMER, previous: bodyNow(key) };
     case "refine":
       return { kind: "refine", instruction: r.instruction, previous: bodyNow(key) };
+    // Try again: what was asked, from the text as it is now when it rewrites it
+    case "retry":
+      return r.spec.previous !== undefined ? { ...r.spec, previous: bodyNow(key) } : r.spec;
   }
 }
 
@@ -1375,6 +1383,8 @@ export function discardAndSend(key: string) {
 /** Try again: what it was asked, with no automatic retry. */
 export function retry(key: string) {
   const s = session(key);
+  // a rewrite that failed, over a strip typed in since: Try again asks first, as the rewrite did (Codex review)
+  if (s?.lastSpec?.kind === "refine" && s.strip) return replacing(key, { how: "retry", spec: s.lastSpec });
   if (s?.lastSpec) startRun(key, s.lastSpec);
   else if (s) void submit(key);
 }

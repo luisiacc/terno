@@ -19,7 +19,7 @@ export type SummaryUi =
   | { kind: "consent"; provider: AiProviderId; was: "none" | "stale" }
   /** nothing set up to run summaries: the block points to Settings */
   | { kind: "noProvider"; was: "none" | "stale" }
-  | { kind: "error"; message: string; errorKind: AiErrorKind | undefined; was: "none" | "stale" };
+  | { kind: "error"; message: string; errorKind: AiErrorKind | undefined; was: "none" | "stale"; key?: string };
 
 interface SummariesState {
   byThread: ReadonlyMap<number, SummaryUi>;
@@ -110,7 +110,7 @@ export async function summarize(threadId: number, o: { acknowledge?: boolean } =
     const errorKind = e.details?.aiErrorKind;
     if (e.code === "CANCELLED" || errorKind === "cancelled") put(threadId, { kind: was });
     else if (errorKind === "not_configured") put(threadId, { kind: "noProvider", was });
-    else put(threadId, { kind: "error", message: localized(e.message ?? "", e.i18n), errorKind, was });
+    else put(threadId, { kind: "error", message: localized(e.message ?? "", e.i18n), errorKind, was, ...(e.i18n?.key ? { key: e.i18n.key } : {}) });
   }
 }
 
