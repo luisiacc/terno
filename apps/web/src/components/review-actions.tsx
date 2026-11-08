@@ -10,6 +10,7 @@ import { client } from "~/rpc/connection";
 import { formatCount } from "./category-snackbar";
 import { getApp, setApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
+import { forwardWheel } from "~/lib/wheel";
 
 /** The one "Always" menu of the Review list: which row's button opened it (rows hold no Base UI primitives). */
 const useAlwaysMenu = create<{ threadId: number | null; anchor: HTMLElement | null }>(() => ({ threadId: null, anchor: null }));
@@ -84,7 +85,8 @@ export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HT
   };
   const at = (b: Box) => ({ left: b.left, top: b.top, width: b.width, height: b.height });
   return (
-    <div ref={layer} className="pointer-events-none absolute overflow-hidden" style={laid ? at(laid.clip) : { display: "none" }}>
+    // outside the list's scroller: a wheel over a button still moves the list, as it would over the row it lies on
+    <div ref={layer} className="pointer-events-none absolute overflow-hidden" style={laid ? at(laid.clip) : { display: "none" }} onWheel={(e) => forwardWheel(e, scroller.current)}>
       {category &&
         laid?.spots.map((spot) => (
           <div key={spot.id} role="group" aria-label={name} aria-describedby={`thread-${spot.id}`}>

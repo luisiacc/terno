@@ -9,6 +9,7 @@ import { richT } from "~/lib/i18n";
 import { registerUndo, snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
+import { forwardWheel } from "~/lib/wheel";
 
 const SENTENCE = { archive: "list.learned.archive", trash: "list.learned.trash", spam: "list.learned.spam" } as const;
 const LINE = { archive: "list.learned.line.archive", trash: "list.learned.line.trash", spam: "list.learned.line.spam" } as const;
@@ -96,7 +97,7 @@ export function LearnedBanner({ proposal, scroller }: { proposal: LearnedProposa
   return (
     // it lies over the scroller, not in it: a wheel over it still moves the list. Clipped to its room, as the rows are
     // Its room takes no pointer itself: only the part of the offer still showing does (a hidden one none), so a row scrolled under it is clicked
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-10 overflow-hidden" style={{ height: LEARNED_H }} onWheel={(e) => scroller.current?.scrollBy(0, e.deltaY)}>
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-10 overflow-hidden" style={{ height: LEARNED_H }} onWheel={(e) => forwardWheel(e, scroller.current)}>
     <div
       ref={ref}
       className="pointer-events-auto h-full"
