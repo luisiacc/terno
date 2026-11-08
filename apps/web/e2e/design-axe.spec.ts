@@ -176,7 +176,7 @@ test.describe("axe", { tag: "@variant" }, () => {
     await openReview(page, facturas);
     await rows(page).first().waitFor();
     await rows(page).first().hover();
-    await rows(page).first().getByTestId("row-review-always").click();
+    await page.locator(`[data-testid=row-review-always][data-thread-id="${await rows(page).first().getAttribute("data-thread-id")}"]`).click();
     await expect(page.getByTestId("review-always-subject-count")).toBeVisible();
     await clean(page, "Review, a row's answers", ["[data-testid=review-always-menu]", "[data-testid=thread-list]"]);
     await page.keyboard.press("Escape");

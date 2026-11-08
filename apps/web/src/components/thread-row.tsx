@@ -310,7 +310,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   const snippet = <RowSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} lead={LEAD.own} />;
   const chip = code && <CodeChip threadId={thread.id} code={code} />;
   const reviewed = review !== null ? categories.find((c) => c.id === review) : undefined;
-  const answer = reviewed && <ReviewControls threadId={thread.id} categoryId={reviewed.id} category={reviewed.name} />;
+  const answer = reviewed && <ReviewControls threadId={thread.id} category={reviewed.name} />;
   const avatar = !classic && (
     <span className={cn("shrink-0", !line && !big && "self-start mt-0.5")}>
       <SenderAvatar

@@ -35,7 +35,7 @@ import { useSnack } from "~/lib/snack";
 import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
 import { ThreadMenu } from "./thread-menu";
 import { DraftsStrip } from "./drafts-strip";
-import { ReviewAlwaysMenu } from "./review-actions";
+import { ReviewAlwaysMenu, ReviewButtons } from "./review-actions";
 import { RAIL, ROW_SHAPE, ThreadRow } from "./thread-row";
 import { registerDesignAnchor, useDesign } from "~/lib/design";
 import { LEARNED_H, LearnedBanner, LearnedSource, useLearnedProposal } from "./learned-banner";
@@ -1295,6 +1295,8 @@ export function ThreadList() {
         )}
       </div>
       </ThreadMenu>
+      {/* plan 158: the Review rows' answers as buttons, outside the listbox (a row is an option, which holds none) */}
+      {review !== null && items.length > 0 && <ReviewButtons scroller={parentRef} tick={`${virtualizer.scrollOffset}|${virtualItems.length}|${virtualItems[0]?.index}|${items.length}|${virtualizer.getTotalSize()}|${height}|${wide}|${virtualizer.scrollRect?.width}|${virtualizer.scrollRect?.height}`} />}
       {review !== null && <ReviewAlwaysMenu />}
       {filter && !loading && items.length === 0 && itemsKey === listKey() && <UnreadEmptyState filter={filter} />}
       {coverage && items.length > 0 && <CoverageNote className="pointer-events-none absolute inset-x-0 px-5 pt-3" style={{ top: virtualizer.getTotalSize() }} />}

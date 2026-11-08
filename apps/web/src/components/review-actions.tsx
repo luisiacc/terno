@@ -2,7 +2,7 @@ import type { AlwaysScope } from "@terno/core";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel } from "@terno/ui/components/dropdown-menu";
 import { t } from "@terno/i18n";
 import { Check, ChevronDown, MessageSquareText, UserRound } from "@terno/ui/icons";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import { answerReview, fileAlways, filterNameOf } from "~/lib/categorize";
 import { scopeLabel } from "~/lib/similar";
@@ -18,52 +18,110 @@ const listbox = () => document.querySelector<HTMLElement>("[data-testid=thread-l
 
 type Offers = { senderName: string | null; offers: { scope: AlwaysScope; count: number; capped: boolean }[] };
 
-/** Pressing a row control neither opens the thread, moves focus nor starts a drag (`data-row-control`). */
-const hold = (e: React.MouseEvent) => {
-  e.stopPropagation();
-  e.preventDefault();
-};
+const PILL = "inline-flex h-6 min-w-0 cursor-pointer items-center gap-1 rounded-full px-2.5 text-xs font-medium whitespace-nowrap transition-colors duration-fast";
+const ACCEPT = "border border-primary/25 bg-accent text-accent-foreground hover:border-primary/40 hover:bg-[color-mix(in_oklab,var(--accent)_85%,var(--primary))]";
+const ALWAYS = "shrink-0 border border-border bg-background text-foreground hover:bg-muted";
 
 /**
- * Plan 80: a Review row's two answers, in words: "Add to C" (it belongs) and
- * "Add similar ▾" (the same subject or everything from the sender, now and in
- * the future). They take the place of the row's preview line. Pointer targets
- * like the code chip: a row is an option, which can't hold a button; keyboards
- * answer with y/n and the thread menu's same items.
+ * Plan 80: a Review row's two answers, in words: "Add to C" (it belongs) and "Add similar ▾" (the same subject or
+ * everything from the sender, now and in the future), in place of the row's preview line. A row is an option, which can't
+ * hold a button, so the row keeps only their room and their look, hidden (this); the buttons themselves are
+ * `ReviewButtons`, laid over it from outside the list (plan 158). y / n and the thread menu answer too.
  */
-export function ReviewControls({ threadId, categoryId, category }: { threadId: number; categoryId: number; category: string }) {
-  const pill = "inline-flex h-6 min-w-0 cursor-pointer items-center gap-1 rounded-full px-2.5 text-xs font-medium whitespace-nowrap transition-colors duration-fast";
+export function ReviewControls({ threadId, category }: { threadId: number; category: string }) {
   return (
-    <span aria-hidden className="flex min-w-0 items-center gap-1.5">
-      <span
-        data-testid="row-review-accept"
-        data-row-control
-        title={t("review.accept", { category })}
-        onMouseDown={hold}
-        onClick={(e) => {
-          e.stopPropagation();
-          void answerReview(threadId, categoryId, true);
-        }}
-        className={`${pill} border border-primary/25 bg-accent text-accent-foreground hover:border-primary/40 hover:bg-[color-mix(in_oklab,var(--accent)_85%,var(--primary))]`}
-      >
+    <span aria-hidden data-review-slot={threadId} className="invisible flex min-w-0 items-center gap-1.5">
+      <span className={`${PILL} ${ACCEPT}`}>
         <Check className="size-3.5 shrink-0" />
         <span className="truncate">{t("review.accept", { category })}</span>
       </span>
-      <span
-        data-testid="row-review-always"
-        data-row-control
-        title={t("review.similar.title", { category })}
-        onMouseDown={hold}
-        onClick={(e) => {
-          e.stopPropagation();
-          useAlwaysMenu.setState({ threadId, anchor: e.currentTarget });
-        }}
-        className={`${pill} shrink-0 border border-border bg-background text-foreground hover:bg-muted`}
-      >
+      <span className={`${PILL} ${ALWAYS}`}>
         {t("review.similar")}
         <ChevronDown className="size-3.5" />
       </span>
     </span>
+  );
+}
+
+type Box = { left: number; top: number; width: number; height: number };
+type Spot = { id: number; accept: Box; always: Box };
+
+const boxOf = (el: Element, base: DOMRect): Box => {
+  const r = el.getBoundingClientRect();
+  return { left: r.left - base.left, top: r.top - base.top, width: r.width, height: r.height };
+};
+
+/**
+ * Plan 158: the Review rows' answers as real buttons, named and reachable by Tab (the open row's; the others by y / n
+ * once open), each laid exactly over its row's room for it (`ReviewControls`). Outside the listbox, in a layer clipped
+ * to it, so the list stays a list of options. Measured again whenever the list renders (`tick`: a scroll, a resize, the
+ * rows changing), and only in a Review list.
+ */
+export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HTMLDivElement | null>; tick: string }) {
+  const layer = useRef<HTMLDivElement>(null);
+  const [laid, setLaid] = useState<{ clip: Box; spots: Spot[] } | null>(null);
+  const category = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
+  const open = useApp((s) => s.selectedId);
+  useLayoutEffect(() => {
+    const list = scroller.current, host = layer.current?.parentElement;
+    if (!list || !host) return;
+    const base = host.getBoundingClientRect();
+    const clip = boxOf(list, base);
+    const at = list.getBoundingClientRect();
+    const spots = [...list.querySelectorAll<HTMLElement>("[data-review-slot]")].flatMap((slot) => {
+      const [accept, always] = slot.children;
+      return accept && always ? [{ id: Number(slot.dataset.reviewSlot), accept: boxOf(accept, at), always: boxOf(always, at) }] : [];
+    });
+    const next = { clip, spots };
+    setLaid((was) => (JSON.stringify(was) === JSON.stringify(next) ? was : next));
+  }, [tick, scroller]);
+  const name = category?.name ?? "";
+  const answered = (e: React.MouseEvent<HTMLButtonElement>) => {
+    // answered from the keyboard: the row goes with its buttons, so the list takes focus back
+    if (document.activeElement === e.currentTarget) requestAnimationFrame(() => listbox()?.focus({ preventScroll: true }));
+  };
+  const at = (b: Box) => ({ left: b.left, top: b.top, width: b.width, height: b.height });
+  return (
+    <div ref={layer} className="pointer-events-none absolute overflow-hidden" style={laid ? at(laid.clip) : { display: "none" }}>
+      {category &&
+        laid?.spots.map((spot) => (
+          <div key={spot.id} role="group" aria-label={name} aria-describedby={`thread-${spot.id}`}>
+            <button
+              type="button"
+              data-testid="row-review-accept"
+              data-thread-id={spot.id}
+              tabIndex={spot.id === open ? 0 : -1}
+              title={t("review.accept", { category: name })}
+              // a press doesn't take focus from the list (j / k go on from there)
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => {
+                answered(e);
+                void answerReview(spot.id, category.id, true);
+              }}
+              className={`${PILL} ${ACCEPT} pointer-events-auto absolute outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+              style={at(spot.accept)}
+            >
+              <Check aria-hidden className="size-3.5 shrink-0" />
+              <span className="truncate">{t("review.accept", { category: name })}</span>
+            </button>
+            <button
+              type="button"
+              data-testid="row-review-always"
+              data-thread-id={spot.id}
+              tabIndex={spot.id === open ? 0 : -1}
+              aria-haspopup="menu"
+              title={t("review.similar.title", { category: name })}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => useAlwaysMenu.setState({ threadId: spot.id, anchor: e.currentTarget })}
+              className={`${PILL} ${ALWAYS} pointer-events-auto absolute outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+              style={at(spot.always)}
+            >
+              {t("review.similar")}
+              <ChevronDown aria-hidden className="size-3.5" />
+            </button>
+          </div>
+        ))}
+    </div>
   );
 }
 

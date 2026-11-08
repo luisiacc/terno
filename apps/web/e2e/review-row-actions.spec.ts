@@ -61,19 +61,43 @@ async function reviewing(page: Page, server: DevServer) {
 const cursor = async (page: Page) => (await page.locator("[data-testid=thread-row][data-cursor]").count()) ? Number(await page.locator("[data-testid=thread-row][data-cursor]").getAttribute("data-thread-id")) : null;
 
 const row = (page: Page, id: number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
+/** A row's answers: buttons laid over it from outside the list (plan 158: an option holds no button) */
+const answer = (page: Page, id: number, which: "accept" | "always") => page.locator(`[data-testid=row-review-${which}][data-thread-id="${id}"]`);
 
 test.describe("Review list: answering from the rows (plan 80)", () => {
+  test("the answers are real buttons: named, Tab reaches the open row's, Enter answers, y still does, axe-clean (plan 158)", async ({ app: page, server }) => {
+    const { threads, filed } = await reviewing(page, server);
+    await expect(page.getByRole("button", { name: "Add to Facturas" })).toHaveCount(3);
+    // laid over the row's own room for them
+    const slot = await row(page, threads[0]!).locator("[data-review-slot] > span").first().boundingBox();
+    const button = await answer(page, threads[0]!, "accept").boundingBox();
+    expect(Math.abs(slot!.x - button!.x) + Math.abs(slot!.y - button!.y)).toBeLessThanOrEqual(1);
+    const violations = (await new AxeBuilder({ page }).include("[data-testid=thread-list]").analyze()).violations.map((v) => v.id);
+    expect(violations).toEqual([]);
+    await row(page, threads[0]!).click();
+    await focusList(page);
+    await page.keyboard.press("Tab");
+    await expect(answer(page, threads[0]!, "accept")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(row(page, threads[0]!)).toHaveCount(0);
+    await expect.poll(() => filed(threads[0]!)).toBe("suggestion");
+    await expect(page.getByRole("listbox", { name: "Conversations", exact: true })).toBeFocused();
+    const next = (await cursor(page))!;
+    await page.keyboard.press("y");
+    await expect(row(page, next)).toHaveCount(0);
+  });
+
   test("only Review rows have the controls; ✓ files it as accepted, the row leaves, nothing opens", { tag: "@variant" }, async ({ app: page, server }) => {
     await expect(page.getByTestId("thread-row").first()).toBeVisible();
     await expect(page.getByTestId("row-review-accept")).toHaveCount(0);
     const { facturas, threads, filed } = await reviewing(page, server);
     await expect(page.getByTestId("row-review-accept")).toHaveCount(3);
-    await expect(row(page, threads[0]!).getByTestId("row-review-accept")).toHaveAttribute("title", "Add to Facturas");
+    await expect(answer(page, threads[0]!, "accept")).toHaveAttribute("title", "Add to Facturas");
 
     // a row that isn't the open one: pressing its ✓ opens nothing
     const open = await cursor(page);
     const target = threads.find((t) => t !== open)!;
-    await row(page, target).getByTestId("row-review-accept").click();
+    await answer(page, target, "accept").click();
     await expect(row(page, target)).toHaveCount(0);
     await expect(page.getByTestId("thread-row")).toHaveCount(2);
     await expect.poll(() => filed(target)).toBe("suggestion");
@@ -108,7 +132,7 @@ test.describe("Review list: answering from the rows (plan 80)", () => {
     expect(sameSubject).toBe(2);
     expect(all).toBeGreaterThan(sameSubject);
     const open = await cursor(page);
-    await row(page, threads[1]!).getByTestId("row-review-always").click();
+    await answer(page, threads[1]!, "always").click();
     const menu = page.getByTestId("review-always-menu");
     await expect(menu).toBeVisible();
     await expect(menu).toContainText("Add to Facturas, now and in the future");
@@ -128,7 +152,7 @@ test.describe("Review list: answering from the rows (plan 80)", () => {
     await expect(page.locator("[data-testid=thread-list] [role=listbox]")).toBeFocused();
     await expect(page.getByTestId("thread-row")).toHaveCount(3);
     // a click outside closes it (modal, as the thread menu: the click goes no further) and the list keeps the focus
-    await row(page, threads[1]!).getByTestId("row-review-always").click();
+    await answer(page, threads[1]!, "always").click();
     await expect(menu).toBeVisible();
     await page.mouse.click(5, 5);
     await expect(menu).toHaveCount(0);
@@ -138,7 +162,7 @@ test.describe("Review list: answering from the rows (plan 80)", () => {
 
   test("Always → same subject files exactly those now and saves the filter; one Undo takes back both", async ({ app: page, server }) => {
     const { facturas, threads, filed, filters } = await reviewing(page, server);
-    await row(page, threads[1]!).getByTestId("row-review-always").click();
+    await answer(page, threads[1]!, "always").click();
     await page.getByTestId("review-always-subject").click();
     await expect(toast(page, "2 added to Facturas, future mail too")).toBeVisible();
     for (const t of threads.slice(0, 2)) await expect.poll(() => filed(t)).toBe("bulk");
@@ -187,7 +211,7 @@ test("the controls and the open menu are axe-clean and read well in light and da
     const { threads } = await reviewing(page, server);
     await row(page, threads[0]!).dispatchEvent("mousedown");
     await row(page, threads[1]!).hover();
-    await row(page, threads[1]!).getByTestId("row-review-always").click();
+    await answer(page, threads[1]!, "always").click();
     await expect(page.getByTestId("review-always-subject-count")).toBeVisible();
     const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=review-always-menu]").include("[data-testid=thread-list]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
     expect(r.violations.map((v) => `${theme} ${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
