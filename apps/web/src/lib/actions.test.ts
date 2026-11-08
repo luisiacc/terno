@@ -162,6 +162,37 @@ describe("Undo puts the selection back (plan 158)", () => {
     expect(useSnack.getState().current?.message).toBe("Moved to Trash");
   });
 
+  it("nor after opening another row and coming back to the same one while it's on its way (series review)", async () => {
+    acted();
+    let release: (() => void) | undefined;
+    fake.handlers["threads.undo"] = () => new Promise((r) => (release = () => r({ restored: 2 })));
+    setApp({ selectedId: 1, checked: new Set([1, 2]) });
+    await act("archive");
+    expect(getApp().selectedId).toBe(3);
+    const undoing = undo();
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    setApp({ selectedId: 4 });
+    setApp({ selectedId: 3 });
+    release!();
+    await undoing;
+    await vi.waitFor(() => expect(fake.handlers["threads.list"]).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r));
+    expect(getApp().checked.size).toBe(0);
+    expect(getApp().selectedId).toBe(3);
+  });
+
+  it("nor after a check made and taken off again (series review)", async () => {
+    acted();
+    setApp({ selectedId: 1, checked: new Set([1, 2]) });
+    await act("archive");
+    setApp({ checked: new Set([3]) });
+    setApp({ checked: new Set() });
+    await undo();
+    await vi.waitFor(() => expect(fake.handlers["threads.list"]).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r));
+    expect(getApp().checked.size).toBe(0);
+  });
+
   it("not in another list", async () => {
     acted();
     setApp({ selectedId: 1, checked: new Set([1, 2]) });

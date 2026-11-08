@@ -7,7 +7,7 @@ import { currentTargets, scopeRows } from "~/lib/select";
 import { dismissSnack, registerUndo, snack, snackPublication, withdrawSnack, type Undo } from "~/lib/snack";
 import { activeFilter } from "~/lib/unread-filter";
 import type { ListFilter } from "@terno/core";
-import { getApp, inPlainInbox, inSeparateTab, openedByApp, setApp, setAppOpened, type AppState, type ScopeSelection } from "~/state/app";
+import { getApp, getSelectionWriteRevision, inPlainInbox, inSeparateTab, openedByApp, setApp, setAppOpened, type AppState, type ScopeSelection } from "~/state/app";
 import { listKey, onlyOnTop, patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, useThreads } from "~/state/threads";
 import { closePage, currentPage, listLayout } from "~/lib/page";
@@ -176,7 +176,7 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   breadcrumb("action", "action.thread", { action, count: targets.length });
   const before = selectionBefore();
   leaveList(action, targets, options);
-  before.left = getApp().selectedId;
+  settled(before);
   // z right after the key: this action is the last one already, its undo waits for the backend's answer
   const connection = client.connectionVersion;
   const undoIds = deferred<number[]>();
@@ -236,12 +236,22 @@ interface SelectionBefore {
   left: number | null;
   /** the open row was the app's (plan 158): Undo puts it back as it was, unread until chosen */
   byApp: boolean;
+  /** the selection the action left, as written: any choice since (even back to the same row, or a check taken off again) is newer */
+  revision: number;
+  leftChecked: AppState["checked"];
+  leftScope: ScopeSelection | null;
 }
 
 const selectionBefore = (): SelectionBefore => {
   const s = getApp();
-  return { key: listKey(), checked: s.checked, scope: s.scope, selectedId: s.selectedId, anchorId: s.anchorId, left: s.selectedId, byApp: s.selectedId !== null && openedByApp(s.selectedId) };
+  return { key: listKey(), checked: s.checked, scope: s.scope, selectedId: s.selectedId, anchorId: s.anchorId, left: s.selectedId, byApp: s.selectedId !== null && openedByApp(s.selectedId), revision: -1, leftChecked: s.checked, leftScope: s.scope };
 };
+
+/** What the action itself left selected: the line a newer choice is measured from. */
+function settled(before: SelectionBefore): void {
+  const s = getApp();
+  Object.assign(before, { left: s.selectedId, revision: getSelectionWriteRevision(), leftChecked: s.checked, leftScope: s.scope });
+}
 
 /**
  * Undo puts the selection back so a cleanup can resume: what was checked, the row that was open, where a range grows
@@ -252,11 +262,15 @@ const selectionBefore = (): SelectionBefore => {
 function restoreSelection(before: SelectionBefore): void {
   const s = getApp();
   if (listKey() !== before.key) return;
-  if (s.checked.size === 0 && s.scope === null && s.selectedId === before.left) {
-    setApp({ checked: before.checked, scope: before.scope, anchorId: before.anchorId });
-    if (before.byApp) setAppOpened(before.selectedId);
-    else setApp({ selectedId: before.selectedId });
+  // a row opened since and the cursor back on the same one is still a newer choice, as is a check made and taken off
+  if (getSelectionWriteRevision() !== before.revision || s.checked !== before.leftChecked || s.scope !== before.leftScope || s.selectedId !== before.left) {
+    if (document.activeElement?.closest("input, textarea, select, [contenteditable=true], [role=dialog]")) return;
+    document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]")?.focus({ preventScroll: true });
+    return;
   }
+  setApp({ checked: before.checked, scope: before.scope, anchorId: before.anchorId });
+  if (before.byApp) setAppOpened(before.selectedId);
+  else setApp({ selectedId: before.selectedId });
   if (document.activeElement?.closest("input, textarea, select, [contenteditable=true], [role=dialog]")) return;
   document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]")?.focus({ preventScroll: true });
 }
@@ -349,7 +363,7 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
   }
   patchRows(loaded, (t) => (leaving && t.id !== stays ? null : patched(t, action)));
   setApp({ checked: new Set(), scope: null });
-  before.left = getApp().selectedId;
+  settled(before);
   const progress = trackJob(t(DOING[action], { count: sel.count }));
   const undoId = deferred<{ id: number | null; n: number }>();
   const undo = registerUndo(() => { const published = snackPublication(); return undoId.promise.then((u) => (u.id === null ? undefined : undoActions([u.id], u.n, () => restoreSelection(before), RESTORES.has(action), published))); });
