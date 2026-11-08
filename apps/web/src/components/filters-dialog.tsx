@@ -324,7 +324,8 @@ function AiSaid({ said, misses }: { said: string; misses: boolean }) {
   );
 }
 
-function Preview({ rule }: { rule: FilterRule }) {
+/** `note`: plan 161, what a sentence's preview found and where, beside a count that looks everywhere */
+function Preview({ rule, note }: { rule: FilterRule; note?: string | null }) {
   const parsed = useMemo(() => filterRuleSchema.safeParse(rule), [rule]);
   const [state, setState] = useState<{ count: number; sample: ThreadSummary[]; ms: number } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -358,6 +359,7 @@ function Preview({ rule }: { rule: FilterRule }) {
         </span>
         {loading ? <Spinner className="size-3.5 text-muted-foreground" aria-hidden /> : state && <span data-testid="preview-ms" className="font-mono text-2xs text-muted-foreground">{Math.round(state.ms)} ms</span>}
       </div>
+      {note && <p className="border-b border-border px-3 py-2 text-xs text-muted-foreground" data-testid="filter-preview-note">{note}</p>}
       <ul className="divide-y divide-border/60">
         {state?.sample.map((th) => (
           <li key={th.id} className="flex items-baseline gap-2 px-3 py-1.5 text-xs">
@@ -398,6 +400,7 @@ export function FiltersDialog() {
   };
   // opened from Ajustes → Filtros: closing goes back there
   const [returnTo] = useState(() => getApp().filterPrefill?.returnTo ?? null);
+  const [note] = useState(() => getApp().filterPrefill?.note ?? null);
   const [deleting, setDeleting] = useState(false);
   useEffect(() => {
     if (getApp().filterPrefill) setApp({ filterPrefill: null });
@@ -717,7 +720,7 @@ export function FiltersDialog() {
               {attempted && !valid.success && <p role="alert" className="text-xs text-destructive-ink" data-testid="filter-invalid">{t(filterIssueKey(valid.error.issues))}</p>}
             </div>
 
-            <Preview rule={rule} />
+            <Preview rule={rule} note={note} />
           </div>
           <div className="flex shrink-0 items-center gap-2 border-t border-border px-6 py-3">
             {draft.source !== "manual" && <Badge variant="secondary">{draft.source === "ai" ? t("filters.source.ai") : t("filters.source.learned")}</Badge>}

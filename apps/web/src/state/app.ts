@@ -80,7 +80,8 @@ export interface AppState {
   /** the thread context menu is open: global shortcuts wait (its own keys apply) */
   menuOpen: boolean;
   /** "Crear filtro desde este remitente…", Ajustes → Filtros → Editar: what the filter builder opens with (an id edits that filter) */
-  filterPrefill: { id?: number; name: string; rule: FilterRule; enabled?: boolean; source?: Filter["source"]; auto?: boolean; returnTo?: "settings" } | null;
+  /** `note`: what the builder says beside its count, opened from a sentence's preview (plan 161) */
+  filterPrefill: { id?: number; name: string; rule: FilterRule; enabled?: boolean; source?: Filter["source"]; auto?: boolean; returnTo?: "settings"; note?: string } | null;
   /** plan 24: in the List layout, the selected conversation is the page (not just the list's cursor); Split ignores it */
   readerOpen: boolean;
 
@@ -259,7 +260,8 @@ function keepTodayValid(state: AppState, next: AppState | Partial<AppState>): Ap
 function keepActionPreviewValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
   if (!state.actionPreview || Object.hasOwn(next, "actionPreview")) return next;
   const m = { ...state, ...next };
-  const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.gmailTab !== null || m.reminders || m.followups || m.today || m.query.trim() !== "";
+  // (its view is the rule's scope, plan 161: Inbox or All Mail; another one is another place)
+  const other = m.view !== state.view || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.gmailTab !== null || m.reminders || m.followups || m.today || m.query.trim() !== "";
   return other ? { ...next, actionPreview: null } : next;
 }
 

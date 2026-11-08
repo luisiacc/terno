@@ -10,6 +10,12 @@ import { registerUndo, snack } from "./snack";
 
 export { useActionPreview };
 
+/** where the rule looks: the Inbox, or all mail but Spam and Trash */
+export const inboxOnly = (p: Pick<ActionPreviewInfo, "plan">): boolean => p.plan.lookIn === "inbox" || p.plan.action.type === "archive";
+
+/** plan 161: waiting on the search or the check, Apply can't run yet, and no count is final */
+export const previewWaiting = (p: Pick<ActionPreviewInfo, "scanning" | "check">, checking: boolean): boolean => p.scanning || p.check === "needed" || checking;
+
 const messageOf = (error: unknown) => {
   const e = error as { message?: string; i18n?: { key: string; params?: Readonly<Record<string, string | number>> } };
   return localized(e.message ?? "", e.i18n);
@@ -52,10 +58,11 @@ export function installActionPreview(): void {
 }
 
 /** The page's part: what came of a sentence. The preview opens with its first rows; anything else stays on the page. */
-export function opened(r: Extract<AiActionStart, { status: "preview" }>): void {
+export function opened(r: Extract<AiActionStart, { status: "preview" }>, sentence = ""): void {
   const { preview } = r;
-  useActionPreview.setState({ preview, future: (preview.plan.future || preview.plan.action.type === "spam") && preview.keep.kind === "ok", checking: false, consent: null, checkError: null, applying: false });
-  enterPreview(preview.previewId);
+  useActionPreview.setState({ preview, sentence: sentence.trim(), future: (preview.plan.future || preview.plan.action.type === "spam") && preview.keep.kind === "ok", checking: false, consent: null, checkError: null, applying: false });
+  // plan 161: the sidebar on the place the rule looks in (archive only ever looks in the Inbox)
+  enterPreview(preview.previewId, inboxOnly(preview) ? "inbox" : "all");
   const heard = early?.previewId === preview.previewId ? early : null;
   early = null;
   if (heard && "ended" in heard) {
@@ -115,7 +122,8 @@ export async function applyPreview(): Promise<void> {
     const token = await undoToken.promise;
     if (token === null) return;
     const r = await client.call("ai.actionUndo", { token });
-    snack.success(ruleOnly ? t("action.rule.undone") : t("action.undone", { count: r.restored }));
+    // plan 161: a result, said for what it undid
+    snack.success(ruleOnly ? t("action.rule.undone") : t(`action.undone.${verb}`, { count: r.restored, category: preview.categoryName ?? "" }));
     void reloadList({ keepSelection: true });
   });
   try {

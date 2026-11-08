@@ -1,9 +1,9 @@
-import type { FilterRule } from "@terno/core";
+import type { Condition, FilterRule } from "@terno/core";
 import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { describeRule, ruleMisses, sensedOp, withSensedOp } from "./rule-words";
+import { describeRule, hasDetails, patternTerms, ruleDetails, ruleMisses, ruleRow, sensedOp, withSensedOp } from "./rule-words";
 
 const names = { accountEmail: (id: number) => `a${id}@x.test`, category: () => "Invoices", folder: (_: number, f: string) => f };
 const uber: FilterRule = { match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "uber.com" }], actions: [{ type: "archive" }] };
@@ -56,5 +56,39 @@ describe("the operator menu holds both senses (plan 161: no yes/not toggle)", ()
     expect(withSensedOp({ field: "hasAttachment", op: "is", value: false }, "not:is")).toEqual({ field: "hasAttachment", op: "is", value: true, negate: true });
     expect(withSensedOp({ field: "hasAttachment", op: "is", value: false, negate: true }, "is")).toEqual({ field: "hasAttachment", op: "is", value: true, negate: undefined });
     expect(withSensedOp({ field: "account", op: "is", value: 2 }, "not:is")).toEqual({ field: "account", op: "is", value: 2, negate: true });
+  });
+});
+
+const email = () => "me@example.com";
+
+describe("a sentence's rule in words (plan 161)", () => {
+  it("a pattern that's only words is those words", () => {
+    expect(patternTerms("shipped|delivery|tracking|pedido|paquete|en camino|entregado|enviado")).toEqual(["shipped", "delivery", "tracking", "pedido", "paquete", "en camino", "entregado", "enviado"]);
+    expect(patternTerms("(?:invoice|receipt)")).toEqual(["invoice", "receipt"]);
+    // an escaped dot is a dot, said as written
+    expect(patternTerms("amazon\\.com|ups")).toEqual(["amazon.com", "ups"]);
+    // anything more than words isn't a list of them
+    for (const p of ["ship.*ped", "^order", "a|b+", "[0-9]+", "x|", "(a|b)c"]) expect(patternTerms(p)).toBeNull();
+  });
+
+  it("each condition a row: where it looks, and what it asks", () => {
+    const opening: Condition = { field: "opening", op: "matches", value: "shipped|delivery", negate: false };
+    expect(ruleRow(opening, email)).toEqual({ label: "Start of mail", text: "mentions any of", terms: ["shipped", "delivery"] });
+    expect(ruleRow({ ...opening, negate: true }, email)).toMatchObject({ text: "mentions none of" });
+    expect(ruleRow({ field: "ageDays", op: "gt", value: 30, negate: false } as Condition, email)).toEqual({ label: "Age", text: "Older than 30 days" });
+    expect(ruleRow({ field: "fromDomain", op: "equals", value: "amazon.com", negate: true }, email)).toEqual({ label: "Domain", text: "Isn’t “amazon.com”" });
+    expect(ruleRow({ field: "text", op: "contains", value: "recruiter", negate: false }, email)).toEqual({ label: "Anywhere", text: "mentions", terms: ["recruiter"] });
+    // a generated template reads as its template; any other pattern doesn't print its syntax
+    expect(ruleRow({ field: "subject", op: "matches", value: "^Tu pedido [0-9]+ está en camino$", negate: false }, email).text).toMatch(/is like “Tu pedido # está en camino”/);
+    const other = ruleRow({ field: "subject", op: "matches", value: "ship.*ped", negate: false }, email);
+    expect(other.text).toBe("matches a pattern (in Details)");
+    expect(other.terms).toBeUndefined();
+  });
+
+  it("Details holds the exact rule, pattern and all, and only when a pattern needs it", () => {
+    const conditions: Condition[] = [{ field: "opening", op: "matches", value: "shipped|delivery", negate: false }, { field: "ageDays", op: "gt", value: 30, negate: false } as Condition];
+    expect(hasDetails(conditions)).toBe(true);
+    expect(ruleDetails(conditions, email)).toEqual(["Start of mail matches pattern “shipped|delivery”", "older than 30 days"]);
+    expect(hasDetails([{ field: "fromDomain", op: "equals", value: "ups.com", negate: false }])).toBe(false);
   });
 });

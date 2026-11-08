@@ -26,6 +26,8 @@ import { Expand } from "./expand";
 import { DraftSlot, draftTitle } from "./inline-draft";
 import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
 import { PANE_TITLE, PANE_TITLE_AFTER, PANE_TITLE_GAP, READING_COLUMN } from "~/lib/pane-lines";
+import { AskReturn } from "./ask-return";
+import { ActionRule } from "./action-preview-header";
 import { ScheduledReplyLine } from "./scheduled-popover";
 import { ForwardLine } from "./forward-line";
 import { comingHomeKey, shownDraftKey, useDrafts } from "~/lib/drafts";
@@ -1049,6 +1051,7 @@ function ReaderContent() {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const open = selectedId !== null;
   const searching = useApp((s) => s.query.trim() !== "" && s.reviewCategoryId === null);
+  const previewing = useApp((s) => s.actionPreview !== null);
   const bodyMarks = useSearchMarks()?.body;
   useEffect(() => {
     const [root, sentinel, bar] = [scrollerRef.current, sentinelRef.current, toolbarRef.current];
@@ -1076,7 +1079,8 @@ function ReaderContent() {
     return () => ro.disconnect();
   }, [open, toolbarSet]);
 
-  if (selectedId === null) return searching ? <SearchReaderEmpty /> : <Welcome />;
+  // plan 161: a sentence's preview has its rule here while no row is open
+  if (selectedId === null) return previewing ? <ActionRule variant="reader" /> : searching ? <SearchReaderEmpty /> : <Welcome />;
   const thread = detail?.thread;
   const cats = thread ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
   const account = thread ? accounts.find((a) => a.id === thread.accountId) : undefined;
@@ -1164,6 +1168,7 @@ function ReaderContent() {
           ) : (
             <>
               {fromDigest && <Button variant="link-secondary" size="xs" className="mb-2" data-testid="back-to-digest" onClick={() => { useToday.setState({ fromDigest: null }); setApp({ selectedId: DIGEST_ROW_ID }); }}>{t("today.digest.back")}</Button>}
+              <AskReturn threadId={detail.thread.id} />
               <Thread key={`t${detail.thread.id}`} detail={detail} account={account} cats={cats} summaryShown={summaryShown} />
               {/* plan 144: off, it never shows; a draft here means it's out of the way */}
               {repliesOn && !draftKey && <ReplyReady key={`r${detail.thread.id}`} threadId={detail.thread.id} />}

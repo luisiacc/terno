@@ -23,6 +23,8 @@ interface ActionRows {
 /** Plan 143: the preview's header state and what it asks of the backend. */
 interface ActionPreviewState {
   preview: ActionPreviewInfo | null;
+  /** plan 161: the words the user typed, echoed back over what Terno made of them */
+  sentence: string;
   future: boolean;
   checking: boolean;
   consent: { provider: string; endpoint: string | null; destination: string } | null;
@@ -30,7 +32,7 @@ interface ActionPreviewState {
   applying: boolean;
 }
 
-export const useActionPreview = create<ActionPreviewState>(() => ({ preview: null, future: false, checking: false, consent: null, checkError: null, applying: false }));
+export const useActionPreview = create<ActionPreviewState>(() => ({ preview: null, sentence: "", future: false, checking: false, consent: null, checkError: null, applying: false }));
 
 export const useActionRows = create<ActionRows>(() => ({ unticked: new Set(), showLeftOut: false, from: null }));
 
@@ -47,7 +49,11 @@ export function noteRows(ids: readonly number[], unticked: readonly number[]): v
 
 const listEl = () => document.querySelector<HTMLElement>('[data-keep-scroll="list"]');
 
-export function enterPreview(previewId: string): void {
+/**
+ * Into the preview's own list. Plan 161: its rows go at once (the skeleton shows until the preview's first page), so the
+ * mailbox you were in is never drawn ticked under a count it isn't; and the sidebar shows where the rule looks.
+ */
+export function enterPreview(previewId: string, view: "inbox" | "all" = "all"): void {
   const s = getApp();
   const { key, itemsKey, items, index, nextCursor } = useList.getState();
   useActionRows.setState({
@@ -55,10 +61,13 @@ export function enterPreview(previewId: string): void {
     showLeftOut: false,
     from: { view: s.view, accountId: s.accountId, categoryId: s.categoryId, reviewCategoryId: s.reviewCategoryId, folder: s.folder, gmailTab: s.gmailTab, reminders: s.reminders, followups: s.followups, today: s.today, query: s.query, selectedId: s.selectedId, readerOpen: s.readerOpen, scrollTop: listEl()?.scrollTop ?? 0, rows: { key, itemsKey, items, index, nextCursor } },
   });
-  setApp({ actionPreview: previewId, view: "all", accountId: null, categoryId: null, reviewCategoryId: null, folder: null, gmailTab: null, reminders: false, followups: false, today: false, query: "", selectedId: null, checked: new Set(), anchorId: null, scope: null, readerOpen: false });
+  useList.setState({ items: [], index: new Map(), nextCursor: null, loading: true, loadingMore: false, error: null });
+  setApp({ actionPreview: previewId, view, accountId: null, categoryId: null, reviewCategoryId: null, folder: null, gmailTab: null, reminders: false, followups: false, today: false, query: "", selectedId: null, checked: new Set(), anchorId: null, scope: null, readerOpen: false });
   // from the top: a place deep in the last list means nothing in this one
   const el = listEl();
   if (el) el.scrollTop = 0;
+  // plan 161: the keys are the list's (j/k, x, ⌘↩, Esc), not the closed palette's; programmatic, so no ring
+  el?.focus({ preventScroll: true });
 }
 
 /** Back to the list and scroll position you left, with no trace. */
@@ -77,6 +86,9 @@ export function leavePreview(): void {
     requestAnimationFrame(() => {
       const el = listEl();
       if (el) el.scrollTop = scrollTop;
+      // plan 161: Apply and Cancel leave the keys where you were, on the list (what a button or the body had isn't a place)
+      const at = document.activeElement;
+      if (el && (!at || at === document.body || at.closest("[data-testid=action-preview], [data-testid=action-rule]") || !at.isConnected)) el.focus({ preventScroll: true });
     }),
   );
 }

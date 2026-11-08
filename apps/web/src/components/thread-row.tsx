@@ -347,8 +347,15 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       }}
     />
   );
+  // plan 161: in a preview the avatar beside the check is the check column too
+  const toggles = included !== undefined && interactive;
   const avatar = !classic && (
-    <span className={cn("shrink-0", !line && !big && "self-start mt-0.5", picking && "group/pick relative")}>
+    <span
+      className={cn("shrink-0", !line && !big && "self-start mt-0.5", picking && "group/pick relative")}
+      data-testid={toggles ? "row-include-avatar" : undefined}
+      onMouseDown={toggles ? (e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.closest<HTMLElement>("[role=listbox]")?.focus({ preventScroll: true }); } : undefined}
+      onClick={toggles ? (e) => { e.stopPropagation(); toggleRow(thread.id); } : undefined}
+    >
       <SenderAvatar
         name={thread.fromName}
         email={thread.fromEmail}
@@ -458,8 +465,11 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       {/* plan 158: the open row's mark, straight inside the selection's rounded edge; none while several are checked */}
       {/* (a checked row's mark is its check, on the same column) */}
       {included !== undefined && (
-        // the row is the option and `x` its key: this is for the pointer, and says nothing the row doesn't
-        <CheckboxMark data-testid="row-include" checked={included} className="absolute top-1/2 left-5 -translate-y-1/2" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); toggleRow(thread.id); }} />
+        // the row is the option and `x` its key: this is for the pointer, and says nothing the row doesn't. Plan 161: the
+        // whole check column at the row's height is the target (the body opens the mail, to check it before Apply)
+        <span data-testid="row-include" data-row-control data-checked={included || undefined} className="absolute inset-y-0 left-0 w-10" onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.closest<HTMLElement>("[role=listbox]")?.focus({ preventScroll: true }); }} onClick={(e) => { e.stopPropagation(); toggleRow(thread.id); }}>
+          <CheckboxMark checked={included} className="absolute top-1/2 left-5 -translate-y-1/2" />
+        </span>
       )}
       {wide ? (
         // a table: sender, then subject and preview as one line, then fixed columns on the right edge (account, category,

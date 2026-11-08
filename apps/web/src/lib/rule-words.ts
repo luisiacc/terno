@@ -1,5 +1,5 @@
-import type { Condition, FilterAction, FilterRule } from "@terno/core";
-import { getLocale, t } from "@terno/i18n";
+import { patternTemplate, type Condition, type FilterAction, type FilterRule } from "@terno/core";
+import { getLocale, t, type TextKey } from "@terno/i18n";
 import { conditionText } from "./rule-text";
 
 /**
@@ -82,3 +82,80 @@ export function withSensedOp(c: Condition, value: SensedOp): Condition {
   if (c.field === "account") return { ...c, negate: negate || undefined };
   return { ...c, op, negate: negate || undefined } as Condition;
 }
+
+// --- the action preview's rows (plan 161, pass 1: actions) ---
+
+/** One row of a rule, said plainly: what it looks at, and what it asks of it (words, or the few terms it lists). */
+export interface RuleRow {
+  label: string;
+  text: string;
+  /** a pattern that's only a list of words: those words, each a chip */
+  terms?: string[];
+}
+
+const FIELD = {
+  from: "filters.field.from",
+  fromDomain: "filters.field.fromDomain",
+  subject: "filters.field.subject",
+  body: "filters.field.body",
+  text: "filters.field.text",
+  opening: "filters.field.opening",
+  recipients: "filters.field.recipients",
+  listId: "filters.field.listIdShort",
+  hasAttachment: "filters.field.hasAttachment",
+  account: "filters.field.account",
+  ageDays: "filters.field.ageDays",
+} as const satisfies Record<Condition["field"], TextKey>;
+
+const OP = {
+  contains: ["filters.op.contains", "filters.op.notContains"],
+  equals: ["filters.op.equals", "filters.op.notEquals"],
+  startsWith: ["filters.op.startsWith", "filters.op.notStartsWith"],
+  endsWith: ["filters.op.endsWith", "filters.op.notEndsWith"],
+} as const satisfies Record<string, readonly [TextKey, TextKey]>;
+
+/**
+ * A pattern that's only alternatives of plain words ("shipped|delivery|en camino"), each word as written; anything
+ * else a pattern can say (classes, anchors, repeats) is null, and reads as "matches a pattern", the text in Details.
+ */
+export function patternTerms(pattern: string): string[] | null {
+  let body = pattern.trim();
+  const group = /^\((?:\?:)?(.*)\)$/s.exec(body);
+  if (group && !/[()]/.test(group[1]!)) body = group[1]!;
+  if (!body) return null;
+  const terms: string[] = [];
+  for (const raw of body.split("|")) {
+    // escapes of punctuation are the punctuation itself; any other special character is more than a word
+    const plain = raw.replace(/\\[\\^$.*+?()[\]{}|/-]/g, "");
+    if (/[\\^$.*+?()[\]{}]/.test(plain)) return null;
+    const term = raw.replace(/\\([\\^$.*+?()[\]{}|/-])/g, "$1").trim();
+    if (!term) return null;
+    if (!terms.includes(term)) terms.push(term);
+  }
+  return terms;
+}
+
+/** Plan 161: a condition as a row of the preview's rule. */
+export function ruleRow(c: Condition, accountEmail: (id: number) => string): RuleRow {
+  const label = t(FIELD[c.field]);
+  const not = Boolean(c.negate);
+  if (c.field === "hasAttachment" || c.field === "account" || c.field === "ageDays") return { label, text: upperFirst(conditionText(c, accountEmail)) };
+  if (c.field === "text") return { label, text: t(not ? "action.rule.noneOf" : "action.rule.anyOf", { count: 1 }), terms: [c.value] };
+  if (c.op === "matches") {
+    const terms = patternTerms(c.value);
+    if (terms) return { label, text: t(not ? "action.rule.noneOf" : "action.rule.anyOf", { count: terms.length }), terms };
+    const template = patternTemplate(c.value);
+    if (template !== null) return { label, text: t(not ? "action.rule.notLike" : "action.rule.like", { template }) };
+    return { label, text: t(not ? "action.rule.notPattern" : "action.rule.pattern") };
+  }
+  const op = Object.hasOwn(OP, c.op) ? OP[c.op as keyof typeof OP] : null;
+  return { label, text: upperFirst(t("action.rule.value", { op: op ? t(op[not ? 1 : 0]) : c.op, value: c.value })) };
+}
+
+/** Details: every condition as the rule builder writes it, a pattern verbatim. */
+export function ruleDetails(conditions: readonly Condition[], accountEmail: (id: number) => string): string[] {
+  return conditions.map((c) => (c.field !== "hasAttachment" && c.field !== "account" && c.field !== "ageDays" && c.op === "matches" ? t("filters.cond.text", { field: t(FIELD[c.field]), op: t(c.negate ? "filters.op.notMatches" : "filters.op.matches"), value: c.value }) : conditionText(c, accountEmail)));
+}
+
+/** Whether Details says more than the rows: a pattern shown as words, a template or "a pattern". */
+export const hasDetails = (conditions: readonly Condition[]): boolean => conditions.some((c) => c.field !== "hasAttachment" && c.field !== "account" && c.field !== "ageDays" && c.op === "matches");
