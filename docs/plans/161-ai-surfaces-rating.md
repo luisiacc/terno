@@ -983,3 +983,46 @@ From `ai-r02`'s `actions` and `ask` (every issue and every reason below 9, four 
 - e2e `ask.spec.ts`: the citation's box is at least 24 × 24 and the answer's lines keep their height, **in every design** (`@design`); a citation click and Enter on a source show the preview in the panel with the dialog still open and the answer back on Esc and on "Back to the answer"; Open message opens the reader; the legend in each state; "All commands" goes back and Close closes; the dialog is named "Ask your mail"; New question and Previous AI questions in the legend's line.
 - e2e `palette.spec.ts` / `ask.spec.ts`: an instruction ranks "Do with AI" first and Enter opens Ask with it; a search, a single verb and a command's name keep their order.
 - `design-axe.spec.ts`: the Ask preview, and the trash preview.
+
+### What building it changed
+
+- **A citation's 24 px box needs a layer for the pointer.** The button is 24 × 24 with `-my-1` and negative inline margins, but Chromium hit-tests an inline box only inside its line, so the corners that reach past the line weren't the citation's. An `after:` layer over the same box, with the button `relative z-[1]`, takes them. The size is the element's own (`getBoundingClientRect`), not the layer's.
+- **The line-height check compares the answer with itself.** Counting line boxes missed an answer's blank line; the test now sets the answer beside a copy with its markers as plain text, the same width, and the two heights must agree within 1 px (it fails by 2 px without `-my-1`).
+- **Ask's back and close are at the end of the field** on the empty Ask page and Previous AI questions (`CommandInput` gets an `end` slot), where the conversation's header has them; the page chip was at the start.
+- **The keys' line in the rule stays** under Apply and Cancel ("⌘↩ Archive 6 · esc Cancel · x Leave out or put back"): it's the keyboard's legend, as the raters asked for in pass 2.
+- **Esc in Ask goes back to all commands** (as before); ⌘K's test steps back once rather than reopening.
+
+### What the Codex review changed
+
+Round 1 (`git diff 668fc97ab..ba6d45a1e`, `/tmp/terno-scratch/ai-pass3/actions-ask/codex-review-1.md`): nine points, all taken, each with a regression test that fails without its fix.
+
+1. **A shown source threw away a follow-up being typed.** The preview replaced the conversation, unmounting the follow-up box. The conversation now stays mounted under the preview (`inert`, collapsed, out of the accessibility tree), and focus goes back to the box on return (`ask.spec`: typed text survives).
+2. **A source still loading could appear in the next conversation.** `showSource` checks the conversation it began in, and a change of conversation closes a shown source (`ask-peek.test`).
+3. **Open message skipped the Spam/Trash check.** It asks the backend again; the second press it was let through with counts only while the message hasn't moved (`ask-peek.test`: moved to Trash since, it arms first).
+4. **A long rule scrolled Apply, Cancel and Stop out of reach.** The decision is `sticky` at the reader pane's foot (`plain-actions.spec`, 1100 × 320 with Exact pattern open; it fails without `sticky`).
+5. **Back from a source jumped to the newest turn.** Kept mounted, the answer keeps its scroll (`ask.spec`).
+6. **Back from a row's source, "↵ Show" was a false promise.** The arrow state lives with the box, which now survives (`ask.spec`: Enter shows it again).
+7. **A rule that will trash new mail saved with the primary.** It's the destructive button too (`action-preview-title.test`).
+8. **".*" and "^" still read "matches a pattern".** A pattern any value matches, an empty one too, reads "Anything, even empty" ("Any mail, on a list or not" for List: a message with no List-Id is an empty value), negated "Nothing"; a negated "." is "Empty" (`rule-words.test`).
+9. **A single-quoted search ranked AI first.** Quotes in single marks keep the search first (`imperative.test`).
+
+Round 2 (`git show 1438f0226`, `codex-review-2.md`): five points on those fixes, all taken, each with a test.
+
+10. **A late Open message could take the reader from the next conversation**, and **a late lookup armed a source in another one.** `sourceThread` and `openSource` take a "still current" check and change nothing, record nothing and open nothing once it fails (`ask-peek.test`).
+11. **The second press was asked for invisibly** (its line was in the hidden conversation). The preview says it, as a status: "In Trash. Press again to open" (`ask.spec`: a source trashed elsewhere while shown).
+12. **The preview's keys moved the hidden rows** (Ctrl+N/P/J/K, the arrows from its buttons). The whole preview keeps cmdk's navigation keys and Enter from the list under it (`ask.spec`: the chosen row is the same after Esc).
+13. **"archive 'weekly report', from bob" still ranked AI first.** Any single quote opening a word keeps the search first; an apostrophe inside a word ("O'Brien's") doesn't (`imperative.test`).
+
+Review rounds stop here.
+
+### Pass 3 results
+
+- **Run:** typecheck and lint, clean. Unit: `apps/web`, `packages/ui` and `packages/i18n` (2649 passed, 1 skipped; one unhandled `scrollIntoView` error in jsdom from `settings/writing-style.test.tsx`, another pass's file, untouched here), then the touched files again after the reviews. e2e (`E2E_PORT=7141`): `ask.spec`, `plain-actions.spec`, `design-axe.spec` and `palette.spec` in macOS, Lumen, Atelier, Graphite and Luma (52 passed); `snippets.spec` and `dev-mode.spec` in macOS. `pnpm test:ui-perf`: 44 passed and one failure on the loaded first pass ("a 250 KB paragraph with a mark on every other word…", a `TypeError` in the composer test's own evaluate while Codex ran beside it), which passed run alone.
+- **Shots:** `/tmp/terno-scratch/ai-pass3/actions-ask/after/<design>/`, the frozen AI set in all five designs, light and dark, both sizes, from `capture.mjs --screens ai` on this branch's desktop build (at `1438f0226`; round 2 changes nothing those states show). `capture.mjs` needed no change: its waits (`ask-source`, `ask-new`, `action-preview`, `action-apply` enabled, `action-finding`) all still exist, `ask-new` now a button on the keys' line. States the frozen set doesn't hold: `extra/ask/<project>-peek-{light,dark}.png` (a source shown in Ask) and `extra/actions/<project>-trash-{light,dark}.png` (a Trash preview), every design. The "before" shots are ai-r02's (`/tmp/terno-scratch/ui9/rounds/ai-r02/<design>/shots/`).
+
+### For the owner
+
+- **The 838.** The plan's matching is sound: the rule the stand-in model wrote ("any mailing list", no sender) matched every list conversation, as written. The stub only reads a sender from a domain. A real model given "from Netflix" should add a sender condition; whether to check a rule against the sender a request names, without a model, is the owner's call (it would read the sentence, as `ruleMisses` does for the AI filter).
+- **A second confirmation above a count** (one rater) isn't built: Undo is exact, and the destructive button and its line now say what happens.
+- **⌘K's default for ordinary input is unchanged.** Only a sentence that is plainly an instruction (a mail verb first, four words or more, no operator or quotes) ranks "Do with AI" first. No change to the default for non-AI input was needed.
+- **The AiProvenance and Copy adoption** waits for the other engineer's `ai-card.ts`: Ask's `ask-copy` and `ask-provenance` in `Turn`'s `ask-turn-actions` line are the two to swap, one for one.
