@@ -15,7 +15,8 @@ import { AI_CARD, AI_GLYPH, AI_TITLE } from "./ai-card";
 
 /**
  * "Action · Send the signed contract      Open message →": the row goes to the message that says it, and says so (plan 161:
- * it read as doing the task). The label sits on the text's line; hovering names whose message and when.
+ * it read as doing the task). The label sits on the text's line; hovering names whose message and when. Its name is its
+ * visible words, in order, so what's read is what's seen (axe's label-content-name-mismatch).
  */
 function Item({ item, from }: { item: AiSummaryItem; from: MessageDetail | undefined }) {
   const kind = t(`summary.kind.${item.kind}`);
@@ -25,7 +26,6 @@ function Item({ item, from }: { item: AiSummaryItem; from: MessageDetail | undef
       data-testid="summary-item"
       data-kind={item.kind}
       data-message-id={item.messageId}
-      aria-label={`${kind}: ${item.text}. ${t("summary.open")}`}
       onClick={() => revealSummaryMessage(item.messageId)}
       className="group/item -mx-2 flex min-h-8 w-[calc(100%+1rem)] items-baseline gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors hover:bg-field focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
