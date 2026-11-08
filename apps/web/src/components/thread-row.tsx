@@ -9,7 +9,7 @@ import { formatList, formatNumber, t } from "@terno/i18n";
 import { listDate } from "~/lib/format";
 import { renderProbe } from "~/lib/render-probe";
 import { useHasDraft } from "~/lib/drafts";
-import { pressRow, releaseRow } from "~/lib/select";
+import { pickRow, pressRow, releaseRow } from "~/lib/select";
 import { activeFilter } from "~/lib/unread-filter";
 import { useApp, type AppState } from "~/state/app";
 import { accountLabels, type AccountLabel } from "~/lib/account-labels";
@@ -46,6 +46,8 @@ interface Props {
   reminderEnd?: boolean;
   /** plan 158: in a search's results, what to mark on the row (one object per search) */
   match?: RowMatch | null;
+  /** plan 24: List's rows offer the pointer a checkbox, in the avatar's place or the marks' column */
+  pick?: boolean;
 }
 
 /**
@@ -55,7 +57,7 @@ interface Props {
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, reminderTop = false, reminderEnd = false, match = null }: Props) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, reminderTop = false, reminderEnd = false, match = null, pick = false }: Props) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -115,6 +117,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       review={review}
       match={match}
       excerpt={excerpt}
+      pick={pick}
       interactive
     />
   );
@@ -208,7 +211,7 @@ function RowDate({ thread, reminderTop, fallback, className, title }: { thread: 
   return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? reminderShort(dueAt) : fallback}</span>;
 }
 
-export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, reminderTop, reminderEnd, selected, checked, included, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt }: ViewProps) {
+export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, reminderTop, reminderEnd, selected, checked, included, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, pick = false }: ViewProps) {
   const cats = thread.categoryIds.length ? categories.filter((c) => c.id !== inCategory && thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
@@ -309,33 +312,66 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   const chip = code && <CodeChip threadId={thread.id} code={code} />;
   const reviewed = review !== null ? categories.find((c) => c.id === review) : undefined;
   const answer = reviewed && <ReviewControls threadId={thread.id} category={reviewed.name} />;
+  // plan 24: List gives the pointer a checkbox. It takes the avatar's place while the avatar is under the pointer, and on
+  // every row once one is checked (the list's data-many: CSS, so starting a selection re-renders only the row checked);
+  // with no avatar, the marks' column under a hovered row. Instant, nothing moves. The row is the option and `x` its key:
+  // this is for the pointer, and says nothing the row doesn't (no control inside an option)
+  const picking = pick && interactive && included === undefined;
+  const pickBox = (className: string) => (
+    <CheckboxMark
+      data-testid="row-pick"
+      data-row-control
+      checked={checked}
+      className={cn("invisible group-data-many/list:visible", className)}
+      // no row press (no cursor move, no drag), no focus move, no text selected by ⇧
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        pickRow(thread.id, e.shiftKey);
+      }}
+    />
+  );
   const avatar = !classic && (
-    <span className={cn("shrink-0", !line && !big && "self-start mt-0.5")}>
+    <span className={cn("shrink-0", !line && !big && "self-start mt-0.5", picking && "group/pick relative")}>
       <SenderAvatar
         name={thread.fromName}
         email={thread.fromEmail}
         // plan 22: never an icon for spam, whatever the view or the search (nor until the backend says a row stopped being spam)
         icon={icons && !thread.inSpam && !thread.hasSpam && !thread.spamHeld}
         person={thread.person === true}
-        className={
+        className={cn(
           compact
             ? "size-(--avatar-row-compact) text-[length:calc(var(--avatar-row-compact)*0.42)]"
             : wide
               ? "size-(--avatar-row-wide) text-[length:calc(var(--avatar-row-wide)*0.38)]"
-              : "size-(--avatar-row) text-[length:calc(var(--avatar-row)*0.34)]"
-        }
+              : "size-(--avatar-row) text-[length:calc(var(--avatar-row)*0.34)]",
+          picking && "group-hover/pick:invisible group-data-many/list:invisible",
+        )}
       />
+      {/* (the box's hit area runs past it, never as far as the sender) */}
+      {picking && pickBox("absolute inset-0 m-auto group-hover/pick:visible")}
     </span>
   );
   // one mark in every design and layout: on the marks' column (12 px into the row, 8 before the text), on the sender's
   // line, never on an avatar. A check takes the dot's place, moving nothing (the row's weight still says unread)
   const onSenderLine = line ? "top-1/2" : "top-[calc(var(--type-row-from-leading)/2)]";
-  const dot =
-    checked && included === undefined ? (
-      <Check aria-hidden data-testid="row-check" className={cn("absolute -left-[14px] size-3 -translate-y-1/2 text-row-selected-foreground [--icon-line:1.5px]", onSenderLine)} />
-    ) : (
-      thread.unread && included === undefined && <span data-testid="row-unread-dot" className={cn("absolute -left-[12px] size-2 -translate-y-1/2 rounded-full bg-unread", onSenderLine)} />
-    );
+  // List's checkbox says checked, so it needs no check beside it; with no avatar it takes the column itself, over a
+  // hovered row and while a selection is made, and the dot gives way (one mark per slot). The column is 16 px between
+  // the fill's edge and the text: the box keeps the check's 12 px there (BOARDUI.md), and its hit area stops at the text
+  const gutterPick = picking && classic;
+  const dot = (
+    <>
+      {checked && included === undefined && !picking ? (
+        <Check aria-hidden data-testid="row-check" className={cn("absolute -left-[14px] size-3 -translate-y-1/2 text-row-selected-foreground [--icon-line:1.5px]", onSenderLine)} />
+      ) : (
+        thread.unread && included === undefined && <span data-testid="row-unread-dot" className={cn("absolute -left-[12px] size-2 -translate-y-1/2 rounded-full bg-unread", onSenderLine, gutterPick && "group-hover/row:invisible group-data-many/list:invisible")} />
+      )}
+      {gutterPick && pickBox(cn("absolute -left-[14px] size-3 rounded-[3px] -translate-y-1/2 group-hover/row:visible after:inset-x-0 [&_svg]:size-2.5! [&_svg]:[--icon-line:1.5px]!", onSenderLine))}
+    </>
+  );
   // a three-line row's first line: its marks and date hold the right edge
   const firstLine = (
     <div className="flex min-w-0 items-center gap-1.5">
