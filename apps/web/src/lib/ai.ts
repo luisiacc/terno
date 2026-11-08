@@ -144,6 +144,11 @@ export const localProvider = (provider: AiProviderId): boolean => LOCAL_PROVIDER
  * Plan 133: what drafts run on, by the backend's rule (`AiService.targetFor`): the task's own choice, else the
  * configured provider. Whether asking can work, and whether mail would leave this Mac; the backend has the last word.
  */
+/** The model drafts run on, as the backend picks it (ai-service targetFor): Sonnet 5.5 on Claude unless the user chose another (plan 133 §6.6). */
+export function writingModel(ai: Pick<AiSettings, "tasks" | "provider" | "model">): string {
+  return ai.tasks.writing?.model ?? (ai.provider === "anthropic" ? WRITING_CLAUDE_MODEL : ai.model);
+}
+
 export function writingTarget(ai: AiSettings | null | undefined): { ready: boolean; provider: AiProviderId; local: boolean } {
   if (!ai) return { ready: false, provider: "none", local: true };
   const chosen = ai.tasks.writing;

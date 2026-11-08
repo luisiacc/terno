@@ -457,6 +457,33 @@ describe("§10.4: binding and races", () => {
     expect(session(key)!.strip!.used.model).toBe("chosen-writing-model");
   });
 
+  it("plan 161, pass 3 (second review): after a stopped write's edited Undo, a new instruction in the field retires the old snack's Undo", async () => {
+    const { key, c } = await writing();
+    delta(key, "Hi");
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    store.stop(key);
+    c.type(" mine");
+    store.undoCommit(key);
+    store.setInstruction(key, "something else");
+    const { useSnack, runUndo } = await import("./snack");
+    await runUndo(useSnack.getState().undo!);
+    expect(c.text).toBe("");
+    expect(session(key)!.phase).toBe("input");
+    expect(session(key)!.instruction).toBe("something else");
+  });
+
+  it("plan 161, pass 3 (second review): on Claude with no choice, a stopped write names the model drafts run on there", async () => {
+    const { WRITING_CLAUDE_MODEL } = await import("@terno/core");
+    setApp({ settings: { ai: { provider: "anthropic", model: "claude-opus-5-5", local: false, tasks: {}, keys: { anthropic: { hasKey: true } }, hasKey: true, keyConfirmed: true, profiles: {} } } as never });
+    // told once already: the first-use line isn't what this is about
+    localStorage.setItem("terno:ai-draft-told:anthropic", "1");
+    const { key } = await writing();
+    delta(key, "Hi");
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    store.stop(key);
+    expect(session(key)!.strip!.used.model).toBe(WRITING_CLAUDE_MODEL);
+  });
+
   it("plan 161, pass 3: stopped over the user's notes, what came goes below them, and Undo leaves the notes and the instruction", async () => {
     const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: "Ana Pérez <ana@example.test>", subject: "Re: Contract", bodyText: "my notes" });
     const { c } = editor(key, "my notes");

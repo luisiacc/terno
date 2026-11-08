@@ -1,10 +1,10 @@
-import { WRITING_CLAUDE_MODEL, WRITING_INSTRUCTIONS_MAX, type WritingPrefs } from "@terno/core";
+import { WRITING_INSTRUCTIONS_MAX, type WritingPrefs } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Switch } from "@terno/ui/components/switch";
 import { useEffect, useState } from "react";
-import { draftingOffered, modelName, providerLabel, writingTarget } from "~/lib/ai";
+import { draftingOffered, modelName, providerLabel, writingModel, writingTarget } from "~/lib/ai";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { shortcutText } from "@terno/ui/components/shortcut";
 import { snack } from "~/lib/snack";
@@ -29,11 +29,6 @@ function usePrefs(): [WritingPrefs | null, (patch: Parameters<typeof client.call
 }
 
 const failed = (e: unknown): void => { snack.error(e instanceof Error ? e.message : String(e)); };
-
-/** The model drafts run on, as the backend picks it: Sonnet 5.5 on Claude unless the user chose another (§6.6). */
-function writingModel(ai: AppSettings["ai"]): string {
-  return ai.tasks.writing?.model ?? (ai.provider === "anthropic" ? WRITING_CLAUDE_MODEL : ai.model);
-}
 
 /** Settings → AI → Drafting. It starts nothing: the local learner follows AI being here (plan 157), not looking at this tab. */
 export function DraftingGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {

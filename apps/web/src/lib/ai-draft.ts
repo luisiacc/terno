@@ -6,7 +6,7 @@ import { aiErrorCopy, errorTarget } from "~/components/ai-error";
 import { client } from "~/rpc/connection";
 import { getApp, useApp } from "~/state/app";
 import { loadThread, useThreads } from "~/state/threads";
-import { draftingOffered, errorHelp, writingTarget } from "./ai";
+import { draftingOffered, errorHelp, writingModel, writingTarget } from "./ai";
 import { aiDraftHooks, canDraft, useAiDraftUi, type AiDraftBadge } from "./ai-draft-state";
 import { addressReply, composeLanding, composeOpening, leaveNewDraft, sendDraft } from "./compose";
 import { focusSoon } from "./compose-focus-move";
@@ -926,8 +926,8 @@ export function placePartial(key: string) {
 function emptyUsed(): AiStrip["used"] {
   const ai = aiSettings();
   const target = writingTarget(ai);
-  // the writing task's own model where one was chosen, with its provider (Codex review of pass 3: Settings' first row's was named)
-  const model = ai?.tasks.writing?.model ?? ai?.model ?? "";
+  // the model drafts run on, as the backend picks it (Codex review of pass 3: Settings' first row's was named)
+  const model = ai ? writingModel(ai) : "";
   return { levels: [], personFromOtherAccount: false, examples: 0, pastConversations: 0, mentions: 0, threadMessages: 0, history: "none", learning: false, inboundSnippetOnly: false, language: "", languageReason: "unknown", provider: target.provider, model, reused: false };
 }
 
@@ -1178,7 +1178,8 @@ function stillOurs(key: string, r: Restore): boolean {
   if (restores.get(key) !== r) return false;
   const shown = r.back ? r.strip : r.left;
   // plan 161, pass 3: a stopped write's Undo leaves the field with its instruction, not nothing (Codex review)
-  if (s && shown === null) return s.phase === "input" && !s.run && s.strip === null;
+  // and only while the field holds what the Undo left there: a new instruction is newer work (second review)
+  if (s && shown === null) return s.phase === "input" && !s.run && s.strip === null && s.instruction === r.strip.instruction;
   return s ? s.phase === "strip" && !s.run && s.strip === shown : shown === null;
 }
 

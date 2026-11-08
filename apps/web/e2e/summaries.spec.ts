@@ -192,6 +192,15 @@ test.describe("summaries (plan 132)", () => {
       expect(right.x + right.width).toBeLessThanOrEqual(card.x + card.width);
     }
 
+    // plan 161, pass 3: an item's Reply, wrapped under its words, has its glyph on the words' line
+    const reply = page.getByTestId("summary-item-reply").first();
+    if (await reply.count()) {
+      const words = (await page.getByTestId("summary-item-text").first().boundingBox())!;
+      const glyph = (await reply.locator("svg").boundingBox())!;
+      if (glyph.y > words.y + words.height - 2) expect(Math.abs(glyph.x - words.x)).toBeLessThanOrEqual(1);
+      else expect(glyph.x - (words.x + words.width)).toBeGreaterThanOrEqual(8);
+    }
+
     // closed, the card is its one row
     await page.getByTestId("summary-toggle").click();
     await expect(page.getByTestId("summary-text")).toHaveCount(0);

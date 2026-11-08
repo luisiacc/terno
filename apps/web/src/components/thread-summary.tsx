@@ -34,9 +34,11 @@ function Item({ item, from, source }: { item: AiSummaryItem; from: MessageDetail
     <li data-testid="summary-item" data-kind={item.kind} data-message-id={item.messageId} className="flex items-baseline gap-2 py-1 text-sm">
       <span className="shrink-0 text-xs text-muted-foreground">{t(`summary.kind.${item.kind}`)}</span>
       {/* the controls follow the words, and wrap under them (never under the kind) when the line is full */}
-      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+      {/* the buttons reach their padding (2.5) back, so wrapped under the words their glyph is on the words' line, and beside
+          them the gap reads as the row's 2.5 */}
+      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-5 gap-y-1">
         <span className="min-w-0 wrap-anywhere" data-testid="summary-item-text">{item.text}</span>
-        <span className="-my-1 -ms-1.5 flex items-center gap-1">
+        <span className="-my-1 -ms-2.5 flex items-center gap-1">
           {ANSWERED.has(item.kind) && (
             <Button variant="ghost" size="sm" data-testid="summary-item-reply" className="text-foreground" onClick={() => reply("reply")}>
               <Reply aria-hidden />
