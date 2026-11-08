@@ -31,7 +31,10 @@ const links = (page: Page) =>
 
 /** The caret right after the first occurrence of `text` in the body (a DOM selection the editor reads). */
 async function caretAfter(page: Page, text: string) {
-  await body(page).evaluate((root, text) => {
+  // resolves once the editor has had the move: it reads the caret on the browser's selectionchange (a fixed wait lost
+  // that race on a full machine)
+  await body(page).evaluate((root, text) => new Promise<void>((done) => {
+    document.addEventListener("selectionchange", () => setTimeout(done, 0), { once: true });
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const nodes: Text[] = [];
     while (walker.nextNode()) nodes.push(walker.currentNode as Text);
@@ -50,8 +53,7 @@ async function caretAfter(page: Page, text: string) {
       }
       at -= n.data.length;
     }
-  }, text);
-  await page.waitForTimeout(30);
+  }), text);
 }
 
 /** A paste event as the browser sends one. */
