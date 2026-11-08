@@ -153,3 +153,31 @@ In every design:
 - The titles' x already agree for the subject and New message in Split: round 4's Graphite 20 px case was fixed in plan 158. The category review's title already shares the list header's line.
 
 Atelier only: at 1440x900 the open reply card runs past the window (its box 475.9 to 916.9 in a 900 px window). The reader's scroller cuts it, and its bottom edge isn't drawn.
+
+## Restraint: the inventory (revision 12, written before any surface changed)
+
+These are the surfaces on the main screens (list, reader, compose, multi-select, review) drawn as a card: a fill, a ring or a shadow on all sides.
+
+**Kept: they float or can be dismissed**
+- The composer's card (New message) and the inline reply's card: dismissable.
+- Toasts, the palette, menus, popovers, tooltips and tips: they float.
+- The rule offer over the list (`learned-banner.tsx`): its × dismisses it, and plan 159 owns it.
+
+**Kept: controls, not containers**
+- The reply bar: the closed draft, a button.
+- Attachment tiles: each opens its file.
+- Fields, the segmented control's thumb, chips, the format bar's well, row and sidebar selection shapes, and the selection panel's buttons.
+
+**Kept: other reasons**
+- The HTML mail's paper (`mail-body.tsx`): it's the mail's own document, not chrome.
+- The skeletons: they hold a place while loading.
+
+**Already hairlines**
+- Messages (`article.hairline-b`) and the follow-ups section (`border-b`).
+- The selection panel's list of rows (`hairline-t`) and List's selection toolbar (`hairline-b`).
+
+**Static containers, so they become hairline sections**
+1. The AI summary over a conversation (`thread-summary.tsx`, `card-group`): a block of the model's words, neither floating nor dismissable. It becomes a section with a hairline above and below, on the column's edges; its glyph still says whose words they are.
+2. The remote-content notice in a message (`mail-body.tsx`, a `bg-tint` pill): a line with its Load button. It loses the fill and keeps the button.
+
+The shared tokens (`card-group`, `surfaces.card`) don't change, so Settings and the snippet editor are untouched. The baselines that move are the reader's (summary and blocked mail) in each design that shows them.
