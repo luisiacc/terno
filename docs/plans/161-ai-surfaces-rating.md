@@ -636,3 +636,59 @@ Review rounds stop here.
   - The countdown ring on the shared snack drains from the top centre, so a moment after it appears it shows a small notch that two raters read as a fault. It's the design (plan 158), not a bug, so it stays. A visible track for the drained part would read as a countdown, if wanted.
   - Raters asked for "Archived 6 shipping notices" (the request's own noun) in the snack. That needs the model's words for the noun, which this pass doesn't add (no new model call); the snack says the count and the verb as the title does.
   - "Reopen preview" after a cancel, or after Undo, would need the plan again: a new model call, so not built.
+
+
+## Pass 2: drafting, summary, follow-ups, Reply ready and the AI card
+
+From `ai-r01`'s `ai_draft`, `summary` and `followups_replies` (every issue and every reason below 9, four designs, both raters), and the lead's list. Actions and Ask are one parallel pass; Today, the digest, Writing style and the AI filter another. No new model call anywhere: everything shown comes from what a run, a summary, a follow-up row or a prepared reply already returns.
+
+### Losing work
+
+- **Replacing an edited draft asks first.** Regenerate, Shorter, Warmer, a free-form ⌘J refinement and a rewritten instruction all replace the text. Over a strip that says "Edited after AI", the strip itself turns into the question: "Replace your edits?" with **Replace** (the default, so Return answers it) and **Keep editing** (Esc). No modal. Replace runs what was asked, and the strip's Undo still restores the edited text exactly (pass 1's `beforeDoc`). An unedited strip runs at once, as now. State: `AiSession.confirm: { run: RunSpec } | null`.
+- **Esc in the ⌘J row closes only the row.** The row opened with an empty reply (⌘J on a conversation) used to take the reply with it on Esc ("Draft discarded"). Now Esc closes the row and leaves the empty reply open with the caret in it; a second Esc is the composer's own, as without AI. ⌘J pressed again in an empty field still closes both, since it opened both.
+- **Use, then discard, gives the card back.** Discarding a draft made from a prepared reply (its Discard, or anything that removes it unsent) gives the row back through the existing `ai.replyAct restore`, so Reply ready shows again, exactly as Undo after Use does. A sent draft gives nothing back. The card never shows beside a draft open on the same conversation (the discard snack's Undo brings the draft back, and the card steps aside).
+
+### ⌘J
+
+- **One row.** The strip is status on the left and commands on the right:
+  - the status is one ghost button, "Written with AI ▾" ("Edited after AI ▾" after an edit). It opens what was the voice popover, which now leads with the voice ("In your voice with Arjun"), then what was read, the model, and the instruction. The separate "In your voice with Arjun ▾" trigger goes; its words are the popover's first line.
+  - beside it, the instruction, quiet and truncated in quotes: “friday works for me, ask him…”. It is a button ("Edit instruction: …"): it opens the row's field holding that instruction, and Return writes a fresh draft from it (a regenerate with the new words, through the edited-text question above). When the row is too narrow for it (a container query on the row, about 34 rem), it hides and the popover's "Edit instruction" is the way.
+  - the commands: Regenerate, Shorter, Warmer as BoardUI's secondary button, then Undo, a gap apart.
+  The row wraps only when even that can't fit; at 1440x900 and 1100x700 it is one line in every design (asserted in `ai-draft.spec.ts`).
+- **Commands look enabled.** The row's line is `text-muted-foreground`, and the secondary button has no text colour of its own, so its label inherited the status's grey. The commands take the ink (`text-foreground`, 4.5:1 and more on `card` in every palette, the secondary's own pair).
+- **A second ⌘J keeps Undo.** ⌘J over the strip opens "What should change?" as before, and the strip's Undo stays at the row's end while the field is open.
+- **Rewrites keep the text.** While a refinement or regenerate streams, the old text stays where it is, dimmed (the editor at 55 % through `data-ai-overlay="rewriting"`), under a "Rewriting…" status with Stop; the new text replaces it in one step when it's done. The stream isn't drawn over it.
+- **One AI error.** `ai-card.ts` gains the error pattern every AI surface uses: `aiErrorCopy(error, ai)` and `AI_ERROR*` classes, and an `AiErrorNotice` component (in `ai-error.tsx`, re-exported from `ai-card.ts`). It is a `role="alert"` block: `CircleAlert` in the destructive ink, a title in the ink ("Couldn't reach Ollama"), one line of help in the muted ink ("Open Ollama, then try again."), and **Try again** (secondary) and **AI settings** (ghost). The words come from the error's kind, never from the provider's message when that carries a host, a URL or a port (`errors.ai.notRunning`, `cannotConnect*`, `notFound`): a title per kind (`ai.error.*`), with the provider's name and no address. A message with no address (the app's own, "This conversation keeps changing…") is shown as it is. The summary's error and ⌘J's use it. **For the Ask engineer:** `import { AiErrorNotice, aiErrorCopy } from "./ai-card"`; pass the error (`{ message, kind, i18n }`) and `onRetry`.
+
+### The AI card and provenance
+
+- **A visible edge.** `AI_CARD` stays the export, and becomes the card ringed in `draft-edge` (`[--card-ring:var(--draft-edge)]` on `card-group`), in every design: plan 160's hairline floor against the page and against the card's own fill. New `BOUNDARY_STEPS`: the ring on the reader's background and on Lumen's card, and the ring against a tint card's fill, both at `HAIRLINE_FLOOR`, light and dark, every palette.
+- **The summary says who wrote it.** Under the items, the row Ask has: **Copy** (a quiet button; "Copied" or the failure as a snack) and, at the row's end, "Written with AI" with the model and date in its tooltip (`provenanceLabel`, `provenanceDetail`). The toggle no longer carries the tooltip.
+- **No Refresh.** A ready summary asked again returns the same one: the backend reuses it when the text, the model and the language are the same (`reusable()`), so a Refresh would need a new behaviour (a forced run). Not built; it comes back on its own when the conversation changes (stale → Summarize).
+- **"Open message" says where.** An item, and the follow-up line, point at a message. On a conversation of one message, that message is the one on screen, so nothing is offered (the item is plain text). Otherwise it says whose and when, "Arjun · 21 Oct →" (the visible words are the name, so axe's label-content-name-mismatch holds).
+- **For the AI filter's engineer:** the exports are unchanged: `AI_CARD` (now with its edge), `AI_HEADER`, `AI_GLYPH`, `AI_TITLE`, `AI_ACTIONS`, `AI_GAP`, `gapPieces`, `aiWritten`, plus `AiErrorNotice` and `aiErrorCopy`. Put the box on `AI_CARD` with an `AI_HEADER` row and `AI_ACTIONS`; say provenance with `provenanceLabel()`/`provenanceDetail()`.
+
+### Follow-ups
+
+- **Said once, with a date.** Header: "Follow-up · Back on top of your Inbox Wed, Oct 28, 9:00 AM" (due: "Due Today 9:00 AM"). The line under it stays "Arjun Ramírez hasn't replied yet", or "… in 5 days". The header no longer adds "if Arjun doesn't reply" or "Sent today": the condition is said once. Any day after tomorrow carries its date (`reminderDated`: "Today 5:00 PM", "Tomorrow 9:00 AM", "Wed, Oct 28, 9:00 AM").
+- **Later shows its times.** Each choice in Later's menu carries the moment it resolves to at its end, muted and tabular, as Remind me's menu already does (`presetWhen`: "Tomorrow … 9:00 AM", "This weekend … Sat 9:00 AM").
+- **A nudge already drafted.** Once Draft a nudge has made a draft on that conversation and it's still there, the primary reads **Open your nudge**: it brings that draft into view with the caret in it. Discarded or sent, it's Draft a nudge again.
+- **Open message** follows the summary's rule above: gone on a one-message conversation (the sent mail on screen), "You · 22 Oct →" otherwise.
+
+### Reply ready
+
+- **Gaps counted.** "Reply ready · 1 gap to fill · To Liam Taylor · In your voice with Liam": the count of the model's gaps still in the text, in the ink, so the state is said before Use.
+- **Preparing holds its place.** The card shows as soon as the backend starts writing (the `writing` event after `needs_reply` says yes, so never for something that won't come): "Writing a reply…" with Stop, and three skeleton lines until words arrive. While it writes and once ready, the text is clamped at six lines, so the card never grows more than that. It enters with a fade within `--motion` (none when motion is reduced).
+- **One R.** The card keeps its "Press R to reply with this draft" (a caption), and the reply bar's own R keycap hides while a reply is ready: R uses the prepared draft then, so the bar's keycap said the wrong thing. (A keycap on Use as draft was tried: the key's muted caption on the primary's fill fails AA.)
+
+### Not taken, and why
+
+- **Reply on the summary's item, claim-level citations in the summary, a timeline.** New behaviour on the summary beyond Copy and provenance; the item's source now says whose message and when.
+- **Shortcuts for Shorter and Warmer, renaming the AI label "Instruction".** Not in the lead's list; the field's placeholder says what it does.
+- **A card for the follow-up line, or merging Reply ready into the reply bar.** Plan 148 keeps the follow-up off the card (it's the user's own to act on); the reply bar is the composer's.
+- **A custom date in Later.** Remind me (plan 87) has it; the follow-up's menu keeps its presets, now with their times.
+
+### Tests
+
+- Unit: `aiErrorCopy` (no host, URL or port in any kind's words, en and es; a message without an address passes through), `reminderDated`, `followupWhen`/`followupLine`, the strip's confirm (a run over an edited strip waits for Replace; Keep runs nothing; unedited runs at once), Esc's close keeping the draft, the prepared reply given back on discard and not on send, the Reply ready header's gap count, the skeleton while writing, `contrast.test.ts`'s new steps.
+- e2e: `ai-draft.spec.ts` (Regenerate over an edit asks, Keep leaves the text, Replace replaces and Undo brings the edit back; Esc in the row leaves the reply open; the instruction shows and its edit rewrites; a second ⌘J keeps Undo; the strip is one line at 1440x900 and 1100x700; the old text stays during Shorter; the error shows no host), `replies-ready.spec.ts` (Use, Discard: the card is back; the gap count; one R), `followups.spec.ts` (the dated header, Later's times, Open your nudge, no Open message on one message), `summaries.spec.ts` (provenance and Copy; the item names its source; the error pattern), `design-axe.spec.ts` for these surfaces.
