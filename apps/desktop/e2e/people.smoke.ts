@@ -78,7 +78,7 @@ test("a v13 profile migrates in the desktop backend; the backfill fills every th
   expect(read<{ c: number }>("SELECT count(*) AS c FROM correspondents WHERE own = 1").c).toBeGreaterThan(0);
   expect(read<{ c: number }>("SELECT count(*) AS c FROM threads WHERE person = 1").c).toBeGreaterThan(0);
   // the fixture explicitly selects Lumen: the greeting's count appears once the facts are known
-  await expect(page.getByTestId("waiting-count")).toHaveText(/^\d+ waiting for your reply$/, { timeout: 30_000 });
+  await expect(page.getByTestId("waiting-count")).toHaveText(/^\d+ to reply to$/, { timeout: 30_000 });
   // plan 145: Today's tip may be up over the list's top: Esc closes it
   await page.getByTestId("tip-today-first").waitFor({ timeout: 5_000 }).then(() => page.keyboard.press("Escape"), () => {});
   await page.getByTestId("quick-filter-people").click();

@@ -575,16 +575,25 @@ function Subtitle({ filter, greeting }: { filter: QuickFilter | undefined; greet
       )}
       {unread > 0 && waiting > 0 && <span aria-hidden> · </span>}
       {waiting > 0 && (
-        // a link button (BoardUI's secondary link) that shows what it says: on, it stays underlined in the ink, its chip beside
-        <Button
-          variant="link-secondary"
-          data-testid="waiting-count"
-          aria-pressed={filter === "waiting"}
-          className={COUNT_LINK}
-          onClick={() => setListFilter(filter === "waiting" ? undefined : "waiting")}
-        >
-          {t("list.waitingCount", { count: waiting })}
-        </Button>
+        // a link button (BoardUI's secondary link) that shows what it says: on, it stays underlined in the ink, its chip beside.
+        // Plan 159: what counts, in words, on hover and as its description (it can be more than what's unread)
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="link-secondary"
+                data-testid="waiting-count"
+                aria-pressed={filter === "waiting"}
+                aria-description={t("list.waitingCount.tip")}
+                className={COUNT_LINK}
+                onClick={() => setListFilter(filter === "waiting" ? undefined : "waiting")}
+              >
+                {t("list.waitingCount", { count: waiting })}
+              </Button>
+            }
+          />
+          <TooltipContent data-testid="waiting-count-tip" className="max-w-72">{t("list.waitingCount.tip")}</TooltipContent>
+        </Tooltip>
       )}
       {unread === 0 && waiting === 0 && t("list.caughtUp")}
       </span>

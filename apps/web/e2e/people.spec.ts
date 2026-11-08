@@ -1,7 +1,7 @@
 /**
  * Plan 17: the People filter, everywhere the quick filters are (Lumen's
  * chips, the "Filtered by" menu of macOS and Atelier, the palette), and
- * Lumen's "· M waiting for your reply", which filters to those conversations.
+ * Lumen's "· M to reply to" (plan 159), which filters to those conversations and says on hover what counts.
  * The People flow goes through the quick filters' variant (@variant).
  */
 import AxeBuilder from "@axe-core/playwright";
@@ -110,14 +110,14 @@ test.describe("the People filter", () => {
       await page.getByTestId("palette-filter-all").click();
       await showing(page, null);
     });
-    await scenario("Filter → People, then Waiting for reply; the empty Waiting list says what it would hold", async () => {
+    await scenario("Filter → People, then To reply to; the empty Waiting list says what it would hold", async () => {
       await fresh();
       await chooseFilter(page, "macos", "people");
       await showing(page, "people");
       await expectFilter(page, "people", "People");
       await chooseFilter(page, "macos", "waiting");
       await showing(page, "waiting");
-      await expectFilter(page, "waiting", "Waiting for reply");
+      await expectFilter(page, "waiting", "To reply to");
       const waiting = new Set(ids(server, "waiting_since >= ?", cutoff));
       expect((await loadedIds(page)).every((id) => waiting.has(id))).toBe(true);
       // a new, empty category: the empty state says what the filter would hold
@@ -125,13 +125,13 @@ test.describe("the People filter", () => {
       await page.locator(`[data-drop-target="${c.id}"]`).click();
       await chooseFilter(page, "macos", "waiting");
       await expect(page.getByTestId("unread-empty")).toHaveAttribute("data-filter", "waiting");
-      await expect(page.getByTestId("unread-empty")).toContainText("Nothing is waiting for your reply");
+      await expect(page.getByTestId("unread-empty")).toContainText("Nothing to reply to");
     });
   });
 });
 
 
-test.describe("Lumen: waiting for your reply", () => {
+test.describe("Lumen: to reply to", () => {
   test.use({ design: "lumen" });
 
   test("Lumen's waiting count: the greeting, an account's own, in Spanish, while the store doesn't know", async ({ app: page, server }) => {
@@ -139,8 +139,14 @@ test.describe("Lumen: waiting for your reply", () => {
       const n = waitingInInbox(server).length;
       expect(n).toBeGreaterThan(0);
       const count = page.getByTestId("waiting-count");
-      await expect(count).toHaveText(`${n} waiting for your reply`);
+      await expect(count).toHaveText(`${n} to reply to`);
       await expect(page.getByTestId("list-subtitle")).toContainText(" unread · ");
+      // plan 159: what counts, in words, on hover and as its description (it can be more than what's unread)
+      const rule = "Inbox conversations from the last 30 days where a person wrote last and you haven’t answered. Read or not; mail you’re only Cc’d on doesn’t count.";
+      await expect(count).toHaveAccessibleDescription(rule);
+      await count.hover();
+      await expect(page.getByTestId("waiting-count-tip")).toHaveText(rule);
+      await page.mouse.move(0, 0);
       await expect(page.getByTestId("quick-filter-waiting")).toHaveCount(0);
       await count.click();
       await showing(page, "waiting");
@@ -165,11 +171,11 @@ test.describe("Lumen: waiting for your reply", () => {
       const account = db(server).get<{ account_id: number }>("SELECT account_id FROM threads WHERE in_inbox = 1 AND waiting_since >= ? GROUP BY account_id ORDER BY count(*) DESC LIMIT 1", cutoff)!.account_id;
       await page.getByTestId(`nav-account-${account}`).click();
       const mine = waitingInInbox(server, account);
-      await expect(page.getByTestId("waiting-count")).toHaveText(`${mine.length} waiting for your reply`);
+      await expect(page.getByTestId("waiting-count")).toHaveText(`${mine.length} to reply to`);
       // reply to the newest of them
       const target = db(server).get<{ id: number; from_email: string }>(`SELECT m.id, m.from_email FROM messages m JOIN threads t ON t.id = m.thread_id WHERE t.id = ${mine[0]} ORDER BY m.date DESC LIMIT 1`)!;
       await server.backend.server.invoke("compose.send", { accountId: account, to: [{ name: "", email: target.from_email }], subject: "Re: hola", bodyText: "Te respondo.", inReplyToMessageId: target.id }, ctx);
-      await expect(page.getByTestId("waiting-count")).toHaveText(`${mine.length - 1} waiting for your reply`);
+      await expect(page.getByTestId("waiting-count")).toHaveText(`${mine.length - 1} to reply to`);
     });
     await scenario("while the store doesn't know yet (its backfill), there is no count, never a wrong one", async () => {
       await fresh(page);
@@ -187,7 +193,7 @@ test.describe("Lumen: waiting for your reply", () => {
       await expect(page.getByTestId("list-subtitle")).toContainText("unread");
       release();
       await expect.poll(() => store.facts.idle()).toBe(true);
-      await expect(page.getByTestId("waiting-count")).toHaveText(`${waitingInInbox(server).length} waiting for your reply`);
+      await expect(page.getByTestId("waiting-count")).toHaveText(`${waitingInInbox(server).length} to reply to`);
     });
     await scenario("in Spanish: the chips and the count", async () => {
       await fresh(page);
@@ -196,7 +202,7 @@ test.describe("Lumen: waiting for your reply", () => {
       await page.locator("[data-ready]").waitFor();
       await expect(page.getByTestId("quick-filter-unread")).toHaveText("No leídos");
       const n = waitingInInbox(server).length;
-      await expect(page.getByTestId("waiting-count")).toHaveText(`${n} ${n === 1 ? "espera" : "esperan"} tu respuesta`);
+      await expect(page.getByTestId("waiting-count")).toHaveText(`${n} por responder`);
     });
   });
 
