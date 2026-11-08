@@ -146,6 +146,34 @@ describe("the model stub (plan 161)", () => {
     expect(stub.unknown).toEqual(["Something new."]);
   });
 
+  it("mail it doesn't know is quoted with its relative days as dates, so the validator takes it first time", async () => {
+    const before = asked("thread_summary");
+    const text = "Hi Luis,\n\nThe launch moved again. Could you review the proposal next week? Let's talk tonight or this weekend, or on Friday.\n\nBest,\nAna";
+    const result = await ai.summarize({ subject: "Launch", thread: [{ label: "m1", from: "Ana Ruiz <ana@x.y>", date: "2026-10-22", own: false, text }], language: "en", today: "2026-10-22" }, signal());
+    expect(asked("thread_summary") - before).toBe(1);
+    expect(result.summary).toBe("Ana wrote on 22 October: “The launch moved again.”");
+    expect(result.items).toEqual([{ kind: "question", text: "Could you review the proposal the week of 26 October?", message: "m1" }]);
+  });
+
+  it("a request cancelled while it's held is never answered, and isn't counted as running", async () => {
+    let release!: () => void;
+    const held = await startModelStub({ chatHeld: new Promise<void>((r) => (release = r)) });
+    try {
+      const controller = new AbortController();
+      const asking = fetch(`${held.url}/v1/chat/completions`, { method: "POST", signal: controller.signal, body: JSON.stringify({ model: "qwen3:8b", stream: true, messages: [{ role: "system", content: "You write email for one person" }, { role: "user", content: "<task>\nkind: new\n</task>" }] }) });
+      await expect.poll(() => held.active).toBe(1);
+      controller.abort();
+      await expect(asking).rejects.toThrow();
+      await expect.poll(() => held.active).toBe(0);
+      release();
+      await new Promise((r) => setTimeout(r, 50));
+      expect(held.active).toBe(0);
+      expect(held.tasks).toEqual(["compose"]);
+    } finally {
+      await held.close();
+    }
+  });
+
   it("a cancelled stream stops being written", async () => {
     const controller = new AbortController();
     const slow = await startModelStub({ paceMs: 30 });

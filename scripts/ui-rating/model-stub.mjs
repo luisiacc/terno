@@ -122,21 +122,39 @@ function read(body, date, name = "") {
  */
 export function anchor(text, date) {
   const monday = date - ((new Date(date).getUTCDay() + 6) % 7) * DAY;
-  const month = (n) => new Date(date + n * 31 * DAY).getUTCMonth();
-  let out = text
-    .replace(/\besta semana\b/gi, `la semana del ${shortDate(monday, true)}`)
-    .replace(/\bthis week\b/gi, `the week of ${shortDate(monday)}`)
-    .replace(/(?<!la )\bmañana\b/gi, `el ${longDate(date + DAY, true)}`)
-    .replace(/\btomorrow\b/gi, `on ${longDate(date + DAY)}`)
-    .replace(/\bhoy\b/gi, `el ${longDate(date, true)}`)
-    .replace(/\btoday\b/gi, `on ${longDate(date)}`)
-    .replace(/\bayer\b/gi, `el ${longDate(date - DAY, true)}`)
-    .replace(/\byesterday\b/gi, `on ${longDate(date - DAY)}`)
-    .replace(/\bel (?:mes que viene|próximo mes)\b/gi, `en ${MONTHS_ES[month(1)]}`)
-    .replace(/\bnext month\b/gi, `in ${MONTHS_EN[month(1)]}`);
-  // a weekday alone reads as the coming one: give it its date
-  out = out.replace(new RegExp(`\\b(${DAYS_EN.join("|")})\\b(?![,\\s]+\\d)`, "g"), (d) => longDate(nextWeekday(date, DAYS_EN.indexOf(d))));
-  out = out.replace(new RegExp(`\\b(${DAYS_ES.join("|")})\\b(?![,\\s]+\\d)`, "gi"), (d) => longDate(nextWeekday(date, DAYS_ES.indexOf(d.toLowerCase())), true));
+  const saturday = monday + 5 * DAY;
+  const monthOf = (n) => (new Date(date).getUTCMonth() + n + 12) % 12;
+  const en = { day: (d) => longDate(d), short: (d) => shortDate(d), month: (n) => MONTHS_EN[monthOf(n)] };
+  const es = { day: (d) => longDate(d, true), short: (d) => shortDate(d, true), month: (n) => MONTHS_ES[monthOf(n)] };
+  // longest first: "esta mañana" before "mañana", "next week" before a weekday
+  const rules = [
+    [/\bthis (morning|afternoon|evening)\b/gi, (_, part) => `on the ${part.toLowerCase()} of ${en.day(date)}`],
+    [/\btonight\b/gi, () => `on the evening of ${en.day(date)}`],
+    [/\bthis weekend\b/gi, () => `the weekend of ${en.short(saturday)}`],
+    [/\b(next|last) weekend\b/gi, (_, w) => `the weekend of ${en.short(saturday + (w.toLowerCase() === "next" ? 7 : -7) * DAY)}`],
+    [/\bthis week\b/gi, () => `the week of ${en.short(monday)}`],
+    [/\b(next|last) week\b/gi, (_, w) => `the week of ${en.short(monday + (w.toLowerCase() === "next" ? 7 : -7) * DAY)}`],
+    [/\bthis month\b/gi, () => `in ${en.month(0)}`],
+    [/\b(next|last) month\b/gi, (_, w) => `in ${en.month(w.toLowerCase() === "next" ? 1 : -1)}`],
+    [/\btomorrow\b/gi, () => `on ${en.day(date + DAY)}`],
+    [/\byesterday\b/gi, () => `on ${en.day(date - DAY)}`],
+    [/\btoday\b/gi, () => `on ${en.day(date)}`],
+    [/\besta (mañana|tarde|noche)\b/gi, (_, part) => `la ${part.toLowerCase()} del ${es.day(date)}`],
+    [/\beste fin de semana\b/gi, () => `el fin de semana del ${es.short(saturday)}`],
+    [/\b(?:la semana (?:que viene|próxima)|la próxima semana)\b/gi, () => `la semana del ${es.short(monday + 7 * DAY)}`],
+    [/\bla semana pasada\b/gi, () => `la semana del ${es.short(monday - 7 * DAY)}`],
+    [/\besta semana\b/gi, () => `la semana del ${es.short(monday)}`],
+    [/\beste mes\b/gi, () => `en ${es.month(0)}`],
+    [/\b(?:el mes (?:que viene|próximo)|el próximo mes)\b/gi, () => `en ${es.month(1)}`],
+    [/\bel mes pasado\b/gi, () => `en ${es.month(-1)}`],
+    [/(?<!la )\bmañana\b/gi, () => `el ${es.day(date + DAY)}`],
+    [/\bhoy\b/gi, () => `el ${es.day(date)}`],
+    [/\bayer\b/gi, () => `el ${es.day(date - DAY)}`],
+  ];
+  let out = rules.reduce((t, [re, to]) => t.replace(re, to), text);
+  // a weekday alone (or "next Friday") reads as the coming one: give it its date
+  out = out.replace(new RegExp(`\\b(?:(?:this|next) )?(${DAYS_EN.join("|")})\\b(?![,\\s]+\\d)`, "gi"), (_, d) => longDate(nextWeekday(date, DAYS_EN.findIndex((x) => x.toLowerCase() === d.toLowerCase()))));
+  out = out.replace(new RegExp(`\\b(?:(?:este|próximo|el próximo) )?(${DAYS_ES.join("|")})\\b(?![,\\s]+\\d)`, "gi"), (_, d) => longDate(nextWeekday(date, DAYS_ES.indexOf(d.toLowerCase())), true));
   return out;
 }
 
@@ -585,6 +603,7 @@ export async function startModelStub(options = {}) {
   let active = 0;
   const server = createServer((req, res) => {
     let data = "";
+    let gone = false;
     req.on("data", (c) => (data += c));
     req.on("end", () => {
       requests.push(`${req.method} ${req.url}`);
@@ -593,13 +612,17 @@ export async function startModelStub(options = {}) {
       if (req.url === "/api/ps") return json(200, { models: [{ name: MODEL }] });
       if (req.url === "/api/show") return json(200, { model_info: { "qwen3.context_length": 40960 } });
       if (req.url !== "/v1/chat/completions") return void res.writeHead(404).end();
+      // counted and watched from arrival: a request cancelled while it's held or delayed is gone when its answer comes
+      active++;
+      res.on("close", () => {
+        gone = true;
+        active--;
+      });
       if (chatHeld) return void chatHeld.then(chat);
       if (chatDelayMs) return void setTimeout(chat, chatDelayMs);
       chat();
     });
     function chat() {
-      active++;
-      res.on("close", () => active--);
       let body;
       try { body = JSON.parse(data); } catch { return void res.writeHead(400).end(); }
       const task = taskOf(body);
@@ -608,8 +631,10 @@ export async function startModelStub(options = {}) {
       if (task === "thread_summary") {
         summaries.push(JSON.stringify(body.messages));
         const failure = summaryFails?.();
-        if (failure) return void res.writeHead(failure, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "The stub says no.", type: "error", code: null } }));
+        if (failure) return void (gone || res.writeHead(failure, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "The stub says no.", type: "error", code: null } })));
       }
+      // what was asked is recorded either way; nobody is left to answer
+      if (gone) return;
       const out = answerFor(body);
       if (!out) {
         unknown.push(text(body.messages?.[0]?.content).slice(0, 80));
@@ -620,8 +645,6 @@ export async function startModelStub(options = {}) {
       }
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
       const pieces = chunksOf(out.content);
-      let gone = false;
-      res.on("close", () => (gone = true));
       const frame = (delta, finish = null) => `data: ${JSON.stringify({ id: "stub", object: "chat.completion.chunk", created: 0, model: body.model, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
       let i = 0;
       const next = () => {
