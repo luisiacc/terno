@@ -2513,7 +2513,6 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "action.rule.value": "{op} «{value}»",
   "action.rule.details": "Patrón exacto",
   "action.rule.show": "Ver la regla",
-  "action.rule.read": "Leer",
   "action.provenance": "Leyó tu petición como la regla de arriba, y puede equivocarse. Revisa la regla y las filas antes de aplicar.",
   "action.asked": "Pediste: «{sentence}»",
   "action.rule.keys": "Haz clic en una conversación para leerla.",

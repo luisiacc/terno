@@ -12,6 +12,7 @@ import { E2E_NOW } from "./constants";
 import { sqlDb } from "../../backend-dev/src/server";
 import { addRecipients, expect, recipientEmails, rows, scenario, stabilize, test, type DevServerFixture } from "./fixtures";
 import { unclipped } from "./helpers/unclipped";
+import { inEveryLook, wheelsTo } from "./helpers/looks";
 
 const SHOTS = process.env.AI_DRAFT_SHOTS ?? "/tmp/terno-scratch/ai-draft";
 const dev = { clientId: "setup", origin: "dev" as const };
@@ -150,6 +151,33 @@ test.afterEach(() => {
 });
 
 test.describe("drafting with AI (plan 133)", () => {
+  test("plan 162: Writing style reaches its end by the wheel, its editor names what it edits beside Save, and its remove buttons are 32 px targets, in every design, light and dark, 1440 and 1100", { tag: "@design" }, async ({ app: page, server }) => {
+    await ready(page, server);
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-ai").click();
+    await page.getByTestId("ai-drafting-style-open").click();
+    await expect(page.getByTestId("style-profile").first()).toContainText(/Usually about \d+ words/, { timeout: 20_000 });
+    await inEveryLook(page, async (where) => {
+      const page_ = page.getByTestId("writing-style");
+      expect(await wheelsTo(page, page_, page.getByTestId("style-people")), where).toBe(true);
+      await page.getByTestId("style-profile-edit").first().scrollIntoViewIfNeeded();
+      await page.getByTestId("style-profile-edit").first().click();
+      await expect(page.getByTestId("style-edit-scope"), where).toHaveText(/^Editing /);
+      await expect(page.getByTestId("style-edit-save"), where).toBeInViewport();
+      const remove = page.getByTestId("style-edit-greetings-remove").first();
+      if (await remove.count()) {
+        // the hit area: its centre and 15 px out on every side are the button
+        const hits = await remove.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const [x, y] = [r.left + r.width / 2, r.top + r.height / 2];
+          return [[0, 0], [-15, 0], [15, 0], [0, -15], [0, 15]].every(([dx, dy]) => el.contains(document.elementFromPoint(x + dx!, y + dy!)));
+        });
+        expect(hits, where).toBe(true);
+      }
+      await page.getByTestId("style-edit-cancel").click();
+    });
+  });
+
   test("the commit moves nothing, on both paths", async ({ app: page, server, design }) => {
     await scenario("⌘J from a conversation: the row, the stream in the body's place, one commit that moves nothing, the strip", async () => {
       await ready(page, server);
@@ -1163,11 +1191,13 @@ test.describe("drafting with AI (plan 133)", () => {
     await scenario("a status and four buttons: the commands have a resting shape at 28 px; the status has none (pass 2: it opens what the AI used)", async () => {
       await expect(page.getByTestId("ai-strip-written")).toHaveText("Written with AI");
       expect(await page.getByTestId("ai-strip-voice").evaluate((el) => getComputedStyle(el).borderTopColor)).toBe("rgba(0, 0, 0, 0)");
+      // plan 162: the four are one group at 28 px, its 1 px edge at rest (not only on hover), each command filling it
+      const group = page.getByTestId("ai-strip-commands");
+      expect((await group.boundingBox())!.height).toBeGreaterThanOrEqual(28);
+      expect(await group.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("1px");
       for (const id of ["ai-strip-regenerate", "ai-strip-shorter", "ai-strip-warmer", "ai-strip-undo"]) {
-        const button = page.getByTestId(id);
-        expect((await button.boundingBox())!.height, id).toBeGreaterThanOrEqual(28);
-        // a 1 px edge at rest, not only on hover
-        expect(await button.evaluate((el) => getComputedStyle(el).borderTopWidth), id).toBe("1px");
+        const button = (await page.getByTestId(id).boundingBox())!;
+        expect(button.height, id).toBeGreaterThanOrEqual((await group.boundingBox())!.height - 2);
       }
     });
     await scenario("an edit keeps the strip, as Edited after AI, with no jump", async () => {

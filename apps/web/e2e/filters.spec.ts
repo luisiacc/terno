@@ -1,7 +1,28 @@
+import { inEveryLook, wheelsTo } from "./helpers/looks";
+import { unclipped } from "./helpers/unclipped";
 import { expect, rows, search, test, scenario, freshStart } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 test.describe("AI filters and learned filters", () => {
+  test("plan 162: the AI rule's provenance is whole, and the form's end reaches the wheel, in every design, light and dark, 1440 and 1100", { tag: "@design" }, async ({ app: page }) => {
+    await freshStart(page);
+    await page.getByTestId("open-filters").click();
+    await page.getByTestId("ai-prompt").fill("archiva los correos de uber.com y ponlos en Facturas");
+    await page.getByTestId("ai-generate").click();
+    await expect(page.getByTestId("ai-explanation")).toBeVisible();
+    await expect(page.getByTestId("filter-preview")).toHaveAttribute("data-ready", "true");
+    await inEveryLook(page, async (where) => {
+      await page.getByTestId("ai-provenance").click();
+      const popover = page.getByTestId("ai-provenance-popover");
+      await expect(popover, where).toBeVisible();
+      expect(await unclipped(popover), where).toEqual([]);
+      await page.keyboard.press("Escape");
+      await expect(popover, where).toHaveCount(0);
+      await expect(page.getByTestId("filters-dialog"), where).toBeVisible();
+      expect(await wheelsTo(page, page.getByTestId("filter-preview"), page.getByTestId("filter-preview").locator("li").last()), where).toBe(true);
+    });
+  });
+
   test("AI filters and learned filters", async ({ app: page, server }) => {
     await scenario("builds a filter from a Spanish prompt, previews it live and applies it", async () => {
       const db = sqlDb(server.backend.store);

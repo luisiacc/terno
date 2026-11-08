@@ -7,6 +7,8 @@ import type { Page } from "@playwright/test";
 import type { SettingsPatch } from "@terno/core/rpc";
 import type { IncomingMessage } from "@terno/store";
 import { E2E_NOW } from "./constants";
+import { inEveryLook } from "./helpers/looks";
+import { unclipped } from "./helpers/unclipped";
 import { expect, ingestConversation, navTo, openRow, rows, test, type DevServerFixture, fresh, scenario } from "./fixtures";
 import { englishLeaks } from "./i18n-leaks";
 import { answerFor } from "../../../scripts/ui-rating/model-stub.mjs";
@@ -58,6 +60,24 @@ async function openSubject(page: Page, subject: string) {
 
 
 test.describe("summaries (plan 132)", () => {
+  test("plan 162: the summary's provenance popover is whole in every design, light and dark, 1440 and 1100", { tag: "@design" }, async ({ app: page, server }) => {
+    const accountId = await firstAccount(server);
+    await settingUp(page, server, { ai: { provider: "fake" } });
+    await deliver(page, server, incoming(accountId, "The contract, new date"));
+    await openSubject(page, "The contract, new date");
+    await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "ready");
+    await inEveryLook(page, async (where) => {
+      await page.getByTestId("summary-provenance").click();
+      const popover = page.getByTestId("summary-provenance-popover");
+      await expect(popover, where).toBeVisible();
+      expect(await unclipped(popover), where).toEqual([]);
+      await page.keyboard.press("Escape");
+      await expect(popover, where).toHaveCount(0);
+      // Esc closed only it, and gave the keys back to what opened it
+      await expect(page.getByTestId("summary-provenance"), where).toBeFocused();
+    });
+  });
+
   test("on with AI, new mail gets a summary between the header and the conversation; old mail has none; axe-clean in both modes", { tag: "@variant" }, async ({ app: page, server }) => {
     const accountId = await firstAccount(server);
     await settingUp(page, server, { ai: { provider: "fake" } });

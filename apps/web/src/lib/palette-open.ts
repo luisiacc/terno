@@ -13,12 +13,18 @@ export const paletteFrom: { draftKey: string | null; focus: HTMLElement | null }
 /** Plan 162: closed, the keys go back where they were when it opened, unless something since took them (a source opened). */
 export function returnPaletteFocus(): void {
   const to = paletteFrom.focus;
-  paletteFrom.focus = null;
-  requestAnimationFrame(() => {
-    const at = document.activeElement;
-    if (to?.isConnected && (!at || at === document.body)) to.focus({ preventScroll: true });
-  });
+  // the dialog's own return (`finalFocus`) reads it first; this catches a close it doesn't see through
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      if (paletteFrom.focus === to) paletteFrom.focus = null;
+      const at = document.activeElement;
+      if (to?.isConnected && (!at || at === document.body)) to.focus({ preventScroll: true });
+    }),
+  );
 }
+
+/** The dialog's return of focus as it closes: what had the keys when it opened, if it's still there, else its default. */
+export const paletteReturn = (): HTMLElement | true => (paletteFrom.focus?.isConnected ? paletteFrom.focus : true);
 
 /** Plan 141: what the root's last row asked, for the page to take up when it's there. Esc on the page stops an answer first. */
 export const askFrom: { question: string | null } = { question: null };

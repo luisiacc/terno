@@ -257,9 +257,6 @@ test.describe("follow-ups (plan 142)", () => {
         await page.keyboard.press("Escape");
         await expect(custom).toHaveCount(0);
         await expect(page.getByTestId("followup-later")).toBeFocused();
-        await page.getByTestId("followup-later").click();
-        if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-later-${scheme}-${size.width}.png` });
-        await page.keyboard.press("Escape");
         await page.getByTestId("followup-provenance").click();
         expect(await unclipped(page.getByTestId("followup-provenance-popover")), where).toEqual([]);
         await page.keyboard.press("Escape");

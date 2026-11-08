@@ -8,6 +8,8 @@ import type { Page } from "@playwright/test";
 import type { SettingsPatch } from "@terno/core/rpc";
 import { fakeDraft } from "../../../packages/ai/src/fake";
 import { E2E_NOW } from "./constants";
+import { inEveryLook, wheelsTo } from "./helpers/looks";
+import { unclipped } from "./helpers/unclipped";
 import { expect, fresh, focusList, ingestConversation, scenario, test, type DevServerFixture } from "./fixtures";
 import { englishLeaks } from "./i18n-leaks";
 import { sqlDb } from "../../backend-dev/src/server";
@@ -61,6 +63,24 @@ async function question(page: Page, text: string) {
 }
 
 test.describe("ask your mail (plan 141)", () => {
+  test("plan 162: Ask's provenance popover is whole, and its answer and sources reach the wheel, in every design, light and dark, 1440 and 1100", { tag: "@design" }, async ({ app: page, server }) => {
+    await withMail(page, server);
+    await open(page);
+    await question(page, `what about ${WORD}?`);
+    await expect(lastTurn(page)).toHaveAttribute("data-status", "answered");
+    await inEveryLook(page, async (where) => {
+      await page.getByTestId("ask-provenance").click();
+      const popover = page.getByTestId("ask-provenance-popover");
+      await expect(popover, where).toBeVisible();
+      expect(await unclipped(popover), where).toEqual([]);
+      await page.keyboard.press("Escape");
+      await expect(popover, where).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "Ask your mail" }), where).toBeVisible();
+      expect(await wheelsTo(page, page.getByTestId("ask-area"), page.getByTestId("ask-scope")), where).toBe(true);
+      expect(await unclipped(page.getByRole("dialog", { name: "Ask your mail" })), where).toEqual([]);
+    });
+  });
+
   test("⌘⇧K: a question, its source, a return, a follow-up, the history, delete and Undo", async ({ app: page, server }) => {
     await withMail(page, server);
     const word = WORD;
@@ -333,7 +353,11 @@ test.describe("ask your mail (plan 141)", () => {
   test("Esc stops a running answer first, then steps back one level: from ⌘⇧K it closes, focus back on the list (plan 162); Backspace in the follow-up box only types", async ({ app: page, server }) => {
     await withMail(page, server);
     const word = WORD;
-    await open(page);
+    // the keys on the list, as a person's are after picking a conversation: where Esc's close gives them back (plan 162)
+    await page.getByTestId("thread-row").first().click();
+    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-keep-scroll"))).toBe("list");
+    await page.keyboard.press("ControlOrMeta+Shift+k");
+    await expect(page.getByRole("dialog")).toBeVisible();
     await question(page, `${word}?`);
     await expect(page.getByTestId("ask-answer")).toBeVisible();
     fakeDraft.paceMs = 300;
@@ -358,8 +382,8 @@ test.describe("ask your mail (plan 141)", () => {
     await expect(page.getByTestId("ask-hints")).toContainText("Close");
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(page.locator(":focus")).toHaveCount(1);
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
+    // the keys back where they were before ⌘⇧K: the list (never the page)
+    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-keep-scroll"))).toBe("list");
   });
 
   test("the palette's last row asks; Enter on a command that matches still wins", async ({ app: page, server }) => {

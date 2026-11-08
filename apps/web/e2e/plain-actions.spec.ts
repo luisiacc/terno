@@ -7,6 +7,8 @@ import type { Page } from "@playwright/test";
 import type { SettingsPatch } from "@terno/core/rpc";
 import { E2E_NOW, UNDO_KEYS } from "./constants";
 import { sqlDb } from "../../backend-dev/src/server";
+import { inEveryLook, wheelsTo } from "./helpers/looks";
+import { unclipped } from "./helpers/unclipped";
 import { expect, fresh, focusList, ingestConversation, scenario, test, type DevServerFixture } from "./fixtures";
 
 test.use({ backendOptions: { network: true } });
@@ -43,6 +45,25 @@ async function say(page: Page, sentence: string) {
 const rows = (page: Page) => page.getByTestId("thread-row");
 
 test.describe("actions in plain English (plan 143)", () => {
+  test("plan 162: the rule's provenance and its Exact pattern are whole, and the rule's end reaches the wheel, in every design, light and dark, 1440 and 1100", { tag: "@design" }, async ({ app: page, server }) => {
+    await withMail(page, server);
+    await say(page, "Archive shipping notices older than a month");
+    await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
+    await inEveryLook(page, async (where) => {
+      await page.getByTestId("action-provenance").click();
+      const popover = page.getByTestId("action-provenance-popover");
+      await expect(popover, where).toBeVisible();
+      expect(await unclipped(popover), where).toEqual([]);
+      await page.keyboard.press("Escape");
+      await expect(popover, where).toHaveCount(0);
+      await expect(page.getByTestId("action-rule"), where).toBeVisible();
+      await page.getByTestId("action-details-toggle").click();
+      expect(await unclipped(page.getByTestId("action-details-text")), where).toEqual([]);
+      expect(await wheelsTo(page, page.getByTestId("action-rule"), page.getByTestId("action-help")), where).toBe(true);
+      await page.getByTestId("action-details-toggle").click();
+    });
+  });
+
   test("\"from now on\" acts on what's here, and saves the rule too", async ({ app: page, server }) => {
     await withMail(page, server);
     // every row holds one of its words, so the offline check takes none out and the rule can be saved
@@ -215,6 +236,8 @@ test.describe("actions in plain English (plan 143)", () => {
       await page.getByTestId("action-apply").click();
       await expect(page.getByTestId("action-preview")).toHaveCount(0);
       await expect(page.getByTestId("snack")).toContainText("Archived 2 conversations");
+      // plan 162: the result says what it was for, under the count
+      await expect(page.getByTestId("snack")).toContainText("You asked: “Archive shipping notices older than a month”");
       // plan 161: back on the list you came from, its keys yours
       await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-keep-scroll"))).toBe("list");
       // the first row stayed out of it; the rest left
@@ -494,8 +517,22 @@ test.describe("actions in plain English at 1100 × 700 (plan 161, pass 2)", () =
     const lines = (testId: string) => page.getByTestId(testId).evaluate((el) => { const box = el.firstElementChild ?? el; const lh = parseFloat(getComputedStyle(box).lineHeight); return Math.round(box.getBoundingClientRect().height / lh); });
     expect(await lines("action-title")).toBe(1);
     expect(await lines("action-rule-title")).toBe(1);
-    // the help is its own line, whole: no word left alone under it
-    await expect(page.getByTestId("action-help")).toHaveText("Click a conversation to read it. Esc brings you back here.");
+    // the help is its own line, whole: no word left alone under it. Plan 162: Esc is said once, where it applies (the
+    // keys' line here; the header's Show the rule while a conversation covers the rule), and the keys fit one line
+    await expect(page.getByTestId("action-help")).toHaveText("Click a conversation to read it.");
     expect(await lines("action-help")).toBe(1);
+    const tops = await page.getByTestId("action-keys").evaluate((el) => [...el.children].map((c) => Math.round(c.getBoundingClientRect().top)));
+    expect(new Set(tops).size).toBe(1);
+    await expect(page.getByTestId("action-rule")).not.toContainText("brings you back");
+    // the one provenance control every AI result has, at the rule's line's end: what it did and how to check it
+    await page.getByTestId("action-provenance").click();
+    await expect(page.getByTestId("action-provenance-popover")).toContainText("Check the rule and the rows before you apply.");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("action-provenance-popover")).toHaveCount(0);
+    await expect(page.getByTestId("action-rule")).toBeVisible();
+    // reading one, the way back says its key
+    await rows(page).first().getByTestId("row-subject").click();
+    await expect(page.getByTestId("action-show-rule")).toContainText("Show the rule");
+    await expect(page.getByTestId("action-show-rule")).toHaveAttribute("aria-keyshortcuts", "Escape");
   });
 });

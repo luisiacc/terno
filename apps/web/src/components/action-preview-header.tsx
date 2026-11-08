@@ -326,7 +326,6 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1" data-testid="action-keys">
             <span className="inline-flex items-center gap-1.5"><Shortcut keys="mod+enter" /> {waiting ? t(`action.button.${verb}`) : t(`action.apply.${verb}`, { count })}</span>
             <span className="inline-flex items-center gap-1.5"><Shortcut keys="escape" /> {t("common.cancel")}</span>
-            <span className="inline-flex items-center gap-1.5"><Shortcut keys="j" /><Shortcut keys="k" /> {t("action.rule.read")}</span>
             <span className="inline-flex items-center gap-1.5"><Shortcut keys="x" /> {t("action.rule.leaveOut")}</span>
           </p>
           {reader && <p className="text-pretty" data-testid="action-help">{t("action.rule.keys")}</p>}

@@ -2528,7 +2528,6 @@ It contains none of your mail, contacts, settings or keys.
   "action.rule.value": "{op} “{value}”",
   "action.rule.details": "Exact pattern",
   "action.rule.show": "Show the rule",
-  "action.rule.read": "Read",
   "action.provenance": "It read your request as the rule above, and can misread it. Check the rule and the rows before you apply.",
   "action.asked": "You asked: “{sentence}”",
   "action.rule.keys": "Click a conversation to read it.",

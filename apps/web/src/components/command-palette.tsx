@@ -29,7 +29,7 @@ import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { openRemind, presetLabel, presetWhen, setReminder, clearReminder, useReminders } from "~/lib/reminders";
 import { draftCommands, type DraftCommands } from "~/lib/draft-commands";
 import { isInstruction } from "~/lib/imperative";
-import { askFrom, paletteBack, paletteFrom, paletteKeys, returnPaletteFocus, setPalettePage, usePalettePage } from "~/lib/palette-open";
+import { askFrom, paletteBack, paletteFrom, paletteKeys, paletteReturn, returnPaletteFocus, setPalettePage, usePalettePage } from "~/lib/palette-open";
 import { loadSnippets, newSnippetId, useSnippets } from "~/lib/snippets";
 import { insertSnippetInto, newMessageFromSnippet, saveDraftAsSnippet } from "~/lib/snippet-insert";
 import { openSnippetEditor } from "~/lib/snippet-editor-state";
@@ -580,7 +580,7 @@ export function CommandPalette() {
   const placeholder = page === "root" ? t("palette.placeholder") : page === "remind" ? t("palette.remindPlaceholder") : page === "snippets" ? t("palette.snippetsPlaceholder") : t("category.picker.placeholder");
 
   return (
-    <CommandDialog open={open} onOpenChange={(o) => !o && close()} finalFocus={() => { const own = tookFocus.current; tookFocus.current = false; return !own; }} title={page === "ask" ? t("ask.dialog.title") : page === "askHistory" ? t("palette.askHistory") : t("palette.title")} description={page === "ask" || page === "askHistory" ? t("ask.dialog.description") : t("palette.description")} hints={page !== "ask"}>
+    <CommandDialog open={open} onOpenChange={(o) => !o && close()} finalFocus={() => { const own = tookFocus.current; tookFocus.current = false; return own ? false : paletteReturn(); }} title={page === "ask" ? t("ask.dialog.title") : page === "askHistory" ? t("palette.askHistory") : t("palette.title")} description={page === "ask" || page === "askHistory" ? t("ask.dialog.description") : t("palette.description")} hints={page !== "ask"}>
       {/* CommandDialog (base-nova) doesn't provide the cmdk root itself */}
       <Command
         // cmdk's Ctrl+J/K/N/P: off the Mac Ctrl+K is the palette's own chord (it closes it)

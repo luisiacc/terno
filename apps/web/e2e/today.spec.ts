@@ -8,6 +8,8 @@ import type { SettingsPatch } from "@terno/core/rpc";
 import type { IncomingMessage } from "@terno/store";
 import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
+import { inEveryLook, wheelsTo } from "./helpers/looks";
+import { unclipped } from "./helpers/unclipped";
 import { expect, fresh, ingestConversation, scenario, test, type DevServerFixture } from "./fixtures";
 
 test.use({ backendOptions: { network: true }, today: true });
@@ -37,6 +39,27 @@ async function withMail(server: DevServerFixture) {
 }
 
 test.describe("Today (plan 145)", () => {
+  test("plan 162: the digest's provenance is whole and its header stays as the list scrolls, in every design, light and dark, 1440 and 1100", { tag: "@design" }, async ({ app: page, server }) => {
+    await withMail(server);
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, today: { digest: true, prepareAt: "00:00" } });
+    await page.getByTestId("nav-today").click();
+    await expect(page.getByTestId("digest-row")).toContainText("today's digest", { timeout: 15_000 });
+    await page.getByTestId("digest-row").click();
+    await expect(page.getByTestId("digest-title")).toHaveText("Today's digest");
+    await inEveryLook(page, async (where) => {
+      await page.getByTestId("digest-provenance").click();
+      const popover = page.getByTestId("digest-provenance-popover");
+      await expect(popover, where).toBeVisible();
+      expect(await unclipped(popover), where).toEqual([]);
+      await page.keyboard.press("Escape");
+      await expect(popover, where).toHaveCount(0);
+      // the last row reaches the wheel, and Archive is still in view when it does
+      expect(await wheelsTo(page, page.getByTestId("digest-scroller"), page.getByTestId("digest-item").last()), where).toBe(true);
+      await expect(page.getByTestId("digest-archive"), where).toBeInViewport();
+      await page.getByTestId("digest-scroller").evaluate((el) => { el.scrollTop = 0; });
+    });
+  });
+
   test("without a provider there's no row, and no palette entry", async ({ app: page, server }) => {
     await settingUp(page, server, { ai: { provider: "none" } });
     await expect(page.getByTestId("nav-inbox")).toBeVisible();
@@ -162,8 +185,9 @@ test.describe("Today (plan 145)", () => {
     await expect.poll(() => inbox("Morning Brew digest")).toBe(0);
     expect(inbox("Stratechery weekly")).toBe(1);
     expect(inbox("Sale ends tonight")).toBe(1);
-    // its Undo, in the page as in the snack
-    await page.getByTestId("digest-undo").click();
+    // its Undo is the snack's while the snack shows (plan 162: one at a time; the page's comes when the snack goes)
+    await expect(page.getByTestId("digest-undo")).toHaveCount(0);
+    await page.getByTestId("snack").filter({ hasText: "Archived 1 newsletter" }).getByTestId("snack-action").click();
     await expect.poll(() => inbox("Morning Brew digest")).toBe(1);
     // the open page hears it: back in the list and the count, and done no more
     await expect(page.getByTestId("digest-item").filter({ hasText: "Morning Brew digest" })).toHaveAttribute("data-live", "true");
