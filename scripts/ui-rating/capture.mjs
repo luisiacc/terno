@@ -115,10 +115,11 @@ async function aiPass(design, mode, dir) {
     }
   };
   const s = async (name, { snack = false } = {}) => {
-    await still();
+    // closed first, then still: a closing snack fades out before the shot
     if (!snack) await noSnacks();
+    await still();
     // the state is still there after the wait: an undo that ran out isn't a shot of the undo
-    else if (!(await page.getByTestId("snack").first().isVisible())) throw new Error(`${name}: its snack was gone before the shot`);
+    if (snack && !(await page.getByTestId("snack").first().isVisible())) throw new Error(`${name}: its snack was gone before the shot`);
     await shot(page, `${name}-${mode}`, dir);
     if (!AI_SMALL.includes(name)) return;
     await resize(app, 1100, 700);
@@ -197,7 +198,8 @@ async function aiPass(design, mode, dir) {
     await page.keyboard.type(AI_INPUTS.action);
     await page.keyboard.press("Enter");
     await visible("action-preview");
-    await visible("action-apply");
+    // whole: the search done, the check done, and Apply ready for what's left
+    await page.waitForFunction(() => !document.querySelector("[data-testid=action-finding], [data-testid=action-checking]") && document.querySelector("[data-testid=action-apply]")?.disabled === false, null, { timeout: 30_000 });
     await s("a05-actions-preview");
     await page.getByTestId("action-apply").click();
     await visible("snack", { hasText: /Archived|Archivad/ });
@@ -243,6 +245,8 @@ async function aiPass(design, mode, dir) {
     await page.getByTestId("ai-prompt").fill(AI_INPUTS.filter);
     await page.getByTestId("ai-generate").click();
     await visible("ai-explanation");
+    // the rule's matches counted, not "Calculating…"
+    await visible("preview-ms");
     await s("a11-filter-ai");
     await page.keyboard.press("Escape");
     await page.getByTestId("ai-prompt").waitFor({ state: "detached" });
