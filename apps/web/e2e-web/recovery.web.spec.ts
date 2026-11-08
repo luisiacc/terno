@@ -16,7 +16,7 @@ for (const [surface, recovery] of [["worker", "missing"], ["render", "unknown"]]
   const body = page.getByTestId("compose-body"); await body.fill("retained exact work");
   await body.press("Meta+a"); await body.press("Meta+b"); await body.press("ArrowRight");
   await page.getByTestId("compose-to").fill('"Pérez, Ana" <ana@example.test>, bob@');
-  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   await page.evaluate(async () => { const c = window.__ternoWeb!.client, d = (await c.call("drafts.list", {}))[0]!; await c.call("drafts.delete", { id: d.id, generation: d.generation }); });
   await body.click(); await body.click(); await body.press("ArrowRight"); await body.press("Meta+ArrowRight"); await page.keyboard.type(" latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
   if (recovery === "unknown") {

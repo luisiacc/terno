@@ -43,6 +43,10 @@ test("actual pending Send refuses Settings storage switching before export and p
   await page.goto("/?demo=200&storage=opfs-sqlite");
   await page.getByTestId("thread-row").first().waitFor({ timeout: 60_000 });
   expect(await page.evaluate(() => window.__ternoWeb!.storage)).toBe("opfs-sqlite");
+  // plan 158: with Undo send on, Send is a hold the backend schedules, not the `compose.send` in flight this is about
+  await page.evaluate(() => window.__ternoWeb!.client.call("settings.update", { undoSend: false }));
+  await page.reload();
+  await page.getByTestId("thread-row").first().waitFor({ timeout: 60_000 });
   await page.getByRole("button", { name: "Compose", exact: true }).click();
   const body = page.getByTestId("compose-body");
   await body.click(); await body.press("Meta+b"); await page.keyboard.type(authored.bodyText);
@@ -54,7 +58,7 @@ test("actual pending Send refuses Settings storage switching before export and p
   await page.getByTestId("compose-subject").fill(authored.subject);
   await page.getByTestId("compose-subject").press("Tab");
   await page.getByTestId("attachment-input").setInputFiles({ name: "pending.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 255, 128]) });
-  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   const editorHtml = await body.innerHTML();
   const old = await readWork(page);
   // Each readback-only counterexample must independently trip the fixed authored oracle.
@@ -121,7 +125,7 @@ test("actual pending Send refuses Settings storage switching before export and p
     expect((await new AxeBuilder({ page }).include('[data-testid="composer"]').analyze()).violations).toEqual([]);
   }
   await page.getByTestId("draft-save-copy").focus(); await page.keyboard.press("Enter");
-  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   const copy = await readWork(page);
   expect(copy.generation).not.toBe(old.generation);
   expect(copy.attachments).toEqual(old.attachments);

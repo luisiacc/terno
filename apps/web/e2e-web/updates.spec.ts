@@ -160,7 +160,7 @@ test("terminal recovery holds repeated deployments and persistent Reload survive
   await expect.poll(() => page.evaluate(async () => Boolean((await navigator.serviceWorker.ready).waiting))).toBe(false);
   expect(navigations).toBe(0); await expect(body).toHaveText("web recovery exact latest");
   await other.close();
-  await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   await Promise.all([page.waitForEvent("framenavigated", { predicate: (frame) => frame === page.mainFrame(), timeout: 5000 }), page.getByTestId("update-pill").click()]);
   await rows(page).first().waitFor();
   await page.getByTestId("strip-item").first().click(); await expect(body).toHaveText("web recovery exact latest");
@@ -185,7 +185,7 @@ test("recovery holds storage switching and mailbox handover while the current wo
   await expect(page.getByTestId("snack-message")).toContainText("Save or discard your unsaved drafts before switching storage. Your work is still here.");
   expect(navigations).toBe(0); expect(await page.evaluate(() => window.__ternoWeb!.storage)).toBe("opfs-sqlite");
   await page.keyboard.press("Escape"); await expect(body).toHaveText("handover recovery exact latest");
-  await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   expect((await page.evaluate(() => window.__ternoWeb!.client.call("drafts.list", {})))[0]!.bodyText).toBe("handover recovery exact latest");
 });
 
@@ -196,7 +196,7 @@ test("slow storage export cannot commit an earlier snapshot over later recovery"
   await body.press("Meta+a"); await body.press("Meta+b"); await body.press("ArrowRight");
   await page.getByTestId("compose-to").fill('"Pérez, Ana" <ana@example.test>, bob@');
   await page.getByTestId("attachment-input").setInputFiles({ name: "carry.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 255, 128]) });
-  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   await page.evaluate(() => {
     const client = window.__ternoWeb!.client, call = client.call.bind(client);
     Object.defineProperty(client, "call", { value: (method: string, params: unknown) => {
@@ -224,7 +224,7 @@ test("slow storage export cannot commit an earlier snapshot over later recovery"
   expect(await page.evaluate(() => sessionStorage.getItem("terno:carry"))).toBeNull();
   expect(await page.evaluate(() => localStorage.getItem("terno:storage:terno"))).toBe(originalPin);
   await expect(body).toHaveText("storage exact latest");
-  await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   const latest = await page.evaluate(async () => (await window.__ternoWeb!.client.call("drafts.list", {}))[0]!);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("Meta+k");
   await page.getByTestId("palette-input").fill("settings storage"); await page.keyboard.press("Enter");
@@ -248,7 +248,7 @@ for (const accepted of ["upload", "composition"] as const) test(`accepted ${acce
   await page.getByRole("button", { name: "Compose", exact: true }).click();
   const body = page.getByTestId("compose-body"); await body.fill("accepted exact work");
   await body.press("Meta+a"); await body.press("Meta+b"); await body.press("ArrowRight");
-  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   if (accepted === "upload") {
     await page.evaluate(() => {
       const c = window.__ternoWeb!.client, call = c.call.bind(c);
@@ -272,7 +272,7 @@ for (const accepted of ["upload", "composition"] as const) test(`accepted ${acce
   expect(navigations).toBe(0); await expect(page.getByTestId("web-taken")).toHaveCount(0);
   if (accepted === "upload") await page.evaluate(() => Reflect.get(window, "finishSeal")());
   else await body.dispatchEvent("compositionend", { data: "" });
-  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   if (accepted === "upload") await expect(page.getByTestId("draft-attachment")).toContainText("accepted.bin");
   await Promise.all([page.waitForEvent("framenavigated", { predicate: (f) => f === page.mainFrame() }), page.getByTestId("update-pill").click()]);
   await rows(page).first().waitFor();
