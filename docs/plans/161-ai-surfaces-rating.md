@@ -818,3 +818,60 @@ Review rounds stop here.
 - **Plan 145's two rules stand:** every newsletter starts ticked, and an opened newsletter is read, so it stays (now said on its row: "Opened · stays in Inbox"). Both raters' "start with nothing ticked" and "keep opened ones in the batch" are still the owner's call.
 - **Same-subject issues** in the digest are separate conversations and both stay; collapsing them would hide a real second mail.
 - **Today's list is capped at 12** (plan 145), so the header says "41 need you · the newest 12 here". Showing all of them would be a change to plan 145.
+
+### ai-r02 (main at `008d91a5a`, 2026-11-08)
+
+After pass 2 (the three areas, landed together; full suite green once its flaky first-pass failures were run again alone). All eight reports valid; 670 cells under 9 as the gate counts them (ai-r01: 683, ai-r00: 695), 104 issues (7 high; ai-r01: 112 and 6, ai-r00: 114 and 17). The numbers as `gate.mjs` wrote them:
+
+| Style | Rater | Overall | UI | UX | Lowest | Cells below |
+|---|---|---:|---:|---:|---:|---:|
+| atelier | claude | 7 | 7 | 7.5 | 3.5 | 84/84 |
+| atelier | codex | 7 | 7 | 7.5 | 4.5 | 81/84 |
+| graphite | claude | 7 | 7 | 7 | 4.5 | 84/84 |
+| graphite | codex | 7.5 | 7.5 | 8 | 6 | 78/84 |
+| lumen | claude | 7 | 6.5 | 7.5 | 4 | 84/84 |
+| lumen | codex | 7.5 | 7.5 | 8 | 6.5 | 75/84 |
+| macos | claude | 7 | 7 | 7.5 | 4.5 | 84/84 |
+| macos | codex | 7.5 | 7.5 | 8 | 6.5 | 76/84 |
+
+#### Screens, each rater's overall
+
+| Screen | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| summary | 7 | 7.5 | 7 | 7.5 | 7 | 7.5 | 7.5 | 7.5 |
+| ai_draft | 7 | 7 | 7.5 | 7.5 | 7.5 | 7.5 | 7.5 | 7.5 |
+| ask | 7.5 | 7.5 | 7 | 8 | 7.5 | 8 | 8 | 7.5 |
+| actions | 7.5 | 8.5 | 7.5 | 8.5 | 8 | 8.5 | 6.5 | 8.5 |
+| today | 6.5 | 6.5 | 6.5 | 7 | 6.5 | 7 | 7 | 7 |
+| followups_replies | 6 | 6.5 | 6.5 | 8 | 6 | 8 | 6.5 | 8 |
+| ai_settings | 7 | 7.5 | 6.5 | 7.5 | 7 | 7.5 | 7 | 7.5 |
+
+#### Facets, mean across screens
+
+| Facet | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| typography | 7.43 | 7.43 | 7.21 | 7.64 | 7.36 | 7.86 | 7.29 | 8.00 |
+| contrast | 7.21 | 8.07 | 7.86 | 8.50 | 6.93 | 8.50 | 7.93 | 8.21 |
+| placement | 6.71 | 7.14 | 7.14 | 7.79 | 7.14 | 7.64 | 6.93 | 7.86 |
+| hierarchy | 6.79 | 7.36 | 6.57 | 7.29 | 6.93 | 7.50 | 6.86 | 7.71 |
+| controls | 6.21 | 6.86 | 6.36 | 7.93 | 6.71 | 7.79 | 6.43 | 7.64 |
+| density | 7.00 | 6.79 | 6.86 | 7.57 | 7.57 | 7.29 | 7.50 | 7.57 |
+| efficiency | 7.79 | 7.14 | 7.43 | 8.29 | 7.93 | 8.29 | 7.50 | 8.00 |
+| clarity | 7.21 | 7.14 | 7.29 | 7.57 | 7.57 | 7.71 | 7.07 | 7.50 |
+| feedback | 6.93 | 8.57 | 7.86 | 8.64 | 7.36 | 8.93 | 7.86 | 8.79 |
+| consistency | 6.93 | 7.57 | 6.64 | 7.57 | 7.14 | 8.00 | 6.93 | 7.79 |
+| accessibility | 6.36 | 7.43 | 6.71 | 7.57 | 6.50 | 7.43 | 6.86 | 7.43 |
+
+**Overall:** 7 to 7.5 from every rater in every style (ai-r00: 6 to 7). Actions reach 8.5 from Codex in all four styles. **The lowest cells (3.5 to 4.5) are one regression pass 2 made:** the follow-up's Later menu, given its times, stayed 128 px wide and clips its labels ("Lat…", "To…", "T") in every style (five of the seven high issues).
+
+**The themes** (all 104 issues in `/tmp/terno-scratch/ui9/rounds/ai-r02`):
+- **Regressions and lost work:** the Later menu (above); Esc while ⌘J is writing throws away the instruction and the partial draft without a word.
+- **Actions:** a bulk "Move 838 to Trash" wears the same primary as "Archive 6"; Apply sits in the list header, far from the rule it applies, with the rule pane half empty; a sentence typed in ⌘K runs Search, with "Ask AI" second.
+- **⌘J:** the instruction is cut to about 20 characters and gone at 1100, where Undo becomes an unlabelled icon while Regenerate, Shorter and Warmer keep their words.
+- **Ask:** citations still about 15x20 px; a click on one closes Ask; the ↑↓ legend promises what the follow-up field doesn't do; the × in the Ask chip returns to Commands; the panel is mostly chrome for a two-line answer.
+- **Summary and one AI language:** the Action row opens the source, not a reply, and doesn't say so; "Copy" and "Written with AI" look different on every surface; one sparkle means three things.
+- **Today:** "41 need you · the newest 12 here · All 165 waiting in Inbox" beside Inbox 100 reads as three contradicting counts; the reasons are now bold and louder than the subject; the digest row is too quiet in Lumen; the digest's AI attribution is at the bottom.
+- **Follow-ups and Reply ready:** the line leads with the date, not the fact, and looks unlike Reply ready; "In your voice" vs "Written from the conversation alone" unexplained.
+- **AI settings:** Esc in a sub-edit closes the whole dialog; the precedence sentence reads as adopting the recipient's voice; the generated rule leaves focus on the dialog; the compact form crowds out its matches.
+
+No finding goes against a product or AI rule. One may touch the palette's default (a sentence in ⌘K): if a fix changes what Enter does for non-AI input, it goes to the owner.
