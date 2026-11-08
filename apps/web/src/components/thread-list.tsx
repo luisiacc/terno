@@ -906,8 +906,11 @@ function UnreadEmptyState({ filter }: { filter: QuickFilter }) {
  */
 function leaveEmptyList() {
   const visible = (el: HTMLElement | null) => (el && el.checkVisibility?.() !== false && !el.closest("[inert]") ? el : null);
-  // (scrolling allowed: a sidebar scrolled past its current view brings it back into sight with the focus)
-  (visible(document.querySelector<HTMLElement>("[data-testid=unread-empty-clear]")) ?? visible(document.querySelector<HTMLElement>("#app-sidebar button[data-active]")))?.focus();
+  // (scrolling allowed: a sidebar scrolled past its current view brings it back into sight with the focus). No sidebar row
+  // is current during a search (plan 158), so an empty search hands it to the Inbox's
+  (visible(document.querySelector<HTMLElement>("[data-testid=unread-empty-clear]")) ??
+    visible(document.querySelector<HTMLElement>("#app-sidebar button[data-active]")) ??
+    visible(document.querySelector<HTMLElement>("#app-sidebar [data-testid=nav-inbox]")))?.focus();
 }
 
 function EmptyState() {
