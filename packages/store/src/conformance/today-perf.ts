@@ -42,4 +42,15 @@ export async function measureToday(o: WorkloadMailbox, budget: { waitingMs: numb
   }
   o.log(`today digestFacts: ${pages} pages, longest ${longest.toFixed(1)} ms`);
   expect(longest).toBeLessThanOrEqual(budget.pageMs * o.budget);
+  // plan 161, pass 2: the page's two reads of its ≤ 40 rows on every refresh (to archive, opened), within the waiting budget
+  const ids = (await store.today.waitingPage({ now: o.now, after: null, limit: 40 })).map((p) => p.id);
+  const stateTimes: number[] = [];
+  for (let i = 0; i < 40; i++) {
+    const t = performance.now();
+    await Promise.all([store.today.digestLive(ids), store.today.digestRead(ids)]);
+    stateTimes.push(performance.now() - t);
+  }
+  const stateP95 = stateTimes.sort((a, b) => a - b)[37]!;
+  o.log(`today digest states: p95 ${stateP95.toFixed(2)} ms`);
+  expect(stateP95).toBeLessThanOrEqual(budget.waitingMs * o.budget);
 }
