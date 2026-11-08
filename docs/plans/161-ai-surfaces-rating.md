@@ -427,3 +427,14 @@ Nine points, all taken, each with a regression test that fails without its fix:
 7. **Back to the answer could open an empty Ask after 30 minutes.** The link is an explicit return. It brings that conversation back however long the source was read, and reopens it if the palette had let it go (`ask-return.test.tsx`, fake clock).
 8. **List layout kept the link after its page closed.** Closing List's conversation page now ends it, as opening another conversation does (`ask-return.test.tsx`).
 9. **The reader's subtitle said a running count as final.** The header and the reader now share `previewTitle`, so no count shows until the search is done (`action-preview-title.test.ts`).
+
+A second, narrower Codex pass on those fixes found one more, also taken. **The ready handoff gave up on a palette still closing.** A preview that's ready at once (a rule for new mail, with nothing here yet) could run its handoff while the palette's input still held focus. The handoff was used up, so focus stayed outside the list. It now waits for the palette to go, by watching the page change rather than a timer, and a key, a press or another list still ends the wait (`action-preview.test.ts`).
+
+### Where pass 1 stands
+
+- **Run:** typecheck and lint; the unit files touched (`rule-words`, `ask-citations`, `provenance`, `action-preview`, `action-preview-title`, `ask-return`, and the reader, list and compose component tests); `plain-actions.spec.ts` and `ask.spec.ts` in macOS; their `@design` flows in all five designs; `design-axe.spec.ts`'s list-and-reader sweep, now including the preview and its rule, in macOS, Lumen and Atelier; `pnpm test:ui-perf` (45 passed). `pnpm test:all` is left for the landing batch.
+- **Shots:** `/tmp/terno-scratch/ai-pass1/actions-ask/<design>/`, the AI set in light and dark at both sizes, from `capture.mjs --screens ai` on this branch's desktop build. The "before" shots are ai-r00's.
+- **Left for later:**
+  - The builder's count opened from "Edit as a rule" is a note beside its own count, not a scoped count. A rule has no folder condition, and `filters.preview` counts everywhere in both stores.
+  - At 1100 px the list header's title still wraps ("Archive 6 / conversations"), because the list column is that narrow.
+  - "Ask again" isn't renamed, and the "Ask ×" chip still sits in two places. Both are in the palette's shared header, outside this pass.

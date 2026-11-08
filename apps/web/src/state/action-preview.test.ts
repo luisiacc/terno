@@ -93,7 +93,7 @@ describe("what a preview keeps to come back to (plan 143)", () => {
   it("ready, the keys go to the list, unless the user moved since it opened (Codex review #3)", () => {
     const list = { scrollTop: 0, focus: vi.fn(), isConnected: true };
     const body = { closest: () => null };
-    vi.stubGlobal("document", { querySelector: () => list, activeElement: body, body });
+    vi.stubGlobal("document", { querySelector: (q: string) => (q === "[role=dialog]" ? null : list), activeElement: body, body });
     try {
       enterPreview("p10");
       list.focus.mockClear();
@@ -112,6 +112,36 @@ describe("what a preview keeps to come back to (plan 143)", () => {
       leavePreview();
     } finally {
       vi.stubGlobal("document", { querySelector: () => null });
+    }
+  });
+
+  it("a palette still closing is waited for, not given up on (Codex review, second pass)", () => {
+    const list = { scrollTop: 0, focus: vi.fn(), isConnected: true };
+    let dialog: object | null = { role: "dialog" };
+    const input = { closest: (q: string) => (q.includes("input") ? input : null) };
+    const body = { closest: () => null };
+    const doc = { querySelector: (q: string) => (q === "[role=dialog]" ? dialog : list), activeElement: input as unknown, body };
+    let changed: (() => void) | null = null;
+    const disconnect = vi.fn();
+    vi.stubGlobal("document", doc);
+    vi.stubGlobal("MutationObserver", class { constructor(run: () => void) { changed = run; } observe() {} disconnect() { disconnect(); } });
+    try {
+      enterPreview("p12");
+      list.focus.mockClear();
+      focusWhenReady("p12");
+      expect(list.focus).not.toHaveBeenCalled();
+      // the palette goes, handing focus back to the page
+      dialog = null;
+      doc.activeElement = body;
+      changed!();
+      expect(list.focus).toHaveBeenCalledTimes(1);
+      expect(disconnect).toHaveBeenCalled();
+      leavePreview();
+    } finally {
+      vi.stubGlobal("document", { querySelector: () => null });
+      vi.unstubAllGlobals();
+      vi.stubGlobal("document", { querySelector: () => null });
+      vi.stubGlobal("requestAnimationFrame", (run: () => void) => run());
     }
   });
 });

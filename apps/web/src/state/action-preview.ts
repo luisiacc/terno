@@ -77,14 +77,35 @@ export function enterPreview(previewId: string, view: "inbox" | "all" = "all"): 
 /** the list's focus once the preview is ready, unless the user has moved since it opened (a Tab to Cancel, a click) */
 const handoff: { previewId: string | null; seq: number } = { previewId: null, seq: 0 };
 
-/** Plan 161: ready (found and checked), the keys go to the list: the palette may have handed focus elsewhere as it closed. */
+/**
+ * Plan 161: ready (found and checked), the keys go to the list: the palette may have handed focus elsewhere as it closed.
+ * A palette still closing is waited for (the page changing, not a timer); a key or a press since the preview opened, or
+ * another list, ends the wait.
+ */
 export function focusWhenReady(previewId: string): void {
   if (handoff.previewId !== previewId) return;
-  handoff.previewId = null;
-  if (focusIntent.seq !== handoff.seq) return;
-  const at = document.activeElement;
-  if (at?.closest?.("input, textarea, select, [contenteditable], [role=dialog], [role=menu], [data-composer]")) return;
-  listEl()?.focus({ preventScroll: true });
+  const attempt = (): boolean => {
+    if (handoff.previewId !== previewId) return true;
+    if (focusIntent.seq !== handoff.seq || getApp().actionPreview !== previewId) {
+      handoff.previewId = null;
+      return true;
+    }
+    if (getApp().dialog !== null || document.querySelector("[role=dialog]")) return false;
+    handoff.previewId = null;
+    const at = document.activeElement;
+    if (!at?.closest?.("input, textarea, select, [contenteditable], [role=menu], [data-composer]")) listEl()?.focus({ preventScroll: true });
+    return true;
+  };
+  if (attempt()) return;
+  const watch = new MutationObserver(() => {
+    if (attempt()) stop();
+  });
+  const timer = setTimeout(() => stop(), 10_000);
+  const stop = () => {
+    watch.disconnect();
+    clearTimeout(timer);
+  };
+  watch.observe(document.body, { childList: true, subtree: true });
 }
 
 /** Back to the list and scroll position you left, with no trace. */
