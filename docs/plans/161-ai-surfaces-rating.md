@@ -577,3 +577,34 @@ After pass 1 (the three areas above, landed together, full suite green). All eig
 - **AI settings:** the AI filter's preview shows "2 ms" and monospace dates (four styles, both raters); Writing style's copy contradicts itself (181 messages over a card saying 64; "Yours and your accounts'"), learned versus "Let AI study my style" unclear, the editor opens with focus above the view, learned phrases can't be removed; Save and apply doesn't repeat its count.
 
 No finding goes against a product or AI rule. Two touch the owner's open questions (an opened newsletter left out of the archive; every newsletter ticked by default, plan 145).
+
+## Pass 2: actions and Ask
+
+From `ai-r01`'s `actions` and `ask` (every issue and every reason below 9, four designs, both raters; collected in `/tmp/terno-scratch/ai-pass2/actions-ask/findings.md`). ⌘J, the summary, follow-ups, Reply ready and the shared AI card are one engineer's pass 2; Today, the digest, Writing style and the AI filter another's. No new model call, and no change to the rating's evidence.
+
+### Actions
+
+- **Esc never loses the action (high).** In Split, with a matched conversation open in the reader (a click on its body, or j/k), Esc closes that conversation and brings the rule back, with the ticks, the request and the count as they were, the keys on the list. Only an Esc with nothing open cancels. List layout already closes its conversation page first; that's now tested too. The rule's help line says so: "Click a conversation to read it. Esc brings you back here."
+- **The outcome is the title.** The reader's rule panel leads with what Apply does ("Archive 6 conversations", the same `previewTitle` the button and the snack count from), and the request is the quieter line under it, in quotes. In Split the list header, which is too narrow at 1100 px for the outcome beside Cancel and Archive, says only the count ("6 conversations"; "Finding… 4 so far" while finding), on one line: the verb is its button's, the outcome the reader's title. List layout, the window's width and no reader, keeps the whole outcome in its header.
+- **Details is the exact pattern, in words' type.** The disclosure is named "Exact pattern" and lists only the conditions that have one: the field ("Subject and first lines"), then the pattern in the UI font, broken only after a `|`, never inside a word. Its trigger is a 24 px target.
+- **"Start of mail" says what it covers:** the field (`opening`, `evaluate.ts`: the subject and the stored first lines) is "Subject and first lines" ("Asunto y primeras líneas") everywhere it's named, the rule builder included, so the preview and Edit as a rule use the same words.
+- **The checks are checkboxes to assistive tech.** A preview row stays the listbox's option (j/k, x), its `aria-selected` the cursor as in any list, and says whether it's included with `aria-checked`. The check column is `role=checkbox` named "Include {subject}", for the pointer (not in the Tab order: the row and x are the keyboard's way).
+- **Waiting reads as waiting.** While finding or checking, Apply is a quiet button with a spinner and its verb ("Archive"), not a faded primary; the count comes with the result. (The 1.7:1 the rater measured was the palette's scrim still fading over a disabled button whose own pair is 5.4:1; the spinner is what says "waiting".)
+- **The keys line** is keycaps only (⌘↩ Archive 6, esc Cancel, X Leave out), and the help is a line of its own, short enough not to leave an orphan at 1100 px (`text-pretty`).
+- **The Undo snack shows ⌘Z** (Ctrl+Z elsewhere), the platform's undo, in the shared snack, since every undo snack's key works the same way. Bare z still undoes, and `aria-keyshortcuts` names both. The snack already names what it did and, after Undo, what came back ("Moved 6 conversations back to the Inbox"). The countdown ring is the shared snack's designed drain from the top centre, not a fault, so it's left as it is (in the report).
+
+### Ask
+
+- **Every turn keeps its sources.** The last turn's sources stay the palette's rows (↑↓, Enter). An earlier turn shows its own under its answer, the same row anatomy (number, sender, subject, date) as buttons, so nothing a turn cited goes away when you ask more. Only the last turn has "Answer again".
+- **Citations are 20 px boxes.** The marker is a 20 px tall button (its own box, so a measurement of the element finds 20 px) holding the small number pill; the line's height doesn't change. Its number is full ink on the field wash (a pair the contrast suite holds at 4.5:1). Hover or focus shows the source (sender, subject, date) in a tooltip. ↑↓ walk the source rows, and the citation of the chosen row lights up with it, so the keyboard reaches what each number points at.
+- **Names say what they do.** "Ask again" is "Answer again" (it asks the same question once more and adds the new answer below). Copy and Answer again are secondary buttons with their icons, not grey text. New question and Previous AI questions are one quiet line of small text under the sources, below the answer in weight and place; "Ask a follow-up…" stays the box to continue.
+- **Follow-up questions read as questions:** in the answer's size and medium weight, like the header's question, not a grey caption.
+- **One "Search older mail on your servers"**: the same quiet secondary button after the scope line and after "Nothing in your mail on this Mac answers this", one label.
+- **The history chip stays on one line:** a chip never wraps (`whitespace-nowrap` in the shared Chip, BoardUI's chip is one line), so its × no longer sits over the placeholder.
+
+### Tests
+
+- e2e `plain-actions.spec.ts`: Esc with a conversation open keeps the preview, its ticks and its request, and a second Esc cancels (Split and List layout); the outcome is the reader's title and the request its subtitle; the header holds one line at 1100 × 700 in Split; Details in the UI font, broken only at `|`; the checks are `role=checkbox` with `aria-checked`, and rows carry `aria-checked`; Apply while waiting shows a spinner; the snack's keycap is ⌘Z (or Ctrl+Z) and both keys undo.
+- e2e `ask.spec.ts`: after a follow-up the first turn's sources are still there and open their mail; the citation's box is at least 20 px high and its line's height is unchanged; its tooltip names the source; ↑ to a row lights its citation; Answer again's name; New question and Previous AI questions are below the sources and smaller than them; one Search older mail look in both states; the history chip is one line.
+- Unit: `rule-words.test.ts` (Details only for patterns, the field's new name), `snack` keycap.
+- `design-axe.spec.ts`: the preview with the reader's rule and the Ask answer, as before.
