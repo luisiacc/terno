@@ -438,15 +438,25 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     });
   });
 
-  test("the narrowest reader holds a search's steps and every reply control on the column", async ({ app: page, server }) => {
+  test("a search's steps take a line of their own: the narrowest reader's toolbar is the same with them, every reply control on the column", async ({ app: page, server }) => {
     const id = await ingestConversation(server, { subject: "Ancho mínimo", count: 2, now: E2E_NOW });
     await page.setViewportSize({ width: 1100, height: 700 });
     await page.getByTestId("pane-handle-list").focus();
     for (let i = 0; i < 40; i++) await page.keyboard.press("ArrowRight");
+    const toolbar = () => page.locator("[data-reader-toolbar]").evaluate((row) => ({ words: row.getAttribute("data-words"), tight: row.hasAttribute("data-tight"), buttons: [...row.querySelectorAll("button")].map((b) => `${b.dataset.testid}:${Math.round(b.getBoundingClientRect().left)}`) }));
+    await selectThread(page, id, 'subject:"Ancho mínimo"');
+    const plain = await toolbar();
+    await expect(page.getByTestId("reader-matches")).toHaveCount(0);
     await selectThread(page, id, 'subject:"Ancho mínimo" Mensaje');
     await expect(page.getByTestId("reader-matches")).toBeVisible();
-    // (the toolbar fits again on the frame after the steps arrive)
-    await expect.poll(async () => { const g = await geometry(page); return !g.overflow && Math.abs(g.end - g.right) <= 1.5; }, { message: "Forward on the column's edge" }).toBe(true);
+    // under the toolbar, out of it: the toolbar keeps its words and every button its place
+    await expect(page.locator("[data-reader-toolbar] [data-testid=reader-matches]")).toHaveCount(0);
+    const [bar, steps] = [await page.locator("[data-reader-toolbar]").boundingBox(), await page.getByTestId("reader-matches").boundingBox()];
+    expect(steps!.y).toBeGreaterThanOrEqual(bar!.y + bar!.height - 0.5);
+    expect(await toolbar()).toEqual(plain);
+    const g = await geometry(page);
+    expect(g.overflow).toBe(false);
+    expect(Math.abs(g.end - g.right), "Forward on the column's edge").toBeLessThanOrEqual(1.5);
     await expect(page.getByTestId("action-forward")).toBeInViewport();
     await page.setViewportSize({ width: 1440, height: 900 });
   });

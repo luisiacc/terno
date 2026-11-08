@@ -270,7 +270,7 @@ export function fitWords(row: HTMLElement): number {
     if (fits()) return level;
   }
   row.dataset.words = "0";
-  // still too wide (the narrowest reader with a search's steps): Category and Remind me give their place; l, h, the row menu
+  // still too wide (the narrowest reader): Category and Remind me give their place; l, h, the row menu
   // and the palette still reach them
   if (!fits()) row.dataset.tight = "";
   return 0;
@@ -555,8 +555,9 @@ function Conversation({ threadId, messages, fold, icons, people, headless }: { t
 
 /**
  * Plan 158: a search's words in the open conversation: how many, which one's in hand, the next and the previous (⌘G, ⇧⌘G,
- * as a Mac's find does), in the toolbar beside Reply, so the conversation doesn't move down for them. Opening a result goes
- * to the first; once the user has moved, it stays out of the way. Keyed by thread and search, so each starts over.
+ * as a Mac's find does), on a slim line under the toolbar, on the column, while there are any: the toolbar never changes
+ * shape. Opening a result goes to the first; once the user has moved, it stays out of the way. Keyed by thread and search,
+ * so each starts over.
  */
 function ReaderMatches({ scroller, bottomInset }: { scroller: React.RefObject<HTMLDivElement | null>; bottomInset: number }) {
   const version = useReaderMarks((s) => s.version);
@@ -612,19 +613,16 @@ function ReaderMatches({ scroller, bottomInset }: { scroller: React.RefObject<HT
   });
   if (shown.count === 0) return null;
   return (
-    <>
-      <div role="group" aria-label={t("reader.match.group")} data-testid="reader-matches" className="flex shrink-0 items-center gap-0.5 text-[length:var(--ds-text-control)] text-muted-foreground">
-        {/* the narrowest reader keeps the steps and says the count only to screen readers, so Reply stays in the column */}
-        <span role="status" data-testid="reader-matches-count" className="tabular mr-1 @max-[420px]:sr-only">{t("reader.match.count", { at: shown.at + 1, count: shown.count })}</span>
-        <IconButton className={tool} label={t("reader.match.previous")} shortcut="mod+shift+g" onClick={() => step(-1)} data-testid="reader-match-previous">
-          <ChevronUp />
-        </IconButton>
-        <IconButton className={tool} label={t("reader.match.next")} shortcut="mod+g" onClick={() => step(1)} data-testid="reader-match-next">
-          <ChevronDown />
-        </IconButton>
-      </div>
-      <ToolbarDivider />
-    </>
+    // the count on the column's content line, its steps after it; the toolbar's controls, a size down
+    <div role="group" aria-label={t("reader.match.group")} data-testid="reader-matches" className={cn(COLUMN, "flex h-7 items-center gap-0.5 pb-1 text-[length:var(--ds-text-control)] text-muted-foreground")}>
+      <span role="status" data-testid="reader-matches-count" className="tabular mr-1">{t("reader.match.count", { at: shown.at + 1, count: shown.count })}</span>
+      <IconButton className={cn(tool, "size-6 @max-[560px]:size-6")} label={t("reader.match.previous")} shortcut="mod+shift+g" onClick={() => step(-1)} data-testid="reader-match-previous">
+        <ChevronUp />
+      </IconButton>
+      <IconButton className={cn(tool, "size-6 @max-[560px]:size-6")} label={t("reader.match.next")} shortcut="mod+g" onClick={() => step(1)} data-testid="reader-match-next">
+        <ChevronDown />
+      </IconButton>
+    </div>
   );
 }
 
@@ -1074,16 +1072,15 @@ function ReaderContent() {
     return open && root && sentinel && bar ? installScrollHairline(root, sentinel, bar) : undefined;
   }, [open]);
 
-  // the toolbar's words: measured again when its width or its set of buttons changes (never on a thread that keeps the same set),
-  // or its end does (a search's count coming or growing); what the fit itself resizes is skipped
+  // the toolbar's words: measured again when its width or its set of buttons changes (never on a thread that keeps the same set);
+  // what the fit itself resizes is skipped
   const toolbarRowRef = useRef<HTMLDivElement>(null);
   const listTitle = useListTitle();
-  const toolbarSet = `${!!bodyMarks?.length}|${page}|${design.id}|${t("actions.archive")}|${detail?.thread.inTrash || detail?.thread.inSpam}|${!!detail && inSeparateTab(detail.thread, accounts)}|${summarizeOffered && summarizable(detail?.thread)}|${listTitle}`;
+  const toolbarSet = `${page}|${design.id}|${t("actions.archive")}|${detail?.thread.inTrash || detail?.thread.inSpam}|${!!detail && inSeparateTab(detail.thread, accounts)}|${summarizeOffered && summarizable(detail?.thread)}|${listTitle}`;
   useLayoutEffect(() => {
     const row = toolbarRowRef.current;
     if (!row) return;
-    const end = row.querySelector<HTMLElement>("[data-toolbar-end]");
-    const key = () => `${row.clientWidth}|${end?.querySelector("[data-testid=reader-matches]")?.getBoundingClientRect().width ?? 0}`;
+    const key = () => String(row.clientWidth);
     let seen = "";
     const fit = () => {
       if (key() === seen) return;
@@ -1093,7 +1090,6 @@ function ReaderContent() {
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(row);
-    if (end) ro.observe(end);
     return () => ro.disconnect();
   }, [open, toolbarSet]);
 
@@ -1162,14 +1158,12 @@ function ReaderContent() {
         {summarize && <SummarizeButton threadId={selectedId} />}
         <ToolbarMore threadId={selectedId} />
         </div>
-        {/* a search's matches lead the reply group at the column's end; the pair's auto margin takes what's left */}
-        <div data-toolbar-end className="ml-auto flex shrink-0 items-center gap-2 @max-[420px]:gap-1">
-          {bodyMarks?.length ? <ReaderMatches key={`${selectedId}:${JSON.stringify(bodyMarks)}`} scroller={scrollerRef} bottomInset={dock} /> : null}
-          <ReplyGroup />
-        </div>
+        <ReplyGroup />
         {page && <ToolbarDivider />}
         {page && <StepButtons id={selectedId} />}
         </div>
+        {/* a search's matches on a slim line of their own, so the toolbar is the same with and without one */}
+        {bodyMarks?.length ? <ReaderMatches key={`${selectedId}:${JSON.stringify(bodyMarks)}`} scroller={scrollerRef} bottomInset={dock} /> : null}
       </div>
       <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]" style={{ scrollPaddingTop: CONTEXT_H, ...(dock ? { paddingBottom: dock, scrollPaddingBottom: dock } : {}) }} onContextMenu={backgroundMenu}>
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
