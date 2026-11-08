@@ -222,14 +222,20 @@ function Profile({ initial, onChanged, onEditing, onReset, total, picked, compac
   const latest = useRef(p);
   latest.current = p;
   const removals = useRef<Promise<unknown>>(Promise.resolve());
+  // while one is out, Edit and switching profile wait: an editor opened on the old phrases would save the removed one back
+  const [removing, setRemoving] = useState(0);
+  useEffect(() => {
+    if (!editing) onEditing?.(removing > 0);
+  }, [removing > 0]);
   const removeExample = (kind: "phrase" | "note", text: string) => {
+    setRemoving((n) => n + 1);
     removals.current = removals.current.then(async () => {
       const now = latest.current;
       const next = await editProfile(now, kind === "phrase" ? { phrases: now.phrases.filter((x) => x !== text) } : { notes: (now.judgment?.notes ?? []).filter((x) => x !== text) });
       latest.current = next;
       setP(next);
       onChanged();
-    }).catch(failed);
+    }).catch(failed).finally(() => setRemoving((n) => n - 1));
   };
   const exampleItems = [...p.phrases.map((text) => ({ kind: "phrase" as const, text })), ...(p.judgment?.notes ?? []).map((text) => ({ kind: "note" as const, text }))];
   const shownExamples = allExamples ? exampleItems : exampleItems.slice(0, PHRASES_SHOWN);
@@ -273,7 +279,7 @@ function Profile({ initial, onChanged, onEditing, onReset, total, picked, compac
         </Collapsible>
       )}
       <div className="-ml-2 flex flex-wrap gap-0.5">
-        <Button ref={editButton} size="xs" variant="ghost" className="font-normal" aria-label={t("aiDraft.style.editName", { name: title })} data-testid="style-profile-edit" onClick={() => setEditing(true)}>{t("common.edit")}</Button>
+        <Button ref={editButton} size="xs" variant="ghost" className="font-normal" aria-label={t("aiDraft.style.editName", { name: title })} data-testid="style-profile-edit" disabled={removing > 0} onClick={() => setEditing(true)}>{t("common.edit")}</Button>
         {p.edited && p.newSince > 0 ? (
           <Button size="xs" variant="ghost" className="font-normal" data-testid="style-profile-update" onClick={reset}>{t("aiDraft.style.update", { count: p.newSince })}</Button>
         ) : (

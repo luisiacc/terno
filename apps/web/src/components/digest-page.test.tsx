@@ -175,3 +175,21 @@ it("Codex review: an inline Undo that fails says so, with a retry", async () => 
   undoFails = false;
   expect(host.querySelector("[data-testid=digest-done]")).not.toBeNull();
 });
+
+it("Codex review, round 2: an older day's Undo leaves today's page as it was left", async () => {
+  const { useSnack, runUndo } = await import("~/lib/snack");
+  archived = { undoId: 10, archived: 1, archivedIds: [1], changed: 0, spared: 0 };
+  await show(digestOf("2026-10-22"));
+  for (const i of [1, 2]) await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[i]!.click());
+  await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-archive]")!.click());
+  const old = useSnack.getState().undo!;
+  // the next day's digest, and a choice made on it
+  served = digestOf("2026-10-23");
+  await act(async () => useToday.setState({ digest: served }));
+  await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[0]!.click());
+  expect(ticks()).toEqual([false, true, true]);
+  await act(async () => runUndo(old));
+  expect(useToday.getState().pick?.day).toBe("2026-10-23|digest");
+  expect([...useToday.getState().pick!.toggled]).toEqual([1]);
+  expect(ticks()).toEqual([false, true, true]);
+});

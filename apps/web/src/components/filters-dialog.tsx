@@ -407,6 +407,8 @@ export function FiltersDialog() {
   });
   // a filter (or a new one) loaded into the builder: fields that keep text of their own (Forward to) start again from it
   const [loads, setLoads] = useState(0);
+  const loadsRef = useRef(0);
+  loadsRef.current = loads;
   const load = (d: Draft) => {
     setDraft(d);
     setLoads((n) => n + 1);
@@ -511,7 +513,9 @@ export function FiltersDialog() {
   const generate = async () => {
     if (prompt.trim().length < 3) return;
     setGenerating(true);
-    setExplanation(null);
+    // asked again (Edit request), the rule on screen stays until the new one is in: a failure, or Rules closing meanwhile,
+    // doesn't lose it (Codex review)
+    if (!aiDraft) setExplanation(null);
     try {
       const out = await client.call("filters.generate", { prompt });
       setDraft({ id: undefined, name: out.name, enabled: true, source: "ai", rule: out.rule });
@@ -535,6 +539,9 @@ export function FiltersDialog() {
   const save = async (applyExisting: boolean) => {
     if (!valid.success) return setAttempted(true);
     setSaving(true);
+    // what's saved is this rule: another opened while Save is out keeps the builder, and its unsaved row (Codex review)
+    const savingKey = aiDraft?.key ?? null;
+    const loadedAt = loadsRef.current;
     try {
       const name = draft.name.trim() || describeCondition(rule.conditions[0]!);
       // plan 90: an automatic filter the user changed is theirs now (turning it on or off isn't a change)
@@ -543,10 +550,13 @@ export function FiltersDialog() {
       const f = await client.call("filters.save", { id: draft.id, name, enabled: draft.enabled, source: draft.source, rule: valid.data, ...(adopted ? { auto: false } : {}) });
       // plan 89: applying runs in the background (its own progress snack); the dialog is free at once
       // saved, it's an ordinary rule: its unsaved row goes, the others stay
-      setAiKey(null);
+      if (savingKey !== null) setParked((held) => held.filter((u) => u.key !== savingKey));
       if (applyExisting) void applyFilter(f.id, f.name);
       else snack.success(t("filters.saved"));
-      load(draftOf(f));
+      if (loadsRef.current === loadedAt) {
+        setAiKey(null);
+        load(draftOf(f));
+      }
       await refresh();
     } catch (error) {
       snack.error(error instanceof Error ? error.message : String(error));

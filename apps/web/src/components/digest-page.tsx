@@ -118,9 +118,10 @@ export default function DigestPage() {
       undoId.promise.then(async (u) => {
         if (u.id === null) return;
         await undoActions([u.id], u.n);
-        // only this Archive's rows come back (Codex review): an earlier one stays done
-        const pick = digestPick(pickDay);
-        keepDigestPick({ ...pick, done: (pick.done ?? []).filter((b) => b.undo !== undo) });
+        // only this Archive's rows come back (Codex review): an earlier one stays done. And only on its own day's page: a
+        // later day's (or automated mail's) choices aren't this one's to touch
+        const pick = useToday.getState().pick;
+        if (pick?.day === pickDay) keepDigestPick({ ...pick, done: (pick.done ?? []).filter((b) => b.undo !== undo) });
       }),
     );
     try {
@@ -130,8 +131,8 @@ export default function DigestPage() {
       snack.success(t(automated ? "today.digest.archivedSelected" : "today.digest.archived", { count: r.archived }), { id: job.snackId, duration: 8000, description: notes, action: r.undoId !== null ? undoAction(undo, t("today.digest.undoName")) : undefined });
       setLive((held) => new Set([...(held ?? items.map((i) => i.threadId))].filter((id) => !chosen.some((i) => i.threadId === id))));
       // what the backend really archived: one archived or changed elsewhere meanwhile stays listed, said so (Codex review)
-      const pick = digestPick(pickDay);
-      if (r.archivedIds.length) keepDigestPick({ ...pick, done: [...(pick.done ?? []), { ids: r.archivedIds, undo: r.undoId !== null ? undo : null }] });
+      const pick = useToday.getState().pick;
+      if (r.archivedIds.length && pick?.day === pickDay) keepDigestPick({ ...pick, done: [...(pick.done ?? []), { ids: r.archivedIds, undo: r.undoId !== null ? undo : null }] });
     } catch (error) {
       undoId.resolve({ id: null, n: 0 });
       snack.error(error instanceof Error ? error.message : String(error), { id: job.snackId });
