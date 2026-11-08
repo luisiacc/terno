@@ -1,6 +1,7 @@
 import { parseAddressList } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { ButtonGroup, ButtonGroupItem } from "@terno/ui/components/button-group";
 import { CloseButton } from "@terno/ui/components/close-button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
@@ -149,50 +150,52 @@ function StatusPopover({ strip, toText }: { strip: AiStrip; toText: string }) {
   );
 }
 
-/** The strip's Undo: the AI's last write taken back. First on its line, BoardUI's secondary with its glyph and its word at every width; also on the row's field over a strip. */
-function UndoButton({ s, className }: { s: AiSession; className?: string }) {
-  return (
+/**
+ * The strip's Undo: the AI's last write taken back, first in the strip's group. Plan 162: one chrome for the four commands
+ * (BoardUI's button group, as the reader's Reply and Forward), so none outranks another and none is bare text. `alone` is
+ * the row's field over a strip, where it's the only command: the group's look on one item.
+ */
+function UndoButton({ s, alone }: { s: AiSession; alone?: boolean }) {
+  const item = (
+    <ButtonGroupItem
+      className="text-foreground"
+      data-testid="ai-strip-undo"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => {
+        // from the field over a strip: the row goes back to the strip first, so Undo acts on it as it would there
+        if (s.phase !== "strip") closeRow(s.key);
+        undoCommit(s.key);
+      }}
+    />
+  );
+  const button = (
     <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className={cn("text-foreground", className)}
-            data-testid="ai-strip-undo"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              // from the field over a strip: the row goes back to the strip first, so Undo acts on it as it would there
-              if (s.phase !== "strip") closeRow(s.key);
-              undoCommit(s.key);
-            }}
-          />
-        }
-      >
+      <TooltipTrigger render={item}>
         <Undo2 aria-hidden />
         {t("common.undo")}
       </TooltipTrigger>
       <TooltipContent>{t("aiDraft.undoTip")}</TooltipContent>
     </Tooltip>
   );
+  return alone ? <ButtonGroup className="h-7" aria-label={t("aiDraft.commands")}>{button}</ButtonGroup> : button;
 }
 
 /**
- * Plan 161, pass 3: what was asked, in the user's words, whole (it wraps), on its own line above the commands: where it was
- * typed, while it's written, and after. Edit (on the strip) opens the field holding it, to write the draft again from new words.
+ * Plan 161, pass 3: what was asked, in the user's words, on its own line above the commands: where it was typed, while
+ * it's written, and after. Plan 162: one line, cut with an ellipsis when it's long (all of it in its tooltip and its
+ * name), so Edit stays right after it at every width: it wrapped onto a line of its own at 1100.
  */
 function InstructionLine({ text, onEdit }: { text: string; onEdit: (() => void) | null }) {
+  const quoted = t("aiDraft.instruction.quoted", { instruction: text });
   return (
-    <p className="min-h-[38px] py-[9px] text-sm leading-5 wrap-anywhere text-foreground" data-testid="ai-strip-instruction">
-      <span data-testid="ai-strip-instruction-text">{t("aiDraft.instruction.quoted", { instruction: text })}</span>
-      {/* its 24 px reach 2 px past the 20 px line each way, so the line is as tall with it as without (writing, then written) */}
-      {/* while it writes, its place is held (nothing to edit yet), so the line is the same height before and after the commit */}
+    <p className="flex min-h-[38px] min-w-0 items-center gap-1.5 text-sm leading-5 text-foreground" data-testid="ai-strip-instruction">
+      <span className="min-w-0 truncate" title={quoted} data-testid="ai-strip-instruction-text">{quoted}</span>
+      {/* while it writes, its place is held (nothing to edit yet), so the line is the same before and after the commit */}
       <Button
         type="button"
         variant="ghost"
         size="xs"
-        className={cn(quiet, "-my-0.5 ms-1.5 align-baseline", !onEdit && "invisible")}
+        className={cn(quiet, "-my-0.5 shrink-0", !onEdit && "invisible")}
         aria-label={t("aiDraft.instruction.edit")}
         aria-hidden={onEdit ? undefined : true}
         tabIndex={onEdit ? undefined : -1}
@@ -217,7 +220,8 @@ function runInstruction(s: AiSession): string {
 function RewriteMenu({ s }: { s: AiSession }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="sm" className="hidden px-2 text-foreground @max-[30rem]/strip:inline-flex" data-testid="ai-strip-rewrite" />}>
+      {/* the group's last item when it shows: no divider after it */}
+      <DropdownMenuTrigger render={<ButtonGroupItem className="hidden text-foreground @max-[30rem]/strip:inline-flex @max-[30rem]/strip:border-e-0" data-testid="ai-strip-rewrite" />}>
         {t("aiDraft.rewrite")}
         <ChevronDown aria-hidden />
       </DropdownMenuTrigger>
@@ -236,20 +240,20 @@ function Strip({ s }: { s: AiSession & { strip: AiStrip } }) {
   const toText = useDrafts((state) => state.drafts[s.key]?.toText ?? "");
   const { strip } = s;
   return (
-    // plan 161, pass 3: the instruction on its own line, then the commands: Undo first (recovery leads), the rewrites quieter
-    // than it, and the provenance at the line's end, as on every AI surface. Narrow, the rewrites fold into Rewrite ▾
+    // plan 161, pass 3: the instruction on its own line, then the commands, and the provenance at the line's end, as on
+    // every AI surface. Plan 162: the commands are one group; narrow, the rewrites fold into Rewrite ▾ in it
     <div className="@container/strip flex min-w-0 flex-1 flex-col" data-testid="ai-strip" data-edited={strip.edited || undefined} data-stopped={strip.stopped || undefined}>
       {strip.instruction && <InstructionLine text={strip.instruction} onEdit={() => editInstruction(s.key)} />}
       <div className={cn(line, "flex-nowrap py-[5px]")}>
-        <span className="flex shrink-0 items-center gap-1 text-foreground" data-testid="ai-strip-commands">
-          <UndoButton s={s} className="-ms-0.5 me-1" />
-          {(["regenerate", "shorter", "warmer"] as const).map((how) => (
-            <Button key={how} type="button" variant="ghost" size="sm" className="px-2 text-foreground @max-[30rem]/strip:hidden" data-testid={`ai-strip-${how}`} onClick={() => refine(s.key, how)}>
-              {t(`aiDraft.${how}`)}
-            </Button>
-          ))}
+        <ButtonGroup className="h-7" aria-label={t("aiDraft.commands")} data-testid="ai-strip-commands">
+          <UndoButton s={s} />
           <RewriteMenu s={s} />
-        </span>
+          {(["regenerate", "shorter", "warmer"] as const).map((how) => (
+            <ButtonGroupItem key={how} className="text-foreground @max-[30rem]/strip:hidden" data-testid={`ai-strip-${how}`} onClick={() => refine(s.key, how)}>
+              {t(`aiDraft.${how}`)}
+            </ButtonGroupItem>
+          ))}
+        </ButtonGroup>
         <StatusPopover strip={strip} toText={toText} />
       </div>
       {/* the same notes the Status had, in the same place: the row keeps its height across the commit */}
@@ -586,7 +590,7 @@ export function AiRow({ draftKey }: { draftKey: string }) {
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5">
             <Field s={s} id={inputId} />
             {/* plan 161, pass 2: over a strip, its Undo stays in reach while the field is open */}
-            {s.strip && s.phase === "input" && <UndoButton s={s} className="mt-[5px] shrink-0 self-start" />}
+            {s.strip && s.phase === "input" && <span className="mt-[5px] shrink-0 self-start"><UndoButton s={s} alone /></span>}
             {s.who && <p className="mb-1.5 w-full text-xs text-muted-foreground" data-testid="ai-who">{t("aiDraft.who")}</p>}
             {s.lookingUp && <p className="mb-1.5 w-full text-xs text-muted-foreground" data-testid="ai-looking-up">{t("aiDraft.lookingUp")}</p>}
           </div>

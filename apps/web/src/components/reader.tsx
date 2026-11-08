@@ -15,6 +15,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
+import { useReplies } from "~/lib/replies";
 import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Printer, Reply, Sparkles, SquarePen, Star, Tag, Trash2 } from "@terno/ui/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
@@ -185,6 +186,7 @@ function ReplyGroup() {
       if (landing.kind === "none" && document.activeElement === document.body && button.isConnected) button.focus();
     });
   };
+  const replyReady = useReplies((r) => r.shown?.phase === "ready");
   const item = (tier: 1 | 3, pad?: string) => cn("px-2.5", pad, SQUARE_ITEM[tier]);
   return (
     <ButtonGroup aria-label={t("reader.group.respond")} className={cn("no-drag ml-auto shrink-0 [&_svg]:[--icon-line:var(--icon-line-toolbar)]", pill && "rounded-full")}>
@@ -195,13 +197,14 @@ function ReplyGroup() {
               <Reply />
               {/* the name is the visible label (still read when the icon shows alone); the key is decoration */}
               <span className={WORDS[1]}>{t("actions.reply")}</span>
-              {pill && <span aria-hidden className={cn("inline-flex", HIDE[1])}><Shortcut keys="r" /></span>}
+              {/* plan 162: one R on screen: while a reply is ready, R is its (the card says so), not this button's */}
+              {pill && !replyReady && <span aria-hidden className={cn("inline-flex", HIDE[1])}><Shortcut keys="r" /></span>}
             </ButtonGroupItem>
           }
         />
         <TooltipContent className="flex items-center gap-2">
           {t("actions.reply")}
-          <Shortcut keys="r" />
+          {!replyReady && <Shortcut keys="r" />}
         </TooltipContent>
       </Tooltip>
       <Tooltip>

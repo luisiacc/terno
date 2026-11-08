@@ -1232,7 +1232,13 @@ export function commitPrepared(key: string, row: PreparedReply, opened: boolean)
 async function forgetUndone(key: string) {
   await provenance.get(key)?.run;
   provenance.delete(key);
-  if (!session(key) && !bodyNow(key).trim()) await unsaveDraft(key);
+  if (session(key) || bodyNow(key).trim()) return;
+  // plan 162: the reply ⌘J opened goes with what it wrote, and the keys go back to the reply bar it came from, never to
+  // the page (its Undo was the last focused thing, and it's gone)
+  const thread = draftOf(key)?.threadId ?? null;
+  const hadFocus = document.activeElement === document.body || draftKeyOf(document.activeElement) === key || (document.activeElement?.closest(`[data-ai-row="${CSS.escape(key)}"]`) ?? null) !== null;
+  await unsaveDraft(key);
+  if (hadFocus && thread !== null) focusSoon(`[data-testid=draft-slot][data-thread="${thread}"] [data-testid=quick-reply]`, null, 12, () => document.activeElement === document.body || document.activeElement === null, () => true);
 }
 
 /** Any change of the text: typing during a stream makes the result a suggestion; the strip lasts until the next keystroke. */

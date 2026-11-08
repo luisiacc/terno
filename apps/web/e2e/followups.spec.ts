@@ -95,7 +95,7 @@ test.describe("follow-ups (plan 142)", () => {
     await fresh(page);
     await rows(page).first().click();
     // sent moments ago in this conversation: "yet", never "in 1 day" (plan 161; whole days are a unit test)
-    await expect(page.getByTestId("followup-text")).toHaveText("Tom Reed hasn’t replied yet");
+    await expect(page.getByTestId("followup-text")).toHaveText("Waiting for Tom Reed’s reply");
     const sends = (await server.backend.store.debug.snapshot()).messages.filter((m) => m.isSent).length;
     await expect(page.getByTestId("followup-nudge")).toHaveText("Write a follow-up");
     await page.getByTestId("followup-nudge").click();
@@ -112,7 +112,7 @@ test.describe("follow-ups (plan 142)", () => {
       await fresh(page);
       await page.locator(`[data-thread-id="${threadId}"]`).first().click();
       // pass 3: the fact first, as the card's title; when it comes back, and on what, under it
-      await expect(page.getByTestId("followup-header")).toHaveText("Tom Reed hasn’t replied yet");
+      await expect(page.getByTestId("followup-header")).toHaveText("Waiting for Tom Reed’s reply");
       await expect(page.getByTestId("followup-due")).toHaveText(/^Comes back to your Inbox (Tomorrow|Today) \d.* if there’s no reply$/);
       expect((await page.getByTestId("followup-header").boundingBox())!.y).toBeLessThan((await page.getByTestId("followup-due").boundingBox())!.y);
       await expect(page.getByTestId("followup-nudge")).toHaveText("Write a follow-up");

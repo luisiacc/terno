@@ -18,41 +18,43 @@ import { AI_ACTIONS, AI_CARD, AI_GLYPH, AI_TITLE, AiCopyButton, AiErrorNotice, A
 const ANSWERED = new Set<AiSummaryItem["kind"]>(["action", "question"]);
 
 /**
- * "Action  Tell Arjun what you think  [Reply]  [Arjun's message, Yesterday →]". Plan 161, pass 3: the item is its words;
- * what can be done with it is beside them, each named: Reply opens the ordinary reply, as R does (the row as one button
- * read as doing the action, and went to the source), and the source says it's a message and whose. On a conversation of
- * one message, that message is the one on screen: no source.
+ * "Action  Tell Arjun what you think", and under the words, at their edge, what can be done with it: Reply opens the
+ * ordinary reply, as R does, and the source says whose message it is. Plan 162: the controls are a line of their own at
+ * every width (they wrapped under the words at 1100 with nothing to align to), and Reply, the step the summary
+ * recommends, is the card's one secondary: it was a ghost beside an outlined Copy. On a conversation of one message,
+ * that message is the one on screen: no source.
  */
 function Item({ item, from, source }: { item: AiSummaryItem; from: MessageDetail | undefined; source: string | null }) {
   const go = source !== null && (
-    <Button variant="ghost" size="sm" data-testid="summary-item-open" className="text-muted-foreground hover:text-foreground" onClick={() => revealSummaryMessage(item.messageId)}>
+    <Button variant="ghost" size="sm" data-testid="summary-item-open" className="px-2 text-muted-foreground hover:text-foreground" onClick={() => revealSummaryMessage(item.messageId)}>
       {source}
       <ArrowRight aria-hidden />
     </Button>
   );
+  const answered = ANSWERED.has(item.kind);
   return (
-    <li data-testid="summary-item" data-kind={item.kind} data-message-id={item.messageId} className="flex items-baseline gap-2 py-1 text-sm">
-      <span className="shrink-0 text-xs text-muted-foreground">{t(`summary.kind.${item.kind}`)}</span>
-      {/* the controls follow the words, and wrap under them (never under the kind) when the line is full */}
-      {/* the buttons reach their padding (2.5) back, so wrapped under the words their glyph is on the words' line, and beside
-          them the gap reads as the row's 2.5 */}
-      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-5 gap-y-1">
-        <span className="min-w-0 wrap-anywhere" data-testid="summary-item-text">{item.text}</span>
-        <span className="-my-1 -ms-2.5 flex items-center gap-1">
-          {ANSWERED.has(item.kind) && (
-            <Button variant="ghost" size="sm" data-testid="summary-item-reply" className="text-foreground" onClick={() => reply("reply")}>
-              <Reply aria-hidden />
-              {t("actions.reply")}
-            </Button>
-          )}
-          {go && from ? (
-            <Tooltip>
-              <TooltipTrigger render={go} />
-              <TooltipContent data-testid="summary-item-source" side="bottom" align="start">{`${from.from.name || from.from.email} · ${messageDate(from.date)}`}</TooltipContent>
-            </Tooltip>
-          ) : go}
-        </span>
-      </span>
+    // a row of the list's grid: the kinds share one column, so every item's words start on one line
+    <li data-testid="summary-item" data-kind={item.kind} data-message-id={item.messageId} className="col-span-2 grid grid-cols-subgrid items-baseline py-1 text-sm">
+      <span className="text-xs text-muted-foreground">{t(`summary.kind.${item.kind}`)}</span>
+      <div className="min-w-0">
+        <p className="wrap-anywhere" data-testid="summary-item-text">{item.text}</p>
+        {(answered || go) && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1" data-testid="summary-item-controls">
+            {answered && (
+              <Button variant="outline" size="sm" data-testid="summary-item-reply" className="text-foreground" onClick={() => reply("reply")}>
+                <Reply aria-hidden />
+                {t("actions.reply")}
+              </Button>
+            )}
+            {go && from ? (
+              <Tooltip>
+                <TooltipTrigger render={go} />
+                <TooltipContent data-testid="summary-item-source" side="bottom" align="start">{`${from.from.name || from.from.email} · ${messageDate(from.date)}`}</TooltipContent>
+              </Tooltip>
+            ) : go}
+          </div>
+        )}
+      </div>
     </li>
   );
 }
@@ -81,10 +83,11 @@ function Ready({ summary, messages }: { summary: AiSummary; messages: readonly M
           <p data-testid="summary-text" className="max-w-(--read-max) text-sm wrap-anywhere whitespace-pre-line text-pretty">
             {summary.summary}
           </p>
-          {summary.items.length > 0 && <ul className="mt-1.5 max-w-(--read-max)" data-testid="summary-items">{summary.items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} from={messages.find((m) => m.id === item.messageId)} source={messageSource(messages, item.messageId, mine)} />)}</ul>}
+          {summary.items.length > 0 && <ul className="mt-1.5 grid max-w-(--read-max) grid-cols-[max-content_minmax(0,1fr)] gap-x-3" data-testid="summary-items">{summary.items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} from={messages.find((m) => m.id === item.messageId)} source={messageSource(messages, item.messageId, mine)} />)}</ul>}
           {/* pass 3: the AI's button row: Copy, and who wrote it at its end, the one control every AI surface has */}
           <div className={cn(AI_ACTIONS, "mt-2")} data-testid="summary-actions">
-            <AiCopyButton text={() => summaryText(summary)} failed={t("summary.copyFailed")} testId="summary-copy" />
+            {/* plan 162: Copy is quiet, its glyph on the text's edge */}
+            <AiCopyButton className="-ms-2" text={() => summaryText(summary)} failed={t("summary.copyFailed")} testId="summary-copy" />
             <AiProvenance model={summary.model} at={summary.generatedAt} testId="summary-provenance" className="-me-1.5 ms-auto" />
           </div>
         </div>

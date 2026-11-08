@@ -1,13 +1,14 @@
 import { remindPresets, type FollowupRow, type MessageDetail, type ThreadDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
+import { Popover, PopoverContent } from "@terno/ui/components/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { ArrowRight, ChevronDown, Clock } from "@terno/ui/icons";
+import { ArrowRight, CalendarClock, ChevronDown, Clock } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { followupsOffered, modelName } from "~/lib/ai";
-import { fullDate } from "~/lib/format";
+import { whenDate } from "~/lib/when";
 import { useCanDraft } from "~/lib/ai-draft-state";
 import { actOnFollowup, followupLine, followupWhen } from "~/lib/followups";
 import { useDrafts } from "~/lib/drafts";
@@ -19,10 +20,11 @@ import { useApp } from "~/state/app";
 import { useFollowups } from "~/state/followups";
 import { AI_ACTIONS, AI_CARD, AI_GLYPH, AI_HEADER, AI_TITLE, AiProvenance, messageSource } from "./ai-card";
 import FollowupsTip from "./followups-tip";
+import { useWhen, WhenFields } from "./when-fields";
 
 /**
  * Plan 161: the line in the AI suggestions' anatomy. Pass 3: on their card too, as Reply ready is (plan 148 left a card out
- * of its scope; raters read the bare line as mail metadata): the fact is the title ("Arjun hasn't replied yet"), when it
+ * of its scope; raters read the bare line as mail metadata): the fact is the title ("Waiting for Arjun’s reply", plan 162), when it
  * comes back is under it, then the buttons, the source, and who found it at the row's end.
  */
 function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageDetail[] }) {
@@ -36,6 +38,12 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
   const source = messageSource(messages, row.messageId, mine);
   // the nudge Write a follow-up made, still a draft: the line offers it rather than another
   const drafted = useDrafts((s) => (awaiting ? nudgeDraft(row.threadId, s.drafts) !== null : false));
+  const laterRef = useRef<HTMLButtonElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const pastId = useId();
+  const [picking, setPicking] = useState(false);
+  // it starts on the moment the line comes back now
+  const when = useWhen(row.dueAt);
   return (
     <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} className={cn(AI_CARD, "px-3.5 pb-3")}>
       {/* the news first, at the text's size: it's what the card is */}
@@ -55,7 +63,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
           <Button size="sm" data-testid="followup-done" onClick={() => void actOnFollowup(row, "done")}>{t("followup.done")}</Button>
         )}
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="text-foreground" data-testid="followup-later" />}>
+          <DropdownMenuTrigger render={<Button ref={laterRef} variant="outline" size="sm" className="text-foreground" data-testid="followup-later" />}>
             {t("followup.later")}
             <ChevronDown aria-hidden />
           </DropdownMenuTrigger>
@@ -68,8 +76,33 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
                 <DropdownMenuShortcut data-testid="followup-later-when" className="tracking-normal whitespace-nowrap tabular-nums">{presetWhen(p, now.getTime())}</DropdownMenuShortcut>
               </DropdownMenuItem>
             ))}
+            {/* plan 162: any moment, with the reminder's own date and time (plan 87): the four presets couldn't say one */}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem data-testid="followup-later-pick" onClick={() => setPicking(true)}>
+              <CalendarClock aria-hidden />
+              <span className="whitespace-nowrap">{t("remind.pick")}</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <Popover open={picking} onOpenChange={(open) => { setPicking(open); if (!open) laterRef.current?.focus({ preventScroll: true }); }}>
+          <PopoverContent anchor={laterRef} align="start" className="w-80" data-testid="followup-later-custom" aria-label={t("followup.later")}>
+            <form
+              ref={formRef}
+              className="flex flex-col gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!when.ready || when.chosen <= Date.now()) return;
+                setPicking(false);
+                laterRef.current?.focus({ preventScroll: true });
+                void actOnFollowup(row, "later", when.chosen);
+              }}
+            >
+              <WhenFields when={when} testPrefix="followup-later" describedBy={pastId} onEnter={() => formRef.current?.requestSubmit()} />
+              {when.past && <p id={pastId} className="text-xs text-destructive-ink" data-testid="followup-later-past">{t("remind.past")}</p>}
+              <Button type="submit" size="sm" data-testid="followup-later-set" disabled={when.past || !when.ready} className="self-end">{t("followup.later")}</Button>
+            </form>
+          </PopoverContent>
+        </Popover>
         <Button variant="outline" size="sm" className="text-foreground" data-testid="followup-dismiss" onClick={() => void actOnFollowup(row, "dismiss")}>{t(awaiting ? "followup.dismiss" : "followup.notPromise")}</Button>
         {/* where it came from, named ("Your message, Oct 22"), its words (the quote) on hover; nothing when it's the one
             message on screen */}
@@ -87,7 +120,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
             model={row.model}
             at={row.createdAt}
             label={t("ai.provenance.found")}
-            detail={t("ai.provenance.foundDetail", { model: modelName(row.model), date: fullDate(row.createdAt) })}
+            detail={t("ai.provenance.foundDetail", { model: modelName(row.model), date: whenDate(row.createdAt) })}
             testId="followup-provenance"
             className="-me-1.5 ms-auto"
           />

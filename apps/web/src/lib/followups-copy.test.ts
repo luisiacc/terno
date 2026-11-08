@@ -20,8 +20,8 @@ afterEach(() => setLocale("en", en as never));
 
 describe("the follow-up's line (plan 161)", () => {
   it("minutes after sending it's 'yet', never 'in 1 day'; whole days after that", () => {
-    expect(followupLine(row(), NOW)).toBe("Arjun Ramírez hasn’t replied yet");
-    expect(followupLine(row({ sentAt: NOW - DAY + MIN }), NOW)).toBe("Arjun Ramírez hasn’t replied yet");
+    expect(followupLine(row(), NOW)).toBe("Waiting for Arjun Ramírez’s reply");
+    expect(followupLine(row({ sentAt: NOW - DAY + MIN }), NOW)).toBe("Waiting for Arjun Ramírez’s reply");
     expect(followupLine(row({ sentAt: NOW - DAY }), NOW)).toBe("Arjun Ramírez hasn’t replied in 1 day");
     expect(followupLine(row({ sentAt: NOW - 5 * DAY - 3 * 3_600_000 }), NOW)).toBe("Arjun Ramírez hasn’t replied in 5 days");
   });
@@ -36,7 +36,7 @@ describe("the follow-up's line (plan 161)", () => {
 
   it("in Spanish too", () => {
     setLocale("es", es as never);
-    expect(followupLine(row(), NOW)).toBe("Arjun Ramírez aún no ha respondido");
+    expect(followupLine(row(), NOW)).toBe("Esperando la respuesta de Arjun Ramírez");
     expect(followupWhen(row(), NOW)).toMatch(/^Vuelve a tu Entrada mar, 27 oct, 09:00 si no hay respuesta$/);
   });
 });
