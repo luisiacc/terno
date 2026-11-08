@@ -258,3 +258,43 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.js b/floating-ui-
  
    // A return-focus queued by the effect cleanup. If the effect re-arms in the same commit, a
    // dependency changed while the popup stayed open, so the cleanup was not a close.
+diff --git a/select/trigger/SelectTrigger.mjs b/select/trigger/SelectTrigger.mjs
+index 06ab82739655b2bea4ac391ef3560b5bdea79aca..e4d15ab42c064871ead50ea30db90273d44d894a 100644
+--- a/select/trigger/SelectTrigger.mjs
++++ b/select/trigger/SelectTrigger.mjs
+@@ -132,11 +132,10 @@ export const SelectTrigger = /*#__PURE__*/React.forwardRef(function SelectTrigge
+       }
+ 
+       // Saves a re-render on initial click: `forceMount === true` mounts
+-      // the items before `open === true`. We could sync those cycles better
+-      // without a timeout, but this is enough for now.
+-      timeoutFocus.start(0, () => {
+-        store.set('forceMount', true);
+-      });
++      // the items before `open === true`. Terno: at once, not a timer later:
++      // the closed trigger's typeahead matches the mounted items' labels, so
++      // keys typed before the timer (a busy page, a fast typist) were lost.
++      store.set('forceMount', true);
+     },
+     onBlur(event) {
+       // If focus is moving into the popup, don't count it as a blur.
+diff --git a/select/trigger/SelectTrigger.js b/select/trigger/SelectTrigger.js
+index 6df79477adede3504480420e886e6ddf7dabca6f..1aabab10da8c0833217b4472953715e768efcb89 100644
+--- a/select/trigger/SelectTrigger.js
++++ b/select/trigger/SelectTrigger.js
+@@ -138,11 +138,10 @@ const SelectTrigger = exports.SelectTrigger = /*#__PURE__*/React.forwardRef(func
+       }
+ 
+       // Saves a re-render on initial click: `forceMount === true` mounts
+-      // the items before `open === true`. We could sync those cycles better
+-      // without a timeout, but this is enough for now.
+-      timeoutFocus.start(0, () => {
+-        store.set('forceMount', true);
+-      });
++      // the items before `open === true`. Terno: at once, not a timer later:
++      // the closed trigger's typeahead matches the mounted items' labels, so
++      // keys typed before the timer (a busy page, a fast typist) were lost.
++      store.set('forceMount', true);
+     },
+     onBlur(event) {
+       // If focus is moving into the popup, don't count it as a blur.
