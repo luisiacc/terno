@@ -46,8 +46,9 @@ export interface PaletteCommand {
 
 /** the groups each page shows, in order */
 export const PAGE_GROUPS: Record<PalettePage, readonly PaletteGroup[]> = {
-  // plan 158: what a palette is opened for, ahead of the list of places
-  root: ["draft", "recent", "conversation", "start", "goTo", "actions", "settings"],
+  // plan 158: what a palette is opened for, ahead of the list of places; the conversation in hand ahead of what was
+  // used lately, so Enter on opening is the same (Archive) whatever was done before
+  root: ["draft", "conversation", "recent", "start", "goTo", "actions", "settings"],
   move: ["move"],
   addTo: ["addTo"],
   remind: ["remindAlways", "remindNoReply", "remindClear"],
@@ -164,8 +165,8 @@ export function arrange(commands: readonly PaletteCommand[], page: PalettePage, 
   }
   let recent: PaletteCommand[] = [];
   if (page === "root") {
-    // a draft's commands are already first; recent ones come from everything else at the root (values too)
-    const pool = mine.filter((c) => c.group !== "draft" && !c.page && !c.disabled);
+    // a draft's and the conversation's commands are already first; recent ones come from everything else at the root (values too)
+    const pool = mine.filter((c) => c.group !== "draft" && c.group !== "conversation" && !c.page && !c.disabled);
     const ids = recentIds(usage, new Set(pool.map((c) => c.id)), RECENT);
     const byId = new Map(pool.map((c) => [c.id, c]));
     recent = ids.map((id) => ({ ...byId.get(id)!, group: "recent" as const }));

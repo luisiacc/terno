@@ -44,7 +44,7 @@ const shortcutAria = (keys: string) => keys.split("+").map((k) => (k === "mod" ?
 function Row({ label, htmlFor, children, hidden, note }: { label: string; htmlFor?: string; children: React.ReactNode; hidden?: boolean; note?: React.ReactNode }) {
   if (hidden) return null;
   return (
-    <div className="hairline-b group/row relative after:pointer-events-none after:absolute after:inset-x-0 after:-bottom-px after:h-px after:bg-ring after:opacity-0 has-[input:focus]:after:opacity-100">
+    <div className="hairline-b group/row relative after:pointer-events-none after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-ring after:opacity-0 has-[input:focus]:after:opacity-100">
       <div className="flex min-h-[38px] items-center gap-2.5 px-3.5" data-recipient-row>
         {/* on the first line when the chips wrap */}
         <label htmlFor={htmlFor} className="w-14 shrink-0 self-start text-xs leading-[38px] text-muted-foreground">
@@ -172,7 +172,7 @@ export function DraftFieldsForm({ d, accounts, showSubject, threadAccountId }: {
             root.querySelector<HTMLElement>(`[data-testid="compose-${field}"]`)?.focus();
           });
         }}
-        className={cn("h-6 rounded-sm px-1.5 text-xs text-muted-foreground transition-opacity duration-fast outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring", o.className)}
+        className={cn("h-7 rounded-sm px-1.5 text-xs text-muted-foreground transition-opacity duration-fast outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring", o.className)}
       >
         {label}
       </button>
@@ -210,7 +210,7 @@ export function DraftFieldsForm({ d, accounts, showSubject, threadAccountId }: {
       )}
       <Row label={t("compose.to")} htmlFor={`${id}-to`} note={problemNote("to")}>
         <RecipientInput id={`${id}-to`} testId="compose-to" label={t("compose.to")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.toText} onChange={(v, a) => recipients("to", v, a)} placeholder={t("compose.toPlaceholder")} accountId={d.accountId} others={[d.ccText, d.bccText]} describedBy={problemId("to")} onInvalid={noteBadChip("to")} />
-        <span className="relative mt-[7px] flex max-w-[65%] min-w-0 shrink-0 items-center justify-end gap-0.5 self-start">
+        <span className="relative mt-[5px] flex max-w-[65%] min-w-0 shrink-0 items-center justify-end gap-0.5 self-start">
           {/* Subject comes up with the row, over what's beside it: at rest it takes no room, so a chip doesn't wrap for it */}
           {toggle(subject, setSubject, t("compose.subject"), "subject", "compose-show-subject", { tip: t("compose.addSubject"), className: "absolute right-full mr-0.5 bg-(--draft-bg) opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 focus-reveal:opacity-100" })}
           {toggle(cc, setCc, t("compose.cc"), "cc", "compose-show-cc", { tip: t("compose.addCc"), name: t("compose.addCc"), keys: "mod+shift+c" })}
@@ -232,6 +232,20 @@ export function DraftFieldsForm({ d, accounts, showSubject, threadAccountId }: {
   );
 }
 
+const SAVING_SHOWN_AFTER_MS = 1000;
+
+/** True once `on` has held for `ms` (a timer only while it's on). */
+function useLasting(on: boolean, ms: number): boolean {
+  const [lasted, setLasted] = useState(false);
+  useEffect(() => {
+    setLasted(false);
+    if (!on) return;
+    const timer = setTimeout(() => setLasted(true), ms);
+    return () => clearTimeout(timer);
+  }, [on, ms]);
+  return on && lasted;
+}
+
 /** What the draft's save state says, for screen readers too: "saved" only for an acknowledged revision. */
 export function SaveState({ d }: { d: LocalDraft }) {
   const held = useDrafts((s) => s.held);
@@ -245,10 +259,14 @@ export function SaveState({ d }: { d: LocalDraft }) {
   const recovery = d.recovery;
   const message = recovery?.state === "refused" ? recovery.reason ?? "invalid" : recovery?.state;
   // said aloud only when it has happened: "Saving…" at every pause in typing would talk over the writing
-  const saving = !held && !message && authored(d) && (d.status === "dirty" || d.status === "saving");
+  const pending = !held && !message && authored(d) && (d.status === "dirty" || d.status === "saving");
+  // plan 158: a save lands within a second of a pause, and "Saving…" flashed at each one read as stuck. Through that
+  // second a draft saved before keeps "Saved" (a first save shows nothing yet); "Saving…" is for a save that takes longer
+  const slow = useLasting(pending, SAVING_SHOWN_AFTER_MS);
+  const settled = pending && !slow && d.id !== null;
   return (
-    <span className="inline-flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground" data-testid="draft-status">
-      {saving && <span aria-hidden>{t("compose.status.saving")}</span>}
+    <span className="inline-flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground" data-testid="draft-status" data-status={d.status}>
+      {(slow || settled) && <span aria-hidden>{t(slow ? "compose.status.saving" : "compose.status.saved")}</span>}
       <span aria-live="polite" aria-atomic="true">
         {held ? t("compose.status.restart") : message ? t(`compose.recovery.${message}`) : d.status === "saved" ? t("compose.status.saved") : null}
         {recovery?.state === "unknown" && recovery.reason && ` ${t(`compose.recovery.${recovery.reason}`)}`}

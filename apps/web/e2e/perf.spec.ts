@@ -1215,7 +1215,7 @@ test("a 2 MB draft of short lines: typing stays within a frame; no serialization
   const during = ((await composerProbe(page)).serialize?.length ?? 0) - serializeBefore;
   expect(during).toBeLessThanOrEqual(1);
   // the autosave after the pause serializes once, within budget
-  await expect(page.getByTestId("draft-status")).toHaveText("Saved", { timeout: 20_000 });
+  await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved", { timeout: 20_000 });
   const ser = (await composerProbe(page)).serialize!;
   const save = stat("2 MB draft (lines): autosave serialization", 150, ser.slice(-1));
   // a selection change: the toolbar's state is computed within a frame

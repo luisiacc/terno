@@ -206,7 +206,7 @@ export function setApp(partial: AppState | Partial<AppState> | ((state: AppState
  * scope across accounts, a tab back to the Inbox) leaves the folder too, so a list is never asked for an invalid one.
  */
 function keepFolderValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
-  next = keepSoloValid(state, keepTodayValid(state, keepActionPreviewValid(state, keepFollowupsValid(state, keepRemindersValid(state, next)))));
+  next = keepSoloValid(state, keepTodayValid(state, keepActionPreviewValid(state, keepFollowupsValid(state, keepRemindersValid(state, keepReviewValid(state, next))))));
   const m = { ...state, ...next };
   const out = m.folder !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.followups || m.today || m.view !== "all") ? { ...next, folder: null } : next;
   // plan 86: a Gmail tab is its account's Inbox, alone, likewise
@@ -228,6 +228,15 @@ function keepRemindersValid(state: AppState, next: AppState | Partial<AppState>)
   const m = { ...state, ...next };
   const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.query.trim() !== "";
   return other ? { ...next, reminders: false } : next;
+}
+
+/**
+ * Plan 158: a search typed in Review leaves it, as one from the palette does: Review's suggestions don't answer a
+ * query, and typing there changed nothing at all.
+ */
+function keepReviewValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
+  if (state.reviewCategoryId === null || Object.hasOwn(next, "reviewCategoryId") || !Object.hasOwn(next, "query")) return next;
+  return (next.query ?? "").trim() !== "" ? { ...next, reviewCategoryId: null } : next;
 }
 
 /** Plan 142: likewise for Follow-ups. */

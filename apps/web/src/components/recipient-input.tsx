@@ -692,13 +692,13 @@ const RecipientChip = memo(function RecipientChip({ chip: c, selected, ids }: { 
       data-invalid={!c.valid || undefined}
       className={cn(
         "group/chip inline-flex h-[22px] max-w-64 min-w-0 cursor-default items-center gap-0.5 rounded-md bg-muted px-1.5 text-sm text-foreground outline-none select-none animate-in fade-in-0 duration-base hover:bg-accent hover:text-accent-foreground",
-        "aria-selected:bg-primary aria-selected:text-primary-foreground",
-        // an invalid one keeps its fill (its mark is drawn for the fill: destructive on muted, CONTRAST_PAIRS)
-        !c.valid && "hover:bg-muted hover:text-foreground",
+        // an invalid one keeps its fill (its mark is drawn for the fill: destructive on muted, CONTRAST_PAIRS); chosen (Send
+        // picks it) it's ringed in the destructive ink, not filled with the primary's, which read as fine (plan 158)
+        c.valid ? "aria-selected:bg-primary aria-selected:text-primary-foreground" : "hover:bg-muted hover:text-foreground aria-selected:ring-[1.5px] aria-selected:ring-destructive aria-selected:ring-inset",
       )}
     >
-      {!c.valid && <CircleAlert aria-hidden="true" className="size-3 shrink-0 text-destructive group-aria-selected/chip:text-primary-foreground" />}
-      <span className={cn("truncate", !c.valid && "underline decoration-destructive decoration-dotted decoration-2 underline-offset-[3px] group-aria-selected/chip:decoration-primary-foreground")}>{chipLabel(c)}</span>
+      {!c.valid && <CircleAlert aria-hidden="true" className="size-3 shrink-0 text-destructive" />}
+      <span className={cn("truncate", !c.valid && "underline decoration-destructive decoration-dotted decoration-2 underline-offset-[3px]")}>{chipLabel(c)}</span>
       {/* on the selected chip only: no space held at rest (the chips stay balanced), nothing shifts under a moving pointer */}
       {selected && (
         <span aria-hidden="true" data-chip-remove className="-mr-0.5 grid size-4 shrink-0 place-items-center rounded-sm">

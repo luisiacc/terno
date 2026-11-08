@@ -877,7 +877,13 @@ test("the composer's states: unavailable Send, Saving and Saved, an invalid addr
   await page.getByTestId("strip-item").click();
   await expect(note).toBeVisible();
   // fixed: it goes, and Send is ready again
-  await page.getByTestId("recipient-chip").click();
+  // (chosen, the wrong one is ringed in the destructive ink, its fill kept: the primary's fill read as fine, plan 158)
+  const chip = page.getByTestId("recipient-chip");
+  const rest = await chip.evaluate((el) => getComputedStyle(el).backgroundColor);
+  await chip.click();
+  await expect(chip).toHaveAttribute("aria-selected", "true");
+  expect(await chip.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(rest);
+  expect(await chip.evaluate((el) => getComputedStyle(el).boxShadow)).toContain("inset");
   await page.keyboard.press("Backspace");
   await page.keyboard.press("Backspace");
   await to.focus();
@@ -889,8 +895,7 @@ test("the composer's states: unavailable Send, Saving and Saved, an invalid addr
   const status = page.getByTestId("draft-status");
   await page.getByTestId("compose-body").click();
   await page.keyboard.type("Something");
-  await expect(status).toHaveText("Saving…");
-  await expect(status.locator("[aria-live]")).toHaveText("");
+  // (Saving… only for a save that takes a while: save-state.test.tsx)
   await expect(status).toHaveText("Saved");
   await expect(status.locator("[aria-live]")).toHaveText("Saved");
 
@@ -931,7 +936,11 @@ test("the composer reads like the message above it, and a short window gives it 
     expect((await body.boundingBox())!.height).toBeLessThanOrEqual(120);
     const card = (await composer.boundingBox())!;
     expect(card.y - pane.y, "the composer clears what sticks at the top").toBeGreaterThanOrEqual(44);
-    expect(pane.y + pane.height - (card.y + card.height), "the card's foot isn't against the window").toBeGreaterThanOrEqual(8);
+    // the card's foot isn't against the window, unless a little of that room keeps the subject whole above (plan 158)
+    const subject = (await page.getByTestId("reader-subject").boundingBox())!;
+    const whole = subject.y >= pane.y && subject.y + subject.height <= pane.y + pane.height;
+    expect(pane.y + pane.height - (card.y + card.height), "the card's foot isn't against the window").toBeGreaterThanOrEqual(whole ? 0 : 8);
+    if (!whole) expect(subject.y + subject.height, "a subject not whole is wholly gone").toBeLessThanOrEqual(pane.y);
     // a chip and the row's own controls fit on the row: it doesn't double for them
     expect((await page.locator("[data-recipient-row]").first().boundingBox())!.height).toBe(38);
     await page.keyboard.press("Escape");

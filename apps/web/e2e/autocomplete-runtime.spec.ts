@@ -87,7 +87,7 @@ test("a fitted suggestion at the true 10 MB model midpoint preserves the full dr
     expect(actual.json, "the document").toBe(sha256(JSON.stringify(fromPlainText(expected).toJSON())));
     expect(actual.text, "the text on screen").toBe(sha256(expected));
     await expect(body).toBeFocused();
-    await expect(page.getByTestId("draft-status")).toHaveText(/saved/i, { timeout: 60_000 });
+    await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved", { timeout: 60_000 });
     const saved = await server.backend.server.invoke("drafts.list", {}, { clientId: "autocomplete-runtime", origin: "dev" });
     expect(saved[0]!.bodyText).toBe(expected);
     expect(saved[0]!.bodyHtml).toBe(toEmailHtml(fromPlainText(expected)));
@@ -178,7 +178,7 @@ test("native Chromium composition clears a fitted ghost and preserves the commit
   await expect(body).toHaveText(expected);
   await page.keyboard.press("Tab");
   await expect(body).toHaveText(expected);
-  await expect(page.getByTestId("draft-status")).toHaveText(/saved/i);
+  await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
   const actual = await body.evaluate(root => (root as unknown as { pmViewDesc: { node: PMNode } }).pmViewDesc.node.toJSON());
   expect(actual).toEqual(fromPlainText(expected).toJSON());
   const saved = await server.backend.server.invoke("drafts.list", {}, { clientId: "autocomplete-runtime", origin: "dev" });

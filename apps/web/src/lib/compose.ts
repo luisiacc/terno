@@ -428,7 +428,7 @@ function showStoredStandalone(key: string, owner: number, allowed: () => boolean
     if (!lease) return null;
     lease.seq = compose.storedFocusSeq;
     if (!current() || focusLease !== lease || !lease.valid) { releaseFocusLease(lease, false); return null; }
-    const publication = { compose, checked: new Set<number>(), scope: null, readerOpen: false, draftFocus: { key, target: "to" as const, seq: compose.storedFocusSeq, leased: true as const } };
+    const publication = { compose, checked: new Set<number>(), scope: null, readerOpen: false, draftFocus: { key, target: resumeTarget(key), seq: compose.storedFocusSeq, leased: true as const } };
     expected = { ...getApp(), ...publication };
     publicationOwner = publication.compose;
     setApp(publication);
@@ -965,6 +965,12 @@ export async function addressReply(key: string, threadId: number, person: { name
   const to = { name: source?.from.name || person.name, email: source?.from.email ?? person.address };
   const patch: DraftFields = { ...fields, showSourceContext: true, toText: formatAddressList([to]), ccText: "", auto: { to: [to.email], cc: [], bcc: [] } };
   return editDraft(key, patch);
+}
+
+/** Opened again, a draft resumes in its text (where the editor kept the caret); To only while a recipient still needs attention (plan 158). */
+export function resumeTarget(key: string): ComposeFocusTarget {
+  const d = useDrafts.getState().drafts[key];
+  return !d || d.toText.trim() === "" || firstInvalid(d.toText) !== null ? "to" : "body";
 }
 
 /** Shows a new-message draft in the reader pane again (from the drafts strip). */

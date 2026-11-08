@@ -31,6 +31,23 @@ function coverOf(scroller: HTMLElement): { covered: number; coveredTop: number }
   return { covered: parseFloat(style.scrollPaddingBottom) || 0, coveredTop: parseFloat(style.scrollPaddingTop) || 0 };
 }
 
+/**
+ * Plan 158: a composer's opening scroll (one with `wanted`) that would leave the conversation's subject cut by the
+ * reader's top stops where it's whole (at 1100x700 a reply's left a sliver of it under the toolbar). Only for a composer,
+ * whose foot sticks, and only for a little (so Send stays in view); holding back more, as for a subject of several lines in a short reader, would hide what's
+ * wanted, so the scroll goes past all of it instead, as far as `max` lets it (the context line then names it).
+ */
+const HOLD_BACK = 40;
+function keepSubjectWhole(scroller: HTMLElement, delta: number, max: number): number {
+  const subject = delta > 0 ? scroller.querySelector<HTMLElement>("#reader-subject") : null;
+  if (!subject) return delta;
+  const s = scroller.getBoundingClientRect().top, r = subject.getBoundingClientRect();
+  const top = r.top - s, bottom = r.bottom - s;
+  if (!(top >= 0 && top < delta && bottom > delta)) return delta;
+  if (delta - top <= HOLD_BACK) return top;
+  return bottom <= max ? bottom : delta;
+}
+
 /** `wanted`: how much of the element, from its top, has to show (all of it by default): a composer's foot sticks, so its first lines are enough. */
 export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.closest<HTMLElement>("[data-reader-scroller]"), pad = 16, wanted?: () => number): () => void {
   cancelReaderScroll();
@@ -42,7 +59,8 @@ export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.cl
       const { covered, coveredTop } = coverOf(scroller);
       const r = el.getBoundingClientRect(), s = scroller.getBoundingClientRect();
       const overflow = r.top + Math.min(wanted(), r.height) - (s.bottom - pad - covered);
-      if (overflow > 0) scroller.scrollTop += Math.min(overflow, r.top - (s.top + pad + coveredTop));
+      const room = r.top - (s.top + pad + coveredTop);
+      if (overflow > 0) scroller.scrollTop += wanted ? keepSubjectWhole(scroller, Math.min(overflow, room), room) : Math.min(overflow, room);
     });
     cancel = () => cancelAnimationFrame(id);
     return cancelReaderScroll;
@@ -67,7 +85,7 @@ export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.cl
     const overflow = (wanted ? r.top + Math.min(wanted(), r.height) : r.bottom) - (s.bottom - pad - covered);
     const room = r.top - (s.top + pad + coveredTop);
     // write
-    if (overflow > 0 && room > 0) scroller.scrollTop += Math.min(overflow, room);
+    if (overflow > 0 && room > 0) scroller.scrollTop += wanted ? keepSubjectWhole(scroller, Math.min(overflow, room), room) : Math.min(overflow, room);
     if (performance.now() < until) frame = requestAnimationFrame(step);
     else stop();
   };

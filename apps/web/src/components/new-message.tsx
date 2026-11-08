@@ -7,11 +7,11 @@ import { cn } from "@terno/ui/lib/utils";
 import { Trash2 } from "@terno/ui/icons";
 import { useEffect, useId, useRef } from "react";
 import { registerUndo, snack } from "~/lib/snack";
-import { composeFocusPending, finishComposeFocus, leaveNewDraft, leaveNewDraftWithFocus, sendDraft, showNewDraft } from "~/lib/compose";
+import { composeFocusPending, finishComposeFocus, leaveNewDraft, leaveNewDraftWithFocus, resumeTarget, sendDraft, showNewDraft } from "~/lib/compose";
 import { discardDraft, restoreDiscarded, useDrafts } from "~/lib/drafts";
 import { setApp, useApp } from "~/state/app";
 import { DRAFT_SURFACE, DraftClose, DraftFieldsForm, DraftPin, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
-import { controllerFor, popupOpen } from "./composer/controller";
+import { popupOpen } from "./composer/controller";
 import { ComposerFormatBar, FormatToggle, LinkButton } from "./composer/controls";
 import { RichBody } from "./composer/rich";
 import { warmAutocomplete } from "~/lib/autocomplete";
@@ -50,7 +50,7 @@ export function NewMessage() {
     if (!compose) return;
     const generation = ++focusGeneration.current;
     const owned = compose.storedFocusSeq === undefined ? null : { key: compose.key, seq: compose.storedFocusSeq };
-    focusSoon(focusSelector(compose.target ?? "to"), rootRef.current, 12, owned ? (fallback) => focusGeneration.current === generation && finishComposeFocus(owned.key, owned.seq, fallback) : undefined, owned ? () => focusGeneration.current === generation && useApp.getState().compose === compose && composeFocusPending(null, owned.key, owned.seq) : undefined);
+    focusSoon(focusSelector(compose.target ?? resumeTarget(compose.key)), rootRef.current, 12, owned ? (fallback) => focusGeneration.current === generation && finishComposeFocus(owned.key, owned.seq, fallback) : undefined, owned ? () => focusGeneration.current === generation && useApp.getState().compose === compose && composeFocusPending(null, owned.key, owned.seq) : undefined);
     if (owned && useApp.getState().draftFocus?.seq === owned.seq) setApp({ draftFocus: null });
     return () => {
       if (owned) queueMicrotask(() => { if (focusGeneration.current === generation) finishComposeFocus(owned.key, owned.seq, false); });
@@ -126,17 +126,16 @@ export function NewMessage() {
       {/* scrolls only where the card's minimum doesn't fit (a short window under a tall pinned card) */}
       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         <div className="mx-auto flex h-full max-w-(--reader-max) flex-col px-(--reader-pad-x) pb-5">
-          {/* a writing surface the pane's height (plan 158): fields at the top, Send at the foot, the page between */}
-          <div className={cn("relative flex min-h-60 flex-1 flex-col", DRAFT_SURFACE)} data-testid="composer-card">
+          {/* plan 158: a card that holds its text, Send just under it. The text starts a third of the window tall (room to
+              write, no half-empty pane) and grows with what's written up to the pane; then it scrolls under a fixed foot */}
+          <div className={cn("relative flex min-h-60 flex-col", DRAFT_SURFACE)} data-testid="composer-card">
             {/* pt-0.5: the first row's text field keeps its whole focus ring */}
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-0.5" data-draft-scroll>
+            <div className="min-h-0 overflow-y-auto pt-0.5" data-draft-scroll>
               <DraftFieldsForm d={d} accounts={accounts} showSubject />
-              <RichBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="rt-measure block min-h-[132px] w-full px-3.5 pt-3 pb-3" />
+              <RichBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="rt-measure block min-h-[max(132px,34vh)] w-full px-3.5 pt-3 pb-3" />
               <DraftAttachments d={d} />
               <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
               <Quote d={d} />
-              {/* the rest of the page is the text's too: a click there writes at its end */}
-              <div aria-hidden className="min-h-4 flex-1 cursor-text" data-testid="compose-page-rest" onMouseDown={(e) => { if (e.button !== 0 || d.sending) return; e.preventDefault(); controllerFor(key)?.focus("last"); }} />
             </div>
             <div className="shrink-0">
               <ComposerFormatBar draftKey={key} id={formatId} className="px-2 pt-1.5" />

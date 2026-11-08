@@ -311,6 +311,12 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     await expect(page.locator("[data-reader-toolbar]").locator("..")).toHaveAttribute("data-context", "");
     await page.locator("[data-reader-scroller]").evaluate((el) => (el.scrollTop = 0));
     await expect(line).not.toHaveAttribute("data-shown");
+    // a subject partly gone is gone: the line covers what's left of it (a sliver read as a glitch, plan 158)
+    const subjectTop = await page.locator("#reader-subject").evaluate((el) => el.getBoundingClientRect().top - el.closest("[data-reader-scroller]")!.getBoundingClientRect().top);
+    await page.locator("[data-reader-scroller]").evaluate((el, by) => (el.scrollTop = by), subjectTop + 6);
+    await expect(line).toHaveAttribute("data-shown");
+    await page.locator("[data-reader-scroller]").evaluate((el) => (el.scrollTop = 0));
+    await expect(line).not.toHaveAttribute("data-shown");
     await page.locator("[data-reader-scroller]").evaluate((el) => (el.scrollTop = el.scrollHeight));
     await expect(line).toHaveAttribute("data-shown");
     // a long reply: an undo far above the view brings its caret below the line, not under it (the editor's own scroll)

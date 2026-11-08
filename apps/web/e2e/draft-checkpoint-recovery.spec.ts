@@ -19,7 +19,7 @@ for (const position of ["backward range", "italic caret"] as const) test(`fatal 
     await page.getByTestId("compose-to").fill('"Pérez, Ana" <ana@example.test>, bob@');
     await body.fill("authored rich work"); await body.press("Meta+a"); await body.press("Meta+b"); await body.press("ArrowRight");
     await page.getByTestId("attachment-input").setInputFiles({ name: "checkpoint.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 255, 128]) });
-    await expect(page.getByTestId("draft-status")).toHaveText("Saved");
+    await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
     const original = (await server.backend.store.drafts.list()).find((d) => d.body_text === "authored rich work")!;
     expect(original).toBeDefined();
     await server.backend.store.drafts.delete(original.id, original.generation);
@@ -86,7 +86,7 @@ for (const position of ["backward range", "italic caret"] as const) test(`fatal 
     await page.getByTestId("recovery-review").click(); await expect(page.getByTestId("recovery-workspace")).toBeVisible();
     await page.getByTestId("draft-status").getByRole("button", { name: /retry/i }).click();
     await expect(page.getByTestId("draft-save-copy")).toBeVisible();
-    await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Saved");
+    await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
     const copy = (await server.backend.store.drafts.list()).find((d) => d.id !== original.id)!;
     expect(copy.body_html).toContain("<b>"); expect(copy.body_text).toBe("authored rich work latest");
     expect(await page.evaluate((html) => (window as unknown as { __terno: Probe }).__terno.parseMailHtml(html), copy.body_html)).toEqual(doc);

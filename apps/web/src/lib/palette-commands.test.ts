@@ -111,6 +111,17 @@ describe("palette groups", () => {
     expect(a[1]!.commands[1]!.command.label).toBe("Move to Work");
   });
 
+  it("keeps the conversation in hand ahead of what was used lately, so the first row on opening doesn't depend on history (plan 158)", () => {
+    const archive = cmd("thread.archive", "conversation");
+    let u: Usage = new Map();
+    for (const [i, id] of ["thread.archive", "go.sent"].entries()) u = recordUse(u, id, i);
+    expect(names(arrange([archive, ...all], "root", "", u, 0)).slice(0, 3)).toEqual([
+      ["draft", ["draft.send"]],
+      ["conversation", ["thread.archive"]],
+      ["recent", ["go.sent"]],
+    ]);
+  });
+
   it("caps the recent commands", () => {
     const many = Array.from({ length: 10 }, (_, i) => cmd(`c${i}`, "actions"));
     let u: Usage = new Map();

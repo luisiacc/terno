@@ -275,6 +275,11 @@ test.describe("context menu on one thread", () => {
       await expect(page.getByTestId("reader").getByTestId("composer")).toBeVisible();
       await expect(page.getByTestId("compose-body")).toBeFocused();
       await page.keyboard.press("Escape");
+      // the palette offers it in the same place, beside Reply (plan 158: it was under the fold, after Spam)
+      await page.keyboard.press("ControlOrMeta+k");
+      const order = await page.locator("[data-group=conversation] [data-command]").evaluateAll((els) => els.map((e) => e.getAttribute("data-command")));
+      expect(order.slice(order.indexOf("compose.reply"), order.indexOf("compose.reply") + 2)).toEqual(["compose.reply", "compose.replyAll"]);
+      await page.keyboard.press("Escape");
     });
     await scenario("Trash and Spam: what can't apply there isn't offered, the way back leads", async () => {
       await fresh(page);

@@ -451,7 +451,7 @@ test.describe("drafts keep their formatting", () => {
       await reply(page);
       await select(page, "propuesta");
       await page.keyboard.press("ControlOrMeta+b");
-      await expect(page.getByTestId("draft-status")).toHaveText("Saved");
+      await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved");
       const row = sqlDb(server.backend.store).get<{ body_text: string; body_html: string }>("SELECT body_text, body_html FROM drafts ORDER BY id DESC LIMIT 1")!;
       expect(row.body_text).toBe("Hola Ana, gracias por la propuesta del viernes.");
       expect(row.body_html).toBe("<div>Hola Ana, gracias por la <b>propuesta</b> del viernes.</div>");
@@ -650,30 +650,53 @@ test.describe("the new message", () => {
     });
   });
 
-  test("plan 158: a writing surface the pane's height: fields at the top, the bar at the foot, the page below the text writes at its end", { tag: "@variant" }, async ({ app: page }) => {
+  test("plan 158: a card that holds its text: Send just under a short message, a click below the words writes at their end", { tag: "@variant" }, async ({ app: page }) => {
     await compose(page);
     await body(page).click();
     await page.keyboard.type("Hola");
-    const bar = await box(page.getByTestId("format-bar")), c = await box(card(page)), pane = await box(page.getByTestId("composer"));
-    // the card reaches the pane's foot (its padding), and the bar is at the card's
-    expect(pane.y + pane.height - (c.y + c.height)).toBeLessThanOrEqual(24);
+    const bar = await box(page.getByTestId("format-bar")), c = await box(card(page)), pane = await box(page.getByTestId("composer")), text = await box(body(page));
+    // room to write (a third of the window), and no further: the foot follows the text, not the pane's bottom
+    expect(text.height).toBeGreaterThanOrEqual(0.3 * page.viewportSize()!.height);
+    expect(pane.y + pane.height - (c.y + c.height), "a short message leaves the pane's foot free").toBeGreaterThan(120);
+    expect(bar.y - (text.y + text.height)).toBeLessThan(80);
     expect(c.y + c.height - (bar.y + bar.height)).toBeLessThan(60);
-    // a click in the empty page goes on writing where the text ends
+    // a click in the empty text below the words goes on writing where they end
     await page.getByTestId("compose-to").click();
-    await page.getByTestId("compose-page-rest").click();
+    await body(page).click({ position: { x: 40, y: text.height - 12 } });
     await expect(body(page)).toBeFocused();
     await page.keyboard.type(" mundo");
     await expect(body(page)).toHaveText("Hola mundo");
-    // every time, not only the first: with words selected, a click there doesn't type over them (Codex review)
-    await body(page).getByText("Hola mundo").dblclick({ position: { x: 4, y: 4 } });
-    await page.getByTestId("compose-page-rest").click();
-    await page.keyboard.type("!");
-    await expect(body(page)).toHaveText("Hola mundo!");
     for (const id of ["compose-send", "compose-send-later", "compose-pin", "compose-discard", "compose-collapse", "format-toggle", "compose-link"]) await expect(card(page).getByTestId(id)).toBeVisible();
     // nothing left in the strip above it: the only controls are the card's
     expect(await page.getByTestId("composer").locator("button").count()).toBe(await card(page).locator("button").count());
     // the title once: no label repeating it
     await expect(page.getByTestId("composer").getByText("New message", { exact: true })).toHaveCount(1);
+  });
+
+  test("plan 158: opened again from the strip, a new message resumes in its text, where the caret was; To while a recipient is missing", async ({ app: page }) => {
+    await compose(page);
+    await page.keyboard.type("marta@example.com");
+    await page.keyboard.press("Enter");
+    await body(page).click();
+    await page.keyboard.type("Hola Marta, nos vemos");
+    await page.keyboard.press("ArrowLeft");
+    // (the editor reads a moved caret on the browser's selectionchange: wait for the editor to have had it)
+    const read = page.evaluate(() => new Promise((done) => document.addEventListener("selectionchange", () => setTimeout(done, 0), { once: true })));
+    await page.keyboard.press("ArrowLeft");
+    await read;
+    await page.keyboard.press("Escape");
+    await page.getByTestId("strip-item").click();
+    await expect(body(page)).toBeFocused();
+    await page.keyboard.type("_");
+    await expect(body(page)).toHaveText("Hola Marta, nos vem_os");
+    // nobody to send to yet: that's what needs attention
+    await page.keyboard.press("Escape");
+    await compose(page);
+    await body(page).click();
+    await page.keyboard.type("Sin destinatario");
+    await page.keyboard.press("Escape");
+    await page.getByTestId("strip-item").first().click();
+    await expect(page.getByTestId("compose-to")).toBeFocused();
   });
 
 });

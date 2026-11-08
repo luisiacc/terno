@@ -62,4 +62,41 @@ describe("keepInView", () => {
       expect(scroller.scrollTop).toBe(800 - 56);
     }
   });
+
+  it("never stops with the subject cut by the reader's top: short of it when some would stay, past it when all goes (plan 158)", () => {
+    const subject = document.createElement("h2");
+    subject.id = "reader-subject";
+    scroller.prepend(subject);
+    for (const motionMs of [80, 0]) {
+      useAppearance.setState({ motionMs });
+      // 116 wanted (as above); a subject from 100 to 140 would keep 24 px: it stops at 100, the subject whole at the top
+      scroller.scrollTop = 0;
+      subject.getBoundingClientRect = () => rect(100 - scroller.scrollTop, 40);
+      keepInView(el, scroller, 16, () => 200);
+      frame();
+      expect(scroller.scrollTop).toBe(100);
+      // one from 40 to 80 goes whole: the scroll goes on
+      scroller.scrollTop = 0;
+      subject.getBoundingClientRect = () => rect(40 - scroller.scrollTop, 40);
+      keepInView(el, scroller, 16, () => 200);
+      frame();
+      expect(scroller.scrollTop).toBe(116);
+      // one of several lines (10 to 150) would hold back 106 px of what's wanted: the scroll goes past all of it instead
+      scroller.scrollTop = 0;
+      subject.getBoundingClientRect = () => rect(10 - scroller.scrollTop, 140);
+      keepInView(el, scroller, 16, () => 200);
+      frame();
+      expect(scroller.scrollTop).toBe(150);
+      // a message opening (no `wanted`: no foot that sticks) gets all it asks for (Codex review; with motion off it's the
+      // browser's scrollIntoView)
+      if (!motionMs) continue;
+      scroller.scrollTop = 0;
+      subject.getBoundingClientRect = () => rect(8 - scroller.scrollTop, 72);
+      el.getBoundingClientRect = () => rect(300 - scroller.scrollTop, 600);
+      keepInView(el, scroller);
+      frame();
+      expect(scroller.scrollTop).toBe(16);
+      el.getBoundingClientRect = () => rect(800 - scroller.scrollTop, 600);
+    }
+  });
 });

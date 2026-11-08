@@ -29,7 +29,7 @@ test("render-error recovery reviews exact draft history and files outside the br
   await stabilize(page);
   await axeBothModes(page);
   await page.getByTestId("draft-save-copy").focus(); await page.keyboard.press("Enter");
-  await expect(page.getByTestId("draft-status")).toHaveText("Saved"); await expect(body).toBeFocused();
+  await expect(page.getByTestId("draft-status")).toHaveAttribute("data-status", "saved"); await expect(body).toBeFocused();
   const copy = (await server.backend.store.drafts.list())[0]!;
   expect(copy.id).not.toBe(original.id); expect(copy.body_html).toContain("<b>");
   const ref = JSON.parse(copy.attachments_json)[0]; expect(await server.backend.store.attachments.read(copy.account_id, ref.assetId, 0)).toBe("AP+A");

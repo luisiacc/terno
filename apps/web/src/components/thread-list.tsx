@@ -607,6 +607,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
   const followups = useApp((s) => s.followups);
   const account = useApp((s) => s.accounts.find((a) => a.id === s.accountId));
   const query = useApp((s) => s.query);
+  const soloName = useApp((s) => (s.soloAccountId === null ? null : (s.accounts.find((a) => a.id === s.soloAccountId)?.displayName ?? null)));
   const searchMs = useList((s) => s.searchMs);
   const more = useList((s) => s.nextCursor !== null);
   const complete = useList((s) => s.complete);
@@ -628,7 +629,9 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
   const inlineTabs = oneRow && tabs && quick === "menu";
   // List's selection toolbar stands on this line: what's under it can't be reached until it goes
   const covered = useApp((s) => list && (s.scope !== null || s.checked.size >= 1));
-  const results = t("list.search.inSaved", { results: more ? t("list.search.resultsMore", { count }) : t("list.search.results", { count }) });
+  // in the field's own words (plan 158: "in saved mail" was a term nobody knew); the few-results note says what's looked through
+  const counted = more ? t("list.search.resultsMore", { count }) : t("list.search.results", { count });
+  const results = soloName === null ? t("list.search.inAll", { results: counted }) : t("list.search.inAccount", { results: counted, account: soloName });
   // none found: the list says so under the field, with what to try; the count is still said, not shown (plan 158)
   const found = count > 0 || more || !complete;
   const stats = query && searchMs !== null && (

@@ -106,14 +106,20 @@ test.describe("palette", () => {
       await focusList(page);
       await palette(page);
       await expect(group(page, "recent")).toHaveCount(0);
-      await input(page).fill("star");
+      await input(page).fill("search");
+      await expect(page.getByTestId("palette-search-mail")).toBeVisible();
       await page.keyboard.press("Enter");
+      await expect(page.getByTestId("search-input")).toBeFocused();
+      await page.keyboard.press("Escape");
+      await openRow(page, 0);
+      await focusList(page);
       await palette(page);
       const recent = group(page, "recent");
       await expect(recent.getByRole("option")).toHaveCount(1);
-      await expect(recent.getByRole("option").first()).toHaveAttribute("data-command", "thread.star");
-      // not listed twice
-      await expect(page.locator("[data-command=\"thread.star\"]")).toHaveCount(1);
+      await expect(recent.getByRole("option").first()).toHaveAttribute("data-command", "search.focus");
+      // not listed twice, and under the conversation's own actions: Enter on opening is Archive whatever ran before (plan 158)
+      await expect(page.locator("[data-command=\"search.focus\"]")).toHaveCount(1);
+      await expect(selected(page)).toHaveAttribute("data-command", "thread.archive");
       await input(page).fill("sta");
       await expect(group(page, "recent")).toHaveCount(0);
     });

@@ -4,6 +4,7 @@ import { focusAccount, goToAccount, goToFolder } from "~/lib/account-folders";
 import { normalizeText, remindPresets, separatesTabs, snippetPreview, TABS, type CategoryColor, type ReminderKind, type Snippet } from "@terno/core";
 import { t, type TextKey } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
+import { cn } from "@terno/ui/lib/utils";
 import { Chip } from "@terno/ui/components/chip";
 import { Command, CommandDescription, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
 import { Archive, AtSign, Bell, BellOff, ListChecks, BookmarkPlus, CalendarClock, CheckCheck, Clock, Copy, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
@@ -34,6 +35,8 @@ import { arrange, itemValue, namesCommand, words, type PaletteCommand, type Pale
 import { noteUse, readUsage, type Usage } from "~/lib/palette-usage";
 import { focusSearchField, reply } from "~/lib/keyboard";
 import { listDate } from "~/lib/format";
+import { reachesSeveral } from "~/lib/compose-fields";
+import { draftIndex, useDrafts } from "~/lib/drafts";
 import { openThread as openConversation } from "~/lib/page";
 import { client } from "~/rpc/connection";
 import { summarizable, summarize } from "~/lib/summaries";
@@ -108,6 +111,8 @@ const MAIL_ROWS = 5;
  * on screen stay until a new one comes, so the panel doesn't flicker. Spam and Trash stay out: a search of its own still
  * looks there, but nothing offers their mail unasked.
  */
+const NO_IDS: ReadonlySet<number> = new Set();
+
 function useFoundMail(query: string, on: boolean, accountId: number | null, filter: ReturnType<typeof activeFilter>): { query: string; rows: readonly ThreadSummary[] } | null {
   const [found, setFound] = useState<{ query: string; rows: readonly ThreadSummary[] } | null>(null);
   const asks = on && query.length >= 2;
@@ -323,8 +328,12 @@ export function CommandPalette() {
       // in the order they lead an empty root (CONVERSATION_LEAD)
       add({ id: "thread.archive", group: inHand, label: t("actions.archive"), icon: <Archive />, shortcut: keysOf("thread.archive"), ...withEnglish(english("palette.archive", { count: targets }), "palette.alias.archive"), run: () => void act("archive") });
       add({ id: "thread.trash", group: inHand, label: t("palette.trash"), icon: <Trash2 />, destructive: true, shortcut: keysOf("thread.trash"), ...withEnglish(english("palette.trash"), "palette.alias.trash"), run: () => void act("trash") });
+      // Reply all: beside Reply where it reaches several people, as in the row menu and the toolbar (plan 158), else further down
+      const replyAll = () => add({ id: "compose.replyAll", group: inHand, label: t("palette.replyAll"), icon: <ReplyAll />, shortcut: keysOf("compose.replyAll"), testId: "palette-reply-all", keywords: english("palette.replyAll"), run: () => reply("replyAll") });
+      const several = replyable && openThread !== undefined && reachesSeveral(openThread, accounts.map((a) => a.email));
       if (replyable) {
         add({ id: "compose.reply", group: inHand, label: t("palette.reply"), icon: <Reply />, shortcut: keysOf("compose.reply"), testId: "palette-reply", ...synonyms("palette.alias.reply", english("palette.reply")), run: () => reply("reply") });
+        if (several) replyAll();
         add({ id: "compose.forward", group: inHand, label: t("palette.forward"), icon: <Forward />, shortcut: keysOf("compose.forward"), testId: "palette-forward", ...synonyms("palette.alias.forward", english("palette.forward")), run: () => reply("forward") });
       }
       add({ id: "thread.star", group: inHand, label: t(starKey), icon: <Star />, shortcut: keysOf("thread.star"), ...withEnglish([t("actions.star"), t("actions.unstar"), ...english("actions.star"), ...english("actions.unstar")], "palette.alias.star"), run: () => toggleStar(undefined, { announce: true }) });
@@ -335,7 +344,7 @@ export function CommandPalette() {
       add({ id: "thread.move", group: inHand, label: t("palette.move"), icon: <FolderInput />, shortcut: keysOf("thread.move"), testId: "palette-move", ...withEnglish(english("palette.move"), "palette.alias.move"), ...(scoped ? { run: () => setApp({ dialog: "categoryPicker", pickerMode: "move" }) } : { page: "move" as const }) });
       add({ id: "thread.addTo", group: inHand, label: t("palette.addToCategory"), icon: <Tag />, testId: "palette-add-to", keywords: english("palette.addToCategory"), page: "addTo" });
       add({ id: "thread.spam", group: inHand, label: t("palette.spam"), icon: <OctagonAlert />, shortcut: keysOf("thread.spam"), ...withEnglish(english("palette.spam"), "palette.alias.spam"), run: () => void act("spam") });
-      if (replyable) add({ id: "compose.replyAll", group: inHand, label: t("palette.replyAll"), icon: <ReplyAll />, shortcut: keysOf("compose.replyAll"), testId: "palette-reply-all", keywords: english("palette.replyAll"), run: () => reply("replyAll") });
+      if (replyable && !several) replyAll();
 
       const targetIds = scoped ? [] : ids();
       for (const c of categories) {
@@ -457,6 +466,7 @@ export function CommandPalette() {
   const soloId = useApp((s) => s.soloAccountId);
   // (the filter the list would keep: what's offered is what the results will hold)
   const mail = useFoundMail(query, open && page === "root", soloId, active);
+  const drafted = useDrafts((s) => (mail ? draftIndex(s.drafts).written : NO_IDS));
   // plan 158: nothing named outright, so it's about mail: the search leads, and Enter runs it
   const aboutMail = page === "root" && query !== "" && !namesCommand(groups, value);
   // the search that found it, whatever's typed by now: the row opens among its own results, and is what acts on next
@@ -481,7 +491,11 @@ export function CommandPalette() {
               <Mail />
               <span className="max-w-[40%] shrink-0 truncate">{r.fromName || r.fromEmail}</span>
               <span className="min-w-0 truncate font-normal text-muted-foreground">{r.subject || t("common.noSubject")}</span>
-              <CommandDescription className="shrink-0 tabular">{listDate(r.lastDate)}</CommandDescription>
+              {/* plan 158: what tells two alike apart, as their rows in the list do: a draft, and the account */}
+              {drafted.has(r.id) && <span data-testid="palette-mail-draft" className="shrink-0 text-xs font-medium text-draft-foreground">{t("list.draft")}</span>}
+              {/* the account bounded, so a long one never takes the subject's room */}
+              {accounts.length > 1 && <CommandDescription className="max-w-32 shrink-0" data-testid="palette-mail-account">{accounts.find((a) => a.id === r.accountId)?.displayName}</CommandDescription>}
+              <CommandDescription className={cn("min-w-14 shrink-0 text-right tabular", accounts.length > 1 && "ms-0")}>{listDate(r.lastDate)}</CommandDescription>
             </CommandItem>
           ))}
         </CommandGroup>
@@ -571,8 +585,9 @@ export function CommandPalette() {
             )
           }
         />
-        {/* plan 158: as tall as what it holds, up to its maximum: the field stays put, the footer follows the last row */}
-        <CommandList ref={listRef} label={t("palette.results")}>
+        {/* plan 158: as tall as what it holds, up to its maximum: the field stays put, the footer follows the last row.
+            Taller than the base list where the window has room, so the places under an open conversation's actions show */}
+        <CommandList ref={listRef} label={t("palette.results")} className="max-h-[min(30rem,55vh)]">
           {/* a row offered below says it already: the root's search while typing, a page's create */}
           {!(page === "root" && query) && !create && <CommandEmpty>{t("palette.empty")}</CommandEmpty>}
           {aboutMail && mailRows}
