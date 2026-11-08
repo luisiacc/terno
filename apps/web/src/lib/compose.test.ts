@@ -24,13 +24,43 @@ const { setApp } = await import("~/state/app");
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-beforeEach(() => {
+beforeEach(async () => {
+  (await import("./send-problem")).useEmptySend.setState({ key: null });
   setApp({ accounts: [{ id: 1, email: "me@example.test" } as import("@terno/core").Account] });
   rpc.calls.length = 0; rpc.autoSave = true;
   useDrafts.setState({ drafts: {} });
 });
 
 describe("sending a draft", () => {
+  it("no message (nothing written, nothing attached): asks once before it goes; Send again sends (plan 158)", async () => {
+    const { useEmptySend } = await import("./send-problem");
+    const key = createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "  " });
+    expect(await sendDraft(key, 123)).toBe(false);
+    expect(useEmptySend.getState()).toMatchObject({ key, sendAt: 123 });
+    expect(rpc.calls.filter((c) => c.method !== "drafts.save")).toHaveLength(0);
+    expect(useDrafts.getState().drafts[key]!.sending).toBe(false);
+    const second = sendDraft(key); await tick();
+    expect(useEmptySend.getState().key).toBeNull();
+    rpc.calls.find((c) => c.method === "compose.send")!.resolve({ opId: "o", threadId: 1 });
+    expect(await second).toBe(true);
+  });
+
+  it("a forward, a file or a picture is a message: no question", async () => {
+    const { useEmptySend } = await import("./send-problem");
+    const { emptyMessage } = await import("./drafts");
+    const draft = (fields: Partial<import("./drafts").LocalDraft>) => ({ ...newFields(1), ...fields }) as import("./drafts").LocalDraft;
+    expect(emptyMessage(draft({}))).toBe(true);
+    expect(emptyMessage(draft({ mode: "reply" }))).toBe(true);
+    expect(emptyMessage(draft({ mode: "forward" }))).toBe(false);
+    expect(emptyMessage(draft({ bodyHtml: '<p><img src="cid:x"></p>' }))).toBe(false);
+    expect(emptyMessage(draft({ attachments: [{ id: 1 } as never] }))).toBe(false);
+    const key = createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "Hola" });
+    const sending = sendDraft(key); await tick();
+    expect(useEmptySend.getState().key).toBeNull();
+    rpc.calls.find((c) => c.method === "compose.send")!.resolve({ opId: "o", threadId: 1 });
+    expect(await sending).toBe(true);
+  });
+
   it("unresolved recovery refuses Send before locking and preserves editable work", async () => {
     const key = createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "keep" });
     markDraftMissing(key);
@@ -130,7 +160,7 @@ describe("what sending says", () => {
     expect(await sendDraft(createDraft({ ...newFields(1), toText: "" }))).toBe(false);
     expect(useSnack.getState().current?.message).toBe("Add a recipient to send");
 
-    const failing = createDraft({ ...newFields(1), toText: "ana@example.com" });
+    const failing = createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "Hola" });
     const p = sendDraft(failing);
     await tick();
     rpc.calls.find((c) => c.method === "compose.send")!.reject(new Error("offline"));
@@ -139,7 +169,7 @@ describe("what sending says", () => {
 
     rpc.calls.length = 0;
     setLocale("es", es);
-    const sent = createDraft({ ...newFields(1), toText: "ana@example.com" });
+    const sent = createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "Hola" });
     const q = sendDraft(sent);
     await tick();
     rpc.calls.find((c) => c.method === "compose.send")!.resolve({ opId: "o", threadId: 1 });

@@ -581,6 +581,11 @@ export function nothingWritten(d: LocalDraft): boolean {
   });
 }
 
+/** No message in it: no text, no picture, no file. A forward always carries one, the message it forwards (plan 158). */
+export function emptyMessage(d: LocalDraft): boolean {
+  return d.mode !== "forward" && !d.bodyText.trim() && !/<img\b/i.test(d.bodyHtml) && !d.attachments?.length && !d.attachmentOwner;
+}
+
 /** Whether the draft as the editor has it now is empty; an editor that can't be read isn't (its text may be there). */
 export function nothingWrittenIn(key: string): boolean {
   try {

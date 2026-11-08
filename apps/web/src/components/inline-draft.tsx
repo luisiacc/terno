@@ -22,7 +22,7 @@ import { registerUndo, snack } from "~/lib/snack";
 import { getSelectionWriteRevision, setApp, useApp } from "~/state/app";
 import { isMac } from "~/lib/select";
 import { Expand } from "./expand";
-import { isSendLaterKey, openSendLater, SendButton } from "./send-button";
+import { isSendLaterKey, openSendLater, SendButton, SendOrAsk } from "./send-button";
 import { controllerFor, popupOpen } from "./composer/controller";
 import { DraftCommandsHost } from "~/lib/draft-commands";
 import { ComposerFormatBar, FormatToggle, LinkButton } from "./composer/controls";
@@ -627,22 +627,24 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
             <div data-draft-foot className="sticky bottom-0 z-[1] rounded-b-xl bg-(--draft-bg) before:pointer-events-none before:absolute before:inset-x-0 before:-top-3 before:h-3 before:bg-linear-to-t before:from-(--draft-bg) before:to-transparent">
             <ComposerFormatBar draftKey={d.key} id={formatId} className="px-2 pt-1.5" />
             <div className="flex flex-wrap items-center gap-1 px-2.5 pt-2 pb-2.5">
-              <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
-              <FormatToggle controls={formatId} />
-              <AttachButton d={d} />
-              <LinkButton draftKey={d.key} disabled={d.sending} />
-              <AiDraftButton draftKey={d.key} disabled={d.sending} testId="compose-ai" />
-              <span className="ml-1.5 flex min-w-0">
-                <SaveState d={d} />
-              </span>
-              <span className="ml-auto flex gap-0.5">
-                {/* plan 115: not from Review drafts, which owns the draft while it's open */}
-                {!recovering && <DraftPin pinned={false} onClick={() => pinDraft(d.key)} disabled={d.sending} />}
-                <IconButton label={t("compose.discard")} onClick={() => void discard()} data-testid="compose-discard" disabled={d.sending}>
-                  <Trash2 />
-                </IconButton>
-                <DraftClose onClick={collapse} />
-              </span>
+              <SendOrAsk d={d} onSend={(at) => void send(at)}>
+                <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
+                <FormatToggle controls={formatId} />
+                <AttachButton d={d} />
+                <LinkButton draftKey={d.key} disabled={d.sending} />
+                <AiDraftButton draftKey={d.key} disabled={d.sending} testId="compose-ai" />
+                <span className="ml-1.5 flex min-w-0">
+                  <SaveState d={d} />
+                </span>
+                <span className="ml-auto flex gap-0.5">
+                  {/* plan 115: not from Review drafts, which owns the draft while it's open */}
+                  {!recovering && <DraftPin pinned={false} onClick={() => pinDraft(d.key)} disabled={d.sending} />}
+                  <IconButton label={t("compose.discard")} onClick={() => void discard()} data-testid="compose-discard" disabled={d.sending}>
+                    <Trash2 />
+                  </IconButton>
+                  <DraftClose onClick={collapse} />
+                </span>
+              </SendOrAsk>
             </div>
             </div>
             {state === "open" && drop.layer}

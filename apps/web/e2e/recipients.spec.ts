@@ -285,8 +285,9 @@ test.describe("reply-all with addresses other clients mangled", () => {
       // said at the field it's about (plan 158)
       await expect(page.getByTestId("compose-field-problem")).toHaveText("“not an address” isn’t an email address. Fix or remove it, then send.");
       await expect(chipsOf(page, "compose-cc")).toBeFocused();
-      // removing it lets the reply go
+      // removing it lets the reply go (with something written: a send of no message asks first, plan 158)
       await page.keyboard.press("Backspace");
+      await page.getByTestId("compose-body").fill("Hola.");
       await page.keyboard.press("ControlOrMeta+Enter");
       await expect(toast(page, /Sending|Message sent/)).toBeVisible();
     });

@@ -777,6 +777,67 @@ test("Undo send (plan 158): a spinner, not a check, while it's held; Undo brings
   await expect(page.getByTestId("undo-send-switch")).toHaveAttribute("aria-checked", "false");
 });
 
+test("a send with no message asks first, in Send's row: Send or Cancel, ⌘↵ the same, Undo send after (plan 158)", async ({ app: page, server }) => {
+  await server.backend.server.invoke("settings.update", { undoSend: true }, { clientId: "setup", origin: "dev" as const });
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+  await openRow(page, 0);
+  await page.keyboard.press("r");
+  const body = page.getByTestId("compose-body");
+  const ask = page.getByTestId("compose-empty-ask");
+  const sending = page.locator("[data-testid=snack]").filter({ hasText: "Sending…" });
+  await expect(body).toBeFocused();
+  await scenario("⌘↵ with nothing written: the question in the row, in words, nothing sent, the caret where it was", async () => {
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect(ask).toBeVisible();
+    await expect(ask).toHaveAccessibleName("Send without a message?");
+    await expect(page.getByTestId("compose-send")).toHaveCount(0);
+    await expect(body).toBeFocused();
+    await expect(sending).toHaveCount(0);
+    await page.getByTestId("compose-empty-cancel").click();
+    await expect(ask).toHaveCount(0);
+    await expect(body).toBeFocused();
+  });
+  await scenario("Send clicked: the question's Send takes focus; Esc and typing put it away", async () => {
+    await page.getByTestId("compose-send").click();
+    await expect(page.getByTestId("compose-empty-send")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(ask).toHaveCount(0);
+    await expect(page.getByTestId("composer")).toBeVisible();
+    await expect(body).toBeFocused();
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect(ask).toBeVisible();
+    await page.keyboard.type("x");
+    await expect(ask).toHaveCount(0);
+    await page.keyboard.press("Backspace");
+  });
+  await scenario("asked once: ⌘↵ again sends, and Undo send brings the empty reply back", async () => {
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect(ask).toBeVisible();
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect(sending).toBeVisible();
+    await expect(page.getByTestId("composer")).toHaveCount(0);
+    await sending.getByTestId("snack-action").click();
+    await expect(page.getByTestId("composer")).toBeVisible();
+    await expect(ask).toHaveCount(0);
+    await expect(page.getByTestId("compose-send")).toBeVisible();
+  });
+  await scenario("the question's Send sends; a new message asks the same", async () => {
+    await page.getByTestId("compose-send").click();
+    await page.getByTestId("compose-empty-send").click();
+    await expect(sending).toBeVisible();
+    await sending.getByTestId("snack-action").click();
+    await page.getByTestId("compose-discard").click();
+    await focusList(page);
+    await page.keyboard.press("c");
+    await addRecipients(page, "compose-to", "ana@example.com");
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect(ask).toBeVisible();
+    await page.getByTestId("compose-empty-cancel").click();
+    await page.getByTestId("compose-discard").click();
+  });
+});
+
 test("Undo send from the pinned card: back on the card, with the reader where it is (plan 158)", async ({ app: page, server }) => {
   await server.backend.server.invoke("settings.update", { undoSend: true }, { clientId: "setup", origin: "dev" as const });
   await page.reload();

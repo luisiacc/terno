@@ -1685,6 +1685,7 @@ const en = {
   // plan 34: recipients as chips
   "compose.invalidRecipient": "“{entry}” isn’t an email address. Fix or remove it, then send.",
   "compose.noRecipient": "Add a recipient to send",
+  "compose.emptySend.question": "Send without a message?",
   "compose.recipients.list": "{field} recipients",
   "compose.recipients.invalid": "Not a valid email address",
   "compose.recipients.noReply": "This address may not accept replies",

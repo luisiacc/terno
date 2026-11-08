@@ -15,7 +15,7 @@ import { usePinned } from "~/lib/pinned-draft-state";
 import { registerUndo, snack, useSnack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
 import { DraftFieldsForm, DraftPin, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
-import { isSendLaterKey, openSendLater, SendButton } from "./send-button";
+import { isSendLaterKey, openSendLater, SendButton, SendOrAsk } from "./send-button";
 import { popupOpen } from "./composer/controller";
 import { ComposerFormatBar, FormatToggle, LinkButton } from "./composer/controls";
 import { RichBody } from "./composer/rich";
@@ -172,26 +172,28 @@ export function PinnedDraft({ overList }: { /** List's rows show under it (its d
         <div className="shrink-0">
           <ComposerFormatBar draftKey={key} id={formatId} className="px-2 pt-1.5" />
           <div className="flex items-center gap-1 px-2.5 pt-2 pb-2.5">
-            <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
-            <FormatToggle controls={formatId} />
-            <AttachButton d={d} />
-            <LinkButton draftKey={key} disabled={d.sending} />
-            <AiDraftButton draftKey={key} disabled={d.sending} testId="compose-ai" />
-            <span className="ml-1.5 flex min-w-0">
-              <SaveState d={d} />
-            </span>
-            <span className="ml-auto flex gap-0.5">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button type="button" variant="ghost" size="icon-sm" aria-label={t("compose.discard")} onClick={() => void discard()} data-testid="compose-discard" disabled={d.sending} className="text-muted-foreground hover:text-foreground">
-                      <Trash2 />
-                    </Button>
-                  }
-                />
-                <TooltipContent>{t("compose.discard")}</TooltipContent>
-              </Tooltip>
-            </span>
+            <SendOrAsk d={d} onSend={(at) => void send(at)}>
+              <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
+              <FormatToggle controls={formatId} />
+              <AttachButton d={d} />
+              <LinkButton draftKey={key} disabled={d.sending} />
+              <AiDraftButton draftKey={key} disabled={d.sending} testId="compose-ai" />
+              <span className="ml-1.5 flex min-w-0">
+                <SaveState d={d} />
+              </span>
+              <span className="ml-auto flex gap-0.5">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button type="button" variant="ghost" size="icon-sm" aria-label={t("compose.discard")} onClick={() => void discard()} data-testid="compose-discard" disabled={d.sending} className="text-muted-foreground hover:text-foreground">
+                        <Trash2 />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>{t("compose.discard")}</TooltipContent>
+                </Tooltip>
+              </span>
+            </SendOrAsk>
           </div>
         </div>
         {drop.layer}

@@ -2,7 +2,7 @@ import { AttachButton, DraftAttachments } from "./attachments";
 import { useComposerDrop } from "./composer-drop";
 import { t } from "@terno/i18n";
 import { IconButton } from "@terno/ui/components/icon-button";
-import { isSendLaterKey, openSendLater, SendButton } from "./send-button";
+import { isSendLaterKey, openSendLater, SendButton, SendOrAsk } from "./send-button";
 import { cn } from "@terno/ui/lib/utils";
 import { Trash2 } from "@terno/ui/icons";
 import { useEffect, useId, useRef } from "react";
@@ -141,22 +141,24 @@ export function NewMessage() {
               <ComposerFormatBar draftKey={key} id={formatId} className="px-2 pt-1.5" />
               {/* wraps: the status can hold a recovery action, and a narrow pane still reaches Discard */}
               <div className="flex flex-wrap items-center gap-1 px-2.5 pt-2 pb-2.5">
-                <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
-                <FormatToggle controls={formatId} />
-                <AttachButton d={d} />
-                <LinkButton draftKey={key} disabled={d.sending} />
-                <AiDraftButton draftKey={key} disabled={d.sending} testId="compose-ai" />
-                <span className="ml-1.5 flex min-w-0">
-                  <SaveState d={d} />
-                </span>
-                <span className="ml-auto flex gap-0.5">
-                  {/* plan 115: kept at the bottom right while conversations are read */}
-                  <DraftPin pinned={false} onClick={() => pinDraft(key)} disabled={d.sending} />
-                  <IconButton label={t("compose.discard")} onClick={() => void discard()} data-testid="compose-discard" disabled={d.sending}>
-                    <Trash2 />
-                  </IconButton>
-                  <DraftClose onClick={() => leave(key)} />
-                </span>
+                <SendOrAsk d={d} onSend={(at) => void send(at)}>
+                  <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
+                  <FormatToggle controls={formatId} />
+                  <AttachButton d={d} />
+                  <LinkButton draftKey={key} disabled={d.sending} />
+                  <AiDraftButton draftKey={key} disabled={d.sending} testId="compose-ai" />
+                  <span className="ml-1.5 flex min-w-0">
+                    <SaveState d={d} />
+                  </span>
+                  <span className="ml-auto flex gap-0.5">
+                    {/* plan 115: kept at the bottom right while conversations are read */}
+                    <DraftPin pinned={false} onClick={() => pinDraft(key)} disabled={d.sending} />
+                    <IconButton label={t("compose.discard")} onClick={() => void discard()} data-testid="compose-discard" disabled={d.sending}>
+                      <Trash2 />
+                    </IconButton>
+                    <DraftClose onClick={() => leave(key)} />
+                  </span>
+                </SendOrAsk>
               </div>
             </div>
             {drop.layer}

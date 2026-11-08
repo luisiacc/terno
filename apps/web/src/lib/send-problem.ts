@@ -19,3 +19,14 @@ let refusals = 0;
 export function sayProblem(problem: Omit<SendProblem, "seq">): void {
   useSendProblem.setState({ problem: { ...problem, seq: ++refusals } });
 }
+
+/**
+ * Plan 158: Send found no message (nothing written, nothing attached): it asks once, at the action row, before anything
+ * is saved or sent; Send again (the question's, the button, ⌘↵) sends, Cancel or typing puts it away. `sendAt`: what Send
+ * later asked for.
+ */
+export const useEmptySend = create<{ key: string | null; sendAt?: number }>(() => ({ key: null }));
+
+export function clearEmptySend(key: string): void {
+  if (useEmptySend.getState().key === key) useEmptySend.setState({ key: null, sendAt: undefined });
+}

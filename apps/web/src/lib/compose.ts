@@ -5,7 +5,7 @@ import { attachmentUploading, draftAttachmentBudget } from "./attachments";
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { firstInvalid, SELECT_INVALID } from "./recipient-field";
-import { sayProblem } from "./send-problem";
+import { clearEmptySend, sayProblem, useEmptySend } from "./send-problem";
 import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
@@ -17,7 +17,7 @@ import { answered, convertFields, forwardAccountMismatch, newFields, replyFields
 import { sentRefs, withSentImages } from "./inline-images";
 import { ensureForwardFiles, fetchForwardFiles, setForwardOpenProbe } from "./forward-files";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead, sealForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, comingHome, draftIndex, invalidateDraftPresentation, loseDraftHome, returnDraftToThread, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, discardIfEmpty, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, nothingWrittenIn, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type DraftFields, type LocalDraft } from "./drafts";
+import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead, sealForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, comingHome, draftIndex, invalidateDraftPresentation, loseDraftHome, returnDraftToThread, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, discardIfEmpty, draftForSend, editDraft, emptyMessage, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, nothingWrittenIn, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type DraftFields, type LocalDraft } from "./drafts";
 import { focusPinned, pinnedKey, usePinned } from "./pinned-draft-state";
 import { prepareEarlyComposeInput, prepareInlineFocusMove, type ComposeFocusTarget, type EarlyComposeInput } from "./compose-focus-move";
 import { aiDraftHooks } from "./ai-draft-state";
@@ -1112,6 +1112,9 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
   // before anything is saved: a refused send leaves no draft behind that wasn't there
   const refused = draft && recipientProblem(draft);
   if (refused) { sayRecipientProblem(key, refused); return false; }
+  // asked already whether to send no message (below): this Send is the answer
+  const asked = useEmptySend.getState().key === key;
+  clearEmptySend(key);
   // read-only from here: nothing typed while the save in flight settles can fall between it and the send
   markSending(key, true);
   let preparing = true;
@@ -1132,6 +1135,13 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
       markSending(key, false);
       resumeDraft(key);
       sayRecipientProblem(key, problem);
+      return false;
+    }
+    // no message (nothing written, nothing attached): asked once, at the action row, before it goes (plan 158)
+    if (!asked && emptyMessage(d)) {
+      markSending(key, false);
+      resumeDraft(key);
+      useEmptySend.setState({ key, sendAt });
       return false;
     }
     breadcrumb("action", "action.send");

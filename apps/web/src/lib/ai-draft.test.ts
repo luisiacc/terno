@@ -881,6 +881,8 @@ describe("what the Codex review found", () => {
     await tick();
     expect(calls("writing.commitGeneration")).toHaveLength(1);
     rpc.deferred.delete("writing.commitGeneration");
+    // (this editor's fake doesn't write the model's text to the store, so Send asks about no message first: plan 158)
+    expect(await sendDraft(key)).toBe(false);
     expect(await sendDraft(key)).toBe(true);
     expect(calls("writing.commitGeneration")).toHaveLength(2);
     const order = rpc.calls.map((c) => c.method);

@@ -5,9 +5,11 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { Clock, Send } from "@terno/ui/icons";
+import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import { create } from "zustand";
 import { useFilesOnTheirWay } from "~/lib/attachments";
-import { validRecipients, type LocalDraft } from "~/lib/drafts";
+import { emptyMessage, validRecipients, type LocalDraft } from "~/lib/drafts";
+import { clearEmptySend, useEmptySend } from "~/lib/send-problem";
 import { firstInvalid } from "~/lib/recipient-field";
 import { SendLaterPicker } from "./send-later-picker";
 
@@ -88,6 +90,70 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
           <SendLaterPicker sendKeys="mod+enter" done={() => setOpen(false)} onPick={(at) => onSend(at === "now" ? undefined : at)} />
         </PopoverContent>
       </Popover>
+    </div>
+  );
+}
+
+/**
+ * Plan 158: a Send with no message asks first, in the action row itself: "Send without a message?", Send and Cancel, in place
+ * of the row's controls and at their height. Send (or ⌘↵ again) sends, Undo send as always after; Cancel, Esc or typing put
+ * it away, focus back in the text. Otherwise the row as it is (`children`).
+ */
+export function SendOrAsk({ d, onSend, children }: { d: LocalDraft; onSend: (sendAt?: number) => void; children: React.ReactNode }) {
+  const asked = useEmptySend((s) => s.key === d.key);
+  const empty = emptyMessage(d);
+  // a file or a picture came in meanwhile: there's a message now
+  useEffect(() => { if (asked && !empty) clearEmptySend(d.key); }, [asked, empty, d.key]);
+  if (!asked || !empty || d.sending) return children;
+  return <EmptySendQuestion draftKey={d.key} onSend={onSend} />;
+}
+
+function EmptySendQuestion({ draftKey, onSend }: { draftKey: string; onSend: (sendAt?: number) => void }) {
+  const id = useId();
+  const root = useRef<HTMLDivElement>(null);
+  const confirm = useRef<HTMLButtonElement>(null);
+  const toText = () => root.current?.closest("form")?.querySelector<HTMLElement>("[data-testid=compose-body]")?.focus({ preventScroll: true });
+  useLayoutEffect(() => {
+    // asked from Send itself (a click, Enter on it): that button just gave its place, so focus goes to this Send, never lost
+    if (!document.activeElement || document.activeElement === document.body) confirm.current?.focus({ preventScroll: true });
+    const form = root.current?.closest("form");
+    const typed = () => clearEmptySend(draftKey);
+    form?.addEventListener("input", typed);
+    return () => form?.removeEventListener("input", typed);
+  }, [draftKey]);
+  const cancel = () => {
+    clearEmptySend(draftKey);
+    toText();
+  };
+  const send = () => {
+    const at = useEmptySend.getState().sendAt;
+    // from the text, as ⌘↵ is: the composer's send puts focus where it goes next from there
+    toText();
+    onSend(at);
+  };
+  return (
+    <div
+      ref={root}
+      role="group"
+      aria-labelledby={id}
+      data-testid="compose-empty-ask"
+      className="flex min-w-0 items-center gap-1"
+      onKeyDown={(e) => {
+        if (e.key !== "Escape") return;
+        e.preventDefault();
+        e.stopPropagation();
+        cancel();
+      }}
+    >
+      <span id={id} role="alert" className="mr-2 truncate pl-1 text-[length:var(--ds-text-control)] font-medium">
+        {t("compose.emptySend.question")}
+      </span>
+      <Button ref={confirm} type="button" size="sm" data-testid="compose-empty-send" onClick={send}>
+        {t("common.send")}
+      </Button>
+      <Button type="button" size="sm" variant="outline" data-testid="compose-empty-cancel" onClick={cancel}>
+        {t("common.cancel")}
+      </Button>
     </div>
   );
 }

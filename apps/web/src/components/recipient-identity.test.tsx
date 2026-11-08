@@ -43,7 +43,7 @@ it("Undo restores chip text while the edited address stays authored for Forward"
 
 it("does not locally remove a recipient while Send holds the draft", async () => {
   const previous = app.getApp();
-  const key = drafts.createDraft({ ...newFields(1), toText: address });
+  const key = drafts.createDraft({ ...newFields(1), toText: address, bodyText: "Hola" });
   const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
   const gate = deferred<{ threadId: number }>(), entered = deferred<void>();
   let sends = 0;
