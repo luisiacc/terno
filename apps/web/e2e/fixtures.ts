@@ -233,6 +233,9 @@ export const test = base.extend<Fixtures>({
     // a project's design in its own colors, as its baselines show it (plan 98's GitHub defaults are a new install's: `design: null`)
     if (design) await server.backend.server.invoke("settings.update", { design, lightTheme: "design", darkTheme: "design" }, { clientId: "setup", origin: "dev" as const });
     if (layout) await server.backend.server.invoke("settings.update", { layout }, { clientId: "setup", origin: "dev" as const });
+    // a fresh install's setup looks for a model on this Mac as it opens: never the machine's own (a real Ollama answering
+    // first became the test's AI). A test that wants one points discovery at its stub and reloads
+    if (backendOptions.empty) await isolateLocalDiscovery(server);
     await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=e2e`);
     await page.locator("[data-ready]").waitFor();
     if (!backendOptions.empty) await rows(page).first().waitFor();
