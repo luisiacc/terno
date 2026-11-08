@@ -117,15 +117,16 @@ export function NewMessage() {
       {/* the window's drag strip, and what this is: the subject is in its field, once (plan 158) */}
       <div className="drag-region h-[60px] shrink-0 [scrollbar-gutter:stable] overflow-y-hidden">
         <div className="mx-auto flex h-full max-w-(--reader-max) items-end px-(--reader-pad-x) pb-3">
-          {/* the pane's heading, as a conversation's subject is: what the pane is doing now */}
-          <h2 className="type-reader-subject truncate pl-3.5" data-testid="compose-title">
+          {/* the pane's heading, as a conversation's subject is: what the pane is doing now, on the reader's column (plan 158) */}
+          <h2 className="type-reader-subject truncate" data-testid="compose-title">
             {t("compose.untitled")}
           </h2>
         </div>
       </div>
       {/* scrolls only where the card's minimum doesn't fit (a short window under a tall pinned card) */}
       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
-        <div className="mx-auto flex h-full max-w-(--reader-max) flex-col px-(--reader-pad-x) pb-5">
+        {/* pt-0.5: the card's ring is drawn outside it, so the scroller's top edge would cut it (plan 158) */}
+        <div className="mx-auto flex h-full max-w-(--reader-max) flex-col px-(--reader-pad-x) pt-0.5 pb-5">
           {/* plan 158: a card that holds its text, Send just under it. The text starts a third of the window tall (room to
               write, no half-empty pane) and grows with what's written up to the pane; then it scrolls under a fixed foot */}
           <div className={cn("relative flex min-h-60 flex-col", DRAFT_SURFACE)} data-testid="composer-card">

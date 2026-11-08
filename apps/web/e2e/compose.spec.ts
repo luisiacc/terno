@@ -315,6 +315,23 @@ test.describe("new message, in the reader pane", () => {
     await expect(page.getByTestId("compose-to-field").getByTestId("recipient-chip")).toHaveCount(1);
   });
 
+  test("the new message's title on the reader's column, and its card's edge whole at the top (plan 158)", { tag: "@design" }, async ({ app: page }) => {
+    await openRow(page, 0);
+    const column = (await page.getByTestId("reader-subject").boundingBox())!.x;
+    await focusList(page);
+    await page.keyboard.press("c");
+    await expect(page.getByTestId("compose-to")).toBeFocused();
+    expect(Math.abs((await page.getByTestId("compose-title").boundingBox())!.x - column)).toBeLessThanOrEqual(1);
+    // the ring is drawn outside the card: its scroller mustn't start at the card's top, or it cuts that edge
+    const gap = await page.getByTestId("composer-card").evaluate((card) => {
+      let el = card.parentElement;
+      while (el && getComputedStyle(el).overflowY === "visible") el = el.parentElement;
+      return card.getBoundingClientRect().top - el!.getBoundingClientRect().top;
+    });
+    expect(gap).toBeGreaterThanOrEqual(1);
+    await page.keyboard.press("Escape");
+  });
+
   test("the new message: c, Esc, a bulk selection", async ({ app: page, server }) => {
     await scenario("c writes a new message in the reader (no dialog), with the drafts strip; it lands in Sent", async () => {
       await openRow(page, 0);
