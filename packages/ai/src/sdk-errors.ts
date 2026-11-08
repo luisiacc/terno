@@ -81,6 +81,9 @@ export function mapSdkError(error: unknown, sdk: SdkErrors, info: ErrorInfo): Ai
     if (status === 429) return new AiError(L("errors.ai.rateLimited", { provider: info.label }), "rate_limited");
     if ((status === 400 || status === 422) && UNSUPPORTED_OUTPUT.test(error.message)) return new AiError(`${info.label}: ${error.message}`, "unsupported");
     if (status === 404) return new AiError(L("errors.ai.notFound", { provider: info.label, detail: error.message }), "unavailable");
+    // plan 162: it answered, with an error (a 500, a model that failed to load): not "couldn't reach", which sends the user
+    // to restart a server that's running. The kind stays, so what reacts to it doesn't change; the words have their own key
+    if (status !== undefined && status >= 400) return new AiError(L("errors.ai.providerError", { provider: info.label, status }), "unavailable");
     return new AiError(`${plainText(info.label)}: ${error.message}`, "unavailable");
   }
   return new AiError(`${plainText(info.label)}: ${error instanceof Error ? error.message : String(error)}`, "unavailable");

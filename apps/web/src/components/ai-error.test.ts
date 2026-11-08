@@ -37,6 +37,12 @@ describe("plan 161, pass 2: one AI error, in plain words, never an address", () 
     expect(aiErrorCopy({ message: "x", kind: "auth" }, cloud)).toMatchObject({ title: "OpenAI didn’t accept the API key", settings: true });
   });
 
+  it("plan 162: a provider that answered with an error says so, not that it couldn't be reached", () => {
+    const copy = aiErrorCopy({ message: "Ollama answered with an error (500).", kind: "unavailable", key: "errors.ai.providerError" }, ollama);
+    expect(copy).toEqual({ title: "Ollama answered with an error (500)", help: "It’s running, but this request failed. Try again, or choose another model in AI settings.", settings: true });
+    expect(copy.title).not.toMatch(/reach/i);
+  });
+
   it("the app's own sentence, with no address, is shown as it is", () => {
     expect(aiErrorCopy({ message: "The model declined to write this.", kind: "refused" }, ollama)).toMatchObject({ title: "The model declined to write this", help: "Rephrase it, or try another model." });
     expect(aiErrorCopy({ message: "This conversation keeps changing. Try again in a moment.", kind: undefined }, ollama)).toMatchObject({ title: "This conversation keeps changing. Try again in a moment", help: null, settings: false });

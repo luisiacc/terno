@@ -162,6 +162,19 @@ describe("out of credit", () => {
   });
 });
 
+describe("plan 162: an error the server answered with", () => {
+  it("is said as an answer, with its status, not as a connection that failed", async () => {
+    const { mapSdkError } = await import("./sdk-errors");
+    class APIError extends Error { status = 500; }
+    class Other extends Error {}
+    const sdk = { APIError, APIUserAbortError: Other, APIConnectionError: Other, APIConnectionTimeoutError: Other } as never;
+    const e = mapSdkError(new APIError("model runner crashed"), sdk, { label: "Ollama", local: true, host: "127.0.0.1:11434" });
+    expect(e.kind).toBe("unavailable");
+    expect(e.i18n?.key).toBe("errors.ai.providerError");
+    expect(e.message).toBe("Ollama answered with an error (500).");
+  });
+});
+
 describe("prices", () => {
   it("knows what the defaults cost, and says nothing about what it doesn't know", () => {
     expect(costOf("gpt-6-luna", { inputTokens: 1_000_000, outputTokens: 0 })).toBeCloseTo(0.1, 6);

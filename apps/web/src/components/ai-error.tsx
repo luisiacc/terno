@@ -97,6 +97,8 @@ export function aiErrorCopy(error: AiErrorInput, ai: Ai): AiErrorCopy {
   const ownKey = error.key !== undefined && OWN_KEYS.has(error.key);
   const own = message !== "" && !hasAddress(message) && (ownKey || (kind !== "unavailable" && kind !== "timeout" && kind !== "auth" && kind !== "rate_limited" && kind !== "blocked"));
   if (own && ownKey) return { title: message.replace(/[.。]$/, ""), help: null, settings: true };
+  // plan 162: the provider answered, with an error: said as that, never as "Couldn't reach", and its status kept
+  if (error.key === "errors.ai.providerError") return { title: message && !hasAddress(message) ? message.replace(/[.。]$/, "") : t("ai.error.providerError", { provider }), help: t("ai.error.help.providerError"), settings: true };
   const title = own ? message.replace(/[.。]$/, "") : byKind ? t(byKind as "ai.error.unavailable", { provider }) : t("ai.error.other");
   const help = helpOf(kind, ai, provider) ?? (own ? null : t("ai.error.help.other"));
   return { title, help, settings: kind === "auth" || kind === "unavailable" || kind === "invalid_output" || kind === "unsupported" || kind === "not_configured" };
