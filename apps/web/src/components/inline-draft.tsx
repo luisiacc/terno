@@ -330,7 +330,7 @@ export function Quote({ d }: { d: LocalDraft }) {
       <QuoteToggle open={show} onToggle={() => setShow((v) => !v)} controls={id} testId="compose-quote" className="mt-0" />
       <div id={id}>
         {show && (
-          <div className="mt-2 border-l-2 border-hairline pl-3 text-sm whitespace-pre-wrap text-muted-foreground">
+          <div data-testid="compose-quote-text" className="mt-2 border-l-2 border-hairline pl-3 text-sm whitespace-pre-wrap text-muted-foreground">
             {d.quotedText}
             <Button variant="link-secondary" className="mt-2 flex text-xs" onClick={() => editDraft(d.key, { includeQuote: false })} data-testid="compose-quote-remove">
               {t("compose.quote.remove")}

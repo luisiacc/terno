@@ -127,3 +127,29 @@ All twelve points taken. Where they change the design:
 10. **Floors by role.** Pairs that carry information nothing else gives (a checkbox's border, a field's edge where nothing else marks it) are 3:1 (WCAG 1.4.11). Pairs that repeat a cue shown another way (the selected row, also shown in the reader; the segmented thumb, whose label also changes; hover; the composer card's edge and dividers) get a named floor in a new `BOUNDARY_STEPS` suite in `contrast.ts`, set at 1.35:1 for tints and 1.5:1 for hairlines unless the screenshots show more is needed, and the text on every tint keeps its 4.5:1 (round 5 measured Graphite's selected-row secondary text at 3.8:1: it must pass).
 11. **The real layers.** A `composite(layers)` helper checks what is drawn: the divider (`hairline`) over the card, the card's ring (`border`) over the reader's `background`, light's thumb (`card`) over the translucent `bg-field` track over `background`, dark's thumb (`muted`) over `background`, the sidebar's selection over `sidebar`. Every palette, Luma's included.
 12. **The inventory first.** Before changing any surface, the engineer lists the cards on the main screens (list, reader, compose, multi-select, review) as containers or controls. Controls (fields, segmented thumbs, selection shapes, chips) keep their shapes. Static containers on those screens become hairline sections; shared tokens (`card-group`, `surfaces.card`) don't change, so Settings and the snippet editor are untouched. The list and its baselines go into this plan.
+
+## The spec on the code before the fixes
+
+`precision.spec.ts` (two Split tests and one List test, every design) was run on 46cdb305f before any fix. 125 checks failed: Lumen 24, Atelier 27, macOS 24, Graphite 24 and Luma 24. The numbers below are CSS px at 1440x900 unless a size is given.
+
+| Check | Lumen | Atelier | macOS | Graphite | Luma |
+|---|---|---|---|---|---|
+| New message's baseline vs the subject's (Split) | 41 vs 81 | 40.8 vs 106 | 42 vs 80 | 41 vs 85 | 40 vs 84 |
+| The selection title's x vs the subject's (Split) | 724 vs 720 | 715 vs 711 | 716 vs 712 | 708 vs 704 | 720 vs 716 |
+| The selection title's baseline vs the subject's (Split) | 95 vs 81 | 93 vs 106 | 92 vs 80 | 97 vs 85 | 97 vs 84 |
+| New message's x vs the subject's (List page) | 520.5 vs 424.5 | 516.5 vs 420.5 | 512.5 vs 416.5 | 504.5 vs 408.5 | 516.5 vs 420.5 |
+| New message's baseline vs the subject's (List page) | 41 vs 81 | 40.8 vs 106 | 42 vs 80 | 41 vs 85 | 40 vs 84 |
+| The selection toolbar's baseline vs the header's (List) | 29.5 vs 33 | 29.5 vs 33 | 29.5 vs 32 | 29.5 vs 31 | 29.5 vs 32 |
+| The reading column in List (≤ `--reader-max`) | 896 > 704 | 896 > 704 | 888 > 696 | 896 > 704 | 896 > 704 |
+| Preview start spread across rows (List) | 166.8 | 176.9 | 184.8 | 174.2 | 181.6 |
+| Toast gap to the pane's foot (want `--float-inset`, 12) | 8 | 8 | 8 | 8 | 8 |
+| Toast centre vs the reader column's centre (Split) | 964 vs 1040 | 955 vs 1031 | 956 vs 1032 | 948 vs 1024 | 960 vs 1036 |
+| Rows the List toast covers | ≥ 1 | ≥ 1 | ≥ 1 | ≥ 1 | ≥ 1 |
+
+In every design:
+- The message text's measure and the editor's are 35em each, written twice (no `--read-max`). The quoted text in a reply has no measure at all.
+- The palette is cut mid-row at 1100x700 and at 1100x560.
+- The row menu on the last visible row (1440x900 and 1100x700) sits 5 px from the window's foot, covers its own row's text, and its bottom edge isn't drawn. A resize leaves it where it was.
+- The titles' x already agree for the subject and New message in Split: round 4's Graphite 20 px case was fixed in plan 158. The category review's title already shares the list header's line.
+
+Atelier only: at 1440x900 the open reply card runs past the window (its box 475.9 to 916.9 in a 900 px window). The reader's scroller cuts it, and its bottom edge isn't drawn.

@@ -404,7 +404,7 @@ export function TextBody({ text, marks }: { text: string; /** plan 158: a search
     );
   return (
     // the measure: about 75 characters a line, in every style's body type
-    <div className="type-body max-w-[35em] whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">
+    <div data-testid="message-text" className="type-body max-w-[35em] whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">
       {render(pieces.main)}
       {quoted && (
         <>
