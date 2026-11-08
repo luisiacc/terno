@@ -245,11 +245,14 @@ async function draftMeasure(page: Page, design: string, where: string): Promise<
   expect.soft(m.quote, `${design} ${where}: the quoted text has the message's measure`).toBe(m.body);
 }
 
-/** Two suggestions for Facturas, so it has a Review to open */
+/**
+ * Two suggestions for Facturas, so it has a Review to open: not on the conversation the titles are measured on, whose
+ * header stays at rest (Atelier's chips line is 20 px at rest, a chip's 24 with one: revision 2, written down in the plan)
+ */
 async function suggest(page: Page, server: DevServer): Promise<number> {
   const db = sqlDb(server.backend.store);
   const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
-  const threads = db.all<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 2");
+  const threads = db.all<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND t.last_from_name NOT LIKE ? AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 2", `${OPEN}%`);
   for (const t of threads) db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.91, '[]', ?)", t.id, facturas, Date.now());
   await fresh(page);
   return facturas;

@@ -842,8 +842,9 @@ function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; a
     classic: <div className={HEADER}>{titled}</div>,
     "chips-display": (
       <div className={HEADER}>
-        {/* plan 160: one chips line tall at rest (a chip's h-6), so the titles of panes without chips keep the subject's line (--pane-title-lead) */}
-        <ThreadChips detail={detail} account={account} cats={cats} fold={fold} className="mb-1.5 min-h-6" />
+        {/* plan 160: one chips line, 20 px at rest whatever it holds (a line with a category's chip takes its 24), so the titles
+            of panes without chips keep the subject's line (--pane-title-lead); no taller than it was */}
+        <ThreadChips detail={detail} account={account} cats={cats} fold={fold} className="mb-1 min-h-5" />
         {heading}
       </div>
     ),

@@ -48,8 +48,8 @@ export function designVars(d: DesignDefinition): [string, string][] {
     ["--reader-min", `${d.layout.readerMin}px`],
     ["--reader-max", d.layout.readerMax],
     ["--reader-pad-x", d.layout.readerPadX],
-    // plan 160: a reader-pane title's line sits under the chips where the subject does (a chips line, h-6, and its mb-1.5)
-    ["--pane-title-lead", d.variants.readerHeader === "chips-display" ? "1.875rem" : "0px"],
+    // plan 160: a reader-pane title's line sits under the chips where the subject does (a chips line, min-h-5, and its mb-1)
+    ["--pane-title-lead", d.variants.readerHeader === "chips-display" ? "1.5rem" : "0px"],
     ["--row-radius", d.layout.rowRadius],
     ["--nav-radius", d.layout.navRadius],
     ["--nav-h", d.layout.navHeight],
