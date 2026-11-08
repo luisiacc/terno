@@ -7,11 +7,24 @@ import { reloadList } from "~/state/list";
 import { deferred, trackJob, undoAction } from "./actions";
 import { localized } from "./i18n";
 import { registerUndo, snack } from "./snack";
+import { installFocusIntent } from "./focus-intent";
 
 export { useActionPreview };
 
 /** where the rule looks: the Inbox, or all mail but Spam and Trash */
 export const inboxOnly = (p: Pick<ActionPreviewInfo, "plan">): boolean => p.plan.lookIn === "inbox" || p.plan.action.type === "archive";
+
+export const verbOf = (p: Pick<ActionPreviewInfo, "plan">) => (p.plan.action.type === "createCategory" ? "moveToCategory" : p.plan.action.type);
+
+/**
+ * Plan 161: no count is said until it's final: "Finding… 4 so far" over the 4 rows there are, then the one number the
+ * title, the button and the snack all use. The header and the reader say it alike.
+ */
+export function previewTitle(preview: ActionPreviewInfo, shown: number, folderName: string): string {
+  if (savesRuleOnly(preview)) return preview.plan.summary;
+  if (preview.scanning) return shown > 0 ? t("action.findingSoFar", { count: shown }) : t("action.finding");
+  return t(`action.title.${verbOf(preview)}`, { count: preview.count, category: preview.categoryName ?? "", folder: folderName });
+}
 
 /** plan 161: waiting on the search or the check, Apply can't run yet, and no count is final */
 export const previewWaiting = (p: Pick<ActionPreviewInfo, "scanning" | "check">, checking: boolean): boolean => p.scanning || p.check === "needed" || checking;
@@ -37,6 +50,7 @@ let lastRows = 0;
 /** what the backend said before its own answer got here: a short walk can be over by then */
 let early: AiActionEvent | null = null;
 export function installActionPreview(): void {
+  installFocusIntent();
   client.on("aiAction", (event) => {
     if (getApp().actionPreview !== event.previewId) {
       early = event;

@@ -1,4 +1,4 @@
-import { savesRuleOnly, type ActionPreviewInfo } from "@terno/core";
+import { savesRuleOnly } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Checkbox } from "@terno/ui/components/checkbox";
@@ -7,15 +7,15 @@ import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/com
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Spinner } from "@terno/ui/components/spinner";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { providerLabel } from "~/lib/ai";
-import { applyPreview, check, inboxOnly, includeSkipped, previewWaiting, showLeftOut, stopApplying, useActionPreview } from "~/lib/action-preview";
+import { applyPreview, check, inboxOnly, includeSkipped, previewTitle, previewWaiting, showLeftOut, stopApplying, useActionPreview, verbOf } from "~/lib/action-preview";
 import { useAppearance } from "~/lib/appearance";
 import { LIST_TITLE } from "~/lib/list-title";
 import { PANE_TITLE, PANE_TITLE_TOP, READING_COLUMN } from "~/lib/pane-lines";
 import { hasDetails, ruleDetails, ruleRow } from "~/lib/rule-words";
 import { isMac } from "~/lib/select";
-import { leavePreview, useActionRows } from "~/state/action-preview";
+import { focusWhenReady, leavePreview, useActionRows } from "~/state/action-preview";
 import { getApp, setApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
 
@@ -27,7 +27,6 @@ const Line = ({ children, testId }: { children: ReactNode; testId?: string }) =>
 
 const Dot = () => <span aria-hidden>·</span>;
 
-const verbOf = (p: ActionPreviewInfo) => (p.plan.action.type === "createCategory" ? "moveToCategory" : p.plan.action.type);
 
 /** The folder a move goes to, by its last name. */
 function useFolderName(): string {
@@ -71,25 +70,18 @@ export default function ActionPreviewHeader() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // plan 161: ready, the keys are the list's (whatever the palette handed focus back to as it closed), unless you're typing
+  // plan 161: ready, the keys are the list's (whatever the palette handed focus back to as it closed), unless you moved
   const ready = preview !== null && !previewWaiting(preview, checking);
-  const readyFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!ready || !preview || readyFor.current === preview.previewId) return;
-    readyFor.current = preview.previewId;
-    const at = document.activeElement;
-    if (at?.closest("input, textarea, select, [contenteditable], [role=dialog], [role=menu], [data-composer]")) return;
-    document.querySelector<HTMLElement>('[data-keep-scroll="list"]')?.focus({ preventScroll: true });
-  }, [ready, preview]);
+    if (ready && preview) focusWhenReady(preview.previewId);
+  }, [ready, preview?.previewId]);
 
   if (!preview) return null;
   const { plan, count } = preview;
   const verb = verbOf(preview);
   const ruleOnly = savesRuleOnly(preview);
   const waiting = previewWaiting(preview, checking);
-  // plan 161: no count is said until it's final: "Finding… 4 so far" over the 4 rows there are, then the one number the
-  // title, the button and the snack all use
-  const title = ruleOnly ? plan.summary : preview.scanning ? (shown > 0 ? t("action.findingSoFar", { count: shown }) : t("action.finding")) : t(`action.title.${verb}`, { count, category: preview.categoryName ?? "", folder: folderName });
+  const title = previewTitle(preview, shown, folderName);
   const button = ruleOnly ? t("action.rule.save") : waiting ? t(`action.button.${verb}`) : t(`action.apply.${verb}`, { count });
   return (
     <section data-testid="action-preview" aria-label={t("action.region", { summary: plan.summary })} className="drag-region shrink-0 space-y-1 border-b border-hairline px-5 pt-3 pb-2.5">
@@ -137,6 +129,7 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
   const ai = useApp((s) => s.settings?.ai);
   const accounts = useApp((s) => s.accounts);
   const folderName = useFolderName();
+  const shown = useList((s) => s.items.length);
   if (!preview) return null;
   const { plan, count } = preview;
   const verb = verbOf(preview);
@@ -162,11 +155,9 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
       {reader ? (
         <div>
           <h2 className={cn(PANE_TITLE, "text-pretty")} data-testid="action-rule-title">{sentence ? `“${sentence}”` : plan.summary}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{ruleOnly ? plan.summary : t(`action.title.${verb}`, { count, category: preview.categoryName ?? "", folder: folderName })}</p>
+          <p className="mt-1 text-sm text-muted-foreground" data-testid="action-rule-count">{previewTitle(preview, shown, folderName)}</p>
         </div>
-      ) : (
-        sentence && <p className="text-xs text-muted-foreground" data-testid="action-rule-title">“{sentence}”</p>
-      )}
+      ) : null}
       <div>
         <h3 className="text-xs font-medium text-muted-foreground">{t("action.rule.readAs")}</h3>
         <dl data-testid="action-conditions" className={cn("mt-1.5 grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4", reader ? "gap-y-2" : "gap-y-1")}>
@@ -264,7 +255,9 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
       )}
     </div>
   );
-  if (!reader) return body;
+  // List: under the header, bounded, so a long rule (Details open) scrolls in place and never takes the rows' room
+  // (the request it reads is the header's line above it)
+  if (!reader) return <div data-testid="action-rule" className="-mx-5 max-h-[min(40vh,18rem)] overflow-y-auto px-5 pb-0.5">{body}</div>;
   return (
     <section data-testid="action-rule" aria-label={t("action.rule.region")} className="@container h-full min-h-0 bg-background">
       <div className="h-full overflow-y-auto [scrollbar-gutter:stable]">

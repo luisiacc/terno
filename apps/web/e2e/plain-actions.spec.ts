@@ -268,3 +268,24 @@ test.describe("actions in plain English (plan 143)", () => {
     await expect(page.getByTestId("ask-command-notice")).toContainText("No mail matches");
   });
 });
+
+test.describe("actions in plain English, List layout (plan 161)", () => {
+  test.use({ layout: "list", viewport: { width: 1100, height: 700 } });
+
+  test("the rule sits under the header, bounded: Details open, the rows keep their room (Codex review #1)", async ({ app: page, server }) => {
+    await withMail(page, server);
+    await say(page, "Archive shipping notices older than a month");
+    await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
+    const rule = page.getByTestId("action-rule");
+    await expect(rule.getByTestId("action-rule-term").first()).toBeVisible();
+    await rule.getByTestId("action-details-toggle").click();
+    await expect(rule.getByTestId("action-details-text")).toBeVisible();
+    expect(await rule.evaluate((el) => [getComputedStyle(el).overflowY, getComputedStyle(el).maxHeight !== "none"])).toEqual(["auto", true]);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/list-layout-light.png` });
+    const rule0 = (await rule.boundingBox())!;
+    expect(rule0.height).toBeLessThanOrEqual(288 + 1);
+    const list = (await page.locator('[data-keep-scroll="list"]').boundingBox())!;
+    expect(list.height).toBeGreaterThanOrEqual(200);
+    await expect(rows(page).first()).toBeInViewport();
+  });
+});

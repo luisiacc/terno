@@ -169,15 +169,17 @@ function Older() {
  * Plan 161: under an answer, how far back it looked, and the way past that, on one line: what Search older mail adds is
  * said by what it's next to.
  */
-function Scope() {
+export function Scope() {
   const offer = useAsk((s) => s.older);
   const last = useAsk((s) => s.turns.at(-1));
   const found = useAsk((s) => s.olderFound);
   const running = useAsk((s) => s.running !== null);
   const enabled = useApp((s) => s.settings?.ask?.enabled !== false);
   if (!enabled || running || !last || last.status === "not_found" || last.status === "partial" || found === 0) return null;
+  // still downloading: what it looked through isn't settled yet, and older mail waits for it
+  if (offer.kind === "downloading") return <p className="text-xs text-muted-foreground" data-testid="ask-older-downloading">{t("ask.older.downloading")}</p>;
   const since = "since" in offer && offer.since ? offer.since : null;
-  if (offer.kind === "none" || offer.kind === "downloading" || !since) return null;
+  if (offer.kind === "none" || !since) return null;
   return (
     <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground" data-testid="ask-scope">
       <span>{t("ask.scope", { date: listDate(since) })}</span>

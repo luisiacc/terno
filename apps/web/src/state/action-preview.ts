@@ -1,5 +1,6 @@
 import type { ActionPreviewInfo } from "@terno/core";
 import { client } from "~/rpc/connection";
+import { focusIntent } from "~/lib/focus-intent";
 import { create } from "zustand";
 import { getApp, setApp, useApp, type AppState } from "./app";
 import { reloadList, useList } from "./list";
@@ -61,13 +62,29 @@ export function enterPreview(previewId: string, view: "inbox" | "all" = "all"): 
     showLeftOut: false,
     from: { view: s.view, accountId: s.accountId, categoryId: s.categoryId, reviewCategoryId: s.reviewCategoryId, folder: s.folder, gmailTab: s.gmailTab, reminders: s.reminders, followups: s.followups, today: s.today, query: s.query, selectedId: s.selectedId, readerOpen: s.readerOpen, scrollTop: listEl()?.scrollTop ?? 0, rows: { key, itemsKey, items, index, nextCursor } },
   });
-  useList.setState({ items: [], index: new Map(), nextCursor: null, loading: true, loadingMore: false, error: null });
+  // the place it leaves is remembered first (the list's own memory, for coming back by the sidebar), then its rows go
   setApp({ actionPreview: previewId, view, accountId: null, categoryId: null, reviewCategoryId: null, folder: null, gmailTab: null, reminders: false, followups: false, today: false, query: "", selectedId: null, checked: new Set(), anchorId: null, scope: null, readerOpen: false });
+  useList.setState({ items: [], index: new Map(), nextCursor: null, loading: true, loadingMore: false, error: null });
   // from the top: a place deep in the last list means nothing in this one
   const el = listEl();
   if (el) el.scrollTop = 0;
   // plan 161: the keys are the list's (j/k, x, ⌘↩, Esc), not the closed palette's; programmatic, so no ring
   el?.focus({ preventScroll: true });
+  handoff.previewId = previewId;
+  handoff.seq = focusIntent.seq;
+}
+
+/** the list's focus once the preview is ready, unless the user has moved since it opened (a Tab to Cancel, a click) */
+const handoff: { previewId: string | null; seq: number } = { previewId: null, seq: 0 };
+
+/** Plan 161: ready (found and checked), the keys go to the list: the palette may have handed focus elsewhere as it closed. */
+export function focusWhenReady(previewId: string): void {
+  if (handoff.previewId !== previewId) return;
+  handoff.previewId = null;
+  if (focusIntent.seq !== handoff.seq) return;
+  const at = document.activeElement;
+  if (at?.closest?.("input, textarea, select, [contenteditable], [role=dialog], [role=menu], [data-composer]")) return;
+  listEl()?.focus({ preventScroll: true });
 }
 
 /** Back to the list and scroll position you left, with no trace. */

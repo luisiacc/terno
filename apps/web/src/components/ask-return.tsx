@@ -12,7 +12,7 @@ export function AskReturn({ threadId }: { threadId: number }) {
   if (!here || !offered) return null;
   return (
     // -ml-2: its words on the conversation's edge, its 24 px shape reaching past it
-    <Button variant="ghost" size="xs" className="mb-2 -ml-2 gap-1.5 font-medium text-muted-foreground hover:text-foreground" data-testid="back-to-answer" onClick={backToAnswer}>
+    <Button variant="ghost" size="xs" className="mb-2 -ml-2 gap-1.5 font-medium text-muted-foreground hover:text-foreground" data-testid="back-to-answer" onClick={() => void backToAnswer()}>
       {t("ask.backToAnswer")}
       <Shortcut keys="mod+shift+k" />
     </Button>

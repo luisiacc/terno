@@ -8,6 +8,8 @@ import { revealSummaryMessage } from "~/lib/summaries";
 import { opened } from "./action-preview";
 import { getApp, setApp, useApp } from "~/state/app";
 import { toggleAsk } from "~/lib/palette-open";
+import { useAppearance } from "~/lib/appearance";
+import { focusIntent, installFocusIntent } from "~/lib/focus-intent";
 
 /**
  * Plan 141: the conversation, in a small store outside the palette: closing it doesn't stop an answer, and ⌘⇧K comes
@@ -47,7 +49,7 @@ export interface AskState {
   /** a source now in Spam or Trash, asked for once: the next ask opens it */
   armedSource: number | null;
   /** plan 161: the conversation a source opened, and its message: the reader offers the way back to the answer there */
-  returnTo: { threadId: number; messageId: number } | null;
+  returnTo: { threadId: number; messageId: number; conversationId: number | null } | null;
   /** just finished: for screen readers */
   ready: number;
   usedAt: number;
@@ -180,10 +182,15 @@ export function askConfigChanged(): void {
 }
 
 export function installAsk(): void {
+  installFocusIntent();
   // another conversation in the reader: the way back to the answer was that one's
   useApp.subscribe((app, prev) => {
     const { returnTo } = useAsk.getState();
-    if (returnTo && app.selectedId !== prev.selectedId && app.selectedId !== returnTo.threadId) useAsk.setState({ returnTo: null });
+    if (!returnTo) return;
+    // another conversation, or (List) its page closed: the way back was that visit's
+    const left = app.selectedId !== prev.selectedId && app.selectedId !== returnTo.threadId;
+    const closed = prev.readerOpen && !app.readerOpen && useAppearance.getState().layout === "list";
+    if (left || closed) useAsk.setState({ returnTo: null });
   });
 
   client.on("aiAsk", ({ requestId, text, older }) => {
@@ -234,29 +241,65 @@ export async function openSource(source: AskSourceRef): Promise<void> {
   setApp({ dialog: null });
   openThread(threadId);
   revealSummaryMessage(source.messageId);
-  useAsk.setState({ returnTo: { threadId, messageId: source.messageId } });
+  useAsk.setState({ returnTo: { threadId, messageId: source.messageId, conversationId: useAsk.getState().conversationId } });
   focusMessage(source.messageId);
 }
 
+/** how long a source's message may take to draw before its focus is given up */
+const FOCUS_WAIT_MS = 10_000;
+
 /**
- * Plan 161: focus goes to the message a source opened (its header), once the reader has drawn it; programmatic, so no
- * ring. A one-message conversation's header isn't a button: its heading takes focus, out of the Tab order.
+ * Plan 161: focus goes to the message a source opened (its header button; a one-message conversation's heading, or the
+ * message itself where a design shows neither), once the reader has drawn it and the palette has gone. Programmatic, so
+ * no ring. It waits on the page changing (no polling), and yields to anything newer: a key or a press, another
+ * conversation, or the wait running out.
  */
-function focusMessage(messageId: number, frames = 30): void {
-  const el = document.querySelector<HTMLElement>(`[data-reader-scroller] article[data-message-id="${messageId}"]`);
-  const target = el?.querySelector<HTMLElement>("[data-testid=message-toggle]") ?? el?.querySelector<HTMLElement>("h3") ?? null;
-  // the palette hands focus back once it has gone: wait for that, then take it
-  if (!target || getApp().dialog !== null || document.querySelector("[role=dialog]")) {
-    if (frames > 0) requestAnimationFrame(() => focusMessage(messageId, frames - 1));
-    return;
-  }
-  if (target.tagName !== "BUTTON" && !target.hasAttribute("tabindex")) target.tabIndex = -1;
-  target.focus({ preventScroll: true });
+export function focusMessage(messageId: number): void {
+  const seq = focusIntent.seq;
+  const started = Date.now();
+  const superseded = () => focusIntent.seq !== seq || useAsk.getState().returnTo?.messageId !== messageId || Date.now() - started > FOCUS_WAIT_MS;
+  const target = () => {
+    const article = document.querySelector<HTMLElement>(`[data-reader-scroller] article[data-message-id="${messageId}"]`);
+    if (!article) return null;
+    const el = article.querySelector<HTMLElement>("[data-testid=message-toggle]") ?? article.querySelector<HTMLElement>("h3") ?? article;
+    if (el.tagName !== "BUTTON" && !el.hasAttribute("tabindex")) el.tabIndex = -1;
+    return el;
+  };
+  /** done: focused, or nothing left to wait for */
+  const attempt = (): boolean => {
+    if (superseded()) return true;
+    // the palette hands focus back once it has gone: wait for that, then take it
+    if (getApp().dialog !== null || document.querySelector("[role=dialog]")) return false;
+    const el = target();
+    if (!el) return false;
+    el.focus({ preventScroll: true });
+    // a dialog's own restore may land a frame later: once more, unless the user moved
+    requestAnimationFrame(() => {
+      if (!superseded() && document.activeElement !== el) el.focus({ preventScroll: true });
+    });
+    return true;
+  };
+  if (attempt()) return;
+  const watch = new MutationObserver(() => {
+    if (attempt()) stop();
+  });
+  const timer = setTimeout(() => stop(), FOCUS_WAIT_MS);
+  const stop = () => {
+    watch.disconnect();
+    clearTimeout(timer);
+  };
+  watch.observe(document.body, { childList: true, subtree: true });
 }
 
-/** Back to the answer: Ask, on the same conversation (it comes back for 30 minutes, as ⌘⇧K does). */
-export function backToAnswer(): void {
-  if (getApp().dialog !== null) return;
+/**
+ * Back to the answer: Ask, on the conversation the source came from. The link is an explicit return, so it brings that
+ * conversation back however long it has been (⌘⇧K's own 30 minutes don't apply); one deleted since opens nothing stale.
+ */
+export async function backToAnswer(): Promise<void> {
+  const { returnTo, conversationId } = useAsk.getState();
+  if (getApp().dialog !== null || !returnTo) return;
+  if (returnTo.conversationId !== null && conversationId !== returnTo.conversationId && !(await openConversation(returnTo.conversationId))) return useAsk.setState({ returnTo: null });
+  useAsk.setState({ usedAt: Date.now() });
   toggleAsk();
 }
 

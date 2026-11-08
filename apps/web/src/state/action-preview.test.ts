@@ -4,8 +4,9 @@ vi.stubGlobal("document", { querySelector: () => null });
 vi.stubGlobal("requestAnimationFrame", (run: () => void) => run());
 const call = vi.fn(async (..._a: unknown[]) => ({ items: [], nextCursor: null, total: 0, unticked: [] }));
 vi.mock("~/rpc/connection", () => ({ client: { call, on: () => () => {}, connectionVersion: 1 } }));
-const { enterPreview, leavePreview, useActionRows } = await import("./action-preview");
-const { navigate, getApp, setApp } = await import("./app");
+const { enterPreview, focusWhenReady, leavePreview, useActionRows } = await import("./action-preview");
+const { focusIntent } = await import("~/lib/focus-intent");
+const { navigate, getApp, setApp, useApp } = await import("./app");
 const { useList } = await import("./list");
 
 describe("what a preview keeps to come back to (plan 143)", () => {
@@ -71,6 +72,44 @@ describe("what a preview keeps to come back to (plan 143)", () => {
       enterPreview("p8");
       leavePreview();
       expect(list.focus).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.stubGlobal("document", { querySelector: () => null });
+    }
+  });
+
+  it("the list remembers the place it leaves before its rows go (Codex review #2)", () => {
+    useList.setState({ key: JSON.stringify(["inbox"]), itemsKey: JSON.stringify(["inbox"]), items: [{ id: 7 } as never], index: new Map([[7, 0]]), loading: false });
+    let rowsWhenLeft = -1;
+    const stop = useApp.subscribe((s, prev) => {
+      if (s.actionPreview !== prev.actionPreview) rowsWhenLeft = useList.getState().items.length;
+    });
+    enterPreview("p9", "inbox");
+    stop();
+    expect(rowsWhenLeft).toBe(1);
+    expect(useList.getState().items).toEqual([]);
+    leavePreview();
+  });
+
+  it("ready, the keys go to the list, unless the user moved since it opened (Codex review #3)", () => {
+    const list = { scrollTop: 0, focus: vi.fn(), isConnected: true };
+    const body = { closest: () => null };
+    vi.stubGlobal("document", { querySelector: () => list, activeElement: body, body });
+    try {
+      enterPreview("p10");
+      list.focus.mockClear();
+      focusWhenReady("p10");
+      expect(list.focus).toHaveBeenCalledTimes(1);
+      // once only
+      focusWhenReady("p10");
+      expect(list.focus).toHaveBeenCalledTimes(1);
+      leavePreview();
+      enterPreview("p11");
+      list.focus.mockClear();
+      // a Tab to Cancel while the check ran
+      focusIntent.seq++;
+      focusWhenReady("p11");
+      expect(list.focus).not.toHaveBeenCalled();
+      leavePreview();
     } finally {
       vi.stubGlobal("document", { querySelector: () => null });
     }
