@@ -332,8 +332,9 @@ export function Quote({ d }: { d: LocalDraft }) {
       <QuoteToggle open={show} onToggle={() => setShow((v) => !v)} controls={id} testId="compose-quote" className="mt-0" />
       <div id={id}>
         {show && (
-          <div data-testid="compose-quote-text" className={cn("mt-2 border-l-2 border-hairline pl-3 text-sm whitespace-pre-wrap text-muted-foreground", READ_MEASURE)}>
-            {d.quotedText}
+          <div className="mt-2 border-l-2 border-hairline pl-3 text-sm whitespace-pre-wrap text-muted-foreground">
+            {/* plan 160: the measure on the text itself, inside the quote's bar and indent (Codex review) */}
+            <div data-testid="compose-quote-text" className={READ_MEASURE}>{d.quotedText}</div>
             <Button variant="link-secondary" className="mt-2 flex text-xs" onClick={() => editDraft(d.key, { includeQuote: false })} data-testid="compose-quote-remove">
               {t("compose.quote.remove")}
             </Button>
