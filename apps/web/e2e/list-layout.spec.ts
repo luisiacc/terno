@@ -179,7 +179,7 @@ async function pointAt(page: Page, row: Locator, avatars: boolean): Promise<void
 }
 
 test.describe("the pointer's checkbox (2026-11-07)", () => {
-  test("in the avatar's place (with none, the marks' column): over it, then on every row once one is checked; it checks without opening, ⇧ checks a range, and nothing moves", { tag: "@design" }, async ({ app: page, design }) => {
+  test("in the avatar's place (with none, a slot of its size): over it, then on every row once one is checked; it checks without opening, ⇧ checks a range, and nothing moves", { tag: "@design" }, async ({ app: page, design }) => {
     const away = () => page.mouse.move(1, 1);
     const shown = (l: Locator) => l.evaluate((el) => getComputedStyle(el).visibility === "visible");
     const fromX = (row: Locator) => row.getByTestId("row-from").evaluate((el) => el.getBoundingClientRect().left);
@@ -213,12 +213,24 @@ test.describe("the pointer's checkbox (2026-11-07)", () => {
         expect(Math.abs(b.x + b.width / 2 - (a.x + a.width / 2))).toBeLessThanOrEqual(1);
         expect(Math.abs(b.y + b.height / 2 - (a.y + a.height / 2))).toBeLessThanOrEqual(1);
       } else {
-        // the marks' column: inside the selection's edge (4 px in), before the text, one mark there
-        const r = (await row.boundingBox())!;
-        expect(b.x).toBeGreaterThanOrEqual(r.x + 4);
-        expect(b.x + b.width).toBeLessThanOrEqual(before.x);
-        const dot = row.getByTestId("row-unread-dot");
-        if (await dot.count()) expect(await shown(dot)).toBe(false);
+        // a slot the size of Lumen's wide avatar, there at rest too: the full box, centred, with air before the name
+        const s = (await row.getByTestId("row-pick-slot").boundingBox())!;
+        expect(s.width).toBe(DESIGNS.find((d) => d.id === "lumen")!.avatar.rowWide);
+        expect(b.width).toBe(16);
+        expect(Math.abs(b.x + b.width / 2 - (s.x + s.width / 2))).toBeLessThanOrEqual(0.5);
+        expect(before.x - (b.x + b.width)).toBeGreaterThanOrEqual(8);
+        // an unread row's dot sits in the slot at rest, and gives it up to the box (one mark per slot)
+        const unread = rows(page).and(page.locator("[data-unread]")).first();
+        const dot = unread.getByTestId("row-unread-dot");
+        await away();
+        const d = (await dot.boundingBox())!;
+        const us = (await unread.getByTestId("row-pick-slot").boundingBox())!;
+        expect(Math.abs(d.x + d.width / 2 - (us.x + us.width / 2))).toBeLessThanOrEqual(0.5);
+        expect(await shown(dot)).toBe(true);
+        await hover(unread);
+        expect(await shown(dot)).toBe(false);
+        expect(await shown(unread.getByTestId("row-pick"))).toBe(true);
+        await hover(row);
       }
       expect(await fromX(row)).toBe(before.x);
       expect((await row.boundingBox())!.height).toBe(before.height);
@@ -506,10 +518,10 @@ test.describe("the List layout: what stays put", () => {
       await fresh();
       const row = rows(page).nth(1);
       const b = (await row.boundingBox())!;
-      await page.mouse.move(b.x + 40, b.y + b.height / 2);
+      await page.mouse.move(b.x + 120, b.y + b.height / 2);
       await page.mouse.down();
-      await page.mouse.move(b.x + 60, b.y + b.height / 2 + 8, { steps: 4 });
-      await page.mouse.move(b.x + 80, b.y + b.height / 2 + 30, { steps: 4 });
+      await page.mouse.move(b.x + 140, b.y + b.height / 2 + 8, { steps: 4 });
+      await page.mouse.move(b.x + 160, b.y + b.height / 2 + 30, { steps: 4 });
       await page.mouse.up();
       await page.waitForTimeout(200);
       await expect(listPage(page)).toHaveCount(0);
@@ -667,9 +679,9 @@ test.describe("categories in List are the sidebar's", () => {
       const id = (await row.getAttribute("data-thread-id"))!;
       const from = (await row.boundingBox())!;
       const to = (await target.boundingBox())!;
-      await page.mouse.move(from.x + 40, from.y + from.height / 2);
+      await page.mouse.move(from.x + 120, from.y + from.height / 2);
       await page.mouse.down();
-      await page.mouse.move(from.x + 46, from.y + from.height / 2 + 2, { steps: 2 });
+      await page.mouse.move(from.x + 126, from.y + from.height / 2 + 2, { steps: 2 });
       await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 });
       await expect(target).toHaveAttribute("data-drop-state", "over");
       await page.mouse.up();

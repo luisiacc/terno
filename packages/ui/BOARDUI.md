@@ -95,4 +95,3 @@ Each item says what differs from BoardUI and why.
 - **Radio card:** BoardUI's radio has no card variant, so Terno's is the radio drawn as a bordered card.
 - **Progress:** plain markup rather than Base UI's.
 - **Search clear:** out of the tab order, as BoardUI's.
-- **List's row checkbox with no avatar (plan 24):** in the macOS and Graphite styles, the `CheckboxMark` List shows in a row's marks' column is 12 px, under BoardUI's `sm` (14 px). The column is 16 px between the selection's edge and the text, and holds one mark at the check's 12 px; the row's content never moves for it. With an avatar it is the `md` box, in the avatar's place.

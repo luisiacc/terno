@@ -314,7 +314,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   const answer = reviewed && <ReviewControls threadId={thread.id} category={reviewed.name} />;
   // plan 24: List gives the pointer a checkbox. It takes the avatar's place while the avatar is under the pointer, and on
   // every row once one is checked (the list's data-many: CSS, so starting a selection re-renders only the row checked);
-  // with no avatar, the marks' column under a hovered row. Instant, nothing moves. The row is the option and `x` its key:
+  // with no avatar, a slot of the avatar's size under a hovered row. Instant, nothing moves. The row is the option and `x` its key:
   // this is for the pointer, and says nothing the row doesn't (no control inside an option)
   const picking = pick && interactive && included === undefined;
   const pickBox = (className: string) => (
@@ -360,20 +360,24 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   // one mark in every design and layout: on the marks' column (12 px into the row, 8 before the text), on the sender's
   // line, never on an avatar. A check takes the dot's place, moving nothing (the row's weight still says unread)
   const onSenderLine = line ? "top-1/2" : "top-[calc(var(--type-row-from-leading)/2)]";
-  // List's checkbox says checked, so it needs no check beside it; with no avatar it takes the column itself, over a
-  // hovered row and while a selection is made, and the dot gives way (one mark per slot). The column is 16 px between
-  // the fill's edge and the text: the box keeps the check's 12 px there (BOARDUI.md), and its hit area stops at the text
-  const gutterPick = picking && classic;
-  const dot = (
-    <>
-      {checked && included === undefined && !picking ? (
-        <Check aria-hidden data-testid="row-check" className={cn("absolute -left-[14px] size-3 -translate-y-1/2 text-row-selected-foreground [--icon-line:1.5px]", onSenderLine)} />
-      ) : (
-        thread.unread && included === undefined && <span data-testid="row-unread-dot" className={cn("absolute -left-[12px] size-2 -translate-y-1/2 rounded-full bg-unread", onSenderLine, gutterPick && "group-hover/row:invisible group-data-many/list:invisible")} />
-      )}
-      {gutterPick && pickBox(cn("absolute -left-[14px] size-3 rounded-[3px] -translate-y-1/2 group-hover/row:visible after:inset-x-0 [&_svg]:size-2.5! [&_svg]:[--icon-line:1.5px]!", onSenderLine))}
-    </>
+  // List's checkbox says checked, so it needs no check beside it
+  const dot =
+    checked && included === undefined && !picking ? (
+      <Check aria-hidden data-testid="row-check" className={cn("absolute -left-[14px] size-3 -translate-y-1/2 text-row-selected-foreground [--icon-line:1.5px]", onSenderLine)} />
+    ) : (
+      thread.unread && included === undefined && <span data-testid="row-unread-dot" className={cn("absolute -left-[12px] size-2 -translate-y-1/2 rounded-full bg-unread", onSenderLine)} />
+    );
+  // With no avatar, List's rows keep a slot of Lumen's wide avatar's size where one would be, at rest too, so nothing
+  // moves for the box: the unread dot sits in it, and over a hovered row or while a selection is made the full box
+  // takes its place (one mark per slot)
+  const slot = picking && classic && (
+    <span data-testid="row-pick-slot" className={cn("relative flex w-6 shrink-0 items-center justify-center", line ? "self-stretch" : "h-(--type-row-from-leading) self-start")}>
+      {thread.unread && <span data-testid="row-unread-dot" className="size-2 rounded-full bg-unread group-hover/row:invisible group-data-many/list:invisible" />}
+      {pickBox("absolute inset-0 m-auto group-hover/row:visible")}
+    </span>
   );
+  /** the marks' column, or the slot that holds them */
+  const lead = slot || dot;
   // a three-line row's first line: its marks and date hold the right edge
   const firstLine = (
     <div className="flex min-w-0 items-center gap-1.5">
@@ -450,7 +454,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
         // a table: sender, then subject and preview as one line, then fixed columns on the right edge (account, category,
         // attachment, star, date), so the eye runs down each. What's narrow gives way from the left of them, the preview first
         <div className="relative flex min-w-0 items-center gap-3">
-          {dot}
+          {lead}
           {avatar}
           {/* the full-width list's code sits with the sender, out of the subject's way (plan 72) */}
           <span className="flex w-[clamp(8rem,15%,12rem)] shrink-0 items-center gap-1.5">
@@ -479,7 +483,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
         </div>
       ) : line ? (
         <div className={cn("relative flex min-w-0 items-center", classic ? "gap-2" : "gap-2.5")}>
-          {dot}
+          {lead}
           {avatar}
           {from}
           {count}
@@ -496,10 +500,15 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
             {date}
           </span>
         </div>
-      ) : classic ? (
+      ) : classic && !slot ? (
         <div className="relative flex min-w-0 flex-col">
           {dot}
           {lines}
+        </div>
+      ) : classic ? (
+        <div className="relative flex min-w-0 gap-2">
+          {slot}
+          <div className="flex min-w-0 flex-1 flex-col">{lines}</div>
         </div>
       ) : (
         <div className={cn("relative flex min-w-0", big ? "items-center gap-3" : "gap-2.5")}>
