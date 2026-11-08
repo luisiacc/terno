@@ -499,7 +499,8 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
         // whole check column at the row's height is the target (the body opens the mail, to check it before Apply)
         // (a checkbox to assistive tech, for the pointer: not in the Tab order, the row and x are the keyboard's way)
         <span role="checkbox" aria-checked={included} aria-label={t("action.row.include", { subject: thread.subject || t("common.noSubject") })} data-testid="row-include" data-row-control data-checked={included || undefined} className="absolute inset-y-0 left-0 w-10" onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.closest<HTMLElement>("[role=listbox]")?.focus({ preventScroll: true }); }} onClick={(e) => { e.stopPropagation(); toggleRow(thread.id); }}>
-          <CheckboxMark checked={included} className="absolute top-1/2 left-5 -translate-y-1/2" />
+          {/* plan 162 (after ai162-r01): the digest's quiet box, the one tick for picking mail for a batch (six solid squares were the loudest thing on screen) */}
+          <CheckboxMark quiet checked={included} className="absolute top-1/2 left-5 -translate-y-1/2" />
         </span>
       )}
       {wide ? (

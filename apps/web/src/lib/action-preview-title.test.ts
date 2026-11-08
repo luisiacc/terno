@@ -67,7 +67,7 @@ describe("Apply sits with the rule, destructive where it takes mail away, and sa
     expect(previewConsequence({ ...trash, count: 0 }, "")).toBeNull();
   });
 
-  it("in Split the rule holds Apply and Cancel and the header only the count; Trash is the destructive button", async () => {
+  it("in Split the header holds Apply and Cancel, the rule none (plan 162); Trash is the destructive button", async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const { act, createElement, Fragment } = await import("react");
     const { createRoot } = await import("react-dom/client");
@@ -82,13 +82,14 @@ describe("Apply sits with the rule, destructive where it takes mail away, and sa
     await act(async () => root.render(createElement(Fragment, null, createElement(ActionPreviewHeader), createElement(ActionRule, { variant: "reader" }))));
     const header = host.querySelector("[data-testid=action-preview]")!;
     const rule = host.querySelector("[data-testid=action-rule]")!;
-    expect(header.querySelector("[data-testid=action-apply]")).toBeNull();
-    expect(header.querySelector("[data-testid=action-cancel]")).toBeNull();
+    // plan 162 (after ai162-r01): the decision has one place, the header, while the rule shows too; the rule holds none
+    expect(rule.querySelector("[data-testid=action-apply]")).toBeNull();
+    expect(rule.querySelector("[data-testid=action-cancel]")).toBeNull();
     expect(host.querySelectorAll("[data-testid=action-apply]")).toHaveLength(1);
-    const apply = rule.querySelector<HTMLButtonElement>("[data-testid=action-decision] [data-testid=action-apply]")!;
+    const apply = header.querySelector<HTMLButtonElement>("[data-testid=action-apply]")!;
     expect(apply.textContent).toBe("Move 838 to Trash");
     expect(apply.dataset.variant).toBe("destructive");
-    expect(rule.querySelector("[data-testid=action-decision] [data-testid=action-cancel]")).not.toBeNull();
+    expect(header.querySelector("[data-testid=action-cancel]")).not.toBeNull();
     expect(rule.querySelector("[data-testid=action-consequence]")!.textContent).toBe("838 conversations go to Trash, from all your mail except Spam and Trash.");
     // an archive is the primary, with no consequence line at six
     await act(async () => useActionPreview.setState({ preview: preview({ count: 6 }) }));

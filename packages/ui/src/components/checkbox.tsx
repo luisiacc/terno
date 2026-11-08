@@ -69,9 +69,9 @@ function Checkbox({ className, target, ...props }: CheckboxPrimitive.Root.Props 
  * The same box as a picture, for a row that is itself the control (an option's children can't be focusable: plan 143).
  * The pointer's way in; the row's own state and key are what a keyboard and a screen reader get.
  */
-function CheckboxMark({ checked, className, ...props }: React.ComponentProps<"span"> & { checked: boolean }) {
+function CheckboxMark({ checked, quiet, className, ...props }: React.ComponentProps<"span"> & { checked: boolean; /** plan 162: the digest's quiet box, for a column of rows picked for one batch */ quiet?: boolean }) {
   return (
-    <span aria-hidden data-slot="checkbox" data-checked={checked ? "" : undefined} className={cn(BOX, className)} {...props}>
+    <span aria-hidden data-slot="checkbox" data-checked={checked ? "" : undefined} data-quiet={quiet || undefined} className={cn(quiet ? QUIET_BOX : BOX, className)} {...props}>
       {checked && (
         <span data-slot="checkbox-indicator" className="grid place-content-center text-current [&>svg]:size-4 [&>svg]:[--icon-line:2px]">
           <CheckIcon />

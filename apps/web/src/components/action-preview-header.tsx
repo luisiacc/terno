@@ -1,11 +1,11 @@
 import { savesRuleOnly } from "@terno/core";
-import { t } from "@terno/i18n";
+import { getLocale, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Checkbox } from "@terno/ui/components/checkbox";
-import { Chip } from "@terno/ui/components/chip";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Spinner } from "@terno/ui/components/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { AiProvenance } from "./ai-provenance";
 import { AiErrorNotice, aiErrorCopy, errorTarget } from "./ai-error";
@@ -15,7 +15,7 @@ import { applyPreview, check, inboxOnly, includeSkipped, isDestructive, previewC
 import { useAppearance } from "~/lib/appearance";
 import { LIST_TITLE } from "~/lib/list-title";
 import { PANE_TITLE, PANE_TITLE_TOP, READING_COLUMN } from "~/lib/pane-lines";
-import { hasDetails, ruleDetails, ruleRow, senderNotLooked } from "~/lib/rule-words";
+import { hasDetails, patternTerms, ruleDetails, ruleRow, senderNotLooked } from "~/lib/rule-words";
 import { isMac } from "~/lib/select";
 import { closePreviewRow, focusWhenReady, leavePreview, useActionRows } from "~/state/action-preview";
 import { getApp, setApp, useApp } from "~/state/app";
@@ -28,6 +28,9 @@ const Line = ({ children, testId }: { children: ReactNode; testId?: string }) =>
 );
 
 const Dot = () => <span aria-hidden>·</span>;
+
+/** "shipped, delivery or tracking", in the user's language: the words, and what joins them */
+const termParts = (terms: readonly string[]) => new Intl.ListFormat(getLocale(), { type: "disjunction" }).formatToParts(terms);
 
 /**
  * "a|b|c" with a break allowed after each "|" (and at a space, between words): a long pattern wraps between its
@@ -97,8 +100,9 @@ export default function ActionPreviewHeader() {
         <h1 data-testid="action-title" className={cn("flex min-w-0 flex-1 items-center gap-2", LIST_TITLE.title)} aria-live="polite">
           <span className={cn("min-w-0", !list && "truncate")} title={heading === title ? undefined : title}>{heading}</span>
         </h1>
-        {/* plan 161, pass 3: Apply sits with the rule it applies; here only while the rule isn't on screen */}
-        {!ruleInReader && <ActionButtons size="sm" className="no-drag" />}
+        {/* plan 162 (after ai162-r01): the decision has one place, here, whether the rule or a match is in the reader (it
+            moved from the rule's foot to here when a match opened) */}
+        <ActionButtons size="sm" className="no-drag" />
       </div>
       {/* the words typed, when the rule (which they head) isn't on screen */}
       {!ruleInReader && sentence && (
@@ -109,6 +113,9 @@ export default function ActionPreviewHeader() {
               <Dot />
               {/* plan 162: Esc said once, where it applies: here, while a conversation covers the rule */}
               <Button variant="link-secondary" size="xs" className="no-drag shrink-0 gap-1.5" data-testid="action-show-rule" aria-keyshortcuts="Escape" onClick={() => closePreviewRow()}>{t("action.rule.show")} <Shortcut keys="escape" /></Button>
+              {/* plan 162 (after ai162-r01): x said only where it works, while a match is being read */}
+              <Dot />
+              <span className="inline-flex shrink-0 items-center gap-1.5" data-testid="action-leave-out-hint"><Shortcut keys="x" /> {t("action.rule.leaveOut")}</span>
             </>
           )}
         </p>
@@ -135,17 +142,25 @@ function ActionButtons({ size, className, order = "cancel-first" }: { size: "sm"
   const label = ruleOnly ? t("action.rule.save") : waiting ? t(`action.button.${verb}`) : t(`action.apply.${verb}`, { count });
   // a rule that will trash or spam new mail is as destructive as a batch (Codex review, pass 3, #7)
   const variant = waiting && !applying ? "secondary" : isDestructive(preview) ? "destructive" : "default";
+  // plan 162 (after ai162-r01): the keys are the buttons' own, in their tooltips and names (a line under them repeated both)
+  const keyed = (button: React.ReactElement, keys: string, name: string) => (
+    <Tooltip key={button.key}>
+      <TooltipTrigger render={button} />
+      <TooltipContent className="flex items-center gap-1.5">{name} <Shortcut keys={keys} /></TooltipContent>
+    </Tooltip>
+  );
   const cancel = applying ? (
     <Button key="cancel" size={size} variant="secondary" className={className} data-testid="action-stop" onClick={stopApplying}>{t("action.stop")}</Button>
   ) : (
-    <Button key="cancel" size={size} variant="secondary" className={className} data-testid="action-cancel" aria-keyshortcuts="Escape" onClick={leavePreview}>{t("common.cancel")}</Button>
+    keyed(<Button key="cancel" size={size} variant="secondary" className={className} data-testid="action-cancel" aria-keyshortcuts="Escape" onClick={leavePreview}>{t("common.cancel")}</Button>, "escape", t("common.cancel"))
   );
-  const apply = (
+  const applyButton = (
     <Button key="apply" size={size} variant={variant} className={cn(className, "tabular")} data-testid="action-apply" data-variant={variant} data-waiting={waiting || undefined} aria-keyshortcuts={isMac ? "Meta+Enter" : "Control+Enter"} disabled={waiting || applying || (count === 0 && !ruleOnly)} onClick={() => void applyPreview()}>
       {waiting && <Spinner data-testid="action-finding" className="size-3.5" />}
       {label}
     </Button>
   );
+  const apply = waiting || applying ? applyButton : keyed(applyButton, "mod+enter", label);
   return order === "apply-first" ? [apply, cancel] : [cancel, apply];
 }
 
@@ -194,13 +209,15 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
   // plan 161 (the owner): a sender the sentence names for certain, and a rule that doesn't look at who sent it: said
   // calmly, beside the rule, without a model; Apply is as it was
   const notLooked = senderNotLooked(conditions, senders);
+  // plan 162 (after ai162-r01): the exact search only when it says more than the words above (a list of words read as a regex)
+  const details = hasDetails(conditions) ? ruleDetails(conditions).filter((d) => patternTerms(d.pattern) === null) : [];
   const senderLine = notLooked && (
     <p data-testid="action-sender" className={cn("text-pretty text-foreground", reader ? "text-sm" : "text-xs")}>
       {t("action.sender.notLooked", { name: notLooked })}
     </p>
   );
   const editLink = plan.action.type !== "createCategory" && (
-    <Button variant="link-secondary" size="xs" className="no-drag h-6 font-medium" data-testid="action-edit-filter" onClick={editAsFilter}>{t("action.editAsFilter")}</Button>
+    <Button variant="link-secondary" size="xs" className="no-drag h-6 font-medium text-muted-foreground hover:text-foreground" data-testid="action-edit-filter" onClick={editAsFilter}>{t("action.editAsFilter")}</Button>
   );
   const body = (
     // (the list's header is a window drag area: what's in it takes clicks)
@@ -217,22 +234,24 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
       )}
       {senderLine}
       <div>
-        <h3 className="text-xs font-medium text-muted-foreground">{t("action.rule.readAs")}</h3>
+        {/* plan 162 (after ai162-r01): a heading in the ink; it was a caption smaller than the labels it introduced */}
+        <h3 className="text-sm font-medium text-foreground">{t("action.rule.readAs")}</h3>
         <dl data-testid="action-conditions" className={cn("mt-1.5 grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4", reader ? "gap-y-2" : "gap-y-1")}>
           {rows.map((r, i) => (
             <div key={i} className="contents" data-testid="action-rule-row">
               <dt className="text-muted-foreground">{r.label}</dt>
-              <dd className="flex min-w-0 flex-wrap items-center gap-1">
+              {/* plan 162 (after ai162-r01): the terms as words in the ink, "shipped, delivery or tracking", not chips that
+                  looked removable and wrapped to three lines */}
+              <dd className="min-w-0 text-pretty wrap-anywhere">
                 <span>{r.text}</span>
-                {r.terms?.map((term) => (
-                  <Chip key={term} data-testid="action-rule-term" className="font-normal" title={term}>{term}</Chip>
-                ))}
+                {r.terms && " "}
+                {r.terms && termParts(r.terms).map((part, j) => (part.type === "element" ? <span key={j} data-testid="action-rule-term" className="font-medium">{part.value}</span> : <span key={j}>{part.value}</span>))}
               </dd>
             </div>
           ))}
         </dl>
       </div>
-      {hasDetails(conditions) ? (
+      {details.length > 0 ? (
         <Collapsible data-testid="action-details">
           {/* plan 161, pass 3: Edit as a rule is a quiet link on this line, so the only buttons near the rule are the decision */}
           <div className="flex flex-wrap items-center gap-x-4">
@@ -246,7 +265,7 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
           <CollapsiblePanel>
             {/* the UI's type, not code's: a pattern breaks only after a "|", never inside a word */}
             <dl className="mt-1 grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4 gap-y-1 text-xs" data-testid="action-details-text">
-              {ruleDetails(conditions).map((d, i) => (
+              {details.map((d, i) => (
                 <div key={i} className="contents">
                   <dt className="text-muted-foreground">{d.field}</dt>
                   <dd className="min-w-0 overflow-x-auto break-normal text-foreground" data-testid="action-details-pattern">
@@ -313,25 +332,8 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
           )}
         </div>
       )}
-      {/* the keys, said where the eye is: ⌘↩ and Esc are the header's buttons, x a row's check */}
-      {/* plan 161, pass 3: the decision, where the review ends (Split's reader; List's header is right above the rule) */}
-      {reader && (
-        // sticky at the pane's foot: a long rule (Details open) never scrolls the decision, nor Stop, out of reach (Codex review, pass 3, #4)
-        <div className="sticky bottom-0 z-10 -mb-3 flex flex-wrap items-center gap-2 bg-background pt-1 pb-3" data-testid="action-decision">
-          <ActionButtons size="default" order="apply-first" />
-        </div>
-      )}
-      {!ruleOnly && (
-        // plan 161, pass 2: the keys as keycaps on one line, the help on its own
-        <div className="space-y-1.5 text-xs text-muted-foreground">
-          <p className="flex flex-wrap items-center gap-x-3 gap-y-1" data-testid="action-keys">
-            <span className="inline-flex items-center gap-1.5"><Shortcut keys="mod+enter" /> {waiting ? t(`action.button.${verb}`) : t(`action.apply.${verb}`, { count })}</span>
-            <span className="inline-flex items-center gap-1.5"><Shortcut keys="escape" /> {t("common.cancel")}</span>
-            <span className="inline-flex items-center gap-1.5"><Shortcut keys="x" /> {t("action.rule.leaveOut")}</span>
-          </p>
-          {reader && <p className="text-pretty" data-testid="action-help">{t("action.rule.keys")}</p>}
-        </div>
-      )}
+      {/* plan 162 (after ai162-r01): what to do here, said once in words; the keys are the header's buttons' own */}
+      {!ruleOnly && <p className={cn("text-pretty text-muted-foreground", reader ? "text-sm" : "text-xs")} data-testid="action-help">{t("action.rule.keys")}</p>}
     </div>
   );
   // List: under the header, bounded, so a long rule (Details open) scrolls in place and never takes the rows' room

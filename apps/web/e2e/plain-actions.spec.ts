@@ -57,10 +57,12 @@ test.describe("actions in plain English (plan 143)", () => {
       await page.keyboard.press("Escape");
       await expect(popover, where).toHaveCount(0);
       await expect(page.getByTestId("action-rule"), where).toBeVisible();
-      await page.getByTestId("action-details-toggle").click();
-      expect(await unclipped(page.getByTestId("action-details-text")), where).toEqual([]);
+      // plan 162 (after ai162-r01): a list of words has no exact search to show; where there is one, it's whole
+      const details = (await page.getByTestId("action-details-toggle").count()) > 0;
+      if (details) await page.getByTestId("action-details-toggle").click();
+      if (details) expect(await unclipped(page.getByTestId("action-details-text")), where).toEqual([]);
       expect(await wheelsTo(page, page.getByTestId("action-rule"), page.getByTestId("action-help")), where).toBe(true);
-      await page.getByTestId("action-details-toggle").click();
+      if (details) await page.getByTestId("action-details-toggle").click();
     });
   });
 
@@ -127,11 +129,17 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("nav-inbox")).toHaveAttribute("data-active");
       await expect(page.locator("#app-sidebar [data-active]")).toHaveCount(1);
       const rule = page.getByTestId("action-rule");
-      // pass 3: Apply and Cancel sit with the rule they apply, the header only the count; an Archive is the primary
-      await expect(rule.getByTestId("action-decision").getByTestId("action-apply")).toHaveAttribute("data-variant", "default");
-      await expect(rule.getByTestId("action-decision").getByTestId("action-cancel")).toBeVisible();
-      await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toHaveCount(0);
-      await expect(page.getByTestId("action-preview").getByTestId("action-cancel")).toHaveCount(0);
+      // plan 162 (after ai162-r01): Apply and Cancel have one place, the list's header, while the rule shows and while a
+      // match is read; the rule holds none. An Archive is the primary
+      await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toHaveAttribute("data-variant", "default");
+      await expect(page.getByTestId("action-preview").getByTestId("action-cancel")).toBeVisible();
+      await expect(rule.getByTestId("action-apply")).toHaveCount(0);
+      await expect(page.getByTestId("action-decision")).toHaveCount(0);
+      const decided = (await page.getByTestId("action-apply").boundingBox())!;
+      // the keys are the buttons' own: no line under the rule repeats them, and x is said only while a match is read
+      await expect(page.getByTestId("action-keys")).toHaveCount(0);
+      await expect(page.getByTestId("action-leave-out-hint")).toHaveCount(0);
+      await expect(rule.getByTestId("action-help")).toHaveText("Untick any you want to keep. Click one to read it.");
       // a small archive needs no words about what it'll do
       await expect(rule.getByTestId("action-consequence")).toHaveCount(0);
       // plan 161, pass 2: what Apply does is the title, what was asked the line under it
@@ -139,16 +147,13 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(rule.getByTestId("action-rule-request")).toHaveText("“Archive shipping notices older than a month”");
       expect(await rule.getByTestId("action-rule-title").evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThan(await rule.getByTestId("action-rule-request").evaluate((el) => parseFloat(getComputedStyle(el).fontSize)));
       await expect(rule.getByTestId("action-conditions")).toContainText("Older than 30 days");
+      // plan 162 (after ai162-r01): the terms are words in the ink, "shipping, delivery or tracking", not chips
       await expect(rule.getByTestId("action-rule-term")).toHaveText(["shipping", "delivery", "tracking"]);
-      // the pattern itself is only in Details, never in the rows
+      await expect(rule.getByTestId("action-conditions")).toContainText("shipping, delivery, or tracking");
+      expect(await rule.getByTestId("action-rule-term").first().evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+      // the pattern is never in the rows, and a list of words has no exact search to show: it says nothing more
       await expect(rule.getByTestId("action-conditions")).not.toContainText("|");
-      // the field said plainly; the exact pattern in the UI's type, not code's, a 24 px target to open it
-      await expect(rule.getByTestId("action-details-toggle")).toHaveText("Exact pattern");
-      expect((await rule.getByTestId("action-details-toggle").boundingBox())!.height).toBeGreaterThanOrEqual(24);
-      await rule.getByTestId("action-details-toggle").click();
-      await expect(rule.getByTestId("action-details-pattern")).toHaveText("shipping|delivery|tracking");
-      const fonts = await page.evaluate(() => [getComputedStyle(document.querySelector("[data-testid=action-details-pattern]")!).fontFamily, getComputedStyle(document.querySelector("[data-testid=action-rule-title]")!).fontFamily]);
-      expect(fonts[0]).toBe(fonts[1]);
+      await expect(rule.getByTestId("action-details-toggle")).toHaveCount(0);
       // checkboxes to assistive tech: the column's check, and the row's checked state (the cursor stays aria-selected)
       await expect(page.getByRole("checkbox", { name: /^Include / })).toHaveCount(2);
       await expect(page.getByRole("checkbox", { name: /^Include / }).first()).toHaveAttribute("aria-checked", "true");
@@ -158,6 +163,9 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("reader-subject")).toBeVisible();
       await expect(rows(page).first()).toHaveAttribute("data-included", "true");
       await expect(page.getByTestId("action-sentence")).toContainText("Archive shipping notices older than a month");
+      // the decision didn't move, and x is said now that it works
+      expect((await page.getByTestId("action-apply").boundingBox())!).toEqual(decided);
+      await expect(page.getByTestId("action-leave-out-hint")).toContainText("Leave this one out");
       // the rule isn't on screen: the header has Apply again, so it's always there exactly once
       await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toHaveText("Archive 2");
       await expect(page.getByTestId("action-apply")).toHaveCount(1);
@@ -347,7 +355,7 @@ test.describe("actions in plain English (plan 143)", () => {
     await withMail(page, server);
     await say(page, "Delete recruiters");
     const rule = page.getByTestId("action-rule");
-    const apply = rule.getByTestId("action-decision").getByTestId("action-apply");
+    const apply = page.getByTestId("action-preview").getByTestId("action-apply");
     await expect(apply).toHaveText("Move 2 to Trash");
     await expect(apply).toHaveAttribute("data-variant", "destructive");
     await expect(rule.getByTestId("action-consequence")).toHaveText("2 conversations go to Trash, from all your mail except Spam and Trash.");
@@ -458,8 +466,6 @@ test.describe("actions in plain English, List layout (plan 161)", () => {
     await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
     const rule = page.getByTestId("action-rule");
     await expect(rule.getByTestId("action-rule-term").first()).toBeVisible();
-    await rule.getByTestId("action-details-toggle").click();
-    await expect(rule.getByTestId("action-details-text")).toBeVisible();
     expect(await rule.evaluate((el) => [getComputedStyle(el).overflowY, getComputedStyle(el).maxHeight !== "none"])).toEqual(["auto", true]);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/list-layout-light.png` });
     const rule0 = (await rule.boundingBox())!;
@@ -467,32 +473,13 @@ test.describe("actions in plain English, List layout (plan 161)", () => {
     const list = (await page.locator('[data-keep-scroll="list"]').boundingBox())!;
     expect(list.height).toBeGreaterThanOrEqual(200);
     await expect(rows(page).first()).toBeInViewport();
-    // Codex review (pass 2) #3: narrowed, the exact pattern wraps only after a "|" or at a space, never inside a word
-    const breaks = await rule.getByTestId("action-details-pattern").evaluate((dd) => {
-      // narrower than one alternative ("shipping|"), so any break inside a word would show
-      (dd as HTMLElement).style.width = "40px";
-      const walker = document.createTreeWalker(dd, NodeFilter.SHOW_TEXT);
-      const chars: { ch: string; top: number }[] = [];
-      for (let n = walker.nextNode(); n; n = walker.nextNode())
-        for (let i = 0; i < n.textContent!.length; i++) {
-          const r = document.createRange();
-          r.setStart(n, i);
-          r.setEnd(n, i + 1);
-          chars.push({ ch: n.textContent![i]!, top: Math.round(r.getBoundingClientRect().top) });
-        }
-      const at: string[] = [];
-      for (let i = 1; i < chars.length; i++) if (chars[i]!.top > chars[i - 1]!.top + 2) at.push(chars[i - 1]!.ch);
-      return at;
+    // plan 162 (after ai162-r01): a long term is a word in a sentence now, wrapping with it inside the rule's column
+    const term = await rule.getByTestId("action-rule-term").first().evaluate((el) => {
+      el.textContent = "a very long phrase the model might have written for the start of a shipping notice ".repeat(4);
+      const box = el.getBoundingClientRect(), row = el.closest("dd")!.getBoundingClientRect();
+      return box.right <= row.right + 0.5;
     });
-    expect(breaks.filter((ch) => ch !== "|" && ch !== " ")).toEqual([]);
-    // Codex review (pass 2) #2: a term longer than its room ends inside its chip, on one line
-    const chip = await rule.getByTestId("action-rule-term").first().evaluate((el) => {
-      const label = el.querySelector<HTMLElement>("[data-slot=chip-label]")!;
-      label.textContent = "a very long phrase the model might have written for the start of a shipping notice ".repeat(4);
-      const box = el.getBoundingClientRect(), text = label.getBoundingClientRect(), row = el.parentElement!.getBoundingClientRect();
-      return { inside: text.right <= box.right + 0.5 && box.right <= row.right + 0.5, lines: Math.round(text.height / parseFloat(getComputedStyle(label).lineHeight)) };
-    });
-    expect(chip).toEqual({ inside: true, lines: 1 });
+    expect(term).toBe(true);
   });
 });
 
@@ -502,16 +489,14 @@ test.describe("actions in plain English at 1100 × 700 (plan 161, pass 2)", () =
   test("a long rule never scrolls Apply out of reach (Codex review, pass 3, #4)", async ({ app: page, server }) => {
     await withMail(page, server);
     await say(page, "Archive shipping notices older than a month");
-    const apply = page.getByTestId("action-decision").getByTestId("action-apply");
+    const apply = page.getByTestId("action-preview").getByTestId("action-apply");
     await expect(apply).toHaveText("Archive 2");
     await page.setViewportSize({ width: 1100, height: 320 });
-    await page.getByTestId("action-details-toggle").click();
-    await expect(page.getByTestId("action-details-text")).toBeVisible();
     // the rule is longer than its pane, and the pane rests at its top
     const pane = page.getByTestId("action-rule").locator("> div");
     expect(await pane.evaluate((el) => el.scrollHeight > el.clientHeight + 40 && el.scrollTop === 0)).toBe(true);
     await expect(apply).toBeInViewport({ ratio: 1 });
-    await expect(page.getByTestId("action-decision").getByTestId("action-cancel")).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId("action-preview").getByTestId("action-cancel")).toBeInViewport({ ratio: 1 });
   });
 
   test("Split's header is one line beside its buttons, and the outcome reads whole in the reader", async ({ app: page, server }) => {
@@ -522,12 +507,10 @@ test.describe("actions in plain English at 1100 × 700 (plan 161, pass 2)", () =
     const lines = (testId: string) => page.getByTestId(testId).evaluate((el) => { const box = el.firstElementChild ?? el; const lh = parseFloat(getComputedStyle(box).lineHeight); return Math.round(box.getBoundingClientRect().height / lh); });
     expect(await lines("action-title")).toBe(1);
     expect(await lines("action-rule-title")).toBe(1);
-    // the help is its own line, whole: no word left alone under it. Plan 162: Esc is said once, where it applies (the
-    // keys' line here; the header's Show the rule while a conversation covers the rule), and the keys fit one line
-    await expect(page.getByTestId("action-help")).toHaveText("Click a conversation to read it.");
+    // the help is its own line, whole. Plan 162 (after ai162-r01): the keys are the header buttons' own; no line repeats them
+    await expect(page.getByTestId("action-help")).toHaveText("Untick any you want to keep. Click one to read it.");
     expect(await lines("action-help")).toBe(1);
-    const tops = await page.getByTestId("action-keys").evaluate((el) => [...el.children].map((c) => Math.round(c.getBoundingClientRect().top)));
-    expect(new Set(tops).size).toBe(1);
+    await expect(page.getByTestId("action-keys")).toHaveCount(0);
     await expect(page.getByTestId("action-rule")).not.toContainText("brings you back");
     // the one provenance control every AI result has, at the rule's line's end: what it did and how to check it
     await page.getByTestId("action-provenance").click();
