@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Spinner } from "@terno/ui/components/spinner";
 import { Textarea } from "@terno/ui/components/textarea";
 import { Plus } from "@terno/ui/icons";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { providerLabel } from "~/lib/ai";
 import { snack } from "~/lib/snack";
 import { imeKey } from "~/lib/ime-escape";
@@ -93,11 +93,26 @@ function ItemsField({ label, add, item, remove, items, onChange, testId, first }
   );
 }
 
+type OpenEditor = { escape: () => void; leave: (then: () => void) => void };
 /**
- * Pass 3 (Codex review): the editor open on the page, for what's outside it: Esc from elsewhere on the page steps back
- * out of it first, and leaving the page (its back button) asks before a change goes. One at a time (the page allows one).
+ * Pass 3 (Codex review): the editors open on the page, for what's outside them: Esc from elsewhere on the page steps back
+ * out of the last one opened first, and leaving the page (its back button) asks each changed one before a change goes.
+ * Your style and a company's or person's can be open at once (Codex review, round 2), so it's a list.
  */
-export const styleEditor: { open: { escape: () => void; leave: (then: () => void) => void } | null } = { open: null };
+const openEditors: { list: OpenEditor[] } = { list: [] };
+
+/** Esc from the page: the editor opened last steps back (cancels, or asks), if there's one. */
+export function escapeStyleEditor(): boolean {
+  const last = openEditors.list.at(-1);
+  last?.escape();
+  return last !== undefined;
+}
+
+/** Leaving the page: each open editor in turn lets it go (at once if unchanged, after asking if not), then `then`. */
+export function leaveStyleEditors(then: () => void): void {
+  const step = (left: readonly OpenEditor[]) => (left.length ? left[0]!.leave(() => step(left.slice(1))) : then());
+  step([...openEditors.list]);
+}
 
 function ProfileEditor({ p, title, onDone }: { p: WritingProfileView; title: string; onDone: (next: WritingProfileView | null) => void }) {
   const ids = useId();
@@ -132,13 +147,18 @@ function ProfileEditor({ p, title, onDone }: { p: WritingProfileView; title: str
     setAfter({ next: then });
     setAsking(true);
   };
-  useEffect(() => {
-    const own = { escape, leave };
-    styleEditor.open = own;
-    return () => {
-      if (styleEditor.open === own) styleEditor.open = null;
-    };
+  // registered once, in the order opened, calling what this render holds
+  const current = useRef({ escape, leave });
+  useLayoutEffect(() => {
+    current.current = { escape, leave };
   });
+  useEffect(() => {
+    const own: OpenEditor = { escape: () => current.current.escape(), leave: (then) => current.current.leave(then) };
+    openEditors.list.push(own);
+    return () => {
+      openEditors.list = openEditors.list.filter((e) => e !== own);
+    };
+  }, []);
   const shares = (list: readonly { text: string; share: number }[], items: readonly string[]) => fromItems(items).slice(0, ITEMS_MAX).map((text) => ({ text, share: list.find((i) => i.text === text)?.share ?? 0.1 }));
   const save = async () => {
     try {

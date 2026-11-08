@@ -1069,6 +1069,23 @@ test.describe("drafting with AI (plan 133)", () => {
       await page.getByTestId("style-edit-cancel").click();
       await expect(companies.nth(0)).toBeEnabled();
     }
+    // Codex review, round 2: Your style's editor and a company's can be open at once; closing the first leaves the second
+    // guarded, so a changed company edit still asks before Esc from elsewhere drops it
+    if ((await companies.first().getAttribute("aria-expanded")) !== "true") await companies.first().click();
+    const domains = page.getByTestId("style-domains");
+    await domains.getByTestId("style-profile-edit").click();
+    await domains.getByTestId("style-edit-phrases").fill("talk soon");
+    await profile.getByTestId("style-profile-edit").click();
+    await expect(profile.getByTestId("style-editor")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(profile.getByTestId("style-editor")).toHaveCount(0);
+    await page.getByTestId("style-rebuild").focus();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("style-discard-dialog")).toBeVisible();
+    await page.getByTestId("style-discard-dialog").getByRole("button", { name: "Cancel" }).click();
+    await expect(domains.getByTestId("style-edit-phrases")).toHaveValue("talk soon");
+    await domains.getByTestId("style-edit-cancel").click();
+    await expect(domains.getByTestId("style-editor")).toHaveCount(0);
     // Codex review: one open across Companies and People
     await page.getByTestId("style-people-toggle").click();
     const people = page.getByTestId("style-people").getByTestId("style-profile-toggle");

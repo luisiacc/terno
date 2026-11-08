@@ -7,7 +7,7 @@ import { imeKey } from "~/lib/ime-escape";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp, type SettingsTab } from "~/state/app";
 import { AiTab } from "./settings/ai-tab";
-import { styleEditor } from "./settings/writing-style";
+import { escapeStyleEditor, leaveStyleEditors } from "./settings/writing-style";
 import { AppearanceTab } from "./settings/appearance-tab";
 import { CategoriesTab } from "./settings/categories-tab";
 import { AccountsTab } from "./settings/accounts-tab";
@@ -89,8 +89,7 @@ export function SettingsDialog() {
       requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-testid=ai-drafting-style-open]")?.focus());
     };
     // a changed editor asks before the page goes (Codex review)
-    if (styleEditor.open) styleEditor.open.leave(back);
-    else back();
+    leaveStyleEditors(back);
   };
   const update = useCallback<SettingsUpdate>(async (patch, options) => {
     try {
@@ -125,8 +124,7 @@ export function SettingsDialog() {
           e.preventDefault();
           e.stopPropagation();
           // an editor open on the page is the level below it, wherever focus is (Codex review): it steps back first
-          if (styleEditor.open) styleEditor.open.escape();
-          else backFromStyle();
+          if (!escapeStyleEditor()) backFromStyle();
         }}
         className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog" initialFocus={initialFocus}
         // on the section title's line, at the content's inset (pt-5 px-6)
