@@ -30,6 +30,15 @@ describe("the model's gaps in the composer", () => {
     expect(marked(state)).toEqual(["[When.]"]);
   });
 
+  it("Codex review 2: a later write without gaps keeps marking an earlier one's, so an undo back to it is marked", () => {
+    let state = write(newState(docOf("", "")), "On [date].", ["[date]"]);
+    state = write(state, "Soon.", []);
+    expect(marked(state)).toEqual([]);
+    undo(state, (tr) => { state = state.apply(tr); });
+    expect(toPlainText(state.doc)).toBe("On [date].");
+    expect(marked(state)).toEqual(["[date]"]);
+  });
+
   it("does nothing, and keeps no set, when a draft came with none", () => {
     const before = newState(docOf("", ""));
     const state = write(before, "Plain. [not a gap]", []);

@@ -104,6 +104,8 @@ export interface AiCommit {
   before: { html: string; text: string };
   /** plan 161: the document as the write found it, which the strip's Undo restores exactly after an edit */
   beforeDoc: unknown;
+  /** plan 161: this version's own checks: going back to it brings them back (its gaps, its check line) */
+  checks: AiStrip["checks"];
   text: string;
 }
 
@@ -780,6 +782,16 @@ function waitForBody(key: string, messageId: number) {
   void loadThread(thread, true);
 }
 
+/**
+ * The strip a refinement began from still describes the text: it's the version it wrote, or (plan 161, Codex review) an
+ * edited strip whose text nothing has touched since the refinement began.
+ */
+function priorStands(prior: AiStrip, run: Run | null | undefined, c: ReturnType<typeof controllerFor>): boolean {
+  if (!c) return true;
+  const token = c.docToken();
+  return token === prior.stack[prior.stack.length - 1]?.doc || (prior.edited === true && token === run?.binding.doc);
+}
+
 /** Esc and the row's Stop: it ends, nothing is written, the strip comes back if there was one. */
 export function stop(key: string) {
   const s = session(key);
@@ -789,7 +801,7 @@ export function stop(key: string) {
   stopWaiting(key);
   const prior = s.run?.prior;
   const c = controllerFor(key);
-  if (prior && (!c || c.docToken() === prior.stack[prior.stack.length - 1]?.doc)) {
+  if (prior && priorStands(prior, s.run, c)) {
     update(key, { phase: "strip", strip: prior, run: null, choice: null, error: null, guard: null, live: "" });
     return focusEditor(key);
   }
@@ -824,7 +836,8 @@ function commit(key: string, how: "replace" | "below", result: Extract<AiCompose
   // never over a subject the user wrote (§10.3)
   let subject: string | null = null;
   if (needsSubject && result.subject && d && !d.subject.trim() && editDraft(key, { subject: result.subject, subjectEdited: true })) subject = result.subject;
-  const stack = [...(prior?.stack ?? []), { doc: inserted.doc, subject, before, beforeDoc: inserted.before, text: c.snapshot().text }];
+  const stack = [...(prior?.stack ?? []), { doc: inserted.doc, subject, before, beforeDoc: inserted.before, checks: result.checks, text: c.snapshot().text }];
+  restores.delete(key);
   // what the draft holds now, as a send will compare it: a replace is all of the text, an insert only what it wrote
   recordProvenance(key, how === "replace" ? c.snapshot().text : result.text);
   clearStream(key);
@@ -869,7 +882,7 @@ export function discard(key: string) {
   }
   const prior = s.run?.prior;
   const c = controllerFor(key);
-  if (prior && (!c || c.docToken() === prior.stack[prior.stack.length - 1]?.doc)) {
+  if (prior && priorStands(prior, s.run, c)) {
     update(key, { phase: "strip", strip: prior, run: null, choice: null, error: null, guard: null, live: "" });
     return focusEditor(key);
   }
@@ -953,7 +966,7 @@ export function undoCommit(key: string) {
   const under = stack[stack.length - 1];
   if (under && undone) {
     stack[stack.length - 1] = { ...under, doc: undone.doc };
-    update(key, { strip: { ...s.strip, stack } });
+    update(key, { strip: { ...s.strip, stack, checks: under.checks } });
     recordProvenance(key, bodyNow(key));
     return focusEditor(key);
   }
@@ -972,7 +985,9 @@ export function undoCommit(key: string) {
  */
 function undoEdited(key: string, s: AiSession & { strip: AiStrip }, top: AiCommit) {
   const c = controllerFor(key);
-  const typed = c ? c.snapshot().text !== top.text : false;
+  // anything typed, formatting and images included: the document, not its text
+  const typed = c ? !c.sameDoc(top.doc) : false;
+  const edited = c?.docToken();
   undoing.key = key;
   const restored = c?.restoreGenerated(top.beforeDoc) ?? null;
   undoing.key = null;
@@ -983,10 +998,12 @@ function undoEdited(key: string, s: AiSession & { strip: AiStrip }, top: AiCommi
   if (subject !== null) editDraft(key, { subject: "", subjectEdited: false });
   const stack = was.stack.slice(0, -1);
   const under = stack[stack.length - 1];
+  let left: AiStrip | null = null;
   if (under) {
     // the version under it is back as it was written, or as it was typed over before this write. Its Undo restores too
     // from here: the editor's last step is now this restore, not its write
-    update(key, { strip: { ...was, stack, edited: c.snapshot().text !== under.text } });
+    left = { ...was, stack, checks: under.checks, edited: !c.sameDoc(under.doc) };
+    update(key, { strip: left });
     recordProvenance(key, bodyNow(key));
   } else {
     remove(key);
@@ -996,18 +1013,47 @@ function undoEdited(key: string, s: AiSession & { strip: AiStrip }, top: AiCommi
   focusEditor(key);
   // nothing typed (an editor rebuilt without its history, or ⌘Z already past it): nothing to bring back
   if (!typed) return;
+  const r: Restore = { edited, restored: restored.doc, strip: { ...was, edited: true }, left, subject, opened: s.opened, lastSpec: s.lastSpec };
+  restores.set(key, r);
   const undo = registerUndo(() => {
+    // newer work since (another write, a refinement running): this old Undo does nothing
+    if (!stillOurs(key, r)) return;
     undoing.key = key;
-    const back = controllerFor(key)?.undoGenerated(restored.doc) ?? null;
+    const back = controllerFor(key)?.undoGenerated(r.restored) ?? null;
     undoing.key = null;
-    if (!back) return;
-    if (subject !== null && draftOf(key)?.subject === "") editDraft(key, { subject, subjectEdited: true });
-    if (!session(key)) useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: { ...newSession(key, { opened: s.opened, phase: "strip" }), lastSpec: s.lastSpec } } }));
-    update(key, { phase: "strip", strip: { ...was, edited: true } });
-    recordProvenance(key, bodyNow(key));
-    focusEditor(key);
+    if (back) reinstate(key, r);
   });
   snack.success(t("aiDraft.undone"), { action: { label: t("common.undo"), name: t("aiDraft.undoneUndo"), undo } });
+}
+
+/**
+ * Plan 161 (Codex review): what an edited Undo took away, so the snack's Undo and the editor's own ⌘Z bring back the
+ * same thing: the edited text (the editor's), and with it the strip, its subject and its gaps' guard (ours). Only while
+ * nothing newer has happened to the session: `left` is the strip the Undo left behind (null: none).
+ */
+interface Restore {
+  edited: unknown;
+  restored: unknown;
+  strip: AiStrip;
+  left: AiStrip | null;
+  subject: string | null;
+  opened: boolean;
+  lastSpec: RunSpec | null;
+}
+const restores = new Map<string, Restore>();
+
+function stillOurs(key: string, r: Restore): boolean {
+  const s = session(key);
+  return restores.get(key) === r && (s ? s.phase === "strip" && !s.run && s.strip === r.left : r.left === null);
+}
+
+function reinstate(key: string, r: Restore): void {
+  restores.delete(key);
+  if (r.subject !== null && draftOf(key)?.subject === "") editDraft(key, { subject: r.subject, subjectEdited: true });
+  if (!session(key)) useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: { ...newSession(key, { opened: r.opened, phase: "strip" }), lastSpec: r.lastSpec } } }));
+  update(key, { phase: "strip", strip: r.strip });
+  recordProvenance(key, bodyNow(key));
+  focusEditor(key);
 }
 
 /** Drafts that hold a prepared reply: what to give back, whether it's been typed in, whether this draft began with it. */
@@ -1091,6 +1137,9 @@ export function noteBody(key: string) {
   }
   const s = session(key);
   const c = c0;
+  // ⌘Z right after an edited Undo: the edited text is back, and so is everything that went with it
+  const r = restores.get(key);
+  if (r && c && stillOurs(key, r) && c.sameDoc(r.edited)) return reinstate(key, r);
   if (!s || !c) return;
   if (s.run && (s.phase === "writing" || s.phase === "waitingBody" || s.phase === "error")) {
     const typed = s.run.spec.kind === "draft" ? !c.empty() : c.docToken() !== s.run.binding.doc;
@@ -1108,7 +1157,7 @@ export function noteBody(key: string) {
       else update(key, { strip: null });
       return;
     }
-    return update(key, { strip: { ...s.strip, stack, edited: !c.sameDoc(under.doc) } });
+    return update(key, { strip: { ...s.strip, stack, checks: under.checks, edited: !c.sameDoc(under.doc) } });
   }
   // plan 161: an edit no longer ends the strip; it says so, and Undo stays until the draft is sent
   if (!s.strip.edited) update(key, { strip: { ...s.strip, edited: true } });
@@ -1135,7 +1184,8 @@ aiDraftHooks.blocksSend = (key, sendAt) => {
 
 /** The model's gaps (only those, never a bracket the user typed) still in the draft's text. */
 export function gapsLeft(key: string, s: AiSession | undefined = session(key)): string[] {
-  const gaps = s?.strip?.checks.placeholders ?? [];
+  // every version's: an undo in the editor can bring back an earlier one's
+  const gaps = [...(s?.strip?.checks.placeholders ?? []), ...(s?.strip?.stack.flatMap((v) => v.checks.placeholders) ?? [])];
   if (!gaps.length) return [];
   const body = bodyNow(key);
   return [...new Set(gaps)].filter((g) => body.includes(g));
@@ -1264,6 +1314,8 @@ useApp.subscribe((state, previous) => {
 
 useDrafts.subscribe((state, previous) => {
   if (state.drafts === previous.drafts) return;
+  // an edited Undo's way back goes with its draft
+  for (const key of restores.keys()) if (!state.drafts[key]) restores.delete(key);
   for (const [key, s] of Object.entries(useAiDraft.getState().sessions)) {
     const before = previous.drafts[key], after = state.drafts[key];
     if (before === after) continue;

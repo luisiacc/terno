@@ -441,7 +441,10 @@ export function AiRow({ draftKey }: { draftKey: string }) {
       frame = requestAnimationFrame(() => {
         const form = rootRef.current?.closest<HTMLElement>("form[data-draft-key]");
         const scroller = form?.closest<HTMLElement>("[data-reader-scroller]");
-        if (!form || !scroller || form.getBoundingClientRect().top < scroller.getBoundingClientRect().top) return;
+        if (!form || !scroller) return;
+        // only a composer whose top is on screen: one scrolled out of view, above or below, is left there (Codex review)
+        const top = form.getBoundingClientRect().top, view = scroller.getBoundingClientRect();
+        if (top < view.top || top >= view.bottom) return;
         keepInView(form, scroller, 16, () => form.getBoundingClientRect().height);
       });
     };

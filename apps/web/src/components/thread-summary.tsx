@@ -94,8 +94,8 @@ function Line({ state, status, icon, actions, children }: { state: string; statu
       <div className="flex min-w-0 flex-1 flex-wrap gap-x-3 gap-y-1">
         {/* its own width: a short status keeps its action on the row, and a long one sends it below */}
         <span className="min-w-0 flex-auto wrap-anywhere">{children}</span>
-        {/* the 24 px buttons reach 2 px past the 20 px line, as the header's height holds them */}
-        {actions && <span className="-my-0.5 ms-auto flex shrink-0 items-center gap-1.5">{actions}</span>}
+        {/* the 28 px buttons (plan 161: the AI suggestions' one height) reach 4 px past the 20 px line, as the header's height holds them */}
+        {actions && <span className="-my-1 ms-auto flex shrink-0 items-center gap-1.5">{actions}</span>}
       </div>
     </div>
   );
@@ -150,7 +150,7 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
             status
             icon={<Spinner aria-hidden className={GLYPH} />}
             actions={
-              <Button size="xs" variant="ghost" data-testid="summary-stop" onClick={() => stopSummary(threadId)}>
+              <Button size="sm" variant="ghost" data-testid="summary-stop" onClick={() => stopSummary(threadId)}>
                 {t("summary.stop")}
               </Button>
             }
@@ -170,10 +170,10 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
             state="consent"
             actions={
               <>
-                <Button size="xs" variant="ghost" data-testid="summary-settings" onClick={openSettings}>
+                <Button size="sm" variant="ghost" data-testid="summary-settings" onClick={openSettings}>
                   {t("common.settings")}
                 </Button>
-                <Button size="xs" variant="outline" data-testid="summary-continue" onClick={() => { dismissSummary(threadId); void summarize(threadId, { acknowledge: true }); }}>
+                <Button size="sm" variant="outline" data-testid="summary-continue" onClick={() => { dismissSummary(threadId); void summarize(threadId, { acknowledge: true }); }}>
                   {t("common.continue")}
                 </Button>
               </>
@@ -187,7 +187,7 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
           <Line
             state="no-provider"
             actions={
-              <Button size="xs" variant="outline" data-testid="summary-settings" onClick={() => { dismissSummary(threadId); openSettings(); }}>
+              <Button size="sm" variant="outline" data-testid="summary-settings" onClick={() => { dismissSummary(threadId); openSettings(); }}>
                 {t("common.settings")}
               </Button>
             }
@@ -201,7 +201,7 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
           <Line
             state="error"
             actions={
-              <Button size="xs" variant="ghost" data-testid="summary-retry" onClick={() => { dismissSummary(threadId); void summarize(threadId); }}>
+              <Button size="sm" variant="ghost" data-testid="summary-retry" onClick={() => { dismissSummary(threadId); void summarize(threadId); }}>
                 {t("summary.tryAgain")}
               </Button>
             }

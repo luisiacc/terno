@@ -37,7 +37,7 @@ function decorate(doc: PMNode, gaps: readonly string[]): DecorationSet {
   return DecorationSet.create(doc, found.map((g) => Decoration.inline(g.from, g.to, { class: AI_GAP, "data-testid": "compose-gap" })));
 }
 
-/** The gaps to mark from now on: with the transaction that writes them. */
+/** The gaps to mark from now on, with those already marked: with the transaction that writes them. */
 export const withGaps = (tr: Transaction, gaps: readonly string[]): Transaction => tr.setMeta(gapsKey, [...new Set(gaps.filter(Boolean))]);
 
 export const gapsPlugin = new Plugin<GapState>({
@@ -45,8 +45,10 @@ export const gapsPlugin = new Plugin<GapState>({
   state: {
     init: () => ({ gaps: [], set: DecorationSet.empty }),
     apply(tr, prev) {
-      const gaps = (tr.getMeta(gapsKey) as string[] | undefined) ?? prev.gaps;
-      if (!gaps.length) return prev.gaps.length ? { gaps, set: DecorationSet.empty } : prev;
+      // every write's gaps add to what's marked: the editor's undo can bring back an earlier version's (Codex review)
+      const added = tr.getMeta(gapsKey) as string[] | undefined;
+      const gaps = added?.some((g) => !prev.gaps.includes(g)) ? [...new Set([...prev.gaps, ...added])] : prev.gaps;
+      if (!gaps.length) return prev;
       if (gaps === prev.gaps && !tr.docChanged) return prev;
       return { gaps, set: decorate(tr.doc, gaps) };
     },

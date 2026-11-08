@@ -1079,6 +1079,17 @@ test.describe("drafting with AI (plan 133)", () => {
       await page.setViewportSize({ width: 1100, height: 700 });
       await expect.poll(async () => { const r = await lastLineClear(); return r.last <= r.foot ? true : JSON.stringify(r); }).toBe(true);
     });
+    await scenario("Codex review 5: scrolled up to read, with the composer below the window, a resize leaves the reader where it is", async () => {
+      const scroller = page.locator("[data-reader-scroller]");
+      await page.setViewportSize({ width: 1100, height: 220 });
+      await page.waitForTimeout(250);
+      await scroller.evaluate((el) => { el.scrollTop = 0; });
+      // its top is below the window: not on screen, so not followed
+      expect(await page.getByTestId("composer").evaluate((el) => el.getBoundingClientRect().top >= el.closest("[data-reader-scroller]")!.getBoundingClientRect().bottom)).toBe(true);
+      await page.setViewportSize({ width: 1100, height: 210 });
+      await page.waitForTimeout(250);
+      expect(await scroller.evaluate((el) => el.scrollTop)).toBe(0);
+    });
   });
 
   test("en and es: the row, status and strip follow the language", async ({ app: page, server }) => {

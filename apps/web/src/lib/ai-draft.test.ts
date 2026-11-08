@@ -56,7 +56,7 @@ function editor(key: string, initial = "") {
       const before = { text: c.text };
       history.push({ text: c.text, doc: c.doc });
       c.text = how === "replace" || !c.text ? text : `${c.text}\n\n${text}`;
-      c.doc = {};
+      c.doc = { text: c.text };
       c.placeholder = placeholder;
       c.gaps = gaps ?? [];
       // as the real editor's change does: the draft is dirty, autosave follows, and its listeners hear of it at once
@@ -68,11 +68,12 @@ function editor(key: string, initial = "") {
     restoreGenerated(before: unknown) {
       history.push({ text: c.text, doc: c.doc });
       c.text = (before as { text: string }).text;
-      c.doc = {};
+      c.doc = { text: c.text };
       for (const l of listeners) l();
       return { doc: c.doc };
     },
-    sameDoc: (doc: unknown) => (doc as { text?: string } | null)?.text === c.text,
+    // the content, marks included, as the real one's doc.eq
+    sameDoc: (doc: unknown) => JSON.stringify(doc) === JSON.stringify(c.doc),
     selectText(text: string) {
       if (!c.text.includes(text)) return false;
       c.selected = text;
@@ -81,7 +82,7 @@ function editor(key: string, initial = "") {
     undoGenerated(doc: unknown) {
       if (c.doc !== doc) return null;
       c.text = history.pop()!.text;
-      c.doc = {};
+      c.doc = { text: c.text };
       for (const l of listeners) l();
       return { doc: c.doc };
     },
@@ -91,7 +92,7 @@ function editor(key: string, initial = "") {
     dismissGhost() {},
     snapshot: () => ({ html: "", text: c.text }),
     focus() { c.focused++; },
-    type(text: string) { c.text += text; c.doc = {}; for (const l of listeners) l(); },
+    type(text: string) { c.text += text; c.doc = { text: c.text }; for (const l of listeners) l(); },
     dom: document.createElement("div"),
     getState: () => ({}),
     subscribe: () => () => {},
@@ -548,6 +549,91 @@ describe("the subject: §10.3's compound undo", () => {
     expect(session(key)!.strip!.edited).toBe(true);
   });
 
+  it("Codex review 1: ⌘Z right after an edited Undo brings back the strip, the subject and the gaps' guard with the text", async () => {
+    const { key, c } = await writing({ mode: "new" });
+    last("ai.compose").resolve(done("On [date].", { subject: "Generated subject", checks: { specifics: [], placeholders: ["[date]"] } }));
+    await tick();
+    c.type(" Mine.");
+    store.undoCommit(key);
+    expect(session(key)).toBeUndefined();
+    expect(useDrafts.getState().drafts[key]!.subject).toBe("");
+    // the editor's own undo of the restore, not the snack's
+    c.undoGenerated(c.doc);
+    expect(c.text).toBe("On [date]. Mine.");
+    expect(session(key)!.phase).toBe("strip");
+    expect(session(key)!.strip!.edited).toBe(true);
+    expect(useDrafts.getState().drafts[key]!.subject).toBe("Generated subject");
+    expect(store.gapsLeft(key)).toEqual(["[date]"]);
+    expect(aiDraftHooks.blocksSend(key, undefined)).toBe(true);
+  });
+
+  it("Codex review 2: going back to an earlier version brings back its own checks, and its gaps are guarded", async () => {
+    const { key, c } = await writing();
+    last("ai.compose").resolve(done("On [date].", { checks: { specifics: [], placeholders: ["[date]"] } }));
+    await tick();
+    store.refine(key, "shorter");
+    last("ai.compose").resolve(done("Soon."));
+    await tick();
+    expect(store.gapsLeft(key)).toEqual([]);
+    store.undoCommit(key);
+    expect(c.text).toBe("On [date].");
+    expect(session(key)!.strip!.checks.placeholders).toEqual(["[date]"]);
+    expect(store.gapsLeft(key)).toEqual(["[date]"]);
+    // the same by the editor's ⌘Z
+    store.refine(key, "shorter");
+    last("ai.compose").resolve(done("Soon."));
+    await tick();
+    c.undoGenerated(c.doc);
+    expect(c.text).toBe("On [date].");
+    expect(session(key)!.strip!.checks.placeholders).toEqual(["[date]"]);
+  });
+
+  it("Codex review 3: a refinement stopped on an edited strip leaves that strip, edited", async () => {
+    const { key, c } = await writing();
+    last("ai.compose").resolve(done("First."));
+    await tick();
+    c.type(" Mine.");
+    store.refine(key, "shorter");
+    expect(session(key)!.phase).toBe("writing");
+    store.stop(key);
+    expect(session(key)!.phase).toBe("strip");
+    expect(session(key)!.strip!.edited).toBe(true);
+    // and Discard of a suggestion the same
+    store.refine(key, "shorter");
+    store.discard(key);
+    expect(session(key)!.phase).toBe("strip");
+  });
+
+  it("Codex review 4: an old snack's Undo does nothing once newer work has begun", async () => {
+    const { key, c } = await writing();
+    last("ai.compose").resolve(done("First."));
+    await tick();
+    c.type(" Mine.");
+    store.undoCommit(key);
+    expect(c.text).toBe("");
+    const { useSnack, runUndo } = await import("./snack");
+    const old = useSnack.getState().undo!;
+    await store.openRow({ key });
+    await store.submit(key);
+    expect(session(key)!.phase).toBe("writing");
+    await runUndo(old);
+    expect(c.text).toBe("");
+    expect(session(key)!.phase).toBe("writing");
+  });
+
+  it("Codex review 6: an edit that changes no words (formatting, an image) still gets the snack that brings it back", async () => {
+    const { key, c } = await writing();
+    last("ai.compose").resolve(done("First."));
+    await tick();
+    // bold on a word: the same text, another document
+    c.doc = { text: c.text, bold: true };
+    store.noteBody(key);
+    expect(session(key)!.strip!.edited).toBe(true);
+    store.undoCommit(key);
+    const { useSnack } = await import("./snack");
+    expect(JSON.stringify(useSnack.getState().current)).toContain("Back to before the AI draft");
+  });
+
   it("plan 161: edited under a refinement, Undo goes back to the version before it, unedited", async () => {
     const { key, c } = await filled();
     store.refine(key, "warmer");
@@ -861,7 +947,7 @@ describe("a prepared reply, used (plan 144)", () => {
     store.commitPrepared(b.key, row({ rowId: "r2", revision: 5 }), true);
     a.c.type(" más");
     a.c.text = "";
-    a.c.doc = {};
+    a.c.doc = { text: a.c.text };
     store.noteBody(a.key);
     expect(back).toEqual([{ threadId: 7, rowId: "r1", revision: 1 }]);
     // typed in: the draft is theirs
