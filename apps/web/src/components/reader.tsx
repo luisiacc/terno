@@ -15,7 +15,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Printer, Reply, ReplyAll, Sparkles, SquarePen, Star, Tag, Trash2 } from "@terno/ui/icons";
+import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Printer, Reply, Sparkles, SquarePen, Star, Tag, Trash2 } from "@terno/ui/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
@@ -170,14 +170,14 @@ function ToolbarMore({ threadId }: { threadId: number }) {
 }
 
 /**
- * One way to reply, the reply bar's words in its order: Reply, Reply all, Forward. Reply all keeps its place, dimmed when it
- * would reach nobody Reply doesn't (`a` is Reply then), so nothing moves between conversations. No menu. Their words show as
- * the toolbar has room for them (`fitWords`): Reply's first, Reply all's and Forward's last. The pill also shows Reply's key.
+ * One way to reply: Reply and Forward, the same in every conversation, so nothing moves or sits dimmed for no reason. Reply all
+ * is where it applies: the bar at the conversation's end, the message's ⋯ menu, the row menu, the palette and `a`. No menu.
+ * Their words show as the toolbar has room for them (`fitWords`): Reply's first, Forward's last. The pill also shows Reply's key.
  */
-function ReplyGroup({ replyAll }: { replyAll: boolean }) {
+function ReplyGroup() {
   const pill = useDesign().variants.replyAction === "pill";
   // a choice hands focus to the draft; refused (a forward's files, say), the button that asked keeps it
-  const choose = (mode: "replyAll" | "forward", button: HTMLElement) => {
+  const choose = (mode: "forward", button: HTMLElement) => {
     void composeLanding(mode).then((landing) => {
       if (landing.kind === "none" && document.activeElement === document.body && button.isConnected) button.focus();
     });
@@ -204,20 +204,6 @@ function ReplyGroup({ replyAll }: { replyAll: boolean }) {
       <Tooltip>
         <TooltipTrigger
           render={
-            <ButtonGroupItem data-testid="action-reply-all" disabled={!replyAll} onClick={(e) => choose("replyAll", e.currentTarget)} className={item(4)}>
-              <ReplyAll />
-              <span className={WORDS[4]}>{t("actions.replyAll")}</span>
-            </ButtonGroupItem>
-          }
-        />
-        <TooltipContent className="flex items-center gap-2">
-          {t("actions.replyAll")}
-          <Shortcut keys="a" />
-        </TooltipContent>
-      </Tooltip>
-      <Tooltip>
-        <TooltipTrigger
-          render={
             <ButtonGroupItem data-testid="action-forward" onClick={(e) => choose("forward", e.currentTarget)} className={item(4, pill ? "pr-3" : undefined)}>
               <Forward />
               <span className={WORDS[4]}>{t("actions.forward")}</span>
@@ -234,7 +220,7 @@ function ReplyGroup({ replyAll }: { replyAll: boolean }) {
 }
 
 /**
- * The toolbar's words, by priority (plan 158): 1 Reply, 2 Back's mailbox, 3 Archive and Delete, 4 Reply all and Forward.
+ * The toolbar's words, by priority (plan 158): 1 Reply, 2 Back's mailbox, 3 Archive and Delete, 4 Forward.
  * As many tiers show as the column holds in this language, measured (`fitWords`), so no word is cut and no button leaves
  * the column; one that doesn't show keeps its icon, and its name in the tooltip and for screen readers. The row says how
  * many tiers fit in `data-words`, which only `fitWords` writes.
@@ -1179,7 +1165,7 @@ function ReaderContent() {
         {/* a search's matches lead the reply group at the column's end; the pair's auto margin takes what's left */}
         <div data-toolbar-end className="ml-auto flex shrink-0 items-center gap-2 @max-[420px]:gap-1">
           {bodyMarks?.length ? <ReaderMatches key={`${selectedId}:${JSON.stringify(bodyMarks)}`} scroller={scrollerRef} bottomInset={dock} /> : null}
-          <ReplyGroup replyAll={replyAll} />
+          <ReplyGroup />
         </div>
         {page && <ToolbarDivider />}
         {page && <StepButtons id={selectedId} />}

@@ -212,21 +212,20 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     await expect(page.getByTestId("compose-title")).toBeVisible();
   });
 
-  test("one way to reply: Reply, Reply all and Forward in the toolbar as in the bar, words as they fit, and nothing moves", async ({ app: page, server }) => {
+  test("one way to reply: Reply and Forward in the toolbar in every conversation, Reply all in the bar where it applies, words as they fit, and nothing moves", async ({ app: page, server }) => {
     const store = server.backend.store;
     const id = await ingestConversation(server, { subject: "Solo con Yuki", count: 1, now: E2E_NOW });
     const replyAt = async () => (await page.getByTestId("action-reply").boundingBox())!.x;
     let solo = 0;
-    await scenario("one other person: Reply all keeps its place, dimmed; none in the bar; no menu; a still works", async () => {
+    const order = () => page.getByTestId("action-reply").locator("xpath=..").locator("button").evaluateAll((items) => items.map((i) => i.getAttribute("data-testid")));
+    await scenario("one other person: no Reply all anywhere, never a dimmed one; no menu; a still works", async () => {
       await selectThread(page, id, 'subject:"Solo con Yuki"');
       await expect(page.getByTestId("action-reply")).toContainText("Reply");
       await expect(page.getByTestId("action-forward")).toHaveAccessibleName("Forward");
-      await expect(page.getByTestId("action-reply-all")).toBeDisabled();
       await expect(page.getByTestId("quick-reply-all")).toHaveCount(0);
       await expect(page.getByTestId("action-reply-menu")).toHaveCount(0);
-      // the bar's order: Reply, Reply all, Forward
-      const order = await page.getByTestId("action-reply").locator("xpath=..").locator("button").evaluateAll((items) => items.map((i) => i.getAttribute("data-testid")));
-      expect(order).toEqual(["action-reply", "action-reply-all", "action-forward"]);
+      // plan 158: the toolbar's reply group is Reply and Forward, whoever's on the conversation
+      expect(await order()).toEqual(["action-reply", "action-forward"]);
       solo = await replyAt();
       // the only message never folds: nothing would be left to read, so its header is no button, has no chevron and opens nothing
       await expect(page.getByTestId("message").getByTestId("message-toggle")).toHaveCount(0);
@@ -253,23 +252,22 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       await expect(page.getByTestId("compose-body")).toBeFocused();
       await page.getByTestId("compose-discard").click();
     });
-    await scenario("someone else on it: Reply all lights up, in words on a full column, and Reply stays put", async () => {
+    await scenario("someone else on it: Reply all in the bar, the toolbar the same, in words on a full column, and Reply stays put", async () => {
       const account = (await store.accounts.list())[0]!;
       const yuki = { name: "Yuki", email: "yuki@acme.studio" };
       const { touched } = await store.sync.ingest([{ accountId: account.id, providerMsgId: "three-people", providerThreadId: "three-people", rfcMessageId: "<three-people@e2e.test>", inReplyTo: null, references: [], from: yuki, replyTo: [], to: [{ name: "", email: account.email }], cc: [{ name: "Ana", email: "ana@x.test" }], bcc: [], subject: "Con Ana también", date: E2E_NOW, snippet: "Hola a los dos", bodyText: "Hola a los dos", bodyHtml: null, bodyState: "full", listId: null, isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100 }], { applyFilters: false, now: E2E_NOW, classifier: null });
       await selectThread(page, touched[0]!, 'subject:"Con Ana también"');
       await expect(page.getByTestId("quick-reply-all")).toBeVisible();
-      await expect(page.getByTestId("action-reply-all")).toBeEnabled();
+      expect(await order()).toEqual(["action-reply", "action-forward"]);
       const words = (id: string) => page.getByTestId(id).locator("span").first().evaluate((el) => el.getBoundingClientRect().width);
-      // a full column: Reply, Archive and Delete in words; Reply all and Forward go together (here Summarize takes their room)
+      // a full column: Reply, Archive and Delete in words
       for (const id of ["action-reply", "action-archive", "action-trash"]) expect(await words(id), id).toBeGreaterThan(20);
-      expect((await words("action-reply-all")) > 1).toBe((await words("action-forward")) > 1);
       expect(Math.abs((await replyAt()) - solo)).toBeLessThanOrEqual(0.5);
-      // a narrower reader lets words go by priority (Reply all's and Forward's first, Reply's last), never a control off the column;
+      // a narrower reader lets words go by priority (Forward's first, Reply's last), never a control off the column;
       // a word that goes keeps its name for screen readers
       await page.setViewportSize({ width: 1100, height: 700 });
-      await expect.poll(() => words("action-reply-all")).toBeLessThanOrEqual(1);
-      await expect(page.getByTestId("action-reply-all")).toHaveAccessibleName("Reply all");
+      await expect.poll(() => words("action-forward")).toBeLessThanOrEqual(1);
+      await expect(page.getByTestId("action-forward")).toHaveAccessibleName("Forward");
       expect(await words("action-reply")).toBeGreaterThan(20);
       const g = await geometry(page);
       expect(Math.abs(g.end - g.right), "the last control on the column's edge").toBeLessThanOrEqual(1.5);

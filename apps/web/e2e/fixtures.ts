@@ -14,14 +14,22 @@ import { iconStub, type IconStub } from "./icon-stub";
 
 export { expect };
 
-/** Reply all or Forward from the reader's toolbar: buttons of their own beside Reply (plan 158). */
+/**
+ * Forward from the reader's toolbar; Reply all, which isn't in the toolbar (plan 158), from the bar at the conversation's end,
+ * or with a draft open (no bar then) from the palette, which converts it.
+ */
 export async function respond(page: Page, mode: "reply-all" | "forward"): Promise<void> {
-  await page.getByTestId(`action-${mode}`).click();
+  if (mode === "forward") return page.getByTestId("action-forward").click();
+  const bar = page.getByTestId("quick-reply-all");
+  if (await bar.isVisible()) return bar.click();
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.getByTestId("palette-input").fill("Reply all");
+  await page.getByRole("option", { name: /^Reply all/ }).first().click();
 }
 
 /** The same with the keyboard alone. */
 export async function respondByKeys(page: Page, mode: "reply-all" | "forward"): Promise<void> {
-  await page.getByTestId(`action-${mode}`).focus();
+  await page.getByTestId(mode === "reply-all" ? "quick-reply-all" : `action-${mode}`).focus();
   await page.keyboard.press("Enter");
 }
 
