@@ -407,3 +407,23 @@ What ai-r00 said about `actions` (plan 143) and `ask` (plan 141), and what this 
 - e2e `plain-actions.spec.ts`: no mailbox row is ever drawn in the preview; the title, button and snack counts agree; the sidebar is on Inbox; the rule panel is in the reader and Details holds the pattern; a click on the body opens the mail, and a click on the check column toggles; focus is on the list at the preview and after Apply; ⌘↩ and Esc; the undo's result text; `z` and ⌘Z.
 - e2e `ask.spec.ts`: no line starts with punctuation at 1100 × 700; the citation's hit area is 24 px or more; opening a source focuses its message, and Back to the answer restores it; provenance reads "Written with AI" with the model in the tooltip; the boundary line.
 - `design-axe.spec.ts`: the rule panel in the reader.
+
+### What building it changed
+
+- **The list reads as loading while a preview finds its first rows.** With none found yet, the empty list handed its focus to the sidebar's Inbox (plan 158's empty-list rule), so the keys were never the list's. While a preview is scanning with no row, the list shows its skeleton, never an empty state.
+- **A source row's number is the inline marker's pill**, so a citation and its row read as one number. On the chosen row it takes full ink.
+- **The keycaps are in the rule's key line** (⌘↩ Archive 6, esc Cancel), not on the header's buttons. With them, the header's title wrapped at 1100 px.
+
+### What the Codex review changed
+
+Nine points, all taken, each with a regression test that fails without its fix:
+
+1. **List layout: the rule could take the rows' room.** The panel under the header is now bounded (`min(40vh, 18rem)`) and scrolls in place, and it no longer repeats the request the header already shows (`plain-actions.spec.ts`, List layout at 1100 × 700 with Details open).
+2. **Entering a preview lost the mailbox's remembered place.** The rows were emptied before `setApp` let the list remember where it was. The place is now remembered first and the rows go after (`action-preview.test.ts`).
+3. **The ready handoff could take focus from the user.** A Tab to Cancel while the check ran was undone when the check finished. `lib/focus-intent.ts` counts the user's keys and presses (capture phase), and the handoff yields if any came after the preview opened (`action-preview.test.ts`).
+4. **A one-message source in Lumen got no focus.** Its sender card has no header button or heading. The message itself now takes focus, out of the Tab order (`ask-return.test.tsx`).
+5. **Source focus waited 30 frames and ignored newer intent.** It now waits on the page changing (a `MutationObserver`, 10 s at most). It gives way to a key or a press, another conversation, or the end of the wait (`ask-return.test.tsx`: a message drawn 700 ms later, and a user move while waiting).
+6. **An answer while mail downloads lost the "still downloading" line.** The scope line shows that line in place of the boundary (`ask-return.test.tsx`).
+7. **Back to the answer could open an empty Ask after 30 minutes.** The link is an explicit return. It brings that conversation back however long the source was read, and reopens it if the palette had let it go (`ask-return.test.tsx`, fake clock).
+8. **List layout kept the link after its page closed.** Closing List's conversation page now ends it, as opening another conversation does (`ask-return.test.tsx`).
+9. **The reader's subtitle said a running count as final.** The header and the reader now share `previewTitle`, so no count shows until the search is done (`action-preview-title.test.ts`).
