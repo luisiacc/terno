@@ -215,7 +215,8 @@ function ConditionRow({ c, onChange, onRemove }: { c: Condition; onChange: (c: C
     <div className="flex flex-col gap-1">
     <div className="flex items-center gap-1.5" data-testid="condition-row">
       <Select value={c.field} onValueChange={(f) => onChange(defaultCondition(f as Field, accounts[0]?.id ?? 1))} items={FIELDS}>
-        <SelectTrigger size="sm" className="w-36" data-testid="condition-field">
+        {/* plan 161, pass 2: as wide as its name ("Subject and first lines" says what it covers), never under the others' */}
+        <SelectTrigger size="sm" className="w-auto min-w-36 shrink-0" data-testid="condition-field">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

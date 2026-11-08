@@ -132,6 +132,9 @@ test.describe("AI filters and learned filters", () => {
       await page.getByTestId("open-filters").click();
       await page.getByTestId("condition-field").click();
       await page.getByRole("option", { name: "Subject and first lines" }).click();
+      // its whole name shows in the closed field (plan 161, pass 2: the name says what it covers)
+      await expect(page.getByTestId("condition-field")).toHaveText("Subject and first lines");
+      expect(await page.getByTestId("condition-field").locator("[data-slot=select-value]").evaluate((el) => el.scrollWidth <= el.clientWidth + 1 && el.getBoundingClientRect().right <= el.parentElement!.getBoundingClientRect().right)).toBe(true);
       await expect(page.getByTestId("condition-pattern-help")).toBeVisible();
       await page.getByTestId("condition-value").fill("uber|receipt");
       await expect(page.getByTestId("preview-count")).toHaveText(/^[1-9]\d*$/);

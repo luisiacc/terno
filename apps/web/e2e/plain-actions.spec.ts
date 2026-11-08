@@ -231,6 +231,19 @@ test.describe("actions in plain English (plan 143)", () => {
     });
   });
 
+  test("Esc with focus inside a matched HTML mail closes it back to the rule (plan 161, pass 2, Codex review #1)", async ({ app: page, server }) => {
+    await ingestConversation(server, { subject: "Shipping notice in HTML 7781", count: 1, html: 1, now: E2E_NOW - 70 * DAY });
+    await withMail(page, server);
+    await say(page, "Archive shipping notices older than a month");
+    await expect(page.getByTestId("action-apply")).toHaveText("Archive 3");
+    await rows(page).filter({ hasText: "Shipping notice in HTML 7781" }).getByTestId("row-subject").click();
+    await page.frameLocator("[data-testid=reader] iframe >> nth=-1").locator("body").click();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("action-rule")).toBeVisible();
+    await expect(page.getByTestId("action-preview")).toBeVisible();
+    await expect(page.getByTestId("action-apply")).toHaveText("Archive 3");
+  });
+
   test("a new category says so, and Undo removes it empty", async ({ app: page, server }) => {
     await withMail(page, server);
     await say(page, "Send recruiters to a Recruiting category");
@@ -343,6 +356,32 @@ test.describe("actions in plain English, List layout (plan 161)", () => {
     const list = (await page.locator('[data-keep-scroll="list"]').boundingBox())!;
     expect(list.height).toBeGreaterThanOrEqual(200);
     await expect(rows(page).first()).toBeInViewport();
+    // Codex review (pass 2) #3: narrowed, the exact pattern wraps only after a "|" or at a space, never inside a word
+    const breaks = await rule.getByTestId("action-details-pattern").evaluate((dd) => {
+      // narrower than one alternative ("shipping|"), so any break inside a word would show
+      (dd as HTMLElement).style.width = "40px";
+      const walker = document.createTreeWalker(dd, NodeFilter.SHOW_TEXT);
+      const chars: { ch: string; top: number }[] = [];
+      for (let n = walker.nextNode(); n; n = walker.nextNode())
+        for (let i = 0; i < n.textContent!.length; i++) {
+          const r = document.createRange();
+          r.setStart(n, i);
+          r.setEnd(n, i + 1);
+          chars.push({ ch: n.textContent![i]!, top: Math.round(r.getBoundingClientRect().top) });
+        }
+      const at: string[] = [];
+      for (let i = 1; i < chars.length; i++) if (chars[i]!.top > chars[i - 1]!.top + 2) at.push(chars[i - 1]!.ch);
+      return at;
+    });
+    expect(breaks.filter((ch) => ch !== "|" && ch !== " ")).toEqual([]);
+    // Codex review (pass 2) #2: a term longer than its room ends inside its chip, on one line
+    const chip = await rule.getByTestId("action-rule-term").first().evaluate((el) => {
+      const label = el.querySelector<HTMLElement>("[data-slot=chip-label]")!;
+      label.textContent = "a very long phrase the model might have written for the start of a shipping notice ".repeat(4);
+      const box = el.getBoundingClientRect(), text = label.getBoundingClientRect(), row = el.parentElement!.getBoundingClientRect();
+      return { inside: text.right <= box.right + 0.5 && box.right <= row.right + 0.5, lines: Math.round(text.height / parseFloat(getComputedStyle(label).lineHeight)) };
+    });
+    expect(chip).toEqual({ inside: true, lines: 1 });
   });
 });
 

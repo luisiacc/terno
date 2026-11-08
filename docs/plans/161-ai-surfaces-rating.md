@@ -608,3 +608,22 @@ From `ai-r01`'s `actions` and `ask` (every issue and every reason below 9, four 
 - e2e `ask.spec.ts`: after a follow-up the first turn's sources are still there and open their mail; the citation's box is at least 20 px high and its line's height is unchanged; its tooltip names the source; ↑ to a row lights its citation; Answer again's name; New question and Previous AI questions are below the sources and smaller than them; one Search older mail look in both states; the history chip is one line.
 - Unit: `rule-words.test.ts` (Details only for patterns, the field's new name), `snack` keycap.
 - `design-axe.spec.ts`: the preview with the reader's rule and the Ask answer, as before.
+
+### What building it changed
+
+- **A citation's box is as wide as its number,** not 20 × 20: at 20 px wide the number stood apart from its word and from the "." after it ("it 1 ."). It is 20 px tall, its target 24 px, and it sits on its word.
+- **Answer again's icon** is the refresh arrows, not the open circle, which read as a spinner beside the word.
+- **The rule builder's field** grows to fit "Subject and first lines" (`w-auto min-w-36`), so only that row is wider and every other keeps its width.
+- The waiting Apply is covered by a component test (`action-preview-title.test.ts`): the fake model finds too fast for e2e to see it.
+
+### What the Codex review changed
+
+Five points (`/tmp/terno-scratch/ai-pass2/actions-ask/codex-review-1.md`), all taken, each with a regression test that fails without its fix:
+
+1. **Esc inside an HTML mail didn't reach the preview.** A mail's frame keeps its keys, and `forwardNavKey` only knew List's page. In Split it now closes the preview's open conversation first, as the window's Esc does (`plain-actions.spec.ts`, focus in the frame).
+2. **A long chip could paint past its box** once a chip no longer wraps. The Chip's label is its own span that ends in "…" inside the box, before the ×; a rule's term keeps its whole text in a tooltip (`plain-actions.spec.ts`, List layout, a long term).
+3. **The exact pattern could still break inside a word** (`break-words` splits a word wider than the column). It's `break-normal` now: it breaks after a "|" or at a space, and a word wider than the column scrolls rather than splits (`plain-actions.spec.ts`, narrowed to 40 px, checking each break's character).
+4. **"Subject and first lines" was clipped** in the rule builder's 144 px field. See above (`filters.spec.ts`: the closed field shows the whole name).
+5. **The history chip's test passed without its fix** (the chip's box is a fixed 24 px however its text wraps). It measures the label's lines and the ×'s place now (`ask.spec.ts`).
+
+Review rounds stop here.

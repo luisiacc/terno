@@ -14,6 +14,7 @@ import { createPageHistory, type Page, type PageHistory } from "~/lib/page-histo
 import { getApp, markSelectionIntent, setApp, useApp, type AppState } from "~/state/app";
 import { flushDeferredRefresh, followedRename, listKey, refreshPolicy, soloSearch } from "~/state/list";
 import { noteOpen } from "~/lib/reminders";
+import { closePreviewRow } from "~/state/action-preview";
 
 export type { Page };
 
@@ -208,7 +209,7 @@ export function bootPage(): number | null {
 
 /**
  * Keys pressed inside a mail's frame never reach the document's handler:
- * Esc and ⌘[ (Ctrl+[ off Mac) go back from List's page there too, like ⌘P
+ * Esc and ⌘[ (Ctrl+[ off Mac) go back from List's page there too (and Esc from a preview's open conversation), like ⌘P
  * is handed over (a menu accelerator covers ⌘[ on desktop anyway).
  */
 export function forwardNavKey(e: KeyboardEvent): void {
@@ -219,6 +220,11 @@ export function forwardNavKey(e: KeyboardEvent): void {
   if (!back) return;
   if (returnFromMailReaderView()) { e.preventDefault(); return; }
   if (!listLayout() || currentPage() === "list") {
+    // plan 161, pass 2: a preview's matched conversation closes back to its rule from inside its mail too (Split)
+    if (e.key === "Escape" && !listLayout() && closePreviewRow()) {
+      e.preventDefault();
+      return;
+    }
     // plan 158: Esc from a search's results, whichever part of them has focus
     if (e.key === "Escape" && getApp().query) {
       e.preventDefault();

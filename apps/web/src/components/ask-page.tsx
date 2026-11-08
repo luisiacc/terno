@@ -5,7 +5,7 @@ import { Chip } from "@terno/ui/components/chip";
 import { CommandDescription, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
 import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { Clock, Copy, Mail, Plus, RotateCw, Search, Sparkles, Undo2 } from "@terno/ui/icons";
+import { Clock, Copy, Mail, Plus, RefreshCw, Search, Sparkles, Undo2 } from "@terno/ui/icons";
 import { useCommandState } from "cmdk";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { askReady, errorHelp, providerLabel } from "~/lib/ai";
@@ -41,7 +41,8 @@ const sourceLine = (source: AskSourceRef) => t("ask.source.from", { from: source
 /**
  * "…renews on 1 March.¹": a citation is a small numbered marker, a button to that source, bound to the word before it
  * and the punctuation after it (plan 161: no line starts with "."). Plan 161, pass 2: the button's own box is 20 px
- * (its margins take back what the line would grow by), its pointer target 24 px, its number full ink on the field's
+ * (as wide as its number, so it stays on its word; its margins take back what the line would grow by), its pointer
+ * target 24 px, its number full ink on the field's
  * wash; hover or focus names the source, and the source row chosen with ↑↓ lights its number here.
  */
 function AnswerText({ text, sources, chosen = null }: { text: string; sources: readonly AskSourceRef[]; chosen?: number | null }) {
@@ -60,7 +61,7 @@ function AnswerText({ text, sources, chosen = null }: { text: string; sources: r
               data-lit={lit || undefined}
               onKeyDown={stopKeys}
               onClick={() => void openSource(source)}
-              className="group/cite relative -my-1 ms-0.5 inline-grid h-5 min-w-5 place-items-center rounded-[0.45em] align-[0.05em] outline-none after:absolute after:top-1/2 after:left-1/2 after:size-6 after:-translate-1/2 focus-visible:ring-2 focus-visible:ring-ring"
+              className="group/cite relative -my-1 ms-0.5 inline-grid h-5 place-items-center rounded-[0.45em] align-[0.05em] outline-none after:absolute after:top-1/2 after:left-1/2 after:size-6 after:-translate-1/2 focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={t("ask.citation", { n, subject: source.subject })}
             />
           }
@@ -140,7 +141,7 @@ function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated
           <Button variant="outline" size="xs" data-testid="ask-copy" onKeyDown={stopKeys} onClick={() => void copy()}><Copy /> {t("ask.copy")}</Button>
           {last && !running && (
             // it asks the same question once more; the new answer comes under this one
-            <Button variant="outline" size="xs" data-testid="ask-again" onKeyDown={stopKeys} onClick={() => askQuestion(turn.question)}><RotateCw /> {t("ask.again")}</Button>
+            <Button variant="outline" size="xs" data-testid="ask-again" onKeyDown={stopKeys} onClick={() => askQuestion(turn.question)}><RefreshCw /> {t("ask.again")}</Button>
           )}
           <Tooltip>
             <TooltipTrigger render={<span tabIndex={0} data-testid="ask-provenance" className="ml-auto rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" />}>{provenanceLabel()}</TooltipTrigger>

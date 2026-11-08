@@ -72,11 +72,10 @@ test.describe("ask your mail (plan 141)", () => {
         const r = el.getBoundingClientRect();
         const [x, y] = [r.left + r.width / 2, r.top + r.height / 2];
         const at = (dx: number, dy: number) => document.elementFromPoint(x + dx, y + dy)?.closest("[data-testid=ask-citation]") === el;
-        return { height: r.height, width: r.width, corners: [at(-11, -11), at(11, -11), at(-11, 11), at(11, 11)], outside: at(0, 14) };
+        return { height: r.height, corners: [at(-11, -11), at(11, -11), at(-11, 11), at(11, 11)], outside: at(0, 14) };
       });
       // pass 2: the element itself measures 20 px, as a rater's ruler does
       expect(hit.height).toBeGreaterThanOrEqual(20);
-      expect(hit.width).toBeGreaterThanOrEqual(20);
       expect(hit.corners).toEqual([true, true, true, true]);
       expect(hit.outside).toBe(false);
       // every line of the answer is the paragraph's line height: the marker grows none of them
@@ -159,10 +158,16 @@ test.describe("ask your mail (plan 141)", () => {
       await page.getByTestId("ask-new").click();
       await expect(ask(page)).toBeFocused();
       await page.getByTestId("ask-history-row").click();
-      // its page's chip is one line, its × clear of the field's placeholder (pass 2)
-      const chip = (await page.getByTestId("palette-page").boundingBox())!;
-      expect(chip.height).toBeLessThanOrEqual(25);
-      expect(chip.x + chip.width).toBeLessThanOrEqual((await ask(page).boundingBox())!.x + 1);
+      // its page's chip is one line, its × after its words and clear of the field's placeholder (pass 2, Codex review #5)
+      const chip = await page.getByTestId("palette-page").evaluate((el) => {
+        const label = el.querySelector<HTMLElement>("[data-slot=chip-label]")!;
+        const x = el.querySelector<HTMLElement>("[data-testid=palette-back]")!.getBoundingClientRect();
+        const text = label.getBoundingClientRect();
+        return { lines: Math.round(text.height / parseFloat(getComputedStyle(label).lineHeight)), clear: x.left >= text.right - 0.5, right: x.right };
+      });
+      expect(chip.lines).toBe(1);
+      expect(chip.clear).toBe(true);
+      expect(chip.right).toBeLessThanOrEqual((await ask(page).boundingBox())!.x + 1);
       const item = page.getByTestId("ask-history-item");
       await expect(item).toHaveCount(1);
       await expect(item).toContainText("1 follow-up");

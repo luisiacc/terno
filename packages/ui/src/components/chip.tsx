@@ -32,7 +32,8 @@ function Chip({ dot, onRemove, removeLabel, removeProps, className, children, ..
       {...props}
     >
       {dot}
-      {children}
+      {/* one line (BoardUI's chip): a label longer than its room ends in "…", inside the box, before the × */}
+      <span data-slot="chip-label" className="min-w-0 truncate">{children}</span>
       {onRemove && <CloseButton size="2xs" label={removeLabel} onClick={onRemove} {...removeProps} />}
     </span>
   )

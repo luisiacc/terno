@@ -27,7 +27,10 @@ const Line = ({ children, testId }: { children: ReactNode; testId?: string }) =>
 
 const Dot = () => <span aria-hidden>·</span>;
 
-/** "a|b|c" with a break allowed after each "|" only: a long pattern wraps between its words, never inside one */
+/**
+ * "a|b|c" with a break allowed after each "|" (and at a space, between words): a long pattern wraps between its
+ * alternatives, never inside a word (`break-normal`; one word wider than the column scrolls rather than splits)
+ */
 const breakAtBars = (pattern: string): ReactNode[] => {
   const parts = pattern.split("|");
   return parts.flatMap((part, i) => (i < parts.length - 1 ? [`${part}|`, <wbr key={i} />] : [part]));
@@ -179,7 +182,7 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
               <dd className="flex min-w-0 flex-wrap items-center gap-1">
                 <span>{r.text}</span>
                 {r.terms?.map((term) => (
-                  <Chip key={term} data-testid="action-rule-term" className="font-normal">{term}</Chip>
+                  <Chip key={term} data-testid="action-rule-term" className="font-normal" title={term}>{term}</Chip>
                 ))}
               </dd>
             </div>
@@ -198,7 +201,7 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
               {ruleDetails(conditions).map((d, i) => (
                 <div key={i} className="contents">
                   <dt className="text-muted-foreground">{d.field}</dt>
-                  <dd className="min-w-0 break-words text-foreground" data-testid="action-details-pattern">
+                  <dd className="min-w-0 overflow-x-auto break-normal text-foreground" data-testid="action-details-pattern">
                     {d.negate && <span className="text-muted-foreground">{t("filters.op.notMatches")} </span>}
                     {breakAtBars(d.pattern)}
                   </dd>
