@@ -350,9 +350,6 @@
 [data-composing] [data-thread-id][data-cursor] {
   color: var(--foreground);
 }
-[data-composing] [data-thread-id][data-cursor] [data-testid="row-rail"] {
-  display: none;
-}
 /* a removal's window: the remaining rows slide up into place */
 [data-reflow] [data-thread-id] {
   transition: transform var(--motion-slow) var(--motion-ease);

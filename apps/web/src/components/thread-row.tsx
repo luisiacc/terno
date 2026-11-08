@@ -162,8 +162,8 @@ function useOwed(thread: Pick<ThreadSummary, "id">, reminderTop?: boolean) {
 
 /**
  * Plan 158, one selection language. Every chosen row has the same fill (`ROW_SHAPE`, from 4 px: the gutter it leaves
- * before the 20 px text line is the marks' column). The marks share that column, centred 12 px in: the open row's rail,
- * the unread dot, a checked row's check, never two at once. What keys or a menu act on is outlined in the focus ring.
+ * before the 20 px text line is the marks' column). The marks share that column, centred 12 px in: the unread dot or a
+ * checked row's check, never both. The open row is its fill alone (no rail: the owner's call). What keys or a menu act on is outlined in the focus ring.
  */
 export const ROW_SHAPE = "before:absolute before:inset-y-px before:right-2 before:left-1 before:rounded-(--row-radius)";
 /** j/k's place among several checked rows, and the row a menu is for: the focus ring, inside the shape */
