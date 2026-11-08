@@ -233,7 +233,7 @@ export const BOUNDARY_STEPS: readonly BoundaryStep[] = [
   // card's fill carries a wash of the ink (generate.ts --ai-card-wash), a step off the reader, and off Lumen's reader card;
   // the ring holds against the washed fill
   { edge: ["tint", AI_CARD_WASH], behind: ["background"], min: 1.2, mode: "dark", why: "an AI card's washed fill on the reader (dark)" },
-  { edge: ["tint", AI_CARD_WASH], behind: ["card"], min: 1.05, mode: "dark", why: "an AI card's washed fill on Lumen's reader card (dark)" },
+  { edge: ["tint", AI_CARD_WASH], behind: ["card"], min: 1.1, mode: "dark", why: "an AI card's washed fill on Lumen's reader card (dark)", except: { nord: { min: 1.05, why: "Nord's tint sits a step under its card: the ring (1.5:1) bounds the card there" } } },
   { edge: ["tint", AI_CARD_WASH, "card-edge"], behind: ["tint", AI_CARD_WASH], min: HAIRLINE_FLOOR, mode: "dark", why: "an AI card's ring against its washed fill (dark)", except: { monokai: { min: 1.48, why: "its washed fill stands off the reader by itself at 1.33:1" } } },
 ];
 

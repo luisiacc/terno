@@ -110,6 +110,8 @@ export interface AiCommit {
   /** plan 161, pass 2: what this version was asked (the strip shows it, Regenerate asks it again), and its notes */
   instruction?: string;
   notes?: string;
+  /** plan 161, pass 3: this version is what came before a Stop */
+  stopped?: boolean;
   text: string;
 }
 
@@ -887,7 +889,7 @@ function commit(key: string, how: "replace" | "below", result: Extract<AiCompose
   const refined = spec.kind === "refine" && !spec.regenerate && prior !== undefined;
   const instruction = refined ? prior.instruction : spec.instruction;
   const notes = refined ? prior.notes : spec.notes;
-  const stack = [...(prior?.stack ?? []), { doc: inserted.doc, subject, before, beforeDoc: inserted.before, checks: result.checks, text: c.snapshot().text, instruction, ...(notes !== undefined ? { notes } : {}) }];
+  const stack = [...(prior?.stack ?? []), { doc: inserted.doc, subject, before, beforeDoc: inserted.before, checks: result.checks, text: c.snapshot().text, instruction, ...(notes !== undefined ? { notes } : {}), ...(o.stopped ? { stopped: true } : {}) }];
   restores.delete(key);
   // what the draft holds now, as a send will compare it: a replace is all of the text, an insert only what it wrote
   recordProvenance(key, how === "replace" ? c.snapshot().text : result.text);
@@ -898,8 +900,8 @@ function commit(key: string, how: "replace" | "below", result: Extract<AiCompose
 }
 
 /** What going back to a version brings with it: its checks, and what it was asked (plan 161, pass 2). */
-function versionOf(v: AiCommit): Pick<AiStrip, "checks"> & Partial<Pick<AiStrip, "instruction" | "notes">> {
-  return { checks: v.checks, ...(v.instruction !== undefined ? { instruction: v.instruction } : {}), ...(v.notes !== undefined ? { notes: v.notes } : {}) };
+function versionOf(v: AiCommit): Pick<AiStrip, "checks" | "stopped"> & Partial<Pick<AiStrip, "instruction" | "notes">> {
+  return { checks: v.checks, stopped: v.stopped === true, ...(v.instruction !== undefined ? { instruction: v.instruction } : {}), ...(v.notes !== undefined ? { notes: v.notes } : {}) };
 }
 
 /** Replace, Insert below, Insert: the suggestion goes in, one undo step. */
@@ -922,8 +924,11 @@ export function placePartial(key: string) {
 }
 
 function emptyUsed(): AiStrip["used"] {
-  const target = writingTarget(aiSettings());
-  return { levels: [], personFromOtherAccount: false, examples: 0, pastConversations: 0, mentions: 0, threadMessages: 0, history: "none", learning: false, inboundSnippetOnly: false, language: "", languageReason: "unknown", provider: target.provider, model: aiSettings()?.model ?? "", reused: false };
+  const ai = aiSettings();
+  const target = writingTarget(ai);
+  // the writing task's own model where one was chosen, with its provider (Codex review of pass 3: Settings' first row's was named)
+  const model = ai?.tasks.writing?.model ?? ai?.model ?? "";
+  return { levels: [], personFromOtherAccount: false, examples: 0, pastConversations: 0, mentions: 0, threadMessages: 0, history: "none", learning: false, inboundSnippetOnly: false, language: "", languageReason: "unknown", provider: target.provider, model, reused: false };
 }
 
 /** Discard: the document never had it. */
@@ -1144,6 +1149,8 @@ function retake(key: string, r: Restore): void {
   r.back = false;
   if (r.subject !== null && draftOf(key)?.subject === r.subject) editDraft(key, { subject: "", subjectEdited: false });
   if (r.left) update(key, { phase: "strip", strip: r.left });
+  // plan 161, pass 3: a stopped write's Undo, again: the field with its instruction, as the first time
+  else if (r.strip.stopped) update(key, { phase: "input", instruction: r.strip.instruction, strip: null, rewrite: false });
   else remove(key);
   recordProvenance(key, bodyNow(key));
 }
@@ -1170,6 +1177,8 @@ function stillOurs(key: string, r: Restore): boolean {
   const s = session(key);
   if (restores.get(key) !== r) return false;
   const shown = r.back ? r.strip : r.left;
+  // plan 161, pass 3: a stopped write's Undo leaves the field with its instruction, not nothing (Codex review)
+  if (s && shown === null) return s.phase === "input" && !s.run && s.strip === null;
   return s ? s.phase === "strip" && !s.run && s.strip === shown : shown === null;
 }
 
@@ -1177,7 +1186,7 @@ function reinstate(key: string, r: Restore): void {
   r.back = true;
   if (r.subject !== null && draftOf(key)?.subject === "") editDraft(key, { subject: r.subject, subjectEdited: true });
   if (!session(key)) useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: { ...newSession(key, { opened: r.opened, phase: "strip" }), lastSpec: r.lastSpec } } }));
-  update(key, { phase: "strip", strip: r.strip });
+  update(key, { phase: "strip", strip: r.strip, instruction: "", rewrite: false });
   recordProvenance(key, bodyNow(key));
   focusEditor(key);
 }

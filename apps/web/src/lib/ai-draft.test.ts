@@ -413,6 +413,50 @@ describe("§10.4: binding and races", () => {
     expect(last("ai.compose").params.instruction).toBe("ask her for the address");
   });
 
+  it("plan 161, pass 3 (Codex review): a stopped write edited, then its Undo: the snack's Undo brings the edit and the stopped strip back", async () => {
+    const { key, c } = await writing();
+    delta(key, "Hi");
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    store.stop(key);
+    c.type(" mine");
+    expect(session(key)!.strip!.edited).toBe(true);
+    store.undoCommit(key);
+    expect(c.text).toBe("");
+    expect(session(key)!.phase).toBe("input");
+    const { useSnack, runUndo } = await import("./snack");
+    await runUndo(useSnack.getState().undo!);
+    expect(c.text).toBe("Hi mine");
+    expect(session(key)!.phase).toBe("strip");
+    expect(session(key)!.strip!.stopped).toBe(true);
+    expect(session(key)!.strip!.edited).toBe(true);
+  });
+
+  it("plan 161, pass 3 (Codex review): a stopped write rewritten, then Undo: it's the stopped version again, and Undo once more gives the field back", async () => {
+    const { key, c } = await writing();
+    delta(key, "Hi");
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    store.stop(key);
+    store.refine(key, "shorter");
+    last("ai.compose").resolve(done("Hey."));
+    await tick();
+    expect(session(key)!.strip!.stopped).toBeFalsy();
+    store.undoCommit(key);
+    expect(c.text).toBe("Hi");
+    expect(session(key)!.strip!.stopped).toBe(true);
+    store.undoCommit(key);
+    expect(c.text).toBe("");
+    expect(session(key)!.phase).toBe("input");
+  });
+
+  it("plan 161, pass 3 (Codex review): a stopped write names the writing task's own model, not Settings' first row's", async () => {
+    setApp({ settings: { ai: { provider: "fake", model: "demo", local: true, tasks: { writing: { provider: "fake", model: "chosen-writing-model" } }, keys: {}, hasKey: false, keyConfirmed: false, profiles: {} } } as never });
+    const { key } = await writing();
+    delta(key, "Hi");
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    store.stop(key);
+    expect(session(key)!.strip!.used.model).toBe("chosen-writing-model");
+  });
+
   it("plan 161, pass 3: stopped over the user's notes, what came goes below them, and Undo leaves the notes and the instruction", async () => {
     const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: "Ana Pérez <ana@example.test>", subject: "Re: Contract", bodyText: "my notes" });
     const { c } = editor(key, "my notes");
