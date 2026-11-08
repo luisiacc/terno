@@ -875,3 +875,41 @@ After pass 2 (the three areas, landed together; full suite green once its flaky 
 - **AI settings:** Esc in a sub-edit closes the whole dialog; the precedence sentence reads as adopting the recipient's voice; the generated rule leaves focus on the dialog; the compact form crowds out its matches.
 
 No finding goes against a product or AI rule. One may touch the palette's default (a sentence in ⌘K): if a fix changes what Enter does for non-AI input, it goes to the owner.
+
+## Pass 3: Today, Writing style and the AI filter
+
+One of three parallel passes on `ai-r02`'s findings. This one takes `today` and `ai_settings`. ⌘J, the summary, follow-ups, Reply ready and the shared AI language (one `AiProvenance`, one Copy button in `ai-card.ts`) belong to one other pass; actions and Ask to the third. Plan 145's rules stand: only unread newsletters are archived, every one starts ticked, and Needs you shows the newest 12.
+
+### Today
+
+- **One sentence for the counts.** Seven raters in all four styles read "41 need you · the newest 12 here · All 165 waiting in Inbox" against the sidebar's Inbox 100 and the Inbox's "100 unread · 165 to reply to". The line now says what the list is, and one way to the rest, with no second total: "The newest 12 of 41 that need you · More in To reply to" when the list is capped, "9 need you" when it isn't. The 41 is the sidebar's Today count, in the ink at medium weight; the link uses the Inbox filter's own name ("To reply to", `list.filter.waiting`), not a count, so nothing on the line can be read against Inbox's 100. Its tooltip says why it holds more: it lists every Inbox conversation waiting for a reply, services' too. A real "Show all 41" isn't possible without lifting plan 145's 12-row cap; that goes to the owner.
+- **The reason, quiet.** "Your turn" and "New from a contact" go from the foreground ink to the row's secondary ink (`quiet`, the snippet's, AA on every row fill), keeping the medium weight and the " · " after it: a label apart from the mail's words by weight, and under the subject (the ink) in strength. No new colour.
+- **The digest row has a resting shape.** In Lumen it read as a section label until selected. At rest it is ringed inside its row shape in `card-edge` (the AI card's edge, a whole pixel), so it reads as a row you can open in every design; hover and selection fill it as before. A new `BOUNDARY_STEPS` entry holds the ring on the list (`pane`) at the hairline floor.
+- **Quieter ticks.** The digest's 24 px targets stay; the box inside is outlined at rest in both states, its tick drawn in the ink on the card, not a solid primary square (a `quiet` look of the shared `Checkbox`'s `target`, recorded in `BOARDUI.md`). The unticked box's edge is the hover edge, so it doesn't vanish beside a ticked one.
+- **Provenance in the header.** The digest's "Written by qwen3:8b. It can make mistakes." leaves the list's foot: the header's date line says "Written with AI" (the one label, `provenanceLabel`) with the sparkle, and the model and caution are its tooltip. When `AiProvenance` lands in `ai-card.ts` (the other pass), this span is the one place in the digest to swap for it: `digest-page.tsx`, the `digest-provenance` trigger in the header.
+- **The open arrow at rest.** Each digest row's arrow shows at rest, in the secondary ink, so opening one is visible (three raters), and its right edge is the Archive button's (the dates no longer stop 24 to 45 px short of it).
+
+### Create a filter with AI
+
+- **Esc steps back one level.** In Rules, Esc in a sub-edit goes up one level before anything closes: with the request open again over a built rule (Edit request), Esc folds the box back to the rule, focus on Edit request; with the caret in one of the rule's text fields (its name, a value, Forward to, the request), Esc leaves the field for the rule's row in the list (New, for a rule not in the list yet). Esc anywhere else (the list, a heading, a button) closes, keeping an unsaved AI rule as before. A field's own Esc (a suggestion list) goes first.
+- **Focus after the AI fills a rule.** The folded box's line ("Domain is “uber.com” → archive.") is a heading, and takes focus when the rule arrives (programmatic: no ring), so a screen reader hears what was built and Tab goes on into the rule. It isn't a field, so the capture's one Esc after `a11` still closes Rules.
+- **The matches in view at 1100x700.** The folded box's review hint ("Review and adjust it below before saving.") runs on after the rule on its line instead of a line of its own; the form's section gaps go from 20 to 16 px; the Name label sits beside its field; and the dialog may take 92 % of the window's height (it was 88 %). At 1100x700 that leaves the match count and at least three matches above the footer.
+
+### Writing style
+
+- **Esc steps back one level.** In the style editor, Esc is Cancel when nothing changed (focus back on that profile's Edit); with a change it asks "Discard your changes?" (Discard / Keep editing, the page's `ConfirmDialog`), so Esc never loses typing. On the Writing style page, Esc goes back to Drafting (as the back button does) with focus on "Writing style…"; Esc there closes Settings. The capture's last Esc (after `a12`) now goes back to Drafting instead of closing; nothing is shot after it, so no capture change.
+- **Precedence as your writing.** "Drafts follow your style with that person, else with their company, else in that account, else your usual one." (es: "Los borradores siguen tu estilo con esa persona; si no, con su empresa; si no, en esa cuenta; si no, el habitual."): whose style it is, yours, is the sentence's subject.
+- **Tighter, with How it learns in the first view.** How it learns moves up, under Your style; Companies and People, the optional overrides, follow it as two compact rows. The overview's and the groups' gaps tighten. At 1440x900 the whole How it learns group, Clear all included, is in view without scrolling.
+
+### Not taken, and why
+
+- **Show all 41 in Today:** plan 145 caps Needs you at 12. The owner's call.
+- **Select all / none on the digest** (Codex, four styles, low): not in this pass's must-fix list; the count line says what goes.
+- **Quoting the request in the filter's folded box**, **bordered Edit / Reset**, **renaming Count again**, **people by name**: low findings outside this pass's list.
+- **One Undo after the digest's Archive** (the page's and the snack's): the snack is the app's one Undo surface; the page's is what a keyboard user reaches without the snack (pass 2). Left for the shared AI language pass.
+
+### Tests
+
+- Unit: `TodayLine` capped and not (no second total, the link's name), the reason's ink, the digest page's provenance in the header (and none at the foot), the quiet checkbox's look, `contrast.test.ts`'s new step.
+- e2e: `filters.spec.ts`: Edit request then Esc folds and Rules stays open; Esc in the name field moves focus to the list and Rules stays; Esc again closes; focus on the rule's line after the AI fills it; the match count and three matches in view at 1100x700. `ai-draft.spec.ts`'s Writing style part: Esc in the unchanged editor cancels with focus on Edit and Settings open; Esc with a change asks, Keep editing keeps the text; Esc on the page goes back to Drafting, a second closes Settings; How it learns in view at 1440x900. `today.spec.ts`: the header line. Each Esc test fails without the fix.
+- `design-axe.spec.ts` for Today, the digest, Rules and Writing style; screenshots in every design, light and dark, 1440x900 and 1100x700, under `/tmp/terno-scratch/ai-pass3/today-settings/`.
