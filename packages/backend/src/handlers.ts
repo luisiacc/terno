@@ -24,6 +24,8 @@ import { beginGoogleRemoval, googleGrantOf, removalMark, removedSince, revokesSe
 
 /** How long a recipient lookup waits for the index's first build (then answers with what it has: nothing). */
 const FIRST_BUILD_WAIT_MS = 250;
+/** plan 161: the sender check's wait for a cold index (it isn't typing: the preview shows meanwhile) */
+const SENDERS_WAIT_MS = 2000;
 
 /** More ids than this and a bulk command runs in time-budgeted slices (plan 02 §6, plan 06). */
 const ONE_GO = 20;
@@ -1120,6 +1122,18 @@ export function createHandlers(b: Backend): Handlers {
         r = b.autocomplete.suggestRecipients(query, { exclude, accountId, limit });
       }
       return r;
+    },
+    "senders.named": async ({ phrases }) => {
+      // a preview's check, off its list: the index restores or builds once (as a draft's would), and a cold one waits a
+      // little, then names nobody (a name is only said when the mailbox has it)
+      let r = b.autocomplete.sendersNamed(phrases);
+      if (r.state === "cold") {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([b.warmAutocomplete().catch(() => {}), new Promise((resolve) => (timer = setTimeout(resolve, SENDERS_WAIT_MS)))]);
+        clearTimeout(timer);
+        r = b.autocomplete.sendersNamed(phrases);
+      }
+      return { named: r.named, ready: r.state === "ready" };
     },
     "compose.recipientInitials": async ({ accountId }) => {
       await b.warmAutocomplete();

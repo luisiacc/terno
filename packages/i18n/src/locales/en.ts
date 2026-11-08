@@ -2501,6 +2501,7 @@ It contains none of your mail, contacts, settings or keys.
   "action.undone.star": { one: "Took the star off # conversation", other: "Took the star off # conversations" },
   "action.undone.moveToCategory": { one: "Moved # conversation back out of {category}", other: "Moved # conversations back out of {category}" },
   "action.undone.moveToFolder": { one: "Moved # conversation back where it was", other: "Moved # conversations back where they were" },
+  "action.sender.notLooked": "Your sentence names {name}, but this rule doesn’t look at the sender. Check it below, or edit it as a rule.",
   "action.rule.readAs": "Terno read it as",
   "action.rule.where": "Where",
   "action.rule.anyOf": { one: "mentions", other: "mentions any of" },

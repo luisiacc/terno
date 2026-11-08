@@ -41,6 +41,9 @@ export function describeRule(rule: FilterRule, names: Names): string {
   return upperFirst(t("filters.say.rule", { actions, conditions }));
 }
 
+/** The fields that read who sent it ("Anywhere" reads the sender too). */
+const SENDER_FIELDS: ReadonlySet<Condition["field"]> = new Set(["from", "fromDomain", "listId", "text"]);
+
 /** What a request names, by what a rule would need for it: English and Spanish, as the AI box takes both. */
 const ASKS: { want: RegExp; has: (rule: FilterRule) => boolean }[] = [
   { want: /\barchiv/i, has: (r) => r.actions.some((a) => a.type === "archive" || a.type === "moveToFolder") },
@@ -53,7 +56,7 @@ const ASKS: { want: RegExp; has: (rule: FilterRule) => boolean }[] = [
     has: (r) => r.conditions.some((c) => c.field === "ageDays"),
   },
   // a sender: an address, a domain, or "from …" (in Spanish "de" says too many things to read as one)
-  { want: /@|\b[\w-]+\.(com|net|org|io|dev|app|co|es|mx|me)\b|\bfrom\b|\bde parte de\b|\benviad[oa]s? por\b/i, has: (r) => r.conditions.some((c) => (c.field === "from" || c.field === "fromDomain" || c.field === "listId") && !c.negate) },
+  { want: /@|\b[\w-]+\.(com|net|org|io|dev|app|co|es|mx|me)\b|\bfrom\b|\bde parte de\b|\benviad[oa]s? por\b/i, has: (r) => r.conditions.some((c) => SENDER_FIELDS.has(c.field) && c.field !== "text" && !c.negate) },
 ];
 /** an action a request can name at all, so a rule that acts on a request naming none wasn't asked to */
 const ANY_ACTION = /\barchiv|\b(delete|trash|bin|spam|read|star|label|tag|move|file|forward|put|categor)|\bborr[ae]|\belimin|papelera|le[ií]d|destac|estrella|etiquet|\bmuev|\bmover\b|reenv|\bpon(er|lo|la|los|las)?\b|categor/i;
@@ -66,6 +69,76 @@ const ANY_ACTION = /\barchiv|\b(delete|trash|bin|spam|read|star|label|tag|move|f
 export function ruleMisses(prompt: string, rule: FilterRule): boolean {
   if (!ANY_ACTION.test(prompt)) return true;
   return ASKS.some((a) => a.want.test(prompt) && !a.has(rule));
+}
+
+// --- the sender check (plan 161, the owner: "if we can do it without using AI, reliably, then yes") ---
+
+/** top levels a domain in a sentence ends in: a word with a dot and one of these is a domain ("uber.com"), not "e.g." or "Node.js" */
+const TLDS = new Set(["com", "net", "org", "io", "dev", "app", "co", "es", "mx", "me", "ai", "us", "uk", "de", "fr", "it", "nl", "pt", "br", "ar", "cl", "pe", "uy", "ve", "ec", "bo", "py", "cr", "gt", "do", "pr", "ca", "au", "nz", "ie", "ch", "at", "be", "se", "no", "dk", "fi", "pl", "eu", "jp", "in", "info", "biz", "edu", "gov", "gob", "tv", "news", "email", "shop", "store", "xyz", "tech", "studio", "page", "cloud", "online", "site"]);
+const ADDRESS = /[\p{L}\p{N}._%+'-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,}/gu;
+const DOMAIN = /(?<![\p{L}\p{N}._%+@-])(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?\.)+(\p{L}{2,})(?![\p{L}\p{N}-]|\.[\p{L}\p{N}])/gu;
+/** a sentence's words and the punctuation that ends a phrase */
+const TOKEN = /[\p{L}\p{N}][\p{L}\p{N}&'’.@_+-]*[\p{L}\p{N}]|[\p{L}\p{N}]|[,;:!?()"“”«»]/gu;
+/** what a sender is said after */
+const FROM = new Set(["from", "de", "del"]);
+/** skipped before a name: "from the …", "de mi …" */
+const DETERMINER = new Set(["the", "my", "our", "your", "his", "her", "their", "a", "an", "el", "la", "los", "las", "lo", "mi", "mis", "tu", "tus", "su", "sus", "nuestro", "nuestra", "nuestros", "nuestras", "un", "una", "unos", "unas"]);
+/** words that end a name, or say it was never one: connectives, time, quantity ("from now on", "de hace más de 30 días") */
+const STOP = new Set([
+  "and", "or", "but", "nor", "older", "newer", "than", "that", "which", "who", "with", "without", "in", "into", "to", "on", "at", "about", "before", "after", "since", "until", "more", "less", "over", "under", "if", "when", "unless", "except", "excluding", "not", "is", "are", "was", "were", "be", "been", "all", "any", "every", "each", "some", "now", "today", "yesterday", "tomorrow", "tonight", "last", "this", "these", "those", "next", "past", "ago", "earlier", "later", "recent", "recently", "old", "new", "day", "days", "week", "weeks", "month", "months", "year", "years", "hour", "hours", "weekend", "too", "also", "only", "just", "as", "so", "for", "by", "of",
+  "y", "e", "o", "u", "ni", "pero", "con", "sin", "en", "a", "al", "para", "por", "que", "cuando", "si", "hace", "más", "mas", "menos", "antes", "después", "despues", "desde", "hasta", "excepto", "salvo", "no", "todo", "todos", "toda", "todas", "cada", "algún", "algunos", "hoy", "ayer", "mañana", "anoche", "este", "esta", "esto", "estos", "estas", "ese", "esa", "esos", "esas", "último", "últimos", "última", "últimas", "ultimo", "ultimos", "pasado", "pasados", "pasada", "pasadas", "próximo", "próxima", "proximo", "ahora", "adelante", "antiguos", "antiguas", "nuevo", "nuevos", "nueva", "nuevas", "día", "días", "dia", "dias", "semana", "semanas", "mes", "meses", "año", "años", "hora", "horas", "también", "solo", "sólo", "como",
+]);
+/** a phrase is at most this many words; at most this many phrases are looked up (the store's SENDER_PHRASES) */
+const PHRASE_WORDS = 3;
+const PHRASES = 4;
+
+/**
+ * What a sentence says about who sent the mail, with no model: the addresses and domains in it (`sure`), and the words
+ * after "from", "de" or "del" that could be a sender's name (`phrases`, up to three words each), which count only once
+ * the mailbox has them (`senders.named`). English and Spanish.
+ */
+export function sendersInSentence(sentence: string): { sure: string[]; phrases: string[] } {
+  const sure: string[] = [];
+  const add = (list: string[], x: string) => {
+    if (!list.some((y) => y.toLowerCase() === x.toLowerCase())) list.push(x);
+  };
+  for (const m of sentence.matchAll(ADDRESS)) add(sure, m[0]);
+  const rest = sentence.replace(ADDRESS, " ");
+  for (const m of rest.matchAll(DOMAIN)) if (TLDS.has(m[1]!.toLowerCase())) add(sure, m[0]);
+  const phrases: string[] = [];
+  const tokens = [...sentence.matchAll(TOKEN)].map((m) => m[0]);
+  for (let i = 0; i < tokens.length && phrases.length < PHRASES; i++) {
+    if (!FROM.has(tokens[i]!.toLowerCase())) continue;
+    let j = i + 1;
+    while (j < tokens.length && DETERMINER.has(tokens[j]!.toLowerCase())) j++;
+    const words: string[] = [];
+    for (; j < tokens.length && words.length < PHRASE_WORDS; j++) {
+      const w = tokens[j]!;
+      const low = w.toLowerCase();
+      // punctuation, another "from", a word of time or a connective, a number, an address or a domain: the name ends
+      if (!/[\p{L}]/u.test(w) || FROM.has(low) || STOP.has(low) || /[@.]/.test(w)) break;
+      words.push(w);
+    }
+    if (words.length) add(phrases, words.join(" "));
+  }
+  return { sure, phrases };
+}
+
+/** The senders a sentence names for certain: its addresses and domains, and the phrases the mailbox has (in its order). */
+export interface SendersNamed {
+  sure: string[];
+  names: string[];
+}
+
+/**
+ * Plan 161: what to say when the sentence names a sender and the rule doesn't look at one (no `from`, `fromDomain`,
+ * `listId` or `text` condition, a "not" one included): the first sender it names, or null. An address or domain the rule
+ * holds anywhere (a recipients condition) isn't a sender it forgot.
+ */
+export function senderNotLooked(conditions: readonly Condition[], named: SendersNamed | null): string | null {
+  if (!named || conditions.some((c) => SENDER_FIELDS.has(c.field))) return null;
+  const values = conditions.map((c) => String(c.value).toLowerCase());
+  return named.sure.find((x) => !values.some((v) => v.includes(x.toLowerCase()))) ?? named.names[0] ?? null;
 }
 
 /** A condition's operator with its sense, as the operator menu holds both (plan 161: no separate "not" toggle). */

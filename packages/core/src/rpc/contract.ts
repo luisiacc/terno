@@ -1201,6 +1201,11 @@ export const contract = {
   /** Conditional on the row as it was seen. Null: refused, and the row isn't what it was. `to` and `cc`: who a reply goes to now. */
   "ai.replyAct": m<PreparedReply | null>()(z.object({ threadId: id, rowId: z.string().min(1).max(64), revision: z.number().int().min(0), action: z.enum(["use", "restore", "dismiss", "undismiss"]), to: z.array(address).max(MAX_RECIPIENTS).default([]), cc: z.array(address).max(MAX_RECIPIENTS).default([]), timezone: z.string().min(1).max(100).default("UTC") })),
   "ai.replyStatus": m<{ blockedBy: { kind: AiErrorKind } | null }>()(empty),
+  /**
+   * Plan 161: which phrases of a sentence (after "from" or "de") name someone who has written to you, from the
+   * autocomplete index (exact tokens, in memory; no model). `ready: false`: the index isn't there yet, and nobody's named.
+   */
+  "senders.named": m<{ named: string[]; ready: boolean }>()(z.object({ phrases: z.array(z.string().trim().min(1).max(100)).min(1).max(4) }), { timeoutMs: 5000 }),
   /** Plan 143: a sentence into a preview. It only reads: nothing changes until `ai.actionApply`, from the connection that saw it. */
   "ai.actionStart": m<AiActionStart>()(z.object({ requestId, sentence: z.string().trim().min(1).max(ASK_QUESTION_MAX), conversationId: id.optional(), timezone: z.string().min(1).max(100) }), { timeoutMs: 300_000 }),
   "ai.actionPage": m<{ items: ThreadSummary[]; total: number; unticked: number[] }>()(z.object({ previewId: z.string().min(1).max(64), offset: z.number().int().min(0), limit: z.number().int().min(1).max(500), leftOut: z.boolean() })),

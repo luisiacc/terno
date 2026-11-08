@@ -852,7 +852,7 @@ export class ContactIndex {
    * sentence ("tom") either is someone's token or isn't, and `suggest` would answer "tomorrow" with Tomás. Entries are
    * sorted, so the exact ones open each range and the walk stops there.
    */
-  resolveExact(token: string, o: { accountId?: number; limit?: number } = {}): ContactHit[] {
+  resolveExact(token: string, o: { accountId?: number; limit?: number; received?: boolean } = {}): ContactHit[] {
     const limit = Math.max(1, Math.min(o.limit ?? 8, 20));
     // "jean-luc" is two tokens here: the first says who
     const t = fold(token.trim()).split(TERM_SPLIT).find(Boolean)?.slice(0, MAX_TOKEN);
@@ -863,6 +863,8 @@ export class ContactIndex {
     const take = (id: number) => {
       const f = this.flags[id]!;
       if (f & DEAD || f & OWN || (f & SPAM && !(this.sent[id]! > 0))) return;
+      // plan 161: someone in mail you received (a sender check), not only someone you wrote to
+      if (o.received && !(this.recv[id]! > 0)) return;
       found.add(id);
     };
     const m = this.main;

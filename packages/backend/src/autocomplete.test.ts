@@ -68,6 +68,20 @@ describe("autocomplete over RPC", () => {
     expect((await client.call("compose.suggestRecipients", { query: "carl" })).items).toHaveLength(1);
   });
 
+  it("senders.named (plan 161): a cold index is warmed and waited for; a name's start or a domain's own label, from someone who wrote", async () => {
+    const { backend, client, accountId } = await setup();
+    await backend.ingestSliced([
+      msg({ accountId, from: { name: "Uber Receipts", email: "uber.receipts@uber.com" }, to: [me] }),
+      msg({ accountId, from: { name: "Morning Brew", email: "crew@morningbrew.test" }, to: [me] }),
+      // someone only written to isn't a sender
+      msg({ accountId, from: me, to: [ana], isSent: true, inInbox: false }),
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(backend.autocomplete.report.state).toBe("cold");
+    expect(await client.call("senders.named", { phrases: ["Uber older", "Brew", "Ana", "bank"] })).toEqual({ named: ["Uber"], ready: true });
+    expect(await client.call("senders.named", { phrases: ["morning brew team", "uber"] })).toEqual({ named: ["morning brew", "uber"], ready: true });
+  });
+
   it("the setting turns body suggestions off (model and snapshot gone) and on again", async () => {
     const { backend, client, accountId, dir } = await setup();
     await backend.ingestSliced([1, 2, 3, 4].map(() => msg({ accountId, from: me, to: [ana], isSent: true, inInbox: false, bodyText: "Let me know if you have any questions." })));

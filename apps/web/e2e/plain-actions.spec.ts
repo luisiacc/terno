@@ -349,6 +349,36 @@ test.describe("actions in plain English (plan 143)", () => {
     }
   });
 
+  test("a sender the sentence names and the rule doesn't look at is said beside the rule, without a model; Apply still works (plan 161, the owner)", async ({ app: page, server }) => {
+    await ingestConversation(server, { subject: "Your trip receipt 5521", count: 1, now: E2E_NOW - 3 * DAY });
+    await withMail(page, server);
+    // a name the mailbox doesn't have isn't one (the same rule, the same rows)
+    await say(page, "Archive receipts from Zyxwbank");
+    await expect(page.getByTestId("action-conditions")).toBeVisible();
+    await page.waitForTimeout(500);
+    await expect(page.getByTestId("action-sender")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("action-preview")).toHaveCount(0);
+    // Uber Receipts (uber.com) has written to this mailbox; the offline model's rule looks only at the subject
+    await say(page, "Archive receipts from Uber");
+    const said = page.getByTestId("action-rule").getByTestId("action-sender");
+    await expect(said).toHaveText("Your sentence names Uber, but this rule doesn’t look at the sender. Check it below, or edit it as a rule.");
+    // beside the rule: above what Terno read it as
+    expect((await said.boundingBox())!.y).toBeLessThan((await page.getByTestId("action-conditions").boundingBox())!.y);
+    await expect(page.getByTestId("action-apply")).toBeEnabled();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/sender-split-light.png` });
+    await page.getByTestId("action-apply").click();
+    await expect.poll(() => sqlDb(server.backend.store).get<{ in_inbox: number }>("SELECT in_inbox FROM threads WHERE subject = ?", "Your trip receipt 5521")?.in_inbox).toBe(0);
+    await expect(page.getByTestId("action-preview")).toBeHidden();
+    // the demo's own sentence names nobody: nothing said
+    await say(page, "Archive shipping notices older than a month");
+    await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
+    await expect(page.getByTestId("action-conditions")).toBeVisible();
+    await expect(page.getByTestId("action-sender")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("action-preview")).toHaveCount(0);
+  });
+
   test("what can't be done, and what nothing matches, stay on the page", async ({ app: page, server }) => {
     await withMail(page, server);
     await say(page, "Forward recruiters to my boss");
@@ -381,6 +411,17 @@ test.describe("actions in plain English, List layout (plan 161)", () => {
     await expect(page.getByTestId("action-apply")).toHaveText("Archive 1");
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("action-preview")).toHaveCount(0);
+  });
+
+  test("List says the sender check under its header, beside the rule (plan 161, the owner)", async ({ app: page, server }) => {
+    await ingestConversation(server, { subject: "Your trip receipt 5521", count: 1, now: E2E_NOW - 3 * DAY });
+    await withMail(page, server);
+    await say(page, "Archive receipts from Uber");
+    const rule = page.getByTestId("action-preview").getByTestId("action-rule");
+    await expect(rule.getByTestId("action-sender")).toHaveText(/^Your sentence names Uber, but this rule doesn’t look at the sender\./);
+    await expect(rule.getByTestId("action-sender")).toBeInViewport();
+    await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toBeEnabled();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/sender-list-light.png` });
   });
 
   test("the rule sits under the header, bounded: Details open, the rows keep their room (Codex review #1)", async ({ app: page, server }) => {

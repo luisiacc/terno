@@ -8,6 +8,7 @@ import { deferred, trackJob, undoAction } from "./actions";
 import { localized } from "./i18n";
 import { registerUndo, snack } from "./snack";
 import { installFocusIntent } from "./focus-intent";
+import { sendersInSentence } from "./rule-words";
 
 export { useActionPreview };
 
@@ -105,7 +106,8 @@ export function installActionPreview(): void {
 /** The page's part: what came of a sentence. The preview opens with its first rows; anything else stays on the page. */
 export function opened(r: Extract<AiActionStart, { status: "preview" }>, sentence = ""): void {
   const { preview } = r;
-  useActionPreview.setState({ preview, sentence: sentence.trim(), future: (preview.plan.future || preview.plan.action.type === "spam") && preview.keep.kind === "ok", checking: false, consent: null, checkError: null, applying: false });
+  useActionPreview.setState({ preview, sentence: sentence.trim(), future: (preview.plan.future || preview.plan.action.type === "spam") && preview.keep.kind === "ok", checking: false, consent: null, checkError: null, applying: false, senders: null });
+  void noteSenders(preview.previewId, sentence);
   // plan 161: the sidebar on the place the rule looks in (archive only ever looks in the Inbox)
   enterPreview(preview.previewId, inboxOnly(preview) ? "inbox" : "all");
   const heard = early?.previewId === preview.previewId ? early : null;
@@ -117,6 +119,22 @@ export function opened(r: Extract<AiActionStart, { status: "preview" }>, sentenc
   }
   took(heard && "preview" in heard ? heard.preview : preview);
   void reloadList({ keepSelection: true, window: true });
+}
+
+/**
+ * Plan 161 (the owner): the senders the sentence names, without a model: its addresses and domains at once, and a name
+ * after "from" or "de" once the mailbox is asked whether someone by it has written. One request, after the preview opens
+ * and off its rows; a failure or a cold index names nobody.
+ */
+async function noteSenders(previewId: string, sentence: string): Promise<void> {
+  const { sure, phrases } = sendersInSentence(sentence);
+  const still = () => getApp().actionPreview === previewId && useActionPreview.getState().preview?.previewId === previewId;
+  if (!phrases.length) {
+    if (sure.length) useActionPreview.setState({ senders: { sure, names: [] } });
+    return;
+  }
+  const names = await client.call("senders.named", { phrases }).then((r) => r.named, () => [] as string[]);
+  if (still()) useActionPreview.setState({ senders: { sure, names } });
 }
 
 export async function check(o: { acknowledge?: string; skip?: boolean }): Promise<void> {

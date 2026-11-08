@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ContactMessage } from "../autocomplete-source";
 import { SliceClock } from "../instant/slices";
 import { ContactIndex } from "./contacts";
+import { namesSender } from "./senders";
 
 const DAY = 86_400_000;
 const NOW = Date.UTC(2026, 10, 4);
@@ -56,5 +57,37 @@ describe("resolveExact (plan 133 §5.1)", () => {
     c.markSpam([spammer.email]);
     expect(c.resolveExact("me")).toEqual([]);
     expect(c.resolveExact("prince")).toEqual([]);
+  });
+});
+
+describe("a sender a sentence names (plan 161)", () => {
+  const uber = { name: "Uber Receipts", email: "uber.receipts@uber.com" };
+  const brew = { name: "Morning Brew", email: "crew@morningbrew.test" };
+  const browser = { name: "The Browser", email: "hello@thebrowser.test" };
+  const netflix = { name: "Netflix", email: "info@account.netflix.com" };
+
+  it("received: only someone who has written to you, not someone you only wrote to", async () => {
+    const ana = { name: "Ana Ruiz", email: "ana@ruiz.test" };
+    const c = await built([received(uber), sent([ana])]);
+    expect(c.resolveExact("ana").map((h) => h.email)).toEqual([ana.email]);
+    expect(c.resolveExact("ana", { received: true })).toEqual([]);
+    expect(c.resolveExact("uber", { received: true }).map((h) => h.email)).toEqual([uber.email]);
+  });
+
+  it("is the start of their name, word for word, or a label of their domain; never a word inside a name", () => {
+    expect(namesSender("Uber", uber)).toBe(1);
+    expect(namesSender("uber older", uber)).toBe(1);
+    expect(namesSender("Uber Receipts", uber)).toBe(2);
+    expect(namesSender("receipts", uber)).toBe(0);
+    expect(namesSender("Netflix", netflix)).toBe(1);
+    expect(namesSender("netflix", { name: "", email: netflix.email })).toBe(1);
+    expect(namesSender("account", { name: "", email: netflix.email })).toBe(0);
+    expect(namesSender("mercadolibre", { name: "", email: "info@mercadolibre.com.mx" })).toBe(1);
+    expect(namesSender("com", { name: "", email: netflix.email })).toBe(0);
+    expect(namesSender("Brew", brew)).toBe(0);
+    expect(namesSender("Morning", brew)).toBe(1);
+    expect(namesSender("Browser", browser)).toBe(1);
+    expect(namesSender("BRÓWSER", browser)).toBe(1);
+    expect(namesSender("", uber)).toBe(0);
   });
 });

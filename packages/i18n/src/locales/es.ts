@@ -2486,6 +2486,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "action.undone.star": { one: "# conversación ya sin destacar", other: "# conversaciones ya sin destacar" },
   "action.undone.moveToCategory": { one: "# conversación devuelta desde {category}", other: "# conversaciones devueltas desde {category}" },
   "action.undone.moveToFolder": { one: "# conversación devuelta a donde estaba", other: "# conversaciones devueltas a donde estaban" },
+  "action.sender.notLooked": "Tu frase menciona {name}, pero esta regla no mira quién envía el correo. Revísala abajo o edítala como regla.",
   "action.rule.readAs": "Terno lo entendió así",
   "action.rule.where": "Dónde",
   "action.rule.anyOf": { one: "menciona", other: "menciona alguna de" },

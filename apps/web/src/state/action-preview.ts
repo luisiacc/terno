@@ -1,6 +1,7 @@
 import type { ActionPreviewInfo } from "@terno/core";
 import { client } from "~/rpc/connection";
 import { focusIntent } from "~/lib/focus-intent";
+import type { SendersNamed } from "~/lib/rule-words";
 import { create } from "zustand";
 import { getApp, setApp, useApp, type AppState } from "./app";
 import { reloadList, useList } from "./list";
@@ -31,9 +32,11 @@ interface ActionPreviewState {
   consent: { provider: string; endpoint: string | null; destination: string } | null;
   checkError: string | null;
   applying: boolean;
+  /** plan 161: the senders the sentence names for certain (its addresses and domains, the names the mailbox has); null until known */
+  senders: SendersNamed | null;
 }
 
-export const useActionPreview = create<ActionPreviewState>(() => ({ preview: null, sentence: "", future: false, checking: false, consent: null, checkError: null, applying: false }));
+export const useActionPreview = create<ActionPreviewState>(() => ({ preview: null, sentence: "", future: false, checking: false, consent: null, checkError: null, applying: false, senders: null }));
 
 export const useActionRows = create<ActionRows>(() => ({ unticked: new Set(), showLeftOut: false, from: null }));
 

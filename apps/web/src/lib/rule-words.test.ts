@@ -3,7 +3,7 @@ import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { describeRule, hasDetails, matchesAnything, patternTerms, ruleDetails, ruleMisses, ruleRow, sensedOp, withSensedOp } from "./rule-words";
+import { describeRule, hasDetails, matchesAnything, patternTerms, ruleDetails, ruleMisses, ruleRow, senderNotLooked, sendersInSentence, sensedOp, withSensedOp } from "./rule-words";
 
 const names = { accountEmail: (id: number) => `a${id}@x.test`, category: () => "Invoices", folder: (_: number, f: string) => f };
 const uber: FilterRule = { match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "uber.com" }], actions: [{ type: "archive" }] };
@@ -113,5 +113,65 @@ describe("a sentence's rule in words (plan 161)", () => {
     for (const p of [".", ".+", " ^.+ ", "(.+)", ".*", "^", "^.*$"]) expect(matchesAnything(p)).toBe(true);
     // more than one character, or a character of its own: still "a pattern"
     for (const p of ["", "..", ".{2}", "\\.", "^a"]) expect(matchesAnything(p)).toBe(false);
+  });
+});
+
+describe("the sender a sentence names, without a model (plan 161, the owner)", () => {
+  const phrases = (s: string) => sendersInSentence(s).phrases;
+  const sure = (s: string) => sendersInSentence(s).sure;
+
+  it("an address or a domain is sure; one inside an address is the address", () => {
+    expect(sendersInSentence("Archive receipts from uber.com")).toEqual({ sure: ["uber.com"], phrases: [] });
+    expect(sure("archive everything ana.ruiz@mail.acme.studio sent")).toEqual(["ana.ruiz@mail.acme.studio"]);
+    expect(sure("Borra lo de Netflix.ES y de billing@stripe.com")).toEqual(["billing@stripe.com", "Netflix.ES"]);
+    expect(sure("move mail from news.mercadolibre.com.mx to Compras")).toEqual(["news.mercadolibre.com.mx"]);
+  });
+
+  it("a word with a dot that isn't a domain isn't one", () => {
+    expect(sure("archive mail about Node.js, e.g. release notes, v2.5 and i.e. betas")).toEqual([]);
+    expect(sure("Archive shipping notices older than a month")).toEqual([]);
+  });
+
+  it("a name after from, de or del is only a phrase to look up, past an article, up to a connective or a word of time", () => {
+    expect(phrases("Archive receipts from Netflix")).toEqual(["Netflix"]);
+    expect(phrases("archive anything from my bank older than a week")).toEqual(["bank"]);
+    expect(phrases("Star mail from the Morning Brew team")).toEqual(["Morning Brew team"]);
+    expect(phrases("Archive everything from Mercado Libre and Rappi")).toEqual(["Mercado Libre"]);
+    expect(phrases("Archiva los recibos de Uber")).toEqual(["Uber"]);
+    expect(phrases("Marca como leídos los correos de Stripe de hace un mes")).toEqual(["Stripe"]);
+    expect(phrases("borra las alertas del banco")).toEqual(["banco"]);
+  });
+
+  it("nothing for words of time, numbers, or no 'from' at all: the demo's actions say nothing", () => {
+    expect(sendersInSentence("Archive shipping notices older than a month")).toEqual({ sure: [], phrases: [] });
+    expect(sendersInSentence("Archive shipping notices older than a month, except Amazon")).toEqual({ sure: [], phrases: [] });
+    expect(phrases("From now on, archive newsletters")).toEqual([]);
+    expect(phrases("archive what came from last week")).toEqual([]);
+    expect(phrases("archiva los correos de hace más de 30 días")).toEqual([]);
+    expect(phrases("De ahora en adelante, archiva las promociones")).toEqual([]);
+    expect(phrases("archive invoices from 2023")).toEqual([]);
+    expect(phrases("archive receipts from uber.com")).toEqual([]);
+  });
+
+  it("at most four phrases, each at most three words, said once", () => {
+    expect(phrases("from A1 b c d, from Bb, from Cc, from Dd, from Ee, from bb")).toEqual(["A1 b c", "Bb", "Cc", "Dd"]);
+  });
+
+  const subject: Condition = { field: "subject", op: "contains", value: "receipt" };
+  it("says the first sender named when the rule doesn't look at the sender; never when it does, a 'not' one included", () => {
+    expect(senderNotLooked([subject], { sure: [], names: ["Netflix"] })).toBe("Netflix");
+    expect(senderNotLooked([subject], { sure: ["uber.com"], names: ["Uber"] })).toBe("uber.com");
+    expect(senderNotLooked([subject, { field: "fromDomain", op: "equals", value: "uber.com" }], { sure: ["uber.com"], names: [] })).toBe(null);
+    expect(senderNotLooked([subject, { field: "from", op: "contains", value: "amazon", negate: true }], { sure: [], names: ["Netflix"] })).toBe(null);
+    expect(senderNotLooked([subject, { field: "listId", op: "matches", value: "." }], { sure: [], names: ["Netflix"] })).toBe(null);
+    expect(senderNotLooked([{ field: "text", op: "contains", value: "netflix" }], { sure: [], names: ["Netflix"] })).toBe(null);
+    // nothing named for certain, or nothing yet: nothing said
+    expect(senderNotLooked([subject], { sure: [], names: [] })).toBe(null);
+    expect(senderNotLooked([subject], null)).toBe(null);
+  });
+
+  it("an address the rule already holds elsewhere (who it was sent to) isn't a sender it forgot", () => {
+    expect(senderNotLooked([{ field: "recipients", op: "contains", value: "Luis@Acme.studio" }], { sure: ["luis@acme.studio"], names: [] })).toBe(null);
+    expect(senderNotLooked([{ field: "recipients", op: "contains", value: "luis@acme.studio" }], { sure: ["luis@acme.studio", "uber.com"], names: [] })).toBe("uber.com");
   });
 });

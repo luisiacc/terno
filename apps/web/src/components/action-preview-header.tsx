@@ -13,7 +13,7 @@ import { applyPreview, check, inboxOnly, includeSkipped, isDestructive, previewC
 import { useAppearance } from "~/lib/appearance";
 import { LIST_TITLE } from "~/lib/list-title";
 import { PANE_TITLE, PANE_TITLE_TOP, READING_COLUMN } from "~/lib/pane-lines";
-import { hasDetails, ruleDetails, ruleRow } from "~/lib/rule-words";
+import { hasDetails, ruleDetails, ruleRow, senderNotLooked } from "~/lib/rule-words";
 import { isMac } from "~/lib/select";
 import { closePreviewRow, focusWhenReady, leavePreview, useActionRows } from "~/state/action-preview";
 import { getApp, setApp, useApp } from "~/state/app";
@@ -157,6 +157,7 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
   const checking = useActionPreview((s) => s.checking);
   const consent = useActionPreview((s) => s.consent);
   const checkError = useActionPreview((s) => s.checkError);
+  const senders = useActionPreview((s) => s.senders);
   const leftOutShown = useActionRows((s) => s.showLeftOut);
   const ai = useApp((s) => s.settings?.ai);
   const accounts = useApp((s) => s.accounts);
@@ -188,6 +189,14 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
       {said.text}
     </p>
   );
+  // plan 161 (the owner): a sender the sentence names for certain, and a rule that doesn't look at who sent it: said
+  // calmly, beside the rule, without a model; Apply is as it was
+  const notLooked = senderNotLooked(conditions, senders);
+  const senderLine = notLooked && (
+    <p data-testid="action-sender" className={cn("text-pretty text-foreground", reader ? "text-sm" : "text-xs")}>
+      {t("action.sender.notLooked", { name: notLooked })}
+    </p>
+  );
   const editLink = plan.action.type !== "createCategory" && (
     <Button variant="link-secondary" size="xs" className="no-drag h-6 font-medium" data-testid="action-edit-filter" onClick={editAsFilter}>{t("action.editAsFilter")}</Button>
   );
@@ -204,6 +213,7 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
       ) : (
         consequence
       )}
+      {senderLine}
       <div>
         <h3 className="text-xs font-medium text-muted-foreground">{t("action.rule.readAs")}</h3>
         <dl data-testid="action-conditions" className={cn("mt-1.5 grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4", reader ? "gap-y-2" : "gap-y-1")}>

@@ -4,8 +4,11 @@ import { RevisionError, sameRevision, type Revision } from "../search";
 import { SliceClock } from "../instant/slices";
 import { ContactIndex, DESKTOP_CONTACT_CAPS, type ContactCaps, type ContactHit, type SuggestOptions } from "./contacts";
 import { DESKTOP_PHRASE_CAPS, PhraseModel, type PhraseCaps, type PhraseSuggestInput } from "./phrases";
+import { namesSender } from "./senders";
 
 const MiB = 1024 * 1024;
+/** plan 161: the phrases one sentence may ask about (each one exact-token lookup) */
+export const SENDER_PHRASES = 4;
 
 /** Both models together, transient copies included (a snapshot, a merge, a prune). */
 export const DESKTOP_AUTOCOMPLETE_PEAK = 160 * MiB;
@@ -130,6 +133,23 @@ export class Autocomplete {
   resolveExact(token: string, o: { accountId?: number; limit?: number } = {}): { state: "ready" | "cold"; hits: ContactHit[] } {
     const c = this.contacts;
     return c ? { state: "ready", hits: c.resolveExact(token, o) } : { state: "cold", hits: [] };
+  }
+
+  /**
+   * Plan 161: which of these phrases (each up to a few words, after "from" or "de" in a sentence) name someone who has
+   * written to you, as their words that do ("Uber" of "Uber older"). Exact tokens, in memory; `cold` names nobody.
+   */
+  sendersNamed(phrases: readonly string[]): { state: "ready" | "cold"; named: string[] } {
+    const c = this.contacts;
+    if (!c) return { state: "cold", named: [] };
+    const named: string[] = [];
+    for (const phrase of phrases.slice(0, SENDER_PHRASES)) {
+      const said = phrase.trim().split(/\s+/).filter(Boolean);
+      if (!said.length) continue;
+      const n = Math.max(0, ...c.resolveExact(said[0]!, { received: true, limit: 20 }).map((h) => namesSender(phrase, h)));
+      if (n > 0) named.push(said.slice(0, n).join(" "));
+    }
+    return { state: "ready", named };
   }
 
   /**
