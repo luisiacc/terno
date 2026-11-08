@@ -206,11 +206,15 @@ function RowTail({ thread, reminderTop, ink, quiet, match, excerpt }: { thread: 
 }
 
 /**
- * Plan 160: a one-line row's subject sits in a column of the row's share (it truncates in it), its Draft, place and
- * reminder marks at the column's end, so every preview starts at one x and the eye runs down subjects and previews
- * apart (CSS only: no row measures anything).
+ * Plan 160: a one-line row's subject sits in a column of the list's width (cqw: the same on every row, whatever its
+ * sender or marks take), its Draft, place and reminder marks at the column's end, so every preview starts at one x and
+ * the eye runs down subjects and previews apart. CSS only: no row measures anything. Short of room the preview goes
+ * first (it has no basis), then the column shrinks: nothing paints over the date.
  */
-const SUBJECT_COLUMN = "flex w-[clamp(9rem,42%,26rem)] shrink-0 min-w-0 items-center gap-1.5";
+const SUBJECT_COLUMN = "flex w-[clamp(9rem,30cqw,26rem)] min-w-0 shrink items-center gap-1.5";
+/** A compact row's sender, a column of the list's width too (a wide row's is the table's own) */
+const SENDER_COLUMN = "flex w-[clamp(5rem,24cqw,11rem)] min-w-0 shrink items-center gap-1.5";
+const COMPACT_SUBJECT = "flex w-[clamp(6rem,30cqw,22rem)] min-w-0 shrink items-center gap-1.5";
 
 /** On the Inbox's top and in its own list, the date a row shows is when it's owed. */
 function RowDate({ thread, reminderTop, fallback, className, title }: { thread: ThreadSummary; reminderTop?: boolean; fallback: string; className: string; title?: string }) {
@@ -496,11 +500,14 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
         <div className={cn("relative flex min-w-0 items-center", classic ? "gap-2" : "gap-2.5")}>
           {lead}
           {avatar}
-          {from}
-          {count}
-          {/* plan 160: the subject in its column, the preview from one x */}
-          <span className="flex min-w-0 flex-1 items-center gap-2">
-            <span className={SUBJECT_COLUMN}>
+          {/* plan 160: the sender and the subject in columns, the preview from one x */}
+          <span className={SENDER_COLUMN}>
+            {from}
+            {count}
+          </span>
+          {/* (a few characters of subject stay whatever the width: the sender's column gives way first) */}
+          <span className="flex min-w-16 flex-1 items-center gap-2">
+            <span className={COMPACT_SUBJECT}>
               <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
               {draft && <span className="ml-auto shrink-0">{draft}</span>}
             </span>

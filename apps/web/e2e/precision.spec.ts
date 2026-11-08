@@ -400,6 +400,32 @@ test.describe("precision across screens (plan 160)", { tag: "@design" }, () => {
   });
 });
 
+test.describe("precision across screens: compact rows (plan 160)", { tag: "@design" }, () => {
+  test("a narrow Split list in compact density: previews on one x, nothing over the date", async ({ app: page, server, design }) => {
+    await server.backend.server.invoke("settings.update", { density: "compact" }, { clientId: "setup", origin: "dev" as const });
+    for (const [width, height] of [[1100, 700], [1060, 700]] as const) {
+      await page.setViewportSize({ width, height });
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await rows(page).first().waitFor();
+      const m = await rows(page).evaluateAll((els) => {
+        const list = document.querySelector("[role=listbox]")!.getBoundingClientRect();
+        return els.filter((r) => { const b = r.getBoundingClientRect(); return b.top >= list.top && b.bottom <= list.bottom; }).map((r) => {
+          const box = (id: string) => r.querySelector(`[data-testid=${id}]`)?.getBoundingClientRect();
+          const subject = box("row-subject")!, snippet = box("row-snippet"), date = box("row-date")!, account = box("account-label");
+          const meta = Math.min(date.left, account && account.width > 0 ? account.left : Infinity);
+          return { snippet: snippet && snippet.width > 0 ? snippet.left : null, over: subject.right > meta + 0.5 || (snippet ? snippet.right > meta + 0.5 : false), listWidth: list.width };
+        });
+      });
+      const lefts = m.map((r) => r.snippet).filter((x): x is number => x !== null);
+      const spread = lefts.length ? Math.max(...lefts) - Math.min(...lefts) : 0;
+      note(`compact ${width} (list ${fmt(m[0]?.listWidth ?? 0)}): preview spread, rows over the meta`, `${fmt(spread)}, ${m.filter((r) => r.over).length}`);
+      expect.soft(spread, `${design} compact ${width}: previews start at one x`).toBeLessThanOrEqual(0.5);
+      expect.soft(m.filter((r) => r.over).length, `${design} compact ${width}: no subject or preview runs over the account or the date`).toBe(0);
+    }
+  });
+});
+
 test.describe("precision across screens: List (plan 160)", { tag: "@design" }, () => {
   test.use({ layout: "list" });
   test("List: titles on the rows' line, one column on the page, toasts clear of the rows", async ({ app: page, design }) => {
