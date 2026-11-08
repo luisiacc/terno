@@ -11,6 +11,7 @@ import { errorHelp, modelName, providerLabel } from "~/lib/ai";
 import { fullDate } from "~/lib/format";
 import { bodyArrivedForSummary, dismissSummary, loadSummary, revealSummaryMessage, setSummaryOpen, stopSummary, summarizable, summarize, useSummaries } from "~/lib/summaries";
 import { setApp, useApp } from "~/state/app";
+import { AI_CARD, AI_GLYPH } from "./ai-card";
 
 /** "Action   Send the signed contract   →": the arrow's whole row goes to the message that says it. */
 function Item({ item }: { item: AiSummaryItem }) {
@@ -36,9 +37,8 @@ function Item({ item }: { item: AiSummaryItem }) {
   );
 }
 
-/** A model's words, not the sender's: the design's card, its edges on the conversation's column and its text inset. */
-const CARD = "card-group mb-4";
-const GLYPH = "size-[1.15em] shrink-0 text-muted-foreground";
+const CARD = `${AI_CARD} mb-4`;
+const GLYPH = AI_GLYPH;
 
 function Ready({ summary }: { summary: AiSummary }) {
   const open = useSummaries((s) => s.open);

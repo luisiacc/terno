@@ -112,6 +112,62 @@ test.describe("replies ready (plan 144)", () => {
     });
   });
 
+  test("a card in every design: the summary's surface, the label as its header, the draft inset, the actions below; its edges on the reply bar's and the summary's", { tag: "@design" }, async ({ app: page, server }, info) => {
+    await withMail(page, server, { replies: { enabled: true } });
+    await row(page).click();
+    await expect(block(page)).toHaveAttribute("data-phase", "ready", { timeout: 15_000 });
+    // the summary above it too, so the column's three surfaces are in one picture
+    await page.getByTestId("action-summarize").click();
+    await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "ready");
+
+    const SIZES = [[1440, 900], [1100, 700]] as const;
+    if (SHOTS) {
+      for (const [width, height] of SIZES) {
+        await page.setViewportSize({ width, height });
+        await block(page).scrollIntoViewIfNeeded();
+        for (const mode of ["light", "dark"] as const) {
+          await page.emulateMedia({ colorScheme: mode });
+          await page.screenshot({ path: `${SHOTS}/${info.project.name}-${width}-${mode}.png` });
+        }
+      }
+      await page.emulateMedia({ colorScheme: "light" });
+    }
+    for (const [width, height] of SIZES) {
+      await page.setViewportSize({ width, height });
+      await block(page).scrollIntoViewIfNeeded();
+
+      // the summary's own surface: tinted, or in Graphite outlined on no fill
+      const card = block(page);
+      const [mine, summary] = await Promise.all([card, page.getByTestId("summary-block")].map((el) => el.evaluate((n) => { const s = getComputedStyle(n); return { fill: s.backgroundColor, ring: s.boxShadow, radius: s.borderTopLeftRadius }; })));
+      expect(mine).toEqual(summary);
+      const NONE = "rgba(0, 0, 0, 0)";
+      if (info.project.name === "e2e-graphite") expect(mine!.ring).not.toContain(NONE);
+      else expect(mine!.fill).not.toBe(NONE);
+
+      // one column: the summary above and the reply bar below share the card's ends
+      const box = (await card.boundingBox())!;
+      for (const other of [page.getByTestId("draft-slot"), page.getByTestId("summary-block")]) {
+        const o = (await other.boundingBox())!;
+        expect(Math.abs(o.x - box.x), `${info.project.name} ${width} left`).toBeLessThanOrEqual(1);
+        expect(Math.abs(o.x + o.width - (box.x + box.width)), `${info.project.name} ${width} right`).toBeLessThanOrEqual(1);
+      }
+
+      // the label is the header, the draft and the actions sit inside the card's padding, on the header's inset
+      const header = (await page.getByTestId("reply-ready-header").boundingBox())!;
+      const text = (await page.getByTestId("reply-ready-text").boundingBox())!;
+      const footer = (await page.getByTestId("reply-ready-footer").boundingBox())!;
+      const inset = text.x - box.x;
+      expect(inset).toBeGreaterThanOrEqual(12);
+      expect((await page.getByTestId("reply-ready-header").locator("svg").first().boundingBox())!.x - box.x).toBe(inset);
+      expect((await page.getByTestId("reply-ready-use").boundingBox())!.x - box.x).toBe(inset);
+      expect(text.x + text.width).toBeLessThanOrEqual(box.x + box.width - inset + 0.5);
+      expect(header.y).toBeGreaterThanOrEqual(box.y);
+      expect(text.y).toBeGreaterThanOrEqual(header.y + header.height);
+      expect(footer.y).toBeGreaterThanOrEqual(text.y + text.height);
+      expect(footer.y + footer.height).toBeLessThanOrEqual(box.y + box.height - 8);
+    }
+  });
+
   test("r before the dwell ends: they're writing, so nothing is prepared; new mail hides what was shown; Clear takes it off screen", async ({ app: page, server }) => {
     const thread = await withMail(page, server, { replies: { enabled: true } });
     const db = sqlDb(server.backend.store);
