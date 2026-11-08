@@ -994,11 +994,15 @@ test.describe("drafting with AI (plan 133)", () => {
     // pass 3: as your writing, never the recipient's voice
     // plan 162: a sequence, not an algorithm
     await expect(page.getByTestId("style-precedence")).toHaveText("A draft uses the closest style it has: the person, then their company, then the account, then yours.");
-    // pass 3: How it learns, all of it, in the first view (it was under the fold), before the optional overrides
-    await expect(page.getByTestId("style-clear")).toBeInViewport();
-    expect(await above("style-actions", "style-domains")).toBe(true);
-    const total = Number(/from (\d+) sent/.exec(await page.getByTestId("style-status").innerText())![1]);
-    await expect(page.getByTestId("style-own")).toContainText(new RegExp(`From \\d+ of the ${total} messages`));
+    // plan 162 (after ai162-r01): one job per group, in order: your style, Companies and People, How it learns, and
+    // Start over on its own, last
+    expect(await above("style-own", "style-domains")).toBe(true);
+    expect(await above("style-domains", "style-actions")).toBe(true);
+    expect(await above("style-actions", "style-start-over")).toBe(true);
+    await expect(page.getByTestId("style-start-over").getByTestId("style-clear")).toBeVisible();
+    // the count says what it counts, and the style shows what it does to a draft
+    await expect(page.getByTestId("style-own")).toContainText(/From (the \d+ you wrote in \w+|\d+ of the \d+ messages|\d+ messages?)/);
+    if (await page.getByTestId("style-sample").count()) await expect(page.getByTestId("style-sample")).toContainText("starts and ends like this");
     await expect(page.getByTestId("style-own")).toContainText("Your style");
     expect(await above("style-status", "style-own")).toBe(true);
     await expect(page.getByTestId("style-profile")).toHaveCount(1);
@@ -1146,6 +1150,12 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(page.getByTestId("style-study-running")).toContainText(/\d+ of \d+/);
     await page.getByTestId("style-study-stop").click();
     await expect(page.getByTestId("style-study-start")).toBeVisible();
+    // plan 162 (after ai162-r01): done, it says where its result is and goes there: Phrases and notes, open, with the keys
+    await page.getByTestId("style-study-start").click();
+    await expect(page.getByTestId("style-study-done")).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId("style-study-show").click();
+    await expect(page.getByTestId("style-profile-examples-toggle")).toBeFocused();
+    await expect(page.getByTestId("style-profile-examples")).toBeVisible();
 
     // pass 3: Esc on the page goes back to Drafting, focus on the way in; Settings stays
     await page.keyboard.press("Escape");

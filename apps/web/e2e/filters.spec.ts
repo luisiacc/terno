@@ -131,7 +131,7 @@ test.describe("AI filters and learned filters", () => {
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("filters-dialog")).toHaveCount(0);
       await page.getByTestId("open-filters").click();
-      await expect(page.getByTestId("filter-unsaved")).toContainText("Not saved · made with AI");
+      await expect(page.getByTestId("filter-unsaved")).toContainText("Not saved · written with AI");
       await expect(page.getByTestId("filter-unsaved")).toHaveAttribute("data-open", "true");
       await expect(page.getByTestId("ai-explanation")).toContainText("doesn’t contain “nicer”");
       await page.getByTestId("ai-edit-request").click();

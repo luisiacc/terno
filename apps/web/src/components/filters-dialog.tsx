@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@terno/ui/components/switch";
 import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Check, Folder as FolderIcon, Forward, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2 } from "@terno/ui/icons";
+import { Archive, Check, Folder as FolderIcon, Forward, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2 } from "@terno/ui/icons";
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import { t, type TextKey } from "@terno/i18n";
 import { richT } from "~/lib/i18n";
@@ -668,7 +668,7 @@ export function FiltersDialog() {
             {/* plan 90: the user's, then Terno's under a heading of their own */}
             {[...filters.filter((f) => !f.auto), ...filters.filter((f) => f.auto)].map((f, i, all) => (
               <Fragment key={f.id}>
-              {f.auto && !all[i - 1]?.auto && <p data-testid="filters-auto-heading" className="mt-4 mb-1 px-2 text-2xs font-medium tracking-wide text-muted-foreground uppercase">{t("filters.group.auto")}</p>}
+              {f.auto && !all[i - 1]?.auto && <p data-testid="filters-auto-heading" className="mt-4 mb-1 px-2 text-xs font-medium text-muted-foreground">{t("filters.group.auto")}</p>}
               <div data-testid="filter-item" data-auto={f.auto || undefined} data-current={draft.id === f.id || undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", draft.id === f.id && "bg-muted")}>
                 <button type="button" className="min-w-0 flex-1 text-left" onClick={() => (leaving(), load(draftOf(f)), setExplanation(null))}>
                   <span className="block truncate">{f.name}</span>
@@ -691,7 +691,7 @@ export function FiltersDialog() {
             {filters.length === 0 && <p className="px-2 py-2 text-xs text-muted-foreground">{t("filters.empty")}</p>}
             {proposals.length > 0 && (
               <>
-                <p className="mt-4 mb-1 px-2 text-2xs font-medium tracking-wide text-muted-foreground uppercase">{t("filters.suggested")}</p>
+                <p className="mt-4 mb-1 px-2 text-xs font-medium text-muted-foreground">{t("filters.suggested")}</p>
                 {proposals.map((p) => (
                   <div key={p.key} className="rounded-md px-2 py-1.5 text-xs" data-testid="proposal-item">
                     {/* plan 159: the rule whole, in the words the list's offer uses: never cut */}
@@ -769,7 +769,8 @@ export function FiltersDialog() {
                         className="min-h-16 flex-1 resize-none bg-background"
                       />
                       <Button data-testid="ai-generate" onClick={generate} loading={generating} disabled={prompt.trim().length < 3} className="self-end">
-                        <Wand2 /> {t("filters.ai.create")}
+                        {/* plan 162 (after ai162-r01): the sparkle every AI way in has (a wand here was the odd one) */}
+                        <Sparkles /> {t("filters.ai.create")}
                       </Button>
                     </div>
                     <p className="mt-2 text-2xs text-muted-foreground" data-testid="ai-privacy-notice">
@@ -834,7 +835,8 @@ export function FiltersDialog() {
                     onClick={() => toggleAction(type)}
                     className={cn(
                       "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
-                      hasAction(type) ? "border-primary/40 bg-primary/10 text-accent-foreground" : "border-border text-muted-foreground hover:bg-muted",
+                      // plan 162 (after ai162-r01): chosen is outlined in the ink, medium (a faint tint was 1.1:1 in Graphite)
+                      hasAction(type) ? "border-foreground font-medium text-foreground" : "border-border text-muted-foreground hover:bg-muted",
                     )}
                   >
                     {/* plan 161: chosen says so with a check, not only a fill (Graphite's sat at 1.2:1) */}
@@ -848,7 +850,7 @@ export function FiltersDialog() {
                   onClick={() => setForward(forwardAction ? null : [])}
                   className={cn(
                     "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
-                    forwardAction ? "border-primary/40 bg-primary/10 text-accent-foreground" : "border-border text-muted-foreground hover:bg-muted",
+                    forwardAction ? "border-foreground font-medium text-foreground" : "border-border text-muted-foreground hover:bg-muted",
                   )}
                 >
                   {forwardAction ? <Check className="size-3.5" data-testid="action-chosen" /> : <Forward className="size-3.5" />} {t("filters.action.forward")}
