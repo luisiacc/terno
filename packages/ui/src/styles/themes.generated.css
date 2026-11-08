@@ -792,7 +792,7 @@
   --sidebar-ring: oklch(0.281 0 0 / 0.55);
   --pane: oklch(1 0 0);
   --row-hover: oklch(0.949 0 0);
-  --row-selected: oklch(0.913 0 0);
+  --row-selected: oklch(0.894 0 0);
   --row-selected-foreground: oklch(0.281 0 0);
   --row-rail: oklch(0.281 0 0);
   --unread: oklch(0.55 0.15 237);
@@ -1800,7 +1800,7 @@
   --sidebar-ring: oklch(0.946 0 0 / 0.55);
   --pane: oklch(0.218 0 0);
   --row-hover: oklch(1 0 0 / 0.06);
-  --row-selected: oklch(0.309 0 0);
+  --row-selected: oklch(0.321 0 0);
   --row-selected-foreground: oklch(0.946 0 0);
   --row-rail: oklch(0.946 0 0);
   --unread: oklch(0.74 0.13 237);

@@ -168,8 +168,6 @@ function useOwed(thread: Pick<ThreadSummary, "id">, reminderTop?: boolean) {
 export const ROW_SHAPE = "before:absolute before:inset-y-px before:right-2 before:left-1 before:rounded-(--row-radius)";
 /** j/k's place among several checked rows, and the row a menu is for: the focus ring, inside the shape */
 export const ROW_OUTLINE = "inset 0 0 0 2px var(--ring)";
-/** The open row's rail: 2 px on the marks' column, inset by the shape's radius so it stays straight */
-export const RAIL = "pointer-events-none absolute top-[min(calc(var(--row-radius)+1px),30%)] bottom-[min(calc(var(--row-radius)+1px),30%)] left-[11px] w-0.5 rounded-full bg-row-rail group-data-many/list:hidden";
 
 /** How far into its line a match may stand: near the start, so it shows whole on the narrowest row (a 1100 px window, an account beside it). */
 const LEAD = { own: 12, wide: 40 };
@@ -330,14 +328,13 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     </span>
   );
   // one mark in every design and layout: on the marks' column (12 px into the row, 8 before the text), on the sender's
-  // line, never on an avatar. A check takes the dot's place, moving nothing (the row's weight still says unread); the open
-  // row's rail is its mark, so it has no dot (its weight says unread)
+  // line, never on an avatar. A check takes the dot's place, moving nothing (the row's weight still says unread)
   const onSenderLine = line ? "top-1/2" : "top-[calc(var(--type-row-from-leading)/2)]";
   const dot =
     checked && included === undefined ? (
       <Check aria-hidden data-testid="row-check" className={cn("absolute -left-[14px] size-3 -translate-y-1/2 text-row-selected-foreground [--icon-line:1.5px]", onSenderLine)} />
     ) : (
-      thread.unread && included === undefined && <span data-testid="row-unread-dot" className={cn("absolute -left-[12px] size-2 -translate-y-1/2 rounded-full bg-unread", opened && "hidden group-data-many/list:block", onSenderLine)} />
+      thread.unread && included === undefined && <span data-testid="row-unread-dot" className={cn("absolute -left-[12px] size-2 -translate-y-1/2 rounded-full bg-unread", onSenderLine)} />
     );
   // a three-line row's first line: its marks and date hold the right edge
   const firstLine = (
@@ -407,7 +404,6 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     >
       {/* plan 158: the open row's mark, straight inside the selection's rounded edge; none while several are checked */}
       {/* (a checked row's mark is its check, on the same column) */}
-      {opened && !checked && <span aria-hidden data-testid="row-rail" className={RAIL} />}
       {included !== undefined && (
         // the row is the option and `x` its key: this is for the pointer, and says nothing the row doesn't
         <CheckboxMark data-testid="row-include" checked={included} className="absolute top-1/2 left-5 -translate-y-1/2" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); toggleRow(thread.id); }} />

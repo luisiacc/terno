@@ -117,7 +117,6 @@ test.describe("the table (plan 158)", () => {
       const cursor = page.locator("[data-testid=thread-row][data-cursor]:not([data-checked])");
       const [c, k] = [await look(cursor), await look(b)];
       expect(c.fill).not.toBe(k.fill);
-      await expect(page.getByTestId("row-rail")).toBeHidden();
       // what's under the toolbar can't be reached; a search ends the selection and takes the keys (the field behind a button opens)
       const covered = page.getByTestId("list-title").locator("xpath=ancestor::*[@inert]");
       await expect(covered).toHaveCount(1);

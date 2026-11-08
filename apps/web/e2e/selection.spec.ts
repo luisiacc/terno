@@ -51,18 +51,15 @@ test("a batch: every row shows it's in, Delete reads as the menu's, Undo puts th
   const ids = (await idsOf(rows(page))).slice(1, 4);
   const open = selectedRow(page);
   await expect(open.getByTestId("row-check")).toHaveCount(0);
-  // plan 158: the open row is told from a checked one by its rail; with several checked the reader shows them, not it
-  await expect(open.getByTestId("row-rail")).toBeVisible();
-  const rail = await open.getByTestId("row-rail").evaluate((el) => { const r = el.getBoundingClientRect(); return r.left + r.width / 2; });
-  // the open row checked alone (x): its check is its mark, the rail giving way on the column they share (Codex review)
+  // the open row is its fill alone: no rail (the owner's call), in any design
+  await expect(page.getByTestId("row-rail")).toHaveCount(0);
+  // the open row checked alone (x): its check is its mark
   await focusList(page);
   await page.keyboard.press("x");
   await expect(open.getByTestId("row-check")).toBeVisible();
-  await expect(open.getByTestId("row-rail")).toHaveCount(0);
   await page.keyboard.press("x");
-  await expect(open.getByTestId("row-rail")).toBeVisible();
+  await expect(open.getByTestId("row-check")).toHaveCount(0);
   await selectRows(page, ids);
-  await expect(page.getByTestId("row-rail")).toBeHidden();
   await expect(checked(page).getByTestId("row-check")).toHaveCount(3);
   // plan 158: one selection, one look: the first row (the cursor among them) is the rest's fill and ink, its check on the
   // sender's line, in the unread dot's slot
@@ -77,7 +74,7 @@ test("a batch: every row shows it's in, Delete reads as the menu's, Undo puts th
   expect(new Set(looks.map((l) => l.ink)).size).toBe(1);
   for (const l of looks) expect(l.off).toBeLessThanOrEqual(2);
   // plan 158: the marks share one column, inside the fill with air on both sides (never clipped by its rounded edge),
-  // and clear of the text: the check where an unread dot sits and the open row's rail is
+  // and clear of the text: the check where an unread dot sits
   const column = (sel: string) => page.locator(sel).first().evaluate((el) => { const r = el.getBoundingClientRect(); return r.left + r.width / 2; });
   const geometry = await checked(page).first().evaluate((el) => {
     const fill = el.getBoundingClientRect().left + parseFloat(getComputedStyle(el, "::before").left);
@@ -90,7 +87,6 @@ test("a batch: every row shows it's in, Delete reads as the menu's, Undo puts th
   expect(geometry.left - geometry.fill).toBeGreaterThanOrEqual(2);
   expect(geometry.text - geometry.right).toBeGreaterThanOrEqual(2);
   expect(Math.abs((await column("[data-testid=row-unread-dot]")) - geometry.centre)).toBeLessThanOrEqual(1);
-  expect(Math.abs(rail - geometry.centre)).toBeLessThanOrEqual(1);
   // j among them: the cursor gets a mark of its own, only by keys, and only while there's a selection
   const list = page.getByTestId("thread-list");
   await expect(list).not.toHaveAttribute("data-keyed");
@@ -159,10 +155,9 @@ test.describe("context menu on one thread", () => {
       await expect(item(page, "menu-read")).toContainText("⇧I");
       // the row's inset selection shape is outlined while the menu is up; the selection didn't move to it
       expect(await row(page, id).evaluate((e) => getComputedStyle(e, "::before").boxShadow)).not.toBe("none");
-      // plan 158: the open row stays open (fill and rail: the reader still shows it); the menu's row is outlined, not filled
+      // plan 158: the open row stays open (its fill: the reader still shows it); the menu's row is outlined, not filled
       const opened = page.locator("[data-testid=thread-row][data-opened]");
       expect(await opened.evaluate((e) => getComputedStyle(e, "::before").backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
-      await expect(opened.getByTestId("row-rail")).toBeVisible();
       expect(await row(page, id).evaluate((e) => getComputedStyle(e, "::before").backgroundColor)).not.toBe(await opened.evaluate((e) => getComputedStyle(e, "::before").backgroundColor));
       await expect(row(page, id)).not.toHaveAttribute("aria-selected", "true");
       await item(page, "menu-read").click();

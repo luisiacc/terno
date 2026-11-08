@@ -39,7 +39,7 @@ export const atelier: DesignDefinition = {
   },
   icon: { stroke: 1.5, toolbar: 1.5, nav: 16 },
   layout: { sidebar: "240px", listMin: "340px", listMax: "min(390px, 32vw)", readerMin: 380, readerMax: "704px", readerPadX: "2rem", rowRadius: "0.75rem", navRadius: "0.625rem", navHeight: "2rem", sidebarPad: "0.5rem", navSectionGap: "1rem", navSectionHeight: "1.25rem", cardRadius: "calc(var(--ds-radius-lg) + 2px)", commandRadius: "var(--ds-radius-xl)" },
-  rows: { comfortable: 68, compact: 34, wide: 38, results: 68 },
+  rows: { comfortable: 76, compact: 34, wide: 38, results: 76 },
   avatar: { row: 32, rowCompact: 22, rowWide: 22, message: 28, collapsed: 28, senderCard: 0 },
   surfaces: { draft: "outline", inboxCount: "muted", cta: "control", card: "tint" },
   variants: {

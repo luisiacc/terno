@@ -138,7 +138,7 @@
   --cta-floor: 0px;
   --card-bg: var(--tint);
   --card-ring: transparent;
-  --row-h: 68px;
+  --row-h: 76px;
   --row-h-compact: 36px;
   --avatar-row: 36px;
   --avatar-row-compact: 24px;
@@ -290,7 +290,7 @@
   --cta-floor: 0px;
   --card-bg: var(--tint);
   --card-ring: transparent;
-  --row-h: 68px;
+  --row-h: 76px;
   --row-h-compact: 34px;
   --avatar-row: 32px;
   --avatar-row-compact: 22px;

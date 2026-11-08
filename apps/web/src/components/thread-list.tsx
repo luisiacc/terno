@@ -36,7 +36,7 @@ import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
 import { ThreadMenu } from "./thread-menu";
 import { DraftsStrip } from "./drafts-strip";
 import { ReviewAlwaysMenu, ReviewButtons } from "./review-actions";
-import { RAIL, ROW_SHAPE, ThreadRow } from "./thread-row";
+import { ROW_SHAPE, ThreadRow } from "./thread-row";
 import { registerDesignAnchor, useDesign } from "~/lib/design";
 import { LEARNED_H, LearnedBanner, LearnedSource, useLearnedProposal } from "./learned-banner";
 import { ForwardQuestion } from "./forward-question";
@@ -82,7 +82,6 @@ function DigestListRow({ thread, top, height }: { thread: ThreadSummary; top: nu
       className={cn("group/row absolute left-0 flex w-full cursor-default items-center gap-2.5 px-5 select-none", ROW_SHAPE, selected ? "text-row-selected-foreground before:bg-row-selected" : "hover:before:bg-row-hover")}
       style={{ transform: `translateY(${top}px)`, height }}
     >
-      {selected && <span aria-hidden className={RAIL} />}
       <Newspaper className={cn("relative size-4 shrink-0", selected ? "" : "text-muted-foreground")} />
       <span className="type-row-subject relative min-w-0 flex-1 truncate">{thread.subject}</span>
     </div>
