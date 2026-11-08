@@ -210,6 +210,9 @@ function Profile({ initial, onChanged, onEditing, onReset, total, picked, compac
     setP(initial);
   }
   const title = useProfileTitle(p);
+  const accounts = useApp((s) => s.accounts);
+  const ofAccount = accounts.length > 1 && (p.scope === "domain" || p.scope === "person") ? accounts.find((a) => a.id === Number(p.scopeKey.split(":")[1])) : undefined;
+  const account = ofAccount ? ofAccount.displayName || ofAccount.email : null;
   const lines = habitLines(p.habits);
   const examples = p.phrases.length + (p.judgment?.notes.length ?? 0);
   const from = total !== null && total >= p.samples ? t("aiDraft.style.fromOf", { count: p.samples, total }) : t("aiDraft.style.from", { count: p.samples });
@@ -243,9 +246,10 @@ function Profile({ initial, onChanged, onEditing, onReset, total, picked, compac
           <CollapsiblePanel>
             <ul className="mt-1 flex flex-col text-sm" data-testid="style-profile-examples">
               {shownExamples.map((x) => (
-                <li key={`${x.kind}${x.text}`} className="flex min-h-7 items-center gap-1" data-testid={x.kind === "phrase" ? "style-profile-phrase" : "style-profile-note"}>
+                <li key={`${x.kind}${x.text}`} className="group/example flex min-h-7 items-center gap-1" data-testid={x.kind === "phrase" ? "style-profile-phrase" : "style-profile-note"}>
                   <span className="min-w-0 flex-1">{x.kind === "phrase" ? `“${x.text}”` : x.text}</span>
-                  <CloseButton label={t("aiDraft.style.removePhrase", { text: x.text })} data-testid="style-profile-example-remove" onClick={() => removeExample(x.kind, x.text)} />
+                  {/* quiet until the row is pointed at or Tab reaches it: seventeen of them would be a column of marks */}
+                  <CloseButton label={t("aiDraft.style.removePhrase", { text: x.text })} className="opacity-0 group-hover/example:opacity-100 focus-reveal:opacity-100" data-testid="style-profile-example-remove" onClick={() => removeExample(x.kind, x.text)} />
                 </li>
               ))}
             </ul>
@@ -278,7 +282,8 @@ function Profile({ initial, onChanged, onEditing, onReset, total, picked, compac
               <span className="truncate">{title}</span>
               {edited}
             </span>
-            <span className="shrink-0 text-xs text-muted-foreground">{t("aiDraft.style.from", { count: p.samples })}</span>
+            {/* the account too: one company can have a profile per account */}
+            <span className="shrink-0 text-xs text-muted-foreground">{account ? `${account} · ` : ""}{t("aiDraft.style.from", { count: p.samples })}</span>
           </CollapsibleTrigger>
           <CollapsiblePanel>
             <div className="pt-1 pb-3">{body}</div>
@@ -356,7 +361,7 @@ function Section({ scope, title, testId, version, onChanged, onReset }: { scope:
     if (open) void read(null).catch(failed);
   }, [open, read, version]);
   return (
-    <section className="mb-6 last:mb-0" data-testid={testId}>
+    <section className="mb-1 last:mb-0" data-testid={testId}>
       <Collapsible open={open} onOpenChange={setOpen}>
         <CollapsibleTrigger className="-mx-2 mb-1.5 h-7 w-[calc(100%+1rem)] rounded-lg px-3 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground" data-testid={`${testId}-toggle`}>
           {title}
@@ -514,8 +519,11 @@ export default function WritingStyle() {
       <SettingsGroup title={t("aiDraft.style.yours")} testId="style-own">
         {own === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : own.length === 0 ? <SettingsNote testId="style-empty">{t("aiDraft.style.empty")}</SettingsNote> : <OwnProfiles items={own} onChanged={changed} onReset={setReset} total={status?.state === "ready" && status.messages > 0 ? status.messages : null} />}
       </SettingsGroup>
-      <Section scope="domain" title={t("aiDraft.style.domains")} testId="style-domains" version={version} onChanged={changed} onReset={setReset} />
-      <Section scope="person" title={t("aiDraft.style.people")} testId="style-people" version={version} onChanged={changed} onReset={setReset} />
+      {/* pass 2: two collapsed rows together, not two bands */}
+      <div className="mb-6">
+        <Section scope="domain" title={t("aiDraft.style.domains")} testId="style-domains" version={version} onChanged={changed} onReset={setReset} />
+        <Section scope="person" title={t("aiDraft.style.people")} testId="style-people" version={version} onChanged={changed} onReset={setReset} />
+      </div>
       {/* pass 2: the two ways it learns side by side, each saying what it does: counted here, and the optional AI notes */}
       <SettingsGroup title={t("aiDraft.study.title")} testId="style-actions">
         <SettingsRow label={t("aiDraft.style.rebuild")} hint={t("aiDraft.style.rebuildHint")} testId="style-rebuild-row">
