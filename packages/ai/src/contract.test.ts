@@ -422,6 +422,6 @@ describe("model discovery", () => {
     const result = await probe(cfg({ model: "tiny:1b" }), AbortSignal.timeout(3000));
     expect(result.capabilities).toMatchObject({ output: "json_object", contextTokens: 2048, embeddings: true, probedAt: expect.any(Number) });
     expect(result.latencyMs).toBeGreaterThanOrEqual(0);
-    expect(result.warning).toEqual({ key: "backend.ai.contextWindow", params: { tokens: 2048, needed: expect.any(Number) }, message: expect.stringMatching(/^The model accepts 2,048 tokens of context; filters need about [\d,]+\.$/) });
+    expect(result.warning).toEqual({ key: "backend.ai.contextWindow", params: { tokens: 2048, needed: expect.any(Number) }, message: expect.stringMatching(/^The model accepts 2,048 tokens of context; rules need about [\d,]+\.$/) });
   });
 });
