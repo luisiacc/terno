@@ -5,7 +5,8 @@ import { Chip } from "@terno/ui/components/chip";
 import { CommandDescription, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
 import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { Clock, Mail, Plus, Search, Sparkles, Undo2 } from "@terno/ui/icons";
+import { Clock, Copy, Mail, Plus, RotateCw, Search, Sparkles, Undo2 } from "@terno/ui/icons";
+import { useCommandState } from "cmdk";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { askReady, errorHelp, providerLabel } from "~/lib/ai";
 import { citationRuns } from "~/lib/ask-citations";
@@ -18,28 +19,59 @@ import { chordLabel } from "@terno/ui/components/shortcut";
 import { snack } from "~/lib/snack";
 import { useApp, setApp } from "~/state/app";
 
-/** an answer's own buttons: quiet text in a 24 px shape, full ink on hover */
-const QUIET = "font-medium text-muted-foreground hover:text-foreground";
+
+/** New question and the history, after an answer: small and quiet, full ink when chosen */
+const SESSION_ROW = "h-7 px-2.5 text-xs font-normal text-muted-foreground data-selected:text-foreground";
 
 const stopKeys = (e: KeyboardEvent) => {
   // a control's own Enter and Space stay out of the list's: cmdk selects the active row whichever control has focus (revision 12)
   if (e.key === "Enter" || e.key === " ") e.stopPropagation();
 };
 
+/** the source row cmdk has chosen (↑↓ in the follow-up box walk them): its message, so its citation lights with it */
+function useChosenSource(): number | null {
+  const value = useCommandState((state) => state.value);
+  const [kind, id] = (value ?? "").split("\u0000");
+  return kind === "source" && id ? Number(id) : null;
+}
+
+/** a source said in a line: who and when, for a citation's tooltip */
+const sourceLine = (source: AskSourceRef) => t("ask.source.from", { from: source.fromName || source.fromEmail, date: listDate(source.date) });
+
 /**
  * "…renews on 1 March.¹": a citation is a small numbered marker, a button to that source, bound to the word before it
- * and the punctuation after it (plan 161: no line starts with "."). Its pointer target is 24 px, drawn around it, so the
- * line keeps its rhythm. Everything else stays plain text, never a link.
+ * and the punctuation after it (plan 161: no line starts with "."). Plan 161, pass 2: the button's own box is 20 px
+ * (its margins take back what the line would grow by), its pointer target 24 px, its number full ink on the field's
+ * wash; hover or focus names the source, and the source row chosen with ↑↓ lights its number here.
  */
-function AnswerText({ text, sources }: { text: string; sources: readonly AskSourceRef[] }) {
+function AnswerText({ text, sources, chosen = null }: { text: string; sources: readonly AskSourceRef[]; chosen?: number | null }) {
   const views = useAsk((s) => s.sources);
   const marker = (n: number, key: number) => {
     const source = sources[n - 1];
     if (!source || views[source.messageId]?.state === "gone") return <span key={key}>[{n}]</span>;
+    const lit = chosen === source.messageId;
     return (
-      <button key={key} type="button" data-testid="ask-citation" onKeyDown={stopKeys} onClick={() => void openSource(source)} className="relative ms-0.5 inline-grid h-[1.3em] min-w-[1.3em] place-items-center rounded-[0.4em] bg-field px-[0.3em] align-[0.15em] text-2xs leading-none font-semibold text-muted-foreground tabular transition-colors after:absolute after:top-1/2 after:left-1/2 after:size-6 after:-translate-1/2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" aria-label={t("ask.citation", { n, subject: source.subject })}>
-        {n}
-      </button>
+      <Tooltip key={key}>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              data-testid="ask-citation"
+              data-lit={lit || undefined}
+              onKeyDown={stopKeys}
+              onClick={() => void openSource(source)}
+              className="group/cite relative -my-1 ms-0.5 inline-grid h-5 min-w-5 place-items-center rounded-[0.45em] align-[0.05em] outline-none after:absolute after:top-1/2 after:left-1/2 after:size-6 after:-translate-1/2 focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={t("ask.citation", { n, subject: source.subject })}
+            />
+          }
+        >
+          <span aria-hidden className={cn("inline-grid h-[1.4em] min-w-[1.4em] place-items-center rounded-[0.4em] px-[0.3em] text-2xs leading-none font-semibold text-foreground tabular transition-colors duration-fast", lit ? "bg-primary/15" : "bg-field group-hover/cite:bg-muted")}>{n}</span>
+        </TooltipTrigger>
+        <TooltipContent data-testid="ask-citation-preview">
+          <span className="block font-medium">{source.subject || t("common.noSubject")}</span>
+          <span className="block">{sourceLine(source)}</span>
+        </TooltipContent>
+      </Tooltip>
     );
   };
   return (
@@ -83,6 +115,7 @@ function Armed({ sources }: { sources: readonly AskSourceRef[] }) {
 /** One question and what came of it. */
 function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated: boolean }) {
   const running = useAsk((s) => s.running !== null);
+  const chosen = useChosenSource();
   if (!turn.answer && !last) return null;
   const copy = async () => {
     try {
@@ -95,17 +128,19 @@ function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated
   return (
     <section className="space-y-1.5" data-testid="ask-turn" data-status={turn.status}>
       {/* the header already says it, as does the turn before it when older mail answered again */}
-      <h3 className={repeated ? "sr-only" : "text-xs font-medium text-muted-foreground"} data-testid="ask-question">{turn.question}</h3>
-      {turn.answer ? <AnswerText text={turn.answer} sources={turn.sources} /> : null}
+      {/* plan 161, pass 2: a follow-up reads as a question, as the header's does, not as a caption */}
+      <h3 className={repeated ? "sr-only" : "text-sm font-medium"} data-testid="ask-question">{turn.question}</h3>
+      {turn.answer ? <AnswerText text={turn.answer} sources={turn.sources} chosen={last ? chosen : null} /> : null}
       <Armed sources={turn.sources} />
       {turn.status === "stopped" && <p className="text-xs text-muted-foreground" data-testid="ask-stopped">{t("ask.stopped")}</p>}
       <Checks turn={turn} />
       {turn.answer && (
-        // -ml-2: the buttons' words on the answer's edge; their 24 px shapes reach past it
-        <div className="-ml-2 flex items-center gap-0.5 text-xs text-muted-foreground" data-testid="ask-turn-actions">
-          <Button variant="ghost" size="xs" className={QUIET} data-testid="ask-copy" onKeyDown={stopKeys} onClick={() => void copy()}>{t("ask.copy")}</Button>
+        // plan 161, pass 2: buttons that look like buttons, their edge on the answer's
+        <div className="flex items-center gap-1.5 pt-0.5 text-xs text-muted-foreground" data-testid="ask-turn-actions">
+          <Button variant="outline" size="xs" data-testid="ask-copy" onKeyDown={stopKeys} onClick={() => void copy()}><Copy /> {t("ask.copy")}</Button>
           {last && !running && (
-            <Button variant="ghost" size="xs" className={QUIET} data-testid="ask-again" onKeyDown={stopKeys} onClick={() => askQuestion(turn.question)}>{t("ask.again")}</Button>
+            // it asks the same question once more; the new answer comes under this one
+            <Button variant="outline" size="xs" data-testid="ask-again" onKeyDown={stopKeys} onClick={() => askQuestion(turn.question)}><RotateCw /> {t("ask.again")}</Button>
           )}
           <Tooltip>
             <TooltipTrigger render={<span tabIndex={0} data-testid="ask-provenance" className="ml-auto rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" />}>{provenanceLabel()}</TooltipTrigger>
@@ -114,6 +149,8 @@ function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated
         </div>
       )}
       {last && turn.answer && <Scope />}
+      {/* plan 161, pass 2: what an earlier turn cited stays under it (the last turn's are the palette's rows) */}
+      {!last && turn.sources.length > 0 && <TurnSources sources={turn.sources} />}
     </section>
   );
 }
@@ -160,7 +197,7 @@ function Older() {
   return (
     <div className="space-y-1.5">
       {lead}
-      <Button size="sm" variant="secondary" data-testid="ask-older" onKeyDown={stopKeys} onClick={searchOlder}>{t("ask.older.button")}</Button>
+      <OlderButton />
     </div>
   );
 }
@@ -181,15 +218,19 @@ export function Scope() {
   const since = "since" in offer && offer.since ? offer.since : null;
   if (offer.kind === "none" || !since) return null;
   return (
-    <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground" data-testid="ask-scope">
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground" data-testid="ask-scope">
       <span>{t("ask.scope", { date: listDate(since) })}</span>
-      {offer.kind === "offline" ? (
-        <span data-testid="ask-older-offline">{t("ask.older.offline")}</span>
-      ) : (
-        // -ml-2 under the gap: its word sits one space after the scope's, its shape reaching back
-        <Button variant="ghost" size="xs" className={cn(QUIET, "-ml-2")} data-testid="ask-older" onKeyDown={stopKeys} onClick={searchOlder}>{t("ask.older.servers")}</Button>
-      )}
+      {offer.kind === "offline" ? <span data-testid="ask-older-offline">{t("ask.older.offline")}</span> : <OlderButton />}
     </p>
+  );
+}
+
+/** Plan 161, pass 2: the one look and label for older mail, after an answer's scope line and after "nothing here" alike. */
+function OlderButton() {
+  return (
+    <Button variant="outline" size="xs" data-testid="ask-older" onKeyDown={stopKeys} onClick={searchOlder}>
+      <Search /> {t("ask.older.servers")}
+    </Button>
   );
 }
 
@@ -253,19 +294,48 @@ function Failure() {
   );
 }
 
-function SourceRow({ source, n }: { source: AskSourceRef; n: number }) {
+/** A source's number, sender, subject (or where it went) and date: a palette row's, and an earlier turn's alike. */
+function SourceCells({ source, n }: { source: AskSourceRef; n: number }) {
   const view = useAsk((s) => s.sources[source.messageId]?.state ?? "ok");
   const armed = useAsk((s) => s.armedSource === source.messageId);
-  const gone = view === "gone";
   const moved = view === "spam" || view === "trash";
   return (
-    <CommandItem value={`source\u0000${source.messageId}\u0000${n}`} disabled={gone} data-testid="ask-source" data-state-view={view} onSelect={() => void openSource(source)}>
-      {/* the inline marker's look, so a citation and its row read as one number (full ink on the chosen row) */}
-      <span className="w-5 shrink-0"><span data-testid="ask-source-n" className="inline-grid h-[1.3em] min-w-[1.3em] place-items-center rounded-[0.4em] bg-field px-[0.3em] text-2xs leading-none font-semibold text-muted-foreground tabular in-data-[selected=true]:text-foreground">{n}</span></span>
+    <>
+      {/* the inline marker's look, so a citation and its row read as one number */}
+      <span className="w-5 shrink-0"><span data-testid="ask-source-n" className="inline-grid h-[1.4em] min-w-[1.4em] place-items-center rounded-[0.4em] bg-field px-[0.3em] text-2xs leading-none font-semibold text-foreground tabular">{n}</span></span>
       <span className="w-32 shrink-0 truncate">{source.fromName || source.fromEmail}</span>
-      <span className="min-w-0 flex-1 truncate text-muted-foreground">{gone ? t("ask.source.gone") : moved ? t(armed ? "ask.source.pressAgain" : view === "spam" ? "ask.source.spam" : "ask.source.trash") : source.subject}</span>
+      <span className="min-w-0 flex-1 truncate text-muted-foreground">{view === "gone" ? t("ask.source.gone") : moved ? t(armed ? "ask.source.pressAgain" : view === "spam" ? "ask.source.spam" : "ask.source.trash") : source.subject}</span>
       <CommandDescription>{listDate(source.date)}</CommandDescription>
+    </>
+  );
+}
+
+function SourceRow({ source, n }: { source: AskSourceRef; n: number }) {
+  const view = useAsk((s) => s.sources[source.messageId]?.state ?? "ok");
+  return (
+    <CommandItem value={`source\u0000${source.messageId}\u0000${n}`} disabled={view === "gone"} data-testid="ask-source" data-state-view={view} onSelect={() => void openSource(source)}>
+      <SourceCells source={source} n={n} />
     </CommandItem>
+  );
+}
+
+/** An earlier turn's sources, under its answer: the rows' anatomy, as buttons (Tab reaches them; ↑↓ are the last turn's). */
+function TurnSources({ sources }: { sources: readonly AskSourceRef[] }) {
+  const views = useAsk((s) => s.sources);
+  return (
+    <div className="pt-1" data-testid="ask-turn-sources">
+      <h4 className="text-xs font-medium text-muted-foreground">{t("ask.sources")}</h4>
+      {/* -mx-3: the rows' words on the answer's edge, their shapes reaching past it, as the palette's rows do */}
+      <ul className="-mx-3 mt-0.5 flex flex-col gap-0.5">
+        {sources.map((source, i) => (
+          <li key={source.messageId}>
+            <button type="button" data-testid="ask-turn-source" disabled={views[source.messageId]?.state === "gone"} onKeyDown={stopKeys} onClick={() => void openSource(source)} className="flex h-8 w-full items-center gap-2 rounded-(--command-radius) px-3 text-start text-sm font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:text-muted-foreground">
+              <SourceCells source={source} n={i + 1} />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -352,11 +422,12 @@ function Conversation({ onBack }: { onBack: () => void }) {
             ))}
           </CommandGroup>
         )}
-        <CommandGroup value="ask-actions" forceMount>
-          <CommandItem forceMount value="ask-new" data-testid="ask-new" onSelect={() => newQuestion()}>
+        {/* plan 161, pass 2: starting over and the history are one quiet line, under the answer and its sources */}
+        <CommandGroup value="ask-actions" forceMount data-testid="ask-session" className="**:[[cmdk-group-items]]:flex-row **:[[cmdk-group-items]]:gap-1">
+          <CommandItem forceMount value="ask-new" data-testid="ask-new" className={SESSION_ROW} onSelect={() => newQuestion()}>
             <Plus /> {t("ask.new")}
           </CommandItem>
-          <CommandItem forceMount value="ask-history" data-testid="ask-history-row" onSelect={() => setPalettePage("askHistory")}>
+          <CommandItem forceMount value="ask-history" data-testid="ask-history-row" className={SESSION_ROW} onSelect={() => setPalettePage("askHistory")}>
             <Clock /> {t("palette.askHistory")}
           </CommandItem>
         </CommandGroup>

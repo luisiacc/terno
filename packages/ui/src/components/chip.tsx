@@ -25,7 +25,7 @@ function Chip({ dot, onRemove, removeLabel, removeProps, className, children, ..
     <span
       data-slot="chip"
       className={cn(
-        "inline-flex h-6 max-w-full min-w-0 shrink-0 items-center gap-1.5 rounded-md bg-field px-2 text-xs font-medium text-foreground",
+        "inline-flex h-6 max-w-full min-w-0 shrink-0 items-center gap-1.5 rounded-md bg-field px-2 text-xs font-medium whitespace-nowrap text-foreground",
         onRemove && "pe-1",
         className
       )}

@@ -63,7 +63,7 @@ test.describe("ask your mail (plan 141)", () => {
       await expect(page.getByTestId("ask-scope").getByTestId("ask-older")).toHaveText("Search older mail on your servers");
     });
 
-    await scenario("a citation is bound to its words, with a 24 px target that moves nothing (plan 161)", async () => {
+    await scenario("a citation is bound to its words: a 20 px box, a 24 px target, and the line's height unchanged (plan 161)", async () => {
       const cited = page.getByTestId("ask-cited").first();
       await expect(cited.getByTestId("ask-citation")).toHaveText("1");
       // one line box: the marker never starts a line, nor does what closes the clause after it
@@ -72,17 +72,43 @@ test.describe("ask your mail (plan 141)", () => {
         const r = el.getBoundingClientRect();
         const [x, y] = [r.left + r.width / 2, r.top + r.height / 2];
         const at = (dx: number, dy: number) => document.elementFromPoint(x + dx, y + dy)?.closest("[data-testid=ask-citation]") === el;
-        return { height: r.height, corners: [at(-11, -11), at(11, -11), at(-11, 11), at(11, 11)], outside: at(0, 14) };
+        return { height: r.height, width: r.width, corners: [at(-11, -11), at(11, -11), at(-11, 11), at(11, 11)], outside: at(0, 14) };
       });
-      expect(hit.height).toBeLessThan(24);
+      // pass 2: the element itself measures 20 px, as a rater's ruler does
+      expect(hit.height).toBeGreaterThanOrEqual(20);
+      expect(hit.width).toBeGreaterThanOrEqual(20);
       expect(hit.corners).toEqual([true, true, true, true]);
       expect(hit.outside).toBe(false);
+      // every line of the answer is the paragraph's line height: the marker grows none of them
+      const lines = await page.getByTestId("ask-answer").first().evaluate((p) => {
+        const range = document.createRange();
+        range.selectNodeContents(p);
+        const n = new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.bottom))).size;
+        return { height: p.getBoundingClientRect().height, n, lh: parseFloat(getComputedStyle(p).lineHeight) };
+      });
+      expect(Math.abs(lines.height - lines.n * lines.lh)).toBeLessThanOrEqual(1);
+      // hovering it names its source
+      await page.getByTestId("ask-citation").first().hover();
+      await expect(page.getByTestId("ask-citation-preview")).toContainText(`${WORD} policy`);
+      await page.mouse.move(0, 0);
+      // Answer again says what it does; Copy and it are buttons, not grey words
+      await expect(page.getByTestId("ask-again")).toHaveText("Answer again");
+      // New question and the history: under the sources, and smaller than them
+      const source = (await page.getByTestId("ask-source").last().boundingBox())!;
+      const session = (await page.getByTestId("ask-new").boundingBox())!;
+      expect(session.y).toBeGreaterThanOrEqual(source.y + source.height - 1);
+      const size = (testId: string) => page.getByTestId(testId).first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+      expect(await size("ask-new")).toBeLessThan(await size("ask-source"));
+      expect(session.height).toBeLessThan(source.height);
     });
 
     await scenario("the source row and the inline number open the thread; ⌘⇧K comes back to the conversation", async () => {
       const source = page.getByTestId("ask-source").first();
       await expect(source).toBeVisible();
       await followUp(page).press("ArrowDown");
+      // pass 2: ↑↓ walk the source rows, and the chosen row's number lights in the answer
+      const chosen = await page.locator("[data-testid=ask-source][data-selected=true] [data-testid=ask-source-n]").textContent();
+      await expect(page.locator("[data-testid=ask-citation][data-lit]").first()).toHaveText(chosen!);
       await page.keyboard.press("Enter");
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(page.getByTestId("reader-subject")).toBeVisible();
@@ -100,11 +126,26 @@ test.describe("ask your mail (plan 141)", () => {
       await expect(lastTurn(page)).toBeVisible();
     });
 
-    await scenario("a follow-up keeps one entry", async () => {
+    await scenario("a follow-up keeps one entry, and the first turn keeps its sources (plan 161, pass 2)", async () => {
+      const cited = await page.getByTestId("ask-source").count();
       await followUp(page).fill(`and ${word} again?`);
       await followUp(page).press("Enter");
       await expect(page.getByTestId("ask-turn")).toHaveCount(2);
       await expect(followUp(page)).toHaveValue("");
+      await expect(lastTurn(page)).toHaveAttribute("data-status", /answered|not_found/);
+      // the follow-up's question reads as a question, not a caption
+      const asked = page.getByTestId("ask-turn").last().getByTestId("ask-question");
+      await expect(asked).toHaveText(`and ${word} again?`);
+      expect(await asked.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(await page.getByTestId("ask-answer").first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize)));
+      const first = page.getByTestId("ask-turn").first();
+      await expect(first.getByTestId("ask-turn-source")).toHaveCount(cited);
+      // only the last answer offers to answer again
+      await expect(first.getByTestId("ask-again")).toHaveCount(0);
+      await first.getByTestId("ask-turn-source").first().click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(page.getByTestId("reader-subject")).toContainText(`${WORD} policy`);
+      await page.keyboard.press("ControlOrMeta+Shift+k");
+      await expect(page.getByTestId("ask-turn")).toHaveCount(2);
     });
 
     await scenario("Enter on Copy and Ask again stays with them, not the list's active row", async () => {
@@ -118,6 +159,10 @@ test.describe("ask your mail (plan 141)", () => {
       await page.getByTestId("ask-new").click();
       await expect(ask(page)).toBeFocused();
       await page.getByTestId("ask-history-row").click();
+      // its page's chip is one line, its × clear of the field's placeholder (pass 2)
+      const chip = (await page.getByTestId("palette-page").boundingBox())!;
+      expect(chip.height).toBeLessThanOrEqual(25);
+      expect(chip.x + chip.width).toBeLessThanOrEqual((await ask(page).boundingBox())!.x + 1);
       const item = page.getByTestId("ask-history-item");
       await expect(item).toHaveCount(1);
       await expect(item).toContainText("1 follow-up");
@@ -156,6 +201,8 @@ test.describe("ask your mail (plan 141)", () => {
     const older = page.getByTestId("ask-older");
     await expect(older).toBeVisible();
     await expect(page.getByTestId("ask-not-found")).toContainText("Nothing in your mail on this Mac answers this.");
+    // pass 2: one look and one label for older mail, here and after an answer's scope line
+    await expect(older).toHaveText("Search older mail on your servers");
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/not-found-light.png` });
     await older.click();
     await expect(page.getByTestId("ask-source").first()).toContainText("Greenway Rentals");
