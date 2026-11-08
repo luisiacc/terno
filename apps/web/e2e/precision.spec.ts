@@ -34,6 +34,24 @@ async function token(page: Page, name: string, fallback: number, at = "body"): P
   }, [name, String(fallback), at] as const);
 }
 
+/** Its box the same over three frames (a menu that re-anchors once it knows its height moves a frame after opening) */
+const still = (l: Locator) =>
+  l.evaluate(
+    (el) =>
+      new Promise<void>((done) => {
+        let last = "", same = 0, frames = 0;
+        const tick = () => {
+          const r = el.getBoundingClientRect();
+          const now = `${r.top},${r.left},${r.width},${r.height}`;
+          same = now === last ? same + 1 : 0;
+          last = now;
+          if (same >= 3 || ++frames > 60) done();
+          else requestAnimationFrame(tick);
+        };
+        tick();
+      }),
+  );
+
 /** Every opening animation inside it finished (a zoom would scale the rects) */
 const settled = (l: Locator) => l.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).filter((a) => a.effect?.getTiming().iterations !== Infinity && a.id !== "snack-countdown").map((a) => a.finished))).catch(() => {});
 
@@ -58,17 +76,23 @@ async function lastReachableRow(page: Page): Promise<{ id: string; x: number; y:
 
 /**
  * A floating card's four edges: inside the window (its ring's spread too), not cut by a scrolling or clipping ancestor,
- * and drawn: along each edge (its corners left out), a 1 px band differs from what's behind it on ≥ 95% of its length.
+ * drawn by a border or a ring on every side (its computed style), and visible: along each edge (its corners left out),
+ * the stroke's own pixel (the border's inside the box, the ring's just outside it) differs from what's behind it on
+ * ≥ 95% of its length. Returns what's wrong (empty: whole), so a test can also show it catches a missing edge.
  */
-async function edges(page: Page, card: Locator, name: string, design: string): Promise<void> {
+async function edgeReport(page: Page, card: Locator): Promise<string[]> {
   await settled(card);
   const geo = await card.evaluate((el) => {
     const r = el.getBoundingClientRect();
-    const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
+    const s = getComputedStyle(el);
+    const radius = parseFloat(s.borderTopLeftRadius) || 0;
+    // a ring: an outer shadow with no offset or blur and a spread (Tailwind's ring, our hairline shadows)
+    const ring = s.boxShadow.split(/,(?![^(]*\))/).some((sh) => !/inset/.test(sh) && /(^|\s)0px 0px 0px [\d.]+px/.test(sh.replace(/rgba?\([^)]*\)|oklch\([^)]*\)|color\([^)]*\)/g, "").trim()) && !/0px 0px 0px 0px/.test(sh));
+    const by = (["top", "right", "bottom", "left"] as const).map((side) => [side, parseFloat(s.getPropertyValue(`border-${side}-width`)) > 0 ? "border" : ring ? "ring" : "none"] as const);
     let clip: string | null = null;
     for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
-      const s = getComputedStyle(a);
-      if (s.overflowX === "visible" && s.overflowY === "visible") continue;
+      const as = getComputedStyle(a);
+      if (as.overflowX === "visible" && as.overflowY === "visible") continue;
       const c = a.getBoundingClientRect();
       // its ring is drawn a pixel outside the box
       if (r.left - 1 < c.left - 0.5 || r.top - 1 < c.top - 0.5 || r.right + 1 > c.right + 0.5 || r.bottom + 1 > c.bottom + 0.5) {
@@ -76,13 +100,15 @@ async function edges(page: Page, card: Locator, name: string, design: string): P
         break;
       }
     }
-    return { r: r.toJSON() as DOMRect, radius, clip, w: innerWidth, h: innerHeight };
+    return { r: r.toJSON() as DOMRect, radius, clip, by: Object.fromEntries(by) as Record<string, "border" | "ring" | "none">, w: innerWidth, h: innerHeight };
   });
   const { r } = geo;
-  expect.soft(r.left - 1 >= 0 && r.top - 1 >= 0 && r.right + 1 <= geo.w && r.bottom + 1 <= geo.h, `${design}: ${name}'s edges are inside the window (${fmt(r.left)},${fmt(r.top)} to ${fmt(r.right)},${fmt(r.bottom)} in ${geo.w}x${geo.h})`).toBe(true);
-  expect.soft(geo.clip, `${design}: no ancestor cuts ${name}'s edge`).toBeNull();
+  const problems: string[] = [];
+  if (!(r.left - 1 >= 0 && r.top - 1 >= 0 && r.right + 1 <= geo.w && r.bottom + 1 <= geo.h)) problems.push(`outside the window (${fmt(r.left)},${fmt(r.top)} to ${fmt(r.right)},${fmt(r.bottom)} in ${geo.w}x${geo.h})`);
+  if (geo.clip) problems.push(`cut by ${geo.clip}`);
+  for (const [side, by] of Object.entries(geo.by)) if (by === "none") problems.push(`no border or ring on its ${side}`);
   const shot = (await page.screenshot({ animations: "disabled", caret: "hide" })).toString("base64");
-  const drawn = await page.evaluate(async ({ shot, r, radius }) => {
+  const drawn = await page.evaluate(async ({ shot, r, radius, by }) => {
     const img = new Image();
     img.src = `data:image/png;base64,${shot}`;
     await img.decode();
@@ -107,23 +133,27 @@ async function edges(page: Page, card: Locator, name: string, design: string): P
     };
     const out: Record<string, number> = {};
     for (const [side, { from, to, n }] of Object.entries(sides)) {
+      // the stroke's pixel: a border's is the box's last, a ring's the first outside it; behind is 4 px further out
+      const d = by[side] === "ring" ? 1 : 0;
       const len = Math.max(Math.abs(to[0]! - from[0]!), Math.abs(to[1]! - from[1]!));
       let hit = 0, total = 0;
       for (let s = 0; s <= len; s += 2) {
         const x = from[0]! + ((to[0]! - from[0]!) * s) / Math.max(1, len);
         const y = from[1]! + ((to[1]! - from[1]!) * s) / Math.max(1, len);
-        if (x < 1 || y < 1 || x > innerWidth - 2 || y > innerHeight - 2) continue;
-        const behind = px(x + n[0]! * 8, y + n[1]! * 8);
-        // the edge band: the card's last pixel and the ring's, just outside it
-        const band = [0, 1].map((d) => px(x + n[0]! * d, y + n[1]! * d));
+        if (x < 6 || y < 6 || x > innerWidth - 7 || y > innerHeight - 7) continue;
         total++;
-        if (band.some((p) => dist(p, behind) >= 6)) hit++;
+        if (dist(px(x + n[0]! * d, y + n[1]! * d), px(x + n[0]! * (d + 4), y + n[1]! * (d + 4))) >= 6) hit++;
       }
       out[side] = total ? hit / total : 0;
     }
     return out;
-  }, { shot, r, radius: geo.radius });
-  for (const [side, share] of Object.entries(drawn)) expect.soft(share, `${design}: ${name}'s ${side} edge is drawn (${Math.round(share * 100)}% of it)`).toBeGreaterThanOrEqual(0.95);
+  }, { shot, r, radius: geo.radius, by: geo.by });
+  for (const [side, share] of Object.entries(drawn)) if (share < 0.95) problems.push(`its ${side} edge drawn on ${Math.round(share * 100)}% of it`);
+  return problems;
+}
+
+async function edges(page: Page, card: Locator, name: string, design: string): Promise<void> {
+  expect.soft(await edgeReport(page, card), `${design}: ${name}'s four edges are whole`).toEqual([]);
 }
 
 /** What a toast holds to: one inset from the bottom it rests on, centred on the reader's column over the reader, never over a row */
@@ -179,6 +209,7 @@ async function menuOnItsRow(page: Page, id: string, design: string, where: strin
   const menu = page.locator("[data-slot=context-menu-content]");
   await expect(menu).toBeVisible();
   await settled(menu);
+  await still(menu);
   const inset = await token(page, "--float-inset", 12);
   await wholeRows(menu, "[role=menuitem]", `${where}: the row menu`, design);
   const m = await menu.evaluate((el, [id, inset]) => {
@@ -228,7 +259,12 @@ async function draftMeasure(page: Page, design: string, where: string): Promise<
     if ((await quote.getAttribute("aria-expanded")) !== "true") await quote.click();
   }
   const m = await page.evaluate(() => {
-    const max = (el: Element | null) => (el ? parseFloat(getComputedStyle(el).maxWidth) : null);
+    // the text's own measure: the box's max-width less its padding and border (box-sizing: border-box)
+    const max = (el: Element | null) => {
+      if (!el) return null;
+      const s = getComputedStyle(el);
+      return Math.round((parseFloat(s.maxWidth) - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight) - parseFloat(s.borderLeftWidth) - parseFloat(s.borderRightWidth)) * 10) / 10;
+    };
     return {
       body: max(document.querySelector("[data-testid=message-text]")),
       editor: max(document.querySelector("[data-testid=draft-slot] [data-testid=compose-body] > *")),
@@ -241,7 +277,7 @@ async function draftMeasure(page: Page, design: string, where: string): Promise<
         el.appendChild(probe);
         const w = getComputedStyle(probe).width;
         probe.remove();
-        return parseFloat(w);
+        return Math.round(parseFloat(w) * 10) / 10;
       })(),
     };
   });
@@ -274,6 +310,30 @@ async function openConversation(page: Page): Promise<void> {
   await focusList(page);
 }
 
+/** The reader pane's three titles at this size: the subject, New message and the selection, on one x and baseline */
+async function titlesAgree(page: Page, design: string, where: string): Promise<void> {
+  await openConversation(page);
+  const subject = await line(page.getByTestId("reader-subject"));
+  await page.keyboard.press("c");
+  const title = page.getByTestId("compose-title");
+  await expect(title).toBeVisible();
+  await settled(page.getByTestId("composer"));
+  const compose = await line(title);
+  await closeCompose(page);
+  const ids = await rows(page).evaluateAll((els) => els.slice(1, 4).map((r) => (r as HTMLElement).dataset.threadId!));
+  await selectRows(page, ids);
+  const count = page.getByTestId("selection-count");
+  await expect(count).toBeVisible();
+  const selection = await line(count);
+  await page.keyboard.press("Escape");
+  await expect(count).toHaveCount(0);
+  const reader = await page.locator("main").evaluate((el) => el.getBoundingClientRect().width);
+  note(`${where} titles (reader ${fmt(reader)} px): subject, New message, selection`, `${fmt(subject.x)},${fmt(subject.y)}; ${fmt(compose.x)},${fmt(compose.y)}; ${fmt(selection.x)},${fmt(selection.y)}`);
+  for (const [name, at] of [["New message", compose], ["the selection's title", selection]] as const) {
+    expect.soft(near(at.x, subject.x, 0.5) && near(at.y, subject.y, 0.5), `${design} ${where} (reader ${fmt(reader)} px): ${name} on the subject's line: ${fmt(at.x)},${fmt(at.y)} vs ${fmt(subject.x)},${fmt(subject.y)}`).toBe(true);
+  }
+}
+
 async function closeCompose(page: Page): Promise<void> {
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("compose-title")).toHaveCount(0);
@@ -295,6 +355,12 @@ test.describe("precision across screens (plan 160)", { tag: "@design" }, () => {
       expect.soft(near(compose.x, subject.x, 0.5), `${design}: New message starts at the subject's x: ${fmt(compose.x)} vs ${fmt(subject.x)}`).toBe(true);
       expect.soft(near(compose.y, subject.y, 0.5), `${design}: New message sits on the subject's baseline: ${fmt(compose.y)} vs ${fmt(subject.y)}`).toBe(true);
       await scenario("New message's card: four edges drawn", () => edges(page, page.getByTestId("composer-card"), "New message's card", design));
+      await scenario("the edge check catches a card with no ring (its own proof)", async () => {
+        const off = await page.addStyleTag({ content: "[data-testid=composer-card]{box-shadow:none!important;border:0!important}" });
+        const report = await edgeReport(page, page.getByTestId("composer-card"));
+        await off.evaluate((el) => el.remove());
+        for (const side of ["top", "right", "bottom", "left"]) expect.soft(report.some((p) => p.includes(side)), `${design}: a ringless card's ${side} edge is reported (${report.join("; ")})`).toBe(true);
+      });
       await closeCompose(page);
 
       const ids = await rows(page).evaluateAll((els) => els.slice(1, 4).map((r) => (r as HTMLElement).dataset.threadId!));
@@ -379,6 +445,14 @@ test.describe("precision across screens (plan 160)", { tag: "@design" }, () => {
       await scenario(`${size}: the menu on the last row shows whole rows, an inset from the window, its row in view`, async () => {
         const id = await rightClickLastRow(page);
         await menuOnItsRow(page, id, design, size);
+        // rows that arrive while it's open (Reply all, once the conversation loads) re-place it: still whole rows (Codex review)
+        const menu = page.locator("[data-slot=context-menu-content]");
+        await menu.evaluate((el) => {
+          const row = el.querySelector("[role=menuitem]")!;
+          for (let i = 0; i < 4; i++) el.insertBefore(row.cloneNode(true), row);
+        });
+        await still(menu);
+        await wholeRows(menu, "[role=menuitem]", `${size}: the row menu, rows added while open`, design);
         // a resize: the menu goes (it would be left where the row was)
         await page.setViewportSize({ width: width - 40, height });
         await expect(page.locator("[data-slot=context-menu-content]")).toHaveCount(0);
@@ -386,6 +460,11 @@ test.describe("precision across screens (plan 160)", { tag: "@design" }, () => {
         await page.keyboard.press("Escape");
         await expect(page.locator("[data-slot=context-menu-content]")).toHaveCount(0);
       });
+    }
+    // the container's narrow steps (a smaller title under 560 px, less margin under 420 px) keep the line too
+    for (const [width, height] of [[1100, 700], [960, 700]] as const) {
+      await page.setViewportSize({ width, height });
+      await scenario(`${width}x${height}: the reader pane's titles share a line`, () => titlesAgree(page, design, `${width}x${height}`));
     }
     await scenario("1100x700: an open reply's card is wholly in view", async () => {
       await page.setViewportSize({ width: 1100, height: 700 });
