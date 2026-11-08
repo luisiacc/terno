@@ -62,6 +62,9 @@ export function designVars(d: DesignDefinition): [string, string][] {
     ["--cta-floor", d.surfaces.cta === "pill" ? "9999px" : "0px"],
     ["--card-bg", d.surfaces.card === "tint" ? "var(--tint)" : "transparent"],
     ["--card-ring", d.surfaces.card === "tint" ? "transparent" : "var(--border)"],
+    // plan 161, pass 3: an AI card's wash of the ink in dark, where its tint alone is 1.11 to 1.15:1 off the reader (contrast.ts
+    // AI_CARD_WASH); an outlined design's card stays outlined
+    ["--ai-card-wash", d.surfaces.card === "tint" ? "color-mix(in oklab, var(--foreground) 4%, transparent)" : "transparent"],
     // plan 161: in a dialog in dark, a tint card is a step off the popover at most: it's ringed there
     ["--card-ring-dialog", d.surfaces.card === "tint" ? "var(--card-edge)" : "var(--border)"],
     ["--row-h", `${d.rows.comfortable}px`],

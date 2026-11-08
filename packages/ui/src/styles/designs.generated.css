@@ -139,6 +139,7 @@
   --cta-floor: 0px;
   --card-bg: var(--tint);
   --card-ring: transparent;
+  --ai-card-wash: color-mix(in oklab, var(--foreground) 4%, transparent);
   --card-ring-dialog: var(--card-edge);
   --row-h: 76px;
   --row-h-compact: 36px;
@@ -293,6 +294,7 @@
   --cta-floor: 0px;
   --card-bg: var(--tint);
   --card-ring: transparent;
+  --ai-card-wash: color-mix(in oklab, var(--foreground) 4%, transparent);
   --card-ring-dialog: var(--card-edge);
   --row-h: 76px;
   --row-h-compact: 34px;
@@ -447,6 +449,7 @@
   --cta-floor: 0px;
   --card-bg: var(--tint);
   --card-ring: transparent;
+  --ai-card-wash: color-mix(in oklab, var(--foreground) 4%, transparent);
   --card-ring-dialog: var(--card-edge);
   --row-h: 64px;
   --row-h-compact: 32px;
@@ -601,6 +604,7 @@
   --cta-floor: 0px;
   --card-bg: var(--tint);
   --card-ring: transparent;
+  --ai-card-wash: color-mix(in oklab, var(--foreground) 4%, transparent);
   --card-ring-dialog: var(--card-edge);
   --row-h: 68px;
   --row-h-compact: 32px;
@@ -755,6 +759,7 @@
   --cta-floor: 9999px;
   --card-bg: transparent;
   --card-ring: var(--border);
+  --ai-card-wash: transparent;
   --card-ring-dialog: var(--border);
   --row-h: 64px;
   --row-h-compact: 32px;

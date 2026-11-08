@@ -199,6 +199,8 @@ export interface BoundaryStep {
  * on the field (over menus and dialogs too) only up to this wash, so its field, and the thumb drawn in it, stop there
  */
 const GRAPHITE_FIELD = { "graphite-light": { min: 1.32, why: "the blueprint's #5D5D5D on the field" }, "graphite-dark": { min: 1.2, why: "the blueprint's #9E9E9E on the field over a menu" } };
+/** Plan 161, pass 3: an AI card's wash of the ink in dark (generate.ts --ai-card-wash, 4 %) */
+export const AI_CARD_WASH: Layer = { token: "foreground", alpha: 0.04 };
 /** Plan 160: the row under the pointer; the selection a step above it */
 export const HOVER_FLOOR = 1.15;
 export const BOUNDARY_STEPS: readonly BoundaryStep[] = [
@@ -227,6 +229,12 @@ export const BOUNDARY_STEPS: readonly BoundaryStep[] = [
   { edge: ["card", "card-edge"], behind: ["card"], min: HAIRLINE_FLOOR, why: "an outlined AI card's ring on a reader card" },
   // pass 3: Today's digest row, ringed at rest in the same edge so it reads as a row to open, on the list
   { edge: ["pane", "card-edge"], behind: ["pane"], min: HAIRLINE_FLOOR, why: "the digest's row, ringed on Today's list" },
+  // plan 161, pass 3: ai-r02 still read the dark card as a hairline (its tint 1.11 to 1.15:1 off the reader): in dark, a tint
+  // card's fill carries a wash of the ink (generate.ts --ai-card-wash), a step off the reader, and off Lumen's reader card;
+  // the ring holds against the washed fill
+  { edge: ["tint", AI_CARD_WASH], behind: ["background"], min: 1.2, mode: "dark", why: "an AI card's washed fill on the reader (dark)" },
+  { edge: ["tint", AI_CARD_WASH], behind: ["card"], min: 1.05, mode: "dark", why: "an AI card's washed fill on Lumen's reader card (dark)" },
+  { edge: ["tint", AI_CARD_WASH, "card-edge"], behind: ["tint", AI_CARD_WASH], min: HAIRLINE_FLOOR, mode: "dark", why: "an AI card's ring against its washed fill (dark)", except: { monokai: { min: 1.48, why: "its washed fill stands off the reader by itself at 1.33:1" } } },
 ];
 
 /** The contrast across a boundary as drawn. */
