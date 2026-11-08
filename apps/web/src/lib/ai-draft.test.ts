@@ -49,16 +49,33 @@ function editor(key: string, initial = "") {
     text: initial,
     doc: {} as object,
     placeholder: undefined as string | undefined,
+    gaps: [] as readonly string[],
+    selected: null as string | null,
     focused: 0,
-    insertGenerated(text: string, how: "replace" | "below", placeholder?: string) {
+    insertGenerated(text: string, how: "replace" | "below", placeholder?: string, gaps?: readonly string[]) {
+      const before = { text: c.text };
       history.push({ text: c.text, doc: c.doc });
       c.text = how === "replace" || !c.text ? text : `${c.text}\n\n${text}`;
       c.doc = {};
       c.placeholder = placeholder;
+      c.gaps = gaps ?? [];
       // as the real editor's change does: the draft is dirty, autosave follows, and its listeners hear of it at once
       editDraft(key, {});
       for (const l of listeners) l();
+      return { doc: c.doc, before };
+    },
+    // as the real one: the document as the write found it, one step that undo takes back
+    restoreGenerated(before: unknown) {
+      history.push({ text: c.text, doc: c.doc });
+      c.text = (before as { text: string }).text;
+      c.doc = {};
+      for (const l of listeners) l();
       return { doc: c.doc };
+    },
+    selectText(text: string) {
+      if (!c.text.includes(text)) return false;
+      c.selected = text;
+      return true;
     },
     undoGenerated(doc: unknown) {
       if (c.doc !== doc) return null;
@@ -411,6 +428,34 @@ describe("the send guard, on every path", () => {
     stop();
   });
 
+  it("plan 161: a gap the model left stops Send once, inline; Fill it in selects it, Send anyway sends", async () => {
+    const { key, c } = await writing();
+    last("ai.compose").resolve(done("Yes. [What you think.] Thanks.", { checks: { specifics: [], placeholders: ["[What you think.]"] } }));
+    await tick();
+    // a bracket the user typed is theirs: only the model's gaps count
+    c.type(" [sic]");
+    expect(store.gapsLeft(key)).toEqual(["[What you think.]"]);
+    expect(await sendDraft(key)).toBe(false);
+    expect(calls("compose.send")).toHaveLength(0);
+    expect(session(key)!.guard).toEqual({ sendAt: undefined, gaps: ["[What you think.]"] });
+    store.keepWriting(key);
+    expect(session(key)!.guard).toBeNull();
+    expect(c.selected).toBe("[What you think.]");
+    // filled in: nothing stops it
+    c.text = "Yes. I like it. Thanks. [sic]";
+    expect(store.gapsLeft(key)).toEqual([]);
+    expect(aiDraftHooks.blocksSend(key, undefined)).toBe(false);
+    // left in, and sent anyway
+    c.text = "Yes. [What you think.] Thanks.";
+    const send = vi.fn();
+    const stop = registerDraftCommands(key, { send, discard() {}, attach() {}, showCc() {}, showBcc() {}, link() {}, pin() {}, unpin() {}, state: () => ({}) as never });
+    expect(aiDraftHooks.blocksSend(key, undefined)).toBe(true);
+    store.discardAndSend(key);
+    expect(send).toHaveBeenCalledWith(undefined);
+    expect(c.text).toBe("Yes. [What you think.] Thanks.");
+    stop();
+  });
+
   it("with nothing undecided it sends, with the authored text, once provenance is written", async () => {
     rpc.deferred.add("writing.commitGeneration");
     const { key } = await writing();
@@ -465,12 +510,47 @@ describe("the subject: §10.3's compound undo", () => {
     expect(useDrafts.getState().drafts[key]!.subject).toBe("My own");
   });
 
-  it("ordinary undo is the text's: the next change ends the strip, and the subject stays", async () => {
+  it("ordinary undo is the text's: the strip stays, edited, and the subject stays", async () => {
     const { key, c } = await filled();
     c.undoGenerated(c.doc);
     store.noteBody(key);
-    expect(session(key)).toBeUndefined();
+    expect(session(key)!.strip!.edited).toBe(true);
     expect(useDrafts.getState().drafts[key]!.subject).toBe("Generated subject");
+  });
+
+  it("plan 161: Undo after an edit restores exactly what the write found, subject too, and the snack's Undo brings the edit back", async () => {
+    const { key, c } = await filled();
+    c.type(" Mine.");
+    expect(session(key)!.strip!.edited).toBe(true);
+    store.undoCommit(key);
+    expect(c.text).toBe("");
+    expect(useDrafts.getState().drafts[key]!.subject).toBe("");
+    expect(session(key)).toBeUndefined();
+    // the draft stays, blank: what was typed is one Undo away
+    expect(useDrafts.getState().drafts[key]).toBeDefined();
+    const { useSnack, runUndo } = await import("./snack");
+    expect(JSON.stringify(useSnack.getState().current)).toContain("Back to before the AI draft");
+    await runUndo(useSnack.getState().undo!);
+    expect(c.text).toBe("Body. Mine.");
+    expect(useDrafts.getState().drafts[key]!.subject).toBe("Generated subject");
+    expect(session(key)!.phase).toBe("strip");
+    expect(session(key)!.strip!.edited).toBe(true);
+  });
+
+  it("plan 161: edited under a refinement, Undo goes back to the version before it, unedited", async () => {
+    const { key, c } = await filled();
+    store.refine(key, "warmer");
+    last("ai.compose").resolve(done("Warmer body."));
+    await tick();
+    c.type(" Edit.");
+    store.undoCommit(key);
+    expect(c.text).toBe("Body.");
+    expect(session(key)!.strip!.stack).toHaveLength(1);
+    expect(session(key)!.strip!.edited).toBe(false);
+    // and that version's own Undo goes back exactly too, never through the restore's step
+    store.undoCommit(key);
+    expect(c.text).toBe("");
+    expect(session(key)).toBeUndefined();
   });
 
   it("a subject the user wrote before is never touched", async () => {
@@ -517,11 +597,12 @@ describe("existing text, and what goes wrong", () => {
     expect(c.text).toBe("fine with the 19th");
   });
 
-  it("caret on the first placeholder: the commit names it", async () => {
+  it("caret on the first placeholder: the commit names it, and every gap to mark", async () => {
     const { c } = await writing();
     last("ai.compose").resolve(done("On [date] at [time].", { checks: { specifics: [], placeholders: ["[date]", "[time]"] } }));
     await tick();
     expect(c.placeholder).toBe("[date]");
+    expect(c.gaps).toEqual(["[date]", "[time]"]);
   });
 
   it("a refusal discards what came, with the plan's words", async () => {
@@ -858,17 +939,20 @@ describe("what the Codex review found", () => {
     rebuilt.unmount();
   });
 
-  it("6: and if they aren't, nothing is overwritten, the subject stays and the strip just goes", async () => {
+  it("6, plan 161: and if they aren't, it's an edit: the document goes back exactly, and the snack's Undo brings the edit back", async () => {
     const { key, unmount } = await writing({ mode: "new" });
     last("ai.compose").resolve(done("Body.", { subject: "Generated" }));
     await tick();
     unmount();
-    editor(key, "Body, and more of mine.");
+    const { c } = editor(key, "Body, and more of mine.");
     editDraft(key, { bodyText: "Body, and more of mine." });
     store.undoCommit(key);
-    expect(useDrafts.getState().drafts[key]!.bodyText).toBe("Body, and more of mine.");
-    expect(useDrafts.getState().drafts[key]!.subject).toBe("Generated");
+    expect(c.text).toBe("");
+    expect(useDrafts.getState().drafts[key]!.subject).toBe("");
     expect(session(key)).toBeUndefined();
+    const { useSnack, runUndo } = await import("./snack");
+    await runUndo(useSnack.getState().undo!);
+    expect(c.text).toBe("Body, and more of mine.");
   });
 
   it("7: provenance that failed is tried again before the send, so the model's text doesn't count as the user's", async () => {
@@ -950,11 +1034,15 @@ describe("the row", () => {
     expect(last("ai.compose").params).toMatchObject({ instruction: "mention Friday", previousDraft: "First." });
   });
 
-  it("the strip goes at the next keystroke", async () => {
+  it("plan 161: the strip stays after a keystroke, as Edited after AI, until the draft goes", async () => {
     const { key, c } = await writing();
     last("ai.compose").resolve(done("First."));
     await tick();
     c.type("!");
+    expect(session(key)!.phase).toBe("strip");
+    expect(session(key)!.strip!.edited).toBe(true);
+    expect(calls("ai.composeEnd")).toHaveLength(0);
+    forgetDraft(key);
     expect(session(key)).toBeUndefined();
     expect(calls("ai.composeEnd")).toHaveLength(1);
   });

@@ -5,10 +5,13 @@ import { CloseButton } from "@terno/ui/components/close-button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { Spinner } from "@terno/ui/components/spinner";
+import { ChevronDown, Sparkles, Undo2 } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import { modelName, providerLabel, writingTarget } from "~/lib/ai";
 import { acknowledgeTold, answer, closeRow, commitHeld, discard, discardAndSend, includeEveryone, keepWriting, noteBody, place, placePartial, previewMode, previewText, recallInstruction, refine, retry, setInstruction, stop, submit, subscribePreview, takeFocusRequest, undoCommit, useAiDraft, type AiSession, type AiStrip } from "~/lib/ai-draft";
+import { keepInView } from "~/lib/reader-scroll";
+import { AI_GLYPH, aiWritten } from "../ai-card";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { useDrafts } from "~/lib/drafts";
 import { setApp, useApp } from "~/state/app";
@@ -100,9 +103,10 @@ function VoicePopover({ strip, toText }: { strip: AiStrip; toText: string }) {
   const lines = voiceLines(strip, who, domainOf(toText));
   return (
     <Popover>
-      {/* shrinks, truncated, before the row would wrap: its full words are in the popover it opens */}
-      <PopoverTrigger render={<Button type="button" variant="ghost" size="xs" className={cn(quiet, "min-w-0 shrink @max-[28rem]:-ml-2")} data-testid="ai-strip-voice" />}>
+      {/* a menu's chevron, since it opens one; it shrinks, truncated, only when the status alone can't fit (its full words are in the popover) */}
+      <PopoverTrigger render={<Button type="button" variant="ghost" size="sm" className={cn(quiet, "min-w-0 shrink text-xs")} data-testid="ai-strip-voice" />}>
         <span className="truncate">{voiceLabel(strip, who)}</span>
+        <ChevronDown aria-hidden />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 text-sm" data-testid="ai-voice-popover">
         <ul className="flex flex-col gap-1">
@@ -133,26 +137,30 @@ function Strip({ s }: { s: AiSession & { strip: AiStrip } }) {
   const toText = useDrafts((state) => state.drafts[s.key]?.toText ?? "");
   const { strip } = s;
   return (
-    <div className={cn(line, "@container")} data-testid="ai-strip">
-      {/* in a narrow card it would wrap the row onto a second line, and the row's label already says AI */}
-      <span className="flex w-full min-w-0 items-center gap-x-1.5">
-      <span className="shrink-0 pr-0.5 text-xs @max-[28rem]:hidden" data-testid="ai-strip-written">{t("aiDraft.written")}</span>
-      <VoicePopover strip={strip} toText={toText} />
-      {/* -mr-0.5: their words end on the line Cc, Bcc and Subject end on; a hover's shape may sit wider */}
-      <span className="-mr-0.5 ml-auto flex shrink-0 items-center gap-x-0.5">
-        <Button type="button" variant="ghost" size="xs" className={quiet} data-testid="ai-strip-regenerate" onClick={() => refine(s.key, "regenerate")}>
+    <div className={cn(line, "py-[5px]")} data-testid="ai-strip" data-edited={strip.edited || undefined}>
+      {/* plan 161: a status, not a control (the secondary type, no shape), and never dropped: the commands wrap below it instead */}
+      <span className="flex min-w-0 flex-1 items-center gap-x-1">
+        <span className="flex shrink-0 items-center gap-1.5 text-xs" data-testid="ai-strip-written">
+          <Sparkles aria-hidden className={AI_GLYPH} />
+          {aiWritten(strip.edited === true)}
+        </span>
+        <VoicePopover strip={strip} toText={toText} />
+      </span>
+      {/* the commands: BoardUI's secondary buttons, ending on the line Cc, Bcc and Subject end on; Undo set apart, with its glyph */}
+      <span className="ml-auto flex shrink-0 items-center gap-1.5" data-testid="ai-strip-commands">
+        <Button type="button" variant="outline" size="sm" data-testid="ai-strip-regenerate" onClick={() => refine(s.key, "regenerate")}>
           {t("aiDraft.regenerate")}
         </Button>
-        <Button type="button" variant="ghost" size="xs" className={quiet} data-testid="ai-strip-shorter" onClick={() => refine(s.key, "shorter")}>
+        <Button type="button" variant="outline" size="sm" data-testid="ai-strip-shorter" onClick={() => refine(s.key, "shorter")}>
           {t("aiDraft.shorter")}
         </Button>
-        <Button type="button" variant="ghost" size="xs" className={quiet} data-testid="ai-strip-warmer" onClick={() => refine(s.key, "warmer")}>
+        <Button type="button" variant="outline" size="sm" data-testid="ai-strip-warmer" onClick={() => refine(s.key, "warmer")}>
           {t("aiDraft.warmer")}
         </Button>
-        <Button type="button" variant="ghost" size="xs" className={quiet} data-testid="ai-strip-undo" onClick={() => undoCommit(s.key)}>
+        <Button type="button" variant="outline" size="sm" className="ml-1.5" data-testid="ai-strip-undo" onClick={() => undoCommit(s.key)}>
+          <Undo2 aria-hidden />
           {t("common.undo")}
         </Button>
-      </span>
       </span>
       {/* the same notes the Status had, in the same place: the row keeps its height across the commit */}
       {s.confirmFailed && <p className="w-full text-xs">{t("aiDraft.confirmFailed")}</p>}
@@ -317,7 +325,25 @@ function Choice({ s }: { s: AiSession }) {
   );
 }
 
+/** Plan 161: Send stopped by a gap the model left: which, and the two answers, inline as the guard is. */
+function GapsGuard({ s, gaps }: { s: AiSession; gaps: string[] }) {
+  return (
+    <div className={line} data-testid="ai-gaps" role="alert">
+      <span className="min-w-0 text-foreground" data-testid="ai-gaps-text">{t("aiDraft.gaps.text", { count: gaps.length, gaps: gaps.join(" ") })}</span>
+      <span className="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
+        <Button type="button" variant="outline" size="sm" data-ai-default data-testid="ai-gaps-fill" onClick={() => keepWriting(s.key)}>
+          {t("aiDraft.gaps.fill")}
+        </Button>
+        <Button type="button" variant="ghost" size="sm" className={quiet} data-testid="ai-gaps-send" onClick={() => discardAndSend(s.key)}>
+          {t("aiDraft.gaps.send")}
+        </Button>
+      </span>
+    </div>
+  );
+}
+
 function Guard({ s }: { s: AiSession }) {
+  if (s.guard?.gaps?.length) return <GapsGuard s={s} gaps={s.guard.gaps} />;
   const writing = s.phase === "writing" || s.phase === "waitingBody";
   return (
     <div className={line} data-testid="ai-guard" role="alert">
@@ -342,10 +368,12 @@ function Field({ s, id }: { s: AiSession; id: string }) {
   const placeholder = s.strip ? t("aiDraft.placeholder.refine") : notes ? t("aiDraft.placeholder.notes") : threaded ? t("aiDraft.placeholder.reply") : t("aiDraft.placeholder.new");
   return (
     <>
-      <input
+      {/* one line that grows to show all it holds (plan 161: a long instruction was cut mid-word); Return still writes */}
+      <textarea
         id={id}
         data-testid="ai-row-input"
-        className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        rows={1}
+        className="field-sizing-content min-h-9 min-w-0 flex-1 resize-none bg-transparent py-[9px] text-sm leading-5 outline-none placeholder:text-muted-foreground"
         value={s.instruction}
         readOnly={working}
         autoComplete="off"
@@ -365,11 +393,15 @@ function Field({ s, id }: { s: AiSession; id: string }) {
         }}
       />
       {working ? <Spinner aria-hidden className="size-[1.15em] shrink-0 text-muted-foreground" /> : s.who ? (
-        <Button type="button" variant="outline" size="xs" className="shrink-0 font-normal" data-testid="ai-who-write" onClick={() => void submit(s.key)}>
+        <Button type="button" variant="outline" size="sm" className="mt-[5px] shrink-0 self-start" data-testid="ai-who-write" onClick={() => void submit(s.key)}>
           {t("aiDraft.whoWrite")}
         </Button>
       ) : (
-        <span aria-hidden className="shrink-0"><Shortcut keys="enter" /></span>
+        // a named button, not a bare ↵: what Return does, said
+        <Button type="button" variant="outline" size="sm" className="mt-[5px] shrink-0 self-start" data-testid="ai-row-write" onMouseDown={(e) => e.preventDefault()} onClick={() => void submit(s.key)}>
+          {t("aiDraft.submit")}
+          <Shortcut keys="enter" className="ml-0.5" />
+        </Button>
       )}
     </>
   );
@@ -388,6 +420,17 @@ export function AiRow({ draftKey }: { draftKey: string }) {
   useEffect(() => {
     if (phase === "held" && c) commitHeld(draftKey);
   }, [phase, c, draftKey]);
+  // plan 161: a write that went in brings the whole composer into view, so the draft and Send are on screen (a small window
+  // left its end under the foot); not on coming back to a strip written earlier
+  const writes = s?.strip?.stack.length ?? 0;
+  const seenWrites = useRef(writes);
+  useEffect(() => {
+    const was = seenWrites.current;
+    seenWrites.current = writes;
+    if (writes <= was) return;
+    const form = rootRef.current?.closest<HTMLElement>("form[data-draft-key]");
+    if (form) return keepInView(form, undefined, 16, () => form.getBoundingClientRect().height);
+  }, [writes]);
   // asked for: the field, or the row's default choice. Programmatic, so no ring (plan 54)
   const focus = s?.focus ?? 0;
   useLayoutEffect(() => {

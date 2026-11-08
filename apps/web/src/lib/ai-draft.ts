@@ -13,7 +13,7 @@ import { draftCommands, draftKeyOf } from "./draft-commands";
 import { discardDraft, authored, draftPresentationThread, editDraft, editDraftRecipients, flushDraft, forgetDraft, loseDraftHome, materialize, NO_AUTO, shownDraftKey, unsaveDraft, useDrafts, validateDraftPresentation, validRecipients, type LocalDraft } from "./drafts";
 import { localized } from "./i18n";
 import { currentPage, listLayout, openThread } from "./page";
-import { snack } from "./snack";
+import { registerUndo, snack } from "./snack";
 
 /**
  * Plan 133 §10: a draft being written with AI, kept by draft key and outside any component, because pinning, collapsing
@@ -102,6 +102,8 @@ export interface AiCommit {
   subject: string | null;
   /** what was there before and what it made, for an editor rebuilt without its history */
   before: { html: string; text: string };
+  /** plan 161: the document as the write found it, which the strip's Undo restores exactly after an edit */
+  beforeDoc: unknown;
   text: string;
 }
 
@@ -116,6 +118,8 @@ export interface AiStrip {
   stack: AiCommit[];
   /** plan 144 revision 6: this came from a prepared reply */
   prepared?: PreparedRef;
+  /** plan 161: typed in since its last write: the strip stays, as "Edited after AI" */
+  edited?: boolean;
 }
 
 export interface AiChoice {
@@ -160,8 +164,8 @@ export interface AiSession {
   held: { how: "replace" | "below"; result: Extract<AiComposeResult, { status: "done" }>; spec: RunSpec; prior: AiStrip | undefined; needsSubject: boolean } | null;
   error: AiError | null;
   strip: AiStrip | null;
-  /** a send was stopped here: the row offers the choice; `sendAt` is what it was asked to do */
-  guard: { sendAt: number | undefined } | null;
+  /** a send was stopped here: the row offers the choice; `sendAt` is what it was asked to do; `gaps`: the model's gaps still in the text (plan 161) */
+  guard: { sendAt: number | undefined; gaps?: string[] } | null;
   /** what a screen reader hears: never the deltas */
   live: string;
 }
@@ -811,7 +815,7 @@ function commit(key: string, how: "replace" | "below", result: Extract<AiCompose
     return true;
   }
   const before = c.snapshot();
-  const inserted = c.insertGenerated(result.text, how, result.checks.placeholders[0]);
+  const inserted = c.insertGenerated(result.text, how, result.checks.placeholders[0], result.checks.placeholders);
   if (!inserted) {
     snack.error(t("aiDraft.cantInsert"));
     return false;
@@ -820,7 +824,7 @@ function commit(key: string, how: "replace" | "below", result: Extract<AiCompose
   // never over a subject the user wrote (§10.3)
   let subject: string | null = null;
   if (needsSubject && result.subject && d && !d.subject.trim() && editDraft(key, { subject: result.subject, subjectEdited: true })) subject = result.subject;
-  const stack = [...(prior?.stack ?? []), { doc: inserted.doc, subject, before, text: c.snapshot().text }];
+  const stack = [...(prior?.stack ?? []), { doc: inserted.doc, subject, before, beforeDoc: inserted.before, text: c.snapshot().text }];
   // what the draft holds now, as a send will compare it: a replace is all of the text, an insert only what it wrote
   recordProvenance(key, how === "replace" ? c.snapshot().text : result.text);
   clearStream(key);
@@ -930,6 +934,8 @@ export function undoCommit(key: string) {
   const top = s?.strip?.stack[s.strip.stack.length - 1];
   if (!s?.strip || !top) return;
   const c = controllerFor(key);
+  // typed in since, or undone by ⌘Z past it: the editor's undo would take back the wrong step, so the document goes back exactly
+  if (c && (s.strip.edited || c.docToken() !== top.doc)) return undoEdited(key, s as AiSession & { strip: AiStrip }, top);
   undoing.key = key;
   const undone = c?.undoGenerated(top.doc);
   undoing.key = null;
@@ -957,6 +963,51 @@ export function undoCommit(key: string) {
   // this draft was only ever what's just gone: no blank one stays in the list
   const left = draftOf(key);
   if (s.opened && left && !bodyNow(key).trim() && !left.attachments?.length) void forgetUndone(key);
+}
+
+/**
+ * Plan 161: Undo on a strip typed in since. The document goes back exactly to what the AI's last write found (before ⌘J,
+ * or before the Shorter, Warmer or Regenerate that made this version), as one editor step; what was typed since goes with
+ * it, and the snack's Undo (or ⌘Z) brings that back exactly, the strip with it.
+ */
+function undoEdited(key: string, s: AiSession & { strip: AiStrip }, top: AiCommit) {
+  const c = controllerFor(key);
+  const typed = c ? c.snapshot().text !== top.text : false;
+  undoing.key = key;
+  const restored = c?.restoreGenerated(top.beforeDoc) ?? null;
+  undoing.key = null;
+  if (!c || !restored) return;
+  const was = s.strip;
+  const d = draftOf(key);
+  const subject = top.subject !== null && d?.subject === top.subject ? top.subject : null;
+  if (subject !== null) editDraft(key, { subject: "", subjectEdited: false });
+  const stack = was.stack.slice(0, -1);
+  const under = stack[stack.length - 1];
+  if (under) {
+    // the version under it is back as it was written, or as it was typed over before this write. Its Undo restores too
+    // from here: the editor's last step is now this restore, not its write
+    update(key, { strip: { ...was, stack, edited: c.snapshot().text !== under.text } });
+    recordProvenance(key, bodyNow(key));
+  } else {
+    remove(key);
+    // the draft stays, even blank: what was typed is one Undo away (the unedited Undo forgets a blank one)
+    if (preparedDrafts.has(key)) backToNothing(key);
+  }
+  focusEditor(key);
+  // nothing typed (an editor rebuilt without its history, or ⌘Z already past it): nothing to bring back
+  if (!typed) return;
+  const undo = registerUndo(() => {
+    undoing.key = key;
+    const back = controllerFor(key)?.undoGenerated(restored.doc) ?? null;
+    undoing.key = null;
+    if (!back) return;
+    if (subject !== null && draftOf(key)?.subject === "") editDraft(key, { subject, subjectEdited: true });
+    if (!session(key)) useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: { ...newSession(key, { opened: s.opened, phase: "strip" }), lastSpec: s.lastSpec } } }));
+    update(key, { phase: "strip", strip: { ...was, edited: true } });
+    recordProvenance(key, bodyNow(key));
+    focusEditor(key);
+  });
+  snack.success(t("aiDraft.undone"), { action: { label: t("common.undo"), name: t("aiDraft.undoneUndo"), undo } });
 }
 
 /** Drafts that hold a prepared reply: what to give back, whether it's been typed in, whether this draft began with it. */
@@ -1047,10 +1098,8 @@ export function noteBody(key: string) {
     return;
   }
   const top = s.strip?.stack[s.strip.stack.length - 1];
-  if (s.strip && top && c.docToken() !== top.doc) {
-    if (s.phase === "strip") remove(key);
-    else update(key, { strip: null });
-  }
+  // plan 161: an edit no longer ends the strip; it says so, and Undo stays until the draft is sent
+  if (s.strip && top && !s.strip.edited && c.docToken() !== top.doc) update(key, { strip: { ...s.strip, edited: true } });
 }
 
 // ── send guard, Esc
@@ -1060,10 +1109,25 @@ const undecided = (s: AiSession) => UNDECIDED.includes(s.phase) || (s.phase === 
 
 aiDraftHooks.blocksSend = (key, sendAt) => {
   const s = session(key);
-  if (!s || !undecided(s)) return false;
-  update(key, { guard: { sendAt }, live: t("aiDraft.guard.live"), focus: s.focus + 1 });
+  if (!s) return false;
+  if (undecided(s)) {
+    update(key, { guard: { sendAt }, live: t("aiDraft.guard.live"), focus: s.focus + 1 });
+    return true;
+  }
+  // plan 161: a gap the model left, still in the text: asked once, inline, before it goes
+  const gaps = gapsLeft(key, s);
+  if (!gaps.length) return false;
+  update(key, { guard: { sendAt, gaps }, live: t("aiDraft.gaps.live"), focus: s.focus + 1 });
   return true;
 };
+
+/** The model's gaps (only those, never a bracket the user typed) still in the draft's text. */
+export function gapsLeft(key: string, s: AiSession | undefined = session(key)): string[] {
+  const gaps = s?.strip?.checks.placeholders ?? [];
+  if (!gaps.length) return [];
+  const body = bodyNow(key);
+  return [...new Set(gaps)].filter((g) => body.includes(g));
+}
 
 aiDraftHooks.provenance = async (key) => {
   const entry = provenance.get(key);
@@ -1118,9 +1182,11 @@ aiDraftHooks.escape = (key) => {
   }
 };
 
-/** The guard's other answer: nothing changes, and the text is where they were. */
+/** The guard's other answer: nothing changes, and the text is where they were; for gaps, the first one is selected to type over. */
 export function keepWriting(key: string) {
+  const gap = session(key)?.guard?.gaps?.[0];
   update(key, { guard: null, live: "" });
+  if (gap) controllerFor(key)?.selectText(gap);
   focusEditor(key);
 }
 
