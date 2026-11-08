@@ -547,6 +547,37 @@ test.describe("precision across screens: List (plan 160)", { tag: "@design" }, (
       await page.keyboard.press("z");
     });
 
+    await scenario("a toast that grows leaves a list scrolled away from its open row where it was", async () => {
+      await page.setViewportSize({ width: 1440, height: 500 });
+      const row = rows(page).nth(14);
+      await row.dispatchEvent("mousedown");
+      await row.dispatchEvent("click");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("reader")).toHaveCount(0);
+      await focusList(page);
+      await page.keyboard.press("e");
+      const card = page.locator("[data-snack-card][data-state=open]");
+      await expect(card).toBeVisible();
+      await still(card);
+      // the open row 50 px under the viewport's foot: out of view by the user's own scroll
+      const list = page.locator("[role=listbox]");
+      const top = await list.evaluate((el) => {
+        const cursor = el.querySelector<HTMLElement>("[data-testid=thread-row][data-cursor]")!;
+        const r = cursor.getBoundingClientRect(), v = el.getBoundingClientRect();
+        el.scrollTop = Math.max(0, el.scrollTop + (r.top - v.bottom) - 50);
+        return el.scrollTop;
+      });
+      await page.waitForTimeout(100);
+      await page.getByTestId("snackbar-similar").click();
+      await still(card);
+      await page.waitForTimeout(100);
+      const after = await list.evaluate((el) => el.scrollTop);
+      note("List scrolled away, toast grown (scrollTop before, after)", `${fmt(top)}, ${fmt(after)}`);
+      expect.soft(after, `${design} List: the toast growing leaves the list where the user scrolled it`).toBe(top);
+      await page.keyboard.press("z");
+      await page.setViewportSize({ width: 1440, height: 900 });
+    });
+
     await scenario("the page: the reader subject and New message share a line; one column, one measure", async () => {
       await openConversation(page);
       const subject = await line(page.getByTestId("reader-subject"));

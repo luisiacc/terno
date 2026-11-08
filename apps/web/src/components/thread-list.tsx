@@ -1195,16 +1195,21 @@ export function ThreadList() {
     return () => ro.disconnect();
   }, []);
 
-  // the dock came up over the open thread's row, or the toast's room took it out of the viewport: it moves up into view,
-  // once (after the padded spacer is in)
+  // the dock came up over the open thread's row, or the toast's room grew over it: it moves up into view, once (after the
+  // padded spacer is in). Only a row that was in view: one the user had scrolled away stays where they left it (Codex review)
+  const lastToastRoom = useRef(0);
   useEffect(() => {
+    const grew = Math.max(0, toastRoom - lastToastRoom.current);
+    lastToastRoom.current = toastRoom;
     const el = parentRef.current;
     const id = getApp().selectedId;
     const i = id === null ? undefined : useList.getState().index.get(id);
     if ((!dock && !toastRoom) || !el || i === undefined) return;
     const row = virtualizer.measurementsCache[i];
     const bottom = el.scrollTop + el.clientHeight;
-    if (row && row.end > bottom - dock && row.start < bottom + toastRoom) virtualizer.scrollToIndex(i, { align: "auto" });
+    // where the viewport ended before the toast's room grew
+    const before = bottom + grew;
+    if (row && row.start < before && row.end > el.scrollTop && row.end > bottom - dock) virtualizer.scrollToIndex(i, { align: "auto" });
   }, [dock, toastRoom]);
 
   useEffect(() => {
