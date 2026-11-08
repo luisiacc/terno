@@ -241,3 +241,60 @@ Six points, all taken, each with a regression test or a check the capture makes 
 6. **Relative days the stub didn't know** ("next week", "tonight", "this weekend") made the summary validator ask again. `anchor()` now covers every phrase the validator rejects, in English and Spanish (`model-stub.test.ts`, asked once).
 
 A second, narrower pass on those fixes found three more, also taken: a snack on its way out keeps a hidden close button for a moment, so clearing snacks now clicks only visible ones (no 30-second stall); a summary cancelled while held no longer uses up a failure the e2e meant for the next one; and `anchor()` reads a weekday the way the validator does ("next Monday 9am" is a weekday with an hour, not a date) and takes unaccented Spanish weekdays (`model-stub.test.ts`).
+
+## Rounds
+
+### ai-r00 (main at `04d0d2515a`, 2026-11-08)
+
+Before any AI fix: plans 159, 160 and 144's card in, the AI set on the stub. All eight reports valid; 695 cells under 9 as the gate counts them (every cell but one: macOS codex had one 9), 114 issues (17 high). The numbers as `gate.mjs` wrote them:
+
+| Style | Rater | Overall | UI | UX | Lowest | Cells below |
+|---|---|---:|---:|---:|---:|---:|
+| atelier | claude | 6 | 6.5 | 5.5 | 4 | 84/84 |
+| atelier | codex | 7 | 7 | 6.5 | 5 | 84/84 |
+| graphite | claude | 6.5 | 6.5 | 6.5 | 4.5 | 84/84 |
+| graphite | codex | 6.5 | 7.5 | 6.5 | 4.5 | 84/84 |
+| lumen | claude | 6.5 | 7 | 6 | 4.5 | 84/84 |
+| lumen | codex | 7 | 7 | 7 | 5 | 84/84 |
+| macos | claude | 6 | 6.5 | 6 | 4 | 84/84 |
+| macos | codex | 7 | 7.5 | 6.5 | 4.5 | 83/84 |
+
+#### Screens, each rater's overall
+
+| Screen | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| summary | 7 | 7.5 | 6.5 | 7.5 | 7 | 7.5 | 6.5 | 7.5 |
+| ai_draft | 6 | 7 | 6 | 6.5 | 7 | 7 | 6.5 | 7 |
+| ask | 7 | 6.5 | 6.5 | 7 | 7 | 7 | 6.5 | 7 |
+| actions | 5 | 7 | 5.5 | 7 | 5.5 | 7 | 5 | 7 |
+| today | 6 | 6.5 | 6 | 5.5 | 6.5 | 6 | 6 | 5.5 |
+| followups_replies | 5.5 | 7.5 | 6 | 7 | 6 | 7.5 | 6 | 7.5 |
+| ai_settings | 6 | 6 | 6.5 | 6.5 | 6 | 6 | 6 | 6.5 |
+
+#### Facets, mean across screens
+
+| Facet | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| typography | 6.71 | 7.00 | 6.57 | 7.50 | 6.79 | 7.50 | 6.64 | 7.36 |
+| contrast | 7.21 | 8.36 | 6.64 | 8.00 | 7.50 | 7.71 | 7.00 | 8.43 |
+| placement | 6.00 | 6.71 | 6.00 | 7.21 | 6.57 | 6.93 | 6.14 | 7.07 |
+| hierarchy | 6.29 | 6.50 | 6.00 | 6.86 | 6.43 | 6.79 | 6.07 | 7.00 |
+| controls | 6.00 | 7.00 | 6.07 | 6.93 | 6.29 | 7.14 | 6.14 | 6.93 |
+| density | 6.71 | 6.43 | 6.79 | 7.07 | 7.00 | 7.07 | 7.07 | 7.14 |
+| efficiency | 6.57 | 7.14 | 7.29 | 7.07 | 6.93 | 7.29 | 6.93 | 7.07 |
+| clarity | 5.50 | 6.21 | 5.57 | 6.43 | 6.07 | 6.21 | 5.64 | 6.64 |
+| feedback | 6.21 | 7.71 | 6.86 | 7.43 | 6.64 | 7.71 | 6.79 | 7.21 |
+| consistency | 6.64 | 7.21 | 6.43 | 7.29 | 6.43 | 7.21 | 6.57 | 7.00 |
+| accessibility | 6.07 | 6.79 | 6.29 | 6.64 | 6.36 | 7.00 | 6.50 | 7.07 |
+
+**The themes** (all 114 issues are in `/tmp/terno-scratch/ui9/rounds/ai-r00`):
+- **Actions** (7 high): the rule is shown as a raw regex, not in words; the user's request isn't echoed; while finding, the preview shows the wrong rows and count (once the whole Inbox, ticked); scope and count disagree with "Edit as a rule" and the sidebar (All Mail); the preview is squeezed into the list column beside an empty reader; focus drops to `<body>` at the preview and after Apply; the Undo toast reads as a command.
+- **⌘J drafting:** status and commands in the strip look the same; one typed character removes the strip and its Undo; at 1100x700 the instruction is cut mid-word, "Written with AI" drops out and the draft runs below the window.
+- **Follow-ups and Reply ready** (3 high): "hasn't replied in 1 day" on mail sent minutes ago; "Comes back Wed 9:00 AM" says nothing of what comes back; the first-run tip teaches promises on an awaiting line; Nudge, Dismiss and Later are 16 to 20 px text links, Use is 39x24; bracketed gaps the model left ("[What you think.]") aren't marked and can be sent; three AI suggestion surfaces, three control patterns.
+- **Today** (2 high): opening a digest source and coming back silently re-checks excluded newsletters; the digest row is below the fold at 1440x900; nothing says why a row "needs you", or how 41 relates to "153 more waiting"; "Archive all 15" after an untick; the "Back to the digest" link stays after you leave.
+- **Ask:** citations are 16 px targets that break sentences and strand punctuation; opening a source drops focus with no way back; the model id ("qwen3:8b") as provenance, worded differently on every surface.
+- **Summary:** the Action row looks like it does the task but only opens the message.
+- **AI settings:** Writing style is a long dump of ten expanded profiles with its status and controls at the bottom, Save falls off a small window, Reset has no undo; the AI filter's explanation echoes the request instead of describing the rule it built, accepts nonsense silently, and shows an unexplained "yes"; Esc discards an unsaved AI-built rule.
+- **Contrast:** Graphite's hover and selection on AI surfaces near 1.2:1; dark AI surfaces losing their edges in macOS's settings.
+
+No finding goes against a product or AI rule; none goes to the owner this round.
