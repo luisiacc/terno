@@ -1155,3 +1155,54 @@ Codex reviewed the adoption: two points, both fixed. Keys inside the open popove
 ### After ai-r03: the digest's scroll (lead, on main)
 
 ai-r03's one high issue, and every low cell (3.5 to 5, Lumen, Codex): the digest page didn't scroll. It was its own scroller with no height to scroll in, so it grew past the reader pane (about 1,200 px in a 700 px window) and the pane clipped its last rows and their boxes, which Archive still counted. Measured in all four rated styles, since plan 145. The pane now scrolls (`digest-scroller`, full height) with the page as a column in it, so the wheel works anywhere over the pane. An e2e test in a short window wheels over the pane's empty side to the last row and unticks it; it fails without the fix. Codex's review found the two scroll-memory unit tests still scrolling the inner page; they now use the scroller.
+
+### ai-r03 (main at `2a875d900`, 2026-11-08)
+
+After pass 3 (the three areas, the shared provenance and Copy adopted in Ask and the digest; full suite green once its flaky first-pass failures ran again alone, and the AI harness smoke updated for Ask's new dialog name). All eight reports valid; 664 cells under 9 as the gate counts them (ai-r02: 670), 101 issues (1 high; ai-r02: 104 and 7). The numbers as `gate.mjs` wrote them:
+
+| Style | Rater | Overall | UI | UX | Lowest | Cells below |
+|---|---|---:|---:|---:|---:|---:|
+| atelier | claude | 7.5 | 7.5 | 8 | 6.5 | 84/84 |
+| atelier | codex | 7.5 | 7.5 | 8 | 6.5 | 73/84 |
+| graphite | claude | 7 | 6.5 | 7.5 | 6 | 84/84 |
+| graphite | codex | 7.5 | 7.5 | 8 | 6 | 79/84 |
+| lumen | claude | 7 | 7 | 7.5 | 6 | 84/84 |
+| lumen | codex | 7 | 7.5 | 7 | 3.5 | 72/84 |
+| macos | claude | 7 | 7 | 7.5 | 6 | 84/84 |
+| macos | codex | 7.5 | 8 | 7.5 | 6.5 | 80/84 |
+
+#### Screens, each rater's overall
+
+| Screen | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| summary | 7.5 | 8 | 7 | 8 | 7 | 7.5 | 7 | 7.5 |
+| ai_draft | 7.5 | 7.5 | 7 | 7 | 7.5 | 7.5 | 7 | 7 |
+| ask | 8 | 8.5 | 7.5 | 8 | 7.5 | 8.5 | 7.5 | 8 |
+| actions | 8 | 8.5 | 7.5 | 8.5 | 7 | 8.5 | 7 | 8.5 |
+| today | 7 | 7 | 6.5 | 6.5 | 6.5 | 4.5 | 7 | 7 |
+| followups_replies | 7.5 | 7.5 | 7.5 | 8 | 7.5 | 8 | 7 | 8 |
+| ai_settings | 7 | 7.5 | 6.5 | 7.5 | 6.5 | 7.5 | 6.5 | 7 |
+
+#### Facets, mean across screens
+
+| Facet | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| typography | 7.93 | 7.93 | 6.93 | 8.21 | 7.43 | 8.07 | 7.29 | 7.86 |
+| contrast | 8.07 | 8.79 | 7.21 | 8.29 | 7.29 | 8.71 | 7.43 | 8.21 |
+| placement | 7.29 | 7.86 | 6.79 | 7.29 | 7.07 | 7.29 | 6.79 | 7.86 |
+| hierarchy | 7.36 | 7.86 | 6.71 | 7.50 | 6.86 | 7.79 | 6.79 | 7.64 |
+| controls | 7.36 | 7.93 | 6.57 | 7.50 | 6.93 | 7.57 | 6.79 | 7.64 |
+| density | 7.71 | 7.36 | 7.21 | 7.50 | 7.36 | 7.14 | 7.14 | 7.36 |
+| efficiency | 8.00 | 7.79 | 7.36 | 8.07 | 7.71 | 7.43 | 7.64 | 7.86 |
+| clarity | 7.64 | 7.86 | 7.50 | 7.79 | 7.21 | 7.86 | 7.21 | 7.71 |
+| feedback | 7.93 | 8.64 | 7.43 | 8.43 | 7.86 | 8.43 | 6.93 | 8.50 |
+| consistency | 7.29 | 8.21 | 7.07 | 7.71 | 7.07 | 7.71 | 7.00 | 7.79 |
+| accessibility | 7.36 | 8.21 | 6.43 | 8.14 | 6.57 | 7.79 | 6.86 | 7.71 |
+
+**Overall:** 7 to 7.5 from every rater in every style; most raters' lowest cell is 6 to 6.5 (ai-r02: 3.5 to 4.5). Ask and actions reach 8.5 from Codex. **The one high issue and every cell under 6** (Lumen, Codex, Today, 3.5 to 5) is the digest not scrolling, fixed after the round (above); it was in every style since plan 145.
+
+**What's left** (medium issues, by screen): Today 11 (reasons still read as part of the snippet, no bulk reset in the digest, focus after a bulk action), ⌘J 8 (the strip's height and its break at 1100), AI settings 8 (Writing style's copy still explains machinery; the filter's primary is the retroactive apply; the preview shows 6 of 66), summary 7 (its prose has no citations as Ask's has; Copy outweighs Reply), actions 6 (two ways of saying Esc; X needs a focused row; a generic snack after Apply), follow-ups 6 (Reschedule has only four presets, no exact date), Ask 3 (one AI error style; one date format).
+
+## Where it stands
+
+Four rated rounds, three fix passes. Every rater's overall went from 6 to 7 (ai-r00) to 7 to 7.5 (ai-r03); cells under 9 from 695 to 664; high issues from 17 to 1, fixed. No screen reaches the bar of 9 from both raters; the closest are Ask and actions (7.5 to 8.5). Owner decisions open: whether an opened newsletter stays in the digest's batch, whether all start ticked, whether an opened one stays pinned, Today's 12-row cap, the action preview's row-body versus check split, the Undo ring's track, a sender check on AI actions, new AI shortcuts, and the follow-up in a card (plan 148).
