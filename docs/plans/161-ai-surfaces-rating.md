@@ -1206,3 +1206,50 @@ After pass 3 (the three areas, the shared provenance and Copy adopted in Ask and
 ## Where it stands
 
 Four rated rounds, three fix passes. Every rater's overall went from 6 to 7 (ai-r00) to 7 to 7.5 (ai-r03); cells under 9 from 695 to 664; high issues from 17 to 1, fixed. No screen reaches the bar of 9 from both raters; the closest are Ask and actions (7.5 to 8.5). Owner decisions open: whether an opened newsletter stays in the digest's batch, whether all start ticked, whether an opened one stays pinned, Today's 12-row cap, the action preview's row-body versus check split, the Undo ring's track, a sender check on AI actions, new AI shortcuts, and the follow-up in a card (plan 148).
+
+## Owner's answers (2026-11-08)
+
+To the open decisions above:
+
+- **Newsletters from the digest are normal emails, nothing more, nothing less.** Opening one from the digest opens it in the reader like any email; Today's list doesn't gain it or pin it. "Back to the digest" and Esc back to it stay. The rest of plan 145 stays: an opened newsletter is read, so it stays in the Inbox and out of the batch ("the first question is fine"); every newsletter starts ticked; Today keeps its 12-row cap.
+- **The Undo ring's drained part is a faint track,** so it reads as a countdown and not a broken outline. An existing token at a faint step, inside the contrast suite; motion within `--motion`.
+- **A sender check on plain-English actions, without AI.** "If it's using AI, no. Don't do that. But if we can do it without using AI, reliably, then yes." Reliable: an address or a domain in the sentence counts; a name after "from"/"de" counts only when it matches a sender name or domain in the mailbox, looked up locally; nothing else counts. Shown on the preview's rule, Split and List; Apply isn't blocked.
+- **No new keyboard shortcuts** for AI.
+- **Keep the split** in the action preview: the row's body opens the mail, the check column includes or leaves it out.
+- **The follow-up stays on the AI card.**
+
+## After the owner's answers
+
+### 1. A newsletter opened from the digest isn't Today's
+
+**What pins it.** The digest page sets `selectedId` to the newsletter. Today's list sends the open row as one of `today.list`'s `heldIds` (plan 145 revision 9, for a row replied to while open), and the backend gives back any held thread, so the next refresh (the read, after the reader's dwell) adds the newsletter at the list's end and keeps it there until the selection moves.
+
+**Change.** `fetchPage` holds the open conversation only when it's one of the list's rows already (`useList`'s index). Revision 9 is about not losing a row you're on, never about adding one. A thread open from elsewhere (the digest, Ask's sources) shows in the reader, and the list is what Today holds. Nothing else in the reader changes: Back to the digest and Esc still come from `fromDigest`.
+
+**Test.** `today.spec`: after opening Stratechery from the digest and the dwell's read, the digest's row says one fewer (the refresh is in) and no thread row in Today's list is Stratechery's. Fails without the change (the row arrives at the list's end).
+
+### 2. The Undo ring's track
+
+**What's there.** The track is `--snack-track: var(--border)`: 1.00 to 1.61:1 on the pill (Nord's border is invisible on its card; Lumen light 1.33), against a ring of 4.5 to 17.7:1. At a few percent drained the gap at the top reads as a fault.
+
+**Change.** `--snack-track` is the secondary ink at 40 % (`color-mix(in oklab, var(--muted-foreground) 40%, transparent)`): 1.86 to 2.40:1 on the pill's card over the popover in every palette, so the whole outline is always there and the drained part reads as a quieter stretch of it. No new token, no new colour, no new motion: the drain is the same Web Animation (linear, or a step a second when motion is off, as plan 13 holds, since the lifetime is information).
+
+**Tests.** `contrast.ts` gains `SNACK_TRACK` and a `BOUNDARY_STEPS` floor (1.8:1, "the Undo ring's drained track on its pill"), and a ceiling under the ring's own step so it stays a track; `contrast.test` checks `globals.css` says the same as `SNACK_TRACK`. e2e (`snack.spec`, `@design`, so every design): the track's colour composited on the pill in the page, light and dark, at the floor or above. Both fail with `--border`.
+
+### 3. The sender check
+
+**Where.** The preview's rule (`ActionRule`, Split's reader and List's header). A line beside the rule, in the rule's own type, not a warning colour: "Your sentence names Netflix, but this rule doesn't look at the sender. Check it below, or edit it as a rule." Apply stays as it is.
+
+**What the sentence names** (`sendersNamed` in `lib/rule-words.ts`, pure, English and Spanish):
+
+- an address, as written;
+- a domain with a known top-level label (`uber.com`, `netflix.es`), not one inside an address;
+- a phrase after "from", "de" or "del": up to three words, past an article or possessive ("the", "my", "los", "mi"…), stopping at a connective or a word of time or quantity ("older", "than", "hace", "más", a number). These are only candidates.
+
+**Reliable.** Addresses and domains count as they are, unless one already appears in a condition (`recipients contains ana@x.com`). A candidate name counts only when the mailbox has it: a new `senders.named` RPC asks the autocomplete index (plan 18, in memory) with `resolveExact`, the exact-token lookup plan 133 made for names in a sentence, and keeps a hit only when the phrase opens the hit's name ("Uber" in "Uber Receipts") or is a label of its domain ("uber" in uber.com), and only for someone who has written to you (received mail, not only mail you sent). A cold index gets the same bounded wait as a recipient lookup, at most 2 s; still cold, names say nothing. No model, nothing leaves the machine.
+
+**When it shows.** Something is named, and the rule (what Apply runs: with or without new mail) has no sender condition, positive or negated (`from`, `fromDomain`, `listId`, or `text`, which reads the sender too). `ruleMisses`' sender test is the loose one (any "from"); the two share the sender-field test.
+
+**Cost.** One RPC after the preview opens, with at most four phrases, each one in-memory range lookup. Nothing on the list's rows or their renders; the line subscribes only in `ActionRule`. `pnpm test:ui-perf` is run.
+
+**Tests.** `rule-words.test`: addresses, domains, a domain in an address, the stub's "Archive shipping notices older than a month" (nothing), "except Amazon" (nothing), "from now on", "from last week", "de hace más de 30 días", "los recibos de Uber", "del banco", the rule's sender conditions with and without `negate`, `text`, an address a recipients condition already holds. `contacts.test`: `resolveExact`'s `received`. Backend: `senders.named` keeps a name's start and a domain label, drops a word inside a name, and a person only written to. e2e (`plain-actions.spec`): "Archive receipts from Uber" warns in Split and List and Apply still works; "Archive receipts from uber.com" (a sender condition) and "Archive shipping notices older than a month" don't.
