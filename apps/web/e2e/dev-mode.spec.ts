@@ -90,7 +90,17 @@ test("Plan 147: the switch off, no AI feature shows, whatever the profile has sa
   await openFirst();
   await hidden();
 
-  await toggle();
+  // Today's settings stay, and say why it isn't in the sidebar: the way to the switch is right there
+  await page.getByTestId("open-settings").click();
+  await page.getByTestId("tab-general").click();
+  await expect(page.getByTestId("today-pro-note")).toContainText("Today is a Pro feature");
+  await page.getByTestId("today-dev-open").click();
+  await page.getByTestId("dev-ai-switch").click();
+  await page.getByTestId("tab-general").click();
+  await expect(page.getByTestId("today-show")).toBeVisible();
+  await expect(page.getByTestId("today-pro-note")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "ready");
   await expect(page.getByTestId("action-summarize")).toBeVisible();
   await expect(page.getByTestId("quick-ai")).toBeVisible();

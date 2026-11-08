@@ -2288,6 +2288,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "today.why.reminder": "Recordatorio {when}",
   "today.tip.title": "Lo que te necesita, en un solo sitio",
   "today.tip.body": "Hoy reúne lo que prometiste, quién espera tu respuesta y lo que vence. Lee lo que hay en este Mac.",
+  "today.settings.pro": "Hoy es una función de Pro",
+  "today.settings.proHint": "Aparece en la barra lateral mientras la IA de Pro esté activada en el modo desarrollador.",
   "today.settings.show": "Mostrar Hoy",
   "today.settings.prepareAt": "Preparar a las",
   "today.settings.prepareAtHint": "Si la app está cerrada entonces, al abrirla.",

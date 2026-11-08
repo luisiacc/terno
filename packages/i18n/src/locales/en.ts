@@ -2303,6 +2303,8 @@ It contains none of your mail, contacts, settings or keys.
   "today.why.reminder": "Reminder {when}",
   "today.tip.title": "What needs you, in one place",
   "today.tip.body": "Today lists what you promised, who's waiting on you and what's due. It reads what's on this Mac.",
+  "today.settings.pro": "Today is a Pro feature",
+  "today.settings.proHint": "It shows in the sidebar while Pro AI is on in Dev mode.",
   "today.settings.show": "Show Today",
   "today.settings.prepareAt": "Prepare at",
   "today.settings.prepareAtHint": "If the app is closed then, at the next open.",
