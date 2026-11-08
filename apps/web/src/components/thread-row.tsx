@@ -476,6 +476,10 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       )}
       {cats.length > 0 && <span className="sr-only">{formatList(cats.map((c) => c.name))}</span>}
       {place && <span className="sr-only">{t(place === "spam" ? "list.place.spam.sr" : "list.place.trash.sr")}</span>}
+      {/* what the dot, the star and the clip show, said as well (plan 158) */}
+      {thread.unread && <span className="sr-only">{t("list.state.unread.sr")}</span>}
+      {thread.starred && <span className="sr-only">{t("list.state.starred.sr")}</span>}
+      {thread.hasAttachments && <span className="sr-only">{t("list.state.attachments.sr")}</span>}
       {account && <span className="sr-only">{t("list.accountLabel.sr", { account: account.text })}</span>}
       {code && <span className="sr-only">{t("codes.sr", { code })}</span>}
       {reminder && <span className="sr-only">{reminder.due ? t("remind.due") : t("remind.pending")}</span>}

@@ -131,3 +131,12 @@ test.describe("no focus ring around the conversation list", () => {
     expect(inSight).toBe(true);
   });
 });
+
+test("a row's name says what its marks show: unread, starred, has attachments (plan 158)", async ({ app: page }) => {
+  const marked = rows(page).filter({ has: page.getByTestId("row-unread-dot") }).filter({ has: page.locator("svg.fill-star") }).first();
+  await expect(marked).toHaveAccessibleName(/, unread ?, starred ?, has attachments/);
+  const plain = rows(page).filter({ hasNot: page.getByTestId("row-unread-dot") }).filter({ hasNot: page.locator("svg.fill-star") }).first();
+  const name = (await plain.evaluate((el) => el.textContent)) ?? "";
+  expect(name).not.toMatch(/, unread|, starred/);
+  expect(name).toContain(await plain.getByTestId("row-from").innerText());
+});
