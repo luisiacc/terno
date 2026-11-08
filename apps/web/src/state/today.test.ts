@@ -58,7 +58,7 @@ describe("a waiting row says why it needs you (plan 161)", () => {
     const rows = flattenToday(list, []);
     // pass 2: the reason is a label of its own, ahead of the words, not their first words
     expect(rows.map((r) => r.snippet)).toEqual(["the snippet", "A summary."]);
-    expect([...useToday.getState().reasons]).toEqual([[1, "Your turn"], [2, "New from a contact"]]);
+    expect([...useToday.getState().reasons]).toEqual([[1, "Your turn"], [2, "Unanswered"]]);
     expect(useToday.getState().needsShown).toBe(2);
   });
 });
@@ -70,7 +70,8 @@ describe("plan 161, pass 2: the digest first", () => {
     const list: TodayList = { now: 0, held: [thread(9)], digest, sections: [{ kind: "needsYou", more: 0, items: [{ thread: thread(1), why: { kind: "waiting", wrote: true } }] }] };
     const rows = flattenToday(list, [thread(9)]);
     expect(rows.map((r) => r.id)).toEqual([DIGEST_ROW_ID, 9, 1]);
-    expect(useToday.getState().groups[0]!.at).toBeGreaterThanOrEqual(1);
+    // plan 162 (after ai162-r01): the digest is a section of its own, Newsletters, over its row; Needs you heads the people
+    expect(useToday.getState().groups.map((g) => [g.kind, g.at])).toEqual([["newsletters", 0], ["needsYou", 1]]);
   });
   it("Esc's way back: only from the newsletter it opened, while Today shows", async () => {
     const { backToDigest } = await import("./today");

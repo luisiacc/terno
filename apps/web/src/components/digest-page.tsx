@@ -8,8 +8,9 @@ import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { digestTarget, modelName } from "~/lib/ai";
 import { listDate } from "~/lib/format";
+import { PANE_TITLE, PANE_TITLE_TOP } from "~/lib/pane-lines";
 import { deferred, trackJob, undoAction, undoActions } from "~/lib/actions";
-import { registerUndo, snack, undoNow, useSnack } from "~/lib/snack";
+import { registerUndo, snack, snackPublication, undoNow, useSnack } from "~/lib/snack";
 import { whenDay } from "~/lib/when";
 import { AiErrorNotice, aiErrorCopy, errorTarget } from "~/components/ai-error";
 import { client } from "~/rpc/connection";
@@ -127,7 +128,7 @@ export default function DigestPage() {
     const undo = registerUndo(() =>
       undoId.promise.then(async (u) => {
         if (u.id === null) return;
-        await undoActions([u.id], u.n);
+        await undoActions([u.id], u.n, undefined, true, snackPublication(), (count) => t(automated ? "actions.restored" : "today.digest.restored", { count }));
         // only this Archive's rows come back (Codex review): an earlier one stays done. And only on its own day's page: a
         // later day's (or automated mail's) choices aren't this one's to touch
         const pick = useToday.getState().pick;
@@ -180,58 +181,20 @@ export default function DigestPage() {
       data-testid="digest-page"
       data-finished={finished || undefined}
       aria-label={t("today.digest.title")}
-      className="mx-auto w-full max-w-(--reader-max,48rem) space-y-3 px-8 pb-8"
+      className="@container mx-auto flex min-h-full w-full max-w-(--reader-max,48rem) flex-col gap-3 px-8"
     >
-      {/* plan 162: the header stays at the pane's top as the list scrolls under it, so the count and Archive are there when
-          the review ends (they scrolled away), with the list's hairline under it; it starts where the page's title did */}
-      <div aria-hidden className="h-12" />
-      <header className="sticky top-0 z-10 mt-0! space-y-1.5 border-b border-hairline bg-background pt-4 pb-3" data-testid="digest-header">
-        <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold tracking-tight outline-none" data-testid="digest-title">{t(automated ? "today.digest.automatedTitle" : "today.digest.title")}</h1>
-        {/* plan 162: what the batch is, said once, under the title (the day and a stray "·" sat beside the provenance) */}
-        {!automated && items.length > 0 && (
-          <p className="text-xs text-muted-foreground" data-testid="digest-coverage">
-            {t("today.digest.coverage", { count: items.length, date: whenDay(Math.min(...items.map((i) => i.lastDate))) })}
-          </p>
-        )}
-        {/* the anatomy's action row: the primary, the quiet reset, what it'll do, and who wrote the lines at its end */}
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 pt-1" data-testid="digest-actions">
-          {(!finished || chosen.length > 0) && (
-            // the count is what goes, always: what was opened or unticked isn't in it, and its row says so
-            <Button size="sm" data-testid="digest-archive" disabled={!chosen.length} onClick={() => void archive()}>
-              {automated ? t("today.digest.archiveSelected", { count: chosen.length }) : t("today.digest.archiveAll", { count: chosen.length })}
-            </Button>
-          )}
-          {/* pass 2: done, its Undo here once the snack that carries the same one is gone (plan 162: one Undo at a time) */}
-          {finished && done.undo && !undoInSnack && (
-            <Button size="sm" variant="outline" className="text-foreground" data-testid="digest-undo" aria-label={t("today.digest.undoName")} onClick={() => undoNow(done.undo!)}>
-              {t("common.undo")}
-            </Button>
-          )}
-          {shown.some(live) && (
-            <Button size="sm" variant="ghost" className="px-2 text-muted-foreground hover:text-foreground" data-testid="digest-tick-all" onClick={() => tickAll(!anyTicked)}>
-              {t(anyTicked ? "today.digest.untickAll" : "today.digest.tickAll")}
-            </Button>
-          )}
-          {finished ? (
-            <p role="status" className="text-sm" data-testid="digest-done">
-              {t(automated ? "today.digest.archivedSelected" : "today.digest.archived", { count: done.count })}.
-              {shown.every((i) => stateOf(i) === "archived") && <span className="ml-1 text-muted-foreground" data-testid="digest-all-done">{t("today.digest.allDone")}</span>}
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground tabular" data-testid="digest-count">
-              {automated ? (
-                chosen.length < shown.filter(live).length ? t("today.digest.countSelected", { count: shown.filter(live).length, selected: chosen.length }) : t("today.digest.automatedCount", { count: shown.filter(live).length })
-              ) : (
-                <>
-                  {/* pass 2: what Archive will do, in words: how many go, and how many stay */}
-                  <span className="font-medium text-foreground" data-testid="digest-to-archive">{t("today.digest.toArchive", { count: chosen.length })}</span>
-                  {staying > 0 && <span data-testid="digest-staying"> · {t("today.digest.staying", { count: staying })}</span>}
-                </>
-              )}
+      {/* plan 162 (after ai162-r01): the title on every pane title's line (it sat 15 px low), what the batch is and who wrote
+          its lines under it; the decision is at the pane's foot, after the list, where reading ends */}
+      <header className={cn(PANE_TITLE_TOP, "space-y-1")} data-testid="digest-header">
+        <h1 ref={heading} tabIndex={-1} className={cn(PANE_TITLE, "outline-none")} data-testid="digest-title">{t(automated ? "today.digest.automatedTitle" : "today.digest.title")}</h1>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {!automated && items.length > 0 && (
+            <p className="text-sm text-muted-foreground" data-testid="digest-coverage">
+              {t("today.digest.coverage", { count: items.length, date: whenDay(Math.min(...items.map((i) => i.lastDate))) })}
             </p>
           )}
           {!automated && row.model && (
-            // pass 3: who wrote the lines, the one control every AI surface has; plan 162: at the action row's end
+            // pass 3: who wrote the lines, the one control every AI surface has, at its line's end
             <AiProvenance model={row.model} at={0} detail={t("today.digest.writtenBy", { model: modelName(row.model) })} testId="digest-provenance" className="-me-1.5 ms-auto" />
           )}
         </div>
@@ -294,6 +257,45 @@ export default function DigestPage() {
           })}
         </ul>
       )}
+      {/* plan 162 (after ai162-r01): the decision, sticky at the pane's foot: what Archive will do, the reset, then Archive
+          last, so the page reads, then acts (Archive led the page, darkest, before anything was read) */}
+      <footer className="sticky bottom-0 z-10 -mx-8 mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-hairline bg-background px-8 pt-3 pb-4" data-testid="digest-actions">
+        {finished ? (
+          <p role="status" className="me-auto text-sm" data-testid="digest-done">
+            {t(automated ? "today.digest.archivedSelected" : "today.digest.archived", { count: done.count })}.
+            {shown.every((i) => stateOf(i) === "archived") && <span className="ml-1 text-muted-foreground" data-testid="digest-all-done">{t("today.digest.allDone")}</span>}
+          </p>
+        ) : (
+          <p className="me-auto text-sm text-muted-foreground tabular" data-testid="digest-count">
+            {automated ? (
+              chosen.length < shown.filter(live).length ? t("today.digest.countSelected", { count: shown.filter(live).length, selected: chosen.length }) : t("today.digest.automatedCount", { count: shown.filter(live).length })
+            ) : (
+              <>
+                {/* pass 2: what Archive will do, in words: how many go, and how many stay; a status, not a button */}
+                <span data-testid="digest-to-archive">{t("today.digest.toArchive", { count: chosen.length })}</span>
+                {staying > 0 && <span data-testid="digest-staying"> · {t("today.digest.staying", { count: staying })}</span>}
+              </>
+            )}
+          </p>
+        )}
+        {shown.some(live) && (
+          <Button size="sm" variant="outline" className="text-foreground" data-testid="digest-tick-all" onClick={() => tickAll(!anyTicked)}>
+            {t(anyTicked ? "today.digest.untickAll" : "today.digest.tickAll")}
+          </Button>
+        )}
+        {/* pass 2: done, its Undo here once the snack that carries the same one is gone (plan 162: one Undo at a time) */}
+        {finished && done.undo && !undoInSnack && (
+          <Button size="sm" variant="outline" className="text-foreground" data-testid="digest-undo" aria-label={t("today.digest.undoName")} onClick={() => undoNow(done.undo!)}>
+            {t("common.undo")}
+          </Button>
+        )}
+        {(!finished || chosen.length > 0) && (
+          // the count is what goes, always: what was opened or unticked isn't in it, and its row says so
+          <Button size="sm" data-testid="digest-archive" disabled={!chosen.length} onClick={() => void archive()}>
+            {automated ? t("today.digest.archiveSelected", { count: chosen.length }) : t("today.digest.archiveAll", { count: chosen.length })}
+          </Button>
+        )}
+      </footer>
     </section>
     </div>
   );

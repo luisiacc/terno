@@ -67,9 +67,11 @@ const EMPTY_GROUPS: readonly TodayGroup[] = [];
 
 /** Plan 145: what the rows under it are, drawn in space the row above leaves. Not a stop for arrow keys: a listbox holds only its options. */
 function TodayHeading({ kind, top }: { kind: TodayGroup["kind"]; top: number }) {
+  // plan 162 (after ai162-r01): a section's name in the ink at the rows' size, a real heading (it was a 12 px grey label,
+  // quieter than the digest's row above it)
   return (
-    <div aria-hidden data-testid="today-heading" data-kind={kind} className="absolute inset-x-0 flex items-end px-5 pb-1 text-xs font-medium text-muted-foreground" style={{ top, height: TOP_LABEL }}>
-      {t(kind === "needsYou" ? "today.needsYou" : "today.reminders")}
+    <div aria-hidden data-testid="today-heading" data-kind={kind} className="absolute inset-x-0 flex items-end px-5 pb-1 text-sm font-medium text-foreground" style={{ top, height: TOP_LABEL }}>
+      {t(kind === "needsYou" ? "today.needsYou" : kind === "newsletters" ? "today.newsletters" : "today.reminders")}
     </div>
   );
 }
@@ -83,6 +85,9 @@ const DIGEST_ROW_MAX = 44;
  */
 function DigestListRow({ thread, top, height }: { thread: ThreadSummary; top: number; height: number }) {
   const selected = useApp((s) => s.selectedId === DIGEST_ROW_ID);
+  // plan 162 (after ai162-r01): on the rows' lines, quieter than any person: its glyph in the avatars' column (where the
+  // design has one), its words at the names' edge in the secondary, no ring (it outranked the people waiting on you)
+  const avatars = useDesign().variants.row === "large-avatar";
   return (
     <div
       role="option"
@@ -92,13 +97,18 @@ function DigestListRow({ thread, top, height }: { thread: ThreadSummary; top: nu
       data-testid="digest-row"
       onMouseDown={(e) => e.button === 0 && pressRow(DIGEST_ROW_ID, { meta: false, ctrl: false, shift: false })}
       onClick={() => releaseRow(DIGEST_ROW_ID)}
-      // pass 3: ringed at rest in the AI card's edge, so it reads as a row to open, not a section's label (Lumen has no fill
-      // until it's chosen); hover and the selection fill it as any row
-      className={cn("group/row absolute left-0 flex w-full cursor-pointer items-center gap-2.5 px-5 select-none", ROW_SHAPE, selected ? "text-row-selected-foreground before:bg-row-selected" : "before:shadow-[inset_0_0_0_1px_var(--card-edge)] hover:before:bg-row-hover")}
+      // hover and the selection fill it as any row
+      className={cn("group/row absolute left-0 flex w-full cursor-pointer items-center px-5 select-none", avatars ? "gap-3" : "gap-2.5", ROW_SHAPE, selected ? "text-row-selected-foreground before:bg-row-selected" : "hover:before:bg-row-hover")}
       style={{ transform: `translateY(${top}px)`, height }}
     >
-      <Newspaper aria-hidden className={cn("relative size-4 shrink-0", selected ? "" : "text-muted-foreground")} />
-      <span className="type-row-subject relative min-w-0 flex-1 truncate">{thread.subject}</span>
+      {avatars ? (
+        <span aria-hidden className="relative grid size-(--avatar-row) shrink-0 place-items-center">
+          <Newspaper className={cn("size-4", selected ? "" : "text-muted-foreground")} />
+        </span>
+      ) : (
+        <Newspaper aria-hidden className={cn("relative size-4 shrink-0", selected ? "" : "text-muted-foreground")} />
+      )}
+      <span className={cn("type-row-subject relative min-w-0 flex-1 truncate", selected ? "" : "text-muted-foreground")}>{thread.subject}</span>
       <ChevronRight aria-hidden className={cn("relative size-4 shrink-0", selected ? "" : "text-muted-foreground")} />
     </div>
   );
@@ -630,11 +640,12 @@ export function TodayLine() {
   const count = needs ?? shown;
   const capped = needs !== null && needs > shown && shown > 0;
   return (
-    <p data-testid="today-line" className="type-list-subtitle flex min-w-0 flex-wrap items-center gap-x-1 text-muted-foreground tabular">
-      {count > 0 && <span data-testid="today-needs" className="font-medium text-foreground">{capped ? t("today.line.newest", { count, shown }) : t("today.line.needs", { count })}</span>}
+    // plan 162 (after ai162-r01): what the list is, as a sentence ("The newest 12 of 41 that need you"), and apart from it a
+    // way to the rest named by its place, the Inbox, a 24 px target (the filter's name in the sentence read as a typo)
+    <p data-testid="today-line" className="type-list-subtitle flex min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground tabular">
+      {count > 0 && <span data-testid="today-needs" className="text-foreground">{capped ? t("today.line.newest", { count, shown }) : t("today.line.needs", { count })}</span>}
       {more > 0 && (
         <>
-          {count > 0 && <span aria-hidden>·</span>}
           <Tooltip>
             <TooltipTrigger
               render={
@@ -642,13 +653,14 @@ export function TodayLine() {
                   variant="link-secondary"
                   data-testid="today-more"
                   aria-description={t("today.line.moreTip", { filter: t("list.filter.waiting") })}
-                  className={COUNT_LINK}
+                  className={cn(COUNT_LINK, "-mx-1 inline-flex h-6 items-center gap-0.5 rounded-md px-1 font-medium")}
                   onClick={() => {
                     navigate({ view: "inbox" });
                     setListFilter("waiting");
                   }}
                 >
-                  {t("today.line.more", { filter: t("list.filter.waiting") })}
+                  {t("today.line.more")}
+                  <ChevronRight aria-hidden className="size-[1.15em]" />
                 </Button>
               }
             />

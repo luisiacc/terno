@@ -1,3 +1,4 @@
+import { Badge } from "@terno/ui/components/badge";
 import { CheckboxMark } from "@terno/ui/components/checkbox";
 import { toggleRow, useActionRows } from "~/state/action-preview";
 import { listFilterOf, matchesFilter, matchFocus, mostUrgent, type CategoryColor, type RowMatch, type ThreadSummary } from "@terno/core";
@@ -196,10 +197,9 @@ function withReason(reason: string | undefined, quiet: string, words: React.Reac
   if (!reason) return words;
   return (
     <>
-      {/* plan 162: the reason in the ink at the row's weight, the words after it in the secondary: told apart by colour
-          and by its separator, never read as the mail's first words (in the secondary it was the snippet's grey) */}
-      <span data-testid="row-why" className="text-foreground">{reason}</span>
-      <span aria-hidden className={quiet}> · </span>
+      {/* plan 162 (after ai162-r01): the reason is a tag of its own (BoardUI's badge, outlined, in the row's ink), so it never
+          reads as the mail's first words; the words after it in the secondary */}
+      <Badge variant="outline" data-testid="row-why" className="me-1.5 border-current/25 align-[1px] font-medium text-current">{reason}</Badge>
       <span className={quiet}>{words}</span>
     </>
   );

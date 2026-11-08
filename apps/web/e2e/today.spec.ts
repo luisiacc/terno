@@ -72,22 +72,29 @@ test.describe("Today (plan 145)", () => {
     // the app still opens on the Inbox
     await expect(page.getByTestId("list-title").or(page.getByTestId("list-header")).first()).toBeVisible();
     await page.getByTestId("nav-today").click();
-    await expect(page.getByTestId("today-heading").first()).toHaveAttribute("data-kind", "needsYou");
+    // plan 162 (after ai162-r01): Newsletters heads the digest's row, Needs you the people, both in the ink at the rows' size
+    await expect(page.getByTestId("today-heading").first()).toHaveAttribute("data-kind", "newsletters");
+    await expect(page.getByTestId("today-heading").nth(1)).toHaveAttribute("data-kind", "needsYou");
+    await expect(page.getByTestId("today-heading").nth(1)).toHaveText("Needs you");
+    expect(await page.getByTestId("today-heading").nth(1).evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(13);
     await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" })).toBeVisible();
     // plan 161: the row says why it needs you (they've written in it). Pass 2: as a label of its own, not the snippet's first words
     await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why")).toHaveText("Your turn");
     // the header says what each number is: the sidebar's count, then how many of them the list shows if it's capped
     // pass 3: one sentence, never a second total to read against the Inbox's: "9 need you", or when capped (plan 162) "Showing 12 of 41"
-    await expect(page.getByTestId("today-needs")).toHaveText(/^(Showing \d+ of \d+|\d+ needs? you)$/);
+    await expect(page.getByTestId("today-needs")).toHaveText(/^(The newest \d+ of \d+ that need you|\d+ needs? you)$/);
     const sidebar = (await page.getByTestId("nav-today").innerText()).match(/\d+/)?.[0];
-    if (sidebar) await expect(page.getByTestId("today-needs")).toHaveText(new RegExp(`^(Showing \\d+ of ${sidebar}|${sidebar} needs? you)$`));
+    if (sidebar) await expect(page.getByTestId("today-needs")).toHaveText(new RegExp(`^(The newest \\d+ of ${sidebar} that need you|${sidebar} needs? you)$`));
     await expect(page.getByTestId("today-line")).not.toContainText(/waiting|\d+ to reply/);
-    // plan 162: the reason is a label of its own: the ink, at the row's own weight (under the subject's medium), and the
-    // words after it the secondary's (it was the snippet's grey, and read as the mail's first words)
+    // plan 162 (after ai162-r01): the reason is a tag of its own, outlined in the row's ink, apart from the words after
+    // it in the secondary (inline, it read as the mail's first words)
     const why = page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why");
     const ink = async (el: typeof why) => el.evaluate((e) => getComputedStyle(e).color);
     expect(await ink(why)).not.toBe(await ink(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-snippet").locator("span").last()));
-    await expect(why).toHaveCSS("font-weight", "400");
+    expect(await why.evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe("1px");
+    await expect(why).toHaveCSS("font-weight", "500");
+    // the digest's row is the quietest thing on the list: no ring, its words in the secondary
+    expect(await page.getByTestId("digest-row").evaluate((e) => getComputedStyle(e, "::before").boxShadow)).toBe("none");
     // pass 2: the digest is the list's first row, in view, a real target; Today still opens on a conversation
     await expect(page.getByTestId("digest-row")).toContainText("automated");
     await expect(page.locator('[data-keep-scroll="list"] [role=option]').first()).toHaveAttribute("data-testid", "digest-row");
@@ -143,7 +150,7 @@ test.describe("Today (plan 145)", () => {
     // pass 2: the button's number is what goes, and the line says what stays
     await expect(page.getByTestId("digest-archive")).toHaveText("Archive 1");
     await expect(page.getByTestId("digest-count")).toContainText(`1 to archive · ${count - 1} ${count - 1 === 1 ? "stays" : "stay"} in Inbox`);
-    await expect(page.getByTestId("digest-tick-hint")).toHaveText("Archive moves the ticked newsletters out of your Inbox. Untick any you want to keep.");
+    await expect(page.getByTestId("digest-tick-hint")).toHaveText("Archive moves the ticked newsletters out of your Inbox. Any you untick or open stay.");
     await expect(page.getByTestId("digest-item").filter({ hasText: "Stratechery" }).getByTestId("digest-state")).toHaveText("Stays in Inbox");
     // a 24 px box of its own
     const box = (await page.getByTestId("digest-tick").first().boundingBox())!;

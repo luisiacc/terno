@@ -13,7 +13,7 @@ import { reloadList } from "./list";
  * thread rows, with what they say in the snippet's place.
  */
 export interface TodayGroup {
-  kind: "needsYou" | "reminders";
+  kind: "needsYou" | "reminders" | "newsletters";
   /** the row it begins at */
   at: number;
 }
@@ -151,7 +151,11 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
   let needsShown = 0;
   // plan 161, pass 2: the digest is the list's first row, a way in without scrolling past Needs you; it isn't a
   // conversation, so Needs you's are still the first conversations (and Today opens on the first of them)
-  if (list.digest) items.push(digestThread(list.digest));
+  // plan 162 (after ai162-r01): under a heading of its own, so the newsletters are a section, not a row above the people
+  if (list.digest) {
+    groups.push({ kind: "newsletters", at: 0 });
+    items.push(digestThread(list.digest));
+  }
   const lead = items.length;
   for (const section of list.sections) {
     groups.push({ kind: section.kind, at: items.length });

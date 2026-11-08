@@ -25,10 +25,12 @@ async function show(today: number, shown: number, more: number) {
   });
 }
 
-it("capped: what the list is, and the way to the rest by the filter's name, never the Waiting count", async () => {
+it("capped: what the list is, as a sentence, and the way to the rest by its place, never the Waiting count", async () => {
   await show(41, 12, 29);
-  expect(host.querySelector("[data-testid=today-needs]")!.textContent).toBe("Showing 12 of 41");
-  expect(host.querySelector("[data-testid=today-more]")!.textContent).toBe("See all in To reply to");
+  // plan 162 (after ai162-r01): "Showing 12 of 41 · See all in To reply to" read as a broken sentence
+  expect(host.querySelector("[data-testid=today-needs]")!.textContent).toBe("The newest 12 of 41 that need you");
+  expect(host.querySelector("[data-testid=today-more]")!.textContent).toBe("See all in Inbox");
+  expect(host.querySelector("[data-testid=today-more]")!.getAttribute("aria-description")).toContain("To reply to");
   expect(line()).not.toMatch(/165|waiting/);
 });
 

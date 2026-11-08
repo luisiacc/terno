@@ -448,7 +448,7 @@ export async function markAccountRead(accountId: number, count: number): Promise
  * runs once the list holds those rows again.
  */
 /** `published`: what the dock had said when Undo was asked for; anything said since keeps the dock, and this waits behind it */
-export async function undoActions(undoIds: readonly number[], n: number, restored?: () => void, back = true, published = snackPublication()): Promise<void> {
+export async function undoActions(undoIds: readonly number[], n: number, restored?: () => void, back = true, published = snackPublication(), said?: (count: number) => string): Promise<void> {
   const progress = n > 200 ? trackJob(t("actions.undoing", { count: n })) : null;
   let undone = false;
   try {
@@ -456,7 +456,8 @@ export async function undoActions(undoIds: readonly number[], n: number, restore
     for (const undoId of undoIds) count += (await client.call("threads.undo", { undoId, jobId: progress?.jobId })).restored;
     undone = true;
     // plan 158: an undo says it worked, briefly: the rows coming back alone could be anything
-    snack.success(t(back ? "actions.restored" : "actions.undone", { count }), { id: progress?.snackId, duration: UNDONE_MS, background: !progress && snackPublication() !== published });
+    // plan 162: what came back by its own noun where the caller knows it ("Moved 14 newsletters back to the Inbox")
+    snack.success(said ? said(count) : t(back ? "actions.restored" : "actions.undone", { count }), { id: progress?.snackId, duration: UNDONE_MS, background: !progress && snackPublication() !== published });
   } catch (error) {
     // the undo token says so, with a retry (z points back at it too)
     if (progress) dismissSnack(progress.snackId);
