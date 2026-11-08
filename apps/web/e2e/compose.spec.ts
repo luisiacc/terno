@@ -972,6 +972,48 @@ test("the composer's states: unavailable Send, Saving and Saved, an invalid addr
   await page.mouse.move(1, 1);
 });
 
+for (const layout of ["split", "list"] as const) {
+  test.describe(`a reply in a short window, ${layout}`, () => {
+    test.use({ layout });
+    test("at 1100x700 r shows the whole card, Send's row clear of the edge, the subject whole or named above it (plan 158)", { tag: "@design" }, async ({ app: page }) => {
+      // as the screens are captured: a reply written in a full window, put away, opened again in a short one
+      const open = async () => { await rows(page).first().click(); await expect(page.getByTestId("reader-subject")).toBeVisible(); };
+      await open();
+      await page.keyboard.press("r");
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+      await page.keyboard.type("Hi Isabella,\n\nThanks for flagging this. I looked at the payment and it went through on our side, so it may just be the bank holding it. Can you send me the error you saw?\n\nI'm free for the concert on Friday, by the way.");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("composer")).toHaveCount(0);
+      await page.setViewportSize({ width: 1100, height: 700 });
+      if (layout === "list") await page.keyboard.press("Meta+[");
+      if (layout === "list") await expect(page.getByTestId("reader")).toHaveCount(0);
+      await open();
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      await page.keyboard.press("r");
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+      const scroller = page.locator("[data-reader-scroller]");
+      // the opening scroll settles within its transition
+      await page.waitForTimeout(300);
+      const pane = (await scroller.boundingBox())!;
+      const card = (await page.getByTestId("composer").boundingBox())!;
+      expect(pane.y + pane.height - (card.y + card.height), "the whole card, its foot clear of the window's edge").toBeGreaterThanOrEqual(8);
+      // nothing of the text under the foot that sticks: the quoted text's control sits above it
+      const quote = page.getByTestId("composer").getByRole("button", { name: /quoted text/i });
+      const foot = (await page.getByTestId("composer").locator("[data-draft-foot]").boundingBox())!;
+      if (await quote.count()) expect((await quote.boundingBox())!.y + (await quote.boundingBox())!.height).toBeLessThanOrEqual(foot.y + 0.5);
+      // the subject whole in view, or wholly gone and named by the context line, which the card stays under
+      const subject = (await page.getByTestId("reader-subject").boundingBox())!;
+      if (subject.y < pane.y) {
+        expect(subject.y + subject.height).toBeLessThanOrEqual(pane.y + 0.5);
+        await expect(page.getByTestId("reader-context")).toHaveAttribute("data-shown");
+        const line = (await page.getByTestId("reader-context").boundingBox())!;
+        expect(card.y).toBeGreaterThanOrEqual(line.y + line.height);
+      }
+      await page.getByTestId("compose-discard").click();
+    });
+  });
+}
+
 test("the composer reads like the message above it, and a short window gives it room, whole (plan 158)", { tag: "@design" }, async ({ app: page }) => {
   await openRow(page, 0);
   await page.keyboard.press("r");
@@ -998,10 +1040,10 @@ test("the composer reads like the message above it, and a short window gives it 
     expect((await body.boundingBox())!.height).toBeLessThanOrEqual(120);
     const card = (await composer.boundingBox())!;
     expect(card.y - pane.y, "the composer clears what sticks at the top").toBeGreaterThanOrEqual(44);
-    // the card's foot isn't against the window, unless a little of that room keeps the subject whole above (plan 158)
+    // the card's foot isn't against the window, ever: the subject goes whole instead (plan 158)
     const subject = (await page.getByTestId("reader-subject").boundingBox())!;
     const whole = subject.y >= pane.y && subject.y + subject.height <= pane.y + pane.height;
-    expect(pane.y + pane.height - (card.y + card.height), "the card's foot isn't against the window").toBeGreaterThanOrEqual(whole ? 0 : 8);
+    expect(pane.y + pane.height - (card.y + card.height), "the card's foot isn't against the window").toBeGreaterThanOrEqual(8);
     if (!whole) expect(subject.y + subject.height, "a subject not whole is wholly gone").toBeLessThanOrEqual(pane.y);
     // a chip and the row's own controls fit on the row: it doesn't double for them
     expect((await page.locator("[data-recipient-row]").first().boundingBox())!.height).toBe(38);

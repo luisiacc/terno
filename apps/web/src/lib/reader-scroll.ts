@@ -33,18 +33,15 @@ function coverOf(scroller: HTMLElement): { covered: number; coveredTop: number }
 
 /**
  * Plan 158: a composer's opening scroll (one with `wanted`) that would leave the conversation's subject cut by the
- * reader's top stops where it's whole (at 1100x700 a reply's left a sliver of it under the toolbar). Only for a composer,
- * whose foot sticks, and only for a little (so Send stays in view); holding back more, as for a subject of several lines in a short reader, would hide what's
- * wanted, so the scroll goes past all of it instead, as far as `max` lets it (the context line then names it).
+ * reader's top goes on past all of it, as far as `max` lets it: the context line then names it. Never short of what's
+ * wanted (stopping at the subject's top hid the composer's Send row under the window's edge at 1100x700).
  */
-const HOLD_BACK = 40;
 function keepSubjectWhole(scroller: HTMLElement, delta: number, max: number): number {
   const subject = delta > 0 ? scroller.querySelector<HTMLElement>("#reader-subject") : null;
   if (!subject) return delta;
   const s = scroller.getBoundingClientRect().top, r = subject.getBoundingClientRect();
   const top = r.top - s, bottom = r.bottom - s;
   if (!(top >= 0 && top < delta && bottom > delta)) return delta;
-  if (delta - top <= HOLD_BACK) return top;
   return bottom <= max ? bottom : delta;
 }
 

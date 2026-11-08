@@ -63,18 +63,19 @@ describe("keepInView", () => {
     }
   });
 
-  it("never stops with the subject cut by the reader's top: short of it when some would stay, past it when all goes (plan 158)", () => {
+  it("never stops with the subject cut by the reader's top, and never short of what's wanted: past the subject (plan 158)", () => {
     const subject = document.createElement("h2");
     subject.id = "reader-subject";
     scroller.prepend(subject);
     for (const motionMs of [80, 0]) {
       useAppearance.setState({ motionMs });
-      // 116 wanted (as above); a subject from 100 to 140 would keep 24 px: it stops at 100, the subject whole at the top
+      // 116 wanted (as above); a subject from 100 to 140 would keep 24 px: it goes on to 140, never back to 100, which
+      // left a short window's Send row under its edge
       scroller.scrollTop = 0;
       subject.getBoundingClientRect = () => rect(100 - scroller.scrollTop, 40);
       keepInView(el, scroller, 16, () => 200);
       frame();
-      expect(scroller.scrollTop).toBe(100);
+      expect(scroller.scrollTop).toBe(140);
       // one from 40 to 80 goes whole: the scroll goes on
       scroller.scrollTop = 0;
       subject.getBoundingClientRect = () => rect(40 - scroller.scrollTop, 40);
