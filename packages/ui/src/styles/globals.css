@@ -550,11 +550,12 @@
 }
 /*
  * The docked snackbar (plan 13) on BoardUI's toast surface (plan 125): solid
- * popover, the menus' edge and lift. Its countdown ring: the track in the
- * hairline ink, the time left in primary.
+ * popover, the menus' edge and lift. Its countdown ring: the time left in
+ * primary, the drained part a faint track of the secondary ink (plan 161, the
+ * owner: a countdown, never a broken outline; contrast.ts SNACK_TRACK).
  */
 @utility snack-surface {
-  --snack-track: var(--border);
+  --snack-track: color-mix(in oklab, var(--muted-foreground) 40%, transparent);
   --snack-ring: var(--primary);
   background-color: var(--popover);
   color: var(--popover-foreground);

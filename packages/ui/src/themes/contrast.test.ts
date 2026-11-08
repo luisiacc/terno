@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { contrast, parseColor, withAlpha } from "./color";
-import { BOUNDARY_STEPS, boundaryStep, composite, contrastFailures, CONTRAST_PAIRS, CONTROL_EDGES, FIELD_WASH, RATED_PALETTES, STAR_ON_ROWS, SURFACE_STEPS, surfaceStep } from "./contrast";
+import { BOUNDARY_STEPS, boundaryStep, composite, contrastFailures, CONTRAST_PAIRS, CONTROL_EDGES, FIELD_WASH, RATED_PALETTES, SNACK_PILL, SNACK_TRACK, SNACK_TRACK_FLOOR, STAR_ON_ROWS, SURFACE_STEPS, surfaceStep } from "./contrast";
 import { DESIGNS } from "../designs/index";
 import { resolveCustomTheme, THEMES } from "./registry";
 
@@ -82,6 +82,19 @@ describe("boundaries as drawn (plan 160)", () => {
   it.each(THEMES.map((t) => [t.id, t] as const))("%s holds every boundary's floor", (id, theme) => {
     for (const draft of drafts)
       for (const step of BOUNDARY_STEPS.filter((s) => (!s.mode || s.mode === theme.mode) && (!s.only || s.only.includes(id)))) expect(boundaryStep(theme, step, draft), `${id} (draft on ${draft}): ${step.why}`).toBeGreaterThanOrEqual(step.except?.[id]?.min ?? step.min);
+  });
+
+  it("the Undo ring's track is what the dock draws, at its floor and well under the ring itself, in every palette (plan 161)", () => {
+    const globals = readFileSync(join(import.meta.dirname, "../styles/globals.css"), "utf8");
+    const layer = SNACK_TRACK as { token: string; alpha: number };
+    expect(/@utility snack-surface \{[^}]*--snack-track: ([^;]+);/.exec(globals)?.[1]).toBe(`color-mix(in oklab, var(--${layer.token}) ${Math.round(layer.alpha * 100)}%, transparent)`);
+    for (const theme of THEMES) {
+      const track = boundaryStep(theme, { edge: [...SNACK_PILL, SNACK_TRACK], behind: SNACK_PILL });
+      const ring = boundaryStep(theme, { edge: [...SNACK_PILL, "primary"], behind: SNACK_PILL });
+      expect(track, theme.id).toBeGreaterThanOrEqual(SNACK_TRACK_FLOOR);
+      // a track, faint: never read as the time left
+      expect(track, theme.id).toBeLessThanOrEqual(ring / 2);
+    }
   });
 
   it("composites translucent layers in order, over the background", () => {

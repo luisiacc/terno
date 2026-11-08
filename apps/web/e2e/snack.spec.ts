@@ -185,6 +185,42 @@ test.describe("the docked snackbar", () => {
     await expect(dock(page)).toHaveCount(0);
   });
 
+  test("the ring's drained part is a faint track on the pill, in light and dark (plan 161, the owner)", { tag: "@design" }, async ({ app: page }) => {
+    await page.mouse.move(1300, 100);
+    await archiveOne(page);
+    await expect(page.getByTestId("snack-ring")).toBeVisible();
+    // held while focused (a program's focus: no ring), so both modes are read on the same snack
+    await dock(page).getByTestId("snack-action").focus();
+    for (const mode of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: mode });
+      // what the eye sees: the track painted over the pill's card over the dock, against the card alone; and the ring
+      const [track, ring] = await page.getByTestId("snack-ring").evaluate((ringPath) => {
+        const pill = ringPath.closest("button")!;
+        const surface = pill.closest<HTMLElement>(".snack-surface")!;
+        const trackPath = ringPath.previousElementSibling as SVGPathElement;
+        const x = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+        const paint = (...colors: string[]) => {
+          x.clearRect(0, 0, 1, 1);
+          for (const c of colors) {
+            x.fillStyle = "#000";
+            x.fillStyle = c;
+            x.fillRect(0, 0, 1, 1);
+          }
+          return [...x.getImageData(0, 0, 1, 1).data].slice(0, 3);
+        };
+        const lum = (rgb: number[]) => rgb.map((v) => v / 255).map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i]!, 0);
+        const ratio = (a: number[], b: number[]) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+        const under = [getComputedStyle(surface).backgroundColor, getComputedStyle(pill).backgroundColor];
+        const card = paint(...under);
+        return [ratio(paint(...under, getComputedStyle(trackPath).stroke), card), ratio(paint(...under, getComputedStyle(ringPath).stroke), card)];
+      });
+      // contrast.ts SNACK_TRACK_FLOOR (1.8), less a little for the page's 8-bit blend; and a track, never the time left
+      expect(track, mode).toBeGreaterThanOrEqual(1.75);
+      expect(track, mode).toBeLessThanOrEqual(ring / 2);
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+  });
+
   test.describe("List: the bar over the one pane", () => {
   // plan 158: Split's bar is over the reader; List's is over its rows, which keep room under them for it
   test.use({ layout: "list" });

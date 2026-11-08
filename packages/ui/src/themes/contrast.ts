@@ -201,6 +201,14 @@ export interface BoundaryStep {
 const GRAPHITE_FIELD = { "graphite-light": { min: 1.32, why: "the blueprint's #5D5D5D on the field" }, "graphite-dark": { min: 1.2, why: "the blueprint's #9E9E9E on the field over a menu" } };
 /** Plan 161, pass 3: an AI card's wash of the ink in dark (generate.ts --ai-card-wash, 4 %) */
 export const AI_CARD_WASH: Layer = { token: "foreground", alpha: 0.04 };
+/**
+ * Plan 161 (the owner): the Undo ring's drained part, a faint track of the secondary ink (globals.css `--snack-track`), so
+ * the whole outline is always there and a little drained reads as a countdown, not a gap. Over the pill's card on the dock.
+ */
+export const SNACK_TRACK: Layer = { token: "muted-foreground", alpha: 0.4 };
+/** the floor it holds, and the ring's own step above it (a track never reads as the time left) */
+export const SNACK_TRACK_FLOOR = 1.8;
+export const SNACK_PILL: readonly Layer[] = ["popover", "card"];
 /** Plan 160: the row under the pointer; the selection a step above it */
 export const HOVER_FLOOR = 1.15;
 export const BOUNDARY_STEPS: readonly BoundaryStep[] = [
@@ -229,6 +237,8 @@ export const BOUNDARY_STEPS: readonly BoundaryStep[] = [
   { edge: ["card", "card-edge"], behind: ["card"], min: HAIRLINE_FLOOR, why: "an outlined AI card's ring on a reader card" },
   // pass 3: Today's digest row, ringed at rest in the same edge so it reads as a row to open, on the list
   { edge: ["pane", "card-edge"], behind: ["pane"], min: HAIRLINE_FLOOR, why: "the digest's row, ringed on Today's list" },
+  // plan 161, the owner: the Undo ring's drained track on its pill (--border was 1.00 to 1.61:1, and read as a broken outline)
+  { edge: [...SNACK_PILL, SNACK_TRACK], behind: SNACK_PILL, min: SNACK_TRACK_FLOOR, why: "the Undo ring's drained track on its pill" },
   // plan 161, pass 3: ai-r02 still read the dark card as a hairline (its tint 1.11 to 1.15:1 off the reader): in dark, a tint
   // card's fill carries a wash of the ink (generate.ts --ai-card-wash), a step off the reader, and off Lumen's reader card;
   // the ring holds against the washed fill
