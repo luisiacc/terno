@@ -324,6 +324,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint }: { dra
             view.dispatch(closeHistory(view.state.tr));
             return { doc: view.state.doc };
           },
+          sameDoc: (doc) => doc instanceof PMNode && view.state.doc.content.size === doc.content.size && view.state.doc.eq(doc),
           selectText: (text) => {
             const at = findGaps(view.state.doc, [text])[0];
             if (!at || viewRef.current !== view) return false;

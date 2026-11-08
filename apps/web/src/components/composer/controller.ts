@@ -99,6 +99,8 @@ export interface ComposerController {
    * step of its own (⌘Z brings the edited text back). Null when the draft can't change now.
    */
   restoreGenerated(before: unknown): { doc: unknown } | null;
+  /** plan 161: the document reads the same as this one (a write's `before`, say), in O(1) unless their sizes match */
+  sameDoc(doc: unknown): boolean;
   /** plan 161: selects the first place this text is, and shows it; false when it isn't there */
   selectText(text: string): boolean;
   /** plan 133: an opaque identity of the document: a change of anything but the selection changes it, in O(1) */

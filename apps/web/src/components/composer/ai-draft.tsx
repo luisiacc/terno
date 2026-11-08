@@ -5,13 +5,13 @@ import { CloseButton } from "@terno/ui/components/close-button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { Spinner } from "@terno/ui/components/spinner";
-import { ChevronDown, Sparkles, Undo2 } from "@terno/ui/icons";
+import { ChevronDown, Undo2 } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import { modelName, providerLabel, writingTarget } from "~/lib/ai";
 import { acknowledgeTold, answer, closeRow, commitHeld, discard, discardAndSend, includeEveryone, keepWriting, noteBody, place, placePartial, previewMode, previewText, recallInstruction, refine, retry, setInstruction, stop, submit, subscribePreview, takeFocusRequest, undoCommit, useAiDraft, type AiSession, type AiStrip } from "~/lib/ai-draft";
 import { keepInView } from "~/lib/reader-scroll";
-import { AI_GLYPH, aiWritten } from "../ai-card";
+import { aiWritten } from "../ai-card";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { useDrafts } from "~/lib/drafts";
 import { setApp, useApp } from "~/state/app";
@@ -104,7 +104,7 @@ function VoicePopover({ strip, toText }: { strip: AiStrip; toText: string }) {
   return (
     <Popover>
       {/* a menu's chevron, since it opens one; it shrinks, truncated, only when the status alone can't fit (its full words are in the popover) */}
-      <PopoverTrigger render={<Button type="button" variant="ghost" size="sm" className={cn(quiet, "min-w-0 shrink text-xs")} data-testid="ai-strip-voice" />}>
+      <PopoverTrigger render={<Button type="button" variant="ghost" size="sm" className={cn(quiet, "min-w-0 shrink px-1.5 text-xs")} data-testid="ai-strip-voice" />}>
         <span className="truncate">{voiceLabel(strip, who)}</span>
         <ChevronDown aria-hidden />
       </PopoverTrigger>
@@ -139,25 +139,24 @@ function Strip({ s }: { s: AiSession & { strip: AiStrip } }) {
   return (
     <div className={cn(line, "py-[5px]")} data-testid="ai-strip" data-edited={strip.edited || undefined}>
       {/* plan 161: a status, not a control (the secondary type, no shape), and never dropped: the commands wrap below it instead */}
-      <span className="flex min-w-0 flex-1 items-center gap-x-1">
-        <span className="flex shrink-0 items-center gap-1.5 text-xs" data-testid="ai-strip-written">
-          <Sparkles aria-hidden className={AI_GLYPH} />
-          {aiWritten(strip.edited === true)}
-        </span>
+      {/* its own width (flex-auto, not a 0 basis): when the commands don't fit beside it they wrap below, never squeezing it */}
+      <span className="flex min-w-0 flex-auto items-center gap-x-1">
+        {/* the row's label already says AI: no glyph to say it again */}
+        <span className="shrink-0 text-xs" data-testid="ai-strip-written">{aiWritten(strip.edited === true)}</span>
         <VoicePopover strip={strip} toText={toText} />
       </span>
       {/* the commands: BoardUI's secondary buttons, ending on the line Cc, Bcc and Subject end on; Undo set apart, with its glyph */}
-      <span className="ml-auto flex shrink-0 items-center gap-1.5" data-testid="ai-strip-commands">
-        <Button type="button" variant="outline" size="sm" data-testid="ai-strip-regenerate" onClick={() => refine(s.key, "regenerate")}>
+      <span className="ml-auto flex shrink-0 items-center gap-1" data-testid="ai-strip-commands">
+        <Button type="button" variant="outline" size="sm" className="px-2" data-testid="ai-strip-regenerate" onClick={() => refine(s.key, "regenerate")}>
           {t("aiDraft.regenerate")}
         </Button>
-        <Button type="button" variant="outline" size="sm" data-testid="ai-strip-shorter" onClick={() => refine(s.key, "shorter")}>
+        <Button type="button" variant="outline" size="sm" className="px-2" data-testid="ai-strip-shorter" onClick={() => refine(s.key, "shorter")}>
           {t("aiDraft.shorter")}
         </Button>
-        <Button type="button" variant="outline" size="sm" data-testid="ai-strip-warmer" onClick={() => refine(s.key, "warmer")}>
+        <Button type="button" variant="outline" size="sm" className="px-2" data-testid="ai-strip-warmer" onClick={() => refine(s.key, "warmer")}>
           {t("aiDraft.warmer")}
         </Button>
-        <Button type="button" variant="outline" size="sm" className="ml-1.5" data-testid="ai-strip-undo" onClick={() => undoCommit(s.key)}>
+        <Button type="button" variant="outline" size="sm" className="ml-1 px-2" data-testid="ai-strip-undo" onClick={() => undoCommit(s.key)}>
           <Undo2 aria-hidden />
           {t("common.undo")}
         </Button>

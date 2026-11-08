@@ -1098,8 +1098,20 @@ export function noteBody(key: string) {
     return;
   }
   const top = s.strip?.stack[s.strip.stack.length - 1];
+  if (!s.strip || !top || c.docToken() === top.doc) return;
+  // ⌘Z took the write back whole: the strip goes with it (the version under it stays), as the strip's own Undo does
+  if (c.sameDoc(top.beforeDoc)) {
+    const stack = s.strip.stack.slice(0, -1);
+    const under = stack[stack.length - 1];
+    if (!under) {
+      if (s.phase === "strip") remove(key);
+      else update(key, { strip: null });
+      return;
+    }
+    return update(key, { strip: { ...s.strip, stack, edited: !c.sameDoc(under.doc) } });
+  }
   // plan 161: an edit no longer ends the strip; it says so, and Undo stays until the draft is sent
-  if (s.strip && top && !s.strip.edited && c.docToken() !== top.doc) update(key, { strip: { ...s.strip, edited: true } });
+  if (!s.strip.edited) update(key, { strip: { ...s.strip, edited: true } });
 }
 
 // ── send guard, Esc

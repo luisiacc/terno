@@ -72,6 +72,7 @@ function editor(key: string, initial = "") {
       for (const l of listeners) l();
       return { doc: c.doc };
     },
+    sameDoc: (doc: unknown) => (doc as { text?: string } | null)?.text === c.text,
     selectText(text: string) {
       if (!c.text.includes(text)) return false;
       c.selected = text;
@@ -510,12 +511,22 @@ describe("the subject: §10.3's compound undo", () => {
     expect(useDrafts.getState().drafts[key]!.subject).toBe("My own");
   });
 
-  it("ordinary undo is the text's: the strip stays, edited, and the subject stays", async () => {
+  it("ordinary undo is the text's: taking the write back whole ends the strip, and the subject stays", async () => {
     const { key, c } = await filled();
     c.undoGenerated(c.doc);
     store.noteBody(key);
-    expect(session(key)!.strip!.edited).toBe(true);
+    expect(session(key)).toBeUndefined();
     expect(useDrafts.getState().drafts[key]!.subject).toBe("Generated subject");
+  });
+
+  it("plan 161: ⌘Z past a refinement leaves the strip for the version under it", async () => {
+    const { key, c } = await filled();
+    store.refine(key, "warmer");
+    last("ai.compose").resolve(done("Warmer body."));
+    await tick();
+    c.undoGenerated(c.doc);
+    expect(c.text).toBe("Body.");
+    expect(session(key)!.strip!.stack).toHaveLength(1);
   });
 
   it("plan 161: Undo after an edit restores exactly what the write found, subject too, and the snack's Undo brings the edit back", async () => {

@@ -89,6 +89,7 @@ function Body({ editorKey, initial, onChange, viewRef }: { editorKey: string; in
       undoGenerated: () => null,
       restoreGenerated: () => null,
       selectText: () => false,
+      sameDoc: () => false,
       docToken: () => view.state.doc,
       subscribeDoc: () => () => {},
       empty: () => false,
