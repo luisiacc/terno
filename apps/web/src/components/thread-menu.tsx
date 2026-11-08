@@ -204,10 +204,17 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
   const wholeRows = useCallback(
     (menu: HTMLDivElement | null) => {
       if (!menu) return;
-      // when it's placed and whenever its height changes (the window's bound arrives with its position): never per row
-      const ro = new ResizeObserver(() => placeWhole(menu, pointerX, (rect) => setAnchor(virtual(rect))));
+      // when it's placed, whenever its height changes (the window's bound arrives with its position), and when its rows do
+      // (Reply all once the conversation loads: a menu already capped keeps its box, so only its rows tell): never per row
+      const place = () => placeWhole(menu, pointerX, (rect) => setAnchor(virtual(rect)));
+      const ro = new ResizeObserver(place);
       ro.observe(menu);
-      return () => ro.disconnect();
+      const mo = new MutationObserver(place);
+      mo.observe(menu, { childList: true, subtree: true });
+      return () => {
+        ro.disconnect();
+        mo.disconnect();
+      };
     },
     [pointerX],
   );

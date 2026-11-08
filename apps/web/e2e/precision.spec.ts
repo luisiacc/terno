@@ -218,13 +218,15 @@ async function menuOnItsRow(page: Page, id: string, design: string, where: strin
     const text = [...row.querySelectorAll("[data-testid=row-from],[data-testid=row-subject],[data-testid=row-snippet],[data-testid=row-date]")].map((t) => t.getBoundingClientRect()).filter((t) => t.width > 0);
     const over = text.some((t) => t.top < r.bottom && t.bottom > r.top && t.left < r.right && t.right > r.left);
     const fits = el.scrollHeight <= el.clientHeight + 1;
+    // the window holds the whole menu (then it must show whole, over its row if need be: revision 4)
+    const holds = el.scrollHeight + 2 * inset <= innerHeight;
     // room for the whole menu under the row or over it, an inset from the window's edge
     const b = row.getBoundingClientRect();
     const room = Math.max(innerHeight - b.bottom, b.top) - inset - 4 >= el.scrollHeight;
-    return { over, fits, room, left: r.left, top: r.top, right: innerWidth - r.right, bottom: innerHeight - r.bottom };
+    return { over, fits, holds, room, left: r.left, top: r.top, right: innerWidth - r.right, bottom: innerHeight - r.bottom };
   }, [id, inset] as const);
   note(`${where} menu (over its row, edge gaps l/t/r/b)`, `${m.over}, ${[m.left, m.top, m.right, m.bottom].map(fmt).join("/")}`);
-  expect.soft(m.fits, `${design} ${where}: the row menu shows every row`).toBe(true);
+  if (m.holds) expect.soft(m.fits, `${design} ${where}: the row menu shows every row`).toBe(true);
   // only a window too short for it on either side lets it cover the row (revision 4)
   if (m.room) expect.soft(m.over, `${design} ${where}: the row menu leaves its own row's text in view`).toBe(false);
   for (const side of ["left", "top", "right", "bottom"] as const) expect.soft(m[side] >= inset - 0.5, `${design} ${where}: the row menu is ≥ ${inset}px from the window's ${side} edge: ${fmt(m[side])}px`).toBe(true);
@@ -426,7 +428,8 @@ test.describe("precision across screens (plan 160)", { tag: "@design" }, () => {
   });
 
   test("small windows: the palette and menus end on whole rows, the menu beside its row, the reply card in view", async ({ app: page, design }) => {
-    for (const [width, height] of [[1100, 700], [1100, 560]] as const) {
+    // (420 tall: every design's menu scrolls there, capped at a whole row, which rows added later must keep)
+    for (const [width, height] of [[1100, 700], [1100, 560], [1100, 420]] as const) {
       await page.setViewportSize({ width, height });
       const size = `${width}x${height}`;
       await scenario(`${size}: the palette ends on a whole row, an inset above the window's foot`, async () => {
@@ -435,6 +438,7 @@ test.describe("precision across screens (plan 160)", { tag: "@design" }, () => {
         const dialog = page.locator("[data-slot=dialog-content]").filter({ has: page.locator("[data-slot=command]") });
         await expect(dialog).toBeVisible();
         await settled(dialog);
+        await still(dialog.locator("[data-slot=command-list]"));
         await wholeRows(dialog.locator("[data-slot=command-list]"), "[data-slot=command-item]", `${size}: the palette`, design);
         const inset = await token(page, "--float-inset", 12);
         const gap = await dialog.evaluate((el) => innerHeight - el.getBoundingClientRect().bottom);
