@@ -11,7 +11,7 @@ import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import { E2E_NOW } from "./constants";
-import { expect, focusList, ingestConversation, rows, selectedRow, stabilize, test, fresh, scenario } from "./fixtures";
+import { expect, focusList, ingestConversation, rows, search, selectedRow, stabilize, test, fresh, scenario } from "./fixtures";
 
 // baselines are at twice the pixels; everything else draws at one (plan 139)
 test.use({ deviceScaleFactor: 2 });
@@ -169,6 +169,126 @@ test.describe("the table (plan 158)", () => {
         expect(await list.evaluate((el) => el.scrollTop)).toBe(at);
       }
     });
+  });
+});
+
+/** The pointer on a row's avatar, or with none on its subject (the row's own hover). By position: the avatar hides under it. */
+async function pointAt(page: Page, row: Locator, avatars: boolean): Promise<void> {
+  const b = (await (avatars ? row.getByTestId("sender-avatar") : row.getByTestId("row-subject")).boundingBox())!;
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+}
+
+test.describe("the pointer's checkbox (2026-11-07)", () => {
+  test("in the avatar's place (with none, the marks' column): over it, then on every row once one is checked; it checks without opening, ⇧ checks a range, and nothing moves", { tag: "@design" }, async ({ app: page, design }) => {
+    const away = () => page.mouse.move(1, 1);
+    const shown = (l: Locator) => l.evaluate((el) => getComputedStyle(el).visibility === "visible");
+    const fromX = (row: Locator) => row.getByTestId("row-from").evaluate((el) => el.getBoundingClientRect().left);
+    const checkedCount = () => page.evaluate(() => (window as unknown as { __terno: { getApp(): { checked: Set<number> } } }).__terno.getApp().checked.size);
+    const avatars = DESIGNS.find((d) => d.id === design)!.variants.row !== "classic";
+    // a row under the pointer: its avatar's, or with none the row's
+    const hover = (row: Locator) => pointAt(page, row, avatars);
+    const pick = async (row: Locator, modifiers?: ["Shift"]) => {
+      await hover(row);
+      await row.getByTestId("row-pick").click({ modifiers });
+    };
+    // past the cursor's row, so it can't be what's checked
+    const row = rows(page).nth(3);
+    const box = row.getByTestId("row-pick");
+    const before = { x: await fromX(row), height: (await row.boundingBox())!.height, cursor: await selectedRow(page).getAttribute("data-thread-id") };
+    await scenario("at rest, no box; over the avatar (or the row, with none) the box takes its place, and nothing moves", async () => {
+      await away();
+      await expect(row.getByTestId("sender-avatar")).toHaveCount(avatars ? 1 : 0);
+      expect(await shown(box)).toBe(false);
+      if (avatars) {
+        // the rest of the row is the row's: no box for it
+        await row.getByTestId("row-subject").hover();
+        expect(await shown(box)).toBe(false);
+      }
+      await hover(row);
+      expect(await shown(box)).toBe(true);
+      const b = (await box.boundingBox())!;
+      if (avatars) {
+        expect(await shown(row.getByTestId("sender-avatar"))).toBe(false);
+        const a = (await row.getByTestId("sender-avatar").boundingBox())!;
+        expect(Math.abs(b.x + b.width / 2 - (a.x + a.width / 2))).toBeLessThanOrEqual(1);
+        expect(Math.abs(b.y + b.height / 2 - (a.y + a.height / 2))).toBeLessThanOrEqual(1);
+      } else {
+        // the marks' column: inside the selection's edge (4 px in), before the text, one mark there
+        const r = (await row.boundingBox())!;
+        expect(b.x).toBeGreaterThanOrEqual(r.x + 4);
+        expect(b.x + b.width).toBeLessThanOrEqual(before.x);
+        const dot = row.getByTestId("row-unread-dot");
+        if (await dot.count()) expect(await shown(dot)).toBe(false);
+      }
+      expect(await fromX(row)).toBe(before.x);
+      expect((await row.boundingBox())!.height).toBe(before.height);
+    });
+    await scenario("a click on it checks the row without opening it or moving the cursor; then every row shows its box, nothing moved", async () => {
+      await pick(row);
+      await expect(row).toHaveAttribute("data-checked", "true");
+      await expect(page.getByTestId("selection-count")).toHaveText("1 conversation selected");
+      await expect(listPage(page)).toHaveCount(0);
+      expect(await selectedRow(page).getAttribute("data-thread-id")).toBe(before.cursor);
+      await away();
+      const all = await rows(page).evaluateAll((els) => els.map((r) => ({
+        box: getComputedStyle(r.querySelector("[data-testid=row-pick]")!).visibility,
+        avatar: r.querySelector("[data-testid=sender-avatar]") && getComputedStyle(r.querySelector("[data-testid=sender-avatar]")!).visibility,
+        dot: r.querySelector("[data-testid=row-unread-dot]") && getComputedStyle(r.querySelector("[data-testid=row-unread-dot]")!).visibility,
+        check: !!r.querySelector("[data-testid=row-check]"),
+      })));
+      for (const r of all) {
+        expect(r.box).toBe("visible");
+        if (avatars) expect(r.avatar).toBe("hidden");
+        // one mark per slot: the box says checked; with no avatar, the dot gives the column up
+        else if (r.dot) expect(r.dot).toBe("hidden");
+        expect(r.check).toBe(false);
+      }
+      await expect(row.getByTestId("row-pick")).toHaveAttribute("data-checked", "");
+      expect(await fromX(row)).toBe(before.x);
+      expect((await row.boundingBox())!.height).toBe(before.height);
+    });
+    await scenario("unchecking the last one brings the avatars back", async () => {
+      await row.getByTestId("row-pick").click();
+      await expect(page.getByTestId("selection-bar")).toHaveCount(0);
+      await away();
+      expect(await shown(box)).toBe(false);
+      if (avatars) expect(await shown(row.getByTestId("sender-avatar"))).toBe(true);
+      await expect(listPage(page)).toHaveCount(0);
+    });
+    await scenario("⇧ on a box checks the range from the last one clicked; ⌘-click and x still check as before", async () => {
+      await pick(rows(page).nth(2));
+      await pick(rows(page).nth(6), ["Shift"]);
+      await expect.poll(checkedCount).toBe(5);
+      for (const i of [2, 3, 4, 5, 6]) await expect(rows(page).nth(i)).toHaveAttribute("data-checked", "true");
+      await rows(page).nth(8).click({ modifiers: ["ControlOrMeta"] });
+      await expect.poll(checkedCount).toBe(6);
+      await page.keyboard.press("Escape");
+      await expect.poll(checkedCount).toBe(0);
+      await focusList(page);
+      await page.keyboard.press("x");
+      await expect.poll(checkedCount).toBe(1);
+      await away();
+      expect(await shown(rows(page).nth(5).getByTestId("row-pick"))).toBe(true);
+      await page.keyboard.press("Escape");
+    });
+    await scenario("a search's results in List: the same box", async () => {
+      await search(page, "design");
+      const hit = rows(page).nth(1);
+      await pick(hit);
+      await expect(hit).toHaveAttribute("data-checked", "true");
+      await expect(listPage(page)).toHaveCount(0);
+    });
+  });
+});
+
+test.describe("the pointer's checkbox: Split (2026-11-07)", () => {
+  test.use({ layout: "split" });
+  test("Split's rows have none, whatever is under the pointer or checked", async ({ app: page }) => {
+    await expect(page.locator("html")).toHaveAttribute("data-layout", "split");
+    await rows(page).nth(3).hover();
+    await rows(page).nth(3).click({ modifiers: ["ControlOrMeta"] });
+    await rows(page).nth(4).hover();
+    await expect(page.getByTestId("row-pick")).toHaveCount(0);
   });
 });
 
@@ -557,7 +677,7 @@ test.describe("categories in List are the sidebar's", () => {
 
 test.describe("List layout: accessibility and look", { tag: "@design" }, () => {
   for (const mode of ["light", "dark"] as const) {
-    test(`axe-clean and on baseline (${mode}): the list, a conversation, a new message`, async ({ app: page }) => {
+    test(`axe-clean and on baseline (${mode}): the list, a conversation, a new message`, async ({ app: page, design }) => {
       await page.emulateMedia({ colorScheme: mode });
       await stabilize(page);
       // names, roles and structure don't change with the mode: dark reads contrast alone
@@ -565,6 +685,17 @@ test.describe("List layout: accessibility and look", { tag: "@design" }, () => {
       const check = async () => expect((await wcag().analyze()).violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
       await check();
       await expect(page).toHaveScreenshot(`list-${mode}.png`);
+      // the pointer's checkboxes (2026-11-07): one row checked by its box, another's under the pointer; nothing new for a
+      // keyboard or a screen reader (the row is the option, `x` its key)
+      const avatars = DESIGNS.find((d) => d.id === design)!.variants.row !== "classic";
+      const under = (i: number) => pointAt(page, rows(page).nth(i), avatars);
+      await under(2);
+      await rows(page).nth(2).getByTestId("row-pick").click();
+      await under(4);
+      await expect(page.getByTestId("selection-count")).toBeVisible();
+      await check();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("selection-bar")).toHaveCount(0);
       await openRow(page, rows(page).first());
       await check();
       await expect(page).toHaveScreenshot(`list-thread-${mode}.png`);
