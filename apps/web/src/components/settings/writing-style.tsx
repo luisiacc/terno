@@ -11,6 +11,7 @@ import { Plus } from "@terno/ui/icons";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { providerLabel } from "~/lib/ai";
 import { snack } from "~/lib/snack";
+import { imeKey } from "~/lib/ime-escape";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
 import { ConfirmDialog, SettingsGroup, SettingsNote, SettingsRow } from "./parts";
@@ -92,6 +93,12 @@ function ItemsField({ label, add, item, remove, items, onChange, testId, first }
   );
 }
 
+/**
+ * Pass 3 (Codex review): the editor open on the page, for what's outside it: Esc from elsewhere on the page steps back
+ * out of it first, and leaving the page (its back button) asks before a change goes. One at a time (the page allows one).
+ */
+export const styleEditor: { open: { escape: () => void; leave: (then: () => void) => void } | null } = { open: null };
+
 function ProfileEditor({ p, title, onDone }: { p: WritingProfileView; title: string; onDone: (next: WritingProfileView | null) => void }) {
   const ids = useId();
   const [greetings, setGreetings] = useState(() => p.habits.greetings.map((g) => g.text));
@@ -110,9 +117,28 @@ function ProfileEditor({ p, title, onDone }: { p: WritingProfileView; title: str
   }, []);
   // pass 3: Esc steps back out of the editor: at once when nothing changed, after asking when something did (never losing typing)
   const [asking, setAsking] = useState(false);
+  // what Discard goes on to: closing the editor, or leaving the page too
+  const [after, setAfter] = useState<{ next: (() => void) | null }>({ next: null });
   const changed = () =>
     JSON.stringify([fromItems(greetings), fromItems(signOffs), fromLines(phrases), fromLines(notes)]) !==
     JSON.stringify([fromItems(p.habits.greetings.map((g) => g.text)), fromItems(p.habits.signOffs.map((g) => g.text)), fromLines(asLines(p.phrases)), fromLines(asLines(p.judgment?.notes ?? []))]);
+  const escape = () => {
+    if (!changed()) return onDone(null);
+    setAfter({ next: null });
+    setAsking(true);
+  };
+  const leave = (then: () => void) => {
+    if (!changed()) return then();
+    setAfter({ next: then });
+    setAsking(true);
+  };
+  useEffect(() => {
+    const own = { escape, leave };
+    styleEditor.open = own;
+    return () => {
+      if (styleEditor.open === own) styleEditor.open = null;
+    };
+  });
   const shares = (list: readonly { text: string; share: number }[], items: readonly string[]) => fromItems(items).slice(0, ITEMS_MAX).map((text) => ({ text, share: list.find((i) => i.text === text)?.share ?? 0.1 }));
   const save = async () => {
     try {
@@ -144,11 +170,10 @@ function ProfileEditor({ p, title, onDone }: { p: WritingProfileView; title: str
       role="group"
       onKeyDown={(e) => {
         // a portal's Esc (the confirm below, a menu) bubbles here through React: only the editor's own
-        if (e.key !== "Escape" || e.defaultPrevented || e.nativeEvent.isComposing || !e.currentTarget.contains(e.target as Node)) return;
+        if (e.key !== "Escape" || e.defaultPrevented || imeKey(e.nativeEvent) || !e.currentTarget.contains(e.target as Node)) return;
         e.preventDefault();
         e.stopPropagation();
-        if (changed()) setAsking(true);
-        else onDone(null);
+        escape();
       }}
     >
       <ItemsField label={t("aiDraft.style.editGreetings")} add={t("aiDraft.style.addGreeting")} item={(n) => t("aiDraft.style.greetingItem", { n })} remove={(n) => t("aiDraft.style.removeGreeting", { n })} items={greetings} onChange={setGreetings} testId="style-edit-greetings" first={first} />
@@ -160,7 +185,10 @@ function ProfileEditor({ p, title, onDone }: { p: WritingProfileView; title: str
         <Button size="sm" data-testid="style-edit-save" onClick={() => void save()}>{t("common.save")}</Button>
         <Button size="sm" variant="ghost" data-testid="style-edit-cancel" onClick={() => onDone(null)}>{t("common.cancel")}</Button>
       </div>
-      <ConfirmDialog open={asking} onOpenChange={setAsking} title={t("aiDraft.style.discardTitle")} description={t("aiDraft.style.discardHint", { name: title })} confirm={t("aiDraft.style.discard")} testId="style-discard-dialog" onConfirm={() => onDone(null)} />
+      <ConfirmDialog open={asking} onOpenChange={setAsking} title={t("aiDraft.style.discardTitle")} description={t("aiDraft.style.discardHint", { name: title })} confirm={t("aiDraft.style.discard")} testId="style-discard-dialog" onConfirm={() => {
+        onDone(null);
+        after.next?.();
+      }} />
     </div>
   );
 }

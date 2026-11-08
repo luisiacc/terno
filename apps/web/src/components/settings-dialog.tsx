@@ -3,9 +3,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@terno/ui/components/t
 import { useCallback, useEffect, useRef } from "react";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { snack } from "~/lib/snack";
+import { imeKey } from "~/lib/ime-escape";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp, type SettingsTab } from "~/state/app";
 import { AiTab } from "./settings/ai-tab";
+import { styleEditor } from "./settings/writing-style";
 import { AppearanceTab } from "./settings/appearance-tab";
 import { CategoriesTab } from "./settings/categories-tab";
 import { AccountsTab } from "./settings/accounts-tab";
@@ -82,8 +84,13 @@ export function SettingsDialog() {
 
   // back to Drafting, focus on the button that opened Writing style (pass 3), as the palette's pages go back
   const backFromStyle = () => {
-    useAiDraftUi.setState({ stylePage: false });
-    requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-testid=ai-drafting-style-open]")?.focus());
+    const back = () => {
+      useAiDraftUi.setState({ stylePage: false });
+      requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-testid=ai-drafting-style-open]")?.focus());
+    };
+    // a changed editor asks before the page goes (Codex review)
+    if (styleEditor.open) styleEditor.open.leave(back);
+    else back();
   };
   const update = useCallback<SettingsUpdate>(async (patch, options) => {
     try {
@@ -112,12 +119,14 @@ export function SettingsDialog() {
         // plan 161, pass 3: Esc steps back a level before it closes: on Writing style, back to Drafting (the style editor's
         // own Esc goes first); a portal's Esc bubbles here through React and is its own
         onKeyDown={(e) => {
-          if (e.key !== "Escape" || !stylePage || e.defaultPrevented || e.nativeEvent.isComposing || !e.currentTarget.contains(e.target as Node)) return;
+          if (e.key !== "Escape" || !stylePage || e.defaultPrevented || imeKey(e.nativeEvent) || !e.currentTarget.contains(e.target as Node)) return;
           // the popup's own Esc (merged after this one) and the document's both stand down
           (e as unknown as { preventBaseUIHandler(): void }).preventBaseUIHandler();
           e.preventDefault();
           e.stopPropagation();
-          backFromStyle();
+          // an editor open on the page is the level below it, wherever focus is (Codex review): it steps back first
+          if (styleEditor.open) styleEditor.open.escape();
+          else backFromStyle();
         }}
         className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog" initialFocus={initialFocus}
         // on the section title's line, at the content's inset (pt-5 px-6)

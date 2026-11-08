@@ -145,3 +145,19 @@ it("Esc in a new rule's name goes to New", async () => {
   expect(isOpen()).toBe(true);
   expect(document.activeElement).toBe($("new-filter"));
 });
+
+it("Codex review: the Esc that dismisses an input method's candidates (after compositionend, as Safari sends it) leaves the field alone", async () => {
+  const name = $("filter-name")!;
+  name.focus();
+  await act(async () => {
+    name.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    name.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  });
+  await esc(name);
+  expect(isOpen()).toBe(true);
+  expect(document.activeElement).toBe(name);
+  // once it has settled, Esc steps back as ever
+  await act(() => new Promise((r) => setTimeout(r, 20)));
+  await esc(name);
+  expect(document.activeElement).toBe($("new-filter"));
+});

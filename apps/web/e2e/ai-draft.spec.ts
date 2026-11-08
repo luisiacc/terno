@@ -1002,6 +1002,21 @@ test.describe("drafting with AI (plan 133)", () => {
     // the edit had left only those two: none left, so nothing to open
     await expect(profile.getByTestId("style-profile-lines")).toBeVisible();
     await expect(profile.getByTestId("style-profile-examples-toggle")).toHaveCount(0);
+    // Codex review: a changed editor survives an Esc from elsewhere on the page, and the back button asks too
+    await profile.getByTestId("style-profile-edit").click();
+    await page.getByTestId("style-edit-phrases").fill("talk soon");
+    await page.getByTestId("style-rebuild").focus();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("style-discard-dialog")).toBeVisible();
+    await page.getByTestId("style-discard-dialog").getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByTestId("style-edit-phrases")).toHaveValue("talk soon");
+    await expect(page.getByTestId("writing-style")).toBeVisible();
+    await page.getByTestId("writing-style-back").click();
+    await expect(page.getByTestId("style-discard-dialog")).toBeVisible();
+    await page.getByTestId("style-discard-dialog").getByRole("button", { name: "Discard" }).click();
+    await expect(page.getByTestId("writing-style")).toHaveCount(0);
+    await page.getByTestId("ai-drafting-style-open").click();
+    await expect(profile.getByTestId("style-profile-lines")).toBeVisible();
     await expect(phrase("let me know")).toHaveCount(0);
     await expect(phrase("all the best")).toHaveCount(0);
     await profile.getByTestId("style-profile-edit").click();

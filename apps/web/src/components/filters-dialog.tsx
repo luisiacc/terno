@@ -26,6 +26,7 @@ import { getApp, setApp, useApp } from "~/state/app";
 import { ConfirmDialog } from "./settings/parts";
 import { AI_CARD, AI_GLYPH, AI_HEADER, AI_TITLE } from "./ai-card";
 import { provenanceLabel } from "~/lib/provenance";
+import { imeKey } from "~/lib/ime-escape";
 import { RecipientInput } from "./recipient-input";
 
 type Field = Condition["field"];
@@ -622,7 +623,7 @@ export function FiltersDialog() {
         onKeyDown={(e) => {
           // a field's own Esc (a suggestion list) and an input method's go first; a portal's (a select, a confirm) bubbles
           // here through React and is its own
-          if (e.key !== "Escape" || e.defaultPrevented || e.nativeEvent.isComposing || !e.currentTarget.contains(e.target as Node)) return;
+          if (e.key !== "Escape" || e.defaultPrevented || imeKey(e.nativeEvent) || !e.currentTarget.contains(e.target as Node)) return;
           const step = escapeStep(e.target as Element);
           if (!step) return;
           // the popup's own Esc (merged after this one) and the document's both stand down
