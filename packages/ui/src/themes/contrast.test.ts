@@ -75,11 +75,11 @@ describe("the field's wash (plans 118, 160)", () => {
 });
 
 describe("boundaries as drawn (plan 160)", () => {
-  // every design's palettes, Luma's included, with the design's own draft surface under a composer's dividers
-  const cases = DESIGNS.flatMap((d) => (["light", "dark"] as const).map((mode) => [`${d.palette[mode]}`, mode, d.surfaces.draft === "card" ? "card" : d.surfaces.draft === "tint" ? "tint" : "background"] as const));
-  it.each(cases)("%s holds every boundary's floor", (id, mode, draft) => {
-    const theme = THEMES.find((t) => t.id === id)!;
-    for (const step of BOUNDARY_STEPS.filter((s) => !s.mode || s.mode === mode)) expect(boundaryStep(theme, step, draft), `${id}: ${step.why}`).toBeGreaterThanOrEqual(step.except?.[id]?.min ?? step.min);
+  // every palette (any can be chosen in any design: Codex review), under every draft surface a design gives a composer
+  const drafts = [...new Set(DESIGNS.map((d) => (d.surfaces.draft === "card" ? "card" : d.surfaces.draft === "tint" ? "tint" : "background")))];
+  it.each(THEMES.map((t) => [t.id, t] as const))("%s holds every boundary's floor", (id, theme) => {
+    for (const draft of drafts)
+      for (const step of BOUNDARY_STEPS.filter((s) => !s.mode || s.mode === theme.mode)) expect(boundaryStep(theme, step, draft), `${id} (draft on ${draft}): ${step.why}`).toBeGreaterThanOrEqual(step.except?.[id]?.min ?? step.min);
   });
 
   it("composites translucent layers in order, over the background", () => {

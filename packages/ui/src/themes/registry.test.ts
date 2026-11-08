@@ -68,9 +68,9 @@ describe("plan 07 tokens", () => {
     const dracula = builtinTheme("dracula")!.tokens;
     expect(parseColor(dracula["draft-foreground"]).l).toBeGreaterThan(parseColor(dracula.destructive).l);
     expect(contrast(dracula["draft-foreground"], dracula["row-selected"])).toBeGreaterThanOrEqual(4.5);
-    // GitHub's reads everywhere already: unchanged
-    const gh = builtinTheme("github-light")!.tokens;
-    expect(gh["draft-foreground"]).toBe(gh.destructive);
+    // Gruvbox's reads everywhere already: unchanged (plan 160: GitHub's selection deepened to the tint floor, so it steps now)
+    const gv = builtinTheme("gruvbox-light")!.tokens;
+    expect(gv["draft-foreground"]).toBe(gv.destructive);
   });
 
   it("menus are translucent only as far as their text stays readable over black and white", () => {
