@@ -137,3 +137,27 @@ All twelve points taken. Where they change the design:
     - each screen names its rated region (for example `ai_draft` rates the ⌘J bar, its states and the draft it produces, not the ordinary composer around it)
 
     `rate.mjs`'s `brief()` takes the set and injects only that set's hands-on text. AI scores are compared only with AI scores, at the same scope and evidence.
+
+## The task inventory
+
+Written before the stub (revision 4), from `createAi()` in `packages/ai/src/tasks.ts` and each backend caller. On Ollama every task goes through `openaiChatTransport` to `POST /v1/chat/completions`. A structured task carries `response_format.json_schema.name` (the probe walks the ladder from `json_schema`, and the stub supports it, so that is the saved capability). The two free-text tasks have no schema: they're told apart by their system prompt's first words (`isComposeRequest`, `isAnswerRequest`). Discovery is `GET /api/tags`, `GET /api/ps` and `POST /api/show`.
+
+| Task | Wire | Caller | Screen | What the answer must hold to render |
+|---|---|---|---|---|
+| `probe` | json `{ ok }` | Settings → AI → Test (`ai.test`) | setup | `{ "ok": true }` |
+| `thread_summary` | json `{ summary, items[] }` | `SummaryWorker` (Summarize, `summaries.request`) | `a01` | a summary of 1 to 3 sentences that names the sender and states where things stand; items whose `message` is a label from the request, under 15 words, not repeating the summary. No word that fades ("tomorrow", "this week") and no weekday without its date, or the validator asks again; no amount or currency the mail lacks. |
+| compose | streamed text, `<subject>` then `<email>…</email>` | `WritingService.compose` (`ai.compose`): ⌘J | `a02`, `a03` | the body inside `<email>`, a greeting by first name, the instruction said in the author's words, the author's sign-off; `<subject>` only when the task says "Write a subject too." |
+| `needs_reply` | json `{ needsReply }` | `ReplyService.prepare` on opening a waiting conversation | `a10` | `true` for mail that asks something |
+| compose (prepared) | streamed text, as above | `ReplyService.run`, with `PREPARED_INSTRUCTION` | `a10` | an answer to what the last message asks, with a `[placeholder]` for any decision the author hasn't made |
+| `ask_plan` | json `{ kind, queries[] }` | `AskService` (⇧⌘K) | `a04`, `a05` | `kind: "question"` with queries the search can match (a named person in `from`, words in `anyOf` with their Spanish forms); `kind: "command"` for an imperative |
+| answer | streamed text, `[mN]` citations, `<status>` | `AskService` → `runAnswerFromMail` | `a04` | one or two sentences, each claim cited with a label from the request, a date where the fact could age, and `<status>answered</status>` on its own line; `not_found` when nothing fits |
+| `action_plan` | json, conditions over fields (not thread ids) | `ActionsService` (an Ask command) | `a05`, `a06` | `actionType` from the list, conditions `convertWireFilter` accepts (one `matches` pattern per field, an age only beside a meaning), `lookIn`, `future`, `meaning` |
+| `action_check` | json `{ drop[] }` | `ActionsService` when `meaning` is true | `a05` | group labels from the request only; drops only groups that don't fit |
+| `sent_mail` | json `{ promises[], expectsReply, awaiting[], kept[] }` | `FollowupWorker` after a send | `a09` | `expectsReply: true` and `awaiting` with recipient labels from the request when the mail asks a question; each promise's `quote` copied exactly from `<own_text>` (else `checkSentMail` drops it) |
+| `newsletter_digest` | json `{ items[] }` | `TodayService` digest | `a07`, `a08` | one item per label given; `newsletter` with one sentence of at most 14 words for issues people subscribe to, `other` with an empty line for the rest |
+| `filter` | json, the wire filter | `AiService.generateFilter` (Filters → Create with AI) | `a11` | conditions and actions `convertWireFilter` accepts; a name and one-sentence explanation in the prompt's language |
+| `parse_intent` | json `{ recipient }` | ⌘J on a new message whose instruction names someone | not on a rated screen | a candidate id or null |
+| `voice_judgment` | json `{ traits, notes[] }` | `VoiceLearner.judge`, only after "Let AI study my style" | not on a rated screen (`a12` is the learned state, no model call) | integer traits in range; notes about manner only, no digits |
+| `classification` | json `{ results[] }` | smart categories (`aiCategorize`, off by default) | not on a rated screen | one result per item id |
+
+The stub answers all fourteen; an unknown task is a 500 that names it, so a new task can't pass silently.
