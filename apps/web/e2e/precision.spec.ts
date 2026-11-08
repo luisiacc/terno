@@ -382,13 +382,15 @@ test.describe("precision across screens (plan 160)", { tag: "@design" }, () => {
       const start = await rows(page).first().evaluate((r) => [...r.children].find((c) => getComputedStyle(c).position !== "absolute" && c.getBoundingClientRect().width > 0)!.getBoundingClientRect().left);
       expect.soft(near(title.x, start, 0.5), `${design}: the list's title starts on the rows' content: ${fmt(title.x)} vs ${fmt(start)}`).toBe(true);
       // a category's review: the same line
+      const mailbox = await page.getByTestId("list-title").textContent();
       await openReview(page, facturas);
-      await expect(page.getByTestId("list-title")).toContainText("Facturas");
+      // (plan 159: the review's own title, its category in a switcher)
+      await expect(page.getByTestId("list-title")).not.toHaveText(mailbox ?? "");
       const review = await line(page.getByTestId("list-title"));
       expect.soft(near(review.x, start, 0.5), `${design}: the review's title starts on the rows' content: ${fmt(review.x)} vs ${fmt(start)}`).toBe(true);
       expect.soft(near(review.y, title.y, 0.5), `${design}: the review's title sits on the mailbox title's baseline: ${fmt(review.y)} vs ${fmt(title.y)}`).toBe(true);
       await page.getByTestId("nav-inbox").click();
-      await expect(page.getByTestId("list-title")).not.toContainText("Facturas");
+      await expect(page.getByTestId("list-title")).toHaveText(mailbox ?? "");
     });
 
     await scenario("one measure: the column, the reply card, the text, the draft and its quote", async () => {
@@ -424,6 +426,22 @@ test.describe("precision across screens (plan 160)", { tag: "@design" }, () => {
       await menuOnItsRow(page, id, design, "Split 1440x900");
       await edges(page, page.locator("[data-slot=context-menu-content]"), "the row menu", design);
       await page.keyboard.press("Escape");
+      await expect(page.locator("[data-slot=context-menu-content]")).toHaveCount(0);
+      // a scroll that lands just before the right-click (its event a frame later) keeps the menu; one after it closes it
+      await page.evaluate(() => {
+        const list = document.querySelector<HTMLElement>("[role=listbox]")!;
+        list.scrollTop += 120;
+        const v = list.getBoundingClientRect();
+        const row = [...list.querySelectorAll<HTMLElement>("[data-testid=thread-row]")].find((r) => r.getBoundingClientRect().top > v.top + 40)!;
+        const b = row.getBoundingClientRect();
+        row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: b.left + 60, clientY: b.top + b.height / 2, button: 2 }));
+      });
+      const menu = page.locator("[data-slot=context-menu-content]");
+      await expect(menu).toBeVisible();
+      await page.waitForTimeout(150);
+      expect.soft(await menu.count(), `${design}: a scroll that landed before the right-click leaves its menu open`).toBe(1);
+      await page.locator("[role=listbox]").evaluate((el) => (el.scrollTop += 60));
+      await expect(menu, `${design}: the list scrolled under it: the menu goes`).toHaveCount(0);
     });
   });
 

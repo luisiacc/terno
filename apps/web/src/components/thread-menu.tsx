@@ -188,8 +188,8 @@ function placeWhole(menu: HTMLElement, x: number, stand: (rect: DOMRect) => void
   else fitWholeRows(menu, "[role=menuitem]", true);
 }
 
-/** The list the menu's row scrolls in, set when it opens (a property bag, not a module let: React Compiler) */
-const rowList: { scroller: HTMLElement | null } = { scroller: null };
+/** The list the menu's row scrolls in and where it stood when the menu opened (a property bag, not a module let: React Compiler) */
+const rowList: { scroller: HTMLElement | null; top: number } = { scroller: null, top: 0 };
 
 /**
  * The thread context menu: one Base UI ContextMenu around the whole list (no
@@ -229,11 +229,13 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
     const scroller = rowList.scroller;
     if (!open) return;
     const close = () => change(false);
+    // a scroll that landed before the right-click (its event arrives a frame later) leaves the row where it was: only a move closes
+    const moved = () => scroller && Math.abs(scroller.scrollTop - rowList.top) > 1 && close();
     window.addEventListener("resize", close);
-    scroller?.addEventListener("scroll", close, { passive: true });
+    scroller?.addEventListener("scroll", moved, { passive: true });
     return () => {
       window.removeEventListener("resize", close);
-      scroller?.removeEventListener("scroll", close);
+      scroller?.removeEventListener("scroll", moved);
     };
   }, [open]);
   return (
@@ -252,6 +254,7 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
           const r = el.getBoundingClientRect();
           setAnchor(virtual(DOMRect.fromRect({ x: e.clientX, y: r.top, width: 0, height: r.height })));
           rowList.scroller = e.currentTarget as HTMLElement;
+          rowList.top = rowList.scroller.scrollTop;
           const row = Number(el.dataset.threadId);
           const target = targetFor(row);
           useMenuTarget.setState(target);
