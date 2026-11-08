@@ -87,6 +87,8 @@ function Body({ editorKey, initial, onChange, viewRef }: { editorKey: string; in
       // no AI in a snippet's editor
       insertGenerated: () => null,
       undoGenerated: () => null,
+      restoreGenerated: () => null,
+      selectText: () => false,
       docToken: () => view.state.doc,
       subscribeDoc: () => () => {},
       empty: () => false,

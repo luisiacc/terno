@@ -11,6 +11,7 @@ import { autolinkRule, liveLinks, textSlice, withAutolink } from "./autolink";
 import type { FormatCommand, FormatState } from "./controller";
 import { keepEditorBody, keptEditorBody, forgetEditorBody, type KeptEditorBody } from "~/lib/drafts";
 import { focusers } from "~/lib/compose-focus-move";
+import { gapsPlugin } from "./gaps";
 import { ghostPlugin, type GhostHooks } from "./ghost";
 import { draggingInPage } from "../composer-drop";
 import { imageView, knownImagesOnly, placeholderPlugin, type ImageHooks } from "./images";
@@ -415,6 +416,8 @@ export function createPlugins(): Plugin[] {
     // plan 39: an autolink's href follows its text
     liveLinks(ghostProbe),
     placeholderPlugin,
+    // plan 161: the gaps a model left, marked while they're there
+    gapsPlugin,
     keymap(mod),
     // Esc belongs to the composer (collapse, leave), not to "select the parent node"
     keymap(BASE_KEYS),

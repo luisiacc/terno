@@ -91,9 +91,16 @@ export interface ComposerController {
    * caret on its first placeholder, else at its end. Never through `fillText`: a literal `{first_name}` stays literal.
    * Returns the document it made (what `undoGenerated` checks), or null when the draft can't change now.
    */
-  insertGenerated(text: string, how: "replace" | "below", placeholder?: string): { doc: unknown } | null;
+  insertGenerated(text: string, how: "replace" | "below", placeholder?: string, gaps?: readonly string[]): { doc: unknown; before: unknown } | null;
   /** plan 133: takes it back while the document is still that one; returns the document it restored, null if it isn't */
   undoGenerated(doc: unknown): { doc: unknown } | null;
+  /**
+   * Plan 161: the document exactly as `insertGenerated` found it (its `before`), whatever was typed since, as one undo
+   * step of its own (⌘Z brings the edited text back). Null when the draft can't change now.
+   */
+  restoreGenerated(before: unknown): { doc: unknown } | null;
+  /** plan 161: selects the first place this text is, and shows it; false when it isn't there */
+  selectText(text: string): boolean;
   /** plan 133: an opaque identity of the document: a change of anything but the selection changes it, in O(1) */
   docToken(): unknown;
   /** plan 133: told after every change of the document, at once */

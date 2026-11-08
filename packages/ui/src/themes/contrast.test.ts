@@ -51,7 +51,8 @@ describe("WCAG AA in every built-in theme", () => {
     // the link button on panes and cards
     // plan 158: a menu's chosen row, its two inks; a search's match on a row, in each of a row's states
     // plan 160: a field's two inks on the list's own surface (pane) too
-    expect(CONTRAST_PAIRS).toHaveLength(2 + 4 + 49 + 2 + 4 + 2 + 6 + 4 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2 + 2 + 2);
+    // plan 161: a model's gap, the match's wash over an AI card and a composer
+    expect(CONTRAST_PAIRS).toHaveLength(2 + 4 + 49 + 2 + 4 + 2 + 6 + 4 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2 + 2 + 2 + 2);
   });
 
   it("reports a failing pair with its ratio", () => {

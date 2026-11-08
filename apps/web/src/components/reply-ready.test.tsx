@@ -38,7 +38,8 @@ it("plan 144's addendum: ready, it's the summary's card, the label its header, t
   expect(header.parentElement).toBe(card);
   expect(header.firstElementChild?.tagName.toLowerCase()).toBe("svg");
   expect(header.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
-  expect(header.textContent).toBe("Reply ready· In your voice with Liam");
+  // plan 161: who Use writes to, then the voice
+  expect(header.textContent).toBe("Reply ready· To Liam Baker· In your voice with Liam");
   // then the draft, then the footer: all inside the card, in that order
   const text = q("reply-ready-text")!;
   const footer = q("reply-ready-footer")!;
@@ -46,7 +47,11 @@ it("plan 144's addendum: ready, it's the summary's card, the label its header, t
   expect(text.textContent).toBe("Hey Liam!\nThanks, Luis");
   expect(footer.contains(q("reply-ready-use"))).toBe(true);
   expect(footer.contains(q("reply-ready-dismiss"))).toBe(true);
-  expect(footer.textContent).toContain("Reply uses this too");
+  expect(footer.textContent).toContain("Press R to reply with this draft");
+  expect(q("reply-ready-use")!.textContent).toBe("Use as draft");
+  // plan 161: the standard height, not 24 px
+  expect(q("reply-ready-use")!.className).toContain("h-7");
+  expect(q("reply-ready-dismiss")!.className).toContain("h-7");
   act(() => q("reply-ready-use")!.click());
   expect(useReply).toHaveBeenCalledWith(7);
   act(() => q("reply-ready-dismiss")!.click());
@@ -75,4 +80,23 @@ it("while it writes: the same card, the spinner in the glyph's place, Stop in th
   expect(q("reply-ready-live")!.textContent).toBe("");
   act(() => q("reply-ready-stop")!.click());
   expect(stopReply).toHaveBeenCalledWith(7);
+});
+
+it("plan 161: the gaps the model left are marked, exactly those, and never while it writes", async () => {
+  await act(async () => root.render(<ReplyReady threadId={7} />));
+  const gappy = { ...row, checks: { specifics: [], placeholders: ["[What you think.]"] } };
+  act(() => useReplies.setState({ shown: { threadId: 7, phase: "writing", text: "Thanks. [What you think.]", row: null } }));
+  expect(host.querySelectorAll("[data-testid=reply-ready-gap]")).toHaveLength(0);
+  act(() => useReplies.setState({ shown: { threadId: 7, phase: "ready", text: "Thanks. [What you think.] See [this] too. [What you think.]", row: gappy } }));
+  const marks = [...host.querySelectorAll<HTMLElement>("[data-testid=reply-ready-gap]")];
+  expect(marks.map((m) => m.tagName.toLowerCase())).toEqual(["mark", "mark"]);
+  expect(marks.map((m) => m.textContent)).toEqual(["[What you think.]", "[What you think.]"]);
+  // the text reads the same, marks and all
+  expect(q("reply-ready-text")!.textContent).toBe("Thanks. [What you think.] See [this] too. [What you think.]");
+});
+
+it("plan 161: several people: the header names them all", async () => {
+  const { replyTo } = await import("./reply-ready");
+  expect(replyTo({ ...row, to: [{ name: "Liam Baker", email: "l@x.test" }, { name: "", email: "ana@x.test" }] } as never)).toBe("To Liam Baker and ana@x.test");
+  expect(replyTo({ ...row, to: [] } as never)).toBeNull();
 });

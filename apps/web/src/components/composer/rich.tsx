@@ -36,7 +36,7 @@ import {
 } from "@terno/ui/icons";
 import { TextSelection, type EditorState } from "prosemirror-state";
 import { closeHistory, undo, undoDepth, redoDepth } from "prosemirror-history";
-import { Fragment, type Node as PMNode } from "prosemirror-model";
+import { Fragment, Node as PMNode } from "prosemirror-model";
 import type { EditorView } from "prosemirror-view";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
@@ -57,6 +57,7 @@ import { imageUrl, isInlineImage, newImageCid, seedImageUrl } from "~/lib/inline
 import { snack } from "~/lib/snack";
 import { insertSnippetTr, snippetDoc, withoutImages } from "./snippets";
 import { generatedTr } from "./generated";
+import { findGaps, withGaps } from "./gaps";
 import { AiPreviewSlot } from "./ai-slot";
 import { aiDraftHooks } from "~/lib/ai-draft-state";
 import { applyLink, COMMANDS, createEditor, docOf, formatState, isEmpty, keepState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
@@ -301,17 +302,33 @@ export function RichBody({ draftKey, placeholder, className, checkpoint }: { dra
             return { undo: () => viewRef.current === view && view.state.doc === after && canMutate() && undo(view.state, view.dispatch) };
           },
           snapshot: () => serialize(withoutImages(view.state.doc)),
-          insertGenerated: (text, how, placeholder) => {
+          insertGenerated: (text, how, placeholder, gaps) => {
             if (!canMutate()) return null;
             dismissGhost(view);
             const hadFocus = view.hasFocus();
-            const tr = generatedTr(view.state, text, how, placeholder);
+            const before = view.state.doc;
+            const tr = withGaps(generatedTr(view.state, text, how, placeholder), gaps ?? []);
             // only someone in the text has their view moved: reading the conversation, it stays where it is
             view.dispatch(hadFocus ? tr.scrollIntoView() : tr);
             // and what's typed next is a step of its own
             view.dispatch(closeHistory(view.state.tr));
             focusedOnce = true;
+            return { doc: view.state.doc, before };
+          },
+          restoreGenerated: (before) => {
+            if (viewRef.current !== view || !canMutate() || !(before instanceof PMNode)) return null;
+            dismissGhost(view);
+            const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, before.content);
+            tr.setSelection(TextSelection.atEnd(tr.doc));
+            view.dispatch(closeHistory(tr));
+            view.dispatch(closeHistory(view.state.tr));
             return { doc: view.state.doc };
+          },
+          selectText: (text) => {
+            const at = findGaps(view.state.doc, [text])[0];
+            if (!at || viewRef.current !== view) return false;
+            view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at.from, at.to)).scrollIntoView());
+            return true;
           },
           undoGenerated: (doc) => {
             if (viewRef.current !== view || view.state.doc !== doc || !canMutate() || !undo(view.state, view.dispatch)) return null;
