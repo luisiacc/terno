@@ -40,7 +40,7 @@ import { ReviewSwitcher } from "./review-switcher";
 import { reviewTotals } from "~/lib/review";
 import { ROW_SHAPE, ThreadRow } from "./thread-row";
 import { registerDesignAnchor, useDesign } from "~/lib/design";
-import { LEARNED_H, LearnedBanner, LearnedSource, useLearnedProposal } from "./learned-banner";
+import { LearnedBanner, LearnedSource, useLearnedProposal } from "./learned-banner";
 import { ForwardQuestion } from "./forward-question";
 import { ReportRow } from "./diag/report-row";
 import { DesktopBanner } from "~/lib/web-parts";
@@ -1052,7 +1052,8 @@ export function ThreadList() {
   const topGap = top > 0 && top < items.length ? TOP_GAP : 0;
   // plan 158: the rule offer is the list's first item: room above the first row, and it goes up with them
   const learned = useLearnedProposal();
-  const lead = learned.proposal && !previewing ? LEARNED_H : 0;
+  // plan 159: as tall as it's laid out (it wraps rather than cutting the rule)
+  const lead = learned.proposal && !previewing ? learned.height : 0;
   const leadRef = useRef(lead);
   leadRef.current = lead;
   const inToday = useApp((s) => s.today);

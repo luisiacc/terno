@@ -289,6 +289,15 @@ export async function fresh(page: Page): Promise<void> {
   await rows(page).first().waitFor();
 }
 
+/** Plan 159: the app again as a launch that hasn't shown the learned-rule offer yet (it shows once), on the same backend. */
+export async function forgetOffer(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    localStorage.removeItem("terno:learned-seen");
+    sessionStorage.removeItem("terno:learned-hushed");
+  });
+  await fresh(page);
+}
+
 /** Also without what this window remembers (the account left open, the scope): as a test starts, on the same backend. */
 export async function freshStart(page: Page): Promise<void> {
   await page.evaluate(() => {

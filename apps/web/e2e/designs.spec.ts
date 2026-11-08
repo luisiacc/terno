@@ -19,7 +19,7 @@ import es from "@terno/i18n/locales/es";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import type { DesignDefinition } from "../../../packages/ui/src/designs/types";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, openRow, rows, scenario, selectedRow, stabilize, test, openReview } from "./fixtures";
+import { expect, focusList, forgetOffer, openRow, rows, scenario, selectedRow, stabilize, test, openReview } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 const reload = async (page: Page) => {
@@ -163,26 +163,26 @@ test.describe("in every design", { tag: "@design" }, () => {
     test("the baselines of every key screen", async ({ app: page, server }) => {
       await scenario("inbox with the reader, light", async () => {
         await server.backend.server.invoke("settings.update", { theme: "light" }, ctx);
-        await reload(page);
+        await forgetOffer(page);
         await ready(page);
         await expect(page).toHaveScreenshot("design-inbox-light.png");
       });
       await scenario("inbox with the reader, dark", async () => {
         await server.backend.server.invoke("settings.update", { theme: "dark" }, ctx);
-        await reload(page);
+        await forgetOffer(page);
         await ready(page);
         await expect(page).toHaveScreenshot("design-inbox-dark.png");
       });
       await scenario("the minimum window", async () => {
         await server.backend.server.invoke("settings.update", { theme: "light" }, ctx);
         await page.setViewportSize({ width: 980, height: 600 });
-        await reload(page);
+        await forgetOffer(page);
         await ready(page);
         await expect(page).toHaveScreenshot("design-980.png");
         await page.setViewportSize({ width: 1440, height: 900 });
       });
       await scenario("Settings → Appearance", async () => {
-        await reload(page);
+        await forgetOffer(page);
         await page.getByTestId("open-settings").click();
         await page.getByTestId("tab-appearance").click();
         await page.evaluate(() => document.fonts.ready);
@@ -190,7 +190,7 @@ test.describe("in every design", { tag: "@design" }, () => {
         await expect(page.getByTestId("settings-dialog")).toHaveScreenshot("design-settings-appearance.png");
       });
       await scenario("inline reply", async () => {
-        await reload(page);
+        await forgetOffer(page);
         await ready(page);
         await page.getByTestId("quick-reply").click();
         await expect(page.getByTestId("compose-body")).toBeFocused();

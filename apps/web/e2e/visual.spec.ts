@@ -2,7 +2,7 @@
  * Visual regression of the key screens (light + dark). Baselines live in
  * e2e/__screenshots__; regenerate with `pnpm test:e2e --update-snapshots`.
  */
-import { expect, focusList, isolateLocalDiscovery, openRow, search, stabilize, test, fresh, scenario } from "./fixtures";
+import { expect, focusList, forgetOffer, isolateLocalDiscovery, openRow, search, stabilize, test, freshStart, scenario } from "./fixtures";
 import { startOllamaStub } from "./ollama-stub";
 import type { Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
@@ -54,7 +54,8 @@ test.describe("chrome", () => {
       await expect(header).not.toHaveAttribute("data-scrolled");
     });
     await scenario("the learned-filter suggestion is quiet: its action isn't a solid primary button", async () => {
-      await fresh(page);
+      // (it shows once: a page that forgot it's been seen, plan 159)
+      await freshStart(page);
       const accept = page.getByTestId("learned-accept");
       await expect(accept).toBeVisible();
       const [bg, primary] = await accept.evaluate((el) => {
@@ -68,7 +69,7 @@ test.describe("chrome", () => {
       expect(bg).not.toBe(primary);
     });
     await scenario("compose says what it is in the list header, a raised button and not the primary's fill", async () => {
-      await fresh(page);
+      await forgetOffer(page);
       const button = page.getByTestId("thread-list").getByRole("button", { name: "New message" });
       await expect(button).toHaveText("New message");
       await expect(page.getByTestId("sidebar").getByRole("button", { name: /New message/ })).toHaveCount(0);
@@ -84,7 +85,7 @@ test.describe("light", () => {
       await expect(page).toHaveScreenshot("inbox-light.png");
     });
     await scenario("settings: agents", async () => {
-      await fresh(page);
+      await forgetOffer(page);
       await ready(page);
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-agents").click();
@@ -93,7 +94,7 @@ test.describe("light", () => {
       await expect(page).toHaveScreenshot("settings-agents.png");
     });
     await scenario("settings: general", async () => {
-      await fresh(page);
+      await forgetOffer(page);
       await ready(page);
       await page.getByTestId("open-settings").click();
       await expect(page.getByTestId("general-tab")).toBeVisible();
@@ -101,7 +102,7 @@ test.describe("light", () => {
       await expect(page).toHaveScreenshot("settings-general.png");
     });
     await scenario("add account", async () => {
-      await fresh(page);
+      await forgetOffer(page);
       await ready(page);
       await page.getByTestId("sidebar").getByText("Add account").click();
       await page.getByTestId("imap-email").fill("ana@icloud.com");
@@ -109,7 +110,7 @@ test.describe("light", () => {
       await expect(page).toHaveScreenshot("add-account.png");
     });
     await scenario("AI filter builder with live preview", async () => {
-      await fresh(page);
+      await forgetOffer(page);
       await ready(page);
       await page.getByTestId("open-filters").click();
       await page.getByTestId("ai-prompt").fill("archiva los correos de uber.com y ponlos en Facturas");
@@ -119,7 +120,7 @@ test.describe("light", () => {
       await expect(page).toHaveScreenshot("filters-ai.png", { mask: [page.getByTestId("preview-ms")] });
     });
     await scenario("HTML newsletter with remote content blocked", async () => {
-      await fresh(page);
+      await forgetOffer(page);
       await openRow(page, 2);
       await expect(page.getByTestId("remote-blocked")).toBeVisible();
       await expect(page.frameLocator("iframe[title='Message content']").locator("h1")).toBeVisible();
@@ -127,7 +128,7 @@ test.describe("light", () => {
       await expect(page).toHaveScreenshot("reader-html.png");
     });
     await scenario("search results", async () => {
-      await fresh(page);
+      await forgetOffer(page);
       await search(page, "in:all factura");
       await ready(page, { banner: false });
       await expect(page).toHaveScreenshot("search.png", { mask: [page.getByTestId("search-stats")] });
@@ -167,7 +168,7 @@ test.describe("light", () => {
       }
     });
     await scenario("category picker and the snackbar after filing", async () => {
-      await fresh(page);
+      await forgetOffer(page);
       const facturas = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
       await search(page, "in:inbox from:uber.receipts@uber.com");
       const target = sqlDb(server.backend.store).get<{ id: number }>(
@@ -238,7 +239,7 @@ test.describe("dark", () => {
       await expect(page).toHaveScreenshot("inbox-dark.png");
     });
     await scenario("AI filter builder", async () => {
-      await fresh(page);
+      await forgetOffer(page);
       await ready(page);
       await page.getByTestId("open-filters").click();
       await page.getByTestId("ai-prompt").fill("archiva los correos de uber.com y ponlos en Facturas");
@@ -248,7 +249,7 @@ test.describe("dark", () => {
       await expect(page).toHaveScreenshot("filters-ai-dark.png", { mask: [page.getByTestId("preview-ms")] });
     });
     await scenario("settings: AI on a local model", async () => {
-      await fresh(page);
+      await forgetOffer(page);
       await ready(page);
       const ollama = await startOllamaStub();
       try {
@@ -259,7 +260,7 @@ test.describe("dark", () => {
       }
     });
     await scenario("snackbar after filing", async () => {
-      await fresh(page);
+      await forgetOffer(page);
       const facturas = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
       const target = sqlDb(server.backend.store).get<{ id: number }>(
         `SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND t.last_from_email = 'uber.receipts@uber.com'
@@ -295,20 +296,20 @@ test.describe("Spanish", () => {
       await expect(page).toHaveScreenshot("es-inbox-light.png");
     });
     await scenario("settings: general", async () => {
-      await fresh(page);
+      await forgetOffer(page);
       await spanish(page);
       await ready(page);
       await expect(page).toHaveScreenshot("es-settings-general.png");
     });
     await scenario("settings: appearance", async () => {
-      await fresh(page);
+      await forgetOffer(page);
       await spanish(page);
       await page.getByTestId("tab-appearance").click();
       await ready(page);
       await expect(page).toHaveScreenshot("es-settings-appearance.png");
     });
     await scenario("print sheet", async () => {
-      await fresh(page);
+      await forgetOffer(page);
       await spanish(page);
       await page.keyboard.press("Escape");
       await openRow(page, 0);

@@ -32,7 +32,7 @@ vi.mock("~/lib/drag-install", () => ({ installDragController: () => () => {} }))
 vi.mock("~/lib/scroll-hairline", () => ({ installScrollHairline: () => () => {} }));
 vi.mock("./thread-menu", () => ({ ThreadMenu: ({ children }: { children: ReactNode }) => children }));
 vi.mock("./drafts-strip", () => ({ DraftsStrip: () => null }));
-vi.mock("./learned-banner", () => ({ LEARNED_H: 36, LearnedBanner: () => null, LearnedSource: () => null, useLearnedProposal: () => ({ proposal: null, setProposal: () => {} }) }));
+vi.mock("./learned-banner", () => ({ LEARNED_H: 36, LearnedBanner: () => null, LearnedSource: () => null, useLearnedProposal: () => ({ proposal: null, height: 36 }) }));
 vi.mock("./diag/report-row", () => ({ ReportRow: () => null }));
 vi.mock("~/lib/web-parts", () => ({ DesktopBanner: null }));
 vi.mock("./thread-row", () => ({ ThreadRow: ({ thread, top, height }: { thread: ThreadSummary; top: number; height: number }) => <div id={`thread-${thread.id}`} data-testid="thread-row" data-thread-id={thread.id} style={{ transform: `translateY(${top}px)`, height }} /> }));

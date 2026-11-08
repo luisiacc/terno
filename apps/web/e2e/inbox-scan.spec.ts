@@ -5,7 +5,7 @@
  */
 import type { Locator } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, fresh, freshNoDrafts, pickFilter, rows, scenario, searchBox, test, expectFilter } from "./fixtures";
+import { expect, focusList, forgetOffer, fresh, freshNoDrafts, pickFilter, rows, scenario, searchBox, test, expectFilter } from "./fixtures";
 
 /** Whole rows at 1440x900 with a suggestion and no drafts, the plan's bar. */
 // Lumen and Atelier trade a row for more air in each (the owner's call): 76 px rows
@@ -19,10 +19,11 @@ test.describe("the inbox list", { tag: "@design" }, () => {
   test("enough whole rows, three lines each, one unread mark, and a header that gives way as the list scrolls", async ({ app: page, server, design }) => {
     const list = page.locator("[data-testid=thread-list] [data-keep-scroll=list]");
     const banner = page.getByTestId("learned-banner");
-    await scenario("the bar: whole rows under a one-line suggestion that doesn't outrank them", async () => {
+    await scenario("the bar: whole rows under a quiet suggestion that doesn't outrank them", async () => {
       await freshNoDrafts(page, server);
       await expect(banner).toBeVisible();
-      expect((await box(banner)).height).toBeLessThanOrEqual(36);
+      // plan 159: two lines at most, where the rule whole doesn't fit one
+      expect((await box(banner)).height).toBeLessThanOrEqual(48);
       const whole = () => list.evaluate((el) => {
         const { top, bottom } = el.getBoundingClientRect();
         return [...el.querySelectorAll("[data-testid=thread-row]")].filter((r) => {
@@ -77,6 +78,8 @@ test.describe("the inbox list", { tag: "@design" }, () => {
       expect([from.y, subject.y, snippet.y]).toEqual([fromBefore!.y, subjectBefore!.y, snippetBefore!.y]);
       await list.evaluate((el) => el.scrollTo(0, 0));
       await freshNoDrafts(page, server);
+      // (it shows once, plan 159: a launch that hasn't shown it yet)
+      await forgetOffer(page);
     });
     await scenario("the suggestion is the list's first item: it goes up with the rows, and comes back at the top", async () => {
       const first = rows(page).first();
@@ -210,13 +213,17 @@ test.describe("the filters and the suggestions", () => {
     const accept = page.getByTestId("learned-accept");
     const before = rules();
     await expect(accept).toHaveText("Create rule");
-    await expect(accept).toHaveAccessibleName("Create rule: Always archive daily.morningbrew.com?");
+    await expect(accept).toHaveAccessibleName("Create rule: Always archive mail from the list daily.morningbrew.com?");
+    // plan 159: the rule whole, and its button at the text's own weight, right after it
+    await expect(page.getByTestId("learned-line")).toHaveText("Always archive mail from the list daily.morningbrew.com?");
+    expect(await weight(accept)).toBe(await weight(page.getByTestId("learned-line")));
+    expect(await weight(accept)).toBeLessThan(500);
     expect((await box(page.getByTestId("learned-dismiss"))).height).toBeGreaterThanOrEqual(24);
     await accept.click();
     await expect(banner).toHaveCount(0);
     const snack = page.getByTestId("snack");
     await expect(snack).toContainText("Rule created");
-    await expect(snack).toContainText("New mail from daily.morningbrew.com is archived from now on.");
+    await expect(snack).toContainText("New mail from the list daily.morningbrew.com is archived from now on.");
     await expect.poll(rules).toBe(before + 1);
     await snack.getByTestId("snack-action").click();
     await expect.poll(rules).toBe(before);
@@ -228,11 +235,41 @@ test.describe("the filters and the suggestions", () => {
     await page.keyboard.press("z");
     await expect.poll(rules).toBe(before);
     await expect(banner).toBeVisible();
-    // one line in a small window too: a long name truncates, and is said whole in the button's name
+    // plan 159: in a small window the rule is never cut: the line wraps, and the rows make room for it
     await page.setViewportSize({ width: 1100, height: 700 });
-    await expect.poll(async () => (await box(banner)).height).toBeLessThanOrEqual(36);
-    expect(await page.getByTestId("learned-line").evaluate((el) => el.getClientRects().length)).toBe(1);
+    const line = page.getByTestId("learned-line");
+    await expect(line).toHaveText("Always archive mail from the list daily.morningbrew.com?");
+    const whole = () => line.evaluate((el) => {
+      const p = el.closest("p")!;
+      const r = p.getBoundingClientRect();
+      // every piece of it inside its paragraph, and nothing clipped by an ellipsis
+      return [...el.getClientRects()].every((c) => c.right <= r.right + 0.5 && c.bottom <= r.bottom + 0.5) && p.scrollWidth <= p.clientWidth;
+    });
+    await expect.poll(whole).toBe(true);
+    const first = rows(page).first();
+    await expect.poll(async () => (await box(first)).y - ((await box(banner)).y + (await box(banner)).height)).toBeGreaterThanOrEqual(-1);
     await page.setViewportSize({ width: 1440, height: 900 });
+  });
+
+  test("the rule offer shows once: it stays while you're in the Inbox, and after you leave or relaunch it isn't offered in the list again; Rules keeps it whole (plan 159)", async ({ app: page }) => {
+    const banner = page.getByTestId("learned-banner");
+    await expect(banner).toBeVisible();
+    // staying: the list changing doesn't take it away
+    await focusList(page);
+    await page.keyboard.press("j");
+    await expect(banner).toBeVisible();
+    await page.getByTestId("nav-starred").click();
+    await expect(banner).toHaveCount(0);
+    await page.getByTestId("nav-inbox").click();
+    await expect(rows(page).first()).toBeVisible();
+    await page.waitForTimeout(300);
+    await expect(banner).toHaveCount(0);
+    await fresh(page);
+    await page.waitForTimeout(300);
+    await expect(banner).toHaveCount(0);
+    // Rules still has it, the condition whole in the same words
+    await page.getByTestId("open-filters").click();
+    await expect(page.getByTestId("proposal-rule").first()).toHaveText("Archive mail from the list daily.morningbrew.com");
   });
 
   test("the rule offer: one quiet ×, and the line is gone for the session, no other offer taking its place (plan 158)", async ({ app: page }) => {
@@ -251,53 +288,88 @@ test.describe("the filters and the suggestions", () => {
     await expect(banner).toHaveCount(0);
   });
 
-  test("suggestions are one line in words under the Categories heading, to the category with the most; each category's own is in its menu", { tag: "@design" }, async ({ app: page, server }) => {
+  test("Sort into categories is a sidebar row like the others; its Review switches between categories, and Esc goes back where it came from", { tag: "@design" }, async ({ app: page, server }) => {
     const db = sqlDb(server.backend.store);
     const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
     const t = db.get<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1")!.id;
     db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.8, '[]', ?)", t, facturas, Date.now());
     await fresh(page);
-    const line = page.getByTestId("nav-review");
-    const total = Number(await line.getAttribute("data-count"));
-    await expect(line).toHaveText(`Review ${total} suggestion${total === 1 ? "" : "s"}`);
-    // on the heading's text column, right under it; no mark on any category row
+    const row = page.getByTestId("nav-review");
+    const inbox = page.getByTestId("nav-inbox");
+    const suggested = await page.locator("[data-suggested]").evaluateAll((els) => els.map((el) => ({ n: Number((el as HTMLElement).dataset.suggested), name: el.querySelector("[data-testid^=nav-category-] .truncate")!.textContent!.trim() })));
+    const total = suggested.reduce((n, c) => n + c.n, 0);
+    const most = suggested.reduce((a, c) => (c.n > a.n ? c : a));
+    // plan 159: a row like Inbox: the same height and inset, an icon, the label in words and the count in the count's place
+    await expect(row).toHaveText(`Sort into categories${total}`);
+    await expect(row.locator("[data-slot=nav-count]")).toHaveText(String(total));
+    await expect(row.locator("[data-slot=nav-icon] svg")).toHaveCount(1);
+    expect((await box(row)).height).toBe((await box(inbox)).height);
+    expect((await box(row.locator("[data-slot=nav-icon]"))).x).toBe((await box(inbox.locator("[data-slot=nav-icon]"))).x);
+    // first under the Categories heading; no mark on any category row
     const heading = page.getByText("Categories", { exact: true });
-    expect(Math.abs((await box(line.locator("span"))).x - (await box(heading)).x)).toBeLessThanOrEqual(1);
-    expect((await box(line)).y).toBeGreaterThanOrEqual((await box(heading)).y);
+    expect((await box(row)).y).toBeGreaterThanOrEqual((await box(heading)).y);
+    expect((await box(row)).y).toBeLessThan((await box(page.getByTestId(`nav-category-${facturas}`))).y);
     await expect(page.locator("[data-testid^=nav-review-]")).toHaveCount(0);
-    // the most suggestions: its review opens
-    const most = await page.locator("[data-suggested]").evaluateAll((els) => els.reduce((a, el) => (Number((el as HTMLElement).dataset.suggested) > Number((a as HTMLElement).dataset.suggested) ? el : a)).querySelector("[data-testid^=nav-category-]")!.textContent!);
-    await line.click();
-    await expect(page.getByTestId("list-title")).toContainText(most.replace(/\d+$/, ""));
-    // a category's own, from its menu, with its count in words
+    // its hover, and its sentence whole on hover
+    const fill = () => row.evaluate((el) => getComputedStyle(el).backgroundColor);
+    const resting = await fill();
+    await row.hover();
+    await expect.poll(fill).not.toBe(resting);
+    await expect(page.locator("[data-slot=tooltip-content]")).toHaveText(`Sort ${total} into categories`);
+    // the Review it opens: the category with the most, the total and that category's own count in its header
+    await row.click();
+    await expect(page.getByTestId("list-title")).toHaveText("Sort into categories");
+    await expect(page.getByTestId("review-total")).toHaveText(`${total} to sort`);
+    await expect(page.getByTestId("review-category")).toHaveText(`${most.name}${most.n}`);
+    await expect(page.getByTestId("review-category")).toHaveAccessibleName("Category to sort");
+    // where you are is one row, this one
+    await expect(row).toHaveAttribute("aria-current", "page");
+    const current = page.locator("#app-sidebar [aria-current=page]");
+    await expect(current).toHaveCount(1);
+    // the switcher: every category with suggestions, its count; another one narrows to it
+    await page.getByTestId("review-category").click();
+    for (const c of suggested.filter((c) => c.n > 0)) await expect(page.getByRole("option", { name: `${c.name} ${c.n}` })).toBeVisible();
+    // Esc closes the choice first, and Review stays
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("listbox", { name: "Category to sort" })).toHaveCount(0);
+    await expect(page.getByTestId("list-title")).toHaveText("Sort into categories");
+    await page.getByTestId("review-category").click();
+    await page.getByTestId(`review-category-${facturas}`).click();
+    await expect(page.getByTestId("review-category")).toContainText("Facturas");
+    await expect(page.getByTestId("review-total")).toHaveText(`${total} to sort`);
+    await expect(page.getByTestId("row-review-accept").first()).toContainText("Add to Facturas");
+    // Esc: back to the Inbox it was entered from, the one row highlighted
+    await focusList(page);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("list-title")).not.toHaveText("Sort into categories");
+    await expect(inbox).toHaveAttribute("aria-current", "page");
+    await expect(current).toHaveCount(1);
+    // a category's own Review, from its menu, opens on it with its count in words
+    await page.getByTestId(`nav-category-${facturas}`).click();
     await page.getByTestId(`nav-category-${facturas}`).click({ button: "right" });
     await expect(page.getByTestId("category-menu-review")).toHaveText(/^Review \d+ suggestions?$/);
     await page.getByTestId("category-menu-review").click();
-    await expect(page.getByTestId("list-title")).toHaveText("Review · Facturas");
-    // plan 158: where you are is always shown. The line is a place like the rows under it: a target, highlighted while in it
-    expect((await box(line)).height).toBeGreaterThanOrEqual(24);
-    await expect(line).toHaveAttribute("aria-current", "page");
-    const current = page.locator("#app-sidebar [aria-current=page]");
-    await expect(current).toHaveCount(1);
+    await expect(page.getByTestId("review-category")).toContainText("Facturas");
+    expect((await box(row)).height).toBeGreaterThanOrEqual(24);
     // a search from Review is a search, of everything: nothing in the sidebar is where you are
     await (await searchBox(page)).focus();
     await page.keyboard.type("pago");
     await expect(page.getByTestId("list-title")).toHaveText("Search");
     await expect(page.getByTestId("search-stats")).toHaveCount(1);
     await expect(current).toHaveCount(0);
-    // Esc back to the Review it was typed in; Esc again leaves Review for its category
+    // Esc back to the Review it was typed in; Esc again leaves Review for where it was entered from (the category)
     await page.keyboard.press("Escape");
-    await expect(page.getByTestId("list-title")).toHaveText("Review · Facturas");
-    await expect(line).toHaveAttribute("aria-current", "page");
+    await expect(page.getByTestId("list-title")).toHaveText("Sort into categories");
+    await expect(row).toHaveAttribute("aria-current", "page");
     // the field's help rows search too, and Esc comes back the same way (Codex review)
     await (await searchBox(page)).focus();
     await page.getByTestId("search-help-row").first().click();
     await expect(page.getByTestId("list-title")).toHaveText("Search");
     await page.getByTestId("search-input").press("Escape");
-    await expect(page.getByTestId("list-title")).toHaveText("Review · Facturas");
+    await expect(page.getByTestId("list-title")).toHaveText("Sort into categories");
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("list-title")).toContainText("Facturas");
-    await expect(page.getByTestId("list-title")).not.toContainText("Review");
+    await expect(page.getByTestId("list-title")).not.toContainText("Sort");
     await expect(page.getByTestId(`nav-category-${facturas}`)).toHaveAttribute("aria-current", "page");
     // and a search from the Inbox: the Inbox isn't highlighted as if you were in it
     await page.getByTestId("nav-inbox").click();

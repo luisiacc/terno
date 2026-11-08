@@ -20,6 +20,7 @@ import { applyFilter } from "~/lib/filters";
 import { aiReady, errorHelp, privacyLine } from "~/lib/ai";
 import { listDate } from "~/lib/format";
 import { client } from "~/rpc/connection";
+import { learnedRule } from "~/lib/learned";
 import { getApp, setApp, useApp } from "~/state/app";
 import { ConfirmDialog } from "./settings/parts";
 import { RecipientInput } from "./recipient-input";
@@ -487,9 +488,8 @@ export function FiltersDialog() {
                 <p className="mt-4 mb-1 px-2 text-2xs font-medium tracking-wide text-muted-foreground uppercase">{t("filters.suggested")}</p>
                 {proposals.map((p) => (
                   <div key={p.key} className="rounded-md px-2 py-1.5 text-xs" data-testid="proposal-item">
-                    <p className="truncate">
-                      {t(p.action === "archive" ? "filters.action.archive" : p.action === "trash" ? "filters.action.trash" : "filters.action.spam")}: <span className="font-medium">{p.value}</span>
-                    </p>
+                    {/* plan 159: the rule whole, in the words the list's offer uses: never cut */}
+                    <p className="wrap-anywhere" data-testid="proposal-rule">{learnedRule(p)}</p>
                     <div className="mt-1 flex gap-1">
                       <Button
                         size="xs"
