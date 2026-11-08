@@ -438,3 +438,59 @@ A second, narrower Codex pass on those fixes found one more, also taken. **The r
   - The builder's count opened from "Edit as a rule" is a note beside its own count, not a scoped count. A rule has no folder condition, and `filters.preview` counts everywhere in both stores.
   - At 1100 px the list header's title still wraps ("Archive 6 / conversations"), because the list column is that narrow.
   - "Ask again" isn't renamed, and the "Ask ×" chip still sits in two places. Both are in the palette's shared header, outside this pass.
+
+
+## Pass 1: drafting, summary, follow-ups and Reply ready
+
+From `ai-r00`'s `ai_draft`, `summary` and `followups_replies` (every issue and every reason below 9, in the four designs, from both raters). Actions, Ask, Today, the digest, Writing style, the AI filter and AI contrast are other passes.
+
+### One anatomy for an AI suggestion
+
+`ai-card.ts` grows from the card's class into its parts, and the summary, Reply ready, the follow-up line and ⌘J's strip use them:
+
+- **Header:** the glyph, a **title in the ink** (`font-medium text-foreground`, so a card's title is no longer its quietest word), then `·` and what it's about in the muted secondary type. Sparkles where a model wrote the words (summary, Reply ready); the follow-up line, which plan 148 kept off the card because it's the user's own to act on, uses `Clock` and the same grammar.
+- **Body:** the text, inset.
+- **Button row:** BoardUI buttons at `size="sm"` (28 px), the main action the primary, the others the secondary (`outline`), and a way to the source message as a named ghost button with its arrow, never a bare arrow. Same gaps everywhere (`AI_ACTIONS`).
+
+### ⌘J drafting (plan 133)
+
+- **Status and commands.** The strip's left is a status: Sparkles and "Written with AI" in the secondary type, not a control; the voice stays a ghost button but gets a chevron, since it opens a popover. Regenerate, Shorter and Warmer are secondary (`outline`) buttons at 28 px; **Undo** is the same with `Undo2` before it and a gap of its own, so it's found first.
+- **The strip stays after an edit.** Plan 133 §10.5 ended the strip at the next keystroke; now an edit relabels it "Edited after AI" and everything stays until the draft is sent, discarded or undone. The status phrase is one helper (`aiWritten(edited)` in `ai-card.ts`), the only place that wording lives.
+- **What Undo restores, exactly.** Undo always takes back the AI's last write. Unedited, it's the editor's own undo step, as before (one version back under a refinement). **Edited after AI, it restores the document exactly as it was just before that write** (before ⌘J for a first draft, before Shorter, Warmer or Regenerate for a later version), as one editor step: the edits made since go with it, and "Back to before the AI draft" offers Undo (the same as ⌘Z), which brings the edited text back exactly. The document before each write is kept with the commit (`AiCommit.beforeDoc`); nothing is re-parsed.
+- **1100x700.** The strip wraps: the status line never truncates or hides (the pinned card's `@max-[28rem]:hidden` goes), and the commands go to a second line, still ending on the Cc/Bcc line. The instruction is a one-line field that grows to show all it holds (`field-sizing: content`, Return still drafts). When a draft goes in, the composer is brought into view whole (`keepInView`), so the draft and Send are on screen without a scroll.
+- **The prompt.** "What should it say? Enter drafts from the conversation." read as "enter drafts": it becomes "Describe the reply, or press Return to draft from the conversation." The notes placeholder says nothing is replaced without asking. The bare ↵ glyph becomes a named button, "Write" with its keycap.
+
+### Placeholders
+
+The model's `[gaps]` are already found on the text (`findPlaceholders`, no model call) and come with every draft and prepared reply as `checks.placeholders`. Only those strings are marked, never a bracket the user typed:
+
+- **In Reply ready's card** each one is a `mark` on the search match's wash (the star's gold at 25 % under the ink, a pair added to `CONTRAST_PAIRS` over the card's surfaces).
+- **In the composer,** after Use or ⌘J, a decoration plugin marks them the same way while they're in the text. The first one is selected on Use (already true; now it can be seen).
+- **On Send,** if any of them is still in the text, the AI row turns into an inline confirm, like plan 133's send guard: "1 gap the AI left is still in the draft: “[What you think.]”" with **Fill it in** (selects the first gap; the default) and **Send anyway**. No modal; Esc is Fill it in.
+
+### Summary (plans 132, 148)
+
+The item row reads as going to a message: its kind label sits tight to the text (no fixed column), and the row ends in "Open message" with the arrow. The row's accessible name is the item, then "Open the message it comes from". Hovering it says whose message and when ("Arjun Ramírez · Yesterday, 9:41 PM"), from the thread already in the reader.
+
+### Follow-ups (plan 142)
+
+- **Time.** "hasn't replied in 1 day" was `Math.max(1, round(days))`. Days are now whole days passed (`floor`): under one, the line says "Arjun Ramírez hasn't replied yet". The header says when it was sent and what comes back: "Follow-up · Sent today · back on top of your Inbox Wed 9:00 AM if Arjun doesn't reply" (a promise: "back on top of your Inbox Wed 9:00 AM"; due: "Due Wed 9:00 AM").
+- **Buttons.** Nudge becomes **Draft a nudge** (primary for a wait, since it's what the line offers), Done the primary for a promise, then Later with a chevron (it's a menu), then Dismiss or Not a promise, all 28 px; **Open message →** ends the row and keeps the quote's tooltip. The section's own bottom hairline goes: the message's divider under it made two.
+- **The tip** (plan 113) teaches the line's kind and points at the line from below: a wait shows "Arjun hasn't replied yet" with the pointer on "Draft a nudge" ("Terno watches for replies: the conversation comes back if nobody answers. Draft a nudge writes a reminder you can edit; nothing is sent"); a promise keeps today's picture and words.
+
+### Reply ready (plan 144)
+
+- Header: "Reply ready · to Liam Taylor · in your voice"; it names who Use will write to (all of them, when it's more than one).
+- Use becomes **Use as draft** (primary) and Dismiss the secondary, both 28 px; the hint is "Press R to reply with this draft", the keycap in the sentence.
+- Placeholders as above.
+
+### Not taken, and why
+
+- **A Reply button on the summary's item, Copy and Regenerate on the card, a provenance footer.** New controls on the summary beyond what it does today; the lead reconciles provenance across surfaces (the Actions/Ask pass), and the card's tooltip keeps the model and date.
+- **Shortcuts for Shorter and Warmer, a "Version 2 of 3" line, keeping the instruction visible after writing.** New behaviour no finding marked high, out of this pass.
+- **The dark card's edge** and Graphite's hovers: AI contrast is another pass.
+- **Merging Reply ready into the reply bar,** a "Preparing a reply…" line before the card: plan 144 decided the card shows only when ready, so the reader never shifts for something that may not come.
+
+### Tests
+
+Unit: `followupLine` (minutes, a day, five days, es), the follow-up header copy, `aiWritten`, the gaps plugin (marks only the given strings, follows edits, none when empty), the edited strip's Undo (restores the before-document exactly; the snack's Undo brings the edit back), the send guard on gaps, Reply ready's header and marks. e2e: `ai-draft.spec.ts` (an edit keeps the strip relabelled; Undo after an edit; Write button; the strip wraps at 1100x700 with its status), `replies-ready.spec.ts` (marks, Use as draft, the gap guard on Send), `followups.spec.ts` (fresh wait copy, buttons at 28 px, the awaiting tip), `summaries.spec.ts` (Open message). Design-axe for these surfaces.
