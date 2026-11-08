@@ -80,6 +80,11 @@ export function SettingsDialog() {
   const hasDevMode = useApp((s) => s.devAi !== null);
   const stylePage = useAiDraftUi((s) => s.stylePage) && tab === "ai";
 
+  // back to Drafting, focus on the button that opened Writing style (pass 3), as the palette's pages go back
+  const backFromStyle = () => {
+    useAiDraftUi.setState({ stylePage: false });
+    requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-testid=ai-drafting-style-open]")?.focus());
+  };
   const update = useCallback<SettingsUpdate>(async (patch, options) => {
     try {
       setApp({ settings: reconcileSettings(await client.call("settings.update", patch)) });
@@ -102,7 +107,19 @@ export function SettingsDialog() {
         setDeletedSnippet(null);
       }}
     >
-      <DialogContent movable="settings" className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog" initialFocus={initialFocus}
+      <DialogContent
+        movable="settings"
+        // plan 161, pass 3: Esc steps back a level before it closes: on Writing style, back to Drafting (the style editor's
+        // own Esc goes first); a portal's Esc bubbles here through React and is its own
+        onKeyDown={(e) => {
+          if (e.key !== "Escape" || !stylePage || e.defaultPrevented || e.nativeEvent.isComposing || !e.currentTarget.contains(e.target as Node)) return;
+          // the popup's own Esc (merged after this one) and the document's both stand down
+          (e as unknown as { preventBaseUIHandler(): void }).preventBaseUIHandler();
+          e.preventDefault();
+          e.stopPropagation();
+          backFromStyle();
+        }}
+        className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog" initialFocus={initialFocus}
         // on the section title's line, at the content's inset (pt-5 px-6)
         closeClassName="top-[calc(var(--spacing)*5+(var(--text-lg--line-height)-var(--spacing)*6)/2)]">
         <DialogTitle className="sr-only">{t("common.settings")}</DialogTitle>
@@ -129,7 +146,7 @@ export function SettingsDialog() {
           <SettingsPane
             // plan 161: Writing style is a page of its own: it's the title, with the way back to Drafting beside it
             title={stylePage ? t("aiDraft.style.title") : settingsTabLabel(tab)}
-            back={stylePage ? { label: t("aiDraft.style.back"), onClick: () => useAiDraftUi.setState({ stylePage: false }), testId: "writing-style-back" } : undefined}
+            back={stylePage ? { label: t("aiDraft.style.back"), onClick: backFromStyle, testId: "writing-style-back" } : undefined}
           >
             {/* a section that fails to render stays a section: the sheet and the other tabs keep working */}
             <PaneBoundary area="settings" resetKey={tab} title={t("settings.sectionError")}>

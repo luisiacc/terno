@@ -944,14 +944,18 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(page.locator("html")).toHaveClass(/dark/);
     expect((await new AxeBuilder({ page }).include("[data-testid=writing-style]").withRules(["color-contrast"]).analyze()).violations).toEqual([]);
     await page.emulateMedia({ colorScheme: "light" });
+    const above = async (a: string, b: string) => (await page.getByTestId(a).boundingBox())!.y < (await page.getByTestId(b).boundingBox())!.y;
     // plan 161: its title is the page's; what it learned and how styles combine come first; one profile at a time
     await expect(page.getByTestId("settings-title")).toHaveText("Writing style");
     // pass 2: plain words that agree: the closest style wins, and a profile's count is part of the page's
-    await expect(page.getByTestId("style-precedence")).toHaveText("Each draft uses the closest style there is: a person's, then their company's, then the account's, then yours.");
+    // pass 3: as your writing, never the recipient's voice
+    await expect(page.getByTestId("style-precedence")).toHaveText("Drafts follow your style with that person, else with their company, else in that account, else your usual one.");
+    // pass 3: How it learns, all of it, in the first view (it was under the fold), before the optional overrides
+    await expect(page.getByTestId("style-clear")).toBeInViewport();
+    expect(await above("style-actions", "style-domains")).toBe(true);
     const total = Number(/from (\d+) sent/.exec(await page.getByTestId("style-status").innerText())![1]);
     await expect(page.getByTestId("style-own")).toContainText(new RegExp(`From \\d+ of the ${total} messages`));
     await expect(page.getByTestId("style-own")).toContainText("Your style");
-    const above = async (a: string, b: string) => (await page.getByTestId(a).boundingBox())!.y < (await page.getByTestId(b).boundingBox())!.y;
     expect(await above("style-status", "style-own")).toBe(true);
     await expect(page.getByTestId("style-profile")).toHaveCount(1);
     if (await page.getByTestId("style-scope").count()) {
@@ -1002,7 +1006,26 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(phrase("all the best")).toHaveCount(0);
     await profile.getByTestId("style-profile-edit").click();
     await expect(page.getByTestId("style-edit-signoffs-field").last()).toHaveValue("Cheers,\nLuis");
-    await page.getByTestId("style-edit-cancel").click();
+    // pass 3: Esc steps back out of the editor, not out of Settings: unchanged, at once, focus back on Edit
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("style-editor")).toHaveCount(0);
+    await expect(page.getByTestId("settings-dialog")).toBeVisible();
+    await expect(profile.getByTestId("style-profile-edit")).toBeFocused();
+    // with a change it asks; Cancel keeps the typing, Discard drops it
+    await profile.getByTestId("style-profile-edit").click();
+    await page.getByTestId("style-edit-phrases").fill("talk soon");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("style-discard-dialog")).toBeVisible();
+    await page.getByTestId("style-discard-dialog").getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByTestId("style-discard-dialog")).toHaveCount(0);
+    await expect(page.getByTestId("style-edit-phrases")).toHaveValue("talk soon");
+    await expect(page.getByTestId("settings-dialog")).toBeVisible();
+    await page.getByTestId("style-edit-phrases").focus();
+    await page.keyboard.press("Escape");
+    await page.getByTestId("style-discard-dialog").getByRole("button", { name: "Discard" }).click();
+    await expect(page.getByTestId("style-editor")).toHaveCount(0);
+    await expect(page.getByTestId("settings-dialog")).toBeVisible();
+    await expect(profile.getByTestId("style-profile-examples-toggle")).toHaveCount(0);
     await page.setViewportSize({ width: 1440, height: 900 });
     // Reset says so, and Undo puts back exactly what was there, the edit too
     await profile.getByTestId("style-profile-reset").click();
@@ -1049,6 +1072,12 @@ test.describe("drafting with AI (plan 133)", () => {
     await page.getByTestId("style-study-stop").click();
     await expect(page.getByTestId("style-study-start")).toBeVisible();
 
+    // pass 3: Esc on the page goes back to Drafting, focus on the way in; Settings stays
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("writing-style")).toHaveCount(0);
+    await expect(page.getByTestId("settings-dialog")).toBeVisible();
+    await expect(page.getByTestId("ai-drafting-style-open")).toBeFocused();
+    await page.getByTestId("ai-drafting-style-open").click();
     await page.getByTestId("writing-style-back").click();
     await expect(page.getByTestId("ai-tab")).toBeVisible();
     await expect(page.getByTestId("ai-drafting-instructions")).toHaveValue("Never use exclamation marks.");

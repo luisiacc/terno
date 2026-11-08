@@ -108,6 +108,11 @@ function ProfileEditor({ p, title, onDone }: { p: WritingProfileView; title: str
     const frame = requestAnimationFrame(() => editor.current?.scrollIntoView({ block: "start" }));
     return () => cancelAnimationFrame(frame);
   }, []);
+  // pass 3: Esc steps back out of the editor: at once when nothing changed, after asking when something did (never losing typing)
+  const [asking, setAsking] = useState(false);
+  const changed = () =>
+    JSON.stringify([fromItems(greetings), fromItems(signOffs), fromLines(phrases), fromLines(notes)]) !==
+    JSON.stringify([fromItems(p.habits.greetings.map((g) => g.text)), fromItems(p.habits.signOffs.map((g) => g.text)), fromLines(asLines(p.phrases)), fromLines(asLines(p.judgment?.notes ?? []))]);
   const shares = (list: readonly { text: string; share: number }[], items: readonly string[]) => fromItems(items).slice(0, ITEMS_MAX).map((text) => ({ text, share: list.find((i) => i.text === text)?.share ?? 0.1 }));
   const save = async () => {
     try {
@@ -131,7 +136,21 @@ function ProfileEditor({ p, title, onDone }: { p: WritingProfileView; title: str
     </div>
   );
   return (
-    <div ref={editor} className="flex scroll-mt-4 flex-col gap-3" data-testid="style-editor" aria-label={t("aiDraft.style.editing", { name: title })} role="group">
+    <div
+      ref={editor}
+      className="flex scroll-mt-4 flex-col gap-3"
+      data-testid="style-editor"
+      aria-label={t("aiDraft.style.editing", { name: title })}
+      role="group"
+      onKeyDown={(e) => {
+        // a portal's Esc (the confirm below, a menu) bubbles here through React: only the editor's own
+        if (e.key !== "Escape" || e.defaultPrevented || e.nativeEvent.isComposing || !e.currentTarget.contains(e.target as Node)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (changed()) setAsking(true);
+        else onDone(null);
+      }}
+    >
       <ItemsField label={t("aiDraft.style.editGreetings")} add={t("aiDraft.style.addGreeting")} item={(n) => t("aiDraft.style.greetingItem", { n })} remove={(n) => t("aiDraft.style.removeGreeting", { n })} items={greetings} onChange={setGreetings} testId="style-edit-greetings" first={first} />
       <ItemsField label={t("aiDraft.style.editSignOffs")} add={t("aiDraft.style.addSignOff")} item={(n) => t("aiDraft.style.signOffItem", { n })} remove={(n) => t("aiDraft.style.removeSignOff", { n })} items={signOffs} onChange={setSignOffs} testId="style-edit-signoffs" />
       {field("phrases", t("aiDraft.style.editPhrases"), phrases, setPhrases, "style-edit-phrases", greetings.length ? undefined : phrasesRef)}
@@ -141,6 +160,7 @@ function ProfileEditor({ p, title, onDone }: { p: WritingProfileView; title: str
         <Button size="sm" data-testid="style-edit-save" onClick={() => void save()}>{t("common.save")}</Button>
         <Button size="sm" variant="ghost" data-testid="style-edit-cancel" onClick={() => onDone(null)}>{t("common.cancel")}</Button>
       </div>
+      <ConfirmDialog open={asking} onOpenChange={setAsking} title={t("aiDraft.style.discardTitle")} description={t("aiDraft.style.discardHint", { name: title })} confirm={t("aiDraft.style.discard")} testId="style-discard-dialog" onConfirm={() => onDone(null)} />
     </div>
   );
 }
@@ -249,7 +269,7 @@ function Profile({ initial, onChanged, onEditing, onReset, total, picked, compac
   const body = editing ? (
     <ProfileEditor p={p} title={title} onDone={(next) => { setEditing(false); setBack(true); if (next) setP(next); }} />
   ) : (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1.5">
       <ul className="flex flex-col gap-0.5 text-sm" data-testid="style-profile-lines">
         {lines.map((line) => <li key={line}>{line}</li>)}
         {p.judgment && <li>{traitLine(p.judgment)}</li>}
@@ -513,7 +533,7 @@ export default function WritingStyle() {
   return (
     <div data-testid="writing-style">
       {/* plan 161: what it has learned, and how the styles combine, before any of them */}
-      <div className="mb-4 px-1" data-testid="style-overview">
+      <div className="mb-3 px-1" data-testid="style-overview">
         <p className="text-sm" data-testid="style-status">{line}</p>
         <p className="mt-1 text-xs text-muted-foreground" data-testid="style-precedence">{t("aiDraft.style.precedence")}</p>
         {reset && (
@@ -537,16 +557,12 @@ export default function WritingStyle() {
           </p>
         )}
       </div>
-      <SettingsGroup title={t("aiDraft.style.yours")} testId="style-own">
+      <SettingsGroup title={t("aiDraft.style.yours")} testId="style-own" className="mb-4">
         {own === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : own.length === 0 ? <SettingsNote testId="style-empty">{t("aiDraft.style.empty")}</SettingsNote> : <OwnProfiles items={own} onChanged={changed} onReset={setReset} total={status?.state === "ready" && status.messages > 0 ? status.messages : null} />}
       </SettingsGroup>
-      {/* pass 2: two collapsed rows together, not two bands */}
-      <div className="mb-6">
-        <Section scope="domain" title={t("aiDraft.style.domains")} testId="style-domains" version={version} onChanged={changed} onReset={setReset} shared={shared} />
-        <Section scope="person" title={t("aiDraft.style.people")} testId="style-people" version={version} onChanged={changed} onReset={setReset} shared={shared} />
-      </div>
-      {/* pass 2: the two ways it learns side by side, each saying what it does: counted here, and the optional AI notes */}
-      <SettingsGroup title={t("aiDraft.study.title")} testId="style-actions">
+      {/* pass 2: the two ways it learns side by side, each saying what it does: counted here, and the optional AI notes.
+          Pass 3: right under your style, in the first view; the optional overrides follow */}
+      <SettingsGroup title={t("aiDraft.study.title")} testId="style-actions" className="mb-4">
         <SettingsRow label={t("aiDraft.style.rebuild")} hint={t("aiDraft.style.rebuildHint")} testId="style-rebuild-row">
           {({ id: _id, "aria-labelledby": _l, "aria-describedby": described }) => (
             <Button variant="outline" size="sm" aria-describedby={described} data-testid="style-rebuild" onClick={() => void client.call("writing.profiles.rebuild", {}).then(changed, failed)}>
@@ -563,6 +579,11 @@ export default function WritingStyle() {
           )}
         </SettingsRow>
       </SettingsGroup>
+      {/* pass 2: two collapsed rows together, not two bands */}
+      <div>
+        <Section scope="domain" title={t("aiDraft.style.domains")} testId="style-domains" version={version} onChanged={changed} onReset={setReset} shared={shared} />
+        <Section scope="person" title={t("aiDraft.style.people")} testId="style-people" version={version} onChanged={changed} onReset={setReset} shared={shared} />
+      </div>
       <ConfirmDialog open={clearing} onOpenChange={setClearing} title={t("aiDraft.style.clearTitle")} description={t("aiDraft.style.clearHint")} confirm={t("aiDraft.style.clearButton")} testId="style-clear-dialog" onConfirm={() => client.call("writing.profiles.clear", {}).then(() => { setReset(null); changed(); }, failed)} />
     </div>
   );
