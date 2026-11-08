@@ -272,3 +272,9 @@ The review stopped after two rounds (the round cap). Round 2's findings were nar
 - **composer.spec "opened again from the strip … where the caret was"** flakes under load on main too: 2 of 48 runs at a load of 14 to 23. While checking whether the card reaching the pane's foot caused it, the pinned-foot version failed 0 of 48 under the same load. It's named flaky, not fixed.
 - **perf.spec "scrolling 2,000 threads deep"** timed out once ("next page never loaded") while the machine was loaded. Alone it passes 3 of 3, at about 33 ms against a 150 ms budget.
 - **A menu re-anchored to the window's foot** (its row has room on neither side) moves a frame after it opens. It happens only in a window too short for the menu on either side of its row, and during the open animation.
+
+## After the full suite
+
+The first `pnpm test:all` (after the rebase) failed two e2e tests:
+- **composer-drop.spec** dropped a file on "the empty pane under the card". The card now reaches the pane's foot, so the drop point is the `--float-inset` under it.
+- **ask.spec (Luma, dark)**: axe read a key's muted text on the field's wash over a dialog at 4.49:1. The page blends a translucent wash one 8-bit step off the suite's math. The field derivation now keeps 4.62:1 on popovers (4.52 elsewhere). The secondary ink of six dark palettes went a touch lighter so their fields still reach the floor: terno-dark 0.701 → 0.704, dracula 0.792 → 0.798, gruvbox-dark 0.799 → 0.805, nord 0.836 → 0.842, catppuccin-mocha 0.784, luma-dark 0.726. The table above was measured before this; each palette's muted-on-open-row ratio rose by at most 0.1.
