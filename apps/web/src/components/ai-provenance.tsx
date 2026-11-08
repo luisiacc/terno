@@ -22,6 +22,7 @@ export function AiProvenance({
   labelTestId = `${testId}-label`,
   popoverTestId = `${testId}-popover`,
   className,
+  onKeyDown,
 }: {
   /** the model that wrote it and when; "" leaves the detail line out (nothing is known) */
   model: string;
@@ -37,18 +38,22 @@ export function AiProvenance({
   labelTestId?: string;
   popoverTestId?: string;
   className?: string;
+  /** a surface inside a command list keeps its own Enter and Space out of the list's (Ask) */
+  onKeyDown?: React.KeyboardEventHandler;
 }) {
   const last = detail ?? (model ? provenanceDetail(model, at) : null);
   return (
     <Popover>
       {/* quiet at rest, a chevron since it opens: the label reads as a status, the row's buttons as commands */}
       <PopoverTrigger
-        render={<Button type="button" variant="ghost" size="sm" className={cn("shrink-0 px-1.5 text-xs font-normal text-muted-foreground hover:text-foreground data-popup-open:text-foreground", className)} data-testid={testId} />}
+        render={<Button type="button" variant="ghost" size="sm" className={cn("shrink-0 px-1.5 text-xs font-normal text-muted-foreground hover:text-foreground data-popup-open:text-foreground", className)} data-testid={testId} onKeyDown={onKeyDown} />}
       >
         <span data-testid={labelTestId}>{label}</span>
         <ChevronDown aria-hidden />
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 gap-2 text-sm" data-testid={popoverTestId} aria-label={t("ai.provenance.details")}>
+      {/* Esc closes only this: the popup is portalled, but its keys still bubble through React to whatever holds it (a reply's
+          composer would close on the same Esc); Base UI's own dismissal listens on the document, so it still closes the popup */}
+      <PopoverContent align="end" className="w-72 gap-2 text-sm" data-testid={popoverTestId} aria-label={t("ai.provenance.details")} onKeyDown={(e) => { if (e.key === "Escape") e.stopPropagation(); }}>
         {lines.length > 0 && (
           <ul className="flex flex-col gap-1">
             {lines.map((text) => (
@@ -69,7 +74,7 @@ const COPIED_MS = 1500;
  * Plan 161, pass 3: Copy, one button on every AI surface: BoardUI's secondary at the row's 28 px, its glyph and word; done,
  * it says Copied in place for a moment (and to a screen reader), and a failure says what to do.
  */
-export function AiCopyButton({ text, failed, testId, className }: { text: () => string; failed: string; testId: string; className?: string }) {
+export function AiCopyButton({ text, failed, testId, className, onKeyDown }: { text: () => string; failed: string; testId: string; className?: string; onKeyDown?: React.KeyboardEventHandler }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -85,7 +90,7 @@ export function AiCopyButton({ text, failed, testId, className }: { text: () => 
   };
   return (
     <>
-      <Button type="button" variant="outline" size="sm" className={cn("text-foreground", className)} data-testid={testId} data-copied={copied || undefined} onClick={() => void copy()}>
+      <Button type="button" variant="outline" size="sm" className={cn("text-foreground", className)} data-testid={testId} data-copied={copied || undefined} onKeyDown={onKeyDown} onClick={() => void copy()}>
         {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
         {/* the wider word holds the width, so nothing after it moves when it changes */}
         <span className="grid">

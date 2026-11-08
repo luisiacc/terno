@@ -5,21 +5,20 @@ import { CloseButton } from "@terno/ui/components/close-button";
 import { CommandDescription, CommandEmpty, CommandGroup, CommandHints, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
 import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { ChevronLeft, Clock, Copy, ExternalLink, Mail, Plus, RefreshCw, Search, Sparkles, Undo2 } from "@terno/ui/icons";
+import { ChevronLeft, Clock, ExternalLink, Mail, Plus, RefreshCw, Search, Sparkles, Undo2 } from "@terno/ui/icons";
 import { useCommandState } from "cmdk";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { askReady, errorHelp, providerLabel } from "~/lib/ai";
 import { closePeek, showSource, usePeek, type Peek } from "~/lib/ask-peek";
 import { Marked } from "~/components/match-mark";
 import { citationRuns } from "~/lib/ask-citations";
-import { provenanceDetail, provenanceLabel } from "~/lib/provenance";
 import { cn } from "@terno/ui/lib/utils";
 import { askConfigChanged, askQuestion, atTurnLimit, declineConsent, deleteConversation, loadAskHistory, newQuestion, openConversation, openSource, restoreConversation, returning, searchOlder, stopAsking, useAsk } from "~/lib/ask";
 import { listDate } from "~/lib/format";
 import { askFrom, paletteKeys, setPalettePage } from "~/lib/palette-open";
 import { chordLabel } from "@terno/ui/components/shortcut";
-import { snack } from "~/lib/snack";
 import { useApp, setApp } from "~/state/app";
+import { AiCopyButton, AiProvenance } from "~/components/ai-provenance";
 
 
 const stopKeys = (e: KeyboardEvent) => {
@@ -119,14 +118,6 @@ function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated
   const running = useAsk((s) => s.running !== null);
   const chosen = useChosenSource();
   if (!turn.answer && !last) return null;
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(answerWithoutCitations(turn.answer ?? ""));
-      snack.success(t("ask.copied"));
-    } catch {
-      snack.error(t("ask.copyFailed"));
-    }
-  };
   return (
     <section className="space-y-1.5" data-testid="ask-turn" data-status={turn.status}>
       {/* the header already says it, as does the turn before it when older mail answered again */}
@@ -139,15 +130,13 @@ function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated
       {turn.answer && (
         // plan 161, pass 2: buttons that look like buttons, their edge on the answer's
         <div className="flex items-center gap-1.5 pt-0.5 text-xs text-muted-foreground" data-testid="ask-turn-actions">
-          <Button variant="outline" size="xs" data-testid="ask-copy" onKeyDown={stopKeys} onClick={() => void copy()}><Copy /> {t("ask.copy")}</Button>
+          {/* plan 161, pass 3: the one Copy and the one "Written with AI ▾" every AI surface has */}
+          <AiCopyButton text={() => answerWithoutCitations(turn.answer ?? "")} failed={t("ask.copyFailed")} testId="ask-copy" onKeyDown={stopKeys} />
           {last && !running && (
             // it asks the same question once more; the new answer comes under this one
             <Button variant="outline" size="xs" data-testid="ask-again" onKeyDown={stopKeys} onClick={() => askQuestion(turn.question)}><RefreshCw /> {t("ask.again")}</Button>
           )}
-          <Tooltip>
-            <TooltipTrigger render={<span tabIndex={0} data-testid="ask-provenance" className="ml-auto rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" />}>{provenanceLabel()}</TooltipTrigger>
-            <TooltipContent data-testid="ask-provenance-detail">{provenanceDetail(turn.model ?? "", turn.createdAt)}</TooltipContent>
-          </Tooltip>
+          <AiProvenance model={turn.model ?? ""} at={turn.createdAt} testId="ask-provenance" className="ml-auto" onKeyDown={stopKeys} />
         </div>
       )}
       {last && turn.answer && <Scope />}

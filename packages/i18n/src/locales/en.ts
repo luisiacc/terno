@@ -2550,8 +2550,6 @@ It contains none of your mail, contacts, settings or keys.
   "ask.tryAgain": "Try again",
   "ask.stop": "Stop",
   "ask.stopped": "Stopped.",
-  "ask.copy": "Copy",
-  "ask.copied": "Copied",
   "ask.copyFailed": "The answer couldn’t be copied. Check clipboard access and try again.",
   "ask.looking": "Looking through your mail…",
   "ask.lookingShort": "Looking through your mail",

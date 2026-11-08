@@ -1143,3 +1143,9 @@ A second, narrower pass on those fixes found two more, both taken with a test: a
 
 - **A key for Summarize** (and for Shorter, Warmer, Draft a nudge): raters asked in every round; each is a new binding in the shortcut list, so it's yours. The tooltips now name each sparkle, with ⌘J where it applies.
 - **The follow-up is now on the AI card.** Plan 148 left that out of its scope (the line is the user's own to act on); both raters and the lead asked for one system with Reply ready. If plan 148's reason should stand, the anatomy works without the card (drop `AI_CARD` from the line).
+
+### Pass 3: the shared AI language, adopted (lead, on main)
+
+The pass 3 engineers left Ask and the digest for the shared components once they landed. Ask's Copy and "Written with AI", and the digest's attribution, now use `AiCopyButton` and `AiProvenance` (`components/ai-provenance.tsx`), so every AI surface says who wrote it and copies it one way. The AI filter keeps "Written with AI" as its card's title, as the summary's card says "Summary". The old `ask.copy` and `ask.copied` strings went with Ask's own button.
+
+The adoption's e2e step (Esc in the provenance popover closes only it) caught a bug: the palette catches Esc in the capture phase, before a portalled popup sees it, and went back to all commands. The palette now leaves keys from a popup portalled out of it to that popup (`command-palette.tsx`), and the popover also stops its Esc from bubbling to whatever holds it. The step fails without the fix.

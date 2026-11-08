@@ -2535,8 +2535,6 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "ask.tryAgain": "Reintentar",
   "ask.stop": "Detener",
   "ask.stopped": "Detenido.",
-  "ask.copy": "Copiar",
-  "ask.copied": "Copiado",
   "ask.copyFailed": "No se pudo copiar la respuesta. Revisa el acceso al portapapeles e inténtalo de nuevo.",
   "ask.looking": "Buscando en tu correo…",
   "ask.lookingShort": "Buscando en tu correo",

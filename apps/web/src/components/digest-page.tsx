@@ -3,20 +3,18 @@ import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Checkbox } from "@terno/ui/components/checkbox";
 import { Spinner } from "@terno/ui/components/spinner";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { ChevronRight, Sparkles } from "@terno/ui/icons";
+import { ChevronRight } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { errorHelp, modelName } from "~/lib/ai";
 import { listDate } from "~/lib/format";
-import { provenanceLabel } from "~/lib/provenance";
-import { AI_GLYPH } from "./ai-card";
 import { deferred, trackJob, undoAction, undoActions } from "~/lib/actions";
 import { registerUndo, snack, undoNow } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { reloadList } from "~/state/list";
 import { digestPick, keepDigestPick, useToday } from "~/state/today";
+import { AiProvenance } from "~/components/ai-provenance";
 
 const dayLong = (day: string) => {
   const [y, m, d] = day.split("-").map(Number);
@@ -164,17 +162,11 @@ export default function DigestPage() {
         <div className="flex items-baseline justify-between gap-3">
           <h1 className="text-xl font-semibold tracking-tight" data-testid="digest-title">{t(automated ? "today.digest.automatedTitle" : "today.digest.title")}</h1>
           <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-            {/* pass 3: who wrote the lines, at the top as every AI result says it (it was under the list); the model and
-                its caution behind it. Becomes ai-card's AiProvenance when that lands (plan 161, pass 3) */}
+            {/* pass 3: who wrote the lines, at the top as every AI result says it (it was under the list), with the one
+                "Written with AI ▾" every AI surface has; the model and its caution behind it */}
             {!automated && row.model && (
               <>
-                <Tooltip>
-                  <TooltipTrigger render={<span tabIndex={0} data-testid="digest-provenance" className="flex items-center gap-1 rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" />}>
-                    <Sparkles aria-hidden className={AI_GLYPH} />
-                    {provenanceLabel()}
-                  </TooltipTrigger>
-                  <TooltipContent data-testid="digest-provenance-detail" side="bottom" align="end">{t("today.digest.writtenBy", { model: modelName(row.model) })}</TooltipContent>
-                </Tooltip>
+                <AiProvenance model={row.model} at={0} detail={t("today.digest.writtenBy", { model: modelName(row.model) })} testId="digest-provenance" />
                 <span aria-hidden>·</span>
               </>
             )}

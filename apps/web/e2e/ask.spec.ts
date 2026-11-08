@@ -72,8 +72,12 @@ test.describe("ask your mail (plan 141)", () => {
       // plan 161: one phrase on every AI surface; the model and the caution behind it
       await expect(page.getByTestId("ask-provenance")).toHaveText("Written with AI");
       await expect(followUp(page)).toBeFocused();
-      await page.getByTestId("ask-provenance").hover();
+      // pass 3: the one "Written with AI ▾" every AI surface has: it opens what wrote it, and Esc closes only it
+      await page.getByTestId("ask-provenance").click();
       await expect(page.getByTestId("ask-provenance-detail")).toContainText(/Written by demo, .+\. It can make mistakes\./);
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("ask-provenance-detail")).toHaveCount(0);
+      await expect(page.getByTestId("ask-answer").last()).toBeVisible();
       // how far back it looked, beside the way past it
       await expect(page.getByTestId("ask-scope")).toContainText("Searched mail on this Mac back to");
       await expect(page.getByTestId("ask-scope").getByTestId("ask-older")).toHaveText("Search older mail on your servers");

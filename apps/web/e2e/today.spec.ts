@@ -101,8 +101,10 @@ test.describe("Today (plan 145)", () => {
     // pass 3: who wrote the lines, at the top, as every AI result says it; the model is its detail, and the foot holds none
     await expect(page.getByTestId("digest-provenance")).toHaveText("Written with AI");
     expect((await page.getByTestId("digest-provenance").boundingBox())!.y).toBeLessThan((await page.getByTestId("digest-item").first().boundingBox())!.y);
-    await page.getByTestId("digest-provenance").hover();
+    await page.getByTestId("digest-provenance").click();
     await expect(page.getByTestId("digest-provenance-detail")).toContainText(/Written by .+\. It can make mistakes\./);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("digest-provenance-detail")).toHaveCount(0);
     await page.mouse.move(0, 0);
     // the sale isn't a newsletter, so it isn't here or in Archive all
     await expect(page.getByTestId("digest-item").filter({ hasText: "Stratechery" })).toHaveCount(1);

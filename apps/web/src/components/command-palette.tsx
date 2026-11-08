@@ -583,6 +583,9 @@ export function CommandPalette() {
         shouldFilter={false}
         onKeyDownCapture={(e) => {
           if (page === "root") return;
+          // a popup a page opened (Ask's "Written with AI ▾") is portalled out of the palette: its keys are its own, so its
+          // Esc closes it and not the page under it (plan 161, pass 3)
+          if (!e.currentTarget.contains(e.target as Node)) return;
           // a page: Esc, or Backspace with nothing typed, goes back to all commands (Esc at the root closes)
           // (not while an input method composes, nor a held Backspace that just emptied the text)
           if (e.nativeEvent.isComposing) return;
