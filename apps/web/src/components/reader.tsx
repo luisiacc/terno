@@ -42,7 +42,7 @@ import { copyThreadText } from "~/lib/copy-thread";
 import { openPrint } from "~/lib/print-open";
 import { HtmlBody, TextBody } from "./mail-body";
 import { Marked } from "./match-mark";
-import { firstHolding, readerMarks, revealMark, useReaderMarks, useSearchMarks } from "~/lib/reader-marks";
+import { firstHolding, MAIL_INTERACTION, readerMarks, revealMark, useReaderMarks, useSearchMarks } from "~/lib/reader-marks";
 import { MailReaderView, useMailReaderView } from "./mail-reader-view";
 import { backgroundMenu, MessageActions, MessageMenu } from "./message-menu";
 import { reasonText } from "~/lib/reasons";
@@ -595,10 +595,12 @@ function ReaderMatches({ scroller, bottomInset }: { scroller: React.RefObject<HT
   useEffect(() => {
     const el = scroller.current;
     const stay = () => (moved.current = true);
-    // from a wheel, a key or a press on, the reader is the user's (folding a message counts again, and scrolls nowhere)
-    for (const type of ["wheel", "keydown", "pointerdown"]) el?.addEventListener(type, stay, { passive: true });
+    // from a wheel, a key or a press on, the reader is the user's (folding a message counts again, and scrolls nowhere);
+    // inside a mail's frame too, which tells it with its own event
+    const types = ["wheel", "keydown", "pointerdown", MAIL_INTERACTION];
+    for (const type of types) el?.addEventListener(type, stay, { passive: true });
     return () => {
-      for (const type of ["wheel", "keydown", "pointerdown"]) el?.removeEventListener(type, stay);
+      for (const type of types) el?.removeEventListener(type, stay);
     };
   }, []);
   useEffect(() => {

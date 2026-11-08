@@ -17,7 +17,7 @@ import { forwardPrintKey, wantsNativeMenu } from "~/lib/print-open";
 import { forwardMouseNav, forwardNavKey } from "~/lib/page";
 import { chooseOpenThread } from "~/state/app";
 import { allowRemoteFor, remoteAllowed, useRemoteConsent } from "~/lib/remote-consent";
-import { FRAME_MAX_HEIGHT, htmlHolds, markDocument, markTextParts, marksChanged, textHolds } from "~/lib/reader-marks";
+import { FRAME_MAX_HEIGHT, htmlHolds, MAIL_INTERACTION, markDocument, markTextParts, marksChanged, textHolds } from "~/lib/reader-marks";
 import { Marked } from "./match-mark";
 
 import { openLink } from "~/lib/open-link";
@@ -266,7 +266,11 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
         d.addEventListener("mouseup", forwardMouseNav, true);
         // a press in the mail is a press in the reader (its own capture never sees this document)
         d.addEventListener("pointerdown", chooseOpenThread, true);
+        // and a wheel, a key or a press here is the user's hand on the reader: a search's first match stops being shown again
+        const interacted = () => { frame.dispatchEvent(new Event(MAIL_INTERACTION, { bubbles: true })); };
+        for (const type of ["wheel", "keydown", "pointerdown"]) d.addEventListener(type, interacted, { capture: true, passive: true });
         detach = () => {
+          for (const type of ["wheel", "keydown", "pointerdown"]) d.removeEventListener(type, interacted, true);
           d.removeEventListener("pointerdown", chooseOpenThread, true);
           d.removeEventListener("load", measure, true);
           d.removeEventListener("click", onClick);

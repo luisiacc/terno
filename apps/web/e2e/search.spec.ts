@@ -214,6 +214,7 @@ test.describe("search", () => {
     });
     await server.backend.store.sync.ingest([
       mail(0, "html", { subject: "Zzhallazgo en el asunto", bodyText: null, bodyHtml: `${filler}<p id="far">El zzhallazgo está <b>aquí abajo</b> y otro zzhallazgo después.</p>${filler}` }),
+      mail(0, "wheel", { bodyText: "La zzrueda, abajo.", bodyHtml: `${filler}<p>La zzrueda, abajo.</p>${filler}` }),
       mail(0, "clip", { bodyText: "El zzrecortado de arriba.", bodyHtml: `<p>El zzrecortado de arriba.</p>${"<p>Una línea más para pasar del corte del marco.</p>".repeat(1200)}<p>El zzrecortado de abajo.</p>` }),
       mail(0, "two", { bodyText: "Uno con el zzdoble.", isRead: false }),
       mail(1, "two", { bodyText: "Otro con el zzdoble." }),
@@ -252,6 +253,26 @@ test.describe("search", () => {
       await frame.evaluate((f: HTMLIFrameElement) => f.contentDocument!.body.focus());
       await page.keyboard.press("ControlOrMeta+g");
       await expect(count).toHaveText("1 of 2 in this conversation");
+    });
+    await scenario("a hand inside the mail is the user's: what comes next (a new message) doesn't scroll back to the first match (series review)", async () => {
+      await search(page, "zzrueda");
+      await rows(page).first().click();
+      const count = page.getByTestId("reader-matches-count");
+      await expect(count).toHaveText("1 of 1 in this conversation");
+      const scroller = page.locator("[data-reader-scroller]");
+      await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+      // a press in the mail's text (its frame's events stop at its own document), then the reader read back up
+      const frame = (await page.getByTestId("reader").locator("iframe").boundingBox())!;
+      const shown = (await scroller.boundingBox())!;
+      await page.mouse.click(frame.x + 40, Math.max(frame.y, shown.y) + 60);
+      await scroller.evaluate((el) => { el.scrollTop = 0; });
+      const threadId = sqlDb(server.backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = 'find-wheel-0'")!.thread_id;
+      await server.backend.store.sync.ingest([mail(1, "wheel", { bodyText: "Llega otra zzrueda.", isRead: false })], { applyFilters: false, now: E2E_NOW, classifier: null });
+      server.backend.notifyChanged([threadId]);
+      // counted again, and nothing scrolled
+      await expect(count).toHaveText("1 of 2 in this conversation");
+      await page.waitForTimeout(200);
+      expect(await scroller.evaluate((el) => el.scrollTop)).toBe(0);
     });
     await scenario("past where a frame clips, a match can't be shown, so it isn't counted", async () => {
       await search(page, "zzrecortado");

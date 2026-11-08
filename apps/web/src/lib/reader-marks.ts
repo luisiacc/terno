@@ -25,6 +25,9 @@ export function useSearchMarks(): RowMatch | null {
 export const useReaderMarks = create<{ version: number }>(() => ({ version: 0 }));
 export const marksChanged = (): void => useReaderMarks.setState((s) => ({ version: s.version + 1 }));
 
+/** A wheel, a key or a press inside a mail's frame, told to the reader: its own listeners never see the frame's document. */
+export const MAIL_INTERACTION = "terno:mail-interaction";
+
 const MARK_SELECTOR = "mark[data-reader-match]";
 /** A mail is marked once it's loaded, on the main thread: bounded, however long the mail is or however one text node runs. */
 const MAX_CHARS = 400_000;
