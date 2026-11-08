@@ -1006,6 +1006,11 @@ test.describe("drafting with AI (plan 133)", () => {
   });
 
   test("plan 161: the strip after an edit, its exact Undo, the Write button, and a small window", async ({ app: page, server }) => {
+    const lastLineClear = () => page.evaluate(() => {
+      const last = [...document.querySelectorAll("[data-testid=compose-body] p")].filter((p) => p.textContent).at(-1)!.getBoundingClientRect();
+      const foot = document.querySelector("[data-draft-foot]")!.getBoundingClientRect();
+      return { last: Math.round(last.bottom), foot: Math.round(foot.top), scrolled: document.querySelector("[data-reader-scroller]")!.scrollTop };
+    });
     await scenario("the prompt says what Return does, and Write does the same", async () => {
       await ready(page, server);
       instant();
@@ -1051,7 +1056,7 @@ test.describe("drafting with AI (plan 133)", () => {
       await page.setViewportSize({ width: 1100, height: 700 });
       await openThread(page, /Contract review/);
       await openField(page);
-      const words = "echo: Friday works for me. Could you send the address of the flat, and say whether parking is near?";
+      const words = "echo: Friday works for me.\n\nCould you send the address of the flat, and say whether parking is near?\n\nThanks,\n\nLuis";
       await field(page).fill(words);
       // the field grows rather than cutting the words: everything it holds is on screen
       expect(await field(page).evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
@@ -1059,9 +1064,20 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(strip(page)).toBeVisible();
       await expect(page.getByTestId("ai-strip-written")).toBeVisible();
       expect(await page.getByTestId("ai-strip-voice").evaluate((el) => { const s = el.querySelector("span")!; return s.scrollWidth <= s.clientWidth; })).toBe(true);
-      const view = page.viewportSize()!;
-      await expect.poll(async () => { const b = (await body(page).boundingBox())!; return b.y + b.height <= view.height; }).toBe(true);
+      // the draft's last line clears the composer's sticky foot: written, it's all there to read without a scroll
+      await expect.poll(async () => { const r = await lastLineClear(); return r.last <= r.foot ? true : JSON.stringify(r); }).toBe(true);
       await expect(page.getByTestId("compose-send")).toBeInViewport();
+    });
+    await scenario("written at a large size, then the window shrinks: the draft is kept in view", async () => {
+      await fresh(page, server);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openThread(page, /Contract review/);
+      await openField(page);
+      await field(page).fill("echo: One.\n\nTwo.\n\nThree.\n\nFour.\n\nFive.\n\nThanks,\n\nLuis");
+      await page.keyboard.press("Enter");
+      await expect(strip(page)).toBeVisible();
+      await page.setViewportSize({ width: 1100, height: 700 });
+      await expect.poll(async () => { const r = await lastLineClear(); return r.last <= r.foot ? true : JSON.stringify(r); }).toBe(true);
     });
   });
 

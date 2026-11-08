@@ -430,6 +430,27 @@ export function AiRow({ draftKey }: { draftKey: string }) {
     const form = rootRef.current?.closest<HTMLElement>("form[data-draft-key]");
     if (form) return keepInView(form, undefined, 16, () => form.getBoundingClientRect().height);
   }, [writes]);
+  // and kept there when the window shrinks under it, while the strip is up and the composer's top is on screen (someone who
+  // scrolled away to read stays where they are)
+  const stripUp = s?.phase === "strip";
+  useEffect(() => {
+    if (!stripUp) return;
+    let frame = 0;
+    const onResize = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const form = rootRef.current?.closest<HTMLElement>("form[data-draft-key]");
+        const scroller = form?.closest<HTMLElement>("[data-reader-scroller]");
+        if (!form || !scroller || form.getBoundingClientRect().top < scroller.getBoundingClientRect().top) return;
+        keepInView(form, scroller, 16, () => form.getBoundingClientRect().height);
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [stripUp]);
   // asked for: the field, or the row's default choice. Programmatic, so no ring (plan 54)
   const focus = s?.focus ?? 0;
   useLayoutEffect(() => {
