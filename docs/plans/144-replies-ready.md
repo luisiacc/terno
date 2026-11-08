@@ -204,3 +204,28 @@ Real models, on a copy of one real mailbox (5,939 threads, three accounts, Spani
 - **What changed:** a cold pitch or a recruiter's outreach to someone who's never written to them wants no reply. A prepared reply is told not to accept, decline or commit, nor apologize for them, and to keep their tú or usted, leaving decisions as a `[placeholder]`.
 - **A real bug the eval found:** the check's 50 output tokens left no room for a model's hidden reasoning, and a real thread failed. It's 1,000 now.
 - **Limit:** a reviewer still reads tú in one draft where the thread is in usted.
+
+## The block is a card (2026-11-08)
+
+> i think for drafts like this one, there needs to be some kind of card with a border or a background because users can confuse this with just another part of the text instead of the suggestion by the ai, this is for all styles, please consider that
+
+This replaces §5's "No card or color: a hairline and type", for the reason plan 148 gave the summary: in the reader, "Reply ready · In your voice with Liam" and then the draft, in the body's type and on the body's left edge, read as more of the mail. Everything else in §5 stands.
+
+```
+┌─────────────────────────────────────────────────┐
+│ ✦ Reply ready · In your voice with Ana          │
+│ Hola Ana, el 19 me viene bien. ¿A la misma hora?│
+│ [Use] [Dismiss]  Reply uses this too R          │
+└─────────────────────────────────────────────────┘
+┌─ ↰ Reply to Ana ─────────────────── Forward ✦ ─┐
+```
+
+- **The summary's surface.** `AI_CARD` (`components/ai-card.ts`) is `card-group`, and the summary and Reply ready both use it, so a model's words look one way in each design: on the tint in Lumen, Atelier, macOS and Luma, outlined on no fill in Graphite. No new token, color or type; the contrast suite already holds the text on it (plan 148).
+- **The label is the header,** in the summary's header style: 40 px, `text-xs`, muted, with `Sparkles` at `1.15em` (the spinner in its place while it writes). "Reply ready" is `font-medium`, as "Summary" is; the voice follows it in regular weight.
+- **The draft is inside,** inset by the summary's `px-3.5`, so it no longer starts on the body's left edge. Use, Dismiss and the hint are the footer, `pb-3` from the bottom edge. Dismiss is the `outline` button, the secondary the summary's card uses: `secondary` fills with the tint and vanished on it.
+- **One column.** The card's outer edges are the column's, the same as the summary above and the reply bar below.
+- **Unchanged:** `data-phase`, every test id, the roles, the live region, keyboard (`r`, `a`), focus never moving, Show all, Stop.
+
+**Other AI text in the reader, looked at and left as it is:** follow-up lines (plan 142) are the user's own commitments, and plan 148 chose no card for them; a Nudge opens the ordinary composer with the AI strip, which already says what wrote it; the digest (plan 145) is its own page under its own title, not text inside a conversation.
+
+**Tests.** `reply-ready.test.tsx`: ready and writing render inside the card, header (glyph, label, voice), then the draft, then the footer with its actions; another thread's reply renders nothing. `replies-ready.spec.ts`, `@design` (every design), at 1440×900 and 1100×700: the card's computed fill, ring and radius equal the summary's; its left and right edges are on the reply bar's and the summary's within 1 px; the draft and the footer's Use start on the header glyph's inset (≥ 12 px), and header, draft and footer stack inside it. The existing `@variant` flow keeps its axe check in light and dark. Screenshots in all five designs, light and dark, both sizes, looked at.
