@@ -60,6 +60,15 @@ export interface NetworkPolicyOptions {
   lookup?: LookupAll;
   fetch?: typeof fetch;
   googleChanged?: () => void;
+  /** plan 161: every decision, allowed or refused, for a test host that proves where requests went (never set in a release) */
+  observe?: (decision: NetDecision) => void;
+}
+
+/** One connection the policy was asked about: its purpose, where it was going, and whether it may. */
+export interface NetDecision {
+  purpose: NetPurpose;
+  url: string;
+  allowed: boolean;
 }
 
 /** 4 or 6 for an IP literal, 0 otherwise (node:net's isIP, portably). */
@@ -175,9 +184,12 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
     const url = new URL(String(target));
     // sender icons are their own decision in both modes: the user's explicit choice in local mode
     if (purpose === "icons") {
-      if (!(await options.siteIcons?.())) throw new NetworkPolicyError(L("errors.net.iconsOff", { host: url.host }), purpose, url.host);
+      const allowed = !!(await options.siteIcons?.());
+      options.observe?.({ purpose, url: url.href, allowed });
+      if (!allowed) throw new NetworkPolicyError(L("errors.net.iconsOff", { host: url.host }), purpose, url.host);
       return {};
     }
+    options.observe?.({ purpose, url: url.href, allowed: true });
     // plan 97: everything else is the feature's own decision (AI: the provider the user chose; updates: their
     // setting; an unsubscribe: their click); local mode means Terno keeps its copy of the mail here, nothing more
     void meta;

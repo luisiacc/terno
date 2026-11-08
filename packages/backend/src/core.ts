@@ -36,7 +36,7 @@ import { createHandlers } from "./handlers";
 import { forgetOwnGoogleClient, googleClientFor, rememberedGoogleClient, type GoogleClients } from "./google-client";
 import { restorePending } from "./import";
 import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
-import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
+import { createNetworkPolicy, type LookupAll, type NetDecision, type NetworkPolicy } from "./net-policy";
 import { CARRY_SLICE, carryRenamed } from "./folders";
 import { followFolderFilters } from "./similar";
 import { acknowledgeSummaryProvider, followFavoriteFolders, provideDevAi, readAutoCategorize, readComposeSuggestions, readGooglePhotos, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
@@ -111,6 +111,8 @@ export interface BackendCoreOptions {
   similarPage?: number;
   /** DNS for the network policy; without it (browsers) only literal loopback hosts count as local and nothing is pinned */
   lookup?: LookupAll;
+  /** plan 161: told every network policy decision; only a test host sets it (the desktop's demo mailbox, TERNO_TEST_NET_LOG) */
+  onNet?: (decision: NetDecision) => void;
   /** the host's kind and capabilities, reported to the renderer (default: everything, as on desktop) */
   host?: HostInfo;
   /** desktop: opens secrets sealed under Única's keychain item, so start() seals them again under Terno's (see keychain.ts) */
@@ -314,7 +316,7 @@ export class BackendCore {
     this.platform = options.platform;
     this.store = options.store;
     if (options.devAi) provideDevAi(this.store, options.devAi);
-    this.net = createNetworkPolicy({ siteIcons: () => readSiteIcons(this.store), lookup: options.lookup, googleChanged: () => this.cooldownChanged() });
+    this.net = createNetworkPolicy({ siteIcons: () => readSiteIcons(this.store), lookup: options.lookup, googleChanged: () => this.cooldownChanged(), observe: options.onNet });
     // the web host POSTs through the policy (no-cors); other hosts pass theirs (Node's in backend.ts)
     this.unsubscribeTransport = options.unsubscribeTransport !== undefined ? options.unsubscribeTransport : options.host?.kind === "web" ? browserUnsubscribeTransport(this.net.fetchFor("unsubscribe")) : null;
     this.aiService = new AiService(this, options.aiFactory ?? defaultAiFactory);

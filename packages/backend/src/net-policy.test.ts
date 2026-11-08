@@ -2,7 +2,7 @@ import dc from "node:diagnostics_channel";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createNetworkPolicy, NetworkPolicyError, type LookupAll, type NetPurpose } from "./net-policy";
+import { createNetworkPolicy, NetworkPolicyError, type LookupAll, type NetDecision, type NetPurpose } from "./net-policy";
 
 /** Every outbound TCP connect in this process, as seen by Node itself (not by our code). */
 const connects: string[] = [];
@@ -64,6 +64,17 @@ describe("network policy (plan 97: local mode means mail is kept here; no purpos
     const { net } = policy();
     await expect(net.assert("ai", "https://api.anthropic.com/v1", { providerLocality: "cloud" })).resolves.toEqual({});
     await expect(net.assert("ai", "http://192.168.1.20:11434/api/tags", { providerLocality: "local" })).resolves.toEqual({});
+  });
+
+  it("plan 161: an observer hears every decision, a refused icon included", async () => {
+    const decisions: NetDecision[] = [];
+    const net = createNetworkPolicy({ lookup: async () => [{ address: "127.0.0.1", family: 4 }], fetch: (input, init) => fetch(input, { ...init, headers: { connection: "close" } }), observe: (d) => decisions.push(d), siteIcons: () => false });
+    await net.fetchFor("ai")(`http://127.0.0.1:${port}/v1/chat/completions`);
+    await expect(net.assert("icons", "https://example.com/favicon.ico")).rejects.toBeInstanceOf(NetworkPolicyError);
+    expect(decisions).toEqual([
+      { purpose: "ai", url: `http://127.0.0.1:${port}/v1/chat/completions`, allowed: true },
+      { purpose: "icons", url: "https://example.com/favicon.ico", allowed: false },
+    ]);
   });
 });
 

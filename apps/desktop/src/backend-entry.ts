@@ -14,6 +14,7 @@ import { createRegistry } from "@terno/mail/registry";
 import { loopbackInsecure } from "./imap-seam";
 import type { BackendToMain, MainToBackend } from "./ipc";
 import { Preparation } from "./mailbox/preparing";
+import { netRecorder, offsetClock } from "./test-hooks";
 import { settleRestored } from "./mailbox/restore";
 
 type PortMain = {
@@ -177,6 +178,9 @@ async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal:
       demoAi: msg.demo || msg.dev,
       devAi: msg.devMode ? devAiKeys(process.env) : undefined,
       demo: msg.demo,
+      // plan 161: main sends these only for the demo mailbox (test-hooks.ts)
+      ...(msg.testNow !== undefined ? { now: offsetClock(msg.testNow) } : {}),
+      ...(msg.testNetLog ? { onNet: netRecorder(msg.testNetLog) } : {}),
       online: msg.online,
       onPolicy: (policy) => send({ type: "policy", ...policy }),
       // plan 41: main owns the Dock and the notifications (they work with every window closed)

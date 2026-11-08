@@ -41,6 +41,7 @@ import { DB_FILE } from "./legacy-profile";
 import { registerPrint } from "./print";
 import { registerMboxExport } from "./mbox-export";
 import { isTrustedSender, testImapInsecure, testPdfDir, testSmtpPort } from "./print-policy";
+import { testClock, testNetLog } from "./test-hooks";
 import { menuTemplate } from "./menu";
 import { readLanguage, switchLanguage, writeLanguage } from "./locale";
 import type { MenuCommand } from "./print-commands";
@@ -341,6 +342,8 @@ function startBackend() {
     diag: { session: diagSession(), build: BUILD_ID, channel: mainDiag.channel },
     testSmtpPort: testSmtpPort(process.env, app.isPackaged, demo) ?? undefined,
     testImapInsecure: testImapInsecure(process.env, demo) || undefined,
+    testNow: testClock(process.env, demo) ?? undefined,
+    testNetLog: testNetLog(process.env, demo) ?? undefined,
     // a restarted backend starts from what the network is now
     online: net.isOnline(),
     ...flags,
