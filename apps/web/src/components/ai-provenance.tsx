@@ -5,6 +5,7 @@ import { Check, ChevronDown, Copy } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
+import { modelName } from "~/lib/ai";
 import { provenanceDetail, provenanceLabel } from "~/lib/provenance";
 
 /**
@@ -41,7 +42,8 @@ export function AiProvenance({
   /** a surface inside a command list keeps its own Enter and Space out of the list's (Ask) */
   onKeyDown?: React.KeyboardEventHandler;
 }) {
-  const last = detail ?? (model ? provenanceDetail(model, at) : null);
+  // plan 162: only what's known: a model without a time is said without one (a zero time is no date)
+  const last = detail ?? (model ? (at > 0 ? provenanceDetail(model, at) : t("ai.provenance.modelOnly", { model: modelName(model) })) : null);
   return (
     <Popover>
       {/* quiet at rest, a chevron since it opens: the label reads as a status, the row's buttons as commands */}
@@ -72,7 +74,7 @@ export function AiProvenance({
 const COPIED_MS = 1500;
 
 /**
- * Plan 161, pass 3: Copy, one button on every AI surface: BoardUI's secondary at the row's 28 px, its glyph and word; done,
+ * Plan 161, pass 3: Copy, one button on every AI surface, at the row's 28 px, its glyph and word (plan 162: quiet); done,
  * it says Copied in place for a moment (and to a screen reader), and a failure says what to do.
  */
 export function AiCopyButton({ text, failed, testId, className, onKeyDown }: { text: () => string; failed: string; testId: string; className?: string; onKeyDown?: React.KeyboardEventHandler }) {
@@ -91,7 +93,9 @@ export function AiCopyButton({ text, failed, testId, className, onKeyDown }: { t
   };
   return (
     <>
-      <Button type="button" variant="outline" size="sm" className={cn("text-foreground", className)} data-testid={testId} data-copied={copied || undefined} onKeyDown={onKeyDown} onClick={() => void copy()}>
+      {/* plan 162: a quiet utility (tier 3), never heavier than what the surface suggests doing: the summary's Reply was
+          drawn lighter than this */}
+      <Button type="button" variant="ghost" size="sm" className={cn("px-2 text-muted-foreground hover:text-foreground data-copied:text-foreground", className)} data-testid={testId} data-copied={copied || undefined} onKeyDown={onKeyDown} onClick={() => void copy()}>
         {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
         {/* the wider word holds the width, so nothing after it moves when it changes */}
         <span className="grid">

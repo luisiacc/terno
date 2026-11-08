@@ -8,17 +8,19 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { ChevronLeft, Clock, ExternalLink, Mail, Plus, RefreshCw, Search, Sparkles, Undo2 } from "@terno/ui/icons";
 import { useCommandState } from "cmdk";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import { askReady, errorHelp } from "~/lib/ai";
+import { askReady, askTarget } from "~/lib/ai";
 import { closePeek, showSource, usePeek, type Peek } from "~/lib/ask-peek";
 import { Marked } from "~/components/match-mark";
 import { citationRuns } from "~/lib/ask-citations";
 import { cn } from "@terno/ui/lib/utils";
 import { askConfigChanged, askQuestion, atTurnLimit, deleteConversation, loadAskHistory, newQuestion, openConversation, openSource, restoreConversation, returning, searchOlder, stopAsking, useAsk } from "~/lib/ask";
 import { listDate } from "~/lib/format";
-import { askFrom, paletteKeys, setPalettePage } from "~/lib/palette-open";
+import { boundaryDay } from "~/lib/when";
+import { askFrom, paletteKeys, setPalettePage, usePalettePage } from "~/lib/palette-open";
 import { chordLabel } from "@terno/ui/components/shortcut";
 import { useApp, setApp } from "~/state/app";
 import { AiCopyButton, AiProvenance } from "~/components/ai-provenance";
+import { AiErrorNotice, aiErrorCopy, errorTarget } from "~/components/ai-error";
 
 
 const stopKeys = (e: KeyboardEvent) => {
@@ -129,12 +131,13 @@ function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated
       <Checks turn={turn} />
       {turn.answer && (
         // plan 161, pass 2: buttons that look like buttons, their edge on the answer's
-        <div className="flex items-center gap-1.5 pt-0.5 text-xs text-muted-foreground" data-testid="ask-turn-actions">
-          {/* plan 161, pass 3: the one Copy and the one "Written with AI ▾" every AI surface has */}
-          <AiCopyButton text={() => answerWithoutCitations(turn.answer ?? "")} failed={t("ask.copyFailed")} testId="ask-copy" onKeyDown={stopKeys} />
+        <div className="flex items-center gap-1 pt-0.5 text-xs text-muted-foreground" data-testid="ask-turn-actions">
+          {/* plan 161, pass 3: the one Copy and the one "Written with AI ▾" every AI surface has. Plan 162: both utilities
+              quiet, at the row's 28 px, the first glyph on the answer's edge, as the summary's */}
+          <AiCopyButton className="-ms-2" text={() => answerWithoutCitations(turn.answer ?? "")} failed={t("ask.copyFailed")} testId="ask-copy" onKeyDown={stopKeys} />
           {last && !running && (
             // it asks the same question once more; the new answer comes under this one
-            <Button variant="outline" size="xs" data-testid="ask-again" onKeyDown={stopKeys} onClick={() => askQuestion(turn.question)}><RefreshCw /> {t("ask.again")}</Button>
+            <Button variant="ghost" size="sm" className="px-2 text-muted-foreground hover:text-foreground" data-testid="ask-again" onKeyDown={stopKeys} onClick={() => askQuestion(turn.question)}><RefreshCw aria-hidden /> {t("ask.again")}</Button>
           )}
           <AiProvenance model={turn.model ?? ""} at={turn.createdAt} testId="ask-provenance" className="ml-auto" onKeyDown={stopKeys} />
         </div>
@@ -210,7 +213,7 @@ export function Scope() {
   if (offer.kind === "none" || !since) return null;
   return (
     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground" data-testid="ask-scope">
-      <span>{t("ask.scope", { date: listDate(since) })}</span>
+      <span>{t("ask.scope", { date: boundaryDay(since) })}</span>
       {/* plan 161, pass 3: after an answer, the way past it is a quiet link in the scope's line, below the answer and its sources in weight */}
       {offer.kind === "offline" ? <span data-testid="ask-older-offline">{t("ask.older.offline")}</span> : (
         <Button variant="link-secondary" size="xs" className="h-6 font-medium" data-testid="ask-older" onKeyDown={stopKeys} onClick={searchOlder}>{t("ask.older.servers")}</Button>
@@ -259,12 +262,22 @@ function Failure() {
   const error = useAsk((s) => s.error);
   const ai = useApp((s) => s.settings?.ai);
   if (!error) return null;
-  const help = ai ? errorHelp(error.kind, ai) : null;
+  // plan 162: the one AI error every surface has (ai-error.tsx): plain words, never an address, Try again and AI settings
+  const copy = aiErrorCopy({ message: error.message, kind: error.kind }, ai ? errorTarget(askTarget(ai).provider, ai) : null);
   return (
-    <section className="space-y-1.5" data-testid="ask-error">
-      <p className="text-sm text-destructive-ink">{error.message}</p>
-      {help && <p className="text-xs text-muted-foreground">{help}</p>}
-      <Button size="sm" variant="secondary" data-testid="ask-retry" onKeyDown={stopKeys} onClick={() => askQuestion(error.question)}>{t("ask.tryAgain")}</Button>
+    <section data-testid="ask-error">
+      <AiErrorNotice
+        copy={copy}
+        textTestId="ask-error-text"
+        actions={
+          <>
+            <Button size="sm" variant="outline" data-testid="ask-retry" onKeyDown={stopKeys} onClick={() => askQuestion(error.question)}>{t("ask.tryAgain")}</Button>
+            {copy.settings && (
+              <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground" data-testid="ask-error-settings" onKeyDown={stopKeys} onClick={() => setApp({ dialog: "settings", settingsTab: "ai" })}>{t("ai.error.settings")}</Button>
+            )}
+          </>
+        }
+      />
     </section>
   );
 }
@@ -318,12 +331,16 @@ function TurnSources({ sources, queries }: { sources: readonly AskSourceRef[]; q
  * Plan 161, pass 3: the way back to all commands, as words that say so, and a plain close. In place of the page chip,
  * whose × read as close.
  */
+/** Plan 162: the way back is All commands only when Ask was opened from them; from ⌘⇧K there's nothing behind it but the mail. */
 function AskNav({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+  const back = usePalettePage((s) => s.entry !== "ask");
   return (
     <span className="flex shrink-0 items-center gap-1.5" data-testid="ask-nav">
-      <Button variant="ghost" size="xs" className="font-medium text-muted-foreground" data-testid="palette-back" onKeyDown={stopKeys} onClick={onBack}>
-        <ChevronLeft /> {t("ask.allCommands")}
-      </Button>
+      {back && (
+        <Button variant="ghost" size="xs" className="font-medium text-muted-foreground" data-testid="palette-back" onKeyDown={stopKeys} onClick={onBack}>
+          <ChevronLeft /> {t("ask.allCommands")}
+        </Button>
+      )}
       <CloseButton size="sm" data-testid="ask-close" onKeyDown={stopKeys} onClick={onClose} />
     </span>
   );
@@ -333,13 +350,16 @@ function AskNav({ onBack, onClose }: { onBack: () => void; onClose: () => void }
 type Where = "empty" | "asking" | "walking" | "peek";
 function AskHints({ where, sources, end }: { where: Where; sources: boolean; end?: ReactNode }) {
   const running = useAsk((s) => s.running !== null);
-  const esc = { keys: ["escape"], label: running ? t("ask.stop") : t("ask.allCommands") };
+  const back = usePalettePage((s) => s.entry !== "ask");
+  // plan 162: one way back on screen. From the palette, All commands is the header's link, so the keys don't repeat it;
+  // from ⌘⇧K, Esc closes and says so; while it answers, Esc stops
+  const esc = running ? [{ keys: ["escape"], label: t("ask.stop") }] : back ? [] : [{ keys: ["escape"], label: t("common.close") }];
   const hints =
     where === "peek"
       ? [{ keys: ["enter"], label: t("ask.peek.open") }, { keys: ["escape"], label: t("ask.peek.back") }]
       : where === "walking"
-        ? [{ keys: ["arrowup", "arrowdown"], label: t("ask.keys.sources") }, { keys: ["enter"], label: t("ask.keys.show") }, esc]
-        : [{ keys: ["enter"], label: t("ask.keys.ask") }, ...(sources && where === "asking" ? [{ keys: ["arrowdown"], label: t("ask.keys.sources") }] : []), esc];
+        ? [{ keys: ["arrowup", "arrowdown"], label: t("ask.keys.sources") }, { keys: ["enter"], label: t("ask.keys.show") }, ...esc]
+        : [{ keys: ["enter"], label: t("ask.keys.ask") }, ...(sources && where === "asking" ? [{ keys: ["arrowdown"], label: t("ask.keys.sources") }] : []), ...esc];
   return <CommandHints hints={hints} end={end} data-testid="ask-hints" data-where={where} />;
 }
 
@@ -497,14 +517,15 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
   const sources = (last?.sources.length ?? 0) > 0;
   // plan 161, pass 3: starting over and the history are quiet controls at the end of the keys' line, not rows of their own
   const session = !peek && (
-    <>
+    // plan 162: starting over and the history are places, not keys: apart from them, after a divider
+    <span className="flex items-center gap-0.5 border-s border-border/60 ps-1.5" data-testid="ask-session">
       <Button variant="ghost" size="xs" className="font-normal text-muted-foreground" data-testid="ask-new" onKeyDown={stopKeys} onClick={() => newQuestion()}>
         <Plus /> {t("ask.new")}
       </Button>
       <Button variant="ghost" size="xs" className="font-normal text-muted-foreground" data-testid="ask-history-row" onKeyDown={stopKeys} onClick={() => setPalettePage("askHistory")}>
         <Clock /> {t("palette.askHistory")}
       </Button>
-    </>
+    </span>
   );
   return (
     <>

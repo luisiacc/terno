@@ -76,3 +76,23 @@ export function reminderDated(ms: number, now = Date.now()): string {
   const date = (new Date(ms).getFullYear() === new Date(now).getFullYear() ? f.dated : f.datedYear).format(ms);
   return `${date}, ${time}`;
 }
+
+/**
+ * Plan 162: a past moment said in a sentence, the one shape AI surfaces use for it (the provenance, the digest's coverage):
+ * "Thu, Oct 22, 4:00 PM", with the year only when it isn't this one. A row or a list says `listDate`; a moment ahead,
+ * `reminderDated`.
+ */
+export function whenDate(ms: number, now = Date.now()): string {
+  return `${whenDay(ms, now)}, ${fmt().time.format(ms)}`;
+}
+
+/** Plan 162: the day alone, in the same shape: "Mon, Oct 19". */
+export function whenDay(ms: number, now = Date.now()): string {
+  const f = fmt();
+  return (new Date(ms).getFullYear() === new Date(now).getFullYear() ? f.dated : f.datedYear).format(ms);
+}
+
+/** Plan 162: a boundary in time, never ambiguous: the day with its year, "Apr 25, 2026" (what a search went back to). */
+export function boundaryDay(ms: number): string {
+  return fmt().year.format(ms);
+}

@@ -29,7 +29,7 @@ import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { openRemind, presetLabel, presetWhen, setReminder, clearReminder, useReminders } from "~/lib/reminders";
 import { draftCommands, type DraftCommands } from "~/lib/draft-commands";
 import { isInstruction } from "~/lib/imperative";
-import { askFrom, paletteFrom, paletteKeys, setPalettePage, usePalettePage } from "~/lib/palette-open";
+import { askFrom, paletteBack, paletteFrom, paletteKeys, setPalettePage, usePalettePage } from "~/lib/palette-open";
 import { loadSnippets, newSnippetId, useSnippets } from "~/lib/snippets";
 import { insertSnippetInto, newMessageFromSnippet, saveDraftAsSnippet } from "~/lib/snippet-insert";
 import { openSnippetEditor } from "~/lib/snippet-editor-state";
@@ -209,7 +209,7 @@ export function CommandPalette() {
 
   const reset = () => {
     setValue("");
-    setPage("root");
+    usePalettePage.setState({ page: "root", entry: "root" });
   };
   const close = () => {
     setApp({ dialog: null });
@@ -562,7 +562,12 @@ export function CommandPalette() {
     </CommandGroup>
   );
 
-  const back = () => goTo("root");
+  // plan 162: one step back, to where the palette was opened from: Ask opened with ⌘⇧K closes (it was two presses)
+  const back = () => {
+    const to = paletteBack(page, usePalettePage.getState().entry);
+    if (to === null) close();
+    else goTo(to);
+  };
   const pageName: Record<Exclude<PalettePage, "root">, string> = {
     move: t("category.picker.moveTitle"),
     addTo: t("palette.group.addTo", { count: targets }),

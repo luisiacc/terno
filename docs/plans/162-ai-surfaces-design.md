@@ -293,5 +293,22 @@ Both on the AI card, one anatomy (pass 3), kept:
 - **Every AI pane reachable by the wheel at 1100x700:** the digest, Ask's area, the rule panel, Writing style, the Rules dialog.
 - **`design-axe`:** the summary, the strip, Ask, the preview, the digest, the follow-up, Reply ready, the AI filter and Writing style, in Lumen and Atelier, light and dark.
 - **`contrast.test.ts`:** unchanged pairs; any new text sits on an existing pair.
-- **Perf:** `pnpm test:ui-perf`; nothing here is on a list's hot path, and the digest's sticky header adds no observer.
+- **Perf:** `pnpm test:ui-perf` and the list's render counts: Today's reason changes the shared thread row (revision 7). The digest's sticky header adds no observer.
 - **The frozen capture** reaches every state in Lumen, Atelier, macOS and Graphite, light and dark.
+
+## Revisions after the Codex review
+
+Twelve points, all taken. Where they change the spec above:
+
+1. **x keeps its target.** In Split the list's cursor is the open conversation (`selectedId`), and the rule panel shows only while none is open: putting the cursor on the first row would hide the rule and change `a05`. So x stays the open conversation's, and the keys' line says it plainly: **j k** Read the next or previous · **x** Leave the one you're reading out, or put it back. A separate preview cursor is new list behaviour, left for later.
+2. **Provenance says only what's known.** The model and the date are each optional. A surface that doesn't carry the model (the action preview, the AI filter: `ActionPreviewInfo` and `filters.generate` return none) shows only its lines; one without a time (⌘J, the digest) shows "Written by {model}. It can make mistakes."; `AiProvenance` never formats a zero time, and nothing infers a model from today's settings.
+3. **The action snack keeps its warnings first.** Its second line is what happened (partial, changed, spared, the rule saved or not), then "You asked: “…”".
+4. **The digest's coverage is the batch's, not a live count.** "Prepared today from 16 newsletters since Mon, Oct 19"; the live counts stay in the count line. Automated mail (digest off) keeps its own words.
+5. **One Undo at a time, not one Undo.** The digest's inline Undo survives navigation and is its own batch's (`digest-page.test.tsx`); it shows once the snack carrying the same Undo is gone, never beside it.
+6. **The action check's failure keeps Skip** in the shared notice's actions (Try again, Skip the check).
+7. **Today's reason is inline wherever the row is one line** (List's wide and compact rows); only the style of the label changes, not the row's structure or height. The row is shared, so the list's render counts and `test:ui-perf` hold it.
+8. **Writing style's remove buttons are 32 px** (the existing `CloseButton` size), each still named for its item.
+9. **The style editor names what it edits** in a heading that stays visible above the fields ("Editing You · English"), beside the sticky Save and Cancel.
+10. **One R on screen.** While Reply ready owns R, the toolbar's Reply drops its R keycap and its tooltip's shortcut (the reply bar already does); no new shortcut.
+11. **Ask's scope is a calendar boundary with its year:** "Searched mail on this Mac back to Apr 25, 2026". Source rows keep `listDate`.
+12. **Ask's footer has one way back.** From the palette, All commands is the header's link and its keycap; the keys' line doesn't repeat it, and New question and Previous questions sit apart from the keys, after a divider. `ask-new` keeps its test id (the capture clicks it).

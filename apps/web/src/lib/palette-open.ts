@@ -11,13 +11,23 @@ export const paletteFrom: { draftKey: string | null } = { draftKey: null };
 export const askFrom: { question: string | null } = { question: null };
 export const paletteKeys: { escape: (() => boolean) | null } = { escape: null };
 
-/** The page the palette shows: set by whoever opens it (⌘K the root, ⌘; the snippets), changed inside it. */
-export const usePalettePage = create<{ page: PalettePage }>(() => ({ page: "root" }));
+/**
+ * The page the palette shows: set by whoever opens it (⌘K the root, ⌘; the snippets), changed inside it. `entry` is the
+ * page it opened on (plan 162): Ask opened with ⌘⇧K has no All commands behind it, so its Esc closes, one step back to the
+ * mail, as every AI surface's Esc is one step.
+ */
+export const usePalettePage = create<{ page: PalettePage; entry: PalettePage }>(() => ({ page: "root", entry: "root" }));
 export const setPalettePage = (page: PalettePage): void => usePalettePage.setState({ page });
+
+/** Where Esc (or Back) goes from `page`: a page, or null to close the palette. */
+export function paletteBack(page: PalettePage, entry: PalettePage): PalettePage | null {
+  if (entry === "ask") return page === "askHistory" ? "ask" : page === "ask" ? null : "root";
+  return "root";
+}
 
 function open(page: PalettePage): void {
   paletteFrom.draftKey = draftKeyOf(document.activeElement);
-  setPalettePage(page);
+  usePalettePage.setState({ page, entry: page });
   setApp({ dialog: "palette" });
 }
 
