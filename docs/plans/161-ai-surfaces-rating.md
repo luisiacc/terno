@@ -771,3 +771,50 @@ One of three parallel passes on `ai-r01`'s findings. This one takes `today` and 
 - Unit: `flattenToday` puts the digest first and the reason on `why`; `openedOn` skips the digest; the digest page's states (to archive, kept, opened, archived), its counts and button, the finished state and its Undo, the pick's `archived` surviving a remount; the store's `digestRead` (conformance, both stores); `today.archive` leaves a read one alone; digest items in time order; Esc's way back; the Rules draft row; Writing style's phrase remove and its counts copy.
 - e2e: `today.spec.ts`: archive with one unticked and one opened, then the page shows only those two with their labels and the finished line, and Undo brings the rest back (fails without the fix: all 16 stay listed); the button's count equals the snack's; the digest row first and Today opening on a conversation; Esc from an opened newsletter back to the digest. `filters.spec.ts`: Esc with an unsaved AI rule, then Rules shows the draft row and opens on it (fails without the fix: no draft row); Edit request focuses the request; the count on Save and apply; no timing shown. `ai-draft.spec.ts`'s Writing style part: the copy, a phrase removed, the editor in view, one Companies profile open at a time.
 - `design-axe.spec.ts` for Today, the digest, Rules and Writing style; screenshots in every design, light and dark, 1440x900 and 1100x700, under `/tmp/terno-scratch/ai-pass2/today-settings/`.
+
+### Pass 2 as built
+
+Where it differs from the design above:
+- **The header line** reads "41 need you · the newest 12 here · All 165 waiting in Inbox"; "41 need you" is in the ink, medium weight, and is the sidebar's number.
+- **The reason label** is the row's own ink at medium weight, then a quiet " · " and the words; `row-why` in tests. It's a client-side map in `useToday` (`reasons`), read once per row, rather than a field on `ThreadSummary`.
+- **The digest's open buttons** have no `aria-label` now: their content (sender, subject, state, date, line) names them. axe's `label-content-name-mismatch` (WCAG 2.5.3) caught the label leaving the state and date out.
+- **Rules' three unnamed selects** (field, all/any, category) are named; the new axe line found them.
+- **The checkbox target** is a `target` variant of the shared `Checkbox` (`BOARDUI.md` records the deviation): the 24 px control is the element a pointer hits and a screen reader names, its 16 px box drawn inside, with a hover fill the target's size.
+- **The phrase removers** show on hover or Tab (`focus-reveal:`), not as a column of marks; a company's or person's profile names its account, since one company can have a profile per account.
+- **The "duplicate" Substack issue** is two conversations: the demo's generator gave one sender the same subject twice (2:40 PM and 12:49 PM, different bodies). Both stay. In time order they're now adjacent, which may still read as a repeat; collapsing same-subject rows would hide a real second mail, so it's left for the owner.
+- **The capture.** `capture.mjs`'s one changed line: `visible("preview-ms")` became `page.locator("[data-testid=filter-preview][data-ready]").first().waitFor({ timeout: 30_000 })`. `data-ready` is set when the preview has a count and nothing is loading, which is exactly when `preview-ms` rendered. The frozen capture reached every AI state in all five designs, light and dark.
+
+### What the Codex review of pass 2 changed
+
+Round 1 (`git diff fcc148651..HEAD`) made nine findings; all nine are fixed, each with a regression test.
+1. **Generating a second AI rule after New replaced the first unsaved one.** Each unsaved rule is its own row (`kept` holds a list and the one the builder showed); Rules reopens on that one (`filters.spec`).
+2. **Opening another company or person unmounted an editor in progress.** While a profile is edited the other rows, and their section's toggle, wait (`ai-draft.spec`).
+3. **Two quick phrase removals sent arrays from the same profile,** so the second put the first back. Removals run one after another from what the last left (`ai-draft.spec`).
+4. **The picker remounted a profile from the page's stale list.** A removal refreshes the lists (`ai-draft.spec`; it fails without the fix).
+5. **Undoing a second Archive cleared the first's finished state.** The page holds an entry per Archive; an Undo takes out only its own (`digest-page.test`).
+6. **The page recorded what it asked to archive, not what was archived.** `today.digestArchive` returns `archivedIds`; only those leave the page, and one archived elsewhere meanwhile stays listed as Archived (`digest-page.test`, backend `today.test`).
+7. **Esc from inside a newsletter's HTML body** (its own document) went past the digest: `forwardNavKey` goes back to it too (`today.test`).
+8. **The page's Undo swallowed failures.** It uses `undoNow`, which says so with a retry (`digest-page.test`).
+9. **Companies and People could each hold an open profile.** One across both (`ai-draft.spec`).
+
+Round 2 (the fix commit) found four gaps in those fixes; all four are fixed, each with a test that fails without it.
+10. **Asking again from Edit request cleared the rule before the answer,** so a failure, or Rules closing meanwhile, lost it. The rule stays until the new one is in (`filters-dialog.test`, new: jsdom with the backend's answers held).
+11. **A Save answered after another unsaved rule was opened** cleared that one's key and loaded the saved rule over it. Save finishes against the rule it started with and leaves the builder alone if it moved on (`filters-dialog.test`).
+12. **Edit opened during a phrase's removal** started from the old phrases and could save the removed one back. Edit and switching wait for removals (`writing-style.test`, new).
+13. **An earlier day's Undo wrote its day's pick over the page now shown.** Archive and Undo touch the pick only on their own day (`digest-page.test`).
+
+Review rounds stop here.
+
+### Pass 2 results
+
+- **Unit:** `digest-page.test` (8), `today.test` (state, 9), `filters-dialog.test` (2), `writing-style.test` (1), the web neighbours of what moved (rows, list, keyboard, selection, reader: 18 files, 122 tests), backend `today.test` (23), the store conformance for `digestLive`/`digestRead` in both stores.
+- **e2e** (`E2E_PORT=7341`): `today.spec`, `filters.spec`, `ai-draft.spec`'s Writing style test and `visual.spec` in `e2e`; `today.spec` in all five designs; `design-axe.spec` (with its new line for Today, the digest before and after Archive, a rule AI built, and Writing style with a company open) in `e2e`, Lumen and Atelier; `controls.spec`. All pass. Two `visual.spec` baselines moved, both looked at: `filters-ai` and `filters-ai-dark` (the shared AI card, no timing, the unsaved row, Save and apply's count).
+- **Perf:** `workloads.perf` "Today's waiting walk and the digest's walk hold" in both stores, now with the page's two state reads: p95 0.07 ms (SQLite) and 0.02 ms (IndexedDB) at 50k. The first SQLite invocation failed before running a test while five captures were loading the machine; two reruns passed.
+- **Typecheck and lint:** clean.
+- **Screenshots:** `/tmp/terno-scratch/ai-pass2/today-settings/<design>/`, every design, light and dark: the frozen AI set (`a01`–`a12`, with `-small` for the five it shoots small), and pass 2's states at 1440x900 and 1100x700 (`b07` Today, `b08` the digest, `b08b` a newsletter opened from it, `b08c` kept and opened rows, `b08d`/`b08e` after Archive, `b11` the AI rule, `b11b` its unsaved row after Esc and New, `b11c` Edit request, `b12` Writing style, `b12b` phrases, `b12c` a company open, `b12d` the editor at 1100x700). The frozen capture reached every AI state in all five designs, both modes, and again on the final build (`final/`).
+
+### For the owner
+
+- **Plan 145's two rules stand:** every newsletter starts ticked, and an opened newsletter is read, so it stays (now said on its row: "Opened · stays in Inbox"). Both raters' "start with nothing ticked" and "keep opened ones in the batch" are still the owner's call.
+- **Same-subject issues** in the digest are separate conversations and both stay; collapsing them would hide a real second mail.
+- **Today's list is capped at 12** (plan 145), so the header says "41 need you · the newest 12 here". Showing all of them would be a change to plan 145.
