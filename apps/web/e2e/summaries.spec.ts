@@ -9,6 +9,7 @@ import type { IncomingMessage } from "@terno/store";
 import { E2E_NOW } from "./constants";
 import { expect, ingestConversation, navTo, openRow, rows, test, type DevServerFixture, fresh, scenario } from "./fixtures";
 import { englishLeaks } from "./i18n-leaks";
+import { answerFor } from "../../../scripts/ui-rating/model-stub.mjs";
 import { startOllamaStub } from "./ollama-stub";
 
 test.use({ backendOptions: { network: true } });
@@ -211,7 +212,9 @@ test.describe("summaries (plan 132)", () => {
       await expect.poll(async () => (await server.backend.store.aiSummaries.get(threadId))?.state).toBe("ready");
       await page.locator(select).dispatchEvent("mousedown");
       await expect(block).toHaveAttribute("data-state", "ready");
-      await expect(page.getByTestId("summary-text")).toHaveText("The stub read the conversation and wrote this.");
+      // the stub's own answer to what was sent (plan 161: one source with the rating's stand-in)
+      const written = JSON.parse(answerFor(stub.last.thread_summary)!.content) as { summary: string; items: { message: string }[] };
+      await expect(page.getByTestId("summary-text")).toHaveText(written.summary);
       // plan 148: the answer takes the running card's place: same box, same header line
       const ready = (await block.boundingBox())!;
       expect({ x: ready.x, y: ready.y, width: ready.width }).toEqual({ x: running.x, y: running.y, width: running.width });
@@ -219,7 +222,9 @@ test.describe("summaries (plan 132)", () => {
 
       // the arrow unfolds and goes to the message it names, and the toolbar's button stays where it is
       await page.getByTestId("summary-item").click();
-      const target = page.locator(`[data-reader-scroller] article[data-message-id]`).first();
+      // its item cites the question in Yuki's last message, m7 of 8: the one before the user's reply
+      expect(written.items[0]!.message).toBe("m7");
+      const target = page.locator(`[data-reader-scroller] article[data-message-id]`).nth(-2);
       await expect(target).toHaveAttribute("data-expanded", "true");
       await expect.poll(async () => (await target.boundingBox())!.y).toBeLessThan(200);
 
