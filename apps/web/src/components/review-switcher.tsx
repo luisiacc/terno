@@ -2,7 +2,7 @@ import type { CategoryColor } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { formatNumber, t } from "@terno/i18n";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { reviewTotals, switchReview, type Pending } from "~/lib/review";
 import { setApp, useApp } from "~/state/app";
 
@@ -16,9 +16,18 @@ export function ReviewSwitcher() {
   const categories = useApp((s) => s.categories);
   const suggestions = useApp((s) => s.counts.categorySuggestions);
   const { total, pending } = useMemo(() => reviewTotals(categories, suggestions), [categories, suggestions]);
+  // open, it holds the app's shortcuts (menuOpen); gone while open (Review left under it: its category deleted in another
+  // window), Base UI says nothing, so it lets go itself (Codex code review #1)
+  const open = useRef(false);
+  useEffect(
+    () => () => {
+      if (open.current) setApp({ menuOpen: false });
+    },
+    [],
+  );
   const current = categories.find((c) => c.id === review);
   if (!current) return null;
-  // the one in view stays a choice at 0 too (its last answer is on its way, and Review moves on by itself)
+  // the one in view stays a choice at 0 too (its last one answered, Review stays on it: an Undo brings the rows back here)
   const choices: Pending[] = pending.some((p) => p.category.id === current.id) ? pending : [{ category: current, count: 0 }, ...pending];
   const items = choices.map(({ category, count }) => ({ value: String(category.id), label: `${category.name} ${formatNumber(count)}` }));
   return (
@@ -27,7 +36,10 @@ export function ReviewSwitcher() {
         {t("review.total", { count: total })}
       </span>
       <span aria-hidden>·</span>
-      <Select value={String(current.id)} onValueChange={(v) => switchReview(Number(v))} onOpenChange={(open) => setApp({ menuOpen: open })} items={items}>
+      <Select value={String(current.id)} onValueChange={(v) => switchReview(Number(v))} onOpenChange={(on) => {
+          open.current = on;
+          setApp({ menuOpen: on });
+        }} items={items}>
         <SelectTrigger size="sm" data-testid="review-category" aria-label={t("review.switch")} className="no-drag min-w-0 font-normal">
           <SelectValue>
             {(value: string) => {

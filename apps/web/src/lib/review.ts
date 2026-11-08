@@ -1,5 +1,6 @@
 import type { Category } from "@terno/core";
 import { getApp, navigate, setApp, useApp, type AppState } from "~/state/app";
+import { reloadList, useList } from "~/state/list";
 
 /**
  * Plan 159: sorting the categories' suggestions. One category's Review at a time (no All: its suggestions come one
@@ -29,18 +30,27 @@ export function reviewTotals(categories: readonly Category[], suggestions: Reado
 }
 
 /** Where Review was entered from: a mailbox, an account's folder, a list of its own or a search. */
-type Origin = Pick<AppState, "view" | "accountId" | "categoryId" | "folder" | "gmailTab" | "reminders" | "followups" | "today" | "query">;
+type Origin = Pick<AppState, "view" | "accountId" | "categoryId" | "folder" | "gmailTab" | "reminders" | "followups" | "today" | "query" | "selectedId"> & {
+  /** a search's rows and offset (a mailbox's own place is kept by the list; a search's isn't, Codex code review #2) */
+  results: { rows: Pick<ReturnType<typeof useList.getState>, "key" | "itemsKey" | "items" | "index" | "nextCursor">; scrollTop: number } | null;
+};
 /** (an object's property, not a module let: the React Compiler and a read-then-reset of a let don't mix) */
 export const reviewFrom: { origin: Origin | null } = { origin: null };
+
+const listEl = () => document.querySelector<HTMLElement>('[data-keep-scroll="list"]');
 
 /** Into a category's Review: from elsewhere, where you were is kept for the way back; from Review, it's a switch. */
 export function enterReview(categoryId: number): void {
   const s = getApp();
   if (s.reviewCategoryId !== null) return switchReview(categoryId);
+  const { key, itemsKey, items, index, nextCursor } = useList.getState();
   // a sentence's preview is no place to come back to (it's over once left): the way back is the Inbox's
   reviewFrom.origin = s.actionPreview
     ? null
-    : { view: s.view, accountId: s.accountId, categoryId: s.categoryId, folder: s.folder, gmailTab: s.gmailTab, reminders: s.reminders, followups: s.followups, today: s.today, query: s.query };
+    : {
+        view: s.view, accountId: s.accountId, categoryId: s.categoryId, folder: s.folder, gmailTab: s.gmailTab, reminders: s.reminders, followups: s.followups, today: s.today, query: s.query, selectedId: s.selectedId,
+        results: s.query.trim() && itemsKey === key ? { rows: { key, itemsKey, items, index, nextCursor }, scrollTop: listEl()?.scrollTop ?? 0 } : null,
+      };
   navigate({ view: "all", reviewCategoryId: categoryId, accountId: null });
 }
 
@@ -50,16 +60,34 @@ export function switchReview(categoryId: number): void {
   setApp({ reviewCategoryId: categoryId, selectedId: null, checked: new Set(), anchorId: null, scope: null, readerOpen: false });
 }
 
+/** Is the place still there (its category, account or folder gone meanwhile, maybe in another window: Codex code review #3)? */
+function stillThere(o: Origin, s: AppState): boolean {
+  if (o.categoryId !== null && !s.categories.some((c) => c.id === o.categoryId)) return false;
+  if (o.accountId !== null && !s.accounts.some((a) => a.id === o.accountId)) return false;
+  return o.folder === null || s.folders.some((f) => f.accountId === o.accountId && f.key === o.folder && f.selectable);
+}
+
 /** Out of Review, back where it was entered from (that mailbox's own place: its thread and scroll), else the Inbox. */
 export function leaveReview(): void {
   const from = reviewFrom.origin;
   reviewFrom.origin = null;
-  if (getApp().reviewCategoryId === null) return;
-  if (!from) return navigate({ view: "inbox", accountId: null, categoryId: null, reviewCategoryId: null });
-  const { query, ...place } = from;
+  const s = getApp();
+  if (s.reviewCategoryId === null) return;
+  if (!from || !stillThere(from, s)) return navigate({ view: "inbox", accountId: null, categoryId: null, reviewCategoryId: null });
+  const { query, selectedId, results, ...place } = from;
   if (!query.trim()) return navigate({ ...place, reviewCategoryId: null });
-  // a search: its query again, in one step (one list asked for, not the mailbox's and then the search's)
-  setApp({ ...place, reviewCategoryId: null, actionPreview: null, query, selectedId: null, checked: new Set(), anchorId: null, scope: null, readerOpen: false });
+  // a search: its query again, in one step, on the rows it showed (the cursor and offset with them), then refreshed in
+  // place, as a sentence's preview comes back to its list
+  if (results) useList.setState({ ...results.rows, loading: false, loadingMore: false, error: null });
+  setApp({ ...place, reviewCategoryId: null, actionPreview: null, query, selectedId: results ? selectedId : null, checked: new Set(), anchorId: null, scope: null, readerOpen: false });
+  if (!results) return;
+  void reloadList({ keepSelection: true, window: true });
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      const el = listEl();
+      if (el) el.scrollTop = results.scrollTop;
+    }),
+  );
 }
 
 useApp.subscribe((s, prev) => {

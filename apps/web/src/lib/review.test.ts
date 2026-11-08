@@ -15,6 +15,7 @@ vi.mock("~/rpc/connection", () => ({ client: { call: () => new Promise(() => {})
 
 const { enterReview, leaveReview, reviewFrom, reviewTotals, switchReview } = await import("./review");
 const { getApp, navigate, setApp, EMPTY_COUNTS } = await import("~/state/app");
+const { useList } = await import("~/state/list");
 
 const cat = (id: number, name: string): Category => ({ id, name, color: "cyan", showInInbox: true }) as unknown as Category;
 const CATS = [cat(1, "Facturas"), cat(2, "Clientes"), cat(3, "Lecturas")];
@@ -61,12 +62,29 @@ describe("Review's way in and out", () => {
     expect(getApp()).toMatchObject({ view: "all", categoryId: 1, reviewCategoryId: null });
   });
 
-  it("entered from a search, it comes back to the search", () => {
+  it("entered from a search, it comes back to the search, on the rows it showed and the result that was open (Codex code review #2)", async () => {
     setApp({ query: "pago" });
+    const { listKey } = await import("~/state/list");
+    const items = [41, 42, 43].map((id) => ({ id }) as never);
+    useList.setState({ key: listKey(), itemsKey: listKey(), items, index: new Map([[41, 0], [42, 1], [43, 2]]), nextCursor: { lastDate: 2, id: 2 }, loading: false });
+    setApp({ selectedId: 43 });
     enterReview(3);
     expect(getApp().query).toBe("");
+    // Review's own rows meanwhile
+    useList.setState({ key: "review", itemsKey: "review", items: [], index: new Map(), nextCursor: null });
     leaveReview();
-    expect(getApp()).toMatchObject({ query: "pago", reviewCategoryId: null });
+    expect(getApp()).toMatchObject({ query: "pago", reviewCategoryId: null, selectedId: 43 });
+    expect(useList.getState()).toMatchObject({ itemsKey: listKey(), nextCursor: { lastDate: 2, id: 2 } });
+    expect(useList.getState().items.map((t) => t.id)).toEqual([41, 42, 43]);
+  });
+
+  it("a place gone meanwhile (its category, in another window) isn't gone back to: the Inbox instead (Codex code review #3)", () => {
+    navigate({ categoryId: 1, accountId: null });
+    enterReview(3);
+    setApp({ categories: CATS.filter((c) => c.id !== 1) });
+    expect(getApp().reviewCategoryId).toBe(3);
+    leaveReview();
+    expect(getApp()).toMatchObject({ view: "inbox", categoryId: null, reviewCategoryId: null });
   });
 
   it("with nowhere remembered, leaves for the Inbox", () => {

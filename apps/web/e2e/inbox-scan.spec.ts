@@ -239,16 +239,35 @@ test.describe("the filters and the suggestions", () => {
     await page.setViewportSize({ width: 1100, height: 700 });
     const line = page.getByTestId("learned-line");
     await expect(line).toHaveText("Always archive mail from the list daily.morningbrew.com?");
+    // the text itself, laid out: every line of it inside the box it's drawn in (a truncated span lays its text out past
+    // its own edge and clips it: Codex code review #4), and nothing past the paragraph either
     const whole = () => line.evaluate((el) => {
-      const p = el.closest("p")!;
-      const r = p.getBoundingClientRect();
-      // every piece of it inside its paragraph, and nothing clipped by an ellipsis
-      return [...el.getClientRects()].every((c) => c.right <= r.right + 0.5 && c.bottom <= r.bottom + 0.5) && p.scrollWidth <= p.clientWidth;
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const boxes = [el.getBoundingClientRect(), el.closest("p")!.getBoundingClientRect()];
+      return [...range.getClientRects()].every((c) => boxes.every((b) => c.left >= b.left - 0.5 && c.right <= b.right + 0.5 && c.bottom <= b.bottom + 0.5));
     });
     await expect.poll(whole).toBe(true);
     const first = rows(page).first();
     await expect.poll(async () => (await box(first)).y - ((await box(banner)).y + (await box(banner)).height)).toBeGreaterThanOrEqual(-1);
     await page.setViewportSize({ width: 1440, height: 900 });
+  });
+
+  test("Review left under its open switcher (its category deleted elsewhere): the app's keys work again (Codex code review #1)", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+    const t = db.get<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1")!.id;
+    db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.8, '[]', ?)", t, facturas, Date.now());
+    await fresh(page);
+    await page.getByTestId("nav-review").click();
+    await page.getByTestId("review-category").click();
+    await expect(page.getByTestId(`review-category-${facturas}`)).toBeVisible();
+    await server.backend.server.invoke("categories.delete", { id: facturas }, { clientId: "other", origin: "dev" });
+    await expect(page.getByTestId("review-category")).toHaveCount(0);
+    await expect(page.getByTestId("nav-inbox")).toHaveAttribute("aria-current", "page");
+    await focusList(page);
+    await page.keyboard.press("/");
+    await expect(page.getByTestId("search-input")).toBeFocused();
   });
 
   test("the rule offer shows once: it stays while you're in the Inbox, and after you leave or relaunch it isn't offered in the list again; Rules keeps it whole (plan 159)", async ({ app: page }) => {
