@@ -121,6 +121,8 @@ test.describe("the inbox list", { tag: "@design" }, () => {
       expect(await firstRow()).toEqual(was);
       // reached by Tab while partly scrolled away, it comes back whole (second Codex review)
       await list.evaluate((el) => el.scrollTo(0, 20));
+      // (hidden while scrolled past it until the scroll event's frame, and a hidden button takes no focus)
+      await expect(banner).toBeVisible();
       await page.getByTestId("learned-accept").focus();
       await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBe(0);
       // gone at the list's very end, where the shorter list clamps the offset first (second Codex review). Lumen's greeting

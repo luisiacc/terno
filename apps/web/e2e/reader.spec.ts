@@ -175,6 +175,8 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     const id = await ingestConversation(server, { subject: "Una conversación con un asunto de longitud bastante normal", count: 3, now: E2E_NOW });
     const check = async (where: string) => {
       await page.locator("[data-testid=message][data-expanded] .type-body").last().waitFor();
+      // the toolbar fits its words when its ResizeObserver runs, a frame after the column took its new width
+      await expect.poll(async () => { const g = await geometry(page); return Math.abs(g.end - g.right) <= 1.5; }, `${where}: the toolbar settles on the column`).toBe(true);
       const g = await geometry(page);
       expect(Math.abs(g.glyph - g.left), `${where}: first glyph on the column`).toBeLessThanOrEqual(1);
       expect(Math.abs(g.end - g.right), `${where}: last control on the column`).toBeLessThanOrEqual(1.5);
