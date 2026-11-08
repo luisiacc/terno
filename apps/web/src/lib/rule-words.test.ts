@@ -102,10 +102,16 @@ describe("a sentence's rule in words (plan 161)", () => {
     expect(ruleRow(anyList, email)).toEqual({ label: "List", text: "Any mailing list" });
     expect(ruleRow({ ...anyList, negate: true }, email).text).toBe("Not from a mailing list");
     expect(ruleRow({ field: "subject", op: "matches", value: ".+", negate: false }, email).text).toBe("Anything");
+    expect(ruleRow({ field: "subject", op: "matches", value: ".", negate: true }, email).text).toBe("Empty");
+    // Codex review (pass 3) #8: one an empty value matches too says so; mail with no List-Id is such a value
+    expect(ruleRow({ field: "subject", op: "matches", value: "^", negate: false }, email).text).toBe("Anything, even empty");
+    expect(ruleRow({ ...anyList, value: ".*" }, email).text).toBe("Any mail, on a list or not");
+    expect(ruleRow({ ...anyList, value: ".*", negate: true }, email).text).toBe("Nothing");
     expect(hasDetails([anyList])).toBe(false);
+    expect(hasDetails([{ ...anyList, value: "^" }])).toBe(false);
     expect(ruleDetails([anyList])).toEqual([]);
-    for (const p of [".", ".+", " ^.+ ", "(.+)"]) expect(matchesAnything(p)).toBe(true);
-    // an empty value matches these too, or they ask for more than one character: still "a pattern"
-    for (const p of [".*", "", "^", "..", ".{2}", "\\."]) expect(matchesAnything(p)).toBe(false);
+    for (const p of [".", ".+", " ^.+ ", "(.+)", ".*", "^", "^.*$"]) expect(matchesAnything(p)).toBe(true);
+    // more than one character, or a character of its own: still "a pattern"
+    for (const p of ["", "..", ".{2}", "\\.", "^a"]) expect(matchesAnything(p)).toBe(false);
   });
 });

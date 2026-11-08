@@ -130,7 +130,8 @@ function ActionButtons({ size, className, order = "cancel-first" }: { size: "sm"
   const ruleOnly = savesRuleOnly(preview);
   const waiting = previewWaiting(preview, checking);
   const label = ruleOnly ? t("action.rule.save") : waiting ? t(`action.button.${verb}`) : t(`action.apply.${verb}`, { count });
-  const variant = waiting && !applying ? "secondary" : isDestructive(preview) && !ruleOnly ? "destructive" : "default";
+  // a rule that will trash or spam new mail is as destructive as a batch (Codex review, pass 3, #7)
+  const variant = waiting && !applying ? "secondary" : isDestructive(preview) ? "destructive" : "default";
   const cancel = applying ? (
     <Button key="cancel" size={size} variant="secondary" className={className} data-testid="action-stop" onClick={stopApplying}>{t("action.stop")}</Button>
   ) : (
@@ -302,7 +303,8 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
       {/* the keys, said where the eye is: ⌘↩ and Esc are the header's buttons, x a row's check */}
       {/* plan 161, pass 3: the decision, where the review ends (Split's reader; List's header is right above the rule) */}
       {reader && (
-        <div className="flex flex-wrap items-center gap-2 pt-1" data-testid="action-decision">
+        // sticky at the pane's foot: a long rule (Details open) never scrolls the decision, nor Stop, out of reach (Codex review, pass 3, #4)
+        <div className="sticky bottom-0 z-10 -mb-3 flex flex-wrap items-center gap-2 bg-background pt-1 pb-3" data-testid="action-decision">
           <ActionButtons size="default" order="apply-first" />
         </div>
       )}

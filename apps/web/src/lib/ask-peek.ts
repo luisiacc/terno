@@ -1,7 +1,7 @@
-import { matchExcerpt, tokenize, type AskPlanQuery, type AskSourceRef, type MatchNeedle } from "@terno/core";
+import { matchExcerpt, tokenize, type AskPlanQuery, type AskSourceRef, type AskSourceView, type MatchNeedle } from "@terno/core";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
-import { sourceThread } from "./ask";
+import { sourceThread, useAsk } from "./ask";
 
 /**
  * Plan 161, pass 3: a cited message shown inside Ask, so checking the evidence never loses the answer. Its text is read
@@ -12,6 +12,8 @@ export interface Peek {
   source: AskSourceRef;
   n: number;
   threadId: number;
+  /** where it was when it was let through: Open message asks again only if it has moved since */
+  approved: Exclude<AskSourceView["state"], "gone">;
   needles: MatchNeedle[];
   state: "loading" | "ready" | "failed";
   text: string;
@@ -57,17 +59,26 @@ let seq = 0;
 /** A citation or a source row: the message, in Ask. A source that can't be shown (gone, or Spam/Trash once) stays put. */
 export async function showSource(source: AskSourceRef, n: number, queries: readonly AskPlanQuery[]): Promise<void> {
   const mine = ++seq;
-  const threadId = await sourceThread(source);
-  if (threadId === null || mine !== seq) return;
+  // Codex review (pass 3) #2: an answer from before another conversation began is that conversation's no longer
+  const conversation = useAsk.getState().conversationId;
+  const current = () => mine === seq && useAsk.getState().conversationId === conversation;
+  const at = await sourceThread(source);
+  if (at === null || !current()) return;
   const needles = needlesOf(queries);
-  usePeek.setState({ peek: { source, n, threadId, needles, state: "loading", text: "", passage: null } });
-  const detail = await client.call("threads.get", { threadId }).catch(() => null);
-  if (mine !== seq || usePeek.getState().peek?.source.messageId !== source.messageId) return;
+  const base = { source, n, threadId: at.threadId, approved: at.state, needles };
+  usePeek.setState({ peek: { ...base, state: "loading", text: "", passage: null } });
+  const detail = await client.call("threads.get", { threadId: at.threadId }).catch(() => null);
+  if (!current() || usePeek.getState().peek?.source.messageId !== source.messageId) return;
   const message = detail?.messages.find((m) => m.id === source.messageId);
-  if (!message) return usePeek.setState({ peek: { source, n, threadId, needles, state: "failed", text: "", passage: null } });
+  if (!message) return usePeek.setState({ peek: { ...base, state: "failed", text: "", passage: null } });
   const text = messageText(message);
-  usePeek.setState({ peek: { source, n, threadId, needles, state: "ready", text, passage: passageOf(text, needles) } });
+  usePeek.setState({ peek: { ...base, state: "ready", text, passage: passageOf(text, needles) } });
 }
+
+// another conversation (New question, Previous AI questions, one cleared elsewhere): a source shown was the last one's
+useAsk.subscribe((s, prev) => {
+  if (s.conversationId !== prev.conversationId || (s.turns.length === 0 && prev.turns.length > 0)) closePeek();
+});
 
 /** Esc and Back to the answer: whether there was one to close. */
 export function closePeek(): boolean {

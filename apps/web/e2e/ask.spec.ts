@@ -146,11 +146,31 @@ test.describe("ask your mail (plan 141)", () => {
       await expect(page.getByRole("dialog")).toBeVisible();
       await expect(followUp(page)).toBeFocused();
       await expect(lastTurn(page)).toBeVisible();
-      // the inline marker shows it too, and Back to the answer is the way back
-      await page.getByTestId("ask-citation").first().click();
+      // Codex review (pass 3) #6: back from a row's source, the keys' line still tells the truth: Enter shows it again
+      await expect(hints).toHaveAttribute("data-where", "walking");
+      await page.keyboard.press("Enter");
+      await expect(peek).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(peek).toHaveCount(0);
+      // the inline marker shows it too, and Back to the answer is the way back, with a follow-up typed and the place
+      // read to kept (Codex review, pass 3, #1 and #5)
+      await followUp(page).fill("half a thought");
+      await page.getByTestId("ask-area").evaluate((el) => {
+        el.style.maxHeight = "40px";
+        el.scrollTop = 7;
+      });
+      // (a source row: a click on a marker scrolls it into view first, as any focus does)
+      await page.getByTestId("ask-source").first().click();
       await expect(peek).toBeVisible();
       await page.getByTestId("ask-peek-back").click();
       await expect(peek).toHaveCount(0);
+      await expect(followUp(page)).toBeFocused();
+      await expect(followUp(page)).toHaveValue("half a thought");
+      expect(await page.getByTestId("ask-area").evaluate((el) => { const top = el.scrollTop; el.style.maxHeight = ""; return top; })).toBe(7);
+      await followUp(page).fill("");
+      await page.getByTestId("ask-citation").first().click();
+      await expect(peek).toBeVisible();
+      await page.getByTestId("ask-peek-back").click();
       await expect(followUp(page)).toBeFocused();
       // Open message (↵ in the preview) opens the thread: focus on its message, and a visible way back
       await page.getByTestId("ask-citation").first().click();
@@ -394,6 +414,13 @@ test.describe("ask your mail (plan 141)", () => {
     await page.getByTestId("ask-citation").first().click();
     await expect(page.getByTestId("ask-peek")).toHaveAttribute("data-state", "ready");
     expect((await axe()).violations).toEqual([]);
+    if (SHOTS) {
+      await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-peek-light.png` });
+      await page.emulateMedia({ colorScheme: "dark" });
+      await expect(page.locator("html")).toHaveClass(/\bdark\b/);
+      await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-peek-dark.png` });
+      await page.emulateMedia({ colorScheme: "light" });
+    }
     await page.keyboard.press("Escape");
     // alignment: the question, its answer and its source rows start on one line in the page's own column
     const left = async (locator: ReturnType<Page["getByTestId"]>) => (await locator.first().boundingBox())!.x;

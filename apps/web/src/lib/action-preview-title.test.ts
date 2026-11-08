@@ -94,6 +94,11 @@ describe("Apply sits with the rule, destructive where it takes mail away, and sa
     await act(async () => useActionPreview.setState({ preview: preview({ count: 6 }) }));
     expect(host.querySelector<HTMLButtonElement>("[data-testid=action-apply]")!.dataset.variant).toBe("default");
     expect(host.querySelector("[data-testid=action-consequence]")).toBeNull();
+    // Codex review #7: a rule that will trash new mail, with nothing here yet, saves with the destructive button too
+    await act(async () => useActionPreview.setState({ preview: { ...trash, plan: { ...trash.plan, future: true }, found: 0, count: 0 } }));
+    const save = host.querySelector<HTMLButtonElement>("[data-testid=action-apply]")!;
+    expect(save.textContent).toBe("Save the rule");
+    expect(save.dataset.variant).toBe("destructive");
     // a row opened: the rule leaves the reader (its owner unmounts it), and the header has the buttons again
     await act(async () => setApp({ selectedId: 3 }));
     expect(header.querySelector("[data-testid=action-apply]")).not.toBeNull();

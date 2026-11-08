@@ -226,34 +226,37 @@ export async function openConversation(conversationId: number): Promise<boolean>
 
 /**
  * What a source is now, from the backend (another window may have moved it, or a merge taken its thread), and whether
- * it may be shown: not when it's gone, nor in Spam or Trash until it's asked for twice. The thread it's in now, or null.
+ * it may be shown: not when it's gone, nor in Spam or Trash until it's asked for twice. `approved`: where it was when it
+ * was last let through (a source shown in Ask), which still counts while it hasn't moved since. Where it is now, or null.
  */
-export async function sourceThread(source: AskSourceRef): Promise<number | null> {
+type Shown = Exclude<AskSourceView["state"], "gone">;
+export async function sourceThread(source: AskSourceRef, approved?: Shown): Promise<{ threadId: number; state: Shown } | null> {
   const fresh = await client.call("ai.askSources", { messageIds: [source.messageId] }).catch(() => null);
   if (fresh) useAsk.setState((s) => ({ sources: { ...s.sources, ...fresh } }));
   const s = useAsk.getState();
   const view = s.sources[source.messageId];
   if (view?.state === "gone") return null;
-  if ((view?.state === "spam" || view?.state === "trash") && s.armedSource !== source.messageId) {
+  const state = view?.state ?? "ok";
+  if ((state === "spam" || state === "trash") && s.armedSource !== source.messageId && approved !== state) {
     useAsk.setState({ armedSource: source.messageId });
     return null;
   }
   useAsk.setState({ armedSource: null });
-  return view?.threadId ?? source.threadId;
+  return { threadId: view ? view.threadId : source.threadId, state };
 }
 
 /**
  * Open a source in the reader: the palette closes and the thread opens at that message, in the thread it's in now, with
  * Back to the answer. Plan 161, pass 3: a citation and a source row first show the message in Ask (`ask-peek.ts`); its
- * Open message comes here with the thread `sourceThread` already let through.
+ * Open message comes here with where the message was when it was shown, checked again (Codex review #3).
  */
-export async function openSource(source: AskSourceRef, threadId?: number): Promise<void> {
-  const thread = threadId ?? (await sourceThread(source));
-  if (thread === null) return;
+export async function openSource(source: AskSourceRef, approved?: Shown): Promise<void> {
+  const at = await sourceThread(source, approved);
+  if (at === null) return;
   setApp({ dialog: null });
-  openThread(thread);
+  openThread(at.threadId);
   revealSummaryMessage(source.messageId);
-  useAsk.setState({ returnTo: { threadId: thread, messageId: source.messageId, conversationId: useAsk.getState().conversationId } });
+  useAsk.setState({ returnTo: { threadId: at.threadId, messageId: source.messageId, conversationId: useAsk.getState().conversationId } });
   focusMessage(source.messageId);
 }
 

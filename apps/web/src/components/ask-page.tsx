@@ -7,7 +7,7 @@ import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { ChevronLeft, Clock, Copy, ExternalLink, Mail, Plus, RefreshCw, Search, Sparkles, Undo2 } from "@terno/ui/icons";
 import { useCommandState } from "cmdk";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { askReady, errorHelp, providerLabel } from "~/lib/ai";
 import { closePeek, showSource, usePeek, type Peek } from "~/lib/ask-peek";
 import { Marked } from "~/components/match-mark";
@@ -374,10 +374,9 @@ function AskHints({ where, sources, end }: { where: Where; sources: boolean; end
 }
 
 /** The page's own keys: Esc stops first, the follow-up box types, arrows walk the sources (and say so below). */
-function FollowUp({ disabled, onWalk }: { disabled: boolean; onWalk: (walking: boolean) => void }) {
+function FollowUp({ disabled, onWalk, inputRef: ref }: { disabled: boolean; onWalk: (walking: boolean) => void; inputRef: RefObject<HTMLInputElement | null> }) {
   const [value, setValue] = useState("");
   const running = useAsk((s) => s.running !== null);
-  const ref = useRef<HTMLInputElement>(null);
   const armed = useRef(false);
   useLayoutEffect(() => ref.current?.focus(), []);
   const walk = (on: boolean) => {
@@ -430,7 +429,7 @@ function PeekView({ peek }: { peek: Peek }) {
   // programmatic: no ring (plan 54), and the keys are the preview's (↑↓ scroll it, Enter opens it)
   useLayoutEffect(() => body.current?.focus({ preventScroll: true }), [peek.source.messageId]);
   const { source } = peek;
-  const open = () => void openSource(source, peek.threadId);
+  const open = () => void openSource(source, peek.approved);
   const text = peek.text.length > PEEK_CHARS ? `${peek.text.slice(0, PEEK_CHARS)}…` : peek.text;
   return (
     <section data-testid="ask-peek" data-state={peek.state} aria-label={t("ask.peek.region", { n: peek.n, subject: source.subject || t("common.noSubject") })}>
@@ -493,11 +492,22 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
   const title = turns[0]?.question ?? running?.question ?? "";
   const last = turns.at(-1);
   const area = useRef<HTMLDivElement>(null);
+  const followUp = useRef<HTMLInputElement>(null);
   const size = (running?.text.length ?? 0) + turns.length;
   useLayoutEffect(() => {
     const el = area.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [size, peek === null]);
+  }, [size]);
+  // back from a shown source: the keys are the follow-up box's again (its words, the place read to and the row chosen
+  // were kept: the conversation stays mounted under the source, Codex review (pass 3) #1, #5, #6)
+  const peeked = useRef(false);
+  useLayoutEffect(() => {
+    if (peek) peeked.current = true;
+    else if (peeked.current) {
+      peeked.current = false;
+      followUp.current?.focus({ preventScroll: true });
+    }
+  }, [peek]);
   const sources = (last?.sources.length ?? 0) > 0;
   // plan 161, pass 3: starting over and the history are quiet controls at the end of the keys' line, not rows of their own
   const session = !peek && (
@@ -517,10 +527,9 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
         <span className="min-w-0 flex-1 truncate" data-testid="ask-title">{title}</span>
         <AskNav onBack={onBack} onClose={onClose} />
       </div>
-      {peek ? (
-        <PeekView peek={peek} />
-      ) : (
-        <>
+      {peek && <PeekView peek={peek} />}
+      {/* under a shown source, out of sight, reach and the accessibility tree, but kept: not unmounted */}
+      <div inert={peek !== null} className={cn(peek && "invisible h-0 overflow-hidden")} data-testid="ask-conversation">
           {/* tabbable: it scrolls, and a keyboard has to reach what it holds */}
           <div ref={area} tabIndex={0} data-testid="ask-area" className="max-h-72 space-y-4 overflow-y-auto px-[18px] py-3 outline-none">
             {turns.map((turn, i) => (
@@ -543,9 +552,8 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
               </CommandGroup>
             </CommandList>
           )}
-          <FollowUp disabled={atLimit || !enabled} onWalk={setWalking} />
-        </>
-      )}
+          <FollowUp disabled={atLimit || !enabled} onWalk={setWalking} inputRef={followUp} />
+      </div>
       <AskHints where={peek ? "peek" : walking && chosen !== null ? "walking" : "asking"} sources={sources} end={session} />
     </>
   );

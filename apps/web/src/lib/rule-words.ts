@@ -143,7 +143,8 @@ export function ruleRow(c: Condition, accountEmail: (id: number) => string): Rul
   if (c.field === "text") return { label, text: t(not ? "action.rule.noneOf" : "action.rule.anyOf", { count: 1 }), terms: [c.value] };
   if (c.op === "matches") {
     // plan 161, pass 3: a pattern every value matches says so ("Any mailing list"), not "matches a pattern"
-    if (matchesAnything(c.value)) return { label, text: t(c.field === "listId" ? (not ? "action.rule.noList" : "action.rule.anyList") : not ? "action.rule.nothing" : "action.rule.anything") };
+    const breadth = patternBreadth(c.value);
+    if (breadth) return { label, text: t(BREADTH[breadth][c.field === "listId" ? "list" : "other"][not ? 1 : 0]) };
     const terms = patternTerms(c.value);
     if (terms) return { label, text: t(not ? "action.rule.noneOf" : "action.rule.anyOf", { count: terms.length }), terms };
     const template = patternTemplate(c.value);
@@ -155,11 +156,21 @@ export function ruleRow(c: Condition, accountEmail: (id: number) => string): Rul
 }
 
 /**
- * Plan 161, pass 3: a pattern every value of one character or more matches (".", ".+"): the row says it whole. Not ".*",
- * which an empty value matches too, so it can't be read as "any mailing list".
+ * Plan 161, pass 3: a pattern every value of one character or more matches (".", ".+"), and one every value matches,
+ * an empty one too (".*", "^"): the row says it whole. A message with no List-Id is an empty one (`evaluate.ts`).
  */
-const ANYTHING = new Set([".", ".+", "^.", "^.+", "(.+)", "(?:.+)"]);
-export const matchesAnything = (pattern: string): boolean => ANYTHING.has(pattern.trim());
+const ANY_FILLED = new Set([".", ".+", "^.", "^.+", "(.+)", "(?:.+)"]);
+const ANY_AT_ALL = new Set([".*", "^", "$", "^.*", ".*$", "^.*$", "(.*)", "(?:.*)"]);
+export function patternBreadth(pattern: string): "filled" | "all" | null {
+  const p = pattern.trim();
+  return ANY_FILLED.has(p) ? "filled" : ANY_AT_ALL.has(p) ? "all" : null;
+}
+export const matchesAnything = (pattern: string): boolean => patternBreadth(pattern) !== null;
+
+const BREADTH = {
+  filled: { list: ["action.rule.anyList", "action.rule.noList"], other: ["action.rule.anything", "action.rule.empty"] },
+  all: { list: ["action.rule.anyMail", "action.rule.nothing"], other: ["action.rule.everything", "action.rule.nothing"] },
+} as const;
 
 /** A condition that holds a pattern: what Details shows verbatim (one for anything says nothing more than its row). */
 const hasPattern = (c: Condition): boolean => c.field !== "hasAttachment" && c.field !== "account" && c.field !== "ageDays" && c.op === "matches" && !matchesAnything(String(c.value));

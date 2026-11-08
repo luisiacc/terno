@@ -430,6 +430,21 @@ test.describe("actions in plain English, List layout (plan 161)", () => {
 test.describe("actions in plain English at 1100 × 700 (plan 161, pass 2)", () => {
   test.use({ viewport: { width: 1100, height: 700 } });
 
+  test("a long rule never scrolls Apply out of reach (Codex review, pass 3, #4)", async ({ app: page, server }) => {
+    await withMail(page, server);
+    await say(page, "Archive shipping notices older than a month");
+    const apply = page.getByTestId("action-decision").getByTestId("action-apply");
+    await expect(apply).toHaveText("Archive 2");
+    await page.setViewportSize({ width: 1100, height: 320 });
+    await page.getByTestId("action-details-toggle").click();
+    await expect(page.getByTestId("action-details-text")).toBeVisible();
+    // the rule is longer than its pane, and the pane rests at its top
+    const pane = page.getByTestId("action-rule").locator("> div");
+    expect(await pane.evaluate((el) => el.scrollHeight > el.clientHeight + 40 && el.scrollTop === 0)).toBe(true);
+    await expect(apply).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId("action-decision").getByTestId("action-cancel")).toBeInViewport({ ratio: 1 });
+  });
+
   test("Split's header is one line beside its buttons, and the outcome reads whole in the reader", async ({ app: page, server }) => {
     await withMail(page, server);
     await say(page, "Archive shipping notices older than a month");
