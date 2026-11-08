@@ -8,6 +8,8 @@ import { client } from "~/rpc/connection";
 import { getApp, inPlainInbox, navigate, useApp } from "~/state/app";
 import { useFollowups } from "~/state/followups";
 import { inboxTop, reloadList, useList } from "~/state/list";
+import { listDate } from "~/lib/format";
+import { reminderShort } from "~/lib/when";
 
 /**
  * Plan 142: what the windows know of follow-ups (the backend's snapshot, at startup and on its `followups` event), and
@@ -36,11 +38,30 @@ const on = () => followupsOffered(getApp());
 
 export const anyFollowupOnTop = (): boolean => on() && useFollowups.getState().onTop > 0;
 
-/** "You told Tom you'd send the contract", "Ana hasn't replied in 5 days". */
+const personOf = (row: FollowupRow): string | null => row.personName || row.personEmail?.split("@")[0] || null;
+
+/** "You told Tom you'd send the contract", "Ana hasn't replied in 5 days", and "yet" until a whole day has passed (plan 161). */
 export function followupLine(row: FollowupRow, now = Date.now()): string {
-  const name = row.personName || row.personEmail?.split("@")[0] || null;
-  if (row.kind === "awaiting") return t("followup.awaiting", { name: name ?? t("followup.someone"), count: followupDaysSince(row.sentAt, now) });
+  const name = personOf(row);
+  if (row.kind === "awaiting") {
+    const who = name ?? t("followup.someone");
+    const days = followupDaysSince(row.sentAt, now);
+    return days === 0 ? t("followup.awaitingYet", { name: who }) : t("followup.awaiting", { name: who, count: days });
+  }
   return name ? t("followup.promise", { name, text: row.text }) : t("followup.promiseNoName", { text: row.text });
+}
+
+/**
+ * Plan 161: the line's header after "Follow-up": when it comes back and what does ("Sent today · back on top of your Inbox
+ * Wed 9:00 AM if Ana doesn't reply"), or that it's due.
+ */
+export function followupWhen(row: FollowupRow, now = Date.now()): string {
+  const date = reminderShort(row.dueAt, now);
+  if (row.state === "due") return t("followup.dueNow", { date });
+  if (row.kind !== "awaiting") return t("followup.dueOn", { date });
+  const sent = new Date(row.sentAt).toDateString() === new Date(now).toDateString() ? t("followup.sentToday") : t("followup.sentOn", { date: listDate(row.sentAt, now) });
+  const first = (personOf(row) ?? t("followup.someone")).split(/\s+/)[0]!;
+  return `${sent} · ${t("followup.backIfNoReply", { date, name: first })}`;
 }
 
 /** What a row says: its most urgent, and how many more. */
@@ -55,7 +76,8 @@ export async function actOnFollowup(row: FollowupRow, action: "done" | "dismiss"
   try {
     const { undoId } = await client.call("followups.act", { id: row.id, revision: row.revision, action, ...(dueAt !== undefined ? { dueAt } : {}) });
     const undo = undoId === null ? null : registerUndo(() => client.call("followups.undo", { undoId }).then(() => undefined));
-    snack.success(t(action === "done" ? "followup.snack.done" : action === "dismiss" ? "followup.snack.dismissed" : "followup.snack.later"), undo ? { action: { label: t("common.undo"), name: t("followup.undo"), undo } } : {});
+    const said = action === "done" ? t("followup.snack.done") : action === "dismiss" ? t("followup.snack.dismissed") : t("followup.snack.later", { date: reminderShort(dueAt ?? row.dueAt) });
+    snack.success(said, undo ? { action: { label: t("common.undo"), name: t("followup.undo"), undo } } : {});
   } catch (error) {
     const e = error as { message?: string };
     snack.error(e.message ?? t("followup.actFailed"));

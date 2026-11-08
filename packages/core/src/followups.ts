@@ -128,5 +128,5 @@ export function mostUrgent<T extends Pick<FollowupRow, "state" | "dueAt" | "id">
   return [...rows].sort((a, b) => (a.state === "due" ? 0 : 1) - (b.state === "due" ? 0 : 1) || a.dueAt - b.dueAt || a.id - b.id)[0];
 }
 
-/** Whole days since it was sent, for "hasn't replied in 5 days": at least 1, so a nudge never says 0. */
-export const followupDaysSince = (sentAt: number, now: number): number => Math.max(1, Math.round((now - sentAt) / 86_400_000));
+/** Whole days since it was sent, for "hasn't replied in 5 days": 0 until a full day has passed (plan 161: "yet", never "in 1 day" minutes after). */
+export const followupDaysSince = (sentAt: number, now: number): number => Math.max(0, Math.floor((now - sentAt) / 86_400_000));

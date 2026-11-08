@@ -43,8 +43,11 @@ describe("a date a model gave", () => {
   });
 });
 
-it("the most urgent is what's due, then the soonest; days since never say zero", () => {
+it("the most urgent is what's due, then the soonest; days since count whole days (plan 161)", () => {
   expect(mostUrgent([{ id: 1, state: "open", dueAt: 1 }, { id: 2, state: "due", dueAt: 9 }, { id: 3, state: "due", dueAt: 5 }])!.id).toBe(3);
-  expect(followupDaysSince(0, 3600)).toBe(1);
+  expect(followupDaysSince(0, 3600)).toBe(0);
+  expect(followupDaysSince(0, 86_400_000 - 1)).toBe(0);
+  expect(followupDaysSince(0, 86_400_000)).toBe(1);
+  expect(followupDaysSince(0, 5.9 * 86_400_000)).toBe(5);
   expect(followupDaysSince(0, 5 * 86_400_000)).toBe(5);
 });
