@@ -1026,3 +1026,87 @@ Review rounds stop here.
 - **A second confirmation above a count** (one rater) isn't built: Undo is exact, and the destructive button and its line now say what happens.
 - **⌘K's default for ordinary input is unchanged.** Only a sentence that is plainly an instruction (a mail verb first, four words or more, no operator or quotes) ranks "Do with AI" first. No change to the default for non-AI input was needed.
 - **The AiProvenance and Copy adoption** waits for the other engineer's `ai-card.ts`: Ask's `ask-copy` and `ask-provenance` in `Turn`'s `ask-turn-actions` line are the two to swap, one for one.
+
+
+
+## Pass 3: drafting, summary, follow-ups and one AI language
+
+From `ai-r02`'s `ai_draft`, `summary` and `followups_replies` (every issue and every reason below 9, four designs, both raters) and the lead's list. Actions and Ask are one parallel pass; Today, the digest, Writing style and the AI filter another. No new model call: everything shown comes from what a run, a summary, a follow-up row or a prepared reply already returns.
+
+### The regression: Later's menu
+
+- **Why it clipped.** `DropdownMenuContent` is `w-(--anchor-width) min-w-32`: the trigger's width, at least 128 px. Pass 2 put a time at each row's end and left the label `truncate` in `flex-1`, so the label gave way to the time ("Lat…", "To…", "T", nothing for Next week).
+- **Fix.** The menu sizes to what it holds (`w-max`, still at least the trigger), and each row is BoardUI's label-and-shortcut row: the label `whitespace-nowrap`, the time in `DropdownMenuShortcut`'s place (`ms-auto ps-3`, muted, tabular). Nothing in it can shrink.
+- **Its name.** Later offers Later today and Tomorrow, which can be earlier than the date the line shows, so it is **Reschedule ▾** (two raters).
+- **The other menus and popovers of passes 1 and 2:** ⌘J's status popover (fixed `w-80`, its lines wrap) and the new Rewrite menu (below) are held by the same test.
+- **Test (`followups.spec.ts`, `@design`):** in every design, light and dark, at 1440x900 and 1100x700, Reschedule's menu and every menu or popover of these surfaces is opened and no text in it is clipped: each item's text element has `scrollWidth <= clientWidth`, and the panel is inside the window.
+
+### Esc while ⌘J is writing
+
+Esc (and the row's Stop) used to end the run and `remove()` the session: the instruction and the words that had come were gone, without a word. Now Stop keeps what's there:
+- **Words came:** they go into the draft as a write of their own (below the user's notes if there were any, as Insert does after a failure), and the strip says **Stopped part-way ▾**. Its Undo takes them back exactly; Regenerate writes the whole draft again from the same instruction; the instruction is on the strip (below). The live region says "Stopped. What it wrote so far is in the draft."
+- **Nothing came yet:** the row goes back to its field, holding the instruction, so Return asks again. A second Esc closes the row, as before.
+- **A rewrite** (Shorter, Warmer, Regenerate) already keeps the old text in place while it streams; Stop leaves it and its strip, as now.
+- **Undo of a stopped write** gives the field back with its instruction, rather than closing the row (the instruction is the user's work too).
+- State: `AiStrip.stopped`; the write's `used` is unknown (the backend never finished), so its popover says the model and that it stopped, not a voice.
+
+### ⌘J's strip
+
+- **The instruction has its own line.** Under the commands, the instruction in the user's words, whole (it wraps), in the ink at the text's size, with **Edit** after it (a quiet button; its name "Edit instruction"). While it writes, the same line is under "Writing…", so the instruction stays where it was typed from Enter to the draft, and the commit still moves nothing: two lines become two lines. With no instruction (a draft from the conversation alone), the strip is one line, as now.
+- **Recovery leads, rewrites are quieter.** The command line reads **↶ Undo** (BoardUI's secondary, with its glyph and its word at every width), then Regenerate, Shorter and Warmer as ghost buttons in the ink (enabled-looking, hover-filled, lighter than Undo), and at the line's end the status, the one provenance control: **Written with AI ▾** (or Edited after AI ▾, Stopped part-way ▾).
+- **Narrow.** Where the three rewrites don't fit beside Undo and the status (a container query on the strip, below about 30 rem), they fold into one ghost **Rewrite ▾** menu (Regenerate, Shorter, Warmer). Undo keeps its word; nothing drops.
+- **The status popover** (the provenance popover, below) leads with the voice and what was read, then the model; its "Edit instruction" link goes, since the instruction is on the strip.
+
+### One AI language: `AiProvenance` and `AiCopyButton`
+
+`components/ai-provenance.tsx`, re-exported from `ai-card.ts`:
+- **`AiProvenance`**: a real button, ghost, `text-xs`, muted until hovered, with a chevron: **Written with AI ▾** (`provenanceLabel()`), or a surface's own words from the same set (Edited after AI, Stopped part-way, Found with AI). It opens a popover (`w-72`, BoardUI's popover) whose lines say what the AI used, if the surface knows, then `provenanceDetail(model, at)`: "Written by qwen3:8b, Nov 8, 2026, 9:41 AM. It can make mistakes." Props: `model`, `at`, `lines?: string[]`, `label?`, `children?` (more content, like ⌘J's Writing style link), `testId`. It replaces the focusable `<span>` with a tooltip, which raters found took focus and did nothing.
+- **Where it goes:** at the **end of the surface's button row**, on every AI surface (the summary, Reply ready, the follow-up line, ⌘J's strip, Ask's turn). The header says what the card is; the row ends in who wrote it.
+- **`AiCopyButton`**: BoardUI's secondary button at `size="sm"` (28 px) with `Copy` before "Copy". On success its label is **Copied** with `Check` for 1.5 s, in place (and announced through its own status region); a failure is a snack with what to do. Props: `text: () => string`, `testId`, `failed` (the snack's words).
+- **For the Ask engineer:** replace `ask-copy` and the `ask-provenance` span with `<AiCopyButton text={() => answerWithoutCitations(turn.answer ?? "")} failed={t("ask.copyFailed")} testId="ask-copy" />` and, at the row's end, `<AiProvenance model={turn.model ?? ""} at={turn.createdAt} testId="ask-provenance" />`. Answer again stays beside Copy, at the same size (`size="sm"`).
+- **For the Today/digest/filter engineer:** the digest's "Written by qwen3:8b. It can make mistakes." line becomes `<AiProvenance model={row.model} at={row.preparedAt ?? row.createdAt} testId="digest-provenance" />` at the end of the digest's header or action row, near its heading; the AI filter's header keeps its title and puts `<AiProvenance … />` at the end of its button row (or header, if it has none), with the model and time the rule was written, if the dialog has them, else `lines` alone.
+- `provenanceLabel()` and `provenanceDetail()` stay exported; nothing else changes for anyone already using them.
+
+### Summary
+
+- **The item says what it does.** The row is no longer one button that "opens" an action. An item is its kind and its text, then, beside the text (wrapping under it when it can't fit), its controls at 28 px:
+  - on an **Action** or a **Question**, a quiet **Reply** (ghost, with `Reply`'s glyph): it opens the conversation's ordinary inline reply, exactly as R does there (`reply("reply")` in `keyboard.ts`, so a Reply ready is used when there is one, as R does). Nothing new happens; it's the existing composer.
+  - the source, named for where it goes: **Arjun's message, Yesterday →** ("Your message, Oct 22 →"), as a link-style button, its hover still "Arjun Ramírez · Yesterday, 9:41 PM". It is gone on a one-message conversation, as before.
+- **A reading measure.** The summary's text and items stop at the mail body's measure (`rt-measure`), so the paragraph wraps as the message under it does (five raters measured 105 to 120 characters a line at 1440).
+- **The footer** is the button row every AI surface has: **Copy** (`AiCopyButton`) and, at its end, `AiProvenance`. Nothing in it is a bare text target any more.
+
+### Reply ready and the follow-up: one anatomy
+
+Both are now the AI card (plan 148 left a card for follow-ups out of its scope, saying the line is the user's own to act on; its header still says so, but it reads as an AI note and both raters asked for one system):
+- **Header** (`AI_HEADER`): glyph, the title in the ink, then what it's about.
+  - Reply ready: "✦ **Reply ready** · **1 gap to fill** · To Liam Taylor". The voice leaves the header for the provenance popover, which explains it.
+  - Follow-up: the fact is the title, "⏱ **Arjun Ramírez hasn't replied yet**" ("You told Arjun you'd send the contract").
+- **Body** (text-sm): Reply ready's draft; the follow-up's schedule in words, muted: "Comes back to your Inbox Wed, Oct 28, 9:00 AM if there's no reply" (a promise: "Comes back to your Inbox Wed, Oct 28, 9:00 AM"; due: "Due today 5:00 PM").
+- **Button row** (`AI_ACTIONS`): the primary, the secondaries, the source if any, and at the end `AiProvenance`. Reply ready: Use as draft, Dismiss, "Press R…", … Written with AI ▾. Follow-up: Draft a nudge (or Done), Reschedule ▾, Dismiss, "Your message, Oct 22 →", … Found with AI ▾ (the follow-up's own model and when it was found; only when the row has a model).
+
+### Voice, said one way
+
+What a draft's provenance says is two facts, kept apart and said the same way on the card and in the composer:
+- **Style:** "In your voice with Liam: it learned from how you write to Liam." / "In your general voice: you haven't written to them before." / "Still learning your voice."
+- **Content:** with no instruction, "What it says comes from this conversation alone: you gave no instruction." (on the card's popover and the strip's), and under the text after Use, the check line says the same thing short: "From the conversation alone, with no instruction from you: check it says what you mean."
+
+### The three sparkles
+
+Each says what it does in its tooltip and accessible name, and its key: the toolbar's **Summarize this conversation** (no key exists; adding one is the owner's), the reply bar's **Reply with AI ⌘J**, the composer's **Write with AI ⌘J**. The icon stays Sparkles everywhere (it's the AI's mark; no catalog icon is clearly better for Summarize). Their names are asserted distinct.
+
+### The AI card's fill in dark
+
+The ring holds its 1.5:1 floor, but raters still read the dark card as a hairline (its fill 1.11 to 1.15:1 off the reader). In dark, a tint card gets a wash of the ink at 4 % (`--ai-card-wash`, generated per design: tint designs only; Graphite outlines its cards). New `BOUNDARY_STEPS`: the AI card's fill on the reader, dark, at 1.2:1, and on Lumen's reader card at 1.1:1. The ring against the washed fill stays at 1.5:1, except Monokai (1.49, its fill now stands off the reader by itself at 1.33:1).
+
+### Not taken, and why
+
+- **A shortcut for Summarize, Shorter, Warmer or Nudge.** New bindings, which the shortcut list and the owner decide; the tooltips say there is none.
+- **Regenerate on the summary.** A ready summary asked again returns the same one (pass 2): it would need a forced run.
+- **Folding the summary's footer into its header.** The header is the disclosure's trigger, a button: nothing can sit in it.
+- **Marking which sentences changed after Shorter or Warmer, a "Restored previous draft" line after Undo, a key for the follow-up.** New behaviour beyond these findings' fixes.
+- **Merging the reply bar into Reply ready.** Plan 144 keeps them apart.
+
+### Tests
+
+- e2e: `followups.spec.ts` (`@design`: Reschedule's menu and the other menus and popovers unclipped, every design, light and dark, 1440 and 1100; the fact first; the card's anatomy; provenance), `ai-draft.spec.ts` (**Esc while writing keeps the instruction and the partial text, Stopped part-way, and Undo**; Stop with nothing yet keeps the instruction; the instruction line whole at 1440 and wrapped at 1100; Undo labelled at 1100; Rewrite ▾ at 1100; the commit moves nothing), `summaries.spec.ts` (Reply opens the reply; the source named; Copy's Copied; provenance popover), `replies-ready.spec.ts` (the header without the voice; provenance popover with the voice), the sparkles' names, `design-axe.spec.ts` for these surfaces.
+- Unit: `stop()` (partial kept as a stopped write, nothing yet back to the field, a rewrite's strip kept), Undo of a stopped write, `messageSource`'s new words (en, es), `followupWhen`'s sentence, `AiProvenance` and `AiCopyButton`, `contrast.test.ts`'s new steps.
