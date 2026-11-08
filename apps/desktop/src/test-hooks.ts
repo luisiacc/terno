@@ -27,13 +27,14 @@ export function offsetClock(at: number, real: () => number = Date.now): () => nu
   return () => real() + shift;
 }
 
-/** Bounded, like every log: a test that runs away stops being recorded rather than filling the disk. */
+/** Bounded, like every log: a test that runs away stops being recorded rather than filling the disk, and says so. */
 export const NET_LOG_MAX = 10_000;
 
 export function netRecorder(path: string, write: (path: string, line: string) => void = appendFileSync): (decision: NetDecision) => void {
   let written = 0;
   return (decision) => {
-    if (written++ >= NET_LOG_MAX) return;
-    write(path, `${JSON.stringify(decision)}\n`);
+    if (written > NET_LOG_MAX) return;
+    // the last line marks the bound, so a reader can't take a cut log as a whole one
+    write(path, `${JSON.stringify(written++ < NET_LOG_MAX ? decision : { overflow: true })}\n`);
   };
 }

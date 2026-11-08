@@ -25,12 +25,13 @@ describe("plan 161: the rating's test hooks, in the demo mailbox only", () => {
     expect(now()).toBe(1_001_234);
   });
 
-  it("the log writes one JSON line a decision, and stops at its bound", () => {
+  it("the log writes one JSON line a decision, and stops at its bound with a line that says so", () => {
     const lines: string[] = [];
     const record = netRecorder("/x", (_, line) => lines.push(line));
     record({ purpose: "ai", url: "http://127.0.0.1:5/v1/chat/completions", allowed: true });
     expect(lines).toEqual(['{"purpose":"ai","url":"http://127.0.0.1:5/v1/chat/completions","allowed":true}\n']);
     for (let i = 0; i < NET_LOG_MAX + 5; i++) record({ purpose: "icons", url: "https://x.test/", allowed: false });
-    expect(lines).toHaveLength(NET_LOG_MAX);
+    expect(lines).toHaveLength(NET_LOG_MAX + 1);
+    expect(lines.at(-1)).toBe('{"overflow":true}\n');
   });
 });

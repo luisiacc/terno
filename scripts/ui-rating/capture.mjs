@@ -107,14 +107,18 @@ async function aiPass(design, mode, dir) {
   /** nothing moving and the model idle: what's on screen is the state, not a step on the way */
   const still = async () => {
     await page.mouse.move(0, 0);
-    await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getComputedTiming().iterations === Infinity));
+    // transitions end (motion is capped at 100 ms); a snack's countdown or a spinner runs on, and isn't waited for
+    await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || !(Number(a.effect?.getComputedTiming().endTime) <= 1000)));
     for (let i = 0; stub.active > 0; i++) {
       if (i > 600) throw new Error("the model stub is still answering");
       await new Promise((r) => setTimeout(r, 50));
     }
   };
-  const s = async (name) => {
+  const s = async (name, { snack = false } = {}) => {
     await still();
+    if (!snack) await noSnacks();
+    // the state is still there after the wait: an undo that ran out isn't a shot of the undo
+    else if (!(await page.getByTestId("snack").first().isVisible())) throw new Error(`${name}: its snack was gone before the shot`);
     await shot(page, `${name}-${mode}`, dir);
     if (!AI_SMALL.includes(name)) return;
     await resize(app, 1100, 700);
@@ -124,10 +128,16 @@ async function aiPass(design, mode, dir) {
     await resize(app, 1440, 900);
     await page.waitForFunction(() => innerWidth === 1440);
   };
-  /** a snack a step left behind (Draft discarded, Undone) isn't part of the next screen */
+  /** a snack a step leaves (Draft discarded, Put back, Message sent) isn't part of the next screen: closed once it's there */
+  const closeSnack = async (text) => {
+    const snack = page.getByTestId("snack").filter({ hasText: text }).first();
+    await snack.waitFor({ timeout: 15_000 });
+    await snack.getByTestId("snack-close").click();
+    await snack.waitFor({ state: "detached" });
+  };
   const noSnacks = async () => {
     for (const close of await page.getByTestId("snack-close").all()) await close.click().catch(() => {});
-    await page.getByTestId("snack").first().waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
+    await page.getByTestId("snack").first().waitFor({ state: "detached", timeout: 5000 });
   };
   const noReplyReady = async (where) => {
     if (await page.getByTestId("reply-ready").count()) throw new Error(`${where}: Reply ready reached a conversation it shouldn't`);
@@ -136,11 +146,13 @@ async function aiPass(design, mode, dir) {
     // --- Today, and the digest the backend prepared on its own against the stub ---
     await page.getByTestId("nav-today").click();
     await visible("today-heading");
-    await visible("digest-row", { hasText: /digest/i, timeout: 60_000 });
+    // ready, not "Preparing today's digest…": the row counts the newsletters, and the page shows that many
+    await visible("digest-row", { hasText: /\d+ newsletters? · today/, timeout: 60_000 });
+    const count = Number(/(\d+) newsletter/.exec(await page.getByTestId("digest-row").first().innerText())[1]);
     await s("a07-today");
     await page.getByTestId("digest-row").first().click();
     await visible("digest-page");
-    await visible("digest-item");
+    await page.waitForFunction((n) => document.querySelectorAll("[data-testid=digest-item]").length === n, count);
     await s("a08-today-digest");
 
     // --- a summary, asked for (old mail isn't summarized on its own) ---
@@ -167,7 +179,7 @@ async function aiPass(design, mode, dir) {
     // the draft goes, so no later screen shows it in the list
     await page.getByTestId("compose-discard").click();
     await page.getByTestId("composer").waitFor({ state: "detached" });
-    await noSnacks();
+    await closeSnack(/discarded|descartado/i);
 
     // --- Ask your mail: an answer and its sources ---
     await blur();
@@ -188,11 +200,11 @@ async function aiPass(design, mode, dir) {
     await s("a05-actions-preview");
     await page.getByTestId("action-apply").click();
     await visible("snack", { hasText: /Archived|Archivad/ });
-    await s("a06-actions-undo");
+    await s("a06-actions-undo", { snack: true });
     await blur();
     await page.keyboard.press("Meta+z");
     await page.getByTestId("snack").filter({ hasText: /Archived|Archivad/ }).waitFor({ state: "detached" });
-    await noSnacks();
+    await closeSnack(/back|devuelt|de vuelta/i);
 
     // --- Reply ready, on mail waiting for the user ---
     await page.getByTestId("nav-inbox").click();

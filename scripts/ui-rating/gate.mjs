@@ -4,7 +4,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SETS } from "./sets.mjs";
+import { SETS, shotFiles } from "./sets.mjs";
 
 export const BAR = 9;
 /** The everyday set's screens (plan 158), the default for a round from before sets */
@@ -71,11 +71,14 @@ export function verdict(found, { designs = DESIGNS, raters = RATERS, bar = BAR, 
  * the everyday set. A round.json that disagrees with its set's definition was edited after the round began.
  */
 export function roundSet(round) {
-  const set = round.set ?? "everyday";
+  // before sets (plan 158): no set, no screens, no shots
+  if (round.set === undefined && round.screens === undefined && round.shots === undefined) return { set: "everyday", screens: SETS.everyday.screens, shots: null };
+  const set = round.set;
   if (!SETS[set]) throw new Error(`round.json names an unknown set: ${set}`);
-  const screens = round.screens ?? SETS[set].screens;
-  if (screens.join() !== SETS[set].screens.join()) throw new Error(`round.json's screens aren't the ${set} set's`);
-  return { set, screens, shots: round.shots ?? null };
+  if (round.screens?.join() !== SETS[set].screens.join()) throw new Error(`round.json's screens aren't the ${set} set's`);
+  // the evidence list can't be thinned to make a round whole
+  if (!Array.isArray(round.shots) || round.shots.join() !== shotFiles(set).join()) throw new Error(`round.json's shots aren't the ${set} set's`);
+  return { set, screens: round.screens, shots: round.shots };
 }
 
 /** Every shot round.json froze, for every style it rated: the evidence is whole, or the round is. */

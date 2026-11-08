@@ -81,8 +81,10 @@ describe("plan 161: a round rates the set it froze", () => {
   it("the screens come from round.json, never from a report; a round from before sets is everyday; an edited one is refused", () => {
     expect(roundSet({ designs: DESIGNS })).toEqual({ set: "everyday", screens: SETS.everyday.screens, shots: null });
     expect(roundSet({ set: "ai", screens: AI, shots: shotFiles("ai") }).screens).toEqual(AI);
-    expect(() => roundSet({ set: "ai", screens: AI.slice(1) })).toThrow("aren't the ai set's");
+    expect(() => roundSet({ set: "ai", screens: AI.slice(1), shots: shotFiles("ai") })).toThrow("screens aren't the ai set's");
     expect(() => roundSet({ set: "lunch" })).toThrow("unknown set");
+    // a round with a set can't drop its evidence list, or thin it, and pass
+    for (const shots of [undefined, null, [], shotFiles("ai").slice(2)]) expect(() => roundSet({ set: "ai", screens: AI, shots })).toThrow("shots aren't the ai set's");
   });
 
   it("the round's evidence is whole: every frozen shot, for every style", () => {

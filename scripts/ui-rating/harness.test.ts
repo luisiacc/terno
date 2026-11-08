@@ -34,4 +34,10 @@ describe("the AI capture's network check (plan 161, revision 10)", () => {
       "the backend reached updates.terno.app (update)",
     ]);
   });
+
+  it("no log, or a log cut at its bound, is no proof", () => {
+    expect(netProblems({ log: join(dir, "never-written.log"), blocked: [], stubPort: 4100 }).problems).toEqual(["the backend's network log is missing"]);
+    const file = log([{ purpose: "ai", url: "http://127.0.0.1:4100/v1/chat/completions", allowed: true }, { overflow: true }]);
+    expect(netProblems({ log: file, blocked: [], stubPort: 4100 }).problems).toEqual(["the network log hit its bound: what came after it is unseen"]);
+  });
 });

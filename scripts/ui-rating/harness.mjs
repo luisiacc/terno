@@ -108,8 +108,12 @@ export async function checkAi(page, url) {
  */
 export function netProblems({ log, blocked, stubPort }) {
   const problems = blocked.map((u) => `the window asked for ${u}`);
-  const lines = existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+  // no log is no proof: the backend always reaches the stub at least once (the digest), so an empty run is a broken seam
+  if (!existsSync(log)) return { problems: [...problems, "the backend's network log is missing"], decisions: 0, ai: 0 };
+  const lines = readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  if (lines.some((d) => d.overflow)) problems.push("the network log hit its bound: what came after it is unseen");
   for (const d of lines) {
+    if (d.overflow) continue;
     const url = new URL(d.url);
     if (!d.allowed) continue;
     if (!LOOPBACK.includes(url.hostname)) problems.push(`the backend reached ${url.host} (${d.purpose})`);
@@ -168,8 +172,8 @@ export async function launch({ design = "lumen", dark = false, width = 1440, hei
       if (design !== "lumen") await setDesign(opened.page, design);
       if (ai) await setUpAi(opened.page, stub.url);
       await quit(opened.app);
-      // what the first launch did is setup: the rated launch is judged on its own requests
-      if (ai) writeFileSync(log, "");
+      // what the first launch did is setup: the rated launch is judged on its own requests (a new log, written as they come)
+      if (ai) rmSync(log, { force: true });
       blocked.length = 0;
       opened = await open();
     }
