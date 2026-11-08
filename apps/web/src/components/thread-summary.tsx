@@ -1,4 +1,4 @@
-import type { AiSummary, AiSummaryItem, ThreadDetail } from "@terno/core";
+import type { AiSummary, AiSummaryItem, MessageDetail, ThreadDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
@@ -8,31 +8,44 @@ import { ArrowRight, Sparkles } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { errorHelp, modelName, providerLabel } from "~/lib/ai";
-import { fullDate } from "~/lib/format";
+import { fullDate, messageDate } from "~/lib/format";
 import { bodyArrivedForSummary, dismissSummary, loadSummary, revealSummaryMessage, setSummaryOpen, stopSummary, summarizable, summarize, useSummaries } from "~/lib/summaries";
 import { setApp, useApp } from "~/state/app";
-import { AI_CARD, AI_GLYPH } from "./ai-card";
+import { AI_CARD, AI_GLYPH, AI_TITLE } from "./ai-card";
 
-/** "Action   Send the signed contract   →": the arrow's whole row goes to the message that says it. */
-function Item({ item }: { item: AiSummaryItem }) {
+/**
+ * "Action · Send the signed contract      Open message →": the row goes to the message that says it, and says so (plan 161:
+ * it read as doing the task). The label sits on the text's line; hovering names whose message and when.
+ */
+function Item({ item, from }: { item: AiSummaryItem; from: MessageDetail | undefined }) {
+  const kind = t(`summary.kind.${item.kind}`);
+  const button = (
+    <button
+      type="button"
+      data-testid="summary-item"
+      data-kind={item.kind}
+      data-message-id={item.messageId}
+      aria-label={`${kind}: ${item.text}. ${t("summary.open")}`}
+      onClick={() => revealSummaryMessage(item.messageId)}
+      className="group/item -mx-2 flex min-h-8 w-[calc(100%+1rem)] items-baseline gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors hover:bg-field focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+    >
+      <span className="shrink-0 text-xs text-muted-foreground">{kind}</span>
+      <span className="min-w-0 flex-1 wrap-anywhere">{item.text}</span>
+      {/* on the first line, however many the text takes */}
+      <span data-testid="summary-item-open" className="flex h-[1lh] shrink-0 items-center gap-1 self-start text-xs text-muted-foreground transition-colors group-hover/item:text-foreground">
+        {t("summary.open")}
+        <ArrowRight aria-hidden className="size-[1.15em]" />
+      </span>
+    </button>
+  );
   return (
     <li>
-      <button
-        type="button"
-        data-testid="summary-item"
-        data-kind={item.kind}
-        data-message-id={item.messageId}
-        onClick={() => revealSummaryMessage(item.messageId)}
-        className="group/item -mx-2 flex min-h-7 w-[calc(100%+1rem)] items-baseline gap-3 rounded-lg px-2 py-1 text-left text-sm transition-colors hover:bg-field focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      >
-        <span className="w-[4.5rem] shrink-0 text-xs text-muted-foreground">{t(`summary.kind.${item.kind}`)}</span>
-        <span className="min-w-0 flex-1 wrap-anywhere">{item.text}</span>
-        <span className="sr-only">{t("summary.goTo")}</span>
-        {/* on the first line, however many the text takes */}
-        <span aria-hidden className="flex h-[1lh] shrink-0 items-center self-start">
-          <ArrowRight className="size-[1.15em] text-muted-foreground transition-colors group-hover/item:text-foreground" />
-        </span>
-      </button>
+      {from ? (
+        <Tooltip>
+          <TooltipTrigger render={button} />
+          <TooltipContent data-testid="summary-item-source" side="bottom" align="end">{`${from.from.name || from.from.email} · ${messageDate(from.date)}`}</TooltipContent>
+        </Tooltip>
+      ) : button}
     </li>
   );
 }
@@ -40,7 +53,7 @@ function Item({ item }: { item: AiSummaryItem }) {
 const CARD = `${AI_CARD} mb-4`;
 const GLYPH = AI_GLYPH;
 
-function Ready({ summary }: { summary: AiSummary }) {
+function Ready({ summary, messages }: { summary: AiSummary; messages: readonly MessageDetail[] }) {
   const open = useSummaries((s) => s.open);
   const provenance = t("summary.provenance", { model: modelName(summary.model), date: fullDate(summary.generatedAt) });
   return (
@@ -50,7 +63,7 @@ function Ready({ summary }: { summary: AiSummary }) {
           render={
             <CollapsibleTrigger data-testid="summary-toggle" className="h-10 gap-1.5 rounded-[inherit] px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
               <Sparkles aria-hidden className={GLYPH} />
-              {t("summary.label")}
+              <span className={AI_TITLE}>{t("summary.label")}</span>
             </CollapsibleTrigger>
           }
         />
@@ -65,7 +78,7 @@ function Ready({ summary }: { summary: AiSummary }) {
           <p data-testid="summary-text" className="text-sm wrap-anywhere whitespace-pre-line text-pretty">
             {summary.summary}
           </p>
-          {summary.items.length > 0 && <ul className="mt-1.5" data-testid="summary-items">{summary.items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} />)}</ul>}
+          {summary.items.length > 0 && <ul className="mt-1.5" data-testid="summary-items">{summary.items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} from={messages.find((m) => m.id === item.messageId)} />)}</ul>}
         </div>
       </CollapsiblePanel>
     </Collapsible>
@@ -129,7 +142,7 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
   const content = (() => {
     switch (ui?.kind) {
       case "ready":
-        return <Ready summary={ui.summary} />;
+        return <Ready summary={ui.summary} messages={detail.messages} />;
       case "running":
         return (
           <Line
