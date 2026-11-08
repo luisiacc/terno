@@ -198,7 +198,11 @@ export async function applyPreview(): Promise<void> {
       return;
     }
     const message = ruleOnly ? t("action.rule.saved") : t(`action.outcome.${verb}`, { count: r.done, category: preview.categoryName ?? "" });
-    snack.success(r.stopped ? t("action.outcome.stopped", { outcome: message }) : message, { id: job.snackId, duration: 8000, description: ruleOnly ? undefined : notes(r), action: r.undoToken !== null ? undoAction(undo, t("action.undoName", { outcome: message })) : undefined });
+    // plan 162: the result says what it was for: the request in its words under the count (it read as any archive's)
+    const asked = s.sentence ? t("action.asked", { sentence: s.sentence }) : null;
+    // what happened first (a partial apply, what changed or was spared, the rule), then what was asked
+    const description = [ruleOnly ? undefined : notes(r), asked].filter(Boolean).join(" ") || undefined;
+    snack.success(r.stopped ? t("action.outcome.stopped", { outcome: message }) : message, { id: job.snackId, duration: 8000, description, action: r.undoToken !== null ? undoAction(undo, t("action.undoName", { outcome: message })) : undefined });
   } catch (error) {
     undoToken.resolve(null);
     useActionPreview.setState({ applying: false });

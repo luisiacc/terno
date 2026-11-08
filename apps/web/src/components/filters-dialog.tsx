@@ -25,7 +25,7 @@ import { describeRule, ruleMisses, sensedOp, withSensedOp, type SensedOp } from 
 import { getApp, setApp, useApp } from "~/state/app";
 import { ConfirmDialog } from "./settings/parts";
 import { AI_CARD, AI_GLYPH, AI_HEADER, AI_TITLE } from "./ai-card";
-import { provenanceLabel } from "~/lib/provenance";
+import { AiProvenance } from "./ai-provenance";
 import { imeKey } from "~/lib/ime-escape";
 import { RecipientInput } from "./recipient-input";
 
@@ -379,6 +379,8 @@ function Preview({ rule, note, onCount }: { rule: FilterRule; note?: string | nu
             : state
               ? richT("filters.preview.matches", { count: state.count, n: (n) => <span data-testid="preview-count">{n}</span> })
               : t("filters.preview.calculating")}
+          {/* plan 162: the sample says it's a sample */}
+          {state && state.count > state.sample.length && <span className="font-normal text-muted-foreground" data-testid="preview-shown"> · {t("filters.preview.newestShown", { count: state.sample.length })}</span>}
         </span>
         {loading && <Spinner className="size-3.5 text-muted-foreground" aria-hidden />}
       </div>
@@ -728,13 +730,21 @@ export function FiltersDialog() {
                 {folded && said !== null ? (
                   // plan 161: built, the box is the rule in a line: what it does, said from its fields
                   <>
+                    {/* plan 162: what was asked, quoted, so the rule under it can be checked against it (it was hidden) */}
                     <div className={AI_HEADER}>
                       <Sparkles aria-hidden className={AI_GLYPH} />
-                      <span className={AI_TITLE} data-testid="ai-provenance">{provenanceLabel()}</span>
-                      <Button ref={editRequestRef} variant="link-secondary" size="xs" className="ml-auto shrink-0" data-testid="ai-edit-request" onClick={() => (setFolded(false), setFocusPrompt(true))}>{t("filters.ai.editRequest")}</Button>
+                      <span className="flex min-w-0 items-baseline gap-1" data-testid="ai-request">
+                        <span className={cn(AI_TITLE, "shrink-0")}>{t("filters.ai.fromRequest")}</span>
+                        <span className="min-w-0 truncate text-foreground" title={prompt}>“{prompt.trim()}”</span>
+                      </span>
+                      <Button ref={editRequestRef} variant="ghost" size="xs" className="-me-1.5 ml-auto shrink-0 font-normal text-muted-foreground hover:text-foreground" data-testid="ai-edit-request" onClick={() => (setFolded(false), setFocusPrompt(true))}>{t("filters.ai.editRequest")}</Button>
                     </div>
-                    <div className="text-sm">
-                      <AiSaid said={said} misses={misses} heading={builtRef} />
+                    {/* the rule in words, and who wrote it at the line's end: the one control every AI surface has */}
+                    <div className="flex items-start gap-2 text-sm">
+                      <div className="min-w-0 flex-1">
+                        <AiSaid said={said} misses={misses} heading={builtRef} />
+                      </div>
+                      <AiProvenance model="" at={0} lines={[t("filters.ai.provenance")]} testId="ai-provenance" labelTestId="ai-provenance-label" className="-me-1.5 -mt-1 shrink-0" />
                     </div>
                   </>
                 ) : (
@@ -895,7 +905,7 @@ export function FiltersDialog() {
             {/* the owner's call (2026-11-08): Save is the main button, for every rule, by hand or by AI; applying it to mail
                 already here is the second choice, its consequence in its words */}
             <div className="ml-auto flex gap-2">
-              <Button variant="outline" data-testid="filter-save-apply" disabled={saving} onClick={() => save(true)}>
+              <Button variant="outline" className="text-foreground" data-testid="filter-save-apply" disabled={saving} onClick={() => save(true)}>
                 {/* pass 2: the consequence in its words: how many it will touch, once counted */}
                 {matches ? t("filters.saveApplyCount", { count: matches }) : t("filters.saveApply")}
               </Button>

@@ -31,6 +31,13 @@ vi.mock("~/rpc/connection", () => ({
 
 const { default: DigestPage } = await import("./digest-page");
 const { useToday } = await import("~/state/today");
+const { dismissSnack: dismissSnackNow } = await import("~/lib/snack");
+
+/** plan 162: the page's own Undo shows once the snack carrying the same one is gone: the snack goes, then it's pressed */
+async function undoInline() {
+  await act(async () => dismissSnackNow());
+  await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-undo]")!.click());
+}
 
 const item = (id: number) => ({ threadId: id, messageId: id, lastDate: 1, messageCount: 1, from: `Sender ${id}`, subject: `Issue ${id}`, line: `Line ${id}` });
 const digestOf = (day: string, automated = false): DigestRow => ({ day, state: "ready", automated, items: [1, 2, 3].map(item), liveIds: [1, 2, 3], model: "m" });
@@ -124,11 +131,38 @@ it("pass 2: after Archive, what it archived leaves the page, the rest stays unde
   await unmount();
   await show(served);
   expect(states()).toEqual(["keep:Stays in Inbox"]);
-  await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-undo]")!.click());
+  await undoInline();
   await vi.waitFor(() => expect(host.querySelector("[data-testid=digest-done]")).toBeNull());
   served = digestOf("2026-10-22");
   await act(async () => useToday.setState({ digest: served }));
   expect(states()).toEqual(["archive:", "keep:Stays in Inbox", "archive:"]);
+});
+
+it("plan 162: one Undo at a time: the page's waits for the snack carrying the same one to go", async () => {
+  archived = { undoId: 11, archived: 1, archivedIds: [1], changed: 0, spared: 0 };
+  await show(digestOf("2026-10-22"));
+  for (const i of [1, 2]) await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[i]!.click());
+  await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-archive]")!.click());
+  expect(host.querySelector("[data-testid=digest-done]")).not.toBeNull();
+  expect(host.querySelector("[data-testid=digest-undo]")).toBeNull();
+  await act(async () => dismissSnackNow());
+  expect(host.querySelector("[data-testid=digest-undo]")).not.toBeNull();
+});
+
+it("plan 162: Tick all and Untick all reset the ticks at once, both ways", async () => {
+  await show(digestOf("2026-10-22"));
+  expect(host.querySelector("[data-testid=digest-tick-all]")!.textContent).toBe("Untick all");
+  await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-tick-all]")!.click());
+  expect(ticks()).toEqual([false, false, false]);
+  expect(host.querySelector("[data-testid=digest-archive]")!.hasAttribute("disabled")).toBe(true);
+  expect(host.querySelector("[data-testid=digest-tick-all]")!.textContent).toBe("Tick all");
+  await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-tick-all]")!.click());
+  expect(ticks()).toEqual([true, true, true]);
+});
+
+it("plan 162: the header says what the batch was, the day it reaches back to", async () => {
+  await show(digestOf("2026-10-22"));
+  expect(host.querySelector("[data-testid=digest-coverage]")!.textContent).toMatch(/^Prepared today from 3 newsletters since \w{3}, \w{3} \d+(, \d{4})?$/);
 });
 
 it("pass 2: everything archived says it's all done", async () => {
@@ -158,7 +192,7 @@ it("Codex review: one archived elsewhere meanwhile stays listed, said so; a seco
   served = { ...digestOf("2026-10-22"), liveIds: [], readIds: [] };
   await act(async () => useToday.setState({ digest: served }));
   expect(host.querySelector("[data-testid=digest-done]")!.textContent).toContain("Archived 2 newsletters.");
-  await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-undo]")!.click());
+  await undoInline();
   served = { ...digestOf("2026-10-22"), liveIds: [3], readIds: [] };
   await act(async () => useToday.setState({ digest: served }));
   await vi.waitFor(() => expect(host.querySelector("[data-testid=digest-done]")!.textContent).toBe("Archived 1 newsletter."));
@@ -172,7 +206,7 @@ it("Codex review: an inline Undo that fails says so, with a retry", async () => 
   for (const i of [1, 2]) await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[i]!.click());
   await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-archive]")!.click());
   undoFails = true;
-  await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-undo]")!.click());
+  await undoInline();
   await vi.waitFor(() => expect(JSON.stringify(useSnack.getState())).toContain("can no longer be undone"));
   undoFails = false;
   expect(host.querySelector("[data-testid=digest-done]")).not.toBeNull();

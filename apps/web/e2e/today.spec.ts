@@ -54,8 +54,8 @@ test.describe("Today (plan 145)", () => {
     // plan 161: the row says why it needs you (they've written in it). Pass 2: as a label of its own, not the snippet's first words
     await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why")).toHaveText("Your turn");
     // the header says what each number is: the sidebar's count, then how many of them the list shows if it's capped
-    // pass 3: one sentence, never a second total to read against the Inbox's: "9 need you", or when capped "The newest 12 of 41 that need you"
-    await expect(page.getByTestId("today-needs")).toHaveText(/^(The newest \d+ of )?\d+ (that )?needs? you$/);
+    // pass 3: one sentence, never a second total to read against the Inbox's: "9 need you", or when capped (plan 162) "Showing 12 of 41"
+    await expect(page.getByTestId("today-needs")).toHaveText(/^(Showing \d+ of \d+|\d+ needs? you)$/);
     const sidebar = (await page.getByTestId("nav-today").innerText()).match(/\d+/)?.[0];
     if (sidebar) await expect(page.getByTestId("today-needs")).toHaveText(new RegExp(`(^| of )${sidebar} (that )?needs? you$`));
     await expect(page.getByTestId("today-line")).not.toContainText(/waiting|\d+ to reply/);

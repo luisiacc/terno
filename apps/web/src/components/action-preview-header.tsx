@@ -7,6 +7,8 @@ import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/com
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Spinner } from "@terno/ui/components/spinner";
 import { cn } from "@terno/ui/lib/utils";
+import { AiProvenance } from "./ai-provenance";
+import { AiErrorNotice } from "./ai-error";
 import { useEffect, type ReactNode } from "react";
 import { applyPreview, check, inboxOnly, includeSkipped, isDestructive, previewConsequence, previewCount, previewTitle, previewWaiting, showLeftOut, stopApplying, useActionPreview, verbOf } from "~/lib/action-preview";
 import { useAppearance } from "~/lib/appearance";
@@ -104,7 +106,8 @@ export default function ActionPreviewHeader() {
           {!list && (
             <>
               <Dot />
-              <Button variant="link-secondary" size="xs" className="no-drag shrink-0" data-testid="action-show-rule" onClick={() => closePreviewRow()}>{t("action.rule.show")}</Button>
+              {/* plan 162: Esc said once, where it applies: here, while a conversation covers the rule */}
+              <Button variant="link-secondary" size="xs" className="no-drag shrink-0 gap-1.5" data-testid="action-show-rule" aria-keyshortcuts="Escape" onClick={() => closePreviewRow()}>{t("action.rule.show")} <Shortcut keys="escape" /></Button>
             </>
           )}
         </p>
@@ -176,6 +179,9 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
     const where = t(inboxOnly(preview) ? "action.in.inbox" : "action.in.everywhere");
     setApp({ dialog: "filters", filterPrefill: { name: plan.summary, rule: { match: "all", conditions: preview.keepConditions, actions: [act] }, source: "ai", note: waiting ? undefined : t("filters.preview.fromAction", { count, where }) } });
   };
+  // plan 162: the one provenance control, at the end of the rule's line, as every AI result has: the model read the request
+  // into this rule (the plan doesn't carry which model, so it says what it did and how to check it)
+  const provenance = <AiProvenance model="" at={0} lines={[t("action.provenance")]} testId="action-provenance" className="-me-1.5 ms-auto no-drag" />;
   const reader = variant === "reader";
   // plan 161, pass 3: a large or destructive batch says what it'll do, in words, before anything else about the rule
   const said = waiting ? null : previewConsequence(preview, folderName);
@@ -234,6 +240,7 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
               {t("action.rule.details")}
             </CollapsibleTrigger>
             {editLink}
+            {provenance}
           </div>
           <CollapsiblePanel>
             {/* the UI's type, not code's: a pattern breaks only after a "|", never inside a word */}
@@ -251,7 +258,10 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
           </CollapsiblePanel>
         </Collapsible>
       ) : (
-        editLink && <div>{editLink}</div>
+        <div className="flex flex-wrap items-center gap-x-4">
+          {editLink}
+          {provenance}
+        </div>
       )}
       {(plan.action.type === "createCategory" || preview.hidden || preview.forwards || preview.skipped > 0 || checking || checkError || preview.leftOut + preview.unchecked > 0 || (preview.keep.kind !== "hidden" && !ruleOnly)) && (
         <div className="hairline-t flex flex-col gap-1.5 pt-3">
@@ -266,12 +276,18 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
           )}
           {checking && <Line testId="action-checking"><Spinner className="size-3" /> {t("action.checking")}</Line>}
           {checkError && (
-            <div className="space-y-1.5 pt-0.5" data-testid="action-check-error">
-              <p className="text-xs text-destructive-ink">{checkError}</p>
-              <div className="flex gap-2">
-                <Button size="xs" variant="secondary" className="no-drag" data-testid="action-check-retry" onClick={() => void check({})}>{t("ask.tryAgain")}</Button>
-                <Button size="xs" variant="secondary" className="no-drag" onClick={() => void check({ skip: true })}>{t("action.skipCheck")}</Button>
-              </div>
+            // plan 162: the one AI error (ai-error.tsx), keeping the way past a check that keeps failing
+            <div className="pt-0.5" data-testid="action-check-error">
+              <AiErrorNotice
+                copy={{ title: checkError, help: null, settings: false }}
+                textTestId="action-check-error-text"
+                actions={
+                  <>
+                    <Button size="sm" variant="outline" className="no-drag" data-testid="action-check-retry" onClick={() => void check({})}>{t("ask.tryAgain")}</Button>
+                    <Button size="sm" variant="ghost" className="no-drag text-muted-foreground hover:text-foreground" data-testid="action-check-skip" onClick={() => void check({ skip: true })}>{t("action.skipCheck")}</Button>
+                  </>
+                }
+              />
             </div>
           )}
           {preview.leftOut + preview.unchecked > 0 && (
@@ -310,6 +326,7 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1" data-testid="action-keys">
             <span className="inline-flex items-center gap-1.5"><Shortcut keys="mod+enter" /> {waiting ? t(`action.button.${verb}`) : t(`action.apply.${verb}`, { count })}</span>
             <span className="inline-flex items-center gap-1.5"><Shortcut keys="escape" /> {t("common.cancel")}</span>
+            <span className="inline-flex items-center gap-1.5"><Shortcut keys="j" /><Shortcut keys="k" /> {t("action.rule.read")}</span>
             <span className="inline-flex items-center gap-1.5"><Shortcut keys="x" /> {t("action.rule.leaveOut")}</span>
           </p>
           {reader && <p className="text-pretty" data-testid="action-help">{t("action.rule.keys")}</p>}

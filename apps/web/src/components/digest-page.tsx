@@ -6,20 +6,17 @@ import { Spinner } from "@terno/ui/components/spinner";
 import { ChevronRight } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { errorHelp, modelName } from "~/lib/ai";
+import { digestTarget, modelName } from "~/lib/ai";
 import { listDate } from "~/lib/format";
 import { deferred, trackJob, undoAction, undoActions } from "~/lib/actions";
-import { registerUndo, snack, undoNow } from "~/lib/snack";
+import { registerUndo, snack, undoNow, useSnack } from "~/lib/snack";
+import { whenDay } from "~/lib/when";
+import { AiErrorNotice, aiErrorCopy, errorTarget } from "~/components/ai-error";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { reloadList } from "~/state/list";
 import { digestPick, keepDigestPick, useToday } from "~/state/today";
 import { AiProvenance } from "~/components/ai-provenance";
-
-const dayLong = (day: string) => {
-  const [y, m, d] = day.split("-").map(Number);
-  return new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long" }).format(new Date(y!, m! - 1, d!));
-};
 
 /**
  * Plan 161, pass 2: what each row is, said on it. To archive (ticked), kept (unticked), opened (read: plan 145 archives
@@ -56,6 +53,9 @@ export default function DigestPage() {
   const [toggled, setToggled] = useState<ReadonlySet<number>>(() => digestPick(day).toggled);
   // pass 2: what this page archived (its rows leave, the header says it's done), held with the rest of the pick
   const batches = useToday((s) => (s.pick?.day === day ? (s.pick.done ?? null) : null));
+  // plan 162: the snack on screen carries this page's last Undo: the page doesn't show a second one beside it
+  const lastUndo = batches?.at(-1)?.undo ?? null;
+  const undoInSnack = useSnack((s) => lastUndo !== null && s.current?.action?.undo === lastUndo);
   const scroller = useRef<HTMLDivElement>(null);
   const scrollAt = useRef(digestPick(day).scroll);
   // back where it was left, once its rows are there: once a digest
@@ -105,6 +105,14 @@ export default function DigestPage() {
       else next.add(id);
       return next;
     });
+  // plan 162: the ticks reset at once, both ways (Atelier codex): every live row ticked, or none
+  const anyTicked = chosen.length > 0;
+  const tickAll = (on: boolean) => {
+    const ids = shown.filter(live).map((i) => i.threadId);
+    // a set means the unticked ones in a digest and the ticked ones in automated mail
+    setToggled(new Set(on === automated ? ids : []));
+  };
+  const heading = useRef<HTMLHeadingElement>(null);
   const open = (threadId: number) => {
     if (day && restored.current === day) keepDigestPick({ day, toggled, scroll: scroller.current?.scrollTop ?? 0, opened: threadId });
     useToday.setState({ fromDigest: threadId });
@@ -132,6 +140,13 @@ export default function DigestPage() {
       const notes = r.changed + r.spared > 0 ? t("today.digest.leftAlone", { count: r.changed + r.spared }) : undefined;
       snack.success(t(automated ? "today.digest.archivedSelected" : "today.digest.archived", { count: r.archived }), { id: job.snackId, duration: 8000, description: notes, action: r.undoId !== null ? undoAction(undo, t("today.digest.undoName")) : undefined });
       setLive((held) => new Set([...(held ?? items.map((i) => i.threadId))].filter((id) => !chosen.some((i) => i.threadId === id))));
+      // plan 162: the keys stay on the page (the button that had them is gone): the first row still here, else the title
+      requestAnimationFrame(() => {
+        const at = document.activeElement;
+        if (at && at !== document.body && at.isConnected) return;
+        const next = scroller.current?.querySelector<HTMLElement>("[data-digest-open]");
+        (next ?? heading.current)?.focus({ preventScroll: true });
+      });
       // what the backend really archived: one archived or changed elsewhere meanwhile stays listed, said so (Codex review)
       const pick = useToday.getState().pick;
       if (r.archivedIds.length && pick?.day === pickDay) keepDigestPick({ ...pick, done: [...(pick.done ?? []), { ids: r.archivedIds, undo: r.undoId !== null ? undo : null }] });
@@ -146,6 +161,7 @@ export default function DigestPage() {
   if (!row) return <div className="p-8 text-sm text-muted-foreground" data-testid="digest-page">{t("today.digest.none")}</div>;
   const done = batches?.length ? { count: batches.reduce((n, b) => n + b.ids.length, 0), undo: batches.at(-1)!.undo } : null;
   const finished = done !== null;
+  const failure = row.state === "failed" ? aiErrorCopy({ message: t("today.digest.failed"), kind: row.errorKind as never }, ai ? errorTarget(digestTarget(ai).provider, ai) : null) : null;
   return (
     // ai-r03: the pane scrolls, bounded to the reader's height, and the page is a column in it. The page itself scrolled
     // with no height to scroll in, so it grew past the window and the parent clipped its last rows (every style, since
@@ -164,32 +180,45 @@ export default function DigestPage() {
       data-testid="digest-page"
       data-finished={finished || undefined}
       aria-label={t("today.digest.title")}
-      className="mx-auto w-full max-w-(--reader-max,48rem) space-y-3 px-8 pt-16 pb-8"
+      className="mx-auto w-full max-w-(--reader-max,48rem) space-y-3 px-8 pb-8"
     >
-      <header className="space-y-1">
-        <div className="flex items-baseline justify-between gap-3">
-          <h1 className="text-xl font-semibold tracking-tight" data-testid="digest-title">{t(automated ? "today.digest.automatedTitle" : "today.digest.title")}</h1>
-          <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-            {/* pass 3: who wrote the lines, at the top as every AI result says it (it was under the list), with the one
-                "Written with AI ▾" every AI surface has; the model and its caution behind it */}
-            {!automated && row.model && (
-              <>
-                <AiProvenance model={row.model} at={0} detail={t("today.digest.writtenBy", { model: modelName(row.model) })} testId="digest-provenance" />
-                <span aria-hidden>·</span>
-              </>
-            )}
-            {dayLong(row.day)}
-          </span>
-        </div>
-        <div className="flex items-center justify-between gap-3">
+      {/* plan 162: the header stays at the pane's top as the list scrolls under it, so the count and Archive are there when
+          the review ends (they scrolled away), with the list's hairline under it; it starts where the page's title did */}
+      <div aria-hidden className="h-12" />
+      <header className="sticky top-0 z-10 -mx-8 mt-0! space-y-1.5 border-b border-hairline bg-background px-8 pt-4 pb-3" data-testid="digest-header">
+        <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold tracking-tight outline-none" data-testid="digest-title">{t(automated ? "today.digest.automatedTitle" : "today.digest.title")}</h1>
+        {/* plan 162: what the batch is, said once, under the title (the day and a stray "·" sat beside the provenance) */}
+        {!automated && items.length > 0 && (
+          <p className="text-xs text-muted-foreground" data-testid="digest-coverage">
+            {t("today.digest.coverage", { count: items.length, date: whenDay(Math.min(...items.map((i) => i.lastDate))) })}
+          </p>
+        )}
+        {/* the anatomy's action row: the primary, the quiet reset, what it'll do, and who wrote the lines at its end */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 pt-1" data-testid="digest-actions">
+          {(!finished || chosen.length > 0) && (
+            // the count is what goes, always: what was opened or unticked isn't in it, and its row says so
+            <Button size="sm" data-testid="digest-archive" disabled={!chosen.length} onClick={() => void archive()}>
+              {automated ? t("today.digest.archiveSelected", { count: chosen.length }) : t("today.digest.archiveAll", { count: chosen.length })}
+            </Button>
+          )}
+          {/* pass 2: done, its Undo here once the snack that carries the same one is gone (plan 162: one Undo at a time) */}
+          {finished && done.undo && !undoInSnack && (
+            <Button size="sm" variant="outline" className="text-foreground" data-testid="digest-undo" aria-label={t("today.digest.undoName")} onClick={() => undoNow(done.undo!)}>
+              {t("common.undo")}
+            </Button>
+          )}
+          {shown.some(live) && (
+            <Button size="sm" variant="ghost" className="px-2 text-muted-foreground hover:text-foreground" data-testid="digest-tick-all" onClick={() => tickAll(!anyTicked)}>
+              {t(anyTicked ? "today.digest.untickAll" : "today.digest.tickAll")}
+            </Button>
+          )}
           {finished ? (
-            // pass 2: done, said as done, with its Undo here (the snack's runs the same one)
             <p role="status" className="text-sm" data-testid="digest-done">
               {t(automated ? "today.digest.archivedSelected" : "today.digest.archived", { count: done.count })}.
               {shown.every((i) => stateOf(i) === "archived") && <span className="ml-1 text-muted-foreground" data-testid="digest-all-done">{t("today.digest.allDone")}</span>}
             </p>
           ) : (
-            <p className="text-xs text-muted-foreground" data-testid="digest-count">
+            <p className="text-xs text-muted-foreground tabular" data-testid="digest-count">
               {automated ? (
                 chosen.length < shown.filter(live).length ? t("today.digest.countSelected", { count: shown.filter(live).length, selected: chosen.length }) : t("today.digest.automatedCount", { count: shown.filter(live).length })
               ) : (
@@ -199,30 +228,24 @@ export default function DigestPage() {
                   {staying > 0 && <span data-testid="digest-staying"> · {t("today.digest.staying", { count: staying })}</span>}
                 </>
               )}
-              {!automated && chosen.length > 0 && <span className="block" data-testid="digest-tick-hint">{t("today.digest.tickHint")}</span>}
             </p>
           )}
-          <div className="flex shrink-0 items-center gap-2">
-            {finished && done.undo && (
-              <Button size="sm" variant="secondary" data-testid="digest-undo" aria-label={t("today.digest.undoName")} onClick={() => undoNow(done.undo!)}>
-                {t("common.undo")}
-              </Button>
-            )}
-            {(!finished || chosen.length > 0) && (
-              // the count is what goes, always: what was opened or unticked isn't in it, and its row says so
-              <Button size="sm" data-testid="digest-archive" disabled={!chosen.length} onClick={() => void archive()}>
-                {automated ? t("today.digest.archiveSelected", { count: chosen.length }) : t("today.digest.archiveAll", { count: chosen.length })}
-              </Button>
-            )}
-          </div>
+          {!automated && row.model && (
+            // pass 3: who wrote the lines, the one control every AI surface has; plan 162: at the action row's end
+            <AiProvenance model={row.model} at={0} detail={t("today.digest.writtenBy", { model: modelName(row.model) })} testId="digest-provenance" className="-me-1.5 ms-auto" />
+          )}
         </div>
+        {!finished && !automated && chosen.length > 0 && <p className="text-xs text-muted-foreground" data-testid="digest-tick-hint">{t("today.digest.tickHint")}</p>}
       </header>
       {row.state === "pending" && <p className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="digest-preparing"><Spinner className="size-3" /> {t("today.digest.preparing")}</p>}
       {row.state === "failed" && (
-        <div className="space-y-1.5" data-testid="digest-failed">
-          <p className="text-sm text-destructive-ink">{t("today.digest.failed")}</p>
-          {ai && row.errorKind ? <p className="text-xs text-muted-foreground">{errorHelp(row.errorKind as Parameters<typeof errorHelp>[0], ai)}</p> : null}
-          <Button size="sm" variant="secondary" data-testid="digest-retry" onClick={() => void client.call("today.digestRetry", {}).catch(() => {})}>{t("ask.tryAgain")}</Button>
+        // plan 162: the one AI error (ai-error.tsx), with Try again
+        <div data-testid="digest-failed">
+          <AiErrorNotice
+            copy={failure!}
+            textTestId="digest-failed-text"
+            actions={<Button size="sm" variant="outline" data-testid="digest-retry" onClick={() => void client.call("today.digestRetry", {}).catch(() => {})}>{t("ask.tryAgain")}</Button>}
+          />
         </div>
       )}
       {automated && (
@@ -233,7 +256,7 @@ export default function DigestPage() {
       )}
       {finished && shown.length > 0 && <h2 className="pt-2 text-xs font-medium text-muted-foreground" data-testid="digest-still-here">{t("today.digest.stillHere")}</h2>}
       {shown.length > 0 && (
-        <ul className="border-t border-hairline">
+        <ul>
           {shown.map((i) => {
             const state = stateOf(i);
             // owner's decisions (2): one sent to Trash or Spam from the reader says where it went, as its snack did

@@ -1,5 +1,6 @@
 import type { Habits, VoiceJudgment, WritingProfileView, WritingStatus } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
+import { richT } from "~/lib/i18n";
 import { Badge } from "@terno/ui/components/badge";
 import { Button } from "@terno/ui/components/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
@@ -81,7 +82,8 @@ function ItemsField({ label, add, item, remove, items, onChange, testId, first }
       {items.map((value, i) => (
         <div key={i} className="flex items-start gap-1" data-testid={`${testId}-item`}>
           <Textarea ref={i === 0 ? first : undefined} aria-label={item(i + 1)} data-testid={`${testId}-field`} value={value} rows={1} onChange={(e) => onChange(items.map((x, j) => (j === i ? e.target.value : x)))} className="min-h-9 resize-none py-1.5" />
-          <CloseButton label={remove(i + 1)} className="mt-1.5" data-testid={`${testId}-remove`} onClick={() => onChange(items.filter((_, j) => j !== i))} />
+          {/* plan 162: a 32 px target (it was the 20 px glyph), drawn at 24 */}
+          <CloseButton size="sm" label={remove(i + 1)} className="relative mt-1.5 after:absolute after:-inset-1 after:content-['']" data-testid={`${testId}-remove`} onClick={() => onChange(items.filter((_, j) => j !== i))} />
         </div>
       ))}
       {items.length < ITEMS_MAX && (
@@ -200,10 +202,12 @@ function ProfileEditor({ p, title, onDone }: { p: WritingProfileView; title: str
       <ItemsField label={t("aiDraft.style.editSignOffs")} add={t("aiDraft.style.addSignOff")} item={(n) => t("aiDraft.style.signOffItem", { n })} remove={(n) => t("aiDraft.style.removeSignOff", { n })} items={signOffs} onChange={setSignOffs} testId="style-edit-signoffs" />
       {field("phrases", t("aiDraft.style.editPhrases"), phrases, setPhrases, "style-edit-phrases", greetings.length ? undefined : phrasesRef)}
       {p.judgment && field("notes", t("aiDraft.style.editNotes"), notes, setNotes, "style-edit-notes")}
-      {/* plan 161: as Rules' footer, Save and Cancel stay in view however tall the form is */}
+      {/* plan 161: as Rules' footer, Save and Cancel stay in view however tall the form is. Plan 162: and what's being
+          edited is said beside them, so a long form never loses its scope */}
       <div className="sticky -bottom-4 z-10 -mx-4 -mb-3 flex gap-1.5 border-t border-hairline bg-popover bg-linear-to-b from-(--card-bg) to-(--card-bg) px-4 pt-2.5 pb-6.5" data-testid="style-edit-footer">
         <Button size="sm" data-testid="style-edit-save" onClick={() => void save()}>{t("common.save")}</Button>
         <Button size="sm" variant="ghost" data-testid="style-edit-cancel" onClick={() => onDone(null)}>{t("common.cancel")}</Button>
+        <span className="ms-auto min-w-0 self-center truncate text-xs text-muted-foreground" data-testid="style-edit-scope">{t("aiDraft.style.editing", { name: title })}</span>
       </div>
       <ConfirmDialog open={asking} onOpenChange={setAsking} title={t("aiDraft.style.discardTitle")} description={t("aiDraft.style.discardHint", { name: title })} confirm={t("aiDraft.style.discard")} testId="style-discard-dialog" onConfirm={() => {
         onDone(null);
@@ -346,12 +350,13 @@ function Profile({ initial, onChanged, onEditing, onReset, total, picked, compac
           </CollapsiblePanel>
         </Collapsible>
       )}
-      <div className="-ml-2 flex flex-wrap gap-0.5">
-        <Button ref={editButton} size="xs" variant="ghost" className="font-normal" aria-label={t("aiDraft.style.editName", { name: title })} data-testid="style-profile-edit" disabled={removing > 0} onClick={() => setEditing(true)}>{t("common.edit")}</Button>
+      {/* plan 162: the profile's own commands are secondaries, as the page's other commands are (three idioms on one page) */}
+      <div className="flex flex-wrap gap-1.5">
+        <Button ref={editButton} size="sm" variant="outline" className="text-foreground" aria-label={t("aiDraft.style.editName", { name: title })} data-testid="style-profile-edit" disabled={removing > 0} onClick={() => setEditing(true)}>{t("common.edit")}</Button>
         {p.edited && p.newSince > 0 ? (
-          <Button size="xs" variant="ghost" className="font-normal" data-testid="style-profile-update" onClick={reset}>{t("aiDraft.style.update", { count: p.newSince })}</Button>
+          <Button size="sm" variant="outline" className="text-foreground" data-testid="style-profile-update" onClick={reset}>{t("aiDraft.style.update", { count: p.newSince })}</Button>
         ) : (
-          <Button size="xs" variant="ghost" className="font-normal" aria-label={t("aiDraft.style.resetName", { name: title })} data-testid="style-profile-reset" onClick={reset}>{t("common.reset")}</Button>
+          <Button size="sm" variant="outline" className="text-foreground" aria-label={t("aiDraft.style.resetName", { name: title })} data-testid="style-profile-reset" onClick={reset}>{t("common.reset")}</Button>
         )}
       </div>
     </div>
@@ -553,7 +558,8 @@ export default function WritingStyle() {
       {/* plan 161: what it has learned, and how the styles combine, before any of them */}
       <div className="mb-3 px-1" data-testid="style-overview">
         <p className="text-sm" data-testid="style-status">{line}</p>
-        <p className="mt-1 text-xs text-muted-foreground" data-testid="style-precedence">{t("aiDraft.style.precedence")}</p>
+        {/* plan 162: the order as a sequence, its four steps in the ink (it read as an algorithm) */}
+        <p className="mt-1 text-xs text-muted-foreground" data-testid="style-precedence">{richT("aiDraft.style.precedence", { b: (x) => <span className="text-foreground">{x}</span> })}</p>
         {reset && (
           <p role="status" className="mt-2 flex items-center gap-2 text-sm" data-testid="style-reset-done">
             {t("aiDraft.style.resetDone", { name: reset.name })}
@@ -591,7 +597,7 @@ export default function WritingStyle() {
         <Study status={status} onChanged={changed} />
         <SettingsRow label={t("aiDraft.style.clear")} hint={t("aiDraft.style.clearHint")}>
           {({ id: _id, "aria-labelledby": _l, "aria-describedby": described }) => (
-            <Button variant="ghost" size="sm" className="text-destructive-ink" aria-describedby={described} data-testid="style-clear" onClick={() => setClearing(true)}>
+            <Button variant="outline" size="sm" className="text-destructive-ink" aria-describedby={described} data-testid="style-clear" onClick={() => setClearing(true)}>
               {t("aiDraft.style.clearButton")}
             </Button>
           )}

@@ -620,7 +620,7 @@ function Subtitle({ filter, greeting }: { filter: QuickFilter | undefined; greet
 
 /**
  * Plan 161: Today's numbers in words, under its title in every header. Pass 3: one sentence, never a second total to read
- * against the Inbox's: what the list is ("The newest 12 of 41 that need you", 41 being the sidebar's count) and, when it's
+ * against the Inbox's: what the list is ("Showing 12 of 41", 41 being the sidebar's count; plan 162) and, when it's
  * capped, the way to the rest by the Inbox filter's own name. The digest's way in is the list's first row.
  */
 export function TodayLine() {

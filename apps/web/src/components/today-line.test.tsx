@@ -27,8 +27,8 @@ async function show(today: number, shown: number, more: number) {
 
 it("capped: what the list is, and the way to the rest by the filter's name, never the Waiting count", async () => {
   await show(41, 12, 29);
-  expect(host.querySelector("[data-testid=today-needs]")!.textContent).toBe("The newest 12 of 41 that need you");
-  expect(host.querySelector("[data-testid=today-more]")!.textContent).toBe("More in To reply to");
+  expect(host.querySelector("[data-testid=today-needs]")!.textContent).toBe("Showing 12 of 41");
+  expect(host.querySelector("[data-testid=today-more]")!.textContent).toBe("See all in To reply to");
   expect(line()).not.toMatch(/165|waiting/);
 });
 
