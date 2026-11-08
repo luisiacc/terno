@@ -246,3 +246,16 @@ Notes on the table:
 - In "before", the ring is `border` at a hairline's width and the dark thumb is `muted`.
 - Graphite's selected-row secondary text is 4.80:1 light and 4.71:1 dark (≥ 4.5). Round 5's 3.8:1 was measured on an earlier, darker selection (#C4C4C4); plan 158 had already moved it to #DCDCDC.
 - Every CONTRAST_PAIRS pair still holds in every theme.
+
+## What the Codex code review changed
+
+Round 1 made six findings; all six are fixed, each with a regression test that fails without the fix.
+
+1. **Compact rows overflowed into the date, and their previews moved with the sender's width.** The subject's column had `shrink-0`, and a compact row's sender had no column. Both are now columns of the list's width (`cqw`), so they're the same on every row whatever the marks take, and both can give way: the preview goes first. A new spec test (compact density at 1100 and 1060 wide) failed in every design without the fix: subjects ran over the date.
+2. **The menu's fit went stale when rows arrived while it was open.** A slow conversation adds Reply all, for example. The fit runs from a ResizeObserver on the menu, not from two frames. Codex's original concern is fixed, and so is a race found with it: in a window too short for either side of its row, the menu shows whole at the window's foot, covering its row (revision 4), and scrolls ending on a whole row only when the window can't hold it. The spec adds rows to an open menu: Lumen and Atelier failed with the frame-based fit.
+3. **The boundary suite skipped selectable palettes.** GitHub Light's open row was at 1.14 and its field at 1.23 while the suite passed. Now every theme is checked under every draft surface. Apple, Solarized, Gruvbox, GitHub, Catppuccin, Dracula, Monokai, Tokyo Night and Nord were tuned the same way (lightness or alpha only), with one override (Apple Light's `cat-slate-ink`, 0.469 to 0.466). `registry.test`'s example of an unchanged draft label moved from GitHub Light (now stepped) to Gruvbox Light.
+4. **The quote's measure capped its box, not its text.** It came out 14 px short. The measure is now on the quoted text inside the bar and indent, and the spec compares usable widths (max-width less padding and border). It failed without the fix.
+5. **Titles weren't checked at the narrow steps.** The spec now compares the three reader-pane titles at 1100x700 (a 539 px reader, under 560) and 960x700 (a 420 px reader). That found a real bug: the selection panel's container was its scroller, whose gutter made the under-420 px margin start 8 px early, so its title sat 16 px off the subject's x. The panel is now the container.
+6. **The edge check could pass a missing outline.** It now reads each side's border or ring from the computed style, samples the stroke's own pixel (a border's inside the box, a ring's just outside), and proves itself: with the composer card's ring removed it reports all four sides.
+
+The spec also waits for a menu's box to be still before measuring, because a menu re-anchored at the window's foot moves a frame after it opens.
