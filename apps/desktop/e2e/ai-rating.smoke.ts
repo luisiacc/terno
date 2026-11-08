@@ -22,7 +22,8 @@ test("launch({ ai: true }): settings survive the relaunch, the AI entry points s
     await page.getByTestId("compose-discard").click();
     await expect(page.getByTestId("composer")).toHaveCount(0);
     await page.keyboard.press("Meta+Shift+k");
-    await expect(page.getByTestId("palette-page")).toHaveText("Ask");
+    // plan 161, pass 3: Ask's page names its dialog (its chip became "‹ All commands")
+    await expect(page.getByRole("dialog", { name: "Ask your mail" })).toBeVisible();
     await page.keyboard.press("Escape");
     const net = network();
     expect(net.problems).toEqual([]);
