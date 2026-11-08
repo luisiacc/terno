@@ -17,7 +17,7 @@ import { RecipientInput, recipientSummary } from "./recipient-input";
 import { warmAutocomplete } from "~/lib/autocomplete";
 import { richT } from "~/lib/i18n";
 import { keepInView } from "~/lib/reader-scroll";
-import { clearSendProblem, useSendProblem } from "~/lib/send-problem";
+import { cancelEmptySend, clearSendProblem, useSendProblem } from "~/lib/send-problem";
 import { registerUndo, snack } from "~/lib/snack";
 import { getSelectionWriteRevision, setApp, useApp } from "~/state/app";
 import { isMac } from "~/lib/select";
@@ -608,8 +608,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
               } else if (e.key === "Escape" && !popupOpen()) {
                 e.preventDefault();
                 e.stopPropagation();
-                // the AI row's first: it stops a stream, closes itself (§10.4)
-                if (!aiDraftHooks.escape(d.key)) collapse();
+                // Send's question first (plan 158), then the AI row: it stops a stream, closes itself (§10.4)
+                if (!cancelEmptySend(d.key) && !aiDraftHooks.escape(d.key)) collapse();
               }
             }}
           >

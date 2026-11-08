@@ -811,6 +811,12 @@ test("a send with no message asks first, in Send's row: Send or Cancel, ⌘↵ t
     await expect(page.getByTestId("compose-send")).toHaveCount(0);
     await expect(body).toBeFocused();
     await expect(sending).toHaveCount(0);
+    // Esc from the text puts the question away, not the reply
+    await page.keyboard.press("Escape");
+    await expect(ask).toHaveCount(0);
+    await expect(page.getByTestId("composer")).toBeVisible();
+    await expect(body).toBeFocused();
+    await page.keyboard.press("ControlOrMeta+Enter");
     await page.getByTestId("compose-empty-cancel").click();
     await expect(ask).toHaveCount(0);
     await expect(body).toBeFocused();

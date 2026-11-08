@@ -1112,8 +1112,10 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
   // before anything is saved: a refused send leaves no draft behind that wasn't there
   const refused = draft && recipientProblem(draft);
   if (refused) { sayRecipientProblem(key, refused); return false; }
-  // asked already whether to send no message (below): this Send is the answer
-  const asked = useEmptySend.getState().key === key;
+  // asked already whether to send no message (below): this Send is the answer, at the time Send later asked for if it did
+  const pending = useEmptySend.getState();
+  const asked = pending.key === key;
+  if (asked && sendAt === undefined) sendAt = pending.sendAt;
   clearEmptySend(key);
   // read-only from here: nothing typed while the save in flight settles can fall between it and the send
   markSending(key, true);

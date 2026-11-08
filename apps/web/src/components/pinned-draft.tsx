@@ -22,6 +22,7 @@ import { RichBody } from "./composer/rich";
 import { focusSelector, type InlineFocusMove } from "~/lib/compose-focus-move";
 import { AiDraftButton } from "./composer/ai-slot";
 import { aiDraftHooks } from "~/lib/ai-draft-state";
+import { cancelEmptySend } from "~/lib/send-problem";
 
 /** The card's distance from the pane's edges (px; right-3 bottom-3). */
 const GAP = 12;
@@ -148,8 +149,8 @@ export function PinnedDraft({ overList }: { /** List's rows show under it (its d
           } else if (e.key === "Escape" && !popupOpen()) {
             e.preventDefault();
             e.stopPropagation();
-            // the AI row's first: it stops a stream, closes itself (§10.4)
-            if (aiDraftHooks.escape(key)) return;
+            // Send's question first (plan 158), then the AI row: it stops a stream, closes itself (§10.4)
+            if (cancelEmptySend(key) || aiDraftHooks.escape(key)) return;
             // Esc leaves the card (it stays pinned): back to the list, or List's page, so j/k read on
             focusReading(false);
           }

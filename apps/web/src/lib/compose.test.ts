@@ -39,10 +39,20 @@ describe("sending a draft", () => {
     expect(useEmptySend.getState()).toMatchObject({ key, sendAt: 123 });
     expect(rpc.calls.filter((c) => c.method !== "drafts.save")).toHaveLength(0);
     expect(useDrafts.getState().drafts[key]!.sending).toBe(false);
+    // ⌘↵ answers with no time of its own: the one Send later asked for stands
     const second = sendDraft(key); await tick();
     expect(useEmptySend.getState().key).toBeNull();
-    rpc.calls.find((c) => c.method === "compose.send")!.resolve({ opId: "o", threadId: 1 });
+    expect(rpc.calls.filter((c) => c.method === "compose.send")).toHaveLength(0);
+    const scheduled = rpc.calls.find((c) => c.method === "compose.schedule")!;
+    scheduled.resolve({ id: 7, sendAt: 123 });
     expect(await second).toBe(true);
+    // asked from Send itself, Send again sends now
+    rpc.calls.length = 0;
+    const now = createDraft({ ...newFields(1), toText: "ana@example.com" });
+    expect(await sendDraft(now)).toBe(false);
+    const again = sendDraft(now); await tick();
+    rpc.calls.find((c) => c.method === "compose.send")!.resolve({ opId: "o", threadId: 1 });
+    expect(await again).toBe(true);
   });
 
   it("a forward, a file or a picture is a message: no question", async () => {

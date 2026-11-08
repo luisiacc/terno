@@ -30,3 +30,10 @@ export const useEmptySend = create<{ key: string | null; sendAt?: number }>(() =
 export function clearEmptySend(key: string): void {
   if (useEmptySend.getState().key === key) useEmptySend.setState({ key: null, sendAt: undefined });
 }
+
+/** Esc in the composer while it asks: the question goes, and nothing else (the composer stays). True when it was asking. */
+export function cancelEmptySend(key: string): boolean {
+  if (useEmptySend.getState().key !== key) return false;
+  clearEmptySend(key);
+  return true;
+}

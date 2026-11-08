@@ -20,6 +20,7 @@ import { pinDraft } from "~/lib/pinned-draft";
 import { AiDraftButton } from "./composer/ai-slot";
 import { aiDraftHooks } from "~/lib/ai-draft-state";
 import { focusSelector } from "~/lib/compose-focus-move";
+import { cancelEmptySend } from "~/lib/send-problem";
 
 /** Esc, Collapse and sending leave the new message; focus goes to its strip item (kept) or back to the list. */
 function leave(key: string) {
@@ -109,8 +110,8 @@ export function NewMessage() {
         } else if (e.key === "Escape" && !popupOpen()) {
           e.preventDefault();
           e.stopPropagation();
-          // the AI row's first: it stops a stream, closes itself (§10.4)
-          if (!aiDraftHooks.escape(key)) leave(key);
+          // Send's question first (plan 158), then the AI row: it stops a stream, closes itself (§10.4)
+          if (!cancelEmptySend(key) && !aiDraftHooks.escape(key)) leave(key);
         }
       }}
     >
