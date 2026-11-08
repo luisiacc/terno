@@ -42,6 +42,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
   const formRef = useRef<HTMLFormElement>(null);
   const pastId = useId();
   const [picking, setPicking] = useState(false);
+  const [, recheck] = useState(0);
   // it starts where the reminder's own picker does (plan 87): the next sensible moment, never one already past
   const when = useWhen(defaultRemindAt(new Date()));
   return (
@@ -91,7 +92,9 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
               className="flex flex-col gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!when.ready || when.chosen <= Date.now()) return;
+                if (!when.ready) return;
+                // the moment can pass while it's open: the clock again, and a render that says why (as RemindPicker does)
+                if (when.chosen <= Date.now()) return recheck((n) => n + 1);
                 setPicking(false);
                 laterRef.current?.focus({ preventScroll: true });
                 void actOnFollowup(row, "later", when.chosen);

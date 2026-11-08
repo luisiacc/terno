@@ -242,3 +242,13 @@ it("pass 3: who wrote the lines is said in the header, before the list, and not 
   await show(digestOf("2026-10-22", true));
   expect(host.querySelector("[data-testid=digest-provenance]")).toBeNull();
 });
+
+it("plan 162 (Codex review): a digest that failed for a reason Settings fixes offers AI settings beside Try again; one that timed out doesn't", async () => {
+  await show({ ...digestOf("2026-10-22"), state: "failed", errorKind: "auth" } as DigestRow);
+  expect(host.querySelector("[data-testid=digest-retry]")).not.toBeNull();
+  expect(host.querySelector("[data-testid=digest-error-settings]")!.textContent).toBe("AI settings");
+  await unmount();
+  await show({ ...digestOf("2026-10-22"), state: "failed", errorKind: "rate_limited" } as DigestRow);
+  expect(host.querySelector("[data-testid=digest-retry]")).not.toBeNull();
+  expect(host.querySelector("[data-testid=digest-error-settings]")).toBeNull();
+});

@@ -31,8 +31,8 @@ export interface AskState {
   turns: AskTurn[];
   sources: Record<number, AskSourceView>;
   running: AskRunning | null;
-  /** Where the first question to a destination would go: said once, before anything leaves. */
-  error: { question: string; message: string; kind: AiErrorKind | undefined } | null;
+  /** plan 162: with its catalog key, so the shared notice says the app's own words (no credit isn't a bad key) */
+  error: { question: string; message: string; kind: AiErrorKind | undefined; key?: string | undefined } | null;
   /** plan 143: why a sentence didn't open a preview; the page stays, with the sentence */
   notice: { question: string; text: string } | null;
   noProvider: boolean;
@@ -68,7 +68,7 @@ const timezone = () => {
 
 const errorOf = (error: unknown) => {
   const e = error as { code?: string; message?: string; details?: { aiErrorKind?: AiErrorKind }; i18n?: { key: string; params?: Readonly<Record<string, string | number>> } };
-  return { code: e.code, kind: e.details?.aiErrorKind, message: localized(e.message ?? "", e.i18n) };
+  return { code: e.code, kind: e.details?.aiErrorKind, message: localized(e.message ?? "", e.i18n), key: e.i18n?.key };
 };
 
 async function settle(call: Promise<AiAskResult>, requestId: string, question: string): Promise<void> {
@@ -91,7 +91,7 @@ async function settle(call: Promise<AiAskResult>, requestId: string, question: s
       incomplete: r.status === "done" ? r.incomplete : false,
       olderFound: r.status === "done" ? (r.olderFound ?? null) : null,
       olderPartial: r.status === "done" && r.olderPartial === true,
-      error: r.status === "failed" ? { question, message: localized(r.error.message, r.error.i18n), kind: r.error.kind } : null,
+      error: r.status === "failed" ? { question, message: localized(r.error.message, r.error.i18n), kind: r.error.kind, key: r.error.i18n?.key } : null,
       usedAt: Date.now(),
     }));
   } catch (error) {
@@ -99,7 +99,7 @@ async function settle(call: Promise<AiAskResult>, requestId: string, question: s
     const e = errorOf(error);
     if (e.code === "CANCELLED" || e.kind === "cancelled") return useAsk.setState({ running: null });
     if (e.kind === "not_configured") return useAsk.setState({ running: null, noProvider: true });
-    useAsk.setState({ running: null, error: { question, message: e.message, kind: e.kind } });
+    useAsk.setState({ running: null, error: { question, message: e.message, kind: e.kind, key: e.key } });
   }
 }
 

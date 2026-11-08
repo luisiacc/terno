@@ -8,8 +8,9 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Spinner } from "@terno/ui/components/spinner";
 import { cn } from "@terno/ui/lib/utils";
 import { AiProvenance } from "./ai-provenance";
-import { AiErrorNotice } from "./ai-error";
+import { AiErrorNotice, aiErrorCopy, errorTarget } from "./ai-error";
 import { useEffect, type ReactNode } from "react";
+import { askTarget } from "~/lib/ai";
 import { applyPreview, check, inboxOnly, includeSkipped, isDestructive, previewConsequence, previewCount, previewTitle, previewWaiting, showLeftOut, stopApplying, useActionPreview, verbOf } from "~/lib/action-preview";
 import { useAppearance } from "~/lib/appearance";
 import { LIST_TITLE } from "~/lib/list-title";
@@ -279,7 +280,7 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
             // plan 162: the one AI error (ai-error.tsx), keeping the way past a check that keeps failing
             <div className="pt-0.5" data-testid="action-check-error">
               <AiErrorNotice
-                copy={{ title: checkError, help: null, settings: false }}
+                copy={aiErrorCopy(checkError, ai ? errorTarget(askTarget(ai).provider, ai) : null)}
                 textTestId="action-check-error-text"
                 actions={
                   <>

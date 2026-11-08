@@ -1,6 +1,6 @@
 # Plan 162: one design for the AI surfaces
 
-- **Status:** spec; built on the branch `t3/ai-surfaces-redesign`, not merged. The owner decides whether it lands.
+- **Status:** built on the branch `t3/ai-surfaces-redesign`, not merged; waiting for the rated rounds (`ai-r04` on). The owner decides whether it lands.
 - **Builds on:** plan 161 (the AI rating, its four rounds and three passes), plans 131 to 157 (the AI features), 147 and 150 (the one gate), 158 (the rating), 159 and 160 (header copy, precision tokens and the contrast suite).
 
 ## The request
@@ -312,3 +312,45 @@ Twelve points, all taken. Where they change the spec above:
 10. **One R on screen.** While Reply ready owns R, the toolbar's Reply drops its R keycap and its tooltip's shortcut (the reply bar already does); no new shortcut.
 11. **Ask's scope is a calendar boundary with its year:** "Searched mail on this Mac back to Apr 25, 2026". Source rows keep `listDate`.
 12. **Ask's footer has one way back.** From the palette, All commands is the header's link and its keycap; the keys' line doesn't repeat it, and New question and Previous questions sit apart from the keys, after a divider. `ask-new` keeps its test id (the capture clicks it).
+
+## As built
+
+Where the build differs from the spec, and what the spec left open.
+
+### The shared system
+- **Dates.** `whenDate` and `whenDay` sit in `lib/when.ts` beside `reminderDated` (the moment ahead, "Wed, Oct 28, 9:00 AM"), not in `lib/format`; `boundaryDay` ("Apr 25, 2026") is the boundary with its year (revision 11). The provenance popover and the follow-up's popover use `whenDate`; `fullDate` is off every AI surface.
+- **Copy** (`AiCopyButton`) is a ghost at 28 px, muted until hovered, its glyph on the text's edge (`-ms-2`).
+- **One error.** Ask, the digest and the action check now use `AiErrorNotice`; the check keeps **Skip the check** beside **Try again** (revision 6).
+- **Provenance.** `AiProvenance` shows "Written by {model}. It can make mistakes." when it knows the model but no time, and only its lines when it knows neither (the action preview, the AI filter).
+- **Esc and focus.** `usePalettePage` holds `entry`; `paletteBack(page, entry)` is the one step back: from ⌘⇧K, Ask closes and its history goes back to Ask (its link says "‹ Ask"); from the palette, both go back to All commands. The palette remembers what had the keys when it opened and gives them back when Esc or × closes it (`paletteReturn` as the dialog's `finalFocus`, and a check two frames later). The probe found Ask closing to `<body>` before this.
+
+### Each surface
+- **Summary:** the items are a two-column grid (`grid-cols-subgrid`), the controls a line of their own under the words; Reply is `outline`, the source a muted ghost.
+- **⌘J:** the instruction is one truncated line with its title; Edit follows it. The commands are BoardUI's `ButtonGroup` at 28 px (`h-7`); under 30 rem, Undo and Rewrite ▾. On the row's field over a strip, Undo is a one-item group. When Undo takes back the only write of a reply ⌘J opened, the reply goes and the keys go to the reply bar.
+- **Ask:** Copy and Answer again are quiet, at 28 px. The keys' line shows esc Close (from ⌘⇧K), nothing for Esc from the palette (the header's link is the way back), esc Stop while it answers; New question and Previous questions sit after a divider (`ask-session`).
+- **Actions:** the rule's line is Exact pattern ▾ · Edit as a rule … Written with AI ▾. The keys' line is ⌘↩ Archive 6 · esc Cancel · x Leave out the one you're reading; a "j k Read" hint was tried and dropped, since it wrapped the line at 1100. "Show the rule" carries its esc keycap. The snack's second line is the warnings, then "You asked: “…”".
+- **Today:** "Showing 12 of 41 · See all in To reply to" (the whole phrase is the link). The reason is in the ink at the row's weight; the row's structure and height don't change.
+- **The digest:** a spacer, then a sticky header (title, "Prepared today from 16 newsletters since Fri, Oct 16", the action row, the tick hint) with the column's hairline under it. **Tick all / Untick all** is a quiet button. The page's Undo shows only while no snack carries the same Undo. After Archive the keys go to the first row still there, else the title.
+- **Follow-ups:** "Waiting for Arjun Ramírez’s reply" on the first day. Reschedule's menu ends in a separator and **Pick date & time…**, which opens a popover anchored to Reschedule with plan 87's `WhenFields`, starting where the reminder's picker does (`defaultRemindAt`), and **Reschedule** to confirm; its Esc gives the keys back to Reschedule.
+- **Reply ready:** unchanged; the toolbar's Reply drops its R keycap and its tooltip's R while a reply is ready (revision 10).
+- **The AI filter:** "✦ From your request “…”" with Edit request (quiet); the rule's line ends in Written with AI ▾; "Matches 66 conversations · the newest 6 shown"; **Save and apply to 66** (secondary) then **Save** (primary). The footer is the Rules dialog's, so a hand-made rule gets the same order.
+- **Writing style:** the precedence is rich text, its four steps in the ink; Edit, Reset and Update are `outline` at 28 px; Clear all is an outlined button in the destructive ink; "Refresh from sent mail"; studying says it repeats before you start it; the editor's sticky footer names what it edits ("Editing You"); the remove buttons are drawn at 24 px with a 32 px hit area.
+
+### Not changed in `scripts/ui-rating/`
+Nothing. Every wait the capture makes still holds; the capture reached every AI state in Lumen, Atelier, macOS and Graphite, light and dark (`/tmp/terno-scratch/ai-redesign/round0/<design>/`).
+
+### Tests
+- **Unit:** `when-date.test.ts` (new), `digest-page.test.tsx` (one Undo at a time, Tick all, the coverage; the inline-Undo tests dismiss the snack first), `today-line.test.tsx`, `followups-copy.test.ts`.
+- **e2e, in macOS:** `ask` (Esc from ⌘⇧K closes in one press and the keys go back to the list; from the palette it goes back, with All commands said once; history goes back to Ask), `summaries` (the controls' own line at 980, 1100 and 1440; Reply bordered, Copy clear; Ask's shared error), `ai-draft` (one line with Edit inline, the group, two lines at most; Writing style's copy), `plain-actions` (Esc said once, the keys on one line at 1100, the provenance popover, the snack's request), `today` (the header, the reason's ink, the snack's Undo), `followups` (the title, Pick date & time… reschedules), `filters` (Save primary and last, the request quoted, the sample said, the provenance popover and its Esc).
+- **e2e, in every design (`@design`), light and dark, 1440 and 1100:** every AI popover whole (summary, Ask, the action's provenance and Exact pattern, the digest, the AI filter, plus the existing Reschedule, its new date popover, Rewrite and ⌘J's); and each AI pane's end in reach of the wheel (Ask's area, the rule panel, the digest with Archive still in view, the AI filter's preview, Writing style), the editor's Save in view and its remove targets 32 px. `unclipped()` now skips screen-reader-only text.
+- **Baselines:** `visual.spec`'s `filters-ai` and `filters-ai-dark` moved, for this pass's AI filter.
+
+## What the Codex review of the build changed
+
+Six findings, all taken, each with a test that fails without its fix:
+1. **The AI filter quoted the field, not the rule's request.** Edit request, a new word, then Esc showed the old rule under the unsent words. It quotes `built`, the request the rule came from (`filters.spec.ts`).
+2. **Ask lost the error's catalog key**, so "no credit left" read as a refused API key. Ask's error keeps its key through both failure paths; `askErrorCopy` maps it (`ask-error-copy.test.ts`).
+3. **The action check showed the provider's own message**, address and all, as the notice's title. Its state keeps the kind and key, and the shared notice words it by kind, Skip the check kept (`action-check-error.test.ts`).
+4. **Reschedule's own moment could expire while open** and do nothing. Set checks the clock again and says "Pick a time in the future.", as the reminder's picker does (`followups.spec.ts`, the page clock moved on while it's open).
+5. **The digest's failure offered only Try again** when the fix is in Settings. It offers AI settings when the error says so (`digest-page.test.tsx`).
+6. **The wheel test trusted the window, not the pane.** `wheelsTo` now needs the target whole inside every ancestor that clips it, top and bottom.

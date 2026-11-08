@@ -1,4 +1,5 @@
-import { answerWithoutCitations, type AskConversationSummary, type AskPlanQuery, type AskSourceRef, type AskTurn } from "@terno/core";
+import { answerWithoutCitations, type AiErrorKind, type AskConversationSummary, type AskPlanQuery, type AskSourceRef, type AskTurn } from "@terno/core";
+import type { AiSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { CloseButton } from "@terno/ui/components/close-button";
@@ -20,7 +21,7 @@ import { askFrom, paletteBack, paletteKeys, setPalettePage, usePalettePage } fro
 import { chordLabel } from "@terno/ui/components/shortcut";
 import { useApp, setApp } from "~/state/app";
 import { AiCopyButton, AiProvenance } from "~/components/ai-provenance";
-import { AiErrorNotice, aiErrorCopy, errorTarget } from "~/components/ai-error";
+import { AiErrorNotice, aiErrorCopy, errorTarget, type AiErrorCopy } from "~/components/ai-error";
 
 
 const stopKeys = (e: KeyboardEvent) => {
@@ -258,12 +259,17 @@ function Running() {
   );
 }
 
+/** Plan 162: Ask's failure in the one AI error's words, from the task's own provider, its catalog key kept (Codex review). */
+export function askErrorCopy(error: { message: string; kind: AiErrorKind | undefined; key?: string | undefined }, ai: AiSettings | null | undefined): AiErrorCopy {
+  return aiErrorCopy({ message: error.message, kind: error.kind, key: error.key }, ai ? errorTarget(askTarget(ai).provider, ai) : null);
+}
+
 function Failure() {
   const error = useAsk((s) => s.error);
   const ai = useApp((s) => s.settings?.ai);
   if (!error) return null;
   // plan 162: the one AI error every surface has (ai-error.tsx): plain words, never an address, Try again and AI settings
-  const copy = aiErrorCopy({ message: error.message, kind: error.kind }, ai ? errorTarget(askTarget(ai).provider, ai) : null);
+  const copy = askErrorCopy(error, ai);
   return (
     <section data-testid="ask-error">
       <AiErrorNotice

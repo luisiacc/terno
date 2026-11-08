@@ -1,4 +1,4 @@
-import { savesRuleOnly, type ActionPreviewInfo, type AiActionApplied, type AiActionEvent, type AiActionStart } from "@terno/core";
+import { savesRuleOnly, type ActionPreviewInfo, type AiErrorKind, type AiActionApplied, type AiActionEvent, type AiActionStart } from "@terno/core";
 import { t } from "@terno/i18n";
 import { enterPreview, leavePreview, rowsToggled, useActionPreview, useActionRows } from "~/state/action-preview";
 import { getApp } from "~/state/app";
@@ -148,7 +148,8 @@ export async function check(o: { skip?: boolean }): Promise<void> {
     await reloadList({ keepSelection: true, window: true });
   } catch (error) {
     if (getApp().actionPreview !== preview.previewId) return;
-    useActionPreview.setState({ checking: false, checkError: messageOf(error) });
+    const e = error as { details?: { aiErrorKind?: AiErrorKind }; i18n?: { key: string } };
+    useActionPreview.setState({ checking: false, checkError: { message: messageOf(error), kind: e.details?.aiErrorKind, key: e.i18n?.key } });
   }
 }
 

@@ -244,7 +244,15 @@ export default function DigestPage() {
           <AiErrorNotice
             copy={failure!}
             textTestId="digest-failed-text"
-            actions={<Button size="sm" variant="outline" data-testid="digest-retry" onClick={() => void client.call("today.digestRetry", {}).catch(() => {})}>{t("ask.tryAgain")}</Button>}
+            actions={
+              <>
+                <Button size="sm" variant="outline" data-testid="digest-retry" onClick={() => void client.call("today.digestRetry", {}).catch(() => {})}>{t("ask.tryAgain")}</Button>
+                {/* when the fix is in Settings (a key, a model), the way there, as every AI error offers it (Codex review) */}
+                {failure!.settings && (
+                  <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground" data-testid="digest-error-settings" onClick={() => setApp({ dialog: "settings", settingsTab: "ai" })}>{t("ai.error.settings")}</Button>
+                )}
+              </>
+            }
           />
         </div>
       )}

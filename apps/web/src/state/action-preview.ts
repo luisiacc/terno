@@ -1,4 +1,4 @@
-import type { ActionPreviewInfo } from "@terno/core";
+import type { ActionPreviewInfo, AiErrorKind } from "@terno/core";
 import { client } from "~/rpc/connection";
 import { focusIntent } from "~/lib/focus-intent";
 import type { SendersNamed } from "~/lib/rule-words";
@@ -29,7 +29,8 @@ interface ActionPreviewState {
   sentence: string;
   future: boolean;
   checking: boolean;
-  checkError: string | null;
+  /** plan 162: what the check's failure was, for the one AI error's words (never the provider's, with its address) */
+  checkError: { message: string; kind: AiErrorKind | undefined; key: string | undefined } | null;
   applying: boolean;
   /** plan 161: the senders the sentence names for certain (its addresses and domains, the names the mailbox has); null until known */
   senders: SendersNamed | null;

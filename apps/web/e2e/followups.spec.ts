@@ -166,6 +166,19 @@ test.describe("follow-ups (plan 142)", () => {
       await expect(page.getByTestId("followup-later-custom")).toHaveCount(0);
       await expect(page.locator("[data-testid=snack]").filter({ hasText: /^Back on top of your Inbox/ })).toBeVisible();
       await expect.poll(async () => ((await server.backend.server.invoke("followups.list", {}, dev)) as { rows: { threadId: number; dueAt: number }[] }).rows.find((r) => r.threadId === threadId)?.dueAt).not.toBe(was);
+      // Codex review: a moment that passes while the picker is open says so, and isn't set
+      await page.getByTestId("followup-later").click();
+      await page.getByTestId("followup-later-pick").click();
+      await expect(page.getByTestId("followup-later-set")).toBeEnabled();
+      const now = (await server.backend.server.invoke("followups.list", {}, dev)) as { rows: { threadId: number; dueAt: number }[] };
+      await page.clock.setFixedTime(new Date(E2E_NOW + 3 * 86_400_000));
+      await page.getByTestId("followup-later-set").click();
+      await expect(page.getByTestId("followup-later-past")).toHaveText("Pick a time in the future.");
+      await expect(page.getByTestId("followup-later-set")).toBeDisabled();
+      await expect(page.getByTestId("followup-later-custom")).toBeVisible();
+      expect(((await server.backend.server.invoke("followups.list", {}, dev)) as typeof now).rows.find((r) => r.threadId === threadId)?.dueAt).toBe(now.rows.find((r) => r.threadId === threadId)?.dueAt);
+      await page.keyboard.press("Escape");
+      await page.clock.setFixedTime(new Date(E2E_NOW));
     });
     await scenario("Write a follow-up, then the line offers that draft; discarded, it's Write a follow-up again", async () => {
       await page.getByTestId("followup-nudge").click();

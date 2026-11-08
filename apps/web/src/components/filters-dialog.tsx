@@ -452,7 +452,8 @@ export function FiltersDialog() {
   const form = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const [matches, setMatches] = useState<number | null>(null);
-  // the request the rule on screen was built from: its words are checked against the rule (plan 161), not shown back
+  // the request the rule on screen was built from: its words are checked against the rule (plan 161), and (plan 162)
+  // quoted over it
   const [built, setBuilt] = useState<string | null>(() => keptOpen()?.built ?? null);
   // once a rule is built, the box is one line, so the rule and its matches fit a small window; Edit request opens it
   const [folded, setFolded] = useState(() => keptOpen() !== null);
@@ -735,7 +736,8 @@ export function FiltersDialog() {
                       <Sparkles aria-hidden className={AI_GLYPH} />
                       <span className="flex min-w-0 items-baseline gap-1" data-testid="ai-request">
                         <span className={cn(AI_TITLE, "shrink-0")}>{t("filters.ai.fromRequest")}</span>
-                        <span className="min-w-0 truncate text-foreground" title={prompt}>“{prompt.trim()}”</span>
+                        {/* the request this rule was built from, not the field's words since (Edit request, then Esc, keeps an unsent edit) */}
+                        <span className="min-w-0 truncate text-foreground" title={built ?? ""}>“{(built ?? "").trim()}”</span>
                       </span>
                       <Button ref={editRequestRef} variant="ghost" size="xs" className="-me-1.5 ml-auto shrink-0 font-normal text-muted-foreground hover:text-foreground" data-testid="ai-edit-request" onClick={() => (setFolded(false), setFocusPrompt(true))}>{t("filters.ai.editRequest")}</Button>
                     </div>

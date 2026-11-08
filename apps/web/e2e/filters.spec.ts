@@ -109,11 +109,19 @@ test.describe("AI filters and learned filters", () => {
       await expect(page.getByTestId("filters-dialog")).toBeVisible();
       await page.getByTestId("ai-edit-request").click();
       await expect(page.getByTestId("ai-prompt")).toBeFocused();
-      // pass 3: Esc steps back a level first: the request folds back to the rule, focus on Edit request, Rules open
+      // pass 3: Esc steps back a level first: the request folds back to the rule, focus on Edit request, Rules open.
+      // Plan 162 (Codex review): an edit to the request that wasn't sent doesn't become the rule's quoted request
+      await page.getByTestId("ai-prompt").fill("something else entirely");
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("filters-dialog")).toBeVisible();
       await expect(page.getByTestId("ai-box")).toHaveAttribute("data-folded", "true");
       await expect(page.getByTestId("ai-edit-request")).toBeFocused();
+      await expect(page.getByTestId("ai-request")).toHaveText("From your request“make my inbox nicer”");
+      // (the field back as it was, for the steps after)
+      await page.getByTestId("ai-edit-request").click();
+      await page.getByTestId("ai-prompt").fill("make my inbox nicer");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("ai-box")).toHaveAttribute("data-folded", "true");
       // the caret in one of the rule's fields: Esc goes to its row in the list, and the next one closes
       await page.getByTestId("filter-name").click();
       await page.keyboard.press("Escape");
