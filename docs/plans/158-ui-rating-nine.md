@@ -234,3 +234,10 @@ The owner stopped the climb after round 4 and chose to land: four passes had mov
 **The bar (every cell at 9 from both raters) isn't met.** Claude rates every style about 7, Codex about 7.5. The rule in `docs/ui-rating.md` stands for future work. After r05, Graphite's open row was made lighter: its secondary text measured 3.8:1 on it (round 5's only high finding about this branch's own code). The other high finding, Reply and Forward in both the toolbar and the bar at the end, is a design choice left to the owner.
 
 The demo mailbox's account colors had been made neutral during pass two; that changed the raters' evidence, so it was reverted before r05 (new accounts still start neutral).
+
+## Before it landed
+
+Two failures in the last full run:
+
+- **Typing on the closed Language control** (`i18n.spec.ts`'s last scenario) left the app in English. Base UI mounts a closed select's hidden items, which its typeahead matches, a timer after the trigger takes focus; letters typed before that timer matched nothing and were dropped. It failed 5 times in 20 under load on `main` too; this branch's heavier list made it fail every time in a full run. The pinned Base UI patch mounts them as focus arrives (`select.test.tsx`; 0 in 40 since, same load). Codex's review of the fix found nothing.
+- **`native-reload.smoke.ts`'s "exact saved ACK through changed focus"** fails at its precondition, a synthetic second window becoming Electron's focused contents while the smoke runs in the background: 3 in 10 alone on this branch, 2 in 10 on `main`. A flake of the test on both, not a change here.
