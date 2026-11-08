@@ -11,9 +11,9 @@ import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
 import { revealSent } from "./sent-reveal";
 import { chooseOpenThread, getApp, getSelectionWriteRevision, markSelectionIntent, setApp, subscribeComposeSelectionIntent, useApp } from "~/state/app";
-import { invalidateThreads, loadThread } from "~/state/threads";
+import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
 import { registerUndo, snack, useSnack } from "./snack";
-import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
+import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs, subjectFor } from "./compose-fields";
 import { sentRefs, withSentImages } from "./inline-images";
 import { ensureForwardFiles, fetchForwardFiles, setForwardOpenProbe } from "./forward-files";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
@@ -175,8 +175,10 @@ export const composeOpening = (threadId: number): DraftMode | undefined => focus
  * Words typed while an open was on its way, whose open ended before they could go in: by conversation, until a draft lands
  * on it. They're the text's, whatever that open's focus is for. Only for the moment that takes: with no open left, they
  * become that conversation's draft, put away as Esc would have put it (`keepStrandedWords`), so they're saved like typing.
+ * What's known of the conversation when they're stranded (its account and subject) comes along, so that a conversation
+ * that can't be read by then still gets them saved: as a new message on its account (Codex series review).
  */
-const strandedWords = new Map<number, string>();
+const strandedWords = new Map<number, { words: string; accountId?: number; subject?: string }>();
 
 /** They go in as what's next in the text, with the editor's own undo when it's on screen; false if the draft can't change now. */
 function addWords(key: string, words: string): boolean {
@@ -190,27 +192,50 @@ function addWords(key: string, words: string): boolean {
 
 function strandWords(threadId: number, words: string, key: string | null): void {
   if (key && addWords(key, words)) return;
-  strandedWords.set(threadId, [strandedWords.get(threadId), words].filter(Boolean).join("\n\n"));
+  const before = strandedWords.get(threadId), known = useThreads.getState().details.get(threadId)?.thread;
+  strandedWords.set(threadId, { words: [before?.words, words].filter(Boolean).join("\n\n"), accountId: known?.accountId ?? before?.accountId, subject: known?.subject ?? before?.subject });
 }
 
 function placeStrandedWords(threadId: number, key: string): void {
-  const words = strandedWords.get(threadId);
+  const words = strandedWords.get(threadId)?.words;
   if (words && addWords(key, words)) strandedWords.delete(threadId);
+}
+
+/** Words that can't go in yet (drafts held, no account to keep them on) wait for that to change, not for a timer. */
+const strandRetry = new Set<number>();
+function retryStrandedOnChange(threadId: number): void {
+  if (strandRetry.has(threadId)) return;
+  strandRetry.add(threadId);
+  const again = () => {
+    if (!strandRetry.delete(threadId)) return;
+    stopDrafts(); stopApp();
+    void keepStrandedWords(threadId);
+  };
+  const stopDrafts = useDrafts.subscribe((state, previous) => { if (previous.held && !state.held) again(); });
+  const stopApp = useApp.subscribe((state, previous) => { if (state.accounts !== previous.accounts) again(); });
 }
 
 /** Nothing landed for them: a reply on that conversation, collapsed, or the draft it has. */
 async function keepStrandedWords(threadId: number): Promise<void> {
   const detail = await loadThread(threadId);
-  const words = strandedWords.get(threadId);
+  const stranded = strandedWords.get(threadId);
   // another open came meanwhile: its landing takes them
-  if (!detail || !words || openingNow > 0 || draftEditsHeld()) return;
+  if (!stranded || openingNow > 0) return;
+  if (draftEditsHeld()) return retryStrandedOnChange(threadId);
   const drafts = useDrafts.getState().drafts;
   const existing = shownDraftKey(drafts, threadId, getApp().draftShown) ?? comingHome(drafts, threadId)[0]?.key;
   if (existing) return placeStrandedWords(threadId, existing);
   const accounts = getApp().accounts;
-  const account = accounts.find((a) => a.id === detail.thread.accountId);
-  if (!account) return;
-  const key = createDraft({ ...replyFields("reply", detail, account, { identities: accounts.map((a) => a.email) }), showSourceContext: true, uiState: "collapsed", bodyText: words });
+  const account = detail && accounts.find((a) => a.id === detail.thread.accountId);
+  let key: string;
+  if (detail && account) key = createDraft({ ...replyFields("reply", detail, account, { identities: accounts.map((a) => a.email) }), showSourceContext: true, uiState: "collapsed", bodyText: stranded.words });
+  else {
+    // the conversation can't be read (gone, or the backend didn't answer): they're kept as a new message, which needs nothing from it
+    const accountId = accounts.find((a) => a.id === (detail?.thread.accountId ?? stranded.accountId))?.id ?? getApp().accountId ?? accounts[0]?.id;
+    if (accountId === undefined) return retryStrandedOnChange(threadId);
+    const subject = detail?.thread.subject ?? stranded.subject;
+    key = createDraft({ ...newFields(accountId), ...(subject ? { subject: subjectFor("reply", subject), subjectEdited: true } : {}), uiState: "collapsed", bodyText: stranded.words });
+  }
   strandedWords.delete(threadId);
   editDraft(key, {});
   void flushDraft(key);

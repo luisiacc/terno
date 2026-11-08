@@ -3,6 +3,7 @@
  * provider. The mail is invented and ingested into this test's own backend.
  */
 import { mkdirSync } from "node:fs";
+import { RpcError } from "@terno/core/rpc";
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { fakeDraft } from "../../../packages/ai/src/fake";
@@ -808,6 +809,38 @@ test.describe("drafting with AI (plan 133)", () => {
       });
       await expect.poll(saved).toEqual(["for the reply"]);
       await expect(body(page)).toHaveText("");
+    });
+    await scenario("Esc, and the conversation can't be read by the time they'd be kept: a new message on its account holds them, saved (series review)", async () => {
+      // the last scenario's reply is put away, where fresh's Discard doesn't reach
+      await page.getByTestId("compose-discard").click();
+      await openThread(page, /Contract review/);
+      await page.getByTestId("draft-collapsed").click();
+      await fresh(page, server);
+      const threadId = Number(await page.locator("[data-testid=thread-row]", { hasText: /Contract review/ }).first().getAttribute("data-thread-id"));
+      await openThread(page, /Contract review/);
+      const handlers = (server.backend.server as unknown as { handlers: Record<string, (input: { threadId: number }, ...rest: unknown[]) => unknown> }).handlers;
+      const get = handlers["threads.get"]!;
+      try {
+        await whileOpening(async () => {
+          await page.keyboard.press("r");
+          await page.keyboard.type("nowhere else");
+          await page.keyboard.press("Escape");
+          // it's gone from under them: the reader's own refetch finds nothing
+          handlers["threads.get"] = (input, ...rest) => {
+            if (input.threadId === threadId) throw new RpcError("NOT_FOUND", "gone");
+            return get(input, ...rest);
+          };
+          await server.backend.server.invoke("threads.act", { threadIds: [threadId], action: "markUnread" }, dev);
+          await expect.poll(() => page.evaluate((id) => Boolean((window as unknown as { __terno: { threadDetail(id: number): unknown } }).__terno.threadDetail(id)), threadId)).toBe(false);
+        });
+        const kept = async () => ((await server.backend.server.invoke("drafts.list", {}, dev)) as { bodyText: string; mode: string; subject: string }[]).map((d) => [d.bodyText, d.mode, d.subject]);
+        await expect.poll(kept).toEqual([["nowhere else", "new", expect.stringMatching(/^Re: Contract review/)]]);
+      } finally {
+        handlers["threads.get"] = get;
+      }
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await expect(page.getByTestId("strip-item")).toContainText("Re: Contract review");
     });
   });
 
