@@ -1067,7 +1067,10 @@ function EmptyState() {
 export function ThreadList() {
   renderProbe("ThreadList");
   const items = useList((s) => s.items);
-  const loading = useList((s) => s.loading);
+  // plan 161: a preview still finding, with no row yet, is loading: its skeleton, never an empty state, and its focus stays
+  const inPreview = useApp((s) => s.actionPreview !== null);
+  const scanning = useActionPreview((s) => s.preview?.scanning === true);
+  const loading = useList((s) => s.loading) || (inPreview && scanning && items.length === 0);
   const itemsKey = useList((s) => s.itemsKey);
   const compact = useApp((s) => s.settings?.density === "compact");
   const composing = useApp((s) => s.compose !== null);

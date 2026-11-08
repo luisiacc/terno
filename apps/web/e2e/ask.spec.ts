@@ -53,8 +53,30 @@ test.describe("ask your mail (plan 141)", () => {
       await question(page, `what about ${word}?`);
       await expect(lastTurn(page)).toHaveAttribute("data-status", "answered");
       await expect(page.getByTestId("ask-answer").last()).toContainText("Mensaje");
-      await expect(page.getByTestId("ask-provenance")).toHaveText("Written by demo");
+      // plan 161: one phrase on every AI surface; the model and the caution behind it
+      await expect(page.getByTestId("ask-provenance")).toHaveText("Written with AI");
       await expect(followUp(page)).toBeFocused();
+      await page.getByTestId("ask-provenance").hover();
+      await expect(page.getByTestId("ask-provenance-detail")).toContainText(/Written by demo, .+\. It can make mistakes\./);
+      // how far back it looked, beside the way past it
+      await expect(page.getByTestId("ask-scope")).toContainText("Searched mail on this Mac back to");
+      await expect(page.getByTestId("ask-scope").getByTestId("ask-older")).toHaveText("Search older mail on your servers");
+    });
+
+    await scenario("a citation is bound to its words, with a 24 px target that moves nothing (plan 161)", async () => {
+      const cited = page.getByTestId("ask-cited").first();
+      await expect(cited.getByTestId("ask-citation")).toHaveText("1");
+      // one line box: the marker never starts a line, nor does what closes the clause after it
+      expect(await cited.evaluate((el) => el.getClientRects().length)).toBe(1);
+      const hit = await page.getByTestId("ask-citation").first().evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const [x, y] = [r.left + r.width / 2, r.top + r.height / 2];
+        const at = (dx: number, dy: number) => document.elementFromPoint(x + dx, y + dy)?.closest("[data-testid=ask-citation]") === el;
+        return { height: r.height, corners: [at(-11, -11), at(11, -11), at(-11, 11), at(11, 11)], outside: at(0, 14) };
+      });
+      expect(hit.height).toBeLessThan(24);
+      expect(hit.corners).toEqual([true, true, true, true]);
+      expect(hit.outside).toBe(false);
     });
 
     await scenario("the source row and the inline number open the thread; ⌘⇧K comes back to the conversation", async () => {
@@ -64,7 +86,16 @@ test.describe("ask your mail (plan 141)", () => {
       await page.keyboard.press("Enter");
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(page.getByTestId("reader-subject")).toBeVisible();
+      // plan 161: focus on the message it opened, and a visible way back
+      await expect.poll(() => page.evaluate(() => document.activeElement?.closest("[data-reader-scroller] article[data-message-id]") !== null)).toBe(true);
+      await expect(page.getByTestId("back-to-answer")).toBeVisible();
       await page.keyboard.press("ControlOrMeta+Shift+k");
+      await expect(followUp(page)).toBeFocused();
+      await expect(lastTurn(page)).toBeVisible();
+      // the inline marker opens it too, and Back to the answer is the way back
+      await page.getByTestId("ask-citation").first().click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await page.getByTestId("back-to-answer").click();
       await expect(followUp(page)).toBeFocused();
       await expect(lastTurn(page)).toBeVisible();
     });

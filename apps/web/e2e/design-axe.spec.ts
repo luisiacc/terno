@@ -69,6 +69,8 @@ test.describe("axe", { tag: "@variant" }, () => {
     const ingest = (place: "inbox" | "archive" | "spam" | "trash") => msg({ accountId: account!.id, providerMsgId: `sweep-${place}`, subject: "Pepinillo quarter", date: E2E_NOW - 3_600_000, from: { name: `Sender ${place}`, email: `hello@${place}.test` }, inInbox: place === "inbox", isSpam: place === "spam", isTrash: place === "trash", isRead: true, bodyText: "Numbers.", hasAttachments: place === "inbox", attachments: place === "inbox" ? [{ filename: "report.pdf", mime: "application/pdf", size: 1024 }] : [] });
     await server.backend.store.sync.ingest((["inbox", "archive", "spam", "trash"] as const).map(ingest), { applyFilters: false, now: E2E_NOW, classifier: null });
     await server.backend.store.sync.ingest([msg({ accountId: account!.id, providerMsgId: "sweep-match", subject: "With a match", date: E2E_NOW - 3_600_000, bodyText: "It says zzhallazgoaxe here." })], { applyFilters: false, now: E2E_NOW, classifier: null });
+    // plan 161: what a sentence's preview finds (a month and more old)
+    await server.backend.store.sync.ingest([msg({ accountId: account!.id, providerMsgId: "sweep-shipping", subject: "Your shipping notice 4411", date: E2E_NOW - 60 * 86_400_000, bodyText: "Delivery tracking." })], { applyFilters: false, now: E2E_NOW, classifier: null });
     const db = sqlDb(server.backend.store);
     const facturas = id(server, "categories", "name", "Facturas");
     const threads = db.all<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 2");
@@ -108,6 +110,17 @@ test.describe("axe", { tag: "@variant" }, () => {
     await page.keyboard.press("?");
     await clean(page, "the shortcuts", "[data-testid=shortcuts-dialog]");
     await page.keyboard.press("Escape");
+
+    // plan 161: a sentence's preview, its rule in the reader
+    await focusList(page);
+    await page.keyboard.press("ControlOrMeta+Shift+k");
+    await page.getByTestId("palette-input").fill("Archive shipping notices older than a month");
+    await page.getByTestId("ask-submit").waitFor();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("action-apply")).toBeEnabled();
+    await clean(page, "a sentence's preview and its rule", ["[data-testid=action-preview]", "[data-testid=action-rule]"]);
+    await page.getByTestId("action-cancel").click();
+    await expect(page.getByTestId("action-preview")).toHaveCount(0);
 
     await page.getByTestId("open-settings").click();
     for (const tab of ["general", "appearance", "accounts", "categories", "filters", "ai", "agents", "data"]) {

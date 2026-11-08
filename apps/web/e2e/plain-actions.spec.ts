@@ -81,6 +81,12 @@ test.describe("actions in plain English (plan 143)", () => {
     expect(place).toBeGreaterThan(5000);
 
     await scenario("nothing runs: the preview is the list", async () => {
+      // plan 161: every row the preview ever draws, from the first frame: none of the mailbox you were in
+      await page.evaluate(() => {
+        const seen = ((window as unknown as { previewRows: string[] }).previewRows = []);
+        const note = () => document.querySelectorAll<HTMLElement>("[data-testid=thread-row][data-included]").forEach((r) => seen.push(`${performance.now() | 0} ${document.querySelector("[data-testid=action-title]")?.textContent} ${r.innerText.replace(/\n/g, " | ")}`));
+        new MutationObserver(note).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-included"] });
+      });
       await say(page, "Archive shipping notices older than a month");
       await expect(page.getByTestId("action-preview")).toBeVisible();
       // the rule found three; the check took out the one that isn't about shipping, and says so
@@ -89,6 +95,39 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(rows(page)).toHaveCount(2);
       await expect(page.getByTestId("action-left-out")).toContainText("Left out by AI (1)");
+      const seen = await page.evaluate(() => (window as unknown as { previewRows: string[] }).previewRows);
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.filter((text) => !/shipping|delivery|tracking/i.test(text))).toEqual([]);
+    });
+
+    await scenario("the rule in words in the reader, one count, the sidebar on its scope, the keys on the list (plan 161)", async () => {
+      // the same number on the title and the button, and only once the search is done
+      await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
+      await expect(page.getByTestId("nav-inbox")).toHaveAttribute("data-active");
+      await expect(page.locator("#app-sidebar [data-active]")).toHaveCount(1);
+      const rule = page.getByTestId("action-rule");
+      await expect(rule.getByTestId("action-rule-title")).toHaveText("“Archive shipping notices older than a month”");
+      await expect(rule.getByTestId("action-conditions")).toContainText("Older than 30 days");
+      await expect(rule.getByTestId("action-rule-term")).toHaveText(["shipping", "delivery", "tracking"]);
+      // the pattern itself is only in Details, never in the rows
+      await expect(rule.getByTestId("action-conditions")).not.toContainText("|");
+      await rule.getByTestId("action-details-toggle").click();
+      await expect(rule.getByTestId("action-details-text")).toContainText("matches pattern “shipping|delivery|tracking”");
+      // the body opens the mail to check it; the rule comes back from the header
+      await rows(page).first().getByTestId("row-subject").click();
+      await expect(page.getByTestId("reader-subject")).toBeVisible();
+      await expect(rows(page).first()).toHaveAttribute("data-included", "true");
+      await expect(page.getByTestId("action-sentence")).toContainText("Archive shipping notices older than a month");
+      await page.getByTestId("action-show-rule").click();
+      await expect(page.getByTestId("action-rule")).toBeVisible();
+      // the check column, at the row's height, toggles
+      const include = rows(page).first().getByTestId("row-include");
+      expect((await include.boundingBox())!.height).toBeGreaterThanOrEqual(24);
+      await include.click({ position: { x: 10, y: 4 } });
+      await expect(rows(page).first()).toHaveAttribute("data-included", "false");
+      await expect(page.getByTestId("action-apply")).toHaveText("Archive 1");
+      await include.click();
+      await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
     });
 
     if (SHOTS) {
@@ -132,10 +171,14 @@ test.describe("actions in plain English (plan 143)", () => {
       await page.getByTestId("action-apply").click();
       await expect(page.getByTestId("action-preview")).toHaveCount(0);
       await expect(page.getByTestId("snack")).toContainText("Archived 2 conversations");
+      // plan 161: back on the list you came from, its keys yours
+      await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-keep-scroll"))).toBe("list");
       // the first row stayed out of it; the rest left
       await inInbox("Your shipping notice 4411").toBe(1);
       await inInbox("Tracking your delivery 2231").toBe(0);
-      await page.getByTestId("snack-action").click();
+      await page.keyboard.press("ControlOrMeta+z");
+      // a result, not a command
+      await expect(page.getByTestId("snack").filter({ hasText: "Moved 2 conversations back to the Inbox" })).toBeVisible();
       await inInbox("Tracking your delivery 2231").toBe(1);
       await inInbox("Shipping delivery tracking 9921").toBe(1);
     });
@@ -179,6 +222,10 @@ test.describe("actions in plain English (plan 143)", () => {
     await expect(page.getByTestId("action-title")).toHaveText("Archive 2 conversations");
     await page.keyboard.press("ControlOrMeta+Enter");
     await expect(page.getByTestId("snack")).toContainText("Archived 2 conversations");
+    // the snack's keycap is z, and z is what undoes (⌘Z too, in the flow before)
+    await expect(page.getByTestId("snack-action")).toHaveAttribute("aria-keyshortcuts", "z");
+    await page.keyboard.press("z");
+    await expect(page.getByTestId("snack").filter({ hasText: "Moved 2 conversations back to the Inbox" })).toBeVisible();
     await focusList(page);
     await page.keyboard.press("ControlOrMeta+Shift+k");
     await page.getByTestId("ask-history-row").click();
@@ -192,7 +239,7 @@ test.describe("actions in plain English (plan 143)", () => {
     await fresh(page);
     await say(page, "Archive recruiters");
     await expect(page.getByTestId("action-title")).toHaveText("Archivar 2 conversaciones");
-    await expect(page.getByTestId("action-apply")).toHaveText("Archivar");
+    await expect(page.getByTestId("action-apply")).toHaveText("Archivar 2");
     await expect(page.getByTestId("action-conditions")).toContainText("Recibidos");
   });
 
@@ -201,7 +248,8 @@ test.describe("actions in plain English (plan 143)", () => {
     await say(page, "Send recruiters to a Recruiting category");
     await expect(page.getByTestId("action-title")).toHaveText("Move 2 conversations to Recruiting");
     const left = async (testId: string) => page.getByTestId(testId).first().evaluate((el) => el.getBoundingClientRect().left);
-    expect(Math.abs((await left("action-title")) - (await left("row-include")))).toBeLessThanOrEqual(1);
+    const box = await page.getByTestId("row-include").first().locator("[data-slot=checkbox]").evaluate((el) => el.getBoundingClientRect().left);
+    expect(Math.abs((await left("action-title")) - box)).toBeLessThanOrEqual(1);
     for (const mode of ["light", "dark"]) {
       await page.emulateMedia({ colorScheme: mode as "light" | "dark" });
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-category-${mode}.png` });

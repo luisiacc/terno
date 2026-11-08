@@ -7,7 +7,7 @@ import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/com
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Spinner } from "@terno/ui/components/spinner";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { providerLabel } from "~/lib/ai";
 import { applyPreview, check, inboxOnly, includeSkipped, previewWaiting, showLeftOut, stopApplying, useActionPreview } from "~/lib/action-preview";
 import { useAppearance } from "~/lib/appearance";
@@ -70,6 +70,17 @@ export default function ActionPreviewHeader() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // plan 161: ready, the keys are the list's (whatever the palette handed focus back to as it closed), unless you're typing
+  const ready = preview !== null && !previewWaiting(preview, checking);
+  const readyFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!ready || !preview || readyFor.current === preview.previewId) return;
+    readyFor.current = preview.previewId;
+    const at = document.activeElement;
+    if (at?.closest("input, textarea, select, [contenteditable], [role=dialog], [role=menu], [data-composer]")) return;
+    document.querySelector<HTMLElement>('[data-keep-scroll="list"]')?.focus({ preventScroll: true });
+  }, [ready, preview]);
 
   if (!preview) return null;
   const { plan, count } = preview;
@@ -158,7 +169,7 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
       )}
       <div>
         <h3 className="text-xs font-medium text-muted-foreground">{t("action.rule.readAs")}</h3>
-        <dl data-testid="action-conditions" className={cn("mt-1.5 grid grid-cols-[minmax(5rem,max-content)_1fr] gap-x-4", reader ? "gap-y-2" : "gap-y-1")}>
+        <dl data-testid="action-conditions" className={cn("mt-1.5 grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4", reader ? "gap-y-2" : "gap-y-1")}>
           {rows.map((r, i) => (
             <div key={i} className="contents" data-testid="action-rule-row">
               <dt className="text-muted-foreground">{r.label}</dt>
