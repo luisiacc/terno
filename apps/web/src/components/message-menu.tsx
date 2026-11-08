@@ -1,7 +1,6 @@
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "@terno/ui/components/context-menu";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
-import { IconButton } from "@terno/ui/components/icon-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Button } from "@terno/ui/components/button";
 import { cn } from "@terno/ui/lib/utils";
@@ -54,7 +53,7 @@ function MessageItems({ threadId, messageId, respond, parts: { Item, Separator }
         <>
           <Item data-testid="message-menu-reply" onClick={() => respond("reply")}>
             <Reply />
-            <span className="flex-1">{t("actions.reply")}</span>
+            <span className="flex-1">{t("reader.message.reply")}</span>
           </Item>
           {replyAll && (
             <Item data-testid="message-menu-reply-all" onClick={() => respond("replyAll")}>
@@ -99,9 +98,9 @@ const DROPDOWN_PARTS: ItemParts = { Item: DropdownMenuItem, Separator: DropdownM
  */
 function useRespond(threadId: number, messageId: number | null, fallback: () => HTMLElement | null | undefined) {
   const handedOff = useRef(false);
-  const respond = (mode: Respond, fromMenu = true) => {
+  const respond = (mode: Respond) => {
     if (messageId === null) return;
-    handedOff.current = fromMenu;
+    handedOff.current = true;
     void composeLanding(mode, threadId, 0, undefined, undefined, { sourceId: messageId }).then((landing) => {
       if (landing.kind !== "none") return;
       handedOff.current = false;
@@ -116,8 +115,9 @@ function useRespond(threadId: number, messageId: number | null, fallback: () => 
 }
 
 /**
- * A message's own actions at the end of its header, so there's no scrolling to the end to answer it. They show on hover and
- * focus, the newest's too (the reply bar is right below it), in a place kept for them, so nothing moves when they come.
+ * A message's own actions, in a ⋯ menu at the end of its header (Reply to this message first), so there's no scrolling to the
+ * end to answer it. Only the menu: the toolbar and the reply bar are the two ways to reply, and a third Reply on every header
+ * was one too many (plan 158). It shows on hover and focus, the newest's too, in a place kept for it, so nothing moves.
  */
 export function MessageActions({ threadId, messageId, className }: { threadId: number; messageId: number; className?: string }) {
   const trigger = useRef<HTMLButtonElement>(null);
@@ -129,9 +129,6 @@ export function MessageActions({ threadId, messageId, className }: { threadId: n
       data-testid="message-actions"
       className={cn("flex items-center gap-px opacity-0 transition-opacity duration-fast group-hover/mh:opacity-100 group-has-[:focus-visible]/mh:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100", className)}
     >
-      <IconButton size="icon-sm" label={t("reader.message.reply")} onClick={() => respond("reply", false)} data-testid="message-reply">
-        <Reply className="size-4" />
-      </IconButton>
       <DropdownMenu onOpenChange={opened}>
         <Tooltip>
           <TooltipTrigger

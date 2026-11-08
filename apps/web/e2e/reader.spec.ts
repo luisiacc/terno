@@ -5,8 +5,15 @@
  */
 import { E2E_NOW } from "./constants";
 import { expect, focusList, ingestConversation, openRow, respond, search, selectThread, test, fresh, scenario } from "./fixtures";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
+
+/** A message's own Reply: first in its ⋯ menu (plan 158: no Reply button on every header). */
+async function replyToMessage(page: Page, message: Locator): Promise<void> {
+  await message.hover();
+  await message.getByTestId("message-more").click();
+  await page.getByTestId("message-menu-reply").click();
+}
 
 test.describe("reader conversation", () => {
   test("messages are disclosure buttons that work with Enter and Space; collapsed bodies aren't mounted", { tag: "@variant" }, async ({ app: page, server }) => {
@@ -84,7 +91,9 @@ test.describe("reader conversation", () => {
       await fresh(page);
       await openRow(page, 0);
       const subject = (await page.getByTestId("reader-subject").textContent())!;
-      await expect(page.getByTestId("quick-reply")).toContainText(/Reply to \S+…/);
+      // the whole first name, no ellipsis that reads as a cut (plan 158)
+      await expect(page.getByTestId("quick-reply")).toContainText(/Reply to \S+/);
+      await expect(page.getByTestId("quick-reply")).not.toContainText("…");
       // the account it answers from is words, and only when there's a choice: never initials that read as a person
       await expect(page.getByTestId("quick-reply").getByTestId("sender-avatar")).toHaveCount(0);
       const several = (await server.backend.store.accounts.list()).length > 1;
@@ -144,9 +153,8 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
   const geometry = (page: Page) => page.evaluate(() => {
     const column = document.querySelector<HTMLElement>("[data-reader-column]")!;
     const box = column.getBoundingClientRect(), style = getComputedStyle(column);
-    // on the column: a wide List page keeps Back and the steps at the pane's edges, beside it
-    const beside = (b: Element) => { for (let e: Element | null = b; e && !e.matches("[data-reader-toolbar]"); e = e.parentElement) if (getComputedStyle(e).position === "absolute") return true; return false; };
-    const bar = [...document.querySelectorAll("[data-reader-toolbar] button")].filter((b) => (b as HTMLElement).offsetParent !== null && !beside(b));
+    // everything on the column, List's Back and steps too
+    const bar = [...document.querySelectorAll("[data-reader-toolbar] button")].filter((b) => (b as HTMLElement).offsetParent !== null);
     const body = [...document.querySelectorAll("[data-testid=message][data-expanded] .type-body")].at(-1) as HTMLElement;
     const type = getComputedStyle(body);
     const ctx2d = document.createElement("canvas").getContext("2d")!;
@@ -192,32 +200,41 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     await page.getByTestId("reader-back").waitFor();
     const list = await check("list, 1440");
     expect(list.firstLine).toBeLessThan(300);
-    // Back and the steps hang just outside the column's edges, with the toolbar, not out at the pane's
-    const nav = await page.evaluate(() => {
-      const column = document.querySelector("[data-reader-toolbar]")!.getBoundingClientRect();
-      const box = (id: string) => document.querySelector(`[data-testid=${id}]`)!.parentElement!.getBoundingClientRect();
-      return { back: column.left - box("reader-back").right, steps: box("reader-newer").left - column.right };
-    });
-    expect(Math.abs(nav.back), "Back beside the column").toBeLessThanOrEqual(1);
-    expect(Math.abs(nav.steps), "the steps beside the column").toBeLessThanOrEqual(1);
+    // Back starts the column and the steps end it (the checks above): the same form at every width, saying where to
+    const where = (await page.getByTestId("reader-back").innerText()).trim();
+    expect(where.length).toBeGreaterThan(0);
+    await page.setViewportSize({ width: 1100, height: 700 });
+    await check("list, 1100");
+    await expect(page.getByTestId("reader-back")).toHaveText(where);
+    await page.setViewportSize({ width: 1440, height: 900 });
     // New message is reachable from the reader, wherever this design keeps it
     await page.getByTestId("reader-compose").or(page.getByTestId("compose-button")).locator("visible=true").first().click();
     await expect(page.getByTestId("compose-title")).toBeVisible();
   });
 
-  test("one way to reply: Reply and Forward in the toolbar, Reply all in words only with someone else on it, and nothing moves", async ({ app: page, server }) => {
+  test("one way to reply: Reply, Reply all and Forward in the toolbar as in the bar, words as they fit, and nothing moves", async ({ app: page, server }) => {
     const store = server.backend.store;
     const id = await ingestConversation(server, { subject: "Solo con Yuki", count: 1, now: E2E_NOW });
     const replyAt = async () => (await page.getByTestId("action-reply").boundingBox())!.x;
     let solo = 0;
-    await scenario("one other person: no Reply all, here or in the bar, no menu, and a still works", async () => {
+    await scenario("one other person: Reply all keeps its place, dimmed; none in the bar; no menu; a still works", async () => {
       await selectThread(page, id, 'subject:"Solo con Yuki"');
       await expect(page.getByTestId("action-reply")).toContainText("Reply");
       await expect(page.getByTestId("action-forward")).toHaveAccessibleName("Forward");
-      await expect(page.getByTestId("action-reply-all")).toHaveCount(0);
+      await expect(page.getByTestId("action-reply-all")).toBeDisabled();
       await expect(page.getByTestId("quick-reply-all")).toHaveCount(0);
       await expect(page.getByTestId("action-reply-menu")).toHaveCount(0);
+      // the bar's order: Reply, Reply all, Forward
+      const order = await page.getByTestId("action-reply").locator("xpath=..").locator("button").evaluateAll((items) => items.map((i) => i.getAttribute("data-testid")));
+      expect(order).toEqual(["action-reply", "action-reply-all", "action-forward"]);
       solo = await replyAt();
+      // the only message never folds: nothing would be left to read, so its header is no button, has no chevron and opens nothing
+      await expect(page.getByTestId("message").getByTestId("message-toggle")).toHaveCount(0);
+      const only = page.getByTestId("message").getByTestId("message-header");
+      await expect(only.getByTestId("message-disclosure")).toHaveCount(0);
+      await expect(only.locator("button")).toHaveCount(0);
+      await only.click();
+      await expect(page.getByTestId("message")).toHaveAttribute("data-expanded", "true");
       await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
       await page.keyboard.press("a");
       await expect(page.getByTestId("compose-body")).toBeFocused();
@@ -236,20 +253,27 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       await expect(page.getByTestId("compose-body")).toBeFocused();
       await page.getByTestId("compose-discard").click();
     });
-    await scenario("someone else on it: Reply all in words, on Reply's far side, so Reply stays put", async () => {
+    await scenario("someone else on it: Reply all lights up, in words on a full column, and Reply stays put", async () => {
       const account = (await store.accounts.list())[0]!;
       const yuki = { name: "Yuki", email: "yuki@acme.studio" };
       const { touched } = await store.sync.ingest([{ accountId: account.id, providerMsgId: "three-people", providerThreadId: "three-people", rfcMessageId: "<three-people@e2e.test>", inReplyTo: null, references: [], from: yuki, replyTo: [], to: [{ name: "", email: account.email }], cc: [{ name: "Ana", email: "ana@x.test" }], bcc: [], subject: "Con Ana también", date: E2E_NOW, snippet: "Hola a los dos", bodyText: "Hola a los dos", bodyHtml: null, bodyState: "full", listId: null, isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100 }], { applyFilters: false, now: E2E_NOW, classifier: null });
       await selectThread(page, touched[0]!, 'subject:"Con Ana también"');
       await expect(page.getByTestId("quick-reply-all")).toBeVisible();
-      await expect(page.getByTestId("action-reply-all")).toHaveText("Reply all");
-      expect(await page.getByTestId("action-reply-all").locator("span").evaluate((el) => el.getBoundingClientRect().width)).toBeGreaterThan(20);
+      await expect(page.getByTestId("action-reply-all")).toBeEnabled();
+      const words = (id: string) => page.getByTestId(id).locator("span").first().evaluate((el) => el.getBoundingClientRect().width);
+      // a full column: Reply, Archive and Delete in words; Reply all and Forward go together (here Summarize takes their room)
+      for (const id of ["action-reply", "action-archive", "action-trash"]) expect(await words(id), id).toBeGreaterThan(20);
+      expect((await words("action-reply-all")) > 1).toBe((await words("action-forward")) > 1);
       expect(Math.abs((await replyAt()) - solo)).toBeLessThanOrEqual(0.5);
-      // a reader short of the full column: Reply all is its glyph (its name still read), so a longer language's words never push Forward out
-      await page.setViewportSize({ width: 1280, height: 800 });
-      await expect.poll(() => page.getByTestId("reader").evaluate((el) => el.getBoundingClientRect().width)).toBeLessThan(720);
+      // a narrower reader lets words go by priority (Reply all's and Forward's first, Reply's last), never a control off the column;
+      // a word that goes keeps its name for screen readers
+      await page.setViewportSize({ width: 1100, height: 700 });
+      await expect.poll(() => words("action-reply-all")).toBeLessThanOrEqual(1);
       await expect(page.getByTestId("action-reply-all")).toHaveAccessibleName("Reply all");
-      expect(await page.getByTestId("action-reply-all").locator("span").evaluate((el) => el.getBoundingClientRect().width)).toBeLessThanOrEqual(1);
+      expect(await words("action-reply")).toBeGreaterThan(20);
+      const g = await geometry(page);
+      expect(Math.abs(g.end - g.right), "the last control on the column's edge").toBeLessThanOrEqual(1.5);
+      expect(g.overflow).toBe(false);
       await page.setViewportSize({ width: 1440, height: 900 });
       await respond(page, "reply-all");
       await expect(page.getByTestId("compose-body")).toBeFocused();
@@ -263,6 +287,19 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     const line = page.getByTestId("reader-context");
     await page.getByTestId("expand-all").click();
     // the header in view: no line, and the toolbar keeps its own hairline
+    await expect(line).not.toHaveAttribute("data-shown");
+    // the subject only just cut by the toolbar's edge: the line covers it, never half a subject (plan 158); a subject taller
+    // than the view too (its top is what's watched)
+    const subject = page.getByTestId("reader-subject");
+    await subject.evaluate((el) => { (el as HTMLElement).style.height = "2000px"; });
+    await page.locator("[data-reader-scroller]").evaluate((el) => (el.scrollTop = 12));
+    await expect(line).toHaveAttribute("data-shown");
+    await page.locator("[data-reader-scroller]").evaluate((el) => (el.scrollTop = 0));
+    await expect(line).not.toHaveAttribute("data-shown");
+    await subject.evaluate((el) => { (el as HTMLElement).style.height = ""; });
+    await page.locator("[data-reader-scroller]").evaluate((el) => (el.scrollTop = 12));
+    await expect(line).toHaveAttribute("data-shown");
+    await page.locator("[data-reader-scroller]").evaluate((el) => (el.scrollTop = 0));
     await expect(line).not.toHaveAttribute("data-shown");
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press("r");
@@ -316,7 +353,9 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       const opacity = (i: number) => messages.nth(i).getByTestId("message-actions").evaluate((el) => getComputedStyle(el).opacity);
       await page.mouse.move(0, 0);
       await expect.poll(() => opacity(2)).toBe("0");
-      expect((await messages.nth(2).getByTestId("message-reply").boundingBox())!.height).toBeGreaterThanOrEqual(28);
+      // the ⋯ menu alone: the toolbar and the bar are the two ways to reply (plan 158)
+      await expect(messages.nth(2).getByTestId("message-reply")).toHaveCount(0);
+      expect((await messages.nth(2).getByTestId("message-more").boundingBox())!.height).toBeGreaterThanOrEqual(28);
       await messages.nth(0).getByTestId("message-toggle").click();
       await page.mouse.move(0, 0);
       await expect.poll(() => opacity(0)).toBe("0");
@@ -325,17 +364,19 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       await page.mouse.move(0, 0);
       await messages.nth(0).getByTestId("message-toggle").focus();
       await page.keyboard.press("Tab");
-      await expect(messages.nth(0).getByTestId("message-reply")).toBeFocused();
+      await expect(messages.nth(0).getByTestId("message-more")).toBeFocused();
       await expect.poll(() => opacity(0)).toBe("1");
     });
-    await scenario("Reply on an older message answers that one, with its words quoted", async () => {
+    await scenario("Reply to this message, first in an older message's menu, answers that one, with its words quoted", async () => {
       const older = (await messages.nth(0).locator("[id^=msg-body-]").innerText()).trim().split("\n")[0]!;
-      await messages.nth(0).getByTestId("message-reply").click();
+      await messages.nth(0).getByTestId("message-more").click();
+      await expect(page.getByTestId("message-actions-menu").getByRole("menuitem").first()).toHaveText("Reply to this message");
+      await page.getByTestId("message-menu-reply").click();
       await expect(page.getByTestId("compose-body")).toBeFocused();
       await page.getByTestId("compose-quote").click();
       await expect(page.getByTestId("composer")).toContainText(older);
     });
-    await scenario("a direct Reply leaves nothing behind: its menu, opened and closed after, gives focus back", async () => {
+    await scenario("a Reply from the menu leaves nothing behind: the menu, opened and closed after, gives focus back", async () => {
       await messages.nth(2).getByTestId("message-more").click();
       await expect.poll(() => page.evaluate(() => document.activeElement?.closest("[role=menu]") != null)).toBe(true);
       await page.keyboard.press("Escape");
@@ -345,7 +386,7 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       await page.getByTestId("compose-body").click();
       await page.keyboard.type("Lo que escribí");
       // the same kind of draft, on another message: the words stay, and the snack says what changed
-      await messages.nth(2).getByTestId("message-reply").click();
+      await replyToMessage(page, messages.nth(2));
       await expect(page.getByTestId("snack-message")).toHaveText("The draft is now on that message");
       await expect(page.getByTestId("compose-body")).toContainText("Lo que escribí");
       await messages.nth(2).getByTestId("message-more").click();
@@ -377,7 +418,7 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       await expect.poll(async () => (await drafted())?.body_text).toContain("Lo escrito");
       db.run("DELETE FROM messages WHERE id = ?", last);
       await messages.nth(0).getByTestId("message-toggle").click();
-      await messages.nth(0).getByTestId("message-reply").click();
+      await replyToMessage(page, messages.nth(0));
       await expect(page.getByTestId("snack-message")).toHaveText("The draft is now on that message");
       await expect(page.getByTestId("compose-body")).toContainText("Lo escrito");
       await expect.poll(async () => (await drafted())?.in_reply_to_message_id).toBe(first);
@@ -386,11 +427,39 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       const second = await idOf(1);
       db.run("DELETE FROM messages WHERE id = ?", second);
       await messages.nth(1).getByTestId("message-toggle").click();
-      await messages.nth(1).getByTestId("message-reply").click();
+      await replyToMessage(page, messages.nth(1));
       await expect(page.getByTestId("snack-message")).toContainText("no longer in this conversation");
       await expect.poll(async () => (await drafted())?.in_reply_to_message_id).toBe(first);
       await expect(page.getByTestId("compose-body")).toContainText("Lo escrito");
     });
+  });
+
+  test("the narrowest reader holds a search's steps and every reply control on the column", async ({ app: page, server }) => {
+    const id = await ingestConversation(server, { subject: "Ancho mínimo", count: 2, now: E2E_NOW });
+    await page.setViewportSize({ width: 1100, height: 700 });
+    await page.getByTestId("pane-handle-list").focus();
+    for (let i = 0; i < 40; i++) await page.keyboard.press("ArrowRight");
+    await selectThread(page, id, 'subject:"Ancho mínimo" Mensaje');
+    await expect(page.getByTestId("reader-matches")).toBeVisible();
+    // (the toolbar fits again on the frame after the steps arrive)
+    await expect.poll(async () => { const g = await geometry(page); return !g.overflow && Math.abs(g.end - g.right) <= 1.5; }, { message: "Forward on the column's edge" }).toBe(true);
+    await expect(page.getByTestId("action-forward")).toBeInViewport();
+    await page.setViewportSize({ width: 1440, height: 900 });
+  });
+
+  test("a conversation left with one message shows it open, even one folded before the others went", async ({ app: page, server }) => {
+    const id = await ingestConversation(server, { subject: "Se queda uno", count: 2, now: E2E_NOW });
+    await selectThread(page, id, 'subject:"Se queda uno"');
+    const messages = page.getByTestId("message");
+    // the newest folded, then the older one goes (deleted on the server, the reader told by a change to the thread)
+    await messages.nth(1).getByTestId("message-toggle").click();
+    await expect(messages.nth(1).getByTestId("message-toggle")).toHaveAttribute("aria-expanded", "false");
+    sqlDb(server.backend.store).run("DELETE FROM messages WHERE id = ?", Number(await messages.nth(0).getAttribute("data-message-id")));
+    await server.backend.server.invoke("threads.act", { threadIds: [id], action: "star" }, { clientId: "setup", origin: "dev" as const });
+    await expect(messages).toHaveCount(1);
+    await expect(messages.first()).toHaveAttribute("data-expanded", "true");
+    await expect(messages.first().getByTestId("message-header")).toBeVisible();
+    await expect(messages.first().getByTestId("message-disclosure")).toHaveCount(0);
   });
 
   test("the full-message view covers the conversation: its keys wait, and nothing folds under it", async ({ app: page, server }) => {
@@ -398,12 +467,18 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     const account = (await store.accounts.list())[0]!;
     const yuki = { name: "Yuki", email: "yuki@acme.studio" };
     const one = (n: number, bodyHtml: string) => ({ accountId: account.id, providerMsgId: `tall-${n}`, providerThreadId: "tall-thread", rfcMessageId: `<tall-${n}@e2e.test>`, inReplyTo: null, references: [], from: yuki, replyTo: [], to: [{ name: "", email: account.email }], cc: [], bcc: [], subject: "Una larga de verdad", date: E2E_NOW - 1000 + n, snippet: "Hola", bodyText: null, bodyHtml, bodyState: "full" as const, listId: null, isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100 });
-    const tall = `<div>${Array.from({ length: 1400 }, (_, i) => `<p style="margin:0;height:20px">Line ${i}</p>`).join("")}</div>`;
+    // a simple mail's own dark ink (plan 158): themed in the reader, so themed in the full view too, never black left on the page
+    const tall = `<div>${Array.from({ length: 1400 }, (_, i) => `<p style="margin:0;height:20px;color:#111">Line ${i}</p>`).join("")}</div>`;
     const { touched } = await store.sync.ingest([one(1, "<p>Corta</p>"), one(2, tall)], { applyFilters: false, now: E2E_NOW, classifier: null });
     await selectThread(page, touched[0]!, 'subject:"Una larga de verdad"');
     await page.getByRole("button", { name: "Show full message", exact: true }).click();
     const scroller = page.locator("[data-full-message-scroller]");
     await expect(scroller.locator("iframe")).toBeVisible();
+    const ink = await scroller.locator("iframe").first().evaluate((f) => {
+      const d = (f as HTMLIFrameElement).contentDocument!;
+      return { p: getComputedStyle(d.querySelector("p")!).color, body: getComputedStyle(d.body).color };
+    });
+    expect(ink.p).toBe(ink.body);
     await page.keyboard.press("Shift+E");
     await page.keyboard.press("Shift+P");
     await expect(scroller.locator("iframe")).toBeVisible();

@@ -108,6 +108,8 @@ test("a one-message conversation has one header in every design", { tag: "@varia
   const id = await ingestConversation(server, { subject: "Una sola nota", count: 1, now: E2E_NOW });
   await selectThread(page, id, 'subject:"Una sola nota"');
   await expect(reader(page).getByTestId("message-date")).toHaveCount(design === "lumen" ? 1 : 0);
-  await expect(reader(page).getByTestId("message-toggle")).toHaveCount(design === "lumen" ? 0 : 1);
+  // the only message opens nothing: a header, not a button (plan 158)
+  await expect(reader(page).getByTestId("message-toggle")).toHaveCount(0);
+  await expect(reader(page).getByTestId("message-header")).toHaveCount(design === "lumen" ? 0 : 1);
   await expect(reader(page).getByTestId("recipients")).toHaveCount(1);
 });

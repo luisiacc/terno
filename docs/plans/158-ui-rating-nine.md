@@ -145,6 +145,22 @@ Not taken: the body measure (35 em, about 75 characters, already in every style)
 
 **What the two Codex reviews changed:** Reply all's words overflowed narrower readers and longer languages, so they now show only where they fit; the composer's own scroll (an undo above the view) put the caret under the line; a reduced-motion opening could land under it; switching style left the line watching a heading that was gone.
 
+## The reader, fourth pass
+
+On round 3's ratings (`e48f0f309`), with the owner's decisions:
+
+- **Two ways to reply, one family.** The toolbar's group and the bar at the end say the same words in the same order: Reply, Reply all, Forward. Reply all keeps its slot in the toolbar, dimmed when it reaches nobody Reply doesn't, so nothing moves between conversations. A message's header has no Reply of its own: its ⋯ menu (and the right-click) leads with "Reply to this message". The bar says "Reply to Arjun", without the ellipsis raters read as a cut.
+- **A toolbar you can read.** Words show beside the icons by priority, as many tiers as the column holds in the language at hand, measured (`fitWords`, re-run when the width or the set of buttons changes): Reply; Back's mailbox; Archive and Delete; Reply all and Forward. A word that doesn't show keeps its name in the tooltip and for screen readers. Mark as unread moved into More. In the narrowest reader with a search's steps, Category and Remind me give their place.
+- **List's page:** Back and the steps on the column, Back named at every width; the column is 12rem wider there (the body keeps its 35 em measure).
+- **HTML mail in "Match theme":** designed means a surface or a hue (a background that isn't a white page, a picture behind, hued text, drawn art, a color set `!important`); greys on white take the theme's ink, quiet ink and page, links its link. Always paper is untouched.
+- **The subject is never half cut:** the context line shows as soon as the subject's top edge goes under the toolbar, with a fade beneath it. A narrow reader's subject is 20 px.
+- **Search:** "Match 1 of 3" and its steps sit in the toolbar, so the conversation doesn't move down for them.
+- **Also:** a conversation's only message never folds and has a plain header; reader avatars follow the list's person rule (your own messages and people's are initials, never a company logo); Expand all carries the "N more messages" glyph.
+
+Not taken: dimming the toolbar's Reply while a draft is open (it goes to the draft), a darker paper for designed mail in dark (a palette token, the lead's).
+
+**What the two Codex reviews changed:** `!important` inline colors stay on paper; the full-message view's sections are themed too; a thread reduced to one folded message opens it; sub-pixel and taller-than-the-view subjects show the context line; the narrowest reader with a search keeps Forward on the column; SVG mail stays on paper; the lone message's header isn't a button. Found while testing: `background:#fff` (a shorthand) reported its image as `initial` and counted as designed; aspect-square items in a stretched group were measured at their icon's width.
+
 ## Second pass: the row menu, the palette, selection and undo, search
 
 Decisions of the second pass in this area, and why:

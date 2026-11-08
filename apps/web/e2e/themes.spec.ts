@@ -158,9 +158,11 @@ test.describe("themes", () => {
     await scenario("HTML mail: uncolored mail takes the theme, designed mail sits on paper", async () => {
       await server.backend.server.invoke("settings.update", { theme: "dark", darkTheme: "dracula" }, ctx);
       const dracula = builtinTheme("dracula")!.tokens;
-      // one thread without colors of its own (the demo's newsletters all set some)
+      // one thread without colors of its own, and one designed (a dark band behind white text)
       const plain = Number(await page.locator("[data-testid=thread-row]").first().getAttribute("data-thread-id"));
       sqlDb(server.backend.store).run("UPDATE message_bodies SET body_html = ? WHERE message_id IN (SELECT id FROM messages WHERE thread_id = ?)", "<p>Hola, <b>sin colores</b>: <a href='https://x.test'>enlace</a></p>", plain);
+      const designed = Number(await page.locator("[data-testid=thread-row]").nth(2).getAttribute("data-thread-id"));
+      sqlDb(server.backend.store).run("UPDATE message_bodies SET body_html = ? WHERE message_id IN (SELECT id FROM messages WHERE thread_id = ?)", "<div style='background:#1a1a2e;color:#fff;padding:24px'><h1>Boletín</h1></div><p>Debajo</p>", designed);
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       const bodyBg = async () => {
@@ -189,30 +191,52 @@ test.describe("themes", () => {
       await expect(page.locator("iframe[data-mail=paper]").first()).toBeVisible();
       expect(await bodyBg()).toBe(rgb(toHex(dracula["mail-paper"])));
     });
-    await scenario("designed mail is recognized from its parsed styles, whatever the quoting", async () => {
+    await scenario("designed mail is told from simple mail by its parsed styles, whatever the quoting", async () => {
       await fresh(page);
+      // designed: a surface (a background that isn't a white page, a picture behind) or text in a hue; simple: greys on white, a link's own color
       const cases: [string, boolean][] = [
-        [`<p style="font-family:'Arial',sans-serif;color:#111">Hola</p>`, true],
-        [`<p style='font-family:"Helvetica Neue";color: rgb(17,17,17)'>Hola</p>`, true],
+        [`<p style="font-family:'Arial',sans-serif;color:#111">Hola</p>`, false],
+        [`<p style='font-family:"Helvetica Neue";color: rgb(17,17,17)'>Hola</p>`, false],
+        [`<div style="BACKGROUND-COLOR: white">x</div>`, false],
+        [`<div style="background:#fff;padding:8px">x</div>`, false],
+        [`<table bgcolor="#ffffff"><tr><td>x</td></tr></table>`, false],
+        [`<p style="color:#888;font-size:12px"><a href="https://x.test/u" style="color:#1a73e8">Darse de baja</a></p>`, false],
         [`<div style="padding:4px;background:#eee url(cid:x)">x</div>`, true],
-        [`<div style="BACKGROUND-COLOR: white">x</div>`, true],
-        [`<table bgcolor="#ffffff"><tr><td>x</td></tr></table>`, true],
+        [`<div style="background-color:#1a1a2e">x</div>`, true],
+        [`<table bgcolor="#f0e6d2"><tr><td>x</td></tr></table>`, true],
         [`<font color="red">x</font>`, true],
+        [`<span style="color:#d00">x</span>`, true],
+        // a color it insists on outranks any sheet: such mail keeps its paper
+        [`<p style="color:#111 !important">x</p>`, true],
+        // drawn art paints fills and strokes no color rule reaches
+        [`<div style="background:#fff"><svg width="10" height="10"><rect width="10" height="10" fill="#000"/></svg></div>`, true],
         [`<p style="font-family:'Arial';font-weight:bold;margin:0">sin colores</p>`, false],
         [`<p style="border-color:red;font-family:'color:red'">x</p>`, false],
         [`<p>color: red; background: blue (texto, no estilo)</p>`, false],
         [`<p title="color:red">x</p>`, false],
       ];
-      const results = await page.evaluate((list) => list.map(([html]) => (window as unknown as { __terno: { hasOwnColors(h: string): boolean } }).__terno.hasOwnColors(html)), cases);
+      const results = await page.evaluate((list) => list.map(([html]) => (window as unknown as { __terno: { mailDesign(h: string): { designed: boolean } } }).__terno.mailDesign(html).designed), cases);
       expect(results).toEqual(cases.map(([, expected]) => expected));
 
-      // and in the reader: dark text from an ordinary inline style lands on the paper card, not on a dark theme
-      await server.backend.server.invoke("settings.update", { theme: "dark", darkTheme: "dracula" }, ctx);
+      // and in the reader, in a dark theme: a simple mail's dark text takes the theme's ink, its grey footer the theme's quiet
+      // ink and its white page the theme's (never a light slab in a dark reader); a designed one keeps its paper
+      await server.backend.server.invoke("settings.update", { theme: "dark", darkTheme: "dracula", htmlMailAppearance: "auto" }, ctx);
       const thread = Number(await page.locator("[data-testid=thread-row]").first().getAttribute("data-thread-id"));
-      sqlDb(server.backend.store).run("UPDATE message_bodies SET body_html = ? WHERE message_id IN (SELECT id FROM messages WHERE thread_id = ?)", `<p style="font-family:'Arial',sans-serif;color:#111">Texto oscuro</p>`, thread);
+      const designed = Number(await page.locator("[data-testid=thread-row]").nth(1).getAttribute("data-thread-id"));
+      const body = (html: string, id = thread) => sqlDb(server.backend.store).run("UPDATE message_bodies SET body_html = ? WHERE message_id IN (SELECT id FROM messages WHERE thread_id = ?)", html, id);
+      body(`<div style="background:#1a1a2e;color:#fff"><p>Diseñado</p></div>`, designed);
+      body(`<div style="background:#ffffff"><p id="ink" style="font-family:'Arial',sans-serif;color:#111">Texto oscuro</p><p id="quiet" style="color:#888">Pie</p></div>`);
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       await openRow(page, 0);
+      await expect(page.locator("iframe[data-mail=themed]").first()).toBeVisible();
+      const frame = page.frameLocator("iframe[title='Message content']").first();
+      const rgb = (hex: string) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ")})`;
+      const dracula = builtinTheme("dracula")!.tokens;
+      await expect.poll(() => frame.locator("#ink").evaluate((el) => getComputedStyle(el).color)).toBe(rgb(toHex(dracula.foreground)));
+      expect(await frame.locator("#quiet").evaluate((el) => getComputedStyle(el).color)).toBe(rgb(toHex(dracula["muted-foreground"])));
+      expect(await frame.locator("#ink").evaluate((el) => getComputedStyle(el.parentElement!).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+      await openRow(page, 1);
       await expect(page.locator("iframe[data-mail=paper]").first()).toBeVisible();
     });
   });

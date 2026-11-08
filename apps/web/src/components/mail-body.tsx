@@ -10,7 +10,7 @@ import { ChevronRight, ImageOff } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { t } from "@terno/i18n";
 import { mailColors, useAppearance } from "~/lib/appearance";
-import { csp, hasOwnColors, hasRemoteContent } from "~/lib/mail";
+import { csp, hasRemoteContent, mailDesign, QUIET_ATTR } from "~/lib/mail";
 import { splitTextQuote } from "~/lib/quote";
 import { withoutTrailingQuote } from "~/lib/quote-html";
 import { forwardPrintKey, wantsNativeMenu } from "~/lib/print-open";
@@ -51,7 +51,7 @@ interface MailLook {
 /** A mail document's colors, scheme and padding for the painted theme. */
 function mailLook(paper: boolean, mode: string): MailLook {
   const c = mailColors()[paper ? "paper" : "themed"];
-  const vars = { "--m-bg": c.bg, "--m-fg": c.fg, "--m-link": c.link, "--m-mark": c.mark, "--m-scheme": paper ? "light" : mode, "--m-pad": paper ? "16px" : "0" };
+  const vars = { "--m-bg": c.bg, "--m-fg": c.fg, "--m-quiet": c.quiet, "--m-link": c.link, "--m-mark": c.mark, "--m-scheme": paper ? "light" : mode, "--m-pad": paper ? "16px" : "0" };
   return { mail: paper ? "paper" : "themed", vars, style: Object.entries(vars).map(([k, v]) => `${k}:${v}`).join(";") };
 }
 
@@ -88,7 +88,11 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
   // re-rendered when the painted theme changes (the colors are literals inside the document)
   const themeKey = useAppearance((s) => s.themeKey);
   const mode = useAppearance((s) => s.mode);
-  const clean = useMemo(() => DOMPurify.sanitize(html, { WHOLE_DOCUMENT: false, FORBID_TAGS: ["style"], FORBID_ATTR: ["srcset"], ADD_ATTR: ["target"] }), [html]);
+  const sanitized = useMemo(() => DOMPurify.sanitize(html, { WHOLE_DOCUMENT: false, FORBID_TAGS: ["style"], FORBID_ATTR: ["srcset"], ADD_ATTR: ["target"] }), [html]);
+  // plan 158: a designed mail keeps its colors on paper; a simple one takes the theme's, its grey text marked quiet
+  // (a section of the full-message view: its paper or theme is the caller's, from the whole mail; its quiet text still marked)
+  const design = useMemo(() => mailDesign(sanitized), [sanitized]);
+  const clean = design.html;
   // one rule for quoted history, in text and in HTML: a trailing block is folded behind the same control
   const [quoteShown, setQuoteShown] = useState(false);
   const main = useMemo(() => (section ? null : withoutTrailingQuote(clean)), [clean, section]);
@@ -112,7 +116,7 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
   }, [cidAllowed, accountId, cidKey, clean]);
   const resolved = cidAllowed && cidResult?.key === cidKey ? cidResult.html : clean;
   const visibleHtml = useMemo(() => (!folded ? resolved : resolved === clean ? main : (withoutTrailingQuote(resolved) ?? resolved)), [resolved, clean, main, folded]);
-  const ownColors = useMemo(() => !section && hasOwnColors(clean), [clean, section]);
+  const ownColors = !section && design.designed;
   const paper = appearance === "paper" || ownColors;
   // a designed mail keeps its own layout; anything else wraps at the reader's measure, while its pictures and fixed tables keep the frame's width
   const measured = !section && !ownColors;
@@ -126,9 +130,12 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
   const sourceId = useMemo(() => String(++version.current), [built]);
   // a search's mark: the tint under the mail's own ink, weight as well as color; the one in hand outlined (no color of its own, so it holds on any mail)
   const markStyle = "mark[data-reader-match]{background:color-mix(in srgb,var(--m-mark) 30%,transparent);color:inherit;font-weight:600;border-radius:2px}mark[data-reader-current]{outline:1.5px solid var(--m-mark)}";
+  // a simple mail in the theme's colors: its greys and white page give way to the theme's ink, quiet ink and page, its links to the theme's link
+  // (keyed on the root's data-mail, so "Always paper" shows it as written, without a rebuild)
+  const themedStyle = `html[data-mail=themed] [data-terno-flow] *:not(:where(mark[data-reader-match])){color:inherit!important;background-color:transparent!important}html[data-mail=themed] [data-terno-flow] a,html[data-mail=themed] [data-terno-flow] a *{color:var(--m-link)!important}html[data-mail=themed] [data-terno-flow] [${QUIET_ATTR}]{color:var(--m-quiet)!important}`;
   const doc = useMemo(
     () =>
-      `<!doctype html><html data-mail="${built.look.mail}" style="${built.look.style}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(built.allowRemote)}"><base target="_blank"><style>${section ? "" : markStyle}${measured ? "[data-terno-flow]{max-width:35em}[data-terno-flow] img,[data-terno-flow] table{max-width:100vw}" : ""}html{overflow-y:clip}html,body{margin:0;padding:0;background:var(--m-bg);color:var(--m-fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;overflow-wrap:anywhere;color-scheme:var(--m-scheme)}body{padding:var(--m-pad);${section ? "" : "max-height:20000px;overflow:clip;box-sizing:border-box;position:relative;contain:paint"}}[data-terno-flow]{display:flow-root}img{max-width:100%;height:auto}a{color:var(--m-link)}table{max-width:100%}${section ? "body{padding:0}body *:not(svg,svg *){position:static!important;float:none!important;transform:none!important;zoom:1!important;writing-mode:horizontal-tb!important;height:auto!important;min-height:0!important;max-height:none!important;min-width:0!important;max-width:100%!important;margin:0!important;padding:0!important;border-width:0!important;border-spacing:0!important;text-indent:0!important;letter-spacing:normal!important;word-spacing:normal!important;overflow:visible!important;font-size:14px!important;line-height:1.55!important;overflow-wrap:anywhere!important;white-space:pre-wrap!important}body img,body svg,body video,body canvas,body input,body select{max-width:100%!important;max-height:2048px!important;object-fit:contain}body table{table-layout:auto}" : ""}</style></head><body><div data-terno-flow data-terno-document="${sourceId}">${built.html}</div></body></html>`,
+      `<!doctype html><html data-mail="${built.look.mail}" style="${built.look.style}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(built.allowRemote)}"><base target="_blank"><style>${section ? themedStyle : markStyle + themedStyle}${measured ? "[data-terno-flow]{max-width:35em}[data-terno-flow] img,[data-terno-flow] table{max-width:100vw}" : ""}html{overflow-y:clip}html,body{margin:0;padding:0;background:var(--m-bg);color:var(--m-fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;overflow-wrap:anywhere;color-scheme:var(--m-scheme)}body{padding:var(--m-pad);${section ? "" : "max-height:20000px;overflow:clip;box-sizing:border-box;position:relative;contain:paint"}}[data-terno-flow]{display:flow-root}img{max-width:100%;height:auto}a{color:var(--m-link)}table{max-width:100%}${section ? "body{padding:0}body *:not(svg,svg *){position:static!important;float:none!important;transform:none!important;zoom:1!important;writing-mode:horizontal-tb!important;height:auto!important;min-height:0!important;max-height:none!important;min-width:0!important;max-width:100%!important;margin:0!important;padding:0!important;border-width:0!important;border-spacing:0!important;text-indent:0!important;letter-spacing:normal!important;word-spacing:normal!important;overflow:visible!important;font-size:14px!important;line-height:1.55!important;overflow-wrap:anywhere!important;white-space:pre-wrap!important}body img,body svg,body video,body canvas,body input,body select{max-width:100%!important;max-height:2048px!important;object-fit:contain}body table{table-layout:auto}" : ""}</style></head><body><div data-terno-flow data-terno-document="${sourceId}">${built.html}</div></body></html>`,
     [built, section, sourceId, measured],
   );
   const source = useCallback((signal: AbortSignal) => new Promise<{ root: HTMLElement; tabs: WeakMap<Node, string | null> }>((resolve, reject) => {
