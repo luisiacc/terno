@@ -627,3 +627,12 @@ Five points (`/tmp/terno-scratch/ai-pass2/actions-ask/codex-review-1.md`), all t
 5. **The history chip's test passed without its fix** (the chip's box is a fixed 24 px however its text wraps). It measures the label's lines and the ×'s place now (`ask.spec.ts`).
 
 Review rounds stop here.
+
+### Where pass 2 stands
+
+- **Run:** typecheck and lint; the unit suites of `apps/web`, `packages/ui` and `packages/i18n` (2601 passed); `plain-actions.spec.ts`, `ask.spec.ts`, `filters.spec.ts`, `snack.spec.ts`, `selection.spec.ts`, `visual.spec.ts`, `designs.spec.ts`, `palette.spec.ts`, the attachment and controls specs in macOS; the `@design` flows of the first two and `designs.spec.ts` in Lumen, Atelier, Luma and Graphite; `design-axe.spec.ts`'s list-and-reader sweep in Lumen and Atelier; `pnpm test:ui-perf` (45 passed). The snack's keycap changed two baselines (`category-snackbar*.png`, Z → ⌘Z); nothing else moved. `pnpm test:all` is left for the landing batch.
+- **Shots:** `/tmp/terno-scratch/ai-pass2/actions-ask/after/<design>/`, the AI set in all five designs, light and dark, both sizes, from `capture.mjs --screens ai` on this branch's desktop build. `capture.mjs` needed no change: its waits (`action-finding`, `action-apply` enabled, `ask-source`, `ask-new`) all still exist. The "before" shots are ai-r01's.
+- **For the owner, not built:**
+  - The countdown ring on the shared snack drains from the top centre, so a moment after it appears it shows a small notch that two raters read as a fault. It's the design (plan 158), not a bug, so it stays. A visible track for the drained part would read as a countdown, if wanted.
+  - Raters asked for "Archived 6 shipping notices" (the request's own noun) in the snack. That needs the model's words for the noun, which this pass doesn't add (no new model call); the snack says the count and the verb as the title does.
+  - "Reopen preview" after a cancel, or after Undo, would need the plan again: a new model call, so not built.
