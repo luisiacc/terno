@@ -172,7 +172,7 @@ test.describe("plan 91: defaults and the same offers everywhere", () => {
     await page.locator(`[data-testid=thread-row][data-thread-id="${g.target}"]`).click({ button: "right" });
     await menuPath(page, "menu-more");
     await page.getByTestId("menu-spam-similar").click();
-    const list = page.getByTestId("menu-more-list");
+    const list = page.getByTestId("menu-spam-similar-list");
     await expect(list.getByTestId("menu-similar-only")).toHaveText("Only this email");
     await expect(list.getByTestId("menu-similar-sender")).toBeVisible();
     const menuOrder = await list.locator("[data-testid^=menu-similar-]:not([data-testid=menu-similar-only])").evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));

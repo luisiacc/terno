@@ -23,7 +23,6 @@ import {
   CalendarClock,
   Check,
   CheckCheck,
-  ChevronRight,
   Copy,
   Ellipsis,
   Filter,
@@ -269,37 +268,18 @@ function placeItems(view: View, run: (a: ThreadAction) => void): MenuEntry[] {
   }
 }
 
-/** A row of a menu's section that unfolds what it holds in place, so nothing stands three menus deep (plan 158). */
-function Unfolding({ id, open, onToggle, icon, label, testId, variant, children }: { id: string; open: string | null; onToggle: (id: string | null) => void; icon: ReactNode; label: string; testId: string; variant?: "destructive"; children: ReactNode }) {
-  const unfolded = open === id;
+/** A row that holds several answers: an ordinary submenu, opened by hover, → or a click (the owner's call over unfolding in place). */
+function SubRow({ icon, label, testId, variant, children }: { icon: ReactNode; label: string; testId: string; variant?: "destructive"; children: ReactNode }) {
   return (
-    <>
-      <ContextMenuItem
-        data-testid={testId}
-        aria-expanded={unfolded}
-        variant={variant}
-        closeOnClick={false}
-        onClick={() => onToggle(unfolded ? null : id)}
-        onKeyDown={(e) => {
-          // the arrows open and close it as they do a submenu, → going in; ← on a closed one still leaves the panel
-          if (e.key === "ArrowRight" && !unfolded) {
-            const row = e.currentTarget;
-            onToggle(id);
-            // the menu's own ↓, once they're there: it knows its rows (a focus from here, it takes back)
-            requestAnimationFrame(() => row.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })));
-          } else if (e.key === "ArrowLeft" && unfolded) {
-            e.stopPropagation();
-            (e as unknown as { preventBaseUIHandler(): void }).preventBaseUIHandler();
-            onToggle(null);
-          }
-        }}
-      >
+    <ContextMenuSub>
+      <ContextMenuSubTrigger data-testid={testId} variant={variant}>
         {icon}
         <span className="min-w-0 flex-1 truncate">{label}</span>
-        <ChevronRight className={cn("ms-auto rtl:-scale-x-100", unfolded && "rotate-90")} />
-      </ContextMenuItem>
-      {unfolded && children}
-    </>
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent className="w-max max-w-96 min-w-60" data-testid={`${testId}-list`}>
+        {children}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
   );
 }
 
@@ -347,9 +327,8 @@ function RemindItems({ kind, ids, inset }: { kind: ReminderKind; ids: number[]; 
   );
 }
 
-/** "Remind me ▸": when, and "Remind me if no reply" unfolding under it. */
+/** "Remind me ▸": when, and "Remind me if no reply ▸" beside it. */
 function RemindSub({ ids, disabled }: { ids: number[]; disabled: boolean }) {
-  const [unfolded, setUnfolded] = useState<string | null>(null);
   return (
     <ContextMenuSub>
       <ContextMenuSubTrigger data-testid="menu-remind-always" disabled={disabled}>
@@ -360,9 +339,9 @@ function RemindSub({ ids, disabled }: { ids: number[]; disabled: boolean }) {
       <ContextMenuSubContent className="w-max min-w-60" data-testid="menu-remind-always-list">
         <RemindItems kind="always" ids={ids} />
         <ContextMenuSeparator />
-        <Unfolding id="noReply" open={unfolded} onToggle={setUnfolded} icon={<MessageSquareReply />} label={t("remind.menuNoReply")} testId="menu-remind-noReply">
-          <RemindItems kind="noReply" ids={ids} inset />
-        </Unfolding>
+        <SubRow icon={<MessageSquareReply />} label={t("remind.menuNoReply")} testId="menu-remind-noReply">
+          <RemindItems kind="noReply" ids={ids} />
+        </SubRow>
       </ContextMenuSubContent>
     </ContextMenuSub>
   );
@@ -371,8 +350,8 @@ function RemindSub({ ids, disabled }: { ids: number[]; disabled: boolean }) {
 const SIMILAR_LABEL = { archive: "threadMenu.similar.archive", trash: "threadMenu.similar.trash", spam: "threadMenu.similar.spam" } as const;
 const SIMILAR_ICON = { archive: <Archive />, trash: <Trash2 />, spam: <OctagonAlert /> };
 
-/** More's "Similar mail": one row per action that still applies here, each unfolding what it would take. */
-function SimilarSection({ view, ids, open, onToggle }: { view: View; ids: number[]; open: string | null; onToggle: (id: string | null) => void }) {
+/** More's "Similar mail": one row per action that still applies here, each a submenu of what it would take. */
+function SimilarSection({ view, ids }: { view: View; ids: number[] }) {
   const actions: SimilarAction[] = [];
   if (view === "inbox" || view === "all" || view === "starred" || view === "sent") actions.push("archive");
   if (view !== "trash") actions.push("trash");
@@ -381,15 +360,15 @@ function SimilarSection({ view, ids, open, onToggle }: { view: View; ids: number
   return (
     <Section label={t("threadMenu.similar")} testId="menu-similar">
       {actions.map((action) => (
-        <Unfolding key={action} id={`similar:${action}`} open={open} onToggle={onToggle} icon={SIMILAR_ICON[action]} label={t(SIMILAR_LABEL[action])} testId={`menu-${action}-similar`} variant={action === "trash" ? "destructive" : undefined}>
+        <SubRow key={action} icon={SIMILAR_ICON[action]} label={t(SIMILAR_LABEL[action])} testId={`menu-${action}-similar`} variant={action === "trash" ? "destructive" : undefined}>
           <SimilarItems action={action} ids={ids} />
-        </Unfolding>
+        </SubRow>
       ))}
     </Section>
   );
 }
 
-/** What a similar row holds: read when it unfolds (plan 91: the snackbar's lines, in its order, its sentences). */
+/** What a similar row holds: read when its submenu opens (plan 91: the snackbar's lines, in its order, its sentences). */
 function SimilarItems({ action, ids }: { action: SimilarAction; ids: number[] }) {
   const [offers, setOffers] = useState<SimilarOffers | null>(null);
   useEffect(() => {
@@ -408,27 +387,27 @@ function SimilarItems({ action, ids }: { action: SimilarAction; ids: number[] })
   return (
     <>
       {/* plan 91: the plain action first, said as plainly as the snackbar's "No, only …" (no default, no sweep) */}
-      <ContextMenuItem inset data-testid="menu-similar-only" variant={variant} onClick={() => void act(action, ids, { automation: "none" })}>
+      <ContextMenuItem data-testid="menu-similar-only" variant={variant} onClick={() => void act(action, ids, { automation: "none" })}>
         <span className="min-w-0 flex-1 truncate">{t(`offers.onlyThis.${action}`, { count: ids.length })}</span>
       </ContextMenuItem>
       {action === "spam" && (
-        <div className="px-2 py-1 ps-[calc(1rem+1.15em)] text-xs text-muted-foreground" data-testid="menu-spam-similar-note">
+        <div className="max-w-80 px-2 py-1 text-xs text-muted-foreground" data-testid="menu-spam-similar-note">
           {t("similar.spamFuture")}
         </div>
       )}
       {!offers ? (
-        <ContextMenuItem inset disabled data-testid="menu-similar-counting">
+        <ContextMenuItem disabled data-testid="menu-similar-counting">
           {t("similar.counting")}
         </ContextMenuItem>
       ) : shown.length === 0 ? (
-        <ContextMenuItem inset disabled data-testid="menu-similar-nothing">
+        <ContextMenuItem disabled data-testid="menu-similar-nothing">
           {t("similar.nothing")}
         </ContextMenuItem>
       ) : (
         shown.map((o) => {
           const sentence = offerSentence(action, o, offers.senderName);
           return (
-            <ContextMenuItem key={o.scope.kind} inset data-testid={`menu-similar-${o.scope.kind}`} variant={variant} title={sentence} onClick={() => void actSimilar(action, ids, o.scope, offers.senderName)}>
+            <ContextMenuItem key={o.scope.kind} data-testid={`menu-similar-${o.scope.kind}`} variant={variant} title={sentence} onClick={() => void actSimilar(action, ids, o.scope, offers.senderName)}>
               <span className="min-w-0 flex-1 truncate">
                 {sentence}
                 {/* a named sender carries its address, muted, so same-named senders tell apart */}
@@ -759,7 +738,7 @@ function MenuItems() {
           <Ellipsis />
           <span className="min-w-0 flex-1 truncate">{t("threadMenu.more")}</span>
         </ContextMenuSubTrigger>
-        {/* plan 158: everything else, flat under small labels; a row with several answers unfolds them, nothing goes a level deeper */}
+        {/* plan 158: everything else, under small labels; a row with several answers opens them beside it */}
         <ContextMenuSubContent className="w-80" data-testid="menu-more-list">
           <MoreItems spam={spam} single={single} code={code} view={view} ids={ids} scope={scope !== null} sender={sender} categories={categories} fileTo={fileTo} filedIn={filedIn} />
         </ContextMenuSubContent>
@@ -768,9 +747,8 @@ function MenuItems() {
   );
 }
 
-/** "More ▸": what a row is rarely right-clicked for. One row unfolded at a time: the panel stays short. */
+/** "More ▸": what a row is rarely right-clicked for; a row with several answers opens them beside it. */
 function MoreItems({ spam, single, code, view, ids, scope, sender, categories, fileTo, filedIn }: { spam: MenuEntry | undefined; single: ThreadSummary | undefined; code: string | null; view: View; ids: number[]; scope: boolean; sender: { email: string; name: string } | null; categories: readonly Category[]; fileTo: readonly Category[]; filedIn: readonly Category[] }) {
-  const [unfolded, setUnfolded] = useState<string | null>(null);
   return (
     <>
       {spam && <Item {...spam} />}
@@ -791,11 +769,11 @@ function MoreItems({ spam, single, code, view, ids, scope, sender, categories, f
       )}
       <Item icon={<CheckCheck />} label={t("actions.selectAll")} command="list.selectAll" onClick={selectAll} testId="menu-select-all" />
       {/* plan 63: the same, for everything like it (explicit rows only: a "select all N" scope is already everything) */}
-      {!scope && ids.length <= 200 && <SimilarSection view={view} ids={ids} open={unfolded} onToggle={setUnfolded} />}
+      {!scope && ids.length <= 200 && <SimilarSection view={view} ids={ids} />}
       {sender && (
         <Section label={t("threadMenu.from", { name: sender.name })} testId="menu-sender">
           {categories.length > 0 && (
-            <Unfolding id="file" open={unfolded} onToggle={setUnfolded} icon={<Tag />} label={t("threadMenu.fileAll")} testId="menu-sender-file">
+            <SubRow icon={<Tag />} label={t("threadMenu.fileAll")} testId="menu-sender-file">
               {fileTo.map((c) => (
                 <ContextMenuItem key={c.id} data-testid={`menu-sender-file-${c.id}`} onClick={() => void applyScope(c.id, { kind: "sender", email: sender.email })}>
                   <CategoryDot color={c.color as CategoryColor} className="mx-1" />
@@ -809,7 +787,7 @@ function MoreItems({ spam, single, code, view, ids, scope, sender, categories, f
                   <span className="truncate">{t("threadMenu.outOfCategory", { category: c.name })}</span>
                 </ContextMenuItem>
               ))}
-            </Unfolding>
+            </SubRow>
           )}
           <Item
             icon={<Filter />}

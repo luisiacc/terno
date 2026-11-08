@@ -209,9 +209,10 @@ test.describe("context menu on one thread", () => {
       const id = (await target.getAttribute("data-thread-id"))!;
       await rightClick(page, target);
       await menuPath(page, "menu-more");
-      // what's about the sender stands under their name: a label, no level of its own
+      // what's about the sender stands under their name: a label, not a level of its own; a row with several answers opens them beside it
       await expect(sub(page, "menu-sender")).toHaveText(/^From /);
-      await expect(page.getByTestId("menu-more-list").locator("[data-slot=context-menu-sub-trigger]")).toHaveCount(0);
+      await expect(sub(page, "menu-sender")).not.toHaveAttribute("data-slot", "context-menu-sub-trigger");
+      await expect(sub(page, "menu-sender-file")).toHaveAttribute("data-slot", "context-menu-sub-trigger");
       await expect(sub(page, "menu-sender-file")).toContainText("File all their mail");
       await sub(page, "menu-copy").click();
       const copied = await page.evaluate(() => navigator.clipboard.readText());

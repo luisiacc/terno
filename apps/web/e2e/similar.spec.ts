@@ -72,7 +72,7 @@ test.describe("similar mail", () => {
       await page.locator(`[data-testid=thread-row][data-thread-id="${ids[0]}"]`).click({ button: "right" });
       await menuPath(page, "menu-more");
       await page.getByTestId("menu-spam-similar").click();
-      const list = page.getByTestId("menu-more-list");
+      const list = page.getByTestId("menu-spam-similar-list");
       await expect(list.getByTestId("menu-spam-similar-note")).toHaveText("Their future mail goes to Spam too.");
       // says how many; the full address follows the name, so same-named senders tell apart
       await expect(list.getByTestId("menu-similar-sender")).toContainText(new RegExp(`^Mark ${anywhere.length} more from .+ as spam ${email.replace(/[.+]/g, "\\$&")}`));
@@ -89,7 +89,7 @@ test.describe("similar mail", () => {
       await expect.poll(inSpam).toBe(0);
       await expect.poll(async () => (await filters()).length).toBe(0);
     });
-    await scenario("More and what unfolds in it are reachable with the keyboard", async () => {
+    await scenario("More and its submenus are reachable with the keyboard", async () => {
       await fresh(page);
       const { email, ids, inInbox } = senderSetup(server);
       await selectThread(page, ids[0]!, `in:inbox from:${email}`);
@@ -106,17 +106,18 @@ test.describe("similar mail", () => {
       }
       await expect(trigger).toBeFocused();
       await page.keyboard.press("ArrowRight");
-      const unfolds = page.getByTestId("menu-archive-similar");
-      await expect(unfolds).toBeVisible();
+      const similar = page.getByTestId("menu-archive-similar");
+      await expect(similar).toBeVisible();
       // the keys are the submenu's once focus is in it (before that ↓ is still the menu's, and closes it)
       await expect.poll(() => page.evaluate(() => document.activeElement?.closest("[data-testid=menu-more-list]") != null)).toBe(true);
-      for (let i = 0; i < 12 && !(await unfolds.evaluate((el) => el === document.activeElement)); i++) {
+      for (let i = 0; i < 12 && !(await similar.evaluate((el) => el === document.activeElement)); i++) {
         await page.keyboard.press("ArrowDown");
         await page.waitForTimeout(50);
       }
-      await expect(unfolds).toHaveAttribute("aria-expanded", "false");
+      // an ordinary submenu: → opens it beside the row, as hovering does
+      await expect(page.getByTestId("menu-archive-similar-list")).toHaveCount(0);
       await page.keyboard.press("ArrowRight");
-      await expect(unfolds).toHaveAttribute("aria-expanded", "true");
+      await expect(page.getByTestId("menu-archive-similar-list")).toBeVisible();
       await expect(page.getByTestId("menu-similar-sender")).toContainText(`Archive ${ids.length} more from`);
       // plan 91: the plain action comes first, focused: Enter archives only this one
       await expect(page.getByTestId("menu-similar-only")).toBeFocused();
