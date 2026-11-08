@@ -100,9 +100,13 @@ function ProfileEditor({ p, title, onDone }: { p: WritingProfileView; title: str
   const [notes, setNotes] = useState(asLines(p.judgment?.notes ?? []));
   const first = useRef<HTMLTextAreaElement>(null);
   const phrasesRef = useRef<HTMLTextAreaElement>(null);
-  // plan 161: editing starts in its first field
+  const editor = useRef<HTMLDivElement>(null);
+  // plan 161: editing starts in its first field. Pass 2: and the editor's top is in view, so that field is on screen (the
+  // Edit button was at the card's foot: the form opened above the view)
   useEffect(() => {
     (first.current ?? phrasesRef.current)?.focus({ preventScroll: true });
+    const frame = requestAnimationFrame(() => editor.current?.scrollIntoView({ block: "start" }));
+    return () => cancelAnimationFrame(frame);
   }, []);
   const shares = (list: readonly { text: string; share: number }[], items: readonly string[]) => fromItems(items).slice(0, ITEMS_MAX).map((text) => ({ text, share: list.find((i) => i.text === text)?.share ?? 0.1 }));
   const save = async () => {
@@ -127,7 +131,7 @@ function ProfileEditor({ p, title, onDone }: { p: WritingProfileView; title: str
     </div>
   );
   return (
-    <div className="flex flex-col gap-3" data-testid="style-editor" aria-label={t("aiDraft.style.editing", { name: title })} role="group">
+    <div ref={editor} className="flex scroll-mt-4 flex-col gap-3" data-testid="style-editor" aria-label={t("aiDraft.style.editing", { name: title })} role="group">
       <ItemsField label={t("aiDraft.style.editGreetings")} add={t("aiDraft.style.addGreeting")} item={(n) => t("aiDraft.style.greetingItem", { n })} remove={(n) => t("aiDraft.style.removeGreeting", { n })} items={greetings} onChange={setGreetings} testId="style-edit-greetings" first={first} />
       <ItemsField label={t("aiDraft.style.editSignOffs")} add={t("aiDraft.style.addSignOff")} item={(n) => t("aiDraft.style.signOffItem", { n })} remove={(n) => t("aiDraft.style.removeSignOff", { n })} items={signOffs} onChange={setSignOffs} testId="style-edit-signoffs" />
       {field("phrases", t("aiDraft.style.editPhrases"), phrases, setPhrases, "style-edit-phrases", greetings.length ? undefined : phrasesRef)}
@@ -157,7 +161,32 @@ function useProfileTitle(p: WritingProfileView): string {
 /** Plan 161: a reset, undoable where it happened (a snack would sit behind Settings, out of reach: Codex review) */
 type ResetDone = { name: string; undo: string };
 
-function Profile({ initial, onChanged, onEditing, onReset }: { initial: WritingProfileView; onChanged: () => void; /** plan 161 (Codex review): the picker waits while it's edited */ onEditing?: (editing: boolean) => void; onReset: (done: ResetDone) => void }) {
+const PHRASES_SHOWN = 5;
+
+/** Pass 2: the profile with its edit, as the editor saves one: what's given replaces, the rest stays as it is. */
+const editProfile = (p: WritingProfileView, change: { phrases?: string[]; notes?: string[] }) =>
+  client.call("writing.profiles.edit", {
+    scopeKey: p.scopeKey,
+    language: p.language,
+    greetings: p.habits.greetings.map((g) => ({ text: g.text, share: g.share })),
+    signOffs: p.habits.signOffs.map((g) => ({ text: g.text, share: g.share })),
+    phrases: change.phrases ?? [...p.phrases],
+    ...(p.judgment ? { judgment: { traits: p.judgment.traits, notes: change.notes ?? [...p.judgment.notes] } } : {}),
+  });
+
+function Profile({ initial, onChanged, onEditing, onReset, total, picked, compact }: {
+  initial: WritingProfileView;
+  onChanged: () => void;
+  /** plan 161 (Codex review): the picker waits while it's edited */
+  onEditing?: (editing: boolean) => void;
+  onReset: (done: ResetDone) => void;
+  /** pass 2: the sent messages everything was learned from, so a profile's count reads as part of it */
+  total: number | null;
+  /** under the picker, which already names it: the card doesn't again */
+  picked?: boolean;
+  /** Companies and People: one line, opened one at a time */
+  compact?: { open: boolean; onOpenChange: (open: boolean) => void };
+}) {
   const [p, setP] = useState(initial);
   const [editing, setEditingState] = useState(false);
   const setEditing = (on: boolean) => {
@@ -183,6 +212,13 @@ function Profile({ initial, onChanged, onEditing, onReset }: { initial: WritingP
   const title = useProfileTitle(p);
   const lines = habitLines(p.habits);
   const examples = p.phrases.length + (p.judgment?.notes.length ?? 0);
+  const from = total !== null && total >= p.samples ? t("aiDraft.style.fromOf", { count: p.samples, total }) : t("aiDraft.style.from", { count: p.samples });
+  const [allExamples, setAllExamples] = useState(false);
+  // pass 2: a learned phrase or note that's wrong goes, as an edit does (the profile reads Edited after)
+  const removeExample = (kind: "phrase" | "note", text: string) =>
+    void editProfile(p, kind === "phrase" ? { phrases: p.phrases.filter((x) => x !== text) } : { notes: (p.judgment?.notes ?? []).filter((x) => x !== text) }).then(setP, failed);
+  const exampleItems = [...p.phrases.map((text) => ({ kind: "phrase" as const, text })), ...(p.judgment?.notes ?? []).map((text) => ({ kind: "note" as const, text }))];
+  const shownExamples = allExamples ? exampleItems : exampleItems.slice(0, PHRASES_SHOWN);
   const reset = () => {
     void client.call("writing.profiles.reset", { scopeKey: p.scopeKey, language: p.language }).then((r) => {
       onChanged();
@@ -190,48 +226,75 @@ function Profile({ initial, onChanged, onEditing, onReset }: { initial: WritingP
       onReset({ name: title, undo: r.undo });
     }, failed);
   };
+  const body = editing ? (
+    <ProfileEditor p={p} title={title} onDone={(next) => { setEditing(false); setBack(true); if (next) setP(next); }} />
+  ) : (
+    <div className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-0.5 text-sm" data-testid="style-profile-lines">
+        {lines.map((line) => <li key={line}>{line}</li>)}
+        {p.judgment && <li>{traitLine(p.judgment)}</li>}
+      </ul>
+      {/* plan 161: the examples second, on request; pass 2: five first, each removable */}
+      {examples > 0 && (
+        <Collapsible>
+          <CollapsibleTrigger className="-ml-1 w-auto gap-1 rounded-md px-1 py-0.5 text-xs text-muted-foreground hover:text-foreground" data-testid="style-profile-examples-toggle">
+            {t("aiDraft.style.examples", { count: examples })}
+          </CollapsibleTrigger>
+          <CollapsiblePanel>
+            <ul className="mt-1 flex flex-col text-sm" data-testid="style-profile-examples">
+              {shownExamples.map((x) => (
+                <li key={`${x.kind}${x.text}`} className="flex min-h-7 items-center gap-1" data-testid={x.kind === "phrase" ? "style-profile-phrase" : "style-profile-note"}>
+                  <span className="min-w-0 flex-1">{x.kind === "phrase" ? `“${x.text}”` : x.text}</span>
+                  <CloseButton label={t("aiDraft.style.removePhrase", { text: x.text })} data-testid="style-profile-example-remove" onClick={() => removeExample(x.kind, x.text)} />
+                </li>
+              ))}
+            </ul>
+            {exampleItems.length > PHRASES_SHOWN && !allExamples && (
+              <Button variant="link-secondary" size="xs" className="mt-0.5" data-testid="style-profile-examples-all" onClick={() => setAllExamples(true)}>
+                {t("aiDraft.style.showAll", { count: exampleItems.length })}
+              </Button>
+            )}
+          </CollapsiblePanel>
+        </Collapsible>
+      )}
+      <div className="-ml-2 flex flex-wrap gap-0.5">
+        <Button ref={editButton} size="xs" variant="ghost" className="font-normal" aria-label={t("aiDraft.style.editName", { name: title })} data-testid="style-profile-edit" onClick={() => setEditing(true)}>{t("common.edit")}</Button>
+        {p.edited && p.newSince > 0 ? (
+          <Button size="xs" variant="ghost" className="font-normal" data-testid="style-profile-update" onClick={reset}>{t("aiDraft.style.update", { count: p.newSince })}</Button>
+        ) : (
+          <Button size="xs" variant="ghost" className="font-normal" aria-label={t("aiDraft.style.resetName", { name: title })} data-testid="style-profile-reset" onClick={reset}>{t("common.reset")}</Button>
+        )}
+      </div>
+    </div>
+  );
+  const edited = p.edited && <Badge variant="secondary" data-testid="style-profile-edited">{t("aiDraft.style.edited")}</Badge>;
+  if (compact)
+    // pass 2: Companies and People are a list of one-line profiles; one open at a time keeps the page short
+    return (
+      <div ref={card} className="scroll-my-12" data-testid="style-profile" data-compact>
+        <Collapsible open={compact.open} onOpenChange={compact.onOpenChange}>
+          <CollapsibleTrigger className="-mx-2 my-1 w-[calc(100%+1rem)] gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-row-hover" data-testid="style-profile-toggle">
+            <span className="flex min-w-0 flex-1 items-center gap-1.5 text-left font-medium" data-testid="style-profile-title">
+              <span className="truncate">{title}</span>
+              {edited}
+            </span>
+            <span className="shrink-0 text-xs text-muted-foreground">{t("aiDraft.style.from", { count: p.samples })}</span>
+          </CollapsibleTrigger>
+          <CollapsiblePanel>
+            <div className="pt-1 pb-3">{body}</div>
+          </CollapsiblePanel>
+        </Collapsible>
+      </div>
+    );
   return (
     <div ref={card} className="scroll-my-12">
       <SettingsRow
         stacked
-        label={<span className="flex items-center gap-1.5" data-testid="style-profile-title">{title}{p.edited && <Badge variant="secondary" data-testid="style-profile-edited">{t("aiDraft.style.edited")}</Badge>}</span>}
-        hint={t("aiDraft.style.from", { count: p.samples })}
+        label={<span className="flex items-center gap-1.5" data-testid="style-profile-title">{picked ? from : title}{edited}</span>}
+        hint={picked ? undefined : from}
         testId="style-profile"
       >
-        {() =>
-          editing ? (
-            <ProfileEditor p={p} title={title} onDone={(next) => { setEditing(false); setBack(true); if (next) setP(next); }} />
-          ) : (
-            <div className="flex flex-col gap-2">
-              <ul className="flex flex-col gap-0.5 text-sm" data-testid="style-profile-lines">
-                {lines.map((line) => <li key={line}>{line}</li>)}
-                {p.judgment && <li>{traitLine(p.judgment)}</li>}
-              </ul>
-              {/* plan 161: the examples second, on request */}
-              {examples > 0 && (
-                <Collapsible>
-                  <CollapsibleTrigger className="-ml-1 w-auto gap-1 rounded-md px-1 py-0.5 text-xs text-muted-foreground hover:text-foreground" data-testid="style-profile-examples-toggle">
-                    {t("aiDraft.style.examples", { count: examples })}
-                  </CollapsibleTrigger>
-                  <CollapsiblePanel>
-                    <ul className="mt-1 flex flex-col gap-0.5 text-sm" data-testid="style-profile-examples">
-                      {p.phrases.map((x) => <li key={`p${x}`} data-testid="style-profile-phrase">“{x}”</li>)}
-                      {p.judgment?.notes.map((note) => <li key={`n${note}`}>{note}</li>)}
-                    </ul>
-                  </CollapsiblePanel>
-                </Collapsible>
-              )}
-              <div className="-ml-2 flex flex-wrap gap-0.5">
-                <Button ref={editButton} size="xs" variant="ghost" className="font-normal" aria-label={t("aiDraft.style.editName", { name: title })} data-testid="style-profile-edit" onClick={() => setEditing(true)}>{t("common.edit")}</Button>
-                {p.edited && p.newSince > 0 ? (
-                  <Button size="xs" variant="ghost" className="font-normal" data-testid="style-profile-update" onClick={reset}>{t("aiDraft.style.update", { count: p.newSince })}</Button>
-                ) : (
-                  <Button size="xs" variant="ghost" className="font-normal" aria-label={t("aiDraft.style.resetName", { name: title })} data-testid="style-profile-reset" onClick={reset}>{t("common.reset")}</Button>
-                )}
-              </div>
-            </div>
-          )
-        }
+        {() => body}
       </SettingsRow>
     </div>
   );
@@ -240,7 +303,7 @@ function Profile({ initial, onChanged, onEditing, onReset }: { initial: WritingP
 const profileKey = (p: Pick<WritingProfileView, "scopeKey" | "language">) => `${p.scopeKey}|${p.language}`;
 
 /** Plan 161: your own and your accounts' profiles, one at a time, picked by whose and which language. */
-function OwnProfiles({ items, onChanged, onReset }: { items: WritingProfileView[]; onChanged: () => void; onReset: (done: ResetDone) => void }) {
+function OwnProfiles({ items, onChanged, onReset, total }: { items: WritingProfileView[]; onChanged: () => void; onReset: (done: ResetDone) => void; total: number | null }) {
   const accounts = useApp((s) => s.accounts);
   const list = oncePerScope(items);
   const [chosen, setChosen] = useState<string | null>(null);
@@ -270,7 +333,7 @@ function OwnProfiles({ items, onChanged, onReset }: { items: WritingProfileView[
           </Select>
         </div>
       )}
-      <Profile key={profileKey(current)} initial={current} onChanged={onChanged} onEditing={setEditing} onReset={onReset} />
+      <Profile key={profileKey(current)} initial={current} onChanged={onChanged} onEditing={setEditing} onReset={onReset} total={total} picked={list.length > 1} />
     </>
   );
 }
@@ -282,6 +345,8 @@ function Section({ scope, title, testId, version, onChanged, onReset }: { scope:
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<WritingProfileView[] | null>(null);
   const [next, setNext] = useState<{ scopeKey: string; language: string } | null>(null);
+  // pass 2: one profile open at a time
+  const [openKey, setOpenKey] = useState<string | null>(null);
   const read = useCallback(async (after: { scopeKey: string; language: string } | null) => {
     const page = await client.call("writing.profiles.list", { scope, limit: PAGE, ...(after ? { after } : {}) });
     setItems((held) => (after ? [...(held ?? []), ...page.items] : page.items));
@@ -297,8 +362,8 @@ function Section({ scope, title, testId, version, onChanged, onReset }: { scope:
           {title}
         </CollapsibleTrigger>
         <CollapsiblePanel>
-          <div className="hairline-divide rounded-[calc(var(--radius-lg)+2px)] bg-tint px-4">
-            {items === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : items.length === 0 ? <SettingsNote testId={`${testId}-empty`}>{t(scope === "domain" ? "aiDraft.style.noDomains" : "aiDraft.style.noPeople")}</SettingsNote> : oncePerScope(items).map((p) => <Profile key={`${p.scopeKey}|${p.language}`} initial={p} onChanged={onChanged} onReset={onReset} />)}
+          <div className="hairline-divide card-group px-4">
+            {items === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : items.length === 0 ? <SettingsNote testId={`${testId}-empty`}>{t(scope === "domain" ? "aiDraft.style.noDomains" : "aiDraft.style.noPeople")}</SettingsNote> : oncePerScope(items).map((p) => <Profile key={profileKey(p)} initial={p} onChanged={onChanged} onReset={onReset} total={null} compact={{ open: openKey === profileKey(p), onOpenChange: (open) => setOpenKey(open ? profileKey(p) : null) }} />)}
           </div>
           {next && (
             <Button variant="link-secondary" className="mt-1.5 ml-1 text-xs" data-testid={`${testId}-more`} onClick={() => void read(next).catch(failed)}>
@@ -313,7 +378,7 @@ function Section({ scope, title, testId, version, onChanged, onReset }: { scope:
 
 type StudyState = { kind: "idle" } | { kind: "asking" } | { kind: "consent"; asked: Extract<WritingStudyResult, { status: "consent" }> } | { kind: "running"; requestId: string; done: number; total: number } | { kind: "done" } | { kind: "failed" } | { kind: "nothing" };
 
-/** "Let AI study my style": optional, and said in full before anything goes (§4). */
+/** "Let AI study my style": optional, and said in full before anything goes (§4). Pass 2: rows in "How it learns", beside the counted habits it adds to. */
 function Study({ status, onChanged }: { status: WritingStatus | null; onChanged: () => void }) {
   const ai = useApp((s) => s.settings?.ai);
   const [state, setState] = useState<StudyState>({ kind: "idle" });
@@ -355,7 +420,7 @@ function Study({ status, onChanged }: { status: WritingStatus | null; onChanged:
     }
   };
   return (
-    <SettingsGroup title={t("aiDraft.study.title")} testId="style-study">
+    <>
       {state.kind === "consent" ? (
         <div className="py-3 text-sm" data-testid="style-study-consent">
           <p className="font-medium">{t("aiDraft.study.question")}</p>
@@ -390,7 +455,7 @@ function Study({ status, onChanged }: { status: WritingStatus | null; onChanged:
       {state.kind === "done" && <SettingsNote testId="style-study-done">{t("aiDraft.study.done")}</SettingsNote>}
       {state.kind === "failed" && <SettingsNote testId="style-study-failed"><span role="status" className="text-destructive-ink">{t("aiDraft.study.failed")}</span></SettingsNote>}
       {state.kind === "nothing" && <SettingsNote testId="style-study-nothing">{t("aiDraft.study.nothing")}</SettingsNote>}
-    </SettingsGroup>
+    </>
   );
 }
 
@@ -447,19 +512,20 @@ export default function WritingStyle() {
         )}
       </div>
       <SettingsGroup title={t("aiDraft.style.yours")} testId="style-own">
-        {own === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : own.length === 0 ? <SettingsNote testId="style-empty">{t("aiDraft.style.empty")}</SettingsNote> : <OwnProfiles items={own} onChanged={changed} onReset={setReset} />}
+        {own === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : own.length === 0 ? <SettingsNote testId="style-empty">{t("aiDraft.style.empty")}</SettingsNote> : <OwnProfiles items={own} onChanged={changed} onReset={setReset} total={status?.state === "ready" && status.messages > 0 ? status.messages : null} />}
       </SettingsGroup>
       <Section scope="domain" title={t("aiDraft.style.domains")} testId="style-domains" version={version} onChanged={changed} onReset={setReset} />
       <Section scope="person" title={t("aiDraft.style.people")} testId="style-people" version={version} onChanged={changed} onReset={setReset} />
-      <Study status={status} onChanged={changed} />
-      <SettingsGroup testId="style-actions">
-        <SettingsRow label={t("aiDraft.style.rebuild")} hint={t("aiDraft.style.rebuildHint")}>
+      {/* pass 2: the two ways it learns side by side, each saying what it does: counted here, and the optional AI notes */}
+      <SettingsGroup title={t("aiDraft.study.title")} testId="style-actions">
+        <SettingsRow label={t("aiDraft.style.rebuild")} hint={t("aiDraft.style.rebuildHint")} testId="style-rebuild-row">
           {({ id: _id, "aria-labelledby": _l, "aria-describedby": described }) => (
             <Button variant="outline" size="sm" aria-describedby={described} data-testid="style-rebuild" onClick={() => void client.call("writing.profiles.rebuild", {}).then(changed, failed)}>
               {t("aiDraft.style.rebuildButton")}
             </Button>
           )}
         </SettingsRow>
+        <Study status={status} onChanged={changed} />
         <SettingsRow label={t("aiDraft.style.clear")} hint={t("aiDraft.style.clearHint")}>
           {({ id: _id, "aria-labelledby": _l, "aria-describedby": described }) => (
             <Button variant="ghost" size="sm" className="text-destructive-ink" aria-describedby={described} data-testid="style-clear" onClick={() => setClearing(true)}>

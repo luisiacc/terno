@@ -938,7 +938,7 @@ test.describe("drafting with AI (plan 133)", () => {
     const profile = page.getByTestId("style-profile").first();
     // (learned from the demo mail by the real pass, which this page started)
     await expect(profile).toContainText(/Usually about \d+ words/, { timeout: 20_000 });
-    await expect(page.getByTestId("style-status")).toContainText(/Learned from \d+ messages/, { timeout: 20_000 });
+    await expect(page.getByTestId("style-status")).toContainText(/Learned from \d+ sent messages/, { timeout: 20_000 });
     expect((await new AxeBuilder({ page }).include("[data-testid=writing-style]").analyze()).violations).toEqual([]);
     await page.emulateMedia({ colorScheme: "dark" });
     await expect(page.locator("html")).toHaveClass(/dark/);
@@ -946,15 +946,21 @@ test.describe("drafting with AI (plan 133)", () => {
     await page.emulateMedia({ colorScheme: "light" });
     // plan 161: its title is the page's; what it learned and how styles combine come first; one profile at a time
     await expect(page.getByTestId("settings-title")).toHaveText("Writing style");
-    await expect(page.getByTestId("style-precedence")).toContainText("AI drafts start from You");
+    // pass 2: plain words that agree: the closest style wins, and a profile's count is part of the page's
+    await expect(page.getByTestId("style-precedence")).toHaveText("Each draft uses the closest style there is: a person's, then their company's, then the account's, then yours.");
+    const total = Number(/from (\d+) sent/.exec(await page.getByTestId("style-status").innerText())![1]);
+    await expect(page.getByTestId("style-own")).toContainText(new RegExp(`From \\d+ of the ${total} messages`));
+    await expect(page.getByTestId("style-own")).toContainText("Your style");
     const above = async (a: string, b: string) => (await page.getByTestId(a).boundingBox())!.y < (await page.getByTestId(b).boundingBox())!.y;
     expect(await above("style-status", "style-own")).toBe(true);
     await expect(page.getByTestId("style-profile")).toHaveCount(1);
     if (await page.getByTestId("style-scope").count()) {
-      const first = await page.getByTestId("style-profile-title").innerText();
+      // under the picker, the card doesn't name the profile again
+      const first = await page.getByTestId("style-scope").innerText();
+      await expect(page.getByTestId("style-profile-title")).not.toContainText(first.split(" · ")[0]!);
       await page.getByTestId("style-scope").click();
       await page.getByRole("option").nth(1).click();
-      await expect(page.getByTestId("style-profile-title")).not.toHaveText(first);
+      await expect(page.getByTestId("style-scope")).not.toHaveText(first);
       await page.getByTestId("style-scope").click();
       await page.getByRole("option").first().click();
     }
@@ -962,6 +968,8 @@ test.describe("drafting with AI (plan 133)", () => {
     await page.setViewportSize({ width: 1100, height: 700 });
     await profile.getByTestId("style-profile-edit").click();
     await expect(page.getByTestId("style-editor").locator("textarea").first()).toBeFocused();
+    // pass 2: the focused field is on screen, not above the view
+    await expect(page.getByTestId("style-editor").locator("textarea").first()).toBeInViewport();
     await page.getByTestId("style-edit-signoffs-add").click();
     await page.getByTestId("style-edit-signoffs-field").last().fill("Cheers,\nLuis");
     await page.getByTestId("style-edit-phrases").fill("all the best\nlet me know");
@@ -973,6 +981,10 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(profile.getByTestId("style-profile-edit")).toBeFocused();
     await profile.getByTestId("style-profile-examples-toggle").click();
     await expect(profile.getByTestId("style-profile-examples")).toContainText("“all the best”");
+    // pass 2: a learned phrase can be removed where it's listed
+    await profile.getByTestId("style-profile-phrase").filter({ hasText: "“let me know”" }).getByTestId("style-profile-example-remove").click();
+    await expect(profile.getByTestId("style-profile-phrase").filter({ hasText: "“let me know”" })).toHaveCount(0);
+    await expect(profile.getByTestId("style-profile-phrase").filter({ hasText: "“all the best”" })).toHaveCount(1);
     await profile.getByTestId("style-profile-edit").click();
     await expect(page.getByTestId("style-edit-signoffs-field").last()).toHaveValue("Cheers,\nLuis");
     await page.getByTestId("style-edit-cancel").click();
@@ -987,6 +999,19 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(page.getByTestId("style-reset-done")).toHaveCount(0);
     await page.getByTestId("style-profile-reset").click();
     await expect(page.getByTestId("style-profile-edited")).toHaveCount(0);
+
+    // pass 2: Companies is a list of one-line profiles, one open at a time
+    await page.getByTestId("style-domains-toggle").click();
+    const companies = page.getByTestId("style-domains").getByTestId("style-profile-toggle");
+    await expect(companies.first()).toBeVisible({ timeout: 20_000 });
+    if ((await companies.count()) >= 2) {
+      await companies.nth(0).click();
+      await expect(page.getByTestId("style-domains").getByTestId("style-profile-lines")).toHaveCount(1);
+      await companies.nth(1).click();
+      await expect(page.getByTestId("style-domains").getByTestId("style-profile-lines")).toHaveCount(1);
+      await expect(companies.nth(0)).toHaveAttribute("aria-expanded", "false");
+    }
+    await page.getByTestId("style-domains-toggle").click();
 
     // the study on a local model asks nothing, and is running, not done, when it starts (Codex review 12)
     await page.getByTestId("style-study-start").click();
