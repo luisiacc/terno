@@ -258,7 +258,8 @@ function SourceRow({ source, n }: { source: AskSourceRef; n: number }) {
   const moved = view === "spam" || view === "trash";
   return (
     <CommandItem value={`source\u0000${source.messageId}\u0000${n}`} disabled={gone} data-testid="ask-source" data-state-view={view} onSelect={() => void openSource(source)}>
-      <span className="w-5 shrink-0 text-xs text-muted-foreground tabular">[{n}]</span>
+      {/* the inline marker's look, so a citation and its row read as one number (full ink on the chosen row) */}
+      <span className="w-5 shrink-0"><span data-testid="ask-source-n" className="inline-grid h-[1.3em] min-w-[1.3em] place-items-center rounded-[0.4em] bg-field px-[0.3em] text-2xs leading-none font-semibold text-muted-foreground tabular in-data-[selected=true]:text-foreground">{n}</span></span>
       <span className="w-32 shrink-0 truncate">{source.fromName || source.fromEmail}</span>
       <span className="min-w-0 flex-1 truncate text-muted-foreground">{gone ? t("ask.source.gone") : moved ? t(armed ? "ask.source.pressAgain" : view === "spam" ? "ask.source.spam" : "ask.source.trash") : source.subject}</span>
       <CommandDescription>{listDate(source.date)}</CommandDescription>
