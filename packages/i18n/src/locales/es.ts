@@ -1690,6 +1690,7 @@ const es = {
   "compose.sending": "Enviando…",
   "compose.undoSend": "Deshacer el envío",
   "compose.undoSendTooLate": "Demasiado tarde para deshacer: este mensaje ya salió.",
+  "compose.undoSendKept": "No se envió. Está de nuevo en tus borradores.",
   "compose.sendFailed": "No se pudo enviar: {error}",
   "compose.readChanged": "El borrador cambió mientras se leía. Tus cambios siguen aquí. Inténtalo de nuevo.",
   "compose.converted.reply": "Convertido en Responder",

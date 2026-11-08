@@ -5,9 +5,9 @@ import { client } from "~/rpc/connection";
 import { forgetScheduledDrafts, loadDrafts, scheduledDrafts, useDrafts } from "~/lib/drafts";
 import { reminderWhen } from "~/lib/when";
 import { dismissSnack, newsWaiting, registerUndo, snack, useSnack } from "~/lib/snack";
-import { pinning } from "~/lib/pinned-draft-state";
+import { pinnedKey, pinning } from "~/lib/pinned-draft-state";
 import { forgetHeldSend, revealHeldSend } from "~/lib/sent-reveal";
-import { getApp, setApp } from "~/state/app";
+import { getApp, getSelectionWriteRevision, setApp, useApp } from "~/state/app";
 import { openStoredDraft } from "~/lib/compose";
 
 /**
@@ -58,21 +58,49 @@ export async function loadScheduled(): Promise<void> {
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-/** A draft back from the backend (unscheduled, given back), opened in the composer. */
-async function openDraftById(draftId: number, pinned = false): Promise<void> {
-  await loadDrafts();
-  const d = Object.values(useDrafts.getState().drafts).find((x) => x.id === draftId);
-  if (!d) return;
-  // sent from the pinned card: back on the card, with the reader left where it is
-  if (pinned && pinning.pin(d.key)) return;
-  await openStoredDraft(d.key);
+/**
+ * Where the user is when an Undo or Edit begins: the backend's answer and the draft's loading take a moment, and if
+ * they've opened, pinned or started writing something else by then, that's theirs; the draft comes back without taking
+ * its place (Codex series review). Focus is read at the end, not followed: the snack gives it back as it goes.
+ */
+function ownership(): { current(): boolean; stop(): void } {
+  const app = getApp(), revision = getSelectionWriteRevision(), pinned = pinnedKey();
+  const active = typeof document === "undefined" ? null : document.activeElement;
+  let moved = false;
+  const stop = useApp.subscribe((state) => { if (state.compose !== app.compose || state.dialog !== app.dialog) moved = true; });
+  const writing = () => {
+    const now = typeof document === "undefined" ? null : document.activeElement;
+    return Boolean(now && now !== active && now.closest("input, textarea, select, [contenteditable=true], [role=dialog], [data-draft-key], [data-recipient-field]"));
+  };
+  return { current: () => !moved && getSelectionWriteRevision() === revision && pinnedKey() === pinned && !writing(), stop };
+}
+
+/** A draft back from the backend (unscheduled, given back), opened in the composer: unless the user has moved on since `owner` began. */
+async function openDraftById(draftId: number, pinned = false, owner?: ReturnType<typeof ownership>): Promise<void> {
+  try {
+    await loadDrafts();
+    const d = Object.values(useDrafts.getState().drafts).find((x) => x.id === draftId);
+    if (!d) return;
+    if (owner && !owner.current()) {
+      snack(t("compose.undoSendKept"));
+      return;
+    }
+    owner?.stop();
+    // sent from the pinned card: back on the card, with the reader left where it is
+    if (pinned && pinning.pin(d.key)) return;
+    await openStoredDraft(d.key);
+  } finally {
+    owner?.stop();
+  }
 }
 
 /** Not scheduled anymore: a draft again, opened to edit (Undo of a schedule, "Edit message"). */
 export async function editScheduled(draftId: number): Promise<boolean> {
+  const owner = ownership();
   try {
     await client.call("scheduled.cancel", { draftId });
   } catch (error) {
+    owner.stop();
     snack.error(t("sendLater.editFailed"), { description: errorText(error) });
     return false;
   }
@@ -80,7 +108,7 @@ export async function editScheduled(draftId: number): Promise<boolean> {
   const byDraft = new Map(useScheduled.getState().byDraft);
   byDraft.delete(draftId);
   useScheduled.setState({ items: [...byDraft.values()], byDraft });
-  await openDraftById(draftId);
+  await openDraftById(draftId, false, owner);
   return true;
 }
 
@@ -136,14 +164,16 @@ export function heldSendSnack(draftId: number, threadId: number | null, holdMs: 
 
 /** False if it had already gone. Anything else that goes wrong is Undo's to say, with a retry. */
 async function cancelHeldSend(draftId: number, pinned: boolean): Promise<boolean> {
+  const owner = ownership();
   try {
     await client.call("scheduled.cancel", { draftId });
   } catch (error) {
+    owner.stop();
     if ((error as { code?: string } | null)?.code !== "NOT_FOUND") throw error;
     snack(t("compose.undoSendTooLate"));
     return false;
   }
-  await openDraftById(draftId, pinned);
+  await openDraftById(draftId, pinned, owner);
   return true;
 }
 

@@ -1704,6 +1704,7 @@ const en = {
   "compose.sending": "Sending…",
   "compose.undoSend": "Undo send",
   "compose.undoSendTooLate": "Too late to undo: this message has already gone.",
+  "compose.undoSendKept": "Not sent. It’s back in your drafts.",
   "compose.sendFailed": "Couldn’t send: {error}",
   "compose.readChanged": "Your draft changed while it was being read. Your changes are still here. Try again.",
   "compose.converted.reply": "Converted to a reply",
