@@ -4,7 +4,8 @@ import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
 import { client } from "~/rpc/connection";
-import { getApp, navigate, useApp } from "./app";
+import type { Undo } from "~/lib/snack";
+import { getApp, navigate, setApp, useApp } from "./app";
 import { reloadList } from "./list";
 
 /**
@@ -12,7 +13,7 @@ import { reloadList } from "./list";
  * thread rows, with what they say in the snippet's place.
  */
 export interface TodayGroup {
-  kind: "needsYou" | "reminders" | "newsletters";
+  kind: "needsYou" | "reminders";
   /** the row it begins at */
   at: number;
 }
@@ -25,6 +26,18 @@ export interface DigestPick {
   day: string;
   toggled: ReadonlySet<number>;
   scroll: number;
+  /** what this page archived, by its own Archive: those rows leave it, and its header says it's done (plan 161, pass 2) */
+  done?: DigestDone | null;
+  /** the row a newsletter was opened from: it takes focus again on the way back */
+  opened?: number | null;
+}
+
+export interface DigestDone {
+  /** every id the page archived today: they stay out of its list until an Undo brings them back */
+  ids: readonly number[];
+  /** the last Archive's count, and its Undo (the snack's runs the same one) */
+  count: number;
+  undo: Undo | null;
 }
 
 interface TodayState {
@@ -36,9 +49,11 @@ interface TodayState {
   pick: DigestPick | null;
   /** the rows Needs you shows (the sidebar's count can be more) */
   needsShown: number;
+  /** plan 161, pass 2: why a waiting row is here ("Your turn"), a label of its own before its words */
+  reasons: ReadonlyMap<number, string>;
 }
 
-export const useToday = create<TodayState>(() => ({ groups: [], more: 0, digest: null, fromDigest: null, pick: null, needsShown: 0 }));
+export const useToday = create<TodayState>(() => ({ groups: [], more: 0, digest: null, fromDigest: null, pick: null, needsShown: 0, reasons: new Map() }));
 
 /** The page's pick for this day: what was left, or nothing toggled. */
 export function digestPick(day: string): DigestPick {
@@ -46,7 +61,18 @@ export function digestPick(day: string): DigestPick {
   return held?.day === day ? held : { day, toggled: new Set(), scroll: 0 };
 }
 
-export const keepDigestPick = (pick: DigestPick): void => useToday.setState({ pick });
+/** What the page was left as; the day's other parts (what it archived, where it was opened from) stay unless given. */
+export const keepDigestPick = (pick: DigestPick): void => useToday.setState((s) => ({ pick: s.pick?.day === pick.day ? { ...s.pick, ...pick } : pick }));
+
+/** Plan 161: Esc, or "Back to the digest", from the newsletter the digest opened: back to the page. */
+export function backToDigest(): boolean {
+  const back = useToday.getState().fromDigest;
+  const s = getApp();
+  if (back === null || !s.today || s.selectedId !== back) return false;
+  useToday.setState({ fromDigest: null });
+  setApp({ selectedId: DIGEST_ROW_ID });
+  return true;
+}
 
 /** At boot, once there's a connection to listen on. */
 export function installToday(): void {
@@ -66,19 +92,21 @@ export function installToday(): void {
   });
 }
 
-/** the digest as a row of the list; no thread has this id (revision 10: it can't be checked or acted on) */
 /** What the digest's row says, and the header's way to it (plan 161). */
 export const digestLabel = (digest: DigestRow): string =>
-  digest.state === "pending" ? t("today.digest.preparing") : digest.state === "failed" ? t("today.digest.failedShort") : digest.automated ? t("today.digest.automatedRow", { count: digest.liveIds.length }) : digest.liveIds.length ? t("today.digest.row", { count: digest.liveIds.length }) : t("today.digest.archivedRow", { count: digest.items.length });
+  digest.state === "pending" ? t("today.digest.preparing") : digest.state === "failed" ? t("today.digest.failedShort") : digest.automated ? t("today.digest.automatedRow", { count: digest.liveIds.length }) : digest.liveIds.length ? t("today.digest.row", { count: digest.liveIds.length }) : t("today.digest.archivedRow", { count: Math.max(0, digest.items.length - (digest.readIds?.length ?? 0)) });
 
+/** the digest as a row of the list; no thread has this id (revision 10: it can't be checked or acted on) */
 function digestThread(digest: DigestRow): ThreadSummary {
   return { id: DIGEST_ROW_ID, accountId: 0, subject: digestLabel(digest), snippet: "", fromName: t("today.newsletters"), fromEmail: "", lastDate: 0, messageCount: 1, unread: false, starred: false, hasAttachments: false, categoryIds: [], inInbox: false, inSpam: false, inTrash: false } as unknown as ThreadSummary;
 }
 
+/** Plan 161: why a waiting row is here, from what let it in (`needsYou`'s two reasons): the row shows it as a label */
+const reasonOf = (item: TodayList["sections"][number]["items"][number]): string | null =>
+  item.why.kind === "waiting" && item.why.wrote !== undefined ? t(item.why.wrote ? "today.why.yourTurn" : "today.why.newFrom") : null;
+
 const whyLine = (item: TodayList["sections"][number]["items"][number]): string => {
   const { why, thread, summary } = item;
-  // plan 161: why it's here first, from what let it in (`needsYou`'s two reasons), then what it says
-  if (why.kind === "waiting" && why.wrote !== undefined) return `${t(why.wrote ? "today.why.yourTurn" : "today.why.newFrom")} · ${summary ?? thread.snippet}`;
   if (why.kind === "promise") return t("today.why.promise", { text: why.text ?? "" });
   if (why.kind === "nudge") return t("today.why.nudge", { name: why.personName || thread.fromName, count: Math.max(1, Math.floor((Date.now() - (why.sentAt ?? Date.now())) / 86_400_000)) });
   if (why.kind === "reminder") return why.dueAt ? `${t("today.why.reminder", { when: listDate(why.dueAt) })} · ${thread.snippet}` : thread.snippet;
@@ -89,25 +117,32 @@ const whyLine = (item: TodayList["sections"][number]["items"][number]): string =
 export function flattenToday(list: TodayList, before: readonly ThreadSummary[]): ThreadSummary[] {
   const groups: TodayGroup[] = [];
   const items: ThreadSummary[] = [];
+  const reasons = new Map<number, string>();
   let more = 0;
   let needsShown = 0;
+  // plan 161, pass 2: the digest is the list's first row, a way in without scrolling past Needs you; it isn't a
+  // conversation, so Needs you's are still the first conversations (and Today opens on the first of them)
+  if (list.digest) items.push(digestThread(list.digest));
+  const lead = items.length;
   for (const section of list.sections) {
     groups.push({ kind: section.kind, at: items.length });
     if (section.kind === "needsYou") {
       more = section.more;
       needsShown = section.items.length;
     }
-    for (const item of section.items) items.push({ ...item.thread, snippet: whyLine(item) });
+    for (const item of section.items) {
+      const reason = reasonOf(item);
+      if (reason) reasons.set(item.thread.id, reason);
+      items.push({ ...item.thread, snippet: whyLine(item) });
+    }
   }
   for (const thread of list.held) {
-    const at = before.findIndex((t) => t.id === thread.id);
-    items.splice(at < 0 ? items.length : Math.min(at, items.length), 0, thread);
-    for (const g of groups) if (g.at > at && at >= 0) g.at++;
+    const was = before.findIndex((t) => t.id === thread.id);
+    // never above the digest's row
+    const at = was < 0 ? items.length : Math.max(lead, Math.min(was, items.length));
+    items.splice(at, 0, thread);
+    for (const g of groups) if (g.at > at && was >= 0) g.at++;
   }
-  if (list.digest) {
-    groups.push({ kind: "newsletters", at: items.length });
-    items.push(digestThread(list.digest));
-  }
-  useToday.setState({ groups, more, digest: list.digest, needsShown });
+  useToday.setState({ groups, more, digest: list.digest, needsShown, reasons });
   return items;
 }

@@ -4,7 +4,7 @@ import { keepInPage } from "@terno/store/list";
 import { followupsOffered } from "~/lib/ai";
 import { prune } from "~/lib/selection";
 import { activeFilter } from "~/lib/unread-filter";
-import { matchesFilter } from "@terno/core";
+import { DIGEST_ROW_ID, matchesFilter } from "@terno/core";
 import { flushSync } from "react-dom";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
@@ -80,7 +80,8 @@ function rememberPlace(selectedId: number | null): void {
 
 /** What a list's first page opens: where it was left, else its nearest row now, else the top. */
 function openedOn(place: Place | undefined, items: readonly ThreadSummary[]): number | null {
-  if (!place || place.selectedId === null) return items[0]?.id ?? null;
+  // plan 161: Today's first row is the digest's; a list opens on its first conversation, unless that's all there is
+  if (!place || place.selectedId === null) return (items.find((t) => t.id !== DIGEST_ROW_ID) ?? items[0])?.id ?? null;
   const id = place.selectedId;
   return items.some((t) => t.id === id) ? id : (items[Math.min(place.at, items.length - 1)]?.id ?? null);
 }

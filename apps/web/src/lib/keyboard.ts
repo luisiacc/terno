@@ -11,6 +11,7 @@ import { loadMore, useList } from "~/state/list";
 import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, answerReview, rejectSuggestion } from "~/lib/categorize";
 import { leaveReview } from "~/lib/review";
+import { backToDigest } from "~/state/today";
 import { conversationKeys } from "~/lib/conversation-keys";
 import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
@@ -117,6 +118,8 @@ function filterList(filter: "unread" | undefined) {
 /** Esc: Back from a page (List), else a preview's open conversation, else the preview, else the multi-selection ends, else from a search's results to its field (plan 158: the query kept, the field's own Esc leaves). */
 function escape() {
   const s = getApp();
+  // plan 161, pass 2: a newsletter the digest opened goes back to the digest first, as its "Back to the digest" does
+  if (backToDigest()) return;
   if (listLayout() && currentPage() !== "list") { markSelectionIntent(); closePage({ focus: true }); }
   // plan 161, pass 2: a matched conversation open in the reader closes first, back to the rule; then the preview ends
   else if (s.actionPreview) { if (listLayout() || !closePreviewRow()) leavePreview(); }

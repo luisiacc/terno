@@ -9,7 +9,21 @@ vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, remo
 
 // the page reads its row from the backend: whatever the test says it is now
 let served: DigestRow | null = null;
-vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(async () => served), on: () => () => {}, connectionVersion: 1 } }));
+// the archive's answer, when the page asks for one
+let archived = { undoId: 5 as number | null, archived: 0, changed: 0, spared: 0 };
+const calls: { method: string; params: unknown }[] = [];
+vi.mock("~/rpc/connection", () => ({
+  client: {
+    call: vi.fn(async (method: string, params: unknown) => {
+      calls.push({ method, params });
+      if (method === "today.digestArchive") return archived;
+      if (method === "threads.undo") return { restored: 1 };
+      return served;
+    }),
+    on: () => () => {},
+    connectionVersion: 1,
+  },
+}));
 
 const { default: DigestPage } = await import("./digest-page");
 const { useToday } = await import("~/state/today");
@@ -44,7 +58,9 @@ it("plan 161: what was unticked, and where it was scrolled, survive opening a so
   await show(digestOf("2026-10-22"));
   expect(ticks()).toEqual([true, false, true]);
   expect(page().scrollTop).toBe(140);
-  expect(host.querySelector("[data-testid=digest-archive]")!.textContent).toBe("Archive selected (2)");
+  // pass 2: the button says what goes, the line what stays
+  expect(host.querySelector("[data-testid=digest-archive]")!.textContent).toBe("Archive 2");
+  expect(host.querySelector("[data-testid=digest-count]")!.textContent).toContain("2 to archive · 1 stays in Inbox");
 });
 
 it("plan 161 (Codex review): a new day starts afresh, its scroll too; automated mail's picks don't turn into the digest's", async () => {
@@ -68,4 +84,53 @@ it("plan 161 (Codex review): a new day starts afresh, its scroll too; automated 
   await unmount();
   await show(digestOf("2026-10-24"));
   expect(ticks()).toEqual([true, true, true]);
+});
+
+const states = () => [...host.querySelectorAll<HTMLElement>("[data-testid=digest-item]")].map((li) => `${li.dataset.state}:${li.querySelector("[data-testid=digest-state]")?.textContent ?? ""}`);
+
+it("pass 2: each row says what it is; what was opened isn't counted, and the button's count is what goes", async () => {
+  await show({ ...digestOf("2026-10-22"), liveIds: [1, 3], readIds: [2] });
+  expect(states()).toEqual(["archive:", "opened:Opened · stays in Inbox", "archive:"]);
+  expect(host.querySelector("[data-testid=digest-archive]")!.textContent).toBe("Archive 2");
+  await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[2]!.click());
+  expect(states()).toEqual(["archive:", "opened:Opened · stays in Inbox", "keep:Stays in Inbox"]);
+  expect(host.querySelector("[data-testid=digest-count]")!.textContent).toContain("1 to archive · 2 stay in Inbox");
+  expect(host.querySelector("[data-testid=digest-archive]")!.textContent).toBe("Archive 1");
+  // the tick is a 24 px control itself, not a pseudo-element around a 16 px box
+  expect(host.querySelector("[data-testid=digest-tick]")!.className).toContain("size-6");
+});
+
+it("pass 2: after Archive, what it archived leaves the page, the rest stays under its own heading, and Undo ends it", async () => {
+  calls.length = 0;
+  archived = { undoId: 5, archived: 2, changed: 0, spared: 0 };
+  await show(digestOf("2026-10-22"));
+  await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[1]!.click());
+  await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-archive]")!.click());
+  expect((calls.find((c) => c.method === "today.digestArchive")!.params as { items: { threadId: number }[] }).items.map((i) => i.threadId)).toEqual([1, 3]);
+  // the backend's answer: two gone, one kept
+  served = { ...digestOf("2026-10-22"), liveIds: [2], readIds: [] };
+  await act(async () => useToday.setState({ digest: served }));
+  expect(host.querySelector("[data-testid=digest-done]")!.textContent).toBe("Archived 2 newsletters.");
+  expect(host.querySelector("[data-testid=digest-still-here]")).not.toBeNull();
+  expect(states()).toEqual(["keep:Stays in Inbox"]);
+  expect(host.querySelector("[data-testid=digest-archive]")).toBeNull();
+  // it outlives the page, as the rest of the pick does
+  await unmount();
+  await show(served);
+  expect(states()).toEqual(["keep:Stays in Inbox"]);
+  await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-undo]")!.click());
+  await vi.waitFor(() => expect(host.querySelector("[data-testid=digest-done]")).toBeNull());
+  served = digestOf("2026-10-22");
+  await act(async () => useToday.setState({ digest: served }));
+  expect(states()).toEqual(["archive:", "keep:Stays in Inbox", "archive:"]);
+});
+
+it("pass 2: everything archived says it's all done", async () => {
+  archived = { undoId: 6, archived: 3, changed: 0, spared: 0 };
+  await show(digestOf("2026-10-22"));
+  await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-archive]")!.click());
+  served = { ...digestOf("2026-10-22"), liveIds: [], readIds: [] };
+  await act(async () => useToday.setState({ digest: served }));
+  expect(host.querySelector("[data-testid=digest-all-done]")!.textContent).toBe("All done for today.");
+  expect(host.querySelectorAll("[data-testid=digest-item]")).toHaveLength(0);
 });

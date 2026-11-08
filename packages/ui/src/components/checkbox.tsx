@@ -9,7 +9,31 @@ const BOX = [
         "data-indeterminate:border-primary data-indeterminate:bg-primary data-indeterminate:bg-linear-to-b data-indeterminate:from-highlight data-indeterminate:to-transparent data-indeterminate:text-primary-foreground data-indeterminate:shadow-[inset_0_1px_var(--highlight)] dark:data-indeterminate:bg-primary",
 ].join(" ")
 
-function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
+/**
+ * The box drawn inside a 24 px target (plan 161): the same box, its states read from the target (`group/checkbox`), so the
+ * control a pointer hits and a screen reader names is the 24 px element itself, not a pseudo-element around a 16 px one.
+ */
+const TARGET_BOX = [
+  "relative flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-control-edge bg-card shadow-xs transition-colors",
+  "group-focus-visible/checkbox:border-ring group-focus-visible/checkbox:ring-3 group-focus-visible/checkbox:ring-ring group-disabled/checkbox:opacity-50",
+  "group-data-checked/checkbox:border-primary group-data-checked/checkbox:bg-primary group-data-checked/checkbox:bg-linear-to-b group-data-checked/checkbox:from-highlight group-data-checked/checkbox:to-transparent group-data-checked/checkbox:text-primary-foreground group-data-checked/checkbox:shadow-[inset_0_1px_var(--highlight)] dark:group-data-checked/checkbox:bg-primary",
+].join(" ")
+
+function Checkbox({ className, target, ...props }: CheckboxPrimitive.Root.Props & { /** a 24 px target of its own, its hover a fill the target's size (plan 161) */ target?: boolean }) {
+  if (target)
+    return (
+      <CheckboxPrimitive.Root
+        data-slot="checkbox-target"
+        className={cn("group/checkbox grid size-6 shrink-0 place-items-center rounded-md outline-none transition-colors hover:not-disabled:bg-row-hover disabled:cursor-not-allowed", className)}
+        {...props}
+      >
+        <span data-slot="checkbox" className={TARGET_BOX}>
+          <CheckboxPrimitive.Indicator data-slot="checkbox-indicator" className="grid place-content-center text-current transition-none [&>svg]:size-4 [&>svg]:[--icon-line:2px]">
+            <CheckIcon />
+          </CheckboxPrimitive.Indicator>
+        </span>
+      </CheckboxPrimitive.Root>
+    )
   return (
     <CheckboxPrimitive.Root
       data-slot="checkbox"

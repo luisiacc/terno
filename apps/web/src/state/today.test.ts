@@ -56,7 +56,38 @@ describe("a waiting row says why it needs you (plan 161)", () => {
       sections: [{ kind: "needsYou", more: 3, items: [{ thread: thread(1), why: { kind: "waiting", wrote: true } }, { thread: thread(2), why: { kind: "waiting", wrote: false }, summary: "A summary." }] }],
     };
     const rows = flattenToday(list, []);
-    expect(rows.map((r) => r.snippet)).toEqual(["Your turn · the snippet", "New from a contact · A summary."]);
+    // pass 2: the reason is a label of its own, ahead of the words, not their first words
+    expect(rows.map((r) => r.snippet)).toEqual(["the snippet", "A summary."]);
+    expect([...useToday.getState().reasons]).toEqual([[1, "Your turn"], [2, "New from a contact"]]);
     expect(useToday.getState().needsShown).toBe(2);
+  });
+});
+
+describe("plan 161, pass 2: the digest first", () => {
+  const thread = (id: number) => ({ id, snippet: "s", fromName: "Ana" }) as never;
+  const digest = { day: "2026-10-22", state: "ready" as const, automated: false, items: [], liveIds: [1, 2], readIds: [] };
+  it("its row leads the list, and Needs you's heading is on the first conversation; a held row never goes above it", () => {
+    const list: TodayList = { now: 0, held: [thread(9)], digest, sections: [{ kind: "needsYou", more: 0, items: [{ thread: thread(1), why: { kind: "waiting", wrote: true } }] }] };
+    const rows = flattenToday(list, [thread(9)]);
+    expect(rows.map((r) => r.id)).toEqual([DIGEST_ROW_ID, 9, 1]);
+    expect(useToday.getState().groups[0]!.at).toBeGreaterThanOrEqual(1);
+  });
+  it("Esc's way back: only from the newsletter it opened, while Today shows", async () => {
+    const { backToDigest } = await import("./today");
+    setApp({ devAi: { anthropic: true, openai: false, jev: false }, settings: { ai, devAi: true, today: { show: true } } as never, view: "all", today: true, selectedId: 7 });
+    useToday.setState({ fromDigest: null });
+    expect(backToDigest()).toBe(false);
+    useToday.setState({ fromDigest: 7 });
+    expect(backToDigest()).toBe(true);
+    expect(useToday.getState().fromDigest).toBe(null);
+    const { getApp } = await import("./app");
+    expect(getApp().selectedId).toBe(DIGEST_ROW_ID);
+  });
+  it("the pick keeps what the page archived when the rest of it moves on", () => {
+    keepDigestPick({ day: "d", toggled: new Set(), scroll: 0, done: { ids: [1], count: 1, undo: null } });
+    keepDigestPick({ day: "d", toggled: new Set([2]), scroll: 40 });
+    expect(digestPick("d").done?.ids).toEqual([1]);
+    keepDigestPick({ day: "e", toggled: new Set(), scroll: 0 });
+    expect(digestPick("e").done ?? null).toBe(null);
   });
 });

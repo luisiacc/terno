@@ -2,7 +2,7 @@ import { folderName } from "~/lib/account-folders";
 import { SearchField } from "@terno/ui/components/search-field";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Bell, ChevronDown, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun, ListChecks, Tags } from "@terno/ui/icons";
+import { Bell, ChevronDown, ChevronRight, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun, ListChecks, Tags } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
@@ -24,7 +24,7 @@ import { navigate, getApp, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
 import { currentScope, inboxTop, listKey, loadMore, searchOfKey, useList } from "~/state/list";
 import { wantExcerpts } from "~/state/excerpts";
-import { digestLabel, useToday, type TodayGroup } from "~/state/today";
+import { useToday, type TodayGroup } from "~/state/today";
 import { pressRow, releaseRow } from "~/lib/select";
 import { DIGEST_ROW_ID, type ThreadSummary } from "@terno/core";
 import { clearSelection, selectScope } from "~/lib/select";
@@ -69,12 +69,18 @@ const EMPTY_GROUPS: readonly TodayGroup[] = [];
 function TodayHeading({ kind, top }: { kind: TodayGroup["kind"]; top: number }) {
   return (
     <div aria-hidden data-testid="today-heading" data-kind={kind} className="absolute inset-x-0 flex items-end px-5 pb-1 text-xs font-medium text-muted-foreground" style={{ top, height: TOP_LABEL }}>
-      {t(kind === "needsYou" ? "today.needsYou" : kind === "reminders" ? "today.reminders" : "today.newsletters")}
+      {t(kind === "needsYou" ? "today.needsYou" : "today.reminders")}
     </div>
   );
 }
 
-/** The digest in the list: it takes the cursor as a row does, and nothing else a thread can. */
+/** Plan 161, pass 2: the digest's row is Today's first, at a compact height of its own (never taller than a row). */
+const DIGEST_ROW_MAX = 44;
+
+/**
+ * The digest in the list: it takes the cursor as a row does, and nothing else a thread can. Plan 161, pass 2: first in
+ * Today, compact, and plainly a way in: a pointer, the row's hover, and an arrow at its end.
+ */
 function DigestListRow({ thread, top, height }: { thread: ThreadSummary; top: number; height: number }) {
   const selected = useApp((s) => s.selectedId === DIGEST_ROW_ID);
   return (
@@ -86,11 +92,12 @@ function DigestListRow({ thread, top, height }: { thread: ThreadSummary; top: nu
       data-testid="digest-row"
       onMouseDown={(e) => e.button === 0 && pressRow(DIGEST_ROW_ID, { meta: false, ctrl: false, shift: false })}
       onClick={() => releaseRow(DIGEST_ROW_ID)}
-      className={cn("group/row absolute left-0 flex w-full cursor-default items-center gap-2.5 px-5 select-none", ROW_SHAPE, selected ? "text-row-selected-foreground before:bg-row-selected" : "hover:before:bg-row-hover")}
+      className={cn("group/row absolute left-0 flex w-full cursor-pointer items-center gap-2.5 px-5 select-none", ROW_SHAPE, selected ? "text-row-selected-foreground before:bg-row-selected" : "hover:before:bg-row-hover")}
       style={{ transform: `translateY(${top}px)`, height }}
     >
-      <Newspaper className={cn("relative size-4 shrink-0", selected ? "" : "text-muted-foreground")} />
+      <Newspaper aria-hidden className={cn("relative size-4 shrink-0", selected ? "" : "text-muted-foreground")} />
       <span className="type-row-subject relative min-w-0 flex-1 truncate">{thread.subject}</span>
+      <ChevronRight aria-hidden className={cn("relative size-4 shrink-0", selected ? "" : "text-muted-foreground")} />
     </div>
   );
 }
@@ -609,40 +616,29 @@ function Subtitle({ filter, greeting }: { filter: QuickFilter | undefined; greet
   );
 }
 
-/** Plan 161: the header's way to the digest: a click on its row, and the row brought into view. */
-function openDigestRow() {
-  pressRow(DIGEST_ROW_ID, { meta: false, ctrl: false, shift: false });
-  releaseRow(DIGEST_ROW_ID);
-  listScroller.scrollToIndex?.(useList.getState().index.get(DIGEST_ROW_ID) ?? 0);
-}
-
 /**
- * Plan 161: Today's numbers in words, under its title in every header: how many need you (the sidebar's count), the
- * digest's way in (reached without scrolling past Needs you, which stays first), and Waiting, which holds more.
+ * Plan 161: Today's numbers in words, under its title in every header. Pass 2: what each one is: how many need you (the
+ * sidebar's count, in the ink), how many of them the list shows when it's capped, and Waiting, which holds more. The
+ * digest's way in is the list's first row.
  */
 function TodayLine() {
   const needs = useApp((s) => s.counts.today ?? null);
   const shown = useToday((s) => s.needsShown);
-  const digest = useToday((s) => s.digest);
   const more = useToday((s) => s.more);
   const waiting = useApp((s) => s.counts.inboxWaiting ?? null);
-  // ready, it's short: the row below says the rest; preparing or failed, it says so
-  const label = digest ? (digest.state === "ready" && !digest.automated && digest.liveIds.length ? t("today.line.digest", { count: digest.liveIds.length }) : digestLabel(digest)) : null;
+  const count = needs ?? shown;
   return (
     <p data-testid="today-line" className="type-list-subtitle flex min-w-0 flex-wrap items-center gap-x-1 text-muted-foreground tabular">
-      {shown > 0 && <span data-testid="today-needs">{needs !== null && needs > shown ? t("today.line.needsOf", { shown, count: needs }) : t("today.line.needs", { count: shown })}</span>}
-      {label && (
+      {count > 0 && <span data-testid="today-needs" className="font-medium text-foreground">{t("today.line.needs", { count })}</span>}
+      {needs !== null && needs > shown && shown > 0 && (
         <>
-          {shown > 0 && <span aria-hidden>·</span>}
-          <Button variant="link-secondary" data-testid="today-digest-link" className={cn(COUNT_LINK, "inline-flex items-center gap-1")} onClick={openDigestRow}>
-            <Newspaper aria-hidden className="size-[1.15em]" />
-            {label}
-          </Button>
+          <span aria-hidden>·</span>
+          <span data-testid="today-shown">{t("today.line.shown", { count: shown })}</span>
         </>
       )}
       {more > 0 && waiting !== null && (
         <>
-          <span aria-hidden>·</span>
+          {count > 0 && <span aria-hidden>·</span>}
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1138,8 +1134,8 @@ export function ThreadList() {
     count: items.length,
     getScrollElement: () => parentRef.current,
     // plan 145: a section's heading is space under the row before it, or above the first
-    estimateSize: (i) => height + (i === top - 1 ? topGap : 0) + (todayGroups.some((g) => g.at === i + 1) ? TOP_LABEL : 0),
-    paddingStart: lead + (top > 0 || todayGroups.length ? TOP_LABEL : 0),
+    estimateSize: (i) => (inToday && items[i]?.id === DIGEST_ROW_ID ? Math.min(height, DIGEST_ROW_MAX) : height) + (i === top - 1 ? topGap : 0) + (todayGroups.some((g) => g.at === i + 1) ? TOP_LABEL : 0),
+    paddingStart: lead + (top > 0 || todayGroups.some((g) => g.at === 0) ? TOP_LABEL : 0),
     overscan: 10,
     getItemKey,
     paddingEnd: dock,
@@ -1392,11 +1388,12 @@ export function ThreadList() {
               </div>
             )}
             {topGap > 0 && <div aria-hidden data-testid="inbox-reminders-end" className="absolute inset-x-5 h-(--hairline-w) bg-hairline" style={{ top: lead + TOP_LABEL + top * height + topGap / 2 }} />}
-            {todayGroups.map((g, i) => (
-              <TodayHeading key={g.kind} kind={g.kind} top={lead + i * TOP_LABEL + g.at * height} />
+            {/* plan 161, pass 2: each heading from its row's real offset (the digest's row is shorter than the rest) */}
+            {todayGroups.map((g) => (
+              <TodayHeading key={g.kind} kind={g.kind} top={(virtualizer.measurementsCache[g.at]?.start ?? lead + TOP_LABEL) - TOP_LABEL} />
             ))}
             {virtualItems.map((v) => (
-              items[v.index]!.id === DIGEST_ROW_ID ? <DigestListRow key={v.key} thread={items[v.index]!} top={v.start} height={height} /> :
+              items[v.index]!.id === DIGEST_ROW_ID ? <DigestListRow key={v.key} thread={items[v.index]!} top={v.start} height={Math.min(height, DIGEST_ROW_MAX)} /> :
               <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} reminderTop={v.index < top} reminderEnd={topGap > 0 && v.index === top - 1} match={match} pick={list} />
             ))}
           </div>

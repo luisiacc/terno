@@ -1,5 +1,5 @@
 import { DIGEST_ROW_ID } from "@terno/core";
-import { useToday } from "~/state/today";
+import { backToDigest, useToday } from "~/state/today";
 import "~/lib/replies";
 import { folderName } from "~/lib/account-folders";
 import { ReaderAttachments } from "./attachments";
@@ -1167,7 +1167,13 @@ function ReaderContent() {
             </div>
           ) : (
             <>
-              {fromDigest && <Button variant="link-secondary" size="xs" className="mb-2" data-testid="back-to-digest" onClick={() => { useToday.setState({ fromDigest: null }); setApp({ selectedId: DIGEST_ROW_ID }); }}>{t("today.digest.back")}</Button>}
+              {/* plan 161, pass 2: as Ask's way back, with its key (Esc goes back too) */}
+              {fromDigest && (
+                <Button variant="ghost" size="xs" className="mb-2 -ml-2 gap-1.5 font-medium text-muted-foreground hover:text-foreground" data-testid="back-to-digest" onClick={() => void backToDigest()}>
+                  {t("today.digest.back")}
+                  <Shortcut keys="escape" />
+                </Button>
+              )}
               <AskReturn threadId={detail.thread.id} />
               <Thread key={`t${detail.thread.id}`} detail={detail} account={account} cats={cats} summaryShown={summaryShown} />
               {/* plan 144: off, it never shows; a draft here means it's out of the way */}
