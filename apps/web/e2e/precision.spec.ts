@@ -178,16 +178,20 @@ async function menuOnItsRow(page: Page, id: string, design: string, where: strin
   await settled(menu);
   const inset = await token(page, "--float-inset", 12);
   await wholeRows(menu, "[role=menuitem]", `${where}: the row menu`, design);
-  const m = await menu.evaluate((el, id) => {
+  const m = await menu.evaluate((el, [id, inset]) => {
     const r = el.getBoundingClientRect();
     const row = document.querySelector(`[data-testid=thread-row][data-thread-id="${id}"]`)!;
     const text = [...row.querySelectorAll("[data-testid=row-from],[data-testid=row-subject],[data-testid=row-snippet],[data-testid=row-date]")].map((t) => t.getBoundingClientRect()).filter((t) => t.width > 0);
     const over = text.some((t) => t.top < r.bottom && t.bottom > r.top && t.left < r.right && t.right > r.left);
     const fits = el.scrollHeight <= el.clientHeight + 1;
-    return { over, fits, left: r.left, top: r.top, right: innerWidth - r.right, bottom: innerHeight - r.bottom };
-  }, id);
+    // room for the whole menu under the row or over it, an inset from the window's edge
+    const b = row.getBoundingClientRect();
+    const room = Math.max(innerHeight - b.bottom, b.top) - inset - 4 >= el.scrollHeight;
+    return { over, fits, room, left: r.left, top: r.top, right: innerWidth - r.right, bottom: innerHeight - r.bottom };
+  }, [id, inset] as const);
   expect.soft(m.fits, `${design} ${where}: the row menu shows every row`).toBe(true);
-  expect.soft(m.over, `${design} ${where}: the row menu leaves its own row's text in view`).toBe(false);
+  // only a window too short for it on either side lets it cover the row (revision 4)
+  if (m.room) expect.soft(m.over, `${design} ${where}: the row menu leaves its own row's text in view`).toBe(false);
   for (const side of ["left", "top", "right", "bottom"] as const) expect.soft(m[side] >= inset - 0.5, `${design} ${where}: the row menu is ≥ ${inset}px from the window's ${side} edge: ${fmt(m[side])}px`).toBe(true);
 }
 
@@ -314,9 +318,10 @@ test.describe("precision across screens (plan 160)", { tag: "@design" }, () => {
       await measure(page, design, "Split");
       await page.keyboard.press("r");
       await expect(page.locator("[data-testid=draft-slot][data-state=open]")).toBeVisible();
+      // as it opened (the quote, opened below, grows it past the window like any long content)
+      await scenario("the reply card: four edges drawn", () => edges(page, page.locator("[data-testid=draft-slot]"), "the reply card", design));
       await draftMeasure(page, design, "Split");
       await measure(page, design, "Split, replying");
-      await scenario("the reply card: four edges drawn", () => edges(page, page.locator("[data-testid=draft-slot]"), "the reply card", design));
       await page.keyboard.press("Escape");
       await focusList(page);
     });

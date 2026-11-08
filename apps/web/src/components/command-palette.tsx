@@ -8,7 +8,8 @@ import { cn } from "@terno/ui/lib/utils";
 import { Chip } from "@terno/ui/components/chip";
 import { Command, CommandDescription, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
 import { Archive, AtSign, Bell, BellOff, ListChecks, BookmarkPlus, CalendarClock, CheckCheck, Clock, Copy, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { fitWholeRows, markMore } from "@terno/ui/lib/whole-rows";
 import { act, openCompose, targetRows, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory } from "~/lib/categorize";
 import { currentTargets, isMac, selectAll } from "~/lib/select";
@@ -220,6 +221,25 @@ export function CommandPalette() {
     // a page starts at its top, wherever the list it came from was scrolled
     listRef.current?.scrollTo({ top: 0 });
   };
+  // plan 160: the list ends on a whole row, --float-inset above the window's foot, at any height and whatever it holds
+  // (measured when what it holds or the window changes, never per row); from when the list mounts (the dialog's popup
+  // mounts after `open`) until it goes
+  const wholeRows = useCallback((list: HTMLDivElement | null) => {
+    listRef.current = list;
+    if (!list) return;
+    const fit = () => fitWholeRows(list, "[data-slot=command-item]");
+    const more = () => markMore(list);
+    const ro = new ResizeObserver(fit);
+    ro.observe(list.firstElementChild ?? list);
+    window.addEventListener("resize", fit);
+    list.addEventListener("scroll", more, { passive: true });
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", fit);
+      list.removeEventListener("scroll", more);
+      if (listRef.current === list) listRef.current = null;
+    };
+  }, []);
   // a reply chosen here puts focus in its draft itself: handed back on closing, focus would cancel it (converting the open draft)
   const tookFocus = useRef(false);
   const select = (c: PaletteCommand) => {
@@ -590,7 +610,7 @@ export function CommandPalette() {
         />
         {/* plan 158: as tall as what it holds, up to its maximum: the field stays put, the footer follows the last row.
             Taller than the base list where the window has room, so the places under an open conversation's actions show */}
-        <CommandList ref={listRef} label={t("palette.results")} className="max-h-[min(30rem,55vh)]">
+        <CommandList ref={wholeRows} label={t("palette.results")} className="relative max-h-[min(30rem,55vh)] data-more:[mask-image:linear-gradient(to_top,transparent,black_0.375rem)]">
           {/* a row offered below says it already: the root's search while typing, a page's create */}
           {!(page === "root" && query) && !create && <CommandEmpty>{t("palette.empty")}</CommandEmpty>}
           {aboutMail && mailRows}
