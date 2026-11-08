@@ -1,6 +1,6 @@
 import { createAi, digestPrompt, probe, type AiTasks, type ProviderConfig } from "@terno/ai";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { answerFor, startModelStub, type ModelStub } from "../../../scripts/ui-rating/model-stub.mjs";
+import { anchor, answerFor, startModelStub, type ModelStub } from "../../../scripts/ui-rating/model-stub.mjs";
 import { checkSentMail } from "./followups";
 
 /**
@@ -153,6 +153,37 @@ describe("the model stub (plan 161)", () => {
     expect(asked("thread_summary") - before).toBe(1);
     expect(result.summary).toBe("Ana wrote on 22 October: “The launch moved again.”");
     expect(result.items).toEqual([{ kind: "question", text: "Could you review the proposal the week of 26 October?", message: "m1" }]);
+  });
+
+  it("anchors a weekday with an hour, an unaccented one, and leaves a dated one alone", () => {
+    const thursday = Date.UTC(2026, 9, 22, 12);
+    expect(anchor("next Monday 9am works", thursday)).toBe("Monday 26 October 9am works");
+    expect(anchor("Friday 23 October is fine", thursday)).toBe("Friday 23 October is fine");
+    expect(anchor("nos vemos el próximo miercoles", thursday)).toBe("nos vemos el miércoles 28 de octubre");
+    expect(anchor("el sabado o el sábado 24", thursday)).toBe("el sábado 24 de octubre o el sábado 24");
+  });
+
+  it("a summary cancelled while held doesn't use up a failure meant for the next one", async () => {
+    let release!: () => void;
+    const failures = [503];
+    const held = await startModelStub({ chatHeld: new Promise<void>((r) => (release = r)), summaryFails: () => failures.shift() ?? null });
+    try {
+      const body = JSON.stringify({ model: "qwen3:8b", messages: [{ role: "system", content: "You summarize one email conversation" }, { role: "user", content: "<subject>x</subject>" }], response_format: { type: "json_schema", json_schema: { name: "thread_summary" } } });
+      const controller = new AbortController();
+      const cancelled = fetch(`${held.url}/v1/chat/completions`, { method: "POST", body, signal: controller.signal });
+      await expect.poll(() => held.active).toBe(1);
+      controller.abort();
+      await expect(cancelled).rejects.toThrow();
+      // the server has seen the first go before the second arrives
+      await expect.poll(() => held.active).toBe(0);
+      const next = fetch(`${held.url}/v1/chat/completions`, { method: "POST", body });
+      await expect.poll(() => held.active).toBe(1);
+      release();
+      expect((await next).status).toBe(503);
+      expect(held.summaries).toHaveLength(2);
+    } finally {
+      await held.close();
+    }
   });
 
   it("a request cancelled while it's held is never answered, and isn't counted as running", async () => {

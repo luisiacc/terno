@@ -136,7 +136,8 @@ async function aiPass(design, mode, dir) {
     await snack.waitFor({ state: "detached" });
   };
   const noSnacks = async () => {
-    for (const close of await page.getByTestId("snack-close").all()) await close.click().catch(() => {});
+    // only what's on screen: a snack on its way out keeps its button for a moment, hidden
+    for (const close of await page.getByTestId("snack-close").all()) if (await close.isVisible()) await close.click({ timeout: 2000 }).catch(() => {});
     await page.getByTestId("snack").first().waitFor({ state: "detached", timeout: 5000 });
   };
   const noReplyReady = async (where) => {
@@ -235,7 +236,6 @@ async function aiPass(design, mode, dir) {
     await visible("followup-nudge");
     // the first follow-up's tip (plan 113) is taught once; the screen is the line it points at
     if (await page.getByTestId("tip-done").isVisible().catch(() => false)) await page.getByTestId("tip-done").click();
-    await noSnacks();
     await s("a09-followup");
 
     // --- Create a filter with AI: the rule it wrote, before saving ---

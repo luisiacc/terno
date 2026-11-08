@@ -152,9 +152,12 @@ export function anchor(text, date) {
     [/\bayer\b/gi, () => `el ${es.day(date - DAY)}`],
   ];
   let out = rules.reduce((t, [re, to]) => t.replace(re, to), text);
-  // a weekday alone (or "next Friday") reads as the coming one: give it its date
-  out = out.replace(new RegExp(`\\b(?:(?:this|next) )?(${DAYS_EN.join("|")})\\b(?![,\\s]+\\d)`, "gi"), (_, d) => longDate(nextWeekday(date, DAYS_EN.findIndex((x) => x.toLowerCase() === d.toLowerCase()))));
-  out = out.replace(new RegExp(`\\b(?:(?:este|próximo|el próximo) )?(${DAYS_ES.join("|")})\\b(?![,\\s]+\\d)`, "gi"), (_, d) => longDate(nextWeekday(date, DAYS_ES.indexOf(d.toLowerCase())), true));
+  // a weekday alone (or "next Friday") reads as the coming one: give it its date. One already dated isn't touched, and
+  // an hour isn't a date ("Monday 9am"), as the summary's validator reads them
+  const dated = String.raw`(?![,\s]+(?:the\s+|el\s+)?\d{1,2}(?!\s*(?:am|pm|a\.m|p\.m|h\b|:|\d)))`;
+  const plain = (w) => w.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  out = out.replace(new RegExp(String.raw`\b(?:(?:this|next) )?(${DAYS_EN.join("|")})\b${dated}`, "gi"), (_, d) => longDate(nextWeekday(date, DAYS_EN.findIndex((x) => x.toLowerCase() === d.toLowerCase()))));
+  out = out.replace(new RegExp(String.raw`(?<![\p{L}])(?:(?:este|próximo) )?(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)(?![\p{L}])${dated}`, "giu"), (_, d) => longDate(nextWeekday(date, DAYS_ES.findIndex((x) => plain(x) === plain(d))), true));
   return out;
 }
 
@@ -628,13 +631,13 @@ export async function startModelStub(options = {}) {
       const task = taskOf(body);
       tasks.push(task ?? "unknown");
       last[task ?? "unknown"] = body;
-      if (task === "thread_summary") {
-        summaries.push(JSON.stringify(body.messages));
-        const failure = summaryFails?.();
-        if (failure) return void (gone || res.writeHead(failure, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "The stub says no.", type: "error", code: null } })));
-      }
-      // what was asked is recorded either way; nobody is left to answer
+      if (task === "thread_summary") summaries.push(JSON.stringify(body.messages));
+      // what was asked is recorded either way; nobody is left to answer, nor to fail
       if (gone) return;
+      if (task === "thread_summary") {
+        const failure = summaryFails?.();
+        if (failure) return void res.writeHead(failure, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "The stub says no.", type: "error", code: null } }));
+      }
       const out = answerFor(body);
       if (!out) {
         unknown.push(text(body.messages?.[0]?.content).slice(0, 80));

@@ -228,3 +228,16 @@ Every AI screen reaches its state on the demo mailbox as the everyday set alread
 ### `round.json` and the gate (revision 11)
 
 `scripts/ui-rating/sets.mjs` defines both sets: their screens, their shots and their brief. `rate.mjs --screens ai` writes `round.json` with the set, its screens, every shot the capture must write, and the hashes of the brief, the capture (capture, harness, sets), the stub and the demo's generator and seed; it refuses a capture that's missing a shot. `gate.mjs` reads the screens from `round.json` (a round from before sets is everyday), refuses a `round.json` whose screens aren't its set's, fails a report that scores a screen the round doesn't have, and fails the round if any frozen shot is missing. The frozen runtime and each rater's room get the harness, the stub and `sets.mjs`; `brief()` picks the set's brief and only that set's hands-on text.
+
+### What the Codex review of the tooling changed
+
+Six points, all taken, each with a regression test or a check the capture makes on itself:
+
+1. **The undo shot waited out its own undo.** The capture waited for every finite animation, and the snack's countdown is one, so `a06` could be shot after the snack expired. It now waits for transitions only (1 s at most; motion is capped at 100 ms), checks `a06`'s snack is still there before the shot, closes each snack a step leaves once it appears (Draft discarded, Put back), and refuses a stray snack before every other shot.
+2. **A round could pass without its evidence.** `gate.mjs` trusted `round.json`'s shot list, so an empty or missing list skipped the check. A round with a set must now list exactly its set's shots; only a round from before sets (no set, screens or shots) is read as everyday (`gate.test.ts`).
+3. **The digest could be shot while preparing.** The row's "Preparing today's digest…" matched the wait. The capture now waits for "N newsletters · today's digest", then for exactly N items on the page.
+4. **The network check accepted no log, and a cut one.** A missing log is now a failure, and the recorder's last line at its bound marks the overflow, which fails the check (`harness.test.ts`, `test-hooks.test.ts`).
+5. **A request cancelled while held was answered anyway** and stayed counted as running. The stub counts and watches each chat request from its arrival (`model-stub.test.ts`).
+6. **Relative days the stub didn't know** ("next week", "tonight", "this weekend") made the summary validator ask again. `anchor()` now covers every phrase the validator rejects, in English and Spanish (`model-stub.test.ts`, asked once).
+
+A second, narrower pass on those fixes found three more, also taken: a snack on its way out keeps a hidden close button for a moment, so clearing snacks now clicks only visible ones (no 30-second stall); a summary cancelled while held no longer uses up a failure the e2e meant for the next one; and `anchor()` reads a weekday the way the validator does ("next Monday 9am" is a weekday with an hour, not a date) and takes unaccented Spanish weekdays (`model-stub.test.ts`).

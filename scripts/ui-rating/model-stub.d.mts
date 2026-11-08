@@ -37,3 +37,4 @@ export function answerFor(body: unknown): { task: string; content: string } | nu
 export function chunksOf(content: string): string[];
 export function longDate(ms: number, es?: boolean): string;
 export function person(from: string | undefined): { name: string; first: string };
+export function anchor(text: string, date: number): string;
