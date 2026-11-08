@@ -78,6 +78,16 @@ describe("Review's way in and out", () => {
     expect(useList.getState().items.map((t) => t.id)).toEqual([41, 42, 43]);
   });
 
+  it("a sentence's preview opened from Review and cancelled keeps the way back (Codex code review round 2 #1)", () => {
+    navigate({ view: "sent", accountId: null });
+    enterReview(3);
+    // enterPreview's and leavePreview's own writes (state/action-preview)
+    setApp({ actionPreview: "p1", view: "all", reviewCategoryId: null, query: "" });
+    setApp({ actionPreview: null, view: "all", reviewCategoryId: 3 });
+    leaveReview();
+    expect(getApp()).toMatchObject({ view: "sent", reviewCategoryId: null });
+  });
+
   it("a place gone meanwhile (its category, in another window) isn't gone back to: the Inbox instead (Codex code review #3)", () => {
     navigate({ categoryId: 1, accountId: null });
     enterReview(3);

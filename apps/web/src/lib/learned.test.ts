@@ -78,6 +78,16 @@ describe("shown once", () => {
     expect(offerOf(useOffer.getState())).toBeNull();
   });
 
+  it("a reload of the window in the same launch offers none: not the one seen, nor the next (Codex code review round 2 #2)", async () => {
+    let m = await load();
+    m.setProposals([A, B]);
+    m.noteShown(A.key, m.getApp());
+    expect(m.offerOf(m.useOffer.getState())?.key).toBe(A.key);
+    m = await load();
+    m.setProposals([A, B]);
+    expect(m.offerOf(m.useOffer.getState())).toBeNull();
+  });
+
   it("after a relaunch it isn't offered again; one not seen yet is", async () => {
     let m = await load();
     m.setProposals([A, B]);

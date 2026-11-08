@@ -92,9 +92,10 @@ export function leaveReview(): void {
 
 useApp.subscribe((s, prev) => {
   const review = s.reviewCategoryId;
-  // left for anywhere but a search typed in it (whose Esc comes back to it): the way back is forgotten
+  // left for anywhere but a search typed in it (whose Esc comes back to it) or a sentence's preview (whose Cancel comes
+  // back to it, Codex code review round 2 #1): the way back is forgotten
   if (review === null) {
-    if (prev.reviewCategoryId !== null && !s.query.trim()) reviewFrom.origin = null;
+    if (prev.reviewCategoryId !== null && !s.query.trim() && s.actionPreview === null) reviewFrom.origin = null;
     return;
   }
   // its category deleted (here or in another window): out, the same way

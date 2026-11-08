@@ -31,7 +31,7 @@ export const learnedRule = (p: LearnedProposal): string => t(PROPOSAL[p.action],
 /** The offers seen, newest last; a bounded few (keys are a scope, a value and an action: small) */
 export const SEEN_KEY = "terno:learned-seen";
 export const SEEN_MAX = 200;
-/** Answered or seen this launch (×, a rule made, a visit that showed one): no offer until the next launch */
+/** Answered or shown this launch (×, a rule made, one on screen): no other offer until the next launch */
 const HUSH_KEY = "terno:learned-hushed";
 
 function readSeen(): string[] {
@@ -92,6 +92,9 @@ export function noteShown(key: string, place: Place): void {
   useOffer.setState({ seen: new Set(seen), visit: { key, place: placeOf(place) } });
   try {
     localStorage.setItem(SEEN_KEY, JSON.stringify(seen));
+    // and this launch has had its offer: a reload of the window shows no other (Codex code review round 2 #2); the one
+    // on screen stays for its visit
+    sessionStorage.setItem(HUSH_KEY, "1");
   } catch {
     // storage refused: it may show once more next launch, which is harmless
   }
@@ -108,9 +111,9 @@ export function hush(on: boolean): void {
   }
 }
 
-/** A rule made and then undone: the offer comes back only while the visit that showed it lasts. */
+/** A rule made and then undone: the offer comes back only while the visit that showed it lasts (the launch has had its offer all the same). */
 export function unhush(key: string): void {
-  if (useOffer.getState().visit?.key === key) hush(false);
+  if (useOffer.getState().visit?.key === key) useOffer.setState({ hushed: false });
 }
 
 /** The offer's laid-out height, as measured. */
