@@ -139,11 +139,14 @@ function answerSuggestion(yes: boolean) {
  * a new message is on screen, it's that message's Send, which says at the field what stops it (plan 158). Never from a
  * dialog, a menu or another field: those keep the key.
  */
-export function sendShownDraft(): void {
+function shownDraft() {
   const el = document.activeElement, s = getApp();
   const nowhere = !el || el === document.body;
-  const key = draftKeyOf(el) ?? (nowhere && s.dialog === null && !s.menuOpen ? s.compose?.key : null);
-  draftCommands(key)?.send();
+  return draftCommands(draftKeyOf(el) ?? (nowhere && s.dialog === null && !s.menuOpen ? s.compose?.key : null));
+}
+
+export function sendShownDraft(): void {
+  shownDraft()?.send();
 }
 
 const HANDLERS: Partial<Record<Command, () => void>> = {
@@ -268,6 +271,8 @@ export function installKeyboard(): () => void {
     if (!result.command) return;
     const handler = HANDLERS[result.command];
     if (!handler) return;
+    // with no draft to send, ⌘Enter is left to whoever else takes it (an action preview's Apply)
+    if (result.command === "compose.send" && !shownDraft()) return;
     e.preventDefault();
     if (TOGGLES.has(result.command)) {
       if (e.repeat) return;

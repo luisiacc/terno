@@ -34,7 +34,8 @@ vi.mock("~/components/snack-dock", () => ({ focusDock() {} }));
 vi.mock("~/components/thread-menu", () => ({ openMenuForSelection() {} }));
 vi.mock("~/components/category-snackbar", () => ({ snackbarControls: { current: null } }));
 
-const { move, sendShownDraft } = await import("./keyboard");
+const { installKeyboard, move, sendShownDraft } = await import("./keyboard");
+const { isMac } = await import("~/lib/select");
 const { registerDraftCommands } = await import("~/lib/draft-commands");
 const { useSnack, resetSnacks } = await import("~/lib/snack");
 const { useAppearance } = await import("~/lib/appearance");
@@ -130,5 +131,25 @@ describe("⌘Enter that no form took (plan 158)", () => {
     sendShownDraft();
     expect(sends).toEqual([]);
     off();
+  });
+  it("with no draft to send, the key is left alone: an action preview's ⌘Enter is Apply", () => {
+    const doc = document as unknown as { addEventListener: unknown; removeEventListener: unknown };
+    let onKey!: (e: unknown) => void;
+    doc.addEventListener = (type: string, f: (e: unknown) => void) => { if (type === "keydown") onKey = f; };
+    doc.removeEventListener = () => {};
+    const uninstall = installKeyboard();
+    const press = () => {
+      const e = { key: "Enter", metaKey: isMac, ctrlKey: !isMac, altKey: false, shiftKey: false, repeat: false, isComposing: false, defaultPrevented: false, preventDefault() { e.defaultPrevented = true; } };
+      onKey(e);
+      return e.defaultPrevented;
+    };
+    setApp({ compose: null, dialog: null, menuOpen: false });
+    expect(press()).toBe(false);
+    const off = commands("new:1");
+    setApp({ compose: { key: "new:1", seq: 1 } as never });
+    expect(press()).toBe(true);
+    expect(sends).toEqual(["new:1"]);
+    off();
+    uninstall();
   });
 });
