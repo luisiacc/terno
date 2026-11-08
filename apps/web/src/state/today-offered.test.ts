@@ -15,13 +15,13 @@ const settings = (devAi: boolean) => ({ ai, devAi, today: { show: true } }) as n
 describe("Today with Dev mode's switch off (plan 147)", () => {
   beforeEach(() => {
     setApp({ devAi: keys, settings: settings(true), today: false });
-    useToday.setState({ fromDigest: false });
+    useToday.setState({ fromDigest: null });
   });
 
   it("a way back to the digest goes with it, though Today's list wasn't on screen", () => {
-    useToday.setState({ fromDigest: true });
+    useToday.setState({ fromDigest: 7 });
     setApp({ settings: settings(false) });
-    expect(useToday.getState().fromDigest).toBe(false);
+    expect(useToday.getState().fromDigest).toBe(null);
   });
 
   it("whatever brings Today back while it's hidden (a preview's Cancel) leaves again", () => {

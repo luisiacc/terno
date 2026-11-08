@@ -1336,6 +1336,8 @@ export function Sidebar() {
           label={t("today.title")}
           count={counts.today || undefined}
           countTone={design.surfaces.inboxCount}
+          // plan 161: what the number counts, in words
+          countHelp={counts.today ? { id: "today-count-help", text: t("today.countHelp", { count: counts.today }) } : undefined}
         />
       )}
       {todayTip && <TodayTip />}

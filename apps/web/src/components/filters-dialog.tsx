@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@terno/ui/components/switch";
 import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Folder as FolderIcon, Forward, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2 } from "@terno/ui/icons";
+import { Archive, Check, Folder as FolderIcon, Forward, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2 } from "@terno/ui/icons";
 import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { t, type TextKey } from "@terno/i18n";
 import { richT } from "~/lib/i18n";
@@ -21,6 +21,7 @@ import { aiReady, errorHelp, privacyLine } from "~/lib/ai";
 import { listDate } from "~/lib/format";
 import { client } from "~/rpc/connection";
 import { learnedRule } from "~/lib/learned";
+import { describeRule, ruleMisses, sensedOp, withSensedOp, type SensedOp } from "~/lib/rule-words";
 import { getApp, setApp, useApp } from "~/state/app";
 import { ConfirmDialog } from "./settings/parts";
 import { RecipientInput } from "./recipient-input";
@@ -41,19 +42,59 @@ const fields = (): { value: Field; label: string }[] => [
   { value: "ageDays", label: t("filters.field.ageDays") },
 ];
 
-/** plan 89: a word field only mentions; a pattern only where the field allows one (never the body) */
-const textOps = (field: Field) =>
+/**
+ * plan 89: a word field only mentions; a pattern only where the field allows one (never the body). Plan 161: each
+ * operator with its "not" beside it, as Mail and Gmail say it, instead of a separate toggle; a word field and the
+ * start of mail only ever turn true, so they have no "not".
+ */
+const textOps = (field: Field): { value: SensedOp; label: string }[] =>
   field === "text"
     ? [{ value: "contains", label: t("filters.op.mentions") }]
     : field === "opening"
     ? [{ value: "matches", label: t("filters.op.matches") }]
     : [
         { value: "contains", label: t("filters.op.contains") },
+        { value: "not:contains", label: t("filters.op.notContains") },
         { value: "equals", label: t("filters.op.equals") },
+        { value: "not:equals", label: t("filters.op.notEquals") },
         { value: "startsWith", label: t("filters.op.startsWith") },
+        { value: "not:startsWith", label: t("filters.op.notStartsWith") },
         { value: "endsWith", label: t("filters.op.endsWith") },
-        ...((PATTERN_FIELDS as readonly string[]).includes(field) ? [{ value: "matches", label: t("filters.op.matches") }] : []),
+        { value: "not:endsWith", label: t("filters.op.notEndsWith") },
+        ...((PATTERN_FIELDS as readonly string[]).includes(field) ? [{ value: "matches", label: t("filters.op.matches") }, { value: "not:matches", label: t("filters.op.notMatches") }] : []),
       ];
+const attachmentOps = (): { value: SensedOp; label: string }[] => [
+  { value: "is", label: t("filters.attach.has") },
+  { value: "not:is", label: t("filters.attach.hasNot") },
+];
+const accountOps = (): { value: SensedOp; label: string }[] => [
+  { value: "is", label: t("filters.op.equals") },
+  { value: "not:is", label: t("filters.op.notEquals") },
+];
+/** a "not" an older rule holds on an age: still shown, and kept, as what it is */
+const ageOps = (negated: boolean): { value: SensedOp; label: string }[] => [
+  { value: "gt", label: t("filters.age.gt") },
+  { value: "lt", label: t("filters.age.lt") },
+  ...(negated ? [{ value: "not:gt", label: t("filters.age.notGt") }, { value: "not:lt", label: t("filters.age.notLt") }] : []),
+];
+
+/** An operator menu over a condition's operator and its sense. */
+function OpSelect({ c, ops, onChange, className }: { c: Condition; ops: { value: SensedOp; label: string }[]; onChange: (c: Condition) => void; className: string }) {
+  return (
+    <Select value={sensedOp(c)} onValueChange={(v) => onChange(withSensedOp(c, v as SensedOp))} items={ops}>
+      <SelectTrigger size="sm" className={className} data-testid="condition-op" aria-label={t("filters.op.label")}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {ops.map((o) => (
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 const PATTERN_ISSUES = {
   syntax: "filters.invalid.pattern.syntax",
@@ -185,59 +226,33 @@ function ConditionRow({ c, onChange, onRemove }: { c: Condition; onChange: (c: C
           ))}
         </SelectContent>
       </Select>
-      {/* a word field only ever turns true (plan 89): it has no "not" */}
-      <button
-        type="button"
-        hidden={c.field === "text" || c.field === "opening"}
-        onClick={() => onChange({ ...c, negate: !c.negate || undefined } as Condition)}
-        className={cn("h-7 rounded-md border px-2 text-xs transition-colors", c.negate ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-transparent text-muted-foreground hover:bg-muted")}
-        title={t("filters.negate")}
-      >
-        {c.negate ? t("filters.negate.no") : t("filters.negate.yes")}
-      </button>
       {c.field === "hasAttachment" ? (
-        <span className="flex-1 text-sm text-muted-foreground">{t("filters.hasAttachment")}</span>
+        <OpSelect c={c} ops={attachmentOps()} onChange={onChange} className="flex-1" />
       ) : c.field === "account" ? (
-        <Select value={String(c.value)} onValueChange={(v) => onChange({ ...c, value: Number(v) })} items={accounts.map((a) => ({ value: String(a.id), label: a.email }))}>
-          <SelectTrigger size="sm" className="flex-1">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {accounts.map((a) => (
-              <SelectItem key={a.id} value={String(a.id)}>
-                {a.email}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      ) : c.field === "ageDays" ? (
-        <div className="flex flex-1 items-center gap-1.5 text-sm">
-          <Select value={c.op} onValueChange={(op) => onChange({ ...c, op: op as "gt" | "lt" })} items={[{ value: "gt", label: t("filters.age.gt") }, { value: "lt", label: t("filters.age.lt") }]}>
-            <SelectTrigger size="sm" className="w-28">
+        <>
+          <OpSelect c={c} ops={accountOps()} onChange={onChange} className="w-28" />
+          <Select value={String(c.value)} onValueChange={(v) => onChange({ ...c, value: Number(v) })} items={accounts.map((a) => ({ value: String(a.id), label: a.email }))}>
+            <SelectTrigger size="sm" className="flex-1" aria-label={t("filters.field.account")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="gt">{t("filters.age.gt")}</SelectItem>
-              <SelectItem value="lt">{t("filters.age.lt")}</SelectItem>
+              {accounts.map((a) => (
+                <SelectItem key={a.id} value={String(a.id)}>
+                  {a.email}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
+        </>
+      ) : c.field === "ageDays" ? (
+        <div className="flex flex-1 items-center gap-1.5 text-sm">
+          <OpSelect c={c} ops={ageOps(Boolean(c.negate))} onChange={onChange} className="w-32" />
           <NumberField aria-label={t("filters.age.days")} min={0} format={{ useGrouping: false }} className="h-7 w-28" value={c.value} onValueChange={(days) => onChange({ ...c, value: Math.max(0, days ?? 0) })} />
           <span className="text-muted-foreground">{t("settings.days")}</span>
         </div>
       ) : (
         <>
-          <Select value={c.op} onValueChange={(op) => onChange({ ...c, op } as Condition)} items={TEXT_OPS}>
-            <SelectTrigger size="sm" className="w-32" data-testid="condition-op">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {TEXT_OPS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <OpSelect c={c} ops={TEXT_OPS} onChange={onChange} className="w-40" />
           <Input
             data-testid="condition-value"
             className={cn("h-7 flex-1", pattern !== null && "font-mono text-xs")}
@@ -295,6 +310,20 @@ function ForwardTo({ to, onChange, paused }: { to: readonly Address[]; onChange:
   );
 }
 
+/** What the AI's rule does, and a calm word when it plainly isn't what was asked (plan 161). */
+function AiSaid({ said, misses }: { said: string; misses: boolean }) {
+  return (
+    <>
+      <p className="text-accent-foreground" data-testid="ai-explanation">{said}</p>
+      {misses ? (
+        <p role="status" className="mt-1 text-destructive-ink" data-testid="ai-unclear">{t("filters.ai.unclear")}</p>
+      ) : (
+        <p className="mt-1 text-muted-foreground">{t("filters.ai.review")}</p>
+      )}
+    </>
+  );
+}
+
 function Preview({ rule }: { rule: FilterRule }) {
   const parsed = useMemo(() => filterRuleSchema.safeParse(rule), [rule]);
   const [state, setState] = useState<{ count: number; sample: ThreadSummary[]; ms: number } | null>(null);
@@ -343,6 +372,12 @@ function Preview({ rule }: { rule: FilterRule }) {
   );
 }
 
+/**
+ * Plan 161: an unsaved rule AI built isn't lost to Esc, the × or a click outside: closing keeps it, and Rules opens on it
+ * again, request and all, until it's saved or New starts another. In memory only: a model's rule, never a setting.
+ */
+const kept: { current: { draft: Draft; prompt: string; built: string } | null } = { current: null };
+
 export function FiltersDialog() {
   const open = useApp((s) => s.dialog === "filters");
   const categories = useApp((s) => s.categories);
@@ -351,7 +386,8 @@ export function FiltersDialog() {
   // "Crear filtro desde este remitente…" opens the builder with its rule
   const [draft, setDraft] = useState<Draft>(() => {
     const prefill = getApp().filterPrefill;
-    return prefill ? draftOf({ ...prefill, enabled: prefill.enabled ?? true, source: prefill.source ?? "manual" }) : emptyDraft();
+    if (prefill) kept.current = null;
+    return prefill ? draftOf({ ...prefill, enabled: prefill.enabled ?? true, source: prefill.source ?? "manual" }) : (kept.current?.draft ?? emptyDraft());
   });
   // a filter (or a new one) loaded into the builder: fields that keep text of their own (Forward to) start again from it
   const [loads, setLoads] = useState(0);
@@ -366,9 +402,16 @@ export function FiltersDialog() {
   useEffect(() => {
     if (getApp().filterPrefill) setApp({ filterPrefill: null });
   }, []);
-  const [prompt, setPrompt] = useState("");
-  const [explanation, setExplanation] = useState<string | null>(null);
+  const [prompt, setPrompt] = useState(() => kept.current?.prompt ?? "");
+  // the request the rule on screen was built from: its words are checked against the rule (plan 161), not shown back
+  const [built, setBuilt] = useState<string | null>(() => kept.current?.built ?? null);
+  // once a rule is built, the box is one line, so the rule and its matches fit a small window; Edit request opens it
+  const [folded, setFolded] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const setExplanation = (none: null) => {
+    setBuilt(none);
+    setFolded(false);
+  };
   const ai = useApp((s) => s.settings?.ai);
   const [saving, setSaving] = useState(false);
   // what's wrong with a rule waits until the user tries to save it: a new one is simply not written yet
@@ -384,6 +427,15 @@ export function FiltersDialog() {
 
   const valid = filterRuleSchema.safeParse(draft.rule);
   const rule = draft.rule;
+  const accounts = useApp((s) => s.accounts);
+  const folders = useApp((s) => s.folders);
+  // plan 161: the AI's rule said from its fields as they stand (an edit changes the line), and checked against the request
+  const said = built !== null && draft.source === "ai" && valid.success ? describeRule(valid.data, {
+    accountEmail: (id) => accounts.find((a) => a.id === id)?.email ?? t("filters.cond.unknownAccount", { id }),
+    category: (id) => categories.find((c) => c.id === id)?.name ?? "?",
+    folder: (accountId, folder) => folders.find((f) => f.accountId === accountId && f.key === folder)?.path.join(" / ") ?? folder,
+  }) : null;
+  const misses = said !== null && built !== null && valid.success && ruleMisses(built, valid.data);
   const setRule = (r: FilterRule) => setDraft((d) => ({ ...d, rule: r }));
   const hasAction = (type: string) => rule.actions.some((a) => a.type === type);
   const toggleAction = (type: Exclude<FilterAction["type"], "addCategory" | "forward" | "moveToFolder">) => {
@@ -403,7 +455,8 @@ export function FiltersDialog() {
     try {
       const out = await client.call("filters.generate", { prompt });
       setDraft({ id: undefined, name: out.name, enabled: true, source: "ai", rule: out.rule });
-      setExplanation(out.explanation);
+      setBuilt(prompt);
+      setFolded(true);
     } catch (error) {
       const kind = (error as { details?: { aiErrorKind?: Parameters<typeof errorHelp>[0] } }).details?.aiErrorKind;
       if (kind === "cancelled") return;
@@ -427,6 +480,7 @@ export function FiltersDialog() {
       const adopted = draft.auto && (draft.auto.name !== name || !sameRule(draft.auto.rule, valid.data));
       const f = await client.call("filters.save", { id: draft.id, name, enabled: draft.enabled, source: draft.source, rule: valid.data, ...(adopted ? { auto: false } : {}) });
       // plan 89: applying runs in the background (its own progress snack); the dialog is free at once
+      kept.current = null;
       if (applyExisting) void applyFilter(f.id, f.name);
       else snack.success(t("filters.saved"));
       load(draftOf(f));
@@ -439,7 +493,14 @@ export function FiltersDialog() {
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && setApp(returnTo === "settings" ? { dialog: "settings", settingsTab: "filters" } : { dialog: null })}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (o) return;
+        kept.current = draft.source === "ai" && draft.id === undefined && built !== null ? { draft, prompt, built } : null;
+        setApp(returnTo === "settings" ? { dialog: "settings", settingsTab: "filters" } : { dialog: null });
+      }}
+    >
       <DialogContent movable="filters" className="flex h-[min(760px,88vh)] max-w-[min(1040px,94vw)] gap-0 overflow-hidden p-0 sm:max-w-[min(1040px,94vw)]" data-testid="filters-dialog" closeClassName="top-4 end-4">
         <DialogTitle className="sr-only">{t("settings.tab.filters")}</DialogTitle>
         <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-muted/30">
@@ -519,33 +580,46 @@ export function FiltersDialog() {
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6 pt-1">
             {/* only offered once an AI can really run (a model, and its key when it needs one); otherwise it could only fail */}
             {aiReady(ai) && (
-              <div className="rounded-xl border border-primary/25 bg-gradient-to-br from-accent/80 to-transparent p-4">
-                <label className="mb-2 flex items-center gap-1.5 text-sm font-medium" htmlFor="ai-prompt">
-                  <Sparkles className="size-4 text-primary" /> {t("filters.ai.label")}
-                </label>
-                <div className="flex gap-2">
-                  <Textarea
-                    id="ai-prompt"
-                    data-testid="ai-prompt"
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void generate();
-                    }}
-                    placeholder={t("filters.ai.placeholder")}
-                    className="min-h-16 flex-1 resize-none bg-background"
-                  />
-                  <Button data-testid="ai-generate" onClick={generate} loading={generating} disabled={prompt.trim().length < 3} className="self-end">
-                    <Wand2 /> {t("filters.ai.create")}
-                  </Button>
-                </div>
-                <p className="mt-2 text-2xs text-muted-foreground" data-testid="ai-privacy-notice">
-                  {privacyLine(ai)}
-                </p>
-                {explanation && (
-                  <p className="mt-2 text-xs text-accent-foreground" data-testid="ai-explanation">
-                    {explanation} {t("filters.ai.review")}
-                  </p>
+              <div className="rounded-xl border border-primary/25 bg-gradient-to-br from-accent/80 to-transparent p-4" data-testid="ai-box" data-folded={folded && said !== null ? true : undefined}>
+                {folded && said !== null ? (
+                  // plan 161: built, the box is the rule in a line: what it does, said from its fields
+                  <div className="flex items-start gap-2">
+                    <Sparkles aria-hidden className="mt-0.5 size-4 shrink-0 text-primary" />
+                    <div className="min-w-0 flex-1 text-sm">
+                      <AiSaid said={said} misses={misses} />
+                    </div>
+                    <Button variant="link-secondary" size="xs" className="shrink-0" data-testid="ai-edit-request" onClick={() => setFolded(false)}>{t("filters.ai.editRequest")}</Button>
+                  </div>
+                ) : (
+                  <>
+                    <label className="mb-2 flex items-center gap-1.5 text-sm font-medium" htmlFor="ai-prompt">
+                      <Sparkles className="size-4 text-primary" /> {t("filters.ai.label")}
+                    </label>
+                    <div className="flex gap-2">
+                      <Textarea
+                        id="ai-prompt"
+                        data-testid="ai-prompt"
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void generate();
+                        }}
+                        placeholder={t("filters.ai.placeholder")}
+                        className="min-h-16 flex-1 resize-none bg-background"
+                      />
+                      <Button data-testid="ai-generate" onClick={generate} loading={generating} disabled={prompt.trim().length < 3} className="self-end">
+                        <Wand2 /> {t("filters.ai.create")}
+                      </Button>
+                    </div>
+                    <p className="mt-2 text-2xs text-muted-foreground" data-testid="ai-privacy-notice">
+                      {privacyLine(ai)}
+                    </p>
+                    {said !== null && (
+                      <div className="mt-2 text-xs">
+                        <AiSaid said={said} misses={misses} />
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -601,7 +675,8 @@ export function FiltersDialog() {
                       hasAction(type) ? "border-primary/40 bg-primary/10 text-accent-foreground" : "border-border text-muted-foreground hover:bg-muted",
                     )}
                   >
-                    <Icon className="size-3.5" /> {t(label)}
+                    {/* plan 161: chosen says so with a check, not only a fill (Graphite's sat at 1.2:1) */}
+                    {hasAction(type) ? <Check className="size-3.5" data-testid="action-chosen" /> : <Icon className="size-3.5" />} {t(label)}
                   </button>
                 ))}
                 <button
@@ -614,7 +689,7 @@ export function FiltersDialog() {
                     forwardAction ? "border-primary/40 bg-primary/10 text-accent-foreground" : "border-border text-muted-foreground hover:bg-muted",
                   )}
                 >
-                  <Forward className="size-3.5" /> {t("filters.action.forward")}
+                  {forwardAction ? <Check className="size-3.5" data-testid="action-chosen" /> : <Forward className="size-3.5" />} {t("filters.action.forward")}
                 </button>
                 <Select
                   value={categoryAction ? String(categoryAction.categoryId) : "none"}

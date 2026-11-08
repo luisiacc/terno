@@ -51,6 +51,10 @@ test.describe("Today (plan 145)", () => {
     await page.getByTestId("nav-today").click();
     await expect(page.getByTestId("today-heading").first()).toHaveAttribute("data-kind", "needsYou");
     await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" })).toBeVisible();
+    // plan 161: the row says why it needs you (they've written in it), and the header names the numbers and the digest
+    await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" })).toContainText("Your turn ·");
+    await expect(page.getByTestId("today-needs")).toHaveText(/^\d+ (of \d+ )?needs? you$/);
+    await expect(page.getByTestId("today-digest-link")).toContainText("automated");
     await expect(page.getByTestId("digest-row")).toContainText("automated");
     if (SHOTS) {
       await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-light.png` });
@@ -65,7 +69,9 @@ test.describe("Today (plan 145)", () => {
     // a heading sits on the rows' own line
     const left = async (testId: string) => page.getByTestId(testId).first().evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
     expect(Math.abs((await left("today-heading")) - (await left("thread-row")))).toBeLessThanOrEqual(1);
-    await page.getByTestId("digest-row").click();
+    // plan 161: the header's way in, with no scrolling past Needs you
+    await page.getByTestId("today-digest-link").click();
+    await expect(page.getByTestId("digest-row")).toHaveAttribute("aria-selected", "true");
     await expect(page.getByTestId("digest-page")).toBeVisible();
     await expect(page.getByTestId("digest-title")).toHaveText("Automated mail");
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-digest-off.png` });
@@ -82,17 +88,28 @@ test.describe("Today (plan 145)", () => {
     await expect(page.getByTestId("digest-item").filter({ hasText: "Stratechery" })).toHaveCount(1);
     await expect(page.getByTestId("digest-item").filter({ hasText: "Acme Store" })).toHaveCount(0);
     const count = await page.getByTestId("digest-item").count();
-    await expect(page.getByTestId("digest-archive")).toHaveText(`Archive all ${count}`);
+    await expect(page.getByTestId("digest-archive")).toHaveText(`Archive ${count}`);
+    // plan 161: each row names its issue, so two of one newsletter are told apart
+    await expect(page.getByTestId("digest-item").filter({ hasText: "Stratechery" }).getByTestId("digest-subject")).toHaveText("Stratechery weekly");
     for (const item of await page.getByTestId("digest-item").all()) {
       if (!/Morning Brew digest/.test(await item.innerText())) await item.getByTestId("digest-tick").click();
     }
-    await expect(page.getByTestId("digest-archive")).toHaveText("Archive all 1");
+    await expect(page.getByTestId("digest-archive")).toHaveText("Archive selected (1)");
+    await expect(page.getByTestId("digest-count")).toContainText(`1 of ${count} selected`);
     // by keyboard too: a named control, and it's what's kept
     await page.getByTestId("digest-tick").last().focus();
     await page.keyboard.press("Space");
-    await expect(page.getByTestId("digest-archive")).not.toHaveText("Archive all 1");
+    await expect(page.getByTestId("digest-archive")).not.toHaveText("Archive selected (1)");
     await page.keyboard.press("Space");
-    await expect(page.getByTestId("digest-archive")).toHaveText("Archive all 1");
+    await expect(page.getByTestId("digest-archive")).toHaveText("Archive selected (1)");
+    // plan 161: opening a source and coming back keeps what was unticked; the way back is only on that newsletter
+    await page.getByTestId("digest-item").filter({ hasText: "Stratechery" }).getByTestId("digest-open").click();
+    await expect(page.getByTestId("back-to-digest")).toBeVisible();
+    await page.getByTestId("back-to-digest").click();
+    await expect(page.getByTestId("digest-page")).toBeVisible();
+    await expect(page.getByTestId("digest-item").filter({ hasText: "Morning Brew" }).getByTestId("digest-tick")).toBeChecked();
+    await expect(page.getByTestId("digest-item").filter({ hasText: "Stratechery" }).getByTestId("digest-tick")).not.toBeChecked();
+    await expect(page.getByTestId("digest-archive")).toHaveText("Archive selected (1)");
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/digest-on.png` });
     await page.getByTestId("digest-archive").click();
     await expect(page.getByTestId("snack")).toContainText("Archived 1 newsletter");
@@ -104,6 +121,13 @@ test.describe("Today (plan 145)", () => {
     await expect.poll(() => inbox("Morning Brew digest")).toBe(1);
     // the open page hears it: back in the count
     await expect(page.getByTestId("digest-item").filter({ hasText: "Morning Brew digest" })).toHaveAttribute("data-live", "true");
+    // plan 161: leaving Today takes the way back with it
+    await page.getByTestId("digest-item").filter({ hasText: "Stratechery" }).getByTestId("digest-open").click();
+    await expect(page.getByTestId("back-to-digest")).toBeVisible();
+    await page.getByTestId("nav-inbox").click();
+    await page.getByTestId("thread-row").first().click();
+    await expect(page.getByTestId("reader")).toBeVisible();
+    await expect(page.getByTestId("back-to-digest")).toHaveCount(0);
   });
 
   test("the row's selection and keys stay on threads: Select All never takes the digest", async ({ app: page, server }) => {

@@ -24,7 +24,7 @@ import { navigate, getApp, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
 import { currentScope, inboxTop, listKey, loadMore, searchOfKey, useList } from "~/state/list";
 import { wantExcerpts } from "~/state/excerpts";
-import { useToday, type TodayGroup } from "~/state/today";
+import { digestLabel, useToday, type TodayGroup } from "~/state/today";
 import { pressRow, releaseRow } from "~/lib/select";
 import { DIGEST_ROW_ID, type ThreadSummary } from "@terno/core";
 import { clearSelection, selectScope } from "~/lib/select";
@@ -609,6 +609,65 @@ function Subtitle({ filter, greeting }: { filter: QuickFilter | undefined; greet
   );
 }
 
+/** Plan 161: the header's way to the digest: a click on its row, and the row brought into view. */
+function openDigestRow() {
+  pressRow(DIGEST_ROW_ID, { meta: false, ctrl: false, shift: false });
+  releaseRow(DIGEST_ROW_ID);
+  listScroller.scrollToIndex?.(useList.getState().index.get(DIGEST_ROW_ID) ?? 0);
+}
+
+/**
+ * Plan 161: Today's numbers in words, under its title in every header: how many need you (the sidebar's count), the
+ * digest's way in (reached without scrolling past Needs you, which stays first), and Waiting, which holds more.
+ */
+function TodayLine() {
+  const needs = useApp((s) => s.counts.today ?? null);
+  const shown = useToday((s) => s.needsShown);
+  const digest = useToday((s) => s.digest);
+  const more = useToday((s) => s.more);
+  const waiting = useApp((s) => s.counts.inboxWaiting ?? null);
+  // ready, it's short: the row below says the rest; preparing or failed, it says so
+  const label = digest ? (digest.state === "ready" && !digest.automated && digest.liveIds.length ? t("today.line.digest", { count: digest.liveIds.length }) : digestLabel(digest)) : null;
+  return (
+    <p data-testid="today-line" className="type-list-subtitle flex min-w-0 flex-wrap items-center gap-x-1 text-muted-foreground tabular">
+      {shown > 0 && <span data-testid="today-needs">{needs !== null && needs > shown ? t("today.line.needsOf", { shown, count: needs }) : t("today.line.needs", { count: shown })}</span>}
+      {label && (
+        <>
+          {shown > 0 && <span aria-hidden>·</span>}
+          <Button variant="link-secondary" data-testid="today-digest-link" className={cn(COUNT_LINK, "inline-flex items-center gap-1")} onClick={openDigestRow}>
+            <Newspaper aria-hidden className="size-[1.15em]" />
+            {label}
+          </Button>
+        </>
+      )}
+      {more > 0 && waiting !== null && (
+        <>
+          <span aria-hidden>·</span>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="link-secondary"
+                  data-testid="today-more"
+                  aria-description={t("today.line.waitingTip")}
+                  className={COUNT_LINK}
+                  onClick={() => {
+                    navigate({ view: "inbox" });
+                    setListFilter("waiting");
+                  }}
+                >
+                  {t("today.line.waiting", { count: waiting })}
+                </Button>
+              }
+            />
+            <TooltipContent className="max-w-72">{t("today.line.waitingTip")}</TooltipContent>
+          </Tooltip>
+        </>
+      )}
+    </p>
+  );
+}
+
 function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement>; /** List's full-width list: everything that fits sits on the title's line */ oneRow: boolean }) {
   const view = useApp((s) => s.view);
   const category = useApp((s) => s.categories.find((c) => c.id === s.categoryId));
@@ -617,7 +676,6 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
   // plan 87: Reminders is a list of its own, unfiltered (no quick filters)
   const reminders = useApp((s) => s.reminders || s.followups || s.today);
   const today = useApp((s) => s.today);
-  const todayMore = useToday((s) => (today ? s.more : 0));
   const followups = useApp((s) => s.followups);
   const account = useApp((s) => s.accounts.find((a) => a.id === s.accountId));
   const query = useApp((s) => s.query);
@@ -656,12 +714,6 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
   const filterControl = !review && !reminders && quick === "menu" && <FilterControl filter={filter} search={query.trim() !== ""} />;
   const actions = (
     <>
-      {todayMore > 0 && (
-        <Button variant="link-secondary" size="xs" className="no-drag shrink-0" data-testid="today-more" onClick={() => {
-          navigate({ view: "inbox" });
-          setListFilter("waiting");
-        }}>{t("today.showAll", { count: todayMore })}</Button>
-      )}
       {behindButton && (
         <Tooltip>
           <TooltipTrigger
@@ -734,6 +786,8 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
             </p>
           ) : review ? (
             <ReviewSwitcher />
+          ) : today ? (
+            <TodayLine />
           ) : (
             kind !== "title" && <Subtitle filter={filter} greeting={kind === "greeting"} />
           )}
@@ -773,7 +827,8 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
           </div>
           {/* gives way as the list scrolls (at once: moving through a list never animates), unless it says what a search found */}
           {!review && <div
-            data-keep={query ? true : undefined}
+            // plan 161: Today's line is its way to the digest: it stays
+            data-keep={query || today ? true : undefined}
             // on a short window it gives its room to the rows (the counts are the sidebar's too), unless it says what a search found
             className="-mt-1.5 pb-2 pl-3 group-data-scrolled/list:not-data-keep:hidden [@media(max-height:760px)]:not-data-keep:hidden"
           >
@@ -782,11 +837,19 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
                 {stats}
                 {searchAll}
               </p>
+            ) : today ? (
+              <TodayLine />
             ) : (
               <Subtitle filter={filter} greeting={kind === "greeting"} />
             )}
           </div>}
         </>
+      )}
+      {/* plan 161: the title row has no subtitle line: Today's numbers and its digest get one of their own */}
+      {!oneRow && kind === "title" && today && !searching && (
+        <div className="-mt-1.5 pb-2 pl-3">
+          <TodayLine />
+        </div>
       )}
       {/* plan 159: Review's switcher on a line of its own under the title, in every header (it never gives way: it's where you are) */}
       {!oneRow && review && !searching && (

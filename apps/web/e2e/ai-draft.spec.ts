@@ -933,12 +933,44 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(page.locator("html")).toHaveClass(/dark/);
     expect((await new AxeBuilder({ page }).include("[data-testid=writing-style]").withRules(["color-contrast"]).analyze()).violations).toEqual([]);
     await page.emulateMedia({ colorScheme: "light" });
+    // plan 161: its title is the page's; what it learned and how styles combine come first; one profile at a time
+    await expect(page.getByTestId("settings-title")).toHaveText("Writing style");
+    await expect(page.getByTestId("style-precedence")).toContainText("AI drafts start from You");
+    const above = async (a: string, b: string) => (await page.getByTestId(a).boundingBox())!.y < (await page.getByTestId(b).boundingBox())!.y;
+    expect(await above("style-status", "style-own")).toBe(true);
+    await expect(page.getByTestId("style-profile")).toHaveCount(1);
+    if (await page.getByTestId("style-scope").count()) {
+      const first = await page.getByTestId("style-profile-title").innerText();
+      await page.getByTestId("style-scope").click();
+      await page.getByRole("option").nth(1).click();
+      await expect(page.getByTestId("style-profile-title")).not.toHaveText(first);
+      await page.getByTestId("style-scope").click();
+      await page.getByRole("option").first().click();
+    }
+    // the editor: its first field focused, a sign-off kept whole, Save in view in a small window, focus back on Edit
+    await page.setViewportSize({ width: 1100, height: 700 });
     await profile.getByTestId("style-profile-edit").click();
+    await expect(page.getByTestId("style-edit-greetings-field").first().or(page.getByTestId("style-edit-phrases"))).toBeFocused();
+    await page.getByTestId("style-edit-signoffs-add").click();
+    await page.getByTestId("style-edit-signoffs-field").last().fill("Cheers,\nLuis");
     await page.getByTestId("style-edit-phrases").fill("all the best\nlet me know");
+    await expect(page.getByTestId("style-edit-save")).toBeInViewport();
     await page.getByTestId("style-edit-save").click();
     await expect(profile.getByTestId("style-profile-edited")).toBeVisible();
-    await expect(profile).toContainText("“all the best”");
+    await expect(profile.getByTestId("style-profile-edit")).toBeFocused();
+    await profile.getByTestId("style-profile-examples-toggle").click();
+    await expect(profile.getByTestId("style-profile-examples")).toContainText("“all the best”");
+    await profile.getByTestId("style-profile-edit").click();
+    await expect(page.getByTestId("style-edit-signoffs-field").filter({ hasText: "Cheers," })).toHaveValue("Cheers,\nLuis");
+    await page.getByTestId("style-edit-cancel").click();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    // Reset says so, and Undo puts back exactly what was there, the edit too
     await profile.getByTestId("style-profile-reset").click();
+    await expect(page.getByTestId("snack")).toContainText("Reset");
+    await expect(page.getByTestId("style-profile-edited")).toHaveCount(0);
+    await page.getByTestId("snack-action").click();
+    await expect(page.getByTestId("style-profile-edited")).toBeVisible();
+    await page.getByTestId("style-profile-reset").click();
     await expect(page.getByTestId("style-profile-edited")).toHaveCount(0);
 
     // the study on a local model asks nothing, and is running, not done, when it starts (Codex review 12)

@@ -15,6 +15,10 @@ test.describe("AI filters and learned filters", () => {
       await expect(page.getByTestId("condition-value")).toHaveValue("uber.com");
       await expect(page.getByTestId("action-toggle-archive")).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByTestId("action-category-select")).toContainText("Facturas");
+      // plan 161: the line says what the rule does, from its fields; the chosen action shows a check
+      await expect(page.getByTestId("ai-explanation")).toHaveText("Archives and files in Facturas mail that matches: domain is “uber.com”.");
+      await expect(page.getByTestId("ai-unclear")).toHaveCount(0);
+      await expect(page.getByTestId("action-toggle-archive").getByTestId("action-chosen")).toBeVisible();
 
       const preview = page.getByTestId("preview-count");
       await expect(preview).toHaveText(/^[1-9]\d*$/);
@@ -35,6 +39,37 @@ test.describe("AI filters and learned filters", () => {
       // nothing of theirs is left in the Inbox (a search everywhere still finds them, where the filter put them)
       await search(page, "in:inbox from:uber.receipts@uber.com");
       await expect(page.getByTestId("list-empty")).toBeVisible();
+    });
+    await scenario("plan 161: a rule that misses its request says so; the operator holds the not; closing keeps an unsaved AI rule", async () => {
+      await freshStart(page);
+      await page.getByTestId("open-filters").click();
+      await page.getByTestId("ai-prompt").fill("make my inbox nicer");
+      await page.getByTestId("ai-generate").click();
+      await expect(page.getByTestId("ai-explanation")).toHaveText("Archives mail that matches: subject contains “nicer”.");
+      await expect(page.getByTestId("ai-unclear")).toHaveText("I couldn't turn this into a clear rule — check it below.");
+      // built, the box is a line: the matches are in view in a small window
+      await page.setViewportSize({ width: 1100, height: 700 });
+      await expect(page.getByTestId("ai-prompt")).toHaveCount(0);
+      await expect(page.getByTestId("filter-preview")).toBeInViewport({ ratio: 0.3 });
+      // "not" is an operator, in words; the line follows the edit
+      await page.getByTestId("condition-op").click();
+      await page.getByRole("option", { name: "doesn’t contain" }).click();
+      await expect(page.getByTestId("ai-explanation")).toContainText("subject doesn’t contain “nicer”");
+      await expect(page.getByTestId("condition-row").getByRole("button", { name: /^(yes|not)$/ })).toHaveCount(0);
+      // Esc doesn't lose it: Rules opens on it again, and its request
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("filters-dialog")).toHaveCount(0);
+      await page.getByTestId("open-filters").click();
+      await expect(page.getByTestId("ai-explanation")).toContainText("doesn’t contain “nicer”");
+      await expect(page.getByTestId("ai-prompt")).toHaveValue("make my inbox nicer");
+      // New starts another; then closing keeps nothing
+      await page.getByTestId("new-filter").click();
+      await expect(page.getByTestId("ai-explanation")).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await page.getByTestId("open-filters").click();
+      await expect(page.getByTestId("ai-prompt")).toHaveValue("");
+      await page.keyboard.press("Escape");
+      await page.setViewportSize({ width: 1440, height: 900 });
     });
     await scenario("with AI off there is no AI box: rules are built by hand", async () => {
       await freshStart(page);

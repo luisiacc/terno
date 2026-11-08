@@ -25,6 +25,9 @@ import type { SettingsUpdate } from "./settings/parts";
 import { PaneBoundary } from "./diag/error-boundary";
 import { ReportPreview } from "./diag/report-preview";
 import { useNativeReload } from "~/lib/native-reload";
+import { useAiDraftUi } from "~/lib/ai-draft-state";
+import { IconButton } from "@terno/ui/components/icon-button";
+import { ChevronLeft } from "@terno/ui/icons";
 
 /** plan 106: opened on an account, its row (expanded by the tab) takes the first focus; else the dialog's own */
 function initialFocus(): boolean | HTMLElement {
@@ -40,7 +43,7 @@ function initialFocus(): boolean | HTMLElement {
  * A section: its title on a row of its own, level with the sheet's close, and the content scrolling below it, so nothing
  * runs under the close. The padding around the row's edge keeps the first control's focus ring from being clipped.
  */
-function SettingsPane({ title, children }: { title: string; children: React.ReactNode }) {
+function SettingsPane({ title, back, children }: { title: string; /** a page inside a section (plan 161): its way back, on the title's line */ back?: { label: string; onClick: () => void; testId: string }; children: React.ReactNode }) {
   const headerRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -51,9 +54,17 @@ function SettingsPane({ title, children }: { title: string; children: React.Reac
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div ref={headerRef} data-testid="settings-header" data-dialog-handle className="scroll-hairline shrink-0 px-6 pt-5 pb-2">
-        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+        {back ? (
+          <div className="-ml-1.5 flex items-center gap-1">
+            <IconButton label={back.label} data-testid={back.testId} onClick={back.onClick}><ChevronLeft /></IconButton>
+            <h2 className="text-lg font-semibold tracking-tight" data-testid="settings-title">{title}</h2>
+          </div>
+        ) : (
+          <h2 className="text-lg font-semibold tracking-tight" data-testid="settings-title">{title}</h2>
+        )}
       </div>
-      <div ref={scrollerRef} className="relative min-h-0 flex-1 overflow-y-auto px-6 pt-2 pb-4">
+      {/* plan 161: on the popover in dark, a tint card's edge is a ring */}
+      <div ref={scrollerRef} className="relative min-h-0 flex-1 overflow-y-auto px-6 pt-2 pb-4 dark:[--card-ring:var(--card-ring-dialog)]">
         <div ref={sentinelRef} aria-hidden className="absolute top-0 h-px w-px" />
         {children}
       </div>
@@ -67,6 +78,7 @@ export function SettingsDialog() {
   const tab = useApp((s) => s.settingsTab);
   const settings = useApp((s) => s.settings);
   const hasDevMode = useApp((s) => s.devAi !== null);
+  const stylePage = useAiDraftUi((s) => s.stylePage) && tab === "ai";
 
   const update = useCallback<SettingsUpdate>(async (patch, options) => {
     try {
@@ -114,7 +126,11 @@ export function SettingsDialog() {
               ))}
             </TabsList>
           </nav>
-          <SettingsPane title={settingsTabLabel(tab)}>
+          <SettingsPane
+            // plan 161: Writing style is a page of its own: it's the title, with the way back to Drafting beside it
+            title={stylePage ? t("aiDraft.style.title") : settingsTabLabel(tab)}
+            back={stylePage ? { label: t("aiDraft.style.back"), onClick: () => useAiDraftUi.setState({ stylePage: false }), testId: "writing-style-back" } : undefined}
+          >
             {/* a section that fails to render stays a section: the sheet and the other tabs keep working */}
             <PaneBoundary area="settings" resetKey={tab} title={t("settings.sectionError")}>
               {hasDevMode && (

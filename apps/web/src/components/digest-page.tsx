@@ -3,14 +3,16 @@ import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Checkbox } from "@terno/ui/components/checkbox";
 import { Spinner } from "@terno/ui/components/spinner";
-import { useEffect, useMemo, useState } from "react";
+import { ChevronRight } from "@terno/ui/icons";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { errorHelp, modelName } from "~/lib/ai";
+import { listDate } from "~/lib/format";
 import { deferred, trackJob, undoAction, undoActions } from "~/lib/actions";
 import { registerUndo, snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { reloadList } from "~/state/list";
-import { useToday } from "~/state/today";
+import { digestPick, keepDigestPick, useToday } from "~/state/today";
 
 const dayLong = (day: string) => {
   const [y, m, d] = day.split("-").map(Number);
@@ -38,7 +40,26 @@ export default function DigestPage() {
   }, []);
   const items = useMemo(() => row?.items ?? [], [row]);
   const automated = row?.automated === true;
-  const [toggled, setToggled] = useState<ReadonlySet<number>>(new Set());
+  // plan 161: what was unticked, and where the page was, outlive it: opening a newsletter and coming back finds them
+  const day = row?.day ?? "";
+  const [toggled, setToggled] = useState<ReadonlySet<number>>(() => digestPick(day).toggled);
+  const [toggledDay, setToggledDay] = useState(day);
+  if (toggledDay !== day) {
+    setToggledDay(day);
+    setToggled(digestPick(day).toggled);
+  }
+  const scroller = useRef<HTMLElement>(null);
+  const scrollAt = useRef(digestPick(day).scroll);
+  useEffect(() => {
+    if (day) keepDigestPick({ day, toggled, scroll: scrollAt.current });
+  }, [day, toggled]);
+  // back where it was left, once its rows are there
+  const restored = useRef(false);
+  useLayoutEffect(() => {
+    if (restored.current || !scroller.current || !row?.items.length) return;
+    restored.current = true;
+    scroller.current.scrollTop = scrollAt.current;
+  }, [row]);
   const ticked = (i: DigestItem) => (automated ? toggled.has(i.threadId) : !toggled.has(i.threadId));
   // the list's refresh brings what changed anywhere: an Undo, a read in another window
   useEffect(() => {
@@ -58,7 +79,8 @@ export default function DigestPage() {
       return next;
     });
   const open = (threadId: number) => {
-    useToday.setState({ fromDigest: true });
+    if (day) keepDigestPick({ day, toggled, scroll: scroller.current?.scrollTop ?? 0 });
+    useToday.setState({ fromDigest: threadId });
     setApp({ selectedId: threadId });
   };
   const archive = async () => {
@@ -82,16 +104,31 @@ export default function DigestPage() {
     }
   };
   if (!row) return <div className="p-8 text-sm text-muted-foreground" data-testid="digest-page">{t("today.digest.none")}</div>;
+  const liveCount = items.filter(live).length;
+  // plan 161: the button says what it does: all of them, or the ones still ticked
+  const partial = chosen.length < liveCount;
   return (
-    <section data-testid="digest-page" aria-label={t("today.digest.title")} className="mx-auto w-full max-w-(--reader-max,48rem) space-y-3 overflow-y-auto px-8 pt-16 pb-8">
+    <section
+      ref={scroller}
+      data-testid="digest-page"
+      aria-label={t("today.digest.title")}
+      className="mx-auto w-full max-w-(--reader-max,48rem) space-y-3 overflow-y-auto px-8 pt-16 pb-8"
+      onScroll={(e) => {
+        scrollAt.current = e.currentTarget.scrollTop;
+        if (day) keepDigestPick({ day, toggled, scroll: scrollAt.current });
+      }}
+    >
       <header className="space-y-1">
         <div className="flex items-baseline justify-between gap-3">
           <h1 className="text-xl font-semibold tracking-tight" data-testid="digest-title">{t(automated ? "today.digest.automatedTitle" : "today.digest.title")}</h1>
           <span className="shrink-0 text-xs text-muted-foreground">{dayLong(row.day)}</span>
         </div>
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground" data-testid="digest-count">{t(automated ? "today.digest.automatedCount" : "today.digest.count", { count: items.filter(live).length })}</p>
-          <Button size="sm" data-testid="digest-archive" disabled={!chosen.length} onClick={() => void archive()}>{automated ? t("today.digest.archiveSelected", { count: chosen.length }) : t("today.digest.archiveAll", { count: chosen.length })}</Button>
+          <p className="text-xs text-muted-foreground" data-testid="digest-count">
+            {partial && !automated ? t("today.digest.countSelected", { count: liveCount, selected: chosen.length }) : t(automated ? "today.digest.automatedCount" : "today.digest.count", { count: liveCount })}
+            {!automated && liveCount > 0 && <span className="block" data-testid="digest-tick-hint">{t("today.digest.tickHint")}</span>}
+          </p>
+          <Button size="sm" data-testid="digest-archive" disabled={!chosen.length} onClick={() => void archive()}>{automated || partial ? t("today.digest.archiveSelected", { count: chosen.length }) : t("today.digest.archiveAll", { count: chosen.length })}</Button>
         </div>
       </header>
       {row.state === "pending" && <p className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="digest-preparing"><Spinner className="size-3" /> {t("today.digest.preparing")}</p>}
@@ -110,11 +147,19 @@ export default function DigestPage() {
       )}
       <ul className="border-t border-hairline">
         {items.map((i) => (
-          <li key={i.threadId} data-testid="digest-item" data-live={live(i)} className="flex items-baseline gap-3 border-b border-hairline py-2">
-            <Checkbox data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={live(i) && ticked(i)} disabled={!live(i)} className="translate-y-0.5" onCheckedChange={() => toggle(i.threadId)} />
-            <button type="button" className="flex min-w-0 flex-1 items-baseline gap-3 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" data-testid="digest-open" onClick={() => open(i.threadId)}>
-              <span className={`w-36 shrink-0 truncate text-sm font-medium ${live(i) ? "" : "text-muted-foreground"}`}>{i.from}</span>
-              <span className="min-w-0 flex-1 text-sm text-muted-foreground">{i.line ?? i.subject}</span>
+          <li key={i.threadId} data-testid="digest-item" data-live={live(i)} className="flex items-start gap-2 border-b border-hairline py-1">
+            <Checkbox data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={live(i) && ticked(i)} disabled={!live(i)} className="mt-2.5" onCheckedChange={() => toggle(i.threadId)} />
+            {/* plan 161: reading is as plain as archiving: the whole row opens the newsletter, and says so on hover */}
+            <button type="button" className="group/open -mr-2 flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" data-testid="digest-open" aria-label={t("today.digest.open", { from: i.from, subject: i.subject })} onClick={() => open(i.threadId)}>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline gap-2 text-xs">
+                  <span className={`max-w-[60%] shrink-0 font-medium ${live(i) ? "text-foreground" : "text-muted-foreground"}`} data-testid="digest-from">{i.from}</span>
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground" data-testid="digest-subject">{i.subject}</span>
+                  <span className="shrink-0 text-muted-foreground tabular">{listDate(i.lastDate)}</span>
+                </span>
+                {i.line !== null && <span className={`mt-0.5 block text-sm ${live(i) ? "text-foreground" : "text-muted-foreground"}`} data-testid="digest-line">{i.line}</span>}
+              </span>
+              <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/open:opacity-100 group-focus-reveal/open:opacity-100" />
             </button>
           </li>
         ))}
@@ -123,4 +168,3 @@ export default function DigestPage() {
     </section>
   );
 }
-

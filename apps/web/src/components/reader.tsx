@@ -1033,7 +1033,8 @@ function ReaderContent() {
   const summarizeOffered = useApp(summariesOffered);
   // plan 147: Dev mode's switch off, what's stored stays out of sight too; elsewhere reading is never gated (plan 132)
   const summaryShown = useApp(aiAllowed);
-  const fromDigest = useToday((s) => s.fromDigest);
+  // plan 161: only on the newsletter it was opened for
+  const fromDigest = useToday((s) => s.fromDigest !== null && s.fromDigest === selectedId);
 
   useEffect(() => {
     if (draftShown?.threadId === selectedId && draftShown.key !== draftKey) setApp({ draftShown: null });
@@ -1162,7 +1163,7 @@ function ReaderContent() {
             </div>
           ) : (
             <>
-              {fromDigest && <Button variant="link-secondary" size="xs" className="mb-2" data-testid="back-to-digest" onClick={() => { useToday.setState({ fromDigest: false }); setApp({ selectedId: DIGEST_ROW_ID }); }}>{t("today.digest.back")}</Button>}
+              {fromDigest && <Button variant="link-secondary" size="xs" className="mb-2" data-testid="back-to-digest" onClick={() => { useToday.setState({ fromDigest: null }); setApp({ selectedId: DIGEST_ROW_ID }); }}>{t("today.digest.back")}</Button>}
               <Thread key={`t${detail.thread.id}`} detail={detail} account={account} cats={cats} summaryShown={summaryShown} />
               {/* plan 144: off, it never shows; a draft here means it's out of the way */}
               {repliesOn && !draftKey && <ReplyReady key={`r${detail.thread.id}`} threadId={detail.thread.id} />}

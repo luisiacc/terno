@@ -3,13 +3,15 @@ import { getLocale, t } from "@terno/i18n";
 import { Badge } from "@terno/ui/components/badge";
 import { Button } from "@terno/ui/components/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
+import { CloseButton } from "@terno/ui/components/close-button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Spinner } from "@terno/ui/components/spinner";
 import { Textarea } from "@terno/ui/components/textarea";
-import { ChevronLeft } from "@terno/ui/icons";
+import { Plus } from "@terno/ui/icons";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { providerLabel } from "~/lib/ai";
-import { useAiDraftUi } from "~/lib/ai-draft-state";
-import { snack } from "~/lib/snack";
+import { undoAction } from "~/lib/actions";
+import { registerUndo, snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
 import { ConfirmDialog, SettingsGroup, SettingsNote, SettingsRow } from "./parts";
@@ -66,14 +68,44 @@ const scopeTitle = (p: WritingProfileView, accounts: readonly { id: number; disp
 
 const asLines = (items: readonly { text: string }[] | readonly string[]) => items.map((i) => (typeof i === "string" ? i : i.text)).join("\n");
 const fromLines = (text: string) => text.split("\n").map((l) => l.trim()).filter(Boolean);
+/** plan 161: a greeting or sign-off is an item, its own line breaks kept ("Cheers," and "Luis" are one sign-off) */
+const fromItems = (items: readonly string[]) => items.map((i) => i.split("\n").map((l) => l.trimEnd()).join("\n").trim()).filter(Boolean);
+const ITEMS_MAX = 10;
 
-function ProfileEditor({ p, onDone }: { p: WritingProfileView; onDone: (next: WritingProfileView | null) => void }) {
+/** Plan 161: a list of short texts, each its own field, with remove and Add. */
+function ItemsField({ label, add, item, remove, items, onChange, testId, first }: { label: string; add: string; item: (n: number) => string; remove: (n: number) => string; items: string[]; onChange: (items: string[]) => void; testId: string; first?: React.Ref<HTMLTextAreaElement> }) {
+  const id = useId();
+  return (
+    <div role="group" aria-labelledby={id} className="flex flex-col gap-1.5" data-testid={testId}>
+      <p id={id} className="text-xs font-medium text-muted-foreground">{label}</p>
+      {items.map((value, i) => (
+        <div key={i} className="flex items-start gap-1" data-testid={`${testId}-item`}>
+          <Textarea ref={i === 0 ? first : undefined} aria-label={item(i + 1)} data-testid={`${testId}-field`} value={value} rows={1} onChange={(e) => onChange(items.map((x, j) => (j === i ? e.target.value : x)))} className="min-h-9 py-1.5 bg-background dark:bg-input/30" />
+          <CloseButton label={remove(i + 1)} className="mt-1.5" data-testid={`${testId}-remove`} onClick={() => onChange(items.filter((_, j) => j !== i))} />
+        </div>
+      ))}
+      {items.length < ITEMS_MAX && (
+        <Button size="xs" variant="ghost" className="-ml-2 self-start font-normal text-muted-foreground" data-testid={`${testId}-add`} onClick={() => onChange([...items, ""])}>
+          <Plus /> {add}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function ProfileEditor({ p, title, onDone }: { p: WritingProfileView; title: string; onDone: (next: WritingProfileView | null) => void }) {
   const ids = useId();
-  const [greetings, setGreetings] = useState(asLines(p.habits.greetings));
-  const [signOffs, setSignOffs] = useState(asLines(p.habits.signOffs));
+  const [greetings, setGreetings] = useState(() => p.habits.greetings.map((g) => g.text));
+  const [signOffs, setSignOffs] = useState(() => p.habits.signOffs.map((g) => g.text));
   const [phrases, setPhrases] = useState(asLines(p.phrases));
   const [notes, setNotes] = useState(asLines(p.judgment?.notes ?? []));
-  const shares = (list: readonly { text: string; share: number }[], text: string) => fromLines(text).slice(0, 10).map((line) => ({ text: line, share: list.find((i) => i.text === line)?.share ?? 0.1 }));
+  const first = useRef<HTMLTextAreaElement>(null);
+  const phrasesRef = useRef<HTMLTextAreaElement>(null);
+  // plan 161: editing starts in its first field
+  useEffect(() => {
+    (first.current ?? phrasesRef.current)?.focus({ preventScroll: true });
+  }, []);
+  const shares = (list: readonly { text: string; share: number }[], items: readonly string[]) => fromItems(items).slice(0, ITEMS_MAX).map((text) => ({ text, share: list.find((i) => i.text === text)?.share ?? 0.1 }));
   const save = async () => {
     try {
       const next = await client.call("writing.profiles.edit", {
@@ -89,19 +121,20 @@ function ProfileEditor({ p, onDone }: { p: WritingProfileView; onDone: (next: Wr
       failed(e);
     }
   };
-  const field = (id: string, label: string, value: string, set: (v: string) => void, testId: string) => (
+  const field = (id: string, label: string, value: string, set: (v: string) => void, testId: string, ref?: React.Ref<HTMLTextAreaElement>) => (
     <div className="flex flex-col gap-1">
       <label htmlFor={`${ids}-${id}`} className="text-xs font-medium text-muted-foreground">{label}</label>
-      <Textarea id={`${ids}-${id}`} data-testid={testId} value={value} onChange={(e) => set(e.target.value)} className="min-h-14 bg-background dark:bg-input/30" />
+      <Textarea ref={ref} id={`${ids}-${id}`} data-testid={testId} value={value} onChange={(e) => set(e.target.value)} className="min-h-14 bg-background dark:bg-input/30" />
     </div>
   );
   return (
-    <div className="flex flex-col gap-2.5" data-testid="style-editor">
-      {field("greetings", t("aiDraft.style.editGreetings"), greetings, setGreetings, "style-edit-greetings")}
-      {field("signoffs", t("aiDraft.style.editSignOffs"), signOffs, setSignOffs, "style-edit-signoffs")}
-      {field("phrases", t("aiDraft.style.editPhrases"), phrases, setPhrases, "style-edit-phrases")}
+    <div className="flex flex-col gap-3" data-testid="style-editor" aria-label={t("aiDraft.style.editing", { name: title })} role="group">
+      <ItemsField label={t("aiDraft.style.editGreetings")} add={t("aiDraft.style.addGreeting")} item={(n) => t("aiDraft.style.greetingItem", { n })} remove={(n) => t("aiDraft.style.removeGreeting", { n })} items={greetings} onChange={setGreetings} testId="style-edit-greetings" first={first} />
+      <ItemsField label={t("aiDraft.style.editSignOffs")} add={t("aiDraft.style.addSignOff")} item={(n) => t("aiDraft.style.signOffItem", { n })} remove={(n) => t("aiDraft.style.removeSignOff", { n })} items={signOffs} onChange={setSignOffs} testId="style-edit-signoffs" />
+      {field("phrases", t("aiDraft.style.editPhrases"), phrases, setPhrases, "style-edit-phrases", greetings.length ? undefined : phrasesRef)}
       {p.judgment && field("notes", t("aiDraft.style.editNotes"), notes, setNotes, "style-edit-notes")}
-      <div className="flex gap-1.5">
+      {/* plan 161: as Rules' footer, Save and Cancel stay in view however tall the form is */}
+      <div className="sticky bottom-0 z-10 -mx-4 -mb-3 flex gap-1.5 border-t border-hairline bg-popover bg-linear-to-b from-(--card-bg) to-(--card-bg) px-4 py-2.5" data-testid="style-edit-footer">
         <Button size="sm" data-testid="style-edit-save" onClick={() => void save()}>{t("common.save")}</Button>
         <Button size="sm" variant="ghost" data-testid="style-edit-cancel" onClick={() => onDone(null)}>{t("common.cancel")}</Button>
       </div>
@@ -115,52 +148,124 @@ function oncePerScope<T extends { scopeKey: string; language: string }>(items: r
   return items.filter((p) => p.language || !split.has(p.scopeKey));
 }
 
-function Profile({ initial, onChanged }: { initial: WritingProfileView; onChanged: () => void }) {
+/** A profile's name: whose, then its language. */
+function useProfileTitle(p: WritingProfileView): string {
   const accounts = useApp((s) => s.accounts);
+  const language = p.language ? new Intl.DisplayNames([getLocale()], { type: "language" }).of(p.language) : null;
+  return language ? `${scopeTitle(p, accounts)} · ${language}` : scopeTitle(p, accounts);
+}
+
+function Profile({ initial, onChanged }: { initial: WritingProfileView; onChanged: () => void }) {
   const [p, setP] = useState(initial);
   const [editing, setEditing] = useState(false);
+  const editButton = useRef<HTMLButtonElement>(null);
+  const card = useRef<HTMLDivElement>(null);
+  // after Save or Cancel, back where the edit began (plan 161): its Edit button, in view
+  const [back, setBack] = useState(false);
+  useEffect(() => {
+    if (!back || editing) return;
+    setBack(false);
+    card.current?.scrollIntoView({ block: "nearest" });
+    editButton.current?.focus({ preventScroll: true });
+  }, [back, editing]);
   // a pass finished or a reset landed: the row follows, unless someone is editing it
   const [read, setRead] = useState(initial);
   if (initial !== read && !editing) {
     setRead(initial);
     setP(initial);
   }
-  const language = p.language ? new Intl.DisplayNames([getLocale()], { type: "language" }).of(p.language) : null;
-  const title = language ? `${scopeTitle(p, accounts)} · ${language}` : scopeTitle(p, accounts);
+  const title = useProfileTitle(p);
   const lines = habitLines(p.habits);
+  const examples = p.phrases.length + (p.judgment?.notes.length ?? 0);
   const reset = () => {
-    void client.call("writing.profiles.reset", { scopeKey: p.scopeKey, language: p.language }).then(onChanged, failed);
+    void client.call("writing.profiles.reset", { scopeKey: p.scopeKey, language: p.language }).then((r) => {
+      onChanged();
+      // plan 161: as other removals, said, and undone with Undo or z
+      const undo = registerUndo(() => client.call("writing.profiles.restore", { undo: r.undo }).then(onChanged));
+      snack.success(t("aiDraft.style.resetDone", { name: title }), { duration: 8000, action: undoAction(undo, t("aiDraft.style.undoReset", { name: title })) });
+    }, failed);
   };
   return (
-    <SettingsRow
-      stacked
-      label={<span className="flex items-center gap-1.5" data-testid="style-profile-title">{title}{p.edited && <Badge variant="secondary" data-testid="style-profile-edited">{t("aiDraft.style.edited")}</Badge>}</span>}
-      hint={t("aiDraft.style.from", { count: p.samples })}
-      testId="style-profile"
-    >
-      {() =>
-        editing ? (
-          <ProfileEditor p={p} onDone={(next) => { setEditing(false); if (next) setP(next); }} />
-        ) : (
-          <div className="flex flex-col gap-2">
-            <ul className="flex flex-col gap-0.5 text-sm" data-testid="style-profile-lines">
-              {lines.map((line) => <li key={line}>{line}</li>)}
-              {p.phrases.length > 0 && <li data-testid="style-profile-phrases">{t("aiDraft.style.phrases", { phrases: p.phrases.slice(0, 5).map((x) => `“${x}”`).join(", ") })}</li>}
-              {p.judgment && <li>{traitLine(p.judgment)}</li>}
-              {p.judgment?.notes.map((note) => <li key={note}>{note}</li>)}
-            </ul>
-            <div className="-ml-2 flex flex-wrap gap-0.5">
-              <Button size="xs" variant="ghost" className="font-normal" data-testid="style-profile-edit" onClick={() => setEditing(true)}>{t("common.edit")}</Button>
-              {p.edited && p.newSince > 0 ? (
-                <Button size="xs" variant="ghost" className="font-normal" data-testid="style-profile-update" onClick={reset}>{t("aiDraft.style.update", { count: p.newSince })}</Button>
-              ) : (
-                <Button size="xs" variant="ghost" className="font-normal" data-testid="style-profile-reset" onClick={reset}>{t("common.reset")}</Button>
+    <div ref={card} className="scroll-my-12">
+      <SettingsRow
+        stacked
+        label={<span className="flex items-center gap-1.5" data-testid="style-profile-title">{title}{p.edited && <Badge variant="secondary" data-testid="style-profile-edited">{t("aiDraft.style.edited")}</Badge>}</span>}
+        hint={t("aiDraft.style.from", { count: p.samples })}
+        testId="style-profile"
+      >
+        {() =>
+          editing ? (
+            <ProfileEditor p={p} title={title} onDone={(next) => { setEditing(false); setBack(true); if (next) setP(next); }} />
+          ) : (
+            <div className="flex flex-col gap-2">
+              <ul className="flex flex-col gap-0.5 text-sm" data-testid="style-profile-lines">
+                {lines.map((line) => <li key={line}>{line}</li>)}
+                {p.judgment && <li>{traitLine(p.judgment)}</li>}
+              </ul>
+              {/* plan 161: the examples second, on request */}
+              {examples > 0 && (
+                <Collapsible>
+                  <CollapsibleTrigger className="-ml-1 w-auto gap-1 rounded-md px-1 py-0.5 text-xs text-muted-foreground hover:text-foreground" data-testid="style-profile-examples-toggle">
+                    {t("aiDraft.style.examples", { count: examples })}
+                  </CollapsibleTrigger>
+                  <CollapsiblePanel>
+                    <ul className="mt-1 flex flex-col gap-0.5 text-sm" data-testid="style-profile-examples">
+                      {p.phrases.map((x) => <li key={`p${x}`} data-testid="style-profile-phrase">“{x}”</li>)}
+                      {p.judgment?.notes.map((note) => <li key={`n${note}`}>{note}</li>)}
+                    </ul>
+                  </CollapsiblePanel>
+                </Collapsible>
               )}
+              <div className="-ml-2 flex flex-wrap gap-0.5">
+                <Button ref={editButton} size="xs" variant="ghost" className="font-normal" aria-label={t("aiDraft.style.editName", { name: title })} data-testid="style-profile-edit" onClick={() => setEditing(true)}>{t("common.edit")}</Button>
+                {p.edited && p.newSince > 0 ? (
+                  <Button size="xs" variant="ghost" className="font-normal" data-testid="style-profile-update" onClick={reset}>{t("aiDraft.style.update", { count: p.newSince })}</Button>
+                ) : (
+                  <Button size="xs" variant="ghost" className="font-normal" aria-label={t("aiDraft.style.resetName", { name: title })} data-testid="style-profile-reset" onClick={reset}>{t("common.reset")}</Button>
+                )}
+              </div>
             </div>
-          </div>
-        )
-      }
-    </SettingsRow>
+          )
+        }
+      </SettingsRow>
+    </div>
+  );
+}
+
+const profileKey = (p: Pick<WritingProfileView, "scopeKey" | "language">) => `${p.scopeKey}|${p.language}`;
+
+/** Plan 161: your own and your accounts' profiles, one at a time, picked by whose and which language. */
+function OwnProfiles({ items, onChanged }: { items: WritingProfileView[]; onChanged: () => void }) {
+  const accounts = useApp((s) => s.accounts);
+  const list = oncePerScope(items);
+  const [chosen, setChosen] = useState<string | null>(null);
+  const current = list.find((p) => profileKey(p) === chosen) ?? list[0]!;
+  const label = (p: WritingProfileView) => {
+    const language = p.language ? new Intl.DisplayNames([getLocale()], { type: "language" }).of(p.language) : null;
+    return language ? `${scopeTitle(p, accounts)} · ${language}` : scopeTitle(p, accounts);
+  };
+  const options = list.map((p) => ({ value: profileKey(p), label: label(p) }));
+  return (
+    <>
+      {list.length > 1 && (
+        <div className="flex items-center justify-between gap-6 py-2.5">
+          <label id="style-scope-label" className="text-sm font-medium">{t("aiDraft.style.showing")}</label>
+          <Select value={profileKey(current)} onValueChange={(v) => setChosen(v as string)} items={options}>
+            <SelectTrigger size="sm" className="w-64" aria-labelledby="style-scope-label" data-testid="style-scope">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {list.map((p) => (
+                <SelectItem key={profileKey(p)} value={profileKey(p)}>
+                  {label(p)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      <Profile key={profileKey(current)} initial={current} onChanged={onChanged} />
+    </>
   );
 }
 
@@ -309,11 +414,13 @@ export default function WritingStyle() {
   const line = !status ? "" : status.state === "off" ? t("aiDraft.style.off") : status.state === "ready" && status.messages > 0 && status.updatedAt !== null ? t("aiDraft.style.learned", { count: status.messages, when: dayAgo(status.updatedAt) }) : status.state === "learning" ? t("aiDraft.style.learning") : t("aiDraft.style.idle");
   return (
     <div data-testid="writing-style">
-      <Button variant="link-secondary" className="mb-3 ml-1 text-xs" data-testid="writing-style-back" onClick={() => useAiDraftUi.setState({ stylePage: false })}>
-        <ChevronLeft /> {t("aiDraft.settings.title")}
-      </Button>
-      <SettingsGroup title={t("aiDraft.style.title")} testId="style-own" footer={<span data-testid="style-status">{line}</span>}>
-        {own === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : own.length === 0 ? <SettingsNote testId="style-empty">{t("aiDraft.style.empty")}</SettingsNote> : oncePerScope(own).map((p) => <Profile key={`${p.scopeKey}|${p.language}`} initial={p} onChanged={changed} />)}
+      {/* plan 161: what it has learned, and how the styles combine, before any of them */}
+      <div className="mb-4 px-1" data-testid="style-overview">
+        <p className="text-sm" data-testid="style-status">{line}</p>
+        <p className="mt-1 text-xs text-muted-foreground" data-testid="style-precedence">{t("aiDraft.style.precedence")}</p>
+      </div>
+      <SettingsGroup title={t("aiDraft.style.yours")} testId="style-own">
+        {own === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : own.length === 0 ? <SettingsNote testId="style-empty">{t("aiDraft.style.empty")}</SettingsNote> : <OwnProfiles items={own} onChanged={changed} />}
       </SettingsGroup>
       <Section scope="domain" title={t("aiDraft.style.domains")} testId="style-domains" version={version} onChanged={changed} />
       <Section scope="person" title={t("aiDraft.style.people")} testId="style-people" version={version} onChanged={changed} />
