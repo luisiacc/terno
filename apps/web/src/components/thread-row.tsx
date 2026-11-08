@@ -189,21 +189,28 @@ function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead }: {
   );
 }
 
-/** A wide row's preview: right after the subject, a step smaller and in the quiet ink, and the first thing cut. */
+/** A wide row's preview: after the subject's column, a step smaller and in the quiet ink, and the first thing cut. */
 function WideSnippet({ thread, reminderTop, ink, quiet, match, excerpt }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string }) {
   const { line } = useOwed(thread, reminderTop);
   return (
-    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("ml-1.5 min-w-0 flex-1 truncate text-xs", line ? ink : quiet)}>
+    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("min-w-0 flex-1 truncate text-xs", line ? ink : quiet)}>
       {line ?? matchLine(match, excerpt ?? thread.snippet, LEAD.wide)}
     </span>
   );
 }
 
-/** A one-line row's words after the subject: the same line, where it reads the same; apart from the subject by ink and space, no dash (subjects have their own). */
+/** A one-line row's words after the subject's column: the same line, where it reads the same; apart from the subject by ink and space, no dash (subjects have their own). */
 function RowTail({ thread, reminderTop, ink, quiet, match, excerpt }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string }) {
   const { line } = useOwed(thread, reminderTop);
-  return <span data-testid="row-snippet" data-followup={line ? true : undefined} className={cn("type-row-snippet ml-2", line ? ink : quiet)}>{line ?? matchLine(match, excerpt ?? thread.snippet, LEAD.wide)}</span>;
+  return <span data-testid="row-snippet" data-followup={line ? true : undefined} className={cn("type-row-snippet min-w-0 flex-1 truncate", line ? ink : quiet)}>{line ?? matchLine(match, excerpt ?? thread.snippet, LEAD.wide)}</span>;
 }
+
+/**
+ * Plan 160: a one-line row's subject sits in a column of the row's share (it truncates in it), its Draft, place and
+ * reminder marks at the column's end, so every preview starts at one x and the eye runs down subjects and previews
+ * apart (CSS only: no row measures anything).
+ */
+const SUBJECT_COLUMN = "flex w-[clamp(9rem,42%,26rem)] shrink-0 min-w-0 items-center gap-1.5";
 
 /** On the Inbox's top and in its own list, the date a row shows is when it's owed. */
 function RowDate({ thread, reminderTop, fallback, className, title }: { thread: ThreadSummary; reminderTop?: boolean; fallback: string; className: string; title?: string }) {
@@ -462,15 +469,19 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
             {count}
             {chip}
           </span>
-          {/* plan 158: subject then preview, one flowing line (no fixed subject column leaving a gap before the preview), the
-              preview what gives way; the meta columns follow it on the right */}
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span data-testid="row-subject" className={cn("max-w-[70%] min-w-0 flex-none truncate", subjectInk)}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
-            {draft}
-            {/* what a row is, not a column: beside the subject, so the columns on the right never move */}
-            {keptTag}
-            {placeTag}
-            {reminder && !reminderTop && bell}
+          {/* plan 160: the subject in its column, the preview from one x on every row (plan 158's flowing line zigzagged);
+              the preview is what gives way; the meta columns follow it on the right */}
+          <span className="flex min-w-0 flex-1 items-center gap-3">
+            <span className={SUBJECT_COLUMN}>
+              <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
+              {/* what a row is, not a column: at the subject column's end, so neither the preview nor the columns on the right move */}
+              <span className="ml-auto flex shrink-0 items-center gap-1.5 empty:hidden">
+                {draft}
+                {keptTag}
+                {placeTag}
+                {reminder && !reminderTop && bell}
+              </span>
+            </span>
             {answer ? <span className="flex min-w-0 flex-1 justify-end">{answer}</span> : <WideSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} />}
           </span>
           {accountTag}
@@ -487,9 +498,12 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
           {avatar}
           {from}
           {count}
-          <span className="min-w-0 flex-1 truncate">
-            <span data-testid="row-subject" className={subjectInk}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
-            {draft && <span className="ml-1.5">{draft}</span>}
+          {/* plan 160: the subject in its column, the preview from one x */}
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <span className={SUBJECT_COLUMN}>
+              <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
+              {draft && <span className="ml-auto shrink-0">{draft}</span>}
+            </span>
             <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} />
           </span>
           {answer}

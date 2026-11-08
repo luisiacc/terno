@@ -50,15 +50,15 @@ test.describe("the table (plan 158)", () => {
   test("one header line, columns that line up, a preview a step under the subject, a selection that moves nothing, and back exactly where it was", { tag: "@design" }, async ({ app: page, server, design }) => {
     const box = async (l: Locator) => (await l.boundingBox())!;
     const list = listbox(page);
-    await scenario("the columns: every row's subject starts on one line with its preview right after it, the date ends on one, and the row is short", async () => {
+    await scenario("the columns: every row's subject starts on one line and its preview on another, the date ends on one, and the row is short", async () => {
       await expect(rows(page).first()).toHaveAttribute("data-wide", "true");
       const lefts = await rows(page).evaluateAll((els) => els.slice(0, 12).map((r) => {
         const [subject, snippet] = ["row-subject", "row-snippet"].map((id) => r.querySelector(`[data-testid=${id}]`)!.getBoundingClientRect());
-        return { subject: subject!.left, gap: snippet!.left - subject!.right };
+        return { subject: subject!.left, snippet: snippet!.left };
       }));
       expect(new Set(lefts.map((l) => l.subject)).size).toBe(1);
-      // plan 158: no column gap between what a mail is about and how it starts (a draft or state tag may sit between)
-      for (const l of lefts) expect(l.gap).toBeLessThanOrEqual(64);
+      // plan 160: the subject has a column of its own, so every preview starts at one x (plan 158's flowing line zigzagged)
+      expect(new Set(lefts.map((l) => Math.round(l.snippet))).size).toBe(1);
       const rights = await rows(page).evaluateAll((els) => els.slice(0, 12).map((r) => Math.round(r.querySelector("[data-testid=row-date]")!.getBoundingClientRect().right)));
       expect(new Set(rights).size).toBe(1);
       const marks = await rows(page).evaluateAll((els) => els.slice(0, 12).map((r) => Math.round(r.querySelector("[data-testid=row-marks]")!.getBoundingClientRect().left)));
