@@ -363,6 +363,40 @@ test.describe("axe", { tag: "@variant" }, () => {
     await page.keyboard.press("Escape");
   });
 
+  test.describe("Today and the AI settings", () => {
+    test.use({ today: true, tips: false });
+    // plan 161, pass 2: Today and its digest (before and after Archive), Rules with a rule AI built, and Writing style
+    test("Today, the digest, an AI rule and Writing style", async ({ app: page, server }) => {
+      await start(page, server, { ai: { provider: "fake", model: "demo" }, today: { digest: true, prepareAt: "00:00" } });
+      await page.getByTestId("nav-today").click();
+      await expect(page.getByTestId("digest-row")).toBeVisible({ timeout: 15_000 });
+      await clean(page, "Today", ['[data-keep-scroll="list"]', "[data-testid=today-line]"]);
+      await page.getByTestId("digest-row").click();
+      await page.getByTestId("digest-page").waitFor();
+      await clean(page, "the digest", "[data-testid=digest-page]");
+      if (await page.getByTestId("digest-archive").isEnabled()) {
+        await page.getByTestId("digest-tick").first().click();
+        await page.getByTestId("digest-archive").click();
+        await page.getByTestId("digest-done").waitFor();
+        await clean(page, "the digest, archived", "[data-testid=digest-page]");
+      }
+      await page.getByTestId("open-filters").click();
+      await page.getByTestId("ai-prompt").fill("archiva los correos de uber.com y ponlos en Facturas");
+      await page.getByTestId("ai-generate").click();
+      await page.locator("[data-testid=filter-preview][data-ready]").waitFor();
+      await clean(page, "Rules, a rule AI built", "[data-testid=filters-dialog]");
+      await page.keyboard.press("Escape");
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-ai").click();
+      await page.getByTestId("ai-drafting-style-open").click();
+      await expect(page.getByTestId("style-status")).toContainText(/Learned from/, { timeout: 20_000 });
+      await clean(page, "Writing style", "[data-testid=writing-style]");
+      await page.getByTestId("style-domains-toggle").click();
+      await page.getByTestId("style-domains").getByTestId("style-profile-toggle").first().click();
+      await clean(page, "Writing style, a company open", "[data-testid=writing-style]");
+    });
+  });
+
   test("what covers or sits over the window: pills, a tip, the mailbox's screens", async ({ app: page, server }) => {
     await start(page, server);
     // (before going offline: a sync's own accounts event would take this card away)

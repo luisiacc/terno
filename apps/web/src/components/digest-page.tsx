@@ -220,7 +220,7 @@ export default function DigestPage() {
                 {/* pass 2: a 24 px box of its own, so a near miss doesn't open the newsletter beside it */}
                 <Checkbox target data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={state === "archive"} disabled={!live(i)} className="mt-1.5" onCheckedChange={() => toggle(i.threadId)} />
                 {/* plan 161: reading is as plain as archiving: the whole row opens the newsletter, and says so on hover */}
-                <button type="button" data-digest-open={i.threadId} className="group/open -mr-2 flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" data-testid="digest-open" aria-label={t("today.digest.open", { from: i.from, subject: i.subject })} onClick={() => open(i.threadId)}>
+                <button type="button" data-digest-open={i.threadId} className="group/open -mr-2 flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" data-testid="digest-open" onClick={() => open(i.threadId)}>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline gap-2 text-xs">
                       <span className={cn("max-w-[60%] shrink-0 font-medium", quiet ? "text-muted-foreground" : "text-foreground")} data-testid="digest-from">{i.from}</span>

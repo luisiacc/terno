@@ -218,7 +218,7 @@ function ConditionRow({ c, onChange, onRemove }: { c: Condition; onChange: (c: C
     <div className="flex items-center gap-1.5" data-testid="condition-row">
       <Select value={c.field} onValueChange={(f) => onChange(defaultCondition(f as Field, accounts[0]?.id ?? 1))} items={FIELDS}>
         {/* plan 161, pass 2: as wide as its name ("Subject and first lines" says what it covers), never under the others' */}
-        <SelectTrigger size="sm" className="w-auto min-w-36 shrink-0" data-testid="condition-field">
+        <SelectTrigger size="sm" className="w-auto min-w-36 shrink-0" data-testid="condition-field" aria-label={t("filters.field.label")}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -703,7 +703,7 @@ export function FiltersDialog() {
               <div className="flex items-center gap-2 text-sm">
                 <span>{t("filters.match.before")}</span>
                 <Select value={rule.match} onValueChange={(m) => setRule({ ...rule, match: m as "all" | "any" })} items={[{ value: "all", label: t("filters.match.all") }, { value: "any", label: t("filters.match.any") }]}>
-                  <SelectTrigger size="sm" className="w-24">
+                  <SelectTrigger size="sm" className="w-24" aria-label={t("filters.match.label")}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -766,7 +766,7 @@ export function FiltersDialog() {
                   }
                   items={[{ value: "none", label: t("filters.noCategory") }, ...categories.map((c) => ({ value: String(c.id), label: c.name }))]}
                 >
-                  <SelectTrigger size="sm" className={cn("h-7 text-xs", categoryAction && "border-primary/40 bg-primary/10")} data-testid="action-category-select">
+                  <SelectTrigger size="sm" className={cn("h-7 text-xs", categoryAction && "border-primary/40 bg-primary/10")} data-testid="action-category-select" aria-label={t("filters.category.label")}>
                     <Tag className="size-3.5" />
                     <SelectValue />
                   </SelectTrigger>
