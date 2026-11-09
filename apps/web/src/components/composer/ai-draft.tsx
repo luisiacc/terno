@@ -263,7 +263,9 @@ function RewriteMenu({ s }: { s: AiSession }) {
         {t("aiDraft.rewrite")}
         <ChevronDown aria-hidden />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-max" data-testid="ai-strip-rewrite-menu">
+      {/* plan 162 (after ai162-r02): a rewrite chosen here gives the keys to the draft, as the wide buttons do; the menu
+          handing them back to its trigger lost them (the commands are redrawn while it writes) */}
+      <DropdownMenuContent align="start" className="w-max" data-testid="ai-strip-rewrite-menu" >
         {(["shorter", "warmer"] as const).map((how) => (
           <DropdownMenuItem key={how} data-testid={`ai-strip-rewrite-${how}`} onClick={() => refine(s.key, how)}>
             <span className="whitespace-nowrap">{t(`aiDraft.${how}`)}</span>

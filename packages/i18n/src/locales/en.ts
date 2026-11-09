@@ -750,6 +750,7 @@ const en = {
   "filters.applyFailed": "Couldn’t apply the rule: {error}",
   "filters.applyPartial": { one: "Applied to # conversation, then stopped: {error}", other: "Applied to # conversations, then stopped: {error}" },
   "filters.saveApply": "Save and apply to existing mail",
+  "filters.saveNew": "Save for new mail",
   "filters.saveApplyCount": { one: "Save and apply to # conversation", other: "Save and apply to # conversations" },
   "filters.unsaved": "Not saved · written with AI",
   "filters.unsavedDiscard": "Discard this unsaved rule",

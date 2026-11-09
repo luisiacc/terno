@@ -70,8 +70,13 @@ test.describe("AI filters and learned filters", () => {
       expect((await page.getByTestId("filter-save-apply").boundingBox())!.x).toBeLessThan((await page.getByTestId("filter-save").boundingBox())!.x);
       if (uberCount > 6) await expect(page.getByTestId("preview-shown")).toHaveText(" · the newest 6 shown");
       await expect(page.getByTestId("ai-request")).toHaveText("From your request“archiva los correos de uber.com y ponlos en Facturas”");
+      // plan 162 (after ai162-r02): each choice says its scope; Edit request is a bounded control
+      await expect(page.getByTestId("filter-save")).toHaveText("Save for new mail");
+      expect(await page.getByTestId("ai-edit-request").evaluate((e) => getComputedStyle(e).borderTopWidth)).not.toBe("0px");
       await page.getByTestId("filter-save-apply").click();
       await expect(page.locator("[data-testid=snack]").filter({ hasText: /Rule applied to \d+ conversations/ })).toBeVisible();
+      // the keys go to the rule just saved (they fell to <body>)
+      await expect(page.locator("[data-testid=filter-item][data-current] button").first()).toBeFocused();
       await expect(page.getByTestId("filter-item")).toContainText(["AI"]);
       await expect.poll(inboxUber).toBe(0);
       await page.keyboard.press("Escape");

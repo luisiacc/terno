@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@terno/ui/components/switch";
 import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Check, Folder as FolderIcon, Forward, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2 } from "@terno/ui/icons";
+import { Archive, Check, Folder as FolderIcon, Forward, MailCheck, OctagonAlert, Pencil, Plus, Sparkles, Star, Tag, Trash2 } from "@terno/ui/icons";
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import { t, type TextKey } from "@terno/i18n";
 import { richT } from "~/lib/i18n";
@@ -604,6 +604,12 @@ export function FiltersDialog() {
         load(draftOf(f));
       }
       await refresh();
+      // plan 162 (after ai162-r02): the keys go to the rule just saved, in the list (they fell to <body> with the button)
+      requestAnimationFrame(() => {
+        const at = document.activeElement;
+        if (at && at !== document.body && at.isConnected) return;
+        document.querySelector<HTMLElement>(`[data-testid=filter-item][data-filter-id="${f.id}"] button`)?.focus({ preventScroll: true });
+      });
     } catch (error) {
       snack.error(error instanceof Error ? error.message : String(error));
     } finally {
@@ -669,7 +675,7 @@ export function FiltersDialog() {
             {[...filters.filter((f) => !f.auto), ...filters.filter((f) => f.auto)].map((f, i, all) => (
               <Fragment key={f.id}>
               {f.auto && !all[i - 1]?.auto && <p data-testid="filters-auto-heading" className="mt-4 mb-1 px-2 text-xs font-medium text-muted-foreground">{t("filters.group.auto")}</p>}
-              <div data-testid="filter-item" data-auto={f.auto || undefined} data-current={draft.id === f.id || undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", draft.id === f.id && "bg-muted")}>
+              <div data-testid="filter-item" data-filter-id={f.id} data-auto={f.auto || undefined} data-current={draft.id === f.id || undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", draft.id === f.id && "bg-muted")}>
                 <button type="button" className="min-w-0 flex-1 text-left" onClick={() => (leaving(), load(draftOf(f)), setExplanation(null))}>
                   <span className="block truncate">{f.name}</span>
                   <span className="text-2xs text-muted-foreground">
@@ -739,7 +745,11 @@ export function FiltersDialog() {
                         {/* the request this rule was built from, not the field's words since (Edit request, then Esc, keeps an unsent edit) */}
                         <span className="min-w-0 truncate text-foreground" title={built ?? ""}>“{(built ?? "").trim()}”</span>
                       </span>
-                      <Button ref={editRequestRef} variant="ghost" size="xs" className="-me-1.5 ml-auto shrink-0 font-normal text-muted-foreground hover:text-foreground" data-testid="ai-edit-request" onClick={() => (setFolded(false), setFocusPrompt(true))}>{t("filters.ai.editRequest")}</Button>
+                      <Button ref={editRequestRef} variant="outline" size="sm" className="ml-auto shrink-0 text-foreground" data-testid="ai-edit-request" onClick={() => (setFolded(false), setFocusPrompt(true))}>
+                        {/* plan 162 (after ai162-r02): bounded, with its pencil, as every "edit what the AI read" (it read as a caption) */}
+                        <Pencil aria-hidden />
+                        {t("filters.ai.editRequest")}
+                      </Button>
                     </div>
                     {/* the rule in words, and who wrote it at the line's end: the one control every AI surface has */}
                     <div className="flex items-start gap-2 text-sm">
@@ -913,8 +923,9 @@ export function FiltersDialog() {
                 {/* pass 2: the consequence in its words: how many it will touch, once counted */}
                 {matches ? t("filters.saveApplyCount", { count: matches }) : t("filters.saveApply")}
               </Button>
+              {/* plan 162 (after ai162-r02): each says its scope (Save's, new mail only, was left to be inferred) */}
               <Button data-testid="filter-save" disabled={saving} onClick={() => save(false)}>
-                {t("common.save")}
+                {t("filters.saveNew")}
               </Button>
             </div>
           </div>

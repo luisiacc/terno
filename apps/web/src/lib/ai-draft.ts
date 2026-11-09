@@ -744,7 +744,11 @@ function finished(key: string, result: AiComposeResult) {
     return;
   }
   // the draft can't change right now (the mailbox is handing over): it waits for a choice, never lost
-  if (!commit(key, "replace", result, run.spec, run.prior, run.needsSubject)) update(key, { phase: "choice", choice: { reason: "typed", writtenFor: null, result }, run: { ...run, typed: true } });
+  if (!commit(key, "replace", result, run.spec, run.prior, run.needsSubject)) return update(key, { phase: "choice", choice: { reason: "typed", writtenFor: null, result }, run: { ...run, typed: true } });
+  // plan 162 (after ai162-r02): keys lost while it wrote (the narrow Rewrite menu handed them to a trigger it redrew) go
+  // to the draft it wrote; wherever else they are, they stay
+  const at = document.activeElement;
+  if (!at || at === document.body) focusEditor(key);
 }
 
 function failed(key: string, error: unknown) {

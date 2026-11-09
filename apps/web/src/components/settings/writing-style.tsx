@@ -51,25 +51,6 @@ export function habitLines(h: Habits): string[] {
   return lines;
 }
 
-/**
- * Plan 162 (after ai162-r01): what the style does to a draft, shown, not described: its usual greeting and sign-off around
- * its usual length, from the counted habits (no model). Nothing when it has neither.
- */
-export function StyleSample({ habits }: { habits: Habits }) {
-  const greeting = habits.greetings[0] && habits.greetings[0].share >= 0.15 ? shown(habits.greetings[0].text) : null;
-  const signOff = habits.signOffs[0] && habits.signOffs[0].share >= 0.15 ? shown(habits.signOffs[0].text) : null;
-  if (!greeting && !signOff) return null;
-  return (
-    <figure className="mt-1" data-testid="style-sample">
-      <figcaption className="text-xs text-muted-foreground">{t("aiDraft.style.sample")}</figcaption>
-      <div className="mt-1 rounded-md border border-hairline px-3 py-2 text-sm whitespace-pre-line">
-        {greeting && <p data-testid="style-sample-greeting">{greeting}</p>}
-        {habits.words.median > 0 && <p className="text-muted-foreground">{t("aiDraft.style.sampleBody", { count: habits.words.median })}</p>}
-        {signOff && <p data-testid="style-sample-signoff">{signOff}</p>}
-      </div>
-    </figure>
-  );
-}
 
 const SCALES = { formality: ["aiDraft.trait.formality1", "aiDraft.trait.formality2", "aiDraft.trait.formality3", "aiDraft.trait.formality4", "aiDraft.trait.formality5"], warmth: ["aiDraft.trait.warmth1", "aiDraft.trait.warmth2", "aiDraft.trait.warmth3", "aiDraft.trait.warmth4", "aiDraft.trait.warmth5"], directness: ["aiDraft.trait.direct1", "aiDraft.trait.direct2", "aiDraft.trait.direct3", "aiDraft.trait.direct4", "aiDraft.trait.direct5"] } as const;
 
@@ -362,7 +343,6 @@ function Profile({ initial, onChanged, onEditing, onReset, total, picked, compac
         {lines.map((line) => <li key={line}>{line}</li>)}
         {p.judgment && <li>{traitLine(p.judgment)}</li>}
       </ul>
-      <StyleSample habits={p.habits} />
       {/* plan 161: the examples second, on request; pass 2: five first, each removable */}
       {examples > 0 && (
         <Collapsible open={examplesOpen} onOpenChange={setExamplesOpen}>

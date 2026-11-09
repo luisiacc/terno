@@ -1010,11 +1010,18 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(page.getByTestId("style-start-over").getByTestId("style-clear")).toBeVisible();
     // the count says what it counts, and the style shows what it does to a draft
     await expect(page.getByTestId("style-own")).toContainText(/From (the \d+ you wrote in \w+|\d+ of the \d+ messages|\d+ messages?)/);
-    if (await page.getByTestId("style-sample").count()) await expect(page.getByTestId("style-sample")).toContainText("starts and ends like this");
+    // plan 162 (after ai162-r02): the habits are said once (a sample box repeated them, 120 px)
+    await expect(page.getByTestId("style-sample")).toHaveCount(0);
     await expect(page.getByTestId("style-own")).toContainText("Your style");
     expect(await above("style-status", "style-own")).toBe(true);
     await expect(page.getByTestId("style-profile")).toHaveCount(1);
     if (await page.getByTestId("style-scope").count()) {
+      // plan 162 (after ai162-r02): Esc on Style for's open menu closes the menu and stays on the page (it left)
+      await page.getByTestId("style-scope").click();
+      await expect(page.getByRole("listbox")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("listbox")).toHaveCount(0);
+      await expect(page.getByTestId("writing-style")).toBeVisible();
       // under the picker, the card doesn't name the profile again
       const first = await page.getByTestId("style-scope").innerText();
       await expect(page.getByTestId("style-profile-title")).not.toContainText(first.split(" · ")[0]!);
@@ -1337,6 +1344,16 @@ test.describe("drafting with AI (plan 133)", () => {
         await page.keyboard.press("Escape");
       }
     }
+    // plan 162 (after ai162-r02): a rewrite picked from the narrow menu gives the keys to the draft, and Undo says what it
+    // takes back; its Undo gives them to the draft too (they were left on the menu's trigger, then on <body>)
+    await page.setViewportSize({ width: 1100, height: 700 });
+    await page.getByTestId("ai-strip-rewrite").click();
+    await page.getByTestId("ai-strip-rewrite-shorter").click();
+    await expect(page.getByTestId("ai-strip-undo")).toHaveAccessibleName("Undo Shorter");
+    await expect(body(page)).toBeFocused();
+    await page.getByTestId("ai-strip-undo").click();
+    await expect(page.getByTestId("ai-strip-undo")).toHaveAccessibleName("Undo: remove the AI’s draft");
+    await expect(body(page)).toBeFocused();
     await page.emulateMedia({ colorScheme: "light" });
     await page.setViewportSize({ width: 1440, height: 900 });
     // the group's items share one look: the same ink and no edge of their own (the group draws it)

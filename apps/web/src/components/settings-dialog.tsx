@@ -119,6 +119,8 @@ export function SettingsDialog() {
         // own Esc goes first); a portal's Esc bubbles here through React and is its own
         onKeyDown={(e) => {
           if (e.key !== "Escape" || !stylePage || e.defaultPrevented || imeKey(e.nativeEvent) || !e.currentTarget.contains(e.target as Node)) return;
+          // plan 162 (after ai162-r02): an open menu on the page (Style for's) closes first, and the page stays (it left)
+          if (e.currentTarget.querySelector("[aria-expanded=true][aria-haspopup]") || (e.target as Element).closest("[role=listbox], [role=menu]")) return;
           // the popup's own Esc (merged after this one) and the document's both stand down
           (e as unknown as { preventBaseUIHandler(): void }).preventBaseUIHandler();
           e.preventDefault();

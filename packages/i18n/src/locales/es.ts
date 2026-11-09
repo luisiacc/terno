@@ -743,6 +743,7 @@ const es = {
   "filters.applyFailed": "No se pudo aplicar la regla: {error}",
   "filters.applyPartial": { one: "Aplicado a # conversación, luego se detuvo: {error}", other: "Aplicado a # conversaciones, luego se detuvo: {error}" },
   "filters.saveApply": "Guardar y aplicar a existentes",
+  "filters.saveNew": "Guardar para el correo nuevo",
   "filters.saveApplyCount": { one: "Guardar y aplicar a # conversación", other: "Guardar y aplicar a # conversaciones" },
   "filters.unsaved": "Sin guardar · escrita con IA",
   "filters.unsavedDiscard": "Descartar esta regla sin guardar",
