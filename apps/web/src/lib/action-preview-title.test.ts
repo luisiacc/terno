@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 window.matchMedia = (() => ({ matches: false, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
 vi.mock("~/rpc/connection", () => ({ client: { call: async () => ({}), on: () => () => {}, connectionVersion: 1 } }));
-const { previewTitle } = await import("./action-preview");
+const { previewCount, previewTitle } = await import("./action-preview");
 
 const preview = (over: Partial<ActionPreviewInfo>): ActionPreviewInfo => ({ previewId: "p", plan: { summary: "Archive shipping", action: { type: "archive" }, conditions: [], lookIn: "inbox", future: false, meaning: true }, count: 40, found: 40, skipped: 0, skippedIncluded: false, leftOut: 0, unchecked: 0, check: "done", keep: { kind: "ok" }, keepConditions: [], scanning: false, hidden: false, categoryName: null, forwards: false, ...over });
 
@@ -14,11 +14,17 @@ describe("a preview's count is said once it's final, the same in the header and 
     expect(previewTitle(preview({ scanning: true }), 0, "")).toBe("Still finding…");
     expect(previewTitle(preview({}), 20, "")).toBe("Archive 40 conversations");
   });
+
+  it("plan 162 (after ai162-r03): while the AI check waits (its consent, or running), they're candidates: no count to act on", () => {
+    // it said "Archive 9", then 3, under the consent
+    expect(previewTitle(preview({ check: "needed", count: 9 }), 9, "")).toBe("Checking 9 matches…");
+    expect(previewCount(preview({ check: "needed", count: 9 }), 9)).toBe("Checking 9 matches…");
+  });
 });
 
 describe("Split's header says only the count, on one line; List's the outcome (plan 161, pass 2)", () => {
   it("the count once final, the same wait while finding", async () => {
-    const { previewCount } = await import("./action-preview");
+    // (previewCount is imported above)
     expect(previewCount(preview({}), 20)).toBe("40 conversations");
     expect(previewCount(preview({ count: 1 }), 1)).toBe("1 conversation");
     expect(previewCount(preview({ scanning: true }), 20)).toBe("Finding… 20 so far");
