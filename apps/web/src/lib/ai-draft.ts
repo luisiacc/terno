@@ -9,7 +9,7 @@ import { client } from "~/rpc/connection";
 import { getApp, useApp } from "~/state/app";
 import { loadThread, useThreads } from "~/state/threads";
 import { draftingOffered, errorHelp, writingModel, writingTarget } from "./ai";
-import { aiDraftHooks, canDraft, glanceNow, refreshGlance, useAiDraftUi, type AiDraftBadge } from "./ai-draft-state";
+import { aiDraftHooks, canDraft, glanceNow, isNote, refreshGlance, useAiDraftUi, type AiDraftBadge } from "./ai-draft-state";
 import { addressReply, composeLanding, recipientsUnchosen, composeOpening, leaveNewDraft, sendDraft } from "./compose";
 import { focusSoon } from "./compose-focus-move";
 import { draftCommands, draftKeyOf } from "./draft-commands";
@@ -359,9 +359,12 @@ const BADGE: Partial<Record<AiPhase, AiDraftBadge>> = { writing: "writing", wait
 /** Plan 163: opened for AI and nothing more: no work to come back to, nothing to keep a blank draft for */
 export const primed = (s: AiSession | undefined): boolean => !!s && s.phase === "input" && !s.who && !s.lookingUp && !s.strip;
 
+/** Plan 162: it couldn't write (or has no provider) and nothing of its own is in the body: what's there is still the note */
+const failedBare = (s: AiSession): boolean => (s.phase === "error" || s.phase === "noProvider") && !s.strip;
+
 function publishBadges() {
   const rows: Record<string, AiDraftBadge> = {};
-  for (const [key, s] of Object.entries(useAiDraft.getState().sessions)) rows[key] = primed(s) ? "primed" : (BADGE[s.phase] ?? "open");
+  for (const [key, s] of Object.entries(useAiDraft.getState().sessions)) rows[key] = primed(s) ? "primed" : failedBare(s) ? "failed" : (BADGE[s.phase] ?? "open");
   useAiDraftUi.setState({ rows });
 }
 
@@ -369,7 +372,7 @@ function update(key: string, patch: Partial<AiSession>) {
   const s = useAiDraft.getState().sessions[key];
   if (!s) return;
   useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: { ...s, ...patch } } }));
-  if (patch.phase !== undefined) publishBadges();
+  if (patch.phase !== undefined || "strip" in patch) publishBadges();
 }
 
 const session = (key: string): AiSession | undefined => useAiDraft.getState().sessions[key];
@@ -401,9 +404,10 @@ const sessionId = (key: string) => key.slice(0, 64);
  * as it was before the write, so words the rules can't place ("shorter, more casual") are a note again, never one Send
  * from going (dropping the session made them a plain draft). Not over an empty body: that draft is forgotten.
  */
-function reprime(key: string, opened: boolean): void {
-  if (!opened || session(key) || !bodyNow(key).trim()) return;
-  useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: newSession(key, { opened: true, phase: "input" }) } }));
+function reprime(key: string, opened: boolean, o: { fromBody?: boolean } = {}): void {
+  // plan 162: a write from the body's own instruction, stopped before a word, leaves it the note it was, ⌘J or not
+  if ((!opened && !o.fromBody) || session(key) || !bodyNow(key).trim()) return;
+  useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: newSession(key, { opened, phase: "input" }) } }));
   publishBadges();
 }
 
@@ -600,6 +604,13 @@ export async function act(key: string): Promise<void> {
   if (!draftingOffered(getApp())) {
     if (!s) showRow(key, false);
     return update(key, { phase: "noProvider" });
+  }
+  // plan 162: Write it (or ⌘J) over a failure that wrote nothing writes from the note as it is now (it may have been
+  // reworded since): the row's question was only "try again?"
+  if (s?.phase === "error" && !s.error?.partial && !s.strip && isNote(key)) {
+    clearStream(key);
+    update(key, { phase: "input", error: null, run: null, live: "" });
+    s = session(key);
   }
   // the row is asking something: its own default answers it, as Return would
   if (s && (s.phase === "question" || s.phase === "choice" || s.phase === "error" || s.phase === "noProvider" || s.phase === "held" || s.confirm || s.guard)) return update(key, { focus: s.focus + 1 });
@@ -1284,6 +1295,8 @@ export function stop(key: string) {
   // plan 163: nothing came: the body is as it was, the instruction still in it (it never left)
   if (spec && spec.kind !== "refine") update(key, { live: spec.instruction ? t("aiDraft.live.stoppedEmpty") : "" });
   remove(key);
+  // plan 162: the instruction it was writing from is still a note for AI: Write it, never Send, is one click away
+  if (spec?.kind === "body") reprime(key, s.opened, { fromBody: true });
   focusEditor(key);
 }
 

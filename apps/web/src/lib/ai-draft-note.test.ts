@@ -7,6 +7,12 @@ describe("plan 162 (after ai162-r04): a note for AI", () => {
     expect(noteState("primed", "write")).toBe(true);
     expect(noteState("primed", "unsure")).toBe(true);
   });
+  it("stays one when AI couldn't write and nothing of its own landed (Couldn't reach Claude left Send the primary)", () => {
+    expect(noteState("failed", "write")).toBe(true);
+    expect(noteState("failed", "unsure")).toBe(true);
+    expect(noteState("failed", "")).toBe(false);
+    expect(noteState("failed", "empty")).toBe(false);
+  });
   it("never a plain draft, an email with gaps, an empty body, or while AI works or holds its draft", () => {
     expect(noteState(undefined, "unsure")).toBe(false);
     expect(noteState(undefined, "")).toBe(false);

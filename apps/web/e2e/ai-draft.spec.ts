@@ -505,6 +505,29 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(strip(page)).toBeVisible();
       await expect(page.getByTestId("ai-strip-check")).toContainText("This was cut off.");
     });
+    await scenario("plan 162: a failure before any words leaves the instruction a note for AI: For AI, Write it the primary, Send off, the notice with Try again", async () => {
+      await fresh(page, server);
+      await openThread(page, /Contract review/);
+      await openField(page);
+      // the provider can't be reached: it fails before a word
+      await body(page).fill("tell him that this is fine by me [fake:fail:0]");
+      await page.keyboard.press(CMD_J);
+      await expect(page.getByTestId("ai-error-text")).toBeVisible();
+      await expect(page.getByTestId("ai-error-retry")).toBeVisible();
+      await expect(body(page)).toHaveText("tell him that this is fine by me [fake:fail:0]");
+      // the real-model comparison: it went plain, with Send the primary, one click from mailing the instruction
+      await expect(page.getByTestId("ai-note-label")).toHaveText(/For AI · not sent/);
+      await expect(page.locator("[data-ai-note]")).toHaveCount(1);
+      await expect(page.getByTestId("compose-ai")).toHaveAttribute("data-note", "true");
+      await expect(page.getByTestId("compose-send")).toHaveAttribute("aria-disabled", "true");
+      await expect(page.getByTestId("compose-send-group")).toHaveCount(0);
+      // Write it writes from the note as it is now (reworded since), not the words that failed
+      await body(page).fill("tell him that this is fine by me");
+      await page.getByTestId("compose-ai").click();
+      await expect(strip(page)).toBeVisible();
+      await expect(page.getByTestId("ai-error-text")).toHaveCount(0);
+      await expect(page.getByTestId("ai-note-label")).toHaveCount(0);
+    });
   });
 
   test.describe("“tell tom” in each row of §5.2", () => {
@@ -788,6 +811,26 @@ test.describe("drafting with AI (plan 133)", () => {
       await page.keyboard.press("Escape");
       await expect(body(page)).toHaveText("say that this is just fine");
       await expect(row(page)).toHaveCount(0);
+      // plan 162: still a note for AI, Send off
+      await expect(page.getByTestId("ai-note-label")).toBeVisible();
+      await expect(page.getByTestId("compose-send")).toHaveAttribute("aria-disabled", "true");
+      fakeDraft.firstTokenMs = 250;
+    });
+    await scenario("plan 162: words the rules can't place, written from as an instruction and stopped before any, stay a note for AI", async () => {
+      await fresh(page, server);
+      fakeDraft.firstTokenMs = 60_000;
+      await openThread(page, /Contract review/);
+      // a conversation's ⌘J opens a reply for AI; the rules can't tell what these words are, the fast read calls them an instruction
+      await openField(page);
+      await page.keyboard.type("shorter, more casual");
+      await expect(page.getByTestId("ai-note-label")).toBeVisible();
+      await page.keyboard.press(CMD_J);
+      await expect(page.getByTestId("ai-row-status-text")).toHaveText("Writing…");
+      await page.keyboard.press("Escape");
+      await expect(row(page)).toHaveCount(0);
+      await expect(body(page)).toHaveText("shorter, more casual");
+      await expect(page.getByTestId("ai-note-label")).toBeVisible();
+      await expect(page.getByTestId("compose-send")).toHaveAttribute("aria-disabled", "true");
       fakeDraft.firstTokenMs = 250;
     });
     await scenario("typing during the stream: it goes on, and ends as a suggestion; a change of recipients says who it was for", async () => {

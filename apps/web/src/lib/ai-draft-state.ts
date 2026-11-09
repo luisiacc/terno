@@ -13,9 +13,10 @@ import { getApp, useApp } from "~/state/app";
 
 /**
  * `open`: the row or strip is up; `writing`: a draft is on its way; `ready`: one waits for the draft to be opened again;
- * `primed` (plan 163): ⌘J opened it for AI, and nothing has run: no work to keep a blank draft for
+ * `primed` (plan 163): ⌘J opened it for AI, and nothing has run: no work to keep a blank draft for; `failed` (plan 162):
+ * the row says it couldn't write, and no draft of its own has landed (the body is what they typed)
  */
-export type AiDraftBadge = "open" | "writing" | "ready" | "primed";
+export type AiDraftBadge = "open" | "writing" | "ready" | "primed" | "failed";
 
 /**
  * Plan 163: what ⌘J would do with a draft's body, read on this machine (`readBody`, rules only): `write` from an instruction,
@@ -28,10 +29,12 @@ export const useAiDraftUi = create<{ enabled: boolean; rows: Readonly<Record<str
 /**
  * Plan 162 (after ai162-r04): the body is a note for AI, not the email: it reads as an instruction, or ⌘J opened the
  * composer for AI and what's typed isn't plainly an email. Never while AI works on it or over its draft (the strip).
+ * A failure before a draft landed leaves it one (plan 162, after the real-model comparison: "Couldn't reach Claude" left
+ * the instruction as plain text with Send the primary, one click from mailing it).
  */
 export function noteState(row: AiDraftBadge | undefined, glance: BodyGlance | undefined): boolean {
-  if (row !== undefined && row !== "primed") return false;
-  return glance === "write" || (row === "primed" && glance === "unsure");
+  if (row !== undefined && row !== "primed" && row !== "failed") return false;
+  return glance === "write" || (row !== undefined && glance === "unsure");
 }
 
 /** What ⌘J would do with the body as it is now (rules only, up to the glance's limit); null with no editor. */

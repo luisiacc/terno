@@ -443,13 +443,38 @@ describe("§10.4: binding and races", () => {
     await tick();
     expect(session(key)!.phase).toBe("writing");
     store.stop(key);
-    expect(session(key)).toBeUndefined();
+    // plan 162: opened for AI again, nothing at work, so the instruction stays a note (Send off), whatever the rules read
+    expect(store.primed(session(key))).toBe(true);
+    expect(useAiDraftUi.getState().rows[key]).toBe("primed");
     expect(c.text).toBe("ask her for the address");
     void store.act(key);
     await tick();
     last("ai.resolveIntent").resolve({ decision: { kind: "route", route: { type: "keep-draft" } }, fromAccountId: null, confirmFailed: false });
     await tick();
     expect(last("ai.compose").params.instruction).toBe("ask her for the address");
+  });
+
+  it("plan 162: a failure before any words keeps the instruction a note (the row is failed, not open); one over a draft doesn't", async () => {
+    const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: "Ana Pérez <ana@example.test>", subject: "Re: Contract", bodyText: "ask her for the address" });
+    editor(key, "ask her for the address");
+    void store.act(key);
+    await tick();
+    last("ai.resolveIntent").resolve({ decision: { kind: "route", route: { type: "keep-draft" } }, fromAccountId: null, confirmFailed: false });
+    await tick();
+    last("ai.compose").reject({ code: "AI", message: "Couldn't reach Claude.", details: { aiErrorKind: "unavailable" } });
+    await tick();
+    expect(session(key)!.phase).toBe("error");
+    expect(useAiDraftUi.getState().rows[key]).toBe("failed");
+    expect(noteState(useAiDraftUi.getState().rows[key], "write")).toBe(true);
+
+    const over = await writing();
+    last("ai.compose").resolve(done("First."));
+    await tick();
+    store.refine(over.key, "regenerate");
+    last("ai.compose").reject({ code: "AI", message: "x", details: { aiErrorKind: "unavailable" } });
+    await tick();
+    expect(session(over.key)!.phase).toBe("error");
+    expect(useAiDraftUi.getState().rows[over.key]).toBe("open");
   });
 
   it("plan 161, pass 3 (Codex review): a stopped write edited, then its Undo: the snack's Undo brings the edit and the stopped strip back", async () => {
