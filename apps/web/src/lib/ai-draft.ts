@@ -13,7 +13,8 @@ import { aiDraftHooks, canDraft, useAiDraftUi, type AiDraftBadge } from "./ai-dr
 import { addressReply, composeLanding, recipientsUnchosen, composeOpening, leaveNewDraft, sendDraft } from "./compose";
 import { focusSoon } from "./compose-focus-move";
 import { draftCommands, draftKeyOf } from "./draft-commands";
-import { discardDraft, discardListeners, authored, draftPresentationThread, editDraft, editDraftRecipients, flushDraft, forgetDraft, loseDraftHome, materialize, NO_AUTO, shownDraftKey, unsaveDraft, useDrafts, validateDraftPresentation, validRecipients, type LocalDraft } from "./drafts";
+import { discardDraft, discardListeners, authored, emptyMessage, draftPresentationThread, editDraft, editDraftRecipients, flushDraft, forgetDraft, loseDraftHome, materialize, NO_AUTO, shownDraftKey, unsaveDraft, useDrafts, validateDraftPresentation, validRecipients, type LocalDraft } from "./drafts";
+import { useEmptySend } from "./send-problem";
 import { localized } from "./i18n";
 import { currentPage, listLayout, openThread } from "./page";
 import { registerUndo, snack } from "./snack";
@@ -1908,10 +1909,18 @@ export function discardAndSend(key: string) {
   const { sendAt } = s.guard;
   cancel(s);
   remove(key);
+  // the deliberate way to send the literal body: Send's own question about a note for AI is answered by it (plan 162,
+  // after ai162-r04: it asked again, once Send read the body itself)
+  if (!emptyMessageNow(key)) useEmptySend.setState({ key, sendAt, reason: "note" });
   const commands = draftCommands(key);
   if (commands) commands.send(sendAt);
   else void sendDraft(key, sendAt);
 }
+
+const emptyMessageNow = (key: string): boolean => {
+  const d = draftOf(key);
+  return !d || emptyMessage(d);
+};
 
 /** Try again: what it was asked, with no automatic retry. */
 export function retry(key: string) {
