@@ -167,7 +167,7 @@ The fill tint is the gap's gold wash family: a fill reads as "AI put this here",
 
 ## Performance
 
-- `readBody` is linear and bounded (20,000 characters for the button, 100,000 at a press). The button's glance reads the editor's blocks only up to its limit, never serializing HTML or the whole document, at most every 150 ms while the text changes and never when it doesn't. A perf gate types into a 10 MB draft and holds the glance's cost per keystroke.
+- `readBody` is linear and bounded (20,000 characters for the button, 100,000 at a press). The button's glance reads the editor's blocks only up to its limit, never serializing HTML or the whole document, at most every 150 ms while the text changes and never when it doesn't. A unit gate (`fills.test.ts`) holds the glance on a 10 MB document under 2 ms: it reads its first 20,000 characters and stops. The page's typing gates (`pnpm test:ui-perf`) run without AI, so they hold the composer as before, not the glance.
 - The fill plugin does nothing without a fill session (no decorations, no mapping).
 - No new chunk, no lazy loading: plain imports.
 - `pnpm test:ui-perf` holds.
@@ -190,7 +190,7 @@ Rewrite on a selection (plan 133's "right after"). Filling gaps in mail the AI d
 8. **Fill events say when a fill is done**, and malformed fills are refused, never written; nothing outside a `<fill>` reaches the document; stop, refusal, timeout and a lost connection are each said.
 9. **⌘Z takes back the body alone**, as plan 133 says; the strip's Undo restores the `before` document itself when the editor's history is gone, so images survive.
 10. **Gap grammar tightened:** `[sic]`, single braces and a bare `XX` are maybes, not certain. A model's own gaps are told from the user's by their text (a user typing the model's exact words, `[Your answer.]`, would have theirs left too: the safe side). Fill again works from the first fill's `before` and its gap positions.
-11. **Bounded where it costs:** the glance reads the editor's blocks up to its limit without serializing; past 100,000 characters nothing is read; at most 20 gaps and 300 characters a fill; a 10 MB typing gate.
+11. **Bounded where it costs:** the glance reads the editor's blocks up to its limit without serializing; past 100,000 characters nothing is read; at most 20 gaps and 300 characters a fill; a 10 MB gate on the glance.
 12. **A fill's language is its sentence's,** not the conversation's; the budget counts the fill's own rules.
 
 ## What building it changed

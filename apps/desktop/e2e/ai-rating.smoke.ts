@@ -18,8 +18,9 @@ test("launch({ ai: \"stub\" }): settings survive the relaunch, the AI entry poin
     await expect(page.getByTestId("nav-today")).toBeVisible();
     await page.getByTestId("thread-row").filter({ hasText: "departamento en la Roma" }).first().click();
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    // plan 163: ⌘J opens the reply for AI, the keys in its body
     await page.keyboard.press("Meta+j");
-    await expect(page.getByTestId("ai-row-input")).toBeVisible();
+    await expect(page.locator("[data-testid=compose-body]:focus")).toBeVisible();
     await page.getByTestId("compose-discard").click();
     await expect(page.getByTestId("composer")).toHaveCount(0);
     await page.keyboard.press("Meta+Shift+k");
