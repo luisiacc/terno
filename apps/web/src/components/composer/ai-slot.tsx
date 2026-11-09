@@ -131,8 +131,10 @@ export function SendOrWrite({ d, onSend, className }: { d: LocalDraft; onSend: (
   const note = useNote(d.key);
   const later = useSendLater((s) => s.open === d.key);
   const sendRef = useRef<HTMLButtonElement>(null);
+  const offId = useId();
   if (!note) return <SendButton d={d} onSend={onSend} className={className} />;
   const disabled = d.sending || Boolean(d.recovery);
+  const off = t("aiDraft.note.sendOff", { keys: shortcutText("mod+enter") });
   return (
     <span className={cn("flex shrink-0 items-center gap-1", className)} data-testid="compose-note-actions">
       <Tooltip>
@@ -148,9 +150,20 @@ export function SendOrWrite({ d, onSend, className }: { d: LocalDraft; onSend: (
         </TooltipTrigger>
         <TooltipContent>{t("aiDraft.button.write")}</TooltipContent>
       </Tooltip>
-      <IconButton ref={sendRef} label={t("aiDraft.note.send")} type="submit" variant="secondary" disabled={disabled} data-testid="compose-send" data-note className="text-foreground">
-        <Send />
-      </IconButton>
+      {/* plan 162 (after ai162-r05): a note is never one click from going. Send is off (aria-disabled, so its reason still
+          shows on hover and to assistive tech); ⌘↵, Send later and the palette ask "This reads as a note for AI.", whose
+          Send as it is is the one way to mail the note itself */}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button ref={sendRef} type="button" variant="outline" size="icon-sm" aria-label={t("common.send")} aria-disabled aria-describedby={offId} data-testid="compose-send" data-note onClick={(e) => e.preventDefault()} className="text-muted-foreground opacity-60 hover:bg-transparent aria-disabled:cursor-default" />
+          }
+        >
+          <Send />
+        </TooltipTrigger>
+        <TooltipContent className="max-w-64">{off}</TooltipContent>
+      </Tooltip>
+      <span id={offId} className="sr-only">{off}</span>
       {/* Send later (⌘⇧↩) keeps its picker, at Send's place; what it picks goes through Send's question (Codex review) */}
       <Popover open={later} onOpenChange={(o) => useSendLater.setState({ open: o ? d.key : null })}>
         <PopoverContent anchor={sendRef} side="top" align="start" sideOffset={6} className="w-72 gap-2 rounded-menu p-1.5" data-testid="send-later-popover" aria-label={t("sendLater.title")}>

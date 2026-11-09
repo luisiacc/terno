@@ -381,6 +381,10 @@ test.describe("drafting with AI (plan 133)", () => {
       await page.getByTestId("ai-strip-undo").click();
       await expect(body(page)).toHaveText("echo: fine by me, tell him that");
       await expect(body(page)).toBeFocused();
+      // plan 162 (after ai162-r05): Undo gives back the note for AI exactly: its label, and Write it as the primary
+      await expect(page.getByTestId("ai-note-label")).toBeVisible();
+      await expect(page.getByTestId("compose-note-actions")).toBeVisible();
+      await expect(page.getByTestId("compose-ai")).toHaveAttribute("data-note", "true");
 
       // an ordinary email being typed leaves it quiet
       await body(page).fill("Hi Tom,\n\nThat works for me. See you then.");
@@ -676,8 +680,16 @@ test.describe("drafting with AI (plan 133)", () => {
         await expect(write).toHaveAttribute("data-note", "true");
         await expect(write).toHaveText(/Write it/);
         await expect(write).toBeInViewport();
-        await expect(page.getByTestId("compose-send")).toHaveAccessibleName("Send it as it is");
+        // plan 162 (after ai162-r05): Send is off, its reason in its description and tooltip; a click sends nothing and asks nothing
+        await expect(page.getByTestId("compose-send")).toHaveAccessibleName("Send");
+        await expect(page.getByTestId("compose-send")).toHaveAttribute("aria-disabled", "true");
+        await expect(page.getByTestId("compose-send")).toHaveAccessibleDescription(/Send is off while this is a note for AI/);
         await expect(page.getByTestId("compose-send-group")).toHaveCount(0);
+        await page.getByTestId("compose-send").click({ force: true });
+        await page.waitForTimeout(200);
+        await expect(page.getByTestId("compose-empty-ask")).toHaveCount(0);
+        await expect(page.getByTestId("composer")).toBeVisible();
+        await expect(body(page)).toHaveText("fine by me, tell him that");
         const sendBox = (await page.getByTestId("compose-send").boundingBox())!;
         const writeBox = (await write.boundingBox())!;
         expect(writeBox.x).toBeLessThan(sendBox.x);
