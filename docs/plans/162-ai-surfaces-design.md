@@ -858,6 +858,10 @@ Four findings, all taken, each with a test that fails without its fix:
 - **The gallery** (`/tmp/terno-scratch/ai-gallery/gallery.mjs`, on `harness.mjs`, frozen runtime of the final build): 12 sheets in `/tmp/terno-scratch/ai-gallery/sheets/`, real models for model output and the stub for errors, empty and working states; nothing skipped but the AI filter's consent, which doesn't exist.
 - **Real-model spend:** about US$0.69 as the app counted it (captures US$0.44 over two runs; the gallery US$0.25 with its smokes).
 
+### Ask's answer language (before ai162-r05)
+
+- **Ask names the answer's language outright** (prompt v9), read on this machine with no model call: `questionLanguage` (core `writing/language.ts`) reads a question by how it asks: its question words, the small words and verbs around them in en and es, its opening word counted thrice, ¿ and ¡, and ñ/á/í/ó/ú only beside a Spanish word ("María?" is a name); words in quotation marks are the mail's and don't count; another language only when `detectWritingLanguage` is sure. A question that doesn't say ("Greenway?") takes the newest question before it in the conversation that did, however far back (older mail's re-answer too), else the app's language. The prompt's last line: "Write the answer in English, whatever language the mail is in."; the rule lets quoted mail stay as written. Codex's review (4 findings, all fixed with a failing test first): verbs-first questions ("Has Alice replied?", "Puedes decirme si pagaron?"), an accented name alone, unquoted mail words ("When is el pago de la factura?"), and the language lost past the three turns the model sees. On real models, light, all four rated designs: the capture's "What did Isabella say about the payment?" answered in English (`/tmp/terno-scratch/ai-redesign/lang/<design>/a04-*`); hands-on, "¿Qué dijo Isabella sobre el pago?" in Spanish and the follow-up "And when did she send it?" in English (Lumen also "¿Y qué le contesté yo?" in Spanish). Summary (the app's language) and Reply ready (`chooseLanguage`, the conversation's) already named theirs and were right on the same runs: unchanged. Spend about US$0.33 as the app counted it.
+
 ### Questions for the owner
 - **The AI filter asks no consent** before its request goes to a cloud provider (it says what's sent under the field). Every other surface asks once. Add the shared consent there?
 - **Showing the AI check's left-out rows by default** in the list (unticked, under the kept ones). Clearer to review, but the list then holds more rows than its title counts. Kept behind Show for now.
@@ -1046,6 +1050,6 @@ Six findings, five taken with a test that fails without the fix, one declined:
 - **Real-model spend:** about US$0.34 as the app counted it (captures US$0.29, hands-on Ask US$0.03, smoke US$0.025).
 
 ### Questions for the owner
-- **Ask answers an English question in Spanish** on some runs (the mail is Spanish; prompt v7 and v8 both say to answer in the question's language). A fix would be a stronger rule or detecting the question's language locally and naming it in the prompt; no new call either way. Want it?
+- ~~**Ask answers an English question in Spanish** on some runs~~: fixed, below (the owner asked for it before ai162-r05).
 - **Focus on Archive when the preview is ready** (four reports asked): it needs Archive's tooltip not to open on a programmatic focus, which is the shared Tooltip's behaviour. Change it there?
 - Still open from before: the model error wording.
