@@ -440,6 +440,10 @@ test.describe("axe", { tag: "@variant" }, () => {
       await page.getByTestId("digest-row").click();
       await page.getByTestId("digest-page").waitFor();
       await clean(page, "the digest", "[data-testid=digest-page]");
+      // plan 166: a row's Not a newsletter, shown on its hover; the sender it leaves out is listed in Settings below
+      await page.getByTestId("digest-item").first().hover();
+      await clean(page, "the digest, a row's Not a newsletter", "[data-testid=digest-page]");
+      await page.getByTestId("digest-not-newsletter").first().click();
       // plan 145, owner's decisions (2): a newsletter opened from it and archived in the reader: back here, its row archived
       // (the last: the page's own Archive below unticks the first)
       await page.getByTestId("digest-open").last().click();
@@ -461,6 +465,8 @@ test.describe("axe", { tag: "@variant" }, () => {
       await page.keyboard.press("Escape");
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-ai").click();
+      await page.getByTestId("ai-digest-excluded").waitFor();
+      await clean(page, "Settings, the senders that aren't newsletters", "[data-testid=ai-digest]");
       await page.getByTestId("ai-drafting-style-open").click();
       await expect(page.getByTestId("style-status")).toContainText(/Learned from/, { timeout: 20_000 });
       await clean(page, "Writing style", "[data-testid=writing-style]");

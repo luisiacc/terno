@@ -2,7 +2,7 @@
 import type { DigestRow } from "@terno/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { beforeEach, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
@@ -20,6 +20,8 @@ vi.mock("~/rpc/connection", () => ({
     call: vi.fn(async (method: string, params: unknown) => {
       calls.push({ method, params });
       if (method === "today.digestArchive") return archived;
+      if (method === "today.notNewsletter") return { added: { ...(params as object), at: 7 }, evicted: null };
+      if (method === "today.newsletterAgain") return { removed: { email: (params as { email: string }).email, name: "x", at: 7 } };
       if (method === "threads.undo") {
         if (undoFails) throw new Error("That can no longer be undone.");
         return { restored: 1 };
@@ -33,7 +35,8 @@ vi.mock("~/rpc/connection", () => ({
 
 const { default: DigestPage } = await import("./digest-page");
 const { useToday } = await import("~/state/today");
-const { dismissSnack: dismissSnackNow } = await import("~/lib/snack");
+const { dismissSnack: dismissSnackNow, undoNow, useSnack } = await import("~/lib/snack");
+const { getApp } = await import("~/state/app");
 
 /** plan 162: the page's own Undo shows once the snack carrying the same one is gone: the snack goes, then it's pressed */
 async function undoInline() {
@@ -41,7 +44,7 @@ async function undoInline() {
   await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-undo]")!.click());
 }
 
-const item = (id: number) => ({ threadId: id, messageId: id, lastDate: 1, messageCount: 1, from: `Sender ${id}`, subject: `Issue ${id}`, line: `Line ${id}` });
+const item = (id: number) => ({ threadId: id, messageId: id, lastDate: 1, messageCount: 1, from: `Sender ${id}`, fromEmail: `news@sender${id}.test`, subject: `Issue ${id}`, line: `Line ${id}` });
 const digestOf = (day: string, automated = false): DigestRow => ({ day, state: "ready", automated, items: [1, 2, 3].map(item), liveIds: [1, 2, 3], model: "m" });
 
 const host = document.createElement("div");
@@ -58,7 +61,7 @@ async function show(row: DigestRow) {
 }
 const unmount = () => act(() => root.render(<></>));
 
-beforeEach(() => useToday.setState({ pick: null, digest: null }));
+beforeEach(() => useToday.setState({ pick: null, digest: null, notNewsletters: new Set() }));
 
 it("plan 161: what was unticked, and where it was scrolled, survive opening a source (the page unmounting)", async () => {
   await show(digestOf("2026-10-22"));
@@ -315,4 +318,74 @@ it("plan 162 (Codex review): a digest whose provider answered with an error says
   await show({ ...digestOf("2026-10-22"), state: "failed", errorKind: "provider_no_permission" } as DigestRow);
   expect(host.querySelector("[data-testid=digest-failed-text]")!.textContent).toMatch(/refused this request for your key: it doesn’t have permission/);
   expect(host.querySelector("[data-testid=digest-error-settings]")).not.toBeNull();
+});
+
+describe("plan 166: Not a newsletter", () => {
+  const senders = () => [...host.querySelectorAll("[data-testid=digest-from]")].map((e) => e.textContent);
+  const undoSnack = () => act(async () => undoNow(useSnack.getState().current!.action!.undo!));
+
+  it("the row's control: its sender leaves the page and Archive at once, no model, no opening; Undo brings it back as it was", async () => {
+    await show(digestOf("2026-10-22"));
+    useToday.setState({ fromDigest: null });
+    // unticked first: Undo must bring it back unticked, after an Untick all / Tick all in between (Codex critique)
+    await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[1]!.click());
+    calls.length = 0;
+    const control = host.querySelectorAll<HTMLElement>("[data-testid=digest-not-newsletter]")[1]!;
+    expect(control.getAttribute("aria-label")).toBe("Not a newsletter");
+    // beside Open, never inside it
+    expect(control.closest("[data-testid=digest-open]")).toBeNull();
+    await act(async () => control.click());
+    expect(senders()).toEqual(["Sender 1", "Sender 3"]);
+    expect(host.querySelector("[data-testid=digest-archive]")!.textContent).toBe("Archive 2");
+    expect(calls.map((c) => c.method).filter((m) => m !== "today.digest" && m !== "threads.list" && m !== "today.list")).toEqual(["today.notNewsletter"]);
+    expect(calls[0]!.params).toEqual({ email: "news@sender2.test", name: "Sender 2" });
+    expect(useToday.getState().fromDigest).toBeNull();
+    // Today's header counts without it at once
+    expect(useToday.getState().digest!.liveIds).toEqual([1, 3]);
+    // whatever a read brings meanwhile (the backend's answer from before), it stays out
+    await act(async () => useToday.setState({ digest: digestOf("2026-10-22") }));
+    expect(senders()).toEqual(["Sender 1", "Sender 3"]);
+    await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-tick-all]")!.click());
+    expect(ticks()).toEqual([false, false]);
+    await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-tick-all]")!.click());
+    expect(useSnack.getState().current!.message).toBe("Sender 2 won't be in your digest");
+    await undoSnack();
+    expect(calls.find((c) => c.method === "today.newsletterAgain")!.params).toEqual({ email: "news@sender2.test", at: 7 });
+    await act(async () => useToday.setState({ digest: digestOf("2026-10-22") }));
+    expect(senders()).toEqual(["Sender 1", "Sender 2", "Sender 3"]);
+    expect(ticks()).toEqual([true, false, true]);
+  });
+
+  it("the row's menu: Open, and Not a newsletter, which gives the keys back to the page and lands them on the next row", async () => {
+    await show(digestOf("2026-10-22"));
+    const row = host.querySelectorAll<HTMLElement>("[data-testid=digest-item]")[0]!;
+    expect(row.hasAttribute("data-context-menu")).toBe(true);
+    host.querySelectorAll<HTMLElement>("[data-testid=digest-open]")[0]!.focus();
+    await act(async () => row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10, button: 2 })));
+    const item = await vi.waitFor(() => {
+      const el = document.querySelector<HTMLElement>("[data-testid=digest-menu-not-newsletter]");
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(document.querySelector("[data-testid=digest-menu-open]")!.textContent).toBe("Open");
+    expect(getApp().menuOpen).toBe(true);
+    await act(async () => item.click());
+    expect(senders()).toEqual(["Sender 2", "Sender 3"]);
+    expect(getApp().menuOpen).toBe(false);
+    await act(async () => new Promise<void>((r) => requestAnimationFrame(() => r())));
+    expect(document.activeElement).toBe(host.querySelector("[data-digest-open='2']"));
+  });
+
+  it("automated mail has neither: nothing there has said these are newsletters", async () => {
+    await show(digestOf("2026-10-22", true));
+    expect(host.querySelectorAll("[data-testid=digest-not-newsletter]")).toHaveLength(0);
+    expect(host.querySelector("[data-testid=digest-item]")!.hasAttribute("data-context-menu")).toBe(false);
+  });
+
+  it("Archive names each row's sender, so one said not to be a newsletter meanwhile is left alone", async () => {
+    await show(digestOf("2026-10-22"));
+    calls.length = 0;
+    await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-archive]")!.click());
+    expect((calls.find((c) => c.method === "today.digestArchive")!.params as { items: { fromEmail?: string }[] }).items.map((i) => i.fromEmail)).toEqual(["news@sender1.test", "news@sender2.test", "news@sender3.test"]);
+  });
 });

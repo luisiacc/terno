@@ -2,8 +2,10 @@ import type { DigestItem, DigestRow } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Checkbox } from "@terno/ui/components/checkbox";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@terno/ui/components/context-menu";
+import { IconButton } from "@terno/ui/components/icon-button";
 import { Spinner } from "@terno/ui/components/spinner";
-import { ChevronRight } from "@terno/ui/icons";
+import { Ban, ChevronRight } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getApp } from "~/state/app";
@@ -17,7 +19,7 @@ import { AiErrorNotice, aiErrorCopy, errorTarget } from "~/components/ai-error";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { reloadList } from "~/state/list";
-import { digestKeys, digestPick, keepDigestPick, openFromDigest, useToday } from "~/state/today";
+import { digestKeys, digestPick, keepDigestPick, leaveOut, letBackIn, openFromDigest, senderKey, useToday, withoutSenders } from "~/state/today";
 import { AiProvenance } from "~/components/ai-provenance";
 
 /**
@@ -32,6 +34,33 @@ const STATE_LABEL: Partial<Record<DigestRowState, () => string>> = { keep: () =>
  * Plan 145 §4: the digest in the reader's column. Plain text, never links: a line is a model's rewording of mail. With the
  * digest off nothing has said what these are, so they're automated mail, unticked (revision 3).
  */
+/** Plan 166: a digest row's menu, the row's own (right-click, or ⇧F10 on it); none for automated mail. */
+function DigestRowMenu({ on, onOpen, onNotNewsletter, children }: { on: boolean; onOpen: () => void; onNotNewsletter: () => void; children: React.ReactElement }) {
+  if (!on) return children;
+  return (
+    <ContextMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
+      <ContextMenuTrigger data-context-menu render={children} />
+      <ContextMenuContent className="w-52" data-testid="digest-item-menu">
+        <ContextMenuItem data-testid="digest-menu-open" onClick={onOpen}>
+          {t("common.open")}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          data-testid="digest-menu-not-newsletter"
+          onClick={() => {
+            // the row (and this menu with it) goes at once: its close never comes, so the keys come back to the page now
+            setApp({ menuOpen: false });
+            onNotNewsletter();
+          }}
+        >
+          <Ban />
+          {t("today.digest.notNewsletter")}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
 export default function DigestPage() {
   const digest = useToday((s) => s.digest);
   const [row, setRow] = useState<DigestRow | null>(digest);
@@ -39,7 +68,17 @@ export default function DigestPage() {
   const [liveIds, setLive] = useState<ReadonlySet<number> | null>(null);
   useEffect(() => {
     let current = true;
-    const read = () => void client.call("today.digest", {}).then((r) => current && setRow(r), () => {});
+    // plan 166 (Codex critique): only the newest of the page's own reads lands, so an older one can't bring back a row
+    let asked = 0;
+    let landed = 0;
+    const read = () => {
+      const mine = ++asked;
+      void client.call("today.digest", {}).then((r) => {
+        if (!current || mine < landed) return;
+        landed = mine;
+        setRow(r);
+      }, () => {});
+    };
     read();
     const off = client.on("todayDigest", read);
     return () => {
@@ -47,7 +86,9 @@ export default function DigestPage() {
       off();
     };
   }, []);
-  const items = useMemo(() => row?.items ?? [], [row]);
+  // plan 166: a sender just said not to be a newsletter is gone at once, whatever a read brings, until its Undo
+  const notNewsletters = useToday((s) => s.notNewsletters);
+  const items = useMemo(() => (row ? withoutSenders(row, notNewsletters).items : []), [row, notNewsletters]);
   const automated = row?.automated === true;
   // plan 161: what was unticked, and where the page was, outlive it: opening a newsletter and coming back finds them.
   // Kept by digest: its day and what kind it is (a set means the unticked in one, the ticked in automated mail)
@@ -138,8 +179,10 @@ export default function DigestPage() {
   const anyTicked = chosen.length > 0;
   const tickAll = (on: boolean) => {
     const ids = shown.filter(tickable).map((i) => i.threadId);
-    // a set means the unticked ones in a digest and the ticked ones in automated mail
-    setToggled(new Set(on === automated ? ids : []));
+    // a set means the unticked ones in a digest and the ticked ones in automated mail. Plan 166 (Codex critique): only the
+    // rows shown change; one left out as not a newsletter keeps its tick, so its Undo brings it back as it was
+    const here = new Set(shown.map((i) => i.threadId));
+    setToggled((held) => new Set([...[...held].filter((id) => !here.has(id)), ...(on === automated ? ids : [])]));
   };
   const heading = useRef<HTMLHeadingElement>(null);
   const open = (threadId: number) => {
@@ -212,7 +255,7 @@ export default function DigestPage() {
       }),
     );
     try {
-      const r = await client.call("today.digestArchive", { items: chosen.map((i) => ({ threadId: i.threadId, lastDate: i.lastDate, messageCount: i.messageCount })), jobId: job.jobId });
+      const r = await client.call("today.digestArchive", { items: chosen.map((i) => ({ threadId: i.threadId, lastDate: i.lastDate, messageCount: i.messageCount, ...(i.fromEmail !== undefined ? { fromEmail: i.fromEmail } : {}) })), jobId: job.jobId });
       undoId.resolve({ id: r.undoId, n: r.archived });
       const notes = r.changed + r.spared > 0 ? t("today.digest.leftAlone", { count: r.changed + r.spared }) : undefined;
       snack.success(t(automated ? "today.digest.archivedSelected" : "today.digest.archived", { count: r.archived }), { id: job.snackId, duration: 8000, description: notes, action: r.undoId !== null ? undoAction(undo, t("today.digest.undoName")) : undefined });
@@ -233,6 +276,43 @@ export default function DigestPage() {
     } finally {
       job.stop();
       void reloadList({ keepSelection: true });
+    }
+  };
+  /**
+   * Plan 166: "Not a newsletter": every row from that sender leaves the page, its Archive and Today's header at once, and
+   * the sender stays out of the digests to come (the backend's list, on this machine). No model, no check. Exact Undo.
+   */
+  const notNewsletter = async (item: DigestItem) => {
+    const email = item.fromEmail;
+    if (!email) return;
+    const key = senderKey(item);
+    // the keys stay on the page: the next row still there (after it, else before it), else the title
+    const rest = shown.filter((i) => senderKey(i) !== key);
+    const at = shown.findIndex((i) => i.threadId === item.threadId);
+    const next = rest.find((i) => shown.indexOf(i) > at) ?? rest.findLast((i) => shown.indexOf(i) < at);
+    const had = document.activeElement;
+    const inRow = had instanceof HTMLElement && had.closest("[data-testid=digest-item]") !== null;
+    leaveOut(key);
+    requestAnimationFrame(() => {
+      const now = document.activeElement;
+      if (!inRow && now && now !== document.body && now.isConnected) return;
+      const to = next && scroller.current?.querySelector<HTMLElement>(`[data-digest-open="${next.threadId}"]`);
+      (to || heading.current)?.focus({ preventScroll: true });
+    });
+    try {
+      const r = await client.call("today.notNewsletter", { email, name: item.from });
+      const undo = registerUndo(async () => {
+        // only the entry this added (one said again since stays), and what the list's cap dropped comes back
+        if (r.added) await client.call("today.newsletterAgain", { email, at: r.added.at });
+        if (r.evicted) await client.call("today.notNewsletter", r.evicted);
+        letBackIn(key);
+        await reloadList({ keepSelection: true });
+      });
+      snack.success(t("today.digest.notNewsletterDone", { sender: item.from }), { duration: 8000, action: undoAction(undo, t("today.digest.notNewsletterUndo", { sender: item.from })) });
+    } catch {
+      letBackIn(key);
+      void reloadList({ keepSelection: true });
+      snack.error(t("today.digest.notNewsletterFailed", { sender: item.from }));
     }
   };
   if (!row) return <div className="p-8 text-sm text-muted-foreground" data-testid="digest-page">{t("today.digest.none")}</div>;
@@ -317,24 +397,43 @@ export default function DigestPage() {
             const label = moved ? () => t(moved === "trash" ? "actions.done.trash" : "actions.done.spam") : automated && state === "keep" ? undefined : STATE_LABEL[state];
             const quiet = state === "opened" || state === "archived";
             return (
-              <li key={i.threadId} data-testid="digest-item" data-live={live(i)} data-state={state} className="flex items-start gap-1 border-b border-hairline py-1">
+              // plan 166: each row of a digest has a menu ("Open", "Not a newsletter"), as rows do; automated mail has claimed
+              // nothing is a newsletter, so it has neither the menu nor the control
+              <DigestRowMenu key={i.threadId} on={!automated} onOpen={() => open(i.threadId)} onNotNewsletter={() => void notNewsletter(i)}>
+              <li data-testid="digest-item" data-live={live(i)} data-state={state} className="group/item relative flex items-start gap-1 border-b border-hairline py-1">
                 {/* pass 2: a 24 px box of its own, so a near miss doesn't open the newsletter beside it */}
                 <Checkbox target="quiet" data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={state === "archive"} disabled={!tickable(i)} className="mt-1.5" onCheckedChange={() => toggle(i.threadId)} />
                 {/* plan 161: reading is as plain as archiving: the whole row opens the newsletter, and says so on hover */}
-                <button type="button" data-digest-open={i.threadId} className="group/open flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-row-hover focus:bg-row-selected focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" data-testid="digest-open" onClick={() => open(i.threadId)}>
+                <button type="button" data-digest-open={i.threadId} className="group/open flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors group-has-[[data-not-newsletter]:hover]/item:bg-row-hover hover:bg-row-hover focus:bg-row-selected focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" data-testid="digest-open" onClick={() => open(i.threadId)}>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline gap-2 text-xs">
                       <span className={cn("max-w-[60%] shrink-0 font-medium", quiet ? "text-muted-foreground" : "text-foreground")} data-testid="digest-from">{i.from}</span>
                       <span className="min-w-0 flex-1 truncate text-muted-foreground" data-testid="digest-subject">{i.subject}</span>
                       {label && <span className="shrink-0 font-medium text-muted-foreground" data-testid="digest-state">{label()}</span>}
-                      <span className="shrink-0 text-muted-foreground tabular">{listDate(i.lastDate)}</span>
+                      {/* plan 166: the date gives its place to the row's control while it shows */}
+                      <span className={cn("shrink-0 text-muted-foreground tabular", !automated && "group-hover/item:invisible group-has-[[data-not-newsletter]:focus-visible]/item:invisible")} data-testid="digest-date">{listDate(i.lastDate)}</span>
                     </span>
                     {i.line !== null && <span className={cn("mt-0.5 block text-sm", quiet ? "text-muted-foreground" : "text-foreground")} data-testid="digest-line">{i.line}</span>}
                   </span>
                   {/* pass 3: at rest, so opening one is as visible as ticking it, its edge the Archive button's */}
                   <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground transition-colors group-hover/open:text-foreground" />
                 </button>
+                {!automated && (
+                  // plan 166: beside Open, never inside it (Codex critique): on the first line where the date is, at the chevron's
+                  // inset, shown with the row's hover or its own Tab focus; quiet, icon-only, named in its tooltip
+                  <IconButton
+                    label={t("today.digest.notNewsletter")}
+                    size="icon-xs"
+                    data-not-newsletter=""
+                    data-testid="digest-not-newsletter"
+                    className="absolute top-1.5 right-8 opacity-0 group-hover/item:opacity-100 focus-reveal:opacity-100"
+                    onClick={() => void notNewsletter(i)}
+                  >
+                    <Ban />
+                  </IconButton>
+                )}
               </li>
+              </DigestRowMenu>
             );
           })}
         </ul>

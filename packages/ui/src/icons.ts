@@ -9,6 +9,7 @@ export { ArrowRight } from "./iconset/generated/ArrowRight";
 export { ArrowUp } from "./iconset/generated/ArrowUp";
 export { AtSign } from "./iconset/generated/AtSign";
 export { BadgeCheck } from "./iconset/generated/BadgeCheck";
+export { Ban } from "./iconset/generated/Ban";
 export { Baseline } from "./iconset/generated/Baseline";
 export { Bell } from "./iconset/generated/Bell";
 export { BellOff } from "./iconset/generated/BellOff";

@@ -151,6 +151,73 @@ test.describe("Today (plan 145)", () => {
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-digest-off.png` });
   });
 
+  test("plan 166: Not a newsletter, by the row's control or its menu, leaves the digest at once with an exact Undo, and Settings lists the sender to let back in", async ({ app: page, server }) => {
+    const { db } = await withMail(server);
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, today: { digest: true, prepareAt: "00:00" } });
+    await page.getByTestId("nav-today").click();
+    await expect(page.getByTestId("digest-row")).toContainText("today's digest", { timeout: 15_000 });
+    await page.getByTestId("digest-row").click();
+    await expect(page.getByTestId("digest-title")).toHaveText("Today's digest");
+    const strat = page.getByTestId("digest-item").filter({ hasText: "Stratechery" });
+    const count = await page.getByTestId("digest-item").count();
+    await expect(page.getByTestId("digest-archive")).toHaveText(`Archive ${count}`);
+    // quiet at rest: the date shows, the control doesn't; on the row's hover it takes the date's place, the chevron unmoved
+    const control = strat.getByTestId("digest-not-newsletter");
+    await page.mouse.move(0, 0);
+    await expect(control).toHaveCSS("opacity", "0");
+    await expect(strat.getByTestId("digest-date")).toBeVisible();
+    const chevron = async () => (await strat.getByTestId("digest-open").locator("svg").last().boundingBox())!.x;
+    const before = await chevron();
+    await strat.hover();
+    await expect(control).toHaveCSS("opacity", "1");
+    await expect(strat.getByTestId("digest-date")).toBeHidden();
+    expect(await chevron()).toBe(before);
+    await control.hover();
+    await expect(page.locator("[data-slot=tooltip-content]")).toHaveText("Not a newsletter");
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-not-newsletter-hover.png` });
+    await control.click();
+    // at once: gone from the page, the batch and the way in; nothing opened or read
+    await expect(strat).toHaveCount(0);
+    await expect(page.getByTestId("digest-archive")).toHaveText(`Archive ${count - 1}`);
+    await expect(page.getByTestId("digest-row")).toContainText(`${count - 1} newsletter`);
+    await expect(page.getByTestId("back-to-digest")).toHaveCount(0);
+    expect(db.get<{ u: number }>("SELECT unread_count u FROM threads WHERE subject = ?", "Stratechery weekly")!.u).toBe(1);
+    const snack = page.getByTestId("snack").filter({ hasText: "Stratechery won't be in your digest" });
+    await expect(snack).toBeVisible();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-not-newsletter-done.png` });
+    // the keys stay on the page
+    await expect(page.locator("[data-digest-open]:focus, [data-testid=digest-title]:focus")).toHaveCount(1);
+    await snack.getByTestId("snack-action").click();
+    await expect(strat).toHaveCount(1);
+    await expect(page.getByTestId("digest-archive")).toHaveText(`Archive ${count}`);
+    // the row's menu does the same, and Settings lists who's kept out
+    // (the demo's own Morning Brew writes from another address: only this sender goes)
+    const others = await page.getByTestId("digest-item").filter({ hasText: "Morning Brew" }).count();
+    await page.getByTestId("digest-item").filter({ hasText: "Morning Brew digest" }).click({ button: "right" });
+    await expect(page.getByTestId("digest-menu-open")).toHaveText("Open");
+    await page.getByTestId("digest-menu-not-newsletter").click();
+    await expect(page.getByTestId("digest-item").filter({ hasText: "Morning Brew digest" })).toHaveCount(0);
+    await expect(page.getByTestId("digest-item").filter({ hasText: "Morning Brew" })).toHaveCount(others - 1);
+    // the page's keys are back (the menu went with its row)
+    await page.keyboard.press("j");
+    await expect(page.locator("[data-digest-open]:focus")).toHaveCount(1);
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-ai").click();
+    const excluded = page.getByTestId("ai-digest-excluded");
+    await expect(excluded).toContainText("Not newsletters");
+    await expect(excluded.getByTestId("ai-digest-excluded-item")).toHaveText(["Morning Brewnews@morningbrew.test"]);
+    await excluded.scrollIntoViewIfNeeded();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-not-newsletter-settings.png` });
+    for (const mode of ["dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme: mode });
+      const results = await new AxeBuilder({ page }).include("[data-testid=ai-digest]").analyze();
+      expect(results.violations.map((v) => `${mode} ${v.id}: ${v.nodes[0]?.html.slice(0, 120)}`)).toEqual([]);
+    }
+    await excluded.getByTestId("ai-digest-excluded-remove").click();
+    await expect(page.getByTestId("ai-digest-excluded")).toHaveCount(0);
+    await expect(page.getByTestId("snack").filter({ hasText: "Morning Brew can be in the digest again" })).toBeVisible();
+  });
+
   test("the digest off lists unticked and sends nothing; on, it sorts them, Archive all has one Undo", async ({ app: page, server }) => {
     const { db } = await withMail(server);
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, today: { digest: true, prepareAt: "00:00" } });

@@ -1,5 +1,5 @@
 import { todayAvailable } from "~/lib/ai";
-import { DIGEST_ROW_ID, NEEDS_GROUPS, needsGroup, type DigestRow, type NeedsGroup, type TodayList, type ThreadSummary } from "@terno/core";
+import { addressKey, DIGEST_ROW_ID, NEEDS_GROUPS, needsGroup, type DigestItem, type DigestRow, type NeedsGroup, type TodayList, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
@@ -56,9 +56,39 @@ interface TodayState {
   needsShown: number;
   /** owner's decisions (2): newsletters the reader sent to Trash or Spam on the way back, so their row says so, not "Archived" */
   movedTo: ReadonlyMap<number, "trash" | "spam">;
+  /**
+   * Plan 166: senders just said not to be newsletters (address keys), left out of every view of the digest at once, before
+   * the backend's read agrees (and whatever an older read brings), until their Undo.
+   */
+  notNewsletters: ReadonlySet<string>;
 }
 
-export const useToday = create<TodayState>(() => ({ groups: [], more: 0, digest: null, fromDigest: null, pick: null, needsShown: 0, movedTo: new Map() }));
+export const useToday = create<TodayState>(() => ({ groups: [], more: 0, digest: null, fromDigest: null, pick: null, needsShown: 0, movedTo: new Map(), notNewsletters: new Set() }));
+
+/** Plan 166: an item's sender, as the list of senders that aren't newsletters keys it. */
+export const senderKey = (item: Pick<DigestItem, "fromEmail">): string => addressKey(item.fromEmail ?? "");
+
+/** Plan 166: the digest without these senders: its items, and what it counts (still to archive, opened). */
+export function withoutSenders(digest: DigestRow, keys: ReadonlySet<string>): DigestRow {
+  if (!keys.size) return digest;
+  const gone = new Set(digest.items.filter((i) => keys.has(senderKey(i))).map((i) => i.threadId));
+  if (!gone.size) return digest;
+  return { ...digest, items: digest.items.filter((i) => !gone.has(i.threadId)), liveIds: digest.liveIds.filter((id) => !gone.has(id)), readIds: digest.readIds?.filter((id) => !gone.has(id)) };
+}
+
+/** Plan 166: "Not a newsletter": out of the digest everywhere at once (the page, Today's header), until `letBackIn`. */
+export function leaveOut(key: string): void {
+  useToday.setState(({ notNewsletters, digest }) => ({ notNewsletters: new Set([...notNewsletters, key]), digest: digest && withoutSenders(digest, new Set([key])) }));
+}
+
+/** Plan 166: its Undo, or Settings' Remove: the rows come back with the next read. */
+export function letBackIn(key: string): void {
+  useToday.setState(({ notNewsletters }) => {
+    const next = new Set(notNewsletters);
+    next.delete(key);
+    return { notNewsletters: next };
+  });
+}
 
 /** The page's pick for this day: what was left, or nothing toggled. */
 export function digestPick(day: string): DigestPick {
@@ -227,6 +257,6 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
       groups.sort((a, b) => a.at - b.at);
     }
   }
-  useToday.setState({ groups, more, digest: list.digest, needsShown });
+  useToday.setState(({ notNewsletters }) => ({ groups, more, digest: list.digest && withoutSenders(list.digest, notNewsletters), needsShown }));
   return items;
 }

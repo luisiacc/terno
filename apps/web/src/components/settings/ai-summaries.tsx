@@ -1,16 +1,20 @@
-import { ASK_CLAUDE_MODEL, DIGEST_CLAUDE_MODEL, DIGEST_OPENAI_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, NUDGE_DAYS, SUMMARY_CLAUDE_MODEL, SUMMARY_DEFAULT_MODEL, type AiErrorKind, type AiProviderId, type AiSummariesStatus, type AiTaskName, type ModelInfo } from "@terno/core";
+import { ASK_CLAUDE_MODEL, DIGEST_CLAUDE_MODEL, DIGEST_OPENAI_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, NUDGE_DAYS, SUMMARY_CLAUDE_MODEL, SUMMARY_DEFAULT_MODEL, type AiErrorKind, type AiProviderId, type AiSummariesStatus, type AiTaskName, type ModelInfo, type NotNewsletter } from "@terno/core";
 import type { AiSettings, AiUsageReport, AppSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { CloseButton } from "@terno/ui/components/close-button";
 import { Input } from "@terno/ui/components/input";
 import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { digestTarget, askTarget, errorHelp, followupTarget, modelName, providerLabel, summariesOffered, summaryTarget } from "~/lib/ai";
 import { reconcileSettings } from "~/lib/appearance";
 import { localized } from "~/lib/i18n";
-import { snack } from "~/lib/snack";
+import { undoAction } from "~/lib/actions";
+import { registerUndo, snack } from "~/lib/snack";
+import { reloadList } from "~/state/list";
+import { leaveOut, letBackIn, senderKey } from "~/state/today";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { CommitInput, SettingsGroup, SettingsNote, SettingsRow, type SettingsUpdate } from "./parts";
@@ -273,7 +277,71 @@ export function DigestGroup({ settings, update }: { settings: AppSettings; updat
         {(a) => <Switch {...a} checked={on} data-testid="ai-digest-switch" onCheckedChange={(digest) => void update({ today: { digest } })} />}
       </SettingsRow>
       {on && <TaskTargetRow ai={ai} update={update} task="digest" provider={target.provider} model={target.model} choices={[...new Set([...providerChoices(ai), target.provider])]} modelFor={(next) => (next === "anthropic" ? DIGEST_CLAUDE_MODEL : next === "openai" ? DIGEST_OPENAI_MODEL : modelFor(ai, next) || target.model)} models={models} prefix="ai-digest" labels={{ row: t("today.digest.target"), hint: t("today.digest.targetHint"), provider: t("ai.followups.targetProvider"), model: t("ai.followups.targetModel") }} />}
+      <NotNewslettersRow />
     </SettingsGroup>
+  );
+}
+
+/**
+ * Plan 166: the senders said not to be newsletters, where the digest's settings are: each can be let back in, with Undo.
+ * Shown whenever there's one, the digest on or off (they're out of Automated mail too). Nothing here leaves the machine.
+ */
+function NotNewslettersRow() {
+  const [senders, setSenders] = useState<NotNewsletter[] | null>(null);
+  const list = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    let current = true;
+    const read = () => void client.call("today.notNewsletters", {}).then((r) => current && setSenders(r.senders), () => {});
+    read();
+    const off = client.on("todayDigest", read);
+    return () => {
+      current = false;
+      off();
+    };
+  }, []);
+  if (!senders?.length) return null;
+  const nameOf = (e: NotNewsletter) => e.name || e.email;
+  const remove = async (e: NotNewsletter, at: number) => {
+    const key = senderKey({ fromEmail: e.email });
+    // the keys go to the next sender's Remove (else the one before): the row they were on is gone
+    const buttons = [...(list.current?.querySelectorAll<HTMLElement>("[data-testid=ai-digest-excluded-remove]") ?? [])];
+    const next = buttons[at + 1] ?? buttons[at - 1];
+    setSenders((held) => held && held.filter((x) => x !== e));
+    next?.focus({ preventScroll: true });
+    try {
+      const r = await client.call("today.newsletterAgain", { email: e.email, at: e.at });
+      letBackIn(key);
+      void reloadList({ keepSelection: true });
+      if (!r.removed) return;
+      const removed = r.removed;
+      const undo = registerUndo(async () => {
+        // back where it was: its own time, so the list's order is as before
+        await client.call("today.notNewsletter", removed);
+        leaveOut(key);
+        await reloadList({ keepSelection: true });
+      });
+      snack.success(t("today.digest.excluded.removed", { sender: nameOf(e) }), { duration: 8000, action: undoAction(undo, t("today.digest.excluded.removeUndo", { sender: nameOf(e) })) });
+    } catch (error) {
+      setSenders((held) => held && [...held, e].sort((a, b) => b.at - a.at));
+      snack.error(error instanceof Error ? error.message : String(error));
+    }
+  };
+  return (
+    <SettingsRow label={t("today.digest.excluded.title")} hint={t("today.digest.excluded.hint")} stacked testId="ai-digest-excluded">
+      {(a) => (
+        <ul ref={list} aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} className="flex flex-col">
+          {senders.map((e, i) => (
+            <li key={`${e.email}-${e.at}`} className="flex min-h-9 items-center gap-3 border-b border-hairline py-1 last:border-b-0" data-testid="ai-digest-excluded-item">
+              <span className="min-w-0 flex-1 truncate text-sm">
+                <span className="font-medium">{nameOf(e)}</span>
+                {e.name && e.name !== e.email && <span className="ml-2 text-xs text-muted-foreground">{e.email}</span>}
+              </span>
+              <CloseButton size="sm" label={t("today.digest.excluded.remove", { sender: nameOf(e) })} className="relative after:absolute after:-inset-1 after:content-['']" data-testid="ai-digest-excluded-remove" onClick={() => void remove(e, i)} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </SettingsRow>
   );
 }
 

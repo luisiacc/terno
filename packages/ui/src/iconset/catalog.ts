@@ -17,6 +17,8 @@ export const ICONS = {
   ArrowUp: "ArrowUp02Icon",
   AtSign: "AtIcon",
   BadgeCheck: "CheckmarkBadge01Icon",
+  // plan 166: the digest row's "Not a newsletter"
+  Ban: "UnavailableIcon",
   Baseline: "TextColorIcon",
   Bell: "Notification01Icon",
   BellOff: "NotificationOff01Icon",
