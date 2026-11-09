@@ -9,7 +9,7 @@ import { client } from "~/rpc/connection";
 import { getApp, useApp } from "~/state/app";
 import { loadThread, useThreads } from "~/state/threads";
 import { draftingOffered, errorHelp, writingModel, writingTarget } from "./ai";
-import { aiDraftHooks, canDraft, useAiDraftUi, type AiDraftBadge } from "./ai-draft-state";
+import { aiDraftHooks, canDraft, refreshGlance, useAiDraftUi, type AiDraftBadge } from "./ai-draft-state";
 import { addressReply, composeLanding, recipientsUnchosen, composeOpening, leaveNewDraft, sendDraft } from "./compose";
 import { focusSoon } from "./compose-focus-move";
 import { draftCommands, draftKeyOf } from "./draft-commands";
@@ -380,6 +380,8 @@ function remove(key: string, endCompose = true) {
   if (!s) return;
   const { [key]: _gone, ...rest } = useAiDraft.getState().sessions;
   useAiDraft.setState({ sessions: rest });
+  // the body may be the note again (an Undo, a stop before words): the foot and the body say so with the row's going
+  refreshGlance(key);
   publishBadges();
   clearStream(key);
   streams.delete(key);

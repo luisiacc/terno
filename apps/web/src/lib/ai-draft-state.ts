@@ -67,6 +67,16 @@ export function setGlance(key: string, glance: BodyGlance | null): void {
   useAiDraftUi.setState({ glances: next });
 }
 
+/**
+ * Plan 162 (after ai162-r05): the glance read now, where one is published (the body's slot is up), for a change that isn't
+ * typing: an Undo that gives the note back must say so in the same moment, not a glance later (a frame of Send as the
+ * primary under the instruction).
+ */
+export function refreshGlance(key: string): void {
+  if (!(key in useAiDraftUi.getState().glances)) return;
+  setGlance(key, glanceNow(key) ?? "");
+}
+
 export const aiDraftHooks: {
   /** a suggestion nobody has decided on: the row asks, and this send stops here (§10.4) */
   blocksSend: (key: string, sendAt?: number) => boolean;

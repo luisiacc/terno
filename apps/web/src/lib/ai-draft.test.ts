@@ -29,7 +29,7 @@ const threads = vi.hoisted(() => ({ listeners: new Set<(state: unknown) => void>
 vi.mock("~/state/threads", () => ({ invalidateThreads: vi.fn(), loadThread: vi.fn(async () => null), useThreads: { subscribe: (l: (state: unknown) => void) => { threads.listeners.add(l); return () => threads.listeners.delete(l); } } }));
 
 const store = await import("./ai-draft");
-const { aiDraftHooks, useAiDraftUi } = await import("./ai-draft-state");
+const { aiDraftHooks, noteState, setGlance, useAiDraftUi } = await import("./ai-draft-state");
 const { sendDraft } = await import("./compose");
 const { newFields } = await import("./compose-fields");
 const drafts = await import("./drafts");
@@ -2104,6 +2104,26 @@ describe("plan 162 (after ai162-r04): revising a draft, and a note for AI", () =
     const plain = reply("Hi Arjun, Friday works for me. See you then.");
     await sendDraft(plain.key);
     expect(useEmptySend.getState().reason).not.toBe("note");
+  });
+
+  it("plan 162 (after ai162-r05): Undo of a write from a note gives the note back at once, Write it and all, not 150 ms later", async () => {
+    const { key, c } = reply("ask him to send the address of the flat");
+    // the body's glance, as the slot publishes it while typing: a note for AI
+    setGlance(key, "write");
+    expect(noteState(useAiDraftUi.getState().rows[key], useAiDraftUi.getState().glances[key])).toBe(true);
+    void store.act(key);
+    await tick();
+    last("ai.resolveIntent").resolve({ decision: { kind: "route", route: { type: "keep-draft" } }, fromAccountId: null, confirmFailed: false });
+    await tick();
+    last("ai.compose").resolve(done(draft));
+    await tick();
+    expect(session(key)!.phase).toBe("strip");
+    // the draft landed, and typing's throttled glance said so: an email
+    setGlance(key, "");
+    store.undoCommit(key);
+    expect(c.text).toBe("ask him to send the address of the flat");
+    // the same moment, not after the next glance: no frame of Send as the primary under the instruction
+    expect(noteState(useAiDraftUi.getState().rows[key], useAiDraftUi.getState().glances[key])).toBe(true);
   });
 
   it("a rewrite typed over while it ran offers Replace, not only Insert below", async () => {
