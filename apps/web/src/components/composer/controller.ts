@@ -1,4 +1,5 @@
 import type { SnippetValues } from "@terno/core";
+import type { BodyText } from "./body-text";
 import { useSyncExternalStore } from "react";
 import { create } from "zustand";
 
@@ -103,6 +104,28 @@ export interface ComposerController {
   sameDoc(doc: unknown): boolean;
   /** plan 161: selects the first place this text is, and shows it; false when it isn't there */
   selectText(text: string): boolean;
+  /** plan 163: the body as its blocks read, up to `limit` characters, never serializing (body-text.ts) */
+  bodyText(limit?: number): BodyText;
+  /** plan 163: a fill begins: its gaps (document ranges) are mapped from now on, and show their fills as they come */
+  startFill(run: string, gaps: readonly { from: number; to: number }[]): boolean;
+  /** plan 163: one gap's fill so far */
+  streamFill(run: string, n: number, text: string, done: boolean): void;
+  /**
+   * Plan 163: every gap nobody touched gets its fill (finished ones only, with `done`), keeping the placeholder's marks,
+   * as one undo step; a gap left as typed is marked as one. Null when the run isn't this editor's (rebuilt without it) or
+   * the draft can't change now. `gaps` are where every unspoiled gap was in `before`, for Fill again.
+   */
+  commitFill(run: string, fills: readonly (string | null)[], o?: { onlyDone?: boolean }): { doc: unknown; before: unknown; gaps: { from: number; to: number }[]; applied: number; left: string[] } | null;
+  /** plan 163: Fill again: `base` (the document before the first fill) with its gaps filled anew, over everything, one undo step */
+  refill(base: unknown, gaps: readonly { from: number; to: number }[], fills: readonly (string | null)[]): { doc: unknown; before: unknown; applied: number; left: string[] } | null;
+  /** plan 163: a fill run ends without filling (stopped, failed) */
+  endFill(run: string): void;
+  /** plan 163: the run filling in this editor now, if any */
+  fillRun(): string | null;
+  /** plan 163: finished fills of the run filling now, by gap (null: unfinished or spoiled) */
+  fillsSoFar(run: string): (string | null)[];
+  /** plan 163: the tint on what was filled goes (the strip went) */
+  clearFilled(): void;
   /** plan 133: an opaque identity of the document: a change of anything but the selection changes it, in O(1) */
   docToken(): unknown;
   /** plan 133: told after every change of the document, at once */

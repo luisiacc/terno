@@ -114,6 +114,22 @@
   min-height: 0;
 }
 
+/* plan 163: a gap being filled: its placeholder gives way to the fill as it comes (a decoration, never the document) */
+.ai-fill-hidden {
+  display: none;
+}
+/* plan 163: ⌘J opened this composer for AI: the empty body says what to do here */
+[data-ai-hint] .rt-body.is-empty::before {
+  content: var(--ai-hint);
+}
+/* plan 163: written from an instruction in the body: the instruction dims while it's read, and the stream takes its place */
+[data-ai-overlay="replacing"] > [data-editor-mount] {
+  opacity: 0.55;
+}
+[data-ai-overlay="replacing"][data-ai-streaming] > [data-editor-mount] {
+  visibility: hidden;
+}
+
 /* plan 18: ghost text, the rest of a sentence the user often writes. A layer beside the editor (never in its DOM),
    wrapped like the caret's line and in its font (set inline); muted, still AA as text; never selectable or clickable */
 .rt-ghost-layer {

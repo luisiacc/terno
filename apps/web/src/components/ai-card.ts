@@ -36,6 +36,14 @@ export const AI_GAP_TINT = "rounded-xs bg-star/25 px-px text-foreground";
 /** Plan 162 (after ai162-r02): a gap in the text is marked by more than its tint: a dotted underline survives grey and colour blindness */
 export const AI_GAP = `${AI_GAP_TINT} underline decoration-dotted decoration-1 underline-offset-2`;
 
+/**
+ * Plan 163: words the model put in a gap the user left, marked until they're read: the primary's wash under the ink and a
+ * solid underline (a gap is gold and dotted: missing; a fill is filled). `CONTRAST_PAIRS` holds it on a composer's surfaces.
+ */
+export const AI_FILL = "rounded-xs bg-primary/12 text-foreground underline decoration-primary/60 decoration-1 underline-offset-2";
+/** a fill still coming, where its gap was: the same mark, so nothing moves when it goes in */
+export const AI_FILL_STREAM = `${AI_FILL} ai-fill-stream`;
+
 /** The text in pieces: each of `gaps` found in it (exactly those strings, never any bracket) as a gap. */
 export function gapPieces(text: string, gaps: readonly string[]): { text: string; gap: boolean }[] {
   const wanted = [...new Set(gaps.filter(Boolean))];

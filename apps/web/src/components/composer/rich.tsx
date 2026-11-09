@@ -58,6 +58,9 @@ import { snack } from "~/lib/snack";
 import { insertSnippetTr, snippetDoc, withoutImages } from "./snippets";
 import { generatedTr } from "./generated";
 import { findGaps, withGaps } from "./gaps";
+import { bodyText } from "./body-text";
+import { fillInto, fillsOf, withFillMeta } from "./fills";
+import { Transform } from "prosemirror-transform";
 import { AiPreviewSlot } from "./ai-slot";
 import { aiDraftHooks } from "~/lib/ai-draft-state";
 import { applyLink, COMMANDS, createEditor, docOf, formatState, isEmpty, keepState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
@@ -325,6 +328,61 @@ export function RichBody({ draftKey, placeholder, className, checkpoint }: { dra
             return { doc: view.state.doc };
           },
           sameDoc: (doc) => doc instanceof PMNode && view.state.doc.content.size === doc.content.size && view.state.doc.eq(doc),
+          bodyText: (limit) => bodyText(view.state.doc, limit),
+          startFill: (run, gaps) => {
+            if (viewRef.current !== view) return false;
+            dismissGhost(view);
+            view.dispatch(withFillMeta(view.state.tr, { start: { run, gaps: [...gaps] } }));
+            return true;
+          },
+          streamFill: (run, n, text, done) => {
+            if (viewRef.current !== view || fillsOf(view.state).run !== run) return;
+            view.dispatch(withFillMeta(view.state.tr, { stream: { run, n, text, done } }));
+          },
+          fillRun: () => fillsOf(view.state).run,
+          fillsSoFar: (run) => {
+            const st = fillsOf(view.state);
+            if (st.run !== run) return [];
+            const out: (string | null)[] = [];
+            for (const g of st.gaps) out[g.n - 1] = g.done && !g.spoiled ? g.text : null;
+            return out;
+          },
+          commitFill: (run, fills, o = {}) => {
+            const st = fillsOf(view.state);
+            if (viewRef.current !== view || st.run !== run || !canMutate()) return null;
+            dismissGhost(view);
+            const before = view.state.doc;
+            const live = st.gaps.filter((g) => !g.spoiled && g.to > g.from);
+            const chosen = live.filter((g) => !!fills[g.n - 1] && (!o.onlyDone || g.done));
+            const { tr, filled } = fillInto(view.state.tr, before, chosen.map((g) => ({ from: g.from, to: g.to, text: fills[g.n - 1]! })));
+            const left = live.filter((g) => !chosen.includes(g)).map((g) => before.textBetween(g.from, g.to));
+            view.dispatch(closeHistory(withGaps(withFillMeta(tr, { stop: run }), left)));
+            view.dispatch(withFillMeta(closeHistory(view.state.tr), { filled }));
+            focusedOnce = true;
+            return { doc: view.state.doc, before, gaps: live.map((g) => ({ from: g.from, to: g.to })), applied: chosen.length, left };
+          },
+          refill: (base, gaps, fills) => {
+            if (viewRef.current !== view || !canMutate() || !(base instanceof PMNode)) return null;
+            dismissGhost(view);
+            const before = view.state.doc;
+            const chosen = gaps.flatMap((g, i) => (fills[i] ? [{ from: g.from, to: g.to, text: fills[i] }] : []));
+            const t = new Transform(base);
+            const { filled } = fillInto(t, base, chosen);
+            const left = gaps.filter((_, i) => !fills[i]).map((g) => base.textBetween(g.from, g.to));
+            const tr = view.state.tr.replaceWith(0, before.content.size, t.doc.content);
+            tr.setSelection(TextSelection.atEnd(tr.doc));
+            view.dispatch(closeHistory(withGaps(tr, left)));
+            view.dispatch(withFillMeta(closeHistory(view.state.tr), { filled }));
+            return { doc: view.state.doc, before, applied: chosen.length, left };
+          },
+          endFill: (run) => {
+            if (viewRef.current !== view || fillsOf(view.state).run !== run) return;
+            view.dispatch(withFillMeta(view.state.tr, { stop: run }));
+          },
+          clearFilled: () => {
+            if (viewRef.current !== view || !fillsOf(view.state).filled.length) return;
+            view.dispatch(withFillMeta(view.state.tr, { clearFilled: true }));
+          },
           selectText: (text) => {
             const at = findGaps(view.state.doc, [text])[0];
             if (!at || viewRef.current !== view) return false;
