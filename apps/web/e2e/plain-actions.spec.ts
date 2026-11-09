@@ -135,18 +135,14 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("nav-inbox")).toHaveAttribute("data-active");
       await expect(page.locator("#app-sidebar [data-active]")).toHaveCount(1);
       const rule = page.getByTestId("action-rule");
-      // plan 162 (after ai162-r04): one decision on screen: while the rule shows, it's the rule's (the header had a second
-      // pair, in the other order: every report)
-      await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toHaveCount(0);
+      // plan 162 (after ai162-r04): one decision on screen, the header's (the rule's pane had a second pair, in the other
+      // order: every report); how Terno read it is shown, not folded (its conditions decide what Apply takes)
+      await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toHaveAttribute("data-variant", "default");
       await expect(page.getByTestId("action-apply")).toHaveCount(1);
       await expect(page.getByTestId("action-cancel")).toHaveCount(1);
-      await expect(rule.getByTestId("action-apply")).toHaveText("Archive 2");
-      await expect(rule.getByTestId("action-apply")).toHaveAttribute("data-variant", "default");
-      await expect(rule.getByTestId("action-cancel")).toBeVisible();
-      // what will happen and the decision lead; how Terno read it follows, shown, not folded (its conditions decide Apply)
-      expect((await rule.getByTestId("action-apply").boundingBox())!.y).toBeGreaterThan((await rule.getByTestId("action-rule-title").boundingBox())!.y);
-      expect((await rule.getByTestId("action-apply").boundingBox())!.y).toBeLessThan((await rule.getByTestId("action-conditions").boundingBox())!.y);
+      await expect(rule.getByTestId("action-apply")).toHaveCount(0);
       await expect(rule.getByTestId("action-conditions")).toBeVisible();
+      const decided = (await page.getByTestId("action-apply").boundingBox())!;
       // the rule's rows share one value column; Edit as a rule is a bordered control in the reading
       const valueLefts = await rule.locator("[data-testid=action-conditions] dd").evaluateAll((dds) => [...new Set(dds.map((d) => Math.round(d.getBoundingClientRect().left)))]);
       expect(valueLefts).toHaveLength(1);
@@ -171,7 +167,7 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(rule.getByTestId("action-details")).toHaveCount(0);
       // and which mail, from the rows, in one line under the title: who sent them, and when
       await expect(rule.getByTestId("action-found-line")).not.toBeEmpty();
-      expect((await rule.getByTestId("action-found").boundingBox())!.y).toBeLessThan((await rule.getByTestId("action-apply").boundingBox())!.y);
+      expect((await rule.getByTestId("action-found").boundingBox())!.y).toBeLessThan((await rule.getByTestId("action-conditions").boundingBox())!.y);
       // checkboxes to assistive tech: the column's check, and the row's checked state (the cursor stays aria-selected)
       await expect(page.getByRole("checkbox", { name: /^Include / })).toHaveCount(2);
       await expect(page.getByRole("checkbox", { name: /^Include / }).first()).toHaveAttribute("aria-checked", "true");
@@ -181,11 +177,13 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("reader-subject")).toBeVisible();
       await expect(rows(page).first()).toHaveAttribute("data-included", "true");
       await expect(page.getByTestId("action-sentence")).toContainText("Archive shipping notices older than a month");
+      // the decision didn't move
+      expect((await page.getByTestId("action-apply").boundingBox())!).toEqual(decided);
       // Codex review: while a match is read, Esc goes back to the rule: Cancel doesn't claim it
       await expect(page.getByTestId("action-cancel")).not.toHaveAttribute("aria-keyshortcuts", "Escape");
       await expect(page.getByTestId("action-show-rule")).toHaveAttribute("aria-keyshortcuts", "Escape");
       // the rule isn't on screen: the header has Apply again, so it's always there exactly once
-      await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toHaveText("Archive 2");
+      await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
       await expect(page.getByTestId("action-apply")).toHaveCount(1);
       await page.getByTestId("action-show-rule").click();
       await expect(page.getByTestId("action-rule")).toBeVisible();
@@ -197,7 +195,7 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("action-apply")).toHaveText("Archive 1");
       // plan 162 (after ai162-r02): what it found counts what's ticked, so an untick recounts it, never hides it
       await expect(rule.getByTestId("action-found-line")).not.toBeEmpty();
-      await expect(rule.getByTestId("action-apply")).toHaveText("Archive 1");
+      await expect(page.getByTestId("action-apply")).toHaveText("Archive 1");
       await include.click();
       await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
     });
@@ -379,7 +377,7 @@ test.describe("actions in plain English (plan 143)", () => {
     await withMail(page, server);
     await say(page, "Delete recruiters");
     const rule = page.getByTestId("action-rule");
-    const apply = page.getByTestId("action-preview").getByTestId("action-apply");
+    const apply = page.getByTestId("action-apply");
     await expect(apply).toHaveText("Move 2 to Trash");
     await expect(apply).toHaveAttribute("data-variant", "destructive");
     await expect(rule.getByTestId("action-consequence")).toHaveText("2 conversations go to Trash, from all your mail except Spam and Trash.");
@@ -419,8 +417,8 @@ test.describe("actions in plain English (plan 143)", () => {
     await say(page, "Archive receipts from Uber");
     const said = page.getByTestId("action-rule").getByTestId("action-sender");
     await expect(said).toHaveText("Your sentence names Uber, but this rule doesn’t look at the sender. Check it below, or edit it as a rule.");
-    // beside what will happen, above the decision
-    expect((await said.boundingBox())!.y).toBeLessThan((await page.getByTestId("action-apply").boundingBox())!.y);
+    // beside what will happen, above how Terno read it
+    expect((await said.boundingBox())!.y).toBeLessThan((await page.getByTestId("action-rule").getByTestId("action-conditions").boundingBox())!.y);
     await expect(page.getByTestId("action-apply")).toBeEnabled();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/sender-split-light.png` });
     await page.getByTestId("action-apply").click();
@@ -460,7 +458,7 @@ test.describe("actions in plain English, List layout (plan 161)", () => {
     await say(page, "Archive shipping notices older than a month");
     await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
     // pass 3: List's rule is right under its header, so Apply stays there, beside the outcome
-    await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toBeVisible();
+    await expect(page.getByTestId("action-apply")).toBeVisible();
     await expect(page.getByTestId("action-decision")).toHaveCount(0);
     // List's header has the window's width: the whole outcome, on one line
     await expect(page.getByTestId("action-title")).toHaveText("Archive 2 conversations");
@@ -482,7 +480,7 @@ test.describe("actions in plain English, List layout (plan 161)", () => {
     const rule = page.getByTestId("action-preview").getByTestId("action-rule");
     await expect(rule.getByTestId("action-sender")).toHaveText(/^Your sentence names Uber, but this rule doesn’t look at the sender\./);
     await expect(rule.getByTestId("action-sender")).toBeInViewport();
-    await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toBeEnabled();
+    await expect(page.getByTestId("action-apply")).toBeEnabled();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/sender-list-light.png` });
   });
 
@@ -516,7 +514,7 @@ test.describe("actions in plain English at 1100 × 700 (plan 161, pass 2)", () =
   test("a long rule never scrolls Apply out of reach (Codex review, pass 3, #4)", async ({ app: page, server }) => {
     await withMail(page, server);
     await say(page, "Archive shipping notices older than a month");
-    const apply = page.getByTestId("action-preview").getByTestId("action-apply");
+    const apply = page.getByTestId("action-apply");
     await expect(apply).toHaveText("Archive 2");
     await page.setViewportSize({ width: 1100, height: 320 });
     // the rule is longer than its pane, and the pane rests at its top

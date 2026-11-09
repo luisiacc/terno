@@ -130,9 +130,10 @@ export default function ActionPreviewHeader() {
         <h1 data-testid="action-title" className={cn("flex min-w-0 flex-1 items-center gap-2", LIST_TITLE.title)} aria-live="polite">
           <span className={cn("min-w-0", !list && "truncate")} title={heading === title ? undefined : title}>{heading}</span>
         </h1>
-        {/* plan 162 (after ai162-r04): one decision on screen, never two. Here in List, and in Split while a match is read
-            (the reader is that mail); while the rule shows in the reader, its foot holds it, where the reading ends */}
-        {!ruleInReader && <ActionButtons size="sm" className="no-drag" escCancels={list} />}
+        {/* plan 162 (after ai162-r04): one decision on screen, never two (the rule's pane had a second pair, in the other
+            order: every report). Here, in every state: it never moves when a match is read, and a short window never
+            scrolls it out of reach (Codex review, pass 3, #4) */}
+        <ActionButtons size="sm" className="no-drag" escCancels={list || ruleInReader} />
       </div>
       {/* the words typed, when the rule (which they head) isn't on screen */}
       {!ruleInReader && sentence && (
@@ -380,12 +381,6 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
       )}
       {/* the decision, where the reading of the pane ends (the header's own commands, which stay, so nothing moves while a
           match is read) */}
-      {reader && (
-        // plan 162 (after ai162-r04): the only Cancel and Archive on screen while the rule shows, in the header's order
-        <div className="no-drag flex flex-wrap items-center gap-2" data-testid="action-rule-decision">
-          <ActionButtons size="sm" order="apply-first" />
-        </div>
-      )}
       {!ruleOnly || plan.conditions.length ? reading : null}
     </div>
   );
