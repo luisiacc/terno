@@ -42,3 +42,48 @@ export function citationRuns(text: string): AnswerRun[] {
   }
   return runs;
 }
+
+/** An answer's block: a paragraph, or a list of items (each an item's words, its marker taken off). */
+export type AnswerBlock = { kind: "p"; text: string } | { kind: "ul" | "ol"; items: string[] };
+
+const BULLET = /^\s*[-*•]\s+/;
+const NUMBERED = /^\s*\d{1,3}[.)]\s+/;
+
+/**
+ * Plan 162 (after ai162-r04): an answer's lines as blocks. A run of "- " (or "* ", "• ") lines is a list, of "1. " lines
+ * a numbered one; anything else is a paragraph, and a blank line ends one. Only that: no other markdown is read.
+ */
+export function answerBlocks(text: string): AnswerBlock[] {
+  const blocks: AnswerBlock[] = [];
+  let para: string[] = [];
+  const endPara = () => {
+    if (para.length) blocks.push({ kind: "p", text: para.join("\n") });
+    para = [];
+  };
+  for (const line of text.split("\n")) {
+    const kind = BULLET.test(line) ? "ul" : NUMBERED.test(line) ? "ol" : null;
+    if (kind) {
+      endPara();
+      const item = line.replace(kind === "ul" ? BULLET : NUMBERED, "");
+      const last = blocks.at(-1);
+      if (last && last.kind === kind) last.items.push(item);
+      else blocks.push({ kind, items: [item] });
+    } else if (!line.trim()) endPara();
+    else para.push(line);
+  }
+  endPara();
+  return blocks;
+}
+
+/** "**words**" as bold, nothing else; a lone "**" is dropped rather than shown. */
+export function boldParts(text: string): { text: string; bold: boolean }[] {
+  const parts: { text: string; bold: boolean }[] = [];
+  let at = 0;
+  for (const m of text.matchAll(/\*\*([^*\n]+?)\*\*/g)) {
+    if (m.index > at) parts.push({ text: text.slice(at, m.index), bold: false });
+    parts.push({ text: m[1]!, bold: true });
+    at = m.index + m[0].length;
+  }
+  if (at < text.length) parts.push({ text: text.slice(at), bold: false });
+  return parts.map((p) => ({ ...p, text: p.text.replace(/\*\*/g, "") })).filter((p) => p.text);
+}

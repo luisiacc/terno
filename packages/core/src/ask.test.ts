@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerSentences, answerWithoutCitations, askOperandsMissing, askSpecifics, buildAskSearch, hasUnlinkedSentence, resolveCitations, sameNamePeople, validAskQueries } from "./ask";
+import { answerSentences, answerWithoutCitations, askOperandsMissing, cleanAnswer, askSpecifics, buildAskSearch, hasUnlinkedSentence, resolveCitations, sameNamePeople, validAskQueries } from "./ask";
 
 const NOW = new Date(2026, 10, 5, 12).getTime();
 
@@ -114,5 +114,23 @@ describe("a machine sum's amounts (plan 154)", () => {
   it("are found however the mail writes them, and flagged when no mail holds them", () => {
     expect(askOperandsMissing(["120.50", "80", "1234.56", "0.001"], ["paid 120,50 then 80.00, then 1.234,56 and BTC 0.001"])).toEqual([]);
     expect(askOperandsMissing(["7777"], ["paid 80"])).toEqual(["7777"]);
+  });
+});
+
+describe("plan 162 (after ai162-r04): what the model wrote for itself never reaches the answer", () => {
+  it("drops a bracket that holds a label and words, keeps citations and other brackets", () => {
+    expect(cleanAnswer("She wrote on 22 October [m3], under another sender address [m9 doesn't mention it, so ignore that one].")).toBe("She wrote on 22 October [m3], under another sender address.");
+    expect(cleanAnswer("Paid [m1][m2] [note]")).toBe("Paid [m1][m2] [note]");
+    expect(cleanAnswer("The code [1] stays")).toBe("The code [1] stays");
+  });
+  it("turns a bracket of labels only into citations", () => {
+    expect(cleanAnswer("Both said so [m1, m3].")).toBe("Both said so [m1][m3].");
+  });
+  it("drops a note still open at the end, while it streams", () => {
+    expect(cleanAnswer("Isabella paid [m2] [m9 doesn't")).toBe("Isabella paid [m2]");
+  });
+  it("resolves what's left: no number from a note reaches a citation or a check", () => {
+    const labels = new Map([["m3", 0]]);
+    expect(resolveCitations("Paid on 2 May [m3] [m9 isn't about it].", labels)).toEqual({ text: "Paid on 2 May [1].", cited: [0], dropped: 0 });
   });
 });

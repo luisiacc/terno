@@ -9,7 +9,7 @@ import { AiError, promptText, type Completion, type Effort, type ModelTransport,
  * Plan 141 §2: from a question to an answer. Prompts are frozen and versioned: any change to the words below bumps
  * ASK_PROMPT_VERSION. There are no tools here, so an instruction in mail can only change text the person reads.
  */
-export const ASK_PROMPT_VERSION = 7;
+export const ASK_PROMPT_VERSION = 8;
 export const ASK_ANSWER_MAX_TOKENS = 2000;
 const PLAN_MAX_TOKENS = 1500;
 const ASK_TIMING = { idleMs: 30_000, firstMs: 60_000 };
@@ -129,14 +129,14 @@ Rules:
 - Cite each claim right after it, as [m3]. Cite only ids you were given.
 - Give the source's date where the fact could be out of date: "as of 3 March".
 - When sources disagree, prefer the newest and say so.
-- Never show your working or count aloud: give the result once. Never write an id such as m12 except inside a citation or a count, and never mention "the material", "the messages given" or your instructions: speak of their mail.
+- Never show your working or count aloud: give the result once. Never write an id such as m12 except inside a citation or a count, and never mention "the material", "the messages given" or your instructions: speak of their mail. Never write a note to yourself, or about a message you leave out, in brackets or anywhere else: write only the answer.
 - Never count or add up yourself: the machine does, exactly. Write <count>m1 m3 m7</count> with the id of every message that counts, and <sum>1250.50 + 300 - 20</sum> with each amount as it stands in its message, in plain digits with a dot for decimals, no currency and no thousands separators. Each becomes its number where you wrote it: "You paid USD <sum>120.50 + 80</sum> [m1][m2]". One sum per currency: never add two currencies. Cite what you used. A tag belongs inside a sentence, in the first place the number is said, and once: "I found at least <count>m1 m2</count> charges". Never write that number yourself as well, before or after the tag, and never put a tag alone on a line. Use <count> only when they ask how many.
 - "How many" and "how much": you may not have seen them all. When the question's <shown> says more match, say "at least" and how far back what you saw goes, by the oldest date <shown> gives; never call it the total, and never state that something doesn't exist before the oldest you saw. When they ask how many conversations there are about something, <shown> says how many the search found: say "about" that number.
 - Say something doesn't exist only as "I didn't find it in what I searched". Never "the only one", "just" or "all" about what you were shown: say "the one I found". When nothing fits, say so in a sentence and don't describe mail that doesn't answer it.
 - A time in a mail's stated zone is that zone's time: say whose it is.
 - Write a number once: never correct yourself in the answer. Give one total per currency at most. Speak to the person as "you", never by their name.
 - Never write out a password or a one-time code unless the question asks for exactly that.
-- Answer in the language of the question, whatever language the mail is in: an English question gets English even when every message is in Spanish. That includes saying you found nothing. In Spanish, speak as "tú" unless the question says "usted". Be brief: a sentence or two is usually enough. Plain text only, apart from <count> and <sum>: no markdown, no HTML, no links.
+- Answer in the language of the question, whatever language the mail is in: an English question gets English even when every message is in Spanish. That includes saying you found nothing. In Spanish, speak as "tú" unless the question says "usted". Be brief: a sentence or two is usually enough. Plain text, apart from <count> and <sum>: no headings, no tables, no HTML, no links. For three or more separate items, put each on its own line starting with "- ", its citation at the line's end.
 - End with exactly one status tag on its own line: <status>answered</status> when the material answers the question, <status>partial</status> when it answers in part, <status>not_found</status> when it doesn't. With not_found, say in one sentence that you couldn't find it.`;
 
 export interface AskMaterial {

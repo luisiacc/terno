@@ -148,6 +148,46 @@ function TargetHeading({ row }: { row: ThreadSummary }) {
   );
 }
 
+/**
+ * Plan 162 (after ai162-r04): Ask is a column bounded by the window (its top at 18%, a margin under it): its answer gives
+ * up height first, so its header, follow-up box and keys are always whole. It ran past a 1100x700 window.
+ */
+const ASK_FITS = "flex flex-col max-h-[calc(82dvh-1rem)]";
+
+/** The dialog's own field (the palette's input, or Ask's follow-up box), else its first control. */
+const paletteHome = (): HTMLElement | null => {
+  const dialog = document.querySelector<HTMLElement>("[data-slot=dialog-content]");
+  return dialog?.querySelector<HTMLElement>("[data-ask-followup]:not(:disabled), [cmdk-input]:not(:disabled)") ?? dialog?.querySelector<HTMLElement>("button:not(:disabled), [tabindex='0']") ?? null;
+};
+
+/**
+ * Plan 162 (after ai162-r04): the app behind the scrim never takes the keys while the palette is open. A control that
+ * goes from under focus (New question, Previous AI questions) dropped it to <body>, and Tab then walked the sidebar behind;
+ * the keys come back to the dialog's field instead, whichever page it's on.
+ */
+function useKeysInPalette(open: boolean): void {
+  useEffect(() => {
+    if (!open) return;
+    const behind = (el: EventTarget | null) => el instanceof Node && document.getElementById("root")?.contains(el) === true;
+    const onFocus = (e: FocusEvent) => {
+      if (behind(e.target)) paletteHome()?.focus({ preventScroll: true });
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Tab" || (document.activeElement && document.activeElement !== document.body)) return;
+      const home = paletteHome();
+      if (!home) return;
+      e.preventDefault();
+      home.focus({ preventScroll: true });
+    };
+    document.addEventListener("focusin", onFocus, true);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("focusin", onFocus, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
+}
+
 export function CommandPalette() {
   const open = useApp((s) => s.dialog === "palette");
   // closed means idle: no re-render for category or account changes
@@ -184,6 +224,7 @@ export function CommandPalette() {
   const updatesAvailable = useHasUpdates();
   const readyVersion = useUpdates((s) => (open && s.state?.ready && s.state.status !== "installing" ? s.state.ready.version : null));
   const [value, setValue] = useState("");
+  useKeysInPalette(open);
   // the page: set by whoever opened it (⌘K the root, ⌘; the snippets), changed inside
   const page = usePalettePage((s) => s.page);
   const setPage = setPalettePage;
@@ -580,9 +621,10 @@ export function CommandPalette() {
   const placeholder = page === "root" ? t("palette.placeholder") : page === "remind" ? t("palette.remindPlaceholder") : page === "snippets" ? t("palette.snippetsPlaceholder") : t("category.picker.placeholder");
 
   return (
-    <CommandDialog open={open} onOpenChange={(o) => !o && close()} finalFocus={() => { const own = tookFocus.current; tookFocus.current = false; return own ? false : paletteReturn(); }} title={page === "ask" ? t("ask.dialog.title") : page === "askHistory" ? t("palette.askHistory") : t("palette.title")} description={page === "ask" || page === "askHistory" ? t("ask.dialog.description") : t("palette.description")} hints={page !== "ask"}>
+    <CommandDialog open={open} onOpenChange={(o) => !o && close()} finalFocus={() => { const own = tookFocus.current; tookFocus.current = false; return own ? false : paletteReturn(); }} title={page === "ask" ? t("ask.dialog.title") : page === "askHistory" ? t("palette.askHistory") : t("palette.title")} description={page === "ask" || page === "askHistory" ? t("ask.dialog.description") : t("palette.description")} hints={page !== "ask"} className={page === "ask" || page === "askHistory" ? ASK_FITS : undefined}>
       {/* CommandDialog (base-nova) doesn't provide the cmdk root itself */}
       <Command
+        className="min-h-0"
         // cmdk's Ctrl+J/K/N/P: off the Mac Ctrl+K is the palette's own chord (it closes it)
         vimBindings={isMac}
         // the palette filters and orders (arrange): cmdk keeps the selection and the keys

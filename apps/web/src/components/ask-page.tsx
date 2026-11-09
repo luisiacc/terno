@@ -1,4 +1,4 @@
-import { answerSentences, answerWithoutCitations, sameNamePeople, type AiErrorKind, type AskConversationSummary, type AskPlanQuery, type AskSourceRef, type AskTurn } from "@terno/core";
+import { answerSentences, answerWithoutCitations, cleanAnswer, sameNamePeople, type AiErrorKind, type AskConversationSummary, type AskPlanQuery, type AskSourceRef, type AskTurn } from "@terno/core";
 import type { AiSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
@@ -13,7 +13,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import { askReady, askTarget } from "~/lib/ai";
 import { closePeek, showSource, usePeek, type Peek } from "~/lib/ask-peek";
 import { Marked } from "~/components/match-mark";
-import { citationRuns } from "~/lib/ask-citations";
+import { answerBlocks, boldParts, citationRuns } from "~/lib/ask-citations";
 import { cn } from "@terno/ui/lib/utils";
 import { askConfigChanged, askQuestion, atTurnLimit, deleteConversation, loadAskHistory, newQuestion, openConversation, openSource, restoreConversation, returning, searchOlder, stopAsking, useAsk } from "~/lib/ask";
 import { listDate } from "~/lib/format";
@@ -80,23 +80,40 @@ function AnswerText({ text, sources, queries, chosen = null, unlinked = null }: 
       </Tooltip>
     );
   };
-  // plan 162 (after ai162-r03): a claim with no citation is marked where it is, so the note under it says which parts
+  // plan 162 (after ai162-r03): a claim with no citation is marked where it is, so the note under it says which parts.
+  // After ai162-r04: marked in the secondary ink, never underlined (an underline reads as a link: five reports)
+  const sentences = (part: string) =>
+    answerSentences(part).map((sentence, k) => {
+      const runs = boldParts(sentence.text.trimEnd()).map((b, j) => (b.bold ? <strong key={j} className="font-semibold"><Runs text={b.text} marker={marker} /></strong> : <Runs key={j} text={b.text} marker={marker} />));
+      const space = sentence.text.slice(sentence.text.trimEnd().length);
+      return sentence.claim && !sentence.linked && unlinked ? (
+        <span key={k}>
+          <span data-testid="ask-unlinked" aria-describedby={unlinked} className="text-muted-foreground">{runs}</span>
+          {space}
+        </span>
+      ) : (
+        <span key={k}>{runs}{space}</span>
+      );
+    });
+  // after ai162-r04: the model's "- " and "1. " lines are a list (they showed as raw hyphens); a blank line a paragraph
   return (
-    <p className="whitespace-pre-wrap break-words text-sm leading-relaxed" data-testid="ask-answer">
-      {answerSentences(text).map((sentence, k) => {
-        const runs = <Runs text={sentence.text.trimEnd()} marker={marker} />;
-        const space = sentence.text.slice(sentence.text.trimEnd().length);
-        return sentence.claim && !sentence.linked && unlinked ? (
-          <span key={k}>
-            <span data-testid="ask-unlinked" aria-describedby={unlinked} className="underline decoration-muted-foreground decoration-dotted decoration-1 underline-offset-[0.25em]">{runs}</span>
-            {space}
-          </span>
+    <div className="space-y-2 break-words text-sm leading-relaxed" data-testid="ask-answer">
+      {answerBlocks(cleanAnswer(text)).map((b, i) =>
+        b.kind === "p" ? (
+          <p key={i} className="whitespace-pre-wrap">{sentences(b.text)}</p>
         ) : (
-          <span key={k}>{runs}{space}</span>
-        );
-      })}
-    </p>
+          <List key={i} kind={b.kind}>
+            {b.items.map((item, j) => <li key={j} className="ps-0.5" data-testid="ask-answer-item">{sentences(item)}</li>)}
+          </List>
+        ),
+      )}
+    </div>
   );
+}
+
+function List({ kind, children }: { kind: "ul" | "ol"; children: ReactNode }) {
+  const cls = "space-y-1 ps-5 marker:text-muted-foreground";
+  return kind === "ol" ? <ol className={cn(cls, "list-decimal")} data-testid="ask-answer-list">{children}</ol> : <ul className={cn(cls, "list-disc")} data-testid="ask-answer-list">{children}</ul>;
 }
 
 /** An answer's words with their citations bound to the word before them (`citationRuns`); `marker` draws a citation. */
@@ -123,22 +140,33 @@ const streamingMark = (n: number, key: number) => (
 );
 
 /** Plan 162 (after ai162-r03): marked inline and said once, only when the answer holds a claim no source backs (a stop says Stopped). */
-export const unlinkedClaims = (turn: Pick<AskTurn, "answer" | "status">): boolean => turn.status !== "stopped" && answerSentences(turn.answer ?? "").some((s) => s.claim && !s.linked);
+export const unlinkedClaims = (turn: Pick<AskTurn, "answer" | "status">): boolean => turn.status !== "stopped" && answerSentences(cleanAnswer(turn.answer ?? "")).some((s) => s.claim && !s.linked);
+
+/**
+ * Plan 162 (after ai162-r03): one first name for several people among the sources, said from their senders. After
+ * ai162-r04: said before the answer, where it decides how the answer reads (it came after the merged answer).
+ */
+function SameName({ turn }: { turn: AskTurn }) {
+  const people = sameNamePeople(turn.sources, turn.question, turn.answer ?? "");
+  if (!people.length) return null;
+  const list = new Intl.ListFormat(getLocale(), { type: "conjunction" });
+  return (
+    <div className="space-y-0.5 text-xs text-foreground" data-testid="ask-same-names">
+      {people.map((p) => (
+        <p key={p.name} data-testid="ask-same-name">{t("ask.sameName", { name: p.name, count: p.people.length, people: list.format(p.people) })}</p>
+      ))}
+    </div>
+  );
+}
 
 function Checks({ turn, unlinkedId }: { turn: AskTurn; unlinkedId: string }) {
   const { unsupported } = turn.checks;
   const unlinked = unlinkedClaims(turn);
-  // plan 162 (after ai162-r03): one first name for several people among the sources, said from their senders
-  const people = sameNamePeople(turn.sources, turn.question, turn.answer ?? "");
-  if (!unlinked && !unsupported.length && !people.length) return null;
-  const list = new Intl.ListFormat(getLocale(), { type: "conjunction" });
+  if (!unlinked && !unsupported.length) return null;
   return (
     <div className="space-y-0.5 text-xs text-muted-foreground" data-testid="ask-checks">
       {unsupported.map((value) => (
         <p key={value} data-testid="ask-check-unsupported" className="text-destructive-ink">{t("ask.check.unsupported", { value })}</p>
-      ))}
-      {people.map((p) => (
-        <p key={p.name} className="text-foreground" data-testid="ask-same-name">{t("ask.sameName", { name: p.name, count: p.people.length, people: list.format(p.people) })}</p>
       ))}
       {unlinked && <p id={unlinkedId} data-testid="ask-check-unlinked">{t("ask.check.unlinked")}</p>}
     </div>
@@ -164,6 +192,7 @@ function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated
       {/* the header already says it, as does the turn before it when older mail answered again */}
       {/* plan 161, pass 2: a follow-up reads as a question, as the header's does, not as a caption */}
       <h3 className={repeated ? "sr-only" : "text-sm font-medium"} data-testid="ask-question">{turn.question}</h3>
+      {turn.answer && <SameName turn={turn} />}
       {turn.answer ? <AnswerText text={turn.answer} sources={turn.sources} queries={turn.queries} chosen={last ? chosen : null} unlinked={unlinkedClaims(turn) ? unlinkedId : null} /> : null}
       <Armed sources={turn.sources} />
       {turn.status === "stopped" && <p className="text-xs text-muted-foreground" data-testid="ask-stopped">{t("ask.stopped")}</p>}
@@ -425,7 +454,7 @@ function AskNav({ onBack, onClose }: { onBack: () => void; onClose: () => void }
 
 /** Plan 161, pass 3: what the keys do where you are, never a promise they don't keep. */
 type Where = "empty" | "asking" | "walking" | "peek";
-function AskHints({ where, sources, end }: { where: Where; sources: boolean; end?: ReactNode }) {
+function AskHints({ where, sources, end }: { where: Where; /** how many the answer has: ↓ says it (plan 162, after ai162-r04) */ sources: number; end?: ReactNode }) {
   const running = useAsk((s) => s.running !== null);
   const back = usePalettePage((s) => s.entry !== "ask");
   // plan 162: one way back on screen. From the palette, All commands is the header's link, so the keys don't repeat it;
@@ -436,7 +465,7 @@ function AskHints({ where, sources, end }: { where: Where; sources: boolean; end
       ? [{ keys: ["enter"], label: t("ask.peek.open") }, { keys: ["escape"], label: t("ask.peek.back") }]
       : where === "walking"
         ? [{ keys: ["arrowup", "arrowdown"], label: t("ask.keys.sources") }, { keys: ["enter"], label: t("ask.keys.show") }, ...esc]
-        : [{ keys: ["enter"], label: t("ask.keys.ask") }, ...(sources && where === "asking" ? [{ keys: ["arrowdown"], label: t("ask.keys.sources") }] : []), ...esc];
+        : [{ keys: ["enter"], label: t("ask.keys.ask") }, ...(sources > 0 && where === "asking" ? [{ keys: ["arrowdown"], label: t("ask.keys.sourcesCount", { count: sources }) }] : []), ...esc];
   return <CommandHints hints={hints} end={end} data-testid="ask-hints" data-where={where} />;
 }
 
@@ -458,7 +487,7 @@ function FollowUp({ disabled, onWalk, inputRef: ref }: { disabled: boolean; onWa
     onWalk(on);
   };
   return (
-    <div className="border-t border-border/60 px-[18px] py-2">
+    <div className="shrink-0 border-t border-border/60 px-[18px] py-2">
       <input
         ref={ref}
         data-testid="ask-follow-up"
@@ -511,6 +540,7 @@ function PeekView({ peek }: { peek: Peek }) {
   const text = peek.text.length > PEEK_CHARS ? `${peek.text.slice(0, PEEK_CHARS)}…` : peek.text;
   return (
     <section
+      className="flex min-h-0 flex-col"
       data-testid="ask-peek"
       data-state={peek.state}
       aria-label={t("ask.peek.region", { n: peek.n, subject: source.subject || t("common.noSubject") })}
@@ -533,7 +563,7 @@ function PeekView({ peek }: { peek: Peek }) {
         ref={body}
         tabIndex={0}
         data-testid="ask-peek-body"
-        className="max-h-80 space-y-3 overflow-y-auto px-[18px] pt-2 pb-3 outline-none"
+        className="max-h-80 min-h-0 space-y-3 overflow-y-auto px-[18px] pt-2 pb-3 outline-none"
         onKeyDown={(e) => {
           // Enter here opens it (the section keeps every navigation key from cmdk)
           if (e.key === "Enter" && !e.nativeEvent.isComposing) {
@@ -609,6 +639,21 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
     if (!running) toTop(lastTurn());
   }, []);
   const unpin = () => { pinned.current = false; };
+  // plan 162 (after ai162-r04): the region's foot fades while more is below it, so a cut row reads as "more", not as the end
+  const [more, setMore] = useState(false);
+  const measureMore = () => {
+    const box = area.current;
+    if (box) setMore(box.scrollTop + box.clientHeight < box.scrollHeight - 2);
+  };
+  useLayoutEffect(() => {
+    const box = area.current;
+    if (!box) return;
+    measureMore();
+    const watch = new ResizeObserver(measureMore);
+    watch.observe(box);
+    if (box.firstElementChild) watch.observe(box.firstElementChild);
+    return () => watch.disconnect();
+  }, [turns.length, running === null]);
   // back from a shown source: the keys are the follow-up box's again (its words, the place read to and the row chosen
   // were kept: the conversation stays mounted under the source, Codex review (pass 3) #1, #5, #6)
   const peeked = useRef(false);
@@ -619,7 +664,8 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
       followUp.current?.focus({ preventScroll: true });
     }
   }, [peek]);
-  const sources = (last?.sources.length ?? 0) > 0;
+  const sourceCount = running ? 0 : (last?.sources.length ?? 0);
+  const sources = sourceCount > 0;
   // plan 161, pass 3: starting over and the history are quiet controls at the end of the keys' line, not rows of their own
   const session = !peek && (
     // plan 162: starting over and the history are places, not keys: apart from them, after a divider
@@ -634,17 +680,19 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
   );
   return (
     <>
-      <div className="flex h-11 items-center gap-2 border-b border-border/60 ps-3 pe-2.5 text-sm" data-testid="ask-header">
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 ps-3 pe-2.5 text-sm" data-testid="ask-header">
         <Sparkles className="size-[1.15em] shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate" data-testid="ask-title">{title}</span>
         <AskNav onBack={onBack} onClose={onClose} />
       </div>
       {peek && <PeekView peek={peek} />}
       {/* under a shown source, out of sight, reach and the accessibility tree, but kept: not unmounted */}
-      <div inert={peek !== null} className={cn(peek && "invisible h-0 overflow-hidden")} data-testid="ask-conversation">
+      {/* plan 162 (after ai162-r04): the dialog is a column bounded by the window; this part gives up height first, so the
+          header, the follow-up box and the keys' line are always whole (it ran past a 1100x700 window) */}
+      <div inert={peek !== null} className={cn("flex min-h-0 flex-col", peek && "invisible h-0 overflow-hidden")} data-testid="ask-conversation">
           {/* tabbable: it scrolls, and a keyboard has to reach what it holds. Plan 162 (after ai162-r03): one scroll region
               for the answer and its sources (two, each cut, hid sources 5 to 7 under the fold with no count) */}
-          <div ref={area} tabIndex={0} data-testid="ask-area" onWheel={unpin} onPointerDown={unpin} onKeyDown={unpin} className="max-h-[min(30rem,calc(100vh-15rem))] overflow-y-auto outline-none">
+          <div ref={area} tabIndex={0} data-testid="ask-area" data-more={more || undefined} onWheel={unpin} onPointerDown={unpin} onKeyDown={unpin} onScroll={measureMore} className="max-h-[30rem] min-h-0 overflow-y-auto outline-none data-more:[mask-image:linear-gradient(to_top,transparent,black_1.5rem)]">
             <div className="space-y-4 px-[18px] py-3">
               {turns.map((turn, i) => (
                 turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={(turn === last && !running && turn.question === title) || (i > 0 && turn.question === turns[i - 1]!.question)} />
@@ -668,7 +716,7 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
           </div>
           <FollowUp disabled={atLimit || !enabled} onWalk={setWalking} inputRef={followUp} />
       </div>
-      <AskHints where={peek ? "peek" : walking && chosen !== null ? "walking" : "asking"} sources={sources} end={session} />
+      <AskHints where={peek ? "peek" : walking && chosen !== null ? "walking" : "asking"} sources={sourceCount} end={session} />
     </>
   );
 }
@@ -721,7 +769,7 @@ function Empty({ value, setValue, onBack, onClose }: { value: string; setValue: 
           </CommandGroup>
         </CommandList>
       )}
-      <AskHints where="empty" sources={false} />
+      <AskHints where="empty" sources={0} />
     </>
   );
 }

@@ -173,6 +173,25 @@ export function validAskQueries(plans: readonly AskPlanQuery[], now: number): { 
   });
 }
 
+/** "[m1, m3]" or "[m1; m3]": labels only, as citations ("[m1][m3]"). */
+const LABEL_LIST = /\[\s*(m\d+(?:\s*[,;]\s*m\d+)+)\s*\]/g;
+/** a bracket's words, short of a line */
+const BRACKET = /\s*\[([^\]\n]{0,400})\]/g;
+/** a message label in words that aren't only it: "m9 doesn't mention it" */
+const LABEL_IN_WORDS = /(?<![\p{L}\d])m\d+(?![\p{L}\d])/u;
+
+/**
+ * Plan 162 (after ai162-r04): what a model wrote for itself never reaches the answer. A bracket holding a message label
+ * and other words ("[m9 doesn't mention it, so ignore that one]") is a note, and goes; a bracket of labels only becomes
+ * citations; a note still open at the end (while it streams) goes too. Everything else stays as written. No model call.
+ */
+export function cleanAnswer(text: string): string {
+  return text
+    .replace(LABEL_LIST, (_, list: string) => list.split(/\s*[,;]\s*/).map((l) => `[${l}]`).join(""))
+    .replace(BRACKET, (whole, inner: string) => (/^\s*m\d+\s*$/.test(inner) || !LABEL_IN_WORDS.test(inner) ? whole : ""))
+    .replace(/\s*\[m\d+(?:\s[^\]\n]*)?$/, "");
+}
+
 /**
  * Citations in a finished answer, for the reader: `[m3]`, in order of first appearance, and the text with each replaced
  * by its number among the sources. A label the material didn't have is dropped and said (the check's `unlinked`).
@@ -180,7 +199,7 @@ export function validAskQueries(plans: readonly AskPlanQuery[], now: number): { 
 export function resolveCitations(text: string, labels: ReadonlyMap<string, number>): { text: string; cited: number[]; dropped: number } {
   const cited: number[] = [];
   let dropped = 0;
-  const out = text
+  const out = cleanAnswer(text)
     .replace(/\s*\[(m\d+)\]/g, (_, label: string) => {
       const at = labels.get(label);
       if (at === undefined) {
