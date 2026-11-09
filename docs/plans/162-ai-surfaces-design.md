@@ -907,3 +907,54 @@ Rebased onto `154b31225`. Main's six commits win wherever they overlap: no per-u
 - **The AI filter's consent** (the open question above) is moot: no surface asks first now (plan 131).
 - **The model the key can't use:** not built; see plan 161's "Owner's answers".
 - ⌘J on unclear text, "sounds good" read as an email, and the fill's tint: plan 163's "Owner's answers".
+
+### ai162-r04 (branch at `cf753ad7a`, real models, 2026-11-09): the first of the owner's two extra rounds
+
+After the pass on round 3's real-model findings, the owner's feedback (the premium AI card, the Ask fade, the action pane, write-in-the-draft from plan 163), no per-use consent, and the rebase onto main. All eight reports valid; 682 cells under 9 (r03: 662), 103 issues (10 high; r03: 105 and 10). The numbers as `gate.mjs` wrote them:
+
+Models: real, openai/gpt-6-luna, anthropic/claude-sonnet-5-5, anthropic/claude-haiku-5-5, anthropic/claude-opus-5-5, jev/jev-latest; the captures spent US$0.28 as the app counted it
+
+| Style | Rater | Overall | UI | UX | Lowest | Cells below |
+|---|---|---:|---:|---:|---:|---:|
+| atelier | claude | 7 | 7 | 6.5 | 5 | 84/84 |
+| atelier | codex | 7 | 7.5 | 7 | 5.5 | 80/84 |
+| graphite | claude | 7.5 | 7 | 7.5 | 6 | 84/84 |
+| graphite | codex | 7 | 7.5 | 7 | 5.5 | 81/84 |
+| lumen | claude | 7 | 7 | 7 | 5 | 84/84 |
+| lumen | codex | 7.5 | 8 | 7.5 | 4.5 | 77/84 |
+| macos | claude | 7 | 6.5 | 7.5 | 6 | 84/84 |
+| macos | codex | 7 | 7.5 | 7 | 5.5 | 84/84 |
+
+#### Screens, each rater's overall
+
+| Screen | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| summary | 7 | 7.5 | 7.5 | 7.5 | 7.5 | 7.5 | 7.5 | 7.5 |
+| ai_draft | 6 | 6.5 | 7 | 7 | 7 | 7.5 | 7 | 7 |
+| ask | 7 | 6.5 | 7.5 | 7 | 6.5 | 6 | 7.5 | 6.5 |
+| actions | 6.5 | 8 | 7 | 7 | 6 | 8 | 6.5 | 7.5 |
+| today | 6.5 | 7.5 | 7 | 7.5 | 6.5 | 7 | 6.5 | 7.5 |
+| followups_replies | 7.5 | 8 | 7.5 | 7.5 | 8 | 8.5 | 7.5 | 8 |
+| ai_settings | 6.5 | 7 | 7.5 | 7.5 | 7.5 | 7.5 | 7.5 | 7.5 |
+
+#### Facets, mean across screens
+
+| Facet | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| typography | 7.29 | 7.79 | 7.57 | 7.93 | 7.57 | 8.00 | 7.50 | 7.64 |
+| contrast | 7.64 | 8.21 | 7.43 | 7.93 | 7.43 | 8.36 | 7.64 | 8.21 |
+| placement | 6.64 | 7.57 | 7.14 | 7.79 | 7.00 | 7.36 | 6.86 | 7.14 |
+| hierarchy | 6.79 | 7.00 | 7.14 | 7.00 | 6.79 | 7.21 | 6.86 | 7.29 |
+| controls | 7.00 | 7.71 | 7.21 | 8.36 | 7.14 | 8.14 | 7.07 | 7.86 |
+| density | 7.00 | 7.07 | 7.57 | 7.43 | 7.07 | 7.00 | 7.07 | 7.00 |
+| efficiency | 7.29 | 8.00 | 7.71 | 7.93 | 7.71 | 8.43 | 7.71 | 8.00 |
+| clarity | 7.07 | 6.79 | 7.21 | 6.86 | 6.79 | 6.93 | 7.07 | 6.86 |
+| feedback | 7.29 | 8.43 | 7.86 | 8.07 | 7.79 | 8.43 | 7.71 | 7.79 |
+| consistency | 6.71 | 7.71 | 7.21 | 8.36 | 7.64 | 8.07 | 7.50 | 7.57 |
+| accessibility | 6.29 | 7.86 | 7.21 | 8.07 | 6.86 | 8.07 | 6.93 | 7.50 |
+
+**Against r03:** follow-ups and Reply ready hold at 7.5 to 8.5; summary steadier (7 to 7.5); Ask 6 to 7.5 (r03: 6 to 8); **⌘J fell** (6 to 7.5, r03: 7 to 7.5), the new flow's first rating.
+
+**High:** plan 163's instruction in the body reads as an email ready to send, with Send still primary and "Write it" a grey word, or only a sparkle at 1100 (four reports); revising a draft is muddled (a Suggestion pane identical to the draft, your words left in the body); Ask's panel runs past a 1100x700 window and cuts its own sources (two); the model's scratch text ("[m9 doesn't mention it…]") reaches the answer; focus escapes Ask to the app behind; "Include" adds every protected conversation past the check, and the line still says "Skips 3".
+
+**Themes:** Ask's dotted underline for unlinked parts reads as a link (five reports); list answers as raw hyphens; same-name people explained after the merged answer; ⌘J's controls change with the window's width.
