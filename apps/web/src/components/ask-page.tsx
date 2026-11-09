@@ -1,4 +1,4 @@
-import { answerSentences, answerWithoutCitations, cleanAnswer, sameNamePeople, type AiErrorKind, type AskConversationSummary, type AskPlanQuery, type AskSourceRef, type AskTurn } from "@terno/core";
+import { answerSentences, answerWithoutCitations, cleanAnswer, sameNamePeople, type AiErrorKind, type AskConversationSummary, type AskPlanQuery, type AskSourceRef, type AskSourceView, type AskTurn } from "@terno/core";
 import type { AiSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
@@ -7,7 +7,7 @@ import { CloseButton } from "@terno/ui/components/close-button";
 import { CommandDescription, CommandEmpty, CommandGroup, CommandHints, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
 import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { ChevronLeft, Clock, ExternalLink, Mail, Plus, RefreshCw, Search, Sparkles, Undo2 } from "@terno/ui/icons";
+import { Check, ChevronLeft, Clock, ExternalLink, Mail, Pin, Plus, RefreshCw, Search, Sparkles, Undo2 } from "@terno/ui/icons";
 import { useCommandState } from "cmdk";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { askReady, askTarget } from "~/lib/ai";
@@ -15,7 +15,9 @@ import { closePeek, showSource, usePeek, type Peek } from "~/lib/ask-peek";
 import { Marked } from "~/components/match-mark";
 import { answerBlocks, boldParts, citationRuns } from "~/lib/ask-citations";
 import { cn } from "@terno/ui/lib/utils";
-import { askConfigChanged, askQuestion, atTurnLimit, deleteConversation, loadAskHistory, newQuestion, openConversation, openSource, restoreConversation, returning, searchOlder, stopAsking, useAsk } from "~/lib/ask";
+import { askConfigChanged, askPlace, askQuestion, atTurnLimit, deleteConversation, loadAskHistory, newQuestion, openConversation, openSource, keepAskPlace, restoreConversation, returning, searchOlder, stopAsking, useAsk, useVisited } from "~/lib/ask";
+import { pinAnswer, unpinAnswer } from "~/lib/pinned-ask";
+import { usePinnedAsk } from "~/lib/pinned-ask-state";
 import { listDate } from "~/lib/format";
 import { getLocale } from "@terno/i18n";
 import { boundaryDay } from "~/lib/when";
@@ -50,40 +52,30 @@ const sourceLine = (source: AskSourceRef) => t("ask.source.from", { from: source
  * the field's wash; hover or focus names the source, the source row chosen with ↑↓ lights its number here, and a click
  * shows the message in Ask (`ask-peek.ts`).
  */
-function AnswerText({ text, sources, queries, chosen = null, unlinked = false }: { text: string; sources: readonly AskSourceRef[]; queries: readonly AskPlanQuery[]; chosen?: number | null; /** unlinked claims are marked (never in a stopped answer) */ unlinked?: boolean }) {
-  const views = useAsk((s) => s.sources);
-  // plan 162 (after ai162-r05, Codex review): a citation's preview stays inside Ask's dialog, at either edge
+export function AnswerText({ text, sources, queries, chosen = null, unlinked = false, conversationId, open, views: own }: {
+  text: string;
+  sources: readonly AskSourceRef[];
+  queries: readonly AskPlanQuery[];
+  chosen?: number | null;
+  /** unlinked claims are marked (never in a stopped answer) */
+  unlinked?: boolean;
+  /** plan 165: whose sources these are, for what's been read */
+  conversationId: number | null;
+  /** plan 165: what a citation does (the pinned answer opens the reader); else it shows the message in Ask */
+  open?: (source: AskSourceRef, n: number) => void;
+  /** the pinned answer's own copy of where its sources were, under what Ask knows now */
+  views?: Readonly<Record<number, AskSourceView>>;
+}) {
+  const live = useAsk((s) => s.sources);
+  const views = own ? { ...own, ...live } : live;
+  // plan 162 (after ai162-r05, Codex review): a citation's preview stays inside Ask's dialog, at either edge (plan 165:
+  // or the pinned answer's card)
   const [panel, setPanel] = useState<Element | null>(null);
-  const answerRef = useCallback((el: HTMLElement | null) => setPanel(el?.closest("[role=dialog]") ?? null), []);
+  const answerRef = useCallback((el: HTMLElement | null) => setPanel(el?.closest("[role=dialog], [data-testid=pinned-ask]") ?? null), []);
   const marker = (n: number, key: number) => {
     const source = sources[n - 1];
     if (!source || views[source.messageId]?.state === "gone") return <span key={key}>[{n}]</span>;
-    const lit = chosen === source.messageId;
-    return (
-      <Tooltip key={key}>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              data-testid="ask-citation"
-              data-lit={lit || undefined}
-              onKeyDown={stopKeys}
-              onClick={() => void showSource(source, n, queries)}
-              className="group/cite relative z-[1] -my-1 ms-px -me-1 inline-flex size-6 items-center justify-center rounded-md align-[0.05em] outline-none after:absolute after:inset-0 focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label={t("ask.citation", { n, subject: source.subject })}
-            />
-          }
-        >
-          <span aria-hidden className={cn(CITE_PILL, "transition-colors duration-fast", lit ? "bg-primary/15" : "bg-field group-hover/cite:bg-muted")}>{n}</span>
-        </TooltipTrigger>
-        {/* plan 162 (after ai162-r05): below its mark, from its start, inside the panel (above, it covered the question
-            and spilled past the panel's edge) */}
-        <TooltipContent side="bottom" align="start" collisionBoundary={panel ?? undefined} collisionPadding={12} data-testid="ask-citation-preview">
-          <span className="block font-medium">{source.subject || t("common.noSubject")}</span>
-          <span className="block">{sourceLine(source)}</span>
-        </TooltipContent>
-      </Tooltip>
-    );
+    return <Citation key={key} source={source} n={n} lit={chosen === source.messageId} conversationId={conversationId} panel={panel} onOpen={() => (open ? open(source, n) : void showSource(source, n, queries))} />;
   };
   // plan 162 (after ai162-r03): a claim with no citation is marked where it is. After ai162-r05: in the ink, as every
   // claim, followed by a mark that says it in words, "no source", where a citation would be (grey alone asked the reader
@@ -118,6 +110,37 @@ function AnswerText({ text, sources, queries, chosen = null, unlinked = false }:
         ),
       )}
     </div>
+  );
+}
+
+/** One citation: the number on its word, a button to its source; a source already read says so to screen readers (plan 165). */
+function Citation({ source, n, lit, conversationId, panel, onOpen }: { source: AskSourceRef; n: number; lit: boolean; conversationId: number | null; panel: Element | null; onOpen: () => void }) {
+  const visited = useVisited(conversationId, source.messageId);
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            data-testid="ask-citation"
+            data-lit={lit || undefined}
+            data-visited={visited || undefined}
+            onKeyDown={stopKeys}
+            onClick={onOpen}
+            className="group/cite relative z-[1] -my-1 ms-px -me-1 inline-flex size-6 items-center justify-center rounded-md align-[0.05em] outline-none after:absolute after:inset-0 focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={t(visited ? "ask.citationVisited" : "ask.citation", { n, subject: source.subject })}
+          />
+        }
+      >
+        <span aria-hidden className={cn(CITE_PILL, "transition-colors duration-fast", lit ? "bg-primary/15" : "bg-field group-hover/cite:bg-muted")}>{n}</span>
+      </TooltipTrigger>
+      {/* plan 162 (after ai162-r05): below its mark, from its start, inside the panel (above, it covered the question
+          and spilled past the panel's edge) */}
+      <TooltipContent side="bottom" align="start" collisionBoundary={panel ?? undefined} collisionPadding={12} data-testid="ask-citation-preview">
+        <span className="block font-medium">{source.subject || t("common.noSubject")}</span>
+        <span className="block">{sourceLine(source)}</span>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -156,7 +179,7 @@ export const unlinkedClaims = (turn: Pick<AskTurn, "answer" | "status">): boolea
  * Plan 162 (after ai162-r03): one first name for several people among the sources, said from their senders. After
  * ai162-r04: said before the answer, where it decides how the answer reads (it came after the merged answer).
  */
-function SameName({ turn }: { turn: AskTurn }) {
+export function SameName({ turn }: { turn: AskTurn }) {
   const people = sameNamePeople(turn.sources, turn.question, turn.answer ?? "");
   if (!people.length) return null;
   const list = new Intl.ListFormat(getLocale(), { type: "conjunction" });
@@ -169,7 +192,7 @@ function SameName({ turn }: { turn: AskTurn }) {
   );
 }
 
-function Checks({ turn }: { turn: AskTurn }) {
+export function Checks({ turn }: { turn: AskTurn }) {
   const { unsupported } = turn.checks;
   if (!unsupported.length) return null;
   return (
@@ -182,7 +205,7 @@ function Checks({ turn }: { turn: AskTurn }) {
 }
 
 /** A source asked for once, now in Spam or Trash: said where the citation is, since a row may be further down, or absent. */
-function Armed({ sources }: { sources: readonly AskSourceRef[] }) {
+export function Armed({ sources }: { sources: readonly AskSourceRef[] }) {
   const armed = useAsk((s) => s.armedSource);
   const view = useAsk((s) => (s.armedSource === null ? undefined : s.sources[s.armedSource]));
   if (armed === null || !sources.some((source) => source.messageId === armed)) return null;
@@ -200,7 +223,7 @@ function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated
       {/* plan 161, pass 2: a follow-up reads as a question, as the header's does, not as a caption */}
       <h3 className={repeated ? "sr-only" : "text-sm font-medium"} data-testid="ask-question">{turn.question}</h3>
       {turn.answer && <SameName turn={turn} />}
-      {turn.answer ? <AnswerText text={turn.answer} sources={turn.sources} queries={turn.queries} chosen={last ? chosen : null} unlinked={unlinkedClaims(turn)} /> : null}
+      {turn.answer ? <AnswerText text={turn.answer} sources={turn.sources} queries={turn.queries} chosen={last ? chosen : null} unlinked={unlinkedClaims(turn)} conversationId={turn.conversationId} /> : null}
       <Armed sources={turn.sources} />
       {turn.status === "stopped" && <p className="text-xs text-muted-foreground" data-testid="ask-stopped">{t("ask.stopped")}</p>}
       <Checks turn={turn} />
@@ -395,16 +418,36 @@ function Failure() {
 function SourceCells({ source, n }: { source: AskSourceRef; n: number }) {
   const view = useAsk((s) => s.sources[source.messageId]?.state ?? "ok");
   const armed = useAsk((s) => s.armedSource === source.messageId);
+  const visited = useVisited(useAsk((s) => s.conversationId), source.messageId);
   const moved = view === "spam" || view === "trash";
   return (
     <>
       {/* the inline marker's look, so a citation and its row read as one number */}
       <span className="w-5 shrink-0"><span data-testid="ask-source-n" className="inline-grid h-[1.4em] min-w-[1.4em] place-items-center rounded-[0.4em] bg-field px-[0.3em] text-2xs leading-none font-semibold text-foreground tabular">{n}</span></span>
-      {/* plan 162 (after ai162-r04): room for a full name where several people share a first one ("Isabella Cruz (Nóm…") */}
-      <span className="w-40 shrink-0 truncate" title={source.fromName || source.fromEmail}>{source.fromName || source.fromEmail}</span>
+      {/* plan 162 (after ai162-r04): room for a full name where several people share a first one ("Isabella Cruz (Nóm…").
+          Plan 165: a source already read goes to the secondary ink, as a visited link does */}
+      <span className={cn("w-40 shrink-0 truncate", visited && "text-muted-foreground")} title={source.fromName || source.fromEmail}>{source.fromName || source.fromEmail}</span>
       <span className="min-w-0 flex-1 truncate text-muted-foreground">{view === "gone" ? t("ask.source.gone") : moved ? t(armed ? "ask.source.pressAgain" : view === "spam" ? "ask.source.spam" : "ask.source.trash") : source.subject}</span>
       <CommandDescription>{listDate(source.date)}</CommandDescription>
+      <Visited visited={visited} />
     </>
+  );
+}
+
+/**
+ * Plan 165: a source already read (shown in Ask, or opened in the reader) ends its row with a quiet check, in a slot every
+ * row keeps so the dates stay one column; screen readers hear "opened".
+ */
+export function Visited({ visited }: { visited: boolean }) {
+  return (
+    <span className="-ms-1 flex w-3.5 shrink-0 justify-end text-muted-foreground" data-testid={visited ? "ask-source-visited" : undefined}>
+      {visited && (
+        <>
+          <Check aria-hidden className="size-3.5" />
+          <span className="sr-only">{t("ask.source.visited")}</span>
+        </>
+      )}
+    </span>
   );
 }
 
@@ -447,11 +490,12 @@ function TurnSources({ sources, queries }: { sources: readonly AskSourceRef[]; q
  * whose × read as close.
  */
 /** Plan 162: the way back is All commands only when Ask was opened from them; from ⌘⇧K there's nothing behind it but the mail. */
-function AskNav({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+function AskNav({ onBack, onClose, pin }: { onBack: () => void; onClose: () => void; /** plan 165: an answer that can be pinned */ pin?: ReactNode }) {
   // where one step back goes from here: All commands, Ask (from its history), or nowhere but the mail (the ×)
   const to = usePalettePage((s) => paletteBack(s.page, s.entry));
   return (
     <span className="flex shrink-0 items-center gap-1.5" data-testid="ask-nav">
+      {pin}
       {to !== null && (
         <Button variant="ghost" size="xs" className="font-medium text-muted-foreground" data-testid="palette-back" onKeyDown={stopKeys} onClick={onBack}>
           <ChevronLeft /> {to === "root" ? t("ask.allCommands") : t("palette.ask.page")}
@@ -459,6 +503,30 @@ function AskNav({ onBack, onClose }: { onBack: () => void; onClose: () => void }
       )}
       <CloseButton size="sm" data-testid="ask-close" onKeyDown={stopKeys} onClick={onClose} />
     </span>
+  );
+}
+
+/**
+ * Plan 165: the answer showing, pinned to the reading pane's corner, so its sources can be read one after another with
+ * it in view. Pressed while this answer is the one pinned: a press takes the card away.
+ */
+function PinAnswer({ turn }: { turn: AskTurn }) {
+  const pinned = usePinnedAsk((s) => s.pinned?.turn.id === turn.id);
+  const label = t(pinned ? "ask.unpin" : "ask.pin");
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button variant="ghost" size="icon-xs" aria-label={label} aria-pressed={pinned} data-testid="ask-pin" onKeyDown={stopKeys} onClick={() => (pinned ? unpinAnswer({ toAsk: false }) : pinAnswer())} className="text-muted-foreground hover:text-foreground aria-pressed:bg-muted aria-pressed:text-primary [&_svg]:size-3.5">
+            <Pin />
+          </Button>
+        }
+      />
+      <TooltipContent className="max-w-64 flex-col items-start gap-0.5 text-left">
+        <span className="font-medium">{label}</span>
+        {!pinned && <span className="text-muted-foreground">{t("ask.pinTip")}</span>}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -481,7 +549,13 @@ function AskHints({ where, sources, end }: { where: Where; /** how many the answ
 
 /** The page's own keys: Esc stops first, the follow-up box types, arrows walk the sources (and say so below). */
 function FollowUp({ disabled, onWalk, inputRef: ref }: { disabled: boolean; onWalk: (walking: boolean) => void; inputRef: RefObject<HTMLInputElement | null> }) {
-  const [value, setValue] = useState("");
+  // plan 165: a follow-up half typed when a source or a pin closed the dialog is there when it comes back
+  const conversationId = useAsk((s) => s.conversationId);
+  const [value, setTyped] = useState(() => askPlace(conversationId)?.followUp ?? "");
+  const setValue = (text: string) => {
+    setTyped(text);
+    keepAskPlace(conversationId, { followUp: text });
+  };
   const running = useAsk((s) => s.running !== null);
   const armed = useRef(false);
   // plan 162 (Codex review): a follow-up that failed or found nothing keeps its words here too, selected, unless typed over
@@ -622,6 +696,7 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
   // plan 162 (after ai162-r01): the question being answered now, not the conversation's first (a follow-up kept the old one)
   const title = running?.question ?? turns.at(-1)?.question ?? "";
   const last = turns.at(-1);
+  const conversationId = useAsk((s) => s.conversationId);
   const area = useRef<HTMLDivElement>(null);
   const followUp = useRef<HTMLInputElement>(null);
   // plan 162 (after ai162-r03): a turn starts at its top. When a question is asked (or Ask opens on an answer), its
@@ -645,9 +720,23 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
   useLayoutEffect(() => {
     if (running && pinned.current) toTop(runningRef.current);
   }, [running?.text.length]);
+  const sourcesRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    if (!running) toTop(lastTurn());
+    if (running) return;
+    // plan 165: back on the same answer (a source read, ⇧⌘K, Back to the answer, Unpin), it's where it was read to, its
+    // sources where they were scrolled to; an answer come since starts at its top, as ever
+    const place = askPlace(conversationId);
+    const box = area.current;
+    if (!box || place?.turns !== turns.length) return toTop(lastTurn());
+    box.scrollTop = place.top;
+    if (sourcesRef.current) sourcesRef.current.scrollTop = place.sourcesTop;
   }, []);
+  const keep = (patch: { top?: number; sourcesTop?: number }) => keepAskPlace(conversationId, { ...patch, turns: turns.length });
+  // the row chosen with ↑↓, for the palette's next opening on this answer (`askChosen`)
+  const chosenValue = useCommandState((state) => state.value);
+  useEffect(() => {
+    if (!running && chosenValue?.startsWith("source\u0000")) keepAskPlace(conversationId, { chosen: chosenValue, turns: turns.length });
+  }, [chosenValue]);
   const unpin = () => { pinned.current = false; };
   // back from a shown source: the keys are the follow-up box's again (its words, the place read to and the row chosen
   // were kept: the conversation stays mounted under the source, Codex review (pass 3) #1, #5, #6)
@@ -678,7 +767,7 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 ps-3 pe-2.5 text-sm" data-testid="ask-header">
         <Sparkles className="size-[1.15em] shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate" data-testid="ask-title">{title}</span>
-        <AskNav onBack={onBack} onClose={onClose} />
+        <AskNav onBack={onBack} onClose={onClose} pin={!peek && !running && conversationId !== null && last?.kind !== "command" && last?.answer ? <PinAnswer turn={last} /> : null} />
       </div>
       {peek && <PeekView peek={peek} />}
       {/* under a shown source, out of sight, reach and the accessibility tree, but kept: not unmounted */}
@@ -688,7 +777,7 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
           {/* tabbable: it scrolls, and a keyboard has to reach what it holds. Plan 162 (after ai162-r05): the answer's
               region; its sources are apart, under it (one region left a long answer one half-faded source row at
               1100x700), and nothing fades: the hairline over the sources is the edge */}
-          <div ref={area} tabIndex={0} data-testid="ask-area" onWheel={unpin} onPointerDown={unpin} onKeyDown={unpin} className="max-h-[30rem] min-h-0 flex-1 overflow-y-auto outline-none">
+          <div ref={area} tabIndex={0} data-testid="ask-area" onWheel={unpin} onPointerDown={unpin} onKeyDown={unpin} onScroll={(e) => keep({ top: e.currentTarget.scrollTop })} className="max-h-[30rem] min-h-0 flex-1 overflow-y-auto outline-none">
             <div className="space-y-4 px-[18px] py-3">
               {turns.map((turn) => (
                 turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={turns.length === 1 && !running && turn.question === title} />
@@ -704,7 +793,7 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
           {last && sources && !running && (
             // plan 162 (after ai162-r05): always on screen, three whole rows under their count (28 px heading, 32 px rows,
             // 2 px gaps, 6 px foot); more scroll here, the heading staying, and ↑↓ bring the chosen row whole into view
-            <CommandList label={t("ask.sources")} data-testid="ask-sources" className="max-h-[8.375rem] shrink-0 overflow-y-auto border-t border-border/60 px-1.5 pt-0 pb-1.5 **:[[cmdk-group-heading]]:top-0">
+            <CommandList ref={sourcesRef} onScroll={(e) => keep({ sourcesTop: e.currentTarget.scrollTop })} label={t("ask.sources")} data-testid="ask-sources" className="max-h-[8.375rem] shrink-0 overflow-y-auto border-t border-border/60 px-1.5 pt-0 pb-1.5 **:[[cmdk-group-heading]]:top-0">
               <CommandGroup heading={t("ask.sourcesCount", { count: last.sources.length })} data-group="ask-sources">
                 {last.sources.map((source, i) => (
                   <SourceRow key={source.messageId} source={source} n={i + 1} queries={last.queries} />

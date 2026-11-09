@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { usePinnedAsk } from "./pinned-ask-state";
 
 /**
  * Plan 115: one draft pinned at the reading area's bottom right, kept there
@@ -11,16 +12,25 @@ interface PinnedState {
   threadId: number | null;
   /** the card's height plus its margins: the reader, the list and a new message pad their scroll end by it */
   inset: number;
+  /** plan 165: its width, for the pinned answer that goes to its left */
+  width: number;
   /** each request for focus in the card (a pin, r/a/f on its conversation, the strip) */
   focus: number;
 }
 
-export const usePinned = create<PinnedState>(() => ({ key: null, threadId: null, inset: 0, focus: 0 }));
+export const usePinned = create<PinnedState>(() => ({ key: null, threadId: null, inset: 0, width: 0, focus: 0 }));
 
 export const pinnedKey = (): string | null => usePinned.getState().key;
 
 /** What pads a scroll end at the bottom right: the snack dock's or the card's, whichever is taller. */
 export const bottomInset = (snackInset: number, pinnedInset: number): number => Math.max(snackInset, pinnedInset);
+
+/**
+ * Plan 165: how much of the pane's foot the pinned cards cover, the draft's and the answer's (each its offset from the
+ * bottom plus its height: the answer's stands on the draft's when it's above it). `on`: only where they're over this pane.
+ */
+export const usePinnedInset = (on = true): number => Math.max(usePinned((s) => (on ? s.inset : 0)), usePinnedAsk((s) => (on ? s.inset : 0)));
+export const pinnedInsetNow = (): number => Math.max(usePinned.getState().inset, usePinnedAsk.getState().inset);
 
 /** Asks the card to take focus (its body). */
 export function focusPinned(): void {

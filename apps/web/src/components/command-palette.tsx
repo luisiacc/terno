@@ -30,6 +30,7 @@ import { openRemind, presetLabel, presetWhen, setReminder, clearReminder, useRem
 import { draftCommands, type DraftCommands } from "~/lib/draft-commands";
 import { isInstruction } from "~/lib/imperative";
 import { askFrom, paletteBack, paletteFrom, paletteKeys, paletteReturn, returnPaletteFocus, setPalettePage, usePalettePage } from "~/lib/palette-open";
+import { askChosen } from "~/lib/ask";
 import { loadSnippets, newSnippetId, useSnippets } from "~/lib/snippets";
 import { insertSnippetInto, newMessageFromSnippet, saveDraftAsSnippet } from "~/lib/snippet-insert";
 import { openSnippetEditor } from "~/lib/snippet-editor-state";
@@ -636,6 +637,8 @@ export function CommandPalette() {
       {/* CommandDialog (base-nova) doesn't provide the cmdk root itself */}
       <Command
         className="min-h-0"
+        // plan 165: Ask opening on the answer it left comes back to the source row that was chosen
+        defaultValue={open && page === "ask" ? askChosen() : undefined}
         // cmdk's Ctrl+J/K/N/P: off the Mac Ctrl+K is the palette's own chord (it closes it)
         vimBindings={isMac}
         // the palette filters and orders (arrange): cmdk keeps the selection and the keys

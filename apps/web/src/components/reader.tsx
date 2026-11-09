@@ -25,7 +25,7 @@ import { cancelReaderScroll, keepInView, revealMessage } from "~/lib/reader-scro
 import { takeHeldSent, takeSent } from "~/lib/sent-reveal";
 import { Expand } from "./expand";
 import { DraftSlot, draftTitle } from "./inline-draft";
-import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
+import { bottomInset, usePinnedInset } from "~/lib/pinned-draft-state";
 import { PANE_TITLE, PANE_TITLE_AFTER, PANE_TITLE_GAP, READING_COLUMN } from "~/lib/pane-lines";
 import { AskReturn } from "./ask-return";
 import { ActionRule } from "./action-preview-header";
@@ -971,7 +971,7 @@ function ReaderContent() {
   const page = useAppearance((s) => s.layout === "list");
   // the dock sits over the conversation's foot in either layout (plan 158: Split's too), so its end (the reply bar) scrolls clear of it
   // plan 115: and the pinned draft sits over its foot in either layout: the last message scrolls clear of the taller one
-  const dock = bottomInset(useSnack((s) => s.inset), usePinned((s) => s.inset));
+  const dock = bottomInset(useSnack((s) => s.inset), usePinnedInset());
   const sectionRef = useRef<HTMLElement>(null);
   const destination = useRef({});
   useLayoutEffect(() => selectedId === null ? undefined : registerReaderFocusDestination(selectedId, destination.current), [selectedId]);
@@ -990,7 +990,8 @@ function ReaderContent() {
       const section = sectionRef.current;
       const state = useApp.getState();
       const threadId = state.selectedId;
-      if (!section || focusMoved || threadId === null || state.dialog || state.fatal || useDrafts.getState().held || section.closest("[inert]")) return;
+      // plan 165: a source opened from the pinned answer leaves focus on the card, where the next source is
+      if (!section || focusMoved || threadId === null || state.dialog || state.fatal || useDrafts.getState().held || section.closest("[inert]") || document.activeElement?.closest("[data-testid=pinned-ask]")) return;
       if (composeFocusPending(threadId)) {
         const active = document.activeElement;
         unsubscribe = subscribeComposeFocus((finishedThread, fallback) => {

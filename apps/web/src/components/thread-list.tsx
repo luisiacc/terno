@@ -31,7 +31,7 @@ import { scopeLabel } from "~/lib/selection";
 import { SearchHelp } from "./search-help";
 import { client } from "~/rpc/connection";
 import { useSnack } from "~/lib/snack";
-import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
+import { bottomInset, pinnedInsetNow, usePinnedInset } from "~/lib/pinned-draft-state";
 import { ThreadMenu } from "./thread-menu";
 import { DraftsStrip } from "./drafts-strip";
 import { ReviewAlwaysMenu, ReviewButtons } from "./review-actions";
@@ -60,7 +60,7 @@ import { pressRow, releaseRow } from "~/lib/select";
  * toast covers none, the list's viewport ends above it; the draft covers only what reaches past the toast's room.
  */
 const pinnedOver = (snack: number, pinned: number): number => Math.max(0, bottomInset(snack, pinned) - snack);
-const listInset = (): number => (useAppearance.getState().layout === "list" ? pinnedOver(listCovered() ? 0 : useSnack.getState().inset, usePinned.getState().inset) : 0);
+const listInset = (): number => (useAppearance.getState().layout === "list" ? pinnedOver(listCovered() ? 0 : useSnack.getState().inset, pinnedInsetNow()) : 0);
 
 const TOP_LABEL = 28;
 const EMPTY_GROUPS: readonly TodayGroup[] = [];
@@ -1136,7 +1136,7 @@ export function ThreadList() {
   const page = usePage();
   const toastOver = over && page === "list";
   const toastRoom = useSnack((s) => (toastOver ? s.inset : 0));
-  const dock = pinnedOver(toastRoom, usePinned((s) => (over ? s.inset : 0)));
+  const dock = pinnedOver(toastRoom, usePinnedInset(over));
   const getItemKey = useCallback((i: number) => items[i]!.id, [items]);
   // plan 87: the Inbox's top (due reminders) under a "Reminders" label, a hairline gap before the rest
   const top = useMemo(() => {

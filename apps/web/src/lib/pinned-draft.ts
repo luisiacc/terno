@@ -13,7 +13,7 @@ let stopWatch: (() => void) | null = null;
 function clear(): void {
   stopWatch?.();
   stopWatch = null;
-  usePinned.setState({ key: null, threadId: null, inset: 0 });
+  usePinned.setState({ key: null, threadId: null, inset: 0, width: 0 });
 }
 
 /**

@@ -1,7 +1,7 @@
 import { matchExcerpt, tokenize, type AskPlanQuery, type AskSourceRef, type AskSourceView, type MatchNeedle } from "@terno/core";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
-import { sourceThread, useAsk } from "./ask";
+import { markVisited, sourceThread, useAsk } from "./ask";
 
 /**
  * Plan 161, pass 3: a cited message shown inside Ask, so checking the evidence never loses the answer. Its text is read
@@ -64,6 +64,8 @@ export async function showSource(source: AskSourceRef, n: number, queries: reado
   const current = () => mine === seq && useAsk.getState().conversationId === conversation;
   const at = await sourceThread(source, undefined, current);
   if (at === null || !current()) return;
+  // plan 165: shown is read: its row says so when the answer is back
+  markVisited(conversation, source.messageId);
   const needles = needlesOf(queries);
   const base = { source, n, threadId: at.threadId, approved: at.state, needles };
   usePeek.setState({ peek: { ...base, state: "loading", text: "", passage: null } });

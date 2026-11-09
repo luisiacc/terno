@@ -68,7 +68,7 @@ export function PinnedDraft({ overList }: { /** List's rows show under it (its d
     if (!card) return;
     const pane = card.parentElement;
     const measure = () => {
-      usePinned.setState({ inset: Math.ceil(card.offsetHeight) + GAP * 2 + lift });
+      usePinned.setState({ inset: Math.ceil(card.offsetHeight) + GAP * 2 + lift, width: card.offsetWidth });
       // where the dock's card is (on the reader's column in Split, plan 158), else where it would be
       const dock = pane?.querySelector<HTMLElement>(":scope > [data-testid=snack-dock] [data-snack-card]")?.getBoundingClientRect();
       if (dock && dock.width) setNarrow(dock.right + GAP > card.getBoundingClientRect().left);
@@ -81,7 +81,7 @@ export function PinnedDraft({ overList }: { /** List's rows show under it (its d
     return () => ro.disconnect();
   // (and when List's page comes or goes: the dock moves onto the reader's column and back, its size unchanged)
   }, [key, lift, !!d, overList]);
-  useEffect(() => () => usePinned.setState({ inset: 0 }), []);
+  useEffect(() => () => usePinned.setState({ inset: 0, width: 0 }), []);
 
   // pinned, or asked for (its conversation's reply bar, r/a/f there, the strip): the body takes focus, once per request
   useEffect(() => {

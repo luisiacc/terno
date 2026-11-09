@@ -10,6 +10,7 @@ import { getApp, setApp, useApp } from "~/state/app";
 import { toggleAsk } from "~/lib/palette-open";
 import { useAppearance } from "~/lib/appearance";
 import { focusIntent, installFocusIntent } from "~/lib/focus-intent";
+import { forgetPinnedAnswer } from "~/lib/pinned-ask-state";
 
 /**
  * Plan 141: the conversation, in a small store outside the palette: closing it doesn't stop an answer, and ⌘⇧K comes
@@ -59,6 +60,69 @@ export interface AskState {
 const EMPTY: Omit<AskState, "usedAt" | "ready" | "gone"> = { conversationId: null, turns: [], sources: {}, running: null, error: null, notice: null, noProvider: false, older: { kind: "none" }, incomplete: false, olderFound: null, olderPartial: false, armedSource: null, returnTo: null };
 
 export const useAsk = create<AskState>(() => ({ ...EMPTY, ready: 0, usedAt: 0, gone: 0 }));
+
+/** Plan 165: how many conversations keep their visited sources (session only). */
+const VISITED_KEEP = 20;
+
+/**
+ * Plan 165: the sources read in each conversation (shown in Ask, or opened in the reader), so going through ten of them
+ * one by one says which are done. Session only; the last 20 conversations, the oldest let go first.
+ */
+export const useAskVisited = create<{ byConversation: ReadonlyMap<number, readonly number[]> }>(() => ({ byConversation: new Map() }));
+
+export function markVisited(conversationId: number | null, messageId: number): void {
+  if (conversationId === null) return;
+  const was = useAskVisited.getState().byConversation;
+  const seen = was.get(conversationId) ?? [];
+  if (seen.includes(messageId)) return;
+  const next = new Map(was);
+  // the newest last: a Map keeps insertion order, so the first key is the oldest
+  next.delete(conversationId);
+  next.set(conversationId, [...seen, messageId]);
+  while (next.size > VISITED_KEEP) next.delete(next.keys().next().value!);
+  useAskVisited.setState({ byConversation: next });
+}
+
+/** Has this conversation's source been read? */
+export const useVisited = (conversationId: number | null, messageId: number): boolean => useAskVisited((s) => conversationId !== null && (s.byConversation.get(conversationId)?.includes(messageId) ?? false));
+
+function forgetVisited(): void {
+  useAskVisited.setState({ byConversation: new Map() });
+  places.clear();
+}
+
+/**
+ * Plan 165: where each conversation was left, so coming back to it (a source read, ⇧⌘K, Back to the answer, Unpin) is
+ * coming back to the same place: the answer read to, the sources scrolled to, the row chosen, a follow-up half typed.
+ * The scrolls hold only while no answer has come since (`turns`). Session only; the last 20 conversations.
+ */
+export interface AskPlace {
+  turns: number;
+  top: number;
+  sourcesTop: number;
+  /** cmdk's value for the chosen source row */
+  chosen: string | null;
+  followUp: string;
+}
+const places = new Map<number, AskPlace>();
+
+export const askPlace = (conversationId: number | null): AskPlace | undefined => (conversationId === null ? undefined : places.get(conversationId));
+
+export function keepAskPlace(conversationId: number | null, patch: Partial<AskPlace>): void {
+  if (conversationId === null) return;
+  const was = places.get(conversationId) ?? { turns: 0, top: 0, sourcesTop: 0, chosen: null, followUp: "" };
+  // the newest last: a Map keeps insertion order, so the first key is the oldest
+  places.delete(conversationId);
+  places.set(conversationId, { ...was, ...patch });
+  while (places.size > VISITED_KEEP) places.delete(places.keys().next().value!);
+}
+
+/** The chosen row to come back to, for the palette opening on Ask (cmdk's `defaultValue`): only a source row of the conversation Ask holds. */
+export function askChosen(): string | undefined {
+  const { conversationId, turns } = useAsk.getState();
+  const place = askPlace(conversationId);
+  return place?.turns === turns.length && place.chosen?.startsWith("source\u0000") ? place.chosen : undefined;
+}
 
 const timezone = () => {
   try {
@@ -204,6 +268,10 @@ export function installAsk(): void {
   client.on("aiAskGone", ({ conversationIds }) => {
     const { conversationId } = useAsk.getState();
     useAsk.setState((s) => ({ gone: s.gone + 1 }));
+    // everything cleared: what was read goes too (one deleted keeps its marks, bounded, for its Undo)
+    if (conversationIds === null) forgetVisited();
+    // plan 165: a pinned answer from one that went goes with it, whichever conversation Ask holds
+    forgetPinnedAnswer(conversationIds);
     if (conversationIds === null || (conversationId !== null && conversationIds.includes(conversationId))) useAsk.setState({ ...EMPTY, usedAt: 0 });
   });
 }
@@ -247,14 +315,17 @@ export async function sourceThread(source: AskSourceRef, approved?: Shown, curre
 /**
  * Open a source in the reader: the palette closes and the thread opens at that message, in the thread it's in now, with
  * Back to the answer. Plan 161, pass 3: a citation and a source row first show the message in Ask (`ask-peek.ts`); its
- * Open message comes here with where the message was when it was shown, checked again (Codex review #3).
+ * Open message comes here with where the message was when it was shown, checked again (Codex review #3). Plan 165: from
+ * the pinned answer (`pinned`), the card is the way back and keeps focus, and the source is that answer's, read.
  */
-export async function openSource(source: AskSourceRef, approved?: Shown, current: () => boolean = () => true): Promise<void> {
+export async function openSource(source: AskSourceRef, approved?: Shown, current: () => boolean = () => true, pinned?: { conversationId: number }): Promise<void> {
   const at = await sourceThread(source, approved, current);
   if (at === null || !current()) return;
   setApp({ dialog: null });
   openThread(at.threadId);
   revealSummaryMessage(source.messageId);
+  markVisited(pinned ? pinned.conversationId : useAsk.getState().conversationId, source.messageId);
+  if (pinned) return;
   useAsk.setState({ returnTo: { threadId: at.threadId, messageId: source.messageId, conversationId: useAsk.getState().conversationId } });
   focusMessage(source.messageId);
 }
@@ -265,20 +336,30 @@ const FOCUS_WAIT_MS = 10_000;
 /**
  * Plan 161: focus goes to the message a source opened (its header button; a one-message conversation's heading, or the
  * message itself where a design shows neither), once the reader has drawn it and the palette has gone. Programmatic, so
- * no ring. It waits on the page changing (no polling), and yields to anything newer: a key or a press, another
- * conversation, or the wait running out.
+ * no ring.
  */
 export function focusMessage(messageId: number): void {
+  focusAfterDialog(
+    () => {
+      const article = document.querySelector<HTMLElement>(`[data-reader-scroller] article[data-message-id="${messageId}"]`);
+      if (!article) return null;
+      const el = article.querySelector<HTMLElement>("[data-testid=message-toggle]") ?? article.querySelector<HTMLElement>("h3") ?? article;
+      if (el.tagName !== "BUTTON" && !el.hasAttribute("tabindex")) el.tabIndex = -1;
+      return el;
+    },
+    () => useAsk.getState().returnTo?.messageId === messageId,
+  );
+}
+
+/**
+ * Focus for what a closing dialog leaves behind (a source's message, the pinned answer): once the dialog has gone and
+ * the target is drawn. It waits on the page changing (no polling), and yields to anything newer: a key or a press,
+ * `wanted` turning false, or the wait running out.
+ */
+export function focusAfterDialog(target: () => HTMLElement | null, wanted: () => boolean): void {
   const seq = focusIntent.seq;
   const started = Date.now();
-  const superseded = () => focusIntent.seq !== seq || useAsk.getState().returnTo?.messageId !== messageId || Date.now() - started > FOCUS_WAIT_MS;
-  const target = () => {
-    const article = document.querySelector<HTMLElement>(`[data-reader-scroller] article[data-message-id="${messageId}"]`);
-    if (!article) return null;
-    const el = article.querySelector<HTMLElement>("[data-testid=message-toggle]") ?? article.querySelector<HTMLElement>("h3") ?? article;
-    if (el.tagName !== "BUTTON" && !el.hasAttribute("tabindex")) el.tabIndex = -1;
-    return el;
-  };
+  const superseded = () => focusIntent.seq !== seq || !wanted() || Date.now() - started > FOCUS_WAIT_MS;
   /** done: focused, or nothing left to wait for */
   const attempt = (): boolean => {
     if (superseded()) return true;
@@ -324,6 +405,7 @@ export async function loadAskHistory(): Promise<AskConversationSummary[]> {
 /** Delete on a row. Its Undo is a row of the page, since a snack's dock sits behind the palette. */
 export async function deleteConversation(conversationId: number): Promise<void> {
   await client.call("ai.askDelete", { conversationId });
+  forgetPinnedAnswer([conversationId]);
   if (useAsk.getState().conversationId === conversationId) useAsk.setState({ ...EMPTY, usedAt: Date.now() });
 }
 
@@ -331,6 +413,8 @@ export const restoreConversation = (conversationId: number): Promise<unknown> =>
 
 /** Settings → Storage → Clear AI data: nothing shown is kept either. */
 export function forgetAsk(): void {
+  forgetVisited();
+  forgetPinnedAnswer(null);
   useAsk.setState({ ...EMPTY, usedAt: 0 });
 }
 
