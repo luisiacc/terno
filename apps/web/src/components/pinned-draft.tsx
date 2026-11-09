@@ -4,6 +4,7 @@ import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Trash2 } from "@terno/ui/icons";
+import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { finishComposeFocus } from "~/lib/compose";
 import { sendDraft } from "~/lib/compose";
@@ -12,6 +13,7 @@ import { DraftCommandsHost } from "~/lib/draft-commands";
 import { warmAutocomplete } from "~/lib/autocomplete";
 import { focusReading, pinDraft, unpinDraft } from "~/lib/pinned-draft";
 import { usePinned } from "~/lib/pinned-draft-state";
+import { usePinnedAsk } from "~/lib/pinned-ask-state";
 import { registerUndo, snack, useSnack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
 import { DraftFieldsForm, DraftPin, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
@@ -39,7 +41,12 @@ const answered = { focus: 0 };
  * attachments, format bar), in a card that floats over the pane; it publishes
  * its height so the reader's end scrolls clear of it.
  */
-export function PinnedDraft({ overList }: { /** List's rows show under it (its dock stands on the drafts strip) */ overList: boolean }) {
+export function PinnedDraft({ overList, beside }: {
+  /** List's rows show under it (its dock stands on the drafts strip) */
+  overList: boolean;
+  /** plan 165: an answer is pinned to its left: the draft is a little narrower, and stands where the answer must */
+  beside: boolean;
+}) {
   const key = usePinned((s) => s.key);
   const focusSeq = usePinned((s) => s.focus);
   const d = useDrafts((s) => (key ? s.drafts[key] : undefined));
@@ -62,13 +69,16 @@ export function PinnedDraft({ overList }: { /** List's rows show under it (its d
   const stripLift = useSnack((s) => s.lift);
   const dockLift = overList ? stripLift : 0;
   const lift = narrow ? snackInset + dockLift : 0;
+  // feet on one line with the pinned answer: where the dock meets that card, the draft stands there too
+  const askFloor = usePinnedAsk((s) => (beside ? s.floor : 0));
+  const bottom = Math.max(GAP + lift, askFloor);
   // the card's height (and its lift) is the scroll end's buffer for whatever reads under it
   useLayoutEffect(() => {
     const card = cardRef.current;
     if (!card) return;
     const pane = card.parentElement;
     const measure = () => {
-      usePinned.setState({ inset: Math.ceil(card.offsetHeight) + GAP * 2 + lift, width: card.offsetWidth });
+      usePinned.setState({ inset: Math.ceil(card.offsetHeight) + bottom + GAP, width: card.offsetWidth, bottom });
       // where the dock's card is (on the reader's column in Split, plan 158), else where it would be
       const dock = pane?.querySelector<HTMLElement>(":scope > [data-testid=snack-dock] [data-snack-card]")?.getBoundingClientRect();
       if (dock && dock.width) setNarrow(dock.right + GAP > card.getBoundingClientRect().left);
@@ -80,8 +90,8 @@ export function PinnedDraft({ overList }: { /** List's rows show under it (its d
     if (pane) ro.observe(pane);
     return () => ro.disconnect();
   // (and when List's page comes or goes: the dock moves onto the reader's column and back, its size unchanged)
-  }, [key, lift, !!d, overList]);
-  useEffect(() => () => usePinned.setState({ inset: 0, width: 0 }), []);
+  }, [key, bottom, !!d, overList]);
+  useEffect(() => () => usePinned.setState({ inset: 0, width: 0, bottom: 0 }), []);
 
   // pinned, or asked for (its conversation's reply bar, r/a/f there, the strip): the body takes focus, once per request
   useEffect(() => {
@@ -121,8 +131,9 @@ export function PinnedDraft({ overList }: { /** List's rows show under it (its d
       aria-label={t("compose.pinnedLabel", { name: what })}
       data-testid="pinned-draft"
       data-draft-key={key}
-      style={lift ? { bottom: GAP + lift } : undefined}
-      className="absolute right-3 bottom-3 z-[6] flex max-h-[min(70%,40rem)] w-[min(32rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-popover animate-in fade-in-0 slide-in-from-bottom-1 duration-base"
+      style={bottom !== GAP ? { bottom } : undefined}
+      // beside a pinned answer, 28.5 rem: its foot (27.25 rem) still holds Generate's word on one line (composer/ai-slot)
+      className={cn("absolute right-3 bottom-3 z-[6] flex max-h-[min(70%,40rem)] flex-col", beside ? "w-[min(28.5rem,calc(100%-1.5rem))]" : "w-[min(32rem,calc(100%-1.5rem))]", "overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-popover animate-in fade-in-0 slide-in-from-bottom-1 duration-base")}
     >
       <form
         ref={rootRef}

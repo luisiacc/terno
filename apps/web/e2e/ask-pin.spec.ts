@@ -1,7 +1,7 @@
 /**
  * Plan 165, on the offline fake model and the demo's server: coming back to an answer where it was left (its scroll, the
  * sources read marked, a follow-up half typed), and the answer pinned to the reading pane's corner (a source opens with
- * the card still there; collapse, Esc, unpin, close; with a pinned draft beside it or above it). Axe: design-axe.spec.
+ * the card still there; collapse, Esc, unpin, close; with a pinned draft, always to its left). Axe: design-axe.spec.
  */
 import type { Locator, Page } from "@playwright/test";
 import type { SettingsPatch } from "@terno/core/rpc";
@@ -35,21 +35,49 @@ async function answered(page: Page, server: DevServerFixture, patch: SettingsPat
 /** Focus is somewhere in `where`. */
 const focusIn = (page: Page, testId: string) => page.evaluate((id) => document.activeElement?.closest(`[data-testid=${id}]`) !== null, testId);
 
-/** Reply to row `index`, pinned (plan 115). */
-async function pinReply(page: Page, index: number) {
+/** Reply to row `index`, pinned (plan 115); `text` a note for AI shows Generate's word in its foot. */
+async function pinReply(page: Page, index: number, text = "Thanks, I'll look.") {
   await rows(page).nth(index).click();
   await focusList(page);
   await page.keyboard.press("r");
   await expect(page.getByTestId("reader").getByTestId("compose-body")).toBeFocused();
-  await page.keyboard.type("Thanks, I'll look.");
+  await page.keyboard.type(text);
   await page.getByTestId("reader").getByTestId("compose-pin").click();
   await expect(draftCard(page)).toBeVisible();
 }
 
 const box = async (l: Locator) => (await l.boundingBox())!;
 
+/**
+ * The owner: with a draft pinned the card is always to its left, never above it: feet on one line, never over the draft,
+ * inside the window and (`sidebar`: unless the window leaves no other room) off the sidebar, above what it reaches over.
+ * The draft is a little narrower beside it, its foot still one line with Generate's word.
+ */
+async function besideDraft(page: Page, { sidebar = true, word = false } = {}) {
+  await expect(card(page)).toHaveAttribute("data-where", "beside");
+  await expect.poll(async () => { const d = await box(draftCard(page)); const c = await box(card(page)); return Math.round(c.y + c.height) - Math.round(d.y + d.height); }).toBe(0);
+  const d = await box(draftCard(page));
+  const c = await box(card(page));
+  expect(c.x + c.width).toBeLessThanOrEqual(d.x - 11);
+  expect(c.x).toBeGreaterThanOrEqual(11);
+  expect(c.y).toBeGreaterThanOrEqual(0);
+  if (sidebar) expect(c.x).toBeGreaterThanOrEqual((await box(page.locator("#app-list"))).x + 11);
+  // on top of whatever it reaches over (the list, its pane edge)
+  const atLeft = await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest("[data-testid=pinned-ask]") !== null, [c.x + 6, c.y + c.height - 6]);
+  expect(atLeft).toBe(true);
+  // 28.5 rem where the pane holds it; the foot on one line, every control inside the card
+  const pane = await box(draftCard(page).locator(".."));
+  expect(Math.round(d.width)).toBe(Math.min(456, Math.round(pane.width) - 24));
+  const mid = async (id: string) => { const b = await box(draftCard(page).getByTestId(id)); return b.y + b.height / 2; };
+  for (const id of ["compose-ai", "compose-discard"]) expect(Math.abs((await mid("compose-send")) - (await mid(id)))).toBeLessThanOrEqual(4);
+  const discard = await box(draftCard(page).getByTestId("compose-discard"));
+  expect(discard.x + discard.width).toBeLessThanOrEqual(d.x + d.width - 8);
+  if (word) await expect(draftCard(page).getByTestId("compose-ai-word")).toBeVisible();
+  return { card: c, draft: d };
+}
+
 test.describe("back to the answer, and the answer pinned (plan 165)", () => {
-  test("Split: the way back keeps the place; pinned, a source opens beside the card; with a draft at 1100x700 it goes above it", async ({ app: page, server }) => {
+  test("Split: the way back keeps the place; pinned, a source opens beside the card; with a draft always to its left", async ({ app: page, server }) => {
     await page.setViewportSize({ width: 1100, height: 560 });
     await answered(page, server);
 
@@ -138,23 +166,29 @@ test.describe("back to the answer, and the answer pinned (plan 165)", () => {
       await expect(page.getByTestId("reader-subject")).toBeVisible();
     });
 
-    await scenario("with a pinned draft at 1100x700: the draft keeps the corner, the card goes above it, never over it", async () => {
+    await scenario("with a pinned draft: always to its left, over the list where the reading pane can't hold both (1100x700, 1440x900, 1880x1040)", async () => {
       await pinReply(page, 1);
-      await expect(card(page)).toHaveAttribute("data-where", "above");
-      const d = await box(draftCard(page));
-      const c = await box(card(page));
-      expect(c.y + c.height).toBeLessThanOrEqual(d.y - 11);
-      expect(Math.round(c.x + c.width)).toBe(Math.round(d.x + d.width));
-      // a short window under a tall draft: no room to open above it, its header alone, and Expand says why
+      // 1100x700: a ~530 px reading pane; the card keeps its 20 rem and reaches over the thread list
+      const narrow = await besideDraft(page);
+      const main = await box(page.locator("main"));
+      expect(Math.round(narrow.card.width)).toBe(320);
+      expect(narrow.card.x).toBeLessThan(main.x);
+      // the list's end scrolls clear of it
+      const list = page.getByTestId("thread-list").locator("[data-keep-scroll=list]");
+      await expect.poll(() => list.evaluate((el) => { el.scrollTop = el.scrollHeight; return el.scrollTop; })).toBeGreaterThan(0);
+      await expect.poll(async () => { const last = await box(rows(page).last()); return last.y + last.height <= (await box(card(page))).y; }).toBe(true);
+      // a taller draft doesn't lift it off the line
       await draftCard(page).getByTestId("compose-body").click();
       await page.keyboard.type(Array.from({ length: 30 }, (_, i) => `line ${i}`).join("\n"));
-      await page.setViewportSize({ width: 1100, height: 560 });
-      await expect(card(page)).toHaveAttribute("data-collapsed", "true");
-      const s = await box(card(page));
-      expect(s.y + s.height).toBeLessThanOrEqual((await box(draftCard(page))).y - 11);
-      await expect(page.getByTestId("pinned-ask-toggle")).toHaveAttribute("aria-disabled", "true");
+      await besideDraft(page);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await besideDraft(page);
+      // wide: in the reading pane, at its own 24 rem
+      await page.setViewportSize({ width: 1880, height: 1040 });
+      const wide = await besideDraft(page);
+      expect(Math.round(wide.card.width)).toBe(384);
+      expect(wide.card.x).toBeGreaterThanOrEqual((await box(page.locator("main"))).x);
       await page.setViewportSize({ width: 1100, height: 900 });
-      await expect(card(page)).not.toHaveAttribute("data-collapsed", "true");
     });
 
     await scenario("unpin brings the same answer back into Ask; pinned again, close takes it away", async () => {
@@ -173,14 +207,17 @@ test.describe("back to the answer, and the answer pinned (plan 165)", () => {
       await page.getByTestId("ask-pin").click();
       await expect(page.getByTestId("pinned-ask-title")).toContainText(`${WORD} once more?`);
       expect(await page.getByTestId("pinned-ask-body").evaluate((el) => el.scrollTop)).toBe(0);
+      const beside = (await box(draftCard(page))).width;
       await page.getByTestId("pinned-ask-close").click();
       await expect(card(page)).toHaveCount(0);
+      // the draft alone: its own width again
+      expect((await box(draftCard(page))).width).toBeGreaterThan(beside + 40);
       // the scroll ends lose its room
       await expect.poll(() => page.locator("[data-reader-scroller]").evaluate((el) => getComputedStyle(el).paddingBottom)).not.toBe("0px");
     });
   });
 
-  test("List: at 1440 the card sits to the pinned draft's left; a source opened from the list's page keeps focus on the card", async ({ app: page, server }) => {
+  test("List: the card sits to the pinned draft's left at 1440 and in a narrow window; a source opened from the list's page keeps focus on the card", async ({ app: page, server }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await answered(page, server, { layout: "list" });
     await page.getByTestId("ask-pin").click();
@@ -196,18 +233,18 @@ test.describe("back to the answer, and the answer pinned (plan 165)", () => {
     await page.keyboard.press("Escape");
     // a draft pinned: the corner is the draft's, the card to its left with the gap between
     await page.keyboard.press("Escape");
-    await pinReply(page, 1);
-    await expect(card(page)).toHaveAttribute("data-where", "beside");
-    const d = await box(draftCard(page));
-    const c = await box(card(page));
-    expect(c.x + c.width).toBeLessThanOrEqual(d.x - 11);
-    expect(Math.round(c.y + c.height)).toBe(Math.round(d.y + d.height));
-    // a narrow window: above the draft, and never over the toolbar of the page that opened under it (Codex review: the
-    // pane didn't change size when List's page came, so the toolbar went unmeasured)
+    // a note for AI: Generate shows its word, still on one line in the narrower draft
+    await pinReply(page, 1, "fine by me, tell him that");
+    await besideDraft(page, { word: true });
+    await page.setViewportSize({ width: 1100, height: 700 });
+    await besideDraft(page, { word: true });
+    // a window narrower than the desktop's least: still beside it, over the sidebar now (nothing else holds it), and
+    // never over the toolbar of the page that opened under it (Codex review: the pane didn't change size when List's
+    // page came, so the toolbar went unmeasured)
     await page.getByTestId("pinned-draft").getByTestId("compose-body").click();
     await page.keyboard.type(Array.from({ length: 12 }, (_, i) => `line ${i}`).join("\n"));
     await page.setViewportSize({ width: 900, height: 800 });
-    await expect(card(page)).toHaveAttribute("data-where", "above");
+    await besideDraft(page, { sidebar: false });
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("list-page")).toHaveCount(0);

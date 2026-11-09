@@ -24,16 +24,16 @@ const answered = { focus: 0 };
 /**
  * Plan 165: an Ask answer pinned at the reading pane's bottom right, kept while its sources are read: the question, the
  * answer and its sources, a click on one opening it in the reader with the card still there. Beside a pinned draft it
- * moves to the draft's left, or above it where the pane is too narrow for both (`pinnedAskPlace`). It publishes how much
- * of the pane's foot it covers, so what reads under it scrolls clear.
+ * moves to the draft's left, reaching over the thread list where the pane can't hold both (`pinnedAskPlace`). It
+ * publishes how much of the pane's foot it covers, so what reads under it scrolls clear.
  */
 export function PinnedAsk() {
   const pinned = usePinnedAsk((s) => s.pinned);
-  const chose = usePinnedAsk((s) => s.collapsed);
+  const collapsed = usePinnedAsk((s) => s.collapsed);
   const focusSeq = usePinnedAsk((s) => s.focus);
   const draftWidth = usePinned((s) => (s.key ? s.width : 0));
-  const draftInset = usePinned((s) => s.inset);
-  const draft = draftWidth ? { width: draftWidth, inset: draftInset } : null;
+  const draftBottom = usePinned((s) => s.bottom);
+  const draft = draftWidth ? { width: draftWidth, bottom: draftBottom || CARD_GAP } : null;
   const snackInset = useSnack((s) => s.inset);
   const snackLift = useSnack((s) => s.lift + s.pageLift);
   // what the pane shows (a conversation, List's page, a new message): the reader's toolbar comes and goes with it
@@ -43,20 +43,32 @@ export function PinnedAsk() {
   const bodyRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
-  const [pane, setPane] = useState({ width: 0, height: 0 });
+  // the pane, and how far left of its right edge the thread list's edge and the window's are (the card may reach over them)
+  const [pane, setPane] = useState({ width: 0, height: 0, list: 0, window: 0 });
   const [floor, setFloor] = useState(0);
   const [top, setTop] = useState(0);
-  const place = pinnedAskPlace(pane, draft, floor, top);
-  const collapsed = chose || place.squeezed;
+  const [listTop, setListTop] = useState(0);
+  // reaching over Split's list, the card keeps clear of its header too (its title line, a selection's toolbar)
+  const base = pinnedAskPlace(pane, draft, 0, top, pane);
+  const overList = base.past > 0 && pane.list > pane.width;
+  const place = pinnedAskPlace(pane, draft, floor, overList ? Math.max(top, listTop) : top, pane);
 
-  // the pane's size, as it changes (no polling)
+  // the pane's size, as it changes (no polling): a pane edge dragged or the window resized resizes it too
   useLayoutEffect(() => {
     const el = cardRef.current?.parentElement;
     if (!el) return;
-    const measure = () => setPane((was) => (was.width === el.clientWidth && was.height === el.clientHeight ? was : { width: el.clientWidth, height: el.clientHeight }));
+    const measure = () => {
+      const right = el.getBoundingClientRect().right;
+      const listLeft = document.getElementById("app-list")?.getBoundingClientRect().left;
+      const next = { width: el.clientWidth, height: el.clientHeight, list: listLeft === undefined ? el.clientWidth : Math.round(right - listLeft), window: Math.round(right) };
+      setPane((was) => (was.width === next.width && was.height === next.height && was.list === next.list && was.window === next.window ? was : next));
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
+    // the list giving way to a wider sidebar moves its edge with the reading pane's size unchanged
+    const list = document.getElementById("app-list");
+    if (list && list !== el) ro.observe(list);
     return () => ro.disconnect();
   }, []);
   // the reader's toolbar stays clear: what's above its scroller (none over the list or a new message), measured whenever
@@ -73,9 +85,18 @@ export function PinnedAsk() {
     ro.observe(scroller);
     return () => ro.disconnect();
   }, [shows, page, pane.height]);
+  useLayoutEffect(() => {
+    const el = cardRef.current?.parentElement;
+    const scroller = overList ? document.querySelector<HTMLElement>("#app-list [data-keep-scroll=list]") : null;
+    if (!el || !scroller) return setListTop(0);
+    const measure = () => setListTop(Math.max(0, Math.round(scroller.getBoundingClientRect().top - el.getBoundingClientRect().top)));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(scroller);
+    return () => ro.disconnect();
+  }, [overList, shows, pane.height]);
   // the snack dock, where it would meet the card: the card stands on it (its own lifts included: it's measured), and
   // follows it as it grows (a snack's More) or moves
-  const base = pinnedAskPlace(pane, draft, 0, top);
   useLayoutEffect(() => {
     const el = cardRef.current?.parentElement;
     const dockCard = snackInset > 0 ? el?.querySelector<HTMLElement>(":scope > [data-testid=snack-dock] [data-snack-card]") : null;
@@ -103,7 +124,10 @@ export function PinnedAsk() {
     ro.observe(card);
     return () => ro.disconnect();
   }, [place.bottom]);
-  useEffect(() => () => usePinnedAsk.setState({ inset: 0 }), []);
+  // the draft beside it stands on the dock where the card must (feet on one line); the list knows when it's covered
+  useLayoutEffect(() => usePinnedAsk.setState({ floor }), [floor]);
+  useLayoutEffect(() => usePinnedAsk.setState({ overList }), [overList]);
+  useEffect(() => () => usePinnedAsk.setState({ inset: 0, floor: 0, overList: false }), []);
 
   // pinned: focus comes here once Ask's dialog has gone (programmatic: no ring), once per request
   useEffect(() => {
@@ -112,10 +136,6 @@ export function PinnedAsk() {
     answered.focus = seq;
     focusAfterDialog(() => bodyRef.current ?? toggleRef.current, () => usePinnedAsk.getState().focus === seq && usePinnedAsk.getState().pinned !== null);
   }, [focusSeq]);
-  // folded with focus in what folds (its own choice is the toggle's, which keeps it): the header keeps it
-  useLayoutEffect(() => {
-    if (collapsed && document.activeElement === document.body && cardRef.current?.isConnected) toggleRef.current?.focus({ preventScroll: true });
-  }, [collapsed]);
 
   if (!pinned) return null;
   const { turn } = pinned;
@@ -134,7 +154,8 @@ export function PinnedAsk() {
       data-where={place.where}
       data-collapsed={collapsed || undefined}
       style={{ right: place.right, bottom: place.bottom, width: place.width, maxHeight: collapsed ? undefined : place.maxHeight }}
-      className={cn("absolute z-[6] flex flex-col overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-popover animate-in fade-in-0 slide-in-from-bottom-1 duration-base", !pane.width && "invisible")}
+      // past the reading pane it's over the list and its pane edge (z-20): above them; in the pane, the draft's level
+      className={cn("absolute flex flex-col overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-popover animate-in fade-in-0 slide-in-from-bottom-1 duration-base", place.past > 0 ? "z-[21]" : "z-[6]", !pane.width && "invisible")}
       onKeyDown={(e) => {
         // a popup's keys (its menu, its provenance: portaled, React still bubbles them here) aren't the card's
         if (e.key !== "Escape" || e.nativeEvent.isComposing || !e.currentTarget.contains(e.target as Node) || (e.target as Element).closest("[data-popup-open]")) return;
@@ -154,11 +175,9 @@ export function PinnedAsk() {
           <HeaderButton
             ref={toggleRef}
             label={collapsed ? t("ask.pinned.expand") : t("ask.pinned.collapse")}
-            tip={place.squeezed ? t("ask.pinned.noRoom") : undefined}
             testId="pinned-ask-toggle"
             expanded={!collapsed}
-            disabled={place.squeezed}
-            onClick={() => !place.squeezed && usePinnedAsk.setState({ collapsed: !chose })}
+            onClick={() => usePinnedAsk.setState({ collapsed: !collapsed })}
           >
             {collapsed ? <ChevronUp /> : <ChevronDown />}
           </HeaderButton>
@@ -174,7 +193,7 @@ export function PinnedAsk() {
 }
 
 /** An icon-only control of the card's header, named, with its tooltip (the draft's header buttons' look). */
-function HeaderButton({ ref, label, tip, testId, pressed, expanded, disabled, onClick, children }: { ref?: React.Ref<HTMLButtonElement>; label: string; tip?: string; testId: string; pressed?: boolean; expanded?: boolean; disabled?: boolean; onClick: () => void; children: ReactNode }) {
+function HeaderButton({ ref, label, tip, testId, pressed, expanded, onClick, children }: { ref?: React.Ref<HTMLButtonElement>; label: string; tip?: string; testId: string; pressed?: boolean; expanded?: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <Tooltip>
       <TooltipTrigger
@@ -187,12 +206,10 @@ function HeaderButton({ ref, label, tip, testId, pressed, expanded, disabled, on
             aria-label={label}
             aria-pressed={pressed}
             aria-expanded={expanded}
-            // still reachable, and still saying why (a disabled button is skipped and silent)
-            aria-disabled={disabled || undefined}
             data-testid={testId}
             onClick={onClick}
             // open isn't a state to show (the ghost button fills while expanded, as a menu's trigger does): pressed is
-            className="text-muted-foreground hover:text-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground aria-expanded:hover:bg-muted aria-expanded:hover:text-foreground unavailable:hover:bg-transparent aria-pressed:bg-muted aria-pressed:text-primary"
+            className="text-muted-foreground hover:text-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground aria-expanded:hover:bg-muted aria-expanded:hover:text-foreground aria-pressed:bg-muted aria-pressed:text-primary"
           >
             {children}
           </Button>

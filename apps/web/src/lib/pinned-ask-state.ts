@@ -19,13 +19,18 @@ interface PinnedAskState {
   collapsed: boolean;
   /** the card's height plus its offsets: the reader, the list and a new message pad their scroll end by it */
   inset: number;
+  /** where it stands on the snack dock, from the pane's bottom (px; 0: it doesn't meet it): the draft beside it stands
+   * there too, so their feet stay on one line */
+  floor: number;
+  /** it reaches past the reading pane over Split's thread list: the list's end scrolls clear of it */
+  overList: boolean;
   /** each request for focus in the card (a pin) */
   focus: number;
 }
 
-export const usePinnedAsk = create<PinnedAskState>(() => ({ pinned: null, collapsed: false, inset: 0, focus: 0 }));
+export const usePinnedAsk = create<PinnedAskState>(() => ({ pinned: null, collapsed: false, inset: 0, floor: 0, overList: false, focus: 0 }));
 
-export const clearPinnedAnswer = (): void => usePinnedAsk.setState({ pinned: null, inset: 0 });
+export const clearPinnedAnswer = (): void => usePinnedAsk.setState({ pinned: null, inset: 0, floor: 0, overList: false });
 
 /** Conversations gone (deleted here or in another window; null: everything, Clear AI data): a card quoting one goes. */
 export function forgetPinnedAnswer(conversationIds: readonly number[] | null): void {
@@ -35,14 +40,15 @@ export function forgetPinnedAnswer(conversationIds: readonly number[] | null): v
 
 /** The card's distance from the pane's edges and from the draft (px), the draft's own. */
 export const CARD_GAP = 12;
-/** Its widest (24 rem) and the least it takes beside a pinned draft (20 rem); narrower, it goes above the draft. */
+/** Its widest (24 rem), and its width beside a pinned draft where the reading pane can't hold that (20 rem: it reaches
+ * over the thread list for it). */
 export const CARD_MAX_W = 384;
 export const CARD_MIN_BESIDE = 320;
-/** Above a draft with less room than this (px) for it, it shows its header alone. */
-export const CARD_MIN_OPEN = 140;
-/** Its tallest (30 rem), as 60% of the pane allows; over a draft, 20 rem, so the conversation still reads beside them. */
+/** Under this (15 rem) between the list's edge and the draft, it may reach over the sidebar, to the window's edge. */
+export const CARD_MIN_FIT = 240;
+/** Its tallest (30 rem), as 60% of the pane allows; never shorter than its header (40 px), which a short window may push up. */
 export const CARD_MAX_H = 480;
-export const CARD_MAX_H_ABOVE = 320;
+export const CARD_HEADER = 40;
 
 export interface CardPlace {
   /** from the pane's right edge and bottom edge (px) */
@@ -51,31 +57,33 @@ export interface CardPlace {
   width: number;
   /** its tallest here (px) */
   maxHeight: number;
-  /** too little room to open: its header alone, whatever its own choice */
-  squeezed: boolean;
-  where: "alone" | "beside" | "above";
+  where: "alone" | "beside";
+  /** how far it reaches past the pane's left edge (px; over the thread list in Split) */
+  past: number;
+}
+
+/** From the pane's right edge (px): to the thread list's left edge, and to the window's. */
+export interface CardReach {
+  list: number;
+  window: number;
 }
 
 /**
- * Plan 165: where the card goes. A pinned draft keeps the corner: the card is to its left when the pane holds both and
- * 20 rem for the card, else above it. `floor`: the least its foot may be from the pane's bottom (it stands on the snack
- * dock where they'd meet, as the draft does). `top`: what it never covers at the pane's top (the reader's toolbar). Its
- * height is capped by the room left (60% of the pane and 30 rem at most, 20 rem over a draft); under 140 px it shows its
- * header alone.
+ * Plan 165: where the card goes. Alone, the pane's corner. A pinned draft keeps the corner and the card is always to its
+ * left, its foot on the draft's (`draft.bottom`), at every size (the owner: never above it): 24 rem at most where the
+ * pane holds it, else 20 rem reaching left over the thread list, narrower only where even the list's edge is closer, and
+ * over the sidebar only where that leaves under 15 rem. `floor`: the least its foot may be from the pane's bottom (it
+ * stands on the snack dock where they'd meet). `top`: what it never covers at the pane's top (the reader's toolbar).
  */
-export function pinnedAskPlace(pane: { width: number; height: number }, draft: { width: number; inset: number } | null, floor = 0, top = 0): CardPlace {
-  const full = Math.max(0, Math.min(CARD_MAX_W, pane.width - CARD_GAP * 2));
-  const beside = draft ? pane.width - draft.width - CARD_GAP * 3 : 0;
-  const where: CardPlace["where"] = !draft ? "alone" : beside >= CARD_MIN_BESIDE ? "beside" : "above";
-  // above the draft: its foot a gap over the draft's top (the draft's inset is its height, its lift and both gaps)
-  const bottom = Math.max(where === "above" ? draft!.inset : CARD_GAP, floor);
+export function pinnedAskPlace(pane: { width: number; height: number }, draft: { width: number; bottom: number } | null, floor = 0, top = 0, reach: CardReach = { list: pane.width, window: pane.width }): CardPlace {
+  const bottom = Math.max(draft ? draft.bottom : CARD_GAP, floor);
   const room = Math.max(0, pane.height - bottom - top - CARD_GAP);
-  return {
-    right: where === "beside" ? CARD_GAP * 2 + draft!.width : CARD_GAP,
-    bottom,
-    width: where === "beside" ? Math.min(CARD_MAX_W, beside) : full,
-    maxHeight: Math.floor(Math.min(room, pane.height * 0.6, where === "above" ? CARD_MAX_H_ABOVE : CARD_MAX_H)),
-    squeezed: room < CARD_MIN_OPEN,
-    where,
-  };
+  const maxHeight = Math.max(CARD_HEADER, Math.floor(Math.min(room, pane.height * 0.6, CARD_MAX_H)));
+  if (!draft) return { right: CARD_GAP, bottom, width: Math.max(0, Math.min(CARD_MAX_W, pane.width - CARD_GAP * 2)), maxHeight, where: "alone", past: 0 };
+  const right = CARD_GAP * 2 + draft.width;
+  const inPane = pane.width - right - CARD_GAP;
+  const toList = reach.list - right - CARD_GAP;
+  const fits = toList >= CARD_MIN_FIT ? toList : Math.max(toList, reach.window - right - CARD_GAP);
+  const width = Math.max(0, Math.min(CARD_MAX_W, Math.max(CARD_MIN_BESIDE, inPane), fits));
+  return { right, bottom, width, maxHeight, where: "beside", past: Math.max(0, right + width - pane.width) };
 }

@@ -52,36 +52,48 @@ beforeEach(() => {
 
 describe("where the card goes", () => {
   const pane = { width: 1000, height: 700 };
+  const draft = { width: 456, bottom: CARD_GAP };
 
   it("alone: the corner, 24 rem at most, its height 60% of the pane at most", () => {
-    expect(pinnedAskPlace(pane, null)).toMatchObject({ right: CARD_GAP, bottom: CARD_GAP, width: 384, maxHeight: 420, squeezed: false, where: "alone" });
+    expect(pinnedAskPlace(pane, null)).toMatchObject({ right: CARD_GAP, bottom: CARD_GAP, width: 384, maxHeight: 420, where: "alone", past: 0 });
     expect(pinnedAskPlace({ width: 300, height: 700 }, null).width).toBe(300 - CARD_GAP * 2);
   });
 
-  it("with a pinned draft: to its left where the pane holds both and 20 rem for the card", () => {
-    const place = pinnedAskPlace({ width: 1100, height: 800 }, { width: 512, inset: 400 });
-    expect(place).toMatchObject({ where: "beside", right: CARD_GAP * 2 + 512, bottom: CARD_GAP, width: 384 });
-    // what's left, down to 20 rem
-    const tight = pinnedAskPlace({ width: 512 + 320 + 36, height: 800 }, { width: 512, inset: 400 });
-    expect(tight).toMatchObject({ where: "beside", width: 320 });
-    // never over the draft: its right edge a gap left of the draft's left
-    expect(1100 - place.right).toBeLessThanOrEqual(1100 - CARD_GAP - 512 - CARD_GAP);
+  it("with a pinned draft: always to its left, its foot on the draft's; 24 rem where the pane holds it, what's left down to 20 rem", () => {
+    const place = pinnedAskPlace({ width: 1100, height: 800 }, { width: 512, bottom: CARD_GAP });
+    expect(place).toMatchObject({ where: "beside", right: CARD_GAP * 2 + 512, bottom: CARD_GAP, width: 384, past: 0 });
+    const tight = pinnedAskPlace({ width: 512 + 350 + 36, height: 800 }, { width: 512, bottom: CARD_GAP });
+    expect(tight).toMatchObject({ where: "beside", width: 350, past: 0 });
+    // the draft stood on the dock: the card's foot with it
+    expect(pinnedAskPlace(pane, { width: 456, bottom: 90 }).bottom).toBe(90);
   });
 
-  it("narrower: above the draft, as tall as the room left, and its header alone under 140 px", () => {
-    const above = pinnedAskPlace({ width: 530, height: 650 }, { width: 506, inset: 400 });
-    expect(above).toMatchObject({ where: "above", right: CARD_GAP, bottom: 400, maxHeight: 650 - 400 - CARD_GAP, squeezed: false });
-    // the reader's toolbar stays clear, and over a draft it's 20 rem at most
-    expect(pinnedAskPlace({ width: 530, height: 650 }, { width: 506, inset: 400 }, 0, 52).maxHeight).toBe(650 - 400 - 52 - CARD_GAP);
-    expect(pinnedAskPlace({ width: 770, height: 900 }, { width: 512, inset: 300 }).maxHeight).toBe(320);
-    const squeezed = pinnedAskPlace({ width: 530, height: 520 }, { width: 506, inset: 400 });
-    expect(squeezed).toMatchObject({ where: "above", squeezed: true });
+  it("never above it: where the reading pane can't hold both, 20 rem reaching left over the thread list", () => {
+    // Split at 1100x700: a ~530 px reading pane, the list's edge 370 px further left
+    const place = pinnedAskPlace({ width: 530, height: 650 }, draft, 0, 0, { list: 900, window: 1100 });
+    expect(place).toMatchObject({ where: "beside", right: CARD_GAP * 2 + 456, bottom: CARD_GAP, width: 320 });
+    expect(place.past).toBe(place.right + 320 - 530);
+    expect(place.maxHeight).toBe(Math.floor(650 * 0.6));
+    // the reader's toolbar stays clear
+    expect(pinnedAskPlace({ width: 530, height: 400 }, draft, 0, 200, { list: 900, window: 1100 }).maxHeight).toBe(400 - CARD_GAP - 200 - CARD_GAP);
+    // a window too short for any: its header still shows whole
+    expect(pinnedAskPlace({ width: 530, height: 120 }, draft, 0, 90, { list: 900, window: 1100 }).maxHeight).toBe(40);
+  });
+
+  it("narrower than 20 rem only to stay off the sidebar; over it only where that leaves under 15 rem", () => {
+    // the list's edge 300 px past the draft's gaps: the card takes what's there
+    expect(pinnedAskPlace({ width: 380, height: 700 }, { width: 356, bottom: CARD_GAP }, 0, 0, { list: 680, window: 900 }).width).toBe(680 - 356 - CARD_GAP * 3);
+    // under 15 rem to the list's edge: to the window's edge, still 20 rem at most
+    expect(pinnedAskPlace({ width: 380, height: 700 }, { width: 356, bottom: CARD_GAP }, 0, 0, { list: 560, window: 900 }).width).toBe(320);
+    expect(pinnedAskPlace({ width: 380, height: 700 }, { width: 356, bottom: CARD_GAP }, 0, 0, { list: 560, window: 600 }).width).toBe(600 - 356 - CARD_GAP * 3);
+    // inside the window, whatever it's given
+    expect(pinnedAskPlace({ width: 200, height: 700 }, { width: 176, bottom: CARD_GAP }, 0, 0, { list: 200, window: 200 }).width).toBe(0);
   });
 
   it("stands on the snack dock where they'd meet (the floor), and the room shrinks with it", () => {
     expect(pinnedAskPlace(pane, null, 80)).toMatchObject({ bottom: 80, maxHeight: 420 });
-    expect(pinnedAskPlace({ width: 530, height: 650 }, { width: 506, inset: 400 }, 200).bottom).toBe(400);
-    expect(pinnedAskPlace({ width: 530, height: 650 }, { width: 506, inset: 400 }, 450)).toMatchObject({ bottom: 450, maxHeight: 650 - 450 - CARD_GAP });
+    expect(pinnedAskPlace({ width: 530, height: 650 }, { width: 456, bottom: 120 }, 80, 0, { list: 900, window: 1100 }).bottom).toBe(120);
+    expect(pinnedAskPlace({ width: 530, height: 650 }, draft, 450, 0, { list: 900, window: 1100 })).toMatchObject({ bottom: 450, maxHeight: 650 - 450 - CARD_GAP });
   });
 });
 

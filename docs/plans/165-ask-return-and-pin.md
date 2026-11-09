@@ -110,3 +110,38 @@ Review 2 (`review-2.md`), six findings, all fixed; the rounds stop here (the own
 4. **Leaving a selection didn't remeasure the toolbar.** The selection is part of what the pane shows, so it's remeasured. No page test of its own: the same measurement as #4 of round 1, which e2e fails without.
 5. **Close, then pin the same answer again, revived a waiting source.** A pin or a close ends every source asked for before it, and the check is the card itself, not its turn's id (unit).
 6. **A Back to the answer from an earlier Ask source stayed on the same conversation.** Opening a source from the card clears it (unit).
+
+## Owner, after the first build: always beside the draft
+
+The owner, 2026-11-09, verbatim, on Split at 1440x900 (the card stacked above the draft):
+
+> "for the split 1440, just make the draft narrower but not a lot, pinned ask box always on the left, never above, even if it covers part of the thread list"
+
+### What changes
+
+- **Always to the draft's left.** With both pinned, the card's right edge is 12 px left of the draft's, its foot on the draft's foot, at every window size and in both layouts. The "above" place, its 20 rem height cap and the "under 140 px only the header" mode go (`CARD_MIN_OPEN`, `CARD_MAX_H_ABOVE`, `squeezed`, the disabled toggle and `ask.pinned.noRoom` in en and es).
+- **The draft a little narrower while an answer is pinned beside it:** 28.5 rem instead of 32 (−11%), still `min(…, 100% − 1.5 rem)`. Its foot then measures 27.25 rem, over the foot's 27 rem query (`composer/ai-slot.tsx`), so Generate keeps its word: the foot is in the same mode it is at 1100 today (Send, Generate's word, the format icons, Discard on one line). A pane already narrower than 30 rem gives the draft what it gave it before; nothing narrows under that. Without an answer pinned the draft is exactly as before.
+- **Its width:** up to 24 rem (its own, as alone) where the reading pane holds it beside the draft; else **20 rem**, reaching left past the reading pane **over the thread list** (Split) as far as it must. It shrinks under 20 rem only where even the list's width can't hold it: then it's what's left between the list's left edge (plus 12 px) and the draft. With Terno's panes that never happens at the desktop's least window (980 px: the sidebar 200, the list 340, the reader 440; the draft 416, the card 328 to the list's edge); a user who widened the sidebar can bring it to ~18 rem.
+- **The sidebar (decided):** the card never covers it, unless what's left between the list's edge and the draft is under 15 rem (a web window narrower than the desktop's least, or panes dragged to their limits); then it may reach to 12 px from the window's left. List layout is the same rule: its one pane is the list's, so the card reaches over the sidebar only in that last case.
+- **Z-order:** while it reaches past the reading pane, the card is above the list and its pane handle (`z-[21]`, the handle is `z-20`); inside the pane it stays at the draft's `z-[6]`.
+- **The list's end scrolls clear** of the card where it covers the list's foot in Split (it publishes `overList`; the list pads by its inset only then), as List's list already does.
+- **Feet aligned with the snack dock too:** where either card would meet the dock, both stand on it. The card publishes its floor (`usePinnedAsk.floor`); the draft's bottom is the larger of its own lift and that floor, and the card's is the draft's bottom (published as `usePinned.bottom`) or its own floor. Neither floor depends on the other's bottom, so there's no measuring loop.
+- **Unchanged:** keyboard order (the card, then the draft), focus, Esc, collapse, unpin, close, reduced motion (no transition on moves; the draft's width changes at once), the card alone.
+
+### Tests
+
+- Unit (`pinned-ask.test.ts`, `pinnedAskPlace`): beside at a wide pane (24 rem); at a narrow pane, 20 rem reaching past the pane's left (`right` + `width` > pane width), the feet on the draft's bottom; shrunk to the list's edge where the list can't hold 20 rem; over the sidebar only under 15 rem; the floor and the draft's bottom.
+- e2e (`ask-pin.spec.ts`): Split at 1100x700 and 1440x900, and wide (1880x1040): the card left of the draft, feet aligned, no overlap, inside the window, never over the sidebar; the draft 28.5 rem with the answer pinned and 32 rem without; above the list (`elementFromPoint` at the card's left part is the card). List at 1440 and 900x800: beside, feet aligned. The draft's foot on one line beside the card (Send and Discard on one line, Generate's word shown).
+- Screenshots, real models: both pinned at 1100x700, 1440x900, 1880x1040, Split and List, Lumen and macOS, light and dark; the draft alone for comparison. `/tmp/terno-scratch/p164/ask-left/shots/`.
+
+### Revisions after the Codex critique
+
+The critique (7 points, `/tmp/terno-scratch/p164/ask-left/critique.md`) and what changed:
+
+1. **The sidebar's bound needs the list's geometry.** The card measures how far left of its pane's right edge the list's edge and the window's are (`CardReach`), and observes `#app-list` too: a wider sidebar can move the list's edge with the reading pane's size unchanged.
+2. **Stale published layout.** Closing, clearing or unmounting the card resets its `inset`, `floor` and `overList`; the draft's `bottom` resets with its `inset` and `width`.
+3. **The draft's own dock measurement is approximate** (it lifts by the dock's inset, not its measured rectangle). Not changed here: it's plan 115's, and where only the draft meets the dock the card follows the draft's bottom, so the feet stay on one line either way.
+4. **Split's list inset is the answer's alone**, in both the list's padding and the imperative j/k visibility (`listInset`); the draft is never over Split's list. e2e scrolls the list to its end under the card.
+5. **No header-only mode, but never shorter than the header:** the card's `maxHeight` has a 40 px floor, so a very short window pushes it up rather than clipping its controls (unit).
+6. **Over the list, its header stays clear** (its title line, a selection's toolbar at `z-20`): reaching over Split's list, the card's top room is also bounded by the list's scroller top.
+7. **Generate's word shows only for a note or gaps.** The List flow pins a reply that is a note for AI and checks the word beside the card; every flow checks Send, Generate and Discard on one line inside the card. Spanish's "Generar" is shorter than "Generate", so English is the binding case.

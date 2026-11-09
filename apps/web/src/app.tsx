@@ -122,7 +122,7 @@ export function App() {
   const pinned = usePinned((s) => s.key);
   // Split: a new message keeps its foot (the format bar) clear of the pinned draft, and of the dock (plan 158: it's over this pane)
   const composeInset = bottomInset(useSnack((s) => (!list && composing ? s.inset : 0)), usePinnedInset(!list && composing));
-  // plan 165: the pinned answer, in the pinned draft's pane, to its left or above it
+  // plan 165: the pinned answer, in the pinned draft's pane, always to its left (reaching over the list where it must)
   // (gone while Ask is off: it comes back if it's turned on again in this window)
   const askShown = useApp(askOffered);
   const pinnedAsk = usePinnedAsk((s) => s.pinned !== null) && askShown;
@@ -182,7 +182,7 @@ export function App() {
           {list && page !== "list" && <PageLayer page={page} />}
           {/* plan 115: the pinned draft, over the list or its page, kept while other mail is read */}
           {list && pinnedAsk && <PinnedAsk />}
-          {list && pinned && <PinnedDraft key={pinned} overList={page === "list"} />}
+          {list && pinned && <PinnedDraft key={pinned} overList={page === "list"} beside={pinnedAsk} />}
           {/* plan 158: toasts sit over the pane that isn't being worked in: List's one pane keeps room under its rows for it */}
           {list && <SnackDock over={page === "list" ? "list" : "reader"} />}
         </section>
@@ -193,7 +193,7 @@ export function App() {
               {many ? <SelectionBar /> : composing ? <NewMessage /> : <Reader />}
             </PaneBoundary>
             {pinnedAsk && <PinnedAsk />}
-            {pinned && <PinnedDraft key={pinned} overList={false} />}
+            {pinned && <PinnedDraft key={pinned} overList={false} beside={pinnedAsk} />}
             {/* Split: over the reader's foot, never over the rows being triaged (the reader's end scrolls clear of it) */}
             <SnackDock over="reader" />
           </main>

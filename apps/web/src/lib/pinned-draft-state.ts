@@ -14,11 +14,13 @@ interface PinnedState {
   inset: number;
   /** plan 165: its width, for the pinned answer that goes to its left */
   width: number;
+  /** its foot's distance from the pane's bottom (px): the pinned answer beside it stands on the same line */
+  bottom: number;
   /** each request for focus in the card (a pin, r/a/f on its conversation, the strip) */
   focus: number;
 }
 
-export const usePinned = create<PinnedState>(() => ({ key: null, threadId: null, inset: 0, width: 0, focus: 0 }));
+export const usePinned = create<PinnedState>(() => ({ key: null, threadId: null, inset: 0, width: 0, bottom: 0, focus: 0 }));
 
 export const pinnedKey = (): string | null => usePinned.getState().key;
 

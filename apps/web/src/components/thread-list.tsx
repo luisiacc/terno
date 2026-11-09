@@ -32,6 +32,7 @@ import { SearchHelp } from "./search-help";
 import { client } from "~/rpc/connection";
 import { useSnack } from "~/lib/snack";
 import { bottomInset, pinnedInsetNow, usePinnedInset } from "~/lib/pinned-draft-state";
+import { usePinnedAsk } from "~/lib/pinned-ask-state";
 import { ThreadMenu } from "./thread-menu";
 import { DraftsStrip } from "./drafts-strip";
 import { ReviewAlwaysMenu, ReviewButtons } from "./review-actions";
@@ -56,11 +57,13 @@ import { pressRow, releaseRow } from "~/lib/select";
 
 /** plan 87: the Inbox top's label and the gap after it (px; a row's height comes from the design) */
 /**
- * What covers the list's last rows now: List's pinned draft (Split's is over the reader, plan 158). Plan 160: List's
- * toast covers none, the list's viewport ends above it; the draft covers only what reaches past the toast's room.
+ * What covers the list's last rows now: List's pinned draft (Split's is over the reader, plan 158), and Split's pinned
+ * answer where it reaches over the list (plan 165). Plan 160: List's toast covers none, the list's viewport ends above it;
+ * the draft covers only what reaches past the toast's room.
  */
 const pinnedOver = (snack: number, pinned: number): number => Math.max(0, bottomInset(snack, pinned) - snack);
-const listInset = (): number => (useAppearance.getState().layout === "list" ? pinnedOver(listCovered() ? 0 : useSnack.getState().inset, pinnedInsetNow()) : 0);
+const askOverList = (): number => (usePinnedAsk.getState().overList ? usePinnedAsk.getState().inset : 0);
+const listInset = (): number => (useAppearance.getState().layout === "list" ? pinnedOver(listCovered() ? 0 : useSnack.getState().inset, pinnedInsetNow()) : askOverList());
 
 const TOP_LABEL = 28;
 const EMPTY_GROUPS: readonly TodayGroup[] = [];
@@ -1143,7 +1146,8 @@ export function ThreadList() {
   const page = usePage();
   const toastOver = over && page === "list";
   const toastRoom = useSnack((s) => (toastOver ? s.inset : 0));
-  const dock = pinnedOver(toastRoom, usePinnedInset(over));
+  const askOver = usePinnedAsk((s) => (!over && s.overList ? s.inset : 0));
+  const dock = pinnedOver(toastRoom, Math.max(usePinnedInset(over), askOver));
   const getItemKey = useCallback((i: number) => items[i]!.id, [items]);
   // plan 87: the Inbox's top (due reminders) under a "Reminders" label, a hairline gap before the rest
   const top = useMemo(() => {

@@ -2730,7 +2730,6 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "ask.pinned.answer": "Respuesta",
   "ask.pinned.expand": "Desplegar",
   "ask.pinned.collapse": "Contraer",
-  "ask.pinned.noRoom": "No hay sitio encima del borrador fijado. Haz la ventana más alta o desfija el borrador.",
   "ask.pinned.close": "Cerrar respuesta fijada",
   "ask.pinned.unpinFailed": "No se pudo abrir esa respuesta en Pregunta a tu correo. Sigue fijada: inténtalo de nuevo en un momento.",
   "palette.askRow": "Preguntar a la IA: «{query}»",
