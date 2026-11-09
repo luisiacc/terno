@@ -1180,3 +1180,54 @@ A 403, or a provider's `permission_error` / `permission_denied` / `PERMISSION_DE
 
 ### Questions for the owner
 - **Grouping Today's Needs you by reason** (three reports): "Your turn" and "Waiting for your reply" as two groups, or by importance, would reorder Today. Wanted?
+
+### As built (pass after ai162-r05)
+
+Where the build differs from the section above:
+- **⌘J's Undo** was reproduced first: the body's glance follows changes with a 150 ms throttle, and the raters shot the moment after Undo, when the foot still read the AI's email (Send primary, no "For AI"). `remove()` reads the glance again at once (`refreshGlance`). Send in the note state is an outlined icon, `aria-disabled` and dimmed, its reason in its tooltip and description; a click does nothing.
+- **Ask's sources** are a region of their own under the answer, `max-h` of three 32 px rows and the 28 px count heading (8.375 rem); the answer's region no longer fades. The "no source" mark is real text (a dashed outline at the citation's height), its tooltip "Not linked to a message: check it before you rely on it."; the legend under the answer went. The real-model capture showed a search caveat drawing the mark ("This covers only what I searched, and more may match."): the caveats (core `ask.ts`) cover that wording and its Spanish.
+- **Today's digest row** says its count line as its title ("16 newsletters · today's digest", which the frozen capture reads) and, under it, who they're from: the first three senders still in the Inbox and "N more", from the digest's own items (`digestFrom`). 48 px tall, its tile on the header's text edge. The reasons: "Your turn: they replied" (ink) and "Waiting for your reply" (the quiet ink), es "Te toca: respondieron" and "Esperan tu respuesta".
+- **The action preview's decision** was first a bar at the pane's foot; the real-model capture showed it 450 px under a short rule, still apart. It's sticky inside the rule's scroller: right under Edit as a rule, held at the pane's foot only when the rule is longer than the pane. One pair at a time (the header's while a match is read), so the test ids and the capture's waits stay. A shown row that isn't plainly a match carries its kind where Today puts its reason ("Didn't fit", "Not checked yet", "Starred or replied"): `ai.actionPage` returns each row's `tags`. The result's snack stays 20 s.
+- **⌘J's strip** quotes what was asked between the commands and Written with AI; a click opens the provenance, where it's whole with its pencil. The note's label is "For AI · not sent" (es "Para la IA · no se envía"), its first line keeping 11 rem clear. A foot under 32 rem says the plain "Saved" to assistive tech only (a problem saving always shows), so Save and close stays on Send's line at 1100.
+- **The summary**: an item's controls end its line when they fit and wrap under its words, at their edge, when not; beside "Arjun asks" the source says only when ("Yesterday, 9:41 PM"), its accessible name whole (`messageSourceShort`); the action row sits 4 px closer.
+- **Writing style** (`settings-dialog.tsx` held the fade): no fade. An edited profile's read view says the greeting and sign-off a draft will use ("Opens with “Hi” and their name"). The editor saved a greeting typed over another at a fixed 10%, so the read view (15% and up) hid it and drafts weighed it less: a value typed over keeps its place's share, never below 10% (`editedShares`).
+- **The AI filter**: while Create with AI writes, the fields are dimmed, `inert` and `aria-busy`, both Saves wait, and the box says "Writing the rule…".
+- **Follow-ups**: the card's "Writing your follow-up…" has no spinner; the composer's is the one.
+- **The model error**: `mapSdkError` gives a 403, or `permission_error`, `permission_denied`, `insufficient_permissions` or `PERMISSION_DENIED` at any status, its own key (`errors.ai.noPermission`), kind still `auth` (what pauses on a bad key still pauses); a 401 without one of those codes keeps "key rejected". The digest stores it as `provider_no_permission`. Every provider on the SDK path has it (Anthropic, OpenAI, OpenRouter, Azure, Ollama, LM Studio); contract tests in each.
+
+**Not built, and why** (with the section above's):
+- Marking the AI filter's fields the request filled until edited (Lumen claude): per-field provenance across the rule form (name, match, each condition, each action, category, folder), cleared field by field, is more than this pass; the box above the fields already says "From your request" with its provenance.
+- The sticky "subject · Reply to…" line letting the text under it show through (Atelier claude): plan 158's deliberate fade on the everyday reader.
+- JEV's and the local servers' 403 (Codex review 9): neither provider documents a permission error, and nothing is built on behaviour a provider doesn't document; they keep "key rejected".
+
+### The Codex review of this pass
+
+Nine findings; seven fixed, each with a test that fails without the fix, two declined:
+1. **Undo made an unclear note a plain draft.** In a composer ⌘J opened, words the rules can't place came back with Send primary after Undo (the session went). The composer stays opened for AI (`reprime`) (`ai-draft.test.ts`).
+2. **The guard's "Stop and send what's there" mailed the instruction.** When what's left is the note, its own question asks instead (`ai-draft.test.ts`).
+3. **A page answering after Cancel could tag an ordinary mailbox's rows.** It notes nothing once the preview ended, and no tag shows outside a preview (`action-preview.test.ts`).
+4. **A rare greeting typed over kept a share below what drafts use.** Floored at 10% (`writing-style-habits.test.ts`).
+5. **A citation's preview could leave the dialog at its right edge.** The shared tooltip takes a collision boundary; Ask gives it its dialog (`ask.spec.ts`, both edges).
+6. **Regenerate's answer hid its question** (the same question twice in a row). Only a single turn the header names hides it (`ask.spec.ts`).
+7. **The strip's quote couldn't open its provenance.** It's a button that does (`ai-draft.spec.ts`).
+8. **The AI filter's fields carry no AI mark** (the plan's promise): declined, above; the plan is corrected.
+9. **JEV and the local servers' 403:** declined, above.
+
+### Results (pass after ai162-r05)
+- **Typecheck and lint:** clean.
+- **Unit:** the touched files pass (`ai-draft` 133, `filters-dialog` 11, `action-preview-title` 6, `ai-draft-state`, `today`, `action-preview`, `writing-style-habits`, `filters-dialog`, core `ask` 19, backend `actions` 74 and `today` 24, `packages/ai` 118, `ai-error`, `digest-page`). Across `apps/web/src/components`, `floating-restoration-lifetime` fails as at the base, and `command-palette` fails only in the full run (passes alone).
+- **e2e:** `e2e` (macOS) `ai-draft` 17, `ask` 11, `plain-actions` 16, `summaries` 9, `today` 10, and `design-axe`, `visual`, `designs`, `i18n`, `snack`, `palette`, `replies-ready`, `followups`, `filters`, `send-later`, `dev-mode`, `ai-no-consent`, `local-ai`, `motion`, `controls`, `menu-corners`: 87 passed. Lumen, Atelier, Luma and Graphite (the same specs' flows): 84 passed. No baseline moved.
+- **`pnpm test:ui-perf`:** 45 passed.
+- **Real-model smoke** (`ai-draft-body.smoke.ts`, `ai-rating.smoke.ts`, `TERNO_RATING_REAL=1`): 4 passed.
+- **The frozen capture on real models**, on the final build, reached every AI state in Lumen, Atelier, macOS and Graphite, light and dark (34 shots each, 62 to 65 AI requests each, only api.anthropic.com and api.openai.com), with no change to `scripts/ui-rating/`: `/tmp/terno-scratch/ai-redesign/round5/<design>/`, contact sheets in `round5/sheets/`. Every shot was looked at.
+- **Hands-on on real models** (`round5/hands-on/`), Lumen light 1440x900 and Atelier dark 1100x700: the digest row 48 px; Send `aria-disabled` and a click sends and asks nothing; the note's label and Write it in the same moment as Undo; Ask's sources three whole rows in view at 1100x700; Apply in the rule pane, 33 px under Edit as a rule.
+- **Real-model spend:** about US$0.80 as the app counted it (two four-design captures US$0.58, hands-on probes US$0.18, smoke US$0.02).
+- **`pnpm test:all`** (`E2E_PORT=7550`, `WEB_PORT=7560`), twice:
+  - **First run (803 s):** lint, build, typecheck, db-wasm, web, smoke and startup passed. e2e, ui-perf and perf failed only on the crowded first pass and passed alone (flaky). **unit failed on two real misses**, fixed in `a5bf8ab8e`: `no-hardcoded` (reduced opacity on text at rest: the digest row's selected senders line, the note's Send, the filter's working fields; now state variants only, `aria-busy:`, `aria-disabled:`) and `action-preview-title` (a unit test still held Apply in Split's header).
+  - **Second run (763 s):** lint, build, typecheck, db-wasm, web, smoke, e2e and startup passed. ui-perf (`sender icons … frames stay smooth`) and perf (`idb.perf`'s folder rename slice, `categorize.perf`'s throughput) failed only on the first pass and passed alone: flaky under load. **unit** failed on `filters-dialog`'s new test reading the old class (fixed in `1ed1d0dd5`), and on `writing.test` (a foreground draft's slot) and `idb.conformance` (a search page), both of which pass alone and are untouched here: flaky.
+  - **The unit gate alone after the fix:** 12,177 passed, 1 failed: `folder-actions.int.test` (a folder rename), which passes alone and isn't touched by this branch: flaky.
+
+### Questions for the owner (after this pass)
+- **Grouping Needs you by reason** ("Your turn" and "Waiting for your reply" as two groups, three reports) would reorder Today. Wanted?
+- **The permission error at a 401:** OpenAI can send `insufficient_permissions` with a 401; it now reads "doesn't have permission", not "key rejected". And a 403 that isn't about permission (OpenAI's unsupported region) reads as no permission too. Keep?
+- **An edited greeting's weight:** typed over another, it now keeps that one's share (it was a fixed 10%), so a draft uses "Hi" as often as it used "Hello". Keep?
