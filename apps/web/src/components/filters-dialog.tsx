@@ -133,7 +133,7 @@ function FolderAction({ action, rule, onChange }: { action: { accountId: number;
         }}
         items={items}
       >
-        <SelectTrigger size="sm" className={cn("h-7 max-w-full text-xs", action && "border-primary/40 bg-primary/10")} data-testid="action-folder-select" aria-label={t("filters.moveToFolder")}>
+        <SelectTrigger size="sm" className={cn("h-7 max-w-full text-xs", action && "border-foreground font-medium")} data-testid="action-folder-select" aria-label={t("filters.moveToFolder")}>
           <FolderIcon className="size-3.5" />
           <SelectValue />
         </SelectTrigger>
@@ -862,7 +862,7 @@ export function FiltersDialog() {
                   }
                   items={[{ value: "none", label: t("filters.noCategory") }, ...categories.map((c) => ({ value: String(c.id), label: c.name }))]}
                 >
-                  <SelectTrigger size="sm" className={cn("h-7 text-xs", categoryAction && "border-primary/40 bg-primary/10")} data-testid="action-category-select" aria-label={t("filters.category.label")}>
+                  <SelectTrigger size="sm" className={cn("h-7 text-xs", categoryAction && "border-foreground font-medium")} data-testid="action-category-select" aria-label={t("filters.category.label")}>
                     <Tag className="size-3.5" />
                     <SelectValue />
                   </SelectTrigger>
