@@ -11,7 +11,7 @@ import { ChevronDown, PenLine, TriangleAlert, Undo2 } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { modelName, providerLabel, writingTarget } from "~/lib/ai";
-import { answer, closeRow, commitHeld, confirmReplace, discard, discardAndSend, includeEveryone, keepEdits, keepWriting, noteBody, place, placePartial, previewMode, previewText, primed, refine, retry, rewriteFrom, stop, submit, subscribePreview, takeFocusRequest, undoCommit, useAiDraft, type AiSession, type AiStrip } from "~/lib/ai-draft";
+import { answer, closeRow, commitHeld, offersReplace, confirmReplace, discard, discardAndSend, includeEveryone, keepEdits, keepWriting, noteBody, place, placePartial, previewMode, previewText, primed, refine, retry, rewriteFrom, stop, submit, subscribePreview, takeFocusRequest, undoCommit, useAiDraft, type AiSession, type AiStrip } from "~/lib/ai-draft";
 import { keepInView } from "~/lib/reader-scroll";
 import { AiErrorNotice, AiProvenance, aiErrorCopy, aiWritten, errorTarget } from "../ai-card";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
@@ -481,7 +481,7 @@ function Choice({ s }: { s: AiSession }) {
   if (!c) return null;
   const notes = c.reason === "notes";
   // plan 163: over an instruction typed into while it wrote, Replace is offered too: the draft was meant for its place
-  const replaceable = notes || s.run?.spec.kind === "body";
+  const replaceable = offersReplace(s);
   return (
     <div className={line} data-testid="ai-choice" data-reason={c.reason}>
       <span data-testid="ai-choice-text">{t(notes ? "aiDraft.choice.notes" : "aiDraft.choice.ready")}</span>

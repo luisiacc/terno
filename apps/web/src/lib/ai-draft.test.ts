@@ -1854,6 +1854,65 @@ describe("plan 163: what the Codex review of the code found", () => {
   };
   const keepDraft = { decision: { kind: "route", route: { type: "keep-draft" } }, fromAccountId: null, confirmFailed: false };
 
+  // the owner's answers (2026-11-08): what the Codex review of writing at once on unsure text found
+  const UNSURE_TEXT = "I'm happy to go ahead with the contract as it is. Nothing in it changes what we agreed, so the 19th is fine.";
+  const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+
+  it("answers 1: Stop on a whole answer waiting for the read puts it in as it came, its gaps still marked, below their words", async () => {
+    const { key, c } = reply(UNSURE_TEXT);
+    void store.act(key);
+    await tick();
+    last("ai.compose").resolve(done("See you on [date].", { checks: { specifics: [], placeholders: ["[date]"] } }));
+    await tick();
+    store.stop(key);
+    expect(c.text).toBe(`${UNSURE_TEXT}\n\nSee you on [date].`);
+    expect(session(key)!.strip!.checks.placeholders).toEqual(["[date]"]);
+    expect(session(key)!.strip!.stopped).toBeUndefined();
+  });
+
+  it("answers 2: typed into while it wrote beside unsure text, the choice still offers Replace", async () => {
+    const { key, c } = reply(UNSURE_TEXT);
+    void store.act(key);
+    await tick();
+    c.type(" Thanks!");
+    last("ai.readDraft").resolve({ kind: "email", gaps: [] });
+    last("ai.compose").resolve(done("A fuller version."));
+    await tick();
+    expect(session(key)!.choice!.reason).toBe("typed");
+    expect(store.offersReplace(session(key)!)).toBe(true);
+  });
+
+  it("answers 3: a run started again once the message's text arrives keeps the read, and its verdict decides where it lands", async () => {
+    const { key, c } = reply(UNSURE_TEXT);
+    void store.act(key);
+    await tick();
+    const read = last("ai.readDraft");
+    last("ai.compose").resolve({ status: "waitingBody", messageId: 3 });
+    await tick();
+    expect(session(key)!.phase).toBe("waitingBody");
+    for (const l of threads.listeners) l({ details: new Map([[7, { messages: [{ id: 3, bodyState: "full" }] }]]) });
+    await tick();
+    expect(session(key)!.phase).toBe("writing");
+    read.resolve({ kind: "instruction", gaps: [] });
+    await tick();
+    last("ai.compose").resolve(done("Hi Arjun, the 19th is fine."));
+    await tick();
+    expect(c.text).toBe("Hi Arjun, the 19th is fine.");
+  });
+
+  it("answers 4: stopped after the read called it an instruction, what came takes its place, never beside it", async () => {
+    const { key, c } = reply(UNSURE_TEXT);
+    void store.act(key);
+    await tick();
+    last("ai.readDraft").resolve({ kind: "instruction", gaps: [] });
+    await tick();
+    delta(key, "Hi Arjun, the 19th");
+    await frame();
+    store.stop(key);
+    expect(c.text).toBe("Hi Arjun, the 19th");
+    expect(session(key)!.strip!.instruction).toBe(UNSURE_TEXT);
+  });
+
   it("4: a first fill that waited for a message's text reads the body again, where its gaps are now", async () => {
     const { key, c } = reply("Hi Arjun, see you [day]");
     await store.act(key);

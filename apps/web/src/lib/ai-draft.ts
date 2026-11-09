@@ -138,7 +138,7 @@ interface Run {
    * user's email, while the fast model reads it. Until it says "instruction", nothing goes over the user's words: an
    * answer that comes first waits here (`held`), in view.
    */
-  read?: { state: "pending" | "instruction" | "email"; text: string; doc: unknown; held?: Extract<AiComposeResult, { status: "done" }> };
+  read?: { id: string; state: "pending" | "instruction" | "email"; text: string; doc: unknown; held?: Extract<AiComposeResult, { status: "done" }> };
 }
 
 export interface AiCommit {
@@ -665,14 +665,16 @@ function writeWhileReading(key: string, b: BodyText, found: BodyRead, doc: unkno
   startRun(key, { kind: "notes", instruction: text, notes: "" });
   const run = session(key)?.run;
   if (!run || run.spec.kind !== "notes") return;
-  update(key, { run: { ...run, read: { state: "pending", text, doc } } });
-  void readAside(key, run.requestId, b, found);
+  // the read is the run's, by its own id: a run started again (the message's body arriving) keeps it (Codex review 3)
+  const id = globalThis.crypto.randomUUID();
+  update(key, { run: { ...run, read: { id, state: "pending", text, doc } } });
+  void readAside(key, id, b, found);
 }
 
-async function readAside(key: string, runId: string, b: BodyText, found: BodyRead): Promise<void> {
+async function readAside(key: string, id: string, b: BodyText, found: BodyRead): Promise<void> {
   let verdict: BodyVerdict | null = null;
   if (b.text.length <= READ_DRAFT_MAX) {
-    const requestId = globalThis.crypto.randomUUID();
+    const requestId = id;
     update(key, { reading: requestId });
     try {
       verdict = await client.call("ai.readDraft", { requestId, text: b.text, maybe: found.maybe.map(({ from, to }) => ({ from, to })) });
@@ -684,7 +686,7 @@ async function readAside(key: string, runId: string, b: BodyText, found: BodyRea
     update(key, { reading: null });
   }
   const run = session(key)?.run;
-  if (!run?.read || run.requestId !== runId) return;
+  if (run?.read?.id !== id) return;
   // typed into since: whatever the read says, it was about other words
   const same = controllerFor(key)?.docToken() === run.read.doc;
   const settled = settleBody(found, verdict);
@@ -701,6 +703,12 @@ async function readAside(key: string, runId: string, b: BodyText, found: BodyRea
   update(key, { run: { ...run, read }, ...(instruction ? { fromBody: true } : {}) });
   if (read.held) finished(key, read.held);
 }
+
+/**
+ * The choice offers Replace when the draft was meant for the text's place: the user's notes, an instruction typed into
+ * while it wrote, or (the owner's answers) text the fast read was asked about.
+ */
+export const offersReplace = (s: AiSession): boolean => s.choice?.reason === "notes" || s.run?.spec.kind === "body" || s.run?.read !== undefined;
 
 /** Plan 163: their gaps, filled where they are. */
 function fillGaps(key: string, b: BodyText, gaps: readonly BodyGap[]): void {
@@ -1158,7 +1166,11 @@ function waitForBody(key: string, messageId: number) {
       update(key, { phase: s.strip ? "strip" : "input", run: null });
       return void act(key);
     }
+    // the owner's answers (Codex review 3): the read, asked or answered, goes with the run started again
+    const read = s.run?.read;
     startRun(key, spec);
+    const again = session(key)?.run;
+    if (read && again) update(key, { run: { ...again, read: { ...read, held: undefined } } });
   });
   waiting.set(key, off);
   // the reader is fetching it if it's open; this asks for the thread as it is now
@@ -1202,7 +1214,12 @@ export function stop(key: string) {
     update(key, { phase: "strip", strip: prior, run: null, choice: null, error: null, guard: null, live: "" });
     return focusEditor(key);
   }
-  const spec = s.run?.spec;
+  // the owner's answers: written from text the read has since called an instruction, it stops as an instruction's run
+  // would, over it while nothing was typed (Codex review 4)
+  const read = s.run?.read;
+  const spec: RunSpec | undefined = read?.state === "instruction" ? { kind: "body", instruction: read.text } : s.run?.spec;
+  // a whole answer waiting on the read: it goes in as it came, checks and all, below their words (Codex review 1)
+  if (read?.held && c && s.phase === "writing" && commit(key, "below", read.held, s.run!.spec, undefined, false)) return focusEditor(key);
   const text = previewText(key).trim();
   // a rewrite keeps the text it rewrites where it is, and its own words aren't a draft: only a first write's are kept
   if (spec && spec.kind !== "refine" && spec.kind !== "fill" && text && c && s.phase === "writing") {
