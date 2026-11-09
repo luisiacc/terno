@@ -65,7 +65,8 @@ test.describe("local mode and AI providers", () => {
       await page.getByTestId("ai-choice-openai").click();
       await expect(page.getByTestId("ai-key")).toBeVisible();
       await expect(page.getByTestId("ai-privacy")).toContainText("api.openai.com");
-      await expect(page.getByTestId("ai-privacy")).toContainText("Never the content of your messages");
+      // plan 131 (no per-use consent): Settings → AI says that a conversation's text goes there when AI is used on it
+      await expect(page.getByTestId("ai-privacy")).toContainText("OpenAI receives a conversation’s text when you use an AI feature on it");
       // where the mail it's asked about goes, said where the user looks
       await expect(pill).toHaveText("AI: OpenAI (cloud)");
 
@@ -108,7 +109,9 @@ test.describe("local mode and AI providers", () => {
         await page.locator("[data-ready]").waitFor();
         await page.getByTestId("open-settings").click();
         await page.getByTestId("tab-ai").click();
-        await expect(page.getByTestId("ai-privacy")).toContainText("Nothing leaves this Mac.");
+        // on this Mac, with no host in the title (plan 131's disclosure still names OpenAI: the key saved above sends summaries there)
+        await expect(page.getByTestId("ai-privacy")).toContainText("Privacy.");
+        await expect(page.getByTestId("ai-privacy")).not.toContainText("api.openai.com");
         await page.getByTestId("ai-test").click();
         await page.getByTestId("ai-provider").click();
         await page.getByTestId("ai-choice-openai").click();
