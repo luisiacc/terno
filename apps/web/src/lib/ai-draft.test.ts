@@ -1743,6 +1743,23 @@ describe("plan 163: ⌘J on what's written in the body", () => {
     expect(c.text).toBe(UNSURE);
   });
 
+  it("plan 162 (after ai162-r05, Codex review): opened for AI, words the rules can't place, written then undone: a note again, not a plain draft", async () => {
+    const { key, c } = reply(UNSURE);
+    setGlance(key, "unsure");
+    void store.act(key);
+    await tick();
+    // ⌘J opened this composer for AI: what's typed then is a note even when the rules are unsure
+    store.useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: { ...session(key)!, opened: true } } }));
+    last("ai.readDraft").resolve({ kind: "instruction", gaps: [] });
+    await tick();
+    last("ai.compose").resolve(done("Hi Arjun,\n\nThe 19th is fine.\n\nLuis"));
+    await tick();
+    store.undoCommit(key);
+    expect(c.text).toBe(UNSURE);
+    expect(useAiDraftUi.getState().rows[key]).toBe("primed");
+    expect(noteState(useAiDraftUi.getState().rows[key], useAiDraftUi.getState().glances[key])).toBe(true);
+  });
+
   it("the answer comes before the read: it waits in view, over nothing, and the read decides where it lands", async () => {
     const a = reply(UNSURE);
     void store.act(a.key);
@@ -1818,9 +1835,14 @@ describe("plan 163: ⌘J on what's written in the body", () => {
     expect(await sendDraft(key)).toBe(false);
     expect(calls("compose.send")).toHaveLength(0);
     expect(session(key)!.guard).toEqual({ sendAt: undefined });
+    // plan 162 (after ai162-r05, Codex review): what's left is the instruction: it isn't mailed from here, its own
+    // question asks ("This reads as a note for AI."), and only Send as it is there sends it
+    const { useEmptySend } = await import("./send-problem");
     store.discardAndSend(key);
     await tick();
-    expect(calls("compose.send")).toHaveLength(1);
+    expect(calls("compose.send")).toHaveLength(0);
+    expect(useEmptySend.getState()).toMatchObject({ key, reason: "note" });
+    useEmptySend.setState({ key: null, reason: undefined });
   });
 
   it("a reply whose recipients someone chose is a draft surface, even from the body (Codex review 3)", async () => {

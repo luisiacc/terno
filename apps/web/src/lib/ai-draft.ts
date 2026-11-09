@@ -9,7 +9,7 @@ import { client } from "~/rpc/connection";
 import { getApp, useApp } from "~/state/app";
 import { loadThread, useThreads } from "~/state/threads";
 import { draftingOffered, errorHelp, writingModel, writingTarget } from "./ai";
-import { aiDraftHooks, canDraft, refreshGlance, useAiDraftUi, type AiDraftBadge } from "./ai-draft-state";
+import { aiDraftHooks, canDraft, glanceNow, refreshGlance, useAiDraftUi, type AiDraftBadge } from "./ai-draft-state";
 import { addressReply, composeLanding, recipientsUnchosen, composeOpening, leaveNewDraft, sendDraft } from "./compose";
 import { focusSoon } from "./compose-focus-move";
 import { draftCommands, draftKeyOf } from "./draft-commands";
@@ -395,6 +395,17 @@ function remove(key: string, endCompose = true) {
 }
 
 const sessionId = (key: string) => key.slice(0, 64);
+
+/**
+ * Plan 162 (after ai162-r05, Codex review): the first write taken back in a composer ⌘J opened leaves it opened for AI,
+ * as it was before the write, so words the rules can't place ("shorter, more casual") are a note again, never one Send
+ * from going (dropping the session made them a plain draft). Not over an empty body: that draft is forgotten.
+ */
+function reprime(key: string, opened: boolean): void {
+  if (!opened || session(key) || !bodyNow(key).trim()) return;
+  useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: newSession(key, { opened: true, phase: "input" }) } }));
+  publishBadges();
+}
 
 async function quietly(call: () => Promise<unknown>): Promise<void> {
   try {
@@ -1571,6 +1582,7 @@ export function undoCommit(key: string) {
   // to change and ⌘J again; no row (it had a field for that, and the words had to be typed twice)
   remove(key);
   if (preparedDrafts.has(key)) return backToNothing(key);
+  reprime(key, s.opened);
   focusEditor(key);
   // this draft was only ever what's just gone: no blank one stays in the list
   const left = draftOf(key);
@@ -1607,6 +1619,7 @@ function undoEdited(key: string, s: AiSession & { strip: AiStrip }, top: AiCommi
   } else if (!preparedDrafts.has(key)) {
     // plan 163: the body is back as it was before the first write, the instruction in it
     remove(key);
+    reprime(key, s.opened);
   } else {
     remove(key);
     // the draft stays, even blank: what was typed is one Undo away (the unedited Undo forgets a blank one)
@@ -1909,8 +1922,17 @@ export function discardAndSend(key: string) {
   const s = session(key);
   if (!s?.guard) return;
   const { sendAt } = s.guard;
+  const opened = s.opened;
   cancel(s);
   remove(key);
+  // plan 162 (after ai162-r05, Codex review): what's left is the note itself (stopped before any words): it goes only
+  // through its own question, "This reads as a note for AI.", never straight from here
+  const g = glanceNow(key);
+  if (!emptyMessageNow(key) && (g === "write" || (opened && g === "unsure"))) {
+    reprime(key, opened);
+    useEmptySend.setState({ key, sendAt, reason: "note" });
+    return;
+  }
   // the deliberate way to send the literal body: Send's own question about a note for AI is answered by it (plan 162,
   // after ai162-r04: it asked again, once Send read the body itself)
   if (!emptyMessageNow(key)) useEmptySend.setState({ key, sendAt, reason: "note" });
