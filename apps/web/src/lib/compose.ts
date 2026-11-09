@@ -20,7 +20,7 @@ export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFiel
 import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead, sealForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, comingHome, draftIndex, invalidateDraftPresentation, loseDraftHome, returnDraftToThread, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, discardIfEmpty, draftForSend, editDraft, emptyMessage, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, nothingWrittenIn, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type DraftFields, type LocalDraft } from "./drafts";
 import { focusPinned, pinnedKey, usePinned } from "./pinned-draft-state";
 import { prepareEarlyComposeInput, prepareInlineFocusMove, type ComposeFocusTarget, type EarlyComposeInput } from "./compose-focus-move";
-import { aiDraftHooks } from "./ai-draft-state";
+import { aiDraftHooks, isNote } from "./ai-draft-state";
 import { fromPlainText, parseHtml, toEmailHtml, toPlainText } from "@terno/richtext";
 import { parseAddressList } from "@terno/core";
 import { controllerFor } from "~/components/composer/controller";
@@ -1159,6 +1159,11 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
   const pending = useEmptySend.getState();
   const asked = pending.key === key;
   if (asked && sendAt === undefined) sendAt = pending.sendAt;
+  // plan 162 (after ai162-r04): a note for AI would go as the email: asked once, at the action row, Write it first
+  if (!asked && isNote(key)) {
+    useEmptySend.setState({ key, sendAt, reason: "note" });
+    return false;
+  }
   clearEmptySend(key);
   // read-only from here: nothing typed while the save in flight settles can fall between it and the send
   markSending(key, true);

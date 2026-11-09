@@ -1334,7 +1334,9 @@ describe("the row", () => {
     last("ai.compose").resolve(done("Second."));
     await tick();
     expect(aiDraftHooks.escape(key)).toBe(false);
-    c.type(" Mine.");
+    // edited inside the draft (words added after it are a revision: plan 162, after ai162-r04)
+    c.text = `Mine. ${c.text}`;
+    c.type("");
     await store.act(key);
     expect(session(key)!.confirm).toEqual({ how: "regenerate" });
   });
@@ -2026,5 +2028,79 @@ describe("plan 163: what the Codex review of the code found", () => {
     await tick();
     expect(c.text).toBe("Hi Arjun, see you Friday");
     expect(session(key)!.strip!.fill!.fills).toEqual(["Friday"]);
+  });
+});
+
+describe("plan 162 (after ai162-r04): revising a draft, and a note for AI", () => {
+  const reply = (body: string) => {
+    const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: "Arjun Ramírez <arjun@example.test>", subject: "Re: The flat", bodyText: body });
+    return { key, ...editor(key, body) };
+  };
+  const draft = "Hey Arjun!\n\nFriday works for me. Could you send me the address of the flat?\n\nCheers,\nLuis";
+
+  it("words typed after the AI's draft are how to change it: rewritten from them, replacing the draft; Undo gives both back exactly", async () => {
+    const { key, c } = reply("");
+    await store.act(key);
+    last("ai.compose").resolve(done(draft));
+    await tick();
+    expect(c.text).toBe(draft);
+    // the rater's case: typed straight after the sign-off, no space
+    c.type("shorter, more casual");
+    await store.act(key);
+    // no "Replace your edits?": the only edit was the instruction
+    expect(session(key)!.confirm ?? null).toBeNull();
+    expect(last("ai.compose").params).toMatchObject({ instruction: "shorter, more casual", previousDraft: draft });
+    last("ai.compose").resolve(done("Friday's good! Send me the flat's address?\n\nLuis"));
+    await tick();
+    expect(c.text).toBe("Friday's good! Send me the flat's address?\n\nLuis");
+    expect(session(key)!.phase).toBe("strip");
+    store.undoCommit(key);
+    expect(c.text).toBe(`${draft}shorter, more casual`);
+  });
+
+  it("a new last paragraph is a revision too; an edit inside the draft isn't (it asks before writing again)", async () => {
+    expect(store.revisionOf(draft, `${draft}\n\nmake it warmer`)).toBe("make it warmer");
+    expect(store.revisionOf(draft, draft)).toBeNull();
+    expect(store.revisionOf(draft, draft.replace("Friday", "Saturday") + " shorter")).toBeNull();
+    expect(store.revisionOf(draft, `${draft} ${"x".repeat(1001)}`)).toBeNull();
+    const { key, c } = reply("");
+    await store.act(key);
+    last("ai.compose").resolve(done(draft));
+    await tick();
+    c.text = c.text.replace("Friday", "Saturday");
+    c.type("");
+    await store.act(key);
+    expect(session(key)!.confirm).toMatchObject({ how: "regenerate" });
+  });
+
+  it("an answer that says what the body already says is never offered beside it: the strip says so", async () => {
+    const { key, c } = reply("");
+    await store.act(key);
+    last("ai.compose").resolve(done(draft));
+    await tick();
+    store.refine(key, "shorter");
+    // the same words back (here, but a typed-into rewrite's suggestion too): nothing to put in or beside
+    last("ai.compose").resolve(done(`${draft}\n`));
+    await tick();
+    expect(session(key)!.phase).toBe("strip");
+    expect(session(key)!.choice).toBeNull();
+    expect(session(key)!.sameNote).toBe(true);
+    expect(session(key)!.strip!.stack).toHaveLength(1);
+    // the next edit retires the note
+    c.type("!");
+    expect(session(key)!.sameNote).toBe(false);
+  });
+
+  it("a rewrite typed over while it ran offers Replace, not only Insert below", async () => {
+    const { key, c } = reply("");
+    await store.act(key);
+    last("ai.compose").resolve(done(draft));
+    await tick();
+    store.refine(key, "shorter");
+    c.type(" PS");
+    last("ai.compose").resolve(done("Friday works. Address?"));
+    await tick();
+    expect(session(key)!.phase).toBe("choice");
+    expect(store.offersReplace(session(key)!)).toBe(true);
   });
 });

@@ -319,6 +319,7 @@ function Strip({ s }: { s: AiSession & { strip: AiStrip } }) {
         </ButtonGroup>
         <StatusPopover s={s} strip={strip} toText={toText} />
       </div>
+      {s.sameNote && <p className="w-full pb-1.5 text-xs text-muted-foreground" role="status" data-testid="ai-same">{t("aiDraft.choice.same")}</p>}
       {/* the same notes the Status had, in the same place: the row keeps its height across the commit */}
       {s.confirmFailed && <p className="w-full pb-1.5 text-xs text-muted-foreground">{t("aiDraft.confirmFailed")}</p>}
       {s.everyone > 0 && (

@@ -222,6 +222,8 @@ export interface AiSession {
   fromAccountId: number | null;
   /** `parseIntent` couldn't say, so the route stayed as it was */
   confirmFailed: boolean;
+  /** plan 162 (after ai162-r04): the last run came back with what the body already said; the strip says so until the next edit or run */
+  sameNote?: boolean;
   /** "Looking up contacts…" */
   lookingUp: boolean;
   /** the §5 call in flight, to stop with the row */
@@ -553,6 +555,22 @@ const READ_DRAFT_MAX = WRITING_ONE_OFF_MAX * 4;
 /** The model's own gaps in the strip's versions: facts only the user knows, never filled for them. */
 const modelGaps = (s: AiSession | undefined): Set<string> => new Set(s?.strip ? [...s.strip.checks.placeholders, ...s.strip.stack.flatMap((v) => v.checks.placeholders)] : []);
 
+const flat = (text: string) => text.replace(/\s+/g, " ").trim();
+
+/**
+ * Plan 162 (after ai162-r04): the words typed after the AI's draft, when that's the only change (at its end, or as a new
+ * last paragraph): what to change in it ("shorter, more casual"). Null when the draft was edited anywhere else, or nothing
+ * (or too much to be an instruction) was added.
+ */
+export function revisionOf(draft: string, body: string): string | null {
+  const was = flat(draft);
+  const now = flat(body);
+  if (!was || !now.startsWith(was)) return null;
+  const added = now.slice(was.length).trim();
+  if (!added || added.length > WRITING_ONE_OFF_MAX) return null;
+  return added;
+}
+
 /**
  * Plan 163: ⌘J or the Sparkles in a draft. What's in the body decides (packages/core `readBody`): nothing is the one-tap
  * draft; an instruction is written from, and the draft replaces it; the user's own email has its gaps filled, or is
@@ -589,9 +607,13 @@ export async function act(key: string): Promise<void> {
   const gapsOk = read.gaps.filter(usable).slice(0, FILL_GAPS_MAX);
   const maybeOk = read.maybe.filter(usable).slice(0, FILL_GAPS_MAX);
   const found = { ...read, gaps: gapsOk, maybe: maybeOk };
-  // over a strip typed in since: what they marked is filled; anything else writes again, asking first
+  // over a strip typed in since: what they marked is filled; words added after the AI's draft are how to change it (plan
+  // 162, after ai162-r04: they stayed in the body, and a copy of the draft came back as a suggestion); anything else writes
+  // again, asking first
   if (s?.strip && s.phase === "strip") {
     if (found.gaps.length) return fillGaps(key, b, found.gaps);
+    const asked = top ? revisionOf(top.text, b.text) : null;
+    if (asked) return startRun(key, { kind: "refine", instruction: asked, previous: top!.text });
     return refine(key, "regenerate");
   }
   if (!s) {
@@ -708,7 +730,7 @@ async function readAside(key: string, id: string, b: BodyText, found: BodyRead):
  * The choice offers Replace when the draft was meant for the text's place: the user's notes, an instruction typed into
  * while it wrote, or (the owner's answers) text the fast read was asked about.
  */
-export const offersReplace = (s: AiSession): boolean => s.choice?.reason === "notes" || s.run?.spec.kind === "body" || s.run?.read !== undefined;
+export const offersReplace = (s: AiSession): boolean => s.choice?.reason === "notes" || s.run?.spec.kind === "body" || s.run?.spec.kind === "refine" || s.run?.read !== undefined;
 
 /** Plan 163: their gaps, filled where they are. */
 function fillGaps(key: string, b: BodyText, gaps: readonly BodyGap[]): void {
@@ -1005,6 +1027,7 @@ function startRun(key: string, spec: RunSpec): void {
     confirm: null,
     rewrite: false,
     strip: null,
+    sameNote: false,
     lastSpec: spec,
     live: t("aiDraft.live.writing"),
     run: { requestId, spec, binding, needsSubject, streaming: false, slow: false, typed: false, moved: false, ...(prior ? { prior } : {}) },
@@ -1087,6 +1110,8 @@ function finished(key: string, result: AiComposeResult) {
   // (bound before its editor existed, as in a draft an answer opened: the words, as the editor reads them now)
   // (the read's instruction is the text it judged: a run started again binds later words, which it never saw)
   const unchanged = asInstruction ? c0?.docToken() === run.read!.doc : run.spec.kind === "body" && c0 && run.binding.doc !== null ? c0.docToken() === run.binding.doc : bodyNow(key).trim() === run.binding.text.trim();
+  // plan 162 (after ai162-r04): an answer that says what the body already says is never shown beside it, nor put over it
+  if (!moved && flat(result.text) === flat(bodyNow(key))) return sameAsBody(key);
   if ((run.spec.kind === "notes" && !asInstruction) || moved || !unchanged) {
     const writtenFor = moved && run.binding.to !== addresses(d.toText) ? run.binding.who || null : null;
     update(key, { phase: "choice", choice: { reason: run.spec.kind === "notes" && unchanged && !moved ? "notes" : "typed", writtenFor, result }, live: t("aiDraft.live.ready", { count: wordCount(result.text) }), run: { ...run, typed: true } });
@@ -1100,6 +1125,14 @@ function finished(key: string, result: AiComposeResult) {
   // to the draft it wrote; wherever else they are, they stay
   const at = document.activeElement;
   if (!at || at === document.body) focusEditor(key);
+}
+
+/** Plan 162 (after ai162-r04): the answer is the text that's there: nothing to choose; the row says so, and the strip stays. */
+function sameAsBody(key: string) {
+  const prior = session(key)?.run?.prior ?? null;
+  clearStream(key);
+  update(key, { run: null, choice: null, strip: prior, phase: prior ? "strip" : "input", live: t("aiDraft.choice.same"), sameNote: true });
+  if (!prior) closeRow(key, { keepDraft: true });
 }
 
 /** Plan 163: a fill that can't go in as asked (the editor was rebuilt, or who it's for moved): nothing changes. */
@@ -1740,6 +1773,7 @@ export function noteBody(key: string) {
     if (r.back && c.sameDoc(r.restored)) return retake(key, r);
   }
   if (!s || !c) return;
+  if (s.sameNote) update(key, { sameNote: false });
   if (s.run && (s.phase === "writing" || s.phase === "waitingBody" || s.phase === "error")) {
     // plan 163: a run bound before its editor existed (a draft an answer opened) compares the words, not a document
     const typed = s.run.spec.kind === "draft" ? !c.empty() : s.run.binding.doc === null ? bodyNow(key).trim() !== s.run.binding.text.trim() : c.docToken() !== s.run.binding.doc;

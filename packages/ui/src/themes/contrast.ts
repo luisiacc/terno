@@ -92,6 +92,8 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...(["tint", "card"] as const).map((over): ContrastPair => ({ fg: "foreground", bg: "star", alpha: 0.25, min: 4.5, overToken: over })),
   // plan 163: words the model put in a gap the user left, in the primary's 15% wash (the owner's answers: a step up from 12%), in a composer (card, tint or background)
   ...(["card", "tint", "background"] as const).map((over): ContrastPair => ({ fg: "foreground", bg: "primary", alpha: 0.15, min: 4.5, overToken: over })),
+  // plan 162 (after ai162-r04): a note for AI in a composer's body, its words and its "For AI" label on the primary's 5% wash
+  ...(["foreground", "muted-foreground"] as const).flatMap((fg) => (["card", "tint", "background"] as const).map((over): ContrastPair => ({ fg, bg: "primary", alpha: 0.05, min: 4.5, overToken: over }))),
   // translucent menus: their text over anything (black or white) behind them
   ...GLASS_TEXT.flatMap((fg) => GLASS_BACKDROPS.map((over): ContrastPair => ({ fg, bg: "popover-glass", min: 4.5, over: `oklch(${over})` }))),
 ];

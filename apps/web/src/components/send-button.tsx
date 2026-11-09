@@ -4,7 +4,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/po
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Clock, Send } from "@terno/ui/icons";
+import { Clock, Send, Sparkles } from "@terno/ui/icons";
+import { openAiDraft } from "~/lib/ai-draft";
 import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import { create } from "zustand";
 import { useFilesOnTheirWay } from "~/lib/attachments";
@@ -100,15 +101,19 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
  * it away, focus back in the text. Otherwise the row as it is (`children`).
  */
 export function SendOrAsk({ d, onSend, children }: { d: LocalDraft; onSend: (sendAt?: number) => void; children: React.ReactNode }) {
-  const asked = useEmptySend((s) => s.key === d.key);
+  const reason = useEmptySend((s) => (s.key === d.key ? (s.reason ?? "empty") : null));
   const empty = emptyMessage(d);
   // a file or a picture came in meanwhile: there's a message now
-  useEffect(() => { if (asked && !empty) clearEmptySend(d.key); }, [asked, empty, d.key]);
-  if (!asked || !empty || d.sending) return children;
-  return <EmptySendQuestion draftKey={d.key} onSend={onSend} />;
+  useEffect(() => { if (reason === "empty" && !empty) clearEmptySend(d.key); }, [reason, empty, d.key]);
+  if (reason === null || (reason === "empty" && !empty) || d.sending) return children;
+  return <EmptySendQuestion draftKey={d.key} onSend={onSend} note={reason === "note"} />;
 }
 
-function EmptySendQuestion({ draftKey, onSend }: { draftKey: string; onSend: (sendAt?: number) => void }) {
+/**
+ * Plan 158's question, or (plan 162, after ai162-r04) the same question about a note for AI: "This reads as a note for
+ * AI." with Write it first (⌘J's, the default) and Send as it is. Esc, Cancel or typing put it away.
+ */
+function EmptySendQuestion({ draftKey, onSend, note = false }: { draftKey: string; onSend: (sendAt?: number) => void; note?: boolean }) {
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
   const confirm = useRef<HTMLButtonElement>(null);
@@ -146,14 +151,28 @@ function EmptySendQuestion({ draftKey, onSend }: { draftKey: string; onSend: (se
       }}
     >
       <span id={id} role="alert" className="mr-2 truncate pl-1 text-[length:var(--ds-text-control)] font-medium">
-        {t("compose.emptySend.question")}
+        {t(note ? "aiDraft.note.question" : "compose.emptySend.question")}
       </span>
-      <Button ref={confirm} type="button" size="sm" data-testid="compose-empty-send" onClick={send}>
-        {t("common.send")}
-      </Button>
-      <Button type="button" size="sm" variant="outline" data-testid="compose-empty-cancel" onClick={cancel}>
-        {t("common.cancel")}
-      </Button>
+      {note ? (
+        <>
+          <Button ref={confirm} type="button" size="sm" data-testid="compose-note-write" onClick={() => { clearEmptySend(draftKey); toText(); openAiDraft({ key: draftKey }); }}>
+            <Sparkles aria-hidden />
+            {t("aiDraft.note.write")}
+          </Button>
+          <Button type="button" size="sm" variant="outline" data-testid="compose-note-send" onClick={send}>
+            {t("aiDraft.note.sendAnyway")}
+          </Button>
+        </>
+      ) : (
+        <>
+          <Button ref={confirm} type="button" size="sm" data-testid="compose-empty-send" onClick={send}>
+            {t("common.send")}
+          </Button>
+          <Button type="button" size="sm" variant="outline" data-testid="compose-empty-cancel" onClick={cancel}>
+            {t("common.cancel")}
+          </Button>
+        </>
+      )}
     </div>
   );
 }

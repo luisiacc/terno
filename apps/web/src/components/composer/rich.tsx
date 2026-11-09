@@ -61,7 +61,7 @@ import { findGaps, withGaps } from "./gaps";
 import { bodyText } from "./body-text";
 import { fillInto, fillsOf, withFillMeta } from "./fills";
 import { Transform } from "prosemirror-transform";
-import { AiPreviewSlot } from "./ai-slot";
+import { AiNoteSlot, AiPreviewSlot } from "./ai-slot";
 import { aiDraftHooks } from "~/lib/ai-draft-state";
 import { applyLink, COMMANDS, createEditor, docOf, formatState, isEmpty, keepState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
 
@@ -556,6 +556,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint }: { dra
       {/* the ghost layer's containing block (beside the editor's own element) */}
       <div ref={mountRef} className="relative [grid-area:1/1]" data-editor-mount />
       <AiPreviewSlot draftKey={draftKey} className={className} />
+      <AiNoteSlot draftKey={draftKey} />
       <span ref={announceRef} className="sr-only" aria-live="polite" data-testid="compose-ghost-announce" />
       <div ref={caretRef} className="rt-drop-caret" aria-hidden="true" data-testid="compose-drop-caret" hidden />
       {link && viewRef.current && <LinkPopover view={viewRef.current} draft={link} onClose={closeLink} canEdit={canMutate} />}

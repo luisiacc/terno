@@ -23,7 +23,7 @@ import { registerUndo, snack } from "~/lib/snack";
 import { getSelectionWriteRevision, setApp, useApp } from "~/state/app";
 import { isMac } from "~/lib/select";
 import { Expand } from "./expand";
-import { isSendLaterKey, openSendLater, SendButton, SendOrAsk } from "./send-button";
+import { isSendLaterKey, openSendLater, SendOrAsk } from "./send-button";
 import { controllerFor, popupOpen } from "./composer/controller";
 import { DraftCommandsHost } from "~/lib/draft-commands";
 import { ComposerFormatBar, FormatToggle, LinkButton } from "./composer/controls";
@@ -32,7 +32,7 @@ import { QuoteToggle } from "./mail-body";
 import { focusPinned, usePinned } from "~/lib/pinned-draft-state";
 import { pinDraft, unpinDraft } from "~/lib/pinned-draft";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
-import { AiDraftButton, AiRowSlot } from "./composer/ai-slot";
+import { AiDraftButton, AiRowSlot, SendOrWrite } from "./composer/ai-slot";
 import { aiDraftHooks, useAiDraftUi } from "~/lib/ai-draft-state";
 import { useReplies } from "~/lib/replies";
 
@@ -638,7 +638,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
             <ComposerFormatBar draftKey={d.key} id={formatId} className="px-2 pt-1.5" />
             <div className="@container/foot flex flex-wrap items-center gap-1 px-2.5 pt-2 pb-2.5">
               <SendOrAsk d={d} onSend={(at) => void send(at)}>
-                <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
+                <SendOrWrite d={d} onSend={(at) => void send(at)} className="mr-1.5" />
                 <FormatToggle controls={formatId} />
                 <AttachButton d={d} />
                 <LinkButton draftKey={d.key} disabled={d.sending} />
