@@ -1229,11 +1229,15 @@ test.describe("drafting with AI (plan 133)", () => {
     await page.getByTestId("style-edit-signoffs-add").click();
     await page.getByTestId("style-edit-signoffs-field").last().fill("Cheers,\nLuis");
     await page.getByTestId("style-edit-phrases").fill("all the best\nlet me know");
+    // plan 162 (after ai162-r05): the first greeting typed over is what the read view says after Save (it showed only Edited)
+    if (!(await page.getByTestId("style-edit-greetings-field").count())) await page.getByTestId("style-edit-greetings-add").click();
+    await page.getByTestId("style-edit-greetings-field").first().fill("Hi {name},");
     await expect(page.getByTestId("style-edit-save")).toBeInViewport();
     // the picker waits while a profile is edited (Codex review): switching would lose the edit
     if (await page.getByTestId("style-scope").count()) await expect(page.getByTestId("style-scope")).toBeDisabled();
     await page.getByTestId("style-edit-save").click();
     await expect(profile.getByTestId("style-profile-edited")).toBeVisible();
+    await expect(profile.getByTestId("style-profile-lines")).toContainText("Opens with “Hi” and their name");
     await expect(profile.getByTestId("style-profile-edit")).toBeFocused();
     await profile.getByTestId("style-profile-examples-toggle").click();
     await expect(profile.getByTestId("style-profile-examples")).toContainText("“all the best”");

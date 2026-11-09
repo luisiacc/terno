@@ -31,19 +31,31 @@ function dayAgo(ms: number): string {
 }
 
 const shown = (text: string) => text.replace(/\{name\}/g, "…");
+/** the share from which a draft's prompt carries a greeting or sign-off (core's render.ts `usage`) */
+const DRAFT_SHARE = 0.1;
 
-/** The counts as sentences. */
-export function habitLines(h: Habits): string[] {
+/**
+ * The counts as sentences. Plan 162 (after ai162-r05): an edited profile's greeting and sign-off are what a draft will
+ * use, the user's first one, said as a fact ("Opens with “Hi”"): the prompt carries one from 10% (render.ts), so a value
+ * the user typed (10%, under the 15% a counted one needs) had vanished from the read view, leaving only "Edited".
+ */
+export function habitLines(h: Habits, edited = false): string[] {
   const lines: string[] = [];
   if (h.words.median > 0) lines.push(t("aiDraft.style.length", { count: h.words.median }));
   const greeting = h.greetings[0];
   // "{name}," alone is someone who opens with just the name: said in words, not as a lone mark in quotes
   // plan 162 (after ai162-r03): "Hello {name}," is "Hello" and their name, in words (the template's "Hello …," read as a placeholder)
   const opener = greeting?.text.includes("{name}") ? greeting.text.replace(/\{name\}/g, "").replace(/[\s,.!:;]+$/u, "").trim() : null;
-  if (greeting && greeting.share >= 0.15) lines.push(/^\{name\}\W*$/.test(greeting.text) ? t("aiDraft.style.greetingName") : opener ? t("aiDraft.style.greetingWithName", { text: opener }) : t("aiDraft.style.greeting", { text: shown(greeting.text) }));
-  else if (h.noGreeting >= 0.6) lines.push(t("aiDraft.style.noGreeting"));
+  const set = edited && greeting !== undefined && greeting.share >= DRAFT_SHARE;
+  if (greeting && (set || greeting.share >= 0.15)) {
+    const nameOnly = /^\{name\}\W*$/.test(greeting.text);
+    lines.push(set
+      ? nameOnly ? t("aiDraft.style.greetingNameSet") : opener ? t("aiDraft.style.greetingWithNameSet", { text: opener }) : t("aiDraft.style.greetingSet", { text: shown(greeting.text) })
+      : nameOnly ? t("aiDraft.style.greetingName") : opener ? t("aiDraft.style.greetingWithName", { text: opener }) : t("aiDraft.style.greeting", { text: shown(greeting.text) }));
+  } else if (h.noGreeting >= 0.6) lines.push(t("aiDraft.style.noGreeting"));
   const signOff = h.signOffs[0];
-  if (signOff && signOff.share >= 0.15) lines.push(t("aiDraft.style.signOff", { text: shown(signOff.text) }));
+  if (signOff && edited && signOff.share >= DRAFT_SHARE) lines.push(t("aiDraft.style.signOffSet", { text: shown(signOff.text) }));
+  else if (signOff && signOff.share >= 0.15) lines.push(t("aiDraft.style.signOff", { text: shown(signOff.text) }));
   else if (h.noSignOff >= 0.6) lines.push(t("aiDraft.style.noSignOff"));
   if (h.exclamation >= 0.3) lines.push(t("aiDraft.style.exclamationOften"));
   else if (h.exclamation <= 0.05) lines.push(t("aiDraft.style.exclamationRare"));
@@ -75,6 +87,23 @@ const fromLines = (text: string) => text.split("\n").map((l) => l.trim()).filter
 /** plan 161: a greeting or sign-off is an item, its own line breaks kept ("Cheers," and "Luis" are one sign-off) */
 const fromItems = (items: readonly string[]) => items.map((i) => i.split("\n").map((l) => l.trimEnd()).join("\n").trim()).filter(Boolean);
 const ITEMS_MAX = 10;
+
+/**
+ * What the editor saves for a list of greetings or sign-offs: each kept item its counted share; one typed over another
+ * (its place's old text gone) takes that one's share, so "Hello" changed to "Hi" is used as often as "Hello" was (plan 162,
+ * after ai162-r05); a new one the share a draft's prompt starts carrying it at.
+ */
+export function editedShares(list: readonly { text: string; share: number }[], items: readonly string[]): { text: string; share: number }[] {
+  // each with the field it was typed in, so an emptied field between doesn't shift the places
+  const typed = items.map((item, at) => ({ text: fromItems([item])[0], at })).filter((x): x is { text: string; at: number } => x.text !== undefined).slice(0, ITEMS_MAX);
+  const texts = typed.map((x) => x.text);
+  return typed.map(({ text, at }) => {
+    const kept = list.find((x) => x.text === text);
+    if (kept) return { text, share: kept.share };
+    const replaced = list[at];
+    return { text, share: replaced && !texts.includes(replaced.text) ? replaced.share : DRAFT_SHARE };
+  });
+}
 
 /** Plan 161: a list of short texts, each its own field, with remove and Add. */
 function ItemsField({ label, add, item, remove, items, onChange, testId, first }: { label: string; add: string; item: (n: number) => string; remove: (n: number) => string; items: string[]; onChange: (items: string[]) => void; testId: string; first?: React.Ref<HTMLTextAreaElement> }) {
@@ -164,14 +193,13 @@ function ProfileEditor({ p, title, onDone }: { p: WritingProfileView; title: str
       openEditors.list = openEditors.list.filter((e) => e !== own);
     };
   }, []);
-  const shares = (list: readonly { text: string; share: number }[], items: readonly string[]) => fromItems(items).slice(0, ITEMS_MAX).map((text) => ({ text, share: list.find((i) => i.text === text)?.share ?? 0.1 }));
   const save = async () => {
     try {
       const next = await client.call("writing.profiles.edit", {
         scopeKey: p.scopeKey,
         language: p.language,
-        greetings: shares(p.habits.greetings, greetings),
-        signOffs: shares(p.habits.signOffs, signOffs),
+        greetings: editedShares(p.habits.greetings, greetings),
+        signOffs: editedShares(p.habits.signOffs, signOffs),
         phrases: fromLines(phrases).slice(0, 40),
         ...(p.judgment ? { judgment: { traits: p.judgment.traits, notes: fromLines(notes).slice(0, 8) } } : {}),
       });
@@ -290,7 +318,7 @@ function Profile({ initial, onChanged, onEditing, onReset, total, picked, compac
   const accounts = useApp((s) => s.accounts);
   const ofAccount = accounts.length > 1 && (p.scope === "domain" || p.scope === "person") ? accounts.find((a) => a.id === Number(p.scopeKey.split(":")[1])) : undefined;
   const account = ofAccount ? ofAccount.displayName || ofAccount.email : null;
-  const lines = habitLines(p.habits);
+  const lines = habitLines(p.habits, p.edited);
   const examples = p.phrases.length + (p.judgment?.notes.length ?? 0);
   // plan 162 (after ai162-r01): what the count counts ("From the 64 you wrote in English"); "64 of the 181" left the rest unexplained
   const languageName = p.language ? new Intl.DisplayNames([getLocale()], { type: "language" }).of(p.language) : null;
