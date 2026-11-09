@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerWithoutCitations, askOperandsMissing, askSpecifics, buildAskSearch, hasUnlinkedSentence, resolveCitations, validAskQueries } from "./ask";
+import { answerSentences, answerWithoutCitations, askOperandsMissing, askSpecifics, buildAskSearch, hasUnlinkedSentence, resolveCitations, sameNamePeople, validAskQueries } from "./ask";
 
 const NOW = new Date(2026, 10, 5, 12).getTime();
 
@@ -75,6 +75,28 @@ describe("citations (plan 141)", () => {
     expect(hasUnlinkedSentence("It renews in March. [1]")).toBe(false);
     expect(hasUnlinkedSentence("It renews in March [1]. Notice runs for sixty days.")).toBe(true);
     expect(answerWithoutCitations("It renews in March [1]. Notice [2]")).toBe("It renews in March. Notice");
+  });
+});
+
+describe("unlinked claims and one name for several people (plan 162, after ai162-r03)", () => {
+  it("a lead-in ending in ':' isn't a claim, so a fully cited list says nothing", () => {
+    // real models open lists this way: the note showed under answers whose every claim was cited
+    expect(hasUnlinkedSentence("Here is what Isabella sent you:\n- The invoice is due Friday [1]\n- The venue moved to Calle 5 [2]")).toBe(false);
+    expect(hasUnlinkedSentence("Here is what Isabella sent:\n- The invoice is due Friday [1]\n- The venue moved to Calle 5")).toBe(true);
+  });
+
+  it("splits an answer into sentences that join back to it, each knowing whether it's cited", () => {
+    const text = "It renews in March. [1] Notice runs for sixty days. Ok.";
+    const parts = answerSentences(text);
+    expect(parts.map((p) => p.text).join("")).toBe(text);
+    expect(parts.map((p) => [p.claim, p.linked])).toEqual([[true, true], [true, false], [false, false]]);
+  });
+
+  it("names a first name the sources hold for several people, only when it's used", () => {
+    const sources = [{ fromName: "Isabella Álvarez" }, { fromName: "Isabella Rivera" }, { fromName: "isabella rivera" }, { fromName: "Isabella Cruz" }, { fromName: "Arjun Mehta" }];
+    expect(sameNamePeople(sources, "What did Isabella say about the venue?")).toEqual([{ name: "Isabella", people: ["Isabella Álvarez", "Isabella Rivera", "Isabella Cruz"] }]);
+    expect(sameNamePeople(sources, "What did Arjun say?")).toEqual([]);
+    expect(sameNamePeople([{ fromName: "Isabella Álvarez" }, { fromName: "Isabella Álvarez" }], "Isabella")).toEqual([]);
   });
 });
 

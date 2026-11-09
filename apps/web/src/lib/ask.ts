@@ -97,7 +97,9 @@ async function settle(call: Promise<AiAskResult>, requestId: string, question: s
   } catch (error) {
     if (!mine()) return;
     const e = errorOf(error);
-    if (e.code === "CANCELLED" || e.kind === "cancelled") return useAsk.setState({ running: null });
+    // plan 162 (after ai162-r03): stopped before a word came, the question stays (in the field, selected) and says so;
+    // it was dropped, so Esc while it looked threw the question away
+    if (e.code === "CANCELLED" || e.kind === "cancelled") return useAsk.setState({ running: null, notice: { question, text: t("ask.stoppedEarly") } });
     if (e.kind === "not_configured") return useAsk.setState({ running: null, noProvider: true });
     useAsk.setState({ running: null, error: { question, message: e.message, kind: e.kind, key: e.key } });
   }

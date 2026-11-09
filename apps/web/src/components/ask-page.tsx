@@ -1,7 +1,8 @@
-import { answerWithoutCitations, type AiErrorKind, type AskConversationSummary, type AskPlanQuery, type AskSourceRef, type AskTurn } from "@terno/core";
+import { answerSentences, answerWithoutCitations, sameNamePeople, type AiErrorKind, type AskConversationSummary, type AskPlanQuery, type AskSourceRef, type AskTurn } from "@terno/core";
 import type { AiSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { CloseButton } from "@terno/ui/components/close-button";
 import { CommandDescription, CommandEmpty, CommandGroup, CommandHints, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
 import { Spinner } from "@terno/ui/components/spinner";
@@ -16,6 +17,7 @@ import { citationRuns } from "~/lib/ask-citations";
 import { cn } from "@terno/ui/lib/utils";
 import { askConfigChanged, askQuestion, atTurnLimit, deleteConversation, loadAskHistory, newQuestion, openConversation, openSource, restoreConversation, returning, searchOlder, stopAsking, useAsk } from "~/lib/ask";
 import { listDate } from "~/lib/format";
+import { getLocale } from "@terno/i18n";
 import { boundaryDay } from "~/lib/when";
 import { askFrom, paletteBack, paletteKeys, setPalettePage, usePalettePage } from "~/lib/palette-open";
 import { chordLabel } from "@terno/ui/components/shortcut";
@@ -48,7 +50,7 @@ const sourceLine = (source: AskSourceRef) => t("ask.source.from", { from: source
  * the field's wash; hover or focus names the source, the source row chosen with ↑↓ lights its number here, and a click
  * shows the message in Ask (`ask-peek.ts`).
  */
-function AnswerText({ text, sources, queries, chosen = null }: { text: string; sources: readonly AskSourceRef[]; queries: readonly AskPlanQuery[]; chosen?: number | null }) {
+function AnswerText({ text, sources, queries, chosen = null, unlinked = null }: { text: string; sources: readonly AskSourceRef[]; queries: readonly AskPlanQuery[]; chosen?: number | null; /** the note's id, when unlinked claims are marked */ unlinked?: string | null }) {
   const views = useAsk((s) => s.sources);
   const marker = (n: number, key: number) => {
     const source = sources[n - 1];
@@ -69,7 +71,7 @@ function AnswerText({ text, sources, queries, chosen = null }: { text: string; s
             />
           }
         >
-          <span aria-hidden className={cn("inline-grid h-[1.5em] min-w-[1.5em] place-items-center rounded-[0.4em] px-[0.3em] text-2xs leading-none font-semibold text-foreground tabular transition-colors duration-fast", lit ? "bg-primary/15" : "bg-field group-hover/cite:bg-muted")}>{n}</span>
+          <span aria-hidden className={cn(CITE_PILL, "transition-colors duration-fast", lit ? "bg-primary/15" : "bg-field group-hover/cite:bg-muted")}>{n}</span>
         </TooltipTrigger>
         <TooltipContent data-testid="ask-citation-preview">
           <span className="block font-medium">{source.subject || t("common.noSubject")}</span>
@@ -78,32 +80,67 @@ function AnswerText({ text, sources, queries, chosen = null }: { text: string; s
       </Tooltip>
     );
   };
+  // plan 162 (after ai162-r03): a claim with no citation is marked where it is, so the note under it says which parts
   return (
     <p className="whitespace-pre-wrap break-words text-sm leading-relaxed" data-testid="ask-answer">
-      {citationRuns(text).map((run, i) =>
-        "text" in run ? (
-          <span key={i}>{run.text}</span>
-        ) : (
-          <span key={i} className="whitespace-nowrap" data-testid="ask-cited">
-            {run.lead}
-            {run.cites.map((n, j) => marker(n, j))}
-            {run.trail}
+      {answerSentences(text).map((sentence, k) => {
+        const runs = <Runs text={sentence.text.trimEnd()} marker={marker} />;
+        const space = sentence.text.slice(sentence.text.trimEnd().length);
+        return sentence.claim && !sentence.linked && unlinked ? (
+          <span key={k}>
+            <span data-testid="ask-unlinked" aria-describedby={unlinked} className="underline decoration-muted-foreground decoration-dotted decoration-1 underline-offset-[0.25em]">{runs}</span>
+            {space}
           </span>
-        ),
-      )}
+        ) : (
+          <span key={k}>{runs}{space}</span>
+        );
+      })}
     </p>
   );
 }
 
-function Checks({ turn }: { turn: AskTurn }) {
-  const { unlinked, unsupported } = turn.checks;
-  if (!unlinked && !unsupported.length) return null;
+/** An answer's words with their citations bound to the word before them (`citationRuns`); `marker` draws a citation. */
+function Runs({ text, marker }: { text: string; marker: (n: number, key: number) => ReactNode }) {
+  return citationRuns(text).map((run, i) =>
+    "text" in run ? (
+      <span key={i}>{run.text}</span>
+    ) : (
+      <span key={i} className="whitespace-nowrap" data-testid="ask-cited">
+        {run.lead}
+        {run.cites.map((n, j) => marker(n, j))}
+        {run.trail}
+      </span>
+    ),
+  );
+}
+
+/** a citation's number as a mark: the button's pill, and while the answer streams the mark alone (its source comes at the end) */
+const CITE_PILL = "inline-grid h-[1.5em] min-w-[1.5em] place-items-center rounded-[0.4em] px-[0.3em] text-2xs leading-none font-semibold text-foreground tabular";
+const streamingMark = (n: number, key: number) => (
+  <span key={key} aria-hidden data-testid="ask-streaming-cite" className="relative -my-1 ms-px -me-1 inline-flex size-6 items-center justify-center align-[0.05em]">
+    <span className={cn(CITE_PILL, "bg-field")}>{n}</span>
+  </span>
+);
+
+/** Plan 162 (after ai162-r03): marked inline and said once, only when the answer holds a claim no source backs (a stop says Stopped). */
+export const unlinkedClaims = (turn: Pick<AskTurn, "answer" | "status">): boolean => turn.status !== "stopped" && answerSentences(turn.answer ?? "").some((s) => s.claim && !s.linked);
+
+function Checks({ turn, unlinkedId }: { turn: AskTurn; unlinkedId: string }) {
+  const { unsupported } = turn.checks;
+  const unlinked = unlinkedClaims(turn);
+  // plan 162 (after ai162-r03): one first name for several people among the sources, said from their senders
+  const people = sameNamePeople(turn.sources, `${turn.question} ${turn.answer ?? ""}`);
+  if (!unlinked && !unsupported.length && !people.length) return null;
+  const list = new Intl.ListFormat(getLocale(), { type: "conjunction" });
   return (
-    <div className="mt-1.5 space-y-0.5 text-xs text-muted-foreground" data-testid="ask-checks">
+    <div className="space-y-0.5 text-xs text-muted-foreground" data-testid="ask-checks">
       {unsupported.map((value) => (
         <p key={value} data-testid="ask-check-unsupported" className="text-destructive-ink">{t("ask.check.unsupported", { value })}</p>
       ))}
-      {unlinked && <p data-testid="ask-check-unlinked">{t("ask.check.unlinked")}</p>}
+      {people.map((p) => (
+        <p key={p.name} className="text-foreground" data-testid="ask-same-name">{t("ask.sameName", { name: p.name, count: p.people.length, people: list.format(p.people) })}</p>
+      ))}
+      {unlinked && <p id={unlinkedId} data-testid="ask-check-unlinked">{t("ask.check.unlinked")}</p>}
     </div>
   );
 }
@@ -120,16 +157,17 @@ function Armed({ sources }: { sources: readonly AskSourceRef[] }) {
 function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated: boolean }) {
   const running = useAsk((s) => s.running !== null);
   const chosen = useChosenSource();
+  const unlinkedId = `ask-unlinked-${turn.id}`;
   if (!turn.answer && !last) return null;
   return (
     <section className="space-y-1.5" data-testid="ask-turn" data-status={turn.status}>
       {/* the header already says it, as does the turn before it when older mail answered again */}
       {/* plan 161, pass 2: a follow-up reads as a question, as the header's does, not as a caption */}
       <h3 className={repeated ? "sr-only" : "text-sm font-medium"} data-testid="ask-question">{turn.question}</h3>
-      {turn.answer ? <AnswerText text={turn.answer} sources={turn.sources} queries={turn.queries} chosen={last ? chosen : null} /> : null}
+      {turn.answer ? <AnswerText text={turn.answer} sources={turn.sources} queries={turn.queries} chosen={last ? chosen : null} unlinked={unlinkedClaims(turn) ? unlinkedId : null} /> : null}
       <Armed sources={turn.sources} />
       {turn.status === "stopped" && <p className="text-xs text-muted-foreground" data-testid="ask-stopped">{t("ask.stopped")}</p>}
-      <Checks turn={turn} />
+      <Checks turn={turn} unlinkedId={unlinkedId} />
       {turn.answer && (
         // plan 161, pass 2: buttons that look like buttons, their edge on the answer's
         <div className="flex items-center gap-1 pt-0.5 text-xs text-muted-foreground" data-testid="ask-turn-actions">
@@ -144,8 +182,9 @@ function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated
         </div>
       )}
       {last && turn.answer && <Scope />}
-      {/* plan 161, pass 2: what an earlier turn cited stays under it (the last turn's are the palette's rows) */}
-      {!last && turn.sources.length > 0 && <TurnSources sources={turn.sources} queries={turn.queries} />}
+      {/* plan 161, pass 2: what an earlier turn cited stays under it (the last turn's are the palette's rows, once nothing
+          is being answered under it) */}
+      {(!last || running) && turn.sources.length > 0 && <TurnSources sources={turn.sources} queries={turn.queries} />}
     </section>
   );
 }
@@ -241,17 +280,18 @@ function OlderLimit() {
   return partial ? <p className="text-xs text-muted-foreground" data-testid="ask-older-partial">{t("ask.older.partial")}</p> : null;
 }
 
-function Running() {
+function Running({ ref }: { ref?: React.Ref<HTMLElement> }) {
   const running = useAsk((s) => s.running);
   const shownTitle = useAsk((s) => s.running?.question ?? s.turns.at(-1)?.question);
   if (!running) return null;
   const { older, searchingOlder, text, question } = running;
   const looking = searchingOlder && !text ? (older ? t("ask.older.progress", { done: older.done, total: older.total }) : t("ask.older.looking")) : t("ask.looking");
   return (
-    <section className="space-y-1.5" data-testid="ask-running">
+    <section ref={ref} className="space-y-1.5" data-testid="ask-running">
       <h3 className={question === shownTitle ? "sr-only" : "text-xs font-medium text-muted-foreground"} data-testid="ask-question">{question}</h3>
       {text ? (
-        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed" data-testid="ask-streaming">{text}</p>
+        // plan 162 (after ai162-r03): its citations as the marks they'll be, never "[1]" until the end
+        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed" data-testid="ask-streaming"><Runs text={text} marker={streamingMark} /></p>
       ) : (
         <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="ask-looking">
           <Spinner className="size-3.5" /> {looking}
@@ -319,9 +359,13 @@ function SourceRow({ source, n, queries }: { source: AskSourceRef; n: number; qu
 /** An earlier turn's sources, under its answer: the rows' anatomy, as buttons (Tab reaches them; ↑↓ are the last turn's). */
 function TurnSources({ sources, queries }: { sources: readonly AskSourceRef[]; queries: readonly AskPlanQuery[] }) {
   const views = useAsk((s) => s.sources);
+  // plan 162 (after ai162-r03): folded to their count, so an earlier turn's rows never stand alone at the top of the answers
   return (
-    <div className="pt-1" data-testid="ask-turn-sources">
-      <h4 className="text-xs font-medium text-muted-foreground">{t("ask.sources")}</h4>
+    <Collapsible data-testid="ask-turn-sources">
+      <CollapsibleTrigger onKeyDown={stopKeys} data-testid="ask-turn-sources-toggle" className="h-6 w-auto gap-1 text-xs font-medium text-muted-foreground hover:text-foreground [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5">
+        {t("ask.sourcesCount", { count: sources.length })}
+      </CollapsibleTrigger>
+      <CollapsiblePanel>
       {/* -mx-3: the rows' words on the answer's edge, their shapes reaching past it, as the palette's rows do */}
       <ul className="-mx-3 mt-0.5 flex flex-col gap-0.5">
         {sources.map((source, i) => (
@@ -332,7 +376,8 @@ function TurnSources({ sources, queries }: { sources: readonly AskSourceRef[]; q
           </li>
         ))}
       </ul>
-    </div>
+      </CollapsiblePanel>
+    </Collapsible>
   );
 }
 
@@ -517,11 +562,20 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
   const last = turns.at(-1);
   const area = useRef<HTMLDivElement>(null);
   const followUp = useRef<HTMLInputElement>(null);
-  const size = (running?.text.length ?? 0) + turns.length;
+  // plan 162 (after ai162-r03): a turn starts at its top. When a question is asked (or Ask opens on an answer), its
+  // question goes to the top of the one scroll region and stays there while the answer streams under it: a long answer
+  // starts at its beginning, and an earlier turn's sources are never what's left on top
+  const runningRef = useRef<HTMLElement>(null);
+  const toTop = (el: HTMLElement | null) => {
+    const box = area.current;
+    if (box && el) box.scrollTop = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 12;
+  };
   useLayoutEffect(() => {
-    const el = area.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [size]);
+    if (running) toTop(runningRef.current);
+  }, [running?.requestId]);
+  useLayoutEffect(() => {
+    if (!running) toTop([...(area.current?.querySelectorAll<HTMLElement>("[data-testid=ask-turn]") ?? [])].at(-1) ?? null);
+  }, []);
   // back from a shown source: the keys are the follow-up box's again (its words, the place read to and the row chosen
   // were kept: the conversation stays mounted under the source, Codex review (pass 3) #1, #5, #6)
   const peeked = useRef(false);
@@ -555,27 +609,30 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
       {peek && <PeekView peek={peek} />}
       {/* under a shown source, out of sight, reach and the accessibility tree, but kept: not unmounted */}
       <div inert={peek !== null} className={cn(peek && "invisible h-0 overflow-hidden")} data-testid="ask-conversation">
-          {/* tabbable: it scrolls, and a keyboard has to reach what it holds */}
-          <div ref={area} tabIndex={0} data-testid="ask-area" className="max-h-72 space-y-4 overflow-y-auto px-[18px] py-3 outline-none">
-            {turns.map((turn, i) => (
-              turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={(turn === last && !running && turn.question === title) || (i > 0 && turn.question === turns[i - 1]!.question)} />
-            ))}
-            <Running />
-            <Failure />
-            <CommandNotice />
-            <Older />
-            {incomplete && <p className="text-xs text-muted-foreground" data-testid="ask-incomplete">{t("ask.incomplete")}</p>}
-            <OlderLimit />
+          {/* tabbable: it scrolls, and a keyboard has to reach what it holds. Plan 162 (after ai162-r03): one scroll region
+              for the answer and its sources (two, each cut, hid sources 5 to 7 under the fold with no count) */}
+          <div ref={area} tabIndex={0} data-testid="ask-area" className="max-h-[min(30rem,calc(100vh-15rem))] overflow-y-auto outline-none">
+            <div className="space-y-4 px-[18px] py-3">
+              {turns.map((turn, i) => (
+                turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={(turn === last && !running && turn.question === title) || (i > 0 && turn.question === turns[i - 1]!.question)} />
+              ))}
+              <Running ref={runningRef} />
+              <Failure />
+              <CommandNotice />
+              <Older />
+              {incomplete && <p className="text-xs text-muted-foreground" data-testid="ask-incomplete">{t("ask.incomplete")}</p>}
+              <OlderLimit />
+            </div>
+            {last && sources && !running && (
+              <CommandList label={t("ask.sources")} className="max-h-none overflow-visible border-t border-border/60 p-1.5 **:[[cmdk-group-heading]]:static">
+                <CommandGroup heading={t("ask.sourcesCount", { count: last.sources.length })} data-group="ask-sources">
+                  {last.sources.map((source, i) => (
+                    <SourceRow key={source.messageId} source={source} n={i + 1} queries={last.queries} />
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            )}
           </div>
-          {last && sources && (
-            <CommandList label={t("ask.sources")} className="max-h-44 border-t border-border/60 p-1.5">
-              <CommandGroup heading={t("ask.sources")} data-group="ask-sources">
-                {last.sources.map((source, i) => (
-                  <SourceRow key={source.messageId} source={source} n={i + 1} queries={last.queries} />
-                ))}
-              </CommandGroup>
-            </CommandList>
-          )}
           <FollowUp disabled={atLimit || !enabled} onWalk={setWalking} inputRef={followUp} />
       </div>
       <AskHints where={peek ? "peek" : walking && chosen !== null ? "walking" : "asking"} sources={sources} end={session} />
@@ -669,8 +726,11 @@ function AskQuestionPage({ value, setValue, onBack, onClose }: { value: string; 
   useEffect(() => {
     // plan 161, pass 3: Esc leaves a shown source first, back to its answer; then a running answer stops; then back
     paletteKeys.escape = () => closePeek() || stopAsking();
+    // plan 162 (after ai162-r03): ⌘⇧K on a shown source goes back to its answer, as Esc does (it closed Ask)
+    paletteKeys.toggle = () => closePeek();
     return () => {
       paletteKeys.escape = null;
+      paletteKeys.toggle = null;
       closePeek();
     };
   }, []);

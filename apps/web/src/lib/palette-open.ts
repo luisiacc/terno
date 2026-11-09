@@ -28,7 +28,7 @@ export const paletteReturn = (): HTMLElement | true => (paletteFrom.focus?.isCon
 
 /** Plan 141: what the root's last row asked, for the page to take up when it's there. Esc on the page stops an answer first. */
 export const askFrom: { question: string | null } = { question: null };
-export const paletteKeys: { escape: (() => boolean) | null } = { escape: null };
+export const paletteKeys: { escape: (() => boolean) | null; /** ⌘⇧K on Ask: a step back inside it first (a shown source) */ toggle: (() => boolean) | null } = { escape: null, toggle: null };
 
 /**
  * The page the palette shows: set by whoever opens it (⌘K the root, ⌘; the snippets), changed inside it. `entry` is the
@@ -76,7 +76,7 @@ export function toggleSnippets(): void {
 export function toggleAsk(): void {
   if (!askOffered(getApp())) return;
   if (getApp().dialog === "palette") {
-    if (usePalettePage.getState().page === "ask") return setApp({ dialog: null });
+    if (usePalettePage.getState().page === "ask") return void (paletteKeys.toggle?.() || setApp({ dialog: null }));
     return setPalettePage("ask");
   }
   if (getApp().dialog !== null) return;

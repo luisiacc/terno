@@ -194,11 +194,61 @@ export function resolveCitations(text: string, labels: ReadonlyMap<string, numbe
   return { text: out, cited, dropped };
 }
 
+/** One sentence of an answer, as written (its trailing space included, so the parts join back to the answer). */
+export interface AnswerSentence {
+  text: string;
+  /** says something about the mail: more than two words, and not a lead-in ending in ":" */
+  claim: boolean;
+  /** holds a citation (one after its full stop is still its own) */
+  linked: boolean;
+}
+
+/**
+ * Plan 162 (after ai162-r03): an answer as its sentences, split where a sentence ends (after its citations, so "… March.
+ * [1] Notice…" gives "… March. [1] " its own) or at a line break. The reader marks a claim with no citation, and says so
+ * only then; the backend's check counts the same claims.
+ */
+export function answerSentences(text: string): AnswerSentence[] {
+  const parts: string[] = [];
+  let start = 0;
+  for (const m of text.matchAll(/[.!?…]+(?:\s*\[\d+\])*(?:\s+|$)|\n+/g)) {
+    const end = m.index + m[0].length;
+    parts.push(text.slice(start, end));
+    start = end;
+  }
+  if (start < text.length) parts.push(text.slice(start));
+  return parts.map((part) => {
+    const words = part.replace(/\[\d+\]/g, " ").trim();
+    return { text: part, claim: tokenize(words).length > 2 && !/:$/.test(words), linked: /\[\d+\]/.test(part) };
+  });
+}
+
 /** A claim is a sentence: one with no citation is what "parts of this aren't linked" means. */
 export function hasUnlinkedSentence(text: string): boolean {
-  // a citation after the full stop is still that sentence's
-  const sentences = text.replace(/([.!?])\s+((?:\[\d+\]\s*)+)/g, "$2$1 ").split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter((s) => tokenize(s).length > 2);
-  return sentences.some((s) => !/\[\d+\]/.test(s));
+  return answerSentences(text).some((s) => s.claim && !s.linked);
+}
+
+/** First names folded for comparing: "Ísabella" and "isabella" are one. */
+const foldName = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+/**
+ * Plan 162 (after ai162-r03): one first name that is several people among an answer's sources, when the question or the
+ * answer uses it ("Isabella" for Isabella Álvarez, Rivera and Cruz). From the senders' names, no model: the answer
+ * may have run them together, and the reader should know.
+ */
+export function sameNamePeople(sources: readonly Pick<AskSourceRef, "fromName">[], said: string): { name: string; people: string[] }[] {
+  const byFirst = new Map<string, { name: string; people: string[] }>();
+  for (const s of sources) {
+    const full = s.fromName.trim().replace(/\s+/g, " ");
+    const first = full.split(" ")[0];
+    if (!first || !full.includes(" ")) continue;
+    const key = foldName(first);
+    const group = byFirst.get(key) ?? { name: first, people: [] };
+    if (!group.people.some((p) => foldName(p) === foldName(full))) group.people.push(full);
+    byFirst.set(key, group);
+  }
+  const words = new Set(foldName(said).split(/[^\p{L}\p{N}]+/u));
+  return [...byFirst.entries()].filter(([key, g]) => g.people.length > 1 && words.has(key)).map(([, g]) => g);
 }
 
 /** A number whatever way it's written: 120,50 and 120.50 and 120.5 are one amount. */
