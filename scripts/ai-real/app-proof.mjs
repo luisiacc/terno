@@ -66,11 +66,6 @@ async function draft(name, instruction, { framesEvery = 400 } = {}) {
   if (instruction) await field.fill(instruction);
   const started = Date.now();
   await page.keyboard.press("Enter");
-  const telling = page.getByTestId("ai-telling-continue");
-  if (await telling.isVisible().catch(() => false) || (await telling.waitFor({ timeout: 1200 }).then(() => true).catch(() => false))) {
-    await shot(`${name}-1b-first-use`);
-    await telling.click();
-  }
   const preview = page.getByTestId("ai-preview-text");
   await preview.filter({ hasText: /\S/ }).waitFor({ timeout: 90_000 });
   const firstWord = Date.now() - started;
@@ -165,8 +160,6 @@ await step("thread-not-participant", async () => {
   await field.waitFor({ timeout: 5000 });
   await field.fill("tell dana that this is just fine");
   await page.keyboard.press("Enter");
-  const telling = page.getByTestId("ai-telling-continue");
-  if (await telling.waitFor({ timeout: 1200 }).then(() => true).catch(() => false)) await telling.click();
   const question = page.getByTestId("ai-question");
   await question.waitFor({ timeout: 20_000 });
   await shot("thread-not-participant-question");
@@ -185,8 +178,6 @@ await step("new-message", async () => {
   await field.fill("ask dana when the billing deploy can go out");
   const started = Date.now();
   await page.keyboard.press("Enter");
-  const telling = page.getByTestId("ai-telling-continue");
-  if (await telling.waitFor({ timeout: 1200 }).then(() => true).catch(() => false)) await telling.click();
   const question = page.getByTestId("ai-question");
   await question.waitFor({ timeout: 20_000 });
   await shot("new-message-1-question");
@@ -209,8 +200,6 @@ await step("summary", async () => {
   await page.waitForTimeout(400);
   await openThread("staging migration");
   await page.getByTestId("action-summarize").click();
-  const go = page.getByTestId("summary-continue");
-  if (await go.waitFor({ timeout: 2000 }).then(() => true).catch(() => false)) await go.click();
   const started = Date.now();
   await page.locator('[data-testid="summary-block"][data-state="ready"], [data-testid="summary-block"][data-state="error"]').waitFor({ timeout: 90_000 });
   await shot("summary-ready");

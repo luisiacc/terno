@@ -116,7 +116,7 @@ async function aiPass(design, mode, dir, ai) {
   const subject = () => page.getByTestId("reader-subject").waitFor();
   const blur = () => page.evaluate(() => document.activeElement?.blur());
   const visible = (testId, opts = {}) => page.getByTestId(testId).filter(opts).first().waitFor({ timeout: opts.timeout ?? wait.model });
-  /** whichever of these selectors shows first, by its index; a consent asked for on the way is a person's yes, once */
+  /** whichever of these selectors shows first, by its index */
   const first = async (selectors, timeout = wait.model) => {
     await page.locator(selectors.join(", ")).first().waitFor({ timeout });
     for (let i = 0; i < selectors.length; i++) if (await page.locator(selectors[i]).first().isVisible().catch(() => false)) return i;
@@ -205,8 +205,7 @@ async function aiPass(design, mode, dir, ai) {
     await page.getByTestId("nav-inbox").click();
     await rows.filter({ hasText: "Recomendaciones de libros" }).first().click(); await subject();
     await page.getByTestId("action-summarize").click();
-    // a cloud model asks once before a conversation goes to it (plan 132): the user's yes
-    if ((await first(["[data-testid=summary-block][data-state=ready]", "[data-testid=summary-continue]"])) === 1) await page.getByTestId("summary-continue").click();
+    // no per-use consent (plan 131, the owner's decision): it runs on the click, on a cloud model too
     await page.locator("[data-testid=summary-block][data-state=ready]").waitFor({ timeout: wait.model });
     await visible("summary-item");
     await s("a01-summary");
@@ -221,8 +220,6 @@ async function aiPass(design, mode, dir, ai) {
     await noReplyReady("⌘J");
     await s("a02-draft-prompt");
     await page.keyboard.press("Enter");
-    // a cloud model's first draft says once what goes to it (plan 133): the user's Continue, which writes it
-    if ((await first(["[data-testid=ai-strip]", "[data-testid=ai-telling-continue]"])) === 1) await page.getByTestId("ai-telling-continue").click();
     await visible("ai-strip");
     // the strip shows once the writing is done; the draft is in the body (the stub's names the address, a real model's words vary)
     await page.waitForFunction(() => (document.querySelector("[data-testid=compose-body]")?.textContent ?? "").trim().length > 40, null, { timeout: wait.model });
@@ -241,7 +238,6 @@ async function aiPass(design, mode, dir, ai) {
       if (n > 1) { await page.getByTestId("ask-new").click(); }
       await page.keyboard.type(AI_INPUTS.ask);
       await page.keyboard.press("Enter");
-      if ((await first(["[data-testid=ask-turn]:not([data-status=running])", "[data-testid=ask-consent-continue]"])) === 1) await page.getByTestId("ask-consent-continue").click();
       await page.locator("[data-testid=ask-turn]:not([data-status=running])").last().waitFor({ timeout: wait.model });
       // an answer with its sources: "answered", or "partial" when the model says it saw only part of the mail (a real
       // model's call on the demo's years of mail); not_found, failed and stopped are asked again
@@ -262,19 +258,10 @@ async function aiPass(design, mode, dir, ai) {
       await page.keyboard.type(AI_INPUTS.action);
       await page.keyboard.press("Enter");
       // nothing matched is a notice in Ask, not a preview: a no from the model's plan
-      let shown = await first(["[data-testid=action-preview]", "[data-testid=ask-command-notice]", "[data-testid=ask-consent-continue]"]);
-      if (shown === 2) { await page.getByTestId("ask-consent-continue").click(); shown = await first(["[data-testid=action-preview]", "[data-testid=ask-command-notice]"]); }
-      if (shown === 1) return false;
-      // whole: the search done, the check done (after a yes, if a cloud model asks first), and Apply ready for what's left
-      // a consent asked is a state of its own: Apply waits on it (its spinner, "finding", turns while it's asked)
-      const ready = () => Boolean(document.querySelector("[data-testid=action-consent-continue]")) || (!document.querySelector("[data-testid=action-finding], [data-testid=action-checking]") && document.querySelector("[data-testid=action-apply]")?.disabled === false);
-      const settled = await page.waitForFunction(ready, null, { timeout: wait.model }).then(() => true, () => false);
-      if (settled && (await page.getByTestId("action-consent-continue").isVisible())) {
-        await page.getByTestId("action-consent-continue").click();
-        await page.waitForFunction(() => !document.querySelector("[data-testid=action-finding], [data-testid=action-checking], [data-testid=action-consent]") && document.querySelector("[data-testid=action-apply]")?.disabled === false, null, { timeout: wait.model });
-        return true;
-      }
-      return settled;
+      if ((await first(["[data-testid=action-preview]", "[data-testid=ask-command-notice]"])) === 1) return false;
+      // whole: the search done, the check done, and Apply ready for what's left
+      const ready = () => !document.querySelector("[data-testid=action-finding], [data-testid=action-checking]") && document.querySelector("[data-testid=action-apply]")?.disabled === false;
+      return page.waitForFunction(ready, null, { timeout: wait.model }).then(() => true, () => false);
     });
     await s("a05-actions-preview");
     await page.getByTestId("action-apply").click();

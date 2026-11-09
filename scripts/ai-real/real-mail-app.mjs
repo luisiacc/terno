@@ -53,12 +53,6 @@ async function step(name, fn) {
   }
 }
 
-// not awaited by what it times: the first-use card shows at most once
-const passTelling = () => {
-  const telling = page.getByTestId("ai-telling-continue");
-  void telling.waitFor({ timeout: 1200 }).then(() => telling.click()).catch(() => {});
-};
-
 async function openBySearch(query) {
   await page.keyboard.press("/");
   await page.getByTestId("search-input").fill(query);
@@ -126,7 +120,6 @@ for (const c of replies) {
     await field.fill(c.instruction);
     const asked = Date.now();
     await page.keyboard.press("Enter");
-    await passTelling();
     const preview = page.getByTestId("ai-preview-text");
     await preview.filter({ hasText: /\S/ }).waitFor({ timeout: 60_000 });
     const firstWordMs = Date.now() - asked;
@@ -163,7 +156,6 @@ for (const c of fromList) {
     await field.fill(c.instruction);
     const asked = Date.now();
     await page.keyboard.press("Enter");
-    await passTelling();
     const question = page.getByTestId("ai-question");
     const strip = page.getByTestId("ai-strip");
     await question.or(strip).first().waitFor({ timeout: 40_000 });
@@ -185,11 +177,6 @@ for (const c of fromList) {
 await step("summary", async () => {
   await openBySearch(replies[0].query);
   await page.getByRole("button", { name: /Summarize|Resumir/ }).first().click();
-  const consent = page.getByTestId("summary-consent");
-  if (await consent.waitFor({ timeout: 1500 }).then(() => true).catch(() => false)) {
-    await shot("30-summary-consent");
-    await page.getByRole("button", { name: /Continue|Continuar|Summarize|Resumir/ }).last().click();
-  }
   const asked = Date.now();
   await page.getByTestId("summary-text").waitFor({ timeout: 60_000 });
   await shot("31-summary");

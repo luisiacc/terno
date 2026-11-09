@@ -242,7 +242,7 @@ describe.skipIf(!process.env.TERNO_REAL_MAIL)("a real mailbox", () => {
       const before = fileLedger().spent();
       const asked = Date.now();
       try {
-        const r = await t.client.call("ai.summarize", { threadId, requestId: `m${threadId}`, acknowledge: true });
+        const r = await t.client.call("ai.summarize", { threadId, requestId: `m${threadId}` });
         manualOut.push({ threadId, ms: Date.now() - asked, cost: fileLedger().spent() - before, result: r });
       } catch (error) {
         manualOut.push({ threadId, error: String(error) });

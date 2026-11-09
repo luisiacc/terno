@@ -36,6 +36,7 @@ How it runs:
 - The clock: the backend starts at the demo's own instant, 22 October 2026 16:00 UTC, and runs on (`TERNO_TEST_NOW`, honored only in the demo mailbox); the window reads the same fixed instant, in UTC. Every round sees the same days.
 - Only the model's own requests leave: the backend logs every network decision (`TERNO_TEST_NET_LOG`, demo mailbox only). On real models the capture fails on any AI request not to a provider in use over https (Anthropic, OpenAI, JEV with its key), anything else off loopback, or any request the window's fence refused; on the stub, on anything off loopback, any AI request not to the stub, or a task the stub doesn't know.
 - The demo mailbox is unchanged: every AI screen reaches its state on the mail the everyday set already rates.
+- No consent step (2026-11-08, the owner's decision in plan 131): a cloud model asks nothing before mail goes to it, so the capture clicks no Continue anywhere. The summary, ⌘J's draft, Ask's answer and the action's checked preview are reached straight from the ask; the screens, shots and states are the same as before.
 
 ```sh
 pnpm ui:rate --screens ai --out /tmp/terno-scratch/rating/ai-r04   # the AI set on real models, with brief-ai.md (--ai stub: the stand-in)

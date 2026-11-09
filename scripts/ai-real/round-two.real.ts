@@ -79,9 +79,8 @@ async function open(phase: string) {
 
 const seeds = () => JSON.parse(readFileSync(join(DIR, "seeds.json"), "utf8")) as { questions: { q: string; expect: string }[]; sentences: { s: string; kind: string }[] };
 
-async function askOnce(client: RpcClient, question: string, acknowledge?: string): Promise<any> {
-  const r: any = await client.call("ai.ask", { requestId: crypto.randomUUID(), question, timezone: "America/Mexico_City", ...(acknowledge ? { acknowledge } : {}) } as never);
-  return r.status === "consent" ? askOnce(client, question, r.destination) : r;
+async function askOnce(client: RpcClient, question: string): Promise<any> {
+  return client.call("ai.ask", { requestId: crypto.randomUUID(), question, timezone: "America/Mexico_City" } as never);
 }
 
 describe.skipIf(!process.env.TERNO_REAL_MAIL)("the AI round on a real mailbox", () => {
@@ -123,7 +122,6 @@ ${recent.map((m) => `${m.sent ? "(sent) " : ""}${m.s} | ${m.f} <${m.e.replace(/^
 
   it.runIf(PHASE === "actions")("sentences", { timeout: 1_200_000 }, async () => {
     const t = await open("actions");
-    let acknowledged: string | undefined;
     for (const { s: sentence, kind } of seeds().sentences) {
       t.calls.length = 0;
       const said = await askOnce(t.client, sentence).catch((e: Error) => ({ status: "error", message: e.message }));
@@ -142,11 +140,7 @@ ${recent.map((m) => `${m.sent ? "(sent) " : ""}${m.s} | ${m.f} <${m.e.replace(/^
             info = await t.client.call("ai.actionToggle", { previewId: id, threadId: 2_000_000_000, included: false });
           }
           if (info.check === "needed") {
-            let checked: any = await t.client.call("ai.actionCheck", { previewId: id, requestId: crypto.randomUUID() } as never);
-            if (checked.status === "consent") {
-              acknowledged = checked.destination;
-              checked = await t.client.call("ai.actionCheck", { previewId: id, requestId: crypto.randomUUID(), acknowledge: acknowledged } as never);
-            }
+            const checked: any = await t.client.call("ai.actionCheck", { previewId: id, requestId: crypto.randomUUID() } as never);
             info = checked.preview;
           }
           const page: any = await t.client.call("ai.actionPage", { previewId: id, offset: 0, limit: 60, leftOut: true });
