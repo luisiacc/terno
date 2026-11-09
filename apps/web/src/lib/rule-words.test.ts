@@ -3,7 +3,7 @@ import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { describeRule, hasDetails, matchesAnything, patternTerms, ruleDetails, ruleMisses, ruleRow, senderNotLooked, sendersInSentence, sensedOp, withSensedOp } from "./rule-words";
+import { broadRule, describeRule, hasDetails, matchesAnything, patternTerms, ruleDetails, ruleGaps, ruleMisses, ruleRow, senderNotLooked, sendersInSentence, sensedOp, withSensedOp } from "./rule-words";
 
 const names = { accountEmail: (id: number) => `a${id}@x.test`, category: () => "Invoices", folder: (_: number, f: string) => f };
 const uber: FilterRule = { match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "uber.com" }], actions: [{ type: "archive" }] };
@@ -87,7 +87,7 @@ describe("a sentence's rule in words (plan 161)", () => {
     // a generated template reads as its template; any other pattern doesn't print its syntax
     expect(ruleRow({ field: "subject", op: "matches", value: "^Tu pedido [0-9]+ está en camino$", negate: false }, email).text).toMatch(/is like “Tu pedido # está en camino”/);
     const other = ruleRow({ field: "subject", op: "matches", value: "ship.*ped", negate: false }, email);
-    expect(other.text).toBe("matches a pattern (see Exact pattern)");
+    expect(other.text).toBe("matches the exact search below");
     expect(other.terms).toBeUndefined();
   });
 
@@ -184,5 +184,23 @@ describe("the sender a sentence names, without a model (plan 161, the owner)", (
   it("an address the rule already holds elsewhere (who it was sent to) isn't a sender it forgot", () => {
     expect(senderNotLooked([{ field: "recipients", op: "contains", value: "Luis@Acme.studio" }], { sure: ["luis@acme.studio"], names: [] })).toBe(null);
     expect(senderNotLooked([{ field: "recipients", op: "contains", value: "luis@acme.studio" }], { sure: ["luis@acme.studio", "uber.com"], names: [] })).toBe("uber.com");
+  });
+});
+
+describe("plan 162 (after ai162-r03): a rule for everything, and what a rule left out", () => {
+  const rule = (conditions: unknown[], match: "all" | "any" = "all") => ({ match, conditions, actions: [{ type: "archive" }] }) as never;
+  it("a pattern any value matches is everything, for all its conditions (or any, in an any-rule)", () => {
+    expect(broadRule(rule([{ field: "listId", op: "matches", value: ".+" }]))).toBe(true);
+    expect(broadRule(rule([{ field: "listId", op: "matches", value: ".+" }, { field: "fromDomain", op: "equals", value: "substack.com" }]))).toBe(false);
+    expect(broadRule(rule([{ field: "subject", op: "matches", value: ".*" }, { field: "fromDomain", op: "equals", value: "substack.com" }], "any"))).toBe(true);
+    expect(broadRule(rule([{ field: "listId", op: "matches", value: ".+", negate: true }]))).toBe(false);
+  });
+  it("names the request's words it left out, and what no rule can see", () => {
+    const listRule = rule([{ field: "listId", op: "matches", value: ".+" }]);
+    expect(ruleGaps("archive newsletters I never open", listRule)).toEqual({ words: ["never open"], cantSay: true });
+    expect(ruleMisses("archive newsletters I never open", listRule)).toBe(true);
+    expect(ruleGaps("archive receipts older than 30 days", listRule).words).toEqual(["older than"]);
+    expect(ruleGaps("archiva los boletines que nunca abro", listRule).words).toEqual(["nunca abro"]);
+    expect(ruleGaps("archive mail from substack.com", rule([{ field: "fromDomain", op: "equals", value: "substack.com" }])).words).toEqual([]);
   });
 });

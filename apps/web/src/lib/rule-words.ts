@@ -63,13 +63,49 @@ const ASKS: { want: RegExp; has: (rule: FilterRule) => boolean }[] = [
 const ANY_ACTION = /\barchiv|\b(delete|trash|bin|spam|read|star|label|tag|move|file|forward|put|categor)|\bborr[ae]|\belimin|papelera|le[ií]d|destac|estrella|etiquet|\bmuev|\bmover\b|reenv|\bpon(er|lo|la|los|las)?\b|categor/i;
 
 /**
+ * What a request can say that no rule can: whether mail was opened or read (rules see the mail, not what you did with
+ * it). English and Spanish.
+ */
+const CANT_SAY = /\b(?:never|not|don['’]?t|didn['’]?t|haven['’]?t|hardly)\s+(?:ever\s+)?(?:open|opened|read)\b|\bun(?:opened|read)\b|\bnunca\s+(?:abr|le)\w*|\bsin\s+(?:abrir|leer)\b|\bno\s+(?:abr|le[oií])\w*/i;
+
+/**
+ * Plan 162 (after ai162-r03): the words of a request a built rule left out, quoted as the request says them, with no
+ * model: an action, an age or a sender it names that the rule lacks, and what no rule can see ("never open"). A real
+ * model turned "archive newsletters I never open" into "List matches .+" and nothing said "never open" was gone.
+ */
+export function ruleGaps(prompt: string, rule: FilterRule): { words: string[]; cantSay: boolean } {
+  const words: string[] = [];
+  const cant = CANT_SAY.exec(prompt);
+  if (cant) words.push(cant[0].trim());
+  for (const a of ASKS) {
+    const m = a.want.exec(prompt);
+    if (m && !a.has(rule) && !words.some((w) => w.includes(m[0].trim()))) words.push(m[0].trim());
+  }
+  return { words, cantSay: cant !== null };
+}
+
+/**
  * Plan 161: whether a built rule plainly misses its request, with no model asked: an action or an age or a sender the
- * request names that the rule lacks, or a rule that acts when the request named nothing to do. Calm by design: it says
- * to check, not that it's wrong.
+ * request names that the rule lacks, what no rule can see, or a rule that acts when the request named nothing to do.
+ * Calm by design: it says to check, not that it's wrong.
  */
 export function ruleMisses(prompt: string, rule: FilterRule): boolean {
   if (!ANY_ACTION.test(prompt)) return true;
-  return ASKS.some((a) => a.want.test(prompt) && !a.has(rule));
+  return ruleGaps(prompt, rule).words.length > 0;
+}
+
+/** A rule's count from which applying it to mail already here asks once more (plan 162, after ai162-r03). */
+export const BROAD_COUNT = 500;
+
+/**
+ * Plan 162 (after ai162-r03): a rule that takes in everything, or every mailing list's mail, by what it says (no model):
+ * every condition of an "all" rule (or any of an "any" rule) is a pattern any value matches (".+", ".*"). Saving it is
+ * never one click.
+ */
+export function broadRule(rule: Pick<FilterRule, "match" | "conditions">): boolean {
+  const vacuous = (c: Condition) => c.field !== "hasAttachment" && c.field !== "account" && c.field !== "ageDays" && c.op === "matches" && !c.negate && matchesAnything(String(c.value));
+  if (!rule.conditions.length) return true;
+  return rule.match === "any" ? rule.conditions.some(vacuous) : rule.conditions.every(vacuous);
 }
 
 // --- the sender check (plan 161, the owner: "if we can do it without using AI, reliably, then yes") ---

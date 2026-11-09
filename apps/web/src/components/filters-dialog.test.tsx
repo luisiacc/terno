@@ -161,3 +161,21 @@ it("Codex review: the Esc that dismisses an input method's candidates (after com
   await esc(name);
   expect(document.activeElement).toBe($("new-filter"));
 });
+
+it("plan 162 (after ai162-r03): a rule for everything is never one click away, and what it dropped is named", async () => {
+  // a real model's answer to "archive newsletters I never open": every mailing list, "never open" gone
+  await ask("archive newsletters I never open");
+  await answer("filters.generate", { name: "Newsletters", rule: { match: "all", conditions: [{ field: "listId", op: "matches", value: ".+" }], actions: [{ type: "archive" }] } });
+  expect($("ai-broad")?.textContent).toMatch(/nearly all your mail/);
+  expect($("ai-gaps")?.textContent).toContain("“never open”");
+  // Save loses its primary, and neither save acts at once: each asks, Cancel first
+  expect($("filter-save")?.getAttribute("data-variant") ?? $("filter-save")?.className).toMatch(/outline/);
+  await click($("filter-save-apply"));
+  expect($("filter-broad-confirm")).not.toBeNull();
+  expect(waiting["filters.save"]?.length ?? 0).toBe(0);
+  await click(document.querySelector<HTMLElement>("[data-testid=filter-broad-confirm] [data-slot=alert-dialog-cancel], [data-testid=filter-broad-confirm] button"));
+  expect(waiting["filters.save"]?.length ?? 0).toBe(0);
+  await click($("filter-save"));
+  expect($("filter-broad-confirm")).not.toBeNull();
+  expect(waiting["filters.save"]?.length ?? 0).toBe(0);
+});

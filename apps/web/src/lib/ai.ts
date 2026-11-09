@@ -192,7 +192,9 @@ export const modelName = (id: string): string => MODEL_NAME[id] ?? id;
 export function privacyLine(ai: AiSettings): string {
   if (ai.provider === "none") return t("ai.privacy.off");
   if (ai.local) return t("ai.privacy.local");
-  return t("ai.privacy.cloud", { host: hostOf(ai) ?? providerName(ai) });
+  // plan 162 (after ai162-r03): the provider by name, as every other AI surface says it ("Claude (Anthropic)", never
+  // api.anthropic.com); only a server of the user's own is said by its address
+  return t("ai.privacy.cloud", { host: ai.provider === "compatible" ? (hostOf(ai) ?? providerName(ai)) : providerName(ai) });
 }
 
 type Target = { provider: AiProviderId; preset: CompatiblePreset | null; baseURL: string | null; local: boolean };

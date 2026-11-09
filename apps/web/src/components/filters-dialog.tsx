@@ -21,7 +21,7 @@ import { aiReady, errorHelp, privacyLine } from "~/lib/ai";
 import { listDate } from "~/lib/format";
 import { client } from "~/rpc/connection";
 import { learnedRule } from "~/lib/learned";
-import { describeRule, ruleMisses, sensedOp, withSensedOp, type SensedOp } from "~/lib/rule-words";
+import { BROAD_COUNT, broadRule, describeRule, ruleGaps, ruleMisses, sensedOp, withSensedOp, type SensedOp } from "~/lib/rule-words";
 import { getApp, setApp, useApp } from "~/state/app";
 import { ConfirmDialog } from "./settings/parts";
 import { AI_CARD, AI_GLYPH, AI_HEADER, AI_TITLE } from "./ai-card";
@@ -319,25 +319,33 @@ function ForwardTo({ to, onChange, paused }: { to: readonly Address[]; onChange:
  * The rule AI built, in a line. Pass 3: folded, it's the heading that names what was built (focus goes there when it
  * arrives), and the review hint runs on after it rather than taking a line of its own, so the matches fit a small window.
  */
-function AiSaid({ said, misses, heading }: { said: string; misses: boolean; heading?: React.Ref<HTMLHeadingElement> }) {
+function AiSaid({ said, misses, gaps, broad, heading }: { said: string; misses: boolean; /** plan 162 (after ai162-r03): the request's words it left out */ gaps: { words: string[]; cantSay: boolean } | null; /** what a rule for nearly everything would do, said plainly */ broad: string | null; heading?: React.Ref<HTMLHeadingElement> }) {
+  // plan 162 (after ai162-r03): what's missing is named, quoted as the request says it, with no model ("never open" went silently)
+  const warning = (broad || misses) && (
+    <div role="status" className="mt-1 space-y-0.5 text-destructive-ink" data-testid="ai-unclear">
+      {broad && <p data-testid="ai-broad">{broad}</p>}
+      {gaps && gaps.words.length > 0 ? (
+        <p data-testid="ai-gaps">{t("filters.ai.gaps", { words: gaps.words.map((w) => `“${w}”`).join(", ") })}{gaps.cantSay && ` ${t("filters.ai.cantSay")}`}</p>
+      ) : misses && !broad ? (
+        <p>{t("filters.ai.unclear")}</p>
+      ) : null}
+    </div>
+  );
+  const quiet = !misses && !broad;
   if (heading)
     return (
       <>
         <div>
           <h3 ref={heading} tabIndex={-1} className="inline font-normal text-foreground outline-none" data-testid="ai-explanation">{said}</h3>
-          {!misses && <span className="text-muted-foreground"> {t("filters.ai.review")}</span>}
+          {quiet && <span className="text-muted-foreground"> {t("filters.ai.review")}</span>}
         </div>
-        {misses && <p role="status" className="mt-1 text-destructive-ink" data-testid="ai-unclear">{t("filters.ai.unclear")}</p>}
+        {warning}
       </>
     );
   return (
     <>
       <p className="text-foreground" data-testid="ai-explanation">{said}</p>
-      {misses ? (
-        <p role="status" className="mt-1 text-destructive-ink" data-testid="ai-unclear">{t("filters.ai.unclear")}</p>
-      ) : (
-        <p className="mt-1 text-muted-foreground">{t("filters.ai.review")}</p>
-      )}
+      {quiet ? <p className="mt-1 text-muted-foreground">{t("filters.ai.review")}</p> : warning}
     </>
   );
 }
@@ -500,6 +508,13 @@ export function FiltersDialog() {
     folder: (accountId, folder) => folders.find((f) => f.accountId === accountId && f.key === folder)?.path.join(" / ") ?? folder,
   }) : null;
   const misses = said !== null && built !== null && valid.success && ruleMisses(built, valid.data);
+  const gaps = said !== null && built !== null && valid.success ? ruleGaps(built, valid.data) : null;
+  // plan 162 (after ai162-r03): a rule for everything (".+") or for 500 or more conversations is never one click away: it
+  // says so, and each save that would act on it asks once more, Cancel the default
+  const vacuous = valid.success && broadRule(valid.data);
+  const large = (matches ?? 0) >= BROAD_COUNT;
+  const broad = said !== null && (vacuous || large) ? (matches !== null ? t("filters.ai.broadCount", { count: matches }) : t("filters.ai.broad")) : null;
+  const [confirming, setConfirming] = useState<"apply" | "save" | null>(null);
   // the rule AI built, not saved yet, in the builder now
   const aiDraft: Unsaved | null = draft.source === "ai" && draft.id === undefined && built !== null && aiKey !== null ? { key: aiKey, draft, prompt, built } : null;
   /** what's in the builder makes way for another rule: an unsaved AI rule is kept, as a draft row (pass 2) */
@@ -754,7 +769,7 @@ export function FiltersDialog() {
                     {/* the rule in words, and who wrote it at the line's end: the one control every AI surface has */}
                     <div className="flex items-start gap-2 text-sm">
                       <div className="min-w-0 flex-1">
-                        <AiSaid said={said} misses={misses} heading={builtRef} />
+                        <AiSaid said={said} misses={misses} gaps={gaps} broad={broad} heading={builtRef} />
                       </div>
                       <AiProvenance model="" at={0} lines={[t("filters.ai.provenance")]} testId="ai-provenance" labelTestId="ai-provenance-label" className="-me-1.5 -mt-1 shrink-0" />
                     </div>
@@ -783,12 +798,12 @@ export function FiltersDialog() {
                         <Sparkles /> {t("filters.ai.create")}
                       </Button>
                     </div>
-                    <p className="mt-2 text-2xs text-muted-foreground" data-testid="ai-privacy-notice">
+                    <p className="mt-2 text-xs text-muted-foreground" data-testid="ai-privacy-notice">
                       {privacyLine(ai)}
                     </p>
                     {said !== null && (
                       <div className="mt-2 text-xs">
-                        <AiSaid said={said} misses={misses} />
+                        <AiSaid said={said} misses={misses} gaps={gaps} broad={broad} />
                       </div>
                     )}
                   </>
@@ -919,14 +934,24 @@ export function FiltersDialog() {
             {/* the owner's call (2026-11-08): Save is the main button, for every rule, by hand or by AI; applying it to mail
                 already here is the second choice, its consequence in its words */}
             <div className="ml-auto flex gap-2">
-              <Button variant="outline" className="text-foreground" data-testid="filter-save-apply" disabled={saving} onClick={() => save(true)}>
+              <Button variant="outline" className="text-foreground" data-testid="filter-save-apply" disabled={saving} onClick={() => (vacuous || large ? setConfirming("apply") : save(true))}>
                 {/* pass 2: the consequence in its words: how many it will touch, once counted */}
                 {matches ? t("filters.saveApplyCount", { count: matches }) : t("filters.saveApply")}
               </Button>
-              {/* plan 162 (after ai162-r02): each says its scope (Save's, new mail only, was left to be inferred) */}
-              <Button data-testid="filter-save" disabled={saving} onClick={() => save(false)}>
+              {/* plan 162 (after ai162-r02): each says its scope (Save's, new mail only, was left to be inferred). After
+                  ai162-r03: a rule for everything has no primary, and asks once more */}
+              <Button variant={vacuous ? "outline" : "default"} className={cn(vacuous && "text-foreground")} data-testid="filter-save" disabled={saving} onClick={() => (vacuous ? setConfirming("save") : save(false))}>
                 {t("filters.saveNew")}
               </Button>
+              <ConfirmDialog
+                open={confirming !== null}
+                onOpenChange={(open) => !open && setConfirming(null)}
+                testId="filter-broad-confirm"
+                title={confirming === "apply" ? t("filters.confirm.applyTitle", { count: matches ?? 0 }) : t("filters.confirm.saveTitle")}
+                description={confirming === "apply" ? t("filters.confirm.applyBody") : t("filters.confirm.saveBody")}
+                confirm={confirming === "apply" ? (matches ? t("filters.saveApplyCount", { count: matches }) : t("filters.saveApply")) : t("filters.confirm.save")}
+                onConfirm={() => save(confirming === "apply")}
+              />
             </div>
           </div>
         </div>
