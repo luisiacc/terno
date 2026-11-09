@@ -1053,3 +1053,65 @@ Six findings, five taken with a test that fails without the fix, one declined:
 - ~~**Ask answers an English question in Spanish** on some runs~~: fixed, below (the owner asked for it before ai162-r05).
 - **Focus on Archive when the preview is ready** (four reports asked): it needs Archive's tooltip not to open on a programmatic focus, which is the shared Tooltip's behaviour. Change it there?
 - Still open from before: the model error wording.
+
+### ai162-r05 (branch at `e86cdfa79`, real models, 2026-11-09): the last round
+
+After the pass that followed r04 and the fix that makes Ask answer in the question's language. All eight reports valid; 681 cells under 9, 106 issues (6 high; r04: 682, 103 and 10). The numbers as `gate.mjs` wrote them:
+
+Models: real, openai/gpt-6-luna, anthropic/claude-sonnet-5-5, anthropic/claude-haiku-5-5, anthropic/claude-opus-5-5, jev/jev-latest; the captures spent US$0.28 as the app counted it
+
+| Style | Rater | Overall | UI | UX | Lowest | Cells below |
+|---|---|---:|---:|---:|---:|---:|
+| atelier | claude | 7.5 | 7.5 | 7.5 | 5.5 | 82/84 |
+| atelier | codex | 7.5 | 7.5 | 7.5 | 6 | 81/84 |
+| graphite | claude | 7 | 7 | 7.5 | 6 | 84/84 |
+| graphite | codex | 7.5 | 7.5 | 7.5 | 5.5 | 81/84 |
+| lumen | claude | 7.5 | 7.5 | 8 | 6 | 83/84 |
+| lumen | codex | 7.5 | 7.5 | 7.5 | 6 | 82/84 |
+| macos | claude | 7 | 7 | 7.5 | 5.5 | 84/84 |
+| macos | codex | 7.5 | 7.5 | 8 | 6 | 80/84 |
+
+#### Screens, each rater's overall
+
+| Screen | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| summary | 7.5 | 7.5 | 7 | 7.5 | 7.5 | 7.5 | 7 | 7.5 |
+| ai_draft | 8 | 7 | 7.5 | 7.5 | 8 | 7.5 | 7.5 | 8 |
+| ask | 7 | 6.5 | 7.5 | 6.5 | 8 | 7 | 8 | 6.5 |
+| actions | 7.5 | 8.5 | 6.5 | 8 | 7.5 | 8 | 7 | 8 |
+| today | 6.5 | 7 | 7 | 7 | 6.5 | 6.5 | 6.5 | 7 |
+| followups_replies | 8 | 8 | 7.5 | 8 | 7.5 | 8 | 7.5 | 8.5 |
+| ai_settings | 7.5 | 7.5 | 7 | 6.5 | 7 | 7 | 7 | 7 |
+
+#### Facets, mean across screens
+
+| Facet | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| typography | 7.86 | 7.86 | 7.64 | 7.86 | 7.71 | 7.86 | 7.21 | 7.79 |
+| contrast | 7.79 | 7.93 | 7.71 | 7.29 | 7.43 | 8.07 | 7.71 | 7.50 |
+| placement | 7.14 | 7.50 | 7.07 | 7.29 | 7.36 | 7.21 | 7.07 | 7.43 |
+| hierarchy | 7.43 | 7.36 | 6.86 | 7.21 | 7.29 | 7.43 | 6.86 | 7.50 |
+| controls | 7.21 | 8.00 | 7.14 | 7.71 | 7.50 | 8.00 | 6.86 | 7.86 |
+| density | 7.07 | 7.50 | 7.14 | 7.14 | 7.64 | 6.93 | 7.07 | 7.29 |
+| efficiency | 8.00 | 8.00 | 7.71 | 8.00 | 7.93 | 7.79 | 7.50 | 8.21 |
+| clarity | 7.86 | 7.36 | 7.43 | 7.14 | 7.50 | 7.36 | 7.21 | 7.57 |
+| feedback | 8.07 | 8.36 | 7.36 | 8.57 | 7.93 | 8.29 | 7.36 | 8.50 |
+| consistency | 7.43 | 7.86 | 7.43 | 7.93 | 7.57 | 7.64 | 7.57 | 7.86 |
+| accessibility | 6.86 | 7.64 | 6.93 | 7.21 | 7.14 | 7.64 | 6.71 | 7.71 |
+
+**Against r04:** ⌘J recovered (6.88 → 7.62 mean of the eight), Ask rose (6.81 → 7.12), actions rose (7.06 → 7.62); the first cells at 9 appear (eight across the reports). Today (6.75) and AI settings (7.06) stay lowest.
+
+**High:** Ask's sources are squeezed to one half-faded row at 1100x700; Send is still one click away beside "Write it" while the body holds an instruction; Undo returns the instruction as ordinary text without its "For AI" state; Today's digest is the smallest thing on the page (two reports); the action preview's decision (header) is split from its explanation (reader).
+
+## Where it stands after the owner's five rounds
+
+| Round | Models | Overall (mean of 8) | Cells under 9 | High |
+|---|---|---|---|---|
+| main's ai-r03 | stub | 7.21 | 664 | 1 |
+| r01 | stub | 7.43 | 656 | 2 |
+| r02 | stub | 7.36 | 673 | 4 |
+| r03 | real | 7.29 | 662 | 10 |
+| r04 | real | 7.14 | 682 | 10 |
+| r05 | real | 7.36 | 681 | 6 |
+
+No screen reached 9 from both raters. The branch is not merged and waits for the owner.
