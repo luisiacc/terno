@@ -14,7 +14,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { withDotEnv } from "../../../scripts/release-env.mjs";
 import { dirname, join } from "node:path";
-import { existsSync, readFileSync, renameSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_DEV_PORT, devPort, viteLocalUrl } from "../src/dev-port.ts";
@@ -92,9 +92,11 @@ if (demoAi) {
   const read = (path) => { try { return readFileSync(path, "utf8"); } catch { return null; } };
   const { keys, from, missing } = resolveKeys(process.env, files.map((path) => ({ path, text: read(path) })));
   if (missing.length) { console.error(missingKeysMessage(missing, files)); process.exit(1); }
-  const profile = devProfile(DEMO_AI_PROFILE);
-  const problem = demoAiProfileProblem({ path: profile, hasDb: existsSync(join(profile, DB_FILE)), hasMarker: existsSync(join(profile, MARKER_FILE)) });
+  // checked before devProfile() opens or renames anything in the folder (a legacy profile's migration would)
+  const { path: candidate } = resolveProfile({ explicit: process.env.TERNO_USER_DATA, defaultPath: join(homedir(), "Library", "Application Support", DEMO_AI_PROFILE) });
+  const problem = demoAiProfileProblem({ path: candidate, entries: existsSync(candidate) ? readdirSync(candidate) : null });
   if (problem) { console.error(`[demo-ai] ${problem}`); process.exit(1); }
+  const profile = devProfile(DEMO_AI_PROFILE);
   if (args.fresh) cleanProfile(profile);
   const steps = stepsToRun(readMarker(read(join(profile, MARKER_FILE))), args);
   console.log(`[demo-ai] keys: ${Object.entries(from).map(([k, f]) => `${k} (${f})`).join(", ")}`);
@@ -197,7 +199,7 @@ if (demoAiPlan) {
     preparing = null;
     const spend = Object.entries(readSpend(profile));
     const total = spend.reduce((a, [, t]) => ({ requests: a.requests + t.requests, usd: a.usd + t.usd }), { requests: 0, usd: 0 });
-    console.log(`[demo-ai] prepared in ${Math.round((Date.now() - started) / 1000)} s: ${total.requests} model requests, about US$${total.usd.toFixed(2)} (${spend.map(([task, t]) => `${task} ${t.requests}`).join(", ")})`);
+    console.log(`[demo-ai] prepared in ${Math.round((Date.now() - started) / 1000)} s; the profile's AI so far (Settings → AI → usage): ${total.requests} model requests, about US$${total.usd.toFixed(2)} (${spend.map(([task, t]) => `${task} ${t.requests}`).join(", ")})`);
     if (failed.length) console.log(`[demo-ai] ${failed.join(", ")} didn't finish: they run again on the next launch (a screenshot of each is in the profile)`);
   }
   env = demoAiEnv({ base: process.env, profile, keys, devUrl: url, background: false, now: demoAiClock(readMarker(read(join(profile, MARKER_FILE)))) });

@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEMO_AI_STEPS, demoAiClock, MARKER_FILE, MARKER_VERSION, readMarker } from "../src/demo-ai.ts";
+import { askFinished, conversationDone, DEMO_AI_STEPS, demoAiClock, MARKER_FILE, MARKER_VERSION, partialVerdict, readMarker } from "../src/demo-ai.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const { _electron: electron } = createRequire(join(root, "package.json"))("@playwright/test");
@@ -116,66 +116,73 @@ const STEPS = {
     await d.closeSettings();
   },
 
-  /** Turning the digest on at 16:00 prepares today's at once (its time is 08:00): Today, until its row says how many it read. */
+  /**
+   * Turning the digest on at 16:00 prepares today's at once (its time is 08:00): its page, until its lines show. A
+   * failure is tried again once with the page's own Try again, as a person would.
+   */
   async digest(d) {
     const { page } = d;
     await d.go("today");
     await page.getByTestId("today-heading").waitFor({ timeout: 30_000 });
     const row = page.getByTestId("digest-row").first();
     await row.waitFor({ timeout: JOB_MS });
+    await row.click();
+    await page.getByTestId("digest-page").waitFor({ timeout: 30_000 });
     const until = Date.now() + JOB_MS;
     let retried = false;
     for (;;) {
-      if (await page.getByTestId("digest-row").filter({ hasText: /\d+ newsletters?/ }).first().isVisible().catch(() => false)) break;
+      const preparing = await page.getByTestId("digest-preparing").first().isVisible().catch(() => false);
+      if (!preparing && (await page.getByTestId("digest-item").first().isVisible().catch(() => false))) break;
       if (await page.getByTestId("digest-failed").first().isVisible().catch(() => false)) {
-        // once: Try again, as a person would; a second failure is the step's
-        if (retried) throw new Error("the digest failed twice: Today's row says why");
+        if (retried) throw new Error("the digest failed twice: its page says why");
         retried = true;
         d.log("  the digest failed; trying again");
-        await row.click();
         await page.getByTestId("digest-retry").click();
       }
       if (Date.now() > until) throw new Error("the digest wasn't ready in 5 minutes");
       await page.waitForTimeout(1000);
     }
-    d.log(`  ${(await row.innerText()).replace(/\s+/g, " ").trim()}`);
+    d.log(`  ${await page.getByTestId("digest-item").count()} newsletters in today's digest: ${(await row.innerText()).replace(/\s+/g, " ").trim()}`);
   },
 
   /**
    * The Inbox's top conversations, then the ones Today says need you: each opened, so Reply ready prepares where it
    * applies (a conversation waiting for your reply), and summarized. Both are kept and show again on the next open.
    */
-  async conversations(d) {
+  async conversations(d, progress) {
     const { page } = d;
     const opened = new Set();
     const counts = { summaries: 0, replies: 0 };
+    const missing = [];
     const visit = async (row, where) => {
       await row.click();
       await page.getByTestId("reader-subject").waitFor();
       const title = (await page.getByTestId("reader-subject").innerText()).trim();
       if (opened.has(title)) return d.log(`  ${where}: ${title}, opened above`);
       opened.add(title);
+      // done on an earlier launch: both are kept, opening it again shows them
+      if (progress.has(title)) return d.log(`  ${where}: ${title}, done earlier`);
       // Reply ready starts as a conversation that waits for your reply opens; the summary is asked for meanwhile
-      let summary = "";
+      let summary = "none";
       const summarize = page.getByTestId("action-summarize");
       if (await summarize.isVisible().catch(() => false)) {
         await summarize.click();
         await page.getByTestId("summary-block").first().waitFor({ timeout: 15_000 });
-        const state = await page.waitForFunction(() => {
+        summary = await page.waitForFunction(() => {
           const s = document.querySelector("[data-testid=summary-block]")?.getAttribute("data-state");
           return s === "ready" || s === "error" ? s : null;
         }, null, { timeout: MODEL_MS }).then((h) => h.jsonValue(), () => "timeout");
-        summary = state === "ready" ? ", summary" : `, summary ${state}`;
-        if (state === "ready") counts.summaries++;
+        if (summary === "ready") counts.summaries++;
       }
-      // the card shows once the model said a reply is wanted (it may decide none is: then it never shows)
-      let reply = "";
+      // the card shows once the model said a reply is wanted; when it decides none is, it never shows
+      let reply = "none";
       if (await shows(page.getByTestId("reply-ready"), 20_000)) {
-        const ready = await shows(page.locator("[data-testid=reply-ready][data-phase=ready]"), MODEL_MS);
-        reply = ready ? ", Reply ready" : ", Reply ready didn't finish";
-        if (ready) counts.replies++;
+        reply = (await shows(page.locator("[data-testid=reply-ready][data-phase=ready]"), MODEL_MS)) ? "ready" : "unfinished";
+        if (reply === "ready") counts.replies++;
       }
-      d.log(`  ${where}: ${title}${summary}${reply}`);
+      if (conversationDone({ summary, reply })) progress.add(title);
+      else missing.push(title);
+      d.log(`  ${where}: ${title}${summary === "none" ? "" : summary === "ready" ? ", summary" : `, summary ${summary}`}${reply === "ready" ? ", Reply ready" : reply === "unfinished" ? ", Reply ready didn't finish" : ""}`);
     };
     await d.go("inbox");
     for (let i = 0; i < TOP; i++) await visit(d.rows.nth(i), `Inbox #${i + 1}`);
@@ -186,8 +193,8 @@ const STEPS = {
       await d.go("today");
       await visit(todayRows.nth(i), `Today #${i + 1}`);
     }
-    if (!counts.summaries) throw new Error("no summary was written");
-    d.log(`  ${counts.summaries} summaries, ${counts.replies} prepared replies`);
+    d.log(`  ${counts.summaries} summaries, ${counts.replies} prepared replies this launch`);
+    return missing;
   },
 
   /**
@@ -255,29 +262,30 @@ const STEPS = {
       const turns = document.querySelectorAll("[data-testid=ask-turn]");
       return turns.length >= n && ["answered", "partial", "not_found", "stopped", "failed"].includes(turns[turns.length - 1].getAttribute("data-status") ?? "");
     }, min, { timeout: MODEL_MS });
-    let answered = 0;
+    const missing = [];
     for (const { q, followUp } of ASK_QUESTIONS) {
       // asked on an earlier launch whose step didn't finish: in the history already
-      if (progress.has(q)) { answered++; continue; }
+      if (progress.has(q)) continue;
       await d.go("inbox");
       await open();
       await page.getByTestId("palette-input").fill(q);
       await page.getByTestId("ask-submit").waitFor();
       await page.keyboard.press("Enter");
       await finished(1);
-      let status = await page.locator("[data-testid=ask-turn]").last().getAttribute("data-status");
-      if (followUp) {
+      const statuses = [await page.locator("[data-testid=ask-turn]").last().getAttribute("data-status")];
+      if (followUp && askFinished(statuses)) {
         await page.getByTestId("ask-follow-up").fill(followUp);
         await page.getByTestId("ask-follow-up").press("Enter");
         await finished(2);
-        status += ` + ${await page.locator("[data-testid=ask-turn]").last().getAttribute("data-status")}`;
+        statuses.push(await page.locator("[data-testid=ask-turn]").last().getAttribute("data-status"));
       }
-      progress.add(q);
-      if (/answered|partial/.test(status ?? "")) answered++;
-      d.log(`  "${q}": ${status}`);
+      // only a question whose turns all finished counts: a failed one is asked again next launch
+      if (askFinished(statuses) && statuses.length === (followUp ? 2 : 1)) progress.add(q);
+      else missing.push(q);
+      d.log(`  "${q}": ${statuses.join(" + ")}`);
       await d.escapeAll();
     }
-    if (!answered) throw new Error("no question was answered");
+    return missing;
   },
 
   /** Filters → Create with AI → saved, for future mail only: the Inbox stays as it is. */
@@ -286,14 +294,25 @@ const STEPS = {
     if (progress.has(RULE_REQUEST)) return d.log("  saved on an earlier launch");
     await d.go("inbox");
     await page.getByTestId("open-filters").click();
+    // the list says "AI · applied N times" under a rule made with AI
+    const aiRule = () => page.getByTestId("filter-item").filter({ hasText: /uber/i }).filter({ hasText: /AI ·/ }).first();
+    // saved on a launch that stopped before recording it: kept, not made twice
+    if (await shows(aiRule(), 3000)) {
+      progress.add(RULE_REQUEST);
+      d.log(`  already saved: ${(await aiRule().innerText()).split("\n")[0]}`);
+      return d.escapeAll();
+    }
     await page.getByTestId("ai-prompt").fill(RULE_REQUEST);
     await page.getByTestId("ai-generate").click();
     await page.getByTestId("ai-explanation").first().waitFor({ timeout: MODEL_MS });
     await page.locator("[data-testid=filter-preview][data-ready]").first().waitFor({ timeout: MODEL_MS }).catch(() => {});
+    const name = (await page.getByTestId("filter-name").first().inputValue().catch(() => "")).trim();
     await page.getByTestId("filter-save").click();
+    // saved is the rule in the list, marked AI, and nothing left unsaved: only then is it recorded
+    await aiRule().waitFor({ timeout: 15_000 });
+    await page.getByTestId("filter-unsaved").waitFor({ state: "detached", timeout: 15_000 });
     progress.add(RULE_REQUEST);
-    await page.getByTestId("filter-unsaved").waitFor({ state: "detached", timeout: 10_000 }).catch(() => {});
-    d.log(`  "${RULE_REQUEST}" → ${(await page.getByTestId("filter-name").first().inputValue().catch(() => "")) || "a rule"}`);
+    d.log(`  "${RULE_REQUEST}" → ${name || "a rule"}`);
     await d.escapeAll();
   },
 
@@ -315,14 +334,17 @@ const STEPS = {
  */
 export async function prepare({ electronBin, main, env, profile, steps, onPid = () => {}, log = console.log }) {
   const marker = loadMarker(profile);
-  if (steps.length === DEMO_AI_STEPS.length) Object.assign(marker, { done: {}, progress: {} });
+  if (steps.length === DEMO_AI_STEPS.length) Object.assign(marker, { done: {}, progress: {}, attempts: {} });
   marker.failed = {};
   marker.progress ??= {};
+  marker.attempts ??= {};
   // the marker first: the profile is this demo's from its first moment, even if this launch stops early
   mkdirSync(profile, { recursive: true });
   writeMarker(profile, marker);
   const startsAt = demoAiClock(marker);
   const launched = Date.now();
+  // the demo's clock goes into every checkpoint: a launch stopped by Ctrl-C never leaves the next one behind it
+  const save = () => { marker.clock = startsAt + (Date.now() - launched) + 60_000; writeMarker(profile, marker); };
   const app = await electron.launch({ executablePath: electronBin, args: [main], env: env(startsAt) });
   const pid = app.process().pid;
   onPid(pid);
@@ -342,9 +364,13 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
       const started = Date.now();
       const items = new Set(marker.progress[step] ?? []);
       // each item is on disk as soon as it's made: a step run again never makes it twice
-      const progress = { has: (k) => items.has(k), add: (k) => { items.add(k); marker.progress[step] = [...items]; writeMarker(profile, marker); } };
+      const progress = { has: (k) => items.has(k), add: (k) => { items.add(k); marker.progress[step] = [...items]; save(); } };
+      const attempt = (marker.attempts[step] = (marker.attempts[step] ?? 0) + 1);
       try {
-        await STEPS[step](d, progress);
+        const missing = (await STEPS[step](d, progress)) ?? [];
+        const verdict = partialVerdict(missing, attempt);
+        if (verdict === "again") throw new Error(`${missing.length} not finished: ${missing.join("; ")}`);
+        if (verdict === "keep") log(`[demo-ai] ${step}: ${missing.join("; ")} still not finished after ${attempt} launches; keeping what's there`);
         marker.done[step] = now();
         log(`[demo-ai] ${step} done in ${Math.round((Date.now() - started) / 1000)} s`);
       } catch (error) {
@@ -355,15 +381,14 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
         await page.screenshot({ path: join(profile, `demo-ai-${step}-failed.png`) }).catch(() => {});
         await d.escapeAll().catch(() => {});
       }
-      writeMarker(profile, marker);
+      save();
     }
   } finally {
     // a clean quit, so what was written is on disk before the window you use opens the same profile
     await Promise.race([app.close().catch(() => {}), new Promise((r) => setTimeout(r, 20_000))]);
     try { process.kill(pid, 0); process.kill(pid, "SIGKILL"); } catch { /* gone */ }
     // later launches start just after this one ended, so nothing it made is ahead of their clock
-    marker.clock = startsAt + (Date.now() - launched) + 60_000;
-    writeMarker(profile, marker);
+    save();
   }
   return failed;
 }

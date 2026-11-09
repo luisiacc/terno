@@ -11,8 +11,8 @@ pnpm dev:demo-ai --fresh   # the profile goes to the Trash and is prepared again
 
 - **Keys.** It needs `ANTHROPIC_API_KEY` and `OPENAI_API_KEY`; `JEV_API_KEY` is optional (smart categories are off in the demo). It reads only these three names: from your shell first, then this checkout's `.env`, then the main checkout's `.env` (so a worktree works without its own). The terminal names which file each came from, never a value. If one is missing, it stops before building and says where it looked.
 - **The first launch** prepares the profile behind your windows before the window opens, about 2 to 4 minutes. Each step prints a `[demo-ai]` line. Leave it alone while it runs; Ctrl-C stops it, and the next launch picks up where it stopped.
-- **Later launches** open at once on what was prepared. Nothing is prepared again unless a step didn't finish (the terminal says which, and a screenshot of it, `demo-ai-<step>-failed.png`, is in the profile).
-- **Profile:** `~/Library/Application Support/Terno-dev-demo-ai`. `TERNO_USER_DATA` moves it, but never onto a folder holding another mailbox or a real Terno profile: the command refuses those.
+- **Later launches** open at once on what was prepared. Nothing is prepared again unless a step didn't finish: the terminal says which, a screenshot of it (`demo-ai-<step>-failed.png`) is in the profile, and the next launch tries only what's missing (a conversation without its summary, a question that failed). After three launches it keeps what's there and stops trying.
+- **Profile:** `~/Library/Application Support/Terno-dev-demo-ai`. `TERNO_USER_DATA` moves it, but only to a new or empty folder (or one it prepared before): it refuses a real Terno profile and any folder that holds something else, before opening anything in it.
 
 ### What the first launch costs
 
@@ -62,7 +62,7 @@ Every surface below is filled when the window opens. Lumen is the style; any oth
 ## Resetting
 
 - `pnpm dev:demo-ai --fresh` puts the profile in the Trash and prepares it again (it costs the same as the first launch). It refuses while a Terno window has the profile open.
-- To keep the mailbox but run the AI steps again, delete `demo-ai.json` in the profile folder.
+- Don't delete `demo-ai.json` by hand: it is how the command knows the folder is the AI demo's, and without it the command refuses the folder. Use `--fresh`.
 - The rest of your setup is untouched: your real profile and `pnpm dev:desktop:demo`'s profile are separate folders, and none of their settings or keys change.
 
 ## What it never does

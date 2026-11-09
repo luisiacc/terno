@@ -93,10 +93,13 @@ export function missingKeysMessage(missing: readonly string[], files: readonly s
 export function demoAiEnv(o: { base: Record<string, string | undefined>; profile: string; keys: Record<string, string>; devUrl: string; background: boolean; now?: number }): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(o.base)) if (v !== undefined) env[k] = v;
-  for (const k of ["ELECTRON_RUN_AS_NODE", "TERNO_TEST_BACKGROUND", "TERNO_TEST_DEV_AI", "TERNO_TEST_NET_LOG", "TERNO_TEST_NOW", ...DEMO_AI_KEYS]) delete env[k];
+  for (const k of ["ELECTRON_RUN_AS_NODE", "TERNO_TEST_BACKGROUND", "TERNO_TEST_LANGUAGES", "TERNO_TEST_DEV_AI", "TERNO_TEST_NET_LOG", "TERNO_TEST_NOW", ...DEMO_AI_KEYS]) delete env[k];
   Object.assign(env, o.keys, { TERNO_DEMO: "1", TERNO_USER_DATA: o.profile, TERNO_DEV_URL: o.devUrl, TERNO_TEST_NOW: String(o.now ?? DEMO_AI_NOW), TZ: "UTC" });
   // the preparation always; your window only if your shell asked (a scripted check that mustn't take focus)
   if (o.background || o.base.TERNO_TEST_BACKGROUND === "1") env.TERNO_TEST_BACKGROUND = "1";
+  // the preparation reads the app's words to know a step is done: in English whatever the Mac's language (only the
+  // system languages it sees are pinned, the language setting stays as it is)
+  if (o.background) env.TERNO_TEST_LANGUAGES = "en-US";
   return env;
 }
 
@@ -108,6 +111,8 @@ export interface DemoAiMarker {
   failed?: Partial<Record<DemoAiStep, string>>;
   /** what a step already made, one item at a time (Ask's questions, the rule): a step run again doesn't make it twice */
   progress?: Partial<Record<DemoAiStep, string[]>>;
+  /** how many launches tried each step (MAX_ATTEMPTS) */
+  attempts?: Partial<Record<DemoAiStep, number>>;
   /**
    * The demo's clock when the preparation ended (epoch ms). Later launches start there, not back at 16:00: what it made
    * (the follow-up switch's time, an answer) is never ahead of the clock.
@@ -122,15 +127,39 @@ export function demoAiClock(marker: DemoAiMarker | null): number {
 }
 
 /**
- * Plan 167: TERNO_USER_DATA may move the profile, but never onto a mailbox that isn't this demo's: the preparation turns
- * cloud AI on and --fresh puts the folder in the Trash. A folder that exists with a database and no marker of ours is
- * refused, and so is any real profile's folder (named Terno without -dev).
+ * Plan 167: TERNO_USER_DATA may move the profile, but never onto anything that isn't this demo's: the preparation turns
+ * cloud AI on and --fresh puts the folder in the Trash. Checked before anything opens or renames a file in it. A real
+ * profile's folder (Terno, Unica, without -dev) is refused, and so is any folder with something in it but no marker of
+ * ours (another dev profile, Application Support itself); a folder that doesn't exist yet or is empty is fine.
+ * `entries`: the folder's names, or null when there's no folder.
  */
-export function demoAiProfileProblem(o: { path: string; hasDb: boolean; hasMarker: boolean }): string | null {
+export function demoAiProfileProblem(o: { path: string; entries: readonly string[] | null }): string | null {
   const name = o.path.replace(/\/+$/, "").split("/").pop() ?? "";
-  if (/^(Terno|Unica|Única)( .*)?$/i.test(name) || /^(Terno|Unica)-(?!dev)/i.test(name)) return `${o.path} looks like a real Terno profile: dev:demo-ai uses its own (unset TERNO_USER_DATA)`;
-  if (o.hasDb && !o.hasMarker) return `${o.path} holds a mailbox that isn't the AI demo's: dev:demo-ai won't turn AI on or clear it (unset TERNO_USER_DATA, or point it at a new folder)`;
+  if (/^(Terno|Unica|Única)( .*)?$/i.test(name) || /^(Terno|Unica|Única)-(?!dev)/i.test(name)) return `${o.path} looks like a real Terno profile: dev:demo-ai uses its own (unset TERNO_USER_DATA)`;
+  const entries = (o.entries ?? []).filter((e) => e !== ".DS_Store");
+  if (entries.length && !entries.includes(MARKER_FILE)) return `${o.path} holds something that isn't the AI demo's: dev:demo-ai won't turn AI on in it or clear it (unset TERNO_USER_DATA, or point it at a new folder)`;
   return null;
+}
+
+/** A step that still has something missing runs again on the next launch, up to this many tries; then what's there stays. */
+export const MAX_ATTEMPTS = 3;
+
+/** Ask: a question counts once every turn finished with an answer of some kind (not_found is the model's answer too). */
+export function askFinished(statuses: readonly (string | null)[]): boolean {
+  return statuses.length > 0 && statuses.every((s) => s === "answered" || s === "partial" || s === "not_found");
+}
+
+/**
+ * A conversation is done when its summary is ready (or it offers none) and its reply is ready or the model decided it
+ * needs none ("none": the card never showed). An error or a timeout leaves it for the next launch.
+ */
+export function conversationDone(o: { summary: "ready" | "none" | "error" | "timeout"; reply: "ready" | "none" | "unfinished" }): boolean {
+  return (o.summary === "ready" || o.summary === "none") && o.reply !== "unfinished";
+}
+
+/** What a step that left things missing does: fail (and run again next launch), or, on its last try, keep what's there. */
+export function partialVerdict(missing: readonly string[], attempt: number): "done" | "again" | "keep" {
+  return missing.length === 0 ? "done" : attempt >= MAX_ATTEMPTS ? "keep" : "again";
 }
 
 /** The marker's text, or null when it's missing, unreadable or from another version: all of those start over. */

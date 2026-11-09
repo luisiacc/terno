@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEMO_AI_NOW, DEMO_AI_STEPS, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, devKeysIn, keyFiles, MARKER_VERSION, missingKeysMessage, readMarker, resolveKeys, stepsToRun } from "./demo-ai";
+import { askFinished, conversationDone, DEMO_AI_NOW, DEMO_AI_STEPS, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, MAX_ATTEMPTS, partialVerdict, devKeysIn, keyFiles, MARKER_VERSION, missingKeysMessage, readMarker, resolveKeys, stepsToRun } from "./demo-ai";
 
 describe("plan 167: pnpm dev:demo-ai", () => {
   it("takes --fresh (and dev.mjs's --cleandb), and refuses anything else so a typo isn't a silent no-op", () => {
@@ -43,7 +43,11 @@ describe("plan 167: pnpm dev:demo-ai", () => {
     const window = demoAiEnv({ base, profile: "/p", keys: { ANTHROPIC_API_KEY: "a", OPENAI_API_KEY: "o" }, devUrl: "http://localhost:5199/", background: false });
     expect(window).toEqual({ PATH: "/bin", ANTHROPIC_API_KEY: "a", OPENAI_API_KEY: "o", TERNO_DEMO: "1", TERNO_USER_DATA: "/p", TERNO_DEV_URL: "http://localhost:5199/", TERNO_TEST_NOW: String(DEMO_AI_NOW), TZ: "UTC" });
     expect(new Date(DEMO_AI_NOW).toISOString()).toBe("2026-10-22T16:00:00.000Z");
-    expect(demoAiEnv({ base, profile: "/p", keys: {}, devUrl: "http://x/", background: true }).TERNO_TEST_BACKGROUND).toBe("1");
+    const preparing = demoAiEnv({ base: { ...base, TERNO_TEST_LANGUAGES: "es-MX" }, profile: "/p", keys: {}, devUrl: "http://x/", background: true });
+    expect(preparing.TERNO_TEST_BACKGROUND).toBe("1");
+    // the preparation reads the app's English words whatever the Mac's language; your window keeps the Mac's
+    expect(preparing.TERNO_TEST_LANGUAGES).toBe("en-US");
+    expect(demoAiEnv({ base: { TERNO_TEST_LANGUAGES: "es-MX" }, profile: "/p", keys: {}, devUrl: "http://x/", background: false }).TERNO_TEST_LANGUAGES).toBeUndefined();
     // a scripted check that mustn't take focus asks for it from the shell
     expect(demoAiEnv({ base: { TERNO_TEST_BACKGROUND: "1" }, profile: "/p", keys: {}, devUrl: "http://x/", background: false }).TERNO_TEST_BACKGROUND).toBe("1");
     // after the preparation the clock starts where it ended
@@ -74,11 +78,43 @@ describe("plan 167: pnpm dev:demo-ai", () => {
     expect(demoAiClock({ version: MARKER_VERSION, done: {}, clock: 5 })).toBe(DEMO_AI_NOW);
   });
 
-  it("TERNO_USER_DATA never lands it on a mailbox that isn't this demo's, nor on a real profile", () => {
-    expect(demoAiProfileProblem({ path: "/Users/x/Library/Application Support/Terno-dev-demo-ai", hasDb: false, hasMarker: false })).toBeNull();
-    expect(demoAiProfileProblem({ path: "/tmp/demo/profile", hasDb: true, hasMarker: true })).toBeNull();
-    expect(demoAiProfileProblem({ path: "/Users/x/Library/Application Support/Terno-dev-demo", hasDb: true, hasMarker: false })).toMatch(/isn't the AI demo's/);
-    expect(demoAiProfileProblem({ path: "/Users/x/Library/Application Support/Terno", hasDb: false, hasMarker: false })).toMatch(/real Terno profile/);
-    expect(demoAiProfileProblem({ path: "/Users/x/Library/Application Support/Terno-beta/", hasDb: false, hasMarker: true })).toMatch(/real Terno profile/);
+  it("TERNO_USER_DATA never lands it on anything that isn't this demo's, nor on a real profile", () => {
+    const ok = (path: string, entries: string[] | null) => demoAiProfileProblem({ path, entries });
+    expect(ok("/Users/x/Library/Application Support/Terno-dev-demo-ai", null)).toBeNull();
+    expect(ok("/tmp/new", [".DS_Store"])).toBeNull();
+    expect(ok("/tmp/demo/profile", ["terno.db", "demo-ai.json"])).toBeNull();
+    // another dev profile, a legacy database, Application Support itself: something there, no marker of ours
+    expect(ok("/Users/x/Library/Application Support/Terno-dev-demo", ["terno.db"])).toMatch(/isn't the AI demo's/);
+    expect(ok("/tmp/old", ["unica.db"])).toMatch(/isn't the AI demo's/);
+    expect(ok("/Users/x/Library/Application Support", ["Terno", "Terno-dev-demo"])).toMatch(/isn't the AI demo's/);
+    expect(ok("/Users/x/Library/Application Support/Terno", null)).toMatch(/real Terno profile/);
+    expect(ok("/Users/x/Library/Application Support/Unica/", null)).toMatch(/real Terno profile/);
+    expect(ok("/Users/x/Library/Application Support/Terno-beta/", ["demo-ai.json"])).toMatch(/real Terno profile/);
+  });
+
+  it("a question counts only once every turn finished with an answer of some kind", () => {
+    expect(askFinished(["answered"])).toBe(true);
+    expect(askFinished(["partial", "not_found"])).toBe(true);
+    expect(askFinished(["answered", "failed"])).toBe(false);
+    expect(askFinished(["stopped"])).toBe(false);
+    expect(askFinished([null])).toBe(false);
+    expect(askFinished([])).toBe(false);
+  });
+
+  it("a conversation is done with its summary and its reply settled; an error or an unfinished reply waits for the next launch", () => {
+    expect(conversationDone({ summary: "ready", reply: "ready" })).toBe(true);
+    // the model decided no reply was needed: done
+    expect(conversationDone({ summary: "ready", reply: "none" })).toBe(true);
+    expect(conversationDone({ summary: "none", reply: "ready" })).toBe(true);
+    expect(conversationDone({ summary: "error", reply: "ready" })).toBe(false);
+    expect(conversationDone({ summary: "timeout", reply: "none" })).toBe(false);
+    expect(conversationDone({ summary: "ready", reply: "unfinished" })).toBe(false);
+  });
+
+  it("a step with something missing runs again, and after MAX_ATTEMPTS keeps what's there", () => {
+    expect(partialVerdict([], 1)).toBe("done");
+    expect(partialVerdict(["a"], 1)).toBe("again");
+    expect(partialVerdict(["a"], MAX_ATTEMPTS - 1)).toBe("again");
+    expect(partialVerdict(["a"], MAX_ATTEMPTS)).toBe("keep");
   });
 });

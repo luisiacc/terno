@@ -96,3 +96,17 @@ Two runs on temp profiles (`/tmp/terno-scratch/p164/demo-ai/run1`, `run2`), scre
 
 - run 1: 98 s, 65 requests, US$0.14. Its Reply ready check gave up too early (Playwright's `isVisible` doesn't wait: fixed, `shows()`), the writing style likewise, and one Ask question wasn't in the mail.
 - run 2: 216 s, 82 requests, US$0.12: 7 summaries, 4 prepared replies (the top conversation among them), 7 follow-ups, 4 Ask conversations, the rule, the writing style learned. The relaunch opened with no preparation, the clock at 16:04, the top conversation's summary and reply there within a second.
+
+## What the Codex code review changed
+
+1. **`--fresh` could trash a folder that merely had no `terno.db`** (`TERNO_USER_DATA` at Application Support itself). The guard now takes the folder's entries: only a missing or empty folder, or one holding `demo-ai.json`, is accepted (`demoAiProfileProblem`, tested with Application Support, another dev profile and a legacy database).
+2. **The guard ran after `devProfile()`'s legacy migration,** which can open and rename a real Unica profile's files. dev.mjs resolves the path and checks it first; only then does `devProfile()` run.
+3. **A failed Ask question was checkpointed** and counted as answered. A question is recorded only when every turn finished with an answer of some kind (`askFinished`); the others are asked again next launch.
+4. **One summary was enough to mark the conversations step done.** Each conversation is recorded once its summary is ready (or it offers none) and its reply is ready or the model decided none was needed (`conversationDone`); the rest are retried, up to three launches (`MAX_ATTEMPTS`, `partialVerdict`), then what's there is kept.
+5. **The digest's Try again was unreachable** (its failure shows inside the digest page). The step opens the digest page and watches its own states (`digest-preparing`, `digest-item`, `digest-failed`), with no words read.
+6. **A Spanish Mac would never see "newsletters".** Besides (5), the preparation launch pins the system languages to English (`TERNO_TEST_LANGUAGES`, the smokes' hook); the language setting and your window are untouched.
+7. **The rule was recorded before it was saved.** It's recorded once the list shows it as made with AI and nothing is left unsaved. A rule saved by a launch that stopped before recording it is found in the list and kept, never made twice (verified: run 3's rule check failed on a text match, the next launch adopted the saved rule, one AI rule in the database).
+8. **Ctrl-C skipped the clock checkpoint.** The demo's clock is written with every checkpoint, not only at the end.
+9. **The doc told you to delete `demo-ai.json` to prepare again,** which the guard then refuses. The doc says to use `--fresh`, and why the marker stays.
+
+Run 3 after the fixes: 260 s, 82 requests, US$0.14; 9 summaries, 4 replies (the top conversation's among them), 8 follow-ups, 4 questions answered.
