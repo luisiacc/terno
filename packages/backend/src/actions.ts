@@ -25,7 +25,7 @@ import { L } from "@terno/i18n";
 import type { ActionThreadFacts } from "@terno/store";
 import type { BackendCore as Backend } from "./core";
 import { SCOPE_CAP, progressReporter } from "./scope";
-import { acknowledgeActionCheck, readSettings } from "./settings";
+import { readSettings } from "./settings";
 import { destinationOf } from "./voice-learner";
 
 /**
@@ -291,8 +291,7 @@ export class ActionsService {
     try {
       const settings = await readSettings(store);
       if (!settings.ask.enabled) throw new AiError(L("errors.ai.askOff"), "not_configured");
-      const { ai, planner, destination } = await this.b.ask.target();
-      if (!ai.local && !settings.ask.acknowledged.includes(destination)) return { status: "consent", provider: ai.providerId, endpoint: ai.endpoint, destination };
+      const { planner } = await this.b.ask.target();
       const now = this.b.now();
       const categories = await store.categories.list();
       const accounts = await store.accounts.list();
@@ -463,12 +462,11 @@ export class ActionsService {
     return this.info(p);
   }
 
-  /** Where senders and subjects may go: agreed for this destination, and checked again before each dispatch (revision 7). */
-  private async stillAgreed(destination: string, signal: AbortSignal): Promise<AiTasks> {
+  /** Where senders and subjects go: the check's first destination, checked again before each dispatch (revision 7), so a provider changed meanwhile gets nothing. */
+  private async stillThere(destination: string, signal: AbortSignal): Promise<AiTasks> {
     if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
     const { ai, planner } = await this.b.ask.target();
     if (destinationOf(ai) !== destination) throw new AiError(L("errors.ai.cancelled"), "cancelled");
-    if (!ai.local && !((await readSettings(this.b.store)).ask.checkAcknowledged ?? []).includes(destination)) throw new AiError(L("errors.ai.cancelled"), "cancelled");
     return planner;
   }
 
@@ -519,18 +517,14 @@ export class ActionsService {
     const { signal: asked, release } = this.b.aiService.begin(params.requestId, clientId);
     const signal = AbortSignal.any([asked, p.controller.signal]);
     try {
-      const { ai, destination } = await this.b.ask.target();
-      if (!ai.local && !((await readSettings(this.b.store)).ask.checkAcknowledged ?? []).includes(destination)) {
-        if (params.acknowledge !== destination) return { status: "consent", provider: ai.providerId, endpoint: ai.endpoint, destination };
-        await acknowledgeActionCheck(this.b.store, destination);
-      }
+      const { destination } = await this.b.ask.target();
       await this.buildGroups(p);
       const budget = { left: CHECK_PROVIDER_REQUESTS };
       const groups = p.groups!;
       let sent = 0;
       try {
         for (let r = 0; r < CHECK_REQUESTS && p.nextGroup < groups.length && !p.dead; r++) {
-          const planner = await this.stillAgreed(destination, signal);
+          const planner = await this.stillThere(destination, signal);
           const fit = checkBudget(planner.contextTokens);
           if (fit.groups === 0) break;
           const batch = groups.slice(p.nextGroup, p.nextGroup + fit.groups);

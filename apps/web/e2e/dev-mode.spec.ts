@@ -15,6 +15,8 @@ test("names its variables, and Pro AI turns the AI features on and gives the sav
   await expect(page.getByTestId("dev-env-openai")).toContainText("Missing");
   await expect(page.getByTestId("dev-env-jev")).toContainText("JEV_API_KEY");
   await expect(page.getByTestId("dev-ai-on")).toHaveCount(0);
+  // plan 131: no per-use consent, so where Pro AI sends mail is said here, before it's turned on
+  await expect(page.getByTestId("dev-ai-privacy")).toHaveText("Privacy. With Pro AI on, Claude (Anthropic) and JEV receive a conversation’s text when you use an AI feature on it, and mail as it comes in or goes out for the background features you turn on in Settings → AI.");
 
   await page.getByTestId("tab-ai").click();
   await expect(page.getByTestId("ai-provider")).toBeVisible();
@@ -26,6 +28,7 @@ test("names its variables, and Pro AI turns the AI features on and gives the sav
   // what would write settings the overlay hides says so; the features below stay
   await page.getByTestId("tab-ai").click();
   await expect(page.getByTestId("ai-dev-note")).toBeVisible();
+  await expect(page.getByTestId("ai-privacy")).toContainText("Claude (Anthropic) and JEV receive a conversation’s text");
   await expect(page.getByTestId("ai-provider")).toHaveCount(0);
   await expect(page.getByTestId("ai-summaries-add-key")).toHaveCount(0);
   await page.getByTestId("tab-categories").click();

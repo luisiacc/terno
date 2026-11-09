@@ -4,7 +4,7 @@ import { setLocale, t } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { aiReady, askOffered, choiceLabel, draftingOffered, errorHelp, followupsOffered, OUTPUT_LABEL, presetLabel, privacyLine, providerName, repliesOffered, summariesOffered, todayOffered } from "./ai";
+import { aiReady, askOffered, choiceLabel, disclosureLine, draftingOffered, errorHelp, mailDestinations, followupsOffered, OUTPUT_LABEL, presetLabel, privacyLine, providerName, repliesOffered, summariesOffered, todayOffered } from "./ai";
 
 const ai = (over: Partial<AiSettings>) => ({ provider: "none", preset: null, baseURL: null, local: false, ...over }) as AiSettings;
 
@@ -98,6 +98,25 @@ describe("AI labels and help", () => {
     expect(privacyLine(ai({ provider: "anthropic" }))).toMatch(/^Sent to api\.anthropic\.com: .* Never the content of your messages\.$/);
     setLocale("es", es);
     expect(privacyLine(ai({ provider: "ollama", local: true }))).toBe("Nada sale de este Mac.");
+  });
+
+  it("plan 131: Settings → AI names every cloud provider mail may go to, by the backend's rules, and what goes", () => {
+    const full = (over: Partial<AiSettings>) => ai({ tasks: {}, keys: {}, ...over });
+    expect(mailDestinations(full({ provider: "none" }))).toEqual([]);
+    expect(mailDestinations(full({ provider: "ollama", local: true }))).toEqual([]);
+    expect(mailDestinations(full({ provider: "anthropic" }))).toEqual(["Claude (Anthropic)"]);
+    // summaries go to OpenAI by default once it has a key, whatever the main provider is (AiService.targetFor)
+    expect(mailDestinations(full({ provider: "ollama", local: true, keys: { openai: { hasKey: true, keyHint: null } } }))).toEqual(["OpenAI"]);
+    // a task's own choice counts; one on this Mac doesn't; a chosen summary row means OpenAI's key alone sends nothing
+    expect(mailDestinations(full({ provider: "anthropic", tasks: { ask: { provider: "openai", model: "m" }, writing: { provider: "ollama", model: "m" } } }))).toEqual(["Claude (Anthropic)", "OpenAI"]);
+    expect(mailDestinations(full({ provider: "anthropic", tasks: { summary: { provider: "anthropic", model: "m" } }, keys: { openai: { hasKey: true, keyHint: null } } }))).toEqual(["Claude (Anthropic)"]);
+    expect(mailDestinations(full({ provider: "anthropic", keys: { jev: { hasKey: true, keyHint: null } } }))).toEqual(["Claude (Anthropic)", "JEV"]);
+    expect(disclosureLine(full({ provider: "none" }))).toBe("AI is off.");
+    expect(disclosureLine(full({ provider: "ollama", local: true }))).toBe("Nothing leaves this Mac.");
+    expect(disclosureLine(full({ provider: "openai" }))).toBe("OpenAI receives a conversation’s text when you use an AI feature on it, and mail as it comes in or goes out for the background features you turn on below.");
+    expect(disclosureLine(full({ provider: "anthropic", keys: { openai: { hasKey: true, keyHint: null } } }))).toMatch(/^Claude \(Anthropic\) and OpenAI receive a conversation’s text/);
+    setLocale("es", es);
+    expect(disclosureLine(full({ provider: "anthropic", keys: { openai: { hasKey: true, keyHint: null } } }))).toMatch(/^Claude \(Anthropic\) y OpenAI reciben el texto de una conversación/);
   });
 
   it("helps by the kind of failure, naming a local provider", () => {

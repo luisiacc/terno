@@ -4,7 +4,8 @@ import { t } from "@terno/i18n";
 import { Switch } from "@terno/ui/components/switch";
 import { CircleAlert, CircleCheck } from "@terno/ui/icons";
 import { useApp } from "~/state/app";
-import { SettingsGroup, SettingsNote, SettingsRow, type SettingsUpdate } from "./parts";
+import { providerLabel, namesList } from "~/lib/ai";
+import { PrivacyNote, SettingsGroup, SettingsNote, SettingsRow, type SettingsUpdate } from "./parts";
 
 const RUNS: Record<DevAiProvider, () => string> = {
   anthropic: () => t("settings.dev.env.anthropic"),
@@ -16,9 +17,11 @@ const RUNS: Record<DevAiProvider, () => string> = {
 export function DevTab({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const set = useApp((s) => s.devAi);
   if (!set) return null;
+  // plan 131: where Pro AI sends mail, said before it's turned on: the providers whose keys are set
+  const names = DEV_AI_PROVIDERS.filter((p) => set[p]).map((p) => providerLabel(p));
   return (
     <div data-testid="dev-tab">
-      <SettingsGroup>
+      <SettingsGroup footer={names.length > 0 && <PrivacyNote testId="dev-ai-privacy" title={t("ai.privacy")}>{t("settings.dev.proAi.disclosure", { count: names.length, providers: namesList(names) })}</PrivacyNote>}>
         <SettingsRow label={t("settings.dev.proAi")} hint={t("settings.dev.proAi.hint")}>
           {(a) => <Switch {...a} data-testid="dev-ai-switch" checked={settings.devAi} disabled={!settings.devAi && !DEV_AI_PROVIDERS.some((p) => set[p])} onCheckedChange={(on) => void update({ devAi: on })} />}
         </SettingsRow>

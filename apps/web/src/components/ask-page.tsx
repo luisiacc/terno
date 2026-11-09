@@ -8,12 +8,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { ChevronLeft, Clock, ExternalLink, Mail, Plus, RefreshCw, Search, Sparkles, Undo2 } from "@terno/ui/icons";
 import { useCommandState } from "cmdk";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import { askReady, errorHelp, providerLabel } from "~/lib/ai";
+import { askReady, errorHelp } from "~/lib/ai";
 import { closePeek, showSource, usePeek, type Peek } from "~/lib/ask-peek";
 import { Marked } from "~/components/match-mark";
 import { citationRuns } from "~/lib/ask-citations";
 import { cn } from "@terno/ui/lib/utils";
-import { askConfigChanged, askQuestion, atTurnLimit, declineConsent, deleteConversation, loadAskHistory, newQuestion, openConversation, openSource, restoreConversation, returning, searchOlder, stopAsking, useAsk } from "~/lib/ask";
+import { askConfigChanged, askQuestion, atTurnLimit, deleteConversation, loadAskHistory, newQuestion, openConversation, openSource, restoreConversation, returning, searchOlder, stopAsking, useAsk } from "~/lib/ask";
 import { listDate } from "~/lib/format";
 import { askFrom, paletteKeys, setPalettePage } from "~/lib/palette-open";
 import { chordLabel } from "@terno/ui/components/shortcut";
@@ -251,25 +251,6 @@ function Running() {
         </p>
       )}
       <Button variant="link-secondary" size="xs" data-testid="ask-stop" onKeyDown={stopKeys} onClick={() => stopAsking()}>{t("ask.stop")}</Button>
-    </section>
-  );
-}
-
-/** Once a destination: where this goes, before anything leaves. */
-function Consent() {
-  const consent = useAsk((s) => s.consent);
-  const ai = useApp((s) => s.settings?.ai);
-  if (!consent) return null;
-  const label = providerLabel(consent.provider as Parameters<typeof providerLabel>[0], ai ?? undefined);
-  // `compatible` covers many servers: this one, by name
-  const origin = consent.provider === "compatible" && consent.endpoint && URL.canParse(consent.endpoint) ? new URL(consent.endpoint).host : null;
-  return (
-    <section className="space-y-2" data-testid="ask-consent">
-      <p className="text-sm">{t("ask.consent", { provider: origin ? `${label} (${origin})` : label })}</p>
-      <div className="flex gap-2">
-        <Button size="sm" data-testid="ask-consent-continue" onKeyDown={stopKeys} onClick={() => askQuestion(consent.question, { acknowledge: consent.destination })}>{t("common.continue")}</Button>
-        <Button size="sm" variant="secondary" data-testid="ask-consent-settings" onKeyDown={stopKeys} onClick={() => { declineConsent(); setApp({ dialog: "settings", settingsTab: "ai" }); }}>{t("common.settings")}</Button>
-      </div>
     </section>
   );
 }
@@ -541,7 +522,6 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
               turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={turn.question === (i === 0 ? title : turns[i - 1]!.question)} />
             ))}
             <Running />
-            <Consent />
             <Failure />
             <CommandNotice />
             <Older />
@@ -567,10 +547,9 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
 /** No question yet: the palette's own input, and Enter on a row. */
 function Empty({ value, setValue, onBack, onClose }: { value: string; setValue: (v: string) => void; onBack: () => void; onClose: () => void }) {
   const running = useAsk((s) => s.running);
-  const consent = useAsk((s) => s.consent);
   const error = useAsk((s) => s.error);
   const query = value.trim();
-  const busy = running !== null || consent !== null || error !== null;
+  const busy = running !== null || error !== null;
   return (
     <>
       <CommandInput
@@ -584,7 +563,6 @@ function Empty({ value, setValue, onBack, onClose }: { value: string; setValue: 
       {busy && (
         <div className="space-y-3 px-[18px] py-3" data-testid="ask-area">
           <Running />
-          <Consent />
           <Failure />
         </div>
       )}

@@ -43,8 +43,8 @@ const { snack } = await import("~/lib/snack");
 const SERVER: AppSettings = {
   devAi: false,
   localMode: true,
-  summaries: { enabled: false, enabledAt: null, acknowledged: [] },
-      ask: { enabled: true, acknowledged: [] },
+  summaries: { enabled: false, enabledAt: null },
+      ask: { enabled: true },
       replies: { enabled: false },
       today: { show: true, prepareAt: "08:00", notify: false, digest: false },
   followups: { enabled: false, enabledAt: null, nudgeAfterDays: 5, scanAnswered: false },

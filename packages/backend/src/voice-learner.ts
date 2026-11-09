@@ -1,4 +1,4 @@
-import { AiError, costOf, JUDGE_PROMPT_VERSION, type AiTasks } from "@terno/ai";
+import { AiError, JUDGE_PROMPT_VERSION, type AiTasks } from "@terno/ai";
 import { L } from "@terno/i18n";
 import { captureError } from "@terno/core/diag";
 import {
@@ -20,7 +20,6 @@ import {
   withoutTrailers,
   writtenText,
   type Account,
-  type AiProviderId,
   type AiStudyProgress,
   type CorpusContext,
   type Habits,
@@ -100,9 +99,10 @@ export interface LearnerCheckpoint {
   updatedAt: number | null;
 }
 
-export interface StudyConsent {
+/** A study the user started: where its samples went and for which accounts. Stored as it was when it was a consent (plan 131). */
+export interface StudyRecord {
   provider: string;
-  /** where the samples were agreed to go, from `destinationOf`: a consent from before this has none, and refreshes nothing */
+  /** where the samples went, from `destinationOf`: a record from before this has none, and refreshes nothing */
   destination?: string;
   accountIds: number[];
   at: number;
@@ -323,7 +323,7 @@ export class VoiceLearner {
   }
 
   async status(): Promise<WritingStatus> {
-    const [cp, prefs, study, available] = await Promise.all([this.checkpoint(), this.host.prefs(), this.host.store.settings.get<StudyConsent | null>(STUDY_KEY, null), this.host.available()]);
+    const [cp, prefs, study, available] = await Promise.all([this.checkpoint(), this.host.prefs(), this.host.store.settings.get<StudyRecord | null>(STUDY_KEY, null), this.host.available()]);
     if (!wantsLearning(prefs)) return { state: "off", messages: cp?.messages ?? 0, updatedAt: cp?.updatedAt ?? null, study };
     if (!cp) return { state: "idle", messages: 0, updatedAt: null, study };
     // nothing is running, or about to, whatever the checkpoint says is due
@@ -720,11 +720,11 @@ export class VoiceLearner {
     await this.host.store.writing.profiles.judge({ scopeKey: row.scopeKey, language: row.language, judgmentJson: JSON.stringify(result.judgment), sampleHash: hash, model: ai.model, provider: ai.providerId, promptVersion: JUDGE_PROMPT_VERSION, now: this.host.now() });
   }
 
-  /** §3: a judgment already asked for comes up to date, only while the consent still holds, and rarely. */
+  /** §3: a judgment already asked for comes up to date, only on the study's own destination and accounts, and rarely. */
   private async refreshJudgments(start: LearnerCheckpoint, accounts: readonly Account[], prefs: WritingPrefs, live: () => boolean): Promise<void> {
     const { store } = this.host;
-    const consent = await store.settings.get<StudyConsent | null>(STUDY_KEY, null);
-    if (!consent) return;
+    const study = await store.settings.get<StudyRecord | null>(STUDY_KEY, null);
+    if (!study) return;
     let ai: AiTasks;
     try {
       ai = await this.host.forVoice();
@@ -732,11 +732,11 @@ export class VoiceLearner {
       return;
     }
     // a study on this machine says nothing about a cloud service, nor one server about another
-    if (consent.destination !== destinationOf(ai)) return;
+    if (study.destination !== destinationOf(ai)) return;
     let cp = start;
     const today = dayOf(this.host.now());
     if (cp.refreshDay !== today) cp = { ...cp, refreshDay: today, refreshes: 0 };
-    const allowed = accounts.filter((a) => consent.accountIds.includes(a.id) && usesSentMail(prefs, a.id));
+    const allowed = accounts.filter((a) => study.accountIds.includes(a.id) && usesSentMail(prefs, a.id));
     const { signal: asked, release } = this.host.begin(`voice-refresh:${this.host.now()}`, "voice-learner");
     const signal = AbortSignal.any([asked, this.permission.signal]);
     try {
@@ -775,9 +775,12 @@ export class VoiceLearner {
     return out;
   }
 
-  /** "Let AI study my style": sends samples of sent mail to the provider, so it says what first and waits for `confirm`. */
-  async study(p: { requestId: string; clientId: string; confirm?: { provider: string; accountIds: readonly number[]; destination?: string } }): Promise<WritingStudyResult> {
-    // before anything is read: a withdrawal from here on stops it, and leaves no consent behind
+  /**
+   * "Study my style": sends samples of sent mail to the provider, at once (plan 131: no per-use consent; the button's
+   * hint says what goes). What it records is where it went and for which accounts: refreshes follow only that.
+   */
+  async study(p: { requestId: string; clientId: string }): Promise<WritingStudyResult> {
+    // before anything is read: a withdrawal from here on stops it, and leaves no record behind
     const epoch = this.epoch;
     // without AI nothing was counted, and "nothing to study" would be the wrong thing to say: this one says why
     if (!(await this.host.available())) await this.host.forVoice();
@@ -791,24 +794,8 @@ export class VoiceLearner {
     const ai = await this.host.forVoice();
     const accountIds = accounts.map((a) => a.id);
     const destination = destinationOf(ai);
-    if (!ai.local) {
-      const agreed = p.confirm && p.confirm.provider === ai.providerId && p.confirm.destination === destination && accountIds.every((id) => p.confirm!.accountIds.includes(id));
-      if (!agreed) {
-        let messages = 0;
-        let tokens = 0;
-        for (const t of targets) {
-          const limits = SAMPLE_LIMITS[t.scope];
-          const used = Math.min(limits.maxMessages, t.samples);
-          messages += used;
-          const habits = JSON.parse(t.habitsJson) as Habits;
-          tokens += Math.min(limits.maxTokens, Math.ceil(used * Math.max(1, habits.words.median) * 1.4));
-        }
-        const usd = costOf(ai.model, { inputTokens: tokens, outputTokens: 300 * targets.length });
-        return { status: "consent", provider: ai.providerId as AiProviderId, destination, messages, tokens, usd, accountIds };
-      }
-    }
     if (epoch !== this.epoch) throw new AiError(L("errors.ai.cancelled"), "cancelled");
-    await store.settings.set(STUDY_KEY, { provider: ai.providerId, destination, accountIds, at: this.host.now() } satisfies StudyConsent);
+    await store.settings.set(STUDY_KEY, { provider: ai.providerId, destination, accountIds, at: this.host.now() } satisfies StudyRecord);
     if (this.studying) return { status: "started", total: this.studying.total };
     const total = targets.length;
     this.studying = { requestId: p.requestId, total };

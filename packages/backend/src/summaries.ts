@@ -40,7 +40,6 @@ export interface SummaryHost {
   runs(settings: AppSettings): boolean;
   forTask(o: { foreground: boolean }): Promise<AiTasks>;
   begin(requestId: string, clientId: string): { signal: AbortSignal; release: () => void };
-  acknowledge(provider: AiProviderId): Promise<void>;
   /** tells open readers, never MCP */
   ready(threadId: number): void;
   log(level: "info" | "warn" | "error", message: string, extra?: unknown): void;
@@ -438,7 +437,7 @@ export class SummaryWorker {
   }
 
   /** §7: a summary by hand. Its limits are spam and trash, and the user's word on where it goes. */
-  async request(threadId: number, requestId: string, clientId: string, acknowledge = false): Promise<AiSummarizeResult> {
+  async request(threadId: number, requestId: string, clientId: string): Promise<AiSummarizeResult> {
     const { store } = this.host;
     const { signal, release } = this.host.begin(requestId, clientId);
     try {
@@ -461,11 +460,6 @@ export class SummaryWorker {
 
         const row = await store.aiSummaries.get(threadId);
         const ai = await this.host.forTask({ foreground: true });
-        if (!ai.local && !acknowledge && !(await this.host.settings()).summaries.acknowledged.includes(ai.providerId)) {
-          // the same text on the same target needs no request, so there's nothing to tell them yet
-          if (!(await this.wouldReuse(sources, row, ai))) return { status: "consent", provider: ai.providerId };
-        }
-        if (acknowledge) await this.host.acknowledge(ai.providerId);
         const { running: mine, joined } = this.single(threadId, () => this.run(sources, row, { foreground: true, signal, ai }));
         // another caller got there during the awaits above: same as finding it running at the top
         if (joined) {
@@ -485,12 +479,6 @@ export class SummaryWorker {
     } finally {
       release();
     }
-  }
-
-  private async wouldReuse(sources: SummarySources, row: AiSummaryRow | null, ai: AiTasks): Promise<boolean> {
-    if (!row?.bodyJson) return false;
-    const { subject, thread, reader } = await assemble(this.host.store, sources, ai.contextTokens);
-    return reusable(row, { contentHash: await sha256(JSON.stringify({ subject, thread, reader })), language: await this.readerLanguage(), ai });
   }
 
   /** The setting, or while that follows the system, what the window said: the backend can't see the system's. */

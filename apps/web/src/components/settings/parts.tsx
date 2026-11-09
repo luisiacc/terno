@@ -5,6 +5,7 @@ import { Button } from "@terno/ui/components/button";
 import { ColorSwatch, ColorSwatches } from "@terno/ui/components/color-swatches";
 import { Input } from "@terno/ui/components/input";
 import { Textarea } from "@terno/ui/components/textarea";
+import { ShieldCheck } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { t } from "@terno/i18n";
 import { useId, useState } from "react";
@@ -112,6 +113,21 @@ export function openSettingsTab(tab: SettingsTab) {
 }
 
 /** A row that is only text (an explanation, a status) inside a group. */
+/**
+ * Where AI sends mail, under the group that turns it on (plan 131: no per-use consent, so it's said here once). A
+ * group's footer, as the rest of Settings words its fine print: the shield, a short title, then the line.
+ */
+export function PrivacyNote({ title, children, testId }: { title: string; children: React.ReactNode; testId?: string }) {
+  return (
+    <span className="flex items-start gap-1.5" data-testid={testId}>
+      <ShieldCheck className="mt-px size-3.5 shrink-0" aria-hidden />
+      <span>
+        <span className="font-medium text-foreground">{title}</span> {children}
+      </span>
+    </span>
+  );
+}
+
 export function SettingsNote({ children, testId }: { children: React.ReactNode; testId?: string }) {
   return (
     <div className="py-2.5 text-xs text-muted-foreground" data-testid={testId}>

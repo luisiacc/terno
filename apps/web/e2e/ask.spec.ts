@@ -1,6 +1,7 @@
 /**
  * Plan 141 in the page, on the offline fake model and the demo's server: nothing here reaches a real provider. ⌘⇧K, a
- * question, a source, a follow-up, the history; older mail on a click; the page's keys; consent; no provider.
+ * question, a source, a follow-up, the history; older mail on a click; the page's keys; no provider. A cloud provider
+ * asks nothing first (plan 131): ai-no-consent.spec.
  */
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
@@ -411,19 +412,6 @@ test.describe("ask your mail (plan 141)", () => {
     await ask(page).fill("ask your");
     await expect(page.getByTestId("palette-ask")).toHaveCount(0);
     await expect(page.getByTestId("palette-ask-row")).toHaveCount(0);
-  });
-
-  test("a cloud destination says where it goes before anything leaves, naming the server; Enter on Settings stays with it", async ({ app: page, server }) => {
-    await settingUp(page, server, { ai: { provider: "compatible", preset: "custom", model: "m", baseURL: "https://ai.example.test/v1" } });
-    await open(page);
-    await question(page, "where does this go?");
-    const consent = page.getByTestId("ask-consent");
-    await expect(consent).toContainText("ai.example.test");
-    await expect(page.getByTestId("ask-consent-continue")).toBeVisible();
-    expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=ask-consent]").analyze()).violations).toEqual([]);
-    await page.getByTestId("ask-consent-settings").focus();
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId("ai-ask")).toBeVisible();
   });
 
   test("the page is axe-clean in both modes, in every design it can change, and in Spanish", { tag: "@design" }, async ({ app: page, server }) => {

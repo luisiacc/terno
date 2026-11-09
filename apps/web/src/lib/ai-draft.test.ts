@@ -475,8 +475,6 @@ describe("§10.4: binding and races", () => {
   it("plan 161, pass 3 (second review): on Claude with no choice, a stopped write names the model drafts run on there", async () => {
     const { WRITING_CLAUDE_MODEL } = await import("@terno/core");
     setApp({ settings: { ai: { provider: "anthropic", model: "claude-opus-5-5", local: false, tasks: {}, keys: { anthropic: { hasKey: true } }, hasKey: true, keyConfirmed: true, profiles: {} } } as never });
-    // told once already: the first-use line isn't what this is about
-    localStorage.setItem("terno:ai-draft-told:anthropic", "1");
     const { key } = await writing();
     delta(key, "Hi");
     await new Promise((r) => requestAnimationFrame(() => r(null)));
@@ -963,22 +961,15 @@ describe("existing text, and what goes wrong", () => {
     setApp({ devAi: null });
   });
 
-  it("a cloud provider's first draft says what it sends, once, before anything goes", async () => {
+  it("a cloud provider's first draft goes at once, with nothing asked first (plan 131: no per-use consent)", async () => {
     setApp({ settings: { ai: { provider: "anthropic", model: "x", local: false, tasks: {}, keys: {}, hasKey: true, keyConfirmed: true, profiles: {} } } as never });
     const key = createDraft({ ...newFields(1), toText: "ana@example.test" });
     editor(key);
     await store.openRow({ key });
     await store.submit(key);
-    expect(session(key)!.phase).toBe("telling");
-    expect(calls("ai.compose")).toHaveLength(0);
-    store.acknowledgeTold(key);
-    await tick();
-    expect(calls("ai.compose")).toHaveLength(1);
-    store.stop(key);
-    await store.openRow({ key });
-    await store.submit(key);
     await tick();
     expect(session(key)!.phase).toBe("writing");
+    expect(calls("ai.compose")).toHaveLength(1);
   });
 
   it("↑ recalls the last instruction", async () => {

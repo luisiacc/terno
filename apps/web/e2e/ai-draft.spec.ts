@@ -936,26 +936,6 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(row(page)).toHaveCount(0);
   });
 
-  test("the first draft on a cloud provider says what it sends, once", async ({ app: page, server }) => {
-    await seed(server);
-    await server.backend.server.invoke("settings.update", { ai: { provider: "compatible", preset: "custom", baseURL: "https://stub.invalid/v1", model: "stub" } }, dev);
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await rows(page).first().waitFor();
-    await openThread(page, /Contract review/);
-    await openField(page);
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId("ai-telling")).toContainText("Each draft sends");
-    await expect(page.getByTestId("ai-telling-continue")).toBeFocused();
-    await page.keyboard.press("Enter");
-    // it goes to the stub, which isn't there: the failure says so, and the line doesn't come back
-    await expect(page.getByTestId("ai-error-text")).toBeVisible();
-    await page.getByTestId("ai-error-close").click();
-    await openField(page);
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId("ai-telling")).toHaveCount(0);
-  });
-
   test("Settings: Drafting, an account's instructions, and Writing style's edit and reset; axe-clean in both modes", async ({ app: page, server }) => {
     const { accountId } = await ready(page, server);
     await page.getByTestId("open-settings").click();
@@ -1132,9 +1112,8 @@ test.describe("drafting with AI (plan 133)", () => {
     await page.getByTestId("style-people-toggle").click();
     await page.getByTestId("style-domains-toggle").click();
 
-    // the study on a local model asks nothing, and is running, not done, when it starts (Codex review 12)
+    // the study is running, not done, when it starts (Codex review 12); it asks nothing on any provider (plan 131)
     await page.getByTestId("style-study-start").click();
-    await expect(page.getByTestId("style-study-consent")).toHaveCount(0);
     await expect(page.getByTestId("style-study-running")).toContainText(/\d+ of \d+/);
     await page.getByTestId("style-study-stop").click();
     await expect(page.getByTestId("style-study-start")).toBeVisible();

@@ -7,7 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { ArrowRight, Reply, Sparkles } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { providerLabel, summaryTarget } from "~/lib/ai";
+import { summaryTarget } from "~/lib/ai";
 import { messageDate } from "~/lib/format";
 import { reply } from "~/lib/keyboard";
 import { bodyArrivedForSummary, dismissSummary, loadSummary, revealSummaryMessage, setSummaryOpen, stopSummary, summarizable, summarize, useSummaries } from "~/lib/summaries";
@@ -170,24 +170,6 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
         return (
           <Line state="waiting" status>
             {t("summary.downloading")}
-          </Line>
-        );
-      case "consent":
-        return (
-          <Line
-            state="consent"
-            actions={
-              <>
-                <Button size="sm" variant="ghost" data-testid="summary-settings" onClick={openSettings}>
-                  {t("common.settings")}
-                </Button>
-                <Button size="sm" variant="outline" data-testid="summary-continue" onClick={() => { dismissSummary(threadId); void summarize(threadId, { acknowledge: true }); }}>
-                  {t("common.continue")}
-                </Button>
-              </>
-            }
-          >
-            <span data-testid="summary-consent">{t("summary.consent", { provider: providerLabel(ui.provider, ai) })}</span>
           </Line>
         );
       case "noProvider":

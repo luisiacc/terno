@@ -39,7 +39,7 @@ import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreada
 import { createNetworkPolicy, type LookupAll, type NetDecision, type NetworkPolicy } from "./net-policy";
 import { CARRY_SLICE, carryRenamed } from "./folders";
 import { followFolderFilters } from "./similar";
-import { acknowledgeSummaryProvider, followFavoriteFolders, provideDevAi, readAutoCategorize, readComposeSuggestions, readGooglePhotos, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
+import { followFavoriteFolders, provideDevAi, readAutoCategorize, readComposeSuggestions, readGooglePhotos, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
 import { IconService } from "./icons/service";
 import type { IconTransport } from "./icons/transport";
 import { browserUnsubscribeTransport, type UnsubscribeTransport } from "./unsubscribe";
@@ -330,7 +330,6 @@ export class BackendCore {
       runs: (s) => s.summaries.enabled && (!options.devAi || s.devAi) && summaryCanRun(s.ai),
       forTask: (o) => this.aiService.forTask("summary", o),
       begin: (requestId, clientId) => this.aiService.begin(requestId, clientId),
-      acknowledge: (provider) => acknowledgeSummaryProvider(this.store, provider),
       ready: (threadId) => this.server.emit("aiSummary", { threadId }, { origins: ["renderer", "dev"] }),
       log: (level, message, extra) => this.log(level, message, extra),
     });

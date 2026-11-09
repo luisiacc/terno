@@ -32,7 +32,6 @@ export interface AskState {
   sources: Record<number, AskSourceView>;
   running: AskRunning | null;
   /** Where the first question to a destination would go: said once, before anything leaves. */
-  consent: { question: string; provider: string; endpoint: string | null; destination: string } | null;
   error: { question: string; message: string; kind: AiErrorKind | undefined } | null;
   /** plan 143: why a sentence didn't open a preview; the page stays, with the sentence */
   notice: { question: string; text: string } | null;
@@ -55,7 +54,7 @@ export interface AskState {
   usedAt: number;
 }
 
-const EMPTY: Omit<AskState, "usedAt" | "ready" | "gone"> = { conversationId: null, turns: [], sources: {}, running: null, consent: null, error: null, notice: null, noProvider: false, older: { kind: "none" }, incomplete: false, olderFound: null, olderPartial: false, armedSource: null, returnTo: null };
+const EMPTY: Omit<AskState, "usedAt" | "ready" | "gone"> = { conversationId: null, turns: [], sources: {}, running: null, error: null, notice: null, noProvider: false, older: { kind: "none" }, incomplete: false, olderFound: null, olderPartial: false, armedSource: null, returnTo: null };
 
 export const useAsk = create<AskState>(() => ({ ...EMPTY, ready: 0, usedAt: 0, gone: 0 }));
 
@@ -77,7 +76,6 @@ async function settle(call: Promise<AiAskResult>, requestId: string, question: s
   try {
     const r = await call;
     if (!mine()) return;
-    if (r.status === "consent") return useAsk.setState({ running: null, consent: { question, provider: r.provider, endpoint: r.endpoint, destination: r.destination } });
     // plan 143: something to do, not a question: its own plan, and nothing runs before Apply
     if (r.status === "command") return await settleCommand(requestId, question);
     const turn = r.turn;
@@ -115,7 +113,6 @@ async function settleCommand(requestId: string, question: string): Promise<void>
     if (r.status === "preview") void client.call("ai.actionCancel", { previewId: r.preview.previewId }).catch(() => {});
     return;
   }
-  if (r.status === "consent") return useAsk.setState({ running: null, consent: { question, provider: r.provider, endpoint: r.endpoint, destination: r.destination } });
   if (r.status !== "preview") return useAsk.setState({ running: null, notice: { question, text: r.status === "noMatch" && r.done ? t("action.noMatchDone", { count: r.done }) : t(COMMAND_NOTICE[r.status]) }, usedAt: Date.now() });
   useAsk.setState({ running: null, usedAt: Date.now() });
   closePalette();
@@ -125,13 +122,13 @@ async function settleCommand(requestId: string, question: string): Promise<void>
 const viewsOf = async (sources: readonly AskSourceRef[]): Promise<Record<number, AskSourceView>> => (sources.length ? client.call("ai.askSources", { messageIds: sources.map((s) => s.messageId) }) : {});
 
 /** A question, or a follow-up on the conversation showing. */
-export function askQuestion(question: string, o: { acknowledge?: string } = {}): void {
+export function askQuestion(question: string): void {
   const text = question.trim();
   const s = useAsk.getState();
   if (!text || s.running) return;
   const requestId = globalThis.crypto.randomUUID();
-  useAsk.setState({ running: { requestId, question: text, text: "", older: null, searchingOlder: false }, consent: null, error: null, notice: null, noProvider: false, olderFound: null, olderPartial: false, usedAt: Date.now() });
-  void settle(client.call("ai.ask", { requestId, question: text, ...(s.conversationId !== null ? { conversationId: s.conversationId } : {}), timezone: timezone(), ...(o.acknowledge ? { acknowledge: o.acknowledge } : {}) }), requestId, text);
+  useAsk.setState({ running: { requestId, question: text, text: "", older: null, searchingOlder: false }, error: null, notice: null, noProvider: false, olderFound: null, olderPartial: false, usedAt: Date.now() });
+  void settle(client.call("ai.ask", { requestId, question: text, ...(s.conversationId !== null ? { conversationId: s.conversationId } : {}), timezone: timezone() }), requestId, text);
 }
 
 /** §3: only ever on this click. */
@@ -208,10 +205,6 @@ export function installAsk(): void {
 }
 
 export const atTurnLimit = (s: Pick<AskState, "turns">): boolean => s.turns.length >= ASK_TURNS_MAX;
-
-export function declineConsent(): void {
-  useAsk.setState({ consent: null });
-}
 
 /** A saved conversation: no request. */
 export async function openConversation(conversationId: number): Promise<boolean> {

@@ -151,8 +151,8 @@ export const DEFAULT_SETTINGS: General = {
   aiCategorize: false,
   aiCategorizeWidened: false,
   // plan 157: on with AI; the worker reads `summaryCanRun` and the switch, so this alone sends nothing
-  summaries: { enabled: true, enabledAt: null, acknowledged: [] },
-  ask: { enabled: true, acknowledged: [] },
+  summaries: { enabled: true, enabledAt: null },
+  ask: { enabled: true },
   replies: { enabled: false },
   today: DEFAULT_TODAY,
   followups: { enabled: false, enabledAt: null, nudgeAfterDays: NUDGE_DEFAULT, scanAnswered: false },
@@ -579,34 +579,6 @@ export async function updateSettings(store: SettingsStore, patch: SettingsPatch,
   const hasLegacyKey = await store.secrets.has(keySecretName("anthropic"));
   await store.settings.update<StoredSettings, void>("app", {}, (s) => ({ value: patchedSettings(migrate(s), patch, hasLegacyKey, now), result: undefined }));
   return readSettings(store);
-}
-
-/** Plan 132: a provider the user was told a hand summary goes to. */
-export async function acknowledgeSummaryProvider(store: SettingsStore, provider: AiProviderId): Promise<void> {
-  await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
-    const s = migrate(raw);
-    const current = s.summaries ?? DEFAULT_SETTINGS.summaries;
-    return { value: current.acknowledged.includes(provider) ? s : { ...s, summaries: { ...current, acknowledged: [...current.acknowledged, provider] } }, result: undefined };
-  });
-}
-
-/** Plan 141 revision 2: consent is for a destination (`destinationOf`), and `compatible` covers many servers. */
-export async function acknowledgeAsk(store: SettingsStore, destination: string): Promise<void> {
-  await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
-    const s = migrate(raw);
-    const current = s.ask ?? DEFAULT_SETTINGS.ask;
-    return { value: current.acknowledged.includes(destination) ? s : { ...s, ask: { ...current, acknowledged: [...current.acknowledged, destination] } }, result: undefined };
-  });
-}
-
-/** Plan 143: a command's check sends senders and subjects: its own agreement, by destination. */
-export async function acknowledgeActionCheck(store: SettingsStore, destination: string): Promise<void> {
-  await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
-    const s = migrate(raw);
-    const current = s.ask ?? DEFAULT_SETTINGS.ask;
-    const had = current.checkAcknowledged ?? [];
-    return { value: had.includes(destination) ? s : { ...s, ask: { ...current, checkAcknowledged: [...had, destination] } }, result: undefined };
-  });
 }
 
 function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: boolean, now: number): StoredSettings {

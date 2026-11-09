@@ -1,4 +1,4 @@
-import type { Habits, VoiceJudgment, WritingProfileView, WritingStatus, WritingStudyResult } from "@terno/core";
+import type { Habits, VoiceJudgment, WritingProfileView, WritingStatus } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { Badge } from "@terno/ui/components/badge";
 import { Button } from "@terno/ui/components/button";
@@ -467,13 +467,13 @@ function Section({ scope, title, testId, version, onChanged, onReset, shared }: 
   );
 }
 
-type StudyState = { kind: "idle" } | { kind: "asking" } | { kind: "consent"; asked: Extract<WritingStudyResult, { status: "consent" }> } | { kind: "running"; requestId: string; done: number; total: number } | { kind: "done" } | { kind: "failed" } | { kind: "nothing" };
+type StudyState = { kind: "idle" } | { kind: "asking" } | { kind: "running"; requestId: string; done: number; total: number } | { kind: "done" } | { kind: "failed" } | { kind: "nothing" };
 
-/** "Let AI study my style": optional, and said in full before anything goes (§4). Pass 2: rows in "How it learns", beside the counted habits it adds to. */
+/** "Study my style": optional, and runs on the click (plan 131: no per-use consent; the row's hint says what goes). Pass 2: rows in "How it learns", beside the counted habits it adds to. */
 function Study({ status, onChanged }: { status: WritingStatus | null; onChanged: () => void }) {
   const ai = useApp((s) => s.settings?.ai);
   const [state, setState] = useState<StudyState>({ kind: "idle" });
-  // listening before asking: on a local model the study can be over before the call that started it has answered
+  // listening before asking: the study can be over before the call that started it has answered
   const asking = useRef<string | null>(null);
   useEffect(() => client.on("aiStudy", (p) => {
     if (p.requestId !== asking.current) return;
@@ -487,24 +487,10 @@ function Study({ status, onChanged }: { status: WritingStatus | null; onChanged:
     try {
       const id = globalThis.crypto.randomUUID();
       asking.current = id;
-      const asked = await client.call("writing.studyStyle", { requestId: id });
-      if (asked.status === "consent") setState({ kind: "consent", asked });
-      else if (asked.status === "nothing") setState({ kind: "nothing" });
-      // a local provider asks nothing: it's running, with its progress and Stop like any other
-      else if (asking.current === id) setState({ kind: "running", requestId: id, done: 0, total: asked.total });
-    } catch (e) {
-      failed(e);
-      setState({ kind: "idle" });
-    }
-  };
-  const confirm = async (asked: Extract<WritingStudyResult, { status: "consent" }>) => {
-    const id = globalThis.crypto.randomUUID();
-    asking.current = id;
-    setState({ kind: "running", requestId: id, done: 0, total: asked.messages });
-    try {
-      const started = await client.call("writing.studyStyle", { requestId: id, confirm: { provider: asked.provider, destination: asked.destination, accountIds: asked.accountIds } });
-      if (started.status === "started") { if (asking.current === id) setState({ kind: "running", requestId: id, done: 0, total: started.total }); }
-      else setState({ kind: started.status === "nothing" ? "nothing" : "idle" });
+      const started = await client.call("writing.studyStyle", { requestId: id });
+      if (started.status === "nothing") setState({ kind: "nothing" });
+      // running, with its progress and Stop, unless its events already said how it ended
+      else if (asking.current === id) setState({ kind: "running", requestId: id, done: 0, total: started.total });
     } catch (e) {
       failed(e);
       setState({ kind: "idle" });
@@ -512,37 +498,21 @@ function Study({ status, onChanged }: { status: WritingStatus | null; onChanged:
   };
   return (
     <>
-      {state.kind === "consent" ? (
-        <div className="py-3 text-sm" data-testid="style-study-consent">
-          <p className="font-medium">{t("aiDraft.study.question")}</p>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            {t("aiDraft.study.consent", { count: state.asked.messages, provider: ai ? providerLabel(state.asked.provider, ai) : state.asked.provider })}{" "}
-            {t("aiDraft.study.tokens", { tokens: state.asked.tokens.toLocaleString(getLocale()) })}
-            {state.asked.usd !== null ? ` ${t("aiDraft.study.cost", { usd: new Intl.NumberFormat(getLocale(), { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(state.asked.usd) })}` : ""}
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t("aiDraft.study.drafts")}</p>
-          <div className="mt-2.5 flex gap-1.5">
-            <Button size="sm" data-testid="style-study-confirm" onClick={() => void confirm(state.asked)}>{t("aiDraft.study.confirm")}</Button>
-            <Button size="sm" variant="ghost" data-testid="style-study-decline" onClick={() => setState({ kind: "idle" })}>{t("aiDraft.study.decline")}</Button>
-          </div>
-        </div>
-      ) : (
-        <SettingsRow label={t("aiDraft.study.action")} hint={status?.study ? t("aiDraft.study.agreed", { provider: ai ? providerLabel(status.study.provider as never, ai) : status.study.provider }) : t("aiDraft.study.hint")} testId="style-study-row">
-          {({ id: _id, "aria-labelledby": _l, "aria-describedby": described }) =>
-            state.kind === "running" ? (
-              <span className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="style-study-running">
-                <Spinner aria-hidden className="size-[1.15em]" />
-                {t("aiDraft.study.running", { done: state.done, total: state.total })}
-                <Button size="xs" variant="ghost" className="font-normal" data-testid="style-study-stop" onClick={() => void client.call("ai.cancel", { requestId: state.requestId }).catch(() => {})}>{t("aiDraft.stop")}</Button>
-              </span>
-            ) : (
-              <Button variant="outline" size="sm" aria-describedby={described} loading={state.kind === "asking"} data-testid="style-study-start" onClick={() => void ask()}>
-                {t("aiDraft.study.start")}
-              </Button>
-            )
-          }
-        </SettingsRow>
-      )}
+      <SettingsRow label={t("aiDraft.study.action")} hint={status?.study ? t("aiDraft.study.studied", { provider: ai ? providerLabel(status.study.provider as never, ai) : status.study.provider }) : t("aiDraft.study.hint")} testId="style-study-row">
+        {({ id: _id, "aria-labelledby": _l, "aria-describedby": described }) =>
+          state.kind === "running" ? (
+            <span className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="style-study-running">
+              <Spinner aria-hidden className="size-[1.15em]" />
+              {t("aiDraft.study.running", { done: state.done, total: state.total })}
+              <Button size="xs" variant="ghost" className="font-normal" data-testid="style-study-stop" onClick={() => void client.call("ai.cancel", { requestId: state.requestId }).catch(() => {})}>{t("aiDraft.stop")}</Button>
+            </span>
+          ) : (
+            <Button variant="outline" size="sm" aria-describedby={described} loading={state.kind === "asking"} data-testid="style-study-start" onClick={() => void ask()}>
+              {t("aiDraft.study.start")}
+            </Button>
+          )
+        }
+      </SettingsRow>
       {state.kind === "done" && <SettingsNote testId="style-study-done">{t("aiDraft.study.done")}</SettingsNote>}
       {state.kind === "failed" && <SettingsNote testId="style-study-failed"><span role="status" className="text-destructive-ink">{t("aiDraft.study.failed")}</span></SettingsNote>}
       {state.kind === "nothing" && <SettingsNote testId="style-study-nothing">{t("aiDraft.study.nothing")}</SettingsNote>}

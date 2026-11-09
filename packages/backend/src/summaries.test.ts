@@ -593,7 +593,7 @@ describe("by hand", () => {
     const m = await s.arrive({ date: START - 400 * 86_400_000, ...over }, false);
     return { ...s, ...m };
   }
-  const go = (client: RpcClient, threadId: number, o: { acknowledge?: boolean; id?: string } = {}) => client.call("ai.summarize", { threadId, requestId: o.id ?? requestId(), ...(o.acknowledge ? { acknowledge: true } : {}) });
+  const go = (client: RpcClient, threadId: number, o: { id?: string } = {}) => client.call("ai.summarize", { threadId, requestId: o.id ?? requestId() });
 
   it("summarizes an old thread with the setting off, a short one and a Promotions one too", async () => {
     const { client, model, thread, id, read, arrive } = await old();
@@ -769,16 +769,13 @@ describe("by hand", () => {
       expect(model.configs).toHaveLength(0);
     });
 
-    it("with an OpenAI key: GPT Luna, told once per provider before sending", async () => {
+    it("with an OpenAI key: GPT Luna, at once, with nothing asked first (plan 131: no per-use consent)", async () => {
       const { client, backend, thread, arrive, model } = await cloud();
       await client.call("settings.update", { ai: { provider: "openai", baseURL: "http://127.0.0.1:9/v1" } });
       await client.call("settings.update", { ai: { provider: "none" } });
       await backend.setSecret("ai:openai:apiKey", "sk-openai-not-a-real-key-0000");
-      await expect(go(client, thread)).resolves.toEqual({ status: "consent", provider: "openai" });
-      expect(model.requests).toHaveLength(0);
-      await expect(go(client, thread, { acknowledge: true })).resolves.toMatchObject({ status: "ready", summary: { provider: "openai", model: "gpt-6-luna" } });
+      await expect(go(client, thread)).resolves.toMatchObject({ status: "ready", summary: { provider: "openai", model: "gpt-6-luna" } });
       expect(model.requests).toHaveLength(1);
-      expect((await client.call("app.bootstrap", {})).settings.summaries.acknowledged).toEqual(["openai"]);
       const next = await arrive({}, false);
       await expect(go(client, next.thread)).resolves.toMatchObject({ status: "ready" });
       expect(model.requests).toHaveLength(2);
@@ -789,10 +786,11 @@ describe("by hand", () => {
       await client.call("settings.update", { ai: { provider: "anthropic", baseURL: "http://127.0.0.1:9", model: "claude-sonnet-5-5" } });
       await backend.setSecret("ai:anthropic:apiKey", "sk-ant-not-a-real-key-0000");
       await client.call("settings.update", { ai: { tasks: { summary: { provider: "anthropic", model: "claude-sonnet-5-5" } } } });
-      await expect(go(client, thread)).resolves.toEqual({ status: "consent", provider: "anthropic" });
+      await expect(go(client, thread)).resolves.toMatchObject({ status: "ready", summary: { provider: "anthropic", model: "claude-sonnet-5-5" } });
       await backend.setSecret("ai:openai:apiKey", "sk-openai-not-a-real-key-0000");
-      await expect(go(client, thread, { acknowledge: true })).resolves.toMatchObject({ status: "ready", summary: { provider: "anthropic", model: "claude-sonnet-5-5" } });
-      expect(model.requests).toHaveLength(1);
+      await client.call("ai.summaries.clear", {});
+      await expect(go(client, thread)).resolves.toMatchObject({ status: "ready", summary: { provider: "anthropic", model: "claude-sonnet-5-5" } });
+      expect(model.requests).toHaveLength(2);
     });
   });
 
@@ -892,7 +890,7 @@ describe("by hand", () => {
 describe("settings", () => {
   it("is on by default, and an import never changes that, nor a switch someone turned off", async () => {
     const { client, backend } = await setup({ enabled: "default" });
-    const on = { enabled: true, enabledAt: null, acknowledged: [] };
+    const on = { enabled: true, enabledAt: null };
     expect((await client.call("app.bootstrap", {})).settings.summaries).toEqual(on);
     expect(backend.summaries.isActive).toBe(true);
     const exported = await client.call("app.export", {});
@@ -902,7 +900,7 @@ describe("settings", () => {
     const off = await setup({ enabled: false });
     const file = await off.client.call("app.export", {});
     await off.client.call("app.import", { data: { ...file, settings: { ...file.settings, summaries: { enabled: true, enabledAt: 1, acknowledged: ["openai"] } } } } as never);
-    expect((await off.client.call("app.bootstrap", {})).settings.summaries).toEqual({ enabled: false, enabledAt: null, acknowledged: [] });
+    expect((await off.client.call("app.bootstrap", {})).settings.summaries).toEqual({ enabled: false, enabledAt: null });
     expect(off.backend.summaries.isActive).toBe(false);
   });
 

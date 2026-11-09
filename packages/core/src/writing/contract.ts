@@ -130,13 +130,11 @@ export interface WritingStatus {
   /** sent messages the profiles were built from */
   messages: number;
   updatedAt: number | null;
-  /** the model step: whether the user agreed, for which provider and accounts */
+  /** the model step: the last study the user started, its provider and accounts */
   study: { provider: string; accountIds: number[]; at: number } | null;
 }
 
 export type WritingStudyResult =
-  /** nothing has been sent: show the consent wording with these numbers, and call again with `confirm` */
-  | { status: "consent"; provider: AiProviderId; /** where this would go: `confirm` hands it back, and anywhere else asks again */ destination: string; messages: number; tokens: number; usd: number | null; accountIds: number[] }
   /** it runs in the background, with `aiStudy` events */
   | { status: "started"; total: number }
   /** nothing to study yet: the local pass hasn't found enough mail */

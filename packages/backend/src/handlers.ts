@@ -1443,7 +1443,7 @@ export function createHandlers(b: Backend): Handlers {
       void b.writing.learner.aiChanged();
       return next;
     },
-    "ai.summarize": ({ threadId, requestId, acknowledge }, ctx) => b.summaries.request(threadId, requestId, ctx.clientId, acknowledge),
+    "ai.summarize": ({ threadId, requestId }, ctx) => b.summaries.request(threadId, requestId, ctx.clientId),
     "ai.summaries.get": ({ threadId }) => b.summaries.read(threadId),
     "ai.summaries.status": () => b.summaries.status(),
     "ai.summaries.clear": async () => {
@@ -1543,9 +1543,9 @@ export function createHandlers(b: Backend): Handlers {
       await b.writing.clearProfiles();
       return { ok: true };
     },
-    "writing.studyStyle": async ({ requestId, confirm }, ctx) => {
+    "writing.studyStyle": async ({ requestId }, ctx) => {
       try {
-        return await b.writing.learner.study({ requestId, clientId: ctx.clientId, ...(confirm ? { confirm } : {}) });
+        return await b.writing.learner.study({ requestId, clientId: ctx.clientId });
       } catch (error) {
         throw toRpcError(error);
       }

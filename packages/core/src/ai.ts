@@ -72,8 +72,8 @@ export interface AiSummary {
 /** `stale`: there was one, but the conversation has changed since. */
 export type AiSummaryRead = { state: "none" } | { state: "stale" } | { state: "ready"; summary: AiSummary };
 
-/** `consent`: this would be the first text sent to this cloud provider by hand; `waitingBody`: the newest message's text isn't here yet. */
-export type AiSummarizeResult = { status: "ready"; summary: AiSummary } | { status: "consent"; provider: AiProviderId } | { status: "waitingBody" };
+/** `waitingBody`: the newest message's text isn't here yet. */
+export type AiSummarizeResult = { status: "ready"; summary: AiSummary } | { status: "waitingBody" };
 
 /** What Settings says about the automatic summaries: `blockedBy` while they've stopped, `lastError` after one failed. */
 export interface AiSummariesStatus {

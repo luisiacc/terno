@@ -71,7 +71,7 @@ async function setup(o: { cloud?: boolean; provider?: "fake" | "none" } = {}) {
     const { inserted } = await backend.ingestSliced([m], true);
     return inserted[0]!;
   };
-  const ask = (question = "When does my lease renew?", extra: { conversationId?: number; acknowledge?: string; requestId?: string } = {}) => client.call("ai.ask", { requestId: extra.requestId ?? crypto.randomUUID(), question, timezone: "UTC", ...extra });
+  const ask = (question = "When does my lease renew?", extra: { conversationId?: number; requestId?: string } = {}) => client.call("ai.ask", { requestId: extra.requestId ?? crypto.randomUUID(), question, timezone: "UTC", ...extra });
   return { backend, client, connect, model, account, put, ask };
 }
 
@@ -203,49 +203,28 @@ describe("the machine's numbers (plan 154)", () => {
   });
 });
 
-describe("consent is for a destination (revision 2)", () => {
-  it("a cloud provider asks once and sends nothing first; local doesn't ask", async () => {
+describe("no per-use consent (plan 131, the owner's decision)", () => {
+  it("a cloud provider's first question is answered straight away, with nothing asked first", async () => {
     const { model, put, ask } = await setup({ cloud: true });
     await put();
-    const asked = await ask();
-    expect(asked).toMatchObject({ status: "consent", provider: "anthropic" });
-    expect(model.plans).toHaveLength(0);
-    expect(done(await ask("q lease", { acknowledge: asked.status === "consent" ? asked.destination : "" })).turn).not.toBeNull();
     expect(done(await ask("q lease")).turn).not.toBeNull();
-    const local = await setup();
-    await local.put();
-    expect(done(await local.ask()).turn).not.toBeNull();
+    expect(model.plans).toHaveLength(1);
+    expect(model.answers).toHaveLength(1);
   });
 
-  it("another server of the same kind asks again", async () => {
-    const { client, put, ask } = await setup();
+  it("an older profile's stored agreement changes nothing: another server is asked as readily", async () => {
+    const { backend, client, model, put, ask } = await setup();
     await put();
-    await client.call("settings.update", { ai: { provider: "compatible", preset: "custom", model: "m", baseURL: "https://one.example.test/v1" } });
-    const first = await ask("q");
-    await ask("q", { acknowledge: first.status === "consent" ? first.destination : "" });
+    await backend.store.settings.update("app", {}, (s: Record<string, unknown>) => ({ value: { ...s, ask: { enabled: true, acknowledged: ["somewhere-else"], checkAcknowledged: ["somewhere-else"] } }, result: undefined }));
     await client.call("settings.update", { ai: { provider: "compatible", preset: "custom", model: "m", baseURL: "https://two.example.test/v1" } });
-    expect((await ask("q")).status).toBe("consent");
-    await client.call("settings.update", { ai: { provider: "compatible", preset: "custom", model: "m", baseURL: "https://one.example.test/v1" } });
-    expect((await ask("q")).status).not.toBe("consent");
-  });
-
-  it("Continue agrees to what was read: Settings having moved since asks again and sends nothing", async () => {
-    const { client, model, put, ask } = await setup();
-    await put();
-    await client.call("settings.update", { ai: { provider: "compatible", preset: "custom", model: "m", baseURL: "https://one.example.test/v1" } });
-    const shown = await ask("q lease");
-    await client.call("settings.update", { ai: { provider: "compatible", preset: "custom", model: "m", baseURL: "https://two.example.test/v1" } });
-    const again = await ask("q lease", { acknowledge: shown.status === "consent" ? shown.destination : "" });
-    expect(again.status).toBe("consent");
-    expect(again.status === "consent" && again.endpoint).toContain("two.example.test");
-    expect(model.plans).toHaveLength(0);
+    expect(done(await ask("q lease")).turn).not.toBeNull();
+    expect(model.configs.at(-1)?.baseURL).toContain("two.example.test");
   });
 
   it("the plan runs on a cheap model on the provider that answers, which is Sonnet on Claude", async () => {
     const { model, put, ask } = await setup({ cloud: true });
     await put();
-    const asked = await ask("q lease");
-    await ask("q lease", { acknowledge: asked.status === "consent" ? asked.destination : "" });
+    await ask("q lease");
     const planned = model.configs.map((c) => [c.id, c.model]);
     expect(planned).toContainEqual(["anthropic", "claude-haiku-5-5"]);
     expect(planned).toContainEqual(["anthropic", "claude-sonnet-5-5"]);

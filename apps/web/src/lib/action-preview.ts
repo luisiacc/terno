@@ -70,7 +70,7 @@ function took(preview: ActionPreviewInfo): void {
   useActionPreview.setState({ preview });
   if (!preview.scanning && preview.check === "needed") {
     const s = useActionPreview.getState();
-    if (!s.checking && !s.consent && !s.checkError) void check({});
+    if (!s.checking && !s.checkError) void check({});
   }
 }
 
@@ -106,7 +106,7 @@ export function installActionPreview(): void {
 /** The page's part: what came of a sentence. The preview opens with its first rows; anything else stays on the page. */
 export function opened(r: Extract<AiActionStart, { status: "preview" }>, sentence = ""): void {
   const { preview } = r;
-  useActionPreview.setState({ preview, sentence: sentence.trim(), future: (preview.plan.future || preview.plan.action.type === "spam") && preview.keep.kind === "ok", checking: false, consent: null, checkError: null, applying: false, senders: null });
+  useActionPreview.setState({ preview, sentence: sentence.trim(), future: (preview.plan.future || preview.plan.action.type === "spam") && preview.keep.kind === "ok", checking: false, checkError: null, applying: false, senders: null });
   void noteSenders(preview.previewId, sentence);
   // plan 161: the sidebar on the place the rule looks in (archive only ever looks in the Inbox)
   enterPreview(preview.previewId, inboxOnly(preview) ? "inbox" : "all");
@@ -137,14 +137,13 @@ async function noteSenders(previewId: string, sentence: string): Promise<void> {
   if (still()) useActionPreview.setState({ senders: { sure, names } });
 }
 
-export async function check(o: { acknowledge?: string; skip?: boolean }): Promise<void> {
+export async function check(o: { skip?: boolean }): Promise<void> {
   const { preview } = useActionPreview.getState();
   if (!preview) return;
-  useActionPreview.setState({ checking: !o.skip, consent: null, checkError: null });
+  useActionPreview.setState({ checking: !o.skip, checkError: null });
   try {
     const r = await client.call("ai.actionCheck", { previewId: preview.previewId, requestId: globalThis.crypto.randomUUID(), ...o });
     if (getApp().actionPreview !== preview.previewId) return;
-    if (r.status === "consent") return useActionPreview.setState({ checking: false, consent: { provider: r.provider, endpoint: r.endpoint, destination: r.destination } });
     useActionPreview.setState({ checking: false, preview: r.preview, future: useActionPreview.getState().future && r.preview.keep.kind === "ok" });
     await reloadList({ keepSelection: true, window: true });
   } catch (error) {

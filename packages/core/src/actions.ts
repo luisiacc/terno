@@ -1,4 +1,3 @@
-import type { AiProviderId } from "./ai";
 import type { Condition } from "./rules/schema";
 
 /** Plan 143: a sentence that does something. What's planned, what's previewed, and nothing runs until Apply. */
@@ -56,8 +55,6 @@ export interface ActionPreviewInfo {
 }
 
 export type AiActionStart =
-  /** Settings moved since the question was agreed */
-  | { status: "consent"; provider: AiProviderId; endpoint: string | null; destination: string }
   | { status: "preview"; preview: ActionPreviewInfo }
   /** outside what a sentence may do */
   | { status: "refused" }
@@ -66,7 +63,7 @@ export type AiActionStart =
   | { status: "noMatch"; summary: string; done?: number }
   | { status: "tooMany" };
 
-export type AiActionCheck = { status: "consent"; provider: AiProviderId; endpoint: string | null; destination: string } | { status: "done"; preview: ActionPreviewInfo };
+export type AiActionCheck = { status: "done"; preview: ActionPreviewInfo };
 
 export type AiActionEvent = { previewId: string; preview: ActionPreviewInfo } | { previewId: string; ended: "tooMany" | "failed" };
 

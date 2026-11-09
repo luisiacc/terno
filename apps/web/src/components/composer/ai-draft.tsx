@@ -10,7 +10,7 @@ import { ChevronDown, Undo2 } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import { modelName, providerLabel, writingTarget } from "~/lib/ai";
-import { acknowledgeTold, answer, closeRow, commitHeld, confirmReplace, discard, discardAndSend, editInstruction, includeEveryone, keepEdits, keepWriting, noteBody, place, placePartial, previewMode, previewText, recallInstruction, refine, retry, setInstruction, stop, submit, subscribePreview, takeFocusRequest, undoCommit, useAiDraft, type AiSession, type AiStrip } from "~/lib/ai-draft";
+import { answer, closeRow, commitHeld, confirmReplace, discard, discardAndSend, editInstruction, includeEveryone, keepEdits, keepWriting, noteBody, place, placePartial, previewMode, previewText, recallInstruction, refine, retry, setInstruction, stop, submit, subscribePreview, takeFocusRequest, undoCommit, useAiDraft, type AiSession, type AiStrip } from "~/lib/ai-draft";
 import { keepInView } from "~/lib/reader-scroll";
 import { AiErrorNotice, AiProvenance, aiErrorCopy, aiWritten, errorTarget } from "../ai-card";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
@@ -336,23 +336,6 @@ function Question({ s }: { s: AiSession }) {
   );
 }
 
-function Telling({ s }: { s: AiSession }) {
-  const ai = useApp((state) => state.settings?.ai);
-  const provider = ai ? providerLabel(writingTarget(ai).provider, ai) : "";
-  return (
-    <div className={line} data-testid="ai-telling">
-      <p className="w-full text-xs leading-relaxed">{t("aiDraft.telling", { provider })}</p>
-      <Button type="button" variant="outline" size="xs" className="font-normal" data-ai-default data-testid="ai-telling-continue" onClick={() => acknowledgeTold(s.key)}>
-        {t("common.continue")}
-        <Shortcut keys="enter" className="ml-0.5" />
-      </Button>
-      <Button type="button" variant="ghost" size="xs" className={quiet} data-testid="ai-telling-settings" onClick={openSettings}>
-        {t("common.settings")}
-      </Button>
-    </div>
-  );
-}
-
 function NoProvider({ s }: { s: AiSession }) {
   return (
     <div className={line} data-testid="ai-no-provider" role="status">
@@ -610,8 +593,6 @@ export function AiRow({ draftKey }: { draftKey: string }) {
         );
       case "question":
         return <Question s={s} />;
-      case "telling":
-        return <Telling s={s} />;
       case "writing":
       case "waitingBody":
         return <Status s={s} />;

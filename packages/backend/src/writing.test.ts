@@ -492,7 +492,7 @@ describe("clearing what was learned (plan 133 review)", () => {
     const t = await setup();
     await t.sentMany(30);
     await t.learned();
-    await t.client.call("writing.studyStyle", { requestId: "st", confirm: { provider: "fake", accountIds: [t.account.id] } });
+    await t.client.call("writing.studyStyle", { requestId: "st" });
     await vi.waitFor(async () => expect((await t.client.call("writing.profiles.list", { scope: "you" })).items[0]?.judgment).toBeTruthy());
     await t.backend.writing.learner.idle();
     return t;
@@ -547,7 +547,7 @@ describe("a reset undone (plan 161)", () => {
     const t = await setup();
     await t.sentMany(30);
     await t.learned();
-    await t.client.call("writing.studyStyle", { requestId: "st", confirm: { provider: "fake", accountIds: [t.account.id] } });
+    await t.client.call("writing.studyStyle", { requestId: "st" });
     await vi.waitFor(async () => expect((await t.client.call("writing.profiles.list", { scope: "you" })).items[0]?.judgment).toBeTruthy());
     await t.backend.writing.learner.idle();
     return t;
@@ -731,7 +731,7 @@ describe("nothing reaches MCP, bootstrap, account events, diagnostics or the log
       throw new TypeError(`${CANARY}-thrown`);
     };
     await errorOf(t.compose({ session: "s4" }));
-    await t.client.call("writing.studyStyle", { requestId: "st", confirm: { provider: "fake", accountIds: [t.account.id] } });
+    await t.client.call("writing.studyStyle", { requestId: "st" });
     await new Promise((resolve) => setTimeout(resolve, 30));
     await t.client.call("ai.resolveIntent", { requestId: "rs", instruction: `tell ${CANARY}-who@x.test`, surface: { kind: "list" }, waitForContacts: true });
 

@@ -29,14 +29,13 @@ interface ActionPreviewState {
   sentence: string;
   future: boolean;
   checking: boolean;
-  consent: { provider: string; endpoint: string | null; destination: string } | null;
   checkError: string | null;
   applying: boolean;
   /** plan 161: the senders the sentence names for certain (its addresses and domains, the names the mailbox has); null until known */
   senders: SendersNamed | null;
 }
 
-export const useActionPreview = create<ActionPreviewState>(() => ({ preview: null, sentence: "", future: false, checking: false, consent: null, checkError: null, applying: false, senders: null }));
+export const useActionPreview = create<ActionPreviewState>(() => ({ preview: null, sentence: "", future: false, checking: false, checkError: null, applying: false, senders: null }));
 
 export const useActionRows = create<ActionRows>(() => ({ unticked: new Set(), showLeftOut: false, from: null }));
 

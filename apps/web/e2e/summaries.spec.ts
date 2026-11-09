@@ -389,7 +389,7 @@ test.describe("summaries (plan 132)", () => {
     });
   });
 
-  test("the first cloud request says where it goes, once per provider; no provider points to Settings; errors say what to do", async ({ app: page, server }) => {
+  test("a cloud request goes at once; no provider points to Settings; errors say what to do", async ({ app: page, server }) => {
     const accountId = await firstAccount(server);
     let failing: number | null = null;
     const stub = await startOllamaStub({ summaryFails: () => failing });
@@ -429,24 +429,20 @@ test.describe("summaries (plan 132)", () => {
       await page.keyboard.press("Escape");
       expect(stub.summaries).toEqual([]);
 
-      // OpenAI (on the stub, never the real one): told once, then it goes
+      // OpenAI (on the stub, never the real one): it goes at once, with nothing to agree to (plan 131: no per-use consent)
       await server.backend.server.invoke("settings.update", { ai: { provider: "openai", baseURL: `${stub.url}/v1`, model: "gpt-6-luna" } }, dev);
       await server.backend.server.invoke("ai.setKey", { provider: "openai", value: "sk-openai-e2e-not-a-real-key" }, dev);
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       await openSubject(page, "No provider yet");
       await page.getByTestId("action-summarize").click();
-      await expect(page.getByTestId("summary-consent")).toHaveText("This sends the text of this conversation to OpenAI.");
-      expect(stub.summaries).toEqual([]);
-      expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=summary-block]").analyze()).violations).toEqual([]);
-      await page.getByTestId("summary-continue").click();
       await expect(page.getByTestId("summary-block")).toHaveAttribute("data-state", "ready");
       expect(stub.summaries).toHaveLength(1);
       await page.getByTestId("summary-provenance").click();
       await expect(page.getByTestId("summary-provenance-popover")).toContainText("Written by GPT Luna");
       await page.keyboard.press("Escape");
 
-      // a second thread isn't asked again; and when it fails, the block says so and can try again
+      // when it fails, the block says so and can try again
       await deliver(page, server, incoming(accountId, "Next one"));
       await openSubject(page, "Next one");
       failing = 401;

@@ -8,7 +8,6 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Spinner } from "@terno/ui/components/spinner";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, type ReactNode } from "react";
-import { providerLabel } from "~/lib/ai";
 import { applyPreview, check, inboxOnly, includeSkipped, isDestructive, previewConsequence, previewCount, previewTitle, previewWaiting, showLeftOut, stopApplying, useActionPreview, verbOf } from "~/lib/action-preview";
 import { useAppearance } from "~/lib/appearance";
 import { LIST_TITLE } from "~/lib/list-title";
@@ -155,11 +154,9 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
   const sentence = useActionPreview((s) => s.sentence);
   const future = useActionPreview((s) => s.future);
   const checking = useActionPreview((s) => s.checking);
-  const consent = useActionPreview((s) => s.consent);
   const checkError = useActionPreview((s) => s.checkError);
   const senders = useActionPreview((s) => s.senders);
   const leftOutShown = useActionRows((s) => s.showLeftOut);
-  const ai = useApp((s) => s.settings?.ai);
   const accounts = useApp((s) => s.accounts);
   const folderName = useFolderName();
   const shown = useList((s) => s.items.length);
@@ -171,8 +168,6 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
   const accountEmail = (id: number) => accounts.find((a) => a.id === id)?.email ?? "";
   const conditions = future ? preview.keepConditions : plan.conditions;
   const rows = [{ label: t("action.rule.where"), text: t(inboxOnly(preview) ? "action.in.inbox" : "action.in.everywhere") }, ...conditions.map((c) => ruleRow(c, accountEmail))];
-  const label = consent ? providerLabel(consent.provider as Parameters<typeof providerLabel>[0], ai ?? undefined) : "";
-  const origin = consent?.provider === "compatible" && consent.endpoint && URL.canParse(consent.endpoint) ? new URL(consent.endpoint).host : null;
   const editAsFilter = () => {
     if (plan.action.type === "createCategory") return;
     const { action } = plan;
@@ -258,7 +253,7 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
       ) : (
         editLink && <div>{editLink}</div>
       )}
-      {(plan.action.type === "createCategory" || preview.hidden || preview.forwards || preview.skipped > 0 || checking || consent || checkError || preview.leftOut + preview.unchecked > 0 || (preview.keep.kind !== "hidden" && !ruleOnly)) && (
+      {(plan.action.type === "createCategory" || preview.hidden || preview.forwards || preview.skipped > 0 || checking || checkError || preview.leftOut + preview.unchecked > 0 || (preview.keep.kind !== "hidden" && !ruleOnly)) && (
         <div className="hairline-t flex flex-col gap-1.5 pt-3">
           {plan.action.type === "createCategory" && <Line testId="action-creates">{t("action.creates", { name: plan.action.name })}</Line>}
           {preview.hidden && <Line testId="action-hidden">{t("action.hidden")}</Line>}
@@ -270,21 +265,12 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
             </Line>
           )}
           {checking && <Line testId="action-checking"><Spinner className="size-3" /> {t("action.checking")}</Line>}
-          {consent && (
-            <div className="space-y-1.5 pt-0.5" data-testid="action-consent">
-              <p className="text-xs">{t("action.consent", { provider: origin ? `${label} (${origin})` : label })}</p>
-              <div className="flex gap-2">
-                <Button size="xs" className="no-drag" data-testid="action-consent-continue" onClick={() => void check({ acknowledge: consent.destination })}>{t("action.consent.continue")}</Button>
-                <Button size="xs" variant="secondary" className="no-drag" data-testid="action-consent-skip" onClick={() => void check({ skip: true })}>{t("action.consent.skip")}</Button>
-              </div>
-            </div>
-          )}
           {checkError && (
             <div className="space-y-1.5 pt-0.5" data-testid="action-check-error">
               <p className="text-xs text-destructive-ink">{checkError}</p>
               <div className="flex gap-2">
                 <Button size="xs" variant="secondary" className="no-drag" data-testid="action-check-retry" onClick={() => void check({})}>{t("ask.tryAgain")}</Button>
-                <Button size="xs" variant="secondary" className="no-drag" onClick={() => void check({ skip: true })}>{t("action.consent.skip")}</Button>
+                <Button size="xs" variant="secondary" className="no-drag" onClick={() => void check({ skip: true })}>{t("action.skipCheck")}</Button>
               </div>
             </div>
           )}

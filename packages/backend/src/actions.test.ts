@@ -100,7 +100,7 @@ async function setup(o: { cloud?: boolean; similarCap?: number } = {}) {
     return client.call("ai.actionToggle", { previewId: r.preview.previewId, threadId: 1e9, included: true });
   };
   const apply = (p: ActionPreviewInfo, future = false) => client.call("ai.actionApply", { previewId: p.previewId, future });
-  const check = (p: ActionPreviewInfo, o: { acknowledge?: string; skip?: boolean } = {}) => client.call("ai.actionCheck", { previewId: p.previewId, requestId: crypto.randomUUID(), ...o });
+  const check = (p: ActionPreviewInfo, o: { skip?: boolean } = {}) => client.call("ai.actionCheck", { previewId: p.previewId, requestId: crypto.randomUUID(), ...o });
   const fact = async (id: number) => (await backend.store.filters.actionFacts([id]))[0]!;
   const rows = async (p: ActionPreviewInfo, leftOut = false) => (await client.call("ai.actionPage", { previewId: p.previewId, offset: 0, limit: 500, leftOut })).items.map((t) => t.id);
   return { backend, client, connect, model, account, put, start, preview, apply, check, fact, rows, clock };
@@ -678,30 +678,14 @@ describe("the check", () => {
     expect((await apply(p)).done).toBe(1);
   });
 
-  it("consent is once a destination, tells where, and nothing leaves before it", async () => {
-    const { client, model, put, preview, check } = await setup({ cloud: true });
+  it("on a cloud provider the sentence and its check run with nothing asked first (plan 131: no per-use consent)", async () => {
+    const { model, put, preview, check } = await setup({ cloud: true });
     await put();
-    const acked = await client.call("ai.ask", { requestId: crypto.randomUUID(), question: "x", timezone: "UTC" });
-    if (acked.status !== "consent") throw new Error(acked.status);
-    await client.call("ai.ask", { requestId: crypto.randomUUID(), question: "x", timezone: "UTC", acknowledge: acked.destination });
     const p = await preview(meaning);
-    const first = await check(p);
-    if (first.status !== "consent") throw new Error(first.status);
-    expect(first.provider).toBe("anthropic");
-    expect(model.checks).toEqual([]);
-    expect((await check(p, { acknowledge: "somewhere-else" })).status).toBe("consent");
-    expect(model.checks).toEqual([]);
-    expect((await check(p, { acknowledge: first.destination })).status).toBe("done");
+    expect(model.plans).toHaveLength(1);
+    const r = await check(p);
+    expect(r.status).toBe("done");
     expect(model.checks).toHaveLength(1);
-    const q = await preview(meaning);
-    expect((await check(q)).status).toBe("done");
-  });
-
-  it("the sentence itself needs the question's agreement first", async () => {
-    const { model, put, start } = await setup({ cloud: true });
-    await put();
-    expect(await start()).toMatchObject({ status: "consent" });
-    expect(model.plans).toEqual([]);
   });
 });
 
@@ -875,7 +859,7 @@ describe("what the real-mail panel changed", () => {
     await put();
     model.check = () => JSON.stringify({ drop: ["g1"] });
     const q = await preview({ future: true, meaning: true });
-    const checked = await client.call("ai.actionCheck", { previewId: q.previewId, requestId: crypto.randomUUID(), acknowledge: "" });
+    const checked = await client.call("ai.actionCheck", { previewId: q.previewId, requestId: crypto.randomUUID() });
     if (checked.status !== "done") throw new Error(checked.status);
     expect(checked.preview).toMatchObject({ count: 0, found: 1 });
     expect(savesRuleOnly(checked.preview)).toBe(false);

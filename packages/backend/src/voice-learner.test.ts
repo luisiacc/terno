@@ -434,34 +434,30 @@ describe("the optional model step (§3)", () => {
     const finish = async () => {
       for (let i = 0; i < 200 && !["done", "failed", "cancelled"].includes(heard[heard.length - 1]?.state ?? ""); i++) await new Promise((r) => setTimeout(r, 5));
     };
-    const consent = () => t.backend.store.settings.get(STUDY_KEY, null);
-    return { ...t, heard, finish, consent };
+    const study = () => t.backend.store.settings.get(STUDY_KEY, null);
+    return { ...t, heard, finish, study };
   };
 
-  it("sends nothing and stores no consent until confirmed, on a cloud provider; a local one has nothing to ask", async () => {
+  it("on a cloud provider it starts on the click, with nothing asked first (plan 131: no per-use consent), and records where it went", async () => {
     const t = await prepared();
     vi.spyOn(await t.backend.aiService.forTask("voice", { foreground: false }), "local", "get").mockReturnValue(false);
-    const asked = await t.client.call("writing.studyStyle", { requestId: "st1" });
-    expect(asked).toMatchObject({ status: "consent", provider: "fake", accountIds: [t.account.id] });
-    expect((asked as { messages: number }).messages).toBeGreaterThan(0);
-    expect((asked as { tokens: number }).tokens).toBeGreaterThan(0);
-    expect(t.model.requests).toEqual([]);
-    expect(await t.consent()).toBeNull();
-    // the wrong provider, or leaving out an account: asks again
-    expect(await t.client.call("writing.studyStyle", { requestId: "st2", confirm: { provider: "anthropic", accountIds: [t.account.id] } })).toMatchObject({ status: "consent" });
-    expect(await t.client.call("writing.studyStyle", { requestId: "st3", confirm: { provider: "fake", accountIds: [] } })).toMatchObject({ status: "consent" });
-    expect(t.model.requests).toEqual([]);
+    const r = await t.client.call("writing.studyStyle", { requestId: "st1" });
+    expect(r).toMatchObject({ status: "started" });
+    await t.finish();
+    expect(t.heard[t.heard.length - 1]).toMatchObject({ state: "done" });
+    expect(t.model.requests.length).toBeGreaterThan(0);
+    expect(await t.study()).toMatchObject({ provider: "fake", accountIds: [t.account.id], destination: expect.stringContaining('"local":false') });
   });
 
   it("runs through the limiter, stores traits and notes, and the next draft uses them; the same sample asks nothing twice", async () => {
     const t = await prepared();
-    const r = await t.client.call("writing.studyStyle", { requestId: "st4", confirm: { provider: "fake", accountIds: [t.account.id] } });
+    const r = await t.client.call("writing.studyStyle", { requestId: "st4" });
     expect(r.status).toBe("started");
     await t.finish();
     expect(t.heard[t.heard.length - 1]).toMatchObject({ state: "done", done: (r as { total: number }).total });
     const { items } = await t.client.call("writing.profiles.list", {});
     expect(items.find((p) => p.scope === "account")!.judgment).toMatchObject({ traits: { directness: 4 }, notes: ["Answers first, adds nothing"] });
-    expect(await t.consent()).toMatchObject({ provider: "fake", accountIds: [t.account.id] });
+    expect(await t.study()).toMatchObject({ provider: "fake", accountIds: [t.account.id] });
     const asked = t.model.requests.length;
     expect(asked).toBeGreaterThan(0);
     await t.compose({ session: "with-judgment" });
@@ -471,7 +467,7 @@ describe("the optional model step (§3)", () => {
     // again: same sample, same prompt, same model
     const before = t.model.requests.length;
     t.heard.length = 0;
-    await t.client.call("writing.studyStyle", { requestId: "st5", confirm: { provider: "fake", accountIds: [t.account.id] } });
+    await t.client.call("writing.studyStyle", { requestId: "st5" });
     await t.finish();
     expect(t.model.requests.length).toBe(before);
   });
@@ -479,7 +475,7 @@ describe("the optional model step (§3)", () => {
   it("its failures are named, never spent twice, and the local profile is untouched; cancel stops it", async () => {
     const t = await prepared();
     t.model.answer = () => ({ text: "not json at all", stop: "end" });
-    await t.client.call("writing.studyStyle", { requestId: "st6", confirm: { provider: "fake", accountIds: [t.account.id] } });
+    await t.client.call("writing.studyStyle", { requestId: "st6" });
     await t.finish();
     expect(t.heard[t.heard.length - 1]).toMatchObject({ state: "failed", errorKind: "invalid_output" });
     const { items } = await t.client.call("writing.profiles.list", { scope: "account" });
@@ -491,16 +487,16 @@ describe("the optional model step (§3)", () => {
       await new Promise((_, reject) => req.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
       throw new Error("never");
     };
-    await t.client.call("writing.studyStyle", { requestId: "st7", confirm: { provider: "fake", accountIds: [t.account.id] } });
+    await t.client.call("writing.studyStyle", { requestId: "st7" });
     for (let i = 0; i < 100 && !started; i++) await new Promise((r) => setTimeout(r, 5));
     await t.client.call("ai.cancel", { requestId: "st7" });
     await t.finish();
     expect(t.heard[t.heard.length - 1]!.state).toBe("cancelled");
   });
 
-  it("refreshes only with consent still standing, after enough new mail, within the day's budget; a changed provider stops it", async () => {
+  it("refreshes only on the study's own destination, after enough new mail, within the day's budget; a changed provider stops it", async () => {
     const t = await prepared();
-    await t.client.call("writing.studyStyle", { requestId: "st8", confirm: { provider: "fake", accountIds: [t.account.id] } });
+    await t.client.call("writing.studyStyle", { requestId: "st8" });
     await t.finish();
     const before = t.model.requests.length;
     // less than 20 new: a pass may run, no judgment moves for the account
@@ -513,7 +509,7 @@ describe("the optional model step (§3)", () => {
     t.clock.now += 3600_000;
     await t.learned();
     expect(t.model.requests.length).toBeGreaterThan(afterFew);
-    // consent for another provider sends nothing more
+    // a study recorded for another provider: refreshes send nothing more
     await t.backend.store.settings.set(STUDY_KEY, { provider: "anthropic", accountIds: [t.account.id], at: START });
     const atChange = t.model.requests.length;
     await t.sentMany(25, (i) => ({ date: t.clock.now + i, bodyText: `Another fresh line of text ${i}, thanks.` }));
@@ -527,7 +523,7 @@ describe("the optional model step (§3)", () => {
 
     it("a full window keeps refreshing: mail coming in counts though the same number left", async () => {
       const t = await prepared();
-      await t.client.call("writing.studyStyle", { requestId: "new1", confirm: { provider: "fake", accountIds: [t.account.id] } });
+      await t.client.call("writing.studyStyle", { requestId: "new1" });
       await t.finish();
       const size = (await t.backend.store.writing.profiles.list({ scope: "account", accountId: t.account.id, limit: 1 }))[0]!.samples;
       expect(await newSince(t)).toBe(0);
@@ -595,7 +591,7 @@ describe("the optional model step (§3)", () => {
     });
   });
 
-  describe("consent follows where the mail goes (plan 133 review)", () => {
+  describe("refreshes follow where the study went (plan 133 review)", () => {
     const moreMail = async (t: Awaited<ReturnType<typeof prepared>>, word: string) => {
       await t.sentMany(25, (i) => ({ date: t.clock.now + i, bodyText: `A ${word} line of text ${i}, thanks.` }));
       t.clock.now += 3600_000;
@@ -604,9 +600,9 @@ describe("the optional model step (§3)", () => {
 
     it("a study on a local endpoint never authorizes a refresh on a cloud service", async () => {
       const t = await prepared();
-      await t.client.call("writing.studyStyle", { requestId: "dest1", confirm: { provider: "fake", accountIds: [t.account.id] } });
+      await t.client.call("writing.studyStyle", { requestId: "dest1" });
       await t.finish();
-      expect(await t.consent()).toMatchObject({ provider: "fake", destination: expect.stringContaining('"local":true') });
+      expect(await t.study()).toMatchObject({ provider: "fake", destination: expect.stringContaining('"local":true') });
       const before = t.model.requests.length;
       // the same provider and id, now somewhere that isn't this machine
       vi.spyOn(await t.backend.aiService.forTask("voice", { foreground: false }), "local", "get").mockReturnValue(false);
@@ -614,9 +610,9 @@ describe("the optional model step (§3)", () => {
       expect(t.model.requests.length).toBe(before);
     });
 
-    it("another server of the same kind needs its own consent", async () => {
+    it("another server of the same kind refreshes nothing until studied there", async () => {
       const t = await prepared();
-      await t.client.call("writing.studyStyle", { requestId: "dest2", confirm: { provider: "fake", accountIds: [t.account.id] } });
+      await t.client.call("writing.studyStyle", { requestId: "dest2" });
       await t.finish();
       const before = t.model.requests.length;
       const ai = await t.backend.aiService.forTask("voice", { foreground: false });
@@ -625,30 +621,12 @@ describe("the optional model step (§3)", () => {
       expect(t.model.requests.length).toBe(before);
     });
 
-    it("a confirm that names only the provider isn't agreement: the destination has to be the one asked about", async () => {
-      const t = await prepared();
-      const ai = await t.backend.aiService.forTask("voice", { foreground: false });
-      vi.spyOn(ai, "local", "get").mockReturnValue(false);
-      const asked = await t.client.call("writing.studyStyle", { requestId: "dest3" });
-      if (asked.status !== "consent") throw new Error("expected consent");
-      expect(await t.client.call("writing.studyStyle", { requestId: "dest4", confirm: { provider: "fake", accountIds: [t.account.id] } })).toMatchObject({ status: "consent" });
-      // agreed to one place; it now points at another
-      Object.defineProperty(ai, "endpoint", { value: "https://elsewhere.example/v1", configurable: true });
-      expect(await t.client.call("writing.studyStyle", { requestId: "dest5", confirm: { provider: "fake", destination: asked.destination, accountIds: [t.account.id] } })).toMatchObject({ status: "consent" });
-      expect(t.model.requests).toEqual([]);
-      expect(await t.consent()).toBeNull();
-      const again = await t.client.call("writing.studyStyle", { requestId: "dest6" });
-      if (again.status !== "consent") throw new Error("expected consent");
-      expect(await t.client.call("writing.studyStyle", { requestId: "dest7", confirm: { provider: "fake", destination: again.destination, accountIds: [t.account.id] } })).toMatchObject({ status: "started" });
-      await t.finish();
-    });
-
-    it("what a consent didn't name stays out: an account added after it", async () => {
+    it("what a study didn't cover stays out: an account added after it", async () => {
       const t = await prepared({ accounts: 2 });
       const [a, b] = t.accounts;
-      await t.client.call("writing.studyStyle", { requestId: "dest8", confirm: { provider: "fake", accountIds: [a!.id, b!.id] } });
+      await t.client.call("writing.studyStyle", { requestId: "dest8" });
       await t.finish();
-      const stored = (await t.consent()) as unknown as { accountIds: number[] };
+      const stored = (await t.study()) as unknown as { accountIds: number[] };
       await t.backend.store.settings.set(STUDY_KEY, { ...stored, accountIds: [a!.id] });
       const before = t.model.requests.length;
       await t.sentMany(25, (i) => ({ accountId: b!.id, date: t.clock.now + i, bodyText: `canary-unnamed ${i}, thanks.` }));
@@ -657,9 +635,9 @@ describe("the optional model step (§3)", () => {
       for (const req of t.model.requests.slice(before)) expect(JSON.stringify(req.messages)).not.toContain("canary-unnamed");
     });
 
-    it("a consent from before destinations were kept refreshes nothing until it's asked again", async () => {
+    it("a study recorded before destinations were kept refreshes nothing until studied again", async () => {
       const t = await prepared();
-      await t.client.call("writing.studyStyle", { requestId: "dest9", confirm: { provider: "fake", accountIds: [t.account.id] } });
+      await t.client.call("writing.studyStyle", { requestId: "dest9" });
       await t.finish();
       await t.backend.store.settings.set(STUDY_KEY, { provider: "fake", accountIds: [t.account.id], at: START });
       const before = t.model.requests.length;
@@ -679,7 +657,7 @@ describe("the optional model step (§3)", () => {
     ])("%s stops a study at the provider, and no judgment lands", async (_name, patch) => {
       const t = await prepared();
       holdingModel(t);
-      await t.client.call("writing.studyStyle", { requestId: "perm1", confirm: { provider: "fake", accountIds: [t.account.id] } });
+      await t.client.call("writing.studyStyle", { requestId: "perm1" });
       await vi.waitFor(() => expect(t.model.requests.length).toBeGreaterThan(0));
       await t.client.call("writing.prefs.set", patch);
       expect(t.model.requests[0]!.signal.aborted).toBe(true);
@@ -689,20 +667,20 @@ describe("the optional model step (§3)", () => {
       expect(rows.every((r) => r.judgmentJson === null)).toBe(true);
     });
 
-    it("Clear stops a study at the provider, and a consent isn't written back afterward", async () => {
+    it("Clear stops a study at the provider, and its record isn't written back afterward", async () => {
       const t = await prepared();
       holdingModel(t);
-      await t.client.call("writing.studyStyle", { requestId: "perm2", confirm: { provider: "fake", accountIds: [t.account.id] } });
+      await t.client.call("writing.studyStyle", { requestId: "perm2" });
       await vi.waitFor(() => expect(t.model.requests.length).toBeGreaterThan(0));
       await t.client.call("writing.profiles.clear", {});
       expect(t.model.requests[0]!.signal.aborted).toBe(true);
       await t.finish();
-      expect(await t.consent()).toBeNull();
+      expect(await t.study()).toBeNull();
     });
 
     it("learning off stops a refresh at the provider", async () => {
       const t = await prepared();
-      await t.client.call("writing.studyStyle", { requestId: "perm3", confirm: { provider: "fake", accountIds: [t.account.id] } });
+      await t.client.call("writing.studyStyle", { requestId: "perm3" });
       await t.finish();
       const before = t.model.requests.length;
       holdingModel(t);
@@ -720,7 +698,7 @@ describe("the optional model step (§3)", () => {
     const empty = await setup();
     expect(await empty.client.call("writing.studyStyle", { requestId: "st9" })).toEqual({ status: "nothing" });
     const none = await prepared({ provider: "none" });
-    const e = await errorOf(none.client.call("writing.studyStyle", { requestId: "st10", confirm: { provider: "fake", accountIds: [none.account.id] } }));
+    const e = await errorOf(none.client.call("writing.studyStyle", { requestId: "st10" }));
     expect(e.details?.aiErrorKind).toBe("not_configured");
     expect(none.model.requests).toEqual([]);
   });

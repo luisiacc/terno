@@ -100,8 +100,6 @@ export type AskOlderOffer = { kind: "none" } | { kind: "downloading" } | { kind:
 export type AiAskResult =
   /** plan 143: it's something to do, not a question: nothing ran, and the preview comes next */
   | { status: "command" }
-  /** the first text this would send to this destination: said once */
-  | { status: "consent"; provider: AiProviderId; endpoint: string | null; destination: string }
   /** `turn` null: its conversation was deleted or cleared while it ran */
   | { status: "done"; turn: AskTurn | null; incomplete: boolean; older: AskOlderOffer; olderFound?: number; olderPartial?: boolean }
   | { status: "failed"; turn: AskTurn | null; error: { kind: import("./ai").AiErrorKind; message: string; i18n?: import("./rpc/envelope").I18nRef }; older: AskOlderOffer };

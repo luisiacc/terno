@@ -29,8 +29,6 @@ export type AiPhase =
   | "resolving"
   /** §5.2's questions */
   | "question"
-  /** the first draft on a cloud provider says what it sends, once */
-  | "telling"
   | "writing"
   /** the message it answers has no text here yet */
   | "waitingBody"
@@ -420,30 +418,6 @@ export function closeRow(key: string, o: { keepDraft?: boolean } = {}) {
   focusEditor(key);
 }
 
-// ── §5: where it goes
-
-function telling(): { provider: string; key: string } | null {
-  const target = writingTarget(aiSettings());
-  if (target.local) return null;
-  const key = `terno:ai-draft-told:${target.provider}`;
-  try {
-    return globalThis.localStorage?.getItem(key) ? null : { provider: target.provider, key };
-  } catch {
-    return null;
-  }
-}
-
-/** The first-use line: read, and said once. */
-export function acknowledgeTold(key: string) {
-  const line = telling();
-  try {
-    if (line) globalThis.localStorage?.setItem(line.key, "1");
-  } catch {
-    /* a private window: it says so again next time */
-  }
-  void submit(key);
-}
-
 function surfaceOf(d: LocalDraft) {
   const thread = threadOf(d);
   // a reply Terno filled in isn't a choice of the user's: the conversation it's on is the surface
@@ -463,7 +437,6 @@ export async function submit(key: string): Promise<void> {
   const instruction = s.instruction.trim();
   if (!draftingOffered(getApp())) return update(key, { phase: "noProvider" });
   if (instruction) memory.last = instruction;
-  if (telling()) return update(key, { phase: "telling", focus: s.focus + 1 });
   update(key, { error: null, confirmFailed: false, question: null, who: false });
   // the strip's own instruction, edited: the draft written again from the new words (plan 161, pass 2)
   if (s.strip && s.rewrite) return replacing(key, { how: "rewrite", instruction });
@@ -1387,7 +1360,6 @@ aiDraftHooks.escape = (key) => {
     case "resolving":
     case "input":
     case "question":
-    case "telling":
     case "error":
     case "noProvider":
       if (s.error?.partial) discard(key);

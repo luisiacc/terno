@@ -25,7 +25,7 @@ import type { ProviderQuery } from "@terno/mail";
 import { ASK_MAX_CHARS, ASK_MESSAGES_MAX, type AskConversationCopy, type AskSource } from "@terno/store";
 import { toRpcError } from "./ai-service";
 import type { BackendCore as Backend } from "./core";
-import { acknowledgeAsk, readSettings } from "./settings";
+import { readSettings } from "./settings";
 import { destinationOf, scrubbed } from "./voice-learner";
 
 /**
@@ -128,12 +128,12 @@ export class AskService {
     return entry;
   }
 
-  /** Where the answer may go, as it was agreed: checked again before anything is sent (revision 2). */
+  /** Where the answer goes: checked again before anything is sent, so a provider changed meanwhile gets nothing (revision 2). */
   async target(): Promise<{ ai: AiTasks; planner: AiTasks; destination: string }> {
     const ai = await this.b.aiService.forTask("ask", { foreground: true });
     const planner = await this.b.aiService.forTask("askPlan", { foreground: true });
     const destination = destinationOf(ai);
-    // i18n-ignore: our own bug if it happens: planning and answering are one acknowledged destination
+    // i18n-ignore: our own bug if it happens: planning and answering are one destination
     if (destinationOf(planner) !== destination) throw new AiError("Planning and answering must go to one place", "blocked");
     return { ai, planner, destination };
   }
@@ -143,7 +143,6 @@ export class AskService {
     if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
     const now = await this.b.aiService.forTask("ask", { foreground: true });
     if (destinationOf(now) !== destination) throw new AiError(L("errors.ai.cancelled"), "cancelled");
-    if (!now.local && !(await readSettings(this.b.store)).ask.acknowledged.includes(destination)) throw new AiError(L("errors.ai.cancelled"), "cancelled");
   }
 
   /** The local search: up to 40 threads a query, merged by reciprocal rank with a small lift for what's recent. */
@@ -174,11 +173,6 @@ export class AskService {
       const settings = await readSettings(store);
       if (!settings.ask.enabled) throw new AiError(L("errors.ai.askOff"), "not_configured");
       const { ai, planner, destination } = await this.target();
-      if (!ai.local && !settings.ask.acknowledged.includes(destination)) {
-        // what they read is what they agreed to: Settings may have moved since
-        if (p.acknowledge !== destination) return { status: "consent", provider: ai.providerId, endpoint: ai.endpoint, destination };
-        await acknowledgeAsk(store, destination);
-      }
       let earlier: { question: string; answer: string }[] = [];
       if (p.conversationId !== undefined) {
         const count = await store.ask.history.turnCount(p.conversationId);
@@ -383,7 +377,6 @@ export class AskService {
       const settings = await readSettings(store);
       if (!settings.ask.enabled) throw new AiError(L("errors.ai.askOff"), "not_configured");
       const { ai, destination } = await this.target();
-      if (!ai.local && !settings.ask.acknowledged.includes(destination)) return { status: "consent", provider: ai.providerId, endpoint: ai.endpoint, destination };
       const now = this.b.now();
       const valid = validAskQueries(turn.queries, now);
       if (!valid.length) throw new AiError(L("errors.ai.askNoPlan"), "invalid_output");

@@ -124,9 +124,9 @@ describe("where a question can go", () => {
     expect(useAsk.getState().noProvider).toBe(false);
   });
 
-  it("Continue sends the destination that was read", () => {
+  it("a question goes as asked, with nothing to agree to first (plan 131: no per-use consent)", () => {
     useAsk.setState({ running: null, conversationId: null, turns: [] });
-    askQuestion("q", { acknowledge: "dest-a" });
-    expect((rpc.calls.find((c) => c.method === "ai.ask")!.params as { acknowledge?: string }).acknowledge).toBe("dest-a");
+    askQuestion("q");
+    expect(rpc.calls.find((c) => c.method === "ai.ask")!.params).not.toHaveProperty("acknowledge");
   });
 });

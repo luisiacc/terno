@@ -1,6 +1,6 @@
 import { aiFeaturesAvailable, aiReady, ASK_CLAUDE_MODEL, chosenTargetReady, DIGEST_CLAUDE_MODEL, DIGEST_OPENAI_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type AiErrorKind, type AiProviderId, type CompatiblePreset, type OutputMode } from "@terno/core";
 import type { AiSettings, AppSettings } from "@terno/core/rpc";
-import { t } from "@terno/i18n";
+import { getLocale, t } from "@terno/i18n";
 
 /** What the AI tab's selector shows: compatible appears twice (a server on this Mac, or a cloud API). */
 export type ProviderChoice = Exclude<AiProviderId, "compatible" | "jev"> | "local-server" | "compatible";
@@ -193,6 +193,31 @@ export function privacyLine(ai: AiSettings): string {
   if (ai.provider === "none") return t("ai.privacy.off");
   if (ai.local) return t("ai.privacy.local");
   return t("ai.privacy.cloud", { host: hostOf(ai) ?? providerName(ai) });
+}
+
+/**
+ * Plan 131, the owner's decision (no per-use consent): every cloud provider AI may send mail to, by the backend's
+ * rules (`AiService.targetFor`): the configured provider, each task's own choice, OpenAI for summaries and JEV for
+ * sorting once they have a key. Named where AI is turned on, since nothing asks again when a feature runs.
+ */
+export function mailDestinations(ai: AiSettings): string[] {
+  const out = new Set<AiProviderId>();
+  const cloud = (p: AiProviderId) => p !== "none" && !LOCAL_PROVIDERS.includes(p) && !(p === ai.provider && ai.local);
+  if (cloud(ai.provider)) out.add(ai.provider);
+  for (const target of Object.values(ai.tasks ?? {})) if (target && cloud(target.provider)) out.add(target.provider);
+  if (ai.keys?.openai?.hasKey && !ai.tasks?.summary) out.add("openai");
+  if (ai.keys?.jev?.hasKey && !ai.tasks?.categorize) out.add("jev");
+  return [...out].map((p) => providerLabel(p, ai));
+}
+
+/** A list as the language says it: "Claude (Anthropic) and OpenAI". */
+export const namesList = (names: readonly string[]): string => new Intl.ListFormat(getLocale(), { type: "conjunction" }).format(names);
+
+/** Settings → AI: where mail goes, and what goes there. `privacyLine` stays the AI filter's, which sends no mail. */
+export function disclosureLine(ai: AiSettings): string {
+  const names = mailDestinations(ai);
+  if (names.length) return t("ai.disclosure.cloud", { count: names.length, providers: namesList(names) });
+  return ai.provider === "none" ? t("ai.privacy.off") : t("ai.privacy.local");
 }
 
 /** How a model answers (keys: read with t()). */

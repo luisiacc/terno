@@ -5,11 +5,11 @@ import { aiFeaturesAvailable } from "@terno/core";
 import { AiUseGroup, AskGroup, DigestGroup, FollowupsGroup, SummariesGroup } from "./ai-summaries";
 import { DraftingGroup } from "./ai-drafting";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
-import { openSettingsTab, SettingsGroup, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
+import { openSettingsTab, PrivacyNote, SettingsGroup, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
 import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@terno/ui/components/select";
-import { CircleAlert, CircleCheck, RefreshCw, ShieldCheck } from "@terno/ui/icons";
+import { CircleAlert, CircleCheck, RefreshCw } from "@terno/ui/icons";
 import { refText, t } from "@terno/i18n";
 import { useEffect, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
@@ -18,6 +18,7 @@ import {
   choiceOf,
   CLOUD_CHOICES,
   DEFAULT_ENDPOINT,
+  disclosureLine,
   endpointOf,
   errorHelp,
   hostOf,
@@ -27,7 +28,6 @@ import {
   PRESET_ENDPOINT,
   presetLabel,
   PRESETS,
-  privacyLine,
   providerName,
   type ProviderChoice,
 } from "~/lib/ai";
@@ -191,7 +191,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
   if (ai.fromEnv) {
     return (
       <div data-testid="ai-tab">
-        <SettingsGroup>
+        <SettingsGroup footer={<PrivacyNote testId="ai-privacy" title={t("ai.privacy")}>{disclosureLine(ai)}</PrivacyNote>}>
           <SettingsRow label={t("settings.dev.aiNote")} hint={t("settings.dev.aiNote.hint")} testId="ai-dev-note">
             {() => (
               <Button variant="outline" size="sm" data-testid="ai-dev-open" onClick={() => openSettingsTab("dev")}>
@@ -209,12 +209,9 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
     <div data-testid="ai-tab">
       <SettingsGroup
         footer={
-          <span className="flex items-start gap-1.5" data-testid="ai-privacy">
-            <ShieldCheck className="mt-px size-3.5 shrink-0" aria-hidden />
-            <span>
-              <span className="font-medium text-foreground">{ai.provider !== "none" && !ai.local && hostOf(ai) ? t("ai.privacyHost", { host: hostOf(ai)! }) : t("ai.privacy")}</span> {privacyLine(ai)}
-            </span>
-          </span>
+          <PrivacyNote testId="ai-privacy" title={ai.provider !== "none" && !ai.local && hostOf(ai) ? t("ai.privacyHost", { host: hostOf(ai)! }) : t("ai.privacy")}>
+            {disclosureLine(ai)}
+          </PrivacyNote>
         }
       >
         <SettingsRow label={t("ai.provider")} hint={t("ai.provider.hint")}>

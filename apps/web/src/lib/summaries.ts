@@ -1,4 +1,4 @@
-import type { AiErrorKind, AiProviderId, AiSummary, ThreadSummary } from "@terno/core";
+import type { AiErrorKind, AiSummary, ThreadSummary } from "@terno/core";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { forgetAsk } from "~/lib/ask";
@@ -15,8 +15,6 @@ export type SummaryUi =
   | { kind: "ready"; summary: AiSummary }
   | { kind: "running"; requestId: string; was: "none" | "stale" }
   | { kind: "waitingBody"; was: "none" | "stale" }
-  /** the first text this would send to this cloud provider: said once, in the block */
-  | { kind: "consent"; provider: AiProviderId; was: "none" | "stale" }
   /** nothing set up to run summaries: the block points to Settings */
   | { kind: "noProvider"; was: "none" | "stale" }
   | { kind: "error"; message: string; errorKind: AiErrorKind | undefined; was: "none" | "stale"; key?: string };
@@ -86,8 +84,8 @@ const wasOf = (ui: SummaryUi | undefined): "none" | "stale" => {
   return ui.was;
 };
 
-/** §7: a summary by hand, shown in the block at once. `acknowledge`: the user has just said Continue. */
-export async function summarize(threadId: number, o: { acknowledge?: boolean } = {}): Promise<void> {
+/** §7: a summary by hand, shown in the block at once. */
+export async function summarize(threadId: number): Promise<void> {
   const before = useSummaries.getState().byThread.get(threadId);
   if (before?.kind === "running") return;
   if (before?.kind === "ready") return useSummaries.setState({ open: true });
@@ -99,10 +97,9 @@ export async function summarize(threadId: number, o: { acknowledge?: boolean } =
     return now?.kind === "running" && now.requestId === requestId;
   };
   try {
-    const result = await client.call("ai.summarize", { threadId, requestId, ...(o.acknowledge ? { acknowledge: true } : {}) });
+    const result = await client.call("ai.summarize", { threadId, requestId });
     if (!mine()) return;
     if (result.status === "ready") put(threadId, { kind: "ready", summary: result.summary });
-    else if (result.status === "consent") put(threadId, { kind: "consent", provider: result.provider, was });
     else put(threadId, { kind: "waitingBody", was });
   } catch (error) {
     if (!mine()) return;

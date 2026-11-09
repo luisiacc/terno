@@ -130,20 +130,17 @@ export interface AiSettings {
   monthlyLimitUsd: number;
 }
 
-/** Plan 141: Ask your mail. On by default, since nothing runs until someone asks, and the first question asks for consent. */
+/**
+ * Plan 141: Ask your mail. On by default, since nothing runs until someone asks. An older profile may still hold
+ * `acknowledged` and `checkAcknowledged` (the per-use consent plan 131 removed): left in place, read by nothing.
+ */
 export interface AskSetting {
   enabled: boolean;
-  /** where the user agreed questions and mail go: provider, preset and origin, as `destinationOf` says (revision 2) */
-  acknowledged: string[];
-  /** plan 143: where the senders and subjects a command's check sends may go */
-  checkAcknowledged?: string[];
 }
 
 export interface AiSummariesSetting {
   enabled: boolean;
   enabledAt: number | null;
-  /** the cloud providers the user was told a hand summary sends the conversation to */
-  acknowledged: AiProviderId[];
 }
 
 /** What AI use has cost so far on the user's own keys (plan 131). */
@@ -1150,9 +1147,9 @@ export const contract = {
   "ai.usage": m<AiUsageReport>()(empty),
   /**
    * Plan 132 §7: a conversation's summary, by hand: any thread that isn't in spam or trash, however old. Cancellable
-   * with `ai.cancel`. `acknowledge`: the user has read that it goes to this provider.
+   * with `ai.cancel`. It runs at once: where AI sends mail is said where the provider is chosen (plan 131, no per-use consent).
    */
-  "ai.summarize": m<AiSummarizeResult>()(z.object({ threadId: id, requestId: z.string().min(1).max(64), acknowledge: z.boolean().optional() }), { timeoutMs: 120_000 }),
+  "ai.summarize": m<AiSummarizeResult>()(z.object({ threadId: id, requestId: z.string().min(1).max(64) }), { timeoutMs: 120_000 }),
   /** Plan 132 §6: the summary an open reader shows. Mail content: renderer only, never for MCP. */
   "ai.summaries.get": m<AiSummaryRead>()(z.object({ threadId: id })),
   /** What the automatic summaries are doing, for Settings → AI. */
@@ -1177,9 +1174,9 @@ export const contract = {
   // plan 141. All renderer-only: none of these is in MCP_ALLOWED, since a question and its answers are mail content.
   /**
    * A question: the answer's text streams to this connection as `aiAsk` events, cancellable with `ai.cancel`.
-   * `conversationId`: a follow-up. `acknowledge`: the destination the user read: any other one asks again.
+   * `conversationId`: a follow-up.
    */
-  "ai.ask": m<AiAskResult>()(z.object({ requestId, question: z.string().trim().min(1).max(ASK_QUESTION_MAX), conversationId: id.optional(), timezone: z.string().min(1).max(100), acknowledge: z.string().min(1).max(2000).optional() }), { timeoutMs: 180_000 }),
+  "ai.ask": m<AiAskResult>()(z.object({ requestId, question: z.string().trim().min(1).max(ASK_QUESTION_MAX), conversationId: id.optional(), timezone: z.string().min(1).max(100) }), { timeoutMs: 180_000 }),
   /** The user's own servers look further back for this turn's question; one more answer comes of it. Only on a click. */
   "ai.askOlder": m<AiAskResult>()(z.object({ requestId, conversationId: id, turnId: id, timezone: z.string().min(1).max(100) }), { timeoutMs: 300_000 }),
   /** Plan 145: what needs you. Local, and live: asked again as things change. `heldIds`: the open and checked rows, kept in place. */
@@ -1211,8 +1208,8 @@ export const contract = {
   "ai.actionPage": m<{ items: ThreadSummary[]; total: number; unticked: number[] }>()(z.object({ previewId: z.string().min(1).max(64), offset: z.number().int().min(0), limit: z.number().int().min(1).max(500), leftOut: z.boolean() })),
   "ai.actionToggle": m<ActionPreviewInfo>()(z.object({ previewId: z.string().min(1).max(64), threadId: id, included: z.boolean() })),
   "ai.actionIncludeSkipped": m<ActionPreviewInfo>()(z.object({ previewId: z.string().min(1).max(64), included: z.boolean() })),
-  /** Senders and subjects, never a body, to see which rows don't fit: it can only remove. Consent is by destination. */
-  "ai.actionCheck": m<AiActionCheck>()(z.object({ previewId: z.string().min(1).max(64), requestId, acknowledge: z.string().max(500).optional(), skip: z.boolean().optional() }), { timeoutMs: 300_000 }),
+  /** Senders and subjects, never a body, to see which rows don't fit: it can only remove. */
+  "ai.actionCheck": m<AiActionCheck>()(z.object({ previewId: z.string().min(1).max(64), requestId, skip: z.boolean().optional() }), { timeoutMs: 300_000 }),
   "ai.actionApply": m<AiActionApplied>()(z.object({ previewId: z.string().min(1).max(64), jobId: z.string().min(1).max(64).optional(), future: z.boolean() }), { timeoutMs: 600_000 }),
   /** Between slices: what committed stays, with its Undo. */
   "ai.actionStop": m<{ ok: true }>()(z.object({ previewId: z.string().min(1).max(64) })),
@@ -1302,13 +1299,13 @@ export const contract = {
   "writing.profiles.restore": m<{ ok: true; restored: boolean }>()(z.object({ undo: z.string().max(64) })),
   /** Counts again from mail, one account or all; nothing is overwritten that's pinned. */
   "writing.profiles.rebuild": m<{ ok: true }>()(z.object({ accountId: id.optional() })),
-  /** Clear all: every profile, generation, consent and checkpoint; it sleeps until the feature is used again. */
+  /** Clear all: every profile, generation, study record and checkpoint; it sleeps until the feature is used again. */
   "writing.profiles.clear": m<{ ok: true }>()(empty),
   /**
-   * "Let AI study my style". Without `confirm` nothing is sent: it answers `consent` with what would go. With it, the
-   * model step runs in the background through the limiter's `voice` task (`aiStudy` events, cancellable with `ai.cancel`).
+   * "Study my style": the model step runs at once, in the background, through the limiter's `voice` task (`aiStudy`
+   * events, cancellable with `ai.cancel`). No per-use consent (plan 131): the button's hint says what goes.
    */
-  "writing.studyStyle": m<WritingStudyResult>()(z.object({ requestId, confirm: z.object({ provider: z.string().max(64), destination: z.string().max(2048).optional(), accountIds: z.array(id).max(100) }).optional() }), { timeoutMs: 120_000 }),
+  "writing.studyStyle": m<WritingStudyResult>()(z.object({ requestId }), { timeoutMs: 120_000 }),
   /** §8: model text went into a draft: its provenance from now until it's sent. False: that draft or generation is gone. */
   "writing.commitGeneration": m<{ ok: boolean }>()(z.object({ accountId: id, draftId: id, draftGeneration: z.string().max(64), address: z.string().max(320), text: z.string().max(GENERATION_TEXT_MAX) })),
 
