@@ -64,8 +64,10 @@ function CommandDialog({
     <Dialog {...props}>
       <DialogContent
         className={cn(
-          // in dark a scrim can't darken a near-black window much: the panel's own edge says where it ends (plan 158)
-          "top-[18%] translate-y-0 gap-0 overflow-hidden rounded-palette! p-0 sm:max-w-[640px] dark:shadow-[0_0_0_var(--hairline-w)_var(--control-edge-hover),0_24px_64px_-24px_var(--shadow-color)]",
+          // in dark a scrim can't darken a near-black window much: the panel's own edge says where it ends (plan 158). It's an
+          // outline on the panel's inner edge, not a shadow's spread: a spread ring's corners rasterize fainter than its sides,
+          // so the corners read as another colour (the owner's catch); an outline is stroked along the curve, one weight all round
+          "top-[18%] translate-y-0 gap-0 overflow-hidden rounded-palette! p-0 sm:max-w-[640px] dark:shadow-[0_24px_64px_-24px_var(--shadow-color)] dark:outline-1 dark:-outline-offset-1 dark:outline-solid dark:outline-(color:--control-edge-hover)",
           className
         )}
         showCloseButton={showCloseButton}
