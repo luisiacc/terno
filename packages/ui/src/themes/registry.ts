@@ -113,7 +113,8 @@ export function glassAlpha(popover: Oklch, texts: Oklch[]): number {
 export const FIELD_WASH = 0.07;
 /**
  * Plan 160's floors for boundaries that repeat a cue shown another way (contrast.ts BOUNDARY_STEPS): a tint (a
- * selection, a field, a thumb) and a hairline (a composer's ring and dividers)
+ * selection) and a hairline (a composer's ring and dividers). A field and the segmented control drawn in it are held at
+ * contrast.ts FIELD_FLOOR instead (the owner's decision)
  */
 export const TINT_FLOOR = 1.35;
 export const HAIRLINE_FLOOR = 1.5;
