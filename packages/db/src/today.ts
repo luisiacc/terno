@@ -57,11 +57,14 @@ export function digestFacts(db: Db, messageIds: readonly number[]): { facts: Dig
        ORDER BY m.id DESC`,
       ids,
     )
-    .map((r) => ({ threadId: r.thread_id, messageId: r.message_id, arrivedAt: r.created_at, lastDate: r.last_date, messageCount: r.message_count, from: r.from_name || r.from_email, subject: r.subject, snippet: r.snippet }));
+    .map((r) => ({ threadId: r.thread_id, messageId: r.message_id, arrivedAt: r.created_at, lastDate: r.last_date, messageCount: r.message_count, from: r.from_name || r.from_email, fromEmail: r.from_email, subject: r.subject, snippet: r.snippet }));
   return { facts, oldest };
 }
 
 export const messagesHere = (db: Db, ids: readonly number[]): number[] => db.all<{ id: number }>("SELECT id FROM messages WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify(ids)).map((r) => r.id);
+
+export const senders = (db: Db, ids: readonly number[]): Map<number, string> =>
+  new Map(db.all<{ id: number; from_email: string }>("SELECT id, from_email FROM messages WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify(ids)).map((r) => [r.id, r.from_email]));
 
 export function digestLive(db: Db, threadIds: readonly number[]): number[] {
   return db.all<{ id: number }>("SELECT id FROM threads WHERE id IN (SELECT value FROM json_each(?)) AND in_inbox = 1 AND unread_count > 0", JSON.stringify(threadIds)).map((r) => r.id);

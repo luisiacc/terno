@@ -108,10 +108,23 @@ export interface DigestItem {
   lastDate: number;
   messageCount: number;
   from: string;
+  /** plan 166: the sender's address (what "Not a newsletter" keeps out); absent in a digest stored before it, and filled at read */
+  fromEmail?: string;
   subject: string;
   /** null: no line, with the digest off */
   line: string | null;
 }
+
+/** Plan 166: a sender the user said isn't a newsletter. Kept on this machine, out of every digest and Automated mail. */
+export interface NotNewsletter {
+  email: string;
+  name: string;
+  /** when it was said: the list's order, and which entry an Undo is for */
+  at: number;
+}
+
+/** Plan 166: the list keeps this many; past it, the oldest goes (and its Undo brings it back). */
+export const NOT_NEWSLETTERS_MAX = 500;
 
 export type DigestState = "pending" | "ready" | "failed";
 

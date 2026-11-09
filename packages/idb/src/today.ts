@@ -52,12 +52,22 @@ export function digestFacts(c: Ctx, messageIds: readonly number[]): { facts: Dig
     if (m.list_id === null && !m.is_bulk) continue;
     if (m.date !== t.last_date || t.in_inbox !== 1 || t.tab === 2 || t.person !== 0 || t.is_starred || t.has_sent || t.in_spam || t.in_trash) continue;
     if (typeof m.gmail_labels === "string" && m.gmail_labels.includes("CATEGORY_UPDATES")) continue;
-    facts.push({ threadId: t.id, messageId: id, arrivedAt: m.created_at, lastDate: t.last_date, messageCount: t.message_count, from: m.from_name || m.from_email, subject: m.subject, snippet: m.snippet });
+    facts.push({ threadId: t.id, messageId: id, arrivedAt: m.created_at, lastDate: t.last_date, messageCount: t.message_count, from: m.from_name || m.from_email, fromEmail: String(m.from_email ?? ""), subject: m.subject, snippet: m.snippet });
   }
   return { facts, oldest };
 }
 
 export const messagesHere = (c: Ctx, ids: readonly number[]): number[] => ids.filter((id) => !!T(c, "messages").get(id));
+
+export function senders(c: Ctx, ids: readonly number[]): Map<number, string> {
+  const messages = T(c, "messages");
+  const out = new Map<number, string>();
+  for (const id of ids) {
+    const m = messages.get(id);
+    if (m) out.set(id, String(m.from_email ?? ""));
+  }
+  return out;
+}
 
 export function digestLive(c: Ctx, threadIds: readonly number[]): number[] {
   const threads = T(c, "threads");

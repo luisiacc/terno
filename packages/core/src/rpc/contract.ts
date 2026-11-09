@@ -24,7 +24,7 @@ import {
   type DevAiProvider,
 } from "../ai";
 import type { FollowupRow, FollowupsSetting, FollowupsSnapshot } from "../followups";
-import type { DigestRow, TodayList, TodaySetting } from "../today";
+import type { DigestRow, NotNewsletter, TodayList, TodaySetting } from "../today";
 import type { AiPrepareReply, AiReplyEvent, PreparedReply, RepliesSetting } from "../replies";
 import type { ActionPreviewInfo, ActionRowTag, AiActionApplied, AiActionCheck, AiActionEvent, AiActionStart } from "../actions";
 import { ASK_QUESTION_MAX, ASK_SOURCES_MAX, type AiAskEvent, type AiAskResult, type AskConversationSummary, type AskOlderOffer, type AskSourceView, type AskTurn } from "../ask";
@@ -1186,7 +1186,16 @@ export const contract = {
   /** a person's try again */
   "today.digestRetry": m<{ ok: true }>()(empty),
   /** only the rows named, and each only if it's still as the page listed it. Undo is `threads.undo`. */
-  "today.digestArchive": m<{ undoId: number | null; archived: number; /** plan 161, pass 2: exactly which, so the page hides only these */ archivedIds: number[]; changed: number; spared: number }>()(z.object({ items: z.array(z.object({ threadId: id, lastDate: z.number(), messageCount: z.number().int() })).max(200), jobId: z.string().min(1).max(64).optional() }), { timeoutMs: 120_000 }),
+  "today.digestArchive": m<{ undoId: number | null; archived: number; /** plan 161, pass 2: exactly which, so the page hides only these */ archivedIds: number[]; changed: number; spared: number }>()(z.object({ items: z.array(z.object({ threadId: id, lastDate: z.number(), messageCount: z.number().int(), /** plan 166: a sender said not to be a newsletter meanwhile is left alone */ fromEmail: z.string().max(320).optional() })).max(200), jobId: z.string().min(1).max(64).optional() }), { timeoutMs: 120_000 }),
+  /**
+   * Plan 166: "Not a newsletter": this sender stays out of every digest and Automated mail, on this machine. No model,
+   * no check. `at` puts back an entry an Undo took off, where it was. `evicted`: the oldest, dropped at the cap.
+   */
+  "today.notNewsletter": m<{ added: NotNewsletter | null; evicted: NotNewsletter | null }>()(z.object({ email: z.string().trim().min(3).max(320), name: z.string().max(200), at: z.number().int().optional() })),
+  /** Plan 166: let a sender back in. `at`: only that entry (an Undo's), so an old Undo can't take off one said again since */
+  "today.newsletterAgain": m<{ removed: NotNewsletter | null }>()(z.object({ email: z.string().trim().min(3).max(320), at: z.number().int().optional() })),
+  /** Plan 166: the senders kept out, newest first: Settings → AI → Newsletter digest */
+  "today.notNewsletters": m<{ senders: NotNewsletter[] }>()(empty),
   /**
    * Plan 144: a conversation that waits for an answer stayed open. It reads the switch, the thread and what's stored
    * again, whatever the window thought, and goes on in `aiReply`. Never MCP. Nothing is ever sent from here.

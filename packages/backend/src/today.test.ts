@@ -417,6 +417,168 @@ describe("the digest", () => {
     expect(t.model.reqs).toEqual([]);
   });
 
+  describe("plan 166: Not a newsletter", () => {
+    const sent = (t: Awaited<ReturnType<typeof setup>>) => t.model.reqs.map((r) => promptText(r.messages[0]!.content)).join();
+
+    it("leaves the digest at once, and Undo (only its own entry) brings it back where it was", async () => {
+      const t = await setup();
+      const strat = await t.letter("Stratechery");
+      const brew = await t.letter("Morning Brew");
+      await on(t);
+      await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(day()))?.state).toBe("ready"));
+      const before = (await t.client.call("today.digest", {}))!;
+      expect(before.items.map((i) => [i.threadId, i.fromEmail])).toEqual([[strat, "news@stratechery.test"], [brew, "news@morningbrew.test"]]);
+      const events: unknown[] = [];
+      const off = t.client.on("todayDigest", (e) => void events.push(e));
+      // any case, any +tag: one sender
+      const r = await t.client.call("today.notNewsletter", { email: "News+weekly@Stratechery.test", name: "Stratechery" });
+      expect(r.added).toMatchObject({ email: "News+weekly@Stratechery.test", name: "Stratechery" });
+      expect(r.evicted).toBeNull();
+      const after = (await t.client.call("today.digest", {}))!;
+      expect(after.items.map((i) => i.threadId)).toEqual([brew]);
+      expect(after.liveIds).toEqual([brew]);
+      await vi.waitFor(() => expect(events.length).toBeGreaterThan(0));
+      off();
+      // said twice, it's one entry, and the second adds nothing for its Undo to take
+      expect((await t.client.call("today.notNewsletter", { email: "news@stratechery.test", name: "S" })).added).toBeNull();
+      expect((await t.client.call("today.notNewsletters", {})).senders.map((e) => e.email)).toEqual(["News+weekly@Stratechery.test"]);
+      // an Undo for another entry (an older one, said again since) takes nothing off
+      expect((await t.client.call("today.newsletterAgain", { email: "news@stratechery.test", at: r.added!.at - 1 })).removed).toBeNull();
+      expect((await t.client.call("today.newsletterAgain", { email: "news@stratechery.test", at: r.added!.at })).removed).toMatchObject({ name: "Stratechery" });
+      expect((await t.client.call("today.digest", {}))!.items.map((i) => i.threadId)).toEqual([strat, brew]);
+      // no model was asked about any of it
+      expect(t.model.reqs).toHaveLength(1);
+    });
+
+    it("keeps the sender out of the next scan before any model call, and gives its place among the 40 to another", async () => {
+      const t = await setup();
+      await t.client.call("today.notNewsletter", { email: "news@stratechery.test", name: "Stratechery" });
+      await t.letter("Stratechery");
+      await t.letter("Kept");
+      await on(t);
+      await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(day()))?.state).toBe("ready"));
+      expect(sent(t)).toContain("Kept");
+      expect(sent(t)).not.toContain("Stratechery");
+      expect((await t.backend.store.today.digest.get(day()))!.items.map((i) => i.from)).toEqual(["Kept"]);
+    });
+
+    it("said while a request waits to leave: that sender doesn't go, and the rest are asked about without it", async () => {
+      const t = await setup();
+      await t.letter("Spammy");
+      await t.letter("Kept");
+      const limiter = (t.backend as unknown as { aiService: { limiter: { host: { beforeAhead(task: string): Promise<void> } } } }).aiService.limiter;
+      const real = limiter.host.beforeAhead;
+      let once = true;
+      limiter.host.beforeAhead = async (task) => {
+        if (task === "digest" && once) {
+          once = false;
+          await t.backend.today.notNewsletter({ email: "news@spammy.test", name: "Spammy" });
+        }
+        await real(task);
+      };
+      await on(t);
+      await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(day()))?.state).toBe("ready"));
+      limiter.host.beforeAhead = real;
+      expect(sent(t)).toContain("Kept");
+      expect(sent(t)).not.toContain("Spammy");
+    });
+
+    it("a digest stored before items carried a sender: its own message's, not the thread's last, and pending ones too", async () => {
+      const t = await setup();
+      const one = await t.letter("Old Letter");
+      const two = await t.letter("Still Pending");
+      const { digest } = t.backend.store.today;
+      const g = digest.clearGeneration();
+      const facts = (await t.backend.store.filters.actionFacts([one, two])).map((f) => ({ threadId: f.id, messageId: f.id, lastDate: f.lastDate, messageCount: f.messageCount, from: f.subject, subject: f.subject, line: "old" as string | null }));
+      // as stored before plan 166: no fromEmail
+      await digest.begin(day(), { at: 0, id: 0 }, [facts[1]!], g);
+      await digest.write({ ...(await digest.get(day()))!, items: [facts[0]!] }, g);
+      // the thread's last sender isn't the newsletter's any more (a reply in it): the item's own message decides
+      t.raw.run("UPDATE threads SET last_from_email = 'ana@people.test' WHERE id = ?", one);
+      await t.client.call("today.notNewsletter", { email: "news@oldletter.test", name: "Old Letter" });
+      await t.client.call("today.notNewsletter", { email: "news@stillpending.test", name: "Still Pending" });
+      // the pending one is dropped before it's sent: no model call at all
+      await t.client.call("settings.update", { today: { digest: true } });
+      await vi.waitFor(async () => expect((await digest.get(day()))?.state).toBe("ready"));
+      expect(t.model.reqs).toEqual([]);
+      expect((await t.client.call("today.digest", {}))!.items).toEqual([]);
+      // let back in, the stored one shows again, with its sender filled from its message
+      await t.client.call("today.newsletterAgain", { email: "news@oldletter.test" });
+      expect((await t.client.call("today.digest", {}))!.items.map((i) => [i.threadId, i.fromEmail])).toEqual([[one, "news@oldletter.test"]]);
+    });
+
+    it("Archive leaves a sender said not to be one meanwhile, and doesn't count it", async () => {
+      const t = await setup();
+      const a = await t.letter("One");
+      const b = await t.letter("Two");
+      await on(t);
+      await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(day()))?.state).toBe("ready"));
+      const listed = (await t.client.call("today.digest", {}))!.items;
+      await t.client.call("today.notNewsletter", { email: "news@two.test", name: "Two" });
+      const r = await t.client.call("today.digestArchive", { items: listed.map((i) => ({ threadId: i.threadId, lastDate: i.lastDate, messageCount: i.messageCount, fromEmail: i.fromEmail })) });
+      expect(r).toMatchObject({ archived: 1, changed: 0, spared: 0, archivedIds: [a] });
+      expect((await t.backend.store.filters.actionFacts([b]))[0]!.inInbox).toBe(true);
+    });
+
+    it("at the cap the oldest goes and is said, so Undo can put it back; two at once lose neither", async () => {
+      const t = await setup();
+      const full = Array.from({ length: 500 }, (_, i) => ({ email: `s${i}@x.test`, name: `S${i}`, at: 1000 + i }));
+      await t.backend.store.settings.set("today:notNewsletters", full);
+      const r = await t.client.call("today.notNewsletter", { email: "new@x.test", name: "New" });
+      expect(r.evicted).toEqual(full[0]);
+      let list = (await t.client.call("today.notNewsletters", {})).senders;
+      expect(list).toHaveLength(500);
+      expect(list[0]!.email).toBe("new@x.test");
+      // the snack's Undo: off what it added, back what it dropped, where it was
+      await t.client.call("today.newsletterAgain", { email: "new@x.test", at: r.added!.at });
+      await t.client.call("today.notNewsletter", r.evicted!);
+      list = (await t.client.call("today.notNewsletters", {})).senders;
+      expect(list.map((e) => e.email).sort()).toEqual(full.map((e) => e.email).sort());
+      expect(list.at(-1)).toEqual(full[0]);
+      // one unit each: two said at once are both kept
+      await t.backend.store.settings.set("today:notNewsletters", []);
+      await Promise.all([t.client.call("today.notNewsletter", { email: "a@x.test", name: "A" }), t.client.call("today.notNewsletter", { email: "b@x.test", name: "B" })]);
+      expect((await t.client.call("today.notNewsletters", {})).senders.map((e) => e.email).sort()).toEqual(["a@x.test", "b@x.test"]);
+    });
+
+    it("with the digest off, Automated mail leaves it too, and a scan begun before isn't kept", async () => {
+      const t = await setup();
+      await t.letter("Acme Store");
+      await t.letter("Other Shop");
+      await t.client.call("today.list", { heldIds: [] });
+      await vi.waitFor(async () => expect((await t.client.call("today.digest", {}))?.items).toHaveLength(2));
+      await t.client.call("today.notNewsletter", { email: "news@acmestore.test", name: "Acme Store" });
+      expect((await t.client.call("today.digest", {}))!.items.map((i) => i.from)).toEqual(["Other Shop"]);
+      // a scan underway when the list changes isn't kept: it was read with the list as it was
+      const service = t.backend.today as unknown as { candidates(since: null): Promise<unknown>; automated: { at: number; candidates: { items: { from: string }[] } } | null };
+      const idle = () => vi.waitFor(() => expect((t.backend.today as unknown as { refreshing: unknown }).refreshing).toBeNull());
+      await idle();
+      const real = service.candidates.bind(service);
+      let release!: () => void;
+      let started!: () => void;
+      const scanning = new Promise<void>((r) => (started = r));
+      service.candidates = async (since) => {
+        // only the first scan waits
+        service.candidates = real;
+        const found = await real(since);
+        started();
+        await new Promise<void>((r) => (release = r));
+        return found;
+      };
+      await t.client.call("today.newsletterAgain", { email: "news@acmestore.test" });
+      await t.client.call("today.digest", {});
+      await scanning;
+      await t.client.call("today.notNewsletter", { email: "news@othershop.test", name: "Other Shop" });
+      const held = service.automated;
+      release();
+      await idle();
+      expect(service.automated).toBe(held);
+      // the next read scans again, with the list as it is now
+      await vi.waitFor(async () => expect((await t.client.call("today.digest", {}))?.items.map((i) => i.from)).toEqual(["Acme Store"]));
+      expect(t.model.reqs).toEqual([]);
+    });
+  });
+
   it("plan 147: a local build with Dev mode's switch off gives no notice, whatever is saved, and doesn't use up the day's", async () => {
     const t = await setup({ devAi: { anthropic: "env-anthropic" } });
     await t.put();

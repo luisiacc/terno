@@ -29,6 +29,8 @@ export interface DigestFact {
   lastDate: number;
   messageCount: number;
   from: string;
+  /** plan 166: the sender's address, what "Not a newsletter" keeps out */
+  fromEmail: string;
   subject: string;
   snippet: string;
 }
@@ -81,6 +83,8 @@ export interface TodayStore {
   digestRead(threadIds: readonly number[]): Promise<number[]>;
   /** of these messages, those still stored */
   messagesHere(messageIds: readonly number[]): Promise<number[]>;
+  /** plan 166: each stored message's sender address, by its id (a digest stored before items carried it) */
+  senders(messageIds: readonly number[]): Promise<Map<number, string>>;
   digest: {
     get(day: string): Promise<DigestStored | null>;
     /** the newest at or before this day */

@@ -33,6 +33,20 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       expect(oldest).not.toBeNull();
     });
 
+    it("plan 166: a candidate carries its sender's address, and senders reads any stored message's by its id", async () => {
+      const { store, put } = await setup();
+      const letter = await put({ from: { name: "Stratechery", email: "Email@Stratechery.test" } });
+      const { facts } = await store.today.digestFacts([letter.message]);
+      expect(facts.map((f) => [f.from, f.fromEmail])).toEqual([["Stratechery", "email@stratechery.test"]]);
+      // stored as ingest keeps it (lowercased); any message, a candidate or not (a person's, a read one), and nothing for an id not stored
+      const person = await put({ listId: null, isRead: true, from: { name: "Ana", email: "ana@x.test" } });
+      const found = await store.today.senders([letter.message, person.message, 987_654]);
+      expect(found.get(letter.message)).toBe("email@stratechery.test");
+      expect(found.get(person.message)).toBe("ana@x.test");
+      expect(found.size).toBe(2);
+      expect(await store.today.senders([])).toEqual(new Map());
+    });
+
     it("what's read, starred, in Spam or Trash, or archived isn't a candidate", async () => {
       const { store, put } = await setup();
       const facts = async (id: number) => (await store.today.digestFacts([id])).facts;

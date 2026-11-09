@@ -53,4 +53,16 @@ export async function measureToday(o: WorkloadMailbox, budget: { waitingMs: numb
   const stateP95 = stateTimes.sort((a, b) => a - b)[37]!;
   o.log(`today digest states: p95 ${stateP95.toFixed(2)} ms`);
   expect(stateP95).toBeLessThanOrEqual(budget.waitingMs * o.budget);
+  // plan 166: a digest stored before its items carried a sender reads its ≤ 40 messages' senders in one go
+  const messageIds = (await store.filters.messageWalk().next(40)).slice(0, 40);
+  expect(messageIds.length).toBe(40);
+  const senderTimes: number[] = [];
+  for (let i = 0; i < 40; i++) {
+    const t = performance.now();
+    await store.today.senders(messageIds);
+    senderTimes.push(performance.now() - t);
+  }
+  const senderP95 = senderTimes.sort((a, b) => a - b)[37]!;
+  o.log(`today senders: p95 ${senderP95.toFixed(2)} ms`);
+  expect(senderP95).toBeLessThanOrEqual(budget.waitingMs * o.budget);
 }

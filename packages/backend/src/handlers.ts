@@ -1479,6 +1479,9 @@ export function createHandlers(b: Backend): Handlers {
       return { ok: true as const };
     },
     "today.digestArchive": (p) => b.today.archive(p),
+    "today.notNewsletter": (p) => b.today.notNewsletter(p),
+    "today.newsletterAgain": (p) => b.today.newsletterAgain(p),
+    "today.notNewsletters": async () => ({ senders: await b.today.notNewsletters() }),
     "ai.prepareReply": (p, ctx) => b.replies.prepare(p, ctx.clientId),
     "ai.replyLeave": async (p, ctx) => {
       b.replies.leave(p.threadId, ctx.clientId);

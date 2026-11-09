@@ -1,5 +1,6 @@
 import { AiError, DIGEST_PROMPT_VERSION, digestBudget, type AiTasks, type DigestOutputItem } from "@terno/ai";
 import {
+  addressKey,
   aiFeaturesAvailable,
   BRIEF_NOTICE_THREAD,
   DEFAULT_TODAY,
@@ -8,6 +9,7 @@ import {
   DIGEST_WINDOW_MS,
   findCode,
   languageName,
+  NOT_NEWSLETTERS_MAX,
   todayKey,
   nextPrepareAt,
   prepareTimeToday,
@@ -16,6 +18,7 @@ import {
   type DigestItem,
   type DigestRow,
   type FollowupRow,
+  type NotNewsletter,
   type TodayItem,
   type TodayList,
   type TodaySection,
@@ -39,6 +42,8 @@ const MAX_DELAY = 24 * 3_600_000;
 const AUTOMATED_FRESH_MS = 30_000;
 const TRIES = 3;
 const SUMMARY_LINE_CHARS = 160;
+/** plan 166: the senders the user said aren't newsletters, in the store's own small values (both stores), never AppSettings */
+const NOT_NEWSLETTERS_KEY = "today:notNewsletters";
 
 export interface TodayOps {
   archive(ids: number[], narrow: (chunk: number[]) => Promise<number[]>, progress: (done: number) => void): Promise<{ undoId: number | null }>;
@@ -72,6 +77,8 @@ export class TodayService {
   /** a key or a setting is what's wrong: nothing goes until they move */
   private paused = false;
   private leaving: { items: readonly DigestItem[]; stop: AbortController } | null = null;
+  /** plan 166: moves with the list of senders that aren't newsletters, so a scan begun before a change isn't kept */
+  private exclusions = 0;
 
   constructor(private readonly b: Backend) {}
 
@@ -184,6 +191,8 @@ export class TodayService {
     const now = this.b.now();
     const floor = Math.max(now - DIGEST_WINDOW_MS, since?.at ?? 0);
     const walk = store.filters.messageWalk();
+    // plan 166: read once a scan; a sender said not to be a newsletter takes no place among the 40, and reaches no model
+    const excluded = await this.excludedKeys();
     const items: DigestItem[] = [];
     const seen = new Set<number>();
     let watermark = since ?? { at: floor, id: 0 };
@@ -202,8 +211,9 @@ export class TodayService {
         if (f.arrivedAt < floor || (since && f.messageId <= since.id) || seen.has(f.threadId)) continue;
         // a sign-in code isn't reading, and it isn't something to archive unread
         if (findCode(f.subject, f.snippet)) continue;
+        if (excluded.has(addressKey(f.fromEmail))) continue;
         seen.add(f.threadId);
-        items.push({ threadId: f.threadId, messageId: f.messageId, lastDate: f.lastDate, messageCount: f.messageCount, from: f.from, subject: f.subject, line: null });
+        items.push({ threadId: f.threadId, messageId: f.messageId, lastDate: f.lastDate, messageCount: f.messageCount, from: f.from, fromEmail: f.fromEmail, subject: f.subject, line: null });
         if (items.length >= DIGEST_CANDIDATES_MAX) return { items, watermark };
       }
       if (oldest === null || oldest < floor || (since && page[page.length - 1]! <= since.id)) break;
@@ -263,11 +273,11 @@ export class TodayService {
         ai = await this.b.aiService.forTask("digest", { foreground: o.foreground === true });
         // what's been deleted, moved to Spam, or changed since it was listed goes no further, and isn't kept (revision 2)
         row = (await digest.get(day)) ?? row;
+        // plan 166: and a sender said not to be a newsletter, before a token goes on it; what's kept carries its sender
         const pending = await this.stillListed(row.pending);
-        if (pending.length !== row.pending.length) {
-          row = { ...row, pending };
-          if (!(await digest.write(row, generation))) return false;
-        }
+        const dropped = pending.length !== row.pending.length;
+        row = { ...row, pending };
+        if (dropped && !(await digest.write(row, generation))) return false;
         if (!row.pending.length) break;
         const { batch: size, textChars } = digestBudget(ai.contextTokens);
         const batch: DigestItem[] = row.pending.slice(0, size);
@@ -331,13 +341,78 @@ export class TodayService {
     }
   }
 
-  private async stillListed(items: readonly DigestItem[]): Promise<DigestItem[]> {
-    if (!items.length) return [];
+  /** As listed, and (plan 166) from a sender still allowed in: run as each request leaves, repairs included. Each with its sender. */
+  private async stillListed(listed: readonly DigestItem[]): Promise<DigestItem[]> {
+    if (!listed.length) return [];
+    const [items, excluded] = await Promise.all([this.withSenders(listed), this.excludedKeys()]);
     const facts = new Map((await this.b.store.filters.actionFacts(items.map((i) => i.threadId))).map((f) => [f.id, f]));
     return items.filter((i) => {
       const f = facts.get(i.threadId);
-      return f && !f.inSpam && !f.inTrash && f.lastDate === i.lastDate && f.messageCount === i.messageCount;
+      return f && !f.inSpam && !f.inTrash && f.lastDate === i.lastDate && f.messageCount === i.messageCount && !excluded.has(addressKey(i.fromEmail ?? ""));
     });
+  }
+
+  /** Plan 166 (Codex critique): an item stored before items carried a sender gets its own message's, not its thread's last. */
+  private async withSenders(items: readonly DigestItem[]): Promise<DigestItem[]> {
+    const missing = items.filter((i) => i.fromEmail === undefined).map((i) => i.messageId);
+    if (!missing.length) return [...items];
+    const found = await this.b.store.today.senders(missing);
+    return items.map((i) => (i.fromEmail === undefined ? { ...i, fromEmail: found.get(i.messageId) ?? "" } : i));
+  }
+
+  // ─── not a newsletter (plan 166) ─────────────────────────────────────────
+
+  private readNotNewsletters(): Promise<NotNewsletter[]> {
+    return this.b.store.settings.get<NotNewsletter[]>(NOT_NEWSLETTERS_KEY, []);
+  }
+
+  private async excludedKeys(): Promise<Set<string>> {
+    return new Set((await this.readNotNewsletters()).map((e) => addressKey(e.email)));
+  }
+
+  /** Newest first. */
+  async notNewsletters(): Promise<NotNewsletter[]> {
+    return [...(await this.readNotNewsletters())].sort((a, b) => b.at - a.at);
+  }
+
+  /** A sender out of every digest. One unit, so two at once can't lose one; at the cap the oldest goes, and is said. */
+  async notNewsletter(p: { email: string; name: string; at?: number }): Promise<{ added: NotNewsletter | null; evicted: NotNewsletter | null }> {
+    const key = addressKey(p.email);
+    const now = this.b.now();
+    const r = await this.b.store.settings.update<NotNewsletter[], { added: NotNewsletter | null; evicted: NotNewsletter | null }>(NOT_NEWSLETTERS_KEY, [], (list) => {
+      if (list.some((e) => addressKey(e.email) === key)) return { value: list, result: { added: null, evicted: null } };
+      // `at` names the entry for its Undo: never one another entry has
+      const at = p.at ?? Math.max(now, ...list.map((e) => e.at + 1));
+      const added: NotNewsletter = { email: p.email.trim(), name: p.name.trim().slice(0, 200), at };
+      let value = [...list, added];
+      let evicted: NotNewsletter | null = null;
+      if (value.length > NOT_NEWSLETTERS_MAX) {
+        evicted = value.reduce((oldest, e) => (e.at < oldest.at ? e : oldest));
+        value = value.filter((e) => e !== evicted);
+      }
+      return { value, result: { added, evicted } };
+    });
+    if (r.added) this.exclusionsChanged();
+    return r;
+  }
+
+  /** A sender back in. With `at`, only that entry: an old Undo can't take off a sender said again since. */
+  async newsletterAgain(p: { email: string; at?: number }): Promise<{ removed: NotNewsletter | null }> {
+    const key = addressKey(p.email);
+    const r = await this.b.store.settings.update<NotNewsletter[], NotNewsletter | null>(NOT_NEWSLETTERS_KEY, [], (list) => {
+      const found = list.find((e) => addressKey(e.email) === key && (p.at === undefined || e.at === p.at)) ?? null;
+      return { value: found ? list.filter((e) => e !== found) : list, result: found };
+    });
+    if (r) this.exclusionsChanged();
+    return { removed: r };
+  }
+
+  /** What's shown reads the list again: the page, Today's header and Settings follow the event. */
+  private exclusionsChanged(): void {
+    this.exclusions++;
+    // what's automated stays shown (filtered at read: never empty for a moment) and is scanned again on the next read
+    if (this.automated) this.automated = { ...this.automated, at: 0 };
+    this.ended(todayKey(this.b.now()));
   }
 
   /** What's gone from the mail goes from every stored digest too: nothing shown outlives what it quotes. */
@@ -456,9 +531,12 @@ export class TodayService {
     const s = await this.setting();
     if (!s.available) return null;
     const day = todayKey(this.b.now());
+    // plan 166: left out at read too, both ways, so a scan or a digest from before a change can't show a sender said not to be one
+    const excluded = await this.excludedKeys();
+    const allowed = (items: readonly DigestItem[]) => items.filter((i) => !excluded.has(addressKey(i.fromEmail ?? "")));
     if (!s.digest) {
       if (!this.automated || this.b.now() - this.automated.at > AUTOMATED_FRESH_MS) this.refreshAutomated();
-      const items = this.automated?.candidates.items ?? [];
+      const items = allowed(this.automated?.candidates.items ?? []);
       if (!items.length) return null;
       return { day, state: "ready", items: newestFirst(items), automated: true, ...(await this.states(items)) };
     }
@@ -467,8 +545,9 @@ export class TodayService {
     if (!shown) return row ? { day, state: "pending", items: [], automated: false, liveIds: [] } : null;
     // deleted since: nothing shown outlives what it quotes, and what's stored goes too
     const here = new Set(await store.today.messagesHere(shown.items.map((i) => i.messageId)));
-    const items = shown.items.filter((i) => here.has(i.messageId));
-    if (items.length !== shown.items.length) void this.purgeGone().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
+    const kept = shown.items.filter((i) => here.has(i.messageId));
+    if (kept.length !== shown.items.length) void this.purgeGone().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
+    const items = allowed(await this.withSenders(kept));
     const paused = row?.state === "pending" && row.errorKind !== null && this.paused;
     return { day: row?.state === "pending" ? day : shown.day, state: paused ? "failed" : (row?.state ?? shown.state), items: newestFirst(items), automated: false, ...(await this.states(items)), errorKind: paused ? row!.errorKind : shown.errorKind, model: shown.model, provider: shown.provider };
   }
@@ -483,8 +562,11 @@ export class TodayService {
   private refreshAutomated(): void {
     if (this.refreshing) return;
     const before = this.automated?.candidates.items.map((i) => i.threadId).join();
+    const exclusions = this.exclusions;
     this.refreshing = this.candidates(null)
       .then((candidates) => {
+        // plan 166: begun before a sender was left out (or let back in): not kept, and the next read scans again
+        if (exclusions !== this.exclusions) return;
         this.automated = { at: this.b.now(), candidates };
         if (candidates.items.map((i) => i.threadId).join() !== before) this.ended(todayKey(this.b.now()));
       })
@@ -496,7 +578,7 @@ export class TodayService {
   }
 
   /** Only what the page listed, each only if it's still as the page saw it: a new message or a star since keeps it (revisions 1, 2). */
-  async archive(p: { items: readonly { threadId: number; lastDate: number; messageCount: number }[]; jobId?: string }): Promise<{ undoId: number | null; archived: number; archivedIds: number[]; changed: number; spared: number }> {
+  async archive(p: { items: readonly { threadId: number; lastDate: number; messageCount: number; fromEmail?: string }[]; jobId?: string }): Promise<{ undoId: number | null; archived: number; archivedIds: number[]; changed: number; spared: number }> {
     const { store } = this.b;
     const listed = new Map(p.items.map((i) => [i.threadId, i]));
     const targets = [...listed.keys()];
@@ -506,10 +588,13 @@ export class TodayService {
     const archivedIds: number[] = [];
     const narrow = async (chunk: number[]) => {
       const facts = new Map((await store.filters.actionFacts(chunk)).map((f) => [f.id, f]));
+      // plan 166: as each chunk goes: a sender said not to be a newsletter meanwhile is left alone, and not counted
+      const excluded = await this.excludedKeys();
       const out: number[] = [];
       for (const id of chunk) {
         const f = facts.get(id);
         const item = listed.get(id)!;
+        if (item.fromEmail !== undefined && excluded.has(addressKey(item.fromEmail))) continue;
         if (!f || !f.inInbox || f.lastDate !== item.lastDate || f.messageCount !== item.messageCount) changed++;
         // plan 145 archives only unread mail: one read since the page was drawn stays, and is counted as left alone (plan 161)
         else if (f.starred || f.replied || !f.unread) spared++;
