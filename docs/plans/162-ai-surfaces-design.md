@@ -731,3 +731,70 @@ Models: real, openai/gpt-6-luna, anthropic/claude-sonnet-5-5, anthropic/claude-h
 ## Where it stands after three rounds
 
 The owner's budget of three rated rounds on this branch is used. Mean of the eight raters' overall: main's ai-r03 7.21, r01 7.43, r02 7.36, r03 7.29 (r03 on real models, so not directly comparable). No cell reached 9 from both raters in any round; the branch is not merged and waits for the owner.
+
+## Pass after ai162-r03 (real models)
+
+### The request (2026-11-08, verbatim)
+
+> "yes, fix the real model findings, do up to 2 more rounds, also i need pictures of how every ai feature looks in the ui to decide if i need to do changes to it or not, each ai ui feature needs to have a clean feeling to it and modern."
+
+Written before any code. All eight r03 reports, their 662 below-9 reasons, the 105 issues (10 high) and the probes were read. The lead runs ai162-r04 and r05 on real models after this pass; this pass also makes a gallery of every AI feature for the owner.
+
+### What real models exposed, and the fix for each
+
+**Ask**
+1. **The scope line.** "Searched mail on this Mac back to Apr 25, 2026" came from the accounts' sync window (`offer()` in the backend), while the local search reads everything on this Mac, older mail included, so it sat beside 2024 sources. The date is where this Mac's copy is *complete* from. The line now says what was searched and what the date means: "Searched all mail on this Mac · complete since Apr 25, 2026", then Search older mail on your servers. Unit test: the line never says "back to" a date later than a cited source.
+2. **The partial note.** It came from the backend's `unlinked`, true for a dropped citation label or for any sentence without one (an intro ending in ":", a list's lead-in). Now the reader decides from the answer it shows: `answerSentences` (core) splits the answer into sentences exactly as `hasUnlinkedSentence` does, an intro ending in ":" isn't a claim, and each claim with no citation is marked inline (a dotted underline, the gap's own mark, and a tooltip "Not linked to a message"). The note shows only when one is marked: "Underlined parts aren't linked to a message." A stopped answer says Stopped and no note. No model call.
+3. **Citations while streaming** render as the same numbered marks (not buttons yet: their sources arrive with the end), never "[1]".
+4. **Sources** say their count ("Sources · 7"), and the list shows every row: one scroll region (below).
+5. **Esc while working** stops and keeps the question: a stop with nothing written yet leaves "Stopped before an answer." with the question in the field, selected, so Return asks again. A stop with words keeps them, as now.
+6. **People with one name.** When the sources' senders hold one first name for several people, and that name is in the question or the answer, a line under the answer says so: "Isabella here is 3 people: Isabella Álvarez, Isabella Rivera and Isabella Cruz." From the sources' senders, no model.
+7. **⇧⌘K on a shown source** goes back to the answer (it closed Ask).
+8. **One scroll region, and a turn starts at its top.** The answer, its notes and its sources scroll together (two regions before, each cut). When a turn starts, its question is scrolled to the top of the region and stays there while the answer streams under it, so a long answer starts at its beginning, and an earlier turn's sources are never what's left at the top. Earlier turns fold their sources into "2 sources ▸".
+
+**First-use consent: one pattern** (`AiConsent`, beside `AiErrorNotice`, the same anatomy)
+9. One line in the ink naming the provider and what goes ("This sends the text of this conversation to OpenAI."), a **What's sent** disclosure only where there's more to say (⌘J's list), then **Continue** (secondary, the surface's default, ↵ where Enter reaches it) and **AI settings** (quiet). The summary, ⌘J and Nudge, Ask, the action check and Study my style use it. Plans 131 to 133 keep their meaning exactly: the same backend status, the same `acknowledge`, the same words (⌘J's long list moves into the disclosure, unchanged).
+10. **The action preview counts only after its check.** While the check waits (consent or running), the title says "Checking 9 matches…", Apply says "Archive" with no number, and the rows are drawn as candidates (dimmed, no ticks); the count appears once, after the check.
+11. **"Open your nudge" only once the nudge has words.** While the composer asks or writes, the card says "Drafting a nudge…" (writing) or keeps "Draft a nudge", which takes you to that draft rather than starting another.
+
+**The AI filter**
+12. **A rule that matches everything is never one click away.** `broadRule` (no model) finds a condition that matches anything (".+", ".*", a pattern any probe matches); the box says plainly what it would do ("This rule matches every conversation from a mailing list: 842 now, and all new ones."), Save and apply asks once more in a confirmation whose default is Cancel, and the footer's Save loses its primary. A large count (500 or more) also confirms.
+13. **What the rule dropped is named.** `ruleMisses` becomes `ruleGaps`: the request's words a rule couldn't express ("never open": a rule can't see what you've opened) or lacks (an action, an age, a sender), quoted: "Not in the rule: “never open”." No model.
+
+**The summary**
+14. **Items say what they are.** A question is labelled by who asked it ("Arjun asks"), a to-do "To do". The summary prompt (v6) asks for a question as asked, ending in "?", and a to-do as a verb phrase. Same call, same schema.
+15. **Reply opens an ordinary reply** (no ⌘J instruction). Chosen because the item is the other person's question, not the user's answer; prefilling it made Write draft a reply with no stance.
+16. **Esc stops Summarizing**, as ⌘J and Ask do, and its Stop shows the esc keycap. **Collapsed** is the header alone (it cut a line in half).
+
+**The action preview**
+17. **One name for the exact search**: the rule says "matches a pattern (see the exact search)" only when there's no word list, and the control is "Show the exact search" everywhere.
+18. **What the check left out is reviewable**: a line in the ink with its count under the title ("6 left out by the check"), and Show lists them in the list, dimmed, each with its tick to put it back.
+
+**Everything else under 9, chosen for how many cells it lifts**
+19. **Reply ready with a gap** says it: "Reply drafted · 1 gap to fill" (not "Reply ready"); without gaps, "Reply ready".
+20. **⌘J's rewrite segment** doesn't stay pressed after it's done.
+21. The filter's disclosure names the provider ("Claude (Anthropic)"), never a host.
+22. Writing style's openers quote what was counted, without the template's "…," ("Often opens with “Hello”").
+23. Study my style's consent is the shared consent, its long text in What's sent, Learn my style and Not now always in view.
+24. Today's digest way in is a row of its own in the ink, not a grey caption; an opened newsletter's line keeps its contrast.
+
+### Clean and modern (the owner's bar), across every AI surface
+- **One consent, one error, one card**: consent and error share an anatomy (a glyph, one line, its help, the actions at the line's end).
+- **Less chrome**: no box in a box (Ask's consent and error sit in the answer's flow), no second scroll region, no repeated provider sentences.
+- **One quiet type ladder**: titles `text-sm font-medium`, meta `text-xs` muted, AI text `leading-relaxed`; nothing at 11 px.
+- **Marks, not badges**: citations, gaps and unlinked claims are marks in the text (a numbered pill, a dotted underline); nothing new is coloured.
+- No new colours, families or glitter; only plan 160's tokens.
+
+### Not in this pass
+- **A lighter scrim for Ask in light** (two reports): the palette's scrim is every dialog's; changing it here changes the everyday screens.
+- **Grouping the digest by sender, merging duplicate issues** (four reports): the digest is normal emails, a line each (owner).
+- **Asking "Which Isabella?" before answering**: a new step before the model call; saying it after, from the sources, is enough.
+- **Showing all 41 in Today**: the owner's cap.
+
+### Tests this pass adds
+- Unit: `askScope`; `answerSentences` (an intro isn't a claim; a citation after the stop is the sentence's); `sameNamePeople`; `broadRule` and `ruleGaps`; the action title while checking; the nudge's state; the summary item label.
+- e2e: `ask` (Esc while working keeps the question; ⇧⌘K from a source returns; one scroll region; the question at the top after a follow-up; the note only with an unlinked sentence); `summaries` (Reply is an ordinary reply; Esc stops); `plain-actions` (no count while checking); `filters` (a match-everything rule confirms; the gap named); the consent component on each surface (stub: `TERNO` test hooks force consent).
+- The clip and wheel tests stay.
+
+### The gallery
+`/tmp/terno-scratch/ai-gallery/gallery.mjs` (on `scripts/ui-rating/harness.mjs`): every AI feature and its main states, Lumen light and dark at 1440x900, macOS light for each main state; real models where a state shows model output, the stub for errors and empty states; one labelled sheet per feature.
