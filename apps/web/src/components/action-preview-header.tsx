@@ -389,19 +389,19 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
   // (the request it reads is the header's line above it)
   if (!reader) return <div data-testid="action-rule" className="-mx-5 max-h-[min(40vh,18rem)] overflow-y-auto px-5 pb-0.5">{body}</div>;
   return (
-    <section data-testid="action-rule" aria-label={t("action.rule.region")} className="@container flex h-full min-h-0 flex-col bg-background">
-      <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
-        <div data-reader-column className={cn(READING_COLUMN, PANE_TITLE_TOP, "pb-8")}>{body}</div>
+    <section data-testid="action-rule" aria-label={t("action.rule.region")} className="@container h-full min-h-0 bg-background">
+      <div className="h-full overflow-y-auto [scrollbar-gutter:stable]">
+        <div data-reader-column className={cn(READING_COLUMN, PANE_TITLE_TOP)}>{body}</div>
+        <RuleFoot />
       </div>
-      <RuleFoot />
     </section>
   );
 }
 
 /**
- * Plan 162 (after ai162-r05): the decision where its explanation is, at the rule pane's foot: Cancel and Archive 3 on a
- * bar that never scrolls (the rule scrolls above it), as the digest's is, so a short window keeps it in reach. The
- * snack stands on it while it's there.
+ * Plan 162 (after ai162-r05): the decision where its explanation ends: Cancel and Archive 3 right under the rule, and,
+ * when the rule is longer than the pane, held at the pane's foot (sticky) as the digest's bar is, so a short window keeps
+ * it in reach. The snack stands on it while it's there.
  */
 function RuleFoot() {
   const foot = useRef<HTMLDivElement>(null);
@@ -418,9 +418,11 @@ function RuleFoot() {
     };
   }, []);
   return (
-    <div ref={foot} className="shrink-0 border-t border-hairline bg-background [scrollbar-gutter:stable] overflow-hidden" data-testid="action-foot">
-      <div className={cn(READING_COLUMN, "flex items-center justify-end gap-2 pt-3 pb-4")}>
-        <ActionButtons size="sm" />
+    <div ref={foot} className="sticky bottom-0 z-[1] bg-background pt-4" data-testid="action-foot">
+      <div className={cn(READING_COLUMN, "flex items-center justify-end gap-2")}>
+        <div className="hairline-t flex w-full items-center justify-end gap-2 pt-3 pb-4">
+          <ActionButtons size="sm" />
+        </div>
       </div>
     </div>
   );

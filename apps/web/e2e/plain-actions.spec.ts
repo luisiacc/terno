@@ -547,6 +547,9 @@ test.describe("actions in plain English at 1100 × 700 (plan 161, pass 2)", () =
     const box = (await apply.boundingBox())!;
     expect(box.y).toBeGreaterThan(title.y);
     expect(box.x).toBeGreaterThan(title.x);
+    // right under the rule when it fits (at the pane's foot it sat 450 px below it, still apart from what it decides)
+    const edit = (await rule.getByTestId("action-edit-filter").boundingBox())!;
+    expect(box.y - (edit.y + edit.height)).toBeLessThanOrEqual(64);
     // its keys still work from the list, and Esc still cancels in one press
     await expect(apply).toHaveAttribute("aria-keyshortcuts", /Enter/);
     // reading a match, the pane is the message: the pair is the header's
