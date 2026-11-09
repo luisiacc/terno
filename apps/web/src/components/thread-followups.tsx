@@ -3,6 +3,7 @@ import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Popover, PopoverContent } from "@terno/ui/components/popover";
+import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { ArrowRight, CalendarClock, ChevronDown, Clock } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
@@ -14,7 +15,8 @@ import { actOnFollowup, followupLine, followupWhen } from "~/lib/followups";
 import { useDrafts } from "~/lib/drafts";
 import { presetLabel, presetWhen } from "~/lib/reminders";
 import { revealSummaryMessage } from "~/lib/summaries";
-import { nudge, nudgeDraft, openNudge } from "~/lib/followup-nudge";
+import { nudge, nudgeDraft, nudgeState, openNudge } from "~/lib/followup-nudge";
+import { useAiDraft } from "~/lib/ai-draft";
 import { offerTip, usePendingTip } from "~/lib/tips";
 import { useApp } from "~/state/app";
 import { useFollowups } from "~/state/followups";
@@ -38,6 +40,9 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
   const source = messageSource(messages, row.messageId, mine);
   // the nudge Write a follow-up made, still a draft: the line offers it rather than another
   const drafted = useDrafts((s) => (awaiting ? nudgeDraft(row.threadId, s.drafts) !== null : false));
+  // plan 162 (after ai162-r03): "Open your follow-up" only once it has words; while the composer asks or writes, the
+  // card says so and takes you to that draft (it offered to open it over an empty body)
+  const nudging = useAiDraft((s) => (drafted ? nudgeState(s.sessions[nudgeDraft(row.threadId) ?? ""]?.phase) : null));
   const laterRef = useRef<HTMLButtonElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const pastId = useId();
@@ -55,7 +60,11 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
       <p data-testid="followup-due" className="text-sm text-muted-foreground tabular">{followupWhen(row)}</p>
       <div className={cn(AI_ACTIONS, "mt-3")} data-testid="followup-actions">
         {awaiting ? (
-          drafted ? (
+          drafted && nudging === "writing" ? (
+            <Button size="sm" variant="outline" className="text-foreground" data-testid="followup-nudging" aria-disabled onClick={() => void openNudge(row.threadId)}><Spinner aria-hidden className="size-3.5" />{t("followup.nudging")}</Button>
+          ) : drafted && nudging === "waiting" ? (
+            <Button size="sm" data-testid="followup-nudge" onClick={() => void openNudge(row.threadId)}>{t("followup.nudge")}</Button>
+          ) : drafted ? (
             <Button size="sm" data-testid="followup-open-nudge" onClick={() => void openNudge(row.threadId)}>{t("followup.openNudge")}</Button>
           ) : (
             canNudge && <Button size="sm" data-testid="followup-nudge" onClick={() => void nudge(row)}>{t("followup.nudge")}</Button>

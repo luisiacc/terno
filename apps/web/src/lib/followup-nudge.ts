@@ -1,5 +1,5 @@
 import type { FollowupRow } from "@terno/core";
-import { openRow, rowKeyOf, setInstruction, submit } from "~/lib/ai-draft";
+import { openRow, rowKeyOf, setInstruction, submit, type AiPhase } from "~/lib/ai-draft";
 import { openStoredDraft } from "~/lib/compose";
 import { editDraftRecipients, useDrafts } from "~/lib/drafts";
 import { snack } from "~/lib/snack";
@@ -39,4 +39,15 @@ export function nudgeDraft(threadId: number, drafts = useDrafts.getState().draft
 export async function openNudge(threadId: number): Promise<void> {
   const key = nudgeDraft(threadId);
   if (key) await openStoredDraft(key);
+}
+
+/**
+ * Plan 162 (after ai162-r03): where the draft Write a follow-up made stands, from its ⌘J session: still being written,
+ * waiting on the user (a question, an error), or written (the strip, or the row closed with it placed). The card offers
+ * "Open your follow-up" only once it's written.
+ */
+export function nudgeState(phase: AiPhase | undefined): "writing" | "waiting" | "written" {
+  if (phase === "writing" || phase === "waitingBody" || phase === "resolving") return "writing";
+  if (phase === "input" || phase === "question" || phase === "noProvider" || phase === "error") return "waiting";
+  return "written";
 }

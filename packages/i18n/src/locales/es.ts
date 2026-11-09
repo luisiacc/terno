@@ -2596,6 +2596,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "aiDraft.fieldName": "Instrucción para la IA",
   "replies.gaps": { one: "# hueco por completar", other: "# huecos por completar" },
   "followup.openNudge": "Abrir tu seguimiento",
+  "followup.nudging": "Escribiendo tu seguimiento…",
   "ai.source.label": "Mensaje de {who}, {date}",
   "summary.copyFailed": "No se pudo copiar el resumen. Revisa el acceso al portapapeles y vuelve a intentarlo.",
   "aiDraft.confirm.title": "¿Sustituir tus cambios?",

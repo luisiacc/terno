@@ -2611,6 +2611,7 @@ It contains none of your mail, contacts, settings or keys.
   "aiDraft.fieldName": "Instruction for AI",
   "replies.gaps": { one: "# gap to fill", other: "# gaps to fill" },
   "followup.openNudge": "Open your follow-up",
+  "followup.nudging": "Writing your follow-up…",
   "ai.source.label": "{who}’s message, {date}",
   "summary.copyFailed": "The summary couldn’t be copied. Check clipboard access and try again.",
   "aiDraft.confirm.title": "Replace your edits?",
