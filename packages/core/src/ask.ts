@@ -235,7 +235,7 @@ export interface AnswerSentence {
  * The answer speaking of itself, not of the mail: what it looked at or didn't find ("I only looked at part of your mail",
  * "None of these says what the problem was"). Nothing to cite, so never marked. English and Spanish.
  */
-const CAVEAT = /^i (?:only )?(?:looked|searched|checked|read|saw)\b|^i (?:couldn['’]t|could not|can['’]t|cannot|didn['’]t|did not|don['’]t|do not) (?:find|see)\b|^i found no\b|(?<!\p{L})(?:none of (?:these|them|those|the (?:messages|mails?|emails?))|no (?:message|mail|email)s? (?:says|said|mentions?)|there (?:may|might|could) be more(?! than)|ninguno de (?:estos|ellos|los)|ningún (?:mensaje|correo)|no (?:encontré|encuentro|veo)|solo (?:miré|revisé|busqué|vi)|puede haber más(?! de))(?!\p{L})/iu;
+const CAVEAT = /^i (?:only )?(?:looked|searched|checked|read|saw)\b|^i (?:couldn['’]t|could not|can['’]t|cannot|didn['’]t|did not|don['’]t|do not) (?:find|see)\b|^i found no\b|(?<!\p{L})(?:none of (?:these|them|those|the (?:messages|mails?|emails?))|no (?:message|mail|email)s? (?:says|said|mentions?)|there (?:may|might|could) be more(?! than)|more (?:may|might|could) match|only what i (?:searched|looked (?:at|through)|checked|found)|ninguno de (?:estos|ellos|los)|ningún (?:mensaje|correo)|no (?:encontré|encuentro|veo)|solo (?:miré|revisé|busqué|vi)|puede haber más(?! de)|puede que haya más|solo lo que (?:busqué|revisé|miré|encontré))(?!\p{L})/iu;
 
 /**
  * Plan 162 (after ai162-r03): an answer as its sentences, split where a sentence ends (after its citations, so "… March.

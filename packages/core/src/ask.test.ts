@@ -89,6 +89,10 @@ describe("unlinked claims and one name for several people (plan 162, after ai162
     // Codex review: only what it says about its own search; a claim that starts with "I" or says "may be more" is still one
     expect(hasUnlinkedSentence("Isabella flagged it [1]. I found that the contract renews on Friday.")).toBe(true);
     expect(hasUnlinkedSentence("Isabella flagged it [1]. The renewal fee may be more than $500.")).toBe(true);
+    // plan 162 (after ai162-r05, real models): the answer on its own search's reach, in other words
+    expect(hasUnlinkedSentence("Isabella flagged it [1]. This covers only what I searched, and more may match.")).toBe(false);
+    expect(hasUnlinkedSentence("Isabella lo mencionó [1]. Esto es solo lo que busqué, y puede que haya más.")).toBe(false);
+    expect(hasUnlinkedSentence("Isabella flagged it [1]. More invoices may match the March order.")).toBe(true);
   });
 
   it("splits an answer into sentences that join back to it, each knowing whether it's cited", () => {
