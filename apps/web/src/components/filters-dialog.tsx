@@ -17,7 +17,8 @@ import { t, type TextKey } from "@terno/i18n";
 import { richT } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
 import { applyFilter } from "~/lib/filters";
-import { aiReady, errorHelp, privacyLine } from "~/lib/ai";
+import { aiReady, type errorHelp, privacyLine } from "~/lib/ai";
+import { aiErrorCopy, errorTarget } from "./ai-error";
 import { listDate } from "~/lib/format";
 import { client } from "~/rpc/connection";
 import { learnedRule } from "~/lib/learned";
@@ -587,10 +588,13 @@ export function FiltersDialog() {
     } catch (error) {
       const kind = (error as { details?: { aiErrorKind?: Parameters<typeof errorHelp>[0] } }).details?.aiErrorKind;
       if (kind === "cancelled") return;
-      const help = ai ? errorHelp(kind, ai) : null;
-      snack.error(error instanceof Error ? error.message : String(error), {
-        description: help ?? undefined,
-        action: kind === "not_configured" || kind === "blocked" ? { label: t("filters.aiSettings"), onClick: () => setApp({ dialog: "settings", settingsTab: "ai" }) } : undefined,
+      // plan 162 (after ai162-r03): the one AI error's words (ai-error.tsx), never the provider's address ("Couldn't connect
+      // to Ollama (127.0.0.1:61550)" read as the app's)
+      const e = error as { message?: string; i18n?: { key: string } };
+      const copy = aiErrorCopy({ message: e.message ?? String(error), kind, key: e.i18n?.key }, ai ? errorTarget(ai.provider, ai) : null);
+      snack.error(copy.title, {
+        description: copy.help ?? undefined,
+        action: copy.settings || kind === "not_configured" || kind === "blocked" ? { label: t("filters.aiSettings"), onClick: () => setApp({ dialog: "settings", settingsTab: "ai" }) } : undefined,
       });
     } finally {
       setGenerating(false);

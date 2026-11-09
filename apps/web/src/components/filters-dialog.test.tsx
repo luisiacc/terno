@@ -179,3 +179,13 @@ it("plan 162 (after ai162-r03): a rule for everything is never one click away, a
   expect($("filter-broad-confirm")).not.toBeNull();
   expect(waiting["filters.save"]?.length ?? 0).toBe(0);
 });
+
+it("plan 162 (after ai162-r03): a failed request says the one AI error's words, never the provider's address", async () => {
+  const { snack } = await import("~/lib/snack");
+  const said = vi.spyOn(snack, "error").mockImplementation(() => undefined as never);
+  await ask("archive mail from a.com");
+  await act(async () => waiting["filters.generate"]!.shift()!.reject(Object.assign(new Error("Couldn't connect to Ollama (127.0.0.1:61550)"), { details: { aiErrorKind: "unavailable" } })));
+  expect(said).toHaveBeenCalled();
+  expect(String(said.mock.calls.at(-1)![0])).not.toMatch(/127\.0\.0\.1|61550/);
+  said.mockRestore();
+});

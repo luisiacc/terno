@@ -204,6 +204,12 @@ export interface AnswerSentence {
 }
 
 /**
+ * The answer speaking of itself, not of the mail: what it looked at or didn't find ("I only looked at part of your mail",
+ * "None of these says what the problem was"). Nothing to cite, so never marked. English and Spanish.
+ */
+const CAVEAT = /^(?:i|i['’](?:m|ve|d)|i couldn['’]t|i can['’]t)\b|(?<!\p{L})(?:none of (?:these|them|those|the (?:messages|mails?|emails?))|no (?:message|mail|email)s? (?:says|said|mentions?)|may be more|might be more|could be more|ninguno de (?:estos|ellos|los)|ningún (?:mensaje|correo)|no (?:encontré|encuentro|veo)|solo (?:miré|revisé|busqué|vi)|puede haber más)(?!\p{L})/iu;
+
+/**
  * Plan 162 (after ai162-r03): an answer as its sentences, split where a sentence ends (after its citations, so "… March.
  * [1] Notice…" gives "… March. [1] " its own) or at a line break. The reader marks a claim with no citation, and says so
  * only then; the backend's check counts the same claims.
@@ -220,7 +226,7 @@ export function answerSentences(text: string): AnswerSentence[] {
   if (start < text.length) parts.push(text.slice(start));
   return parts.map((part) => {
     const words = part.replace(/\[\d+\]/g, " ").trim();
-    return { text: part, claim: tokenize(words).length > 2 && !words.endsWith(":"), linked: /\[\d+\]/.test(part) };
+    return { text: part, claim: tokenize(words).length > 2 && !words.endsWith(":") && !CAVEAT.test(words), linked: /\[\d+\]/.test(part) };
   });
 }
 

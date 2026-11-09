@@ -83,6 +83,9 @@ describe("unlinked claims and one name for several people (plan 162, after ai162
     // real models open lists this way: the note showed under answers whose every claim was cited
     expect(hasUnlinkedSentence("Here is what Isabella sent you:\n- The invoice is due Friday [1]\n- The venue moved to Calle 5 [2]")).toBe(false);
     expect(hasUnlinkedSentence("Here is what Isabella sent:\n- The invoice is due Friday [1]\n- The venue moved to Calle 5")).toBe(true);
+    // what the answer says of itself isn't a claim about the mail (a real model's closing lines)
+    expect(hasUnlinkedSentence("Isabella flagged the payment [1]. None of these says what the problem was. I only looked at part of your mail, so there may be more.")).toBe(false);
+    expect(hasUnlinkedSentence("Isabella marcó el pago [1]. Solo revisé parte de tu correo.")).toBe(false);
   });
 
   it("splits an answer into sentences that join back to it, each knowing whether it's cited", () => {
