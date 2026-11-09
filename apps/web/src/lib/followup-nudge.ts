@@ -23,7 +23,7 @@ export async function nudge(row: FollowupRow): Promise<void> {
   }
 }
 
-/** Plan 161, pass 2: the draft each conversation's Draft a nudge made, while it's there: the line offers it, not another. */
+/** Plan 161, pass 2: the draft each conversation's Write a follow-up made, while it's there: the line offers it, not another. */
 const nudges = new Map<number, string>();
 
 /** The nudge drafted on this conversation, if it's still a draft (sent or discarded, it's gone). */
@@ -35,7 +35,7 @@ export function nudgeDraft(threadId: number, drafts = useDrafts.getState().draft
   return null;
 }
 
-/** "Open your nudge": that draft (not whichever the conversation shows), in view, with the caret in it. */
+/** "Open your follow-up": that draft (not whichever the conversation shows), in view, with the caret in it. */
 export async function openNudge(threadId: number): Promise<void> {
   const key = nudgeDraft(threadId);
   if (key) await openStoredDraft(key);

@@ -97,7 +97,7 @@ test.describe("follow-ups (plan 142)", () => {
     // sent moments ago in this conversation: "yet", never "in 1 day" (plan 161; whole days are a unit test)
     await expect(page.getByTestId("followup-text")).toHaveText("Tom Reed hasn’t replied yet");
     const sends = (await server.backend.store.debug.snapshot()).messages.filter((m) => m.isSent).length;
-    await expect(page.getByTestId("followup-nudge")).toHaveText("Draft a nudge");
+    await expect(page.getByTestId("followup-nudge")).toHaveText("Write a follow-up");
     await page.getByTestId("followup-nudge").click();
     await expect(page.getByTestId("composer")).toBeVisible();
     await expect(page.getByTestId("composer")).toContainText("Tom Reed");
@@ -115,7 +115,7 @@ test.describe("follow-ups (plan 142)", () => {
       await expect(page.getByTestId("followup-header")).toHaveText("Tom Reed hasn’t replied yet");
       await expect(page.getByTestId("followup-due")).toHaveText(/^Comes back to your Inbox (Tomorrow|Today) \d.* if there’s no reply$/);
       expect((await page.getByTestId("followup-header").boundingBox())!.y).toBeLessThan((await page.getByTestId("followup-due").boundingBox())!.y);
-      await expect(page.getByTestId("followup-nudge")).toHaveText("Draft a nudge");
+      await expect(page.getByTestId("followup-nudge")).toHaveText("Write a follow-up");
       // pass 3: the source named for where it goes, whose message and when
       await expect(page.getByTestId("followup-go")).toHaveText(/^Your message, /);
       for (const id of ["followup-nudge", "followup-later", "followup-dismiss", "followup-go"]) {
@@ -125,7 +125,7 @@ test.describe("follow-ups (plan 142)", () => {
       const tip = page.getByTestId("tip-followups-first");
       await expect(tip).toBeVisible();
       await expect(tip).toContainText("Terno watches for replies");
-      await expect(tip).toContainText("Draft a nudge");
+      await expect(tip).toContainText("Write a follow-up");
       await expect(tip).not.toContainText("Done");
       const line = (await page.getByTestId("followup-line").boundingBox())!;
       const box = (await tip.boundingBox())!;
@@ -154,19 +154,19 @@ test.describe("follow-ups (plan 142)", () => {
       expect(await page.getByTestId("followup-later-when").count()).toBe(await items.count());
       await page.keyboard.press("Escape");
     });
-    await scenario("Draft a nudge, then the line offers that nudge; discarded, it's Draft a nudge again", async () => {
+    await scenario("Write a follow-up, then the line offers that draft; discarded, it's Write a follow-up again", async () => {
       await page.getByTestId("followup-nudge").click();
       await expect(page.getByTestId("composer")).toBeVisible();
       await expect(page.getByTestId("ai-strip")).toBeVisible();
       await expect(page.getByTestId("followup-nudge")).toHaveCount(0);
-      await expect(page.getByTestId("followup-open-nudge")).toHaveText("Open your nudge");
+      await expect(page.getByTestId("followup-open-nudge")).toHaveText("Open your follow-up");
       await page.locator("[data-reader-scroller]").evaluate((el) => { el.scrollTop = 0; });
       await page.getByTestId("followup-open-nudge").click();
       await expect(page.getByTestId("compose-body")).toBeFocused();
       await expect(page.getByTestId("composer")).toBeInViewport();
       await page.getByTestId("compose-discard").click();
       await expect(page.getByTestId("composer")).toHaveCount(0);
-      await expect(page.getByTestId("followup-nudge")).toHaveText("Draft a nudge");
+      await expect(page.getByTestId("followup-nudge")).toHaveText("Write a follow-up");
     });
   });
 

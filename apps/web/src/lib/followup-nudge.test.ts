@@ -14,7 +14,7 @@ vi.mock("~/lib/drafts", async () => {
 const { nudge, nudgeDraft, openNudge } = await import("./followup-nudge");
 const { useDrafts } = await import("~/lib/drafts");
 
-it("plan 161, pass 2 (Codex review): Open your nudge opens that draft, by its key, not whichever the conversation shows", async () => {
+it("plan 161, pass 2 (Codex review): Open your follow-up opens that draft, by its key, not whichever the conversation shows", async () => {
   await nudge({ threadId: 7, personEmail: null, personName: null } as never);
   useDrafts.setState({ drafts: { "k-nudge": {}, "k-other": {} } as never });
   expect(nudgeDraft(7)).toBe("k-nudge");

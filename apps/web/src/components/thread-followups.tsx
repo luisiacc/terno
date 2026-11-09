@@ -34,7 +34,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
   const awaiting = row.kind === "awaiting";
   const mine = useApp((s) => s.accounts).map((a) => a.email);
   const source = messageSource(messages, row.messageId, mine);
-  // the nudge Draft a nudge made, still a draft: the line offers it rather than another
+  // the nudge Write a follow-up made, still a draft: the line offers it rather than another
   const drafted = useDrafts((s) => (awaiting ? nudgeDraft(row.threadId, s.drafts) !== null : false));
   return (
     <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} className={cn(AI_CARD, "px-3.5 pb-3")}>

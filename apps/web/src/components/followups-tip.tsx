@@ -6,7 +6,7 @@ import { TipMenu, TipMenuItem, TipPicture } from "./tip-picture";
 
 /**
  * Plan 113 and 142: the first time a follow-up shows on an open thread: the line, and how it ends. Plan 161: it teaches
- * the kind the line is (a wait shows Draft a nudge, a promise Done) and points at the line, from below.
+ * the kind the line is (a wait shows Write a follow-up, a promise Done) and points at the line, from below.
  */
 export default function FollowupsTip({ kind, name }: { kind: FollowupKind; name: string | null }) {
   const awaiting = kind === "awaiting";
