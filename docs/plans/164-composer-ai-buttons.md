@@ -116,3 +116,16 @@ The popover's pencil (rewrite from new words) stays as plan 163 left it. The bod
 Second round, on the fixes alone (`git diff c4ed14dfe..HEAD`), one finding, taken:
 
 5. **⌘Z while a change ran, back past the draft to the note, then Stop, kept the strip,** so Send no longer asked about the note. The strip is kept only when the body isn't a note for AI again; otherwise the session goes, as before, and Send asks (`ai-draft.test.ts`, fails without the fix). The field's words go with the strip in that one case. No third round.
+
+## Results
+
+- **Unit:** `ai-draft.test.ts` 139 (the plan 164 cases and each review fix fail without their change), `packages/i18n` 55, `packages/ui` 280, `apps/web/src/components/composer`. Across `apps/web/src`: `diag-local` and `floating-restoration-lifetime` fail at the base too (plan 162 records them); `filters-dialog`'s IME test failed once in the crowded run and passes alone.
+- **e2e:** `e2e` (macOS) `ai-draft`, `design-axe` (two new states: Send asking about a note, a change typed in the field), `summaries`, `compose`, `composer-send`, `composer`, `controls`, `designs`, `dev-mode`, `followups`, `i18n`, `local-ai`, `palette`, `pinned-draft`, `replies-ready`, `send-later`, `visual`: all pass; the tagged flows of `ai-draft`, `design-axe`, `designs`, `controls`, `visual`, `i18n` in Lumen, Atelier, Luma and Graphite: all pass. No baseline moved.
+- **`pnpm typecheck`, `pnpm lint`:** clean. Not run, as asked: `pnpm test:all`, `pnpm test:ui-perf`, the rating.
+- **On real models** (Pro's routing, `/tmp/terno-scratch/p164/composer/shots/`, its `index.md`): every state above in Lumen and macOS, light and dark, at 1440x900, and the 1100x700 foot, strip and pinned card. A change asked in the field ("shorter, more casual") came back "Friday works. Can you send me the address?". The failure is real: api.anthropic.com refused at a loopback proxy. About US$0.10 as the app counted it.
+- **What looking changed:** the field's text moved onto To's line (it sat 8 px right); its focus ring is lighter than Input's; ⌘J's keycap shows from a 36 rem foot (it was hidden at 1440 in Lumen); the label has a short form and a glyph-only form, measured so the foot never wraps (it wrapped at 1100 in macOS).
+
+## Left for the owner
+
+- At 1100x700 the foot holds Send, the format, attach and link icons, and Save and close, but not the words "Generate with AI": there the button is the bordered sparkle alone (its tooltip and name say "Generate with AI"). Giving it the words at 1100 would mean shortening Save and close to an icon or dropping another control on a narrow foot.
+- The body's "For AI · not sent" wash and label stay as plan 162 left them.
