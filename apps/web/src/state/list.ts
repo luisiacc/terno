@@ -205,7 +205,8 @@ async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE
     const offset = cursor?.id ?? 0;
     const page = Math.min(limit, 500);
     const r = await client.call("ai.actionPage", { previewId: s.actionPreview, offset, limit: page, leftOut: useActionRows.getState().showLeftOut });
-    noteRows(r.items.map((t) => t.id), r.unticked, r.tags);
+    // a page that answers after the preview ended (Cancel while Show was loading) notes nothing (Codex review)
+    if (getApp().actionPreview === s.actionPreview) noteRows(r.items.map((t) => t.id), r.unticked, r.tags);
     return { items: r.items, nextCursor: offset + page < r.total ? { lastDate: 0, id: offset + page } : null };
   }
   if (s.today) {

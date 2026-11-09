@@ -199,7 +199,9 @@ function useReason(thread: Pick<ThreadSummary, "id">): string | undefined {
   const today = useToday((s) => (inToday ? s.reasons.get(thread.id) : undefined));
   // plan 162 (after ai162-r05): in an action's preview, why a shown row isn't plainly a match, in the same place and
   // look as Today's reason (the left-out and the starred or replied rows read as the matches: two reports)
-  const tag = useActionRows((s) => s.tags.get(thread.id));
+  // only inside a preview: a page that answers after Cancel can't put a tag on an ordinary mailbox's row (Codex review)
+  const previewing = useApp((s) => s.actionPreview !== null);
+  const tag = useActionRows((s) => (previewing ? s.tags.get(thread.id) : undefined));
   return today ?? (tag ? t(`action.row.${tag}`) : undefined);
 }
 

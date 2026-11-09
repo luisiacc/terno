@@ -160,3 +160,18 @@ describe("what a preview keeps to come back to (plan 143)", () => {
   });
 });
 
+
+describe("plan 162 (after ai162-r05, Codex review): a row's tag belongs to its preview", () => {
+  it("a page that answers after Cancel tags nothing", async () => {
+    const { reloadList } = await import("./list");
+    setApp({ actionPreview: null, view: "inbox" });
+    enterPreview("p20");
+    let answer: (v: unknown) => void = () => {};
+    call.mockImplementationOnce(() => new Promise((r) => { answer = r; }) as never);
+    const loading = reloadList();
+    leavePreview();
+    answer({ items: [{ id: 7 }], total: 1, unticked: [7], tags: [[7, "leftOut"]] });
+    await loading.catch(() => {});
+    expect(useActionRows.getState().tags.size).toBe(0);
+  });
+});
