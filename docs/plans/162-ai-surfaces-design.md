@@ -674,3 +674,60 @@ Still open from before: Save as primary in Rules; a palette command "Summarize t
 - **The frozen capture**, on the final build, reached every AI state in Lumen, Atelier, macOS and Graphite, light and dark: 136 shots, 56 AI requests each, all to the stub, with no change to `scripts/ui-rating/`.
 - **Hands-on** (`harness.mjs`, macOS light 1440x900 and Atelier dark 1100x700): the digest (open, j/k/x, Enter then Esc, Back to the digest, the way in, Esc to the list, Archive, the snack above the bar, Undo), ⌘J at 1100 (one line, Rewrite ▾ then Undo twice: keys in the draft, then the field holding the instruction), Writing style's Style for and Esc.
 - **Shots:** `/tmp/terno-scratch/ai-redesign/round2/<design>/`; before and after sheets in `/tmp/terno-scratch/ai-redesign/sheets-r2/`.
+
+### ai162-r03 (branch at `8602bce4c`, rebased on main's real-model rating, 2026-11-08): the last round
+
+After the pass that followed ai162-r02, rated blind **on real models** (Pro's routing: summaries on OpenAI gpt-6-luna; ⌘J, Ask and Reply ready on claude-sonnet-5-5; actions, follow-ups and the digest on claude-haiku-5-5; the AI filter on claude-opus-5-5), the owner's request. All eight reports valid; 662 cells under 9, 105 issues (10 high). The numbers as `gate.mjs` wrote them:
+
+Models: real, openai/gpt-6-luna, anthropic/claude-sonnet-5-5, anthropic/claude-haiku-5-5, anthropic/claude-opus-5-5, jev/jev-latest; the captures spent US$0.26 as the app counted it
+
+| Style | Rater | Overall | UI | UX | Lowest | Cells below |
+|---|---|---:|---:|---:|---:|---:|
+| atelier | claude | 7.5 | 7.5 | 7.5 | 6 | 84/84 |
+| atelier | codex | 7.5 | 7.5 | 7.5 | 6 | 75/84 |
+| graphite | claude | 6.5 | 7 | 6.5 | 5.5 | 84/84 |
+| graphite | codex | 7.5 | 7.5 | 7 | 5.5 | 78/84 |
+| lumen | claude | 7 | 7 | 7 | 6 | 84/84 |
+| lumen | codex | 7.5 | 7.5 | 7.5 | 5.5 | 69/84 |
+| macos | claude | 7.5 | 7.5 | 7 | 5.5 | 84/84 |
+| macos | codex | 7.5 | 7.5 | 7.5 | 5.5 | 80/84 |
+
+#### Screens, each rater's overall
+
+| Screen | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| summary | 8 | 7.5 | 7 | 7.5 | 7 | 7.5 | 7.5 | 7.5 |
+| ai_draft | 7.5 | 7.5 | 7 | 7.5 | 7 | 7.5 | 7.5 | 7.5 |
+| ask | 7.5 | 7 | 6.5 | 7 | 6.5 | 6.5 | 8 | 6 |
+| actions | 7 | 8 | 6.5 | 8 | 6.5 | 7.5 | 7 | 8 |
+| today | 7 | 7 | 6.5 | 7 | 6.5 | 7 | 7.5 | 7 |
+| followups_replies | 8 | 8 | 7 | 8.5 | 7.5 | 8.5 | 8 | 8 |
+| ai_settings | 7.5 | 7.5 | 7.5 | 7.5 | 7 | 8 | 6.5 | 7 |
+
+#### Facets, mean across screens
+
+| Facet | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| typography | 7.79 | 8.07 | 7.21 | 8.07 | 7.21 | 8.07 | 7.64 | 7.71 |
+| contrast | 7.43 | 8.29 | 7.14 | 8.29 | 6.86 | 8.43 | 8.07 | 8.14 |
+| placement | 7.14 | 7.86 | 6.71 | 8.00 | 7.00 | 8.14 | 7.64 | 8.07 |
+| hierarchy | 7.50 | 7.21 | 6.86 | 7.50 | 6.71 | 7.57 | 7.29 | 7.07 |
+| controls | 7.64 | 8.29 | 6.86 | 8.21 | 6.93 | 8.50 | 7.50 | 8.14 |
+| density | 7.21 | 7.07 | 6.64 | 7.50 | 6.79 | 7.21 | 7.36 | 7.21 |
+| efficiency | 7.93 | 8.50 | 7.14 | 8.07 | 7.07 | 8.50 | 8.00 | 8.29 |
+| clarity | 7.36 | 7.07 | 6.79 | 7.21 | 6.64 | 7.50 | 7.14 | 6.79 |
+| feedback | 8.29 | 8.71 | 6.93 | 8.36 | 7.36 | 8.50 | 7.71 | 8.07 |
+| consistency | 7.79 | 8.21 | 7.07 | 8.07 | 6.93 | 8.71 | 7.29 | 8.00 |
+| accessibility | 6.86 | 7.86 | 6.43 | 8.29 | 6.43 | 8.79 | 7.50 | 7.93 |
+
+**Against r02 (stub):** Today rose (6.5 to 7.5, was 5.5 to 7.5); follow-ups held at 7 to 8.5; **Ask fell** (6 to 8, was 7.5 to 8.5) and clarity with it. Real models made the raters see what the stub never produced, and most high issues are those:
+- Ask: the scope line ("searched back to Apr 25, 2026") contradicts sources from 2024 and 2025; "Parts of this aren't linked to a message" says neither which parts nor what to do, and shows under fully cited answers; sources cut to four rows with no count; raw [n] while streaming; Esc while working drops the question; same-name people merged silently.
+- First use asks for consent three different ways (summary banner, composer paragraph, action paragraph), and the action preview's count changes under the consent.
+- The AI filter turned part of a request into `.+` and offered to archive 842 conversations.
+- The summary's question items are written as instructions, and Reply puts them in ⌘J as the instruction.
+- "Open your nudge" shows before the nudge exists (while the composer waits on consent).
+- The action preview's "matches a pattern (see Exact pattern)" points at a control named otherwise; what the AI check left out is the faintest line on the page.
+
+## Where it stands after three rounds
+
+The owner's budget of three rated rounds on this branch is used. Mean of the eight raters' overall: main's ai-r03 7.21, r01 7.43, r02 7.36, r03 7.29 (r03 on real models, so not directly comparable). No cell reached 9 from both raters in any round; the branch is not merged and waits for the owner.
