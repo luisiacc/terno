@@ -40,7 +40,7 @@ export const AI_GAP = `${AI_GAP_TINT} underline decoration-dotted decoration-1 u
  * Plan 163: words the model put in a gap the user left, marked until they're read: the primary's wash under the ink and a
  * solid underline (a gap is gold and dotted: missing; a fill is filled). `CONTRAST_PAIRS` holds it on a composer's surfaces.
  */
-export const AI_FILL = "rounded-xs bg-primary/12 text-foreground underline decoration-primary/60 decoration-1 underline-offset-2";
+export const AI_FILL = "rounded-xs bg-primary/15 text-foreground underline decoration-primary/60 decoration-1 underline-offset-2";
 /** a fill still coming, where its gap was: the same mark, so nothing moves when it goes in */
 export const AI_FILL_STREAM = `${AI_FILL} ai-fill-stream`;
 
