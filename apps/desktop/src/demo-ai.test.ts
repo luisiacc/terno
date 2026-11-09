@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { askFinished, conversationDone, DEMO_AI_NOW, DEMO_AI_STEPS, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, MAX_ATTEMPTS, partialVerdict, devKeysIn, keyFiles, MARKER_VERSION, missingKeysMessage, readMarker, resolveKeys, stepsToRun } from "./demo-ai";
+import { askFinished, conversationDone, replyOutcome, DEMO_AI_NOW, DEMO_AI_STEPS, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, MAX_ATTEMPTS, partialVerdict, devKeysIn, keyFiles, MARKER_VERSION, missingKeysMessage, readMarker, resolveKeys, stepsToRun } from "./demo-ai";
 
 describe("plan 167: pnpm dev:demo-ai", () => {
   it("takes --fresh (and dev.mjs's --cleandb), and refuses anything else so a typo isn't a silent no-op", () => {
@@ -109,6 +109,21 @@ describe("plan 167: pnpm dev:demo-ai", () => {
     expect(conversationDone({ summary: "error", reply: "ready" })).toBe(false);
     expect(conversationDone({ summary: "timeout", reply: "none" })).toBe(false);
     expect(conversationDone({ summary: "ready", reply: "unfinished" })).toBe(false);
+  });
+
+  it("Reply ready is settled by what the app stored, not by the card's absence", () => {
+    const now = DEMO_AI_NOW;
+    const day = 86_400_000;
+    expect(replyOutcome({ cardReady: true, stored: null, waitingSince: now - day, now })).toBe("ready");
+    expect(replyOutcome({ cardReady: false, stored: "ready", waitingSince: now - day, now })).toBe("ready");
+    // the model said no reply is needed: settled
+    expect(replyOutcome({ cardReady: false, stored: "skipped", waitingSince: now - day, now })).toBe("none");
+    expect(replyOutcome({ cardReady: false, stored: "failed", waitingSince: now - day, now })).toBe("unfinished");
+    // no row yet on a conversation that waits for a reply: the model may still be deciding
+    expect(replyOutcome({ cardReady: false, stored: null, waitingSince: now - day, now })).toBe("unfinished");
+    // no row because nothing is owed, or the wait is past Reply ready's 30 days
+    expect(replyOutcome({ cardReady: false, stored: null, waitingSince: null, now })).toBe("none");
+    expect(replyOutcome({ cardReady: false, stored: null, waitingSince: now - 31 * day, now })).toBe("none");
   });
 
   it("a step with something missing runs again, and after MAX_ATTEMPTS keeps what's there", () => {

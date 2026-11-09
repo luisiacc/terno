@@ -16,7 +16,7 @@ pnpm dev:demo-ai --fresh   # the profile goes to the Trash and is prepared again
 
 ### What the first launch costs
 
-Measured on two runs: **65 to 82 model requests, about US$0.12 to 0.15**, counted by the app's own usage book (Settings → AI shows it). The end of the preparation prints its total. Roughly:
+Measured on four runs: **about 80 model requests, US$0.12 to 0.16**, counted by the app's own usage book (Settings → AI shows it). The end of the preparation prints its total. Roughly:
 
 | Feature | Requests | Model (Pro's routing) |
 | --- | --- | --- |

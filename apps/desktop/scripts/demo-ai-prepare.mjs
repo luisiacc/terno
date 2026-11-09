@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { askFinished, conversationDone, DEMO_AI_STEPS, demoAiClock, MARKER_FILE, MARKER_VERSION, partialVerdict, readMarker } from "../src/demo-ai.ts";
+import { askFinished, conversationDone, replyOutcome, DEMO_AI_STEPS, demoAiClock, MARKER_FILE, MARKER_VERSION, partialVerdict, readMarker } from "../src/demo-ai.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const { _electron: electron } = createRequire(join(root, "package.json"))("@playwright/test");
@@ -45,6 +45,17 @@ export function loadMarker(profile) {
 }
 
 /** What the app counted it spent (its usage book, plan 131), as the rating reads it: requests and US dollars by task. */
+/** What the app stored, read while it runs (never written): a thread's Reply ready row, its wait, the AI rules. */
+export function readStored(profile, run) {
+  const db = new DatabaseSync(join(profile, "terno.db"), { readOnly: true });
+  try { return run(db); } finally { db.close(); }
+}
+const replyStored = (profile, threadId) => readStored(profile, (db) => ({
+  stored: db.prepare("SELECT state FROM ai_prepared_replies WHERE thread_id = ?").get(threadId)?.state ?? null,
+  waitingSince: db.prepare("SELECT waiting_since FROM threads WHERE id = ?").get(threadId)?.waiting_since ?? null,
+}));
+const aiRules = (profile) => readStored(profile, (db) => db.prepare("SELECT name FROM filters WHERE source = 'ai'").all().map((r) => r.name));
+
 export function readSpend(profile) {
   const db = new DatabaseSync(join(profile, "terno.db"), { readOnly: true });
   try {
@@ -131,14 +142,17 @@ const STEPS = {
     const until = Date.now() + JOB_MS;
     let retried = false;
     for (;;) {
-      const preparing = await page.getByTestId("digest-preparing").first().isVisible().catch(() => false);
-      if (!preparing && (await page.getByTestId("digest-item").first().isVisible().catch(() => false))) break;
+      // a failure first: a digest whose later batch failed keeps the lines of the earlier ones
       if (await page.getByTestId("digest-failed").first().isVisible().catch(() => false)) {
         if (retried) throw new Error("the digest failed twice: its page says why");
         retried = true;
         d.log("  the digest failed; trying again");
         await page.getByTestId("digest-retry").click();
+        await page.waitForTimeout(1000);
+        continue;
       }
+      const preparing = await page.getByTestId("digest-preparing").first().isVisible().catch(() => false);
+      if (!preparing && (await page.getByTestId("digest-item").first().isVisible().catch(() => false))) break;
       if (Date.now() > until) throw new Error("the digest wasn't ready in 5 minutes");
       await page.waitForTimeout(1000);
     }
@@ -155,6 +169,7 @@ const STEPS = {
     const counts = { summaries: 0, replies: 0 };
     const missing = [];
     const visit = async (row, where) => {
+      const threadId = Number(await row.getAttribute("data-thread-id"));
       await row.click();
       await page.getByTestId("reader-subject").waitFor();
       const title = (await page.getByTestId("reader-subject").innerText()).trim();
@@ -174,12 +189,17 @@ const STEPS = {
         }, null, { timeout: MODEL_MS }).then((h) => h.jsonValue(), () => "timeout");
         if (summary === "ready") counts.summaries++;
       }
-      // the card shows once the model said a reply is wanted; when it decides none is, it never shows
-      let reply = "none";
-      if (await shows(page.getByTestId("reply-ready"), 20_000)) {
-        reply = (await shows(page.locator("[data-testid=reply-ready][data-phase=ready]"), MODEL_MS)) ? "ready" : "unfinished";
-        if (reply === "ready") counts.replies++;
+      // the card shows once the model said a reply is wanted; what the app stored settles it either way (replyOutcome)
+      let cardReady = false;
+      if (await shows(page.getByTestId("reply-ready"), 20_000)) cardReady = await shows(page.locator("[data-testid=reply-ready][data-phase=ready]"), MODEL_MS);
+      let reply = "unfinished";
+      for (const until = Date.now() + 60_000; ; await page.waitForTimeout(2000)) {
+        const stored = replyStored(d.profile, threadId);
+        reply = replyOutcome({ cardReady, ...stored, now: await page.evaluate(() => Date.now()) });
+        // no row yet on a conversation that waits for a reply: the model may still be deciding
+        if (reply !== "unfinished" || stored.stored === "failed" || Date.now() > until) break;
       }
+      if (reply === "ready") counts.replies++;
       if (conversationDone({ summary, reply })) progress.add(title);
       else missing.push(title);
       d.log(`  ${where}: ${title}${summary === "none" ? "" : summary === "ready" ? ", summary" : `, summary ${summary}`}${reply === "ready" ? ", Reply ready" : reply === "unfinished" ? ", Reply ready didn't finish" : ""}`);
@@ -294,12 +314,12 @@ const STEPS = {
     if (progress.has(RULE_REQUEST)) return d.log("  saved on an earlier launch");
     await d.go("inbox");
     await page.getByTestId("open-filters").click();
-    // the list says "AI · applied N times" under a rule made with AI
-    const aiRule = () => page.getByTestId("filter-item").filter({ hasText: /uber/i }).filter({ hasText: /AI ·/ }).first();
-    // saved on a launch that stopped before recording it: kept, not made twice
-    if (await shows(aiRule(), 3000)) {
+    // the demo mailbox has no rule made with AI: one there is ours, saved by a launch that stopped before recording
+    // it, and kept rather than made twice
+    const before = aiRules(d.profile);
+    if (before.length) {
       progress.add(RULE_REQUEST);
-      d.log(`  already saved: ${(await aiRule().innerText()).split("\n")[0]}`);
+      d.log(`  already saved: ${before.join(", ")}`);
       return d.escapeAll();
     }
     await page.getByTestId("ai-prompt").fill(RULE_REQUEST);
@@ -308,9 +328,8 @@ const STEPS = {
     await page.locator("[data-testid=filter-preview][data-ready]").first().waitFor({ timeout: MODEL_MS }).catch(() => {});
     const name = (await page.getByTestId("filter-name").first().inputValue().catch(() => "")).trim();
     await page.getByTestId("filter-save").click();
-    // saved is the rule in the list, marked AI, and nothing left unsaved: only then is it recorded
-    await aiRule().waitFor({ timeout: 15_000 });
-    await page.getByTestId("filter-unsaved").waitFor({ state: "detached", timeout: 15_000 });
+    // saved is a rule made with AI in the store: only then is it recorded
+    for (const until = Date.now() + 15_000; !aiRules(d.profile).length; await page.waitForTimeout(250)) if (Date.now() > until) throw new Error("the rule wasn't saved");
     progress.add(RULE_REQUEST);
     d.log(`  "${RULE_REQUEST}" → ${name || "a rule"}`);
     await d.escapeAll();
@@ -332,7 +351,7 @@ const STEPS = {
  * Runs `steps` on the profile behind your windows and records each in the marker. Returns the steps that failed.
  * `env(now)` is demoAiEnv's with `background: true`, the clock starting at `now`.
  */
-export async function prepare({ electronBin, main, env, profile, steps, onPid = () => {}, log = console.log }) {
+export async function prepare({ electronBin, main, env, profile, steps, onPid = () => {}, onSave = () => {}, log = console.log }) {
   const marker = loadMarker(profile);
   if (steps.length === DEMO_AI_STEPS.length) Object.assign(marker, { done: {}, progress: {}, attempts: {} });
   marker.failed = {};
@@ -345,6 +364,8 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
   const launched = Date.now();
   // the demo's clock goes into every checkpoint: a launch stopped by Ctrl-C never leaves the next one behind it
   const save = () => { marker.clock = startsAt + (Date.now() - launched) + 60_000; writeMarker(profile, marker); };
+  // and once more as Ctrl-C stops it, so a long step's work is never ahead of the next launch's clock
+  onSave(save);
   const app = await electron.launch({ executablePath: electronBin, args: [main], env: env(startsAt) });
   const pid = app.process().pid;
   onPid(pid);
@@ -359,6 +380,7 @@ export async function prepare({ electronBin, main, env, profile, steps, onPid = 
     const windowNow = await page.evaluate(() => Date.now());
     if (Math.abs(windowNow - startsAt - (Date.now() - launched)) > 60_000) log(`[demo-ai] note: the window's clock reads ${new Date(windowNow).toISOString()}, not the demo's`);
     const d = driver(page, log);
+    d.profile = profile;
     for (const [i, step] of steps.entries()) {
       log(`[demo-ai] ${i + 1}/${steps.length} ${step} …`);
       const started = Date.now();

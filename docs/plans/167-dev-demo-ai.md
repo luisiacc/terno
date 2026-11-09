@@ -110,3 +110,15 @@ Two runs on temp profiles (`/tmp/terno-scratch/p164/demo-ai/run1`, `run2`), scre
 9. **The doc told you to delete `demo-ai.json` to prepare again,** which the guard then refuses. The doc says to use `--fresh`, and why the marker stays.
 
 Run 3 after the fixes: 260 s, 82 requests, US$0.14; 9 summaries, 4 replies (the top conversation's among them), 8 follow-ups, 4 questions answered.
+
+### Second round (Codex, on the fix commit)
+
+It confirmed 1, 3, 6 and 9, called 2, 4, 5, 7 and 8 partial, and found four new defects. All fixed:
+
+- **A legacy sibling could still be adopted unchecked** (`Unica-dev-demo-ai` taken over by `devProfile()` after the check). The demo uses the checked path itself: no sibling is adopted and nothing is migrated.
+- **An absent card was taken as "no reply needed",** even when the model was still deciding or had failed. What the app stored for the thread settles it, read only (`replyOutcome`): ready, skipped (the model said none is needed), failed, or no row (none when nothing is owed or the wait is past 30 days; otherwise unfinished, retried).
+- **A digest whose later batch failed kept earlier lines and passed.** The failure is checked first.
+- **The rule's detection leaned on its generated name.** A rule made with AI in the store is the test, both for "saved" and for adopting one a stopped launch saved (the demo mailbox has none of its own).
+- **Ctrl-C could still leave work ahead of the clock** between checkpoints. dev.mjs's shutdown writes the preparation's checkpoint before it stops it (`onSave`).
+
+Run 4 after these: 245 s, 82 requests, US$0.16. The Japanese conversation's summary came back as the provider's error; the next launch prepared only that one (24 s, one request) and opened.

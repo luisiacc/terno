@@ -96,7 +96,8 @@ if (demoAi) {
   const { path: candidate } = resolveProfile({ explicit: process.env.TERNO_USER_DATA, defaultPath: join(homedir(), "Library", "Application Support", DEMO_AI_PROFILE) });
   const problem = demoAiProfileProblem({ path: candidate, entries: existsSync(candidate) ? readdirSync(candidate) : null });
   if (problem) { console.error(`[demo-ai] ${problem}`); process.exit(1); }
-  const profile = devProfile(DEMO_AI_PROFILE);
+  // the checked path itself: no legacy sibling is adopted (an unchecked Unica-dev-demo-ai would be), and nothing is migrated
+  const profile = candidate;
   if (args.fresh) cleanProfile(profile);
   const steps = stepsToRun(readMarker(read(join(profile, MARKER_FILE))), args);
   console.log(`[demo-ai] keys: ${Object.entries(from).map(([k, f]) => `${k} (${f})`).join(", ")}`);
@@ -154,10 +155,12 @@ const localUrl = new Promise((resolve, reject) => {
 });
 
 let electron;
-/** plan 167: the Electron that prepares the AI demo, while it runs */
+/** plan 167: the Electron that prepares the AI demo, and its checkpoint, while it runs */
 let preparing = null;
+let preparingSave = null;
 const shutdown = (code = 0) => {
   electron?.kill();
+  try { preparingSave?.(); } catch { /* the marker stays as last written */ }
   if (preparing) { try { process.kill(preparing, "SIGTERM"); } catch { /* gone */ } }
   killVite();
   process.exit(code);
@@ -195,8 +198,10 @@ if (demoAiPlan) {
       steps,
       // Ctrl-C while it prepares stops that Electron too, by its PID
       onPid: (pid) => (preparing = pid),
+      onSave: (save) => (preparingSave = save),
     });
     preparing = null;
+    preparingSave = null;
     const spend = Object.entries(readSpend(profile));
     const total = spend.reduce((a, [, t]) => ({ requests: a.requests + t.requests, usd: a.usd + t.usd }), { requests: 0, usd: 0 });
     console.log(`[demo-ai] prepared in ${Math.round((Date.now() - started) / 1000)} s; the profile's AI so far (Settings → AI → usage): ${total.requests} model requests, about US$${total.usd.toFixed(2)} (${spend.map(([task, t]) => `${task} ${t.requests}`).join(", ")})`);

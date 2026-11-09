@@ -157,6 +157,23 @@ export function conversationDone(o: { summary: "ready" | "none" | "error" | "tim
   return (o.summary === "ready" || o.summary === "none") && o.reply !== "unfinished";
 }
 
+/** The window Reply ready answers within (`@terno/core`'s WAITING_WINDOW_MS): older waits get none. */
+const WAITING_WINDOW_MS = 30 * 86_400_000;
+
+/**
+ * Reply ready on a conversation, settled or not. The card shows only while a reply comes, so its absence alone says
+ * nothing; what the app stored for the thread decides (read, never written): its row says ready, skipped (the model said
+ * no reply is needed) or failed. Without a row, a conversation that doesn't wait for your reply (or waited too long) gets
+ * none; one that does is unfinished, and tried again next launch.
+ */
+export function replyOutcome(o: { cardReady: boolean; stored: string | null; waitingSince: number | null; now: number }): "ready" | "none" | "unfinished" {
+  if (o.cardReady || o.stored === "ready" || o.stored === "used" || o.stored === "dismissed") return "ready";
+  if (o.stored === "skipped") return "none";
+  if (o.stored === "failed") return "unfinished";
+  if (o.waitingSince === null || o.now - o.waitingSince > WAITING_WINDOW_MS) return "none";
+  return "unfinished";
+}
+
 /** What a step that left things missing does: fail (and run again next launch), or, on its last try, keep what's there. */
 export function partialVerdict(missing: readonly string[], attempt: number): "done" | "again" | "keep" {
   return missing.length === 0 ? "done" : attempt >= MAX_ATTEMPTS ? "keep" : "again";
