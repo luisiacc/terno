@@ -10,3 +10,4 @@ export * from "./screen";
 export * from "./provenance";
 export * from "./contract";
 export * from "./language";
+export * from "./body";
